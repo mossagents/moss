@@ -79,7 +79,7 @@ func NewService(wsRoot string, trust workspace.TrustLevel, reader io.Reader, wri
 	cat.Register(builtins.NewWriteFileTool(ws))
 	cat.Register(builtins.NewAskUserTool(reader, writer))
 
-	rm := NewRunManager(ws, pol, appSvc, cat, bus, ts)
+	rm := NewRunManager(ws, pol, appSvc, cat, bus)
 
 	managerAgent := manager.New(cat)
 

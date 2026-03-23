@@ -11,7 +11,6 @@ import (
 	"github.com/mossagi/moss/internal/events"
 	"github.com/mossagi/moss/internal/policy"
 	"github.com/mossagi/moss/internal/tools"
-	"github.com/mossagi/moss/internal/transcript"
 	"github.com/mossagi/moss/internal/workspace"
 )
 
@@ -22,13 +21,12 @@ func newEventID() string {
 }
 
 type RunManager struct {
-	ws         *workspace.Manager
-	policy     *policy.Engine
-	approval   *approval.Service
-	catalog    *tools.Catalog
-	bus        *events.Bus
-	transcript *transcript.TranscriptStore
-	runs       map[string]*domain.Run
+	ws       *workspace.Manager
+	policy   *policy.Engine
+	approval *approval.Service
+	catalog  *tools.Catalog
+	bus      *events.Bus
+	runs     map[string]*domain.Run
 }
 
 func NewRunManager(
@@ -37,16 +35,14 @@ func NewRunManager(
 	svc *approval.Service,
 	cat *tools.Catalog,
 	bus *events.Bus,
-	ts *transcript.TranscriptStore,
 ) *RunManager {
 	return &RunManager{
-		ws:         ws,
-		policy:     pol,
-		approval:   svc,
-		catalog:    cat,
-		bus:        bus,
-		transcript: ts,
-		runs:       make(map[string]*domain.Run),
+		ws:       ws,
+		policy:   pol,
+		approval: svc,
+		catalog:  cat,
+		bus:      bus,
+		runs:     make(map[string]*domain.Run),
 	}
 }
 
@@ -76,9 +72,6 @@ func (rm *RunManager) StartRun(ctx context.Context, req RunRequest) (*domain.Run
 		Payload:   map[string]any{"goal": req.Goal, "mode": string(req.Mode)},
 	}
 	rm.bus.Publish(e)
-	if rm.transcript != nil {
-		_ = rm.transcript.Write(e)
-	}
 
 	return run, nil
 }
@@ -93,17 +86,13 @@ func (rm *RunManager) CompleteRun(runID, result string) error {
 	run.FinalResult = result
 	run.Status = domain.RunStatusCompleted
 
-	e := events.Event{
+	rm.bus.Publish(events.Event{
 		EventID:   newEventID(),
 		Type:      events.EventRunCompleted,
 		RunID:     runID,
 		Timestamp: now,
 		Payload:   map[string]any{"result": result},
-	}
-	rm.bus.Publish(e)
-	if rm.transcript != nil {
-		_ = rm.transcript.Write(e)
-	}
+	})
 	return nil
 }
 
@@ -117,17 +106,13 @@ func (rm *RunManager) FailRun(runID, errMsg string) error {
 	run.Status = domain.RunStatusFailed
 	run.FinalResult = errMsg
 
-	e := events.Event{
+	rm.bus.Publish(events.Event{
 		EventID:   newEventID(),
 		Type:      events.EventRunFailed,
 		RunID:     runID,
 		Timestamp: now,
 		Payload:   map[string]any{"error": errMsg},
-	}
-	rm.bus.Publish(e)
-	if rm.transcript != nil {
-		_ = rm.transcript.Write(e)
-	}
+	})
 	return nil
 }
 
