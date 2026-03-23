@@ -19,6 +19,8 @@ func (b *Bus) Subscribe(h Handler) {
 	b.subscribers = append(b.subscribers, h)
 }
 
+// Publish delivers the event synchronously to all subscribers in subscription order.
+// Handlers should be fast; a slow handler will delay subsequent handlers.
 func (b *Bus) Publish(e Event) {
 	b.mu.RLock()
 	handlers := make([]Handler, len(b.subscribers))

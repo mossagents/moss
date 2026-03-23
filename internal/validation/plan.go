@@ -19,6 +19,7 @@ type ValidationStep struct {
 	Type    ValidationType
 	Command string
 	Args    []string
+	Timeout time.Duration // zero means default (60s)
 }
 
 type ValidationPlan struct {
@@ -40,7 +41,11 @@ func (p *ValidationPlan) Execute(ctx context.Context, ws *workspace.Manager) ([]
 			return results, ctx.Err()
 		default:
 		}
-		out, exitCode, err := ws.RunCommand(step.Command, step.Args, 60*time.Second)
+		timeout := step.Timeout
+		if timeout == 0 {
+			timeout = 60 * time.Second
+		}
+		out, exitCode, err := ws.RunCommand(step.Command, step.Args, timeout)
 		result := ValidationResult{
 			Step:   step,
 			Output: out,

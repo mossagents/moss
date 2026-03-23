@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/mossagi/moss/internal/agents/manager"
@@ -51,8 +52,9 @@ func NewService(wsRoot string, trust workspace.TrustLevel, reader io.Reader, wri
 	bus := events.NewBus()
 
 	// Set up transcript store
-	tsPath := wsRoot + "/.moss/transcript.jsonl"
-	if err := os.MkdirAll(wsRoot+"/.moss", 0755); err != nil {
+	mossDir := filepath.Join(wsRoot, ".moss")
+	tsPath := filepath.Join(mossDir, "transcript.jsonl")
+	if err := os.MkdirAll(mossDir, 0755); err != nil {
 		return nil, fmt.Errorf("creating .moss dir: %w", err)
 	}
 	ts, err := transcript.NewTranscriptStore(tsPath)

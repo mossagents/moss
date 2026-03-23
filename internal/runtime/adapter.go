@@ -72,6 +72,7 @@ func (a *SimpleAdapter) Execute(ctx context.Context, req RunRequest) (RunResult,
 		if !ok {
 			continue
 		}
+		// MVP: use a permissive input covering common fields; tools ignore irrelevant keys.
 		input := tools.ToolInput{"path": ".", "pattern": "*", "query": req.Goal}
 		a.bus.Publish(events.Event{
 			EventID:   newEventID(),

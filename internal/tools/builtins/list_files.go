@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"context"
+	"path/filepath"
 
 	"github.com/mossagi/moss/internal/tools"
 	"github.com/mossagi/moss/internal/workspace"
@@ -29,10 +30,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, input tools.ToolInput) (too
 	if path == "" {
 		path = "."
 	}
-	fullPattern := path + "/" + pattern
-	if path == "." {
-		fullPattern = pattern
-	}
+	fullPattern := filepath.Join(path, pattern)
 	files, err := t.ws.ListFiles(fullPattern)
 	if err != nil {
 		return tools.ToolOutput{Success: false, Error: err.Error()}, nil
