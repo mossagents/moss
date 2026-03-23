@@ -24,6 +24,8 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		runCmd(os.Args[2:])
+	case "tui":
+		tuiCmd(os.Args[2:])
 	case "version":
 		fmt.Printf("moss %s\n", version)
 	case "help", "--help", "-h":
@@ -40,10 +42,11 @@ func printUsage() {
 
 Usage:
   moss run [flags]
+  moss tui [flags]
   moss version
 
 Flags:
-  --goal        Goal for the agent to accomplish (required)
+  --goal        Goal for the agent to accomplish (required unless interactive TUI is used)
   --workspace   Workspace directory (default: ".")
   --mode        Run mode: interactive|safe|autopilot (default: interactive)
   --trust       Trust level: trusted|restricted (default: trusted)
@@ -52,7 +55,7 @@ Flags:
 
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	goal := fs.String("goal", "", "Goal for the agent to accomplish (required)")
+	goal := fs.String("goal", "", "Goal for the agent to accomplish (required unless interactive TUI is used)")
 	wsDir := fs.String("workspace", ".", "Workspace directory")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|safe|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
@@ -62,33 +65,25 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
+	runMode, err := parseRunMode(*mode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	trustLevel, err := parseTrustLevel(*trust)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
 	if *goal == "" {
+		if runMode == domain.RunModeInteractive {
+			runTUI(*wsDir, runMode, trustLevel, os.Stdin, os.Stdout, os.Stderr)
+			return
+		}
 		fmt.Fprintln(os.Stderr, "error: --goal is required")
 		fs.Usage()
-		os.Exit(1)
-	}
-
-	var runMode domain.RunMode
-	switch *mode {
-	case "interactive":
-		runMode = domain.RunModeInteractive
-	case "safe":
-		runMode = domain.RunModeSafe
-	case "autopilot":
-		runMode = domain.RunModeAutopilot
-	default:
-		fmt.Fprintf(os.Stderr, "error: invalid mode %q\n", *mode)
-		os.Exit(1)
-	}
-
-	var trustLevel workspace.TrustLevel
-	switch *trust {
-	case "trusted":
-		trustLevel = workspace.TrustLevelTrusted
-	case "restricted":
-		trustLevel = workspace.TrustLevelRestricted
-	default:
-		fmt.Fprintf(os.Stderr, "error: invalid trust level %q\n", *trust)
 		os.Exit(1)
 	}
 
@@ -130,5 +125,29 @@ func runCmd(args []string) {
 	fmt.Printf("Status: %s\n", run.Status)
 	if run.FinalResult != "" {
 		fmt.Printf("\nResult:\n%s\n", run.FinalResult)
+	}
+}
+
+func parseRunMode(value string) (domain.RunMode, error) {
+	switch value {
+	case "interactive":
+		return domain.RunModeInteractive, nil
+	case "safe":
+		return domain.RunModeSafe, nil
+	case "autopilot":
+		return domain.RunModeAutopilot, nil
+	default:
+		return "", fmt.Errorf("invalid mode %q", value)
+	}
+}
+
+func parseTrustLevel(value string) (workspace.TrustLevel, error) {
+	switch value {
+	case "trusted":
+		return workspace.TrustLevelTrusted, nil
+	case "restricted":
+		return workspace.TrustLevelRestricted, nil
+	default:
+		return "", fmt.Errorf("invalid trust level %q", value)
 	}
 }
