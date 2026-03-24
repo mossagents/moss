@@ -215,6 +215,21 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.sendFn = func(text string) {
 			go agent.appendAndRun(text)
 		}
+		m.chat.skillListFn = func() string {
+			skills := agent.k.SkillManager().List()
+			if len(skills) == 0 {
+				return "暂无已加载的 skill。"
+			}
+			var sb strings.Builder
+			sb.WriteString("已加载的 skills:\n")
+			for _, s := range skills {
+				sb.WriteString(fmt.Sprintf("  • %s v%s — %s\n", s.Name, s.Version, s.Description))
+				if len(s.Tools) > 0 {
+					sb.WriteString(fmt.Sprintf("    工具: %s\n", strings.Join(s.Tools, ", ")))
+				}
+			}
+			return sb.String()
+		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
 			connInfo += " (" + m.config.Model + ")"
@@ -250,7 +265,8 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		}
 
 		// 创建持久 session，注入 system prompt
-		sysPrompt := buildSystemPrompt(wCfg.Workspace)
+		skillAdditions := k.SkillManager().SystemPromptAdditions()
+		sysPrompt := buildSystemPrompt(wCfg.Workspace, skillAdditions)
 		sess, err := k.NewSession(ctx, session.SessionConfig{
 			Goal:         "interactive",
 			Mode:         "interactive",

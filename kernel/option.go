@@ -6,6 +6,7 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
@@ -45,4 +46,9 @@ func WithSessionManager(m session.Manager) Option {
 // WithLoopConfig 配置 Agent Loop 参数。
 func WithLoopConfig(cfg loop.LoopConfig) Option {
 	return func(k *Kernel) { k.loopCfg = cfg }
+}
+
+// WithSkillManager 替换默认的 Skill Manager。
+func WithSkillManager(m *skill.Manager) Option {
+	return func(k *Kernel) { k.skills = m }
 }

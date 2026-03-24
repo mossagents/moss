@@ -3,18 +3,20 @@ package tui
 import (
 	"fmt"
 	"runtime"
+	"strings"
 )
 
 // buildSystemPrompt 构造 Agent 的 system prompt。
 // 风格：类 Claude Code / Cursor 的通用编程助手。
-func buildSystemPrompt(workspace string) string {
+// skillPrompts 是来自 SkillManager 的额外提示片段。
+func buildSystemPrompt(workspace string, skillPrompts ...string) string {
 	os := runtime.GOOS
 	shell := "bash"
 	if os == "windows" {
 		shell = "powershell"
 	}
 
-	return fmt.Sprintf(`You are moss, an expert AI coding assistant running in an interactive terminal.
+	base := fmt.Sprintf(`You are moss, an expert AI coding assistant running in an interactive terminal.
 
 ## Environment
 - Operating system: %s
@@ -45,4 +47,10 @@ You have access to tools that let you interact with the user's file system and e
 - When showing code changes, be specific about file paths and what changed.
 - For multi-step tasks, work through them systematically.
 `, os, shell, workspace)
+
+	if len(skillPrompts) > 0 {
+		base += "\n## Additional Skills\n" + strings.Join(skillPrompts, "\n")
+	}
+
+	return base
 }

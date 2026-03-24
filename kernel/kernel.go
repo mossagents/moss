@@ -10,6 +10,7 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
@@ -22,6 +23,7 @@ type Kernel struct {
 	sessions session.Manager
 	chain    *middleware.Chain
 	loopCfg  loop.LoopConfig
+	skills   *skill.Manager
 }
 
 // New 使用函数式选项创建 Kernel。
@@ -30,6 +32,7 @@ func New(opts ...Option) *Kernel {
 		tools:    tool.NewRegistry(),
 		sessions: session.NewManager(),
 		chain:    middleware.NewChain(),
+		skills:   skill.NewManager(),
 	}
 	for _, opt := range opts {
 		opt(k)
@@ -63,13 +66,28 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 }
 
 // Shutdown 关闭 Kernel，释放资源。
-func (k *Kernel) Shutdown(_ context.Context) error {
-	return nil
+func (k *Kernel) Shutdown(ctx context.Context) error {
+	return k.skills.ShutdownAll(ctx)
 }
 
 // ToolRegistry 返回工具注册表。
 func (k *Kernel) ToolRegistry() tool.Registry {
 	return k.tools
+}
+
+// SkillManager 返回 Skill 管理器。
+func (k *Kernel) SkillManager() *skill.Manager {
+	return k.skills
+}
+
+// SkillDeps 返回当前 Kernel 的 Skill 依赖。
+func (k *Kernel) SkillDeps() skill.Deps {
+	return skill.Deps{
+		ToolRegistry: k.tools,
+		Middleware:    k.chain,
+		Sandbox:      k.sandbox,
+		UserIO:       k.io,
+	}
 }
 
 // SessionManager 返回 Session 管理器。

@@ -35,8 +35,9 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn   func(string) // 发送用户消息给 agent
-	pendAsk  *bridgeAsk   // 当前阻塞的 Ask 请求
+	sendFn     func(string) // 发送用户消息给 agent
+	skillListFn func() string // 查询已加载 skills
+	pendAsk    *bridgeAsk   // 当前阻塞的 Ask 请求
 	finished bool         // session 已结束
 	result   string       // 最终结果
 
@@ -310,9 +311,19 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/skills":
+		info := "skill 信息不可用。"
+		if m.skillListFn != nil {
+			info = m.skillListFn()
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
 	case "/help":
 		help := "可用命令:\n" +
 			"  /model [名称]  查看或切换模型\n" +
+			"  /skills        查看已加载的 skills\n" +
 			"  /clear         清空对话记录\n" +
 			"  /help          显示此帮助\n" +
 			"  /exit          退出 moss"
