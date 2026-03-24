@@ -86,6 +86,7 @@ type appModel struct {
 	agent    *agentState // 共享指针，跨值传递保持一致
 	width    int
 	height   int
+	initCmd  tea.Cmd // 直接进入 chat 时的初始化命令
 }
 
 // Run 启动 TUI 应用。
@@ -93,10 +94,23 @@ func Run(cfg Config) error {
 	bridge := NewBridgeIO()
 
 	m := appModel{
-		state:    stateWelcome,
-		welcome:  newWelcomeModel(cfg.Provider, cfg.Model, cfg.Workspace),
 		config:   cfg,
 		bridgeIO: bridge,
+	}
+
+	// 如果 CLI 已提供足够配置，跳过 Welcome 直接进入 Chat
+	if cfg.Provider != "" && cfg.Workspace != "" {
+		wCfg := WelcomeConfig{
+			Provider:  cfg.Provider,
+			Model:     cfg.Model,
+			Workspace: cfg.Workspace,
+		}
+		m.state = stateChat
+		m.chat = newChatModel(wCfg.Provider, wCfg.Workspace)
+		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
+	} else {
+		m.state = stateWelcome
+		m.welcome = newWelcomeModel(cfg.Provider, cfg.Model, cfg.Workspace)
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen())
@@ -107,6 +121,10 @@ func Run(cfg Config) error {
 }
 
 func (m appModel) Init() tea.Cmd {
+	if m.state == stateChat {
+		// 跳过 Welcome 直接进入 Chat，同时启动 textarea 光标闪烁和 kernel 初始化
+		return tea.Batch(m.chat.Init(), m.initCmd)
+	}
 	return m.welcome.Init()
 }
 
