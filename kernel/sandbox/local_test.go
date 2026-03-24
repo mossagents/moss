@@ -109,3 +109,69 @@ func TestLocalSandboxListFiles(t *testing.T) {
 		t.Fatalf("ListFiles len = %d, want 2", len(files))
 	}
 }
+
+func TestLocalSandboxListFilesRecursive(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+
+	// 创建嵌套目录结构
+	os.MkdirAll(filepath.Join(dir, "src", "pkg"), 0755)
+	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
+	os.WriteFile(filepath.Join(dir, "src", "app.go"), []byte("package src"), 0644)
+	os.WriteFile(filepath.Join(dir, "src", "pkg", "util.go"), []byte("package pkg"), 0644)
+	os.WriteFile(filepath.Join(dir, "README.md"), []byte("readme"), 0644)
+
+	// **/*.go 应匹配所有 .go 文件
+	files, err := s.ListFiles("**/*.go")
+	if err != nil {
+		t.Fatalf("ListFiles recursive: %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("expected 3 .go files, got %d: %v", len(files), files)
+	}
+
+	// **/* 应匹配所有文件
+	all, err := s.ListFiles("**/*")
+	if err != nil {
+		t.Fatalf("ListFiles all: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("expected 4 files, got %d: %v", len(all), all)
+	}
+}
+
+func TestLocalSandboxExecuteShellCommand(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+
+	// 测试 shell 命令自动包装（命令包含空格）
+	var out Output
+	var err error
+	if isWindows() {
+		out, err = s.Execute(context.Background(), "echo hello world", nil)
+	} else {
+		out, err = s.Execute(context.Background(), "echo hello world", nil)
+	}
+	if err != nil {
+		t.Fatalf("Execute shell: %v", err)
+	}
+	if out.ExitCode != 0 {
+		t.Fatalf("ExitCode = %d, want 0, stderr: %s", out.ExitCode, out.Stderr)
+	}
+	if !contains(out.Stdout, "hello world") {
+		t.Fatalf("stdout = %q, expected to contain 'hello world'", out.Stdout)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
+}
+
+func containsSubstring(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagi/moss/kernel"
@@ -29,12 +30,49 @@ type Config struct {
 	BuildKernel func(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error)
 }
 
-// kernelReadyMsg 表示 kernel 已初始化并启动。
-// 通过消息传递避免在 tea.Cmd 闭包中修改值类型 model。
+// kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
 type kernelReadyMsg struct {
-	k      *kernel.Kernel
-	ctx    context.Context
-	cancel context.CancelFunc
+	agent *agentState
+}
+
+// agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
+// 使用指针共享，避免 Bubble Tea 值语义问题。
+type agentState struct {
+	k       *kernel.Kernel
+	sess    *session.Session
+	ctx     context.Context
+	cancel  context.CancelFunc
+	bridge  *BridgeIO
+	trust   string
+	mu      sync.Mutex
+	running bool // 是否正在执行 loop
+}
+
+// appendAndRun 追加用户消息到 session 并重新执行 agent loop。
+func (a *agentState) appendAndRun(text string) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return // 防止重复执行
+	}
+	a.running = true
+	a.mu.Unlock()
+
+	a.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: text})
+
+	result, err := a.k.Run(a.ctx, a.sess)
+
+	a.mu.Lock()
+	a.running = false
+	a.mu.Unlock()
+
+	if a.bridge.program != nil {
+		msg := sessionResultMsg{err: err}
+		if result != nil {
+			msg.output = result.Output
+		}
+		a.bridge.program.Send(msg)
+	}
 }
 
 // appModel 是顶层 Bubble Tea Model。
@@ -44,8 +82,7 @@ type appModel struct {
 	chat     chatModel
 	config   Config
 	bridgeIO *BridgeIO
-	k        *kernel.Kernel
-	cancel   context.CancelFunc
+	agent    *agentState // 共享指针，跨值传递保持一致
 	width    int
 	height   int
 }
@@ -111,7 +148,6 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat = newChatModel(cfg.Provider, cfg.Workspace)
 		m.state = stateChat
 
-		// 启动 kernel 初始化（异步 Cmd，结果通过 kernelReadyMsg 传回）
 		return m, initKernelCmd(m.config, cfg, m.bridgeIO)
 	}
 
@@ -119,16 +155,20 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// 在 app 层处理 kernel 就绪消息，设置 chat.sendFn
+	// 取消并退出
+	if _, ok := msg.(cancelMsg); ok {
+		if m.agent != nil && m.agent.cancel != nil {
+			m.agent.cancel()
+		}
+		return m, tea.Quit
+	}
+
+	// kernel 就绪：设置 sendFn 为多轮复用 session 的方式
 	if ready, ok := msg.(kernelReadyMsg); ok {
-		m.k = ready.k
-		m.cancel = ready.cancel
-		k := ready.k
-		ctx := ready.ctx
-		trust := m.config.Trust
-		bridge := m.bridgeIO
+		m.agent = ready.agent
+		agent := ready.agent
 		m.chat.sendFn = func(text string) {
-			go runSession(ctx, k, trust, bridge, text)
+			go agent.appendAndRun(text)
 		}
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgAssistant,
@@ -143,8 +183,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// initKernelCmd 返回一个异步 Cmd，完成 kernel 创建和启动。
-// 不修改 model，通过返回 kernelReadyMsg 或 sessionResultMsg 传递结果。
+// initKernelCmd 异步创建 kernel + session。
 func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		provider := strings.ToLower(wCfg.Provider)
@@ -160,33 +199,31 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			return sessionResultMsg{err: fmt.Errorf("启动 kernel 失败: %w", err)}
 		}
 
-		return kernelReadyMsg{k: k, ctx: ctx, cancel: cancel}
-	}
-}
-
-// runSession 在后台运行 agent session（独立函数，不依赖 model 指针）。
-func runSession(ctx context.Context, k *kernel.Kernel, trust string, bridge *BridgeIO, goal string) {
-	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:       goal,
-		Mode:       "interactive",
-		TrustLevel: trust,
-		MaxSteps:   50,
-	})
-	if err != nil {
-		bridge.Send(ctx, port.OutputMessage{
-			Type:    port.OutputText,
-			Content: fmt.Sprintf("创建 session 失败: %v", err),
+		// 创建持久 session，注入 system prompt
+		sysPrompt := buildSystemPrompt(wCfg.Workspace)
+		sess, err := k.NewSession(ctx, session.SessionConfig{
+			Goal:         "interactive",
+			Mode:         "interactive",
+			TrustLevel:   cfg.Trust,
+			MaxSteps:     200,
+			SystemPrompt: sysPrompt,
 		})
-		return
-	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: goal})
-
-	result, err := k.Run(ctx, sess)
-	if bridge.program != nil {
-		msg := sessionResultMsg{err: err}
-		if result != nil {
-			msg.output = result.Output
+		if err != nil {
+			cancel()
+			return sessionResultMsg{err: fmt.Errorf("创建 session 失败: %w", err)}
 		}
-		bridge.program.Send(msg)
+		// 注入 system 消息到对话历史
+		sess.AppendMessage(port.Message{Role: port.RoleSystem, Content: sysPrompt})
+
+		agent := &agentState{
+			k:      k,
+			sess:   sess,
+			ctx:    ctx,
+			cancel: cancel,
+			bridge: bridge,
+			trust:  cfg.Trust,
+		}
+
+		return kernelReadyMsg{agent: agent}
 	}
 }

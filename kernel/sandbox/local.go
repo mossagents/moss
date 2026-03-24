@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -78,8 +79,51 @@ func (s *LocalSandbox) ResolvePath(path string) (string, error) {
 }
 
 func (s *LocalSandbox) ListFiles(pattern string) ([]string, error) {
+	// 支持 ** 递归匹配
+	if strings.Contains(pattern, "**") {
+		return s.listFilesRecursive(pattern)
+	}
 	fullPattern := filepath.Join(s.root, pattern)
 	return filepath.Glob(fullPattern)
+}
+
+// listFilesRecursive 用 WalkDir 实现 ** 递归 glob 匹配。
+func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
+	// 将 pattern 拆为前缀（** 之前）和后缀（** 之后）
+	// 例如 "**/*.go" → prefix="", suffix="*.go"
+	// 例如 "src/**/*.go" → prefix="src", suffix="*.go"
+	parts := strings.SplitN(pattern, "**", 2)
+	prefix := strings.TrimRight(parts[0], "/\\")
+	suffix := ""
+	if len(parts) > 1 {
+		suffix = strings.TrimLeft(parts[1], "/\\")
+	}
+
+	searchRoot := s.root
+	if prefix != "" {
+		searchRoot = filepath.Join(s.root, prefix)
+	}
+
+	var matches []string
+	err := filepath.WalkDir(searchRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil // 跳过无权限等错误
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if suffix == "" {
+			matches = append(matches, path)
+			return nil
+		}
+		ok, _ := filepath.Match(suffix, name)
+		if ok {
+			matches = append(matches, path)
+		}
+		return nil
+	})
+	return matches, err
 }
 
 func (s *LocalSandbox) ReadFile(path string) ([]byte, error) {
@@ -112,6 +156,18 @@ func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (
 		defer cancel()
 	}
 
+	// 如果无参数且命令包含 shell 特殊字符，自动用 shell 包装。
+	// 这样 LLM 可以直接发送 "ls -la" 或 "go build ./..." 等完整 shell 命令。
+	if len(args) == 0 && needsShell(cmd) {
+		if runtime.GOOS == "windows" {
+			args = []string{"/C", cmd}
+			cmd = "cmd"
+		} else {
+			args = []string{"-c", cmd}
+			cmd = "sh"
+		}
+	}
+
 	c := exec.CommandContext(ctx, cmd, args...)
 	c.Dir = s.root
 
@@ -133,6 +189,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (
 		}
 	}
 	return out, nil
+}
+
+// needsShell 检查命令是否需要 shell 包装（包含空格、管道、重定向等）。
+func needsShell(cmd string) bool {
+	return strings.ContainsAny(cmd, " \t|><&;$`")
 }
 
 func (s *LocalSandbox) Limits() ResourceLimits {

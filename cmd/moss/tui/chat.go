@@ -16,6 +16,9 @@ type sessionResultMsg struct {
 	err    error
 }
 
+// cancelMsg 通知应用退出并清理资源。
+type cancelMsg struct{}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -70,7 +73,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, tea.Quit
+			return m, func() tea.Msg { return cancelMsg{} }
 		case "enter":
 			return m.handleSend()
 		}
@@ -239,12 +242,8 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 输入区
-	if m.pendAsk != nil {
-		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
-	} else if m.streaming {
+	if m.streaming {
 		b.WriteString(mutedStyle.Render("  ● 思考中..."))
-	} else if m.finished {
-		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	} else {
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	}
