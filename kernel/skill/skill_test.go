@@ -225,6 +225,18 @@ func TestMergeConfigs(t *testing.T) {
 	}
 }
 
+func TestMergeConfigs_WithNilInput(t *testing.T) {
+	c1 := &Config{Skills: []SkillConfig{{Name: "a", Transport: "stdio", Command: "cmd-a"}}}
+
+	merged := MergeConfigs(nil, c1, nil)
+	if merged == nil {
+		t.Fatal("expected non-nil merged config")
+	}
+	if len(merged.Skills) != 1 || merged.Skills[0].Name != "a" {
+		t.Fatalf("unexpected merged skills: %+v", merged.Skills)
+	}
+}
+
 func TestSkillConfig_IsEnabled_Default(t *testing.T) {
 	sc := SkillConfig{Name: "test"}
 	if !sc.IsEnabled() {
@@ -385,6 +397,10 @@ func TestEnsureMossDir_CreatesTemplate(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "skills:") {
 		t.Fatalf("template should contain skills section, got: %q", string(data))
+	}
+
+	if _, err := LoadConfig(path); err != nil {
+		t.Fatalf("generated template should be parseable, got error: %v", err)
 	}
 }
 

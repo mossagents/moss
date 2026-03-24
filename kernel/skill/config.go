@@ -32,16 +32,16 @@ const defaultConfigTemplate = `# Global config for moss
 # api_key: ""
 
 skills:
-	# Example MCP skill via stdio
-	# - name: my-mcp-server
-	#   transport: stdio
-	#   command: npx
-	#   args: ["-y", "@example/mcp-server"]
+  # Example MCP skill via stdio
+  # - name: my-mcp-server
+  #   transport: stdio
+  #   command: npx
+  #   args: ["-y", "@example/mcp-server"]
 
-	# Example MCP skill via SSE
-	# - name: remote-mcp
-	#   transport: sse
-	#   url: http://localhost:3000/sse
+  # Example MCP skill via SSE
+  # - name: remote-mcp
+  #   transport: sse
+  #   url: http://localhost:3000/sse
 `
 
 // Config 是 moss.yaml 或 ~/.moss/config.yaml 中的配置。
@@ -99,6 +99,9 @@ func MergeConfigs(configs ...*Config) *Config {
 	var result []SkillConfig
 
 	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
 		for _, sc := range cfg.Skills {
 			if idx, ok := seen[sc.Name]; ok {
 				result[idx] = sc // 覆盖
