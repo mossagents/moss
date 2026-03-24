@@ -1,0 +1,9 @@
+# moss runtime artifacts
+.moss/
+
+# Go build artifacts
+/moss
+*.exe
+*.test
+*.out
+/dist/
