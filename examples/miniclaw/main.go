@@ -24,11 +24,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 
-	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/adapters/embedding"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
@@ -36,7 +34,6 @@ import (
 	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
@@ -51,35 +48,20 @@ func main() {
 	skill.SetAppName("miniclaw")
 	_ = skill.EnsureMossDir()
 
-	provider := flag.String("provider", "openai", "LLM provider: claude|openai")
-	model := flag.String("model", "", "Model name")
-	workspace := flag.String("workspace", ".", "Workspace directory (for saving crawled data)")
-	trust := flag.String("trust", "trusted", "Trust level: trusted|restricted")
-	apiKey := flag.String("api-key", "", "API key (overrides env)")
-	baseURL := flag.String("base-url", "", "API base URL")
-	mode := flag.String("mode", "repl", "Run mode: repl (legacy) | gateway (channel-based)")
-	flag.Parse()
+	var mode string
+	flag.StringVar(&mode, "mode", "repl", "Run mode: repl (legacy) | gateway (channel-based)")
+	flags := appkit.ParseCommonFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	if err := run(ctx, *provider, *model, *workspace, *trust, *apiKey, *baseURL, *mode); err != nil {
+	if err := run(ctx, flags, mode); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL, mode string) error {
-	llm, err := adapters.BuildLLM(provider, model, apiKey, baseURL)
-	if err != nil {
-		return err
-	}
-
-	sb, err := sandbox.NewLocal(workspace)
-	if err != nil {
-		return fmt.Errorf("sandbox: %w", err)
-	}
-
+func run(ctx context.Context, flags *appkit.CommonFlags, mode string) error {
 	// Session 持久化存储
 	storeDir := filepath.Join(skill.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
@@ -91,22 +73,18 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	sched := scheduler.New()
 
 	// 知识库：嵌入模型 + 内存向量存储
-	embedder := embedding.NewWithBaseURL(apiKey, baseURL)
+	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
 	knStore := knowledge.NewMemoryStore()
 
 	userIO := port.NewConsoleIO()
 
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(userIO),
+	k, err := appkit.BuildKernel(ctx, flags, userIO,
 		kernel.WithSessionStore(store),
 		kernel.WithScheduler(sched),
 		kernel.WithEmbedder(embedder),
 	)
-
-	if err := k.SetupWithDefaults(ctx, workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return fmt.Errorf("setup: %w", err)
+	if err != nil {
+		return err
 	}
 
 	// 注册网络访问工具
@@ -124,7 +102,7 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		return fmt.Errorf("register knowledge tools: %w", err)
 	}
 
-	if trust == "restricted" {
+	if flags.Trust == "restricted" {
 		k.WithPolicy(
 			builtins.RequireApprovalFor("write_file", "run_command", "fetch_url"),
 			builtins.DefaultAllow(),
@@ -142,8 +120,8 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
 			Goal:         job.Goal,
 			Mode:         "scheduled",
-			TrustLevel:   trust,
-			SystemPrompt: buildSystemPrompt(workspace),
+			TrustLevel:   flags.Trust,
+			SystemPrompt: buildSystemPrompt(flags.Workspace),
 			MaxSteps:     30,
 		})
 		if err != nil {
@@ -163,24 +141,23 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	defer sched.Stop()
 
 	prompt := "🐾 > "
-	modelName := model
+	modelName := flags.Model
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	fmt.Println("╭──────────────────────────────────────╮")
-	fmt.Println("│     miniclaw — Personal AI Assistant  │")
-	fmt.Println("╰──────────────────────────────────────╯")
-	fmt.Printf("  Provider:  %s\n", provider)
-	fmt.Printf("  Model:     %s\n", modelName)
-	fmt.Printf("  Workspace: %s\n", workspace)
-	fmt.Printf("  Mode:      %s\n", mode)
-	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
-	fmt.Println()
-	fmt.Println("  Ask me anything — I can search the web, manage files, schedule tasks, and more.")
-	fmt.Println("  Type /help for commands, /exit to quit.")
-	fmt.Println()
+	appkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
+		map[string]string{
+			"Provider":  flags.Provider,
+			"Model":     modelName,
+			"Workspace": flags.Workspace,
+			"Mode":      mode,
+			"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
+		},
+		"Ask me anything — I can search the web, manage files, schedule tasks, and more.",
+		"Type /help for commands, /exit to quit.",
+	)
 
-	sysPrompt := buildSystemPrompt(workspace)
+	sysPrompt := buildSystemPrompt(flags.Workspace)
 
 	if mode == "gateway" {
 		return appkit.Serve(ctx, appkit.ServeConfig{
@@ -193,7 +170,7 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:         "personal AI assistant",
 		Mode:         "interactive",
-		TrustLevel:   trust,
+		TrustLevel:   flags.Trust,
 		SystemPrompt: sysPrompt,
 	})
 	if err != nil {
@@ -444,11 +421,7 @@ func stripTags(s string) string {
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	osName := runtime.GOOS
-	prompt := skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
-		"OS":        osName,
-		"Workspace": workspace,
-	})
+	prompt := appkit.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, nil)
 
 	// 注入 bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md 等）
 	bootstrap.SetAppName("miniclaw")

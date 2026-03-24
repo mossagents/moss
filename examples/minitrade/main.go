@@ -17,15 +17,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 
-	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
@@ -36,12 +33,8 @@ import (
 var tradingPromptTemplate string
 
 type config struct {
-	provider  string
-	model     string
-	workspace string
-	apiKey    string
-	baseURL   string
-	capital   float64
+	flags   *appkit.CommonFlags
+	capital float64
 }
 
 func main() {
@@ -61,22 +54,8 @@ func main() {
 
 func parseFlags() *config {
 	cfg := &config{}
-
-	flag.StringVar(&cfg.provider, "provider", "openai", "LLM provider: claude|openai")
-	flag.StringVar(&cfg.model, "model", "", "Model name")
-	flag.StringVar(&cfg.workspace, "workspace", ".", "Workspace directory")
-	flag.StringVar(&cfg.apiKey, "api-key", "", "API key")
-	flag.StringVar(&cfg.baseURL, "base-url", "", "API base URL")
 	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
-	flag.Parse()
-
-	if globalCfg, err := skill.LoadGlobalConfig(); err == nil {
-		cfg.provider = appkit.FirstNonEmpty(cfg.provider, globalCfg.Provider, "openai")
-		cfg.model = appkit.FirstNonEmpty(cfg.model, globalCfg.Model)
-		cfg.apiKey = appkit.FirstNonEmpty(cfg.apiKey, globalCfg.APIKey)
-		cfg.baseURL = appkit.FirstNonEmpty(cfg.baseURL, globalCfg.BaseURL)
-	}
-
+	cfg.flags = appkit.ParseCommonFlags()
 	return cfg
 }
 
@@ -87,16 +66,6 @@ func run(ctx context.Context, cfg *config) error {
 	}
 	mkt := newMarket(capital)
 
-	llm, err := adapters.BuildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
-	if err != nil {
-		return err
-	}
-
-	sb, err := sandbox.NewLocal(cfg.workspace)
-	if err != nil {
-		return fmt.Errorf("sandbox: %w", err)
-	}
-
 	storeDir := filepath.Join(skill.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -106,18 +75,12 @@ func run(ctx context.Context, cfg *config) error {
 	sched := scheduler.New()
 	userIO := port.NewConsoleIO()
 
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(userIO),
+	k, err := appkit.BuildKernel(ctx, cfg.flags, userIO,
 		kernel.WithSessionStore(store),
 		kernel.WithScheduler(sched),
 	)
-
-	if err := k.SetupWithDefaults(ctx, cfg.workspace,
-		kernel.WithWarningWriter(os.Stderr),
-	); err != nil {
-		return fmt.Errorf("setup: %w", err)
+	if err != nil {
+		return err
 	}
 
 	// 注册交易工具
@@ -156,7 +119,7 @@ func run(ctx context.Context, cfg *config) error {
 	defer k.Shutdown(ctx)
 
 	// 启动定时调度器
-	sysPrompt := buildSystemPrompt(cfg.workspace, capital)
+	sysPrompt := buildSystemPrompt(cfg.flags.Workspace, capital)
 	sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
 		fmt.Fprintf(os.Stdout, "\n⏰ Scheduled [%s]: %s\n", job.ID, job.Goal)
 		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
@@ -209,22 +172,21 @@ func run(ctx context.Context, cfg *config) error {
 		return fmt.Errorf("session: %w", err)
 	}
 
-	modelName := cfg.model
+	modelName := cfg.flags.Model
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	fmt.Println("╭──────────────────────────────────────────╮")
-	fmt.Println("│  minitrade — Quantitative Trading Agent   │")
-	fmt.Println("╰──────────────────────────────────────────╯")
-	fmt.Printf("  Provider:  %s\n", cfg.provider)
-	fmt.Printf("  Model:     %s\n", modelName)
-	fmt.Printf("  Capital:   $%.2f\n", capital)
-	fmt.Printf("  Symbols:   %d available\n", len(mkt.prices))
-	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
-	fmt.Println()
-	fmt.Println("  Market is live! Prices update every 5 seconds.")
-	fmt.Println("  Type /help for commands, /exit to quit.")
-	fmt.Println()
+	appkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
+		map[string]string{
+			"Provider": cfg.flags.Provider,
+			"Model":    modelName,
+			"Capital":  fmt.Sprintf("$%.2f", capital),
+			"Symbols":  fmt.Sprintf("%d available", len(mkt.prices)),
+			"Tools":    fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
+		},
+		"Market is live! Prices update every 5 seconds.",
+		"Type /help for commands, /exit to quit.",
+	)
 
 	return appkit.REPL(ctx, appkit.REPLConfig{
 		Prompt:      "💰 > ",
@@ -234,9 +196,7 @@ func run(ctx context.Context, cfg *config) error {
 }
 
 func buildSystemPrompt(workspace string, capital float64) string {
-	return skill.RenderSystemPrompt(workspace, tradingPromptTemplate, map[string]any{
-		"OS":        runtime.GOOS,
-		"Workspace": workspace,
-		"Capital":   capital,
+	return appkit.RenderSystemPrompt(workspace, tradingPromptTemplate, map[string]any{
+		"Capital": capital,
 	})
 }

@@ -15,18 +15,14 @@ package main
 import (
 	"context"
 	_ "embed"
-	"flag"
 	"fmt"
 	"os"
-	"runtime"
 
-	"github.com/mossagi/moss/adapters"
 	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/skill"
 )
 
@@ -38,24 +34,9 @@ func main() {
 	skill.SetAppName("minicode")
 	_ = skill.EnsureMossDir()
 
-	provider := flag.String("provider", "", "LLM provider: claude|openai")
-	model := flag.String("model", "", "Model name")
-	workspace := flag.String("workspace", ".", "Workspace directory")
-	trust := flag.String("trust", "trusted", "Trust level: trusted|restricted")
-	apiKey := flag.String("api-key", "", "API key (overrides env)")
-	baseURL := flag.String("base-url", "", "API base URL")
-	flag.Parse()
+	flags := appkit.ParseCommonFlags()
 
-	cfg, err := skill.LoadGlobalConfig()
-	if err != nil || cfg == nil {
-		cfg = &skill.Config{}
-	}
-	effectiveProvider := appkit.FirstNonEmpty(*provider, cfg.Provider, "openai")
-	effectiveModel := appkit.FirstNonEmpty(*model, cfg.Model)
-	effectiveAPIKey := appkit.FirstNonEmpty(*apiKey, cfg.APIKey)
-	effectiveBaseURL := appkit.FirstNonEmpty(*baseURL, cfg.BaseURL)
-
-	if err := launchTUI(effectiveProvider, effectiveModel, *workspace, *trust, effectiveAPIKey, effectiveBaseURL); err != nil {
+	if err := launchTUI(flags.Provider, flags.Model, flags.Workspace, flags.Trust, flags.APIKey, flags.BaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -75,25 +56,17 @@ func launchTUI(provider, model, workspace, trust, apiKey, baseURL string) error 
 }
 
 func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
-	sb, err := sandbox.NewLocal(wsDir)
-	if err != nil {
-		return nil, fmt.Errorf("sandbox: %w", err)
-	}
-
-	llm, err := adapters.BuildLLM(provider, model, apiKey, baseURL)
+	ctx := context.Background()
+	k, err := appkit.BuildKernel(ctx, &appkit.CommonFlags{
+		Provider:  provider,
+		Model:     model,
+		Workspace: wsDir,
+		Trust:     trust,
+		APIKey:    apiKey,
+		BaseURL:   baseURL,
+	}, io)
 	if err != nil {
 		return nil, err
-	}
-
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(io),
-	)
-
-	ctx := context.Background()
-	if err := k.SetupWithDefaults(ctx, wsDir, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return nil, fmt.Errorf("setup: %w", err)
 	}
 
 	if trust == "restricted" {
@@ -109,15 +82,5 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	osName := runtime.GOOS
-	shell := "bash"
-	if osName == "windows" {
-		shell = "powershell"
-	}
-
-	return skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
-		"OS":        osName,
-		"Shell":     shell,
-		"Workspace": workspace,
-	})
+	return appkit.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, nil)
 }

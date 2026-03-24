@@ -90,3 +90,14 @@ func WithBootstrap(b *bootstrap.Context) Option {
 func WithAgentRegistry(r *agent.Registry) Option {
 	return func(k *Kernel) { k.agents = r }
 }
+
+// WithParallelToolCalls 启用并行工具调用。
+// 当 LLM 在一次响应中返回多个 tool calls 时，它们会并发执行。
+func WithParallelToolCalls() Option {
+	return func(k *Kernel) { k.loopCfg.ParallelToolCall = true }
+}
+
+// WithLLMRetry 配置真实 LLM 调用的重试策略。
+func WithLLMRetry(cfg loop.RetryConfig) Option {
+	return func(k *Kernel) { k.loopCfg.LLMRetry = cfg }
+}

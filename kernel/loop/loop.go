@@ -2,19 +2,49 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"math/rand"
+	"sync"
+	"time"
 
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/retry"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
-	MaxIterations int                     // 最大循环次数（默认 50）
-	StopWhen      func(port.Message) bool // 自定义停止条件
+	MaxIterations    int                     // 最大循环次数（默认 50）
+	StopWhen         func(port.Message) bool // 自定义停止条件
+	ParallelToolCall bool                    // 启用并行工具调用（默认 false，串行执行）
+	LLMRetry         RetryConfig             // LLM 调用重试配置
+}
+
+// RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
+type RetryConfig = retry.Config
+
+type callAttemptResult struct {
+	resp      *port.CompletionResponse
+	streamed  bool
+	retryable bool
+	err       error
+}
+
+type retryableCallError struct {
+	err       error
+	retryable bool
+}
+
+func (e *retryableCallError) Error() string {
+	return e.err.Error()
+}
+
+func (e *retryableCallError) Unwrap() error {
+	return e.err
 }
 
 func (c LoopConfig) maxIter() int {
@@ -134,20 +164,72 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.C
 		Tools:    specs,
 	}
 
+	cfg := l.Config.LLMRetry
+	if !cfg.Enabled() {
+		attempt := l.callLLMOnce(ctx, req)
+		return attempt.resp, attempt.streamed, attempt.err
+	}
+
+	maxRetries := cfg.MaxRetriesOrDefault()
+	delay := cfg.InitialDelayOrDefault()
+	var lastErr error
+
+	for attemptIndex := 0; attemptIndex <= maxRetries; attemptIndex++ {
+		attempt := l.callLLMOnce(ctx, req)
+		if attempt.err == nil {
+			return attempt.resp, attempt.streamed, nil
+		}
+
+		lastErr = attempt.err
+		if !attempt.retryable || !cfg.ShouldRetryOrDefault(attempt.err) || attemptIndex == maxRetries {
+			return nil, false, attempt.err
+		}
+
+		jitter := time.Duration(rand.Int63n(int64(delay) / 2))
+		sleepDuration := delay + jitter
+		if sleepDuration > cfg.MaxDelayOrDefault() {
+			sleepDuration = cfg.MaxDelayOrDefault()
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-time.After(sleepDuration):
+		}
+
+		delay = time.Duration(float64(delay) * cfg.MultiplierOrDefault())
+		if delay > cfg.MaxDelayOrDefault() {
+			delay = cfg.MaxDelayOrDefault()
+		}
+	}
+
+	return nil, false, lastErr
+}
+
+func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest) callAttemptResult {
+
 	// 优先使用 Streaming
 	if sllm, ok := l.LLM.(port.StreamingLLM); ok {
 		resp, err := l.streamLLM(ctx, sllm, req)
-		return resp, true, err
+		if err == nil {
+			return callAttemptResult{resp: resp, streamed: true}
+		}
+
+		var streamErr *retryableCallError
+		if errors.As(err, &streamErr) {
+			return callAttemptResult{streamed: true, retryable: streamErr.retryable, err: err}
+		}
+		return callAttemptResult{streamed: true, retryable: true, err: err}
 	}
 
 	resp, err := l.LLM.Complete(ctx, req)
-	return resp, false, err
+	return callAttemptResult{resp: resp, streamed: false, retryable: true, err: err}
 }
 
 func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req port.CompletionRequest) (*port.CompletionResponse, error) {
 	iter, err := sllm.Stream(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, &retryableCallError{err: err, retryable: true}
 	}
 	defer iter.Close()
 
@@ -155,6 +237,7 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 	var toolCalls []port.ToolCall
 	var usage port.TokenUsage
 	var stopReason string
+	emittedContent := false
 
 	for {
 		chunk, err := iter.Next()
@@ -162,10 +245,11 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 			break
 		}
 		if err != nil {
-			return nil, err
+			return nil, &retryableCallError{err: err, retryable: !emittedContent}
 		}
 
 		if chunk.Delta != "" {
+			emittedContent = true
 			fullContent += chunk.Delta
 			if l.IO != nil {
 				l.IO.Send(ctx, port.OutputMessage{
@@ -176,6 +260,7 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		}
 
 		if chunk.ToolCall != nil {
+			emittedContent = true
 			toolCalls = append(toolCalls, *chunk.ToolCall)
 		}
 
@@ -209,70 +294,98 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 }
 
 func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
+	if l.Config.ParallelToolCall && len(calls) > 1 {
+		return l.executeToolCallsParallel(ctx, sess, calls)
+	}
+	return l.executeToolCallsSerial(ctx, sess, calls)
+}
+
+func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
 	for _, call := range calls {
-		spec, handler, ok := l.Tools.Get(call.Name)
-		if !ok {
-			result := port.ToolResult{
-				CallID:  call.ID,
-				Content: fmt.Sprintf("tool %q not found", call.Name),
-				IsError: true,
-			}
-			sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
-			continue
-		}
-
-		// UserIO: 通知工具开始
-		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputToolStart,
-				Content: call.Name,
-				Meta:    map[string]any{"call_id": call.ID},
-			})
-		}
-
-		// BeforeToolCall middleware
-		if err := l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil); err != nil {
-			result := port.ToolResult{
-				CallID:  call.ID,
-				Content: err.Error(),
-				IsError: true,
-			}
-			sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
-			continue
-		}
-
-		// 执行工具
-		output, err := handler(ctx, call.Arguments)
-
-		var result port.ToolResult
-		if err != nil {
-			result = port.ToolResult{
-				CallID:  call.ID,
-				Content: err.Error(),
-				IsError: true,
-			}
-		} else {
-			result = port.ToolResult{
-				CallID:  call.ID,
-				Content: string(output),
-			}
-		}
-
-		// AfterToolCall middleware
-		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
-
-		// UserIO: 通知工具结果
-		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputToolResult,
-				Content: result.Content,
-				Meta:    map[string]any{"call_id": call.ID, "tool": call.Name, "is_error": result.IsError},
-			})
-		}
-
+		result := l.executeSingleToolCall(ctx, sess, call)
 		sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
 	}
 	return nil
+}
+
+func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
+	results := make([]port.ToolResult, len(calls))
+
+	var wg sync.WaitGroup
+	for i, call := range calls {
+		wg.Add(1)
+		go func(idx int, c port.ToolCall) {
+			defer wg.Done()
+			results[idx] = l.executeSingleToolCall(ctx, sess, c)
+		}(i, call)
+	}
+	wg.Wait()
+
+	// 按顺序追加结果到 session（保持确定性）
+	for _, result := range results {
+		sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
+	}
+	return nil
+}
+
+func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call port.ToolCall) port.ToolResult {
+	spec, handler, ok := l.Tools.Get(call.Name)
+	if !ok {
+		return port.ToolResult{
+			CallID:  call.ID,
+			Content: fmt.Sprintf("tool %q not found", call.Name),
+			IsError: true,
+		}
+	}
+
+	// UserIO: 通知工具开始
+	if l.IO != nil {
+		l.IO.Send(ctx, port.OutputMessage{
+			Type:    port.OutputToolStart,
+			Content: call.Name,
+			Meta:    map[string]any{"call_id": call.ID},
+		})
+	}
+
+	// BeforeToolCall middleware
+	if err := l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil); err != nil {
+		return port.ToolResult{
+			CallID:  call.ID,
+			Content: err.Error(),
+			IsError: true,
+		}
+	}
+
+	// 执行工具
+	output, err := handler(ctx, call.Arguments)
+
+	var result port.ToolResult
+	if err != nil {
+		result = port.ToolResult{
+			CallID:  call.ID,
+			Content: err.Error(),
+			IsError: true,
+		}
+	} else {
+		result = port.ToolResult{
+			CallID:  call.ID,
+			Content: string(output),
+		}
+	}
+
+	// AfterToolCall middleware
+	l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
+
+	// UserIO: 通知工具结果
+	if l.IO != nil {
+		l.IO.Send(ctx, port.OutputMessage{
+			Type:    port.OutputToolResult,
+			Content: result.Content,
+			Meta:    map[string]any{"call_id": call.ID, "tool": call.Name, "is_error": result.IsError},
+		})
+	}
+
+	return result
 }
 
 func (l *AgentLoop) toolSpecs() []port.ToolSpec {

@@ -118,6 +118,27 @@ func (c *Client) buildParams(req port.CompletionRequest) anthropic.MessageNewPar
 	if req.Config.Temperature > 0 {
 		params.Temperature = anthropic.Float(req.Config.Temperature)
 	}
+	if req.ResponseFormat != nil {
+		switch req.ResponseFormat.Type {
+		case "json_object":
+			params.OutputConfig = anthropic.OutputConfigParam{
+				Format: anthropic.JSONOutputFormatParam{
+					Schema: map[string]any{"type": "object"},
+				},
+			}
+		case "json_schema":
+			var schema map[string]any
+			if req.ResponseFormat.JSONSchema != nil && len(req.ResponseFormat.JSONSchema.Schema) > 0 {
+				_ = json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema)
+			}
+			if len(schema) == 0 {
+				schema = map[string]any{"type": "object"}
+			}
+			params.OutputConfig = anthropic.OutputConfigParam{
+				Format: anthropic.JSONOutputFormatParam{Schema: schema},
+			}
+		}
+	}
 	return params
 }
 

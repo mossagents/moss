@@ -2,6 +2,7 @@ package claude
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -134,6 +135,49 @@ func TestToAnthropicTools(t *testing.T) {
 	}
 	if result[0].OfTool.Name != "read_file" {
 		t.Errorf("tool name = %q, want read_file", result[0].OfTool.Name)
+	}
+}
+
+func TestBuildParams_ResponseFormatJSONObject(t *testing.T) {
+	c := New("")
+	params := c.buildParams(port.CompletionRequest{
+		Messages:       []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		ResponseFormat: &port.ResponseFormat{Type: "json_object"},
+	})
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"output_config"`) {
+		t.Fatalf("expected output_config in payload: %s", text)
+	}
+	if !strings.Contains(text, `"schema":{"type":"object"}`) {
+		t.Fatalf("expected object schema in payload: %s", text)
+	}
+}
+
+func TestBuildParams_ResponseFormatJSONSchema(t *testing.T) {
+	c := New("")
+	params := c.buildParams(port.CompletionRequest{
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		ResponseFormat: &port.ResponseFormat{
+			Type: "json_schema",
+			JSONSchema: &port.JSONSchemaSpec{
+				Name:   "trade_signal",
+				Schema: json.RawMessage(`{"type":"object","properties":{"signal":{"type":"string"}},"required":["signal"]}`),
+			},
+		},
+	})
+
+	data, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"signal"`) {
+		t.Fatalf("expected custom schema in payload: %s", text)
 	}
 }
 

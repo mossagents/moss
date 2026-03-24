@@ -126,6 +126,32 @@ func (c *Client) buildParams(req port.CompletionRequest) openai.ChatCompletionNe
 		params.Tools = tools
 	}
 
+	// ResponseFormat 支持
+	if req.ResponseFormat != nil {
+		switch req.ResponseFormat.Type {
+		case "json_object":
+			params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONObject: &openai.ResponseFormatJSONObjectParam{},
+			}
+		case "json_schema":
+			if req.ResponseFormat.JSONSchema != nil {
+				var schema interface{}
+				if req.ResponseFormat.JSONSchema.Schema != nil {
+					_ = json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema)
+				}
+				params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+					OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{
+						JSONSchema: openai.ResponseFormatJSONSchemaJSONSchemaParam{
+							Name:   req.ResponseFormat.JSONSchema.Name,
+							Schema: schema,
+							Strict: openai.Bool(req.ResponseFormat.JSONSchema.Strict),
+						},
+					},
+				}
+			}
+		}
+	}
+
 	return params
 }
 

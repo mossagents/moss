@@ -50,14 +50,14 @@ Available symbols: AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, BTC, ETH, SPY.`,
 }
 
 type analysisResult struct {
-	Symbol     string          `json:"symbol"`
-	Price      float64         `json:"price"`
-	DataPoints int             `json:"data_points"`
-	MA         *maResult       `json:"ma,omitempty"`
-	RSI        *rsiResult      `json:"rsi,omitempty"`
-	MACD       *macdResult     `json:"macd,omitempty"`
+	Symbol     string           `json:"symbol"`
+	Price      float64          `json:"price"`
+	DataPoints int              `json:"data_points"`
+	MA         *maResult        `json:"ma,omitempty"`
+	RSI        *rsiResult       `json:"rsi,omitempty"`
+	MACD       *macdResult      `json:"macd,omitempty"`
 	BB         *bollingerResult `json:"bollinger_bands,omitempty"`
-	Signal     string          `json:"signal"`
+	Signal     string           `json:"signal"`
 }
 
 type maResult struct {

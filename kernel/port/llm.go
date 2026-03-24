@@ -18,9 +18,29 @@ type StreamingLLM interface {
 
 // CompletionRequest 是发送给 LLM 的请求。
 type CompletionRequest struct {
-	Messages []Message   `json:"messages"`
-	Tools    []ToolSpec  `json:"tools,omitempty"`
-	Config   ModelConfig `json:"config"`
+	Messages       []Message       `json:"messages"`
+	Tools          []ToolSpec      `json:"tools,omitempty"`
+	Config         ModelConfig     `json:"config"`
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+// ResponseFormat 控制 LLM 的输出格式。
+type ResponseFormat struct {
+	// Type 指定输出格式类型：
+	//   - "text": 默认自由文本
+	//   - "json_object": 强制 JSON 输出
+	//   - "json_schema": 按指定 JSON Schema 输出
+	Type string `json:"type"`
+
+	// JSONSchema 当 Type="json_schema" 时，描述期望的输出结构。
+	JSONSchema *JSONSchemaSpec `json:"json_schema,omitempty"`
+}
+
+// JSONSchemaSpec 描述 JSON Schema 约束。
+type JSONSchemaSpec struct {
+	Name   string          `json:"name"`
+	Schema json.RawMessage `json:"schema"`
+	Strict bool            `json:"strict,omitempty"`
 }
 
 // ModelConfig 配置模型参数。

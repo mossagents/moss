@@ -17,18 +17,18 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
-	"runtime"
 	"sync"
 
-	"github.com/mossagi/moss/adapters"
 	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
@@ -80,56 +80,34 @@ type config struct {
 }
 
 func parseFlags() config {
-	globalCfg, err := skill.LoadGlobalConfig()
-	if err != nil || globalCfg == nil {
-		globalCfg = &skill.Config{}
-	}
-
+	common := &appkit.CommonFlags{}
 	c := config{
 		workspace: ".",
 		trust:     "trusted",
 		workers:   3,
 	}
-
-	var cliProvider, cliModel, cliAPIKey, cliBaseURL string
-
-	args := os.Args[1:]
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--provider":
-			i++
-			cliProvider = args[i]
-		case "--model":
-			i++
-			cliModel = args[i]
-		case "--workspace":
-			i++
-			c.workspace = args[i]
-		case "--trust":
-			i++
-			c.trust = args[i]
-		case "--api-key":
-			i++
-			cliAPIKey = args[i]
-		case "--base-url":
-			i++
-			cliBaseURL = args[i]
-		case "--goal":
-			i++
-			c.goal = args[i]
-		case "--workers":
-			i++
-			fmt.Sscanf(args[i], "%d", &c.workers)
-		case "--help", "-h":
+	fs := flag.NewFlagSet("miniwork", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindCommonFlags(fs, common)
+	fs.StringVar(&c.goal, "goal", "", "Goal for one-shot workflow execution; omit to launch TUI")
+	fs.IntVar(&c.workers, "workers", 3, "Max parallel workers")
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
 			printUsage()
 			os.Exit(0)
 		}
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
+	common.MergeGlobalConfig()
+	common.MergeEnv("MINIWORK", "MOSS")
 
-	c.provider = appkit.FirstNonEmpty(cliProvider, globalCfg.Provider, os.Getenv("MINIWORK_PROVIDER"), "openai")
-	c.model = appkit.FirstNonEmpty(cliModel, globalCfg.Model, os.Getenv("MINIWORK_MODEL"))
-	c.apiKey = appkit.FirstNonEmpty(cliAPIKey, globalCfg.APIKey, os.Getenv("MINIWORK_API_KEY"))
-	c.baseURL = appkit.FirstNonEmpty(cliBaseURL, globalCfg.BaseURL, os.Getenv("MINIWORK_BASE_URL"))
+	c.provider = common.Provider
+	c.model = common.Model
+	c.workspace = common.Workspace
+	c.trust = common.Trust
+	c.apiKey = common.APIKey
+	c.baseURL = common.BaseURL
 
 	return c
 }
@@ -227,16 +205,14 @@ func run(ctx context.Context, cfg config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	fmt.Println("╭──────────────────────────────────────╮")
-	fmt.Println("│       miniwork — Orchestrator         │")
-	fmt.Println("╰──────────────────────────────────────╯")
-	fmt.Printf("  Provider:  %s\n", cfg.provider)
-	fmt.Printf("  Model:     %s\n", modelName)
-	fmt.Printf("  Workspace: %s\n", cfg.workspace)
-	fmt.Printf("  Workers:   max %d parallel\n", cfg.workers)
-	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
-	fmt.Printf("  Goal:      %s\n", cfg.goal)
-	fmt.Println()
+	appkit.PrintBanner("miniwork — Orchestrator", map[string]string{
+		"Provider":  cfg.provider,
+		"Model":     modelName,
+		"Workspace": cfg.workspace,
+		"Workers":   fmt.Sprintf("max %d parallel", cfg.workers),
+		"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
+		"Goal":      cfg.goal,
+	})
 
 	// 注入目标并运行
 	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: cfg.goal})
@@ -416,48 +392,27 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 // ─── System Prompts ─────────────────────────────────
 
 func buildManagerPrompt(workspace string, maxWorkers int) string {
-	osName := runtime.GOOS
-	return skill.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, map[string]any{
-		"OS":         osName,
-		"Workspace":  workspace,
+	return appkit.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, map[string]any{
 		"MaxWorkers": maxWorkers,
 	})
 }
 
 func buildWorkerPrompt(workspace string) string {
-	osName := runtime.GOOS
-	shell := "bash"
-	if osName == "windows" {
-		shell = "powershell"
-	}
-
-	return skill.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, map[string]any{
-		"OS":        osName,
-		"Shell":     shell,
-		"Workspace": workspace,
-	})
+	return appkit.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, nil)
 }
 
 func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {
-	llm, err := adapters.BuildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
+	ctx := context.Background()
+	k, err := appkit.BuildKernel(ctx, &appkit.CommonFlags{
+		Provider:  cfg.provider,
+		Model:     cfg.model,
+		Workspace: cfg.workspace,
+		Trust:     cfg.trust,
+		APIKey:    cfg.apiKey,
+		BaseURL:   cfg.baseURL,
+	}, io)
 	if err != nil {
 		return nil, err
-	}
-
-	sb, err := sandbox.NewLocal(cfg.workspace)
-	if err != nil {
-		return nil, fmt.Errorf("sandbox: %w", err)
-	}
-
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(io),
-	)
-
-	ctx := context.Background()
-	if err := k.SetupWithDefaults(ctx, cfg.workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return nil, fmt.Errorf("setup: %w", err)
 	}
 
 	if err := registerOrchestrationTools(k, ctx, cfg); err != nil {
