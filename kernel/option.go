@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
@@ -67,4 +68,19 @@ func WithScheduler(s *scheduler.Scheduler) Option {
 // WithEmbedder 设置文本嵌入模型。
 func WithEmbedder(e port.Embedder) Option {
 	return func(k *Kernel) { k.embedder = e }
+}
+
+// WithChannel 追加一个消息通道。
+func WithChannel(ch port.Channel) Option {
+	return func(k *Kernel) { k.channels = append(k.channels, ch) }
+}
+
+// WithRouter 设置会话路由器。
+func WithRouter(r *session.Router) Option {
+	return func(k *Kernel) { k.router = r }
+}
+
+// WithBootstrap 设置引导上下文。
+func WithBootstrap(b *bootstrap.Context) Option {
+	return func(k *Kernel) { k.bootstrap = b }
 }

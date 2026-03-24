@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
@@ -18,17 +19,20 @@ import (
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
-	llm      port.LLM
-	io       port.UserIO
-	sandbox  sandbox.Sandbox
-	tools    tool.Registry
-	sessions session.Manager
-	store    session.SessionStore
-	sched    *scheduler.Scheduler
-	embedder port.Embedder
-	chain    *middleware.Chain
-	loopCfg  loop.LoopConfig
-	skills   *skill.Manager
+	llm       port.LLM
+	io        port.UserIO
+	sandbox   sandbox.Sandbox
+	tools     tool.Registry
+	sessions  session.Manager
+	store     session.SessionStore
+	sched     *scheduler.Scheduler
+	embedder  port.Embedder
+	chain     *middleware.Chain
+	loopCfg   loop.LoopConfig
+	skills    *skill.Manager
+	channels  []port.Channel
+	router    *session.Router
+	bootstrap *bootstrap.Context
 }
 
 // New 使用函数式选项创建 Kernel。
@@ -64,16 +68,26 @@ func (k *Kernel) Boot(_ context.Context) error {
 }
 
 // NewSession 创建新 Session。
-// 如果 cfg.SystemPrompt 非空或 SkillManager 有系统提示词补充，
-// 将自动在 Session.Messages 开头注入 system 消息。
+// 自动注入 system prompt：bootstrap 上下文 + skill 补充。
 func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*session.Session, error) {
 	sess, err := k.sessions.Create(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	// 自动注入 system prompt + skill 补充
+	// 构建 system prompt：cfg > bootstrap > skills
 	sysPrompt := cfg.SystemPrompt
+
+	if k.bootstrap != nil {
+		if section := k.bootstrap.SystemPromptSection(); section != "" {
+			if sysPrompt != "" {
+				sysPrompt += "\n\n" + section
+			} else {
+				sysPrompt = section
+			}
+		}
+	}
+
 	if additions := k.skills.SystemPromptAdditions(); additions != "" {
 		if sysPrompt != "" {
 			sysPrompt += "\n\n" + additions
@@ -81,6 +95,7 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 			sysPrompt = additions
 		}
 	}
+
 	if sysPrompt != "" {
 		sess.Messages = append([]port.Message{{
 			Role:    port.RoleSystem,
@@ -156,4 +171,19 @@ func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
 // WithPolicy 设置权限策略（便利 API，内部实现为 PolicyCheck middleware）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 	k.chain.Use(builtins.PolicyCheck(rules...))
+}
+
+// Channels 返回已注册的消息通道列表。
+func (k *Kernel) Channels() []port.Channel {
+	return k.channels
+}
+
+// Router 返回会话路由器（可能为 nil）。
+func (k *Kernel) Router() *session.Router {
+	return k.router
+}
+
+// Bootstrap 返回引导上下文（可能为 nil）。
+func (k *Kernel) Bootstrap() *bootstrap.Context {
+	return k.bootstrap
 }

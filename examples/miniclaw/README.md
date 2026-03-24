@@ -1,13 +1,16 @@
 # miniclaw
 
-miniclaw 是一个 Web 抓取 Agent 示例，演示如何在 Moss 中加入网络抓取类工具。
+miniclaw 是一个个人 AI 助理示例，对标 [OpenClaw](https://github.com/openclaw/openclaw)。
+
+在 Moss 框架上构建，演示如何将 Agent 打造为全能个人助理。
 
 ## 功能
 
-- 自定义抓取工具：`fetch_url`
-- 自定义链接提取工具：`extract_links`
-- 可配合内置文件工具将抓取结果落盘
-- 支持交互式多轮抓取
+- 网络访问工具：`fetch_url` / `extract_links`
+- 知识库：语义检索 + 文档摄入
+- 定时任务调度器
+- Bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md）
+- 交互式 REPL 模式
 
 ## 运行
 
@@ -22,6 +25,24 @@ go run .
 go run . --provider openai --model gpt-4o
 go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:8080/v1
 ```
+
+## 自定义 Bootstrap 上下文
+
+在工作区根目录或 `~/.miniclaw/` 放置以下文件即可定制 Agent 行为：
+
+| 文件 | 作用 |
+|------|------|
+| `AGENTS.md` | Agent 行为指令 |
+| `SOUL.md` | 性格 / 沟通风格 |
+| `TOOLS.md` | 工具使用建议 |
+| `IDENTITY.md` | Agent 身份标识 |
+| `USER.md` | 用户画像 |
+
+搜索路径（优先级从高到低）：
+
+1. `.agents/` — 项目级
+2. `.miniclaw/` — 项目级
+3. `~/.miniclaw/` — 全局级
 
 ## 配置
 

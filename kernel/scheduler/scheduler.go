@@ -49,6 +49,7 @@ type Scheduler struct {
 	parentCtx context.Context
 	cancel    context.CancelFunc
 	running   bool
+	store     JobStore // 可选，持久化存储
 }
 
 type jobEntry struct {
@@ -58,10 +59,22 @@ type jobEntry struct {
 }
 
 // New 创建一个新的 Scheduler。
-func New() *Scheduler {
-	return &Scheduler{
+func New(opts ...SchedulerOption) *Scheduler {
+	s := &Scheduler{
 		jobs: make(map[string]*jobEntry),
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// SchedulerOption 是 Scheduler 的函数式配置选项。
+type SchedulerOption func(*Scheduler)
+
+// WithPersistence 设置 Job 持久化存储。
+func WithPersistence(store JobStore) SchedulerOption {
+	return func(s *Scheduler) { s.store = store }
 }
 
 // AddJob 添加一个定时任务。如果已存在同 ID 的任务，先移除再添加。
@@ -91,6 +104,7 @@ func (s *Scheduler) AddJob(job Job) error {
 		s.scheduleEntry(entry, interval, once)
 	}
 
+	s.persistLocked()
 	return nil
 }
 
@@ -111,6 +125,8 @@ func (s *Scheduler) RemoveJob(id string) error {
 		entry.cancel()
 	}
 	delete(s.jobs, id)
+
+	s.persistLocked()
 	return nil
 }
 
@@ -128,6 +144,7 @@ func (s *Scheduler) ListJobs() []Job {
 
 // Start 启动调度器，handler 在每次任务触发时被调用。
 // ctx 用于全局生命周期管理：当 ctx 取消时，调度器停止且所有 job 的 context 也被取消。
+// 启动时会自动从 JobStore 恢复之前持久化的任务。
 func (s *Scheduler) Start(ctx context.Context, handler JobHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -137,6 +154,18 @@ func (s *Scheduler) Start(ctx context.Context, handler JobHandler) {
 	s.parentCtx = ctx
 	s.handler = handler
 	s.running = true
+
+	// 从持久化存储恢复 jobs
+	if s.store != nil {
+		if saved, err := s.store.LoadJobs(ctx); err == nil {
+			for _, job := range saved {
+				if _, exists := s.jobs[job.ID]; !exists {
+					entry := &jobEntry{job: job}
+					s.jobs[job.ID] = entry
+				}
+			}
+		}
+	}
 
 	// 为所有已注册的 job 启动 timer
 	for _, entry := range s.jobs {
@@ -246,6 +275,20 @@ func (s *Scheduler) stopAll() {
 		}
 	}
 	s.running = false
+}
+
+// persistLocked 在持有锁的状态下将 jobs 持久化到 store。
+// 调用方必须已持有 s.mu。
+func (s *Scheduler) persistLocked() {
+	if s.store == nil {
+		return
+	}
+	jobs := make([]Job, 0, len(s.jobs))
+	for _, e := range s.jobs {
+		jobs = append(jobs, e.job)
+	}
+	// 最佳努力持久化，不阻塞调度器
+	_ = s.store.SaveJobs(context.Background(), jobs)
 }
 
 // parseSchedule 解析调度表达式。

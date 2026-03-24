@@ -1,10 +1,11 @@
-// miniclaw 是一个智能 Web 爬虫 Agent 示例。
+// miniclaw 是一个个人 AI 助理示例，对标 OpenClaw (openclaw.ai)。
 //
-// 演示如何用 moss kernel 构建具有网络访问能力的 Agent：
-//   - 自定义工具：fetch_url（抓取网页内容）、extract_links（提取链接）
-//   - Agent 自主决定抓取策略：根据用户目标选择 URL、筛选内容、跟踪链接
-//   - 结合内置工具将结果保存到本地文件
-//   - 交互式 REPL 模式，支持多轮爬取
+// 演示如何用 moss kernel 构建具有丰富能力的个人 AI 助理：
+//   - 网络访问工具：fetch_url（抓取网页内容）、extract_links（提取链接）
+//   - 知识库：语义检索、文档摄入
+//   - 定时任务调度
+//   - Bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md）
+//   - 交互式 REPL 模式
 //
 // 用法:
 //
@@ -31,6 +32,7 @@ import (
 	"github.com/mossagi/moss/adapters/embedding"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -106,9 +108,9 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		return fmt.Errorf("setup: %w", err)
 	}
 
-	// 注册爬虫专用工具
-	if err := registerCrawlTools(k); err != nil {
-		return fmt.Errorf("register crawl tools: %w", err)
+	// 注册网络访问工具
+	if err := registerWebTools(k); err != nil {
+		return fmt.Errorf("register web tools: %w", err)
 	}
 
 	// 注册调度工具 (schedule_task, list_schedules, cancel_schedule)
@@ -160,7 +162,7 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	defer sched.Stop()
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         "web crawling assistant",
+		Goal:         "personal AI assistant",
 		Mode:         "interactive",
 		TrustLevel:   trust,
 		SystemPrompt: buildSystemPrompt(workspace),
@@ -174,26 +176,26 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		modelName = "(default)"
 	}
 	fmt.Println("╭──────────────────────────────────────╮")
-	fmt.Println("│        miniclaw — Web Crawler         │")
+	fmt.Println("│     miniclaw — Personal AI Assistant  │")
 	fmt.Println("╰──────────────────────────────────────╯")
 	fmt.Printf("  Provider:  %s\n", provider)
 	fmt.Printf("  Model:     %s\n", modelName)
 	fmt.Printf("  Workspace: %s\n", workspace)
 	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
 	fmt.Println()
-	fmt.Println("  Type a URL or describe what you want to crawl.")
+	fmt.Println("  Ask me anything — I can search the web, manage files, schedule tasks, and more.")
 	fmt.Println("  Type /help for commands, /exit to quit.")
 	fmt.Println()
 
 	return appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:  "🕷 > ",
+		Prompt:  "� > ",
 		AppName: "miniclaw",
 	}, k, sess)
 }
 
-// ─── Crawl Tools ────────────────────────────────────
+// ─── Web Tools ──────────────────────────────────────
 
-func registerCrawlTools(k *kernel.Kernel) error {
+func registerWebTools(k *kernel.Kernel) error {
 	// fetch_url: 抓取网页内容，返回纯文本
 	fetchSpec := tool.ToolSpec{
 		Name: "fetch_url",
@@ -320,7 +322,7 @@ func doFetch(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", "miniclaw/1.0 (moss agent)")
+	req.Header.Set("User-Agent", "miniclaw/1.0 (moss personal assistant)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
 
 	resp, err := httpClient.Do(req)
@@ -430,10 +432,19 @@ func stripTags(s string) string {
 
 func buildSystemPrompt(workspace string) string {
 	osName := runtime.GOOS
-	return skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
+	prompt := skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
 		"OS":        osName,
 		"Workspace": workspace,
 	})
+
+	// 注入 bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md 等）
+	bootstrap.SetAppName("miniclaw")
+	bctx := bootstrap.Load(workspace)
+	if section := bctx.SystemPromptSection(); section != "" {
+		prompt = prompt + "\n\n" + section
+	}
+
+	return prompt
 }
 
 // ─── Helpers ────────────────────────────────────────
