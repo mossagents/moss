@@ -11,6 +11,7 @@ import (
 
 	"github.com/mossagi/moss/adapters/claude"
 	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	"github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -19,27 +20,25 @@ import (
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func main() {
+	// 无参数默认进入 TUI
 	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
+		launchTUI(os.Args[1:]) // empty slice
+		return
 	}
 
 	switch os.Args[1] {
 	case "run":
 		runCmd(os.Args[2:])
-	case "tui":
-		tuiCmd(os.Args[2:])
 	case "version":
 		fmt.Printf("moss %s\n", version)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
-		printUsage()
-		os.Exit(1)
+		// 不识别的命令也进入 TUI
+		launchTUI(os.Args[1:])
 	}
 }
 
@@ -47,14 +46,13 @@ func printUsage() {
 	fmt.Print(`moss - Agent Runtime Kernel
 
 Usage:
-  moss run [flags]
-  moss tui [flags]
-  moss version
+  moss                Launch interactive TUI (default)
+  moss run [flags]    Run with a specific goal
+  moss version        Show version
 
 Flags:
-  --goal        Goal for the agent to accomplish (required unless interactive TUI is used)
+  --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
-  --mode        Run mode: interactive|autopilot (default: interactive)
   --trust       Trust level: trusted|restricted (default: trusted)
   --provider    LLM provider: claude|openai (default: claude)
   --model       Model name (default depends on provider)
@@ -64,6 +62,26 @@ Environment:
   OPENAI_API_KEY     Required when provider=openai.
   OPENAI_BASE_URL    Optional. Override OpenAI API base URL (for compatible APIs).
 `)
+}
+
+// launchTUI 启动 Bubble Tea TUI 界面。
+func launchTUI(args []string) {
+	fs := flag.NewFlagSet("moss", flag.ExitOnError)
+	wsDir := fs.String("workspace", ".", "Workspace directory")
+	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
+	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
+
+	_ = fs.Parse(args)
+
+	if err := tui.Run(tui.Config{
+		Provider:    *provider,
+		Workspace:   *wsDir,
+		Trust:       *trust,
+		BuildKernel: BuildKernelWithIO,
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func runCmd(args []string) {
@@ -81,11 +99,8 @@ func runCmd(args []string) {
 	}
 
 	if *goal == "" {
-		if *mode == "interactive" {
-			runTUI(*wsDir, *mode, *trust, *provider, os.Stdin, os.Stdout, os.Stderr)
-			return
-		}
-		fmt.Fprintln(os.Stderr, "error: --goal is required")
+		fmt.Fprintln(os.Stderr, "error: --goal is required for 'run' command")
+		fmt.Fprintln(os.Stderr, "hint: run 'moss' without arguments to enter interactive TUI")
 		fs.Usage()
 		os.Exit(1)
 	}
@@ -162,14 +177,22 @@ func buildLLM(provider, model string) (port.LLM, error) {
 	}
 }
 
-// buildKernel 构建 Kernel 实例。
+// buildKernel 构建 Kernel 实例（CLI 模式，使用 cliUserIO）。
 func buildKernel(wsDir, trust, provider, model string) (*kernel.Kernel, error) {
+	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
+	return buildKernelWithIO(wsDir, trust, provider, model, cliIO)
+}
+
+// BuildKernelWithIO 构建 Kernel 实例，允许注入自定义 UserIO（供 TUI 使用）。
+func BuildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error) {
+	return buildKernelWithIO(wsDir, trust, provider, model, io)
+}
+
+func buildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error) {
 	sb, err := sandbox.NewLocal(wsDir)
 	if err != nil {
 		return nil, err
 	}
-
-	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
 
 	llm, err := buildLLM(provider, model)
 	if err != nil {
@@ -179,11 +202,11 @@ func buildKernel(wsDir, trust, provider, model string) (*kernel.Kernel, error) {
 	k := kernel.New(
 		kernel.WithLLM(llm),
 		kernel.WithSandbox(sb),
-		kernel.WithUserIO(cliIO),
+		kernel.WithUserIO(io),
 	)
 
 	// 注册内置工具
-	if err := toolbuiltins.RegisterAll(k.ToolRegistry(), sb, cliIO); err != nil {
+	if err := toolbuiltins.RegisterAll(k.ToolRegistry(), sb, io); err != nil {
 		return nil, fmt.Errorf("register built-in tools: %w", err)
 	}
 

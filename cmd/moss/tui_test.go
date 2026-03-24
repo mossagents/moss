@@ -2,52 +2,33 @@ package main
 
 import (
 	"bytes"
-	"strings"
+	"context"
 	"testing"
+
+	"github.com/mossagi/moss/kernel/port"
 )
 
-func TestCollectRunRequestUsesDefaults(t *testing.T) {
-	// goal, provider (default), workspace (default), mode (default), trust (default), confirm
-	input := strings.NewReader("analyze repository\n\n\n\n\ny\n")
-	var output bytes.Buffer
-	ui := newTerminalUI(input, &output)
+func TestCliUserIOSend(t *testing.T) {
+	var buf bytes.Buffer
+	io := &cliUserIO{writer: &buf}
 
-	req, err := ui.collectRunRequest("/repo", "interactive", "trusted", "claude")
+	err := io.Send(context.Background(), port.OutputMessage{
+		Type:    port.OutputText,
+		Content: "hello",
+	})
 	if err != nil {
-		t.Fatalf("collectRunRequest returned error: %v", err)
+		t.Fatal(err)
 	}
-
-	if req.Goal != "analyze repository" {
-		t.Fatalf("expected goal to be collected, got %q", req.Goal)
-	}
-	if req.Workspace != "/repo" {
-		t.Fatalf("expected default workspace, got %q", req.Workspace)
-	}
-	if req.Mode != "interactive" {
-		t.Fatalf("expected default mode, got %q", req.Mode)
-	}
-	if req.Trust != "trusted" {
-		t.Fatalf("expected default trust, got %q", req.Trust)
-	}
-	if req.Provider != "claude" {
-		t.Fatalf("expected default provider, got %q", req.Provider)
-	}
-
-	rendered := output.String()
-	if !strings.Contains(rendered, "moss interactive TUI") {
-		t.Fatalf("expected TUI title in output, got %q", rendered)
+	if got := buf.String(); got != "hello\n" {
+		t.Fatalf("expected %q, got %q", "hello\n", got)
 	}
 }
 
-func TestCollectRunRequestCanCancel(t *testing.T) {
-	input := strings.NewReader("q\n")
-	ui := newTerminalUI(input, &bytes.Buffer{})
-
-	_, err := ui.collectRunRequest("/repo", "interactive", "trusted", "claude")
-	if err == nil {
-		t.Fatal("expected cancellation error")
+func TestTruncate(t *testing.T) {
+	if got := truncate("short", 10); got != "short" {
+		t.Fatalf("expected 'short', got %q", got)
 	}
-	if err != errCancelled {
-		t.Fatalf("expected errCancelled, got %v", err)
+	if got := truncate("a long string here", 5); got != "a lon..." {
+		t.Fatalf("expected 'a lon...', got %q", got)
 	}
 }
