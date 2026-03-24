@@ -14,6 +14,7 @@ type welcomeField int
 
 const (
 	fieldProvider welcomeField = iota
+	fieldModel
 	fieldWorkspace
 	fieldStart
 	fieldCount // sentinel
@@ -22,6 +23,7 @@ const (
 // welcomeModel 是欢迎/配置界面。
 type welcomeModel struct {
 	provider  string
+	model     string
 	workspace string
 	focus     welcomeField
 	width     int
@@ -34,10 +36,11 @@ type welcomeModel struct {
 // WelcomeConfig 是欢迎界面收集的配置。
 type WelcomeConfig struct {
 	Provider  string
+	Model     string
 	Workspace string
 }
 
-func newWelcomeModel(defaultProvider, defaultWorkspace string) welcomeModel {
+func newWelcomeModel(defaultProvider, defaultModel, defaultWorkspace string) welcomeModel {
 	ta := textarea.New()
 	ta.Placeholder = ""
 	ta.SetHeight(1)
@@ -48,6 +51,7 @@ func newWelcomeModel(defaultProvider, defaultWorkspace string) welcomeModel {
 
 	return welcomeModel{
 		provider:  defaultProvider,
+		model:     defaultModel,
 		workspace: defaultWorkspace,
 		focus:     fieldProvider,
 		input:     ta,
@@ -112,6 +116,8 @@ func (m *welcomeModel) applyCurrentField() {
 		if val != "" {
 			m.provider = val
 		}
+	case fieldModel:
+		m.model = val // 允许为空，表示使用 provider 默认模型
 	case fieldWorkspace:
 		if val != "" {
 			m.workspace = val
@@ -123,6 +129,9 @@ func (m *welcomeModel) syncInput() {
 	switch m.focus {
 	case fieldProvider:
 		m.input.SetValue(m.provider)
+		m.input.Focus()
+	case fieldModel:
+		m.input.SetValue(m.model)
 		m.input.Focus()
 	case fieldWorkspace:
 		m.input.SetValue(m.workspace)
@@ -141,12 +150,17 @@ func (m welcomeModel) View() string {
 	b.WriteString("\n" + logo + version + "\n\n")
 
 	// Fields
+	modelDisplay := m.model
+	if modelDisplay == "" {
+		modelDisplay = "(default)"
+	}
 	fields := []struct {
 		label string
 		value string
 		field welcomeField
 	}{
 		{"Provider", m.provider, fieldProvider},
+		{"Model", modelDisplay, fieldModel},
 		{"Workspace", m.workspace, fieldWorkspace},
 	}
 
@@ -185,6 +199,7 @@ func (m welcomeModel) View() string {
 func (m welcomeModel) config() WelcomeConfig {
 	return WelcomeConfig{
 		Provider:  m.provider,
+		Model:     m.model,
 		Workspace: m.workspace,
 	}
 }

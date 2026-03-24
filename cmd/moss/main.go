@@ -70,11 +70,13 @@ func launchTUI(args []string) {
 	wsDir := fs.String("workspace", ".", "Workspace directory")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
 	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
+	model := fs.String("model", "", "Model name (default depends on provider)")
 
 	_ = fs.Parse(args)
 
 	if err := tui.Run(tui.Config{
 		Provider:    *provider,
+		Model:       *model,
 		Workspace:   *wsDir,
 		Trust:       *trust,
 		BuildKernel: BuildKernelWithIO,

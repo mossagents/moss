@@ -7,3 +7,4 @@
 *.test
 *.out
 /dist/
+test_output.txt

@@ -25,6 +25,7 @@ const (
 // Config 是启动 TUI 的配置。
 type Config struct {
 	Provider    string
+	Model       string
 	Workspace   string
 	Trust       string
 	BuildKernel func(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error)
@@ -93,7 +94,7 @@ func Run(cfg Config) error {
 
 	m := appModel{
 		state:    stateWelcome,
-		welcome:  newWelcomeModel(cfg.Provider, cfg.Workspace),
+		welcome:  newWelcomeModel(cfg.Provider, cfg.Model, cfg.Workspace),
 		config:   cfg,
 		bridgeIO: bridge,
 	}
@@ -170,9 +171,10 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.sendFn = func(text string) {
 			go agent.appendAndRun(text)
 		}
+		connInfo := m.chat.provider
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgAssistant,
-			content: fmt.Sprintf("已连接到 %s，输入消息开始对话。", m.chat.provider),
+			content: fmt.Sprintf("已连接到 %s，输入消息开始对话。", connInfo),
 		})
 		m.chat.refreshViewport()
 		return m, nil
@@ -188,7 +190,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		provider := strings.ToLower(wCfg.Provider)
 
-		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, provider, "", bridge)
+		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, provider, wCfg.Model, bridge)
 		if err != nil {
 			return sessionResultMsg{err: fmt.Errorf("初始化 kernel 失败: %w", err)}
 		}
