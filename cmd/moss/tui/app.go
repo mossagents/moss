@@ -24,14 +24,17 @@ const (
 
 // Config 是启动 TUI 的配置。
 type Config struct {
-	Provider          string
-	Model             string
-	Workspace         string
-	Trust             string
-	BaseURL           string
-	APIKey            string
-	BuildKernel       func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	BuildSystemPrompt func(workspace string) string
+	Provider           string
+	Model              string
+	Workspace          string
+	Trust              string
+	BaseURL            string
+	APIKey             string
+	BuildKernel        func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildSystemPrompt  func(workspace string) string
+	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
+	SidebarTitle       string
+	RenderSidebar      func() string
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -110,6 +113,8 @@ func Run(cfg Config) error {
 		}
 		m.state = stateChat
 		m.chat = newChatModel(wCfg.Provider, wCfg.Workspace)
+		m.chat.sidebarTitle = cfg.SidebarTitle
+		m.chat.renderSidebar = cfg.RenderSidebar
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
 	} else {
 		m.state = stateWelcome
@@ -170,6 +175,8 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 持久化用户选择的 provider/model 到 ~/.moss/config.yaml
 		saveWelcomeConfig(cfg)
 		m.chat = newChatModel(cfg.Provider, cfg.Workspace)
+		m.chat.sidebarTitle = m.config.SidebarTitle
+		m.chat.renderSidebar = m.config.RenderSidebar
 		m.state = stateChat
 
 		// 将当前窗口尺寸传递给 chatModel，避免它因未收到 WindowSizeMsg 而卡在 "加载中"
@@ -274,13 +281,33 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		if cfg.BuildSystemPrompt != nil {
 			sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace)
 		}
-		sess, err := k.NewSession(ctx, session.SessionConfig{
+		sessCfg := session.SessionConfig{
 			Goal:         "interactive",
 			Mode:         "interactive",
 			TrustLevel:   cfg.Trust,
 			MaxSteps:     200,
 			SystemPrompt: sysPrompt,
-		})
+		}
+		if cfg.BuildSessionConfig != nil {
+			sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, sysPrompt)
+			if sessCfg.SystemPrompt == "" {
+				sessCfg.SystemPrompt = sysPrompt
+			}
+			if sessCfg.TrustLevel == "" {
+				sessCfg.TrustLevel = cfg.Trust
+			}
+			if sessCfg.Goal == "" {
+				sessCfg.Goal = "interactive"
+			}
+			if sessCfg.Mode == "" {
+				sessCfg.Mode = "interactive"
+			}
+			if sessCfg.MaxSteps == 0 {
+				sessCfg.MaxSteps = 200
+			}
+		}
+
+		sess, err := k.NewSession(ctx, sessCfg)
 		if err != nil {
 			cancel()
 			return sessionResultMsg{err: fmt.Errorf("创建 session 失败: %w", err)}

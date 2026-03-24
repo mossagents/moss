@@ -58,4 +58,13 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorPrimary).
 				Padding(0, 1)
+
+	sidebarBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorMuted).
+			Padding(0, 1)
+
+	sidebarTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorPrimary)
 )

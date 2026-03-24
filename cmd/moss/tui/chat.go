@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/skill"
 )
@@ -45,6 +46,9 @@ type chatModel struct {
 	// 配置显示
 	provider  string
 	workspace string
+
+	sidebarTitle  string
+	renderSidebar func() string
 }
 
 func newChatModel(provider, workspace string) chatModel {
@@ -87,6 +91,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 
 	case bridgeMsg:
 		return m.handleBridge(msg)
+
+	case refreshMsg:
+		m.refreshViewport()
+		return m, nil
 
 	case sessionResultMsg:
 		m.streaming = false
@@ -209,7 +217,7 @@ func (m *chatModel) appendStream(delta string) {
 }
 
 func (m *chatModel) refreshViewport() {
-	content := renderAllMessages(m.messages, m.width)
+	content := renderAllMessages(m.messages, m.mainWidth())
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
@@ -225,15 +233,44 @@ func (m *chatModel) recalcLayout() {
 	}
 
 	if !m.ready {
-		m.viewport = viewport.New(m.width, vpHeight)
+		m.viewport = viewport.New(m.mainWidth(), vpHeight)
 		m.ready = true
 	} else {
-		m.viewport.Width = m.width
+		m.viewport.Width = m.mainWidth()
 		m.viewport.Height = vpHeight
 	}
 
 	m.textarea.SetWidth(m.width - 4)
 	m.refreshViewport()
+}
+
+func (m chatModel) sidebarVisible() bool {
+	return m.renderSidebar != nil && m.width >= 100
+}
+
+func (m chatModel) sidebarWidth() int {
+	if !m.sidebarVisible() {
+		return 0
+	}
+	width := m.width / 3
+	if width < 32 {
+		width = 32
+	}
+	if width > 42 {
+		width = 42
+	}
+	return width
+}
+
+func (m chatModel) mainWidth() int {
+	if !m.sidebarVisible() {
+		return m.width
+	}
+	mainWidth := m.width - m.sidebarWidth() - 1
+	if mainWidth < 40 {
+		return 40
+	}
+	return mainWidth
 }
 
 func (m chatModel) View() string {
@@ -250,7 +287,21 @@ func (m chatModel) View() string {
 	b.WriteString(strings.Repeat("─", m.width) + "\n")
 
 	// 消息区
-	b.WriteString(m.viewport.View())
+	body := m.viewport.View()
+	if m.sidebarVisible() {
+		sidebarContent := "暂无摘要。"
+		if m.renderSidebar != nil {
+			sidebarContent = m.renderSidebar()
+		}
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
+			sidebarBoxStyle.Width(m.sidebarWidth()).Render(
+				sidebarTitleStyle.Render(m.sidebarTitle)+"\n\n"+sidebarContent,
+			),
+		)
+	}
+	b.WriteString(body)
 	b.WriteString("\n")
 
 	// 输入区

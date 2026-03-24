@@ -8,6 +8,7 @@
 //
 // 用法:
 //
+//	go run .
 //	go run . --provider openai --model gpt-4o --goal "分析 main.go 并编写测试"
 //	go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:8080/v1
 package main
@@ -26,6 +27,7 @@ import (
 
 	"github.com/mossagi/moss/adapters/claude"
 	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -46,6 +48,13 @@ func main() {
 	_ = skill.EnsureMossDir()
 
 	cfg := parseFlags()
+	if cfg.goal == "" {
+		if err := launchTUI(cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -78,25 +87,32 @@ type config struct {
 	baseURL   string
 	goal      string
 	workers   int
+	tracker   *orchestrationTracker
 }
 
 func parseFlags() config {
+	globalCfg, err := skill.LoadGlobalConfig()
+	if err != nil || globalCfg == nil {
+		globalCfg = &skill.Config{}
+	}
+
 	c := config{
-		provider:  envOrDefault("MINIWORK_PROVIDER", "openai"),
 		workspace: ".",
 		trust:     "trusted",
 		workers:   3,
 	}
+
+	var cliProvider, cliModel, cliAPIKey, cliBaseURL string
 
 	args := os.Args[1:]
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--provider":
 			i++
-			c.provider = args[i]
+			cliProvider = args[i]
 		case "--model":
 			i++
-			c.model = args[i]
+			cliModel = args[i]
 		case "--workspace":
 			i++
 			c.workspace = args[i]
@@ -105,10 +121,10 @@ func parseFlags() config {
 			c.trust = args[i]
 		case "--api-key":
 			i++
-			c.apiKey = args[i]
+			cliAPIKey = args[i]
 		case "--base-url":
 			i++
-			c.baseURL = args[i]
+			cliBaseURL = args[i]
 		case "--goal":
 			i++
 			c.goal = args[i]
@@ -121,11 +137,11 @@ func parseFlags() config {
 		}
 	}
 
-	if c.goal == "" {
-		fmt.Fprintln(os.Stderr, "error: --goal is required")
-		printUsage()
-		os.Exit(1)
-	}
+	c.provider = firstNonEmpty(cliProvider, globalCfg.Provider, os.Getenv("MINIWORK_PROVIDER"), "openai")
+	c.model = firstNonEmpty(cliModel, globalCfg.Model, os.Getenv("MINIWORK_MODEL"))
+	c.apiKey = firstNonEmpty(cliAPIKey, globalCfg.APIKey, os.Getenv("MINIWORK_API_KEY"))
+	c.baseURL = firstNonEmpty(cliBaseURL, globalCfg.BaseURL, os.Getenv("MINIWORK_BASE_URL"))
+
 	return c
 }
 
@@ -133,10 +149,10 @@ func printUsage() {
 	fmt.Print(`miniwork — Multi-Agent Workflow Orchestrator
 
 Usage:
-  miniwork --goal "your task description" [flags]
+	miniwork [flags]
 
 Flags:
-  --goal        (required) Goal for the workflow
+	--goal        Goal for one-shot workflow execution; omit to launch TUI
   --provider    LLM provider: claude|openai (default: openai)
   --model       Model name
   --workspace   Workspace directory (default: ".")
@@ -154,41 +170,66 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+func launchTUI(cfg config) error {
+	tracker := newOrchestrationTracker(nil)
+	cfg.tracker = tracker
+
+	return mossTUI.Run(mossTUI.Config{
+		Provider:  cfg.provider,
+		Model:     cfg.model,
+		Workspace: cfg.workspace,
+		Trust:     cfg.trust,
+		BaseURL:   cfg.baseURL,
+		APIKey:    cfg.apiKey,
+		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+			tuiCfg := cfg
+			tuiCfg.workspace = wsDir
+			tuiCfg.trust = trust
+			tuiCfg.provider = provider
+			tuiCfg.model = model
+			tuiCfg.apiKey = apiKey
+			tuiCfg.baseURL = baseURL
+			if tuiBridge, ok := io.(interface{ Refresh() }); ok {
+				tuiCfg.tracker = newOrchestrationTracker(tuiBridge.Refresh)
+				tracker = tuiCfg.tracker
+			}
+			return buildKernelForConfig(tuiCfg, io)
+		},
+		BuildSystemPrompt: func(workspace string) string {
+			return buildManagerPrompt(workspace, cfg.workers)
+		},
+		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+			return session.SessionConfig{
+				Goal:         "interactive orchestration",
+				Mode:         "orchestrator",
+				TrustLevel:   trust,
+				MaxSteps:     100,
+				SystemPrompt: systemPrompt,
+			}
+		},
+		SidebarTitle: "Workers",
+		RenderSidebar: func() string {
+			return tracker.Summary()
+		},
+	})
+}
+
 // ─── Main Run ───────────────────────────────────────
 
 func run(ctx context.Context, cfg config) error {
-	llm, err := buildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
+	io := &logIO{writer: os.Stdout}
+	k, err := buildKernelForConfig(cfg, io)
 	if err != nil {
 		return err
-	}
-
-	sb, err := sandbox.NewLocal(cfg.workspace)
-	if err != nil {
-		return fmt.Errorf("sandbox: %w", err)
-	}
-
-	io := &logIO{writer: os.Stdout}
-
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(io),
-	)
-
-	if err := k.SetupWithDefaults(ctx, cfg.workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return fmt.Errorf("setup: %w", err)
-	}
-
-	// 注册编排工具：delegate_tasks
-	if err := registerOrchestrationTools(k, ctx, cfg); err != nil {
-		return fmt.Errorf("register orchestration tools: %w", err)
-	}
-
-	if cfg.trust == "restricted" {
-		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "run_command"),
-			builtins.DefaultAllow(),
-		)
 	}
 
 	if err := k.Boot(ctx); err != nil {
@@ -309,6 +350,9 @@ func makeDelegateHandler(k *kernel.Kernel, _ context.Context, cfg config) tool.T
 			fmt.Fprintf(os.Stdout, "  • [%s] %s\n", t.ID, truncate(t.Description, 80))
 		}
 		fmt.Println()
+		if cfg.tracker != nil {
+			cfg.tracker.StartBatch(req.Tasks)
+		}
 
 		// 并行执行，限制并发数
 		results := make([]taskOutput, len(req.Tasks))
@@ -339,6 +383,9 @@ func makeDelegateHandler(k *kernel.Kernel, _ context.Context, cfg config) tool.T
 			}
 		}
 		fmt.Fprintf(os.Stdout, "\n  %d/%d tasks succeeded\n\n", succeeded, len(results))
+		if cfg.tracker != nil {
+			cfg.tracker.FinishBatch(results)
+		}
 
 		return json.Marshal(results)
 	}
@@ -347,6 +394,9 @@ func makeDelegateHandler(k *kernel.Kernel, _ context.Context, cfg config) tool.T
 // runWorker 创建一个独立的 Worker Session 并执行子任务。
 func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput) taskOutput {
 	fmt.Fprintf(os.Stdout, "  🚀 [%s] worker started\n", task.ID)
+	if cfg.tracker != nil {
+		cfg.tracker.StartWorker(task)
+	}
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:         task.Description,
@@ -356,7 +406,11 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 		MaxSteps:     30,
 	})
 	if err != nil {
-		return taskOutput{ID: task.ID, Success: false, Error: err.Error()}
+		result := taskOutput{ID: task.ID, Success: false, Error: err.Error()}
+		if cfg.tracker != nil {
+			cfg.tracker.FinishWorker(result)
+		}
+		return result
 	}
 
 	sess.AppendMessage(port.Message{
@@ -366,16 +420,24 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
-		return taskOutput{ID: task.ID, Success: false, Error: err.Error()}
+		workerResult := taskOutput{ID: task.ID, Success: false, Error: err.Error()}
+		if cfg.tracker != nil {
+			cfg.tracker.FinishWorker(workerResult)
+		}
+		return workerResult
 	}
 
-	return taskOutput{
+	workerResult := taskOutput{
 		ID:      task.ID,
 		Success: result.Success,
 		Output:  result.Output,
 		Steps:   result.Steps,
 		Error:   result.Error,
 	}
+	if cfg.tracker != nil {
+		cfg.tracker.FinishWorker(workerResult)
+	}
+	return workerResult
 }
 
 // ─── System Prompts ─────────────────────────────────
@@ -430,6 +492,42 @@ func buildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
 	default:
 		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
 	}
+}
+
+func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {
+	llm, err := buildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	sb, err := sandbox.NewLocal(cfg.workspace)
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: %w", err)
+	}
+
+	k := kernel.New(
+		kernel.WithLLM(llm),
+		kernel.WithSandbox(sb),
+		kernel.WithUserIO(io),
+	)
+
+	ctx := context.Background()
+	if err := k.SetupWithDefaults(ctx, cfg.workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
+		return nil, fmt.Errorf("setup: %w", err)
+	}
+
+	if err := registerOrchestrationTools(k, ctx, cfg); err != nil {
+		return nil, fmt.Errorf("register orchestration tools: %w", err)
+	}
+
+	if cfg.trust == "restricted" {
+		k.WithPolicy(
+			builtins.RequireApprovalFor("write_file", "run_command"),
+			builtins.DefaultAllow(),
+		)
+	}
+
+	return k, nil
 }
 
 // ─── Output IO ──────────────────────────────────────

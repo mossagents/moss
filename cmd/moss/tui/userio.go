@@ -14,6 +14,8 @@ type bridgeMsg struct {
 	ask    *bridgeAsk
 }
 
+type refreshMsg struct{}
+
 // bridgeAsk 表示一个阻塞式用户输入请求。
 type bridgeAsk struct {
 	request port.InputRequest
@@ -49,6 +51,17 @@ func (b *BridgeIO) Send(_ context.Context, msg port.OutputMessage) error {
 	}
 	p.Send(bridgeMsg{output: &msg})
 	return nil
+}
+
+// Refresh 请求 TUI 立即重绘一次，适合外部状态面板刷新。
+func (b *BridgeIO) Refresh() {
+	b.mu.Lock()
+	p := b.program
+	b.mu.Unlock()
+	if p == nil {
+		return
+	}
+	p.Send(refreshMsg{})
 }
 
 // Ask 向用户请求输入（阻塞当前 goroutine，等待 TUI 回复）。
