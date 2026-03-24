@@ -3,6 +3,7 @@ package kernel
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
@@ -41,9 +42,19 @@ func New(opts ...Option) *Kernel {
 }
 
 // Boot 验证 Kernel 配置完整性。
+// 检查必要组件是否已设置，并给出具体的修复建议。
 func (k *Kernel) Boot(_ context.Context) error {
+	var errs []string
+
 	if k.llm == nil {
-		return errors.New("kernel: LLM port is required")
+		errs = append(errs, "LLM port is required (use kernel.WithLLM())")
+	}
+	if k.io == nil {
+		errs = append(errs, "UserIO port is not set (use kernel.WithUserIO(), or port.NoOpIO{} / port.NewPrintfIO())")
+	}
+
+	if len(errs) > 0 {
+		return errors.New("kernel boot failed:\n  - " + strings.Join(errs, "\n  - "))
 	}
 	return nil
 }

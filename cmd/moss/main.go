@@ -18,7 +18,6 @@ import (
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
-	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
 const version = "0.3.0"
@@ -259,35 +258,8 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 	)
 
 	ctx := context.Background()
-	deps := k.SkillDeps()
-
-	// 注册内置工具 skill
-	if err := k.SkillManager().Register(ctx, &toolbuiltins.CoreSkill{}, deps); err != nil {
-		return nil, fmt.Errorf("register core skill: %w", err)
-	}
-
-	// 加载配置文件中的 MCP skills
-	globalCfg, _ := skill.LoadConfig(skill.DefaultGlobalConfigPath())
-	projectCfg, _ := skill.LoadConfig(skill.DefaultProjectConfigPath(wsDir))
-	merged := skill.MergeConfigs(globalCfg, projectCfg)
-
-	for _, sc := range merged.Skills {
-		if !sc.IsEnabled() || !sc.IsMCP() {
-			continue
-		}
-		mcpSkill := skill.NewMCPSkill(sc)
-		if err := k.SkillManager().Register(ctx, mcpSkill, deps); err != nil {
-			// MCP skill 加载失败不中断启动，仅打印警告
-			fmt.Fprintf(os.Stderr, "warning: failed to load MCP skill %q: %v\n", sc.Name, err)
-		}
-	}
-
-	// 发现并加载 skills.sh 兼容的 SKILL.md 文件
-	promptSkills := skill.DiscoverPromptSkills(wsDir)
-	for _, ps := range promptSkills {
-		if err := k.SkillManager().Register(ctx, ps, deps); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to load prompt skill %q: %v\n", ps.Metadata().Name, err)
-		}
+	if err := k.SetupWithDefaults(ctx, wsDir, kernel.WithWarningWriter(os.Stderr)); err != nil {
+		return nil, err
 	}
 
 	// 根据 trust level 设置策略
