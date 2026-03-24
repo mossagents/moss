@@ -68,7 +68,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		}
 
 		// 2. LLM 调用
-		resp, err := l.callLLM(ctx, sess)
+		resp, streamed, err := l.callLLM(ctx, sess)
 		if err != nil {
 			l.runErrorMiddleware(ctx, sess, err)
 			return l.fail(sess, totalUsage, err), err
@@ -95,7 +95,8 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			}
 		} else {
 			lastOutput = resp.Message.Content
-			if l.IO != nil {
+			// 流式模式下 IO 已经逐 chunk 输出过了，不再重复发送。
+			if l.IO != nil && !streamed {
 				l.IO.Send(ctx, port.OutputMessage{
 					Type:    port.OutputText,
 					Content: resp.Message.Content,
@@ -126,7 +127,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	}, nil
 }
 
-func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, error) {
+func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
 	specs := l.toolSpecs()
 	req := port.CompletionRequest{
 		Messages: sess.Messages,
@@ -135,10 +136,12 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.C
 
 	// 优先使用 Streaming
 	if sllm, ok := l.LLM.(port.StreamingLLM); ok {
-		return l.streamLLM(ctx, sllm, req)
+		resp, err := l.streamLLM(ctx, sllm, req)
+		return resp, true, err
 	}
 
-	return l.LLM.Complete(ctx, req)
+	resp, err := l.LLM.Complete(ctx, req)
+	return resp, false, err
 }
 
 func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req port.CompletionRequest) (*port.CompletionResponse, error) {
