@@ -23,6 +23,11 @@ import (
 const version = "0.3.0"
 
 func main() {
+	// 确保 ~/.moss 配置目录存在
+	if err := skill.EnsureMossDir(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: cannot create config dir: %v\n", err)
+	}
+
 	// 无参数默认进入 TUI
 	if len(os.Args) < 2 {
 		launchTUI(os.Args[1:]) // empty slice

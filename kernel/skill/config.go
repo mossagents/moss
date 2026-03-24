@@ -114,3 +114,12 @@ func MossDir() string {
 	}
 	return filepath.Join(home, ".moss")
 }
+
+// EnsureMossDir 确保 ~/.moss 目录存在，不存在则创建。
+func EnsureMossDir() error {
+	dir := MossDir()
+	if dir == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+	return os.MkdirAll(dir, 0700)
+}
