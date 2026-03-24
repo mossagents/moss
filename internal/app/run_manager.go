@@ -101,12 +101,11 @@ func (rm *RunManager) RegisterPlan(runID string, plan *domain.Plan) error {
 	if !ok {
 		return fmt.Errorf("run %q not found", runID)
 	}
+	if plan == nil {
+		return fmt.Errorf("plan is required")
+	}
 
 	run.Plan = plan
-	run.ActiveTaskID = ""
-	if plan == nil {
-		return nil
-	}
 	run.ActiveTaskID = plan.FirstStepID()
 
 	for _, step := range plan.Steps {

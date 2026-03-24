@@ -54,3 +54,21 @@ func TestRegisterPlanSetsActiveTaskAndPublishesDelegations(t *testing.T) {
 		t.Fatalf("expected 2 task delegation events, got %d", len(delegated))
 	}
 }
+
+func TestRegisterPlanRejectsNilPlan(t *testing.T) {
+	bus := events.NewBus()
+	rm := NewRunManager(nil, nil, nil, nil, bus)
+
+	run, err := rm.StartRun(context.Background(), RunRequest{
+		Goal:      "analyze",
+		Mode:      domain.RunModeInteractive,
+		Workspace: "/repo",
+	})
+	if err != nil {
+		t.Fatalf("StartRun returned error: %v", err)
+	}
+
+	if err := rm.RegisterPlan(run.RunID, nil); err == nil {
+		t.Fatal("expected RegisterPlan to reject nil plans")
+	}
+}

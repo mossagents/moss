@@ -46,3 +46,24 @@ func TestSimplePlannerAddsCoderStepForImplementationGoals(t *testing.T) {
 		t.Fatalf("expected coder step to depend on research step, got %+v", plan.Steps[1].DependsOn)
 	}
 }
+
+func TestGoalNeedsCoding(t *testing.T) {
+	tests := []struct {
+		name string
+		goal string
+		want bool
+	}{
+		{name: "implementation keyword", goal: "implement the requested feature", want: true},
+		{name: "multiple coding keywords", goal: "fix and refactor the workflow", want: true},
+		{name: "case insensitive match", goal: "Create a command runner", want: true},
+		{name: "analysis goal only", goal: "analyze the repository structure", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := goalNeedsCoding(tt.goal); got != tt.want {
+				t.Fatalf("goalNeedsCoding(%q) = %v, want %v", tt.goal, got, tt.want)
+			}
+		})
+	}
+}
