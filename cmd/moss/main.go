@@ -14,6 +14,7 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
+	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
 const version = "0.2.0"
@@ -152,6 +153,11 @@ func buildKernel(wsDir, trust, model string) (*kernel.Kernel, error) {
 		kernel.WithSandbox(sb),
 		kernel.WithUserIO(cliIO),
 	)
+
+	// 注册内置工具
+	if err := toolbuiltins.RegisterAll(k.ToolRegistry(), sb, cliIO); err != nil {
+		return nil, fmt.Errorf("register built-in tools: %w", err)
+	}
 
 	// 根据 trust level 设置策略
 	if trust == "restricted" {
