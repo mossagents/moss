@@ -2,6 +2,37 @@
 
 ---
 
+## v0.2.0 — 示例完善与 Prompt 模板化 (2026-03-24)
+
+> Recent commits: `5ef1541`, `a8d3d99`, `2eb9182`, `d78b0ed`, `6e11e75`, `f211059`
+
+### 新增
+
+- 新增 4 个示例应用：
+  - `examples/minicode`（代码助手）
+  - `examples/miniwork`（多 Agent 编排）
+  - `examples/miniclaw`（Web 抓取）
+  - `examples/trader`（模拟交易）
+- 新增应用名配置能力：`skill.SetAppName(name)` / `skill.AppName()`
+  - 支持将全局配置目录从 `~/.moss` 切换到 `~/.<appName>`
+- 新增 system prompt 模板机制（Moss 和 examples）
+  - 项目级覆盖：`./.<appName>/system_prompt.tmpl`
+  - 全局级覆盖：`~/.<appName>/system_prompt.tmpl`
+
+### 变更
+
+- `minicode` 由 REPL 迁移为默认 TUI 交互方式
+- 全局配置策略统一为 `config.yaml`（不再使用 `config.yml`）
+- 配置目录初始化时自动创建配置模板文件（首次创建）
+
+### 修复
+
+- 修复 `MergeConfigs` 在配置加载异常场景下的空指针风险
+- 修复自动生成配置模板中的 YAML 缩进问题
+- 修复配置读取失败时导致默认 provider 回退行为不透明的问题
+
+---
+
 ## v0.1.0 — 库友好 API (2026-03-24)
 
 > Commit: `9ca8b7c`

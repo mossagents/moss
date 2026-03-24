@@ -143,6 +143,46 @@ skills:
 
 **优先级**：CLI 参数 > 配置文件 > 环境变量 (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`)
 
+### 第三方应用自定义配置目录
+
+作为库集成时，可在启动早期设置应用名：
+
+```go
+skill.SetAppName("minicode")
+_ = skill.EnsureMossDir()
+```
+
+此时全局配置目录会从 `~/.moss` 变为 `~/.minicode`（全局配置文件固定为 `config.yaml`）。
+
+### System Prompt 模板覆盖
+
+Moss 与 examples 现已支持通过模板文件覆盖默认 system prompt：
+
+- 项目级（优先）：`./.<appName>/system_prompt.tmpl`
+- 全局级：`~/.<appName>/system_prompt.tmpl`
+
+未提供覆盖模板时，使用内置默认模板。
+
+## 示例应用
+
+仓库内置 4 个示例应用：
+
+| 示例 | 说明 | 入口 |
+|---|---|---|
+| `minicode` | 代码助手（默认 TUI） | `examples/minicode/main.go` |
+| `miniwork` | 多 Agent 任务编排（Manager/Worker） | `examples/miniwork/main.go` |
+| `miniclaw` | Web 抓取 Agent | `examples/miniclaw/main.go` |
+| `trader` | 模拟交易 Agent | `examples/trader/main.go` |
+
+运行方式（示例）：
+
+```bash
+cd examples/minicode
+go run .
+```
+
+每个示例目录下均提供独立 README 说明。
+
 ## 项目结构
 
 ```
@@ -161,6 +201,11 @@ moss/
 ├── adapters/                # LLM Adapter 实现
 │   ├── claude/              # Anthropic Claude (SDK)
 │   └── openai/              # OpenAI 兼容 (SDK)
+├── examples/                # 示例应用
+│   ├── minicode/            # 代码助手（TUI）
+│   ├── miniwork/            # 多 Agent 编排
+│   ├── miniclaw/            # Web 抓取
+│   └── trader/              # 模拟交易
 ├── kernel/                  # Agent Runtime Kernel (零外部依赖)
 │   ├── kernel.go            # Kernel 入口 (New/Boot/Run/Shutdown)
 │   ├── option.go            # 函数式选项 (WithLLM/WithSandbox/Use...)
@@ -276,6 +321,7 @@ go test ./... -count=1
 |---|---|
 | [架构设计](docs/architecture.md) | 分层架构、核心概念、依赖图 |
 | [快速开始](docs/getting-started.md) | 安装、CLI 用法、库集成指南 |
+| [Examples 指南](examples/minicode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
 | [技能系统](docs/skills.md) | CoreSkill、MCP Skill、PromptSkill 详解 |
 | [内核设计](docs/kernel-design.md) | 原始设计文档（第一性原理、接口定义、流程图） |
 | [开发日志](docs/changelog.md) | 版本变更记录 |

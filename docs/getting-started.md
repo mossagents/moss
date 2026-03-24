@@ -43,6 +43,26 @@ skills:
 | `ANTHROPIC_API_KEY` | Claude API 密钥 |
 | `OPENAI_API_KEY` | OpenAI API 密钥 |
 
+### 第三方应用配置目录
+
+若你基于 Moss 构建自己的应用，可设置应用名以隔离配置目录：
+
+```go
+skill.SetAppName("myagent")
+_ = skill.EnsureMossDir()
+```
+
+此时全局配置文件路径为 `~/.myagent/config.yaml`。
+
+### System Prompt 模板覆盖
+
+可通过模板覆盖默认 system prompt：
+
+- 项目级（优先）：`./.<appName>/system_prompt.tmpl`
+- 全局级：`~/.<appName>/system_prompt.tmpl`
+
+模板语法使用 Go `text/template`。
+
 ## CLI 用法
 
 ```bash
@@ -69,6 +89,26 @@ moss version
 | `/model <name>` | 切换模型 |
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
+
+---
+
+## 示例应用
+
+仓库内置示例：
+
+- `examples/minicode`：代码助手（默认 TUI）
+- `examples/miniwork`：多 Agent 编排
+- `examples/miniclaw`：Web 抓取 Agent
+- `examples/trader`：模拟交易 Agent
+
+快速体验（以 minicode 为例）：
+
+```bash
+cd examples/minicode
+go run .
+```
+
+详细说明见各目录 README。
 
 ---
 
