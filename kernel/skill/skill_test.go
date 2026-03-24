@@ -433,7 +433,7 @@ func TestEnsureMossDir_DoesNotOverwriteExistingConfig(t *testing.T) {
 	}
 }
 
-func TestLoadGlobalConfig_FallbackToYML(t *testing.T) {
+func TestLoadGlobalConfig_YAMLOnly(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -444,35 +444,8 @@ func TestLoadGlobalConfig_FallbackToYML(t *testing.T) {
 	if err := os.MkdirAll(MossDir(), 0700); err != nil {
 		t.Fatalf("prepare dir: %v", err)
 	}
-	content := "provider: claude\nmodel: sonnet\n"
-	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte(content), 0600); err != nil {
-		t.Fatalf("write config.yml: %v", err)
-	}
-
-	cfg, err := LoadGlobalConfig()
-	if err != nil {
-		t.Fatalf("LoadGlobalConfig failed: %v", err)
-	}
-	if cfg.Provider != "claude" || cfg.Model != "sonnet" {
-		t.Fatalf("unexpected cfg: %+v", cfg)
-	}
-}
-
-func TestLoadGlobalConfig_PreferYMLOverYAML(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-
-	SetAppName("minicode")
-	t.Cleanup(func() { SetAppName("moss") })
-
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
-		t.Fatalf("prepare dir: %v", err)
-	}
-	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte("provider: claude\n"), 0600); err != nil {
-		t.Fatalf("write config.yml: %v", err)
-	}
-	if err := os.WriteFile(DefaultGlobalConfigPath(), []byte("provider: openai\n"), 0600); err != nil {
+	content := "provider: openai\nmodel: gpt-4o\n"
+	if err := os.WriteFile(DefaultGlobalConfigPath(), []byte(content), 0600); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
 
@@ -480,12 +453,12 @@ func TestLoadGlobalConfig_PreferYMLOverYAML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGlobalConfig failed: %v", err)
 	}
-	if cfg.Provider != "claude" {
-		t.Fatalf("expected config.yml to win, got provider=%q", cfg.Provider)
+	if cfg.Provider != "openai" || cfg.Model != "gpt-4o" {
+		t.Fatalf("unexpected cfg: %+v", cfg)
 	}
 }
 
-func TestEnsureMossDir_DoesNotCreateYAMLWhenYMLExists(t *testing.T) {
+func TestLoadGlobalConfig_MissingReturnsEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -493,20 +466,31 @@ func TestEnsureMossDir_DoesNotCreateYAMLWhenYMLExists(t *testing.T) {
 	SetAppName("minicode")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
-		t.Fatalf("prepare dir: %v", err)
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig failed: %v", err)
 	}
-	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte("provider: claude\n"), 0600); err != nil {
-		t.Fatalf("write config.yml: %v", err)
+	if cfg == nil {
+		t.Fatal("expected non-nil config")
 	}
+	if cfg.Provider != "" || cfg.Model != "" || len(cfg.Skills) != 0 {
+		t.Fatalf("expected empty config for missing config.yaml, got: %+v", cfg)
+	}
+}
+
+func TestEnsureMossDir_CreatesYAMLByDefault(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("minicode")
+	t.Cleanup(func() { SetAppName("moss") })
 
 	if err := EnsureMossDir(); err != nil {
 		t.Fatalf("EnsureMossDir failed: %v", err)
 	}
 
-	if _, err := os.Stat(DefaultGlobalConfigPath()); err == nil {
-		t.Fatalf("config.yaml should not be created when config.yml exists")
-	} else if !os.IsNotExist(err) {
-		t.Fatalf("unexpected stat error: %v", err)
+	if _, err := os.Stat(DefaultGlobalConfigPath()); err != nil {
+		t.Fatalf("config.yaml should be created by default, got err: %v", err)
 	}
 }

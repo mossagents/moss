@@ -124,37 +124,21 @@ func DefaultGlobalConfigPath() string {
 	return filepath.Join(d, "config.yaml")
 }
 
-// DefaultGlobalConfigPathYML 返回全局配置文件路径（~/.<appName>/config.yml）。
-func DefaultGlobalConfigPathYML() string {
-	d := MossDir()
-	if d == "" {
-		return ""
-	}
-	return filepath.Join(d, "config.yml")
-}
-
-// LoadGlobalConfig 加载全局配置，支持 config.yaml 和 config.yml。
-// 优先级：config.yml > config.yaml。
+// LoadGlobalConfig 加载全局配置（~/.<appName>/config.yaml）。
 func LoadGlobalConfig() (*Config, error) {
-	primary := DefaultGlobalConfigPathYML()
-	if primary != "" {
-		if _, err := os.Stat(primary); err == nil {
-			return LoadConfig(primary)
-		} else if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("stat global config %s: %w", primary, err)
-		}
+	yamlPath := DefaultGlobalConfigPath()
+	if yamlPath == "" {
+		return &Config{}, nil
 	}
 
-	secondary := DefaultGlobalConfigPath()
-	if secondary != "" {
-		if _, err := os.Stat(secondary); err == nil {
-			return LoadConfig(secondary)
-		} else if !os.IsNotExist(err) {
-			return nil, fmt.Errorf("stat global config %s: %w", secondary, err)
+	if _, err := os.Stat(yamlPath); err != nil {
+		if os.IsNotExist(err) {
+			return &Config{}, nil
 		}
+		return nil, fmt.Errorf("stat global config %s: %w", yamlPath, err)
 	}
 
-	return &Config{}, nil
+	return LoadConfig(yamlPath)
 }
 
 // DefaultProjectConfigPath 返回项目级配置文件路径。
@@ -201,16 +185,6 @@ func EnsureMossDir() error {
 	cfgPath := DefaultGlobalConfigPath()
 	if cfgPath == "" {
 		return nil
-	}
-
-	// 兼容用户使用 config.yml 的场景，此时不再创建 config.yaml 模板。
-	legacyPath := DefaultGlobalConfigPathYML()
-	if legacyPath != "" {
-		if _, err := os.Stat(legacyPath); err == nil {
-			return nil
-		} else if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("check config %s: %w", legacyPath, err)
-		}
 	}
 
 	f, err := os.OpenFile(cfgPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
