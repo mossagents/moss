@@ -23,6 +23,27 @@ func SetAppName(name string) { appName = name }
 // AppName 返回当前应用名称。
 func AppName() string { return appName }
 
+const defaultConfigTemplate = `# Global config for moss
+# Priority: CLI flags > config file > environment variables
+
+# provider: openai
+# model: gpt-4o
+# base_url: ""
+# api_key: ""
+
+skills:
+	# Example MCP skill via stdio
+	# - name: my-mcp-server
+	#   transport: stdio
+	#   command: npx
+	#   args: ["-y", "@example/mcp-server"]
+
+	# Example MCP skill via SSE
+	# - name: remote-mcp
+	#   transport: sse
+	#   url: http://localhost:3000/sse
+`
+
 // Config 是 moss.yaml 或 ~/.moss/config.yaml 中的配置。
 type Config struct {
 	Provider string        `yaml:"provider,omitempty"`
@@ -130,11 +151,34 @@ func MossDir() string {
 	return filepath.Join(home, "."+appName)
 }
 
-// EnsureMossDir 确保 ~/.moss 目录存在，不存在则创建。
+// EnsureMossDir 确保 ~/.<appName> 目录存在，不存在则创建。
+// 同时会在全局配置文件不存在时创建一个可编辑的模板文件。
 func EnsureMossDir() error {
 	dir := MossDir()
 	if dir == "" {
 		return fmt.Errorf("cannot determine home directory")
 	}
-	return os.MkdirAll(dir, 0700)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+
+	cfgPath := DefaultGlobalConfigPath()
+	if cfgPath == "" {
+		return nil
+	}
+
+	f, err := os.OpenFile(cfgPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("create config template %s: %w", cfgPath, err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString(defaultConfigTemplate); err != nil {
+		return fmt.Errorf("write config template %s: %w", cfgPath, err)
+	}
+
+	return nil
 }

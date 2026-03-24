@@ -365,3 +365,54 @@ func TestMossDir(t *testing.T) {
 		t.Errorf("expected path ending with .moss, got %q", dir)
 	}
 }
+
+func TestEnsureMossDir_CreatesTemplate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("moss")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := EnsureMossDir(); err != nil {
+		t.Fatalf("EnsureMossDir failed: %v", err)
+	}
+
+	path := DefaultGlobalConfigPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config template: %v", err)
+	}
+	if !strings.Contains(string(data), "skills:") {
+		t.Fatalf("template should contain skills section, got: %q", string(data))
+	}
+}
+
+func TestEnsureMossDir_DoesNotOverwriteExistingConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("moss")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	existing := "provider: openai\nmodel: qwen\n"
+	if err := os.WriteFile(DefaultGlobalConfigPath(), []byte(existing), 0600); err != nil {
+		t.Fatalf("write existing config: %v", err)
+	}
+
+	if err := EnsureMossDir(); err != nil {
+		t.Fatalf("EnsureMossDir failed: %v", err)
+	}
+
+	data, err := os.ReadFile(DefaultGlobalConfigPath())
+	if err != nil {
+		t.Fatalf("read config after ensure: %v", err)
+	}
+	if string(data) != existing {
+		t.Fatalf("existing config should be preserved, got: %q", string(data))
+	}
+}
