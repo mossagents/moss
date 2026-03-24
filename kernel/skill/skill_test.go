@@ -10,13 +10,13 @@ import (
 // --- fakeSkill for testing ---
 
 type fakeSkill struct {
-	name      string
-	initErr   error
-	shutErr   error
-	inited    bool
-	shutdown  bool
-	tools     []string
-	prompts   []string
+	name     string
+	initErr  error
+	shutErr  error
+	inited   bool
+	shutdown bool
+	tools    []string
+	prompts  []string
 }
 
 func (f *fakeSkill) Metadata() Metadata {

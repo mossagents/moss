@@ -84,7 +84,7 @@ func (k *Kernel) SkillManager() *skill.Manager {
 func (k *Kernel) SkillDeps() skill.Deps {
 	return skill.Deps{
 		ToolRegistry: k.tools,
-		Middleware:    k.chain,
+		Middleware:   k.chain,
 		Sandbox:      k.sandbox,
 		UserIO:       k.io,
 	}

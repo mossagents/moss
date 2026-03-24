@@ -232,6 +232,14 @@ func buildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*k
 		}
 	}
 
+	// 发现并加载 skills.sh 兼容的 SKILL.md 文件
+	promptSkills := skill.DiscoverPromptSkills(wsDir)
+	for _, ps := range promptSkills {
+		if err := k.SkillManager().Register(ctx, ps, deps); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to load prompt skill %q: %v\n", ps.Metadata().Name, err)
+		}
+	}
+
 	// 根据 trust level 设置策略
 	if trust == "restricted" {
 		k.WithPolicy(

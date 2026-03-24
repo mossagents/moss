@@ -35,11 +35,11 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn     func(string) // 发送用户消息给 agent
+	sendFn      func(string)  // 发送用户消息给 agent
 	skillListFn func() string // 查询已加载 skills
-	pendAsk    *bridgeAsk   // 当前阻塞的 Ask 请求
-	finished bool         // session 已结束
-	result   string       // 最终结果
+	pendAsk     *bridgeAsk    // 当前阻塞的 Ask 请求
+	finished    bool          // session 已结束
+	result      string        // 最终结果
 
 	// 配置显示
 	provider  string
