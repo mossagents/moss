@@ -152,7 +152,6 @@ func buildSystemPrompt(workspace string) string {
 	})
 }
 
-
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {
