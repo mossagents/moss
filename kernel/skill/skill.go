@@ -9,8 +9,8 @@ import (
 	"github.com/mossagi/moss/kernel/tool"
 )
 
-// Skill 是可加载的能力单元：一组工具 + 系统提示词 + 可选中间件。
-type Skill interface {
+// Provider 是可加载的能力单元：一组工具 + 系统提示词 + 可选中间件。
+type Provider interface {
 	// Metadata 返回 skill 的元信息。
 	Metadata() Metadata
 

@@ -10,17 +10,17 @@ import (
 // Manager 管理所有已加载的 skills。
 type Manager struct {
 	mu     sync.RWMutex
-	skills map[string]Skill
+	skills map[string]Provider
 	order  []string // 按加载顺序保存 skill 名称
 }
 
 // NewManager 创建 SkillManager。
 func NewManager() *Manager {
-	return &Manager{skills: make(map[string]Skill)}
+	return &Manager{skills: make(map[string]Provider)}
 }
 
 // Register 注册并初始化一个 skill。
-func (m *Manager) Register(ctx context.Context, s Skill, deps Deps) error {
+func (m *Manager) Register(ctx context.Context, s Provider, deps Deps) error {
 	meta := s.Metadata()
 	m.mu.Lock()
 	if _, exists := m.skills[meta.Name]; exists {
@@ -82,7 +82,7 @@ func (m *Manager) List() []Metadata {
 }
 
 // Get 按名称查找 skill。
-func (m *Manager) Get(name string) (Skill, bool) {
+func (m *Manager) Get(name string) (Provider, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	s, ok := m.skills[name]

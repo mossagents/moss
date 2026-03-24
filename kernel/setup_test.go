@@ -52,7 +52,7 @@ func TestSetupWithDefaults(t *testing.T) {
 	}
 }
 
-func TestSetupWithDefaults_WithoutCoreSkill(t *testing.T) {
+func TestSetupWithDefaults_WithoutBuiltin(t *testing.T) {
 	mock := &kt.MockLLM{}
 	io := &port.NoOpIO{}
 
@@ -62,7 +62,7 @@ func TestSetupWithDefaults_WithoutCoreSkill(t *testing.T) {
 	)
 
 	ctx := context.Background()
-	if err := k.SetupWithDefaults(ctx, ".", WithoutCoreSkill()); err != nil {
+	if err := k.SetupWithDefaults(ctx, ".", WithoutBuiltin()); err != nil {
 		t.Fatalf("SetupWithDefaults: %v", err)
 	}
 
@@ -70,7 +70,7 @@ func TestSetupWithDefaults_WithoutCoreSkill(t *testing.T) {
 	skills := k.SkillManager().List()
 	for _, s := range skills {
 		if s.Name == "core" {
-			t.Error("core skill should not be registered when WithoutCoreSkill is used")
+			t.Error("core skill should not be registered when WithoutBuiltin is used")
 		}
 	}
 }

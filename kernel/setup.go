@@ -13,25 +13,25 @@ import (
 type SetupOption func(*setupConfig)
 
 type setupConfig struct {
-	coreSkill    bool
-	mcpSkills    bool
-	promptSkills bool
-	warnWriter   io.Writer
+	builtin    bool
+	mcpServers bool
+	skills     bool
+	warnWriter io.Writer
 }
 
-// WithoutCoreSkill 禁用内置核心工具注册。
-func WithoutCoreSkill() SetupOption {
-	return func(c *setupConfig) { c.coreSkill = false }
+// WithoutBuiltin 禁用内置核心工具注册。
+func WithoutBuiltin() SetupOption {
+	return func(c *setupConfig) { c.builtin = false }
 }
 
-// WithoutMCPSkills 禁用 MCP skill 自动加载。
-func WithoutMCPSkills() SetupOption {
-	return func(c *setupConfig) { c.mcpSkills = false }
+// WithoutMCPServers 禁用 MCP server 自动加载。
+func WithoutMCPServers() SetupOption {
+	return func(c *setupConfig) { c.mcpServers = false }
 }
 
-// WithoutPromptSkills 禁用 SKILL.md prompt skill 自动发现。
-func WithoutPromptSkills() SetupOption {
-	return func(c *setupConfig) { c.promptSkills = false }
+// WithoutSkills 禁用 SKILL.md 自动发现。
+func WithoutSkills() SetupOption {
+	return func(c *setupConfig) { c.skills = false }
 }
 
 // WithWarningWriter 设置加载警告的输出目标，默认丢弃。
@@ -39,22 +39,22 @@ func WithWarningWriter(w io.Writer) SetupOption {
 	return func(c *setupConfig) { c.warnWriter = w }
 }
 
-// SetupWithDefaults 注册标准技能（CoreSkill、MCP skills、PromptSkills）。
+// SetupWithDefaults 注册标准技能（BuiltinTool、MCP servers、Skills）。
 // 这是库用户推荐的快速开始方式，一行代码替代手动注册流程。
 //
 // 默认行为:
 //   - 注册 6 个内置工具（read_file, write_file, list_files, search_text, run_command, ask_user）
-//   - 从 ~/.moss/config.yaml 和 ./moss.yaml 加载 MCP skills
-//   - 从标准目录发现 SKILL.md prompt skills
+//   - 从 ~/.moss/config.yaml 和 ./moss.yaml 加载 MCP servers
+//   - 从标准目录发现 SKILL.md skills
 //
 // 可通过 SetupOption 选择性禁用：
 //
-//	k.SetupWithDefaults(ctx, ".", kernel.WithoutMCPSkills(), kernel.WithoutPromptSkills())
+//	k.SetupWithDefaults(ctx, ".", kernel.WithoutMCPServers(), kernel.WithoutSkills())
 func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opts ...SetupOption) error {
 	cfg := &setupConfig{
-		coreSkill:    true,
-		mcpSkills:    true,
-		promptSkills: true,
+		builtin:    true,
+		mcpServers: true,
+		skills:     true,
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -63,14 +63,14 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 	deps := k.SkillDeps()
 
 	// 1. 注册内置工具 skill
-	if cfg.coreSkill {
-		if err := k.skills.Register(ctx, &toolbuiltins.CoreSkill{}, deps); err != nil {
-			return fmt.Errorf("register core skill: %w", err)
+	if cfg.builtin {
+		if err := k.skills.Register(ctx, &toolbuiltins.BuiltinTool{}, deps); err != nil {
+			return fmt.Errorf("register builtin tool: %w", err)
 		}
 	}
 
-	// 2. 加载配置文件中的 MCP skills
-	if cfg.mcpSkills {
+	// 2. 加载配置文件中的 MCP servers
+	if cfg.mcpServers {
 		globalCfg, _ := skill.LoadGlobalConfig()
 		projectCfg, _ := skill.LoadConfig(skill.DefaultProjectConfigPath(workspaceDir))
 		merged := skill.MergeConfigs(globalCfg, projectCfg)
@@ -79,22 +79,22 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 			if !sc.IsEnabled() || !sc.IsMCP() {
 				continue
 			}
-			mcpSkill := skill.NewMCPSkill(sc)
-			if err := k.skills.Register(ctx, mcpSkill, deps); err != nil {
+			mcpServer := skill.NewMCPServer(sc)
+			if err := k.skills.Register(ctx, mcpServer, deps); err != nil {
 				if cfg.warnWriter != nil {
-					fmt.Fprintf(cfg.warnWriter, "warning: failed to load MCP skill %q: %v\n", sc.Name, err)
+					fmt.Fprintf(cfg.warnWriter, "warning: failed to load MCP server %q: %v\n", sc.Name, err)
 				}
 			}
 		}
 	}
 
-	// 3. 发现并加载 SKILL.md prompt skills
-	if cfg.promptSkills {
-		promptSkills := skill.DiscoverPromptSkills(workspaceDir)
-		for _, ps := range promptSkills {
+	// 3. 发现并加载 SKILL.md skills
+	if cfg.skills {
+		skills := skill.DiscoverSkills(workspaceDir)
+		for _, ps := range skills {
 			if err := k.skills.Register(ctx, ps, deps); err != nil {
 				if cfg.warnWriter != nil {
-					fmt.Fprintf(cfg.warnWriter, "warning: failed to load prompt skill %q: %v\n", ps.Metadata().Name, err)
+					fmt.Fprintf(cfg.warnWriter, "warning: failed to load skill %q: %v\n", ps.Metadata().Name, err)
 				}
 			}
 		}

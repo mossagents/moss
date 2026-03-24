@@ -6,14 +6,14 @@ import (
 	"github.com/mossagi/moss/kernel/skill"
 )
 
-// CoreSkill 将内置 6 个工具包装为 Skill 接口。
-type CoreSkill struct {
+// BuiltinTool 将内置 6 个工具包装为 Provider 接口。
+type BuiltinTool struct {
 	toolNames []string
 }
 
-var _ skill.Skill = (*CoreSkill)(nil)
+var _ skill.Provider = (*BuiltinTool)(nil)
 
-func (s *CoreSkill) Metadata() skill.Metadata {
+func (s *BuiltinTool) Metadata() skill.Metadata {
 	return skill.Metadata{
 		Name:        "core",
 		Version:     "0.3.0",
@@ -25,7 +25,7 @@ func (s *CoreSkill) Metadata() skill.Metadata {
 	}
 }
 
-func (s *CoreSkill) Init(ctx context.Context, deps skill.Deps) error {
+func (s *BuiltinTool) Init(ctx context.Context, deps skill.Deps) error {
 	s.toolNames = []string{
 		"read_file", "write_file", "list_files",
 		"search_text", "run_command", "ask_user",
@@ -33,6 +33,6 @@ func (s *CoreSkill) Init(ctx context.Context, deps skill.Deps) error {
 	return RegisterAll(deps.ToolRegistry, deps.Sandbox, deps.UserIO)
 }
 
-func (s *CoreSkill) Shutdown(_ context.Context) error {
+func (s *BuiltinTool) Shutdown(_ context.Context) error {
 	return nil
 }

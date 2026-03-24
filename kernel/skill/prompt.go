@@ -12,16 +12,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// PromptSkill 代表一个 skills.sh 兼容的 SKILL.md 文件。
+// Skill 代表一个 skills.sh 兼容的 SKILL.md 文件。
 // 它将 SKILL.md 的正文注入到 system prompt 中，不注册任何工具。
-type PromptSkill struct {
+type Skill struct {
 	name        string
 	description string
 	body        string // markdown 正文（去除 frontmatter 后的内容）
 	source      string // 文件来源路径
 }
 
-var _ Skill = (*PromptSkill)(nil)
+var _ Provider = (*Skill)(nil)
 
 // skillFrontmatter 是 SKILL.md 的 YAML frontmatter 结构。
 type skillFrontmatter struct {
@@ -30,7 +30,7 @@ type skillFrontmatter struct {
 }
 
 // ParseSkillMD 从指定路径解析 SKILL.md 文件。
-func ParseSkillMD(path string) (*PromptSkill, error) {
+func ParseSkillMD(path string) (*Skill, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read SKILL.md: %w", err)
@@ -39,7 +39,7 @@ func ParseSkillMD(path string) (*PromptSkill, error) {
 }
 
 // ParseSkillMDContent 从内容字符串解析 SKILL.md。
-func ParseSkillMDContent(content, source string) (*PromptSkill, error) {
+func ParseSkillMDContent(content, source string) (*Skill, error) {
 	fm, body, err := splitFrontmatter(content)
 	if err != nil {
 		return nil, fmt.Errorf("parse frontmatter in %s: %w", source, err)
@@ -54,7 +54,7 @@ func ParseSkillMDContent(content, source string) (*PromptSkill, error) {
 		return nil, fmt.Errorf("SKILL.md %s: 'name' field is required in frontmatter", source)
 	}
 
-	return &PromptSkill{
+	return &Skill{
 		name:        meta.Name,
 		description: meta.Description,
 		body:        strings.TrimSpace(body),
@@ -62,7 +62,7 @@ func ParseSkillMDContent(content, source string) (*PromptSkill, error) {
 	}, nil
 }
 
-func (s *PromptSkill) Metadata() Metadata {
+func (s *Skill) Metadata() Metadata {
 	return Metadata{
 		Name:        s.name,
 		Version:     "0.0.0",
@@ -71,11 +71,11 @@ func (s *PromptSkill) Metadata() Metadata {
 	}
 }
 
-func (s *PromptSkill) Init(_ context.Context, _ Deps) error {
+func (s *Skill) Init(_ context.Context, _ Deps) error {
 	return nil // 纯提示词 skill，无需初始化
 }
 
-func (s *PromptSkill) Shutdown(_ context.Context) error {
+func (s *Skill) Shutdown(_ context.Context) error {
 	return nil
 }
 
@@ -121,13 +121,13 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 	return strings.Join(fmLines, "\n"), strings.Join(bodyLines, "\n"), nil
 }
 
-// DiscoverPromptSkills 扫描标准目录，发现所有 SKILL.md 文件。
+// DiscoverSkills 扫描标准目录，发现所有 SKILL.md 文件。
 // 按以下优先级扫描（project → global）：
 //
 //	Project: .agents/skills/, .moss/skills/
 //	Global:  ~/.copilot/skills/, ~/.config/agents/skills/, ~/.moss/skills/
-func DiscoverPromptSkills(workspace string) []*PromptSkill {
-	var skills []*PromptSkill
+func DiscoverSkills(workspace string) []*Skill {
+	var skills []*Skill
 
 	// Project-level 目录
 	projectDirs := []string{
@@ -180,8 +180,8 @@ func DiscoverPromptSkills(workspace string) []*PromptSkill {
 //
 //	skills/SKILL.md          （根目录直接有 SKILL.md）
 //	skills/<name>/SKILL.md   （子目录中有 SKILL.md）
-func scanSkillDir(dir string) []*PromptSkill {
-	var skills []*PromptSkill
+func scanSkillDir(dir string) []*Skill {
+	var skills []*Skill
 
 	// 检查根目录的 SKILL.md
 	rootSkill := filepath.Join(dir, "SKILL.md")

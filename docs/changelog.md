@@ -40,10 +40,10 @@
 ### 新增
 
 - **`Kernel.SetupWithDefaults()`** — 一行代码替代 30+ 行手动注册
-  - 自动注册 CoreSkill（6 个内置工具）
+  - 自动注册 BuiltinTool（6 个内置工具）
   - 自动加载 MCP Skills（从 `~/.moss/config.yaml` 和 `./moss.yaml`）
-  - 自动发现 PromptSkills（从标准目录的 `SKILL.md`）
-  - 支持 `SetupOption`：`WithoutCoreSkill()`, `WithoutMCPSkills()`, `WithoutPromptSkills()`, `WithWarningWriter()`
+  - 自动发现 Skills（从标准目录的 `SKILL.md`）
+  - 支持 `SetupOption`：`WithoutBuiltin()`, `WithoutMCPServers()`, `WithoutSkills()`, `WithWarningWriter()`
 - **标准 `UserIO` 实现** (`kernel/port/io_std.go`)
   - `NoOpIO` — 静默模式，Ask 返回安全默认值
   - `PrintfIO` — 格式化输出到 `io.Writer`，自动批准确认
@@ -81,9 +81,9 @@
 
 - **Skill 接口** + `SkillManager` — 统一扩展入口
 - **MCP Client** — 通过 MCP 协议连接外部工具服务器（stdio / SSE）
-- **CoreSkill** — 内置 6 工具的 Skill 封装
-- **PromptSkill** — 兼容 skills.sh 的 `SKILL.md` 系统提示词注入
-- `DiscoverPromptSkills()` — 从标准目录自动发现
+- **BuiltinTool** — 内置 6 工具的 Provider 封装
+- **Skill** — 兼容 skills.sh 的 `SKILL.md` 系统提示词注入
+- `DiscoverSkills()` — 从标准目录自动发现
 - CLI 输出已加载的 Skills 信息
 
 ---

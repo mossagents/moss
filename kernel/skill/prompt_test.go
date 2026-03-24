@@ -37,7 +37,6 @@ This is the body of the skill.
 		t.Errorf("unexpected body: %q", s.body)
 	}
 }
-
 func TestParseSkillMDContent_MissingName(t *testing.T) {
 	content := `---
 description: no name
@@ -72,8 +71,8 @@ description: missing closing
 	}
 }
 
-func TestPromptSkill_Metadata(t *testing.T) {
-	s := &PromptSkill{
+func TestSkill_Metadata(t *testing.T) {
+	s := &Skill{
 		name:        "my-skill",
 		description: "test desc",
 		body:        "some instructions",
@@ -86,12 +85,12 @@ func TestPromptSkill_Metadata(t *testing.T) {
 		t.Errorf("Prompts = %v", meta.Prompts)
 	}
 	if len(meta.Tools) != 0 {
-		t.Errorf("PromptSkill should have no tools, got %v", meta.Tools)
+		t.Errorf("Skill should have no tools, got %v", meta.Tools)
 	}
 }
 
-func TestPromptSkill_InitShutdown(t *testing.T) {
-	s := &PromptSkill{name: "noop"}
+func TestSkill_InitShutdown(t *testing.T) {
+	s := &Skill{name: "noop"}
 	ctx := context.Background()
 	if err := s.Init(ctx, Deps{}); err != nil {
 		t.Errorf("Init: %v", err)
@@ -143,7 +142,7 @@ func TestSplitFrontmatter(t *testing.T) {
 	}
 }
 
-func TestDiscoverPromptSkills(t *testing.T) {
+func TestDiscoverSkills(t *testing.T) {
 	// 创建临时工作区
 	workspace := t.TempDir()
 
@@ -175,7 +174,7 @@ Custom instructions here.
 		t.Fatal(err)
 	}
 
-	skills := DiscoverPromptSkills(workspace)
+	skills := DiscoverSkills(workspace)
 	if len(skills) < 2 {
 		t.Fatalf("expected at least 2 skills, got %d", len(skills))
 	}
@@ -192,7 +191,7 @@ Custom instructions here.
 	}
 }
 
-func TestDiscoverPromptSkills_Dedup(t *testing.T) {
+func TestDiscoverSkills_Dedup(t *testing.T) {
 	workspace := t.TempDir()
 
 	// 同名 skill 在两个目录中
@@ -213,7 +212,7 @@ Content
 		}
 	}
 
-	skills := DiscoverPromptSkills(workspace)
+	skills := DiscoverSkills(workspace)
 	count := 0
 	for _, s := range skills {
 		if s.name == "dup-skill" {

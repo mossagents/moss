@@ -91,7 +91,7 @@ func main() {
         kernel.WithSandbox(must(sandbox.NewLocal("."))),
     )
 
-    // 2. 一键注册标准技能（CoreSkill + MCP + PromptSkill）
+    // 2. 一键注册标准技能（BuiltinTool + MCPServer + Skill）
     k.SetupWithDefaults(ctx, ".")
 
     // 3. 启动并运行
@@ -218,7 +218,7 @@ moss/
 │   ├── tool/                # Tool System
 │   │   ├── tool.go          # ToolSpec, ToolHandler, RiskLevel
 │   │   ├── registry.go      # Registry 接口 + map 实现
-│   │   └── builtins/        # 内置工具 + CoreSkill
+│   │   └── builtins/        # 内置工具 + BuiltinTool
 │   ├── session/             # Session Management
 │   │   ├── session.go       # Session, Budget, SessionConfig
 │   │   └── manager.go       # Manager 接口 + 内存实现
@@ -235,7 +235,7 @@ moss/
 │   │   ├── skill.go         # Skill 接口 + Manager
 │   │   ├── config.go        # Config 加载/保存/合并
 │   │   ├── mcp.go           # MCP Skill (外部工具服务器)
-│   │   └── prompt.go        # PromptSkill (SKILL.md 注入)
+│   │   └── prompt.go        # Skill (SKILL.md 注入)
 │   └── testing/             # Mock 适配器
 │       ├── mock_llm.go      # MockLLM, MockStreamingLLM
 │       ├── mock_sandbox.go  # MemorySandbox
@@ -322,7 +322,7 @@ go test ./... -count=1
 | [架构设计](docs/architecture.md) | 分层架构、核心概念、依赖图 |
 | [快速开始](docs/getting-started.md) | 安装、CLI 用法、库集成指南 |
 | [Examples 指南](examples/minicode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
-| [技能系统](docs/skills.md) | CoreSkill、MCP Skill、PromptSkill 详解 |
+| [技能系统](docs/skills.md) | BuiltinTool、MCPServer、Skill 详解 |
 | [内核设计](docs/kernel-design.md) | 原始设计文档（第一性原理、接口定义、流程图） |
 | [开发日志](docs/changelog.md) | 版本变更记录 |
 | [路线图](docs/roadmap.md) | 后续规划 (P1/P2/P3) |

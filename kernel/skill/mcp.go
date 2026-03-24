@@ -13,30 +13,30 @@ import (
 	"github.com/mossagi/moss/kernel/tool"
 )
 
-// MCPSkill 通过 MCP 协议连接外部 skill server，发现并注册工具。
-type MCPSkill struct {
+// MCPServer 通过 MCP 协议连接外部 skill server，发现并注册工具。
+type MCPServer struct {
 	cfg       SkillConfig
 	client    mcpclient.MCPClient
 	toolNames []string
 }
 
-var _ Skill = (*MCPSkill)(nil)
+var _ Provider = (*MCPServer)(nil)
 
-// NewMCPSkill 根据配置创建 MCPSkill（但不连接，连接在 Init 时执行）。
-func NewMCPSkill(cfg SkillConfig) *MCPSkill {
-	return &MCPSkill{cfg: cfg}
+// NewMCPServer 根据配置创建 MCPServer（但不连接，连接在 Init 时执行）。
+func NewMCPServer(cfg SkillConfig) *MCPServer {
+	return &MCPServer{cfg: cfg}
 }
 
-func (s *MCPSkill) Metadata() Metadata {
+func (s *MCPServer) Metadata() Metadata {
 	return Metadata{
 		Name:        s.cfg.Name,
 		Version:     "0.0.0",
-		Description: fmt.Sprintf("MCP skill: %s (transport: %s)", s.cfg.Name, s.cfg.Transport),
+		Description: fmt.Sprintf("MCP server: %s (transport: %s)", s.cfg.Name, s.cfg.Transport),
 		Tools:       s.toolNames,
 	}
 }
 
-func (s *MCPSkill) Init(ctx context.Context, deps Deps) error {
+func (s *MCPServer) Init(ctx context.Context, deps Deps) error {
 	// 1. 建立连接
 	client, err := s.connect(ctx)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *MCPSkill) Init(ctx context.Context, deps Deps) error {
 	return nil
 }
 
-func (s *MCPSkill) Shutdown(ctx context.Context) error {
+func (s *MCPServer) Shutdown(ctx context.Context) error {
 	if s.client != nil {
 		return s.client.Close()
 	}
@@ -100,7 +100,7 @@ func (s *MCPSkill) Shutdown(ctx context.Context) error {
 }
 
 // connect 根据 transport 类型创建 MCP client 连接。
-func (s *MCPSkill) connect(ctx context.Context) (mcpclient.MCPClient, error) {
+func (s *MCPServer) connect(ctx context.Context) (mcpclient.MCPClient, error) {
 	env := s.buildEnv()
 
 	switch s.cfg.Transport {
@@ -134,13 +134,13 @@ func (s *MCPSkill) connect(ctx context.Context) (mcpclient.MCPClient, error) {
 }
 
 // buildCommand 构建启动命令和参数。
-func (s *MCPSkill) buildCommand() []string {
+func (s *MCPServer) buildCommand() []string {
 	parts := strings.Fields(s.cfg.Command)
 	return append(parts, s.cfg.Args...)
 }
 
 // buildEnv 构建环境变量列表（KEY=VALUE 格式）。
-func (s *MCPSkill) buildEnv() []string {
+func (s *MCPServer) buildEnv() []string {
 	env := os.Environ()
 	for k, v := range s.cfg.Env {
 		env = append(env, k+"="+v)
@@ -149,7 +149,7 @@ func (s *MCPSkill) buildEnv() []string {
 }
 
 // makeHandler 为指定 MCP tool 创建 ToolHandler。
-func (s *MCPSkill) makeHandler(mcpToolName string) tool.ToolHandler {
+func (s *MCPServer) makeHandler(mcpToolName string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		// 解析 input 为 map
 		var args map[string]any

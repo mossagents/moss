@@ -174,10 +174,10 @@ func must[T any](v T, err error) T {
 `SetupWithDefaults` 支持选择性禁用：
 
 ```go
-// 只注册核心工具，不加载 MCP 和 PromptSkill
+// 只注册核心工具，不加载 MCP 和 Skill
 k.SetupWithDefaults(ctx, ".",
-    kernel.WithoutMCPSkills(),
-    kernel.WithoutPromptSkills(),
+    kernel.WithoutMCPServers(),
+    kernel.WithoutSkills(),
 )
 
 // 完全自定义：不使用 SetupWithDefaults
