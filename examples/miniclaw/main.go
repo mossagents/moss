@@ -57,18 +57,19 @@ func main() {
 	trust := flag.String("trust", "trusted", "Trust level: trusted|restricted")
 	apiKey := flag.String("api-key", "", "API key (overrides env)")
 	baseURL := flag.String("base-url", "", "API base URL")
+	mode := flag.String("mode", "repl", "Run mode: repl (legacy) | gateway (channel-based)")
 	flag.Parse()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	if err := run(ctx, *provider, *model, *workspace, *trust, *apiKey, *baseURL); err != nil {
+	if err := run(ctx, *provider, *model, *workspace, *trust, *apiKey, *baseURL, *mode); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL string) error {
+func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL, mode string) error {
 	llm, err := adapters.BuildLLM(provider, model, apiKey, baseURL)
 	if err != nil {
 		return err
@@ -161,16 +162,7 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	})
 	defer sched.Stop()
 
-	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         "personal AI assistant",
-		Mode:         "interactive",
-		TrustLevel:   trust,
-		SystemPrompt: buildSystemPrompt(workspace),
-	})
-	if err != nil {
-		return fmt.Errorf("session: %w", err)
-	}
-
+	prompt := "🐾 > "
 	modelName := model
 	if modelName == "" {
 		modelName = "(default)"
@@ -181,14 +173,35 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	fmt.Printf("  Provider:  %s\n", provider)
 	fmt.Printf("  Model:     %s\n", modelName)
 	fmt.Printf("  Workspace: %s\n", workspace)
+	fmt.Printf("  Mode:      %s\n", mode)
 	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
 	fmt.Println()
 	fmt.Println("  Ask me anything — I can search the web, manage files, schedule tasks, and more.")
 	fmt.Println("  Type /help for commands, /exit to quit.")
 	fmt.Println()
 
+	sysPrompt := buildSystemPrompt(workspace)
+
+	if mode == "gateway" {
+		return appkit.Serve(ctx, appkit.ServeConfig{
+			Prompt:       prompt,
+			SystemPrompt: sysPrompt,
+		}, k)
+	}
+
+	// 默认: REPL 模式 (legacy)
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:         "personal AI assistant",
+		Mode:         "interactive",
+		TrustLevel:   trust,
+		SystemPrompt: sysPrompt,
+	})
+	if err != nil {
+		return fmt.Errorf("session: %w", err)
+	}
+
 	return appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:  "� > ",
+		Prompt:  prompt,
 		AppName: "miniclaw",
 	}, k, sess)
 }
