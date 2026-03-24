@@ -33,9 +33,14 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagi/moss/kernel/skill"
 )
 
 func main() {
+	// 配置目录使用 ~/.minicode
+	skill.SetAppName("minicode")
+	_ = skill.EnsureMossDir()
+
 	provider := flag.String("provider", "openai", "LLM provider: claude|openai")
 	model := flag.String("model", "", "Model name")
 	workspace := flag.String("workspace", ".", "Workspace directory")

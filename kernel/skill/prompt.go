@@ -132,7 +132,7 @@ func DiscoverPromptSkills(workspace string) []*PromptSkill {
 	// Project-level 目录
 	projectDirs := []string{
 		filepath.Join(workspace, ".agents", "skills"),
-		filepath.Join(workspace, ".moss", "skills"),
+		filepath.Join(workspace, "."+appName, "skills"),
 	}
 
 	// Global-level 目录
@@ -141,7 +141,7 @@ func DiscoverPromptSkills(workspace string) []*PromptSkill {
 	if home != "" {
 		globalDirs = append(globalDirs,
 			filepath.Join(home, ".copilot", "skills"),
-			filepath.Join(home, ".moss", "skills"),
+			filepath.Join(home, "."+appName, "skills"),
 		)
 		if runtime.GOOS != "windows" {
 			globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))

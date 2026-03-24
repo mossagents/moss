@@ -8,6 +8,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// appName 是应用名称，决定全局配置目录（~/.<appName>）。
+// 默认为 "moss"，第三方应用可通过 SetAppName 自定义。
+var appName = "moss"
+
+// SetAppName 设置应用名称，影响全局配置目录路径。
+// 必须在任何配置读写操作之前调用。
+//
+// 示例：
+//
+//	skill.SetAppName("minicode") // 配置目录变为 ~/.minicode
+func SetAppName(name string) { appName = name }
+
+// AppName 返回当前应用名称。
+func AppName() string { return appName }
+
 // Config 是 moss.yaml 或 ~/.moss/config.yaml 中的配置。
 type Config struct {
 	Provider string        `yaml:"provider,omitempty"`
@@ -76,13 +91,13 @@ func MergeConfigs(configs ...*Config) *Config {
 	return &Config{Skills: result}
 }
 
-// DefaultGlobalConfigPath 返回全局配置文件路径。
+// DefaultGlobalConfigPath 返回全局配置文件路径（~/.<appName>/config.yaml）。
 func DefaultGlobalConfigPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
+	d := MossDir()
+	if d == "" {
 		return ""
 	}
-	return filepath.Join(home, ".moss", "config.yaml")
+	return filepath.Join(d, "config.yaml")
 }
 
 // DefaultProjectConfigPath 返回项目级配置文件路径。
@@ -106,13 +121,13 @@ func SaveConfig(path string, cfg *Config) error {
 	return nil
 }
 
-// MossDir 返回 ~/.moss 目录路径。
+// MossDir 返回全局配置目录路径（~/.<appName>）。
 func MossDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(home, ".moss")
+	return filepath.Join(home, "."+appName)
 }
 
 // EnsureMossDir 确保 ~/.moss 目录存在，不存在则创建。
