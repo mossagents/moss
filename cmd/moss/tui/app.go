@@ -149,6 +149,13 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat = newChatModel(cfg.Provider, cfg.Workspace)
 		m.state = stateChat
 
+		// 将当前窗口尺寸传递给 chatModel，避免它因未收到 WindowSizeMsg 而卡在 "加载中"
+		if m.width > 0 && m.height > 0 {
+			m.chat.width = m.width
+			m.chat.height = m.height
+			m.chat.recalcLayout()
+		}
+
 		return m, initKernelCmd(m.config, cfg, m.bridgeIO)
 	}
 
