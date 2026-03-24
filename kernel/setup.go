@@ -71,7 +71,7 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 
 	// 2. 加载配置文件中的 MCP skills
 	if cfg.mcpSkills {
-		globalCfg, _ := skill.LoadConfig(skill.DefaultGlobalConfigPath())
+		globalCfg, _ := skill.LoadGlobalConfig()
 		projectCfg, _ := skill.LoadConfig(skill.DefaultProjectConfigPath(workspaceDir))
 		merged := skill.MergeConfigs(globalCfg, projectCfg)
 

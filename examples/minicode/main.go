@@ -41,13 +41,22 @@ func main() {
 	skill.SetAppName("minicode")
 	_ = skill.EnsureMossDir()
 
-	provider := flag.String("provider", "openai", "LLM provider: claude|openai")
+	provider := flag.String("provider", "", "LLM provider: claude|openai")
 	model := flag.String("model", "", "Model name")
 	workspace := flag.String("workspace", ".", "Workspace directory")
 	trust := flag.String("trust", "trusted", "Trust level: trusted|restricted")
 	apiKey := flag.String("api-key", "", "API key (overrides env)")
 	baseURL := flag.String("base-url", "", "API base URL")
 	flag.Parse()
+
+	cfg, err := skill.LoadGlobalConfig()
+	if err != nil || cfg == nil {
+		cfg = &skill.Config{}
+	}
+	effectiveProvider := firstNonEmpty(*provider, cfg.Provider, "openai")
+	effectiveModel := firstNonEmpty(*model, cfg.Model)
+	effectiveAPIKey := firstNonEmpty(*apiKey, cfg.APIKey)
+	effectiveBaseURL := firstNonEmpty(*baseURL, cfg.BaseURL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -62,7 +71,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	if err := run(ctx, *provider, *model, *workspace, *trust, *apiKey, *baseURL); err != nil {
+	if err := run(ctx, effectiveProvider, effectiveModel, *workspace, *trust, effectiveAPIKey, effectiveBaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -382,4 +391,13 @@ func (c *consoleIO) Ask(_ context.Context, req port.InputRequest) (port.InputRes
 		}
 		return port.InputResponse{Value: strings.TrimSpace(line)}, nil
 	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

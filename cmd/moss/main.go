@@ -280,7 +280,7 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 
 // loadMossConfig 加载 ~/.moss/config.yaml 全局配置。
 func loadMossConfig() *skill.Config {
-	cfg, err := skill.LoadConfig(skill.DefaultGlobalConfigPath())
+	cfg, err := skill.LoadGlobalConfig()
 	if err != nil {
 		return &skill.Config{}
 	}

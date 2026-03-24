@@ -432,3 +432,81 @@ func TestEnsureMossDir_DoesNotOverwriteExistingConfig(t *testing.T) {
 		t.Fatalf("existing config should be preserved, got: %q", string(data))
 	}
 }
+
+func TestLoadGlobalConfig_FallbackToYML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("minicode")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare dir: %v", err)
+	}
+	content := "provider: claude\nmodel: sonnet\n"
+	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte(content), 0600); err != nil {
+		t.Fatalf("write config.yml: %v", err)
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig failed: %v", err)
+	}
+	if cfg.Provider != "claude" || cfg.Model != "sonnet" {
+		t.Fatalf("unexpected cfg: %+v", cfg)
+	}
+}
+
+func TestLoadGlobalConfig_PreferYMLOverYAML(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("minicode")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare dir: %v", err)
+	}
+	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte("provider: claude\n"), 0600); err != nil {
+		t.Fatalf("write config.yml: %v", err)
+	}
+	if err := os.WriteFile(DefaultGlobalConfigPath(), []byte("provider: openai\n"), 0600); err != nil {
+		t.Fatalf("write config.yaml: %v", err)
+	}
+
+	cfg, err := LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("LoadGlobalConfig failed: %v", err)
+	}
+	if cfg.Provider != "claude" {
+		t.Fatalf("expected config.yml to win, got provider=%q", cfg.Provider)
+	}
+}
+
+func TestEnsureMossDir_DoesNotCreateYAMLWhenYMLExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("minicode")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare dir: %v", err)
+	}
+	if err := os.WriteFile(DefaultGlobalConfigPathYML(), []byte("provider: claude\n"), 0600); err != nil {
+		t.Fatalf("write config.yml: %v", err)
+	}
+
+	if err := EnsureMossDir(); err != nil {
+		t.Fatalf("EnsureMossDir failed: %v", err)
+	}
+
+	if _, err := os.Stat(DefaultGlobalConfigPath()); err == nil {
+		t.Fatalf("config.yaml should not be created when config.yml exists")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected stat error: %v", err)
+	}
+}
