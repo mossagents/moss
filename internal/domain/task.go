@@ -17,6 +17,7 @@ type Task struct {
 	Constraints   []string
 	Status        TaskStatus
 	Result        *TaskResult
+	Plan          *Plan
 }
 
 type TaskResult struct {

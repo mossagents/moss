@@ -96,6 +96,38 @@ func (rm *RunManager) CompleteRun(runID, result string) error {
 	return nil
 }
 
+func (rm *RunManager) RegisterPlan(runID string, plan *domain.Plan) error {
+	run, ok := rm.runs[runID]
+	if !ok {
+		return fmt.Errorf("run %q not found", runID)
+	}
+
+	run.Plan = plan
+	run.ActiveTaskID = ""
+	if plan == nil {
+		return nil
+	}
+	run.ActiveTaskID = plan.FirstStepID()
+
+	for _, step := range plan.Steps {
+		rm.bus.Publish(events.Event{
+			EventID:   newEventID(),
+			Type:      events.EventTaskDelegated,
+			RunID:     runID,
+			TaskID:    step.StepID,
+			Timestamp: time.Now(),
+			Payload: map[string]any{
+				"agent":      step.AssignedAgent,
+				"title":      step.Title,
+				"goal":       step.Goal,
+				"depends_on": step.DependsOn,
+			},
+		})
+	}
+
+	return nil
+}
+
 func (rm *RunManager) FailRun(runID, errMsg string) error {
 	run, ok := rm.runs[runID]
 	if !ok {

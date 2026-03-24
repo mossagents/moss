@@ -12,6 +12,7 @@ import (
 	"github.com/mossagi/moss/internal/approval"
 	"github.com/mossagi/moss/internal/domain"
 	"github.com/mossagi/moss/internal/events"
+	"github.com/mossagi/moss/internal/planning"
 	"github.com/mossagi/moss/internal/policy"
 	"github.com/mossagi/moss/internal/tools"
 	"github.com/mossagi/moss/internal/tools/builtins"
@@ -37,6 +38,7 @@ type Service struct {
 	runManager *RunManager
 	agents     map[string]AgentRunner
 	catalog    *tools.Catalog
+	planner    planning.Planner
 }
 
 // NewService creates a new app service with all dependencies wired up
@@ -87,6 +89,7 @@ func NewService(wsRoot string, trust workspace.TrustLevel, reader io.Reader, wri
 		runManager: rm,
 		catalog:    cat,
 		agents:     map[string]AgentRunner{"manager": managerAgent},
+		planner:    planning.NewSimplePlanner(),
 	}, nil
 }
 
@@ -104,6 +107,17 @@ func (s *Service) Execute(ctx context.Context, req RunRequest) (*domain.Run, err
 		AssignedAgent: "manager",
 		Goal:          req.Goal,
 		Status:        domain.TaskStatusRunning,
+	}
+
+	plan, err := s.planner.Create(task, req.Mode)
+	if err != nil {
+		_ = s.runManager.FailRun(run.RunID, err.Error())
+		return run, fmt.Errorf("planning run: %w", err)
+	}
+	task.Plan = plan
+	if err := s.runManager.RegisterPlan(run.RunID, plan); err != nil {
+		_ = s.runManager.FailRun(run.RunID, err.Error())
+		return run, fmt.Errorf("registering plan: %w", err)
 	}
 
 	agentRunner, ok := s.agents["manager"]

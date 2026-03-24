@@ -32,6 +32,7 @@ type Run struct {
 	ActiveTaskID string
 	ArtifactRefs []string
 	Budget       *Budget
+	Plan         *Plan
 }
 
 type Budget struct {
