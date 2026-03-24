@@ -1,0 +1,121 @@
+package session
+
+import (
+	"context"
+	"testing"
+
+	"github.com/mossagi/moss/kernel/port"
+)
+
+func TestBudgetExhausted(t *testing.T) {
+	b := Budget{MaxTokens: 100, MaxSteps: 5}
+	if b.Exhausted() {
+		t.Fatal("should not be exhausted initially")
+	}
+
+	b.Record(50, 2)
+	if b.Exhausted() {
+		t.Fatal("should not be exhausted after partial use")
+	}
+
+	b.Record(50, 1)
+	if !b.Exhausted() {
+		t.Fatal("should be exhausted after reaching max tokens")
+	}
+}
+
+func TestBudgetExhaustedBySteps(t *testing.T) {
+	b := Budget{MaxSteps: 3}
+	b.Record(0, 3)
+	if !b.Exhausted() {
+		t.Fatal("should be exhausted after reaching max steps")
+	}
+}
+
+func TestSessionAppendAndTruncate(t *testing.T) {
+	s := &Session{
+		ID:       "test",
+		Messages: make([]port.Message, 0),
+	}
+
+	for i := 0; i < 10; i++ {
+		s.AppendMessage(port.Message{Role: port.RoleUser, Content: "msg"})
+	}
+	if len(s.Messages) != 10 {
+		t.Fatalf("len = %d, want 10", len(s.Messages))
+	}
+
+	// 每条消息 1 token，最多保留 5 token
+	s.TruncateMessages(5, func(m port.Message) int { return 1 })
+	if len(s.Messages) != 5 {
+		t.Fatalf("after truncate len = %d, want 5", len(s.Messages))
+	}
+}
+
+func TestSessionState(t *testing.T) {
+	s := &Session{ID: "test"}
+	s.SetState("key", "value")
+	v, ok := s.GetState("key")
+	if !ok || v != "value" {
+		t.Fatalf("GetState = %v, %v; want value, true", v, ok)
+	}
+
+	_, ok = s.GetState("missing")
+	if ok {
+		t.Fatal("expected not found for missing key")
+	}
+}
+
+func TestManagerCreateAndGet(t *testing.T) {
+	m := NewManager()
+	s, err := m.Create(context.Background(), SessionConfig{Goal: "test"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if s.Status != StatusCreated {
+		t.Fatalf("Status = %q, want %q", s.Status, StatusCreated)
+	}
+
+	got, ok := m.Get(s.ID)
+	if !ok {
+		t.Fatal("Get: not found")
+	}
+	if got.Config.Goal != "test" {
+		t.Fatalf("Goal = %q, want %q", got.Config.Goal, "test")
+	}
+}
+
+func TestManagerCancel(t *testing.T) {
+	m := NewManager()
+	s, _ := m.Create(context.Background(), SessionConfig{Goal: "test"})
+	if err := m.Cancel(s.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	got, _ := m.Get(s.ID)
+	if got.Status != StatusCancelled {
+		t.Fatalf("Status = %q, want %q", got.Status, StatusCancelled)
+	}
+}
+
+func TestManagerList(t *testing.T) {
+	m := NewManager()
+	m.Create(context.Background(), SessionConfig{Goal: "a"})
+	m.Create(context.Background(), SessionConfig{Goal: "b"})
+	list := m.List()
+	if len(list) != 2 {
+		t.Fatalf("List len = %d, want 2", len(list))
+	}
+}
+
+func TestManagerNotify(t *testing.T) {
+	m := NewManager()
+	s, _ := m.Create(context.Background(), SessionConfig{Goal: "test"})
+	msg := port.Message{Role: port.RoleUser, Content: "hello"}
+	if err := m.Notify(s.ID, msg); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	got, _ := m.Get(s.ID)
+	if len(got.Messages) != 1 || got.Messages[0].Content != "hello" {
+		t.Fatalf("Messages = %v, want 1 message with 'hello'", got.Messages)
+	}
+}
