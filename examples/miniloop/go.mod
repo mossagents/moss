@@ -1,4 +1,4 @@
-module github.com/mossagi/moss/examples/trader
+module github.com/mossagi/moss/examples/miniloop
 
 go 1.24.2
 

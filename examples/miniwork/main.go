@@ -19,16 +19,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/signal"
 	"runtime"
-	"strings"
 	"sync"
-	"syscall"
 
-	"github.com/mossagi/moss/adapters/claude"
-	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	"github.com/mossagi/moss/adapters"
 	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
+	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
@@ -56,16 +53,8 @@ func main() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println("\n\nInterrupted, cancelling...")
-		cancel()
-	}()
 
 	if err := run(ctx, cfg); err != nil {
 		if ctx.Err() != nil {
@@ -137,10 +126,10 @@ func parseFlags() config {
 		}
 	}
 
-	c.provider = firstNonEmpty(cliProvider, globalCfg.Provider, os.Getenv("MINIWORK_PROVIDER"), "openai")
-	c.model = firstNonEmpty(cliModel, globalCfg.Model, os.Getenv("MINIWORK_MODEL"))
-	c.apiKey = firstNonEmpty(cliAPIKey, globalCfg.APIKey, os.Getenv("MINIWORK_API_KEY"))
-	c.baseURL = firstNonEmpty(cliBaseURL, globalCfg.BaseURL, os.Getenv("MINIWORK_BASE_URL"))
+	c.provider = appkit.FirstNonEmpty(cliProvider, globalCfg.Provider, os.Getenv("MINIWORK_PROVIDER"), "openai")
+	c.model = appkit.FirstNonEmpty(cliModel, globalCfg.Model, os.Getenv("MINIWORK_MODEL"))
+	c.apiKey = appkit.FirstNonEmpty(cliAPIKey, globalCfg.APIKey, os.Getenv("MINIWORK_API_KEY"))
+	c.baseURL = appkit.FirstNonEmpty(cliBaseURL, globalCfg.BaseURL, os.Getenv("MINIWORK_BASE_URL"))
 
 	return c
 }
@@ -161,22 +150,6 @@ Flags:
   --api-key     API key
   --base-url    API base URL
 `)
-}
-
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func launchTUI(cfg config) error {
@@ -465,37 +438,8 @@ func buildWorkerPrompt(workspace string) string {
 	})
 }
 
-// ─── LLM Construction ───────────────────────────────
-
-func buildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
-	switch strings.ToLower(provider) {
-	case "claude", "anthropic":
-		var opts []claude.Option
-		if model != "" {
-			opts = append(opts, claude.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return claude.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return claude.New("", opts...), nil
-
-	case "openai":
-		var opts []adaptersopenai.Option
-		if model != "" {
-			opts = append(opts, adaptersopenai.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return adaptersopenai.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return adaptersopenai.New("", opts...), nil
-
-	default:
-		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
-	}
-}
-
 func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {
-	llm, err := buildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
+	llm, err := adapters.BuildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
 	if err != nil {
 		return nil, err
 	}

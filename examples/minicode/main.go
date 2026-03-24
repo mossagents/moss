@@ -19,12 +19,11 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"strings"
 
-	"github.com/mossagi/moss/adapters/claude"
-	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	"github.com/mossagi/moss/adapters"
 	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
+	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
@@ -51,10 +50,10 @@ func main() {
 	if err != nil || cfg == nil {
 		cfg = &skill.Config{}
 	}
-	effectiveProvider := firstNonEmpty(*provider, cfg.Provider, "openai")
-	effectiveModel := firstNonEmpty(*model, cfg.Model)
-	effectiveAPIKey := firstNonEmpty(*apiKey, cfg.APIKey)
-	effectiveBaseURL := firstNonEmpty(*baseURL, cfg.BaseURL)
+	effectiveProvider := appkit.FirstNonEmpty(*provider, cfg.Provider, "openai")
+	effectiveModel := appkit.FirstNonEmpty(*model, cfg.Model)
+	effectiveAPIKey := appkit.FirstNonEmpty(*apiKey, cfg.APIKey)
+	effectiveBaseURL := appkit.FirstNonEmpty(*baseURL, cfg.BaseURL)
 
 	if err := launchTUI(effectiveProvider, effectiveModel, *workspace, *trust, effectiveAPIKey, effectiveBaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -81,7 +80,7 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 		return nil, fmt.Errorf("sandbox: %w", err)
 	}
 
-	llm, err := buildLLM(provider, model, apiKey, baseURL)
+	llm, err := adapters.BuildLLM(provider, model, apiKey, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -107,35 +106,6 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 	return k, nil
 }
 
-// ─── LLM Construction ───────────────────────────────
-
-func buildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
-	switch strings.ToLower(provider) {
-	case "claude", "anthropic":
-		var opts []claude.Option
-		if model != "" {
-			opts = append(opts, claude.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return claude.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return claude.New("", opts...), nil
-
-	case "openai":
-		var opts []adaptersopenai.Option
-		if model != "" {
-			opts = append(opts, adaptersopenai.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return adaptersopenai.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return adaptersopenai.New("", opts...), nil
-
-	default:
-		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
-	}
-}
-
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
@@ -150,13 +120,4 @@ func buildSystemPrompt(workspace string) string {
 		"Shell":     shell,
 		"Workspace": workspace,
 	})
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

@@ -172,7 +172,7 @@ Moss 与 examples 现已支持通过模板文件覆盖默认 system prompt：
 | `minicode` | 代码助手（默认 TUI） | `examples/minicode/main.go` |
 | `miniwork` | 多 Agent 任务编排（Manager/Worker） | `examples/miniwork/main.go` |
 | `miniclaw` | Web 抓取 Agent | `examples/miniclaw/main.go` |
-| `trader` | 模拟交易 Agent | `examples/trader/main.go` |
+| `miniloop` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/miniloop/main.go` |
 
 运行方式（示例）：
 

@@ -99,7 +99,7 @@ moss version
 - `examples/minicode`：代码助手（默认 TUI）
 - `examples/miniwork`：多 Agent 编排
 - `examples/miniclaw`：Web 抓取 Agent
-- `examples/trader`：模拟交易 Agent
+- `examples/miniloop`：有状态自主循环 Agent（内置 trading 领域适配器）
 
 快速体验（以 minicode 为例）：
 

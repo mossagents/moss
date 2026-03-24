@@ -12,7 +12,7 @@
   - `examples/minicode`（代码助手）
   - `examples/miniwork`（多 Agent 编排）
   - `examples/miniclaw`（Web 抓取）
-  - `examples/trader`（模拟交易）
+  - `examples/miniloop`（有状态自主循环 Agent，内置 trading 领域）
 - 新增应用名配置能力：`skill.SetAppName(name)` / `skill.AppName()`
   - 支持将全局配置目录从 `~/.moss` 切换到 `~/.<appName>`
 - 新增 system prompt 模板机制（Moss 和 examples）

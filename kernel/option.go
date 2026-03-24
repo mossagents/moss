@@ -5,6 +5,7 @@ import (
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
@@ -51,4 +52,19 @@ func WithLoopConfig(cfg loop.LoopConfig) Option {
 // WithSkillManager 替换默认的 Skill Manager。
 func WithSkillManager(m *skill.Manager) Option {
 	return func(k *Kernel) { k.skills = m }
+}
+
+// WithSessionStore 设置 Session 持久化存储。
+func WithSessionStore(s session.SessionStore) Option {
+	return func(k *Kernel) { k.store = s }
+}
+
+// WithScheduler 设置定时任务调度器。
+func WithScheduler(s *scheduler.Scheduler) Option {
+	return func(k *Kernel) { k.sched = s }
+}
+
+// WithEmbedder 设置文本嵌入模型。
+func WithEmbedder(e port.Embedder) Option {
+	return func(k *Kernel) { k.embedder = e }
 }

@@ -19,6 +19,11 @@ AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, BTC, ETH, SPY
 - **write_file**: Save analysis reports or trade logs
 - **read_file**: Read previously saved files
 
+## Scheduling Tools
+- **schedule_task**: Schedule periodic market analysis or trading checks. Example: `schedule_task(id="market-check", schedule="@every 30m", goal="Check portfolio and rebalance if any position drifts >10% from target")`
+- **list_schedules**: List all active scheduled tasks.
+- **cancel_schedule**: Cancel a scheduled task.
+
 ## Workflow
 1. **Analyze**: Check market data to understand current prices and trends.
 2. **Plan**: Formulate a strategy based on the user's goals and risk tolerance.

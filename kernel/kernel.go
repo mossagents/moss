@@ -10,6 +10,7 @@ import (
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
@@ -22,6 +23,9 @@ type Kernel struct {
 	sandbox  sandbox.Sandbox
 	tools    tool.Registry
 	sessions session.Manager
+	store    session.SessionStore
+	sched    *scheduler.Scheduler
+	embedder port.Embedder
 	chain    *middleware.Chain
 	loopCfg  loop.LoopConfig
 	skills   *skill.Manager
@@ -127,6 +131,21 @@ func (k *Kernel) SkillDeps() skill.Deps {
 // SessionManager 返回 Session 管理器。
 func (k *Kernel) SessionManager() session.Manager {
 	return k.sessions
+}
+
+// SessionStore 返回 Session 持久化存储（可能为 nil）。
+func (k *Kernel) SessionStore() session.SessionStore {
+	return k.store
+}
+
+// Scheduler 返回调度器（可能为 nil）。
+func (k *Kernel) Scheduler() *scheduler.Scheduler {
+	return k.sched
+}
+
+// Embedder 返回嵌入模型（可能为 nil）。
+func (k *Kernel) Embedder() port.Embedder {
+	return k.embedder
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

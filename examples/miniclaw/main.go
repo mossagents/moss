@@ -13,7 +13,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -22,22 +21,25 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/signal"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/mossagi/moss/adapters/claude"
-	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	"github.com/mossagi/moss/adapters"
+	"github.com/mossagi/moss/adapters/embedding"
 	"github.com/mossagi/moss/kernel"
+	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
+	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -55,17 +57,8 @@ func main() {
 	baseURL := flag.String("base-url", "", "API base URL")
 	flag.Parse()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
-
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigCh
-		fmt.Println("\n\nBye!")
-		cancel()
-		os.Exit(0)
-	}()
 
 	if err := run(ctx, *provider, *model, *workspace, *trust, *apiKey, *baseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -74,7 +67,7 @@ func main() {
 }
 
 func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL string) error {
-	llm, err := buildLLM(provider, model, apiKey, baseURL)
+	llm, err := adapters.BuildLLM(provider, model, apiKey, baseURL)
 	if err != nil {
 		return err
 	}
@@ -84,12 +77,29 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		return fmt.Errorf("sandbox: %w", err)
 	}
 
-	userIO := &consoleIO{writer: os.Stdout, reader: os.Stdin}
+	// Session 持久化存储
+	storeDir := filepath.Join(skill.MossDir(), "sessions")
+	store, err := session.NewFileStore(storeDir)
+	if err != nil {
+		return fmt.Errorf("session store: %w", err)
+	}
+
+	// 定时调度器
+	sched := scheduler.New()
+
+	// 知识库：嵌入模型 + 内存向量存储
+	embedder := embedding.NewWithBaseURL(apiKey, baseURL)
+	knStore := knowledge.NewMemoryStore()
+
+	userIO := port.NewConsoleIO()
 
 	k := kernel.New(
 		kernel.WithLLM(llm),
 		kernel.WithSandbox(sb),
 		kernel.WithUserIO(userIO),
+		kernel.WithSessionStore(store),
+		kernel.WithScheduler(sched),
+		kernel.WithEmbedder(embedder),
 	)
 
 	if err := k.SetupWithDefaults(ctx, workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
@@ -99,6 +109,16 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	// 注册爬虫专用工具
 	if err := registerCrawlTools(k); err != nil {
 		return fmt.Errorf("register crawl tools: %w", err)
+	}
+
+	// 注册调度工具 (schedule_task, list_schedules, cancel_schedule)
+	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
+		return fmt.Errorf("register schedule tools: %w", err)
+	}
+
+	// 注册知识库工具 (ingest_document, knowledge_search, knowledge_list)
+	if err := toolbuiltins.RegisterKnowledgeTools(k.ToolRegistry(), knStore, embedder); err != nil {
+		return fmt.Errorf("register knowledge tools: %w", err)
 	}
 
 	if trust == "restricted" {
@@ -112,6 +132,32 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 		return err
 	}
 	defer k.Shutdown(ctx)
+
+	// 启动调度器：当任务触发时创建新 Session 并执行
+	sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
+		fmt.Fprintf(os.Stdout, "\n⏰ Scheduled task [%s]: %s\n", job.ID, job.Goal)
+		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
+			Goal:         job.Goal,
+			Mode:         "scheduled",
+			TrustLevel:   trust,
+			SystemPrompt: buildSystemPrompt(workspace),
+			MaxSteps:     30,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ❌ schedule session: %v\n", err)
+			return
+		}
+		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
+		result, err := k.Run(jobCtx, jobSess)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ❌ schedule run: %v\n", err)
+			return
+		}
+		// 持久化完成的 session
+		_ = store.Save(jobCtx, jobSess)
+		fmt.Fprintf(os.Stdout, "  ✅ [%s] done (%d steps)\n\n", job.ID, result.Steps)
+	})
+	defer sched.Stop()
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:         "web crawling assistant",
@@ -139,96 +185,10 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 	fmt.Println("  Type /help for commands, /exit to quit.")
 	fmt.Println()
 
-	return repl(ctx, k, sess)
-}
-
-// ─── REPL ───────────────────────────────────────────
-
-func repl(ctx context.Context, k *kernel.Kernel, sess *session.Session) error {
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		fmt.Print("🕷 > ")
-		line, err := reader.ReadString('\n')
-		if err == io.EOF {
-			fmt.Println()
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-
-		input := strings.TrimSpace(line)
-		if input == "" {
-			continue
-		}
-
-		if strings.HasPrefix(input, "/") {
-			done := handleCommand(input, sess)
-			if done {
-				return nil
-			}
-			continue
-		}
-
-		sess.AppendMessage(port.Message{Role: port.RoleUser, Content: input})
-
-		result, err := k.Run(ctx, sess)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n\n", err)
-			continue
-		}
-		_ = result
-		fmt.Println()
-	}
-}
-
-func handleCommand(input string, sess *session.Session) bool {
-	cmd := strings.ToLower(strings.Fields(input)[0])
-
-	switch cmd {
-	case "/exit", "/quit":
-		fmt.Println("Bye!")
-		return true
-	case "/clear":
-		var systemMsgs []port.Message
-		for _, m := range sess.Messages {
-			if m.Role == port.RoleSystem {
-				systemMsgs = append(systemMsgs, m)
-			}
-		}
-		sess.Messages = systemMsgs
-		sess.Budget.UsedSteps = 0
-		sess.Budget.UsedTokens = 0
-		fmt.Println("✓ Conversation cleared.")
-	case "/compact":
-		var systemMsgs, dialogMsgs []port.Message
-		for _, m := range sess.Messages {
-			if m.Role == port.RoleSystem {
-				systemMsgs = append(systemMsgs, m)
-			} else {
-				dialogMsgs = append(dialogMsgs, m)
-			}
-		}
-		keep := 6
-		if len(dialogMsgs) > keep {
-			dialogMsgs = dialogMsgs[len(dialogMsgs)-keep:]
-		}
-		sess.Messages = append(systemMsgs, dialogMsgs...)
-		fmt.Printf("✓ Compacted to %d messages.\n", len(sess.Messages))
-	case "/help":
-		fmt.Println("Commands:")
-		fmt.Println("  /help     Show this help")
-		fmt.Println("  /clear    Clear conversation history")
-		fmt.Println("  /compact  Keep only recent messages")
-		fmt.Println("  /exit     Exit miniclaw")
-	default:
-		fmt.Printf("Unknown command: %s (type /help)\n", cmd)
-	}
-	return false
+	return appkit.REPL(ctx, appkit.REPLConfig{
+		Prompt:  "🕷 > ",
+		AppName: "miniclaw",
+	}, k, sess)
 }
 
 // ─── Crawl Tools ────────────────────────────────────
@@ -474,99 +434,6 @@ func buildSystemPrompt(workspace string) string {
 		"OS":        osName,
 		"Workspace": workspace,
 	})
-}
-
-// ─── LLM Construction ───────────────────────────────
-
-func buildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
-	switch strings.ToLower(provider) {
-	case "claude", "anthropic":
-		var opts []claude.Option
-		if model != "" {
-			opts = append(opts, claude.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return claude.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return claude.New("", opts...), nil
-
-	case "openai":
-		var opts []adaptersopenai.Option
-		if model != "" {
-			opts = append(opts, adaptersopenai.WithModel(model))
-		}
-		if baseURL != "" || apiKey != "" {
-			return adaptersopenai.NewWithBaseURL(apiKey, baseURL, opts...), nil
-		}
-		return adaptersopenai.New("", opts...), nil
-
-	default:
-		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
-	}
-}
-
-// ─── Console UserIO ─────────────────────────────────
-
-type consoleIO struct {
-	writer io.Writer
-	reader *os.File
-}
-
-func (c *consoleIO) Send(_ context.Context, msg port.OutputMessage) error {
-	switch msg.Type {
-	case port.OutputText:
-		fmt.Fprintln(c.writer, msg.Content)
-	case port.OutputStream:
-		fmt.Fprint(c.writer, msg.Content)
-	case port.OutputStreamEnd:
-		fmt.Fprintln(c.writer)
-	case port.OutputToolStart:
-		fmt.Fprintf(c.writer, "🔧 %s\n", msg.Content)
-	case port.OutputToolResult:
-		isErr, _ := msg.Meta["is_error"].(bool)
-		if isErr {
-			fmt.Fprintf(c.writer, "❌ %s\n", msg.Content)
-		} else {
-			content := msg.Content
-			if len(content) > 200 {
-				content = content[:200] + "..."
-			}
-			fmt.Fprintf(c.writer, "✅ %s\n", content)
-		}
-	}
-	return nil
-}
-
-func (c *consoleIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
-	reader := bufio.NewReader(c.reader)
-
-	switch req.Type {
-	case port.InputConfirm:
-		fmt.Fprintf(c.writer, "%s [y/N]: ", req.Prompt)
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return port.InputResponse{}, err
-		}
-		answer := strings.TrimSpace(strings.ToLower(line))
-		return port.InputResponse{Approved: answer == "y" || answer == "yes"}, nil
-
-	case port.InputSelect:
-		for i, opt := range req.Options {
-			fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt)
-		}
-		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
-		var sel int
-		fmt.Fscan(c.reader, &sel)
-		return port.InputResponse{Selected: sel - 1}, nil
-
-	default:
-		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return port.InputResponse{}, err
-		}
-		return port.InputResponse{Value: strings.TrimSpace(line)}, nil
-	}
 }
 
 // ─── Helpers ────────────────────────────────────────
