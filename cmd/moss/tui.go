@@ -10,10 +10,76 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagi/moss/internal/app"
-	"github.com/mossagi/moss/internal/domain"
-	"github.com/mossagi/moss/internal/workspace"
+	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/session"
 )
+
+// cliUserIO 是基于终端的 UserIO 实现。
+type cliUserIO struct {
+	writer io.Writer
+	reader *os.File
+}
+
+func (c *cliUserIO) Send(_ context.Context, msg port.OutputMessage) error {
+	switch msg.Type {
+	case port.OutputText:
+		fmt.Fprintln(c.writer, msg.Content)
+	case port.OutputStream:
+		fmt.Fprint(c.writer, msg.Content)
+	case port.OutputStreamEnd:
+		fmt.Fprintln(c.writer)
+	case port.OutputProgress:
+		fmt.Fprintf(c.writer, "⏳ %s\n", msg.Content)
+	case port.OutputToolStart:
+		fmt.Fprintf(c.writer, "🔧 Running %s...\n", msg.Content)
+	case port.OutputToolResult:
+		isErr, _ := msg.Meta["is_error"].(bool)
+		if isErr {
+			fmt.Fprintf(c.writer, "❌ %s\n", msg.Content)
+		} else {
+			fmt.Fprintf(c.writer, "✅ %s\n", truncate(msg.Content, 200))
+		}
+	}
+	return nil
+}
+
+func (c *cliUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+	reader := bufio.NewReader(c.reader)
+	switch req.Type {
+	case port.InputConfirm:
+		fmt.Fprintf(c.writer, "%s [y/N]: ", req.Prompt)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return port.InputResponse{}, err
+		}
+		line = strings.TrimSpace(strings.ToLower(line))
+		return port.InputResponse{Approved: line == "y" || line == "yes"}, nil
+
+	case port.InputSelect:
+		for i, opt := range req.Options {
+			fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt)
+		}
+		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
+		var sel int
+		fmt.Fscan(c.reader, &sel)
+		return port.InputResponse{Selected: sel - 1}, nil
+
+	default: // FreeText
+		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return port.InputResponse{}, err
+		}
+		return port.InputResponse{Value: strings.TrimSpace(line)}, nil
+	}
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
+}
 
 type terminalUI struct {
 	reader *bufio.Reader
@@ -35,10 +101,18 @@ func newTerminalUI(reader io.Reader, writer io.Writer) *terminalUI {
 	}
 }
 
+// RunRequest 收集 TUI 输入后的运行请求。
+type RunRequest struct {
+	Goal      string
+	Mode      string
+	Workspace string
+	Trust     string
+}
+
 func tuiCmd(args []string) {
 	fs := flag.NewFlagSet("tui", flag.ExitOnError)
 	wsDir := fs.String("workspace", ".", "Workspace directory")
-	mode := fs.String("mode", "interactive", "Run mode: interactive|safe|autopilot")
+	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
 
 	if err := fs.Parse(args); err != nil {
@@ -46,22 +120,10 @@ func tuiCmd(args []string) {
 		os.Exit(1)
 	}
 
-	runMode, err := parseRunMode(*mode)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	trustLevel, err := parseTrustLevel(*trust)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	runTUI(*wsDir, runMode, trustLevel, os.Stdin, os.Stdout, os.Stderr)
+	runTUI(*wsDir, *mode, *trust, os.Stdin, os.Stdout, os.Stderr)
 }
 
-func runTUI(defaultWorkspace string, defaultMode domain.RunMode, defaultTrust workspace.TrustLevel, reader io.Reader, writer io.Writer, errWriter io.Writer) {
+func runTUI(defaultWorkspace, defaultMode, defaultTrust string, reader io.Reader, writer io.Writer, errWriter io.Writer) {
 	ui := newTerminalUI(reader, writer)
 	req, err := ui.collectRunRequest(defaultWorkspace, defaultMode, defaultTrust)
 	if err != nil {
@@ -73,67 +135,92 @@ func runTUI(defaultWorkspace string, defaultMode domain.RunMode, defaultTrust wo
 		os.Exit(1)
 	}
 
-	svc, err := app.NewService(req.Workspace, req.Trust, reader, writer)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	k, err := buildKernel(req.Workspace, req.Trust, os.Stdin, os.Stdout)
 	if err != nil {
-		fmt.Fprintf(errWriter, "error initializing service: %v\n", err)
+		fmt.Fprintf(errWriter, "error initializing kernel: %v\n", err)
+		os.Exit(1)
+	}
+	if err := k.Boot(ctx); err != nil {
+		fmt.Fprintf(errWriter, "error booting kernel: %v\n", err)
+		os.Exit(1)
+	}
+	defer k.Shutdown(ctx)
+
+	fmt.Fprintf(writer, "\nLaunching session...\n\n")
+	fmt.Fprintf(writer, "Goal: %s\n", req.Goal)
+	fmt.Fprintf(writer, "Workspace: %s\n", req.Workspace)
+	fmt.Fprintf(writer, "Mode: %s | Trust: %s\n", req.Mode, req.Trust)
+
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:       req.Goal,
+		Mode:       req.Mode,
+		TrustLevel: req.Trust,
+		MaxSteps:   50,
+	})
+	if err != nil {
+		fmt.Fprintf(errWriter, "error creating session: %v\n", err)
+		os.Exit(1)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: req.Goal})
+
+	result, err := k.Run(ctx, sess)
+	if err != nil {
+		fmt.Fprintf(errWriter, "\n❌ Run failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	runCmdWithService(ctx, svc, req, writer, errWriter)
+	fmt.Fprintf(writer, "\n✅ Session completed (ID: %s)\n", result.SessionID)
+	fmt.Fprintf(writer, "Steps: %d | Tokens: %d\n", result.Steps, result.TokensUsed.TotalTokens)
+	if result.Output != "" {
+		fmt.Fprintf(writer, "\nResult:\n%s\n", result.Output)
+	}
 }
 
 var errCancelled = errors.New("cancelled")
 
-func (ui *terminalUI) collectRunRequest(defaultWorkspace string, defaultMode domain.RunMode, defaultTrust workspace.TrustLevel) (app.RunRequest, error) {
+func (ui *terminalUI) collectRunRequest(defaultWorkspace, defaultMode, defaultTrust string) (RunRequest, error) {
 	ui.renderFrame(defaultWorkspace, defaultMode, defaultTrust)
 
 	goal, err := ui.promptRequired("Goal", "")
 	if err != nil {
-		return app.RunRequest{}, err
+		return RunRequest{}, err
 	}
 
 	workspaceValue, err := ui.promptWithDefault("Workspace", defaultWorkspace)
 	if err != nil {
-		return app.RunRequest{}, err
+		return RunRequest{}, err
 	}
 
-	modeValue, err := ui.promptWithDefault("Mode", string(defaultMode))
+	modeValue, err := ui.promptWithDefault("Mode", defaultMode)
 	if err != nil {
-		return app.RunRequest{}, err
-	}
-	runMode, err := parseRunMode(modeValue)
-	if err != nil {
-		return app.RunRequest{}, err
+		return RunRequest{}, err
 	}
 
-	trustValue, err := ui.promptWithDefault("Trust", string(defaultTrust))
+	trustValue, err := ui.promptWithDefault("Trust", defaultTrust)
 	if err != nil {
-		return app.RunRequest{}, err
-	}
-	trustLevel, err := parseTrustLevel(trustValue)
-	if err != nil {
-		return app.RunRequest{}, err
+		return RunRequest{}, err
 	}
 
 	start, err := ui.promptWithDefault("Start run? [Y/n]", "y")
 	if err != nil {
-		return app.RunRequest{}, err
+		return RunRequest{}, err
 	}
 	if strings.EqualFold(start, "n") || strings.EqualFold(start, "no") {
-		return app.RunRequest{}, errCancelled
+		return RunRequest{}, errCancelled
 	}
 
-	return app.RunRequest{
+	return RunRequest{
 		Goal:      goal,
-		Mode:      runMode,
+		Mode:      modeValue,
 		Workspace: workspaceValue,
-		Trust:     trustLevel,
+		Trust:     trustValue,
 	}, nil
 }
 
-func (ui *terminalUI) renderFrame(defaultWorkspace string, defaultMode domain.RunMode, defaultTrust workspace.TrustLevel) {
+func (ui *terminalUI) renderFrame(defaultWorkspace, defaultMode, defaultTrust string) {
 	fmt.Fprint(ui.writer, ansiClearScreen)
 	fmt.Fprintf(ui.writer, "🌿 moss %s\n", version)
 	fmt.Fprintln(ui.writer, "┌────────────────────────────────────────────────────────────┐")
@@ -175,23 +262,4 @@ func (ui *terminalUI) promptWithDefault(label, fallback string) (string, error) 
 		return fallback, nil
 	}
 	return line, nil
-}
-
-func runCmdWithService(ctx context.Context, svc *app.Service, req app.RunRequest, writer io.Writer, errWriter io.Writer) {
-	fmt.Fprintf(writer, "\nLaunching run from TUI...\n\n")
-	fmt.Fprintf(writer, "Goal: %s\n", req.Goal)
-	fmt.Fprintf(writer, "Workspace: %s\n", req.Workspace)
-	fmt.Fprintf(writer, "Mode: %s | Trust: %s\n", req.Mode, req.Trust)
-
-	run, err := svc.Execute(ctx, req)
-	if err != nil {
-		fmt.Fprintf(errWriter, "\n❌ Run failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Fprintf(writer, "\n✅ Run completed (ID: %s)\n", run.RunID)
-	fmt.Fprintf(writer, "Status: %s\n", run.Status)
-	if run.FinalResult != "" {
-		fmt.Fprintf(writer, "\nResult:\n%s\n", run.FinalResult)
-	}
 }

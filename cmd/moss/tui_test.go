@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/mossagi/moss/internal/domain"
-	"github.com/mossagi/moss/internal/workspace"
 )
 
 func TestCollectRunRequestUsesDefaults(t *testing.T) {
@@ -15,7 +12,7 @@ func TestCollectRunRequestUsesDefaults(t *testing.T) {
 	var output bytes.Buffer
 	ui := newTerminalUI(input, &output)
 
-	req, err := ui.collectRunRequest("/repo", domain.RunModeInteractive, workspace.TrustLevelTrusted)
+	req, err := ui.collectRunRequest("/repo", "interactive", "trusted")
 	if err != nil {
 		t.Fatalf("collectRunRequest returned error: %v", err)
 	}
@@ -26,10 +23,10 @@ func TestCollectRunRequestUsesDefaults(t *testing.T) {
 	if req.Workspace != "/repo" {
 		t.Fatalf("expected default workspace, got %q", req.Workspace)
 	}
-	if req.Mode != domain.RunModeInteractive {
+	if req.Mode != "interactive" {
 		t.Fatalf("expected default mode, got %q", req.Mode)
 	}
-	if req.Trust != workspace.TrustLevelTrusted {
+	if req.Trust != "trusted" {
 		t.Fatalf("expected default trust, got %q", req.Trust)
 	}
 
@@ -43,7 +40,7 @@ func TestCollectRunRequestCanCancel(t *testing.T) {
 	input := strings.NewReader("q\n")
 	ui := newTerminalUI(input, &bytes.Buffer{})
 
-	_, err := ui.collectRunRequest("/repo", domain.RunModeInteractive, workspace.TrustLevelTrusted)
+	_, err := ui.collectRunRequest("/repo", "interactive", "trusted")
 	if err == nil {
 		t.Fatal("expected cancellation error")
 	}

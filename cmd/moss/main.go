@@ -8,12 +8,14 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mossagi/moss/internal/app"
-	"github.com/mossagi/moss/internal/domain"
-	"github.com/mossagi/moss/internal/workspace"
+	"github.com/mossagi/moss/kernel"
+	"github.com/mossagi/moss/kernel/middleware/builtins"
+	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagi/moss/kernel/session"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -38,7 +40,7 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Print(`moss - MVP Agent Runtime
+	fmt.Print(`moss - Agent Runtime Kernel
 
 Usage:
   moss run [flags]
@@ -48,16 +50,16 @@ Usage:
 Flags:
   --goal        Goal for the agent to accomplish (required unless interactive TUI is used)
   --workspace   Workspace directory (default: ".")
-  --mode        Run mode: interactive|safe|autopilot (default: interactive)
+  --mode        Run mode: interactive|autopilot (default: interactive)
   --trust       Trust level: trusted|restricted (default: trusted)
 `)
 }
 
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
-	goal := fs.String("goal", "", "Goal for the agent to accomplish (required unless interactive TUI is used)")
+	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	wsDir := fs.String("workspace", ".", "Workspace directory")
-	mode := fs.String("mode", "interactive", "Run mode: interactive|safe|autopilot")
+	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
 
 	if err := fs.Parse(args); err != nil {
@@ -65,21 +67,9 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	runMode, err := parseRunMode(*mode)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	trustLevel, err := parseTrustLevel(*trust)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
 	if *goal == "" {
-		if runMode == domain.RunModeInteractive {
-			runTUI(*wsDir, runMode, trustLevel, os.Stdin, os.Stdout, os.Stderr)
+		if *mode == "interactive" {
+			runTUI(*wsDir, *mode, *trust, os.Stdin, os.Stdout, os.Stderr)
 			return
 		}
 		fmt.Fprintln(os.Stderr, "error: --goal is required")
@@ -87,16 +77,9 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	svc, err := app.NewService(*wsDir, trustLevel, os.Stdin, os.Stdout)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error initializing service: %v\n", err)
-		os.Exit(1)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle signals
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -105,49 +88,69 @@ func runCmd(args []string) {
 		cancel()
 	}()
 
+	k, err := buildKernel(*wsDir, *trust, os.Stdin, os.Stdout)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error initializing kernel: %v\n", err)
+		os.Exit(1)
+	}
+	if err := k.Boot(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "error booting kernel: %v\n", err)
+		os.Exit(1)
+	}
+	defer k.Shutdown(ctx)
+
 	fmt.Printf("🌿 moss %s\n", version)
 	fmt.Printf("Goal: %s\n", *goal)
 	fmt.Printf("Workspace: %s\n", *wsDir)
 	fmt.Printf("Mode: %s | Trust: %s\n\n", *mode, *trust)
 
-	run, err := svc.Execute(ctx, app.RunRequest{
-		Goal:      *goal,
-		Mode:      runMode,
-		Workspace: *wsDir,
-		Trust:     trustLevel,
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:       *goal,
+		Mode:       *mode,
+		TrustLevel: *trust,
+		MaxSteps:   50,
 	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error creating session: %v\n", err)
+		os.Exit(1)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: *goal})
+
+	result, err := k.Run(ctx, sess)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Run failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n✅ Run completed (ID: %s)\n", run.RunID)
-	fmt.Printf("Status: %s\n", run.Status)
-	if run.FinalResult != "" {
-		fmt.Printf("\nResult:\n%s\n", run.FinalResult)
+	fmt.Printf("\n✅ Session completed (ID: %s)\n", result.SessionID)
+	fmt.Printf("Steps: %d | Tokens: %d\n", result.Steps, result.TokensUsed.TotalTokens)
+	if result.Output != "" {
+		fmt.Printf("\nResult:\n%s\n", result.Output)
 	}
 }
 
-func parseRunMode(value string) (domain.RunMode, error) {
-	switch value {
-	case "interactive":
-		return domain.RunModeInteractive, nil
-	case "safe":
-		return domain.RunModeSafe, nil
-	case "autopilot":
-		return domain.RunModeAutopilot, nil
-	default:
-		return "", fmt.Errorf("invalid mode %q", value)
+// buildKernel 构建 Kernel 实例（当前没有真实 LLM adapter，使用占位）。
+func buildKernel(wsDir, trust string, _ *os.File, _ *os.File) (*kernel.Kernel, error) {
+	sb, err := sandbox.NewLocal(wsDir)
+	if err != nil {
+		return nil, err
 	}
-}
 
-func parseTrustLevel(value string) (workspace.TrustLevel, error) {
-	switch value {
-	case "trusted":
-		return workspace.TrustLevelTrusted, nil
-	case "restricted":
-		return workspace.TrustLevelRestricted, nil
-	default:
-		return "", fmt.Errorf("invalid trust level %q", value)
+	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
+
+	k := kernel.New(
+		kernel.WithLLM(nil), // TODO: 接入真实 LLM adapter
+		kernel.WithSandbox(sb),
+		kernel.WithUserIO(cliIO),
+	)
+
+	// 根据 trust level 设置策略
+	if trust == "restricted" {
+		k.WithPolicy(
+			builtins.RequireApprovalFor("write_file", "run_command"),
+			builtins.DefaultAllow(),
+		)
 	}
+
+	return k, nil
 }
