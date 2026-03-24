@@ -494,3 +494,60 @@ func TestEnsureMossDir_CreatesYAMLByDefault(t *testing.T) {
 		t.Fatalf("config.yaml should be created by default, got err: %v", err)
 	}
 }
+
+func TestRenderSystemPrompt_UsesGlobalTemplate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("minicode")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	globalTpl := "You are {{.App}} on {{.OS}} in {{.Workspace}}"
+	if err := os.WriteFile(DefaultGlobalSystemPromptTemplatePath(), []byte(globalTpl), 0600); err != nil {
+		t.Fatalf("write global template: %v", err)
+	}
+
+	rendered := RenderSystemPrompt(".", "default {{.App}}", map[string]any{
+		"App":       "minicode",
+		"OS":        "windows",
+		"Workspace": ".",
+	})
+	if rendered != "You are minicode on windows in ." {
+		t.Fatalf("unexpected rendered prompt: %q", rendered)
+	}
+}
+
+func TestRenderSystemPrompt_ProjectTemplateOverridesGlobal(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("miniwork")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	workspace := t.TempDir()
+
+	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	if err := os.WriteFile(DefaultGlobalSystemPromptTemplatePath(), []byte("global {{.Scope}}"), 0600); err != nil {
+		t.Fatalf("write global template: %v", err)
+	}
+
+	projectPath := DefaultProjectSystemPromptTemplatePath(workspace)
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0700); err != nil {
+		t.Fatalf("prepare project template dir: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("project {{.Scope}}"), 0600); err != nil {
+		t.Fatalf("write project template: %v", err)
+	}
+
+	rendered := RenderSystemPrompt(workspace, "default {{.Scope}}", map[string]any{"Scope": "prompt"})
+	if rendered != "project prompt" {
+		t.Fatalf("project template should override global template, got: %q", rendered)
+	}
+}

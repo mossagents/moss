@@ -15,6 +15,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -38,6 +39,9 @@ import (
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
+
+//go:embed templates/system_prompt.tmpl
+var defaultSystemPromptTemplate string
 
 func main() {
 	skill.SetAppName("miniclaw")
@@ -466,38 +470,10 @@ func stripTags(s string) string {
 
 func buildSystemPrompt(workspace string) string {
 	osName := runtime.GOOS
-	return fmt.Sprintf(`You are miniclaw, an intelligent web crawling agent.
-
-## Environment
-- OS: %s
-- Workspace: %s (for saving crawled data)
-
-## Crawl Tools
-- **fetch_url**: Fetch a web page and get its text content (HTML stripped). Supports up to 50000 chars.
-- **extract_links**: Fetch a page and extract all hyperlinks with their text and URLs. Supports filtering.
-
-## File Tools
-- **read_file**: Read saved files
-- **write_file**: Save crawled content to files
-- **list_files**: List files in workspace
-- **search_text**: Search within saved files
-
-## Workflow
-1. **Understand the goal**: What does the user want to extract or crawl?
-2. **Explore**: Use extract_links to discover page structure, then fetch_url for specific pages.
-3. **Extract**: Parse the relevant information from fetched content.
-4. **Save**: Write results to files using write_file (e.g., Markdown, JSON, CSV).
-5. **Report**: Summarize what was found and where it was saved.
-
-## Rules
-- Always fetch a page before trying to extract information from it.
-- For sites with many pages, use extract_links first to discover the structure, then selectively fetch.
-- Save important results to files — don't just display them.
-- Be respectful: don't fetch too many pages at once.
-- Clearly explain what you're doing at each step.
-- If a URL fails, report the error and suggest alternatives.
-- Use Markdown formatting in responses.
-`, osName, workspace)
+	return skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
+		"OS":        osName,
+		"Workspace": workspace,
+	})
 }
 
 // ─── LLM Construction ───────────────────────────────

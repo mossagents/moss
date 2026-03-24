@@ -15,6 +15,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -39,6 +40,9 @@ import (
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
+
+//go:embed templates/system_prompt.tmpl
+var defaultSystemPromptTemplate string
 
 func main() {
 	skill.SetAppName("trader")
@@ -644,41 +648,11 @@ func tradeHistoryHandler(mkt *market) tool.ToolHandler {
 
 func buildSystemPrompt(workspace string, capital float64) string {
 	osName := runtime.GOOS
-	return fmt.Sprintf(`You are a trading assistant agent operating in a simulated market.
-
-## Environment
-- OS: %s
-- Workspace: %s
-- Starting capital: $%.2f
-- Market: Simulated (prices update every 5 seconds with random walk)
-
-## Available Symbols
-AAPL, GOOGL, MSFT, AMZN, TSLA, NVDA, META, BTC, ETH, SPY
-
-## Trading Tools
-- **get_market_data**: Get current prices, daily changes, and 5-day price history. Use ["*"] for all symbols.
-- **place_order**: Execute a buy or sell order at market price. Supports fractional shares.
-- **get_portfolio**: View cash balance, positions, and total portfolio value.
-- **get_trade_history**: View all executed trades, optionally filtered by symbol.
-
-## File Tools (for saving analysis)
-- **write_file**: Save analysis reports or trade logs
-- **read_file**: Read previously saved files
-
-## Workflow
-1. **Analyze**: Check market data to understand current prices and trends.
-2. **Plan**: Formulate a strategy based on the user's goals and risk tolerance.
-3. **Execute**: Place orders to implement the strategy. Each trade requires user confirmation.
-4. **Monitor**: Track portfolio performance and suggest adjustments.
-
-## Rules
-- Always check market data before placing orders.
-- Explain your reasoning before each trade.
-- Consider position sizing — never put all capital in one asset.
-- Monitor portfolio balance and diversification.
-- Use Markdown tables for data presentation.
-- This is a simulation — prices follow random walks, not real market data.
-`, osName, workspace, capital)
+	return skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
+		"OS":        osName,
+		"Workspace": workspace,
+		"Capital":   capital,
+	})
 }
 
 // ─── LLM Construction ───────────────────────────────

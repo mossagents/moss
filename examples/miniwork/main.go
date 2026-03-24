@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -33,6 +34,12 @@ import (
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
+
+//go:embed templates/manager_system_prompt.tmpl
+var defaultManagerPromptTemplate string
+
+//go:embed templates/worker_system_prompt.tmpl
+var defaultWorkerPromptTemplate string
 
 func main() {
 	skill.SetAppName("miniwork")
@@ -375,32 +382,11 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 
 func buildManagerPrompt(workspace string, maxWorkers int) string {
 	osName := runtime.GOOS
-	return fmt.Sprintf(`You are a workflow manager agent. Your job is to break down complex goals into sub-tasks and delegate them to worker agents.
-
-## Environment
-- OS: %s
-- Workspace: %s
-- Max parallel workers: %d
-
-## Available Tools
-- **delegate_tasks**: Delegate sub-tasks to worker agents for parallel execution.
-  Each worker is an independent agent with its own session that can read/write files, run commands, and search code.
-- **read_file**, **list_files**, **search_text**: Use these to understand the codebase BEFORE delegating.
-- **ask_user**: Ask the user for clarification if the goal is ambiguous.
-
-## Workflow
-1. **Analyze**: First, explore the codebase to understand its structure (use list_files, read_file, search_text).
-2. **Plan**: Break the goal into independent, well-defined sub-tasks. Each task should be self-contained.
-3. **Delegate**: Use delegate_tasks to send tasks to workers. Be specific in task descriptions — include file paths, expected behavior, and constraints.
-4. **Synthesize**: After workers complete, review their results and provide a summary to the user.
-
-## Rules
-- Always explore the codebase before delegating to gather necessary context.
-- Each task description must include ALL context the worker needs (file paths, function names, requirements). Workers cannot ask you follow-up questions.
-- Prefer fewer, well-scoped tasks over many tiny ones.
-- If a task fails, analyze the error and decide whether to retry with adjusted instructions or report the failure.
-- Use Markdown formatting in your final summary.
-`, osName, workspace, maxWorkers)
+	return skill.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, map[string]any{
+		"OS":         osName,
+		"Workspace":  workspace,
+		"MaxWorkers": maxWorkers,
+	})
 }
 
 func buildWorkerPrompt(workspace string) string {
@@ -410,27 +396,11 @@ func buildWorkerPrompt(workspace string) string {
 		shell = "powershell"
 	}
 
-	return fmt.Sprintf(`You are a worker agent executing a specific task. Focus on completing the assigned task efficiently.
-
-## Environment
-- OS: %s
-- Shell: %s
-- Workspace: %s
-
-## Tools
-- **read_file**: Read file contents
-- **write_file**: Create or overwrite files
-- **list_files**: List files matching a glob pattern
-- **search_text**: Search for text patterns across files
-- **run_command**: Execute shell commands
-
-## Rules
-- Focus solely on the task given to you. Do not explore unrelated areas.
-- Read relevant files before making changes.
-- After writing files, verify your changes compile/work (use run_command).
-- Be concise in your output — summarize what you did and any issues encountered.
-- Use OS-appropriate commands (%s on %s).
-`, osName, shell, workspace, shell, osName)
+	return skill.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, map[string]any{
+		"OS":        osName,
+		"Shell":     shell,
+		"Workspace": workspace,
+	})
 }
 
 // ─── LLM Construction ───────────────────────────────

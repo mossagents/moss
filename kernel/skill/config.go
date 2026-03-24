@@ -1,9 +1,12 @@
 package skill
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"text/template"
 
 	"gopkg.in/yaml.v3"
 )
@@ -144,6 +147,77 @@ func LoadGlobalConfig() (*Config, error) {
 // DefaultProjectConfigPath 返回项目级配置文件路径。
 func DefaultProjectConfigPath(workspace string) string {
 	return filepath.Join(workspace, "moss.yaml")
+}
+
+// DefaultGlobalSystemPromptTemplatePath 返回全局 system prompt 模板路径（~/.<appName>/system_prompt.tmpl）。
+func DefaultGlobalSystemPromptTemplatePath() string {
+	d := MossDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "system_prompt.tmpl")
+}
+
+// DefaultProjectSystemPromptTemplatePath 返回项目级 system prompt 模板路径（./.<appName>/system_prompt.tmpl）。
+func DefaultProjectSystemPromptTemplatePath(workspace string) string {
+	return filepath.Join(workspace, "."+AppName(), "system_prompt.tmpl")
+}
+
+// LoadSystemPromptTemplate 加载可选 system prompt 模板。
+// 优先级：项目级 > 全局级。
+func LoadSystemPromptTemplate(workspace string) (string, error) {
+	projectPath := DefaultProjectSystemPromptTemplatePath(workspace)
+	if projectPath != "" {
+		if data, err := os.ReadFile(projectPath); err == nil {
+			return string(data), nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("read system prompt template %s: %w", projectPath, err)
+		}
+	}
+
+	globalPath := DefaultGlobalSystemPromptTemplatePath()
+	if globalPath != "" {
+		if data, err := os.ReadFile(globalPath); err == nil {
+			return string(data), nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("read system prompt template %s: %w", globalPath, err)
+		}
+	}
+
+	return "", nil
+}
+
+// RenderSystemPrompt 渲染 system prompt。
+// 若存在项目/全局模板则覆盖 defaultTemplate；渲染失败时回退到 defaultTemplate 渲染结果。
+func RenderSystemPrompt(workspace, defaultTemplate string, data map[string]any) string {
+	tplSrc := defaultTemplate
+	if loaded, err := LoadSystemPromptTemplate(workspace); err == nil && strings.TrimSpace(loaded) != "" {
+		tplSrc = loaded
+	}
+
+	if rendered, err := renderPromptTemplate(tplSrc, data); err == nil {
+		return rendered
+	}
+
+	if rendered, err := renderPromptTemplate(defaultTemplate, data); err == nil {
+		return rendered
+	}
+
+	return defaultTemplate
+}
+
+func renderPromptTemplate(src string, data map[string]any) (string, error) {
+	tpl, err := template.New("system_prompt").Parse(src)
+	if err != nil {
+		return "", err
+	}
+
+	var b bytes.Buffer
+	if err := tpl.Execute(&b, data); err != nil {
+		return "", err
+	}
+
+	return b.String(), nil
 }
 
 // SaveConfig 将配置写入指定路径，自动创建父目录。

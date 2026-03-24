@@ -17,6 +17,7 @@ package main
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"flag"
 	"fmt"
 	"io"
@@ -35,6 +36,9 @@ import (
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 )
+
+//go:embed templates/system_prompt.tmpl
+var defaultSystemPromptTemplate string
 
 func main() {
 	// 配置目录使用 ~/.minicode
@@ -293,36 +297,11 @@ func buildSystemPrompt(workspace string) string {
 		shell = "powershell"
 	}
 
-	return fmt.Sprintf(`You are minicode, an expert AI coding assistant.
-
-## Environment
-- OS: %s
-- Shell: %s
-- Workspace: %s
-
-## Tools
-You have these tools to interact with the user's codebase:
-- **read_file**: Read file contents
-- **write_file**: Create or overwrite files (creates parent directories)
-- **list_files**: List files matching a glob pattern (supports ** for recursive)
-- **search_text**: Search for text/regex patterns across files
-- **run_command**: Execute shell commands in the workspace
-- **ask_user**: Ask the user for clarification
-
-## Workflow
-1. **Understand first**: Read relevant files before making changes.
-2. **Plan**: For complex tasks, outline your approach before coding.
-3. **Execute**: Make changes using write_file, verify with run_command.
-4. **Verify**: Run tests or builds to confirm changes work.
-
-## Rules
-- Be direct and concise. Show what you did, not what you'll do.
-- Always read a file before editing it.
-- Use OS-appropriate commands (%s on %s).
-- For destructive operations, confirm with the user first.
-- When editing files, show the specific changes made.
-- Use Markdown formatting in responses.
-`, osName, shell, workspace, shell, osName)
+	return skill.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
+		"OS":        osName,
+		"Shell":     shell,
+		"Workspace": workspace,
+	})
 }
 
 // ─── Console UserIO ─────────────────────────────────
