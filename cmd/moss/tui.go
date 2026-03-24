@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/mossagi/moss/adapters/claude"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
 )
@@ -138,7 +139,7 @@ func runTUI(defaultWorkspace, defaultMode, defaultTrust string, reader io.Reader
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	k, err := buildKernel(req.Workspace, req.Trust, os.Stdin, os.Stdout)
+	k, err := buildKernel(req.Workspace, req.Trust, claude.DefaultModel)
 	if err != nil {
 		fmt.Fprintf(errWriter, "error initializing kernel: %v\n", err)
 		os.Exit(1)

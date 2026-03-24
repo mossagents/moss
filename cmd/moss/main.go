@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/mossagi/moss/adapters/claude"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -52,6 +53,10 @@ Flags:
   --workspace   Workspace directory (default: ".")
   --mode        Run mode: interactive|autopilot (default: interactive)
   --trust       Trust level: trusted|restricted (default: trusted)
+  --model       Claude model name (default: claude-sonnet-4-20250514)
+
+Environment:
+  ANTHROPIC_API_KEY  Required. Your Anthropic API key.
 `)
 }
 
@@ -61,6 +66,7 @@ func runCmd(args []string) {
 	wsDir := fs.String("workspace", ".", "Workspace directory")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
+	model := fs.String("model", claude.DefaultModel, "Claude model name")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
@@ -88,7 +94,7 @@ func runCmd(args []string) {
 		cancel()
 	}()
 
-	k, err := buildKernel(*wsDir, *trust, os.Stdin, os.Stdout)
+	k, err := buildKernel(*wsDir, *trust, *model)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error initializing kernel: %v\n", err)
 		os.Exit(1)
@@ -129,8 +135,8 @@ func runCmd(args []string) {
 	}
 }
 
-// buildKernel 构建 Kernel 实例（当前没有真实 LLM adapter，使用占位）。
-func buildKernel(wsDir, trust string, _ *os.File, _ *os.File) (*kernel.Kernel, error) {
+// buildKernel 构建 Kernel 实例。
+func buildKernel(wsDir, trust, model string) (*kernel.Kernel, error) {
 	sb, err := sandbox.NewLocal(wsDir)
 	if err != nil {
 		return nil, err
@@ -138,8 +144,11 @@ func buildKernel(wsDir, trust string, _ *os.File, _ *os.File) (*kernel.Kernel, e
 
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
 
+	// Claude adapter：API key 从 ANTHROPIC_API_KEY 环境变量读取
+	llm := claude.New("", claude.WithModel(model))
+
 	k := kernel.New(
-		kernel.WithLLM(nil), // TODO: 接入真实 LLM adapter
+		kernel.WithLLM(llm),
 		kernel.WithSandbox(sb),
 		kernel.WithUserIO(cliIO),
 	)
