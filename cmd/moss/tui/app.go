@@ -24,13 +24,14 @@ const (
 
 // Config 是启动 TUI 的配置。
 type Config struct {
-	Provider    string
-	Model       string
-	Workspace   string
-	Trust       string
-	BaseURL     string
-	APIKey      string
-	BuildKernel func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	Provider          string
+	Model             string
+	Workspace         string
+	Trust             string
+	BaseURL           string
+	APIKey            string
+	BuildKernel       func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildSystemPrompt func(workspace string) string
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -270,6 +271,9 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 
 		// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
 		sysPrompt := buildSystemPrompt(wCfg.Workspace)
+		if cfg.BuildSystemPrompt != nil {
+			sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace)
+		}
 		sess, err := k.NewSession(ctx, session.SessionConfig{
 			Goal:         "interactive",
 			Mode:         "interactive",

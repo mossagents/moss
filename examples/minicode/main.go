@@ -29,6 +29,7 @@ import (
 
 	"github.com/mossagi/moss/adapters/claude"
 	adaptersopenai "github.com/mossagi/moss/adapters/openai"
+	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -51,6 +52,7 @@ func main() {
 	trust := flag.String("trust", "trusted", "Trust level: trusted|restricted")
 	apiKey := flag.String("api-key", "", "API key (overrides env)")
 	baseURL := flag.String("base-url", "", "API base URL")
+	replMode := flag.Bool("repl", false, "Use classic REPL mode instead of TUI")
 	flag.Parse()
 
 	cfg, err := skill.LoadGlobalConfig()
@@ -61,6 +63,14 @@ func main() {
 	effectiveModel := firstNonEmpty(*model, cfg.Model)
 	effectiveAPIKey := firstNonEmpty(*apiKey, cfg.APIKey)
 	effectiveBaseURL := firstNonEmpty(*baseURL, cfg.BaseURL)
+
+	if !*replMode {
+		if err := launchTUI(effectiveProvider, effectiveModel, *workspace, *trust, effectiveAPIKey, effectiveBaseURL); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -81,43 +91,29 @@ func main() {
 	}
 }
 
+func launchTUI(provider, model, workspace, trust, apiKey, baseURL string) error {
+	return mossTUI.Run(mossTUI.Config{
+		Provider:          provider,
+		Model:             model,
+		Workspace:         workspace,
+		Trust:             trust,
+		BaseURL:           baseURL,
+		APIKey:            apiKey,
+		BuildKernel:       buildKernelWithIO,
+		BuildSystemPrompt: buildSystemPrompt,
+	})
+}
+
 func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL string) error {
-	// 1. 构建 LLM adapter
-	llm, err := buildLLM(provider, model, apiKey, baseURL)
-	if err != nil {
-		return err
-	}
-
-	// 2. 构建 Sandbox
-	sb, err := sandbox.NewLocal(workspace)
-	if err != nil {
-		return fmt.Errorf("sandbox: %w", err)
-	}
-
-	// 3. 构建 UserIO（终端交互）
+	// 构建 UserIO（终端交互）
 	userIO := &consoleIO{
 		writer: os.Stdout,
 		reader: os.Stdin,
 	}
 
-	// 4. 构建 Kernel
-	k := kernel.New(
-		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
-		kernel.WithUserIO(userIO),
-	)
-
-	// 5. 注册标准技能
-	if err := k.SetupWithDefaults(ctx, workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return fmt.Errorf("setup: %w", err)
-	}
-
-	// 6. 设置策略（restricted 模式下危险操作需确认）
-	if trust == "restricted" {
-		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "run_command"),
-			builtins.DefaultAllow(),
-		)
+	k, err := buildKernelWithIO(workspace, trust, provider, model, apiKey, baseURL, userIO)
+	if err != nil {
+		return err
 	}
 
 	// 7. Boot
@@ -156,6 +152,38 @@ func run(ctx context.Context, provider, model, workspace, trust, apiKey, baseURL
 
 	// 10. REPL 循环
 	return repl(ctx, k, sess)
+}
+
+func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+	sb, err := sandbox.NewLocal(wsDir)
+	if err != nil {
+		return nil, fmt.Errorf("sandbox: %w", err)
+	}
+
+	llm, err := buildLLM(provider, model, apiKey, baseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	k := kernel.New(
+		kernel.WithLLM(llm),
+		kernel.WithSandbox(sb),
+		kernel.WithUserIO(io),
+	)
+
+	ctx := context.Background()
+	if err := k.SetupWithDefaults(ctx, wsDir, kernel.WithWarningWriter(os.Stderr)); err != nil {
+		return nil, fmt.Errorf("setup: %w", err)
+	}
+
+	if trust == "restricted" {
+		k.WithPolicy(
+			builtins.RequireApprovalFor("write_file", "run_command"),
+			builtins.DefaultAllow(),
+		)
+	}
+
+	return k, nil
 }
 
 // repl 实现交互式读取-执行-打印循环。
