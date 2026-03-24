@@ -2,111 +2,16 @@ package main
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
-
-//go:embed templates/trading_prompt.tmpl
-var tradingPromptTemplate string
-
-func init() {
-	registerDomain("trading", newTradingDomain)
-}
-
-// ─── Trading Domain Adapter ─────────────────────────
-
-type tradingDomain struct {
-	capital float64
-	mkt     *market
-}
-
-func newTradingDomain(cfg *config) Domain {
-	capital := cfg.capital
-	if capital <= 0 {
-		capital = 100000
-	}
-	return &tradingDomain{
-		capital: capital,
-		mkt:     newMarket(capital),
-	}
-}
-
-func (d *tradingDomain) Name() string { return "trading" }
-func (d *tradingDomain) Description() string {
-	return "Simulated market trading with portfolio management"
-}
-func (d *tradingDomain) Prompt() string { return "💰 > " }
-
-func (d *tradingDomain) Setup(k *kernel.Kernel) error {
-	return registerTradeTools(k, d.mkt)
-}
-
-func (d *tradingDomain) SystemPrompt(workspace string) string {
-	return skill.RenderSystemPrompt(workspace, tradingPromptTemplate, map[string]any{
-		"OS":        runtime.GOOS,
-		"Workspace": workspace,
-		"Capital":   d.capital,
-	})
-}
-
-func (d *tradingDomain) Policies() []builtins.PolicyRule {
-	return []builtins.PolicyRule{
-		builtins.RequireApprovalFor("place_order"),
-		builtins.DefaultAllow(),
-	}
-}
-
-func (d *tradingDomain) EventHooks() map[string]builtins.EventHandler {
-	return map[string]builtins.EventHandler{
-		"tool.completed": func(e builtins.Event) {
-			if data, ok := e.Data.(map[string]any); ok {
-				if name, _ := data["tool"].(string); name == "place_order" {
-					fmt.Printf("  📊 [event] Trade executed at %s\n", e.Timestamp.Format("15:04:05"))
-				}
-			}
-		},
-	}
-}
-
-func (d *tradingDomain) Start(ctx context.Context) func() {
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-done:
-				return
-			case <-ticker.C:
-				d.mkt.tick()
-			}
-		}
-	}()
-	return func() { close(done) }
-}
-
-func (d *tradingDomain) Banner() []string {
-	return []string{
-		fmt.Sprintf("  Capital:   $%.2f", d.capital),
-		fmt.Sprintf("  Symbols:   %d available", len(d.mkt.prices)),
-		"",
-		"  Market is live! Prices update every 5 seconds.",
-	}
-}
 
 // ─── Market Simulation ──────────────────────────────
 
@@ -178,7 +83,7 @@ func (m *market) tick() {
 
 // ─── Trade Tools ────────────────────────────────────
 
-func registerTradeTools(k *kernel.Kernel, mkt *market) error {
+func registerTradeTools(reg tool.Registry, mkt *market) error {
 	tools := []struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -190,7 +95,7 @@ func registerTradeTools(k *kernel.Kernel, mkt *market) error {
 	}
 
 	for _, t := range tools {
-		if err := k.ToolRegistry().Register(t.spec, t.handler); err != nil {
+		if err := reg.Register(t.spec, t.handler); err != nil {
 			return err
 		}
 	}

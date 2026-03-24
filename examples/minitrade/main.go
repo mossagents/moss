@@ -1,32 +1,29 @@
-// miniloop 是一个通用的有状态自主循环 Agent 框架。
+// minitrade 是一个量化交易 AI Agent POC。
 //
-// 它通过 Domain 接口将领域逻辑（工具、提示词、策略、后台进程）
-// 与 Agent 运行时（Kernel、REPL、LLM 适配）彻底解耦。
-//
-// 添加新领域只需实现 Domain 接口并在 init() 中注册：
-//
-//	func init() { registerDomain("mydom", newMyDomain) }
-//
-// 内置领域：
-//   - trading: 模拟市场交易（随机游走、组合管理、交易审批）
+// 基于 moss kernel 构建，集成模拟市场（10 种资产、5 秒 tick）、
+// 交易工具（下单/查询/投资组合）、技术分析、定时调度等能力。
+// LLM 驱动决策，Agent 自主进行分析→规划→执行→监控的交易循环。
 //
 // 用法:
 //
-//	go run . --domain trading --capital 100000
-//	go run . --provider openai --model gpt-4o --domain trading
+//	go run . --capital 100000
+//	go run . --provider openai --model gpt-4o --capital 50000
 package main
 
 import (
 	"context"
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"runtime"
+	"time"
 
 	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/scheduler"
@@ -35,18 +32,20 @@ import (
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
+//go:embed templates/trading_prompt.tmpl
+var tradingPromptTemplate string
+
 type config struct {
 	provider  string
 	model     string
 	workspace string
 	apiKey    string
 	baseURL   string
-	domain    string
-	capital   float64 // trading domain
+	capital   float64
 }
 
 func main() {
-	skill.SetAppName("miniloop")
+	skill.SetAppName("minitrade")
 	_ = skill.EnsureMossDir()
 
 	cfg := parseFlags()
@@ -63,22 +62,14 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 
-	// Domain list for help text
-	var domainNames []string
-	for name := range domains {
-		domainNames = append(domainNames, name)
-	}
-
 	flag.StringVar(&cfg.provider, "provider", "openai", "LLM provider: claude|openai")
 	flag.StringVar(&cfg.model, "model", "", "Model name")
 	flag.StringVar(&cfg.workspace, "workspace", ".", "Workspace directory")
 	flag.StringVar(&cfg.apiKey, "api-key", "", "API key")
 	flag.StringVar(&cfg.baseURL, "base-url", "", "API base URL")
-	flag.StringVar(&cfg.domain, "domain", "trading", "Domain adapter: "+strings.Join(domainNames, "|"))
-	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital (trading domain)")
+	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
 	flag.Parse()
 
-	// Merge with global config (~/.miniloop/config.yaml)
 	if globalCfg, err := skill.LoadGlobalConfig(); err == nil {
 		cfg.provider = appkit.FirstNonEmpty(cfg.provider, globalCfg.Provider, "openai")
 		cfg.model = appkit.FirstNonEmpty(cfg.model, globalCfg.Model)
@@ -90,18 +81,12 @@ func parseFlags() *config {
 }
 
 func run(ctx context.Context, cfg *config) error {
-	// Resolve domain adapter
-	factory, ok := domains[cfg.domain]
-	if !ok {
-		var names []string
-		for k := range domains {
-			names = append(names, k)
-		}
-		return fmt.Errorf("unknown domain: %s (available: %s)", cfg.domain, strings.Join(names, ", "))
+	capital := cfg.capital
+	if capital <= 0 {
+		capital = 100000
 	}
-	dom := factory(cfg)
+	mkt := newMarket(capital)
 
-	// Build kernel
 	llm, err := adapters.BuildLLM(cfg.provider, cfg.model, cfg.apiKey, cfg.baseURL)
 	if err != nil {
 		return err
@@ -112,16 +97,13 @@ func run(ctx context.Context, cfg *config) error {
 		return fmt.Errorf("sandbox: %w", err)
 	}
 
-	// Session 持久化存储
 	storeDir := filepath.Join(skill.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return fmt.Errorf("session store: %w", err)
 	}
 
-	// 定时调度器
 	sched := scheduler.New()
-
 	userIO := port.NewConsoleIO()
 
 	k := kernel.New(
@@ -138,9 +120,14 @@ func run(ctx context.Context, cfg *config) error {
 		return fmt.Errorf("setup: %w", err)
 	}
 
-	// Domain-specific setup: tools, policies, events
-	if err := dom.Setup(k); err != nil {
-		return fmt.Errorf("domain setup: %w", err)
+	// 注册交易工具
+	if err := registerTradeTools(k.ToolRegistry(), mkt); err != nil {
+		return fmt.Errorf("register trade tools: %w", err)
+	}
+
+	// 注册技术分析工具
+	if err := registerAnalysisTools(k.ToolRegistry(), mkt); err != nil {
+		return fmt.Errorf("register analysis tools: %w", err)
 	}
 
 	// 注册调度工具
@@ -148,27 +135,35 @@ func run(ctx context.Context, cfg *config) error {
 		return fmt.Errorf("register schedule tools: %w", err)
 	}
 
-	if rules := dom.Policies(); len(rules) > 0 {
-		k.WithPolicy(rules...)
-	}
+	// 策略：下单需要审批
+	k.WithPolicy(
+		builtins.RequireApprovalFor("place_order"),
+		builtins.DefaultAllow(),
+	)
 
-	for pattern, handler := range dom.EventHooks() {
-		k.OnEvent(pattern, handler)
-	}
+	// 事件：交易执行日志
+	k.OnEvent("tool.completed", func(e builtins.Event) {
+		if data, ok := e.Data.(map[string]any); ok {
+			if name, _ := data["tool"].(string); name == "place_order" {
+				fmt.Printf("  📊 [event] Trade executed at %s\n", e.Timestamp.Format("15:04:05"))
+			}
+		}
+	})
 
 	if err := k.Boot(ctx); err != nil {
 		return err
 	}
 	defer k.Shutdown(ctx)
 
-	// 启动调度器
+	// 启动定时调度器
+	sysPrompt := buildSystemPrompt(cfg.workspace, capital)
 	sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
 		fmt.Fprintf(os.Stdout, "\n⏰ Scheduled [%s]: %s\n", job.ID, job.Goal)
 		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
 			Goal:         job.Goal,
 			Mode:         "scheduled",
 			TrustLevel:   "restricted",
-			SystemPrompt: dom.SystemPrompt(cfg.workspace),
+			SystemPrompt: sysPrompt,
 			MaxSteps:     30,
 		})
 		if err != nil {
@@ -186,42 +181,62 @@ func run(ctx context.Context, cfg *config) error {
 	})
 	defer sched.Stop()
 
-	// Start domain background processes
-	stop := dom.Start(ctx)
-	defer stop()
+	// 启动市场行情（每 5 秒 tick）
+	mktDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-mktDone:
+				return
+			case <-ticker.C:
+				mkt.tick()
+			}
+		}
+	}()
+	defer close(mktDone)
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         dom.Name() + " assistant",
+		Goal:         "quantitative trading assistant",
 		Mode:         "interactive",
 		TrustLevel:   "restricted",
-		SystemPrompt: dom.SystemPrompt(cfg.workspace),
+		SystemPrompt: sysPrompt,
 	})
 	if err != nil {
 		return fmt.Errorf("session: %w", err)
 	}
 
-	// Print banner
 	modelName := cfg.model
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	fmt.Println("╭─────────────────────────────────────────╮")
-	fmt.Printf("│  miniloop — %-27s │\n", dom.Name())
-	fmt.Println("╰─────────────────────────────────────────╯")
+	fmt.Println("╭──────────────────────────────────────────╮")
+	fmt.Println("│  minitrade — Quantitative Trading Agent   │")
+	fmt.Println("╰──────────────────────────────────────────╯")
 	fmt.Printf("  Provider:  %s\n", cfg.provider)
 	fmt.Printf("  Model:     %s\n", modelName)
-	fmt.Printf("  Domain:    %s\n", dom.Description())
-	for _, line := range dom.Banner() {
-		fmt.Println(line)
-	}
+	fmt.Printf("  Capital:   $%.2f\n", capital)
+	fmt.Printf("  Symbols:   %d available\n", len(mkt.prices))
 	fmt.Printf("  Tools:     %d loaded\n", len(k.ToolRegistry().List()))
 	fmt.Println()
+	fmt.Println("  Market is live! Prices update every 5 seconds.")
 	fmt.Println("  Type /help for commands, /exit to quit.")
 	fmt.Println()
 
 	return appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:      dom.Prompt(),
-		AppName:     "miniloop",
+		Prompt:      "💰 > ",
+		AppName:     "minitrade",
 		CompactKeep: 8,
 	}, k, sess)
+}
+
+func buildSystemPrompt(workspace string, capital float64) string {
+	return skill.RenderSystemPrompt(workspace, tradingPromptTemplate, map[string]any{
+		"OS":        runtime.GOOS,
+		"Workspace": workspace,
+		"Capital":   capital,
+	})
 }
