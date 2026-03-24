@@ -141,9 +141,9 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
 			defer close(done)
 			return &loop.SessionResult{
-				SessionID: sess.ID,
-				Success:   true,
-				Output:    "async done",
+				SessionID:  sess.ID,
+				Success:    true,
+				Output:     "async done",
 				TokensUsed: port.TokenUsage{TotalTokens: 42},
 			}, nil
 		},
