@@ -133,7 +133,20 @@ func runCmd(args []string) {
 	fmt.Printf("🌿 moss %s\n", version)
 	fmt.Printf("Goal: %s\n", *goal)
 	fmt.Printf("Workspace: %s\n", *wsDir)
-	fmt.Printf("Mode: %s | Trust: %s\n\n", *mode, *trust)
+	fmt.Printf("Mode: %s | Trust: %s\n", *mode, *trust)
+
+	skills := k.SkillManager().List()
+	if len(skills) > 0 {
+		fmt.Printf("Skills: ")
+		for i, s := range skills {
+			if i > 0 {
+				fmt.Print(", ")
+			}
+			fmt.Print(s.Name)
+		}
+		fmt.Println()
+	}
+	fmt.Println()
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:       *goal,
