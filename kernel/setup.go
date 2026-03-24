@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 
+	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/skill"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
@@ -96,6 +99,24 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 				if cfg.warnWriter != nil {
 					fmt.Fprintf(cfg.warnWriter, "warning: failed to load skill %q: %v\n", ps.Metadata().Name, err)
 				}
+			}
+		}
+	}
+
+	// 4. 发现并加载 Agent 配置（.agents/agents/ 目录）
+	if k.agents == nil {
+		k.agents = agent.NewRegistry()
+	}
+	agentDirs := []string{
+		filepath.Join(workspaceDir, ".agents", "agents"),
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		agentDirs = append(agentDirs, filepath.Join(home, ".moss", "agents"))
+	}
+	for _, dir := range agentDirs {
+		if err := k.agents.LoadDir(dir); err != nil {
+			if cfg.warnWriter != nil {
+				fmt.Fprintf(cfg.warnWriter, "warning: failed to load agents from %s: %v\n", dir, err)
 			}
 		}
 	}

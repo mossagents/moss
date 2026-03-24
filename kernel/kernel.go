@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
@@ -33,6 +34,8 @@ type Kernel struct {
 	channels  []port.Channel
 	router    *session.Router
 	bootstrap *bootstrap.Context
+	agents    *agent.Registry
+	tasks     *agent.TaskTracker
 }
 
 // New 使用函数式选项创建 Kernel。
@@ -51,6 +54,7 @@ func New(opts ...Option) *Kernel {
 
 // Boot 验证 Kernel 配置完整性。
 // 检查必要组件是否已设置，并给出具体的修复建议。
+// 同时初始化 Agent 委派系统（如果已配置 AgentRegistry）。
 func (k *Kernel) Boot(_ context.Context) error {
 	var errs []string
 
@@ -64,6 +68,17 @@ func (k *Kernel) Boot(_ context.Context) error {
 	if len(errs) > 0 {
 		return errors.New("kernel boot failed:\n  - " + strings.Join(errs, "\n  - "))
 	}
+
+	// 初始化 Agent 委派工具
+	if k.agents != nil && len(k.agents.List()) > 0 {
+		if k.tasks == nil {
+			k.tasks = agent.NewTaskTracker()
+		}
+		if err := agent.RegisterTools(k.tools, k.agents, k.tasks, k); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -113,6 +128,19 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 		Tools:  k.tools,
 		Chain:  k.chain,
 		IO:     k.io,
+		Config: k.loopCfg,
+	}
+	return l.Run(ctx, sess)
+}
+
+// RunWithTools 使用指定的工具注册表运行 Agent Loop。
+// 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
+func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+	l := &loop.AgentLoop{
+		LLM:    k.llm,
+		Tools:  tools,
+		Chain:  k.chain,
+		IO:     &port.NoOpIO{},
 		Config: k.loopCfg,
 	}
 	return l.Run(ctx, sess)
@@ -186,4 +214,14 @@ func (k *Kernel) Router() *session.Router {
 // Bootstrap 返回引导上下文（可能为 nil）。
 func (k *Kernel) Bootstrap() *bootstrap.Context {
 	return k.bootstrap
+}
+
+// AgentRegistry 返回 Agent 注册表（可能为 nil）。
+func (k *Kernel) AgentRegistry() *agent.Registry {
+	return k.agents
+}
+
+// TaskTracker 返回异步任务跟踪器（可能为 nil）。
+func (k *Kernel) TaskTracker() *agent.TaskTracker {
+	return k.tasks
 }

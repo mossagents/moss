@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
@@ -83,4 +84,9 @@ func WithRouter(r *session.Router) Option {
 // WithBootstrap 设置引导上下文。
 func WithBootstrap(b *bootstrap.Context) Option {
 	return func(k *Kernel) { k.bootstrap = b }
+}
+
+// WithAgentRegistry 设置 Agent 注册表。
+func WithAgentRegistry(r *agent.Registry) Option {
+	return func(k *Kernel) { k.agents = r }
 }
