@@ -35,7 +35,11 @@ func (fs *FileStore) Save(_ context.Context, sess *Session) error {
 	}
 
 	path := fs.path(sess.ID)
-	return os.WriteFile(path, data, 0600)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("write session tmp: %w", err)
+	}
+	return os.Rename(tmpPath, path)
 }
 
 func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
@@ -113,8 +117,19 @@ func (fs *FileStore) Delete(_ context.Context, id string) error {
 }
 
 // sanitizeID 清理 Session ID 防止路径遍历。
+// 使用白名单策略：只保留字母、数字、连字符、下划线。
 func sanitizeID(id string) string {
-	return strings.ReplaceAll(filepath.Base(id), "..", "_")
+	safe := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '-' || r == '_' {
+			return r
+		}
+		return '_'
+	}, filepath.Base(id))
+	if safe == "" || safe == "." || safe == ".." {
+		safe = "_invalid_"
+	}
+	return safe
 }
 
 func (fs *FileStore) path(id string) string {

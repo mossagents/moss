@@ -43,11 +43,12 @@ type JobHandler func(ctx context.Context, job Job)
 
 // Scheduler 管理定时任务的执行。
 type Scheduler struct {
-	mu      sync.Mutex
-	jobs    map[string]*jobEntry
-	handler JobHandler
-	cancel  context.CancelFunc
-	running bool
+	mu        sync.Mutex
+	jobs      map[string]*jobEntry
+	handler   JobHandler
+	parentCtx context.Context
+	cancel    context.CancelFunc
+	running   bool
 }
 
 type jobEntry struct {
@@ -126,12 +127,14 @@ func (s *Scheduler) ListJobs() []Job {
 }
 
 // Start 启动调度器，handler 在每次任务触发时被调用。
+// ctx 用于全局生命周期管理：当 ctx 取消时，调度器停止且所有 job 的 context 也被取消。
 func (s *Scheduler) Start(ctx context.Context, handler JobHandler) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	ctx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
+	s.parentCtx = ctx
 	s.handler = handler
 	s.running = true
 
@@ -176,12 +179,25 @@ func (s *Scheduler) Count() int {
 }
 
 func (s *Scheduler) scheduleEntry(entry *jobEntry, interval time.Duration, once bool) {
-	ctx, cancel := context.WithCancel(context.Background())
+	// job context 继承 parentCtx，这样全局 cancel 时 handler 内的 ctx 也会响应
+	parent := s.parentCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithCancel(parent)
 	entry.cancel = cancel
+
+	jobID := entry.job.ID // 捕获 ID 用于闭包内安全比较
 
 	var fire func()
 	fire = func() {
 		s.mu.Lock()
+		// 检查 entry 是否仍有效（可能已被 handler 内 RemoveJob 移除）
+		current, exists := s.jobs[jobID]
+		if !exists || current != entry {
+			s.mu.Unlock()
+			return
+		}
 		entry.job.LastRun = time.Now()
 		entry.job.RunCount++
 		handler := s.handler
@@ -193,13 +209,22 @@ func (s *Scheduler) scheduleEntry(entry *jobEntry, interval time.Duration, once 
 		}
 
 		if once {
-			_ = s.RemoveJob(job.ID)
+			// @once 任务：handler 完成后才移除（不会 cancel 正在执行的 ctx）
+			s.mu.Lock()
+			if e, ok := s.jobs[jobID]; ok && e == entry {
+				if e.timer != nil {
+					e.timer.Stop()
+				}
+				delete(s.jobs, jobID)
+			}
+			s.mu.Unlock()
+			cancel()
 			return
 		}
 
 		// 重新调度下一次执行
 		s.mu.Lock()
-		if e, ok := s.jobs[job.ID]; ok && s.running {
+		if e, ok := s.jobs[jobID]; ok && e == entry && s.running {
 			e.job.NextRun = time.Now().Add(interval)
 			e.timer = time.AfterFunc(interval, fire)
 		}

@@ -80,8 +80,14 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 			fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
 		}
 		fmt.Fprintf(c.W, "%s: ", req.Prompt)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return InputResponse{}, err
+		}
 		var sel int
-		fmt.Fscan(c.R, &sel)
+		if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &sel); err != nil || sel < 1 || sel > len(req.Options) {
+			return InputResponse{Selected: 0}, nil // 默认选第一项
+		}
 		return InputResponse{Selected: sel - 1}, nil
 
 	default:

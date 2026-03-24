@@ -112,7 +112,7 @@ func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -126,10 +126,14 @@ func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 
+	if len(result.Data) != len(texts) {
+		return nil, fmt.Errorf("embedding API returned %d results for %d inputs", len(result.Data), len(texts))
+	}
+
 	// 按 index 排序（API 不保证顺序）
 	embeddings := make([][]float64, len(texts))
 	for _, item := range result.Data {
-		if item.Index < len(embeddings) {
+		if item.Index >= 0 && item.Index < len(embeddings) {
 			embeddings[item.Index] = item.Embedding
 		}
 	}
