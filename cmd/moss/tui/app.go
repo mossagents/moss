@@ -268,9 +268,8 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			return sessionResultMsg{err: fmt.Errorf("启动 kernel 失败: %w", err)}
 		}
 
-		// 创建持久 session，注入 system prompt
-		skillAdditions := k.SkillManager().SystemPromptAdditions()
-		sysPrompt := buildSystemPrompt(wCfg.Workspace, skillAdditions)
+		// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
+		sysPrompt := buildSystemPrompt(wCfg.Workspace)
 		sess, err := k.NewSession(ctx, session.SessionConfig{
 			Goal:         "interactive",
 			Mode:         "interactive",
@@ -282,8 +281,6 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			cancel()
 			return sessionResultMsg{err: fmt.Errorf("创建 session 失败: %w", err)}
 		}
-		// 注入 system 消息到对话历史
-		sess.AppendMessage(port.Message{Role: port.RoleSystem, Content: sysPrompt})
 
 		agent := &agentState{
 			k:      k,

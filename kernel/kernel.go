@@ -60,8 +60,31 @@ func (k *Kernel) Boot(_ context.Context) error {
 }
 
 // NewSession 创建新 Session。
+// 如果 cfg.SystemPrompt 非空或 SkillManager 有系统提示词补充，
+// 将自动在 Session.Messages 开头注入 system 消息。
 func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*session.Session, error) {
-	return k.sessions.Create(ctx, cfg)
+	sess, err := k.sessions.Create(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// 自动注入 system prompt + skill 补充
+	sysPrompt := cfg.SystemPrompt
+	if additions := k.skills.SystemPromptAdditions(); additions != "" {
+		if sysPrompt != "" {
+			sysPrompt += "\n\n" + additions
+		} else {
+			sysPrompt = additions
+		}
+	}
+	if sysPrompt != "" {
+		sess.Messages = append([]port.Message{{
+			Role:    port.RoleSystem,
+			Content: sysPrompt,
+		}}, sess.Messages...)
+	}
+
+	return sess, nil
 }
 
 // Run 在指定 Session 上运行 Agent Loop。
