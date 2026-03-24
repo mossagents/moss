@@ -11,6 +11,7 @@ type msgKind int
 const (
 	msgUser msgKind = iota
 	msgAssistant
+	msgSystem
 	msgToolStart
 	msgToolResult
 	msgToolError
@@ -39,6 +40,9 @@ func renderMessage(m chatMessage, width int) string {
 	case msgAssistant:
 		label := assistantLabelStyle.Render("🤖 moss")
 		return fmt.Sprintf("\n%s\n%s", label, wrapText(m.content, maxContent))
+
+	case msgSystem:
+		return systemStyle.Render(fmt.Sprintf("\n  ● %s", m.content))
 
 	case msgToolStart:
 		return toolLabelStyle.Render(fmt.Sprintf("  🔧 %s", m.content))

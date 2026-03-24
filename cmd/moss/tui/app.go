@@ -189,6 +189,25 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
+	// 切换模型：关闭旧 kernel，用新 model 重建
+	if sm, ok := msg.(switchModelMsg); ok {
+		if m.agent != nil && m.agent.cancel != nil {
+			m.agent.cancel()
+		}
+		m.agent = nil
+		m.chat.sendFn = nil
+
+		// 更新 config 中的 model
+		m.config.Model = sm.model
+		wCfg := WelcomeConfig{
+			Provider:  m.config.Provider,
+			Model:     sm.model,
+			Workspace: m.config.Workspace,
+		}
+		m.chat.provider = m.config.Provider
+		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+	}
+
 	// kernel 就绪：设置 sendFn 为多轮复用 session 的方式
 	if ready, ok := msg.(kernelReadyMsg); ok {
 		m.agent = ready.agent
@@ -197,9 +216,13 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go agent.appendAndRun(text)
 		}
 		connInfo := m.chat.provider
+		if m.config.Model != "" {
+			connInfo += " (" + m.config.Model + ")"
+		}
+		m.chat.streaming = false
 		m.chat.messages = append(m.chat.messages, chatMessage{
-			kind:    msgAssistant,
-			content: fmt.Sprintf("已连接到 %s，输入消息开始对话。", connInfo),
+			kind:    msgSystem,
+			content: fmt.Sprintf("已连接到 %s", connInfo),
 		})
 		m.chat.refreshViewport()
 		return m, nil

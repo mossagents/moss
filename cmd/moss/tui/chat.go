@@ -19,6 +19,11 @@ type sessionResultMsg struct {
 // cancelMsg 通知应用退出并清理资源。
 type cancelMsg struct{}
 
+// switchModelMsg 通知 app 切换模型。
+type switchModelMsg struct {
+	model string
+}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -42,7 +47,7 @@ type chatModel struct {
 
 func newChatModel(provider, workspace string) chatModel {
 	ta := textarea.New()
-	ta.Placeholder = "输入消息... (Enter 发送, Ctrl+C 退出)"
+	ta.Placeholder = "输入消息... (Enter 发送, /help 查看命令)"
 	ta.Focus()
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
@@ -113,6 +118,11 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	text := strings.TrimSpace(m.textarea.Value())
 	if text == "" {
 		return m, nil
+	}
+
+	// 斜杠命令
+	if strings.HasPrefix(text, "/") {
+		return m.handleSlashCommand(text)
 	}
 
 	// 如果有阻塞的 Ask 请求，回复它
@@ -250,11 +260,72 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 底部状态
-	status := mutedStyle.Render("Ctrl+C 退出")
+	status := mutedStyle.Render("/help 查看命令 │ Ctrl+C 退出")
 	if m.pendAsk != nil {
-		status = mutedStyle.Render("输入回复后按 Enter 发送 │ Ctrl+C 退出")
+		status = mutedStyle.Render("输入回复后按 Enter 发送 │ /help 查看命令")
 	}
 	b.WriteString(status)
 
 	return b.String()
+}
+
+// handleSlashCommand 处理 / 开头的斜杠命令。
+func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
+	parts := strings.Fields(input)
+	cmd := strings.ToLower(parts[0])
+	args := parts[1:]
+
+	m.textarea.Reset()
+
+	switch cmd {
+	case "/exit", "/quit":
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "再见 👋"})
+		m.refreshViewport()
+		return m, func() tea.Msg { return cancelMsg{} }
+
+	case "/model":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgSystem,
+				content: fmt.Sprintf("当前模型: %s\n用法: /model <模型名称>", m.provider),
+			})
+			m.refreshViewport()
+			return m, nil
+		}
+		newModel := strings.Join(args, " ")
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgSystem,
+			content: fmt.Sprintf("正在切换到模型 %s...", newModel),
+		})
+		m.streaming = true
+		m.refreshViewport()
+		return m, func() tea.Msg { return switchModelMsg{model: newModel} }
+
+	case "/clear":
+		m.messages = nil
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgSystem,
+			content: "对话已清空。",
+		})
+		m.refreshViewport()
+		return m, nil
+
+	case "/help":
+		help := "可用命令:\n" +
+			"  /model [名称]  查看或切换模型\n" +
+			"  /clear         清空对话记录\n" +
+			"  /help          显示此帮助\n" +
+			"  /exit          退出 moss"
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: help})
+		m.refreshViewport()
+		return m, nil
+
+	default:
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgSystem,
+			content: fmt.Sprintf("未知命令: %s (输入 /help 查看可用命令)", cmd),
+		})
+		m.refreshViewport()
+		return m, nil
+	}
 }

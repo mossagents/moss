@@ -47,6 +47,10 @@ var (
 			Foreground(colorError).
 			Bold(true)
 
+	systemStyle = lipgloss.NewStyle().
+			Foreground(colorMuted).
+			Italic(true)
+
 	mutedStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
