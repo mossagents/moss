@@ -7,12 +7,12 @@ import (
 )
 
 func TestCollectRunRequestUsesDefaults(t *testing.T) {
-	// goal, workspace (default), mode (default), trust (default), confirm
-	input := strings.NewReader("analyze repository\n\n\n\ny\n")
+	// goal, provider (default), workspace (default), mode (default), trust (default), confirm
+	input := strings.NewReader("analyze repository\n\n\n\n\ny\n")
 	var output bytes.Buffer
 	ui := newTerminalUI(input, &output)
 
-	req, err := ui.collectRunRequest("/repo", "interactive", "trusted")
+	req, err := ui.collectRunRequest("/repo", "interactive", "trusted", "claude")
 	if err != nil {
 		t.Fatalf("collectRunRequest returned error: %v", err)
 	}
@@ -29,6 +29,9 @@ func TestCollectRunRequestUsesDefaults(t *testing.T) {
 	if req.Trust != "trusted" {
 		t.Fatalf("expected default trust, got %q", req.Trust)
 	}
+	if req.Provider != "claude" {
+		t.Fatalf("expected default provider, got %q", req.Provider)
+	}
 
 	rendered := output.String()
 	if !strings.Contains(rendered, "moss interactive TUI") {
@@ -40,7 +43,7 @@ func TestCollectRunRequestCanCancel(t *testing.T) {
 	input := strings.NewReader("q\n")
 	ui := newTerminalUI(input, &bytes.Buffer{})
 
-	_, err := ui.collectRunRequest("/repo", "interactive", "trusted")
+	_, err := ui.collectRunRequest("/repo", "interactive", "trusted", "claude")
 	if err == nil {
 		t.Fatal("expected cancellation error")
 	}

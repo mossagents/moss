@@ -2,7 +2,10 @@ module github.com/mossagi/moss
 
 go 1.23.0
 
-require github.com/anthropics/anthropic-sdk-go v1.27.1
+require (
+	github.com/anthropics/anthropic-sdk-go v1.27.1
+	github.com/openai/openai-go v1.12.0
+)
 
 require (
 	github.com/tidwall/gjson v1.18.0 // indirect

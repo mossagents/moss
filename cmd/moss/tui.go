@@ -10,7 +10,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagi/moss/adapters/claude"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
 )
@@ -108,6 +107,7 @@ type RunRequest struct {
 	Mode      string
 	Workspace string
 	Trust     string
+	Provider  string
 }
 
 func tuiCmd(args []string) {
@@ -115,18 +115,19 @@ func tuiCmd(args []string) {
 	wsDir := fs.String("workspace", ".", "Workspace directory")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
+	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
 		os.Exit(1)
 	}
 
-	runTUI(*wsDir, *mode, *trust, os.Stdin, os.Stdout, os.Stderr)
+	runTUI(*wsDir, *mode, *trust, *provider, os.Stdin, os.Stdout, os.Stderr)
 }
 
-func runTUI(defaultWorkspace, defaultMode, defaultTrust string, reader io.Reader, writer io.Writer, errWriter io.Writer) {
+func runTUI(defaultWorkspace, defaultMode, defaultTrust, defaultProvider string, reader io.Reader, writer io.Writer, errWriter io.Writer) {
 	ui := newTerminalUI(reader, writer)
-	req, err := ui.collectRunRequest(defaultWorkspace, defaultMode, defaultTrust)
+	req, err := ui.collectRunRequest(defaultWorkspace, defaultMode, defaultTrust, defaultProvider)
 	if err != nil {
 		if errors.Is(err, errCancelled) {
 			fmt.Fprintln(writer, "\nRun cancelled.")
@@ -139,7 +140,7 @@ func runTUI(defaultWorkspace, defaultMode, defaultTrust string, reader io.Reader
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	k, err := buildKernel(req.Workspace, req.Trust, claude.DefaultModel)
+	k, err := buildKernel(req.Workspace, req.Trust, req.Provider, "")
 	if err != nil {
 		fmt.Fprintf(errWriter, "error initializing kernel: %v\n", err)
 		os.Exit(1)
@@ -182,10 +183,15 @@ func runTUI(defaultWorkspace, defaultMode, defaultTrust string, reader io.Reader
 
 var errCancelled = errors.New("cancelled")
 
-func (ui *terminalUI) collectRunRequest(defaultWorkspace, defaultMode, defaultTrust string) (RunRequest, error) {
-	ui.renderFrame(defaultWorkspace, defaultMode, defaultTrust)
+func (ui *terminalUI) collectRunRequest(defaultWorkspace, defaultMode, defaultTrust, defaultProvider string) (RunRequest, error) {
+	ui.renderFrame(defaultWorkspace, defaultMode, defaultTrust, defaultProvider)
 
 	goal, err := ui.promptRequired("Goal", "")
+	if err != nil {
+		return RunRequest{}, err
+	}
+
+	providerValue, err := ui.promptWithDefault("Provider (claude/openai)", defaultProvider)
 	if err != nil {
 		return RunRequest{}, err
 	}
@@ -218,17 +224,18 @@ func (ui *terminalUI) collectRunRequest(defaultWorkspace, defaultMode, defaultTr
 		Mode:      modeValue,
 		Workspace: workspaceValue,
 		Trust:     trustValue,
+		Provider:  providerValue,
 	}, nil
 }
 
-func (ui *terminalUI) renderFrame(defaultWorkspace, defaultMode, defaultTrust string) {
+func (ui *terminalUI) renderFrame(defaultWorkspace, defaultMode, defaultTrust, defaultProvider string) {
 	fmt.Fprint(ui.writer, ansiClearScreen)
 	fmt.Fprintf(ui.writer, "🌿 moss %s\n", version)
 	fmt.Fprintln(ui.writer, "┌────────────────────────────────────────────────────────────┐")
 	fmt.Fprintln(ui.writer, "│ moss interactive TUI                                      │")
 	fmt.Fprintln(ui.writer, "│ Press Enter to keep defaults. Type 'q' to cancel any time.│")
 	fmt.Fprintln(ui.writer, "└────────────────────────────────────────────────────────────┘")
-	fmt.Fprintf(ui.writer, "Defaults → workspace=%s | mode=%s | trust=%s\n\n", defaultWorkspace, defaultMode, defaultTrust)
+	fmt.Fprintf(ui.writer, "Defaults → workspace=%s | mode=%s | trust=%s | provider=%s\n\n", defaultWorkspace, defaultMode, defaultTrust, defaultProvider)
 }
 
 func (ui *terminalUI) promptRequired(label, fallback string) (string, error) {

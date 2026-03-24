@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/mossagi/moss/adapters/claude"
+	adaptersopenai "github.com/mossagi/moss/adapters/openai"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -54,10 +56,13 @@ Flags:
   --workspace   Workspace directory (default: ".")
   --mode        Run mode: interactive|autopilot (default: interactive)
   --trust       Trust level: trusted|restricted (default: trusted)
-  --model       Claude model name (default: claude-sonnet-4-20250514)
+  --provider    LLM provider: claude|openai (default: claude)
+  --model       Model name (default depends on provider)
 
 Environment:
-  ANTHROPIC_API_KEY  Required. Your Anthropic API key.
+  ANTHROPIC_API_KEY  Required when provider=claude.
+  OPENAI_API_KEY     Required when provider=openai.
+  OPENAI_BASE_URL    Optional. Override OpenAI API base URL (for compatible APIs).
 `)
 }
 
@@ -67,7 +72,8 @@ func runCmd(args []string) {
 	wsDir := fs.String("workspace", ".", "Workspace directory")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
-	model := fs.String("model", claude.DefaultModel, "Claude model name")
+	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
+	model := fs.String("model", "", "Model name (default depends on provider)")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
@@ -76,7 +82,7 @@ func runCmd(args []string) {
 
 	if *goal == "" {
 		if *mode == "interactive" {
-			runTUI(*wsDir, *mode, *trust, os.Stdin, os.Stdout, os.Stderr)
+			runTUI(*wsDir, *mode, *trust, *provider, os.Stdin, os.Stdout, os.Stderr)
 			return
 		}
 		fmt.Fprintln(os.Stderr, "error: --goal is required")
@@ -95,7 +101,7 @@ func runCmd(args []string) {
 		cancel()
 	}()
 
-	k, err := buildKernel(*wsDir, *trust, *model)
+	k, err := buildKernel(*wsDir, *trust, *provider, *model)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error initializing kernel: %v\n", err)
 		os.Exit(1)
@@ -136,8 +142,28 @@ func runCmd(args []string) {
 	}
 }
 
+// buildLLM 根据 provider 创建 LLM 适配器。
+func buildLLM(provider, model string) (port.LLM, error) {
+	switch strings.ToLower(provider) {
+	case "claude", "anthropic":
+		var opts []claude.Option
+		if model != "" {
+			opts = append(opts, claude.WithModel(model))
+		}
+		return claude.New("", opts...), nil
+	case "openai":
+		var opts []adaptersopenai.Option
+		if model != "" {
+			opts = append(opts, adaptersopenai.WithModel(model))
+		}
+		return adaptersopenai.New("", opts...), nil
+	default:
+		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
+	}
+}
+
 // buildKernel 构建 Kernel 实例。
-func buildKernel(wsDir, trust, model string) (*kernel.Kernel, error) {
+func buildKernel(wsDir, trust, provider, model string) (*kernel.Kernel, error) {
 	sb, err := sandbox.NewLocal(wsDir)
 	if err != nil {
 		return nil, err
@@ -145,8 +171,10 @@ func buildKernel(wsDir, trust, model string) (*kernel.Kernel, error) {
 
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
 
-	// Claude adapter：API key 从 ANTHROPIC_API_KEY 环境变量读取
-	llm := claude.New("", claude.WithModel(model))
+	llm, err := buildLLM(provider, model)
+	if err != nil {
+		return nil, err
+	}
 
 	k := kernel.New(
 		kernel.WithLLM(llm),

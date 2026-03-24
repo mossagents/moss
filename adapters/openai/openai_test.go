@@ -1,0 +1,491 @@
+package openai
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/mossagi/moss/kernel/port"
+	"github.com/openai/openai-go"
+)
+
+// ─── toOpenAIMessages ────────────────────────────────
+
+func TestToOpenAIMessages_SystemMessage(t *testing.T) {
+	msgs := []port.Message{
+		{Role: port.RoleSystem, Content: "You are a helpful assistant."},
+		{Role: port.RoleUser, Content: "Hello"},
+	}
+	result := toOpenAIMessages(msgs)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+	if result[0].OfSystem == nil {
+		t.Fatal("expected system message")
+	}
+	if result[1].OfUser == nil {
+		t.Fatal("expected user message")
+	}
+}
+
+func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
+	msgs := []port.Message{
+		{Role: port.RoleUser, Content: "What's the weather?"},
+		{
+			Role:    port.RoleAssistant,
+			Content: "Let me check.",
+			ToolCalls: []port.ToolCall{
+				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
+			},
+		},
+	}
+	result := toOpenAIMessages(msgs)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(result))
+	}
+	asst := result[1].OfAssistant
+	if asst == nil {
+		t.Fatal("expected assistant message")
+	}
+	if len(asst.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(asst.ToolCalls))
+	}
+	if asst.ToolCalls[0].Function.Name != "get_weather" {
+		t.Errorf("tool name = %q, want get_weather", asst.ToolCalls[0].Function.Name)
+	}
+	if asst.ToolCalls[0].Function.Arguments != `{"city":"Beijing"}` {
+		t.Errorf("tool args = %q", asst.ToolCalls[0].Function.Arguments)
+	}
+}
+
+func TestToOpenAIMessages_ToolResults(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleTool,
+			ToolResults: []port.ToolResult{
+				{CallID: "call_1", Content: "Sunny, 25°C"},
+				{CallID: "call_2", Content: "error: timeout", IsError: true},
+			},
+		},
+	}
+	result := toOpenAIMessages(msgs)
+
+	// OpenAI 要求每个 tool result 是独立的 tool message
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tool messages, got %d", len(result))
+	}
+	for _, msg := range result {
+		if msg.OfTool == nil {
+			t.Fatal("expected tool message")
+		}
+	}
+	if result[0].OfTool.ToolCallID != "call_1" {
+		t.Errorf("tool_call_id = %q, want call_1", result[0].OfTool.ToolCallID)
+	}
+}
+
+func TestToOpenAIMessages_EmptyAssistantSkipped(t *testing.T) {
+	msgs := []port.Message{
+		{Role: port.RoleAssistant, Content: "", ToolCalls: nil},
+	}
+	result := toOpenAIMessages(msgs)
+
+	if len(result) != 0 {
+		t.Fatalf("expected 0 messages for empty assistant, got %d", len(result))
+	}
+}
+
+// ─── toOpenAITools ───────────────────────────────────
+
+func TestToOpenAITools(t *testing.T) {
+	tools := []port.ToolSpec{
+		{
+			Name:        "read_file",
+			Description: "Read a file",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+		},
+		{
+			Name:        "list_files",
+			Description: "",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+		},
+	}
+	result := toOpenAITools(tools)
+
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(result))
+	}
+	if result[0].Function.Name != "read_file" {
+		t.Errorf("tool name = %q, want read_file", result[0].Function.Name)
+	}
+}
+
+func TestToOpenAITools_Empty(t *testing.T) {
+	result := toOpenAITools(nil)
+	if result != nil {
+		t.Errorf("expected nil for empty tools, got %v", result)
+	}
+}
+
+// ─── fromOpenAIResponse ──────────────────────────────
+
+func TestFromOpenAIResponse_TextOnly(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-123",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "gpt-4o",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": "Hello World"
+			},
+			"finish_reason": "stop"
+		}],
+		"usage": {
+			"prompt_tokens": 10,
+			"completion_tokens": 5,
+			"total_tokens": 15
+		}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := fromOpenAIResponse(&completion)
+
+	if resp.Message.Role != port.RoleAssistant {
+		t.Errorf("role = %s, want assistant", resp.Message.Role)
+	}
+	if resp.Message.Content != "Hello World" {
+		t.Errorf("content = %q, want Hello World", resp.Message.Content)
+	}
+	if len(resp.ToolCalls) != 0 {
+		t.Errorf("expected 0 tool calls, got %d", len(resp.ToolCalls))
+	}
+	if resp.StopReason != "stop" {
+		t.Errorf("stop_reason = %q, want stop", resp.StopReason)
+	}
+	if resp.Usage.PromptTokens != 10 {
+		t.Errorf("prompt_tokens = %d, want 10", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.CompletionTokens != 5 {
+		t.Errorf("completion_tokens = %d, want 5", resp.Usage.CompletionTokens)
+	}
+	if resp.Usage.TotalTokens != 15 {
+		t.Errorf("total_tokens = %d, want 15", resp.Usage.TotalTokens)
+	}
+}
+
+func TestFromOpenAIResponse_WithToolCalls(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-456",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "gpt-4o",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": "Let me check.",
+				"tool_calls": [{
+					"id": "call_abc",
+					"type": "function",
+					"function": {
+						"name": "get_weather",
+						"arguments": "{\"city\":\"Beijing\"}"
+					}
+				}]
+			},
+			"finish_reason": "tool_calls"
+		}],
+		"usage": {
+			"prompt_tokens": 20,
+			"completion_tokens": 15,
+			"total_tokens": 35
+		}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := fromOpenAIResponse(&completion)
+
+	if resp.Message.Content != "Let me check." {
+		t.Errorf("content = %q", resp.Message.Content)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
+	}
+	tc := resp.ToolCalls[0]
+	if tc.ID != "call_abc" {
+		t.Errorf("tool call id = %q", tc.ID)
+	}
+	if tc.Name != "get_weather" {
+		t.Errorf("tool call name = %q", tc.Name)
+	}
+	if string(tc.Arguments) != `{"city":"Beijing"}` {
+		t.Errorf("tool call args = %s", tc.Arguments)
+	}
+	if resp.StopReason != "tool_calls" {
+		t.Errorf("stop_reason = %q, want tool_calls", resp.StopReason)
+	}
+}
+
+func TestFromOpenAIResponse_EmptyChoices(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-789",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "gpt-4o",
+		"choices": [],
+		"usage": {"prompt_tokens": 5, "completion_tokens": 0, "total_tokens": 5}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := fromOpenAIResponse(&completion)
+	if resp.Message.Role != port.RoleAssistant {
+		t.Errorf("role = %s, want assistant", resp.Message.Role)
+	}
+	if resp.Message.Content != "" {
+		t.Errorf("expected empty content, got %q", resp.Message.Content)
+	}
+}
+
+// ─── streamIterator (processChunk / flushToolCalls) ──
+
+func newTestIterator() *streamIterator {
+	return &streamIterator{
+		toolBuilders: make(map[int]*toolCallBuilder),
+	}
+}
+
+func chunkFromJSON(t *testing.T, raw string) openai.ChatCompletionChunk {
+	t.Helper()
+	var c openai.ChatCompletionChunk
+	if err := json.Unmarshal([]byte(raw), &c); err != nil {
+		t.Fatalf("unmarshal chunk: %v", err)
+	}
+	return c
+}
+
+func TestStreamIterator_TextDeltas(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-1","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"content":" World"},"finish_reason":""}]
+	}`))
+
+	if len(it.pending) != 2 {
+		t.Fatalf("expected 2 pending chunks, got %d", len(it.pending))
+	}
+	if it.pending[0].Delta != "Hello" {
+		t.Errorf("chunk[0].Delta = %q, want Hello", it.pending[0].Delta)
+	}
+	if it.pending[1].Delta != " World" {
+		t.Errorf("chunk[1].Delta = %q, want ' World'", it.pending[1].Delta)
+	}
+}
+
+func TestStreamIterator_SingleToolCall(t *testing.T) {
+	it := newTestIterator()
+
+	// 第一个 chunk：工具调用开始
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-2","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_abc","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":""}]
+	}`))
+	// 参数增量
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-2","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":"}}]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-2","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"Beijing\"}"}}]},"finish_reason":""}]
+	}`))
+	// finish_reason = tool_calls → 触发 flush
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-2","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
+	}`))
+
+	// pending 中不应有文本 delta，只有工具调用
+	var toolChunks []port.StreamChunk
+	for _, p := range it.pending {
+		if p.ToolCall != nil {
+			toolChunks = append(toolChunks, p)
+		}
+	}
+	if len(toolChunks) != 1 {
+		t.Fatalf("expected 1 tool call chunk, got %d", len(toolChunks))
+	}
+	tc := toolChunks[0].ToolCall
+	if tc.ID != "call_abc" {
+		t.Errorf("tool call ID = %q", tc.ID)
+	}
+	if tc.Name != "get_weather" {
+		t.Errorf("tool call Name = %q", tc.Name)
+	}
+	if string(tc.Arguments) != `{"city":"Beijing"}` {
+		t.Errorf("tool call Arguments = %s", tc.Arguments)
+	}
+}
+
+func TestStreamIterator_ParallelToolCalls(t *testing.T) {
+	it := newTestIterator()
+
+	// 两个并行工具调用
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-3","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[
+			{"index":0,"id":"call_1","type":"function","function":{"name":"func_a","arguments":""}},
+			{"index":1,"id":"call_2","type":"function","function":{"name":"func_b","arguments":""}}
+		]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-3","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[
+			{"index":0,"function":{"arguments":"{\"a\":1}"}},
+			{"index":1,"function":{"arguments":"{\"b\":2}"}}
+		]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-3","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
+	}`))
+
+	var toolChunks []port.StreamChunk
+	for _, p := range it.pending {
+		if p.ToolCall != nil {
+			toolChunks = append(toolChunks, p)
+		}
+	}
+	if len(toolChunks) != 2 {
+		t.Fatalf("expected 2 tool call chunks, got %d", len(toolChunks))
+	}
+
+	names := map[string]string{}
+	for _, tc := range toolChunks {
+		names[tc.ToolCall.Name] = string(tc.ToolCall.Arguments)
+	}
+	if names["func_a"] != `{"a":1}` {
+		t.Errorf("func_a args = %q", names["func_a"])
+	}
+	if names["func_b"] != `{"b":2}` {
+		t.Errorf("func_b args = %q", names["func_b"])
+	}
+}
+
+func TestStreamIterator_EmptyToolArgs(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-4","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_x","type":"function","function":{"name":"no_args","arguments":""}}]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-4","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
+	}`))
+
+	var tc *port.ToolCall
+	for _, p := range it.pending {
+		if p.ToolCall != nil {
+			tc = p.ToolCall
+		}
+	}
+	if tc == nil {
+		t.Fatal("expected tool call")
+	}
+	// 空参数应该被替换为 "{}"
+	if string(tc.Arguments) != "{}" {
+		t.Errorf("expected empty args as {}, got %s", tc.Arguments)
+	}
+}
+
+func TestStreamIterator_UsageTracking(t *testing.T) {
+	it := newTestIterator()
+
+	// 中间 chunk 无 usage
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-5","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":""}]
+	}`))
+
+	if it.usage.TotalTokens != 0 {
+		t.Errorf("expected 0 total tokens before final chunk, got %d", it.usage.TotalTokens)
+	}
+
+	// 最后一个 chunk 带 usage
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-5","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[],
+		"usage":{"prompt_tokens":10,"completion_tokens":3,"total_tokens":13}
+	}`))
+
+	if it.usage.PromptTokens != 10 {
+		t.Errorf("prompt_tokens = %d, want 10", it.usage.PromptTokens)
+	}
+	if it.usage.CompletionTokens != 3 {
+		t.Errorf("completion_tokens = %d, want 3", it.usage.CompletionTokens)
+	}
+	if it.usage.TotalTokens != 13 {
+		t.Errorf("total_tokens = %d, want 13", it.usage.TotalTokens)
+	}
+}
+
+func TestStreamIterator_EmptyChoicesIgnored(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-6","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[]
+	}`))
+
+	if len(it.pending) != 0 {
+		t.Errorf("expected 0 pending, got %d", len(it.pending))
+	}
+}
+
+func TestStreamIterator_TextAndToolCallMixed(t *testing.T) {
+	it := newTestIterator()
+
+	// 先输出文本
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-7","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"content":"Let me check."},"finish_reason":""}]
+	}`))
+	// 然后工具调用
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-7","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_m","type":"function","function":{"name":"search","arguments":"{\"q\":\"test\"}"}}]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-7","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
+	}`))
+
+	// 应该先有文本 delta，再有工具调用
+	if len(it.pending) != 2 {
+		t.Fatalf("expected 2 pending chunks, got %d", len(it.pending))
+	}
+	if it.pending[0].Delta != "Let me check." {
+		t.Errorf("first chunk should be text delta, got %+v", it.pending[0])
+	}
+	if it.pending[1].ToolCall == nil {
+		t.Error("second chunk should be tool call")
+	}
+}
