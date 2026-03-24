@@ -13,7 +13,7 @@ import (
 
 // 确保实现 port.LLM 和 port.StreamingLLM 接口。
 var (
-	_ port.LLM         = (*Client)(nil)
+	_ port.LLM          = (*Client)(nil)
 	_ port.StreamingLLM = (*Client)(nil)
 )
 
@@ -40,6 +40,26 @@ func New(apiKey string, opts ...Option) *Client {
 	var reqOpts []option.RequestOption
 	if apiKey != "" {
 		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	c := &Client{
+		client:    anthropic.NewClient(reqOpts...),
+		model:     DefaultModel,
+		maxTokens: 8192,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// NewWithBaseURL 创建 Claude 适配器，允许指定 API Key 和 Base URL。
+func NewWithBaseURL(apiKey, baseURL string, opts ...Option) *Client {
+	var reqOpts []option.RequestOption
+	if apiKey != "" {
+		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	if baseURL != "" {
+		reqOpts = append(reqOpts, option.WithBaseURL(baseURL))
 	}
 	c := &Client{
 		client:    anthropic.NewClient(reqOpts...),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -240,5 +241,127 @@ func TestSkillConfig_IsMCP(t *testing.T) {
 	}
 	if sc := (SkillConfig{Transport: ""}); sc.IsMCP() {
 		t.Error("empty transport should not be MCP")
+	}
+}
+
+func TestSaveConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "subdir", "config.yaml")
+
+	cfg := &Config{
+		Provider: "openai",
+		Model:    "gpt-4o",
+		BaseURL:  "https://api.example.com/v1",
+		APIKey:   "sk-test123",
+		Skills: []SkillConfig{
+			{Name: "test", Transport: "stdio", Command: "echo"},
+		},
+	}
+
+	if err := SaveConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reload and verify
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Provider != "openai" {
+		t.Errorf("expected provider=openai, got %q", loaded.Provider)
+	}
+	if loaded.Model != "gpt-4o" {
+		t.Errorf("expected model=gpt-4o, got %q", loaded.Model)
+	}
+	if loaded.BaseURL != "https://api.example.com/v1" {
+		t.Errorf("expected base_url, got %q", loaded.BaseURL)
+	}
+	if loaded.APIKey != "sk-test123" {
+		t.Errorf("expected api_key, got %q", loaded.APIKey)
+	}
+	if len(loaded.Skills) != 1 || loaded.Skills[0].Name != "test" {
+		t.Errorf("expected 1 skill, got %+v", loaded.Skills)
+	}
+}
+
+func TestSaveConfig_PreservesExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	// 写入初始配置
+	initial := &Config{
+		Provider: "claude",
+		APIKey:   "sk-initial",
+		Skills: []SkillConfig{
+			{Name: "mcp1", Transport: "stdio", Command: "npx server"},
+		},
+	}
+	if err := SaveConfig(path, initial); err != nil {
+		t.Fatal(err)
+	}
+
+	// 加载、修改、重新保存
+	loaded, _ := LoadConfig(path)
+	loaded.Provider = "openai"
+	loaded.Model = "gpt-4o"
+	if err := SaveConfig(path, loaded); err != nil {
+		t.Fatal(err)
+	}
+
+	// 验证所有字段都被保留
+	final, _ := LoadConfig(path)
+	if final.Provider != "openai" {
+		t.Errorf("provider should be updated to openai, got %q", final.Provider)
+	}
+	if final.APIKey != "sk-initial" {
+		t.Errorf("api_key should be preserved, got %q", final.APIKey)
+	}
+	if len(final.Skills) != 1 || final.Skills[0].Name != "mcp1" {
+		t.Errorf("skills should be preserved, got %+v", final.Skills)
+	}
+}
+
+func TestLoadConfig_WithProviderFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	data := `provider: openai
+model: gpt-4o
+base_url: https://api.example.com/v1
+api_key: sk-test
+
+skills:
+  - name: mcp-server
+    transport: stdio
+    command: npx -y @test/server
+`
+	if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Provider != "openai" || cfg.Model != "gpt-4o" {
+		t.Errorf("unexpected provider/model: %q/%q", cfg.Provider, cfg.Model)
+	}
+	if cfg.BaseURL != "https://api.example.com/v1" {
+		t.Errorf("unexpected base_url: %q", cfg.BaseURL)
+	}
+	if cfg.APIKey != "sk-test" {
+		t.Errorf("unexpected api_key: %q", cfg.APIKey)
+	}
+	if len(cfg.Skills) != 1 {
+		t.Errorf("expected 1 skill, got %d", len(cfg.Skills))
+	}
+}
+
+func TestMossDir(t *testing.T) {
+	dir := MossDir()
+	if dir == "" {
+		t.Skip("cannot determine home directory")
+	}
+	if !strings.HasSuffix(dir, ".moss") {
+		t.Errorf("expected path ending with .moss, got %q", dir)
 	}
 }

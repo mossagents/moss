@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagi/moss/kernel/skill"
 )
 
 // welcomeState 表示欢迎界面的焦点字段。
@@ -202,4 +203,17 @@ func (m welcomeModel) config() WelcomeConfig {
 		Model:     m.model,
 		Workspace: m.workspace,
 	}
+}
+
+// saveWelcomeConfig 将用户选择的配置（provider, model）持久化到 ~/.moss/config.yaml。
+// 仅更新 provider 和 model 字段，保留已有的 api_key, base_url, skills 等配置。
+func saveWelcomeConfig(wCfg WelcomeConfig) {
+	cfgPath := skill.DefaultGlobalConfigPath()
+	if cfgPath == "" {
+		return
+	}
+	existing, _ := skill.LoadConfig(cfgPath)
+	existing.Provider = wCfg.Provider
+	existing.Model = wCfg.Model
+	_ = skill.SaveConfig(cfgPath, existing)
 }

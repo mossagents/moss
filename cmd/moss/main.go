@@ -55,31 +55,51 @@ Flags:
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
-  --provider    LLM provider: claude|openai (default: claude)
-  --model       Model name (default depends on provider)
+  --provider    LLM provider: claude|openai (default from config or "claude")
+  --model       Model name (default from config or provider default)
+  --base-url    LLM API base URL (override config)
+  --api-key     LLM API key (override config)
+
+Config:
+  ~/.moss/config.yaml    Global configuration (provider, model, base_url, api_key, skills)
+  ./moss.yaml            Project-level skill configuration
 
 Environment:
-  ANTHROPIC_API_KEY  Required when provider=claude.
-  OPENAI_API_KEY     Required when provider=openai.
-  OPENAI_BASE_URL    Optional. Override OpenAI API base URL (for compatible APIs).
+  ANTHROPIC_API_KEY  Fallback when provider=claude and no api_key in config.
+  OPENAI_API_KEY     Fallback when provider=openai and no api_key in config.
+  OPENAI_BASE_URL    Fallback when provider=openai and no base_url in config.
 `)
 }
 
 // launchTUI 启动 Bubble Tea TUI 界面。
 func launchTUI(args []string) {
 	fs := flag.NewFlagSet("moss", flag.ExitOnError)
-	wsDir := fs.String("workspace", ".", "Workspace directory")
+	wsDir := fs.String("workspace", "", "Workspace directory")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
-	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
+	provider := fs.String("provider", "", "LLM provider: claude|openai")
 	model := fs.String("model", "", "Model name (default depends on provider)")
+	baseURL := fs.String("base-url", "", "LLM API base URL")
+	apiKey := fs.String("api-key", "", "LLM API key")
 
 	_ = fs.Parse(args)
 
+	// 加载 ~/.moss/config.yaml
+	mossCfg := loadMossConfig()
+
+	// CLI flags > config file defaults
+	effectiveProvider := firstNonEmpty(*provider, mossCfg.Provider, "claude")
+	effectiveModel := firstNonEmpty(*model, mossCfg.Model)
+	effectiveBaseURL := firstNonEmpty(*baseURL, mossCfg.BaseURL)
+	effectiveAPIKey := firstNonEmpty(*apiKey, mossCfg.APIKey)
+	effectiveWorkspace := firstNonEmpty(*wsDir, ".")
+
 	if err := tui.Run(tui.Config{
-		Provider:    *provider,
-		Model:       *model,
-		Workspace:   *wsDir,
+		Provider:    effectiveProvider,
+		Model:       effectiveModel,
+		Workspace:   effectiveWorkspace,
 		Trust:       *trust,
+		BaseURL:     effectiveBaseURL,
+		APIKey:      effectiveAPIKey,
 		BuildKernel: BuildKernelWithIO,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -90,11 +110,13 @@ func launchTUI(args []string) {
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
-	wsDir := fs.String("workspace", ".", "Workspace directory")
+	wsDir := fs.String("workspace", "", "Workspace directory")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
 	trust := fs.String("trust", "trusted", "Trust level: trusted|restricted")
-	provider := fs.String("provider", "claude", "LLM provider: claude|openai")
+	provider := fs.String("provider", "", "LLM provider: claude|openai")
 	model := fs.String("model", "", "Model name (default depends on provider)")
+	baseURL := fs.String("base-url", "", "LLM API base URL")
+	apiKey := fs.String("api-key", "", "LLM API key")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
@@ -108,6 +130,15 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
+	// 加载 ~/.moss/config.yaml
+	mossCfg := loadMossConfig()
+
+	effectiveProvider := firstNonEmpty(*provider, mossCfg.Provider, "claude")
+	effectiveModel := firstNonEmpty(*model, mossCfg.Model)
+	effectiveBaseURL := firstNonEmpty(*baseURL, mossCfg.BaseURL)
+	effectiveAPIKey := firstNonEmpty(*apiKey, mossCfg.APIKey)
+	effectiveWorkspace := firstNonEmpty(*wsDir, ".")
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -119,7 +150,7 @@ func runCmd(args []string) {
 		cancel()
 	}()
 
-	k, err := buildKernel(*wsDir, *trust, *provider, *model)
+	k, err := buildKernel(effectiveWorkspace, *trust, effectiveProvider, effectiveModel, effectiveAPIKey, effectiveBaseURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error initializing kernel: %v\n", err)
 		os.Exit(1)
@@ -132,7 +163,7 @@ func runCmd(args []string) {
 
 	fmt.Printf("🌿 moss %s\n", version)
 	fmt.Printf("Goal: %s\n", *goal)
-	fmt.Printf("Workspace: %s\n", *wsDir)
+	fmt.Printf("Workspace: %s\n", effectiveWorkspace)
 	fmt.Printf("Mode: %s | Trust: %s\n", *mode, *trust)
 
 	skills := k.SkillManager().List()
@@ -174,18 +205,24 @@ func runCmd(args []string) {
 }
 
 // buildLLM 根据 provider 创建 LLM 适配器。
-func buildLLM(provider, model string) (port.LLM, error) {
+func buildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
 	switch strings.ToLower(provider) {
 	case "claude", "anthropic":
 		var opts []claude.Option
 		if model != "" {
 			opts = append(opts, claude.WithModel(model))
 		}
+		if baseURL != "" || apiKey != "" {
+			return claude.NewWithBaseURL(apiKey, baseURL, opts...), nil
+		}
 		return claude.New("", opts...), nil
 	case "openai":
 		var opts []adaptersopenai.Option
 		if model != "" {
 			opts = append(opts, adaptersopenai.WithModel(model))
+		}
+		if baseURL != "" || apiKey != "" {
+			return adaptersopenai.NewWithBaseURL(apiKey, baseURL, opts...), nil
 		}
 		return adaptersopenai.New("", opts...), nil
 	default:
@@ -194,23 +231,23 @@ func buildLLM(provider, model string) (port.LLM, error) {
 }
 
 // buildKernel 构建 Kernel 实例（CLI 模式，使用 cliUserIO）。
-func buildKernel(wsDir, trust, provider, model string) (*kernel.Kernel, error) {
+func buildKernel(wsDir, trust, provider, model, apiKey, baseURL string) (*kernel.Kernel, error) {
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
-	return buildKernelWithIO(wsDir, trust, provider, model, cliIO)
+	return buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL, cliIO)
 }
 
 // BuildKernelWithIO 构建 Kernel 实例，允许注入自定义 UserIO（供 TUI 使用）。
-func BuildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error) {
-	return buildKernelWithIO(wsDir, trust, provider, model, io)
+func BuildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+	return buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL, io)
 }
 
-func buildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error) {
+func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	sb, err := sandbox.NewLocal(wsDir)
 	if err != nil {
 		return nil, err
 	}
 
-	llm, err := buildLLM(provider, model)
+	llm, err := buildLLM(provider, model, apiKey, baseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -262,4 +299,23 @@ func buildKernelWithIO(wsDir, trust, provider, model string, io port.UserIO) (*k
 	}
 
 	return k, nil
+}
+
+// loadMossConfig 加载 ~/.moss/config.yaml 全局配置。
+func loadMossConfig() *skill.Config {
+	cfg, err := skill.LoadConfig(skill.DefaultGlobalConfigPath())
+	if err != nil {
+		return &skill.Config{}
+	}
+	return cfg
+}
+
+// firstNonEmpty 返回第一个非空字符串。
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }

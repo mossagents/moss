@@ -8,9 +8,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config 是 moss.yaml 或 ~/.moss/config.yaml 中的 skill 配置。
+// Config 是 moss.yaml 或 ~/.moss/config.yaml 中的配置。
 type Config struct {
-	Skills []SkillConfig `yaml:"skills"`
+	Provider string        `yaml:"provider,omitempty"`
+	Model    string        `yaml:"model,omitempty"`
+	BaseURL  string        `yaml:"base_url,omitempty"`
+	APIKey   string        `yaml:"api_key,omitempty"`
+	Skills   []SkillConfig `yaml:"skills,omitempty"`
 }
 
 // SkillConfig 描述一个 skill 的加载配置。
@@ -84,4 +88,29 @@ func DefaultGlobalConfigPath() string {
 // DefaultProjectConfigPath 返回项目级配置文件路径。
 func DefaultProjectConfigPath(workspace string) string {
 	return filepath.Join(workspace, "moss.yaml")
+}
+
+// SaveConfig 将配置写入指定路径，自动创建父目录。
+func SaveConfig(path string, cfg *Config) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("create config dir %s: %w", dir, err)
+	}
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return fmt.Errorf("write config %s: %w", path, err)
+	}
+	return nil
+}
+
+// MossDir 返回 ~/.moss 目录路径。
+func MossDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".moss")
 }

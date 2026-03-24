@@ -54,6 +54,18 @@ func New(apiKey string, opts ...Option) *Client {
 	return c
 }
 
+// NewWithBaseURL 创建 OpenAI 兼容适配器，允许指定 API Key 和 Base URL。
+func NewWithBaseURL(apiKey, baseURL string, opts ...Option) *Client {
+	var reqOpts []option.RequestOption
+	if apiKey != "" {
+		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	if baseURL != "" {
+		reqOpts = append(reqOpts, option.WithBaseURL(baseURL))
+	}
+	return NewWithRequestOptions(reqOpts, opts...)
+}
+
 // NewWithRequestOptions 创建 OpenAI 适配器，允许传入 option.RequestOption（如 WithBaseURL）。
 func NewWithRequestOptions(reqOpts []option.RequestOption, opts ...Option) *Client {
 	c := &Client{

@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/skill"
 )
 
 // sessionResultMsg 表示 agent session 结束。
@@ -320,9 +321,14 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/config":
+		return m.handleConfigCommand(args)
+
 	case "/help":
 		help := "可用命令:\n" +
 			"  /model [名称]  查看或切换模型\n" +
+			"  /config        查看当前配置\n" +
+			"  /config set <key> <value>  设置配置项 (provider/model/base_url/api_key)\n" +
 			"  /skills        查看已加载的 skills\n" +
 			"  /clear         清空对话记录\n" +
 			"  /help          显示此帮助\n" +
@@ -339,4 +345,99 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
+}
+
+// handleConfigCommand 处理 /config 命令。
+func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
+	cfgPath := skill.DefaultGlobalConfigPath()
+	if cfgPath == "" {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "无法确定配置目录。"})
+		m.refreshViewport()
+		return m, nil
+	}
+
+	// /config — 显示当前配置
+	if len(args) == 0 {
+		cfg, _ := skill.LoadConfig(cfgPath)
+		apiKeyDisplay := "(未设置)"
+		if cfg.APIKey != "" {
+			apiKeyDisplay = maskKey(cfg.APIKey)
+		}
+		info := fmt.Sprintf("配置文件: %s\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
+			cfgPath,
+			valueOrDefault(cfg.Provider, "(未设置)"),
+			valueOrDefault(cfg.Model, "(未设置)"),
+			valueOrDefault(cfg.BaseURL, "(未设置)"),
+			apiKeyDisplay,
+		)
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+	}
+
+	// /config set <key> <value>
+	if args[0] == "set" && len(args) >= 3 {
+		key := strings.ToLower(args[1])
+		value := strings.Join(args[2:], " ")
+
+		cfg, _ := skill.LoadConfig(cfgPath)
+		switch key {
+		case "provider":
+			cfg.Provider = value
+		case "model":
+			cfg.Model = value
+		case "base_url", "baseurl":
+			cfg.BaseURL = value
+		case "api_key", "apikey":
+			cfg.APIKey = value
+		default:
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgError,
+				content: fmt.Sprintf("未知配置项: %s (支持: provider, model, base_url, api_key)", key),
+			})
+			m.refreshViewport()
+			return m, nil
+		}
+
+		if err := skill.SaveConfig(cfgPath, cfg); err != nil {
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgError,
+				content: fmt.Sprintf("保存配置失败: %v", err),
+			})
+		} else {
+			display := value
+			if key == "api_key" || key == "apikey" {
+				display = maskKey(value)
+			}
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgSystem,
+				content: fmt.Sprintf("已设置 %s = %s\n提示: 部分设置需要重启 moss 或使用 /model 切换后生效。", key, display),
+			})
+		}
+		m.refreshViewport()
+		return m, nil
+	}
+
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgSystem,
+		content: "用法:\n  /config              查看当前配置\n  /config set <key> <value>  设置配置项",
+	})
+	m.refreshViewport()
+	return m, nil
+}
+
+// maskKey 遮盖 API key 只显示前4和后4位。
+func maskKey(key string) string {
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// valueOrDefault 返回 s 或 defaultVal。
+func valueOrDefault(s, defaultVal string) string {
+	if s == "" {
+		return defaultVal
+	}
+	return s
 }

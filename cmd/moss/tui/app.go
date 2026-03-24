@@ -28,7 +28,9 @@ type Config struct {
 	Model       string
 	Workspace   string
 	Trust       string
-	BuildKernel func(wsDir, trust, provider, model string, io port.UserIO) (*kernel.Kernel, error)
+	BaseURL     string
+	APIKey      string
+	BuildKernel func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -164,6 +166,8 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.welcome.confirmed {
 		cfg := m.welcome.config()
+		// 持久化用户选择的 provider/model 到 ~/.moss/config.yaml
+		saveWelcomeConfig(cfg)
 		m.chat = newChatModel(cfg.Provider, cfg.Workspace)
 		m.state = stateChat
 
@@ -253,7 +257,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		provider := strings.ToLower(wCfg.Provider)
 
-		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, provider, wCfg.Model, bridge)
+		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, provider, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 		if err != nil {
 			return sessionResultMsg{err: fmt.Errorf("初始化 kernel 失败: %w", err)}
 		}
