@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"os"
 
-	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/skill"
+	mossTUI "github.com/mossagi/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl

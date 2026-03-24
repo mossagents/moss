@@ -24,7 +24,6 @@ import (
 	"os"
 	"sync"
 
-	mossTUI "github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
@@ -32,6 +31,7 @@ import (
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
+	mossTUI "github.com/mossagi/moss/userio/tui"
 )
 
 //go:embed templates/manager_system_prompt.tmpl

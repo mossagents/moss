@@ -11,13 +11,13 @@ import (
 
 	"github.com/mossagi/moss/adapters/claude"
 	adaptersopenai "github.com/mossagi/moss/adapters/openai"
-	"github.com/mossagi/moss/cmd/moss/tui"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/skill"
+	"github.com/mossagi/moss/userio/tui"
 )
 
 const version = "0.3.0"
