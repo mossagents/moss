@@ -1,6 +1,5 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { User, Bot, AlertTriangle, Wrench, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import type { ChatMessage as ChatMessageType, ToolExecution } from "@/lib/types";
 
@@ -14,57 +13,47 @@ export default function ChatMessage({ message }: ChatMessageProps) {
   if (role === "system") {
     return (
       <div className="flex items-start gap-2 py-2 animate-fade-in">
-        <AlertTriangle size={14} className="text-amber-400 mt-0.5 shrink-0" />
-        <p className="text-sm text-amber-300/80">{content}</p>
+        <span className="material-symbols-outlined text-sm text-error mt-0.5 shrink-0">warning</span>
+        <p className="text-sm text-error/80">{content}</p>
       </div>
     );
   }
 
   const isUser = role === "user";
 
-  return (
-    <div
-      className={cn(
-        "flex gap-3 py-3 animate-fade-in",
-        isUser ? "flex-row-reverse" : "flex-row",
-      )}
-    >
-      {/* Avatar */}
-      <div
-        className={cn(
-          "flex items-center justify-center shrink-0 w-8 h-8 rounded-xl mt-0.5",
-          isUser
-            ? "bg-blue-500/15 text-blue-400"
-            : "bg-accent/12 text-accent",
-        )}
-      >
-        {isUser ? <User size={15} /> : <Bot size={15} />}
+  if (isUser) {
+    return (
+      <div className="flex flex-col items-end animate-fade-in">
+        <div className="bg-surface-container-high rounded-2xl rounded-tr-none p-4 max-w-[80%]">
+          <p className="text-on-surface font-medium leading-relaxed text-sm">{content}</p>
+        </div>
+        <span className="text-[10px] text-on-surface-variant mt-2 font-medium tracking-wider uppercase">
+          {new Date(message.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
       </div>
+    );
+  }
 
-      {/* Content bubble */}
-      <div
-        className={cn(
-          "min-w-0 max-w-[85%] rounded-2xl px-4 py-3 text-[14px]",
-          isUser
-            ? "bg-blue-500/12 text-slate-200 rounded-tr-md"
-            : "bg-surface-bright text-slate-200 rounded-tl-md border border-border",
-        )}
-      >
+  // Assistant message
+  return (
+    <div className="flex gap-6 animate-fade-in">
+      <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
+        <span className="material-symbols-outlined text-on-primary text-sm">auto_awesome</span>
+      </div>
+      <div className="flex-1 space-y-4 min-w-0">
         {/* Tool executions */}
         {tools && tools.length > 0 && (
-          <div className="mb-2 space-y-1.5">
+          <div className="space-y-1.5">
             {tools.map((tool, i) => (
               <ToolChip key={i} tool={tool} />
             ))}
           </div>
         )}
 
-        {/* Message text */}
+        {/* Message content */}
         {content && (
-          <div className={cn("prose-chat", streaming && "typing-cursor")}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {content}
-            </ReactMarkdown>
+          <div className={cn("prose-chat text-sm leading-relaxed", streaming && "typing-cursor")}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         )}
       </div>
@@ -74,20 +63,26 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
 function ToolChip({ tool }: { tool: ToolExecution }) {
   return (
-    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-black/20 border border-border text-xs">
-      <Wrench size={12} className="text-slate-500 shrink-0" />
-      <span className="text-slate-400 truncate">{tool.name}</span>
-      <span className="ml-auto shrink-0">
-        {tool.status === "running" && (
-          <Loader2 size={12} className="text-accent animate-spin" />
-        )}
-        {tool.status === "done" && (
-          <Check size={12} className="text-emerald-400" />
-        )}
-        {tool.status === "error" && (
-          <AlertTriangle size={12} className="text-rose-400" />
-        )}
-      </span>
+    <div
+      className={cn(
+        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold",
+        tool.status === "running"
+          ? "bg-tertiary-container text-on-tertiary-container"
+          : tool.status === "done"
+          ? "bg-primary-container/50 text-on-primary-container"
+          : "bg-error-container/20 text-error"
+      )}
+    >
+      {tool.status === "running" && (
+        <span className="material-symbols-outlined text-sm animate-spin-1s">refresh</span>
+      )}
+      {tool.status === "done" && (
+        <span className="material-symbols-outlined text-sm">check_circle</span>
+      )}
+      {tool.status === "error" && (
+        <span className="material-symbols-outlined text-sm">error</span>
+      )}
+      <span>{tool.name}</span>
     </div>
   );
 }

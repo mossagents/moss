@@ -18,6 +18,8 @@ import ChatArea from "@/components/ChatArea";
 import MessageInput from "@/components/MessageInput";
 import AskDialog from "@/components/AskDialog";
 import WorkerPanel from "@/components/WorkerPanel";
+import TopBar from "@/components/TopBar";
+import RightPanel from "@/components/RightPanel";
 
 let msgCounter = 0;
 function nextId() {
@@ -242,33 +244,45 @@ export default function App() {
   // ─── Render ───────────────────────────────────────
 
   return (
-    <div className="flex h-full w-full bg-surface-dim">
+    <div className="flex h-full w-full bg-background text-on-surface">
       {/* Title bar drag region */}
-      <div className="wails-drag fixed top-0 left-0 right-0 h-8 z-50" />
+      <div className="wails-drag fixed top-0 left-0 right-0 h-8 z-60" />
 
+      {/* Left sidebar */}
       <Sidebar
         config={config}
         isRunning={isRunning}
         onNewSession={handleNewSession}
       />
 
-      <main className="flex flex-col flex-1 min-w-0">
-        {/* Chat area */}
-        <div className="flex-1 overflow-hidden relative">
+      {/* Right panel */}
+      <RightPanel config={config} isRunning={isRunning} />
+
+      {/* Main content */}
+      <main className="absolute left-64 right-80 top-0 bottom-0 flex flex-col bg-background">
+        {/* Top bar */}
+        <TopBar onNewSession={handleNewSession} />
+
+        {/* Chat area — starts below topbar, ends above input */}
+        <div className="flex-1 overflow-hidden relative mt-16">
           <ChatArea messages={messages} isRunning={isRunning} />
+
+          {/* Worker panel (overlays bottom of chat area) */}
+          {workerState && workerState.tasks.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 pb-2">
+              <WorkerPanel state={workerState} />
+            </div>
+          )}
         </div>
 
-        {/* Worker panel */}
-        {workerState && workerState.tasks.length > 0 && (
-          <WorkerPanel state={workerState} />
-        )}
-
-        {/* Input */}
-        <MessageInput
-          onSend={handleSend}
-          onStop={handleStop}
-          isRunning={isRunning}
-        />
+        {/* Input bar */}
+        <div className="relative h-36 shrink-0">
+          <MessageInput
+            onSend={handleSend}
+            onStop={handleStop}
+            isRunning={isRunning}
+          />
+        </div>
       </main>
 
       {/* Ask dialog overlay */}

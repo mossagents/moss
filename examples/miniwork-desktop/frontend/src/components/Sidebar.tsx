@@ -1,4 +1,4 @@
-import { Bot, Plus, Cpu, FolderOpen } from "lucide-react";
+import { Plus } from "lucide-react";
 import type { AppConfig } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -9,111 +9,80 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ config, isRunning, onNewSession }: SidebarProps) {
+  const initials = config?.provider?.[0]?.toUpperCase() ?? "M";
+  const modelLabel = config?.model || "AI Agent";
+  const providerLabel = config?.provider || "mosswork";
+
   return (
-    <aside className="flex flex-col w-[260px] min-w-[260px] bg-surface border-r border-border pt-10 select-none">
+    <aside className="h-screen w-64 fixed left-0 top-0 bg-surface-container flex flex-col p-4 overflow-y-auto z-50 select-none shadow-botanical-sidebar">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-5 pb-5">
-        <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-accent/15 text-accent">
-          <Bot size={20} />
-        </div>
-        <div>
-          <h1 className="text-[15px] font-semibold text-slate-100 leading-tight">
-            Moss Desktop
-          </h1>
-          <p className="text-[11px] text-slate-500 leading-tight mt-0.5">
-            AI Agent Workspace
-          </p>
-        </div>
+      <div className="mb-8 px-2 pt-4">
+        <h1 className="text-2xl font-bold text-on-surface tracking-tight font-headline">mosswork</h1>
+        <p className="text-xs text-on-surface-variant font-medium opacity-70">Botanical Intelligence</p>
       </div>
 
-      {/* New session button */}
-      <div className="px-4 mb-4">
-        <button
-          onClick={onNewSession}
-          disabled={isRunning}
-          className={cn(
-            "flex items-center gap-2 w-full px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all",
-            "bg-accent/10 text-accent hover:bg-accent/20 active:scale-[0.98]",
-            isRunning && "opacity-40 pointer-events-none",
-          )}
-        >
-          <Plus size={16} />
-          新对话
-        </button>
-      </div>
-
-      {/* Divider */}
-      <div className="mx-5 border-t border-border" />
-
-      {/* Config info */}
-      <div className="flex-1 overflow-y-auto px-5 pt-4 space-y-3.5">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
-          配置
-        </p>
-
-        {config ? (
-          <>
-            <ConfigItem
-              icon={<Cpu size={14} />}
-              label="服务商"
-              value={config.provider || "—"}
-            />
-            <ConfigItem
-              icon={<Bot size={14} />}
-              label="模型"
-              value={config.model || "—"}
-            />
-            <ConfigItem
-              icon={<FolderOpen size={14} />}
-              label="工作区"
-              value={
-                config.workspace
-                  ? config.workspace.replace(/\\/g, "/").split("/").pop() || config.workspace
-                  : "—"
-              }
-            />
-          </>
-        ) : (
-          <p className="text-xs text-slate-600">加载中…</p>
+      {/* New Session button */}
+      <button
+        onClick={onNewSession}
+        disabled={isRunning}
+        className={cn(
+          "mb-8 w-full py-3 px-4 bg-primary text-on-primary rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-90",
+          isRunning && "opacity-50 pointer-events-none"
         )}
-      </div>
+      >
+        <Plus size={18} />
+        新对话
+      </button>
 
-      {/* Status bar */}
-      <div className="px-5 py-3.5 border-t border-border">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "w-2 h-2 rounded-full",
-              isRunning
-                ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]"
-                : "bg-slate-600",
-            )}
-          />
-          <span className="text-[11px] text-slate-500">
-            {isRunning ? "Agent 运行中" : "空闲"}
-          </span>
+      {/* Navigation */}
+      <nav className="flex-1 space-y-1">
+        <NavItem icon="local_library" label="Library" />
+        <NavItem icon="history" label="Recents" />
+        <NavItem icon="space_dashboard" label="Workspace" active />
+        <NavItem icon="settings" label="Settings" />
+      </nav>
+
+      {/* User Profile */}
+      <div className="mt-auto pt-4 flex items-center gap-3 px-2">
+        <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0">
+          <span className="text-sm font-bold text-on-surface-variant">{initials}</span>
         </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-on-surface truncate">{providerLabel}</p>
+          <p className="text-xs text-on-surface-variant truncate">{modelLabel}</p>
+        </div>
+        <span
+          className={cn(
+            "w-2 h-2 rounded-full shrink-0",
+            isRunning ? "status-dot-active animate-pulse" : "status-dot-inactive"
+          )}
+        />
       </div>
     </aside>
   );
 }
 
-function ConfigItem({
+function NavItem({
   icon,
   label,
-  value,
+  active,
 }: {
-  icon: React.ReactNode;
+  icon: string;
   label: string;
-  value: string;
+  active?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-2.5">
-      <span className="text-slate-500 mt-0.5 shrink-0">{icon}</span>
-      <div className="min-w-0">
-        <p className="text-[10px] text-slate-500 leading-none mb-0.5">{label}</p>
-        <p className="text-[13px] text-slate-300 truncate">{value}</p>
-      </div>
-    </div>
+    <a
+      href="#"
+      className={cn(
+        "flex items-center gap-3 px-4 py-3 rounded-xl transition-colors",
+        active
+          ? "bg-surface-container-lowest text-on-surface shadow-sm"
+          : "text-on-surface-variant hover:bg-surface-container-lowest/50"
+      )}
+    >
+      <span className="material-symbols-outlined text-xl">{icon}</span>
+      <span className="font-bold text-base tracking-tight font-headline">{label}</span>
+    </a>
   );
 }
