@@ -25,7 +25,6 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
@@ -38,8 +37,8 @@ type config struct {
 }
 
 func main() {
-	skill.SetAppName("minitrade")
-	_ = skill.EnsureMossDir()
+	appkit.SetAppName("minitrade")
+	_ = appkit.EnsureMossDir()
 
 	cfg := parseFlags()
 
@@ -66,7 +65,7 @@ func run(ctx context.Context, cfg *config) error {
 	}
 	mkt := newMarket(capital)
 
-	storeDir := filepath.Join(skill.MossDir(), "sessions")
+	storeDir := filepath.Join(appkit.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return fmt.Errorf("session store: %w", err)

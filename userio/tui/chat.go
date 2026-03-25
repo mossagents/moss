@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/skill"
 )
@@ -461,7 +462,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 
-		if err := skill.SaveConfig(cfgPath, cfg); err != nil {
+		if err := appkit.SaveConfig(cfgPath, cfg); err != nil {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
 				content: fmt.Sprintf("保存配置失败: %v", err),

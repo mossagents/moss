@@ -13,7 +13,6 @@ import (
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/userio/tui"
 )
 
@@ -23,7 +22,7 @@ func main() {
 	logger := logging.GetLogger()
 
 	// 确保 ~/.moss 配置目录存在
-	if err := skill.EnsureMossDir(); err != nil {
+	if err := appkit.EnsureMossDir(); err != nil {
 		logger.Warn("cannot create config dir", slog.Any("error", err))
 	}
 

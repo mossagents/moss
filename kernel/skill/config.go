@@ -13,10 +13,13 @@ import (
 
 // appName 是应用名称，决定全局配置目录（~/.<appName>）。
 // 默认为 "moss"，第三方应用可通过 SetAppName 自定义。
+// 注意：SetAppName 现已迁移到 appkit 包，请使用 appkit.SetAppName()。
 var appName = "moss"
 
 // SetAppName 设置应用名称，影响全局配置目录路径。
 // 必须在任何配置读写操作之前调用。
+//
+// 已废弃：请使用 appkit.SetAppName() 代替。
 //
 // 示例：
 //
@@ -24,7 +27,19 @@ var appName = "moss"
 func SetAppName(name string) { appName = name }
 
 // AppName 返回当前应用名称。
+//
+// 已废弃：请使用 appkit.AppName() 代替，但此函数仍可用于兼容。
 func AppName() string { return appName }
+
+// _mossDir 内部函数，返回全局配置目录路径（~/.<appName>）。
+// 仅用于 skill 包内部的配置路径构造。
+func _mossDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, "."+appName)
+}
 
 const defaultConfigTemplate = `# Global config for moss
 # Priority: CLI flags > config file > environment variables
@@ -46,6 +61,11 @@ skills:
   #   transport: sse
   #   url: http://localhost:3000/sse
 `
+
+// DefaultConfigTemplate 返回全局配置文件的默认模板。
+func DefaultConfigTemplate() string {
+	return defaultConfigTemplate
+}
 
 // Config 是 moss.yaml 或 ~/.moss/config.yaml 中的配置。
 type Config struct {
@@ -120,7 +140,7 @@ func MergeConfigs(configs ...*Config) *Config {
 
 // DefaultGlobalConfigPath 返回全局配置文件路径（~/.<appName>/config.yaml）。
 func DefaultGlobalConfigPath() string {
-	d := MossDir()
+	d := _mossDir()
 	if d == "" {
 		return ""
 	}
@@ -151,7 +171,7 @@ func DefaultProjectConfigPath(workspace string) string {
 
 // DefaultGlobalSystemPromptTemplatePath 返回全局 system prompt 模板路径（~/.<appName>/system_prompt.tmpl）。
 func DefaultGlobalSystemPromptTemplatePath() string {
-	d := MossDir()
+	d := _mossDir()
 	if d == "" {
 		return ""
 	}
@@ -220,59 +240,10 @@ func renderPromptTemplate(src string, data map[string]any) (string, error) {
 	return b.String(), nil
 }
 
-// SaveConfig 将配置写入指定路径，自动创建父目录。
-func SaveConfig(path string, cfg *Config) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("create config dir %s: %w", dir, err)
-	}
-	data, err := yaml.Marshal(cfg)
-	if err != nil {
-		return fmt.Errorf("marshal config: %w", err)
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return fmt.Errorf("write config %s: %w", path, err)
-	}
-	return nil
-}
-
-// MossDir 返回全局配置目录路径（~/.<appName>）。
-func MossDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, "."+appName)
-}
-
-// EnsureMossDir 确保 ~/.<appName> 目录存在，不存在则创建。
-// 同时会在全局配置文件不存在时创建一个可编辑的模板文件。
-func EnsureMossDir() error {
-	dir := MossDir()
-	if dir == "" {
-		return fmt.Errorf("cannot determine home directory")
-	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-
-	cfgPath := DefaultGlobalConfigPath()
-	if cfgPath == "" {
-		return nil
-	}
-
-	f, err := os.OpenFile(cfgPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if err != nil {
-		if os.IsExist(err) {
-			return nil
-		}
-		return fmt.Errorf("create config template %s: %w", cfgPath, err)
-	}
-	defer f.Close()
-
-	if _, err := f.WriteString(defaultConfigTemplate); err != nil {
-		return fmt.Errorf("write config template %s: %w", cfgPath, err)
-	}
-
-	return nil
-}
+// 以下函数已移到 appkit 包，请使用以下替代方案：
+//
+// SaveConfig 已移到 appkit.SaveConfig()
+// MossDir 已移到 appkit.MossDir()
+// EnsureMossDir 已移到 appkit.EnsureMossDir()
+//
+// 为了向后兼容性，以下函数仍可通过 skill 包访问（但不再定义在此）

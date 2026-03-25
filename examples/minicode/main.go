@@ -22,7 +22,6 @@ import (
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/skill"
 	mossTUI "github.com/mossagi/moss/userio/tui"
 )
 
@@ -31,8 +30,8 @@ var defaultSystemPromptTemplate string
 
 func main() {
 	// 配置目录使用 ~/.minicode
-	skill.SetAppName("minicode")
-	_ = skill.EnsureMossDir()
+	appkit.SetAppName("minicode")
+	_ = appkit.EnsureMossDir()
 
 	flags := appkit.ParseAppFlags()
 

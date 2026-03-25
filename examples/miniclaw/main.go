@@ -37,7 +37,6 @@ import (
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 	mossTUI "github.com/mossagi/moss/userio/tui"
@@ -48,7 +47,7 @@ var defaultSystemPromptTemplate string
 
 func main() {
 	skill.SetAppName("miniclaw")
-	_ = skill.EnsureMossDir()
+	_ = appkit.EnsureAppDir()
 
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
@@ -158,7 +157,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 }
 
 func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
-	storeDir := filepath.Join(skill.MossDir(), "sessions")
+	storeDir := filepath.Join(appkit.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("session store: %w", err)

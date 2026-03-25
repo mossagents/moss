@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/skill"
 )
 
@@ -215,5 +216,5 @@ func saveWelcomeConfig(wCfg WelcomeConfig) {
 	existing, _ := skill.LoadConfig(cfgPath)
 	existing.Provider = wCfg.Provider
 	existing.Model = wCfg.Model
-	_ = skill.SaveConfig(cfgPath, existing)
+	_ = appkit.SaveConfig(cfgPath, existing)
 }

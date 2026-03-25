@@ -19,7 +19,6 @@ import (
 
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/logging"
-	"github.com/mossagi/moss/kernel/skill"
 	"golang.org/x/net/websocket"
 )
 
@@ -27,8 +26,8 @@ import (
 var staticFS embed.FS
 
 func main() {
-	skill.SetAppName("miniroom")
-	_ = skill.EnsureMossDir()
+	appkit.SetAppName("miniroom")
+	_ = appkit.EnsureMossDir()
 
 	flags := appkit.ParseAppFlags()
 
