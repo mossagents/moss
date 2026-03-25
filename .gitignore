@@ -9,3 +9,7 @@
 *.out
 /dist/
 test_output.txt
+
+.idea
+.claude
+.vscode
