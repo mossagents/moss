@@ -40,6 +40,7 @@ Schedule formats:
   - "@every 30m"  — run every 30 minutes
   - "@every 6h"   — run every 6 hours
   - "@every 1h30m" — run every 1.5 hours
+	- "@after 10m"  — run once after 10 minutes
   - "@once"       — run once immediately (then auto-remove)
 
 Example: schedule_task(id="crawl-news", schedule="@every 6h", goal="Crawl news.ycombinator.com and save top stories")`,
@@ -47,7 +48,7 @@ Example: schedule_task(id="crawl-news", schedule="@every 6h", goal="Crawl news.y
 		"type": "object",
 		"properties": {
 			"id":       {"type": "string", "description": "Unique identifier for this scheduled task"},
-			"schedule": {"type": "string", "description": "Schedule expression: '@every <duration>' or '@once'"},
+			"schedule": {"type": "string", "description": "Schedule expression: '@every <duration>', '@after <duration>' or '@once'"},
 			"goal":     {"type": "string", "description": "Goal description for the task — what it should accomplish"}
 		},
 		"required": ["id", "schedule", "goal"]

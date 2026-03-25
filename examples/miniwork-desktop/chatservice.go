@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/tool"
+	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -22,6 +25,7 @@ import (
 type ChatService struct {
 	cfg     config
 	k       *kernel.Kernel
+	sched   *scheduler.Scheduler
 	sess    *session.Session
 	wailsIO *WailsUserIO
 	tracker *orchestrationTracker
@@ -65,6 +69,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 		return fmt.Errorf("create session: %w", err)
 	}
 	s.sess = sess
+	s.startScheduler(ctx)
 	slog.Info("ChatService started successfully",
 		slog.String("provider", s.cfg.provider),
 		slog.String("model", s.cfg.model),
@@ -76,51 +81,38 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 func (s *ChatService) ServiceShutdown() error {
 	slog.Info("ChatService shutting down...")
 	s.mu.Lock()
-
-	// 停止任何正在运行的 agent
-	if s.cancel != nil {
-		slog.Info("Cancelling running agent...")
-		s.cancel()
-	}
-
-	// 等待 agent 完成运行（最多 5 秒）
+	cancel := s.cancel
+	s.cancel = nil
 	s.mu.Unlock()
 
-	// 给后台任务一些时间来响应取消
-	shutdown := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				s.mu.Lock()
-				if !s.running {
-					s.mu.Unlock()
-					shutdown <- struct{}{}
-					return
-				}
-				s.mu.Unlock()
-			}
-		}
-	}()
-
-	select {
-	case <-shutdown:
-		slog.Info("Agent stopped gracefully")
-	case <-time.After(5 * time.Second):
-		slog.Warn("Agent shutdown timeout, forcing shutdown")
+	if cancel != nil {
+		slog.Info("Cancelling running agent...")
+		cancel()
 	}
 
 	// 关闭 kernel
 	if s.k != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		shutdownCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
+		defer stop()
 
 		slog.Info("Shutting down kernel...")
-		if err := s.k.Shutdown(shutdownCtx); err != nil && err != context.DeadlineExceeded {
-			slog.Error("Error shutting down kernel", slog.Any("error", err))
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.k.Shutdown(shutdownCtx)
+		}()
+
+		select {
+		case err := <-errCh:
+			if err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+				slog.Error("Error shutting down kernel", slog.Any("error", err))
+			}
+		case <-time.After(3500 * time.Millisecond):
+			slog.Warn("Kernel shutdown hard-timeout reached; continuing process exit")
 		}
+	}
+
+	if s.sched != nil {
+		s.sched.Stop()
 	}
 
 	slog.Info("ChatService shutdown complete")
@@ -255,6 +247,7 @@ func (s *ChatService) IsRunning() bool {
 
 func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	ctx := context.Background()
+	sched := scheduler.New()
 	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  s.cfg.provider,
 		Model:     s.cfg.model,
@@ -262,9 +255,14 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		Trust:     s.cfg.trust,
 		APIKey:    s.cfg.apiKey,
 		BaseURL:   s.cfg.baseURL,
-	}, s.wailsIO)
+	}, s.wailsIO, kernel.WithScheduler(sched))
 	if err != nil {
 		return nil, err
+	}
+	s.sched = sched
+
+	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
+		return nil, fmt.Errorf("register schedule tools: %w", err)
 	}
 
 	if err := registerOrchestrationTools(k, ctx, s.cfg, s.tracker); err != nil {
@@ -279,6 +277,28 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	}
 
 	return k, nil
+}
+
+func (s *ChatService) startScheduler(ctx context.Context) {
+	if s.sched == nil {
+		return
+	}
+
+	s.sched.Start(ctx, func(_ context.Context, job scheduler.Job) {
+		message := strings.TrimSpace(job.Goal)
+		if message == "" {
+			message = fmt.Sprintf("定时任务 %s 已触发", job.ID)
+		}
+
+		emitEvent("chat:text", map[string]any{
+			"content": fmt.Sprintf("⏰ 定时提醒：%s", message),
+		})
+		emitEvent("chat:reminder", map[string]any{
+			"id":      job.ID,
+			"goal":    job.Goal,
+			"content": message,
+		})
+	})
 }
 
 // ─── Orchestration ──────────────────────────────────

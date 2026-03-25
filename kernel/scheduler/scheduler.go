@@ -315,7 +315,7 @@ func (s *Scheduler) persistLocked() {
 }
 
 // parseSchedule 解析调度表达式。
-// 支持: "@every 30m", "@every 1h", "@every 1h30m", "@once"（默认 0 延迟）
+// 支持: "@every 30m", "@every 1h", "@every 1h30m", "@after 10m", "@once"（默认 0 延迟）
 func parseSchedule(expr string) (interval time.Duration, once bool, err error) {
 	expr = strings.TrimSpace(expr)
 
@@ -335,5 +335,17 @@ func parseSchedule(expr string) (interval time.Duration, once bool, err error) {
 		return d, false, nil
 	}
 
-	return 0, false, fmt.Errorf("unsupported schedule: %q (use '@every <duration>' or '@once')", expr)
+	if strings.HasPrefix(expr, "@after ") {
+		durStr := strings.TrimPrefix(expr, "@after ")
+		d, err := time.ParseDuration(durStr)
+		if err != nil {
+			return 0, false, fmt.Errorf("invalid duration %q: %w", durStr, err)
+		}
+		if d < time.Second {
+			return 0, false, fmt.Errorf("interval too short: %s (minimum 1s)", d)
+		}
+		return d, true, nil
+	}
+
+	return 0, false, fmt.Errorf("unsupported schedule: %q (use '@every <duration>', '@after <duration>' or '@once')", expr)
 }
