@@ -231,6 +231,7 @@
   }
   .player-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .player-dot.offline { background: var(--text-dim); }
+  .player-dot.virtual { background: #7b68ee; box-shadow: 0 0 6px #7b68ee; }
   .player-name-self { color: var(--amber); font-weight: 700; }
 
   /* Chat Area */
@@ -403,6 +404,69 @@
     color: var(--text-dim);
     margin-top: 2px;
   }
+
+  /* Topic overlay */
+  #topic-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(15,14,13,0.92);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #topic-overlay.show { display: flex; }
+  #topic-overlay .topic-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.4em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  #topic-overlay .topic-sub {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-top: -8px;
+  }
+  #topic-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 340px;
+    max-width: 90vw;
+  }
+  .topic-card {
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .topic-card:hover {
+    border-color: var(--amber-dim);
+    background: rgba(212,168,83,0.05);
+    transform: translateY(-1px);
+  }
+  .topic-card .topic-emoji {
+    font-size: 1.6em;
+    flex-shrink: 0;
+  }
+  .topic-card .topic-info { flex: 1; }
+  .topic-card .topic-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.05em;
+    color: var(--amber);
+  }
+  .topic-card .topic-desc {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
@@ -438,6 +502,12 @@
 
 <!-- Room View -->
 <div id="room-view" class="view">
+  <!-- Topic Selection Overlay -->
+  <div id="topic-overlay">
+    <div class="topic-title">🎭 选择聊天主题</div>
+    <div class="topic-sub">选择一个你感兴趣的话题，AI 角色将围绕该主题与你互动</div>
+    <div id="topic-list"></div>
+  </div>
   <div id="sidebar">
     <div id="room-info">
       <div style="color:var(--text-dim);font-size:0.75em;">房间号</div>
@@ -472,6 +542,7 @@ let currentScriptID = null;
 const scriptHints = {
   'turtle_soup': '🐢 <b>海龟汤</b><br>人齐后输入「开始」<br>主持人出谜题，用是非题推理真相<br>回答：✅是 / ❌不是 / ⚪不相关',
   'spy': '🕵️ <b>谁是卧底</b><br>建议 4 人以上，输入「开始」<br>主持人私发词语，轮流描述→投票<br>找出拿到不同词语的卧底！',
+  'chat': '🎭 <b>陪聊室</b><br>选择主题后自动开始<br>AI 扮演多个虚拟角色与你互动<br>🤖 标记 = 虚拟角色',
 };
 
 // ── LocalStorage helpers ──
@@ -588,9 +659,13 @@ function updatePlayers(users) {
     const el = document.createElement('div');
     el.className = 'player-item';
     const isSelf = u.id === myUserID;
-    el.innerHTML = '<div class="player-dot ' + (u.online ? 'online' : 'offline') + '"></div>' +
-      '<span class="' + (isSelf ? 'player-name-self' : '') + '">' +
-      esc(u.name) + (isSelf ? ' (你)' : '') + '</span>';
+    const isVirtual = u.is_virtual;
+    const dotCls = isVirtual ? 'virtual' : (u.online ? 'online' : 'offline');
+    let label = esc(u.name);
+    if (isSelf) label += ' (你)';
+    if (isVirtual) label += ' 🤖';
+    el.innerHTML = '<div class="player-dot ' + dotCls + '"></div>' +
+      '<span class="' + (isSelf ? 'player-name-self' : '') + '">' + label + '</span>';
     list.appendChild(el);
   });
 }
@@ -626,11 +701,37 @@ function esc(s) {
 }
 
 // ── Handle server messages ──
+function showTopicSelection(topics) {
+  const overlay = document.getElementById('topic-overlay');
+  const list = document.getElementById('topic-list');
+  list.innerHTML = '';
+  topics.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'topic-card';
+    card.onclick = () => selectTopic(t.id);
+    card.innerHTML = '<div class="topic-emoji">' + esc(t.emoji) + '</div>' +
+      '<div class="topic-info"><div class="topic-name">' + esc(t.name) + '</div>' +
+      '<div class="topic-desc">' + esc(t.description) + '</div></div>';
+    list.appendChild(card);
+  });
+  overlay.classList.add('show');
+}
+
+function selectTopic(topicId) {
+  document.getElementById('topic-overlay').classList.remove('show');
+  wsSend({ type: 'select_topic', topic: topicId });
+  addSystemMsg('正在召唤虚拟角色，请稍候...');
+}
+
 function handleServerMsg(msg) {
   switch (msg.type) {
     case 'scripts':
       availableScripts = msg.scripts || [];
       renderScripts();
+      break;
+
+    case 'chat_topics':
+      showTopicSelection(msg.chat_topics || []);
       break;
 
     case 'room_created':

@@ -41,6 +41,7 @@ func init() {
 	}{
 		{"turtle_soup", "海龟汤", "🐢", "横向思维解谜：通过是非题推理隐藏真相", "templates/game_prompt.tmpl"},
 		{"spy", "谁是卧底", "🕵️", "身份推理：找出拿到不同词语的卧底玩家", "templates/spy_prompt.tmpl"},
+		{"chat", "陡聊室", "🎭", "AI 扮演多个虚拟角色与你聊天互动", "templates/chat_prompt.tmpl"},
 	}
 	for _, f := range files {
 		data, err := promptFS.ReadFile(f.filename)
@@ -66,8 +67,8 @@ func GetScript(id string) (*Script, bool) {
 // ListScripts 返回所有可用剧本信息。
 func ListScripts() []ScriptInfo {
 	list := make([]ScriptInfo, 0, len(scriptRegistry))
-	// 保证顺序：turtle_soup 在前
-	for _, id := range []string{"turtle_soup", "spy"} {
+	// 保证顺序
+	for _, id := range []string{"turtle_soup", "spy", "chat"} {
 		if s, ok := scriptRegistry[id]; ok {
 			list = append(list, ScriptInfo{
 				ID:          s.ID,
@@ -85,6 +86,21 @@ func buildSystemPrompt(workspace string, script *Script) string {
 	return appkit.RenderSystemPrompt(workspace, script.Template, nil)
 }
 
+// ── 陪聊主题 ────────────────────────────────────────
+
+var chatTopics = []ChatTopicInfo{
+	{ID: "emotion", Name: "深夜情感", Emoji: "🌃", Description: "谈心事、聊感情、倾诉烦恼"},
+	{ID: "acg", Name: "二次元宅聊", Emoji: "🎮", Description: "动漫、游戏、cosplay、番剧推荐"},
+	{ID: "daily", Name: "日常闲聊", Emoji: "🍵", Description: "轻松话题、分享日常、吐槽生活"},
+	{ID: "literature", Name: "文艺沙龙", Emoji: "📚", Description: "文学、音乐、电影、诗歌"},
+	{ID: "party", Name: "派对嗨聊", Emoji: "🎉", Description: "潮流、八卦、搞笑、段子"},
+}
+
+// ListChatTopics 返回所有可用的陪聊主题。
+func ListChatTopics() []ChatTopicInfo {
+	return chatTopics
+}
+
 // ── 工具定义 ─────────────────────────────────────────
 
 func registerGameTools(reg tool.Registry, room *Room) {
@@ -92,6 +108,8 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(whisperSpec, whisperHandler(room))
 	_ = reg.Register(announceSpec, announceHandler(room))
 	_ = reg.Register(setGameStateSpec, setGameStateHandler(room))
+	_ = reg.Register(addVirtualPlayerSpec, addVirtualPlayerHandler(room))
+	_ = reg.Register(chatAsSpec, chatAsHandler(room))
 }
 
 // ── get_players ─────────────────────────────────────
@@ -231,5 +249,75 @@ func setGameStateHandler(room *Room) tool.ToolHandler {
 			Content: fmt.Sprintf("游戏状态已更新：%s", label),
 		})
 		return json.Marshal(map[string]string{"status": "updated", "state": args.State})
+	}
+}
+
+// ── add_virtual_player ──────────────────────────────
+
+var addVirtualPlayerSpec = tool.ToolSpec{
+	Name:        "add_virtual_player",
+	Description: "添加一个虚拟角色到房间，虚拟角色会出现在在线列表中",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"name":    {"type": "string", "description": "虚拟角色的名字"},
+			"persona": {"type": "string", "description": "角色设定简述（如：活泼可爱的高中生）"}
+		},
+		"required": ["name", "persona"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func addVirtualPlayerHandler(room *Room) tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			Name    string `json:"name"`
+			Persona string `json:"persona"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+
+		room.AddVirtualPlayer(args.Name, args.Persona)
+		return json.Marshal(map[string]string{"status": "added", "name": args.Name})
+	}
+}
+
+// ── chat_as ─────────────────────────────────────────
+
+var chatAsSpec = tool.ToolSpec{
+	Name:        "chat_as",
+	Description: "以指定虚拟角色的身份在房间中发送消息",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"name":    {"type": "string", "description": "虚拟角色的名字（需先 add_virtual_player）"},
+			"content": {"type": "string", "description": "消息内容"}
+		},
+		"required": ["name", "content"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func chatAsHandler(room *Room) tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			Name    string `json:"name"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+
+		room.mu.RLock()
+		_, exists := room.virtualPlayers[args.Name]
+		room.mu.RUnlock()
+
+		if !exists {
+			return json.Marshal(map[string]string{"status": "error", "message": "虚拟角色不存在: " + args.Name})
+		}
+
+		room.ChatAs(args.Name, args.Content)
+		return json.Marshal(map[string]string{"status": "sent", "name": args.Name})
 	}
 }

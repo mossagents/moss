@@ -49,13 +49,21 @@ func (p *Player) send(msg ServerMsg) {
 
 // ── Room ────────────────────────────────────────────
 
+// VirtualPlayer 代表由 Agent 扮演的虚拟角色。
+type VirtualPlayer struct {
+	Name    string
+	Persona string // 角色设定简述
+}
+
 // Room 是一个游戏房间，拥有独立的 Kernel 和 Session。
 type Room struct {
-	Code     string
-	players  map[string]*Player // user_id → Player
-	history  []HistoryMsg
-	state    GameState
-	ScriptID string
+	Code           string
+	players        map[string]*Player        // user_id → Player
+	virtualPlayers map[string]*VirtualPlayer // name → VirtualPlayer
+	history        []HistoryMsg
+	state          GameState
+	ScriptID       string
+	Topic          string // 陪聊主题 ID（仅 chat 剧本）
 
 	k    *kernel.Kernel
 	sess *session.Session
@@ -92,15 +100,37 @@ func (r *Room) broadcast(msg ServerMsg) {
 	}
 }
 
-// playerInfos 返回当前所有玩家信息。
+// playerInfos 返回当前所有玩家信息（含虚拟角色）。
 func (r *Room) playerInfos() []PlayerInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	infos := make([]PlayerInfo, 0, len(r.players))
+	infos := make([]PlayerInfo, 0, len(r.players)+len(r.virtualPlayers))
 	for _, p := range r.players {
 		infos = append(infos, PlayerInfo{ID: p.ID, Name: p.Name, Online: p.online})
 	}
+	for _, vp := range r.virtualPlayers {
+		infos = append(infos, PlayerInfo{ID: "v_" + vp.Name, Name: vp.Name, Online: true, IsVirtual: true})
+	}
 	return infos
+}
+
+// AddVirtualPlayer 添加一个虚拟角色到房间。
+func (r *Room) AddVirtualPlayer(name, persona string) {
+	r.mu.Lock()
+	if r.virtualPlayers == nil {
+		r.virtualPlayers = make(map[string]*VirtualPlayer)
+	}
+	r.virtualPlayers[name] = &VirtualPlayer{Name: name, Persona: persona}
+	r.mu.Unlock()
+
+	r.addHistory("系统", name+" 加入了房间", MsgSystem)
+	r.broadcast(ServerMsg{Type: MsgUserJoined, Content: name, Users: r.playerInfos()})
+}
+
+// ChatAs 以虚拟角色身份在房间中发送消息。
+func (r *Room) ChatAs(name, content string) {
+	r.addHistory(name, content, "chat")
+	r.broadcast(ServerMsg{Type: MsgChatBcast, From: name, Content: content})
 }
 
 // join 将一位玩家加入/重连到房间。
@@ -140,6 +170,11 @@ func (r *Room) join(p *Player) {
 		// 新玩家加入通知
 		r.addHistory("系统", p.Name+" 加入了房间", MsgSystem)
 		r.broadcast(ServerMsg{Type: MsgUserJoined, Content: p.Name, Users: r.playerInfos()})
+
+		// 陪聊剧本：第一个玩家加入时发送主题列表，等用户选择
+		if r.ScriptID == "chat" && r.sess != nil && len(r.players) == 1 {
+			p.send(ServerMsg{Type: MsgChatTopics, ChatTopics: ListChatTopics()})
+		}
 	} else {
 		// 重连通知
 		r.broadcast(ServerMsg{Type: MsgUsers, Users: r.playerInfos()})
@@ -174,6 +209,31 @@ func (r *Room) run() {
 			r.handlePlayerMessage(pm)
 		}
 	}
+}
+
+// SelectTopic 用户选择陪聊主题后，存储主题并触发 Agent 初始化。
+func (r *Room) SelectTopic(topicID string, p *Player) {
+	r.mu.Lock()
+	r.Topic = topicID
+	r.mu.Unlock()
+	go r.triggerChatStart(p)
+}
+
+// triggerChatStart 在陪聊剧本中自动触发 Agent 初始化虚拟角色。
+func (r *Room) triggerChatStart(p *Player) {
+	initMsg := fmt.Sprintf("[系统]: 玩家 %s 进入了聊天室，选择的主题是【%s】，请立刻根据该主题初始化对应的角色并做自我介绍。", p.Name, r.Topic)
+	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: initMsg})
+
+	result, err := r.k.Run(r.ctx, r.sess)
+	if err != nil {
+		if r.ctx.Err() != nil {
+			return
+		}
+		log.Printf("[room %s] chat auto-start error: %v", r.Code, err)
+		r.broadcast(ServerMsg{Type: MsgError, Content: "自动启动失败: " + err.Error()})
+		return
+	}
+	_ = result
 }
 
 // handlePlayerMessage 处理一条玩家消息。
@@ -213,12 +273,22 @@ type RoomIO struct {
 var _ port.UserIO = (*RoomIO)(nil)
 
 func (io *RoomIO) Send(_ context.Context, msg port.OutputMessage) error {
+	isChatScript := io.room.ScriptID == "chat"
 	switch msg.Type {
 	case port.OutputStream:
+		if isChatScript {
+			return nil // 陡聊剧本不显示主持人流式输出
+		}
 		io.room.broadcast(ServerMsg{Type: MsgStream, Content: msg.Content, From: "主持人"})
 	case port.OutputStreamEnd:
+		if isChatScript {
+			return nil
+		}
 		io.room.broadcast(ServerMsg{Type: MsgStreamEnd, From: "主持人"})
 	case port.OutputText:
+		if isChatScript {
+			return nil // 陡聊剧本主持人隐身，不广播直接文本
+		}
 		io.room.addHistory("主持人", msg.Content, "agent")
 		io.room.broadcast(ServerMsg{Type: MsgAgent, Content: msg.Content, From: "主持人"})
 	case port.OutputToolStart, port.OutputToolResult:
@@ -280,13 +350,14 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context, scriptID string) (*
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	room := &Room{
-		Code:     code,
-		ScriptID: scriptID,
-		players:  make(map[string]*Player),
-		state:    StateLobby,
-		msgCh:    make(chan playerMessage, 64),
-		ctx:      ctx,
-		cancel:   cancel,
+		Code:           code,
+		ScriptID:       scriptID,
+		players:        make(map[string]*Player),
+		virtualPlayers: make(map[string]*VirtualPlayer),
+		state:          StateLobby,
+		msgCh:          make(chan playerMessage, 64),
+		ctx:            ctx,
+		cancel:         cancel,
 	}
 
 	roomIO := &RoomIO{room: room}

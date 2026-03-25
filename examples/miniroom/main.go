@@ -173,6 +173,20 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 				websocket.JSON.Send(conn, ServerMsg{Type: MsgError, Content: "消息队列已满，请稍后"})
 			}
 
+		case MsgSelectTopic:
+			if currentRoom == nil || currentRoom.ScriptID != "chat" {
+				continue
+			}
+			if msg.Topic == "" {
+				continue
+			}
+			currentRoom.mu.RLock()
+			player := currentRoom.players[currentUserID]
+			currentRoom.mu.RUnlock()
+			if player != nil {
+				currentRoom.SelectTopic(msg.Topic, player)
+			}
+
 		case MsgLeaveRoom:
 			if currentRoom != nil {
 				currentRoom.leave(currentUserID)
