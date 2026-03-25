@@ -63,7 +63,7 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 }
 
 func (f *AppFlags) mergeGlobalConfig() {
-	globalCfg, err := skill.LoadGlobalConfig()
+	globalCfg, err := LoadGlobalConfig()
 	if err != nil || globalCfg == nil {
 		globalCfg = &skill.Config{}
 	}
@@ -94,11 +94,11 @@ func DefaultTemplateContext(workspace string) map[string]any {
 	}
 }
 
-// RenderSystemPrompt 使用标准模板上下文渲染 system prompt，并允许附加领域专属变量。
-func RenderSystemPrompt(workspace, defaultTemplate string, extra map[string]any) string {
+// buildSystemPromptWithExtra 使用标准模板上下文渲染 system prompt，并允许附加领域专属变量。
+func buildSystemPromptWithExtra(workspace, defaultTemplate string, extra map[string]any) string {
 	ctx := DefaultTemplateContext(workspace)
 	for key, value := range extra {
 		ctx[key] = value
 	}
-	return skill.RenderSystemPrompt(workspace, defaultTemplate, ctx)
+	return RenderSystemPrompt(workspace, defaultTemplate, ctx)
 }

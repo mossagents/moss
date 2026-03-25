@@ -412,7 +412,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 // handleConfigCommand 处理 /config 命令。
 func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
-	cfgPath := skill.DefaultGlobalConfigPath()
+	cfgPath := appkit.DefaultGlobalConfigPath()
 	if cfgPath == "" {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "无法确定配置目录。"})
 		m.refreshViewport()
