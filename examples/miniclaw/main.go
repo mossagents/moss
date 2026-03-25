@@ -157,7 +157,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 }
 
 func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
-	storeDir := filepath.Join(appkit.MossDir(), "sessions")
+	storeDir := filepath.Join(appkit.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("session store: %w", err)

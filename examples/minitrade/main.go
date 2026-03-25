@@ -38,7 +38,7 @@ type config struct {
 
 func main() {
 	appkit.SetAppName("minitrade")
-	_ = appkit.EnsureMossDir()
+	_ = appkit.EnsureAppDir()
 
 	cfg := parseFlags()
 
@@ -65,7 +65,7 @@ func run(ctx context.Context, cfg *config) error {
 	}
 	mkt := newMarket(capital)
 
-	storeDir := filepath.Join(appkit.MossDir(), "sessions")
+	storeDir := filepath.Join(appkit.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return fmt.Errorf("session store: %w", err)

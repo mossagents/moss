@@ -22,7 +22,7 @@ func main() {
 	logger := logging.GetLogger()
 
 	// 确保 ~/.moss 配置目录存在
-	if err := appkit.EnsureMossDir(); err != nil {
+	if err := appkit.EnsureAppDir(); err != nil {
 		logger.Warn("cannot create config dir", slog.Any("error", err))
 	}
 

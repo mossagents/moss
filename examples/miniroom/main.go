@@ -27,7 +27,7 @@ var staticFS embed.FS
 
 func main() {
 	appkit.SetAppName("miniroom")
-	_ = appkit.EnsureMossDir()
+	_ = appkit.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()
 

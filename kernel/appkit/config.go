@@ -30,8 +30,8 @@ func SetAppName(name string) {
 // AppName 返回当前应用名称。
 func AppName() string { return appName }
 
-// MossDir 返回全局配置目录路径（~/.<appName>）。
-func MossDir() string {
+// AppDir 返回全局配置目录路径（~/.<appName>）。
+func AppDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""
@@ -39,10 +39,10 @@ func MossDir() string {
 	return filepath.Join(home, "."+appName)
 }
 
-// EnsureMossDir 确保 ~/.<appName> 目录存在，不存在则创建。
+// EnsureAppDir 确保 ~/.<appName> 目录存在，不存在则创建。
 // 同时会在全局配置文件不存在时创建一个可编辑的模板文件。
-func EnsureMossDir() error {
-	dir := MossDir()
+func EnsureAppDir() error {
+	dir := AppDir()
 	if dir == "" {
 		return fmt.Errorf("cannot determine home directory")
 	}
@@ -128,7 +128,7 @@ func DefaultProjectConfigPath(workspace string) string {
 
 // DefaultGlobalSystemPromptTemplatePath 返回全局 system prompt 模板路径（~/.<appName>/system_prompt.tmpl）。
 func DefaultGlobalSystemPromptTemplatePath() string {
-	d := MossDir()
+	d := AppDir()
 	if d == "" {
 		return ""
 	}
@@ -196,4 +196,3 @@ func renderPromptTemplate(src string, data map[string]any) (string, error) {
 
 	return b.String(), nil
 }
-

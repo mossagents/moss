@@ -22,7 +22,7 @@ import (
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
-	mossTUI "github.com/mossagi/moss/userio/tui"
+	"github.com/mossagi/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -31,7 +31,7 @@ var defaultSystemPromptTemplate string
 func main() {
 	// 配置目录使用 ~/.minicode
 	appkit.SetAppName("minicode")
-	_ = appkit.EnsureMossDir()
+	_ = appkit.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()
 
@@ -42,7 +42,7 @@ func main() {
 }
 
 func launchTUI(provider, model, workspace, trust, apiKey, baseURL string) error {
-	return mossTUI.Run(mossTUI.Config{
+	return tui.Run(tui.Config{
 		Provider:          provider,
 		Model:             model,
 		Workspace:         workspace,

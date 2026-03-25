@@ -42,7 +42,7 @@ var defaultWorkerPromptTemplate string
 
 func main() {
 	skill.SetAppName("miniwork")
-	_ = appkit.EnsureMossDir()
+	_ = appkit.EnsureAppDir()
 
 	cfg := parseFlags()
 	if cfg.goal == "" {
