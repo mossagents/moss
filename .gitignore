@@ -14,3 +14,5 @@ test_output.txt
 .claude
 .vscode
 skills-lock.json
+/examples/miniwork-desktop/wails_err.txt
+/examples/miniwork-desktop/wails_out.txt
