@@ -33,7 +33,7 @@ import (
 var tradingPromptTemplate string
 
 type config struct {
-	flags   *appkit.CommonFlags
+	flags   *appkit.AppFlags
 	capital float64
 }
 
@@ -55,7 +55,7 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
-	cfg.flags = appkit.ParseCommonFlags()
+	cfg.flags = appkit.ParseAppFlags()
 	return cfg
 }
 

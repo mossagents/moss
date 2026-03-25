@@ -30,7 +30,7 @@ import (
 var staticFS embed.FS
 
 func main() {
-	flags := appkit.ParseCommonFlags()
+	flags := appkit.ParseAppFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
@@ -62,7 +62,7 @@ func main() {
 	}
 }
 
-func handleConnection(ctx context.Context, flags *appkit.CommonFlags, conn *websocket.Conn) {
+func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websocket.Conn) {
 	defer conn.Close()
 
 	wsIO := &WebSocketIO{conn: conn}

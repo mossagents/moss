@@ -65,7 +65,7 @@ func main() {
 	}
 }
 
-// ─── Config & Flags ─────────────────────────────────
+// ─── Config & AppFlags ─────────────────────────────────
 
 type config struct {
 	provider  string
@@ -80,7 +80,7 @@ type config struct {
 }
 
 func parseFlags() config {
-	common := &appkit.CommonFlags{}
+	common := &appkit.AppFlags{}
 	c := config{
 		workspace: ".",
 		trust:     "trusted",
@@ -88,7 +88,7 @@ func parseFlags() config {
 	}
 	fs := flag.NewFlagSet("miniwork", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	appkit.BindCommonFlags(fs, common)
+	appkit.BindAppFlags(fs, common)
 	fs.StringVar(&c.goal, "goal", "", "Goal for one-shot workflow execution; omit to launch TUI")
 	fs.IntVar(&c.workers, "workers", 3, "Max parallel workers")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -118,7 +118,7 @@ func printUsage() {
 Usage:
 	miniwork [flags]
 
-Flags:
+AppFlags:
 	--goal        Goal for one-shot workflow execution; omit to launch TUI
   --provider    LLM provider: claude|openai (default: openai)
   --model       Model name
@@ -403,7 +403,7 @@ func buildWorkerPrompt(workspace string) string {
 
 func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := appkit.BuildKernel(ctx, &appkit.CommonFlags{
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  cfg.provider,
 		Model:     cfg.model,
 		Workspace: cfg.workspace,

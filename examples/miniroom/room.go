@@ -486,11 +486,11 @@ func (io *RoomIO) Ask(_ context.Context, _ port.InputRequest) (port.InputRespons
 type RoomManager struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
-	flags *appkit.CommonFlags
+	flags *appkit.AppFlags
 }
 
 // NewRoomManager 创建房间管理器。
-func NewRoomManager(flags *appkit.CommonFlags) *RoomManager {
+func NewRoomManager(flags *appkit.AppFlags) *RoomManager {
 	return &RoomManager{
 		rooms: make(map[string]*Room),
 		flags: flags,

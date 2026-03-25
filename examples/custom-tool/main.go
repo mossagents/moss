@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	flags := appkit.ParseCommonFlags()
+	flags := appkit.ParseAppFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()

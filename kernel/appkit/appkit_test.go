@@ -40,8 +40,8 @@ func TestDefaultTemplateContext(t *testing.T) {
 }
 
 func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
-	// Test with a new CommonFlags - should have defaults
-	f := &CommonFlags{
+	// Test with a new AppFlags - should have defaults
+	f := &AppFlags{
 		Provider: "openai",
 	}
 	f.MergeGlobalConfig()
@@ -56,7 +56,7 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 	t.Setenv("MOSS_PROVIDER", "claude")
 	t.Setenv("MOSS_MODEL", "claude-sonnet")
 
-	f := &CommonFlags{}
+	f := &AppFlags{}
 	f.MergeEnv("MOSS")
 
 	if f.Provider != "claude" {
@@ -83,7 +83,7 @@ func TestRenderSystemPrompt(t *testing.T) {
 }
 
 func TestBuildKernelWithConfig_DefaultLLMRetry(t *testing.T) {
-	k, err := BuildKernelWithConfig(context.Background(), &CommonFlags{
+	k, err := BuildKernelWithConfig(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 	}, nil, BuildConfig{

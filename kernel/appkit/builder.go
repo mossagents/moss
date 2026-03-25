@@ -18,7 +18,7 @@ type BuildConfig struct {
 	DefaultLLMRetry *retry.Config
 }
 
-// BuildKernel 根据 CommonFlags 构建标准 Kernel，注册默认工具和 MCP servers。
+// BuildKernel 根据 AppFlags 构建标准 Kernel，注册默认工具和 MCP servers。
 //
 // 这是推荐的快速构建方式，自动完成：
 //   - 构建 LLM adapter
@@ -26,14 +26,14 @@ type BuildConfig struct {
 //   - 注册内置工具 + MCP servers + Skills
 //
 // 调用者仍可通过 extraOpts 追加自定义配置（如 WithScheduler、WithSessionStore）。
-func BuildKernel(ctx context.Context, flags *CommonFlags, io port.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+func BuildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	return BuildKernelWithConfig(ctx, flags, io, BuildConfig{}, extraOpts...)
 }
 
 // BuildKernelWithConfig 在标准装配基础上，允许附加 appkit 级默认行为。
 //
 // 这用于把常见运行时默认值收敛在 appkit，而不是散落在各个示例应用中。
-func BuildKernelWithConfig(ctx context.Context, flags *CommonFlags, io port.UserIO, cfg BuildConfig, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO, cfg BuildConfig, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	llm, err := adapters.BuildLLM(flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err

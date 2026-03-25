@@ -34,7 +34,7 @@ func main() {
 	skill.SetAppName("minicode")
 	_ = skill.EnsureMossDir()
 
-	flags := appkit.ParseCommonFlags()
+	flags := appkit.ParseAppFlags()
 
 	if err := launchTUI(flags.Provider, flags.Model, flags.Workspace, flags.Trust, flags.APIKey, flags.BaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -57,7 +57,7 @@ func launchTUI(provider, model, workspace, trust, apiKey, baseURL string) error 
 
 func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := appkit.BuildKernel(ctx, &appkit.CommonFlags{
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  provider,
 		Model:     model,
 		Workspace: wsDir,

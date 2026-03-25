@@ -50,7 +50,7 @@ Usage:
   moss run [flags]    Run with a specific goal
   moss version        Show version
 
-Flags:
+AppFlags:
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
@@ -73,8 +73,8 @@ Environment:
 // launchTUI 启动 Bubble Tea TUI 界面。
 func launchTUI(args []string) {
 	fs := flag.NewFlagSet("moss", flag.ExitOnError)
-	f := &appkit.CommonFlags{}
-	appkit.BindCommonFlags(fs, f)
+	f := &appkit.AppFlags{}
+	appkit.BindAppFlags(fs, f)
 	_ = fs.Parse(args)
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
@@ -97,8 +97,8 @@ func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
-	f := &appkit.CommonFlags{}
-	appkit.BindCommonFlags(fs, f)
+	f := &appkit.AppFlags{}
+	appkit.BindAppFlags(fs, f)
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
@@ -177,7 +177,7 @@ func runCmd(args []string) {
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
 func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := appkit.BuildKernel(ctx, &appkit.CommonFlags{
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  provider,
 		Model:     model,
 		Workspace: wsDir,

@@ -52,7 +52,7 @@ func main() {
 
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
-	flags := appkit.ParseCommonFlags()
+	flags := appkit.ParseAppFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
@@ -63,7 +63,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, flags *appkit.CommonFlags, mode string) error {
+func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
 	if mode == "gateway" {
 		return runGateway(ctx, flags)
 	}
@@ -73,12 +73,12 @@ func run(ctx context.Context, flags *appkit.CommonFlags, mode string) error {
 }
 
 type miniclawRuntime struct {
-	flags *appkit.CommonFlags
+	flags *appkit.AppFlags
 	store session.SessionStore
 	sched *scheduler.Scheduler
 }
 
-func launchTUI(flags *appkit.CommonFlags) error {
+func launchTUI(flags *appkit.AppFlags) error {
 	var activeRuntime *miniclawRuntime
 
 	return mossTUI.Run(mossTUI.Config{
@@ -89,7 +89,7 @@ func launchTUI(flags *appkit.CommonFlags) error {
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
 		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
-			runtimeFlags := &appkit.CommonFlags{
+			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
 				Workspace: wsDir,
@@ -123,7 +123,7 @@ func launchTUI(flags *appkit.CommonFlags) error {
 	})
 }
 
-func runGateway(ctx context.Context, flags *appkit.CommonFlags) error {
+func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	userIO := port.NewConsoleIO()
 	k, runtime, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
@@ -157,7 +157,7 @@ func runGateway(ctx context.Context, flags *appkit.CommonFlags) error {
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *appkit.CommonFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
 	storeDir := filepath.Join(skill.MossDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
