@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐢 海龟汤 — miniroom</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=ZCOOL+KuaiLe&display=swap');
+
+  :root {
+    --bg-deep: #0f0e0d;
+    --bg-card: #1a1814;
+    --bg-input: #15130f;
+    --amber: #d4a853;
+    --amber-dim: #8a6d2b;
+    --amber-glow: #f5d78e;
+    --green: #5e9c6b;
+    --red: #c75050;
+    --text: #d9d0c0;
+    --text-dim: #7a7060;
+    --text-bright: #f0e8d8;
+    --whisper: #7b68ee;
+    --border: #2a2520;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Serif SC', 'Georgia', serif;
+    background: var(--bg-deep);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #1a1610 0%, #221e16 100%);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  #header h1 {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.3em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  #header-info {
+    font-size: 0.85em;
+    color: var(--text-dim);
+  }
+  #header-info span { color: var(--amber-dim); }
+  #btn-leave {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8em;
+    display: none;
+  }
+  #btn-leave:hover { color: var(--red); border-color: var(--red); }
+
+  /* ── Views ── */
+  .view { display: none; flex: 1; overflow: hidden; }
+  .view.active { display: flex; flex-direction: column; }
+
+  /* ── Landing ── */
+  #landing {
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    background: radial-gradient(ellipse at center, #1a1610 0%, #0f0e0d 70%);
+  }
+  .landing-logo {
+    font-size: 4em;
+    text-shadow: 0 0 40px rgba(212,168,83,0.3);
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .landing-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 2.2em;
+    color: var(--amber);
+    letter-spacing: 4px;
+    text-shadow: 0 2px 10px rgba(212,168,83,0.2);
+  }
+  .landing-sub {
+    color: var(--text-dim);
+    font-size: 0.95em;
+    margin-top: -16px;
+    font-style: italic;
+  }
+  .landing-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 280px;
+  }
+  .btn-primary {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--amber-dim), var(--amber));
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-secondary {
+    padding: 12px 24px;
+    background: transparent;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    border-radius: var(--radius);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { background: rgba(212,168,83,0.1); }
+
+  /* ── Join Dialog ── */
+  #join-dialog {
+    display: none;
+    margin-top: 8px;
+    gap: 8px;
+    flex-direction: row;
+    width: 280px;
+  }
+  #join-dialog.show { display: flex; }
+  #join-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1.1em;
+    text-align: center;
+    letter-spacing: 6px;
+    outline: none;
+  }
+  #join-input::placeholder { letter-spacing: 2px; color: var(--text-dim); }
+  #join-input:focus { border-color: var(--amber-dim); }
+  #join-confirm {
+    padding: 10px 16px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+  }
+
+  /* ── Room View ── */
+  #room-view {
+    flex-direction: row;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width: 200px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  #room-info {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #room-code {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.8em;
+    color: var(--amber);
+    letter-spacing: 4px;
+  }
+  #game-state-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    margin-top: 4px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+  }
+  #players-section {
+    padding: 12px 16px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  #players-section h3 {
+    color: var(--text-dim);
+    font-size: 0.8em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .player-item {
+    padding: 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+  }
+  .player-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .player-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .player-dot.offline { background: var(--text-dim); }
+  .player-name-self { color: var(--amber); font-weight: 700; }
+
+  /* Chat Area */
+  #chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #messages::-webkit-scrollbar { width: 6px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    padding: 6px 12px;
+    border-radius: 8px;
+    max-width: 85%;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .msg.chat-self {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #2a2418, #332a1c);
+    border: 1px solid var(--amber-dim);
+    color: var(--amber-glow);
+  }
+  .msg.chat-other {
+    align-self: flex-start;
+    background: #1e1c18;
+    border: 1px solid var(--border);
+  }
+  .msg .msg-sender {
+    font-size: 0.75em;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .msg.agent {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #161a14, #1a2018);
+    border: 1px solid #2a3525;
+    color: var(--text-bright);
+    max-width: 90%;
+  }
+  .msg.agent .msg-sender { color: var(--green); }
+  .msg.system-msg {
+    align-self: center;
+    background: none;
+    color: var(--text-dim);
+    font-size: 0.85em;
+    font-style: italic;
+    padding: 4px 0;
+  }
+  .msg.whisper-msg {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #1a1628, #1e1830);
+    border: 1px solid #302850;
+    color: #c8b8f0;
+  }
+  .msg.whisper-msg .msg-sender { color: var(--whisper); }
+  .msg.error-msg {
+    align-self: center;
+    color: var(--red);
+    font-size: 0.85em;
+  }
+  .msg.game-state-msg {
+    align-self: center;
+    color: var(--amber);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    padding: 8px 0;
+    letter-spacing: 2px;
+  }
+
+  /* Streaming cursor */
+  .streaming::after {
+    content: '▍';
+    color: var(--amber);
+    animation: blink 0.8s infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* Input Area */
+  #input-area {
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  #chat-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 0.95em;
+    outline: none;
+  }
+  #chat-input:focus { border-color: var(--amber-dim); }
+  #chat-input::placeholder { color: var(--text-dim); }
+  #btn-send {
+    padding: 10px 20px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  #btn-send:hover { background: var(--amber); }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    #sidebar { width: 0; overflow: hidden; border: none; }
+    #sidebar.show { width: 200px; position: absolute; z-index: 10; height: calc(100vh - 48px); top: 48px; }
+    .landing-title { font-size: 1.6em; }
+    .landing-logo { font-size: 3em; }
+  }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>🐢 海龟汤</h1>
+  <span id="header-info"></span>
+  <button id="btn-leave" onclick="leaveRoom()">退出房间</button>
+</div>
+
+<!-- Landing View -->
+<div id="landing" class="view active">
+  <div class="landing-logo">🐢</div>
+  <div class="landing-title">海 龟 汤</div>
+  <div class="landing-sub">横向思维解谜 · 多人在线</div>
+  <div class="landing-actions">
+    <button class="btn-primary" onclick="createRoom()">创 建 房 间</button>
+    <button class="btn-secondary" onclick="showJoinDialog()">加 入 房 间</button>
+    <div id="join-dialog">
+      <input id="join-input" type="text" maxlength="4" placeholder="房间号"
+             inputmode="numeric" pattern="[0-9]*" />
+      <button id="join-confirm" onclick="joinRoom()">进入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Room View -->
+<div id="room-view" class="view">
+  <div id="sidebar">
+    <div id="room-info">
+      <div style="color:var(--text-dim);font-size:0.75em;">房间号</div>
+      <div id="room-code">----</div>
+      <div id="game-state-badge">🏠 等待中</div>
+    </div>
+    <div id="players-section">
+      <h3>在线玩家</h3>
+      <div id="players-list"></div>
+    </div>
+  </div>
+  <div id="chat-area">
+    <div id="messages"></div>
+    <div id="input-area">
+      <input id="chat-input" placeholder="输入消息... (人齐后发送「开始」)" autocomplete="off" />
+      <button id="btn-send" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let ws = null;
+let currentRoom = null;
+let myUserID = null;
+let myUserName = null;
+let streamEl = null;
+
+// ── LocalStorage helpers ──
+function saveIdentity(room, uid, uname) {
+  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  data[room] = { uid, uname };
+  localStorage.setItem('miniroom_ids', JSON.stringify(data));
+}
+function loadIdentity(room) {
+  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  return data[room] || null;
+}
+
+// ── WebSocket ──
+function connect() {
+  return new Promise((resolve, reject) => {
+    if (ws && ws.readyState === WebSocket.OPEN) { resolve(); return; }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    ws.onclose = () => {
+      if (currentRoom) {
+        addSystemMsg('连接已断开，请刷新页面重连');
+      }
+    };
+    ws.onmessage = (e) => handleServerMsg(JSON.parse(e.data));
+  });
+}
+
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// ── Actions ──
+async function createRoom() {
+  await connect();
+  wsSend({ type: 'create_room' });
+}
+
+function showJoinDialog() {
+  document.getElementById('join-dialog').classList.toggle('show');
+  document.getElementById('join-input').focus();
+}
+
+async function joinRoom() {
+  const code = document.getElementById('join-input').value.trim();
+  if (!/^\d{4}$/.test(code)) { alert('请输入 4 位数字房间号'); return; }
+  await connect();
+  const identity = loadIdentity(code);
+  wsSend({
+    type: 'join_room',
+    room: code,
+    user_id: identity ? identity.uid : '',
+    user_name: identity ? identity.uname : '',
+  });
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  wsSend({ type: 'chat', content: text });
+  input.value = '';
+}
+
+function leaveRoom() {
+  wsSend({ type: 'leave_room' });
+  currentRoom = null;
+  showView('landing');
+  document.getElementById('btn-leave').style.display = 'none';
+  document.getElementById('header-info').textContent = '';
+}
+
+// ── View switching ──
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(name === 'room' ? 'room-view' : 'landing').classList.add('active');
+}
+
+// ── Render helpers ──
+function updatePlayers(users) {
+  const list = document.getElementById('players-list');
+  list.innerHTML = '';
+  (users || []).forEach(u => {
+    const el = document.createElement('div');
+    el.className = 'player-item';
+    const isSelf = u.id === myUserID;
+    el.innerHTML = '<div class="player-dot ' + (u.online ? 'online' : 'offline') + '"></div>' +
+      '<span class="' + (isSelf ? 'player-name-self' : '') + '">' +
+      esc(u.name) + (isSelf ? ' (你)' : '') + '</span>';
+    list.appendChild(el);
+  });
+}
+
+function updateGameState(state) {
+  const badge = document.getElementById('game-state-badge');
+  const labels = { lobby: '🏠 等待中', playing: '🎮 进行中', ended: '🏁 已结束' };
+  badge.textContent = labels[state] || state;
+}
+
+function addMsg(cls, html) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.innerHTML = html;
+  document.getElementById('messages').appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function addSystemMsg(text) {
+  addMsg('system-msg', esc(text));
+}
+
+function scrollToBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Handle server messages ──
+function handleServerMsg(msg) {
+  switch (msg.type) {
+    case 'room_created':
+      currentRoom = msg.room;
+      myUserName = msg.content;
+      myUserID = null; // will be set from room_joined
+      // room_joined follows immediately
+      break;
+
+    case 'room_joined':
+      currentRoom = msg.room;
+      if (msg.content) myUserName = msg.content;
+      // Find own ID from users list
+      if (msg.users) {
+        const me = msg.users.find(u => u.name === myUserName);
+        if (me) myUserID = me.id;
+      }
+      saveIdentity(currentRoom, myUserID, myUserName);
+
+      // Switch to room view
+      showView('room');
+      document.getElementById('room-code').textContent = msg.room;
+      document.getElementById('btn-leave').style.display = 'inline-block';
+      document.getElementById('header-info').innerHTML =
+        '你是 <span>' + esc(myUserName) + '</span>';
+      updatePlayers(msg.users);
+      if (msg.state) updateGameState(msg.state);
+
+      // Replay history
+      const messagesEl = document.getElementById('messages');
+      messagesEl.innerHTML = '';
+      (msg.history || []).forEach(h => renderHistory(h));
+      scrollToBottom();
+      break;
+
+    case 'user_joined':
+      addSystemMsg(msg.content + ' 加入了房间');
+      if (msg.users) updatePlayers(msg.users);
+      break;
+
+    case 'user_left':
+      addSystemMsg(msg.content + ' 离开了房间');
+      if (msg.users) updatePlayers(msg.users);
+      break;
+
+    case 'users':
+      if (msg.users) updatePlayers(msg.users);
+      break;
+
+    case 'chat_bcast': {
+      const isSelf = msg.from === myUserName;
+      const cls = isSelf ? 'chat-self' : 'chat-other';
+      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + esc(msg.content));
+      break;
+    }
+
+    case 'agent':
+      streamEl = null;
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + esc(msg.content));
+      break;
+
+    case 'stream':
+      if (!streamEl) {
+        streamEl = addMsg('agent streaming', '<div class="msg-sender">🐢 主持人</div><span class="stream-text"></span>');
+      }
+      streamEl.querySelector('.stream-text').textContent += msg.content;
+      scrollToBottom();
+      break;
+
+    case 'stream_end':
+      if (streamEl) streamEl.classList.remove('streaming');
+      streamEl = null;
+      break;
+
+    case 'whisper':
+      addMsg('whisper-msg', '<div class="msg-sender">🔮 ' + esc(msg.from || '主持人') + ' 悄悄对你说</div>' + esc(msg.content));
+      break;
+
+    case 'system':
+      addSystemMsg(msg.content);
+      break;
+
+    case 'game_state':
+      updateGameState(msg.state);
+      addMsg('game-state-msg', esc(msg.content));
+      break;
+
+    case 'error':
+      addMsg('error-msg', '⚠️ ' + esc(msg.content));
+      break;
+  }
+}
+
+function renderHistory(h) {
+  switch (h.type) {
+    case 'chat':
+      const isSelf = h.from === myUserName;
+      addMsg(isSelf ? 'chat-self' : 'chat-other',
+        '<div class="msg-sender">' + esc(h.from) + '</div>' + esc(h.content));
+      break;
+    case 'agent':
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + esc(h.content));
+      break;
+    case 'system':
+      addSystemMsg(h.content);
+      break;
+    case 'whisper':
+      addMsg('whisper-msg', '<div class="msg-sender">🔮 悄悄话</div>' + esc(h.content));
+      break;
+    default:
+      addSystemMsg(h.content);
+  }
+}
+
+// ── Key bindings ──
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChat();
+});
+document.getElementById('join-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') joinRoom();
+});
+</script>
+</body>
+</html>
