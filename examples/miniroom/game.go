@@ -111,6 +111,7 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(setGameStateSpec, setGameStateHandler(room))
 	_ = reg.Register(addVirtualPlayerSpec, addVirtualPlayerHandler(room))
 	_ = reg.Register(chatAsSpec, chatAsHandler(room))
+	_ = reg.Register(askChoiceSpec, askChoiceHandler(room))
 	_ = reg.Register(getTimeSpec, getTimeHandler())
 	_ = reg.Register(getWeatherSpec, getWeatherHandler())
 	_ = reg.Register(setReminderSpec, setReminderHandler(room))
@@ -266,9 +267,11 @@ var addVirtualPlayerSpec = tool.ToolSpec{
 		"type": "object",
 		"properties": {
 			"name":    {"type": "string", "description": "虚拟角色的名字"},
-			"persona": {"type": "string", "description": "角色设定简述（如：活泼可爱的高中生）"}
+			"persona": {"type": "string", "description": "角色设定简述（如：活泼可爱的高中生）"},
+			"avatar":  {"type": "string", "description": "角色头像 emoji（如：🌸）"},
+			"intro":   {"type": "string", "description": "角色一句话简介（如：追番十年的二次元少女）"}
 		},
-		"required": ["name", "persona"]
+		"required": ["name", "persona", "avatar", "intro"]
 	}`),
 	Risk: tool.RiskLow,
 }
@@ -278,12 +281,14 @@ func addVirtualPlayerHandler(room *Room) tool.ToolHandler {
 		var args struct {
 			Name    string `json:"name"`
 			Persona string `json:"persona"`
+			Avatar  string `json:"avatar"`
+			Intro   string `json:"intro"`
 		}
 		if err := json.Unmarshal(input, &args); err != nil {
 			return nil, err
 		}
 
-		room.AddVirtualPlayer(args.Name, args.Persona)
+		room.AddVirtualPlayer(args.Name, args.Persona, args.Avatar, args.Intro)
 		return json.Marshal(map[string]string{"status": "added", "name": args.Name})
 	}
 }
@@ -323,6 +328,50 @@ func chatAsHandler(room *Room) tool.ToolHandler {
 		}
 
 		room.ChatAs(args.Name, args.Content)
+		return json.Marshal(map[string]string{"status": "sent", "name": args.Name})
+	}
+}
+
+// ── ask_choice ──────────────────────────────────────
+
+var askChoiceSpec = tool.ToolSpec{
+	Name:        "ask_choice",
+	Description: "以虚拟角色身份向房间发送选择题卡片，玩家可以点击选项回答",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"name":     {"type": "string", "description": "以哪个虚拟角色身份提问（需先 add_virtual_player）"},
+			"question": {"type": "string", "description": "选择题问题"},
+			"options":  {"type": "array", "items": {"type": "string"}, "description": "选项列表（2-6个）"}
+		},
+		"required": ["name", "question", "options"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func askChoiceHandler(room *Room) tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			Name     string   `json:"name"`
+			Question string   `json:"question"`
+			Options  []string `json:"options"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+
+		room.mu.RLock()
+		_, exists := room.virtualPlayers[args.Name]
+		room.mu.RUnlock()
+
+		if !exists {
+			return json.Marshal(map[string]string{"status": "error", "message": "虚拟角色不存在: " + args.Name})
+		}
+		if len(args.Options) < 2 || len(args.Options) > 6 {
+			return json.Marshal(map[string]string{"status": "error", "message": "选项数量应为 2-6 个"})
+		}
+
+		room.AskChoice(args.Name, args.Question, args.Options)
 		return json.Marshal(map[string]string{"status": "sent", "name": args.Name})
 	}
 }

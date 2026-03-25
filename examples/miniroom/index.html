@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🎮 miniroom — 多人游戏房间</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=ZCOOL+KuaiLe&display=swap');
 
@@ -471,6 +473,266 @@
   /* @mention highlight */
   .mention { color: var(--amber); font-weight: 600; }
 
+  /* Profile Creation Screen */
+  #profile-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,14,13,0.96);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+  #profile-overlay.show { display: flex; }
+  .profile-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.6em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  .profile-sub {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-top: -12px;
+  }
+  .profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 320px;
+    max-width: 90vw;
+  }
+  .profile-label {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-bottom: 4px;
+  }
+  .gender-group {
+    display: flex;
+    gap: 8px;
+  }
+  .gender-btn {
+    flex: 1;
+    padding: 10px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1em;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .gender-btn:hover { border-color: var(--amber-dim); }
+  .gender-btn.selected {
+    border-color: var(--amber);
+    background: rgba(212,168,83,0.1);
+    color: var(--amber);
+  }
+  .name-row {
+    display: flex;
+    gap: 8px;
+  }
+  .name-row input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1em;
+    outline: none;
+  }
+  .name-row input:focus { border-color: var(--amber-dim); }
+  .name-row input::placeholder { color: var(--text-dim); }
+  .btn-random {
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.2s;
+  }
+  .btn-random:hover { border-color: var(--amber-dim); color: var(--amber); }
+
+  /* Virtual player card in sidebar */
+  .player-card {
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(123,104,238,0.06);
+    border: 1px solid rgba(123,104,238,0.15);
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .player-card:hover {
+    border-color: rgba(123,104,238,0.3);
+    background: rgba(123,104,238,0.1);
+  }
+  .player-card .pc-avatar {
+    font-size: 1.6em;
+    flex-shrink: 0;
+    line-height: 1;
+    margin-top: 2px;
+  }
+  .player-card .pc-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .player-card .pc-name {
+    font-size: 0.85em;
+    color: #b8a8e8;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .player-card .pc-name .pc-bot { font-size: 0.75em; }
+  .player-card .pc-intro {
+    font-size: 0.72em;
+    color: var(--text-dim);
+    margin-top: 2px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Character intro card in chat */
+  .msg.char-intro-card {
+    align-self: flex-start;
+    background: linear-gradient(135deg, rgba(123,104,238,0.06), rgba(123,104,238,0.02));
+    border: 1px solid rgba(123,104,238,0.2);
+    max-width: 360px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .char-intro-card .cic-avatar {
+    font-size: 2.4em;
+    flex-shrink: 0;
+    line-height: 1;
+    filter: drop-shadow(0 2px 6px rgba(123,104,238,0.3));
+  }
+  .char-intro-card .cic-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .char-intro-card .cic-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+    color: #b8a8e8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .char-intro-card .cic-name .cic-bot {
+    font-size: 0.7em;
+    background: rgba(123,104,238,0.15);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: #9b8ad8;
+  }
+  .char-intro-card .cic-intro {
+    font-size: 0.82em;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  /* Markdown rendered content */
+  .msg .md-content { line-height: 1.7; }
+  .msg .md-content p { margin: 0 0 0.4em 0; }
+  .msg .md-content p:last-child { margin-bottom: 0; }
+  .msg .md-content strong { color: var(--text-bright); }
+  .msg .md-content em { color: var(--amber-dim); font-style: italic; }
+  .msg .md-content code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: 'Courier New', monospace;
+  }
+  .msg .md-content pre {
+    background: rgba(0,0,0,0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 4px 0;
+  }
+  .msg .md-content pre code {
+    background: none;
+    padding: 0;
+  }
+  .msg .md-content blockquote {
+    border-left: 3px solid var(--amber-dim);
+    padding-left: 10px;
+    margin: 4px 0;
+    color: var(--text-dim);
+  }
+  .msg .md-content ul, .msg .md-content ol {
+    margin: 4px 0;
+    padding-left: 20px;
+  }
+  .msg .md-content a {
+    color: var(--amber);
+    text-decoration: underline;
+  }
+
+  /* Choice card in chat */
+  .msg.choice-card-msg {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #1a1628, #1e1830);
+    border: 1px solid #302850;
+    max-width: 90%;
+    padding: 12px 14px;
+  }
+  .choice-card-msg .cc-question {
+    font-size: 0.95em;
+    color: var(--text-bright);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .choice-card-msg .cc-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .choice-card-msg .cc-option {
+    padding: 8px 14px;
+    background: rgba(123,104,238,0.08);
+    border: 1px solid rgba(123,104,238,0.2);
+    border-radius: 8px;
+    color: #c8b8f0;
+    cursor: pointer;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 0.9em;
+    transition: all 0.2s;
+    text-align: left;
+  }
+  .choice-card-msg .cc-option:hover {
+    background: rgba(123,104,238,0.15);
+    border-color: rgba(123,104,238,0.4);
+    color: #e0d4ff;
+    transform: translateX(4px);
+  }
+  .choice-card-msg .cc-option.selected {
+    background: rgba(123,104,238,0.2);
+    border-color: #7b68ee;
+    color: #7b68ee;
+    font-weight: 600;
+  }
+
   /* @mention autocomplete popup */
   #mention-popup {
     display: none;
@@ -509,6 +771,31 @@
 </style>
 </head>
 <body>
+
+<!-- Profile Creation Overlay -->
+<div id="profile-overlay">
+  <div style="font-size:3em;text-shadow:0 0 30px rgba(212,168,83,0.3);">🎭</div>
+  <div class="profile-title">创建你的身份</div>
+  <div class="profile-sub">选择性别和昵称，开始你的聊天之旅</div>
+  <div class="profile-form">
+    <div>
+      <div class="profile-label">选择性别</div>
+      <div class="gender-group">
+        <button class="gender-btn" data-gender="male" onclick="selectGender('male')">👦 男</button>
+        <button class="gender-btn" data-gender="female" onclick="selectGender('female')">👧 女</button>
+        <button class="gender-btn" data-gender="secret" onclick="selectGender('secret')">🤫 保密</button>
+      </div>
+    </div>
+    <div>
+      <div class="profile-label">输入昵称</div>
+      <div class="name-row">
+        <input id="profile-name" type="text" maxlength="8" placeholder="给自己起个名字" />
+        <button class="btn-random" onclick="randomProfileName()" title="随机生成">🎲</button>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="confirmProfile()" style="margin-top:8px;">确 认</button>
+  </div>
+</div>
 
 <div id="header">
   <h1>🎮 miniroom</h1>
@@ -579,12 +866,64 @@ let streamEl = null;
 let availableScripts = [];
 let currentScriptID = null;
 let currentPlayers = []; // 维护当前玩家列表用于 @补全
+let myGender = null;
+
+const maleNames = ['小龙', '阿杰', '大熊', '阿修', '星辰', '铁柱', '阿南', '墨白', '皮皮', '石头', '阿亮', '飞哥'];
+const femaleNames = ['小雪', '萌萌', '糖糖', '叶子', '小鱼', '小柠', '妮可', '思思', '林夕', '翠花', '小月', '朵朵'];
+const neutralNames = ['清风', '流云', '竹叶', '细雨', '松果', '明月', '星河', '柳絮', '拾光', '知秋', '晴岚', '溪鹿'];
 
 const scriptHints = {
   'turtle_soup': '🐢 <b>海龟汤</b><br>人齐后输入「开始」<br>主持人出谜题，用是非题推理真相<br>回答：✅是 / ❌不是 / ⚪不相关',
   'spy': '🕵️ <b>谁是卧底</b><br>建议 4 人以上，输入「开始」<br>主持人私发词语，轮流描述→投票<br>找出拿到不同词语的卧底！',
   'chat': '🎭 <b>陪聊室</b><br>选择主题后自动开始<br>AI 扮演多个虚拟角色与你互动<br>🤖 标记 = 虚拟角色',
 };
+
+// ── Profile management ──
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem('miniroom_profile');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveProfile(gender, name) {
+  localStorage.setItem('miniroom_profile', JSON.stringify({ gender, name }));
+}
+
+function selectGender(g) {
+  myGender = g;
+  document.querySelectorAll('.gender-btn').forEach(b =>
+    b.classList.toggle('selected', b.dataset.gender === g)
+  );
+}
+
+function randomProfileName() {
+  const pool = myGender === 'male' ? maleNames : myGender === 'female' ? femaleNames : neutralNames;
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  document.getElementById('profile-name').value = name;
+}
+
+function confirmProfile() {
+  const name = document.getElementById('profile-name').value.trim();
+  if (!name) { alert('请输入昵称'); return; }
+  if (!myGender) { alert('请选择性别'); return; }
+  saveProfile(myGender, name);
+  myUserName = name;
+  document.getElementById('profile-overlay').classList.remove('show');
+}
+
+function checkProfile() {
+  const profile = loadProfile();
+  if (profile && profile.name) {
+    myUserName = profile.name;
+    myGender = profile.gender;
+  } else {
+    document.getElementById('profile-overlay').classList.add('show');
+  }
+}
+
+// 页面加载时检查
+checkProfile();
 
 // ── LocalStorage helpers ──
 function saveIdentity(room, uid, uname) {
@@ -649,7 +988,7 @@ function renderScripts() {
 
 async function createRoom(scriptId) {
   await connect();
-  wsSend({ type: 'create_room', script: scriptId });
+  wsSend({ type: 'create_room', script: scriptId, user_name: myUserName || '' });
 }
 
 function showJoinDialog() {
@@ -666,7 +1005,7 @@ async function joinRoom() {
     type: 'join_room',
     room: code,
     user_id: identity ? identity.uid : '',
-    user_name: identity ? identity.uname : '',
+    user_name: identity ? identity.uname : (myUserName || ''),
   });
 }
 
@@ -698,25 +1037,45 @@ function updatePlayers(users) {
   const list = document.getElementById('players-list');
   list.innerHTML = '';
   (users || []).forEach(u => {
-    const el = document.createElement('div');
-    el.className = 'player-item';
     const isSelf = u.id === myUserID;
     const isVirtual = u.is_virtual;
-    const dotCls = isVirtual ? 'virtual' : (u.online ? 'online' : 'offline');
-    let label = esc(u.name);
-    if (isSelf) label += ' (你)';
-    if (isVirtual) label += ' 🤖';
-    el.innerHTML = '<div class="player-dot ' + dotCls + '"></div>' +
-      '<span class="' + (isSelf ? 'player-name-self' : '') + '">' + label + '</span>';
-    if (!isSelf) {
-      el.style.cursor = 'pointer';
-      el.onclick = () => {
+
+    if (isVirtual && (u.avatar || u.intro)) {
+      // 虚拟角色：渲染角色卡片
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.onclick = () => {
         const input = document.getElementById('chat-input');
         input.value += '@' + u.name + ' ';
         input.focus();
       };
+      card.innerHTML =
+        '<div class="pc-avatar">' + esc(u.avatar || '🤖') + '</div>' +
+        '<div class="pc-info">' +
+          '<div class="pc-name">' + esc(u.name) + ' <span class="pc-bot">🤖</span></div>' +
+          (u.intro ? '<div class="pc-intro">' + esc(u.intro) + '</div>' : '') +
+        '</div>';
+      list.appendChild(card);
+    } else {
+      // 真实玩家或无卡片的虚拟角色
+      const el = document.createElement('div');
+      el.className = 'player-item';
+      const dotCls = isVirtual ? 'virtual' : (u.online ? 'online' : 'offline');
+      let label = esc(u.name);
+      if (isSelf) label += ' (你)';
+      if (isVirtual) label += ' 🤖';
+      el.innerHTML = '<div class="player-dot ' + dotCls + '"></div>' +
+        '<span class="' + (isSelf ? 'player-name-self' : '') + '">' + label + '</span>';
+      if (!isSelf) {
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+          const input = document.getElementById('chat-input');
+          input.value += '@' + u.name + ' ';
+          input.focus();
+        };
+      }
+      list.appendChild(el);
     }
-    list.appendChild(el);
   });
 }
 
@@ -748,6 +1107,17 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function renderMarkdown(text) {
+  // Render markdown, sanitize output, then highlight @mentions
+  try {
+    const html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false });
+    const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p','br','strong','em','code','pre','blockquote','ul','ol','li','a','h1','h2','h3','h4','hr','del','table','thead','tbody','tr','th','td','span'], ALLOWED_ATTR: ['href','target'] });
+    return '<div class="md-content">' + clean.replace(/@(\S+)/g, '<span class="mention">@$1</span>') + '</div>';
+  } catch {
+    return highlightMentions(text);
+  }
 }
 
 function highlightMentions(text) {
@@ -934,10 +1304,23 @@ function handleServerMsg(msg) {
       scrollToBottom();
       break;
 
-    case 'user_joined':
+    case 'user_joined': {
       addSystemMsg(msg.content + ' 加入了房间');
-      if (msg.users) updatePlayers(msg.users);
+      if (msg.users) {
+        updatePlayers(msg.users);
+        // 显示虚拟角色入场卡片
+        const vp = msg.users.find(u => u.name === msg.content && u.is_virtual && u.avatar);
+        if (vp) {
+          addMsg('char-intro-card',
+            '<div class="cic-avatar">' + esc(vp.avatar) + '</div>' +
+            '<div class="cic-body">' +
+              '<div class="cic-name">' + esc(vp.name) + ' <span class="cic-bot">虚拟角色</span></div>' +
+              (vp.intro ? '<div class="cic-intro">' + esc(vp.intro) + '</div>' : '') +
+            '</div>');
+        }
+      }
       break;
+    }
 
     case 'user_left':
       addSystemMsg(msg.content + ' 离开了房间');
@@ -951,13 +1334,13 @@ function handleServerMsg(msg) {
     case 'chat_bcast': {
       const isSelf = msg.from === myUserName;
       const cls = isSelf ? 'chat-self' : 'chat-other';
-      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + highlightMentions(msg.content));
+      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + renderMarkdown(msg.content));
       break;
     }
 
     case 'agent':
       streamEl = null;
-      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + esc(msg.content));
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + renderMarkdown(msg.content));
       break;
 
     case 'stream':
@@ -969,12 +1352,21 @@ function handleServerMsg(msg) {
       break;
 
     case 'stream_end':
-      if (streamEl) streamEl.classList.remove('streaming');
+      if (streamEl) {
+        streamEl.classList.remove('streaming');
+        // Re-render accumulated text as Markdown
+        const textSpan = streamEl.querySelector('.stream-text');
+        if (textSpan) {
+          const raw = textSpan.textContent;
+          const sender = streamEl.querySelector('.msg-sender');
+          streamEl.innerHTML = (sender ? sender.outerHTML : '') + renderMarkdown(raw);
+        }
+      }
       streamEl = null;
       break;
 
     case 'whisper':
-      addMsg('whisper-msg', '<div class="msg-sender">🔮 ' + esc(msg.from || '主持人') + ' 悄悄对你说</div>' + esc(msg.content));
+      addMsg('whisper-msg', '<div class="msg-sender">🔮 ' + esc(msg.from || '主持人') + ' 悄悄对你说</div>' + renderMarkdown(msg.content));
       break;
 
     case 'system':
@@ -985,6 +1377,33 @@ function handleServerMsg(msg) {
       updateGameState(msg.state);
       addMsg('game-state-msg', esc(msg.content));
       break;
+
+    case 'choice_card': {
+      const c = msg.choices;
+      if (!c) break;
+      let html = '<div class="msg-sender">' + esc(msg.from || '🤖') + ' 发起了一个选择</div>';
+      html += '<div class="cc-question">' + esc(c.question) + '</div>';
+      html += '<div class="cc-options">';
+      (c.options || []).forEach((opt, idx) => {
+        html += '<div class="cc-option" data-idx="' + idx + '">' + esc(opt) + '</div>';
+      });
+      html += '</div>';
+      const el = addMsg('choice-card-msg', html);
+      // 绑定点击
+      el.querySelectorAll('.cc-option').forEach(optEl => {
+        optEl.addEventListener('click', function() {
+          if (this.classList.contains('selected')) return;
+          el.querySelectorAll('.cc-option').forEach(o => o.classList.remove('selected'));
+          this.classList.add('selected');
+          el.querySelectorAll('.cc-option').forEach(o => {
+            o.style.pointerEvents = 'none';
+            o.style.opacity = o === this ? '1' : '0.5';
+          });
+          wsSend({ type: 'chat', content: this.textContent });
+        });
+      });
+      break;
+    }
 
     case 'error':
       addMsg('error-msg', '⚠️ ' + esc(msg.content));
@@ -997,16 +1416,22 @@ function renderHistory(h) {
     case 'chat':
       const isSelf = h.from === myUserName;
       addMsg(isSelf ? 'chat-self' : 'chat-other',
-        '<div class="msg-sender">' + esc(h.from) + '</div>' + highlightMentions(h.content));
+        '<div class="msg-sender">' + esc(h.from) + '</div>' + renderMarkdown(h.content));
       break;
     case 'agent':
-      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + esc(h.content));
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + renderMarkdown(h.content));
       break;
     case 'system':
       addSystemMsg(h.content);
       break;
     case 'whisper':
       addMsg('whisper-msg', '<div class="msg-sender">🔮 悄悄话</div>' + esc(h.content));
+      break;
+    case 'choice':
+      addMsg('choice-card-msg',
+        '<div class="msg-sender">' + esc(h.from) + '</div>' +
+        '<div class="cc-question">' + esc(h.content) + '</div>' +
+        '<div style="font-size:0.8em;color:var(--text-dim);font-style:italic;">（选择题已结束）</div>');
       break;
     default:
       addSystemMsg(h.content);

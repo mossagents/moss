@@ -102,9 +102,12 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 				continue
 			}
 
-			// 生成用户身份
+			// 生成用户身份（使用客户端传来的用户名，否则随机）
 			userID := generateUserID()
-			userName := generateUserName()
+			userName := msg.UserName
+			if userName == "" {
+				userName = generateUserName()
+			}
 
 			// 先发 room_created 让 JS 记录用户名，再 join 触发 room_joined
 			websocket.JSON.Send(conn, ServerMsg{

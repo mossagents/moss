@@ -54,6 +54,8 @@ func (p *Player) send(msg ServerMsg) {
 type VirtualPlayer struct {
 	Name    string
 	Persona string // 角色设定简述
+	Avatar  string // 头像 emoji
+	Intro   string // 一句话简介
 }
 
 // Room 是一个游戏房间，拥有独立的 Kernel 和 Session。
@@ -110,18 +112,21 @@ func (r *Room) playerInfos() []PlayerInfo {
 		infos = append(infos, PlayerInfo{ID: p.ID, Name: p.Name, Online: p.online})
 	}
 	for _, vp := range r.virtualPlayers {
-		infos = append(infos, PlayerInfo{ID: "v_" + vp.Name, Name: vp.Name, Online: true, IsVirtual: true})
+		infos = append(infos, PlayerInfo{
+			ID: "v_" + vp.Name, Name: vp.Name, Online: true, IsVirtual: true,
+			Avatar: vp.Avatar, Intro: vp.Intro,
+		})
 	}
 	return infos
 }
 
 // AddVirtualPlayer 添加一个虚拟角色到房间。
-func (r *Room) AddVirtualPlayer(name, persona string) {
+func (r *Room) AddVirtualPlayer(name, persona, avatar, intro string) {
 	r.mu.Lock()
 	if r.virtualPlayers == nil {
 		r.virtualPlayers = make(map[string]*VirtualPlayer)
 	}
-	r.virtualPlayers[name] = &VirtualPlayer{Name: name, Persona: persona}
+	r.virtualPlayers[name] = &VirtualPlayer{Name: name, Persona: persona, Avatar: avatar, Intro: intro}
 	r.mu.Unlock()
 
 	r.addHistory("系统", name+" 加入了房间", MsgSystem)
@@ -132,6 +137,16 @@ func (r *Room) AddVirtualPlayer(name, persona string) {
 func (r *Room) ChatAs(name, content string) {
 	r.addHistory(name, content, "chat")
 	r.broadcast(ServerMsg{Type: MsgChatBcast, From: name, Content: content})
+}
+
+// AskChoice 以虚拟角色身份发送选择题卡片。
+func (r *Room) AskChoice(name, question string, options []string) {
+	r.addHistory(name, question, "choice")
+	r.broadcast(ServerMsg{
+		Type:    MsgChoiceCard,
+		From:    name,
+		Choices: &ChoiceCardInfo{Question: question, Options: options},
+	})
 }
 
 // join 将一位玩家加入/重连到房间。

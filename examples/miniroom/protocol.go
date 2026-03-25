@@ -27,6 +27,7 @@ const (
 	MsgScripts     = "scripts"      // 可用剧本列表
 	MsgChatTopics  = "chat_topics"  // 陪聊主题列表
 	MsgSelectTopic = "select_topic" // 选择陪聊主题
+	MsgChoiceCard  = "choice_card"  // 选择题卡片
 	MsgError       = "error"        // 错误
 )
 
@@ -53,6 +54,7 @@ type ServerMsg struct {
 	Scripts    []ScriptInfo    `json:"scripts,omitempty"`     // 可用剧本列表
 	ScriptID   string          `json:"script_id,omitempty"`   // 房间使用的剧本 ID
 	ChatTopics []ChatTopicInfo `json:"chat_topics,omitempty"` // 陪聊主题列表
+	Choices    *ChoiceCardInfo `json:"choices,omitempty"`     // 选择题卡片数据
 }
 
 // PlayerInfo 是玩家摘要信息。
@@ -61,6 +63,9 @@ type PlayerInfo struct {
 	Name      string `json:"name"`
 	Online    bool   `json:"online"`
 	IsVirtual bool   `json:"is_virtual,omitempty"`
+	Avatar    string `json:"avatar,omitempty"`
+	Intro     string `json:"intro,omitempty"`
+	Gender    string `json:"gender,omitempty"`
 }
 
 // ChatTopicInfo 用于向客户端发送陪聊主题列表。
@@ -69,6 +74,12 @@ type ChatTopicInfo struct {
 	Name        string `json:"name"`
 	Emoji       string `json:"emoji"`
 	Description string `json:"description"`
+}
+
+// ChoiceCardInfo 包含选择题卡片数据。
+type ChoiceCardInfo struct {
+	Question string   `json:"question"`
+	Options  []string `json:"options"`
 }
 
 // HistoryMsg 是房间历史消息。
