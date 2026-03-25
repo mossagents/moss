@@ -82,7 +82,8 @@
   - 自动注册 BuiltinTool（6 个内置工具）
   - 自动加载 MCP Skills（从 `~/.moss/config.yaml` 和 `./moss.yaml`）
   - 自动发现 Skills（从标准目录的 `SKILL.md`）
-  - 支持 `SetupOption`：`WithoutBuiltin()`, `WithoutMCPServers()`, `WithoutSkills()`, `WithWarningWriter()`
+  - 支持 `SetupOption`：`WithoutBuiltin()`, `WithoutMCPServers()`, `WithoutSkills()`
+  - 警告和错误通过 slog 输出
 - **标准 `UserIO` 实现** (`kernel/port/io_std.go`)
   - `NoOpIO` — 静默模式，Ask 返回安全默认值
   - `PrintfIO` — 格式化输出到 `io.Writer`，自动批准确认

@@ -2,15 +2,17 @@ package builtins
 
 import (
 	"context"
-	"fmt"
-	"io"
+	"log/slog"
 	"time"
 
+	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/middleware"
 )
 
 // Logger 构造日志 middleware，记录每个 phase 的开始/结束/耗时。
-func Logger(w io.Writer) middleware.Middleware {
+// 使用 slog 输出结构化日志。
+func Logger() middleware.Middleware {
+	logger := logging.GetLogger()
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		start := time.Now()
 
@@ -19,17 +21,27 @@ func Logger(w io.Writer) middleware.Middleware {
 			label += ":" + mc.Tool.Name
 		}
 
-		fmt.Fprintf(w, "[%s] %s session=%s start\n", start.Format(time.RFC3339), label, mc.Session.ID)
+		logger.InfoContext(ctx, "phase start",
+			slog.String("phase", label),
+			slog.String("session_id", mc.Session.ID),
+		)
 
 		err := next(ctx)
 
 		elapsed := time.Since(start)
 		if err != nil {
-			fmt.Fprintf(w, "[%s] %s session=%s error=%v elapsed=%s\n",
-				time.Now().Format(time.RFC3339), label, mc.Session.ID, err, elapsed)
+			logger.ErrorContext(ctx, "phase error",
+				slog.String("phase", label),
+				slog.String("session_id", mc.Session.ID),
+				slog.Duration("elapsed", elapsed),
+				slog.Any("error", err),
+			)
 		} else {
-			fmt.Fprintf(w, "[%s] %s session=%s done elapsed=%s\n",
-				time.Now().Format(time.RFC3339), label, mc.Session.ID, elapsed)
+			logger.InfoContext(ctx, "phase done",
+				slog.String("phase", label),
+				slog.String("session_id", mc.Session.ID),
+				slog.Duration("elapsed", elapsed),
+			)
 		}
 
 		return err

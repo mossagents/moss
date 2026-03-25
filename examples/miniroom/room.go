@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"strings"
 	"sync"
@@ -15,6 +15,7 @@ import (
 	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
@@ -306,7 +307,10 @@ func (r *Room) triggerChatStart(p *Player) {
 		if r.ctx.Err() != nil {
 			return
 		}
-		log.Printf("[room %s] chat auto-start error: %v", r.Code, err)
+		logging.GetLogger().ErrorContext(r.ctx, "chat auto-start error",
+			slog.String("room", r.Code),
+			slog.Any("error", err),
+		)
 		r.broadcast(ServerMsg{Type: MsgError, Content: "自动启动失败: " + err.Error()})
 		return
 	}
@@ -342,7 +346,10 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 		if r.ctx.Err() != nil {
 			return
 		}
-		log.Printf("[room %s] agent error: %v", r.Code, err)
+		logging.GetLogger().ErrorContext(r.ctx, "agent error",
+			slog.String("room", r.Code),
+			slog.Any("error", err),
+		)
 		r.broadcast(ServerMsg{Type: MsgError, Content: "Agent 出错: " + err.Error()})
 		return
 	}
@@ -426,7 +433,10 @@ func (r *Room) fireAutoTurn() {
 		if r.ctx.Err() != nil {
 			return
 		}
-		log.Printf("[room %s] auto-turn error: %v", r.Code, err)
+		logging.GetLogger().ErrorContext(r.ctx, "auto-turn error",
+			slog.String("room", r.Code),
+			slog.Any("error", err),
+		)
 		return
 	}
 	_ = result
@@ -584,7 +594,9 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context, scriptID string) (*
 	// 启动房间消息处理循环
 	go room.run()
 
-	log.Printf("[room %s] created", code)
+	logging.GetLogger().InfoContext(context.Background(), "room created",
+		slog.String("code", code),
+	)
 	return room, nil
 }
 

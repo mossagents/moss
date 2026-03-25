@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
@@ -18,9 +20,11 @@ import (
 const version = "0.3.0"
 
 func main() {
+	logger := logging.GetLogger()
+
 	// 确保 ~/.moss 配置目录存在
 	if err := skill.EnsureMossDir(); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: cannot create config dir: %v\n", err)
+		logger.Warn("cannot create config dir", slog.Any("error", err))
 	}
 
 	// 无参数默认进入 TUI
@@ -94,6 +98,7 @@ func launchTUI(args []string) {
 }
 
 func runCmd(args []string) {
+	logger := logging.GetLogger()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
@@ -101,7 +106,7 @@ func runCmd(args []string) {
 	appkit.BindAppFlags(fs, f)
 
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
+		logger.Error("error parsing flags", slog.Any("error", err))
 		os.Exit(1)
 	}
 	f.MergeGlobalConfig()
@@ -120,13 +125,13 @@ func runCmd(args []string) {
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
 	k, err := appkit.BuildKernel(ctx, f, cliIO)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error initializing kernel: %v\n", err)
+		logger.Error("error initializing kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
 	applyPolicy(k, f.Trust)
 
 	if err := k.Boot(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "error booting kernel: %v\n", err)
+		logger.Error("error booting kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer k.Shutdown(ctx)
@@ -156,7 +161,7 @@ func runCmd(args []string) {
 		MaxSteps:   50,
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error creating session: %v\n", err)
+		logger.Error("error creating session", slog.Any("error", err))
 		os.Exit(1)
 	}
 	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: *goal})
@@ -164,6 +169,7 @@ func runCmd(args []string) {
 	result, err := k.Run(ctx, sess)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Run failed: %v\n", err)
+		logger.Error("run failed", slog.Any("error", err))
 		os.Exit(1)
 	}
 

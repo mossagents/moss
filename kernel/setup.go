@@ -2,12 +2,12 @@ package kernel
 
 import (
 	"context"
-	"fmt"
-	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/mossagi/moss/kernel/agent"
+	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/skill"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
@@ -19,27 +19,6 @@ type setupConfig struct {
 	builtin    bool
 	mcpServers bool
 	skills     bool
-	warnWriter io.Writer
-}
-
-// WithoutBuiltin 禁用内置核心工具注册。
-func WithoutBuiltin() SetupOption {
-	return func(c *setupConfig) { c.builtin = false }
-}
-
-// WithoutMCPServers 禁用 MCP server 自动加载。
-func WithoutMCPServers() SetupOption {
-	return func(c *setupConfig) { c.mcpServers = false }
-}
-
-// WithoutSkills 禁用 SKILL.md 自动发现。
-func WithoutSkills() SetupOption {
-	return func(c *setupConfig) { c.skills = false }
-}
-
-// WithWarningWriter 设置加载警告的输出目标，默认丢弃。
-func WithWarningWriter(w io.Writer) SetupOption {
-	return func(c *setupConfig) { c.warnWriter = w }
 }
 
 // SetupWithDefaults 注册标准技能（BuiltinTool、MCP servers、Skills）。
@@ -63,12 +42,13 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 		opt(cfg)
 	}
 
+	logger := logging.GetLogger()
 	deps := k.SkillDeps()
 
 	// 1. 注册内置工具 skill
 	if cfg.builtin {
 		if err := k.skills.Register(ctx, &toolbuiltins.BuiltinTool{}, deps); err != nil {
-			return fmt.Errorf("register builtin tool: %w", err)
+			return err
 		}
 	}
 
@@ -84,9 +64,10 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 			}
 			mcpServer := skill.NewMCPServer(sc)
 			if err := k.skills.Register(ctx, mcpServer, deps); err != nil {
-				if cfg.warnWriter != nil {
-					fmt.Fprintf(cfg.warnWriter, "warning: failed to load MCP server %q: %v\n", sc.Name, err)
-				}
+				logger.WarnContext(ctx, "failed to load MCP server",
+					slog.String("server", sc.Name),
+					slog.Any("error", err),
+				)
 			}
 		}
 	}
@@ -96,9 +77,10 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 		skills := skill.DiscoverSkills(workspaceDir)
 		for _, ps := range skills {
 			if err := k.skills.Register(ctx, ps, deps); err != nil {
-				if cfg.warnWriter != nil {
-					fmt.Fprintf(cfg.warnWriter, "warning: failed to load skill %q: %v\n", ps.Metadata().Name, err)
-				}
+				logger.WarnContext(ctx, "failed to load skill",
+					slog.String("skill", ps.Metadata().Name),
+					slog.Any("error", err),
+				)
 			}
 		}
 	}
@@ -115,9 +97,10 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 	}
 	for _, dir := range agentDirs {
 		if err := k.agents.LoadDir(dir); err != nil {
-			if cfg.warnWriter != nil {
-				fmt.Fprintf(cfg.warnWriter, "warning: failed to load agents from %s: %v\n", dir, err)
-			}
+			logger.WarnContext(ctx, "failed to load agents",
+				slog.String("dir", dir),
+				slog.Any("error", err),
+			)
 		}
 	}
 

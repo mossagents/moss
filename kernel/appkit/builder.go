@@ -3,7 +3,6 @@ package appkit
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/kernel"
@@ -56,8 +55,8 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 
 	k := kernel.New(opts...)
 
-	if err := k.SetupWithDefaults(ctx, flags.Workspace, kernel.WithWarningWriter(os.Stderr)); err != nil {
-		return nil, fmt.Errorf("setup: %w", err)
+	if err := k.SetupWithDefaults(ctx, flags.Workspace); err != nil {
+		return nil, err
 	}
 
 	return k, nil

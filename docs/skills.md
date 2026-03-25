@@ -213,8 +213,7 @@ k.SetupWithDefaults(ctx, workspaceDir,
   kernel.WithoutBuiltin(),        // 不注册内置 6 工具
   kernel.WithoutMCPServers(),     // 不加载 MCP 配置
   kernel.WithoutSkills(),         // 不发现 SKILL.md
-    kernel.WithWarningWriter(os.Stderr),  // 输出加载警告
 )
 ```
 
-`WithWarningWriter` 默认不设置（静默模式），确保库用户不会收到意外的 stderr 输出。
+加载过程中的警告会通过 slog 输出到 stderr，日志级别为 `WARN`。可通过 `logging.ConfigureLogging()` 调整日志级别。

@@ -14,10 +14,11 @@ package main
 import (
 	"context"
 	"embed"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/skill"
 	"golang.org/x/net/websocket"
 )
@@ -58,8 +59,9 @@ func main() {
 		srv.Close()
 	}()
 
+	logger := logging.GetLogger()
 	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+		logger.Error("server error", slog.Any("error", err))
 	}
 }
 
