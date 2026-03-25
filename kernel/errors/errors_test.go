@@ -1,4 +1,4 @@
-package kerr
+package errors
 
 import (
 	"errors"

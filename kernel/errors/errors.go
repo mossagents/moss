@@ -1,8 +1,8 @@
-// Package kerr 提供 Moss Kernel 的结构化错误类型。
+// Package errors 提供 Moss Kernel 的结构化错误类型。
 //
 // 所有 Kernel 子系统返回的错误均可通过 errors.As 解析为 *Error，
 // 获取机器可读的错误码、可重试标志和附加上下文。
-package kerr
+package errors
 
 import (
 	"errors"
@@ -81,7 +81,7 @@ func (e *Error) WithMeta(key string, value any) *Error {
 	return e
 }
 
-// IsRetryable 检查错误链中是否有可重试的 kerr.Error。
+// IsRetryable 检查错误链中是否有可重试的 errors.Error。
 func IsRetryable(err error) bool {
 	var ke *Error
 	if errors.As(err, &ke) {
@@ -90,8 +90,8 @@ func IsRetryable(err error) bool {
 	return false
 }
 
-// GetCode 从错误链中提取 kerr.Code。
-// 如果不是 kerr.Error，返回 ErrInternal。
+// GetCode 从错误链中提取 errors.Code。
+// 如果不是 errors.Error，返回 ErrInternal。
 func GetCode(err error) Code {
 	var ke *Error
 	if errors.As(err, &ke) {

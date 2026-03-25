@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagi/moss/kernel/kerr"
+	"github.com/mossagi/moss/kernel/errors"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
@@ -182,8 +182,8 @@ func TestRateLimiter_AllowsBurst(t *testing.T) {
 	if err == nil {
 		t.Fatal("should be rate limited")
 	}
-	var kErr *kerr.Error
-	if !errors.As(err, &kErr) || kErr.Code != kerr.ErrRateLimit {
+	var kErr *errors.Error
+	if !errors.As(err, &kErr) || kErr.Code != errors.ErrRateLimit {
 		t.Fatalf("expected ErrRateLimit, got: %v", err)
 	}
 }

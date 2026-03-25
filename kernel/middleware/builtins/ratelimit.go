@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel/kerr"
+	"github.com/mossagi/moss/kernel/errors"
 	"github.com/mossagi/moss/kernel/middleware"
 )
 
@@ -25,7 +25,7 @@ func RateLimiter(rps int, burst int) middleware.Middleware {
 		bucket := v.(*tokenBucket)
 
 		if !bucket.allow() {
-			return kerr.New(kerr.ErrRateLimit, "rate limit exceeded for session "+sessID)
+			return errors.New(errors.ErrRateLimit, "rate limit exceeded for session "+sessID)
 		}
 
 		return next(ctx)

@@ -113,7 +113,7 @@ type Executor interface {
 **现状问题**：全部使用 `fmt.Errorf`，上层无法区分错误类型进行恢复。
 
 ```go
-// kernel/kerr/errors.go
+// kernel/errors/errors.go
 
 package kerr
 
