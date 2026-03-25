@@ -190,6 +190,20 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 				currentRoom.SelectTopic(msg.Topic, player)
 			}
 
+		case MsgSelectChars:
+			if currentRoom == nil || currentRoom.ScriptID != "chat" {
+				continue
+			}
+			if len(msg.Chars) == 0 {
+				continue
+			}
+			currentRoom.mu.RLock()
+			player := currentRoom.players[currentUserID]
+			currentRoom.mu.RUnlock()
+			if player != nil {
+				currentRoom.SelectCharacters(msg.Chars, player)
+			}
+
 		case MsgLeaveRoom:
 			if currentRoom != nil {
 				currentRoom.leave(currentUserID)

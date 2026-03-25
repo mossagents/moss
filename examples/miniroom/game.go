@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	core "github.com/mossagi/moss/contrib/core"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/tool"
 )
@@ -113,9 +114,13 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(chatAsSpec, chatAsHandler(room))
 	_ = reg.Register(askChoiceSpec, askChoiceHandler(room))
 	_ = reg.Register(getTimeSpec, getTimeHandler())
-	_ = reg.Register(getWeatherSpec, getWeatherHandler())
+	core.RegisterWeather(reg)
+	core.RegisterJinaSearch(reg)
+	core.RegisterJinaReader(reg)
 	_ = reg.Register(setReminderSpec, setReminderHandler(room))
 	_ = reg.Register(randomPickSpec, randomPickHandler())
+	_ = reg.Register(updateGameContextSpec, updateGameContextHandler(room))
+	_ = reg.Register(getGameContextSpec, getGameContextHandler(room))
 }
 
 // ── get_players ─────────────────────────────────────
@@ -395,49 +400,6 @@ func getTimeHandler() tool.ToolHandler {
 	}
 }
 
-// ── get_weather ─────────────────────────────────────
-
-var getWeatherSpec = tool.ToolSpec{
-	Name:        "get_weather",
-	Description: "查询指定城市的天气（模拟数据，用于角色对话）",
-	InputSchema: json.RawMessage(`{
-		"type": "object",
-		"properties": {
-			"city": {"type": "string", "description": "城市名称，如：杭州、北京、上海"}
-		},
-		"required": ["city"]
-	}`),
-	Risk: tool.RiskLow,
-}
-
-func getWeatherHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var args struct {
-			City string `json:"city"`
-		}
-		if err := json.Unmarshal(input, &args); err != nil {
-			return nil, err
-		}
-		// 模拟天气数据，虚拟角色场景不需要真实 API
-		hour := time.Now().In(time.FixedZone("CST", 8*3600)).Hour()
-		var weather, temp string
-		switch {
-		case hour >= 6 && hour < 12:
-			weather, temp = "晴转多云", "18°C ~ 25°C"
-		case hour >= 12 && hour < 18:
-			weather, temp = "多云", "22°C ~ 28°C"
-		default:
-			weather, temp = "晴", "15°C ~ 20°C"
-		}
-		return json.Marshal(map[string]string{
-			"city":    args.City,
-			"weather": weather,
-			"temp":    temp,
-			"tip":     "适合外出，注意防晒",
-		})
-	}
-}
-
 // ── set_reminder ────────────────────────────────────
 
 var setReminderSpec = tool.ToolSpec{
@@ -524,5 +486,62 @@ func randomPickHandler() tool.ToolHandler {
 			"result": args.Options[idx],
 			"total":  fmt.Sprintf("%d", len(args.Options)),
 		})
+	}
+}
+
+// ── update_game_context ─────────────────────────────
+
+var updateGameContextSpec = tool.ToolSpec{
+	Name:        "update_game_context",
+	Description: "更新/保存角色扮演游戏上下文（如剧情进度、角色状态、当前回合等），数据会在整个游戏会话中持久保存",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"game_type":  {"type": "string", "description": "游戏类型标识，如 spy_roleplay、detective、adventure 等"},
+			"round":      {"type": "integer", "description": "当前回合/章节编号"},
+			"summary":    {"type": "string", "description": "当前剧情/进度概要（每次更新时覆盖）"},
+			"roles":      {"type": "object", "description": "各角色当前状态的 JSON 对象，如 {\"小雪\": {\"身份\": \"卧底\", \"存活\": true}}"},
+			"flags":      {"type": "object", "description": "自定义标记/变量，如 {\"线索已找到\": true, \"嫌疑人\": \"老王\"}"},
+			"next_action": {"type": "string", "description": "下一步应该做什么（给自己的备忘）"}
+		},
+		"required": ["summary"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func updateGameContextHandler(room *Room) tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		room.mu.Lock()
+		room.gameContext = input
+		room.mu.Unlock()
+
+		room.broadcast(ServerMsg{
+			Type:    MsgGameState,
+			State:   "playing",
+			Content: "📋 游戏进度已更新",
+		})
+		return json.Marshal(map[string]string{"status": "saved"})
+	}
+}
+
+// ── get_game_context ────────────────────────────────
+
+var getGameContextSpec = tool.ToolSpec{
+	Name:        "get_game_context",
+	Description: "获取当前保存的角色扮演游戏上下文（剧情进度、角色状态等）",
+	InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	Risk:        tool.RiskLow,
+}
+
+func getGameContextHandler(room *Room) tool.ToolHandler {
+	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		room.mu.RLock()
+		ctx := room.gameContext
+		room.mu.RUnlock()
+
+		if ctx == nil {
+			return json.Marshal(map[string]string{"status": "empty", "message": "暂无保存的游戏上下文"})
+		}
+		return ctx, nil
 	}
 }

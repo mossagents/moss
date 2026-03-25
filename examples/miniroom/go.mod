@@ -1,9 +1,10 @@
 module github.com/mossagi/moss/examples/miniroom
 
-go 1.24.2
+go 1.25
 
 require (
 	github.com/mossagi/moss v0.0.0
+	github.com/mossagi/moss/contrib/core v0.0.0
 	golang.org/x/net v0.41.0
 )
 
@@ -28,3 +29,5 @@ require (
 )
 
 replace github.com/mossagi/moss => ../..
+
+replace github.com/mossagi/moss/contrib/core => ../../contrib/core

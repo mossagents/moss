@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/mossagi/moss/adapters"
 	"github.com/mossagi/moss/kernel"
@@ -66,11 +69,18 @@ type Room struct {
 	history        []HistoryMsg
 	state          GameState
 	ScriptID       string
-	Topic          string // 陪聊主题 ID（仅 chat 剧本）
+	Topic          string          // 陪聊主题 ID（仅 chat 剧本）
+	selectedChars  []string        // 用户选定的角色名列表
+	gameContext    json.RawMessage // 持久化游戏上下文（角色扮演进度）
 
 	k    *kernel.Kernel
 	sess *session.Session
 	io   *RoomIO
+
+	// 自主对话循环
+	lastUserMsg   time.Time   // 上次真实用户发言时间
+	autoTimer     *time.Timer // 自主对话计时器
+	autoTurnCount int         // 已执行的自主对话轮次
 
 	msgCh  chan playerMessage
 	mu     sync.RWMutex
@@ -227,18 +237,69 @@ func (r *Room) run() {
 	}
 }
 
-// SelectTopic 用户选择陪聊主题后，存储主题并触发 Agent 初始化。
+// SelectTopic 用户选择陪聊主题后，发送角色列表供用户选择。
 func (r *Room) SelectTopic(topicID string, p *Player) {
 	r.mu.Lock()
 	r.Topic = topicID
 	r.mu.Unlock()
+
+	// 发送该主题下的角色列表，由用户选择 3-5 个
+	chars := CharactersForTheme(topicID)
+	charInfos := make([]CharInfo, len(chars))
+	for i, c := range chars {
+		charInfos[i] = CharInfo{Name: c.Name, Avatar: c.Avatar, Intro: c.Intro, Gender: c.Gender}
+	}
+	p.send(ServerMsg{Type: MsgCharList, CharList: charInfos})
+}
+
+// SelectCharacters 用户选择角色后，启动陪聊。
+func (r *Room) SelectCharacters(charNames []string, p *Player) {
+	// 验证角色数量
+	if len(charNames) < 3 {
+		charNames = charNames[:0]
+		// 自动补齐到 3 个
+		chars := CharactersForTheme(r.Topic)
+		for _, c := range chars {
+			charNames = append(charNames, c.Name)
+			if len(charNames) >= 3 {
+				break
+			}
+		}
+	}
+	if len(charNames) > 5 {
+		charNames = charNames[:5]
+	}
+
+	// 保存选定角色名
+	r.mu.Lock()
+	r.selectedChars = charNames
+	r.mu.Unlock()
+
 	go r.triggerChatStart(p)
 }
 
 // triggerChatStart 在陪聊剧本中自动触发 Agent 初始化虚拟角色。
 func (r *Room) triggerChatStart(p *Player) {
-	initMsg := fmt.Sprintf("[系统]: 玩家 %s 进入了聊天室，选择的主题是【%s】，请立刻根据该主题初始化对应的角色并做自我介绍。", p.Name, r.Topic)
+	// 构建选定角色的详细信息
+	r.mu.RLock()
+	charNames := r.selectedChars
+	r.mu.RUnlock()
+
+	var charDetails []string
+	for _, name := range charNames {
+		if c, ok := CharacterByName(name); ok {
+			charDetails = append(charDetails, fmt.Sprintf("- %s（%s）：%s。人设：%s", c.Name, c.Avatar, c.Intro, c.Persona))
+		}
+	}
+
+	initMsg := fmt.Sprintf("[系统]: 玩家 %s 进入了聊天室，选择的主题是【%s】。\n\n用户指定的角色（请严格使用这些角色）：\n%s\n\n请立刻为每个角色调用 add_virtual_player 注册，然后让它们做自我介绍。",
+		p.Name, r.Topic, strings.Join(charDetails, "\n"))
 	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: initMsg})
+
+	// 记录用户活动时间（初始化也算活动）
+	r.mu.Lock()
+	r.lastUserMsg = time.Now()
+	r.mu.Unlock()
 
 	result, err := r.k.Run(r.ctx, r.sess)
 	if err != nil {
@@ -250,6 +311,9 @@ func (r *Room) triggerChatStart(p *Player) {
 		return
 	}
 	_ = result
+
+	// 初始化完成后启动自主对话循环
+	r.startAutoLoop()
 }
 
 // handlePlayerMessage 处理一条玩家消息。
@@ -262,11 +326,17 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 		Content: pm.content,
 	})
 
-	// 2. 拼接为 "[玩家名]: 内容" 作为用户消息交给 Agent
+	// 2. 记录用户活动时间 & 重置自主对话
+	r.mu.Lock()
+	r.lastUserMsg = time.Now()
+	r.autoTurnCount = 0
+	r.mu.Unlock()
+
+	// 3. 拼接为 "[玩家名]: 内容" 作为用户消息交给 Agent
 	userMsg := fmt.Sprintf("[%s]: %s", pm.player.Name, pm.content)
 	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: userMsg})
 
-	// 3. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
+	// 4. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
 	result, err := r.k.Run(r.ctx, r.sess)
 	if err != nil {
 		if r.ctx.Err() != nil {
@@ -277,6 +347,96 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 		return
 	}
 	_ = result
+
+	// 5. 用户发言后重启自主对话计时
+	if r.ScriptID == "chat" {
+		r.startAutoLoop()
+	}
+}
+
+// ── 自主对话循环 ────────────────────────────────────
+
+const (
+	autoMaxTurns   = 6                // 最大自主对话轮次
+	autoWindowMins = 10               // 自主对话窗口（分钟）
+	autoFirstDelay = 45 * time.Second // 第一次自主对话延迟
+)
+
+// autoDelay 返回第 n 轮自主对话的延迟时间（递增）。
+func autoDelay(turn int) time.Duration {
+	delays := []time.Duration{
+		45 * time.Second,
+		60 * time.Second,
+		90 * time.Second,
+		120 * time.Second,
+		150 * time.Second,
+		180 * time.Second,
+	}
+	if turn < len(delays) {
+		return delays[turn]
+	}
+	return 180 * time.Second
+}
+
+// startAutoLoop 启动或重置自主对话计时器。
+func (r *Room) startAutoLoop() {
+	r.mu.Lock()
+	// 停掉旧的计时器
+	if r.autoTimer != nil {
+		r.autoTimer.Stop()
+	}
+	delay := autoDelay(r.autoTurnCount)
+	r.autoTimer = time.AfterFunc(delay, func() {
+		r.fireAutoTurn()
+	})
+	r.mu.Unlock()
+}
+
+// stopAutoLoop 停止自主对话计时器。
+func (r *Room) stopAutoLoop() {
+	r.mu.Lock()
+	if r.autoTimer != nil {
+		r.autoTimer.Stop()
+		r.autoTimer = nil
+	}
+	r.mu.Unlock()
+}
+
+// fireAutoTurn 触发一次自主对话。
+func (r *Room) fireAutoTurn() {
+	r.mu.RLock()
+	lastMsg := r.lastUserMsg
+	turnCount := r.autoTurnCount
+	state := r.state
+	r.mu.RUnlock()
+
+	// 检查是否超出窗口或轮次限制
+	if state == StateEnded || turnCount >= autoMaxTurns || time.Since(lastMsg) > autoWindowMins*time.Minute {
+		return
+	}
+
+	elapsed := time.Since(lastMsg)
+	prompt := fmt.Sprintf(`[系统-自主对话]: 距离上次用户发言已过 %d 秒，虚拟角色可以自主闲聊或互动。请自然地让1-2个角色说点什么（闲聊、接之前的话题、互相调侃等），但控制篇幅简短。如果觉得没什么好说的，回复"skip"即可。`,
+		int(elapsed.Seconds()))
+
+	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: prompt})
+
+	result, err := r.k.Run(r.ctx, r.sess)
+	if err != nil {
+		if r.ctx.Err() != nil {
+			return
+		}
+		log.Printf("[room %s] auto-turn error: %v", r.Code, err)
+		return
+	}
+	_ = result
+
+	// 递增轮次并安排下一轮
+	r.mu.Lock()
+	r.autoTurnCount++
+	r.mu.Unlock()
+
+	r.startAutoLoop()
 }
 
 // ── RoomIO ──────────────────────────────────────────
