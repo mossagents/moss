@@ -50,6 +50,7 @@ type Scheduler struct {
 	cancel    context.CancelFunc
 	running   bool
 	store     JobStore // 可选，持久化存储
+	lock      Lock     // 可选，分布式锁
 }
 
 type jobEntry struct {
@@ -75,6 +76,12 @@ type SchedulerOption func(*Scheduler)
 // WithPersistence 设置 Job 持久化存储。
 func WithPersistence(store JobStore) SchedulerOption {
 	return func(s *Scheduler) { s.store = store }
+}
+
+// WithLock 设置分布式锁，用于多实例部署时的 Job 去重。
+// 未设置时 Job 在每个实例上都会执行。
+func WithLock(lock Lock) SchedulerOption {
+	return func(s *Scheduler) { s.lock = lock }
 }
 
 // AddJob 添加一个定时任务。如果已存在同 ID 的任务，先移除再添加。
@@ -231,10 +238,26 @@ func (s *Scheduler) scheduleEntry(entry *jobEntry, interval time.Duration, once 
 		entry.job.RunCount++
 		handler := s.handler
 		job := entry.job
+		lock := s.lock
 		s.mu.Unlock()
 
-		if handler != nil {
+		// 分布式锁：多实例部署时防止重复执行
+		acquired := true
+		var lockUnlock func()
+		if lock != nil {
+			u, lockErr := lock.TryLock(ctx, "scheduler:"+jobID, interval)
+			if lockErr != nil {
+				acquired = false
+			} else {
+				lockUnlock = u
+			}
+		}
+
+		if acquired && handler != nil {
 			handler(ctx, job)
+		}
+		if lockUnlock != nil {
+			lockUnlock()
 		}
 
 		if once {

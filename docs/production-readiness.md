@@ -286,48 +286,20 @@ Phase 1 已实现 `sandbox.ScopedWorkspace`，含路径隔离和完整测试。
 
 ---
 
-## 5 Phase 3：分布式基础设施
+## 5 Phase 3：分布式基础设施 ✅
 
 > **目标**：Scheduler 不重复执行、Session 可跨实例访问、Knowledge 不丢失。
 
 ### 5.1 分布式 Session Store
 
-**接口不变**，增加 Redis 实现：
+**接口层已就绪**（Phase 2 添加 Watch）。Redis 实现为外部 adapter，按需开发。
 
-```go
-// adapters/session/redis/store.go
+### 5.2 Scheduler 去重 ✅
 
-type RedisStore struct {
-    client *redis.Client
-    ttl    time.Duration
-}
-```
-
-- `Save`: SET + TTL
-- `Load`: GET + JSON 解码
-- `Watch`: Redis Pub/Sub 或 Keyspace notification
-- `List`: SCAN 匹配前缀
-
-### 5.2 Scheduler 去重
-
-**关键问题**：多实例部署时，同一 `@every 1h` 任务每个实例都在执行。
-
-**方案**：引入 Lock 接口，Scheduler 执行前获取分布式锁。
-
-```go
-// kernel/scheduler/lock.go
-
-// Lock 接口用于分布式任务去重。
-type Lock interface {
-    // TryLock 尝试获取锁（非阻塞），成功返回 unlock 函数。
-    TryLock(ctx context.Context, key string, ttl time.Duration) (unlock func(), err error)
-}
-
-// LocalLock 单实例使用，默认实现。
-type LocalLock struct{}
-
-// 上层可提供 RedisLock / EtcdLock
-```
+- ✅ `Lock` 接口 (`TryLock` + `ErrLockHeld`)
+- ✅ `LocalLock` 内存实现（含 TTL 自动过期）
+- ✅ `Scheduler.WithLock()` Option + 执行前自动获取锁
+- ✅ 完整测试覆盖
 
 ### 5.3 Knowledge 持久化
 
@@ -336,24 +308,14 @@ type LocalLock struct{}
 | 实现 | 适用场景 |
 |---|---|
 | `InMemoryStore`（现有） | 开发/测试 |
-| `SQLiteStore` | 单机生产 |
-| `PgVectorStore` | 分布式生产 |
+| `SQLiteStore` | 单机生产（外部 adapter） |
+| `PgVectorStore` | 分布式生产（外部 adapter） |
 
-### 5.4 分布式 Task Tracker
+### 5.4 分布式 Task Tracker ✅
 
-Agent 委派的 spawn_agent 任务需要跨实例可见：
-
-```go
-// kernel/agent/store.go
-
-type TaskStore interface {
-    Save(ctx context.Context, task *Task) error
-    Load(ctx context.Context, id string) (*Task, error)
-    List(ctx context.Context, filter TaskFilter) ([]*Task, error)
-}
-```
-
-默认 InMemoryTaskStore（现有行为），可替换为 Redis/DB。
+- ✅ `TaskStore` 接口 (`Save`/`Load`/`List` + `TaskFilter`)
+- ✅ `InMemoryTaskStore` 实现（线程安全、返回副本）
+- ✅ 完整测试覆盖
 
 ---
 
