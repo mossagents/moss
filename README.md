@@ -117,6 +117,69 @@ func must[T any](v T, err error) T {
 }
 ```
 
+### 动态模型路由（按任务能力选择模型）
+
+Moss 支持在一个配置文件中声明多个模型，并按任务需求动态路由：
+
+- 可配置模型能力（如 `image_generation`、`reasoning`）
+- 可配置成本等级（`cost_tier`）
+- 可按任务约束选择低成本或高能力模型
+- 找不到可用模型时返回详细错误
+
+示例配置 `models.yaml`：
+
+```yaml
+models:
+    - name: gpt-4o
+        provider: openai
+        model: gpt-4o
+        cost_tier: 3
+        capabilities: [text_generation, code_generation, image_understanding, function_calling, reasoning]
+        is_default: true
+
+    - name: gpt-4o-mini
+        provider: openai
+        model: gpt-4o-mini
+        cost_tier: 1
+        capabilities: [text_generation, code_generation, function_calling]
+
+    - name: image-gen
+        provider: openai
+        model: gpt-image-1
+        cost_tier: 2
+        capabilities: [image_generation]
+```
+
+在 Kernel 中启用路由器：
+
+```go
+router, err := adapters.NewModelRouterFromFile("models.yaml")
+if err != nil {
+        panic(err)
+}
+
+k := kernel.New(
+        kernel.WithLLM(router),
+        kernel.WithUserIO(port.NewPrintfIO(os.Stdout)),
+        kernel.WithSandbox(must(sandbox.NewLocal("."))),
+)
+```
+
+为单次任务声明能力需求：
+
+```go
+sess, _ := k.NewSession(ctx, session.SessionConfig{
+        Goal: "生成一张海报图",
+        ModelConfig: port.ModelConfig{
+                Requirements: &port.TaskRequirement{
+                        Capabilities: []port.ModelCapability{port.CapImageGeneration},
+                        MaxCostTier:  2,
+                        PreferCheap:  true,
+                },
+        },
+})
+```
+
 ### 标准 UserIO 实现
 
 | 实现 | 场景 | 用法 |
@@ -202,6 +265,8 @@ moss/
 ├── adapters/                # LLM Adapter 实现
 │   ├── claude/              # Anthropic Claude (SDK)
 │   └── openai/              # OpenAI 兼容 (SDK)
+│   ├── router.go             # 多模型动态路由 (ModelRouter)
+│   └── router_test.go
 ├── examples/                # 示例应用
 │   ├── minicode/            # 代码助手（TUI）
 │   ├── miniwork/            # 多 Agent 编排
@@ -215,6 +280,7 @@ moss/
 │   ├── port/                # Port 接口 (纯类型定义)
 │   │   ├── types.go         # Message, Role, ToolCall, ToolResult
 │   │   ├── llm.go           # LLM, StreamingLLM, CompletionRequest
+│   │   ├── capability.go    # 模型能力标签 + TaskRequirement
 │   │   ├── io.go            # UserIO, OutputMessage, InputRequest
 │   │   ├── io_std.go        # NoOpIO, PrintfIO, BufferIO
 │   │   ├── channel.go       # Channel, InboundMessage, OutboundMessage

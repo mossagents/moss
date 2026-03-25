@@ -20,14 +20,15 @@ const (
 
 // SessionConfig 配置 Session 的运行参数。
 type SessionConfig struct {
-	Goal         string         `json:"goal"`
-	Mode         string         `json:"mode,omitempty"`
-	TrustLevel   string         `json:"trust_level,omitempty"`
-	MaxSteps     int            `json:"max_steps,omitempty"`
-	MaxTokens    int            `json:"max_tokens,omitempty"`
-	Timeout      time.Duration  `json:"timeout,omitempty"`
-	SystemPrompt string         `json:"system_prompt,omitempty"`
-	Metadata     map[string]any `json:"metadata,omitempty"`
+	Goal         string           `json:"goal"`
+	Mode         string           `json:"mode,omitempty"`
+	TrustLevel   string           `json:"trust_level,omitempty"`
+	MaxSteps     int              `json:"max_steps,omitempty"`
+	MaxTokens    int              `json:"max_tokens,omitempty"`
+	Timeout      time.Duration    `json:"timeout,omitempty"`
+	SystemPrompt string           `json:"system_prompt,omitempty"`
+	ModelConfig  port.ModelConfig `json:"model_config,omitempty"`
+	Metadata     map[string]any   `json:"metadata,omitempty"`
 }
 
 // Budget 追踪 Session 的资源预算使用情况。

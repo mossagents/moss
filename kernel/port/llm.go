@@ -45,10 +45,11 @@ type JSONSchemaSpec struct {
 
 // ModelConfig 配置模型参数。
 type ModelConfig struct {
-	Model       string         `json:"model"`
-	MaxTokens   int            `json:"max_tokens,omitempty"`
-	Temperature float64        `json:"temperature,omitempty"`
-	Extra       map[string]any `json:"extra,omitempty"`
+	Model        string           `json:"model"`
+	MaxTokens    int              `json:"max_tokens,omitempty"`
+	Temperature  float64          `json:"temperature,omitempty"`
+	Extra        map[string]any   `json:"extra,omitempty"`
+	Requirements *TaskRequirement `json:"requirements,omitempty"`
 }
 
 // CompletionResponse 是 LLM 返回的同步响应。

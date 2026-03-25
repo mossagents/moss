@@ -2,6 +2,33 @@
 
 ---
 
+## v0.4.0 — 动态模型路由 (2026-03-25)
+
+### 新增
+
+- **ModelRouter (`adapters/router.go`)**：支持按任务需求动态选择模型
+  - 支持在一个 YAML 文件中声明多个模型配置
+  - 支持能力标签匹配（如 `image_generation`、`reasoning`、`function_calling`）
+  - 支持成本约束（`cost_tier` + `max_cost_tier`）
+  - 支持选择偏好（`prefer_cheap`）
+  - 无可用模型时返回详细诊断错误
+- **模型能力类型 (`kernel/port/capability.go`)**
+  - 新增 `ModelCapability` 能力枚举
+  - 新增 `TaskRequirement` 任务需求结构
+
+### 变更
+
+- `ModelConfig` 新增 `requirements` 字段（`kernel/port/llm.go`）
+- `SessionConfig` 新增 `model_config` 字段（`kernel/session/session.go`）
+- Agent Loop 在调用 LLM 时透传 `session.Config.ModelConfig`（`kernel/loop/loop.go`）
+- README 与 Getting Started 文档同步新增动态模型路由配置与使用示例
+
+### 兼容性
+
+- 向后兼容：现有代码若不设置 `model_config` / `requirements`，行为与此前一致（使用默认模型）
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更

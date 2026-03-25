@@ -43,6 +43,57 @@ skills:
 | `ANTHROPIC_API_KEY` | Claude API 密钥 |
 | `OPENAI_API_KEY` | OpenAI API 密钥 |
 
+### 动态模型路由配置（可选）
+
+如果你希望根据任务能力自动选择模型（例如图片生成任务走图像模型），可单独提供一个模型路由配置文件：
+
+```yaml
+models:
+  - name: claude-sonnet
+    provider: claude
+    model: claude-sonnet-4-20250514
+    cost_tier: 2
+    capabilities: [text_generation, code_generation, reasoning, function_calling]
+    is_default: true
+
+  - name: image-gen
+    provider: openai
+    model: gpt-image-1
+    cost_tier: 3
+    capabilities: [image_generation]
+```
+
+在代码中加载并注入 `ModelRouter`：
+
+```go
+router, err := adapters.NewModelRouterFromFile("models.yaml")
+if err != nil {
+    panic(err)
+}
+
+k := kernel.New(
+    kernel.WithLLM(router),
+    kernel.WithUserIO(port.NewPrintfIO(os.Stdout)),
+)
+```
+
+创建 Session 时可传入任务要求：
+
+```go
+sess, _ := k.NewSession(ctx, session.SessionConfig{
+    Goal: "生成一张产品海报",
+    ModelConfig: port.ModelConfig{
+        Requirements: &port.TaskRequirement{
+            Capabilities: []port.ModelCapability{port.CapImageGeneration},
+            MaxCostTier:  3,
+            PreferCheap:  false,
+        },
+    },
+})
+```
+
+当没有任何模型满足要求时，`ModelRouter` 会返回可读错误并列出已注册模型与能力。
+
 ### 第三方应用配置目录
 
 若你基于 Moss 构建自己的应用，可设置应用名以隔离配置目录：

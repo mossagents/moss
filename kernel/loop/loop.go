@@ -189,6 +189,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.C
 	req := port.CompletionRequest{
 		Messages: sess.Messages,
 		Tools:    specs,
+		Config:   sess.Config.ModelConfig,
 	}
 
 	cfg := l.Config.LLMRetry
