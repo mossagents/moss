@@ -46,10 +46,10 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
           <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden mb-3">
             <div
               className={cn(
-                "h-full rounded-full transition-all duration-500",
+                "progress-fill h-full rounded-full transition-all duration-500",
                 isCompleted && state.failed > 0 ? "bg-error" : "bg-primary"
               )}
-              style={{ width: `${pct}%` }}
+              style={{ '--progress-width': `${pct}%` } as React.CSSProperties}
             />
           </div>
 

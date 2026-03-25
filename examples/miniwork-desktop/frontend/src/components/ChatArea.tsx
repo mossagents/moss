@@ -50,7 +50,7 @@ export default function ChatArea({ messages, isRunning }: ChatAreaProps) {
           !messages.some((m) => m.streaming) &&
           messages[messages.length - 1]?.role !== "assistant" && (
             <div className="flex gap-6 animate-fade-in">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
                 <span className="material-symbols-outlined text-on-primary text-sm">auto_awesome</span>
               </div>
               <div className="flex items-center gap-1.5 py-3">
