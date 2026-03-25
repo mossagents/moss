@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "miniwork-desktop-wails.exe"
+name: "miniwork-desktop.exe"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.0"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A miniwork-desktop-wails application"
+description: "A miniwork-desktop application"
 vendor: "My Company"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/miniwork-desktop-wails.exe"
-    dst: "/usr/local/bin/miniwork-desktop-wails.exe"
+  - src: "./bin/miniwork-desktop.exe"
+    dst: "/usr/local/bin/miniwork-desktop.exe"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/miniwork-desktop-wails.exe.png"
-  - src: "./build/linux/miniwork-desktop-wails.exe.desktop"
-    dst: "/usr/share/applications/miniwork-desktop-wails.exe.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/miniwork-desktop.exe.png"
+  - src: "./build/linux/miniwork-desktop.exe.desktop"
+    dst: "/usr/share/applications/miniwork-desktop.exe.desktop"
 
 # Default dependencies for Debian 12/Ubuntu 22.04+ with WebKit 4.1
 depends:

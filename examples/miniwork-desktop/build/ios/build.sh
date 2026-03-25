@@ -2,7 +2,7 @@
 set -e
 
 # Build configuration
-APP_NAME="miniwork-desktop-wails.exe"
+APP_NAME="miniwork-desktop.exe"
 BUNDLE_ID="com.example.miniworkdesktopwails"
 VERSION="0.1.0"
 BUILD_NUMBER="0.1.0"

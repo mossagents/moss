@@ -1,4 +1,4 @@
-// miniwork-desktop-wails 是基于 Wails v3 的桌面端 AI 助手。
+// miniwork-desktop 是基于 Wails v3 的桌面端 AI 助手。
 //
 // 演示 moss kernel 接入桌面端的能力：
 //   - 对话式任务交互（流式输出）

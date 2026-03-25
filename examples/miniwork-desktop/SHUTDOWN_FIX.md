@@ -1,7 +1,7 @@
 # 应用关闭进程问题修复
 
 ## 问题描述
-关闭 miniwork-desktop-wails 桌面应用后，终端中的进程不会立即关闭，导致僵尸进程存在。
+关闭 miniwork-desktop 桌面应用后，终端中的进程不会立即关闭，导致僵尸进程存在。
 
 ## 根本原因
 1. **FileService 缺少生命周期管理** - `ServiceShutdown` 方法未实现
@@ -133,7 +133,7 @@ slog.Info("Application shutdown complete")
 
 编译命令:
 ```bash
-cd examples/miniwork-desktop-wails
+cd examples/miniwork-desktop
 go build -o ./bin/miniwork-desktop.exe .
 ```
 

@@ -6,7 +6,7 @@
         <key>CFBundleName</key>
             <string>My Product</string>
         <key>CFBundleExecutable</key>
-            <string>miniwork-desktop-wails.exe</string>
+            <string>miniwork-desktop.exe</string>
         <key>CFBundleIdentifier</key>
             <string>com.example.miniworkdesktopwails</string>
         <key>CFBundleVersion</key>

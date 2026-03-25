@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="miniwork-desktop-wails.exe"
+        Path="miniwork-desktop.exe"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,7 +18,7 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A miniwork-desktop-wails application">
+        PackageDescription="A miniwork-desktop application">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
@@ -26,9 +26,9 @@
         <Applications>
             <Application
                 Id="com.example.miniworkdesktopwails"
-                Description="A miniwork-desktop-wails application"
+                Description="A miniwork-desktop application"
                 DisplayName="My Product"
-                ExecutableName="miniwork-desktop-wails.exe"
+                ExecutableName="miniwork-desktop.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A miniwork-desktop-wails application</Description>
+            <Description>A miniwork-desktop application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="miniwork-desktop-wails.msix" />
+    <SaveLocation PackagePath="miniwork-desktop.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>
