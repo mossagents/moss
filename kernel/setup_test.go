@@ -12,10 +12,12 @@ import (
 func TestSetupWithDefaults(t *testing.T) {
 	mock := &kt.MockLLM{}
 	io := &port.NoOpIO{}
+	sb := kt.NewMemorySandbox()
 
 	k := New(
 		WithLLM(mock),
 		WithUserIO(io),
+		WithSandbox(sb),
 	)
 
 	ctx := context.Background()
@@ -71,6 +73,37 @@ func TestSetupWithDefaults_WithoutBuiltin(t *testing.T) {
 	for _, s := range skills {
 		if s.Name == "core" {
 			t.Error("core skill should not be registered when WithoutBuiltin is used")
+		}
+	}
+}
+
+func TestSetupWithDefaults_NoSandbox(t *testing.T) {
+	mock := &kt.MockLLM{}
+	io := &port.NoOpIO{}
+
+	k := New(
+		WithLLM(mock),
+		WithUserIO(io),
+		// 不设置 Sandbox — 纯对话模式
+	)
+
+	ctx := context.Background()
+	if err := k.SetupWithDefaults(ctx, "."); err != nil {
+		t.Fatalf("SetupWithDefaults: %v", err)
+	}
+
+	// 仅 ask_user 应被注册
+	tools := k.ToolRegistry().List()
+	toolNames := make(map[string]bool)
+	for _, ts := range tools {
+		toolNames[ts.Name] = true
+	}
+	if !toolNames["ask_user"] {
+		t.Error("expected ask_user to be registered without sandbox")
+	}
+	for _, name := range []string{"read_file", "write_file", "list_files", "search_text", "run_command"} {
+		if toolNames[name] {
+			t.Errorf("tool %q should not be registered without sandbox", name)
 		}
 	}
 }

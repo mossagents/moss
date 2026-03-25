@@ -26,10 +26,7 @@ func (s *BuiltinTool) Metadata() skill.Metadata {
 }
 
 func (s *BuiltinTool) Init(ctx context.Context, deps skill.Deps) error {
-	s.toolNames = []string{
-		"read_file", "write_file", "list_files",
-		"search_text", "run_command", "ask_user",
-	}
+	s.toolNames = RegisteredToolNames(deps.Sandbox)
 	return RegisterAll(deps.ToolRegistry, deps.Sandbox, deps.UserIO)
 }
 

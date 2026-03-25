@@ -12,19 +12,40 @@ import (
 	"github.com/mossagi/moss/kernel/tool"
 )
 
+// RegisteredToolNames 返回给定 sandbox 配置下会注册的工具名列表。
+// sandbox 为 nil 时仅包含不依赖 sandbox 的工具（如 ask_user）。
+func RegisteredToolNames(sb sandbox.Sandbox) []string {
+	if sb == nil {
+		return []string{"ask_user"}
+	}
+	return []string{
+		"read_file", "write_file", "list_files",
+		"search_text", "run_command", "ask_user",
+	}
+}
+
 // RegisterAll 注册所有内置工具到 registry。
+// 当 sb 为 nil 时，仅注册不依赖 sandbox 的工具（ask_user）。
 func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO) error {
-	tools := []struct {
+	type entry struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
-	}{
-		{readFileSpec, readFileHandler(sb)},
-		{writeFileSpec, writeFileHandler(sb)},
-		{listFilesSpec, listFilesHandler(sb)},
-		{searchTextSpec, searchTextHandler(sb)},
-		{runCommandSpec, runCommandHandler(sb)},
-		{askUserSpec, askUserHandler(io)},
 	}
+
+	var tools []entry
+
+	if sb != nil {
+		tools = append(tools,
+			entry{readFileSpec, readFileHandler(sb)},
+			entry{writeFileSpec, writeFileHandler(sb)},
+			entry{listFilesSpec, listFilesHandler(sb)},
+			entry{searchTextSpec, searchTextHandler(sb)},
+			entry{runCommandSpec, runCommandHandler(sb)},
+		)
+	}
+
+	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
+
 	for _, t := range tools {
 		if err := reg.Register(t.spec, t.handler); err != nil {
 			return err
