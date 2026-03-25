@@ -37,12 +37,11 @@ func main() {
 	appkit.PrintBannerWithHint("miniroom", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
-		"Game":     "🐢 海龟汤",
+		"Scripts":  "🐢 海龟汤 / 🕵️ 谁是卧底",
 		"Listen":   "http://localhost:8091",
 	}, "在浏览器中打开 http://localhost:8091 创建或加入房间")
 
-	prompt := buildSystemPrompt(flags.Workspace)
-	mgr := NewRoomManager(flags, prompt)
+	mgr := NewRoomManager(flags)
 
 	http.Handle("/ws", websocket.Handler(func(conn *websocket.Conn) {
 		handleWS(ctx, mgr, conn)
@@ -77,6 +76,9 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 		}
 	}()
 
+	// 连接建立后立即发送可用剧本列表
+	websocket.JSON.Send(conn, ServerMsg{Type: MsgScripts, Scripts: ListScripts()})
+
 	for {
 		var msg ClientMsg
 		if err := websocket.JSON.Receive(conn, &msg); err != nil {
@@ -88,7 +90,13 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 			if currentRoom != nil {
 				currentRoom.leave(currentUserID)
 			}
-			room, err := mgr.CreateRoom(ctx)
+
+			scriptID := msg.Script
+			if scriptID == "" {
+				scriptID = "turtle_soup" // 默认剧本
+			}
+
+			room, err := mgr.CreateRoom(ctx, scriptID)
 			if err != nil {
 				websocket.JSON.Send(conn, ServerMsg{Type: MsgError, Content: "创建房间失败: " + err.Error()})
 				continue
@@ -98,18 +106,17 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 			userID := generateUserID()
 			userName := generateUserName()
 
+			// 先发 room_created 让 JS 记录用户名，再 join 触发 room_joined
+			websocket.JSON.Send(conn, ServerMsg{
+				Type: MsgRoomCreated,
+				Room: room.Code,
+			})
+
 			player := &Player{ID: userID, Name: userName, conn: conn}
 			room.join(player)
 
 			currentRoom = room
 			currentUserID = userID
-
-			// 返回房间号和用户信息
-			websocket.JSON.Send(conn, ServerMsg{
-				Type:    MsgRoomCreated,
-				Room:    room.Code,
-				Content: userName,
-			})
 
 		case MsgJoinRoom:
 			if msg.Room == "" {
@@ -137,17 +144,10 @@ func handleWS(ctx context.Context, mgr *RoomManager, conn *websocket.Conn) {
 			}
 
 			player := &Player{ID: userID, Name: userName, conn: conn}
-			room.join(player)
+			room.join(player) // join() 内部已发送 room_joined（含用户名）
 
 			currentRoom = room
 			currentUserID = userID
-
-			// 返回确认和用户信息
-			websocket.JSON.Send(conn, ServerMsg{
-				Type:    MsgRoomJoined,
-				Room:    room.Code,
-				Content: userName,
-			})
 
 		case MsgChat:
 			if currentRoom == nil {

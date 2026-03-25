@@ -24,6 +24,7 @@ const (
 	MsgWhisper     = "whisper"      // 私信
 	MsgSystem      = "system"       // 系统消息
 	MsgGameState   = "game_state"   // 游戏状态
+	MsgScripts     = "scripts"      // 可用剧本列表
 	MsgError       = "error"        // 错误
 )
 
@@ -34,17 +35,20 @@ type ClientMsg struct {
 	Content  string `json:"content,omitempty"`
 	UserID   string `json:"user_id,omitempty"`
 	UserName string `json:"user_name,omitempty"`
+	Script   string `json:"script,omitempty"` // 创建房间时选择的剧本 ID
 }
 
 // ServerMsg 是服务端发送到客户端的消息。
 type ServerMsg struct {
-	Type    string       `json:"type"`
-	Room    string       `json:"room,omitempty"`
-	Content string       `json:"content,omitempty"`
-	From    string       `json:"from,omitempty"`
-	Users   []PlayerInfo `json:"users,omitempty"`
-	History []HistoryMsg `json:"history,omitempty"`
-	State   string       `json:"state,omitempty"`
+	Type     string       `json:"type"`
+	Room     string       `json:"room,omitempty"`
+	Content  string       `json:"content,omitempty"`
+	From     string       `json:"from,omitempty"`
+	Users    []PlayerInfo `json:"users,omitempty"`
+	History  []HistoryMsg `json:"history,omitempty"`
+	State    string       `json:"state,omitempty"`
+	Scripts  []ScriptInfo `json:"scripts,omitempty"`   // 可用剧本列表
+	ScriptID string       `json:"script_id,omitempty"` // 房间使用的剧本 ID
 }
 
 // PlayerInfo 是玩家摘要信息。

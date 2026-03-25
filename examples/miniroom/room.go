@@ -51,10 +51,11 @@ func (p *Player) send(msg ServerMsg) {
 
 // Room 是一个游戏房间，拥有独立的 Kernel 和 Session。
 type Room struct {
-	Code    string
-	players map[string]*Player // user_id → Player
-	history []HistoryMsg
-	state   GameState
+	Code     string
+	players  map[string]*Player // user_id → Player
+	history  []HistoryMsg
+	state    GameState
+	ScriptID string
 
 	k    *kernel.Kernel
 	sess *session.Session
@@ -126,11 +127,13 @@ func (r *Room) join(p *Player) {
 	r.mu.RUnlock()
 
 	p.send(ServerMsg{
-		Type:    MsgRoomJoined,
-		Room:    r.Code,
-		Users:   r.playerInfos(),
-		History: hist,
-		State:   string(r.state),
+		Type:     MsgRoomJoined,
+		Room:     r.Code,
+		Content:  p.Name,
+		Users:    r.playerInfos(),
+		History:  hist,
+		State:    string(r.state),
+		ScriptID: r.ScriptID,
 	})
 
 	if !ok {
@@ -238,20 +241,23 @@ type RoomManager struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
 	flags *appkit.CommonFlags
-	prompt string // 渲染后的系统提示词
 }
 
 // NewRoomManager 创建房间管理器。
-func NewRoomManager(flags *appkit.CommonFlags, prompt string) *RoomManager {
+func NewRoomManager(flags *appkit.CommonFlags) *RoomManager {
 	return &RoomManager{
-		rooms:  make(map[string]*Room),
-		flags:  flags,
-		prompt: prompt,
+		rooms: make(map[string]*Room),
+		flags: flags,
 	}
 }
 
-// CreateRoom 创建新房间。
-func (rm *RoomManager) CreateRoom(parentCtx context.Context) (*Room, error) {
+// CreateRoom 创建新房间，使用指定的剧本。
+func (rm *RoomManager) CreateRoom(parentCtx context.Context, scriptID string) (*Room, error) {
+	script, ok := GetScript(scriptID)
+	if !ok {
+		return nil, fmt.Errorf("未知剧本: %s", scriptID)
+	}
+
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -274,12 +280,13 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context) (*Room, error) {
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	room := &Room{
-		Code:    code,
-		players: make(map[string]*Player),
-		state:   StateLobby,
-		msgCh:   make(chan playerMessage, 64),
-		ctx:     ctx,
-		cancel:  cancel,
+		Code:     code,
+		ScriptID: scriptID,
+		players:  make(map[string]*Player),
+		state:    StateLobby,
+		msgCh:    make(chan playerMessage, 64),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 
 	roomIO := &RoomIO{room: room}
@@ -309,11 +316,12 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context) (*Room, error) {
 	}
 
 	// 创建共享 Session
+	prompt := buildSystemPrompt(rm.flags.Workspace, script)
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         "turtle_soup_game",
+		Goal:         script.ID,
 		Mode:         "interactive",
 		MaxSteps:     200,
-		SystemPrompt: rm.prompt,
+		SystemPrompt: prompt,
 	})
 	if err != nil {
 		cancel()

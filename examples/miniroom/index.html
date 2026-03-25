@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🐢 海龟汤 — miniroom</title>
+<title>🎮 miniroom — 多人游戏房间</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=ZCOOL+KuaiLe&display=swap');
 
@@ -367,23 +367,66 @@
     .landing-title { font-size: 1.6em; }
     .landing-logo { font-size: 3em; }
   }
+
+  /* Script cards */
+  .script-card {
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .script-card:hover {
+    border-color: var(--amber-dim);
+    background: rgba(212,168,83,0.05);
+    transform: translateY(-1px);
+  }
+  .script-card .script-emoji {
+    font-size: 1.8em;
+    flex-shrink: 0;
+  }
+  .script-card .script-info {
+    flex: 1;
+  }
+  .script-card .script-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    color: var(--amber);
+    letter-spacing: 1px;
+  }
+  .script-card .script-desc {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
 </style>
 </head>
 <body>
 
 <div id="header">
-  <h1>🐢 海龟汤</h1>
+  <h1>🎮 miniroom</h1>
   <span id="header-info"></span>
   <button id="btn-leave" onclick="leaveRoom()">退出房间</button>
 </div>
 
 <!-- Landing View -->
 <div id="landing" class="view active">
-  <div class="landing-logo">🐢</div>
-  <div class="landing-title">海 龟 汤</div>
-  <div class="landing-sub">横向思维解谜 · 多人在线</div>
+  <div class="landing-logo">🎮</div>
+  <div class="landing-title">miniroom</div>
+  <div class="landing-sub">多人在线游戏房间</div>
+
+  <!-- 剧本选择 -->
+  <div id="script-section" style="display:none; width: 340px;">
+    <div style="color:var(--text-dim); font-size:0.85em; text-align:center; margin-bottom:8px;">选择一个游戏剧本</div>
+    <div id="script-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
+
   <div class="landing-actions">
-    <button class="btn-primary" onclick="createRoom()">创 建 房 间</button>
+    <button class="btn-primary" onclick="showScriptSelection()">创 建 房 间</button>
     <button class="btn-secondary" onclick="showJoinDialog()">加 入 房 间</button>
     <div id="join-dialog">
       <input id="join-input" type="text" maxlength="4" placeholder="房间号"
@@ -405,6 +448,7 @@
       <h3>在线玩家</h3>
       <div id="players-list"></div>
     </div>
+    <div id="game-hint" style="padding:12px 16px;border-top:1px solid var(--border);font-size:0.8em;color:var(--text-dim);line-height:1.6;display:none;"></div>
   </div>
   <div id="chat-area">
     <div id="messages"></div>
@@ -422,6 +466,13 @@ let currentRoom = null;
 let myUserID = null;
 let myUserName = null;
 let streamEl = null;
+let availableScripts = [];
+let currentScriptID = null;
+
+const scriptHints = {
+  'turtle_soup': '🐢 <b>海龟汤</b><br>人齐后输入「开始」<br>主持人出谜题，用是非题推理真相<br>回答：✅是 / ❌不是 / ⚪不相关',
+  'spy': '🕵️ <b>谁是卧底</b><br>建议 4 人以上，输入「开始」<br>主持人私发词语，轮流描述→投票<br>找出拿到不同词语的卧底！',
+};
 
 // ── LocalStorage helpers ──
 function saveIdentity(room, uid, uname) {
@@ -456,9 +507,37 @@ function wsSend(obj) {
 }
 
 // ── Actions ──
-async function createRoom() {
+async function showScriptSelection() {
+  const section = document.getElementById('script-section');
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    renderScripts();
+    await connect(); // 建立 WS 连接以接收剧本列表
+  } else {
+    section.style.display = 'none';
+  }
+}
+
+function renderScripts() {
+  const list = document.getElementById('script-list');
+  list.innerHTML = '';
+  availableScripts.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'script-card';
+    card.onclick = () => createRoom(s.id);
+    card.innerHTML = '<div class="script-emoji">' + esc(s.emoji) + '</div>' +
+      '<div class="script-info"><div class="script-name">' + esc(s.name) + '</div>' +
+      '<div class="script-desc">' + esc(s.description) + '</div></div>';
+    list.appendChild(card);
+  });
+  if (availableScripts.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:8px;">正在加载剧本...</div>';
+  }
+}
+
+async function createRoom(scriptId) {
   await connect();
-  wsSend({ type: 'create_room' });
+  wsSend({ type: 'create_room', script: scriptId });
 }
 
 function showJoinDialog() {
@@ -549,22 +628,34 @@ function esc(s) {
 // ── Handle server messages ──
 function handleServerMsg(msg) {
   switch (msg.type) {
+    case 'scripts':
+      availableScripts = msg.scripts || [];
+      renderScripts();
+      break;
+
     case 'room_created':
       currentRoom = msg.room;
-      myUserName = msg.content;
-      myUserID = null; // will be set from room_joined
-      // room_joined follows immediately
+      // room_joined follows immediately with full info
       break;
 
     case 'room_joined':
       currentRoom = msg.room;
       if (msg.content) myUserName = msg.content;
+      if (msg.script_id) currentScriptID = msg.script_id;
       // Find own ID from users list
       if (msg.users) {
         const me = msg.users.find(u => u.name === myUserName);
         if (me) myUserID = me.id;
       }
       saveIdentity(currentRoom, myUserID, myUserName);
+      // Show game hint
+      const hintEl = document.getElementById('game-hint');
+      if (currentScriptID && scriptHints[currentScriptID]) {
+        hintEl.innerHTML = scriptHints[currentScriptID];
+        hintEl.style.display = 'block';
+      } else {
+        hintEl.style.display = 'none';
+      }
 
       // Switch to room view
       showView('room');

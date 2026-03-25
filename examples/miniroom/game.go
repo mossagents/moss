@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
 
@@ -10,12 +10,79 @@ import (
 	"github.com/mossagi/moss/kernel/tool"
 )
 
-//go:embed templates/game_prompt.tmpl
-var gamePromptTemplate string
+//go:embed templates/*.tmpl
+var promptFS embed.FS
 
-// buildSystemPrompt 渲染系统提示词模板。
-func buildSystemPrompt(workspace string) string {
-	return appkit.RenderSystemPrompt(workspace, gamePromptTemplate, nil)
+// ── 剧本注册表 ──────────────────────────────────────
+
+// Script 定义一个游戏剧本。
+type Script struct {
+	ID          string // 唯一标识
+	Name        string // 显示名称
+	Emoji       string // 代表 emoji
+	Description string // 简短描述
+	Template    string // 模板文件内容
+}
+
+// ScriptInfo 用于向客户端发送可用剧本列表。
+type ScriptInfo struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Emoji       string `json:"emoji"`
+	Description string `json:"description"`
+}
+
+var scriptRegistry map[string]*Script
+
+func init() {
+	scriptRegistry = make(map[string]*Script)
+	files := []struct {
+		id, name, emoji, desc, filename string
+	}{
+		{"turtle_soup", "海龟汤", "🐢", "横向思维解谜：通过是非题推理隐藏真相", "templates/game_prompt.tmpl"},
+		{"spy", "谁是卧底", "🕵️", "身份推理：找出拿到不同词语的卧底玩家", "templates/spy_prompt.tmpl"},
+	}
+	for _, f := range files {
+		data, err := promptFS.ReadFile(f.filename)
+		if err != nil {
+			panic("load script template " + f.filename + ": " + err.Error())
+		}
+		scriptRegistry[f.id] = &Script{
+			ID:          f.id,
+			Name:        f.name,
+			Emoji:       f.emoji,
+			Description: f.desc,
+			Template:    string(data),
+		}
+	}
+}
+
+// GetScript 获取指定 ID 的剧本。
+func GetScript(id string) (*Script, bool) {
+	s, ok := scriptRegistry[id]
+	return s, ok
+}
+
+// ListScripts 返回所有可用剧本信息。
+func ListScripts() []ScriptInfo {
+	list := make([]ScriptInfo, 0, len(scriptRegistry))
+	// 保证顺序：turtle_soup 在前
+	for _, id := range []string{"turtle_soup", "spy"} {
+		if s, ok := scriptRegistry[id]; ok {
+			list = append(list, ScriptInfo{
+				ID:          s.ID,
+				Name:        s.Name,
+				Emoji:       s.Emoji,
+				Description: s.Description,
+			})
+		}
+	}
+	return list
+}
+
+// buildSystemPrompt 渲染指定剧本的系统提示词。
+func buildSystemPrompt(workspace string, script *Script) string {
+	return appkit.RenderSystemPrompt(workspace, script.Template, nil)
 }
 
 // ── 工具定义 ─────────────────────────────────────────
