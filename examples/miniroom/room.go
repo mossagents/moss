@@ -238,13 +238,15 @@ type RoomManager struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
 	flags *appkit.CommonFlags
+	prompt string // 渲染后的系统提示词
 }
 
 // NewRoomManager 创建房间管理器。
-func NewRoomManager(flags *appkit.CommonFlags) *RoomManager {
+func NewRoomManager(flags *appkit.CommonFlags, prompt string) *RoomManager {
 	return &RoomManager{
-		rooms: make(map[string]*Room),
-		flags: flags,
+		rooms:  make(map[string]*Room),
+		flags:  flags,
+		prompt: prompt,
 	}
 }
 
@@ -311,7 +313,7 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context) (*Room, error) {
 		Goal:         "turtle_soup_game",
 		Mode:         "interactive",
 		MaxSteps:     200,
-		SystemPrompt: systemPrompt,
+		SystemPrompt: rm.prompt,
 	})
 	if err != nil {
 		cancel()

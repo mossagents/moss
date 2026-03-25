@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/skill"
 	"golang.org/x/net/websocket"
 )
 
@@ -25,6 +26,9 @@ import (
 var staticFS embed.FS
 
 func main() {
+	skill.SetAppName("miniroom")
+	_ = skill.EnsureMossDir()
+
 	flags := appkit.ParseCommonFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
@@ -37,7 +41,8 @@ func main() {
 		"Listen":   "http://localhost:8091",
 	}, "在浏览器中打开 http://localhost:8091 创建或加入房间")
 
-	mgr := NewRoomManager(flags)
+	prompt := buildSystemPrompt(flags.Workspace)
+	mgr := NewRoomManager(flags, prompt)
 
 	http.Handle("/ws", websocket.Handler(func(conn *websocket.Conn) {
 		handleWS(ctx, mgr, conn)
