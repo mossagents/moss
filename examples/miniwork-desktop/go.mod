@@ -1,4 +1,4 @@
-module github.com/mossagi/moss/examples/miniwork-desktop-wails
+module github.com/mossagi/moss/examples/miniwork-desktop
 
 go 1.25
 
