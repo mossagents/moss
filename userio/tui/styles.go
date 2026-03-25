@@ -67,4 +67,8 @@ var (
 	sidebarTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(colorPrimary)
+
+	collapsedToolStyle = lipgloss.NewStyle().
+				Foreground(colorTool).
+				Italic(true)
 )

@@ -68,15 +68,36 @@ func renderMessage(m chatMessage, width int) string {
 	}
 }
 
+// isToolMsg 判断消息是否属于可折叠的工具类别。
+func isToolMsg(kind msgKind) bool {
+	return kind == msgToolStart || kind == msgToolResult
+}
+
 // renderAllMessages 渲染所有消息为单个可滚动字符串。
-func renderAllMessages(messages []chatMessage, width int) string {
+// 当 toolCollapsed 为 true 时，连续的工具消息会折叠为一行摘要。
+func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) string {
 	if len(messages) == 0 {
 		return mutedStyle.Render("\n  输入消息开始对话...\n")
 	}
 	var b strings.Builder
-	for _, m := range messages {
-		b.WriteString(renderMessage(m, width))
-		b.WriteString("\n")
+	i := 0
+	for i < len(messages) {
+		m := messages[i]
+		if toolCollapsed && isToolMsg(m.kind) {
+			// 计算连续工具消息数量
+			count := 0
+			for j := i; j < len(messages) && isToolMsg(messages[j].kind); j++ {
+				count++
+			}
+			b.WriteString(collapsedToolStyle.Render(
+				fmt.Sprintf("  ▶ %d 个工具调用 (Ctrl+T 展开)", count)))
+			b.WriteString("\n")
+			i += count
+		} else {
+			b.WriteString(renderMessage(m, width))
+			b.WriteString("\n")
+			i++
+		}
 	}
 	return b.String()
 }

@@ -43,6 +43,9 @@ type chatModel struct {
 	finished    bool          // session 已结束
 	result      string        // 最终结果
 
+	// 工具输出折叠
+	toolCollapsed bool // true 时折叠 tool start/result 消息
+
 	// 配置显示
 	provider  string
 	workspace string
@@ -85,6 +88,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, func() tea.Msg { return cancelMsg{} }
+		case "ctrl+t":
+			m.toolCollapsed = !m.toolCollapsed
+			m.refreshViewport()
+			return m, nil
 		case "enter":
 			return m.handleSend()
 		}
@@ -217,7 +224,7 @@ func (m *chatModel) appendStream(delta string) {
 }
 
 func (m *chatModel) refreshViewport() {
-	content := renderAllMessages(m.messages, m.mainWidth())
+	content := renderAllMessages(m.messages, m.mainWidth(), m.toolCollapsed)
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
@@ -313,7 +320,11 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 底部状态
-	status := mutedStyle.Render("/help 查看命令 │ Ctrl+C 退出")
+	toolHint := "Ctrl+T 折叠工具"
+	if m.toolCollapsed {
+		toolHint = "Ctrl+T 展开工具"
+	}
+	status := mutedStyle.Render(fmt.Sprintf("/help 查看命令 │ %s │ Ctrl+C 退出", toolHint))
 	if m.pendAsk != nil {
 		status = mutedStyle.Render("输入回复后按 Enter 发送 │ /help 查看命令")
 	}
