@@ -13,10 +13,10 @@ var _ Sandbox = (*NoOp)(nil)
 
 var errNoSandbox = fmt.Errorf("sandbox not available: this agent is running in conversation-only mode")
 
-func (*NoOp) ResolvePath(string) (string, error)           { return "", errNoSandbox }
-func (*NoOp) ListFiles(string) ([]string, error)           { return nil, errNoSandbox }
-func (*NoOp) ReadFile(string) ([]byte, error)              { return nil, errNoSandbox }
-func (*NoOp) WriteFile(string, []byte) error               { return errNoSandbox }
+func (*NoOp) ResolvePath(string) (string, error) { return "", errNoSandbox }
+func (*NoOp) ListFiles(string) ([]string, error) { return nil, errNoSandbox }
+func (*NoOp) ReadFile(string) ([]byte, error)    { return nil, errNoSandbox }
+func (*NoOp) WriteFile(string, []byte) error     { return errNoSandbox }
 func (*NoOp) Execute(context.Context, string, []string) (Output, error) {
 	return Output{}, errNoSandbox
 }
