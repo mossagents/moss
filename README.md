@@ -165,14 +165,15 @@ Moss 与 examples 现已支持通过模板文件覆盖默认 system prompt：
 
 ## 示例应用
 
-仓库内置 4 个示例应用：
+仓库内置 5 个示例应用：
 
 | 示例 | 说明 | 入口 |
 |---|---|---|
 | `minicode` | 代码助手（默认 TUI） | `examples/minicode/main.go` |
 | `miniwork` | 多 Agent 任务编排（Manager/Worker） | `examples/miniwork/main.go` |
 | `miniclaw` | Web 抓取 Agent | `examples/miniclaw/main.go` |
-| `miniloop` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/miniloop/main.go` |
+| `minitrade` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/minitrade/main.go` |
+| `miniroom` | 多人实时 Agent 游戏（WebSocket + Per-Room Kernel） | `examples/miniroom/main.go` |
 
 运行方式（示例）：
 
@@ -205,7 +206,8 @@ moss/
 │   ├── minicode/            # 代码助手（TUI）
 │   ├── miniwork/            # 多 Agent 编排
 │   ├── miniclaw/            # Web 抓取
-│   └── trader/              # 模拟交易
+│   ├── minitrade/           # 有状态循环 Agent（模拟交易）
+│   └── miniroom/            # 多人实时 Agent 游戏（WebSocket）
 ├── kernel/                  # Agent Runtime Kernel (零外部依赖)
 │   ├── kernel.go            # Kernel 入口 (New/Boot/Run/Shutdown)
 │   ├── option.go            # 函数式选项 (WithLLM/WithSandbox/Use...)
@@ -214,28 +216,46 @@ moss/
 │   │   ├── types.go         # Message, Role, ToolCall, ToolResult
 │   │   ├── llm.go           # LLM, StreamingLLM, CompletionRequest
 │   │   ├── io.go            # UserIO, OutputMessage, InputRequest
-│   │   └── io_std.go        # NoOpIO, PrintfIO, BufferIO
+│   │   ├── io_std.go        # NoOpIO, PrintfIO, BufferIO
+│   │   ├── channel.go       # Channel, InboundMessage, OutboundMessage
+│   │   └── embedder.go      # Embedder 接口
 │   ├── tool/                # Tool System
 │   │   ├── tool.go          # ToolSpec, ToolHandler, RiskLevel
 │   │   ├── registry.go      # Registry 接口 + map 实现
+│   │   ├── scoped.go        # ScopedRegistry (工具白名单视图)
 │   │   └── builtins/        # 内置工具 + BuiltinTool
 │   ├── session/             # Session Management
 │   │   ├── session.go       # Session, Budget, SessionConfig
-│   │   └── manager.go       # Manager 接口 + 内存实现
+│   │   ├── manager.go       # Manager 接口 + 内存实现
+│   │   ├── router.go        # Router (DMScope 路由)
+│   │   ├── store.go         # SessionStore 接口
+│   │   └── store_file.go    # 文件持久化实现
 │   ├── middleware/           # Middleware Chain (洋葱模型)
 │   │   ├── middleware.go     # Middleware 类型, Phase, Context
 │   │   ├── chain.go         # Chain 执行
 │   │   └── builtins/        # PolicyCheck, EventEmitter, Logger
 │   ├── loop/                # Agent Loop
-│   │   └── loop.go          # think→act→observe + streaming
+│   │   └── loop.go          # think→act→observe + streaming + 重试
 │   ├── sandbox/             # Sandbox (执行隔离)
 │   │   ├── sandbox.go       # Sandbox 接口
 │   │   └── local.go         # LocalSandbox (路径逃逸保护)
+│   ├── agent/               # Agent 委派系统
+│   │   ├── config.go        # AgentConfig (YAML)
+│   │   ├── registry.go      # Agent Registry
+│   │   ├── tools.go         # delegate_agent / spawn_agent
+│   │   └── depth.go         # 委派深度限制
 │   ├── skill/               # 技能系统
 │   │   ├── skill.go         # Skill 接口 + Manager
 │   │   ├── config.go        # Config 加载/保存/合并
 │   │   ├── mcp.go           # MCP Skill (外部工具服务器)
 │   │   └── prompt.go        # Skill (SKILL.md 注入)
+│   ├── appkit/              # 应用脚手架工具箱
+│   │   ├── appkit.go        # ContextWithSignal, CommonFlags, Banner
+│   │   ├── repl.go          # REPL 引擎
+│   │   └── serve.go         # HTTP Serve 脚手架
+│   ├── gateway/             # 消息网关 [实验性]
+│   ├── knowledge/           # 知识系统 [实验性]
+│   ├── scheduler/           # 定时任务调度器
 │   └── testing/             # Mock 适配器
 │       ├── mock_llm.go      # MockLLM, MockStreamingLLM
 │       ├── mock_sandbox.go  # MemorySandbox

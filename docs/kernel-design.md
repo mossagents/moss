@@ -371,6 +371,12 @@ type Manager interface {
 
 默认实现：基于 `sync.Mutex` 保护的 in-memory map。
 
+**多轮会话复用**：
+
+Session 支持跨多次 `kernel.Run()` 复用。每次调用 Run 时，Loop 会将状态从 `completed` 重置为 `running`，运行结束后再标记为 `completed`。这是 REPL、WebSocket 聊天等多轮对话场景的标准模式。
+
+注意：Budget 在多轮间累积。长时间运行的 Session 应通过 `TruncateMessages()` 控制消息历史长度，并根据需要重置或设置足够大的 MaxSteps/MaxTokens。
+
 ### 4.3 Middleware (`middleware/`)
 
 Middleware 是 **唯一的扩展机制**，统一替代了 Hook、Policy、EventBus 三个独立子系统。
@@ -696,41 +702,83 @@ type SessionResult struct {
 kernel/
 ├── kernel.go              # Kernel struct, New(), Boot(), Run(), Shutdown()
 ├── kernel_test.go         # 集成测试
-├── option.go              # functional options: WithLLM, WithSandbox, Use
-├── result.go              # SessionResult
+├── option.go              # functional options: WithLLM, WithSandbox, Use, ...
+├── setup.go               # SetupWithDefaults, SetupOption
+├── setup_test.go
 │
 ├── port/                  # Port 接口（零依赖，纯类型定义）
 │   ├── types.go           # Message, Role, ToolCall, ToolResult, TokenUsage
 │   ├── llm.go             # LLM, StreamingLLM, CompletionRequest/Response
-│   └── io.go              # UserIO, OutputMessage, InputRequest, InputResponse
+│   ├── io.go              # UserIO, OutputMessage, InputRequest, InputResponse
+│   ├── io_std.go          # 标准实现: NoOpIO, PrintfIO, BufferIO
+│   ├── channel.go         # Channel, InboundMessage, OutboundMessage
+│   └── embedder.go        # Embedder 接口
 │
 ├── tool/                  # Tool System
 │   ├── tool.go            # ToolSpec, ToolHandler, RiskLevel
 │   ├── registry.go        # Registry interface + default impl
-│   └── registry_test.go
+│   ├── scoped.go          # ScopedRegistry (工具白名单视图)
+│   └── builtins/          # 内置核心工具 (read_file, write_file, ...)
 │
 ├── session/               # Session Management
-│   ├── session.go         # Session, SessionStatus, Budget, Manager
-│   └── session_test.go
+│   ├── session.go         # Session, SessionStatus, Budget
+│   ├── manager.go         # Manager interface + memory impl
+│   ├── router.go          # Router (DMScope 路由)
+│   ├── store.go           # SessionStore interface
+│   └── store_file.go      # 文件持久化实现
 │
 ├── middleware/             # Middleware System
 │   ├── middleware.go       # Middleware type, Phase, Context, Next
 │   ├── chain.go           # Chain impl
-│   ├── chain_test.go
 │   └── builtins/          # 内置 middleware
 │       ├── policy.go      # PolicyCheck, PolicyRule, PolicyDecision
 │       ├── events.go      # EventEmitter, Event, EventHandler
 │       └── logger.go      # Logger
 │
 ├── loop/                  # Agent Loop（核心调度器）
-│   ├── loop.go            # AgentLoop, LoopConfig
-│   ├── executor.go        # Tool dispatch, budget check, streaming
+│   ├── loop.go            # AgentLoop, LoopConfig, SessionResult
 │   └── loop_test.go
 │
 ├── sandbox/               # Sandbox（执行隔离）
 │   ├── sandbox.go         # Sandbox interface, Output, ResourceLimits
 │   ├── local.go           # LocalSandbox impl
 │   └── local_test.go
+│
+├── agent/                 # Agent 委派系统
+│   ├── config.go          # AgentConfig (YAML 配置)
+│   ├── registry.go        # Agent Registry
+│   ├── tools.go           # delegate_agent / spawn_agent 工具
+│   ├── task.go            # TaskTracker (async task)
+│   └── depth.go           # 委派深度限制
+│
+├── skill/                 # 技能系统
+│   ├── skill.go           # Provider 接口, Manager
+│   ├── config.go          # 配置加载 (YAML)
+│   ├── mcp.go             # MCP Server 集成
+│   ├── prompt.go          # SKILL.md 解析
+│   └── manager.go         # SkillManager
+│
+├── appkit/                # 应用脚手架工具箱
+│   ├── appkit.go          # ContextWithSignal, CommonFlags, Banner
+│   ├── repl.go            # REPL 引擎
+│   └── serve.go           # HTTP Serve 脚手架
+│
+├── bootstrap/             # 引导上下文
+│   └── bootstrap.go       # Bootstrap Context (工作区信息注入)
+│
+├── gateway/               # 消息网关 [实验性]
+│   ├── gateway.go         # Gateway (Channel fan-in → Router → Kernel)
+│   └── channel/
+│       └── cli.go         # CLI Channel 实现
+│
+├── knowledge/             # 知识系统 [实验性]
+│   ├── memory.go          # Memory 短期/长期记忆
+│   ├── store.go           # 向量存储接口
+│   └── chunker.go         # 文本分块
+│
+├── scheduler/             # 定时任务调度器
+│   ├── scheduler.go       # Scheduler
+│   └── store.go           # 任务持久化
 │
 └── testing/               # Test helpers
     ├── mock_llm.go        # MockLLM (可编程响应)
@@ -810,7 +858,21 @@ kernel.Run(ctx, session)
 SessionResult{Success: true, Steps: 4}
 ```
 
-### 9.3 多界面对接
+### 9.3 miniroom (多人实时 Agent 游戏)
+
+| miniroom 特性 | Kernel 映射 | 应用层构建 |
+|---|---|---|
+| Per-Room Agent | 独立 Kernel 实例 + Session | Room 管理、WebSocket 路由 |
+| 游戏主持人 | AgentLoop + SystemPrompt 模板 | Script Registry、模板渲染 |
+| 多人广播 | UserIO Port (`RoomIO` 适配器) | WebSocket 广播逻辑 |
+| 虚拟角色 | 自定义 Tool (add_virtual_player, chat_as) | VirtualPlayer 数据结构 |
+| 私聊 | 自定义 Tool (whisper) | 按玩家名查找连接 |
+| 游戏状态 | Session.State + 自定义 Tool | GameState 枚举 |
+| 多轮对话 | Session 复用 (多次 Run) | 消息队列串行化 |
+
+**架构验证结论**：miniroom 使用了 Per-Instance Kernel 模式（每房间独立 Kernel + Session），通过自定义 `RoomIO` 实现 `port.UserIO` 将 Agent 输出广播到 WebSocket 客户端，同时跳过了 Sandbox 和内置文件工具——验证了 Kernel 的最小化组合能力。
+
+### 9.4 多界面对接
 
 | 界面 | UserIO Adapter | 特殊处理 |
 |---|---|---|

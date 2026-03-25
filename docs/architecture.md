@@ -272,3 +272,70 @@ cmd/moss                            (CLI/TUI 入口)
 | Task/Plan/Agent 在上层 | Kernel 只有 Session，编排逻辑不属于最小核心 |
 | Sandbox 保持独立 | 安全隔离是一等公民，显式接口便于审计 |
 | Kernel 零外部依赖 | 仅 Go stdlib，确保长期稳定演化 |
+
+---
+
+## 应用模式指南
+
+### 多轮会话复用 (Reusable Session)
+
+REPL 和 miniroom 等场景需要在同一个 Session 上反复调用 `k.Run()`，每次追加新的 user message 后运行 Agent Loop。这是 Kernel 支持的核心使用模式：
+
+```go
+// 创建一次 Session
+sess, _ := k.NewSession(ctx, session.SessionConfig{...})
+
+// 多轮对话循环
+for {
+    userInput := readInput()
+    sess.AppendMessage(port.Message{Role: port.RoleUser, Content: userInput})
+    result, _ := k.Run(ctx, sess)
+    // Session 状态自动从 completed → running → completed
+}
+```
+
+**注意事项**：
+- Session 消息历史会持续增长，长对话应定期调用 `TruncateMessages()` 或使用 `/compact` 命令
+- Budget 在多轮间累积，按需重置或设置足够大的 MaxSteps
+
+### Per-Instance Kernel（多实例隔离）
+
+当应用需要多个独立 Agent 时（如 miniroom 的每房间一Agent），为每个实例创建独立的 Kernel + Session：
+
+```go
+// 每个房间/用户拥有独立 Kernel
+k := kernel.New(
+    kernel.WithLLM(llm),
+    kernel.WithUserIO(roomIO),  // 自定义 UserIO 适配器
+)
+registerDomainTools(k.ToolRegistry(), instance)
+k.Boot(ctx)
+sess, _ := k.NewSession(ctx, cfg)
+```
+
+这比共享 Kernel + 多 Session 更简单，适合需要独立工具集的场景。
+
+### 自定义 UserIO 适配器
+
+实现 `port.UserIO` 接口是对接任何 UI 的标准方式：
+
+| 场景 | Send 实现 | Ask 实现 |
+|---|---|---|
+| WebSocket 广播 | broadcast JSON 到所有连接 | 自动批准 (Agent 自主) |
+| Telegram Bot | `sendMessage(chatID)` | inline keyboard callback |
+| 后台任务 | 写日志 | `NoOpIO` 默认值 |
+
+---
+
+## 子系统成熟度
+
+| 子系统 | 成熟度 | 说明 |
+|---|---|---|
+| Loop, Tool, Session, Middleware, Sandbox | **稳定** | 核心 5 概念，API 稳定 |
+| LLM Port, UserIO Port | **稳定** | 接口已验证：CLI/TUI/WebSocket/REPL |
+| Skill (BuiltinTool / MCP / SKILL.md) | **稳定** | 三种扩展方式均已使用 |
+| Agent (委派/深度限制) | **可用** | 已在 miniwork 验证 |
+| appkit (REPL / Flags / Serve) | **可用** | 应用脚手架工具箱 |
+| Gateway / Channel | **实验性** | 框架已搭建，未完整集成到主流程 |
+| Knowledge / Embedder | **实验性** | 接口定义完成，尚无示例使用 |
+| Scheduler | **可用** | 独立调度器，可按需启用 |
