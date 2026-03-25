@@ -467,6 +467,45 @@
     color: var(--text-dim);
     margin-top: 2px;
   }
+
+  /* @mention highlight */
+  .mention { color: var(--amber); font-weight: 600; }
+
+  /* @mention autocomplete popup */
+  #mention-popup {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 0;
+    min-width: 160px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 50;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+  }
+  #mention-popup.show { display: block; }
+  .mention-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mention-item:hover, .mention-item.active {
+    background: rgba(212,168,83,0.1);
+    color: var(--amber);
+  }
+  .mention-item .mi-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .mention-item .mi-dot.real { background: var(--green); }
+  .mention-item .mi-dot.virtual { background: #7b68ee; }
 </style>
 </head>
 <body>
@@ -522,8 +561,9 @@
   </div>
   <div id="chat-area">
     <div id="messages"></div>
-    <div id="input-area">
-      <input id="chat-input" placeholder="输入消息... (人齐后发送「开始」)" autocomplete="off" />
+    <div id="input-area" style="position:relative;">
+      <div id="mention-popup"></div>
+      <input id="chat-input" placeholder="输入消息... 用 @ 提及特定用户" autocomplete="off" />
       <button id="btn-send" onclick="sendChat()">发送</button>
     </div>
   </div>
@@ -538,6 +578,7 @@ let myUserName = null;
 let streamEl = null;
 let availableScripts = [];
 let currentScriptID = null;
+let currentPlayers = []; // 维护当前玩家列表用于 @补全
 
 const scriptHints = {
   'turtle_soup': '🐢 <b>海龟汤</b><br>人齐后输入「开始」<br>主持人出谜题，用是非题推理真相<br>回答：✅是 / ❌不是 / ⚪不相关',
@@ -653,6 +694,7 @@ function showView(name) {
 
 // ── Render helpers ──
 function updatePlayers(users) {
+  currentPlayers = users || [];
   const list = document.getElementById('players-list');
   list.innerHTML = '';
   (users || []).forEach(u => {
@@ -666,6 +708,14 @@ function updatePlayers(users) {
     if (isVirtual) label += ' 🤖';
     el.innerHTML = '<div class="player-dot ' + dotCls + '"></div>' +
       '<span class="' + (isSelf ? 'player-name-self' : '') + '">' + label + '</span>';
+    if (!isSelf) {
+      el.style.cursor = 'pointer';
+      el.onclick = () => {
+        const input = document.getElementById('chat-input');
+        input.value += '@' + u.name + ' ';
+        input.focus();
+      };
+    }
     list.appendChild(el);
   });
 }
@@ -698,6 +748,116 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function highlightMentions(text) {
+  // Escape first, then highlight @mentions
+  const safe = esc(text);
+  return safe.replace(/@(\S+)/g, '<span class="mention">@$1</span>');
+}
+
+// ── @mention autocomplete ──
+let mentionActive = false;
+let mentionQuery = '';
+let mentionStartIdx = -1;
+let mentionSelectedIdx = 0;
+let mentionFiltered = [];
+
+function getMentionCandidates(query) {
+  const q = query.toLowerCase();
+  return currentPlayers
+    .filter(u => u.id !== myUserID) // exclude self
+    .filter(u => u.name.toLowerCase().includes(q))
+    .slice(0, 8);
+}
+
+function showMentionPopup(candidates) {
+  const popup = document.getElementById('mention-popup');
+  if (candidates.length === 0) { hideMentionPopup(); return; }
+  mentionFiltered = candidates;
+  mentionSelectedIdx = 0;
+  popup.innerHTML = '';
+  candidates.forEach((u, i) => {
+    const el = document.createElement('div');
+    el.className = 'mention-item' + (i === 0 ? ' active' : '');
+    const dotCls = u.is_virtual ? 'virtual' : 'real';
+    el.innerHTML = '<div class="mi-dot ' + dotCls + '"></div>' + esc(u.name) + (u.is_virtual ? ' 🤖' : '');
+    el.onmousedown = (e) => { e.preventDefault(); completeMention(u.name); };
+    popup.appendChild(el);
+  });
+  popup.classList.add('show');
+}
+
+function hideMentionPopup() {
+  mentionActive = false;
+  mentionQuery = '';
+  mentionStartIdx = -1;
+  mentionFiltered = [];
+  document.getElementById('mention-popup').classList.remove('show');
+}
+
+function completeMention(name) {
+  const input = document.getElementById('chat-input');
+  const before = input.value.substring(0, mentionStartIdx);
+  const after = input.value.substring(input.selectionStart);
+  input.value = before + '@' + name + ' ' + after;
+  hideMentionPopup();
+  input.focus();
+  const pos = before.length + name.length + 2;
+  input.setSelectionRange(pos, pos);
+}
+
+const chatInput = document.getElementById('chat-input');
+chatInput.addEventListener('input', () => {
+  const val = chatInput.value;
+  const cursor = chatInput.selectionStart;
+  // Find the last @ before cursor
+  let atIdx = -1;
+  for (let i = cursor - 1; i >= 0; i--) {
+    if (val[i] === '@') { atIdx = i; break; }
+    if (val[i] === ' ') break;
+  }
+  if (atIdx >= 0) {
+    const query = val.substring(atIdx + 1, cursor);
+    mentionActive = true;
+    mentionStartIdx = atIdx;
+    mentionQuery = query;
+    showMentionPopup(getMentionCandidates(query));
+  } else {
+    hideMentionPopup();
+  }
+});
+
+chatInput.addEventListener('keydown', e => {
+  if (mentionActive && mentionFiltered.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionSelectedIdx = (mentionSelectedIdx + 1) % mentionFiltered.length;
+      updateMentionSelection();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionSelectedIdx = (mentionSelectedIdx - 1 + mentionFiltered.length) % mentionFiltered.length;
+      updateMentionSelection();
+      return;
+    }
+    if (e.key === 'Tab' || (e.key === 'Enter' && mentionActive && mentionFiltered.length > 0)) {
+      e.preventDefault();
+      completeMention(mentionFiltered[mentionSelectedIdx].name);
+      return;
+    }
+    if (e.key === 'Escape') {
+      hideMentionPopup();
+      return;
+    }
+  }
+  if (e.key === 'Enter' && !mentionActive) sendChat();
+});
+
+function updateMentionSelection() {
+  const items = document.querySelectorAll('#mention-popup .mention-item');
+  items.forEach((el, i) => el.classList.toggle('active', i === mentionSelectedIdx));
 }
 
 // ── Handle server messages ──
@@ -791,7 +951,7 @@ function handleServerMsg(msg) {
     case 'chat_bcast': {
       const isSelf = msg.from === myUserName;
       const cls = isSelf ? 'chat-self' : 'chat-other';
-      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + esc(msg.content));
+      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + highlightMentions(msg.content));
       break;
     }
 
@@ -837,7 +997,7 @@ function renderHistory(h) {
     case 'chat':
       const isSelf = h.from === myUserName;
       addMsg(isSelf ? 'chat-self' : 'chat-other',
-        '<div class="msg-sender">' + esc(h.from) + '</div>' + esc(h.content));
+        '<div class="msg-sender">' + esc(h.from) + '</div>' + highlightMentions(h.content));
       break;
     case 'agent':
       addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + esc(h.content));
@@ -854,9 +1014,6 @@ function renderHistory(h) {
 }
 
 // ── Key bindings ──
-document.getElementById('chat-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') sendChat();
-});
 document.getElementById('join-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') joinRoom();
 });

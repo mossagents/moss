@@ -5,6 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/tool"
@@ -110,6 +111,10 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(setGameStateSpec, setGameStateHandler(room))
 	_ = reg.Register(addVirtualPlayerSpec, addVirtualPlayerHandler(room))
 	_ = reg.Register(chatAsSpec, chatAsHandler(room))
+	_ = reg.Register(getTimeSpec, getTimeHandler())
+	_ = reg.Register(getWeatherSpec, getWeatherHandler())
+	_ = reg.Register(setReminderSpec, setReminderHandler(room))
+	_ = reg.Register(randomPickSpec, randomPickHandler())
 }
 
 // ── get_players ─────────────────────────────────────
@@ -319,5 +324,158 @@ func chatAsHandler(room *Room) tool.ToolHandler {
 
 		room.ChatAs(args.Name, args.Content)
 		return json.Marshal(map[string]string{"status": "sent", "name": args.Name})
+	}
+}
+
+// ── get_time ────────────────────────────────────────
+
+var getTimeSpec = tool.ToolSpec{
+	Name:        "get_time",
+	Description: "获取当前日期和时间（北京时间）",
+	InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+	Risk:        tool.RiskLow,
+}
+
+func getTimeHandler() tool.ToolHandler {
+	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		loc, _ := time.LoadLocation("Asia/Shanghai")
+		now := time.Now().In(loc)
+		return json.Marshal(map[string]string{
+			"datetime": now.Format("2006-01-02 15:04:05"),
+			"weekday":  now.Weekday().String(),
+		})
+	}
+}
+
+// ── get_weather ─────────────────────────────────────
+
+var getWeatherSpec = tool.ToolSpec{
+	Name:        "get_weather",
+	Description: "查询指定城市的天气（模拟数据，用于角色对话）",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"city": {"type": "string", "description": "城市名称，如：杭州、北京、上海"}
+		},
+		"required": ["city"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func getWeatherHandler() tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			City string `json:"city"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+		// 模拟天气数据，虚拟角色场景不需要真实 API
+		loc, _ := time.LoadLocation("Asia/Shanghai")
+		hour := time.Now().In(loc).Hour()
+		var weather, temp string
+		switch {
+		case hour >= 6 && hour < 12:
+			weather, temp = "晴转多云", "18°C ~ 25°C"
+		case hour >= 12 && hour < 18:
+			weather, temp = "多云", "22°C ~ 28°C"
+		default:
+			weather, temp = "晴", "15°C ~ 20°C"
+		}
+		return json.Marshal(map[string]string{
+			"city":    args.City,
+			"weather": weather,
+			"temp":    temp,
+			"tip":     "适合外出，注意防晒",
+		})
+	}
+}
+
+// ── set_reminder ────────────────────────────────────
+
+var setReminderSpec = tool.ToolSpec{
+	Name:        "set_reminder",
+	Description: "设定一个定时提醒，到时间后以指定虚拟角色的身份提醒某位玩家",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"minutes":     {"type": "number", "description": "几分钟后提醒"},
+			"content":     {"type": "string", "description": "提醒内容"},
+			"remind_as":   {"type": "string", "description": "以哪个虚拟角色身份提醒"},
+			"target_name": {"type": "string", "description": "要提醒的玩家名字"}
+		},
+		"required": ["minutes", "content", "remind_as"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func setReminderHandler(room *Room) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			Minutes    float64 `json:"minutes"`
+			Content    string  `json:"content"`
+			RemindAs   string  `json:"remind_as"`
+			TargetName string  `json:"target_name"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+		if args.Minutes <= 0 || args.Minutes > 60 {
+			return json.Marshal(map[string]string{"status": "error", "message": "提醒时间需在 1-60 分钟之间"})
+		}
+
+		dur := time.Duration(args.Minutes * float64(time.Minute))
+		go func() {
+			select {
+			case <-time.After(dur):
+				msg := args.Content
+				if args.TargetName != "" {
+					msg = fmt.Sprintf("@%s %s", args.TargetName, args.Content)
+				}
+				room.ChatAs(args.RemindAs, msg)
+			case <-room.ctx.Done():
+			}
+		}()
+
+		label := fmt.Sprintf("%.0f 分钟后提醒", args.Minutes)
+		return json.Marshal(map[string]string{"status": "scheduled", "when": label})
+	}
+}
+
+// ── random_pick ─────────────────────────────────────
+
+var randomPickSpec = tool.ToolSpec{
+	Name:        "random_pick",
+	Description: "从给定选项中随机选一个（用于抽签、骰子等趣味互动）",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"options": {
+				"type": "array",
+				"items": {"type": "string"},
+				"description": "候选选项列表"
+			}
+		},
+		"required": ["options"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func randomPickHandler() tool.ToolHandler {
+	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var args struct {
+			Options []string `json:"options"`
+		}
+		if err := json.Unmarshal(input, &args); err != nil {
+			return nil, err
+		}
+		if len(args.Options) == 0 {
+			return json.Marshal(map[string]string{"status": "error", "message": "选项不能为空"})
+		}
+		idx := time.Now().UnixNano() % int64(len(args.Options))
+		return json.Marshal(map[string]string{
+			"result": args.Options[idx],
+			"total":  fmt.Sprintf("%d", len(args.Options)),
+		})
 	}
 }

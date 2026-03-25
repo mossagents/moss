@@ -24,10 +24,10 @@ const (
 	MsgWhisper     = "whisper"      // 私信
 	MsgSystem      = "system"       // 系统消息
 	MsgGameState   = "game_state"   // 游戏状态
-	MsgScripts     = "scripts"       // 可用剧本列表
-	MsgChatTopics  = "chat_topics"   // 陪聊主题列表
-	MsgSelectTopic = "select_topic"  // 选择陪聊主题
-	MsgError       = "error"         // 错误
+	MsgScripts     = "scripts"      // 可用剧本列表
+	MsgChatTopics  = "chat_topics"  // 陪聊主题列表
+	MsgSelectTopic = "select_topic" // 选择陪聊主题
+	MsgError       = "error"        // 错误
 )
 
 // ClientMsg 是客户端发送到服务端的消息。
@@ -43,13 +43,13 @@ type ClientMsg struct {
 
 // ServerMsg 是服务端发送到客户端的消息。
 type ServerMsg struct {
-	Type     string       `json:"type"`
-	Room     string       `json:"room,omitempty"`
-	Content  string       `json:"content,omitempty"`
-	From     string       `json:"from,omitempty"`
-	Users    []PlayerInfo `json:"users,omitempty"`
-	History  []HistoryMsg `json:"history,omitempty"`
-	State    string       `json:"state,omitempty"`
+	Type       string          `json:"type"`
+	Room       string          `json:"room,omitempty"`
+	Content    string          `json:"content,omitempty"`
+	From       string          `json:"from,omitempty"`
+	Users      []PlayerInfo    `json:"users,omitempty"`
+	History    []HistoryMsg    `json:"history,omitempty"`
+	State      string          `json:"state,omitempty"`
 	Scripts    []ScriptInfo    `json:"scripts,omitempty"`     // 可用剧本列表
 	ScriptID   string          `json:"script_id,omitempty"`   // 房间使用的剧本 ID
 	ChatTopics []ChatTopicInfo `json:"chat_topics,omitempty"` // 陪聊主题列表
