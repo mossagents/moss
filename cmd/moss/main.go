@@ -9,6 +9,7 @@ import (
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -22,7 +23,7 @@ func main() {
 	logger := logging.GetLogger()
 
 	// 确保 ~/.moss 配置目录存在
-	if err := appkit.EnsureAppDir(); err != nil {
+	if err := appconfig.EnsureAppDir(); err != nil {
 		logger.Warn("cannot create config dir", slog.Any("error", err))
 	}
 

@@ -18,6 +18,7 @@ import (
 	"net/http"
 
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"golang.org/x/net/websocket"
 )
@@ -26,8 +27,8 @@ import (
 var staticFS embed.FS
 
 func main() {
-	appkit.SetAppName("miniroom")
-	_ = appkit.EnsureAppDir()
+	appconfig.SetAppName("miniroom")
+	_ = appconfig.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()
 

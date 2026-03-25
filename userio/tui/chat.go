@@ -8,9 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/skill"
 )
 
 // sessionResultMsg 表示 agent session 结束。
@@ -412,7 +411,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 // handleConfigCommand 处理 /config 命令。
 func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
-	cfgPath := appkit.DefaultGlobalConfigPath()
+	cfgPath := appconfig.DefaultGlobalConfigPath()
 	if cfgPath == "" {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "无法确定配置目录。"})
 		m.refreshViewport()
@@ -421,7 +420,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 
 	// /config — 显示当前配置
 	if len(args) == 0 {
-		cfg, _ := skill.LoadConfig(cfgPath)
+		cfg, _ := appconfig.LoadConfig(cfgPath)
 		apiKeyDisplay := "(未设置)"
 		if cfg.APIKey != "" {
 			apiKeyDisplay = maskKey(cfg.APIKey)
@@ -443,7 +442,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		key := strings.ToLower(args[1])
 		value := strings.Join(args[2:], " ")
 
-		cfg, _ := skill.LoadConfig(cfgPath)
+		cfg, _ := appconfig.LoadConfig(cfgPath)
 		switch key {
 		case "provider":
 			cfg.Provider = value
@@ -462,7 +461,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 
-		if err := appkit.SaveConfig(cfgPath, cfg); err != nil {
+		if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
 				content: fmt.Sprintf("保存配置失败: %v", err),

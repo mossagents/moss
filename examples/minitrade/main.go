@@ -21,6 +21,7 @@ import (
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
@@ -37,8 +38,8 @@ type config struct {
 }
 
 func main() {
-	appkit.SetAppName("minitrade")
-	_ = appkit.EnsureAppDir()
+	appconfig.SetAppName("minitrade")
+	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
 
@@ -65,7 +66,7 @@ func run(ctx context.Context, cfg *config) error {
 	}
 	mkt := newMarket(capital)
 
-	storeDir := filepath.Join(appkit.AppDir(), "sessions")
+	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return fmt.Errorf("session store: %w", err)
@@ -195,7 +196,7 @@ func run(ctx context.Context, cfg *config) error {
 }
 
 func buildSystemPrompt(workspace string, capital float64) string {
-	return appkit.RenderSystemPrompt(workspace, tradingPromptTemplate, map[string]any{
-		"Capital": capital,
-	})
+	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx["Capital"] = capital
+	return appconfig.RenderSystemPrompt(workspace, tradingPromptTemplate, ctx)
 }

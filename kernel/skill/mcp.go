@@ -10,12 +10,13 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
 // MCPServer 通过 MCP 协议连接外部 skill server，发现并注册工具。
 type MCPServer struct {
-	cfg       SkillConfig
+	cfg       appconfig.SkillConfig
 	client    mcpclient.MCPClient
 	toolNames []string
 }
@@ -23,7 +24,7 @@ type MCPServer struct {
 var _ Provider = (*MCPServer)(nil)
 
 // NewMCPServer 根据配置创建 MCPServer（但不连接，连接在 Init 时执行）。
-func NewMCPServer(cfg SkillConfig) *MCPServer {
+func NewMCPServer(cfg appconfig.SkillConfig) *MCPServer {
 	return &MCPServer{cfg: cfg}
 }
 

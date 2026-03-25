@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -21,11 +22,10 @@ func buildSystemPrompt(workspace string, skillPrompts ...string) string {
 		shell = "powershell"
 	}
 
-	base := appkit.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, map[string]any{
-		"OS":        osName,
-		"Shell":     shell,
-		"Workspace": workspace,
-	})
+	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx["OS"] = osName
+	ctx["Shell"] = shell
+	base := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 
 	if len(skillPrompts) > 0 {
 		base += "\n## Additional Skills\n" + strings.Join(skillPrompts, "\n")

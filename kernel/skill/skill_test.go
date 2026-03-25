@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	. "github.com/mossagi/moss/kernel/config"
 )
 
 // --- fakeSkill for testing ---
@@ -369,7 +371,7 @@ skills:
 }
 
 func TestMossDir(t *testing.T) {
-	dir := MossDir()
+	dir := AppDir()
 	if dir == "" {
 		t.Skip("cannot determine home directory")
 	}
@@ -386,8 +388,8 @@ func TestEnsureMossDir_CreatesTemplate(t *testing.T) {
 	SetAppName("moss")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := EnsureMossDir(); err != nil {
-		t.Fatalf("EnsureMossDir failed: %v", err)
+	if err := EnsureAppDir(); err != nil {
+		t.Fatalf("EnsureAppDir failed: %v", err)
 	}
 
 	path := DefaultGlobalConfigPath()
@@ -412,7 +414,7 @@ func TestEnsureMossDir_DoesNotOverwriteExistingConfig(t *testing.T) {
 	SetAppName("moss")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+	if err := os.MkdirAll(AppDir(), 0700); err != nil {
 		t.Fatalf("prepare config dir: %v", err)
 	}
 	existing := "provider: openai\nmodel: qwen\n"
@@ -420,8 +422,8 @@ func TestEnsureMossDir_DoesNotOverwriteExistingConfig(t *testing.T) {
 		t.Fatalf("write existing config: %v", err)
 	}
 
-	if err := EnsureMossDir(); err != nil {
-		t.Fatalf("EnsureMossDir failed: %v", err)
+	if err := EnsureAppDir(); err != nil {
+		t.Fatalf("EnsureAppDir failed: %v", err)
 	}
 
 	data, err := os.ReadFile(DefaultGlobalConfigPath())
@@ -441,7 +443,7 @@ func TestLoadGlobalConfig_YAMLOnly(t *testing.T) {
 	SetAppName("minicode")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+	if err := os.MkdirAll(AppDir(), 0700); err != nil {
 		t.Fatalf("prepare dir: %v", err)
 	}
 	content := "provider: openai\nmodel: gpt-4o\n"
@@ -486,8 +488,8 @@ func TestEnsureMossDir_CreatesYAMLByDefault(t *testing.T) {
 	SetAppName("minicode")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := EnsureMossDir(); err != nil {
-		t.Fatalf("EnsureMossDir failed: %v", err)
+	if err := EnsureAppDir(); err != nil {
+		t.Fatalf("EnsureAppDir failed: %v", err)
 	}
 
 	if _, err := os.Stat(DefaultGlobalConfigPath()); err != nil {
@@ -503,7 +505,7 @@ func TestRenderSystemPrompt_UsesGlobalTemplate(t *testing.T) {
 	SetAppName("minicode")
 	t.Cleanup(func() { SetAppName("moss") })
 
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+	if err := os.MkdirAll(AppDir(), 0700); err != nil {
 		t.Fatalf("prepare config dir: %v", err)
 	}
 	globalTpl := "You are {{.App}} on {{.OS}} in {{.Workspace}}"
@@ -531,7 +533,7 @@ func TestRenderSystemPrompt_ProjectTemplateOverridesGlobal(t *testing.T) {
 
 	workspace := t.TempDir()
 
-	if err := os.MkdirAll(MossDir(), 0700); err != nil {
+	if err := os.MkdirAll(AppDir(), 0700); err != nil {
 		t.Fatalf("prepare config dir: %v", err)
 	}
 	if err := os.WriteFile(DefaultGlobalSystemPromptTemplatePath(), []byte("global {{.Scope}}"), 0600); err != nil {

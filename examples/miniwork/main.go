@@ -26,10 +26,10 @@ import (
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 	mossTUI "github.com/mossagi/moss/userio/tui"
 )
@@ -41,8 +41,8 @@ var defaultManagerPromptTemplate string
 var defaultWorkerPromptTemplate string
 
 func main() {
-	skill.SetAppName("miniwork")
-	_ = appkit.EnsureAppDir()
+	appconfig.SetAppName("miniwork")
+	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
 	if cfg.goal == "" {
@@ -392,13 +392,14 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 // ─── System Prompts ─────────────────────────────────
 
 func buildManagerPrompt(workspace string, maxWorkers int) string {
-	return appkit.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, map[string]any{
-		"MaxWorkers": maxWorkers,
-	})
+	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx["MaxWorkers"] = maxWorkers
+	return appconfig.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, ctx)
 }
 
 func buildWorkerPrompt(workspace string) string {
-	return appkit.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, nil)
+	ctx := appkit.DefaultTemplateContext(workspace)
+	return appconfig.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, ctx)
 }
 
 func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {

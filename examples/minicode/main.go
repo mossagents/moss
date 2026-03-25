@@ -20,6 +20,7 @@ import (
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/userio/tui"
@@ -30,8 +31,8 @@ var defaultSystemPromptTemplate string
 
 func main() {
 	// 配置目录使用 ~/.minicode
-	appkit.SetAppName("minicode")
-	_ = appkit.EnsureAppDir()
+	appconfig.SetAppName("minicode")
+	_ = appconfig.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()
 
@@ -81,5 +82,6 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	return appkit.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, nil)
+	ctx := appkit.DefaultTemplateContext(workspace)
+	return appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 }

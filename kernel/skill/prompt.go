@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -132,7 +133,7 @@ func DiscoverSkills(workspace string) []*Skill {
 	// Project-level 目录
 	projectDirs := []string{
 		filepath.Join(workspace, ".agents", "skills"),
-		filepath.Join(workspace, "."+appName, "skills"),
+		filepath.Join(workspace, "."+appconfig.AppName(), "skills"),
 	}
 
 	// Global-level 目录
@@ -141,7 +142,7 @@ func DiscoverSkills(workspace string) []*Skill {
 	if home != "" {
 		globalDirs = append(globalDirs,
 			filepath.Join(home, ".copilot", "skills"),
-			filepath.Join(home, "."+appName, "skills"),
+			filepath.Join(home, "."+appconfig.AppName(), "skills"),
 		)
 		if runtime.GOOS != "windows" {
 			globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))

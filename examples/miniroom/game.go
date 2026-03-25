@@ -9,6 +9,7 @@ import (
 
 	core "github.com/mossagi/moss/contrib/core"
 	"github.com/mossagi/moss/kernel/appkit"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
@@ -85,7 +86,8 @@ func ListScripts() []ScriptInfo {
 
 // buildSystemPrompt 渲染指定剧本的系统提示词。
 func buildSystemPrompt(workspace string, script *Script) string {
-	return appkit.RenderSystemPrompt(workspace, script.Template, nil)
+	ctx := appkit.DefaultTemplateContext(workspace)
+	return appconfig.RenderSystemPrompt(workspace, script.Template, ctx)
 }
 
 // ── 陪聊主题 ────────────────────────────────────────

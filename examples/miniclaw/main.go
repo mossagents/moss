@@ -32,6 +32,7 @@ import (
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/bootstrap"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
@@ -46,8 +47,8 @@ import (
 var defaultSystemPromptTemplate string
 
 func main() {
-	skill.SetAppName("miniclaw")
-	_ = appkit.EnsureAppDir()
+	appconfig.SetAppName("miniclaw")
+	_ = appconfig.EnsureAppDir()
 
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
@@ -157,7 +158,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 }
 
 func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
-	storeDir := filepath.Join(appkit.AppDir(), "sessions")
+	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("session store: %w", err)
@@ -522,7 +523,8 @@ func stripTags(s string) string {
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	prompt := appkit.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, nil)
+	ctx := appkit.DefaultTemplateContext(workspace)
+	prompt := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 
 	// 注入 bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md 等）
 	bootstrap.SetAppName("miniclaw")

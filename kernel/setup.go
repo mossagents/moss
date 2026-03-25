@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/mossagi/moss/kernel/agent"
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/skill"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
@@ -19,6 +20,21 @@ type setupConfig struct {
 	builtin    bool
 	mcpServers bool
 	skills     bool
+}
+
+// WithoutBuiltin 禁用内置核心工具注册。
+func WithoutBuiltin() SetupOption {
+	return func(c *setupConfig) { c.builtin = false }
+}
+
+// WithoutMCPServers 禁用 MCP server 自动加载。
+func WithoutMCPServers() SetupOption {
+	return func(c *setupConfig) { c.mcpServers = false }
+}
+
+// WithoutSkills 禁用 SKILL.md 自动发现。
+func WithoutSkills() SetupOption {
+	return func(c *setupConfig) { c.skills = false }
 }
 
 // SetupWithDefaults 注册标准技能（BuiltinTool、MCP servers、Skills）。
@@ -54,9 +70,9 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 
 	// 2. 加载配置文件中的 MCP servers
 	if cfg.mcpServers {
-		globalCfg, _ := skill.LoadGlobalConfig()
-		projectCfg, _ := skill.LoadConfig(skill.DefaultProjectConfigPath(workspaceDir))
-		merged := skill.MergeConfigs(globalCfg, projectCfg)
+		globalCfg, _ := appconfig.LoadGlobalConfig()
+		projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
+		merged := appconfig.MergeConfigs(globalCfg, projectCfg)
 
 		for _, sc := range merged.Skills {
 			if !sc.IsEnabled() || !sc.IsMCP() {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/retry"
 )
 
@@ -71,9 +72,9 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 }
 
 func TestRenderSystemPrompt(t *testing.T) {
-	prompt := RenderSystemPrompt("/workspace", `OS={{.OS}} Workspace={{.Workspace}} Capital={{.Capital}}`, map[string]any{
-		"Capital": 123,
-	})
+	ctx := DefaultTemplateContext("/workspace")
+	ctx["Capital"] = 123
+	prompt := appconfig.RenderSystemPrompt("/workspace", `OS={{.OS}} Workspace={{.Workspace}} Capital={{.Capital}}`, ctx)
 	if prompt == "" {
 		t.Fatal("expected rendered prompt")
 	}

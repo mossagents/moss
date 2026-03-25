@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/mossagi/moss/kernel/skill"
+	appconfig "github.com/mossagi/moss/kernel/config"
 )
 
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。
@@ -63,9 +63,9 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 }
 
 func (f *AppFlags) mergeGlobalConfig() {
-	globalCfg, err := LoadGlobalConfig()
+	globalCfg, err := appconfig.LoadGlobalConfig()
 	if err != nil || globalCfg == nil {
-		globalCfg = &skill.Config{}
+		globalCfg = &appconfig.Config{}
 	}
 
 	f.Provider = FirstNonEmpty(f.Provider, globalCfg.Provider, "openai")
@@ -100,5 +100,5 @@ func buildSystemPromptWithExtra(workspace, defaultTemplate string, extra map[str
 	for key, value := range extra {
 		ctx[key] = value
 	}
-	return RenderSystemPrompt(workspace, defaultTemplate, ctx)
+	return appconfig.RenderSystemPrompt(workspace, defaultTemplate, ctx)
 }
