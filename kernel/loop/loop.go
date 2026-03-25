@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	kerrors "github.com/mossagi/moss/kernel/errors"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/retry"
@@ -63,6 +64,7 @@ type AgentLoop struct {
 	IO       port.UserIO
 	Config   LoopConfig
 	Observer port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	sidefxMu sync.Mutex
 }
 
 // SessionResult 是一次 Session 执行的结果。
@@ -239,7 +241,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	if b := l.Config.LLMBreaker; b != nil {
 		if !b.Allow() {
 			return callAttemptResult{
-				err:       fmt.Errorf("LLM circuit breaker is open: too many recent failures"),
+				err:       kerrors.New(kerrors.ErrLLMRejected, "LLM circuit breaker is open: too many recent failures"),
 				retryable: false,
 			}
 		}
@@ -383,19 +385,25 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	}
 
 	// UserIO: 通知工具开始
-	if l.IO != nil {
-		l.IO.Send(ctx, port.OutputMessage{
-			Type:    port.OutputToolStart,
-			Content: call.Name,
-			Meta:    map[string]any{"call_id": call.ID},
-		})
-	}
+	l.withSideEffectsLock(func() {
+		if l.IO != nil {
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputToolStart,
+				Content: call.Name,
+				Meta:    map[string]any{"call_id": call.ID},
+			})
+		}
+	})
 
 	// BeforeToolCall middleware
-	if err := l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil); err != nil {
+	var beforeErr error
+	l.withSideEffectsLock(func() {
+		beforeErr = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil)
+	})
+	if beforeErr != nil {
 		return port.ToolResult{
 			CallID:  call.ID,
-			Content: err.Error(),
+			Content: beforeErr.Error(),
 			IsError: true,
 		}
 	}
@@ -429,18 +437,28 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 
 	// AfterToolCall middleware
-	l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
+	l.withSideEffectsLock(func() {
+		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
+	})
 
 	// UserIO: 通知工具结果
-	if l.IO != nil {
-		l.IO.Send(ctx, port.OutputMessage{
-			Type:    port.OutputToolResult,
-			Content: result.Content,
-			Meta:    map[string]any{"call_id": call.ID, "tool": call.Name, "is_error": result.IsError},
-		})
-	}
+	l.withSideEffectsLock(func() {
+		if l.IO != nil {
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputToolResult,
+				Content: result.Content,
+				Meta:    map[string]any{"call_id": call.ID, "tool": call.Name, "is_error": result.IsError},
+			})
+		}
+	})
 
 	return result
+}
+
+func (l *AgentLoop) withSideEffectsLock(fn func()) {
+	l.sidefxMu.Lock()
+	defer l.sidefxMu.Unlock()
+	fn()
 }
 
 func (l *AgentLoop) toolSpecs() []port.ToolSpec {

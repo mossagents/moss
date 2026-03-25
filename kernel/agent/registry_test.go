@@ -75,6 +75,7 @@ func TestTaskTracker(t *testing.T) {
 
 	task := &Task{ID: "t1", AgentName: "a", Goal: "test", Status: TaskRunning}
 	tt.Add(task)
+	task.Status = TaskFailed // Ensure Add stores a defensive copy.
 
 	got, ok := tt.Get("t1")
 	if !ok {
@@ -82,6 +83,12 @@ func TestTaskTracker(t *testing.T) {
 	}
 	if got.Status != TaskRunning {
 		t.Errorf("status = %q", got.Status)
+	}
+
+	got.Status = TaskCancelled // Ensure Get returns a defensive copy.
+	gotAgain, _ := tt.Get("t1")
+	if gotAgain.Status != TaskRunning {
+		t.Fatalf("internal task should not be mutated through Get result, got %q", gotAgain.Status)
 	}
 
 	tt.Complete("t1", "done", port.TokenUsage{TotalTokens: 100})

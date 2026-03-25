@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -126,9 +127,12 @@ func registerSpawn(reg tool.Registry, agents *Registry, tracker *TaskTracker, de
 
 		// 后台执行
 		go func() {
-			childCtx := WithDepth(context.Background(), depth+1)
-			result, err := runAgent(childCtx, agents, delegator, in.Agent, in.Task)
+			result, err := runAgent(ctx, agents, delegator, in.Agent, in.Task)
 			if err != nil {
+				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					tracker.Cancel(taskID, err.Error())
+					return
+				}
 				tracker.Fail(taskID, err.Error())
 				return
 			}
@@ -183,6 +187,8 @@ func registerQuery(reg tool.Registry, tracker *TaskTracker) error {
 		switch task.Status {
 		case TaskCompleted:
 			resp["result"] = task.Result
+		case TaskCancelled:
+			resp["error"] = task.Error
 		case TaskFailed:
 			resp["error"] = task.Error
 		}

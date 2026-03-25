@@ -37,4 +37,23 @@ func TestScopedRegistry(t *testing.T) {
 	if ok {
 		t.Error("run_command should not be accessible in scoped registry")
 	}
+
+	// Register should be blocked for read-only scoped view.
+	err := scoped.Register(ToolSpec{Name: "new_tool"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	})
+	if err == nil {
+		t.Fatal("expected Register to fail on scoped registry")
+	}
+
+	// Unregister should be blocked for read-only scoped view.
+	err = scoped.Unregister("read_file")
+	if err == nil {
+		t.Fatal("expected Unregister to fail on scoped registry")
+	}
+
+	// Parent registry should remain unchanged.
+	if _, _, ok := parent.Get("read_file"); !ok {
+		t.Fatal("parent registry was unexpectedly modified")
+	}
 }

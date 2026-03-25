@@ -3,14 +3,28 @@ package kernel
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	kerrors "github.com/mossagi/moss/kernel/errors"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
 	kt "github.com/mossagi/moss/kernel/testing"
 	"github.com/mossagi/moss/kernel/tool"
 )
+
+type blockingLLM struct {
+	calls int32
+}
+
+func (b *blockingLLM) Complete(ctx context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	atomic.AddInt32(&b.calls, 1)
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
 
 func TestKernelIntegration(t *testing.T) {
 	// MockLLM: 先请求 tool call，然后 text 回复
@@ -176,5 +190,84 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	}
 	if overrideIO.Sent[0].Content != "hello from override" {
 		t.Fatalf("override IO content = %q", overrideIO.Sent[0].Content)
+	}
+}
+
+func TestKernelRunRejectedWhenShuttingDown(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&port.NoOpIO{}),
+	)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	if err := k.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "test", MaxSteps: 1})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+
+	_, err = k.Run(context.Background(), sess)
+	if err == nil {
+		t.Fatal("expected shutdown rejection error")
+	}
+
+	var kerr *kerrors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrShutdown {
+		t.Fatalf("expected ErrShutdown, got: %v", err)
+	}
+}
+
+func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
+	bl := &blockingLLM{}
+	k := New(
+		WithLLM(bl),
+		WithUserIO(&port.NoOpIO{}),
+	)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "long-running", MaxSteps: 5})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, runErr := k.Run(context.Background(), sess)
+		runErrCh <- runErr
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for atomic.LoadInt32(&bl.calls) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("LLM was not called before timeout")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	if err := k.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	select {
+	case runErr := <-runErrCh:
+		if runErr == nil {
+			t.Fatal("expected run error after shutdown cancellation")
+		}
+		if !stderrors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got: %v", runErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight run did not exit after shutdown")
 	}
 }

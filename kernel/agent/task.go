@@ -13,6 +13,7 @@ const (
 	TaskRunning   TaskStatus = "running"
 	TaskCompleted TaskStatus = "completed"
 	TaskFailed    TaskStatus = "failed"
+	TaskCancelled TaskStatus = "cancelled"
 )
 
 // Task 表示一个异步委派任务。
@@ -28,7 +29,7 @@ type Task struct {
 
 // TaskTracker 管理异步委派任务的状态。
 type TaskTracker struct {
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	tasks map[string]*Task
 }
 
@@ -41,15 +42,20 @@ func NewTaskTracker() *TaskTracker {
 func (t *TaskTracker) Add(task *Task) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.tasks[task.ID] = task
+	cp := *task
+	t.tasks[task.ID] = &cp
 }
 
 // Get 按 ID 查找任务。
 func (t *TaskTracker) Get(id string) (*Task, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	task, ok := t.tasks[id]
-	return task, ok
+	if !ok {
+		return nil, false
+	}
+	cp := *task
+	return &cp, true
 }
 
 // Complete 将任务标记为完成。
@@ -69,6 +75,16 @@ func (t *TaskTracker) Fail(id, errMsg string) {
 	defer t.mu.Unlock()
 	if task, ok := t.tasks[id]; ok {
 		task.Status = TaskFailed
+		task.Error = errMsg
+	}
+}
+
+// Cancel 将任务标记为已取消。
+func (t *TaskTracker) Cancel(id, errMsg string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if task, ok := t.tasks[id]; ok {
+		task.Status = TaskCancelled
 		task.Error = errMsg
 	}
 }

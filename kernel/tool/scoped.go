@@ -1,5 +1,7 @@
 package tool
 
+import "fmt"
+
 // ScopedRegistry 按工具名白名单过滤的只读 Registry 视图。
 type ScopedRegistry struct {
 	parent  Registry
@@ -16,11 +18,11 @@ func Scoped(parent Registry, allowedTools []string) Registry {
 }
 
 func (s *ScopedRegistry) Register(spec ToolSpec, handler ToolHandler) error {
-	return s.parent.Register(spec, handler)
+	return fmt.Errorf("scoped registry is read-only: cannot register tool %q", spec.Name)
 }
 
 func (s *ScopedRegistry) Unregister(name string) error {
-	return s.parent.Unregister(name)
+	return fmt.Errorf("scoped registry is read-only: cannot unregister tool %q", name)
 }
 
 func (s *ScopedRegistry) Get(name string) (ToolSpec, ToolHandler, bool) {

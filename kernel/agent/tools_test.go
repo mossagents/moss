@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/port"
@@ -241,5 +242,93 @@ func TestScopedToolIsolation(t *testing.T) {
 	_, _, ok := capturedTools.Get("write_file")
 	if ok {
 		t.Error("write_file should not be accessible in scoped registry")
+	}
+}
+
+func TestSpawnAgent_CancelledContext(t *testing.T) {
+	agents := NewRegistry()
+	agents.Register(AgentConfig{
+		Name:         "worker",
+		SystemPrompt: "Work.",
+		Tools:        []string{},
+	})
+
+	tracker := NewTaskTracker()
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+
+	_, spawnHandler, ok := reg.Get("spawn_agent")
+	if !ok {
+		t.Fatal("spawn_agent not registered")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	input, _ := json.Marshal(spawnInput{Agent: "worker", Task: "background work"})
+	result, err := spawnHandler(ctx, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var spawnResp map[string]string
+	if err := json.Unmarshal(result, &spawnResp); err != nil {
+		t.Fatal(err)
+	}
+	taskID := spawnResp["task_id"]
+	if taskID == "" {
+		t.Fatal("expected task_id")
+	}
+
+	cancel()
+
+	_, queryHandler, ok := reg.Get("query_agent")
+	if !ok {
+		t.Fatal("query_agent not registered")
+	}
+
+	deadline := time.After(1 * time.Second)
+	for {
+		task, found := tracker.Get(taskID)
+		if !found {
+			t.Fatal("task not found in tracker")
+		}
+		if task.Status == TaskCancelled {
+			if task.Error == "" {
+				t.Fatal("expected cancellation error message")
+			}
+
+			qInput, _ := json.Marshal(queryInput{TaskID: taskID})
+			qResult, qErr := queryHandler(context.Background(), qInput)
+			if qErr != nil {
+				t.Fatalf("query_agent failed: %v", qErr)
+			}
+
+			var qResp map[string]string
+			if err := json.Unmarshal(qResult, &qResp); err != nil {
+				t.Fatalf("failed to decode query response: %v", err)
+			}
+			if qResp["status"] != string(TaskCancelled) {
+				t.Fatalf("query status = %q, want %q", qResp["status"], TaskCancelled)
+			}
+			if qResp["error"] == "" {
+				t.Fatal("expected query error for cancelled task")
+			}
+			return
+		}
+
+		select {
+		case <-deadline:
+			t.Fatalf("expected task status cancelled, got %s", task.Status)
+		case <-time.After(10 * time.Millisecond):
+		}
 	}
 }

@@ -382,7 +382,7 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 
 	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: task.Description})
 
-	result, err := k.Run(ctx, sess)
+	result, err := k.RunWithUserIO(ctx, sess, &port.NoOpIO{})
 	if err != nil {
 		r := taskOutput{ID: task.ID, Success: false, Error: err.Error()}
 		tracker.FinishWorker(r)

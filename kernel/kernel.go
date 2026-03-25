@@ -2,12 +2,12 @@ package kernel
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"sync"
 
 	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/bootstrap"
+	kerrors "github.com/mossagi/moss/kernel/errors"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
@@ -43,7 +43,7 @@ type Kernel struct {
 
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
-	activeRuns   sync.WaitGroup
+	runs         *runSupervisor
 }
 
 // New 使用函数式选项创建 Kernel。
@@ -54,6 +54,7 @@ func New(opts ...Option) *Kernel {
 		chain:      middleware.NewChain(),
 		skills:     skill.NewManager(),
 		shutdownCh: make(chan struct{}),
+		runs:       newRunSupervisor(),
 	}
 	for _, opt := range opts {
 		opt(k)
@@ -75,7 +76,7 @@ func (k *Kernel) Boot(_ context.Context) error {
 	}
 
 	if len(errs) > 0 {
-		return errors.New("kernel boot failed:\n  - " + strings.Join(errs, "\n  - "))
+		return kerrors.New(kerrors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
 
 	// 初始化 Agent 委派工具
@@ -84,7 +85,7 @@ func (k *Kernel) Boot(_ context.Context) error {
 			k.tasks = agent.NewTaskTracker()
 		}
 		if err := agent.RegisterTools(k.tools, k.agents, k.tasks, k); err != nil {
-			return err
+			return kerrors.Wrap(kerrors.ErrInternal, "register agent delegation tools", err)
 		}
 	}
 
@@ -135,13 +136,16 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
-	k.activeRuns.Add(1)
-	defer k.activeRuns.Done()
+	runCtx, runID, err := k.runs.begin(ctx, sess.ID, runKindForeground)
+	if err != nil {
+		return nil, err
+	}
+	defer k.runs.end(runID)
 
 	// Session 超时
 	if sess.Config.Timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, sess.Config.Timeout)
+		runCtx, cancel = context.WithTimeout(runCtx, sess.Config.Timeout)
 		defer cancel()
 	}
 
@@ -153,7 +157,7 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 		Config:   k.loopCfg,
 		Observer: k.observer,
 	}
-	return l.Run(ctx, sess)
+	return l.Run(runCtx, sess)
 }
 
 // RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
@@ -161,8 +165,11 @@ func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io po
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
-	k.activeRuns.Add(1)
-	defer k.activeRuns.Done()
+	runCtx, runID, err := k.runs.begin(ctx, sess.ID, runKindWithUserIO)
+	if err != nil {
+		return nil, err
+	}
+	defer k.runs.end(runID)
 
 	l := &loop.AgentLoop{
 		LLM:      k.llm,
@@ -172,7 +179,7 @@ func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io po
 		Config:   k.loopCfg,
 		Observer: k.observer,
 	}
-	return l.Run(ctx, sess)
+	return l.Run(runCtx, sess)
 }
 
 // RunWithTools 使用指定的工具注册表运行 Agent Loop。
@@ -181,8 +188,11 @@ func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools 
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
-	k.activeRuns.Add(1)
-	defer k.activeRuns.Done()
+	runCtx, runID, err := k.runs.begin(ctx, sess.ID, runKindDelegated)
+	if err != nil {
+		return nil, err
+	}
+	defer k.runs.end(runID)
 
 	l := &loop.AgentLoop{
 		LLM:      k.llm,
@@ -192,7 +202,7 @@ func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools 
 		Config:   k.loopCfg,
 		Observer: k.observer,
 	}
-	return l.Run(ctx, sess)
+	return l.Run(runCtx, sess)
 }
 
 // Shutdown 优雅关停 Kernel。
@@ -203,17 +213,10 @@ func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools 
 // 5. 停止 Scheduler
 func (k *Kernel) Shutdown(ctx context.Context) error {
 	k.shutdownOnce.Do(func() { close(k.shutdownCh) })
+	k.runs.beginShutdown()
 
 	// 等待活跃运行结束
-	done := make(chan struct{})
-	go func() {
-		k.activeRuns.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-ctx.Done():
-	}
+	k.runs.wait(ctx)
 
 	// 持久化活跃 Session
 	if k.store != nil {
@@ -237,7 +240,7 @@ func (k *Kernel) Shutdown(ctx context.Context) error {
 func (k *Kernel) checkShutdown() error {
 	select {
 	case <-k.shutdownCh:
-		return errors.New("kernel is shutting down")
+		return kerrors.New(kerrors.ErrShutdown, "kernel is shutting down")
 	default:
 		return nil
 	}
