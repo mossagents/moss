@@ -6,6 +6,7 @@ import (
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/retry"
 	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
@@ -24,6 +25,18 @@ func WithLLM(llm port.LLM) Option {
 // WithSandbox 设置 Sandbox。
 func WithSandbox(sb sandbox.Sandbox) Option {
 	return func(k *Kernel) { k.sandbox = sb }
+}
+
+// WithWorkspace 设置 Workspace Port（文件系统抽象）。
+// 当同时设置了 Sandbox 时，内置工具优先使用 Workspace。
+func WithWorkspace(ws port.Workspace) Option {
+	return func(k *Kernel) { k.workspace = ws }
+}
+
+// WithExecutor 设置 Executor Port（命令执行抽象）。
+// 当同时设置了 Sandbox 时，内置工具优先使用 Executor。
+func WithExecutor(exec port.Executor) Option {
+	return func(k *Kernel) { k.executor = exec }
 }
 
 // WithUserIO 设置 UserIO Port。
@@ -91,6 +104,13 @@ func WithAgentRegistry(r *agent.Registry) Option {
 	return func(k *Kernel) { k.agents = r }
 }
 
+// WithObserver 设置运行时事件观察者。
+// Observer 用于收集可观测性指标（LLM 调用耗时、工具调用结果等），
+// 不设置则使用 NoOpObserver（零开销）。
+func WithObserver(o port.Observer) Option {
+	return func(k *Kernel) { k.observer = o }
+}
+
 // WithParallelToolCalls 启用并行工具调用。
 // 当 LLM 在一次响应中返回多个 tool calls 时，它们会并发执行。
 func WithParallelToolCalls() Option {
@@ -100,4 +120,10 @@ func WithParallelToolCalls() Option {
 // WithLLMRetry 配置真实 LLM 调用的重试策略。
 func WithLLMRetry(cfg loop.RetryConfig) Option {
 	return func(k *Kernel) { k.loopCfg.LLMRetry = cfg }
+}
+
+// WithLLMBreaker 配置 LLM 调用熔断器。
+// 当连续失败次数超过阈值时，自动拒绝后续请求，避免请求堆积。
+func WithLLMBreaker(cfg retry.BreakerConfig) Option {
+	return func(k *Kernel) { k.loopCfg.LLMBreaker = retry.NewBreaker(cfg) }
 }

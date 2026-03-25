@@ -36,4 +36,6 @@ type Deps struct {
 	Middleware   *middleware.Chain
 	Sandbox      sandbox.Sandbox
 	UserIO       port.UserIO
+	Workspace    port.Workspace
+	Executor     port.Executor
 }

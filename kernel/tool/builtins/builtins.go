@@ -12,21 +12,24 @@ import (
 	"github.com/mossagi/moss/kernel/tool"
 )
 
-// RegisteredToolNames 返回给定 sandbox 配置下会注册的工具名列表。
-// sandbox 为 nil 时仅包含不依赖 sandbox 的工具（如 ask_user）。
-func RegisteredToolNames(sb sandbox.Sandbox) []string {
-	if sb == nil {
-		return []string{"ask_user"}
+// RegisteredToolNames 返回给定配置下会注册的工具名列表。
+// 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
+// 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
+func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
+	names := []string{}
+	if ws != nil || sb != nil {
+		names = append(names, "read_file", "write_file", "list_files", "search_text")
 	}
-	return []string{
-		"read_file", "write_file", "list_files",
-		"search_text", "run_command", "ask_user",
+	if exec != nil || sb != nil {
+		names = append(names, "run_command")
 	}
+	names = append(names, "ask_user")
+	return names
 }
 
 // RegisterAll 注册所有内置工具到 registry。
-// 当 sb 为 nil 时，仅注册不依赖 sandbox 的工具（ask_user）。
-func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO) error {
+// 优先使用 Workspace/Executor 接口；未提供时回退到 Sandbox。
+func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
 	type entry struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -34,14 +37,28 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO) error {
 
 	var tools []entry
 
-	if sb != nil {
+	// 文件系统工具：优先 Workspace，回退 Sandbox
+	if ws != nil {
+		tools = append(tools,
+			entry{readFileSpec, readFileHandlerWS(ws)},
+			entry{writeFileSpec, writeFileHandlerWS(ws)},
+			entry{listFilesSpec, listFilesHandlerWS(ws)},
+			entry{searchTextSpec, searchTextHandlerWS(ws)},
+		)
+	} else if sb != nil {
 		tools = append(tools,
 			entry{readFileSpec, readFileHandler(sb)},
 			entry{writeFileSpec, writeFileHandler(sb)},
 			entry{listFilesSpec, listFilesHandler(sb)},
 			entry{searchTextSpec, searchTextHandler(sb)},
-			entry{runCommandSpec, runCommandHandler(sb)},
 		)
+	}
+
+	// 命令执行：优先 Executor，回退 Sandbox
+	if exec != nil {
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerExec(exec)})
+	} else if sb != nil {
+		tools = append(tools, entry{runCommandSpec, runCommandHandler(sb)})
 	}
 
 	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
@@ -262,6 +279,122 @@ func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
 			return nil, err
 		}
 		return json.Marshal(output)
+	}
+}
+
+func runCommandHandlerExec(exec port.Executor) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		output, err := exec.Execute(ctx, params.Command, params.Args)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(output)
+	}
+}
+
+// ─── Workspace-based handlers ────────────────────────
+
+func readFileHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		data, err := ws.ReadFile(ctx, params.Path)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(string(data))
+	}
+}
+
+func writeFileHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		if err := ws.WriteFile(ctx, params.Path, []byte(params.Content)); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]string{"status": "ok", "path": params.Path})
+	}
+}
+
+func listFilesHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Pattern string `json:"pattern"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		files, err := ws.ListFiles(ctx, params.Pattern)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(files)
+	}
+}
+
+func searchTextHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Pattern    string `json:"pattern"`
+			Glob       string `json:"glob"`
+			MaxResults int    `json:"max_results"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		if params.Glob == "" {
+			params.Glob = "**/*"
+		}
+		if params.MaxResults <= 0 {
+			params.MaxResults = 50
+		}
+
+		files, err := ws.ListFiles(ctx, params.Glob)
+		if err != nil {
+			return nil, err
+		}
+
+		var matches []searchMatch
+		for _, file := range files {
+			if len(matches) >= params.MaxResults {
+				break
+			}
+			data, err := ws.ReadFile(ctx, file)
+			if err != nil {
+				continue
+			}
+			lines := strings.Split(string(data), "\n")
+			for i, line := range lines {
+				if len(matches) >= params.MaxResults {
+					break
+				}
+				if strings.Contains(line, params.Pattern) {
+					matches = append(matches, searchMatch{
+						File: file,
+						Line: i + 1,
+						Text: truncateString(line, 200),
+					})
+				}
+			}
+		}
+		return json.Marshal(matches)
 	}
 }
 

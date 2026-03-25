@@ -1,0 +1,100 @@
+// Package kerr 提供 Moss Kernel 的结构化错误类型。
+//
+// 所有 Kernel 子系统返回的错误均可通过 errors.As 解析为 *Error，
+// 获取机器可读的错误码、可重试标志和附加上下文。
+package kerr
+
+import (
+	"errors"
+	"fmt"
+)
+
+// Code 是错误分类码，用于机器可读的错误识别。
+type Code string
+
+const (
+	ErrBudgetExhausted Code = "BUDGET_EXHAUSTED"
+	ErrToolNotFound    Code = "TOOL_NOT_FOUND"
+	ErrToolExecution   Code = "TOOL_EXECUTION"
+	ErrLLMCall         Code = "LLM_CALL"
+	ErrLLMTimeout      Code = "LLM_TIMEOUT"
+	ErrLLMRejected     Code = "LLM_REJECTED" // 熔断器拒绝
+	ErrSandboxDenied   Code = "SANDBOX_DENIED"
+	ErrSandboxIO       Code = "SANDBOX_IO"
+	ErrSessionNotFound Code = "SESSION_NOT_FOUND"
+	ErrSessionRunning  Code = "SESSION_RUNNING"
+	ErrPolicyDenied    Code = "POLICY_DENIED"
+	ErrValidation      Code = "VALIDATION"
+	ErrShutdown        Code = "SHUTDOWN"
+	ErrInternal        Code = "INTERNAL"
+)
+
+// Error 是 Moss Kernel 的结构化错误。
+type Error struct {
+	Code      Code           `json:"code"`
+	Message   string         `json:"message"`
+	Cause     error          `json:"-"`
+	Retryable bool           `json:"retryable"`
+	Meta      map[string]any `json:"meta,omitempty"`
+}
+
+func (e *Error) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("[%s] %s: %v", e.Code, e.Message, e.Cause)
+	}
+	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+}
+
+func (e *Error) Unwrap() error { return e.Cause }
+
+// Is 支持 errors.Is 匹配：相同 Code 视为同一类错误。
+func (e *Error) Is(target error) bool {
+	var t *Error
+	if errors.As(target, &t) {
+		return e.Code == t.Code
+	}
+	return false
+}
+
+// New 创建一个新的结构化错误。
+func New(code Code, msg string) *Error {
+	return &Error{Code: code, Message: msg}
+}
+
+// Wrap 包装一个底层错误为结构化错误。
+func Wrap(code Code, msg string, cause error) *Error {
+	return &Error{Code: code, Message: msg, Cause: cause}
+}
+
+// Retryable 创建一个可重试的结构化错误。
+func Retryable(code Code, msg string, cause error) *Error {
+	return &Error{Code: code, Message: msg, Cause: cause, Retryable: true}
+}
+
+// WithMeta 向错误添加上下文元数据（链式调用）。
+func (e *Error) WithMeta(key string, value any) *Error {
+	if e.Meta == nil {
+		e.Meta = make(map[string]any)
+	}
+	e.Meta[key] = value
+	return e
+}
+
+// IsRetryable 检查错误链中是否有可重试的 kerr.Error。
+func IsRetryable(err error) bool {
+	var ke *Error
+	if errors.As(err, &ke) {
+		return ke.Retryable
+	}
+	return false
+}
+
+// GetCode 从错误链中提取 kerr.Code。
+// 如果不是 kerr.Error，返回 ErrInternal。
+func GetCode(err error) Code {
+	var ke *Error
+	if errors.As(err, &ke) {
+		return ke.Code
+	}
+	return ErrInternal
+}

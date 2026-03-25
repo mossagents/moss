@@ -22,6 +22,7 @@ type LoopConfig struct {
 	StopWhen         func(port.Message) bool // 自定义停止条件
 	ParallelToolCall bool                    // 启用并行工具调用（默认 false，串行执行）
 	LLMRetry         RetryConfig             // LLM 调用重试配置
+	LLMBreaker       *retry.Breaker          // LLM 调用熔断器（可选）
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
@@ -56,11 +57,12 @@ func (c LoopConfig) maxIter() int {
 
 // AgentLoop 组合所有子系统，驱动 Agent 的 think→act→observe 循环。
 type AgentLoop struct {
-	LLM    port.LLM
-	Tools  tool.Registry
-	Chain  *middleware.Chain
-	IO     port.UserIO
-	Config LoopConfig
+	LLM      port.LLM
+	Tools    tool.Registry
+	Chain    *middleware.Chain
+	IO       port.UserIO
+	Config   LoopConfig
+	Observer port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
 }
 
 // SessionResult 是一次 Session 执行的结果。
@@ -73,11 +75,19 @@ type SessionResult struct {
 	Error      string          `json:"error,omitempty"`
 }
 
+func (l *AgentLoop) observer() port.Observer {
+	if l.Observer != nil {
+		return l.Observer
+	}
+	return port.NoOpObserver{}
+}
+
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
-	// OnSessionStart middleware
+	// OnSessionStart
+	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
 
 	var lastOutput string
@@ -98,11 +108,27 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		}
 
 		// 2. LLM 调用
+		llmStart := time.Now()
 		resp, streamed, err := l.callLLM(ctx, sess)
+		llmDur := time.Since(llmStart)
 		if err != nil {
+			l.observer().OnLLMCall(ctx, port.LLMCallEvent{
+				SessionID: sess.ID, Duration: llmDur, Error: err, Streamed: streamed,
+			})
+			l.observer().OnError(ctx, port.ErrorEvent{
+				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
+			})
 			l.runErrorMiddleware(ctx, sess, err)
 			return l.fail(sess, totalUsage, err), err
 		}
+
+		l.observer().OnLLMCall(ctx, port.LLMCallEvent{
+			SessionID:  sess.ID,
+			Duration:   llmDur,
+			Usage:      resp.Usage,
+			StopReason: resp.StopReason,
+			Streamed:   streamed,
+		})
 
 		totalUsage.PromptTokens += resp.Usage.PromptTokens
 		totalUsage.CompletionTokens += resp.Usage.CompletionTokens
@@ -146,6 +172,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	}
 
 	sess.Status = session.StatusCompleted
+	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
 
 	return &SessionResult{
@@ -207,14 +234,25 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.C
 }
 
 func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest) callAttemptResult {
+	// 熔断器检查
+	if b := l.Config.LLMBreaker; b != nil {
+		if !b.Allow() {
+			return callAttemptResult{
+				err:       fmt.Errorf("LLM circuit breaker is open: too many recent failures"),
+				retryable: false,
+			}
+		}
+	}
 
 	// 优先使用 Streaming
 	if sllm, ok := l.LLM.(port.StreamingLLM); ok {
 		resp, err := l.streamLLM(ctx, sllm, req)
 		if err == nil {
+			l.recordBreakerSuccess()
 			return callAttemptResult{resp: resp, streamed: true}
 		}
 
+		l.recordBreakerFailure()
 		var streamErr *retryableCallError
 		if errors.As(err, &streamErr) {
 			return callAttemptResult{streamed: true, retryable: streamErr.retryable, err: err}
@@ -223,6 +261,11 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	}
 
 	resp, err := l.LLM.Complete(ctx, req)
+	if err != nil {
+		l.recordBreakerFailure()
+	} else {
+		l.recordBreakerSuccess()
+	}
 	return callAttemptResult{resp: resp, streamed: false, retryable: true, err: err}
 }
 
@@ -357,7 +400,9 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	}
 
 	// 执行工具
+	toolStart := time.Now()
 	output, err := handler(ctx, call.Arguments)
+	toolDur := time.Since(toolStart)
 
 	var result port.ToolResult
 	if err != nil {
@@ -372,6 +417,15 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			Content: string(output),
 		}
 	}
+
+	// Observer: 工具调用指标
+	l.observer().OnToolCall(ctx, port.ToolCallEvent{
+		SessionID: sess.ID,
+		ToolName:  call.Name,
+		Risk:      string(spec.Risk),
+		Duration:  toolDur,
+		Error:     err,
+	})
 
 	// AfterToolCall middleware
 	l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
@@ -399,6 +453,18 @@ func (l *AgentLoop) toolSpecs() []port.ToolSpec {
 		}
 	}
 	return specs
+}
+
+func (l *AgentLoop) recordBreakerSuccess() {
+	if b := l.Config.LLMBreaker; b != nil {
+		b.RecordSuccess()
+	}
+}
+
+func (l *AgentLoop) recordBreakerFailure() {
+	if b := l.Config.LLMBreaker; b != nil {
+		b.RecordFailure()
+	}
 }
 
 func (l *AgentLoop) runMiddleware(ctx context.Context, phase middleware.Phase, sess *session.Session, t *tool.ToolSpec, input, result []byte) error {

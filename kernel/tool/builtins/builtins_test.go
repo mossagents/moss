@@ -83,6 +83,55 @@ func (m *mockUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputRe
 	return port.InputResponse{Value: m.response}, nil
 }
 
+// ── mock workspace ───────────────────────────────────
+
+type mockWorkspace struct {
+	files map[string]string
+}
+
+func (m *mockWorkspace) ReadFile(_ context.Context, path string) ([]byte, error) {
+	if content, ok := m.files[path]; ok {
+		return []byte(content), nil
+	}
+	return nil, &notFoundError{path: path}
+}
+
+func (m *mockWorkspace) WriteFile(_ context.Context, path string, content []byte) error {
+	m.files[path] = string(content)
+	return nil
+}
+
+func (m *mockWorkspace) ListFiles(_ context.Context, _ string) ([]string, error) {
+	var result []string
+	for p := range m.files {
+		result = append(result, p)
+	}
+	return result, nil
+}
+
+func (m *mockWorkspace) Stat(_ context.Context, path string) (port.FileInfo, error) {
+	if _, ok := m.files[path]; ok {
+		return port.FileInfo{Name: path, Size: int64(len(m.files[path]))}, nil
+	}
+	return port.FileInfo{}, &notFoundError{path: path}
+}
+
+func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
+	delete(m.files, path)
+	return nil
+}
+
+// ── mock executor ────────────────────────────────────
+
+type mockExecutor struct{}
+
+func (m *mockExecutor) Execute(_ context.Context, cmd string, args []string) (port.ExecOutput, error) {
+	return port.ExecOutput{
+		Stdout:   "exec: " + cmd + " " + strings.Join(args, " "),
+		ExitCode: 0,
+	}, nil
+}
+
 // ── tests ────────────────────────────────────────────
 
 func TestRegisterAll(t *testing.T) {
@@ -90,7 +139,7 @@ func TestRegisterAll(t *testing.T) {
 	sb := newMockSandbox("/ws", nil)
 	io := &mockUserIO{}
 
-	if err := RegisterAll(reg, sb, io); err != nil {
+	if err := RegisterAll(reg, sb, io, nil, nil); err != nil {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
@@ -301,7 +350,7 @@ func TestToolRiskLevels(t *testing.T) {
 	reg := tool.NewRegistry()
 	sb := newMockSandbox("/ws", nil)
 	io := &mockUserIO{}
-	RegisterAll(reg, sb, io)
+	RegisterAll(reg, sb, io, nil, nil)
 
 	for _, c := range cases {
 		spec, _, ok := reg.Get(c.name)
@@ -346,4 +395,142 @@ func toJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatalf("marshal: %v", err)
 	}
 	return data
+}
+
+// ── Workspace/Executor handler tests ─────────────────
+
+func TestRegisterAllWithWorkspace(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := &mockWorkspace{files: map[string]string{}}
+	exec := &mockExecutor{}
+	io := &mockUserIO{}
+
+	if err := RegisterAll(reg, nil, io, ws, exec); err != nil {
+		t.Fatalf("RegisterAll: %v", err)
+	}
+
+	expected := []string{"read_file", "write_file", "list_files", "search_text", "run_command", "ask_user"}
+	specs := reg.List()
+	if len(specs) != len(expected) {
+		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
+	}
+}
+
+func TestReadFileWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{"hello.txt": "Hello via Workspace!"}}
+	handler := readFileHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "hello.txt"}))
+	if err != nil {
+		t.Fatalf("readFileWS: %v", err)
+	}
+
+	var content string
+	json.Unmarshal(result, &content)
+	if content != "Hello via Workspace!" {
+		t.Errorf("expected 'Hello via Workspace!', got %q", content)
+	}
+}
+
+func TestWriteFileWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{}}
+	handler := writeFileHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"path":    "out.txt",
+		"content": "ws content",
+	}))
+	if err != nil {
+		t.Fatalf("writeFileWS: %v", err)
+	}
+
+	var resp map[string]string
+	json.Unmarshal(result, &resp)
+	if resp["status"] != "ok" {
+		t.Errorf("expected status ok, got %q", resp["status"])
+	}
+	if ws.files["out.txt"] != "ws content" {
+		t.Errorf("file not written via workspace")
+	}
+}
+
+func TestListFilesWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{
+		"a.go": "", "b.go": "", "dir/c.txt": "",
+	}}
+	handler := listFilesHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "*"}))
+	if err != nil {
+		t.Fatalf("listFilesWS: %v", err)
+	}
+
+	var files []string
+	json.Unmarshal(result, &files)
+	if len(files) != 3 {
+		t.Errorf("expected 3 files, got %d: %v", len(files), files)
+	}
+}
+
+func TestSearchTextWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{
+		"main.go":  "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
+		"other.go": "package other\n\nfunc other() {}\n",
+	}}
+	handler := searchTextHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "main"}))
+	if err != nil {
+		t.Fatalf("searchTextWS: %v", err)
+	}
+
+	var matches []searchMatch
+	json.Unmarshal(result, &matches)
+	if len(matches) < 2 {
+		t.Errorf("expected at least 2 matches, got %d: %+v", len(matches), matches)
+	}
+}
+
+func TestRunCommandExec(t *testing.T) {
+	exec := &mockExecutor{}
+	handler := runCommandHandlerExec(exec)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"command": "echo",
+		"args":    []string{"hello"},
+	}))
+	if err != nil {
+		t.Fatalf("runCommandExec: %v", err)
+	}
+
+	var output port.ExecOutput
+	json.Unmarshal(result, &output)
+	if !strings.Contains(output.Stdout, "echo") {
+		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
+	}
+}
+
+func TestWorkspacePreferredOverSandbox(t *testing.T) {
+	// When both Workspace and Sandbox are provided, Workspace should be used
+	ws := &mockWorkspace{files: map[string]string{"ws.txt": "from workspace"}}
+	sb := newMockSandbox("/ws", map[string]string{"/ws/ws.txt": "from sandbox"})
+
+	reg := tool.NewRegistry()
+	RegisterAll(reg, sb, &mockUserIO{}, ws, nil)
+
+	_, handler, ok := reg.Get("read_file")
+	if !ok {
+		t.Fatal("read_file not registered")
+	}
+
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "ws.txt"}))
+	if err != nil {
+		t.Fatalf("read_file: %v", err)
+	}
+
+	var content string
+	json.Unmarshal(result, &content)
+	if content != "from workspace" {
+		t.Errorf("expected workspace content, got %q", content)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 
 	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/bootstrap"
@@ -23,6 +24,8 @@ type Kernel struct {
 	llm       port.LLM
 	io        port.UserIO
 	sandbox   sandbox.Sandbox
+	workspace port.Workspace
+	executor  port.Executor
 	tools     tool.Registry
 	sessions  session.Manager
 	store     session.SessionStore
@@ -36,15 +39,21 @@ type Kernel struct {
 	bootstrap *bootstrap.Context
 	agents    *agent.Registry
 	tasks     *agent.TaskTracker
+	observer  port.Observer
+
+	shutdownCh   chan struct{}
+	shutdownOnce sync.Once
+	activeRuns   sync.WaitGroup
 }
 
 // New 使用函数式选项创建 Kernel。
 func New(opts ...Option) *Kernel {
 	k := &Kernel{
-		tools:    tool.NewRegistry(),
-		sessions: session.NewManager(),
-		chain:    middleware.NewChain(),
-		skills:   skill.NewManager(),
+		tools:      tool.NewRegistry(),
+		sessions:   session.NewManager(),
+		chain:      middleware.NewChain(),
+		skills:     skill.NewManager(),
+		shutdownCh: make(chan struct{}),
 	}
 	for _, opt := range opts {
 		opt(k)
@@ -123,24 +132,38 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 
 // Run 在指定 Session 上运行 Agent Loop。
 func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionResult, error) {
+	if err := k.checkShutdown(); err != nil {
+		return nil, err
+	}
+	k.activeRuns.Add(1)
+	defer k.activeRuns.Done()
+
 	l := &loop.AgentLoop{
-		LLM:    k.llm,
-		Tools:  k.tools,
-		Chain:  k.chain,
-		IO:     k.io,
-		Config: k.loopCfg,
+		LLM:      k.llm,
+		Tools:    k.tools,
+		Chain:    k.chain,
+		IO:       k.io,
+		Config:   k.loopCfg,
+		Observer: k.observer,
 	}
 	return l.Run(ctx, sess)
 }
 
 // RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
 func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io port.UserIO) (*loop.SessionResult, error) {
+	if err := k.checkShutdown(); err != nil {
+		return nil, err
+	}
+	k.activeRuns.Add(1)
+	defer k.activeRuns.Done()
+
 	l := &loop.AgentLoop{
-		LLM:    k.llm,
-		Tools:  k.tools,
-		Chain:  k.chain,
-		IO:     io,
-		Config: k.loopCfg,
+		LLM:      k.llm,
+		Tools:    k.tools,
+		Chain:    k.chain,
+		IO:       io,
+		Config:   k.loopCfg,
+		Observer: k.observer,
 	}
 	return l.Run(ctx, sess)
 }
@@ -148,19 +171,69 @@ func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io po
 // RunWithTools 使用指定的工具注册表运行 Agent Loop。
 // 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
 func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+	if err := k.checkShutdown(); err != nil {
+		return nil, err
+	}
+	k.activeRuns.Add(1)
+	defer k.activeRuns.Done()
+
 	l := &loop.AgentLoop{
-		LLM:    k.llm,
-		Tools:  tools,
-		Chain:  k.chain,
-		IO:     &port.NoOpIO{},
-		Config: k.loopCfg,
+		LLM:      k.llm,
+		Tools:    tools,
+		Chain:    k.chain,
+		IO:       &port.NoOpIO{},
+		Config:   k.loopCfg,
+		Observer: k.observer,
 	}
 	return l.Run(ctx, sess)
 }
 
-// Shutdown 关闭 Kernel，释放资源。
+// Shutdown 优雅关停 Kernel。
+// 1. 标记拒绝新请求
+// 2. 等待进行中的 Session 完成（或 ctx 超时后取消）
+// 3. 持久化所有活跃 Session
+// 4. 关闭 Skills（MCP 连接等）
+// 5. 停止 Scheduler
 func (k *Kernel) Shutdown(ctx context.Context) error {
+	k.shutdownOnce.Do(func() { close(k.shutdownCh) })
+
+	// 等待活跃运行结束
+	done := make(chan struct{})
+	go func() {
+		k.activeRuns.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+
+	// 持久化活跃 Session
+	if k.store != nil {
+		for _, sess := range k.sessions.List() {
+			if sess.Status == session.StatusRunning {
+				sess.Status = session.StatusPaused
+			}
+			k.store.Save(ctx, sess)
+		}
+	}
+
+	// 停止调度器
+	if k.sched != nil {
+		k.sched.Stop()
+	}
+
+	// 关闭 Skills
 	return k.skills.ShutdownAll(ctx)
+}
+
+func (k *Kernel) checkShutdown() error {
+	select {
+	case <-k.shutdownCh:
+		return errors.New("kernel is shutting down")
+	default:
+		return nil
+	}
 }
 
 // ToolRegistry 返回工具注册表。
@@ -180,6 +253,8 @@ func (k *Kernel) SkillDeps() skill.Deps {
 		Middleware:   k.chain,
 		Sandbox:      k.sandbox,
 		UserIO:       k.io,
+		Workspace:    k.workspace,
+		Executor:     k.executor,
 	}
 }
 
@@ -196,6 +271,16 @@ func (k *Kernel) SessionStore() session.SessionStore {
 // Scheduler 返回调度器（可能为 nil）。
 func (k *Kernel) Scheduler() *scheduler.Scheduler {
 	return k.sched
+}
+
+// Workspace 返回工作区抽象（可能为 nil）。
+func (k *Kernel) Workspace() port.Workspace {
+	return k.workspace
+}
+
+// Executor 返回命令执行器（可能为 nil）。
+func (k *Kernel) Executor() port.Executor {
+	return k.executor
 }
 
 // Embedder 返回嵌入模型（可能为 nil）。

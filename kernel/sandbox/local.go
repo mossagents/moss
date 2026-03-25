@@ -9,6 +9,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/mossagi/moss/kernel/port"
 )
 
 // LocalSandbox 是基于本地文件系统的 Sandbox 实现。
@@ -198,4 +200,70 @@ func needsShell(cmd string) bool {
 
 func (s *LocalSandbox) Limits() ResourceLimits {
 	return s.limits
+}
+
+// LocalWorkspace 将 LocalSandbox 适配为 port.Workspace 接口。
+type LocalWorkspace struct {
+	sb *LocalSandbox
+}
+
+// NewLocalWorkspace 基于 LocalSandbox 创建 Workspace 适配器。
+func NewLocalWorkspace(sb *LocalSandbox) *LocalWorkspace {
+	return &LocalWorkspace{sb: sb}
+}
+
+func (w *LocalWorkspace) ReadFile(_ context.Context, path string) ([]byte, error) {
+	return w.sb.ReadFile(path)
+}
+
+func (w *LocalWorkspace) WriteFile(_ context.Context, path string, content []byte) error {
+	return w.sb.WriteFile(path, content)
+}
+
+func (w *LocalWorkspace) ListFiles(_ context.Context, pattern string) ([]string, error) {
+	return w.sb.ListFiles(pattern)
+}
+
+func (w *LocalWorkspace) Stat(_ context.Context, path string) (port.FileInfo, error) {
+	resolved, err := w.sb.ResolvePath(path)
+	if err != nil {
+		return port.FileInfo{}, err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return port.FileInfo{}, err
+	}
+	return port.FileInfo{
+		Name:    info.Name(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+		ModTime: info.ModTime(),
+	}, nil
+}
+
+func (w *LocalWorkspace) DeleteFile(_ context.Context, path string) error {
+	resolved, err := w.sb.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(resolved)
+}
+
+// LocalExecutor 将 LocalSandbox 适配为 port.Executor 接口。
+type LocalExecutor struct {
+	sb *LocalSandbox
+}
+
+// NewLocalExecutor 基于 LocalSandbox 创建 Executor 适配器。
+func NewLocalExecutor(sb *LocalSandbox) *LocalExecutor {
+	return &LocalExecutor{sb: sb}
+}
+
+func (e *LocalExecutor) Execute(ctx context.Context, cmd string, args []string) (port.ExecOutput, error) {
+	out, err := e.sb.Execute(ctx, cmd, args)
+	return port.ExecOutput{
+		Stdout:   out.Stdout,
+		Stderr:   out.Stderr,
+		ExitCode: out.ExitCode,
+	}, err
 }
