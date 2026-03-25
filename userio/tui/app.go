@@ -31,6 +31,7 @@ type Config struct {
 	BaseURL            string
 	APIKey             string
 	BuildKernel        func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	AfterBoot          func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt  func(workspace string) string
 	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
 	SidebarTitle       string
@@ -274,6 +275,12 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		if err := k.Boot(ctx); err != nil {
 			cancel()
 			return sessionResultMsg{err: fmt.Errorf("启动 kernel 失败: %w", err)}
+		}
+		if cfg.AfterBoot != nil {
+			if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("初始化运行时失败: %w", err)}
+			}
 		}
 
 		// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）

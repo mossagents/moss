@@ -135,3 +135,46 @@ func TestKernelBootRequiresLLM(t *testing.T) {
 		t.Fatal("expected error when LLM not configured")
 	}
 }
+
+func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{{
+			Message:    port.Message{Role: port.RoleAssistant, Content: "hello from override"},
+			StopReason: "end_turn",
+		}},
+	}
+
+	defaultIO := kt.NewRecorderIO()
+	overrideIO := kt.NewRecorderIO()
+	k := New(
+		WithLLM(mock),
+		WithUserIO(defaultIO),
+	)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "test", MaxSteps: 5})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "hi"})
+
+	result, err := k.RunWithUserIO(context.Background(), sess, overrideIO)
+	if err != nil {
+		t.Fatalf("RunWithUserIO: %v", err)
+	}
+	if result.Output != "hello from override" {
+		t.Fatalf("Output = %q, want hello from override", result.Output)
+	}
+	if len(defaultIO.Sent) != 0 {
+		t.Fatalf("default IO should be unused, got %d messages", len(defaultIO.Sent))
+	}
+	if len(overrideIO.Sent) != 1 {
+		t.Fatalf("override IO messages = %d, want 1", len(overrideIO.Sent))
+	}
+	if overrideIO.Sent[0].Content != "hello from override" {
+		t.Fatalf("override IO content = %q", overrideIO.Sent[0].Content)
+	}
+}

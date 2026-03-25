@@ -133,6 +133,18 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 	return l.Run(ctx, sess)
 }
 
+// RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
+func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io port.UserIO) (*loop.SessionResult, error) {
+	l := &loop.AgentLoop{
+		LLM:    k.llm,
+		Tools:  k.tools,
+		Chain:  k.chain,
+		IO:     io,
+		Config: k.loopCfg,
+	}
+	return l.Run(ctx, sess)
+}
+
 // RunWithTools 使用指定的工具注册表运行 Agent Loop。
 // 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
 func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {

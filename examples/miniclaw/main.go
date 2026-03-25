@@ -5,7 +5,7 @@
 //   - 知识库：语义检索、文档摄入
 //   - 定时任务调度
 //   - Bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md）
-//   - 交互式 REPL 模式
+//   - 交互式 TUI 模式
 //
 // 用法:
 //
@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mossagi/moss/adapters/embedding"
@@ -39,6 +40,7 @@ import (
 	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
+	mossTUI "github.com/mossagi/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -49,7 +51,7 @@ func main() {
 	_ = skill.EnsureMossDir()
 
 	var mode string
-	flag.StringVar(&mode, "mode", "repl", "Run mode: repl (legacy) | gateway (channel-based)")
+	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
 	flags := appkit.ParseCommonFlags()
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
@@ -62,85 +64,78 @@ func main() {
 }
 
 func run(ctx context.Context, flags *appkit.CommonFlags, mode string) error {
-	// Session 持久化存储
-	storeDir := filepath.Join(skill.MossDir(), "sessions")
-	store, err := session.NewFileStore(storeDir)
-	if err != nil {
-		return fmt.Errorf("session store: %w", err)
+	if mode == "gateway" {
+		return runGateway(ctx, flags)
 	}
 
-	// 定时调度器
-	sched := scheduler.New()
+	return launchTUI(flags)
 
-	// 知识库：嵌入模型 + 内存向量存储
-	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
-	knStore := knowledge.NewMemoryStore()
+}
 
+type miniclawRuntime struct {
+	flags *appkit.CommonFlags
+	store session.SessionStore
+	sched *scheduler.Scheduler
+}
+
+func launchTUI(flags *appkit.CommonFlags) error {
+	var activeRuntime *miniclawRuntime
+
+	return mossTUI.Run(mossTUI.Config{
+		Provider:  flags.Provider,
+		Model:     flags.Model,
+		Workspace: flags.Workspace,
+		Trust:     flags.Trust,
+		BaseURL:   flags.BaseURL,
+		APIKey:    flags.APIKey,
+		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+			runtimeFlags := &appkit.CommonFlags{
+				Provider:  provider,
+				Model:     model,
+				Workspace: wsDir,
+				Trust:     trust,
+				APIKey:    apiKey,
+				BaseURL:   baseURL,
+			}
+			k, runtime, err := buildMiniclawKernel(context.Background(), runtimeFlags, io)
+			if err != nil {
+				return nil, err
+			}
+			activeRuntime = runtime
+			return k, nil
+		},
+		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error {
+			if activeRuntime != nil {
+				activeRuntime.startScheduler(ctx, k, io)
+			}
+			return nil
+		},
+		BuildSystemPrompt: buildSystemPrompt,
+		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+			return session.SessionConfig{
+				Goal:         "personal AI assistant",
+				Mode:         "interactive",
+				TrustLevel:   trust,
+				SystemPrompt: systemPrompt,
+				MaxSteps:     200,
+			}
+		},
+	})
+}
+
+func runGateway(ctx context.Context, flags *appkit.CommonFlags) error {
 	userIO := port.NewConsoleIO()
-
-	k, err := appkit.BuildKernel(ctx, flags, userIO,
-		kernel.WithSessionStore(store),
-		kernel.WithScheduler(sched),
-		kernel.WithEmbedder(embedder),
-	)
+	k, runtime, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
 		return err
-	}
-
-	// 注册网络访问工具
-	if err := registerWebTools(k); err != nil {
-		return fmt.Errorf("register web tools: %w", err)
-	}
-
-	// 注册调度工具 (schedule_task, list_schedules, cancel_schedule)
-	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
-		return fmt.Errorf("register schedule tools: %w", err)
-	}
-
-	// 注册知识库工具 (ingest_document, knowledge_search, knowledge_list)
-	if err := toolbuiltins.RegisterKnowledgeTools(k.ToolRegistry(), knStore, embedder); err != nil {
-		return fmt.Errorf("register knowledge tools: %w", err)
-	}
-
-	if flags.Trust == "restricted" {
-		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "run_command", "fetch_url"),
-			builtins.DefaultAllow(),
-		)
 	}
 
 	if err := k.Boot(ctx); err != nil {
 		return err
 	}
 	defer k.Shutdown(ctx)
+	runtime.startScheduler(ctx, k, userIO)
 
-	// 启动调度器：当任务触发时创建新 Session 并执行
-	sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
-		fmt.Fprintf(os.Stdout, "\n⏰ Scheduled task [%s]: %s\n", job.ID, job.Goal)
-		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
-			Goal:         job.Goal,
-			Mode:         "scheduled",
-			TrustLevel:   flags.Trust,
-			SystemPrompt: buildSystemPrompt(flags.Workspace),
-			MaxSteps:     30,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ❌ schedule session: %v\n", err)
-			return
-		}
-		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
-		result, err := k.Run(jobCtx, jobSess)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ❌ schedule run: %v\n", err)
-			return
-		}
-		// 持久化完成的 session
-		_ = store.Save(jobCtx, jobSess)
-		fmt.Fprintf(os.Stdout, "  ✅ [%s] done (%d steps)\n\n", job.ID, result.Steps)
-	})
-	defer sched.Stop()
-
-	prompt := "🐾 > "
 	modelName := flags.Model
 	if modelName == "" {
 		modelName = "(default)"
@@ -150,37 +145,144 @@ func run(ctx context.Context, flags *appkit.CommonFlags, mode string) error {
 			"Provider":  flags.Provider,
 			"Model":     modelName,
 			"Workspace": flags.Workspace,
-			"Mode":      mode,
+			"Mode":      "gateway",
 			"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
 		},
 		"Ask me anything — I can search the web, manage files, schedule tasks, and more.",
-		"Type /help for commands, /exit to quit.",
 	)
 
-	sysPrompt := buildSystemPrompt(flags.Workspace)
+	return appkit.Serve(ctx, appkit.ServeConfig{
+		Prompt:       "🐾 > ",
+		SystemPrompt: buildSystemPrompt(flags.Workspace),
+	}, k)
+}
 
-	if mode == "gateway" {
-		return appkit.Serve(ctx, appkit.ServeConfig{
-			Prompt:       prompt,
-			SystemPrompt: sysPrompt,
-		}, k)
-	}
-
-	// 默认: REPL 模式 (legacy)
-	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         "personal AI assistant",
-		Mode:         "interactive",
-		TrustLevel:   flags.Trust,
-		SystemPrompt: sysPrompt,
-	})
+func buildMiniclawKernel(ctx context.Context, flags *appkit.CommonFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
+	storeDir := filepath.Join(skill.MossDir(), "sessions")
+	store, err := session.NewFileStore(storeDir)
 	if err != nil {
-		return fmt.Errorf("session: %w", err)
+		return nil, nil, fmt.Errorf("session store: %w", err)
 	}
 
-	return appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:  prompt,
-		AppName: "miniclaw",
-	}, k, sess)
+	sched := scheduler.New()
+	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
+	knStore := knowledge.NewMemoryStore()
+
+	k, err := appkit.BuildKernel(ctx, flags, io,
+		kernel.WithSessionStore(store),
+		kernel.WithScheduler(sched),
+		kernel.WithEmbedder(embedder),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := registerWebTools(k); err != nil {
+		return nil, nil, fmt.Errorf("register web tools: %w", err)
+	}
+	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
+		return nil, nil, fmt.Errorf("register schedule tools: %w", err)
+	}
+	if err := toolbuiltins.RegisterKnowledgeTools(k.ToolRegistry(), knStore, embedder); err != nil {
+		return nil, nil, fmt.Errorf("register knowledge tools: %w", err)
+	}
+	if flags.Trust == "restricted" {
+		k.WithPolicy(
+			builtins.RequireApprovalFor("write_file", "run_command", "fetch_url"),
+			builtins.DefaultAllow(),
+		)
+	}
+
+	return k, &miniclawRuntime{flags: flags, store: store, sched: sched}, nil
+}
+
+func (r *miniclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io port.UserIO) {
+	r.sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
+		_ = io.Send(jobCtx, port.OutputMessage{
+			Type:    port.OutputProgress,
+			Content: fmt.Sprintf("Scheduled task [%s] started: %s", job.ID, job.Goal),
+		})
+
+		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
+			Goal:         job.Goal,
+			Mode:         "scheduled",
+			TrustLevel:   r.flags.Trust,
+			SystemPrompt: buildSystemPrompt(r.flags.Workspace),
+			MaxSteps:     30,
+		})
+		if err != nil {
+			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
+			return
+		}
+
+		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
+		jobIO := newScheduledTaskIO(job)
+		result, err := k.RunWithUserIO(jobCtx, jobSess, jobIO)
+		if err != nil {
+			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
+			return
+		}
+		_ = r.store.Save(jobCtx, jobSess)
+
+		summary := strings.TrimSpace(result.Output)
+		if summary == "" {
+			summary = strings.TrimSpace(jobIO.FinalText())
+		}
+		if summary != "" {
+			_ = io.Send(jobCtx, port.OutputMessage{
+				Type:    port.OutputText,
+				Content: fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary),
+			})
+		}
+		_ = io.Send(jobCtx, port.OutputMessage{
+			Type:    port.OutputProgress,
+			Content: fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps),
+		})
+	})
+}
+
+type scheduledTaskIO struct {
+	mu      sync.Mutex
+	stream  strings.Builder
+	results []string
+}
+
+func newScheduledTaskIO(job scheduler.Job) *scheduledTaskIO {
+	_ = job
+	return &scheduledTaskIO{}
+}
+
+func (s *scheduledTaskIO) Send(_ context.Context, msg port.OutputMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	switch msg.Type {
+	case port.OutputStream, port.OutputText:
+		s.stream.WriteString(msg.Content)
+		if msg.Type == port.OutputText {
+			s.stream.WriteString("\n")
+		}
+	case port.OutputToolResult:
+		isErr, _ := msg.Meta["is_error"].(bool)
+		if isErr {
+			s.results = append(s.results, "error: "+strings.TrimSpace(msg.Content))
+		}
+	}
+	return nil
+}
+
+func (s *scheduledTaskIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+	return (&port.NoOpIO{}).Ask(context.Background(), req)
+}
+
+func (s *scheduledTaskIO) FinalText() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	text := strings.TrimSpace(s.stream.String())
+	if text != "" {
+		return text
+	}
+	return strings.Join(s.results, "\n")
 }
 
 // ─── Web Tools ──────────────────────────────────────
