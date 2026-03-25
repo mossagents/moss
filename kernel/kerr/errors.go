@@ -24,6 +24,7 @@ const (
 	ErrSessionNotFound Code = "SESSION_NOT_FOUND"
 	ErrSessionRunning  Code = "SESSION_RUNNING"
 	ErrPolicyDenied    Code = "POLICY_DENIED"
+	ErrRateLimit       Code = "RATE_LIMIT"
 	ErrValidation      Code = "VALIDATION"
 	ErrShutdown        Code = "SHUTDOWN"
 	ErrInternal        Code = "INTERNAL"

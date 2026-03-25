@@ -319,100 +319,64 @@ Phase 1 已实现 `sandbox.ScopedWorkspace`，含路径隔离和完整测试。
 
 ---
 
-## 6 Phase 4：安全与合规
+## 6 Phase 4：安全与合规 ✅
 
 > **目标**：多租户环境下的认证授权与审计。
 
-### 6.1 认证框架
+### 6.1 认证框架 ✅
 
-```go
-// kernel/port/auth.go
+- ✅ `port.Identity` 结构体（UserID/TenantID/Roles/Meta + HasRole 方法）
+- ✅ `port.Authenticator` 接口
+- ✅ `AuthMiddleware` — 在 OnSessionStart 阶段从 Metadata 取 token 认证，注入 Identity 到 Session.State
 
-type Identity struct {
-    UserID   string
-    TenantID string
-    Roles    []string
-    Meta     map[string]any
-}
+### 6.2 RBAC 工具访问控制 ✅
 
-type Authenticator interface {
-    Authenticate(ctx context.Context, token string) (*Identity, error)
-}
-```
+- ✅ `RBACRule` 结构体（Role/Tools/Action，支持 `*` 通配符）
+- ✅ `RBAC()` middleware — 按角色+工具名第一匹配规则决策
+- ✅ `SetIdentity`/`GetIdentity` 辅助函数
+- ✅ `RiskBasedPolicy` — PolicyRule 按工具风险级别决策
 
-通过 Middleware 在 `OnSessionStart` 阶段注入 Identity 到 Session.Metadata。
+### 6.3 审计日志 ✅
 
-### 6.2 RBAC 工具访问控制
+- ✅ `AuditLogger` 实现 Observer 接口（JSON Lines 输出）
+- ✅ 支持 LLM 调用、工具调用、Session 事件、错误事件四种审计记录
+- ✅ 线程安全，不侵入核心逻辑
 
-扩展现有 PolicyCheck middleware：
+### 6.4 速率限制 ✅
 
-```go
-// 策略规则示例
-policies:
-  - role: "viewer"
-    tools: ["read_file", "list_files", "search_text"]
-    action: allow
-  - role: "viewer"
-    tools: ["*"]
-    action: deny
-  - role: "operator"
-    tools: ["*"]
-    action: allow
-```
-
-### 6.3 审计日志
-
-通过 Observer 接口实现，不侵入核心：
-
-```go
-type AuditLogger struct {
-    writer io.Writer // JSON Lines 输出
-}
-
-func (a *AuditLogger) OnToolCall(ctx context.Context, e ToolCallEvent) {
-    // 记录：who (Identity) + what (tool) + when + result
-}
-```
-
-### 6.4 速率限制
-
-```go
-// kernel/middleware/builtins/ratelimit.go
-
-func RateLimiter(rps int, burst int) middleware.Middleware
-```
-
-按 Session 或按 Identity 限流。
+- ✅ `RateLimiter(rps, burst)` middleware — BeforeLLM 阶段按 Session 限流
+- ✅ 令牌桶算法实现
+- ✅ `kerr.ErrRateLimit` 错误码
 
 ---
 
 ## 7 实施优先级
 
 ```
-P0 — 不做就不能上线（Phase 1）
- ├─ Workspace 抽象层（port 接口 + LocalWorkspace 提取）
- ├─ 结构化错误体系 (kerr 包)
- ├─ 可观测性 Observer 接口
- ├─ 优雅关停 Shutdown
- └─ LLM 熔断器
+P0 — 不做就不能上线（Phase 1）✅
+ ├─ ✅ Workspace 抽象层（port 接口 + LocalWorkspace 提取）
+ ├─ ✅ 结构化错误体系 (kerr 包)
+ ├─ ✅ 可观测性 Observer 接口
+ ├─ ✅ 优雅关停 Shutdown
+ └─ ✅ LLM 熔断器
 
-P1 — 上线后立即需要（Phase 1 + Phase 2）
- ├─ MemoryWorkspace（miniroom 多房间隔离）
- ├─ ScopedWorkspace（多租户路径隔离）
- ├─ Session 超时机制
- └─ 内置工具切换到 Workspace/Executor
+P1 — 上线后立即需要（Phase 1 + Phase 2）✅
+ ├─ ✅ MemoryWorkspace（miniroom 多房间隔离）
+ ├─ ✅ ScopedWorkspace（多租户路径隔离）
+ ├─ ✅ Session 超时机制
+ └─ ✅ 内置工具切换到 Workspace/Executor
 
-P2 — 多实例部署需要（Phase 3）
- ├─ Redis SessionStore
- ├─ Scheduler 分布式锁
- ├─ Knowledge SQLite/PgVector Store
- └─ Task Store
+P2 — 多实例部署需要（Phase 3）✅
+ ├─ ✅ Session Store Watch 接口
+ ├─ ✅ Scheduler 分布式锁
+ ├─ ✅ Task Store 接口
+ └─ Knowledge SQLite/PgVector Store（外部 adapter，按需开发）
 
-P3 — 企业级需要（Phase 4）
- ├─ 认证框架
- ├─ RBAC
- ├─ 审计日志
- └─ 速率限制
+P3 — 企业级需要（Phase 4）✅
+ ├─ ✅ 认证框架
+ ├─ ✅ RBAC
+ ├─ ✅ 审计日志
+ └─ ✅ 速率限制
 ```
 
 ---
