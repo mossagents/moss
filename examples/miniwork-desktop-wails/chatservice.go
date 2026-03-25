@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
@@ -16,9 +18,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// ─── ChatService ────────────────────────────────────
-
-// ChatService 是 Wails 服务，桥接 moss kernel 与桌面前端。
+// ChatService 桥接 moss kernel 与桌面前端。
 type ChatService struct {
 	cfg     config
 	k       *kernel.Kernel
@@ -31,15 +31,12 @@ type ChatService struct {
 	cancel  context.CancelFunc
 }
 
-// NewChatService 创建 ChatService 实例。
 func NewChatService(cfg config) *ChatService {
-	return &ChatService{
-		cfg: cfg,
-	}
+	return &ChatService{cfg: cfg}
 }
 
-// ServiceStartup 在 Wails 应用启动时被调用。
 func (s *ChatService) ServiceStartup(ctx context.Context, options application.ServiceOptions) error {
+	slog.Info("ChatService starting up...")
 	s.wailsIO = NewWailsUserIO()
 	s.tracker = newOrchestrationTracker(func() {
 		emitEvent("worker:update", s.tracker.Summary())
@@ -47,16 +44,15 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 
 	k, err := s.buildKernel()
 	if err != nil {
+		slog.Error("ChatService: failed to build kernel", slog.Any("error", err))
 		return fmt.Errorf("build kernel: %w", err)
 	}
-
 	if err := k.Boot(ctx); err != nil {
+		slog.Error("ChatService: failed to boot kernel", slog.Any("error", err))
 		return fmt.Errorf("boot kernel: %w", err)
 	}
-
 	s.k = k
 
-	// 创建初始 Session
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:         "interactive desktop assistant",
 		Mode:         "orchestrator",
@@ -65,64 +61,123 @@ func (s *ChatService) ServiceStartup(ctx context.Context, options application.Se
 		MaxSteps:     100,
 	})
 	if err != nil {
+		slog.Error("ChatService: failed to create session", slog.Any("error", err))
 		return fmt.Errorf("create session: %w", err)
 	}
 	s.sess = sess
-
+	slog.Info("ChatService started successfully",
+		slog.String("provider", s.cfg.provider),
+		slog.String("model", s.cfg.model),
+		slog.String("workspace", resolveWorkspace(s.cfg.workspace)),
+	)
 	return nil
 }
 
-// ServiceShutdown 在 Wails 应用关闭时被调用。
 func (s *ChatService) ServiceShutdown() error {
+	slog.Info("ChatService shutting down...")
+	s.mu.Lock()
+
+	// 停止任何正在运行的 agent
 	if s.cancel != nil {
+		slog.Info("Cancelling running agent...")
 		s.cancel()
 	}
-	if s.k != nil {
-		s.k.Shutdown(context.Background())
+
+	// 等待 agent 完成运行（最多 5 秒）
+	s.mu.Unlock()
+
+	// 给后台任务一些时间来响应取消
+	shutdown := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				s.mu.Lock()
+				if !s.running {
+					s.mu.Unlock()
+					shutdown <- struct{}{}
+					return
+				}
+				s.mu.Unlock()
+			}
+		}
+	}()
+
+	select {
+	case <-shutdown:
+		slog.Info("Agent stopped gracefully")
+	case <-time.After(5 * time.Second):
+		slog.Warn("Agent shutdown timeout, forcing shutdown")
 	}
+
+	// 关闭 kernel
+	if s.k != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		slog.Info("Shutting down kernel...")
+		if err := s.k.Shutdown(shutdownCtx); err != nil && err != context.DeadlineExceeded {
+			slog.Error("Error shutting down kernel", slog.Any("error", err))
+		}
+	}
+
+	slog.Info("ChatService shutdown complete")
 	return nil
 }
 
-// SendMessage 接收用户消息并异步运行 agent loop。
-// 前端通过事件接收流式输出。
 func (s *ChatService) SendMessage(content string) error {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
 		return fmt.Errorf("agent is already running")
 	}
+	if s.sess == nil || s.k == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("service not initialized")
+	}
 	s.running = true
 	s.mu.Unlock()
 
-	// 追加用户消息
+	slog.Info("SendMessage called", slog.String("content", truncate(content, 80)))
 	s.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: content})
 
-	// 异步运行 agent loop
 	go func() {
 		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("SendMessage goroutine panic", slog.Any("panic", r))
+				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r)})
+			}
 			s.mu.Lock()
 			s.running = false
 			s.mu.Unlock()
 		}()
 
-		ctx, cancel := context.WithCancel(application.Get().Context())
+		ctx, cancel := context.WithCancel(context.Background())
 		s.mu.Lock()
 		s.cancel = cancel
 		s.mu.Unlock()
 		defer cancel()
 
+		slog.Info("Starting RunWithUserIO...")
 		result, err := s.k.RunWithUserIO(ctx, s.sess, s.wailsIO)
 		if err != nil {
 			if ctx.Err() != nil {
-				emitEvent("chat:cancelled", nil)
+				slog.Info("Agent run cancelled")
+				emitEvent("chat:cancelled", map[string]any{"message": "已取消"})
 				return
 			}
-			emitEvent("chat:error", map[string]any{
-				"message": err.Error(),
-			})
+			slog.Error("Agent run failed", slog.Any("error", err))
+			emitEvent("chat:error", map[string]any{"message": err.Error()})
 			return
 		}
 
+		slog.Info("Agent run completed",
+			slog.String("session", result.SessionID),
+			slog.Int("steps", result.Steps),
+			slog.Int("tokens", result.TokensUsed.TotalTokens),
+		)
 		emitEvent("chat:done", map[string]any{
 			"session_id":  result.SessionID,
 			"steps":       result.Steps,
@@ -134,8 +189,6 @@ func (s *ChatService) SendMessage(content string) error {
 	return nil
 }
 
-// SendMessageWithAttachments 发送带有附件的消息。
-// attachments 是已上传到 workspace 的文件路径列表。
 func (s *ChatService) SendMessageWithAttachments(content string, attachments []string) error {
 	if len(attachments) > 0 {
 		content += "\n\n📎 Attached files:\n"
@@ -146,7 +199,6 @@ func (s *ChatService) SendMessageWithAttachments(content string, attachments []s
 	return s.SendMessage(content)
 }
 
-// StopAgent 中止当前正在运行的 agent。
 func (s *ChatService) StopAgent() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -155,15 +207,10 @@ func (s *ChatService) StopAgent() {
 	}
 }
 
-// RespondToAsk 响应 kernel 的 Ask 请求。
 func (s *ChatService) RespondToAsk(value string, approved bool) {
-	s.wailsIO.RespondToAsk(port.InputResponse{
-		Value:    value,
-		Approved: approved,
-	})
+	s.wailsIO.RespondToAsk(port.InputResponse{Value: value, Approved: approved})
 }
 
-// NewSession 创建新的对话会话。
 func (s *ChatService) NewSession() error {
 	s.mu.Lock()
 	if s.running {
@@ -187,7 +234,6 @@ func (s *ChatService) NewSession() error {
 	return nil
 }
 
-// GetConfig 返回当前配置。
 func (s *ChatService) GetConfig() map[string]any {
 	return map[string]any{
 		"provider":  s.cfg.provider,
@@ -199,7 +245,6 @@ func (s *ChatService) GetConfig() map[string]any {
 	}
 }
 
-// IsRunning 返回 agent 是否正在运行。
 func (s *ChatService) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -236,7 +281,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	return k, nil
 }
 
-// ─── Orchestration Tools ────────────────────────────
+// ─── Orchestration ──────────────────────────────────
 
 type taskInput struct {
 	ID          string `json:"id"`
@@ -256,19 +301,17 @@ func registerOrchestrationTools(k *kernel.Kernel, ctx context.Context, cfg confi
 		Name: "delegate_tasks",
 		Description: `Delegate multiple sub-tasks to worker agents for parallel execution.
 Each task gets its own independent agent session with full tool access.
-Workers can read/write files, run commands, and search code.
 Returns the result of each worker as an array.`,
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"tasks": {
 					"type": "array",
-					"description": "Array of task descriptions for workers to execute",
 					"items": {
 						"type": "object",
 						"properties": {
-							"id":          {"type": "string", "description": "Unique task identifier"},
-							"description": {"type": "string", "description": "Detailed description of what the worker should do"}
+							"id":          {"type": "string"},
+							"description": {"type": "string"}
 						},
 						"required": ["id", "description"]
 					}
@@ -292,7 +335,6 @@ func makeDelegateHandler(k *kernel.Kernel, _ context.Context, cfg config, tracke
 		if err := json.Unmarshal(input, &req); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-
 		if len(req.Tasks) == 0 {
 			return json.Marshal([]taskOutput{})
 		}
@@ -302,7 +344,6 @@ func makeDelegateHandler(k *kernel.Kernel, _ context.Context, cfg config, tracke
 		})
 		tracker.StartBatch(req.Tasks)
 
-		// 并行执行，限制并发数
 		results := make([]taskOutput, len(req.Tasks))
 		sem := make(chan struct{}, cfg.workers)
 		var wg sync.WaitGroup
@@ -339,30 +380,25 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 		return result
 	}
 
-	sess.AppendMessage(port.Message{
-		Role:    port.RoleUser,
-		Content: task.Description,
-	})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: task.Description})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
-		workerResult := taskOutput{ID: task.ID, Success: false, Error: err.Error()}
-		tracker.FinishWorker(workerResult)
-		return workerResult
+		r := taskOutput{ID: task.ID, Success: false, Error: err.Error()}
+		tracker.FinishWorker(r)
+		return r
 	}
 
-	workerResult := taskOutput{
+	r := taskOutput{
 		ID:      task.ID,
 		Success: result.Success,
 		Output:  result.Output,
 		Steps:   result.Steps,
 		Error:   result.Error,
 	}
-	tracker.FinishWorker(workerResult)
-	return workerResult
+	tracker.FinishWorker(r)
+	return r
 }
-
-// ─── Helpers ────────────────────────────────────────
 
 func truncate(s string, max int) string {
 	if len(s) <= max {
@@ -371,10 +407,7 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// logIO 是一个只输出不交互的 UserIO 实现。
-type logIO struct {
-	writer *os.File
-}
+type logIO struct{ writer *os.File }
 
 func (l *logIO) Send(_ context.Context, msg port.OutputMessage) error {
 	switch msg.Type {
@@ -387,8 +420,7 @@ func (l *logIO) Send(_ context.Context, msg port.OutputMessage) error {
 	case port.OutputToolStart:
 		fmt.Fprintf(l.writer, "  🔧 %s\n", msg.Content)
 	case port.OutputToolResult:
-		isErr, _ := msg.Meta["is_error"].(bool)
-		if isErr {
+		if isErr, _ := msg.Meta["is_error"].(bool); isErr {
 			fmt.Fprintf(l.writer, "  ❌ %s\n", msg.Content)
 		}
 	}
@@ -399,5 +431,5 @@ func (l *logIO) Ask(_ context.Context, req port.InputRequest) (port.InputRespons
 	if req.Type == port.InputConfirm {
 		return port.InputResponse{Approved: true}, nil
 	}
-	return port.InputResponse{Value: ""}, nil
+	return port.InputResponse{}, nil
 }

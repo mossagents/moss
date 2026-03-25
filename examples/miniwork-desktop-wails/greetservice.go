@@ -1,7 +1,4 @@
 package main
 
-type GreetService struct{}
-
-func (g *GreetService) Greet(name string) string {
-	return "Hello " + name + "!"
-}
+// This file intentionally left empty. The old GreetService has been replaced
+// by ChatService and FileService.
