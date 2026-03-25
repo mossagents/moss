@@ -1,6 +1,12 @@
 package session
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrNotSupported 表示存储实现不支持该操作。
+var ErrNotSupported = errors.New("operation not supported")
 
 // SessionStore 提供 Session 的持久化存储能力。
 // 实现应保证并发安全。
@@ -16,6 +22,11 @@ type SessionStore interface {
 
 	// Delete 删除指定 ID 的 Session。
 	Delete(ctx context.Context, id string) error
+
+	// Watch 监听指定 Session 的变更事件。
+	// 用于多实例部署时跨节点 Session 状态同步。
+	// 不支持时应返回 ErrNotSupported。
+	Watch(ctx context.Context, id string) (<-chan *Session, error)
 }
 
 // SessionSummary 是 Session 的摘要信息，用于列表展示。

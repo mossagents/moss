@@ -255,88 +255,34 @@ type SessionConfig struct {
 
 ---
 
-## 4 Phase 2：Workspace 抽象化落地
+## 4 Phase 2：Workspace 抽象化落地 ✅
 
 > **目标**：让 miniroom / websocket 等场景可以水平扩展到多实例部署。
 
-### 4.1 核心：Sandbox → Workspace + Executor 重构
+### 4.1 核心：Sandbox → Workspace + Executor 重构 ✅
 
-**步骤**：
+**已完成**：
 
-1. 新增 `port.Workspace` 和 `port.Executor` 接口 (Phase 1 已定义)
-2. 原 LocalSandbox 拆分：
-   - `sandbox.LocalWorkspace`：文件操作 + 路径安全
-   - `sandbox.LocalExecutor`：命令执行 + 资源限制
-3. LocalSandbox 改为 Workspace + Executor 的组合包装
-4. 内置工具 (read_file, write_file 等) 改为调用 `Workspace` 而非 `Sandbox`
-5. run_command 改为调用 `Executor`
-6. Kernel 新增 `WithWorkspace()` / `WithExecutor()` Option
+- ✅ `port.Workspace` 和 `port.Executor` 接口 (Phase 1)
+- ✅ 内置工具优先使用 `Workspace`/`Executor`，回退到 `Sandbox` (Phase 1)
+- ✅ `WithWorkspace()` / `WithExecutor()` Option (Phase 1)
+- ✅ `WithSandbox()` 自动适配为通用 Workspace + Executor 适配器
+- ✅ `SessionConfig.Timeout` + `Kernel.Run` 超时强制执行
 
-**兼容性保证**：
+### 4.2 MemoryWorkspace 实现 ✅
 
-```go
-// 旧方式仍有效
-k := kernel.New(kernel.WithSandbox(localSandbox))
+Phase 1 已实现 `sandbox.MemoryWorkspace`，含容量限制和完整测试。
 
-// 新方式
-k := kernel.New(
-    kernel.WithWorkspace(memWorkspace),
-    kernel.WithExecutor(localExecutor),
-)
+### 4.3 ScopedWorkspace 实现 ✅
 
-// WithSandbox 内部拆分
-func WithSandbox(sb sandbox.Sandbox) Option {
-    return func(k *Kernel) {
-        k.workspace = sb  // Sandbox 实现了 Workspace
-        k.executor = sb   // Sandbox 实现了 Executor
-    }
-}
-```
+Phase 1 已实现 `sandbox.ScopedWorkspace`，含路径隔离和完整测试。
 
-### 4.2 MemoryWorkspace 实现
+### 4.4 Session Store 接口扩展 ✅
 
-适用于 miniroom（每房间独立虚拟文件系统）、测试、临时 Agent：
-
-```go
-// kernel/sandbox/memory.go
-
-type MemoryWorkspace struct {
-    mu    sync.RWMutex
-    files map[string][]byte
-    limit int64 // 总容量限制
-}
-```
-
-### 4.3 ScopedWorkspace 实现
-
-适用于多租户场景（不同用户/房间共享底层存储，但路径隔离）：
-
-```go
-// kernel/sandbox/scoped.go
-
-type ScopedWorkspace struct {
-    prefix string        // 如 "tenant_123/" 或 "room_abc/"
-    inner  port.Workspace
-}
-```
-
-### 4.4 Session Store 接口扩展
-
-为分布式部署准备 Session Store 接口增强：
-
-```go
-// session/store.go 扩展
-
-type SessionStore interface {
-    // ... 现有方法 ...
-
-    // Watch 监听 Session 变更（可选实现）。
-    // 用于多实例间 Session 状态同步。
-    Watch(ctx context.Context, id string) (<-chan *Session, error)
-}
-```
-
-当前 FileStore 返回 `ErrNotSupported`，后续 Redis/etcd 实现提供真正的 Watch。
+- ✅ `SessionStore.Watch()` 方法已添加
+- ✅ `ErrNotSupported` 哨兵错误
+- ✅ `FileStore.Watch()` 返回 `ErrNotSupported`
+- ✅ miniroom 迁移到 `MemoryWorkspace`（每房间独立虚拟文件系统）
 
 ---
 

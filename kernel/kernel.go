@@ -138,6 +138,13 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 	k.activeRuns.Add(1)
 	defer k.activeRuns.Done()
 
+	// Session 超时
+	if sess.Config.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, sess.Config.Timeout)
+		defer cancel()
+	}
+
 	l := &loop.AgentLoop{
 		LLM:      k.llm,
 		Tools:    k.tools,

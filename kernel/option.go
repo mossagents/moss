@@ -1,6 +1,9 @@
 package kernel
 
 import (
+	"context"
+	"os"
+
 	"github.com/mossagi/moss/kernel/agent"
 	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
@@ -23,8 +26,17 @@ func WithLLM(llm port.LLM) Option {
 }
 
 // WithSandbox 设置 Sandbox。
+// 同时自动适配为 Workspace 和 Executor（如果尚未单独设置）。
 func WithSandbox(sb sandbox.Sandbox) Option {
-	return func(k *Kernel) { k.sandbox = sb }
+	return func(k *Kernel) {
+		k.sandbox = sb
+		if k.workspace == nil {
+			k.workspace = &sandboxWorkspaceAdapter{sb: sb}
+		}
+		if k.executor == nil {
+			k.executor = &sandboxExecutorAdapter{sb: sb}
+		}
+	}
 }
 
 // WithWorkspace 设置 Workspace Port（文件系统抽象）。
@@ -126,4 +138,62 @@ func WithLLMRetry(cfg loop.RetryConfig) Option {
 // 当连续失败次数超过阈值时，自动拒绝后续请求，避免请求堆积。
 func WithLLMBreaker(cfg retry.BreakerConfig) Option {
 	return func(k *Kernel) { k.loopCfg.LLMBreaker = retry.NewBreaker(cfg) }
+}
+
+// ── Sandbox → Workspace/Executor 适配器 ─────────────
+
+// sandboxWorkspaceAdapter 将任意 Sandbox 适配为 port.Workspace。
+type sandboxWorkspaceAdapter struct {
+	sb sandbox.Sandbox
+}
+
+func (a *sandboxWorkspaceAdapter) ReadFile(_ context.Context, path string) ([]byte, error) {
+	return a.sb.ReadFile(path)
+}
+
+func (a *sandboxWorkspaceAdapter) WriteFile(_ context.Context, path string, content []byte) error {
+	return a.sb.WriteFile(path, content)
+}
+
+func (a *sandboxWorkspaceAdapter) ListFiles(_ context.Context, pattern string) ([]string, error) {
+	return a.sb.ListFiles(pattern)
+}
+
+func (a *sandboxWorkspaceAdapter) Stat(_ context.Context, path string) (port.FileInfo, error) {
+	resolved, err := a.sb.ResolvePath(path)
+	if err != nil {
+		return port.FileInfo{}, err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return port.FileInfo{}, err
+	}
+	return port.FileInfo{
+		Name:    info.Name(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+		ModTime: info.ModTime(),
+	}, nil
+}
+
+func (a *sandboxWorkspaceAdapter) DeleteFile(_ context.Context, path string) error {
+	resolved, err := a.sb.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(resolved)
+}
+
+// sandboxExecutorAdapter 将任意 Sandbox 适配为 port.Executor。
+type sandboxExecutorAdapter struct {
+	sb sandbox.Sandbox
+}
+
+func (a *sandboxExecutorAdapter) Execute(ctx context.Context, cmd string, args []string) (port.ExecOutput, error) {
+	out, err := a.sb.Execute(ctx, cmd, args)
+	return port.ExecOutput{
+		Stdout:   out.Stdout,
+		Stderr:   out.Stderr,
+		ExitCode: out.ExitCode,
+	}, err
 }

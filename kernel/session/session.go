@@ -25,6 +25,7 @@ type SessionConfig struct {
 	TrustLevel   string         `json:"trust_level,omitempty"`
 	MaxSteps     int            `json:"max_steps,omitempty"`
 	MaxTokens    int            `json:"max_tokens,omitempty"`
+	Timeout      time.Duration  `json:"timeout,omitempty"`
 	SystemPrompt string         `json:"system_prompt,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 }

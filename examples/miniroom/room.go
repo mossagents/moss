@@ -13,6 +13,7 @@ import (
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/sandbox"
 	"github.com/mossagi/moss/kernel/session"
 	"golang.org/x/net/websocket"
 )
@@ -376,6 +377,7 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context, scriptID string) (*
 	k := kernel.New(
 		kernel.WithLLM(llm),
 		kernel.WithUserIO(roomIO),
+		kernel.WithWorkspace(sandbox.NewMemoryWorkspace()),
 	)
 
 	// 注册游戏专用工具
