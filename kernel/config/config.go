@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"text/template"
 
@@ -193,6 +194,25 @@ func LoadSystemPromptTemplate(workspace string) (string, error) {
 	}
 
 	return "", nil
+}
+
+// DefaultTemplateContext 返回 system prompt 模板渲染的通用上下文变量。
+// 包括 OS、Shell、Arch、Hostname、Workspace 等常用字段。
+// 调用者可在返回的 map 中追加领域专属字段。
+func DefaultTemplateContext(workspace string) map[string]any {
+	osName := runtime.GOOS
+	shell := "bash"
+	if osName == "windows" {
+		shell = "powershell"
+	}
+	hostname, _ := os.Hostname()
+	return map[string]any{
+		"OS":        osName,
+		"Shell":     shell,
+		"Arch":      runtime.GOARCH,
+		"Hostname":  hostname,
+		"Workspace": workspace,
+	}
 }
 
 func RenderSystemPrompt(workspace, defaultTemplate string, data map[string]any) string {

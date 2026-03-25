@@ -3,7 +3,6 @@ package appkit
 import (
 	"flag"
 	"os"
-	"runtime"
 
 	appconfig "github.com/mossagi/moss/kernel/config"
 )
@@ -72,33 +71,4 @@ func (f *AppFlags) mergeGlobalConfig() {
 	f.Model = FirstNonEmpty(f.Model, globalCfg.Model)
 	f.APIKey = FirstNonEmpty(f.APIKey, globalCfg.APIKey)
 	f.BaseURL = FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
-}
-
-// DefaultTemplateContext 返回 system prompt 模板渲染的通用上下文变量。
-// 包括 OS、Shell、Arch、Hostname、Workspace 等常用字段。
-// 调用者可在返回的 map 中追加领域专属字段。
-func DefaultTemplateContext(workspace string) map[string]any {
-	osName := runtime.GOOS
-	shell := "bash"
-	if osName == "windows" {
-		shell = "powershell"
-	}
-	hostname, _ := os.Hostname()
-
-	return map[string]any{
-		"OS":        osName,
-		"Shell":     shell,
-		"Arch":      runtime.GOARCH,
-		"Hostname":  hostname,
-		"Workspace": workspace,
-	}
-}
-
-// buildSystemPromptWithExtra 使用标准模板上下文渲染 system prompt，并允许附加领域专属变量。
-func buildSystemPromptWithExtra(workspace, defaultTemplate string, extra map[string]any) string {
-	ctx := DefaultTemplateContext(workspace)
-	for key, value := range extra {
-		ctx[key] = value
-	}
-	return appconfig.RenderSystemPrompt(workspace, defaultTemplate, ctx)
 }

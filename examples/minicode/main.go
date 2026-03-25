@@ -82,6 +82,6 @@ func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	return appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 }

@@ -2,10 +2,8 @@ package tui
 
 import (
 	_ "embed"
-	"runtime"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/appkit"
 	appconfig "github.com/mossagi/moss/kernel/config"
 )
 
@@ -16,15 +14,7 @@ var defaultSystemPromptTemplate string
 // 风格：类 Claude Code / Cursor 的通用编程助手。
 // skillPrompts 是来自 SkillManager 的额外提示片段。
 func buildSystemPrompt(workspace string, skillPrompts ...string) string {
-	osName := runtime.GOOS
-	shell := "bash"
-	if osName == "windows" {
-		shell = "powershell"
-	}
-
-	ctx := appkit.DefaultTemplateContext(workspace)
-	ctx["OS"] = osName
-	ctx["Shell"] = shell
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	base := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 
 	if len(skillPrompts) > 0 {

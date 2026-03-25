@@ -196,7 +196,7 @@ func run(ctx context.Context, cfg *config) error {
 }
 
 func buildSystemPrompt(workspace string, capital float64) string {
-	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	ctx["Capital"] = capital
 	return appconfig.RenderSystemPrompt(workspace, tradingPromptTemplate, ctx)
 }

@@ -523,7 +523,7 @@ func stripTags(s string) string {
 // ─── System Prompt ──────────────────────────────────
 
 func buildSystemPrompt(workspace string) string {
-	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	prompt := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 
 	// 注入 bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md 等）

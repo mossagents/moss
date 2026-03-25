@@ -392,13 +392,13 @@ func runWorker(ctx context.Context, k *kernel.Kernel, cfg config, task taskInput
 // ─── System Prompts ─────────────────────────────────
 
 func buildManagerPrompt(workspace string, maxWorkers int) string {
-	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	ctx["MaxWorkers"] = maxWorkers
 	return appconfig.RenderSystemPrompt(workspace, defaultManagerPromptTemplate, ctx)
 }
 
 func buildWorkerPrompt(workspace string) string {
-	ctx := appkit.DefaultTemplateContext(workspace)
+	ctx := appconfig.DefaultTemplateContext(workspace)
 	return appconfig.RenderSystemPrompt(workspace, defaultWorkerPromptTemplate, ctx)
 }
 

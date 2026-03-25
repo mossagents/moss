@@ -13,7 +13,7 @@ import (
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
-	ctx := DefaultTemplateContext("/workspace")
+	ctx := appconfig.DefaultTemplateContext("/workspace")
 
 	if ctx["OS"] != runtime.GOOS {
 		t.Errorf("OS = %v, want %v", ctx["OS"], runtime.GOOS)
@@ -72,7 +72,7 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 }
 
 func TestRenderSystemPrompt(t *testing.T) {
-	ctx := DefaultTemplateContext("/workspace")
+	ctx := appconfig.DefaultTemplateContext("/workspace")
 	ctx["Capital"] = 123
 	prompt := appconfig.RenderSystemPrompt("/workspace", `OS={{.OS}} Workspace={{.Workspace}} Capital={{.Capital}}`, ctx)
 	if prompt == "" {
