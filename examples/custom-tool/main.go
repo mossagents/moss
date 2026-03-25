@@ -1,0 +1,170 @@
+// custom-tool 演示如何在 moss kernel 中注册自定义工具。
+//
+// 包含两个示例工具：
+//   - calculator：四则运算计算器
+//   - random_number：生成指定范围内的随机数
+//
+// 自定义工具与内置工具共存，Agent 可根据用户意图自动调用。
+//
+// 用法:
+//
+//	go run . --provider openai --model gpt-4o
+//	go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:8080/v1
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"math/rand/v2"
+	"os"
+
+	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagi/moss/kernel/tool"
+)
+
+func main() {
+	flags := appkit.ParseCommonFlags()
+
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	defer cancel()
+
+	k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// ── 注册自定义工具 ──────────────────────────────────
+	registerCustomTools(k.ToolRegistry())
+
+	if err := k.Boot(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "boot error: %v\n", err)
+		os.Exit(1)
+	}
+	defer k.Shutdown(ctx)
+
+	tools := k.ToolRegistry().List()
+	appkit.PrintBannerWithHint("custom-tool", map[string]string{
+		"Provider": flags.Provider,
+		"Model":    flags.Model,
+		"Tools":    fmt.Sprintf("%d loaded", len(tools)),
+	}, "试试说: \"帮我算 123 * 456\"  或  \"给我一个 1 到 100 的随机数\"")
+
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:       "interactive",
+		Mode:       "interactive",
+		TrustLevel: flags.Trust,
+		MaxSteps:   100,
+		SystemPrompt: "You are a helpful assistant with access to a calculator and random number generator. " +
+			"Use the calculator tool for math operations and random_number for generating random numbers.",
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "session error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := appkit.REPL(ctx, appkit.REPLConfig{
+		Prompt:  "you> ",
+		AppName: "custom-tool",
+	}, k, sess); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// ── Calculator Tool ─────────────────────────────────
+
+var calculatorSpec = tool.ToolSpec{
+	Name:        "calculator",
+	Description: "Perform basic arithmetic operations (+, -, *, /).",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"a":  {"type": "number", "description": "First operand"},
+			"b":  {"type": "number", "description": "Second operand"},
+			"op": {"type": "string", "enum": ["+", "-", "*", "/"], "description": "Operator"}
+		},
+		"required": ["a", "b", "op"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func calculatorHandler(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+	var args struct {
+		A  float64 `json:"a"`
+		B  float64 `json:"b"`
+		Op string  `json:"op"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return nil, fmt.Errorf("invalid input: %w", err)
+	}
+
+	var result float64
+	switch args.Op {
+	case "+":
+		result = args.A + args.B
+	case "-":
+		result = args.A - args.B
+	case "*":
+		result = args.A * args.B
+	case "/":
+		if args.B == 0 {
+			return json.Marshal(map[string]string{"error": "division by zero"})
+		}
+		result = args.A / args.B
+	default:
+		return json.Marshal(map[string]string{"error": fmt.Sprintf("unknown operator: %s", args.Op)})
+	}
+
+	return json.Marshal(map[string]any{
+		"expression": fmt.Sprintf("%g %s %g", args.A, args.Op, args.B),
+		"result":     result,
+	})
+}
+
+// ── Random Number Tool ──────────────────────────────
+
+var randomNumberSpec = tool.ToolSpec{
+	Name:        "random_number",
+	Description: "Generate a random integer within a specified range [min, max].",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"min": {"type": "integer", "description": "Minimum value (inclusive)"},
+			"max": {"type": "integer", "description": "Maximum value (inclusive)"}
+		},
+		"required": ["min", "max"]
+	}`),
+	Risk: tool.RiskLow,
+}
+
+func randomNumberHandler(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+	var args struct {
+		Min int `json:"min"`
+		Max int `json:"max"`
+	}
+	if err := json.Unmarshal(input, &args); err != nil {
+		return nil, fmt.Errorf("invalid input: %w", err)
+	}
+
+	if args.Min > args.Max {
+		return json.Marshal(map[string]string{"error": "min must be <= max"})
+	}
+
+	n := args.Min + rand.IntN(args.Max-args.Min+1)
+	return json.Marshal(map[string]any{"result": n})
+}
+
+// ── 注册 ────────────────────────────────────────────
+
+func registerCustomTools(reg tool.Registry) {
+	if err := reg.Register(calculatorSpec, calculatorHandler); err != nil {
+		fmt.Fprintf(os.Stderr, "register calculator: %v\n", err)
+	}
+	if err := reg.Register(randomNumberSpec, randomNumberHandler); err != nil {
+		fmt.Fprintf(os.Stderr, "register random_number: %v\n", err)
+	}
+}
