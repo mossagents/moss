@@ -338,8 +338,7 @@ var getTimeSpec = tool.ToolSpec{
 
 func getTimeHandler() tool.ToolHandler {
 	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-		loc, _ := time.LoadLocation("Asia/Shanghai")
-		now := time.Now().In(loc)
+		now := time.Now().In(time.FixedZone("CST", 8*3600))
 		return json.Marshal(map[string]string{
 			"datetime": now.Format("2006-01-02 15:04:05"),
 			"weekday":  now.Weekday().String(),
@@ -371,8 +370,7 @@ func getWeatherHandler() tool.ToolHandler {
 			return nil, err
 		}
 		// 模拟天气数据，虚拟角色场景不需要真实 API
-		loc, _ := time.LoadLocation("Asia/Shanghai")
-		hour := time.Now().In(loc).Hour()
+		hour := time.Now().In(time.FixedZone("CST", 8*3600)).Hour()
 		var weather, temp string
 		switch {
 		case hour >= 6 && hour < 12:
