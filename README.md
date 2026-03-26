@@ -299,8 +299,9 @@ moss/
 │   ├── skill/               # 技能系统
 │   │   ├── skill.go         # Skill 接口 + Manager
 │   │   ├── config.go        # Config 加载/保存/合并
-│   │   ├── mcp.go           # MCP Skill (外部工具服务器)
 │   │   └── prompt.go        # Skill (SKILL.md 注入)
+│   ├── mcp/                 # MCP 协议集成
+│   │   └── mcp.go           # MCP Provider（外部工具服务器）
 │   ├── gateway/             # 消息网关 [实验性]
 │   ├── knowledge/           # 知识系统 [实验性]
 │   ├── scheduler/           # 定时任务调度器
@@ -397,7 +398,7 @@ go test ./... -count=1
 | [架构设计](docs/architecture.md) | 分层架构、核心概念、依赖图 |
 | [快速开始](docs/getting-started.md) | 安装、CLI 用法、库集成指南 |
 | [Examples 指南](examples/mosscode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
-| [技能系统](docs/skills.md) | BuiltinTool、MCPServer、Skill 详解 |
+| [技能系统](docs/skills.md) | Core Tool Skill、MCP（mcp 包）、Skill 详解 |
 | [内核设计](docs/kernel-design.md) | 原始设计文档（第一性原理、接口定义、流程图） |
 | [开发日志](docs/changelog.md) | 版本变更记录 |
 | [路线图](docs/roadmap.md) | 后续规划 (P1/P2/P3) |
