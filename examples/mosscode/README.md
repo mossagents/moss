@@ -1,11 +1,13 @@
 # mosscode
 
-mosscode 是一个类 Claude Code 的极简代码助手示例，当前为默认 TUI 交互。
+`mosscode` 是一个“轻量但生产可用”的代码助手示例：默认 TUI，多轮会话，支持 one-shot 执行。
 
 ## 功能
 
-- 基于 Moss Kernel 的交互式代码助手
-- 内置 8 个核心工具（read_file、write_file、edit_file、glob、list_files、search_text、run_command、ask_user）
+- 基于 `appkit.BuildDeepAgentKernel` 的增强装配（轻量入口 + 生产向默认能力）
+- 内置 8 个核心工具 + 持久 memories + context offload + 异步任务生命周期工具
+- TUI 支持增强斜杠命令（`/session`、`/offload`、`/tasks`、`/task`）
+- 支持 one-shot 模式：`--goal "..."`
 - 支持 provider/model/base_url/api_key 配置
 - 支持 system prompt 模板覆盖
 
@@ -21,6 +23,8 @@ go run .
 ```bash
 go run . --provider openai --model gpt-4o
 go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:8080/v1
+go run . --trust restricted
+go run . --goal "Analyze flaky tests and propose a fix plan"
 ```
 
 ## 配置
@@ -43,3 +47,10 @@ api_key: ""
 - 全局级：`~/.mosscode/system_prompt.tmpl`
 
 默认模板文件：`templates/system_prompt.tmpl`
+
+## 运行模式
+
+- **TUI（默认）**：`go run .`
+- **one-shot**：`go run . --goal "<your task>"`
+
+当启用 `restricted` 信任级别时，危险工具会触发审批策略，适合更稳妥的生产使用。
