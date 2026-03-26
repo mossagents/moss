@@ -1,4 +1,4 @@
-package skill
+package mcp
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/skill"
 )
 
 // MCPServer 通过 MCP 协议连接外部 skill server，发现并注册工具。
@@ -21,15 +22,15 @@ type MCPServer struct {
 	toolNames []string
 }
 
-var _ Provider = (*MCPServer)(nil)
+var _ skill.Provider = (*MCPServer)(nil)
 
 // NewMCPServer 根据配置创建 MCPServer（但不连接，连接在 Init 时执行）。
 func NewMCPServer(cfg appconfig.SkillConfig) *MCPServer {
 	return &MCPServer{cfg: cfg}
 }
 
-func (s *MCPServer) Metadata() Metadata {
-	return Metadata{
+func (s *MCPServer) Metadata() skill.Metadata {
+	return skill.Metadata{
 		Name:        s.cfg.Name,
 		Version:     "0.0.0",
 		Description: fmt.Sprintf("MCP server: %s (transport: %s)", s.cfg.Name, s.cfg.Transport),
@@ -37,7 +38,7 @@ func (s *MCPServer) Metadata() Metadata {
 	}
 }
 
-func (s *MCPServer) Init(ctx context.Context, deps Deps) error {
+func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
 	// 1. 建立连接
 	client, err := s.connect(ctx)
 	if err != nil {

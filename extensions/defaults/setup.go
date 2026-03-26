@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/mcp"
 	"github.com/mossagents/moss/skill"
 )
 
@@ -80,7 +81,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 			if !sc.IsEnabled() || !sc.IsMCP() {
 				continue
 			}
-			mcpServer := skill.NewMCPServer(sc)
+			mcpServer := mcp.NewMCPServer(sc)
 			if err := skillsx.Manager(k).Register(ctx, mcpServer, deps); err != nil {
 				logger.WarnContext(ctx, "failed to load MCP server",
 					slog.String("server", sc.Name),

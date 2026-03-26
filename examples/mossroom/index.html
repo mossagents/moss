@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎮 miniroom — 多人游戏房间</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=ZCOOL+KuaiLe&display=swap');
+
+  :root {
+    --bg-deep: #0f0e0d;
+    --bg-card: #1a1814;
+    --bg-input: #15130f;
+    --amber: #d4a853;
+    --amber-dim: #8a6d2b;
+    --amber-glow: #f5d78e;
+    --green: #5e9c6b;
+    --red: #c75050;
+    --text: #d9d0c0;
+    --text-dim: #7a7060;
+    --text-bright: #f0e8d8;
+    --whisper: #7b68ee;
+    --border: #2a2520;
+    --radius: 10px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Serif SC', 'Georgia', serif;
+    background: var(--bg-deep);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  #header {
+    padding: 12px 20px;
+    background: linear-gradient(135deg, #1a1610 0%, #221e16 100%);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  #header h1 {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.3em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  #header-info {
+    font-size: 0.85em;
+    color: var(--text-dim);
+  }
+  #header-info span { color: var(--amber-dim); }
+  #btn-leave {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8em;
+    display: none;
+  }
+  #btn-leave:hover { color: var(--red); border-color: var(--red); }
+
+  /* ── Views ── */
+  .view { display: none; flex: 1; overflow: hidden; }
+  .view.active { display: flex; flex-direction: column; }
+
+  /* ── Landing ── */
+  #landing {
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    background: radial-gradient(ellipse at center, #1a1610 0%, #0f0e0d 70%);
+  }
+  .landing-logo {
+    font-size: 4em;
+    text-shadow: 0 0 40px rgba(212,168,83,0.3);
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+  .landing-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 2.2em;
+    color: var(--amber);
+    letter-spacing: 4px;
+    text-shadow: 0 2px 10px rgba(212,168,83,0.2);
+  }
+  .landing-sub {
+    color: var(--text-dim);
+    font-size: 0.95em;
+    margin-top: -16px;
+    font-style: italic;
+  }
+  .landing-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 280px;
+  }
+  .btn-primary {
+    padding: 12px 24px;
+    background: linear-gradient(135deg, var(--amber-dim), var(--amber));
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  .btn-primary:hover { filter: brightness(1.15); transform: translateY(-1px); }
+  .btn-secondary {
+    padding: 12px 24px;
+    background: transparent;
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+    border-radius: var(--radius);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    cursor: pointer;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  .btn-secondary:hover { background: rgba(212,168,83,0.1); }
+
+  /* ── Join Dialog ── */
+  #join-dialog {
+    display: none;
+    margin-top: 8px;
+    gap: 8px;
+    flex-direction: row;
+    width: 280px;
+  }
+  #join-dialog.show { display: flex; }
+  #join-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1.1em;
+    text-align: center;
+    letter-spacing: 6px;
+    outline: none;
+  }
+  #join-input::placeholder { letter-spacing: 2px; color: var(--text-dim); }
+  #join-input:focus { border-color: var(--amber-dim); }
+  #join-confirm {
+    padding: 10px 16px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+  }
+
+  /* ── Room View ── */
+  #room-view {
+    flex-direction: row;
+  }
+
+  /* Sidebar */
+  #sidebar {
+    width: 200px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  #room-info {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  #room-code {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.8em;
+    color: var(--amber);
+    letter-spacing: 4px;
+  }
+  #game-state-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75em;
+    margin-top: 4px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+  }
+  #players-section {
+    padding: 12px 16px;
+    flex: 1;
+    overflow-y: auto;
+  }
+  #players-section h3 {
+    color: var(--text-dim);
+    font-size: 0.8em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  .player-item {
+    padding: 6px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+  }
+  .player-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .player-dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .player-dot.offline { background: var(--text-dim); }
+  .player-dot.virtual { background: #7b68ee; box-shadow: 0 0 6px #7b68ee; }
+  .player-name-self { color: var(--amber); font-weight: 700; }
+
+  /* Chat Area */
+  #chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #messages::-webkit-scrollbar { width: 6px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .msg {
+    padding: 6px 12px;
+    border-radius: 8px;
+    max-width: 85%;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+  .msg.chat-self {
+    align-self: flex-end;
+    background: linear-gradient(135deg, #2a2418, #332a1c);
+    border: 1px solid var(--amber-dim);
+    color: var(--amber-glow);
+  }
+  .msg.chat-other {
+    align-self: flex-start;
+    background: #1e1c18;
+    border: 1px solid var(--border);
+  }
+  .msg .msg-sender {
+    font-size: 0.75em;
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .msg.agent {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #161a14, #1a2018);
+    border: 1px solid #2a3525;
+    color: var(--text-bright);
+    max-width: 90%;
+  }
+  .msg.agent .msg-sender { color: var(--green); }
+  .msg.system-msg {
+    align-self: center;
+    background: none;
+    color: var(--text-dim);
+    font-size: 0.85em;
+    font-style: italic;
+    padding: 4px 0;
+  }
+  .msg.whisper-msg {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #1a1628, #1e1830);
+    border: 1px solid #302850;
+    color: #c8b8f0;
+  }
+  .msg.whisper-msg .msg-sender { color: var(--whisper); }
+  .msg.error-msg {
+    align-self: center;
+    color: var(--red);
+    font-size: 0.85em;
+  }
+  .msg.game-state-msg {
+    align-self: center;
+    color: var(--amber);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    padding: 8px 0;
+    letter-spacing: 2px;
+  }
+
+  /* Streaming cursor */
+  .streaming::after {
+    content: '▍';
+    color: var(--amber);
+    animation: blink 0.8s infinite;
+  }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* Input Area */
+  #input-area {
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  #chat-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 0.95em;
+    outline: none;
+  }
+  #chat-input:focus { border-color: var(--amber-dim); }
+  #chat-input::placeholder { color: var(--text-dim); }
+  #btn-send {
+    padding: 10px 20px;
+    background: var(--amber-dim);
+    color: var(--bg-deep);
+    border: none;
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+  }
+  #btn-send:hover { background: var(--amber); }
+
+  /* Mobile */
+  @media (max-width: 640px) {
+    #sidebar { width: 0; overflow: hidden; border: none; }
+    #sidebar.show { width: 200px; position: absolute; z-index: 10; height: calc(100vh - 48px); top: 48px; }
+    .landing-title { font-size: 1.6em; }
+    .landing-logo { font-size: 3em; }
+  }
+
+  /* Script cards */
+  .script-card {
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .script-card:hover {
+    border-color: var(--amber-dim);
+    background: rgba(212,168,83,0.05);
+    transform: translateY(-1px);
+  }
+  .script-card .script-emoji {
+    font-size: 1.8em;
+    flex-shrink: 0;
+  }
+  .script-card .script-info {
+    flex: 1;
+  }
+  .script-card .script-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.1em;
+    color: var(--amber);
+    letter-spacing: 1px;
+  }
+  .script-card .script-desc {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* Topic overlay */
+  #topic-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(15,14,13,0.92);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #topic-overlay.show { display: flex; }
+  #topic-overlay .topic-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.4em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  #topic-overlay .topic-sub {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-top: -8px;
+  }
+  #topic-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 340px;
+    max-width: 90vw;
+  }
+  .topic-card {
+    padding: 14px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .topic-card:hover {
+    border-color: var(--amber-dim);
+    background: rgba(212,168,83,0.05);
+    transform: translateY(-1px);
+  }
+  .topic-card .topic-emoji {
+    font-size: 1.6em;
+    flex-shrink: 0;
+  }
+  .topic-card .topic-info { flex: 1; }
+  .topic-card .topic-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.05em;
+    color: var(--amber);
+  }
+  .topic-card .topic-desc {
+    font-size: 0.8em;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* Character selection overlay */
+  #char-overlay {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(15,14,13,0.94);
+    z-index: 101;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    padding: 24px;
+    overflow-y: auto;
+  }
+  #char-overlay.show { display: flex; }
+  #char-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    width: 600px;
+    max-width: 90vw;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 4px;
+  }
+  .char-card {
+    padding: 12px 10px;
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  .char-card:hover {
+    border-color: var(--amber-dim);
+    background: rgba(212,168,83,0.05);
+  }
+  .char-card.selected {
+    border-color: var(--amber);
+    background: rgba(212,168,83,0.1);
+    box-shadow: 0 0 8px rgba(212,168,83,0.2);
+  }
+  .char-card .cc-avatar { font-size: 1.8em; }
+  .char-card .cc-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 0.95em;
+    color: var(--amber);
+    margin: 4px 0 2px;
+  }
+  .char-card .cc-intro {
+    font-size: 0.72em;
+    color: var(--text-dim);
+    line-height: 1.3;
+  }
+  #char-actions {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  #char-count {
+    color: var(--text-dim);
+    font-size: 0.85em;
+  }
+  #btn-confirm-chars {
+    padding: 8px 24px;
+    background: var(--amber-dim);
+    color: var(--text-bright);
+    border: none;
+    border-radius: var(--radius);
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  #btn-confirm-chars:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  #btn-confirm-chars:not(:disabled):hover {
+    background: var(--amber);
+    color: var(--bg-deep);
+  }
+
+  /* @mention highlight */
+  .mention { color: var(--amber); font-weight: 600; }
+
+  /* Profile Creation Screen */
+  #profile-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15,14,13,0.96);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+  #profile-overlay.show { display: flex; }
+  .profile-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1.6em;
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  .profile-sub {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-top: -12px;
+  }
+  .profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 320px;
+    max-width: 90vw;
+  }
+  .profile-label {
+    color: var(--text-dim);
+    font-size: 0.85em;
+    margin-bottom: 4px;
+  }
+  .gender-group {
+    display: flex;
+    gap: 8px;
+  }
+  .gender-btn {
+    flex: 1;
+    padding: 10px 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1em;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+  }
+  .gender-btn:hover { border-color: var(--amber-dim); }
+  .gender-btn.selected {
+    border-color: var(--amber);
+    background: rgba(212,168,83,0.1);
+    color: var(--amber);
+  }
+  .name-row {
+    display: flex;
+    gap: 8px;
+  }
+  .name-row input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-bright);
+    font-family: 'Noto Serif SC', serif;
+    font-size: 1em;
+    outline: none;
+  }
+  .name-row input:focus { border-color: var(--amber-dim); }
+  .name-row input::placeholder { color: var(--text-dim); }
+  .btn-random {
+    padding: 10px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 1.1em;
+    transition: all 0.2s;
+  }
+  .btn-random:hover { border-color: var(--amber-dim); color: var(--amber); }
+
+  /* Virtual player card in sidebar */
+  .player-card {
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    background: rgba(123,104,238,0.06);
+    border: 1px solid rgba(123,104,238,0.15);
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .player-card:hover {
+    border-color: rgba(123,104,238,0.3);
+    background: rgba(123,104,238,0.1);
+  }
+  .player-card .pc-avatar {
+    font-size: 1.6em;
+    flex-shrink: 0;
+    line-height: 1;
+    margin-top: 2px;
+  }
+  .player-card .pc-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .player-card .pc-name {
+    font-size: 0.85em;
+    color: #b8a8e8;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .player-card .pc-name .pc-bot { font-size: 0.75em; }
+  .player-card .pc-intro {
+    font-size: 0.72em;
+    color: var(--text-dim);
+    margin-top: 2px;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Character intro card in chat */
+  .msg.char-intro-card {
+    align-self: flex-start;
+    background: linear-gradient(135deg, rgba(123,104,238,0.06), rgba(123,104,238,0.02));
+    border: 1px solid rgba(123,104,238,0.2);
+    max-width: 360px;
+    padding: 12px 14px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .char-intro-card .cic-avatar {
+    font-size: 2.4em;
+    flex-shrink: 0;
+    line-height: 1;
+    filter: drop-shadow(0 2px 6px rgba(123,104,238,0.3));
+  }
+  .char-intro-card .cic-body {
+    flex: 1;
+    min-width: 0;
+  }
+  .char-intro-card .cic-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 1em;
+    color: #b8a8e8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .char-intro-card .cic-name .cic-bot {
+    font-size: 0.7em;
+    background: rgba(123,104,238,0.15);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: #9b8ad8;
+  }
+  .char-intro-card .cic-intro {
+    font-size: 0.82em;
+    color: var(--text-dim);
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+
+  /* Markdown rendered content */
+  .msg .md-content { line-height: 1.7; }
+  .msg .md-content p { margin: 0 0 0.4em 0; }
+  .msg .md-content p:last-child { margin-bottom: 0; }
+  .msg .md-content strong { color: var(--text-bright); }
+  .msg .md-content em { color: var(--amber-dim); font-style: italic; }
+  .msg .md-content code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.9em;
+    font-family: 'Courier New', monospace;
+  }
+  .msg .md-content pre {
+    background: rgba(0,0,0,0.3);
+    padding: 8px 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin: 4px 0;
+  }
+  .msg .md-content pre code {
+    background: none;
+    padding: 0;
+  }
+  .msg .md-content blockquote {
+    border-left: 3px solid var(--amber-dim);
+    padding-left: 10px;
+    margin: 4px 0;
+    color: var(--text-dim);
+  }
+  .msg .md-content ul, .msg .md-content ol {
+    margin: 4px 0;
+    padding-left: 20px;
+  }
+  .msg .md-content a {
+    color: var(--amber);
+    text-decoration: underline;
+  }
+
+  /* Choice card in chat */
+  .msg.choice-card-msg {
+    align-self: flex-start;
+    background: linear-gradient(135deg, #1a1628, #1e1830);
+    border: 1px solid #302850;
+    max-width: 90%;
+    padding: 12px 14px;
+  }
+  .choice-card-msg .cc-question {
+    font-size: 0.95em;
+    color: var(--text-bright);
+    margin-bottom: 10px;
+    line-height: 1.5;
+  }
+  .choice-card-msg .cc-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .choice-card-msg .cc-option {
+    padding: 8px 14px;
+    background: rgba(123,104,238,0.08);
+    border: 1px solid rgba(123,104,238,0.2);
+    border-radius: 8px;
+    color: #c8b8f0;
+    cursor: pointer;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 0.9em;
+    transition: all 0.2s;
+    text-align: left;
+  }
+  .choice-card-msg .cc-option:hover {
+    background: rgba(123,104,238,0.15);
+    border-color: rgba(123,104,238,0.4);
+    color: #e0d4ff;
+    transform: translateX(4px);
+  }
+  .choice-card-msg .cc-option.selected {
+    background: rgba(123,104,238,0.2);
+    border-color: #7b68ee;
+    color: #7b68ee;
+    font-weight: 600;
+  }
+
+  /* @mention autocomplete popup */
+  #mention-popup {
+    display: none;
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 0;
+    min-width: 160px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 50;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+  }
+  #mention-popup.show { display: block; }
+  .mention-item {
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mention-item:hover, .mention-item.active {
+    background: rgba(212,168,83,0.1);
+    color: var(--amber);
+  }
+  .mention-item .mi-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }
+  .mention-item .mi-dot.real { background: var(--green); }
+  .mention-item .mi-dot.virtual { background: #7b68ee; }
+</style>
+</head>
+<body>
+
+<!-- Profile Creation Overlay -->
+<div id="profile-overlay">
+  <div style="font-size:3em;text-shadow:0 0 30px rgba(212,168,83,0.3);">🎭</div>
+  <div class="profile-title">创建你的身份</div>
+  <div class="profile-sub">选择性别和昵称，开始你的聊天之旅</div>
+  <div class="profile-form">
+    <div>
+      <div class="profile-label">选择性别</div>
+      <div class="gender-group">
+        <button class="gender-btn" data-gender="male" onclick="selectGender('male')">👦 男</button>
+        <button class="gender-btn" data-gender="female" onclick="selectGender('female')">👧 女</button>
+        <button class="gender-btn" data-gender="secret" onclick="selectGender('secret')">🤫 保密</button>
+      </div>
+    </div>
+    <div>
+      <div class="profile-label">输入昵称</div>
+      <div class="name-row">
+        <input id="profile-name" type="text" maxlength="8" placeholder="给自己起个名字" />
+        <button class="btn-random" onclick="randomProfileName()" title="随机生成">🎲</button>
+      </div>
+    </div>
+    <button class="btn-primary" onclick="confirmProfile()" style="margin-top:8px;">确 认</button>
+  </div>
+</div>
+
+<div id="header">
+  <h1>🎮 miniroom</h1>
+  <span id="header-info"></span>
+  <button id="btn-leave" onclick="leaveRoom()">退出房间</button>
+</div>
+
+<!-- Landing View -->
+<div id="landing" class="view active">
+  <div class="landing-logo">🎮</div>
+  <div class="landing-title">miniroom</div>
+  <div class="landing-sub">多人在线游戏房间</div>
+
+  <!-- 剧本选择 -->
+  <div id="script-section" style="display:none; width: 340px;">
+    <div style="color:var(--text-dim); font-size:0.85em; text-align:center; margin-bottom:8px;">选择一个游戏剧本</div>
+    <div id="script-list" style="display:flex; flex-direction:column; gap:8px;"></div>
+  </div>
+
+  <div class="landing-actions">
+    <button class="btn-primary" onclick="showScriptSelection()">创 建 房 间</button>
+    <button class="btn-secondary" onclick="showJoinDialog()">加 入 房 间</button>
+    <div id="join-dialog">
+      <input id="join-input" type="text" maxlength="4" placeholder="房间号"
+             inputmode="numeric" pattern="[0-9]*" />
+      <button id="join-confirm" onclick="joinRoom()">进入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Room View -->
+<div id="room-view" class="view">
+  <!-- Topic Selection Overlay -->
+  <div id="topic-overlay">
+    <div class="topic-title">🎭 选择聊天主题</div>
+    <div class="topic-sub">选择一个你感兴趣的话题，AI 角色将围绕该主题与你互动</div>
+    <div id="topic-list"></div>
+  </div>
+  <!-- Character Selection Overlay -->
+  <div id="char-overlay">
+    <div class="topic-title">✨ 选择虚拟角色</div>
+    <div class="topic-sub">选择 3-5 个你喜欢的角色加入聊天室（点击选中/取消）</div>
+    <div id="char-list"></div>
+    <div id="char-actions">
+      <span id="char-count">已选 0 个</span>
+      <button id="btn-confirm-chars" disabled onclick="confirmChars()">确认选择</button>
+    </div>
+  </div>
+  <div id="sidebar">
+    <div id="room-info">
+      <div style="color:var(--text-dim);font-size:0.75em;">房间号</div>
+      <div id="room-code">----</div>
+      <div id="game-state-badge">🏠 等待中</div>
+    </div>
+    <div id="players-section">
+      <h3>在线玩家</h3>
+      <div id="players-list"></div>
+    </div>
+    <div id="game-hint" style="padding:12px 16px;border-top:1px solid var(--border);font-size:0.8em;color:var(--text-dim);line-height:1.6;display:none;"></div>
+  </div>
+  <div id="chat-area">
+    <div id="messages"></div>
+    <div id="input-area" style="position:relative;">
+      <div id="mention-popup"></div>
+      <input id="chat-input" placeholder="输入消息... 用 @ 提及特定用户" autocomplete="off" />
+      <button id="btn-send" onclick="sendChat()">发送</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let ws = null;
+let currentRoom = null;
+let myUserID = null;
+let myUserName = null;
+let streamEl = null;
+let availableScripts = [];
+let currentScriptID = null;
+let currentPlayers = []; // 维护当前玩家列表用于 @补全
+let myGender = null;
+
+const maleNames = ['小龙', '阿杰', '大熊', '阿修', '星辰', '铁柱', '阿南', '墨白', '皮皮', '石头', '阿亮', '飞哥'];
+const femaleNames = ['小雪', '萌萌', '糖糖', '叶子', '小鱼', '小柠', '妮可', '思思', '林夕', '翠花', '小月', '朵朵'];
+const neutralNames = ['清风', '流云', '竹叶', '细雨', '松果', '明月', '星河', '柳絮', '拾光', '知秋', '晴岚', '溪鹿'];
+
+const scriptHints = {
+  'turtle_soup': '🐢 <b>海龟汤</b><br>人齐后输入「开始」<br>主持人出谜题，用是非题推理真相<br>回答：✅是 / ❌不是 / ⚪不相关',
+  'spy': '🕵️ <b>谁是卧底</b><br>建议 4 人以上，输入「开始」<br>主持人私发词语，轮流描述→投票<br>找出拿到不同词语的卧底！',
+  'chat': '🎭 <b>陪聊室</b><br>选择主题后自动开始<br>AI 扮演多个虚拟角色与你互动<br>🤖 标记 = 虚拟角色',
+};
+
+// ── Profile management ──
+function loadProfile() {
+  try {
+    const raw = localStorage.getItem('miniroom_profile');
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveProfile(gender, name) {
+  localStorage.setItem('miniroom_profile', JSON.stringify({ gender, name }));
+}
+
+function selectGender(g) {
+  myGender = g;
+  document.querySelectorAll('.gender-btn').forEach(b =>
+    b.classList.toggle('selected', b.dataset.gender === g)
+  );
+}
+
+function randomProfileName() {
+  const pool = myGender === 'male' ? maleNames : myGender === 'female' ? femaleNames : neutralNames;
+  const name = pool[Math.floor(Math.random() * pool.length)];
+  document.getElementById('profile-name').value = name;
+}
+
+function confirmProfile() {
+  const name = document.getElementById('profile-name').value.trim();
+  if (!name) { alert('请输入昵称'); return; }
+  if (!myGender) { alert('请选择性别'); return; }
+  saveProfile(myGender, name);
+  myUserName = name;
+  document.getElementById('profile-overlay').classList.remove('show');
+}
+
+function checkProfile() {
+  const profile = loadProfile();
+  if (profile && profile.name) {
+    myUserName = profile.name;
+    myGender = profile.gender;
+  } else {
+    document.getElementById('profile-overlay').classList.add('show');
+  }
+}
+
+// 页面加载时检查
+checkProfile();
+
+// ── LocalStorage helpers ──
+function saveIdentity(room, uid, uname) {
+  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  data[room] = { uid, uname };
+  localStorage.setItem('miniroom_ids', JSON.stringify(data));
+}
+function loadIdentity(room) {
+  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  return data[room] || null;
+}
+
+// ── WebSocket ──
+function connect() {
+  return new Promise((resolve, reject) => {
+    if (ws && ws.readyState === WebSocket.OPEN) { resolve(); return; }
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws');
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error('WebSocket connection failed'));
+    ws.onclose = () => {
+      if (currentRoom) {
+        addSystemMsg('连接已断开，请刷新页面重连');
+      }
+    };
+    ws.onmessage = (e) => handleServerMsg(JSON.parse(e.data));
+  });
+}
+
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+// ── Actions ──
+async function showScriptSelection() {
+  const section = document.getElementById('script-section');
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    renderScripts();
+    await connect(); // 建立 WS 连接以接收剧本列表
+  } else {
+    section.style.display = 'none';
+  }
+}
+
+function renderScripts() {
+  const list = document.getElementById('script-list');
+  list.innerHTML = '';
+  availableScripts.forEach(s => {
+    const card = document.createElement('div');
+    card.className = 'script-card';
+    card.onclick = () => createRoom(s.id);
+    card.innerHTML = '<div class="script-emoji">' + esc(s.emoji) + '</div>' +
+      '<div class="script-info"><div class="script-name">' + esc(s.name) + '</div>' +
+      '<div class="script-desc">' + esc(s.description) + '</div></div>';
+    list.appendChild(card);
+  });
+  if (availableScripts.length === 0) {
+    list.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:8px;">正在加载剧本...</div>';
+  }
+}
+
+async function createRoom(scriptId) {
+  await connect();
+  wsSend({ type: 'create_room', script: scriptId, user_name: myUserName || '' });
+}
+
+function showJoinDialog() {
+  document.getElementById('join-dialog').classList.toggle('show');
+  document.getElementById('join-input').focus();
+}
+
+async function joinRoom() {
+  const code = document.getElementById('join-input').value.trim();
+  if (!/^\d{4}$/.test(code)) { alert('请输入 4 位数字房间号'); return; }
+  await connect();
+  const identity = loadIdentity(code);
+  wsSend({
+    type: 'join_room',
+    room: code,
+    user_id: identity ? identity.uid : '',
+    user_name: identity ? identity.uname : (myUserName || ''),
+  });
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  wsSend({ type: 'chat', content: text });
+  input.value = '';
+}
+
+function leaveRoom() {
+  wsSend({ type: 'leave_room' });
+  currentRoom = null;
+  showView('landing');
+  document.getElementById('btn-leave').style.display = 'none';
+  document.getElementById('header-info').textContent = '';
+}
+
+// ── View switching ──
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(name === 'room' ? 'room-view' : 'landing').classList.add('active');
+}
+
+// ── Render helpers ──
+function updatePlayers(users) {
+  currentPlayers = users || [];
+  const list = document.getElementById('players-list');
+  list.innerHTML = '';
+  (users || []).forEach(u => {
+    const isSelf = u.id === myUserID;
+    const isVirtual = u.is_virtual;
+
+    if (isVirtual && (u.avatar || u.intro)) {
+      // 虚拟角色：渲染角色卡片
+      const card = document.createElement('div');
+      card.className = 'player-card';
+      card.onclick = () => {
+        const input = document.getElementById('chat-input');
+        input.value += '@' + u.name + ' ';
+        input.focus();
+      };
+      card.innerHTML =
+        '<div class="pc-avatar">' + esc(u.avatar || '🤖') + '</div>' +
+        '<div class="pc-info">' +
+          '<div class="pc-name">' + esc(u.name) + ' <span class="pc-bot">🤖</span></div>' +
+          (u.intro ? '<div class="pc-intro">' + esc(u.intro) + '</div>' : '') +
+        '</div>';
+      list.appendChild(card);
+    } else {
+      // 真实玩家或无卡片的虚拟角色
+      const el = document.createElement('div');
+      el.className = 'player-item';
+      const dotCls = isVirtual ? 'virtual' : (u.online ? 'online' : 'offline');
+      let label = esc(u.name);
+      if (isSelf) label += ' (你)';
+      if (isVirtual) label += ' 🤖';
+      el.innerHTML = '<div class="player-dot ' + dotCls + '"></div>' +
+        '<span class="' + (isSelf ? 'player-name-self' : '') + '">' + label + '</span>';
+      if (!isSelf) {
+        el.style.cursor = 'pointer';
+        el.onclick = () => {
+          const input = document.getElementById('chat-input');
+          input.value += '@' + u.name + ' ';
+          input.focus();
+        };
+      }
+      list.appendChild(el);
+    }
+  });
+}
+
+function updateGameState(state) {
+  const badge = document.getElementById('game-state-badge');
+  const labels = { lobby: '🏠 等待中', playing: '🎮 进行中', ended: '🏁 已结束' };
+  badge.textContent = labels[state] || state;
+}
+
+function addMsg(cls, html) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + cls;
+  el.innerHTML = html;
+  document.getElementById('messages').appendChild(el);
+  scrollToBottom();
+  return el;
+}
+
+function addSystemMsg(text) {
+  addMsg('system-msg', esc(text));
+}
+
+function scrollToBottom() {
+  const m = document.getElementById('messages');
+  m.scrollTop = m.scrollHeight;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderMarkdown(text) {
+  // Render markdown, sanitize output, then highlight @mentions
+  try {
+    const html = marked.parse(text, { breaks: true, gfm: true, headerIds: false, mangle: false });
+    const clean = DOMPurify.sanitize(html, { ALLOWED_TAGS: ['p','br','strong','em','code','pre','blockquote','ul','ol','li','a','h1','h2','h3','h4','hr','del','table','thead','tbody','tr','th','td','span'], ALLOWED_ATTR: ['href','target'] });
+    return '<div class="md-content">' + clean.replace(/@(\S+)/g, '<span class="mention">@$1</span>') + '</div>';
+  } catch {
+    return highlightMentions(text);
+  }
+}
+
+function highlightMentions(text) {
+  // Escape first, then highlight @mentions
+  const safe = esc(text);
+  return safe.replace(/@(\S+)/g, '<span class="mention">@$1</span>');
+}
+
+// ── @mention autocomplete ──
+let mentionActive = false;
+let mentionQuery = '';
+let mentionStartIdx = -1;
+let mentionSelectedIdx = 0;
+let mentionFiltered = [];
+
+function getMentionCandidates(query) {
+  const q = query.toLowerCase();
+  return currentPlayers
+    .filter(u => u.id !== myUserID) // exclude self
+    .filter(u => u.name.toLowerCase().includes(q))
+    .slice(0, 8);
+}
+
+function showMentionPopup(candidates) {
+  const popup = document.getElementById('mention-popup');
+  if (candidates.length === 0) { hideMentionPopup(); return; }
+  mentionFiltered = candidates;
+  mentionSelectedIdx = 0;
+  popup.innerHTML = '';
+  candidates.forEach((u, i) => {
+    const el = document.createElement('div');
+    el.className = 'mention-item' + (i === 0 ? ' active' : '');
+    const dotCls = u.is_virtual ? 'virtual' : 'real';
+    el.innerHTML = '<div class="mi-dot ' + dotCls + '"></div>' + esc(u.name) + (u.is_virtual ? ' 🤖' : '');
+    el.onmousedown = (e) => { e.preventDefault(); completeMention(u.name); };
+    popup.appendChild(el);
+  });
+  popup.classList.add('show');
+}
+
+function hideMentionPopup() {
+  mentionActive = false;
+  mentionQuery = '';
+  mentionStartIdx = -1;
+  mentionFiltered = [];
+  document.getElementById('mention-popup').classList.remove('show');
+}
+
+function completeMention(name) {
+  const input = document.getElementById('chat-input');
+  const before = input.value.substring(0, mentionStartIdx);
+  const after = input.value.substring(input.selectionStart);
+  input.value = before + '@' + name + ' ' + after;
+  hideMentionPopup();
+  input.focus();
+  const pos = before.length + name.length + 2;
+  input.setSelectionRange(pos, pos);
+}
+
+const chatInput = document.getElementById('chat-input');
+chatInput.addEventListener('input', () => {
+  const val = chatInput.value;
+  const cursor = chatInput.selectionStart;
+  // Find the last @ before cursor
+  let atIdx = -1;
+  for (let i = cursor - 1; i >= 0; i--) {
+    if (val[i] === '@') { atIdx = i; break; }
+    if (val[i] === ' ') break;
+  }
+  if (atIdx >= 0) {
+    const query = val.substring(atIdx + 1, cursor);
+    mentionActive = true;
+    mentionStartIdx = atIdx;
+    mentionQuery = query;
+    showMentionPopup(getMentionCandidates(query));
+  } else {
+    hideMentionPopup();
+  }
+});
+
+chatInput.addEventListener('keydown', e => {
+  if (mentionActive && mentionFiltered.length > 0) {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      mentionSelectedIdx = (mentionSelectedIdx + 1) % mentionFiltered.length;
+      updateMentionSelection();
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      mentionSelectedIdx = (mentionSelectedIdx - 1 + mentionFiltered.length) % mentionFiltered.length;
+      updateMentionSelection();
+      return;
+    }
+    if (e.key === 'Tab' || (e.key === 'Enter' && mentionActive && mentionFiltered.length > 0)) {
+      e.preventDefault();
+      completeMention(mentionFiltered[mentionSelectedIdx].name);
+      return;
+    }
+    if (e.key === 'Escape') {
+      hideMentionPopup();
+      return;
+    }
+  }
+  if (e.key === 'Enter' && !mentionActive) sendChat();
+});
+
+function updateMentionSelection() {
+  const items = document.querySelectorAll('#mention-popup .mention-item');
+  items.forEach((el, i) => el.classList.toggle('active', i === mentionSelectedIdx));
+}
+
+// ── Handle server messages ──
+function showTopicSelection(topics) {
+  const overlay = document.getElementById('topic-overlay');
+  const list = document.getElementById('topic-list');
+  list.innerHTML = '';
+  topics.forEach(t => {
+    const card = document.createElement('div');
+    card.className = 'topic-card';
+    card.onclick = () => selectTopic(t.id);
+    card.innerHTML = '<div class="topic-emoji">' + esc(t.emoji) + '</div>' +
+      '<div class="topic-info"><div class="topic-name">' + esc(t.name) + '</div>' +
+      '<div class="topic-desc">' + esc(t.description) + '</div></div>';
+    list.appendChild(card);
+  });
+  overlay.classList.add('show');
+}
+
+function selectTopic(topicId) {
+  document.getElementById('topic-overlay').classList.remove('show');
+  wsSend({ type: 'select_topic', topic: topicId });
+  addSystemMsg('正在加载角色列表...');
+}
+
+// ── Character selection ──
+let selectedChars = new Set();
+
+function showCharSelection(chars) {
+  const overlay = document.getElementById('char-overlay');
+  const list = document.getElementById('char-list');
+  selectedChars.clear();
+  list.innerHTML = '';
+  chars.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'char-card';
+    card.dataset.name = c.name;
+    card.onclick = () => toggleChar(card, c.name);
+    card.innerHTML = '<div class="cc-avatar">' + esc(c.avatar) + '</div>' +
+      '<div class="cc-name">' + esc(c.name) + '</div>' +
+      '<div class="cc-intro">' + esc(c.intro) + '</div>';
+    list.appendChild(card);
+  });
+  updateCharCount();
+  overlay.classList.add('show');
+}
+
+function toggleChar(card, name) {
+  if (selectedChars.has(name)) {
+    selectedChars.delete(name);
+    card.classList.remove('selected');
+  } else {
+    if (selectedChars.size >= 5) return; // max 5
+    selectedChars.add(name);
+    card.classList.add('selected');
+  }
+  updateCharCount();
+}
+
+function updateCharCount() {
+  const n = selectedChars.size;
+  document.getElementById('char-count').textContent = '已选 ' + n + ' 个';
+  document.getElementById('btn-confirm-chars').disabled = (n < 3);
+}
+
+function confirmChars() {
+  if (selectedChars.size < 3) return;
+  document.getElementById('char-overlay').classList.remove('show');
+  wsSend({ type: 'select_chars', chars: Array.from(selectedChars) });
+  addSystemMsg('正在召唤虚拟角色，请稍候...');
+}
+
+function handleServerMsg(msg) {
+  switch (msg.type) {
+    case 'scripts':
+      availableScripts = msg.scripts || [];
+      renderScripts();
+      break;
+
+    case 'chat_topics':
+      showTopicSelection(msg.chat_topics || []);
+      break;
+
+    case 'char_list':
+      showCharSelection(msg.char_list || []);
+      break;
+
+    case 'room_created':
+      currentRoom = msg.room;
+      // room_joined follows immediately with full info
+      break;
+
+    case 'room_joined':
+      currentRoom = msg.room;
+      if (msg.content) myUserName = msg.content;
+      if (msg.script_id) currentScriptID = msg.script_id;
+      // Find own ID from users list
+      if (msg.users) {
+        const me = msg.users.find(u => u.name === myUserName);
+        if (me) myUserID = me.id;
+      }
+      saveIdentity(currentRoom, myUserID, myUserName);
+      // Show game hint
+      const hintEl = document.getElementById('game-hint');
+      if (currentScriptID && scriptHints[currentScriptID]) {
+        hintEl.innerHTML = scriptHints[currentScriptID];
+        hintEl.style.display = 'block';
+      } else {
+        hintEl.style.display = 'none';
+      }
+
+      // Switch to room view
+      showView('room');
+      document.getElementById('room-code').textContent = msg.room;
+      document.getElementById('btn-leave').style.display = 'inline-block';
+      document.getElementById('header-info').innerHTML =
+        '你是 <span>' + esc(myUserName) + '</span>';
+      updatePlayers(msg.users);
+      if (msg.state) updateGameState(msg.state);
+
+      // Replay history
+      const messagesEl = document.getElementById('messages');
+      messagesEl.innerHTML = '';
+      (msg.history || []).forEach(h => renderHistory(h));
+      scrollToBottom();
+      break;
+
+    case 'user_joined': {
+      addSystemMsg(msg.content + ' 加入了房间');
+      if (msg.users) {
+        updatePlayers(msg.users);
+        // 显示虚拟角色入场卡片
+        const vp = msg.users.find(u => u.name === msg.content && u.is_virtual && u.avatar);
+        if (vp) {
+          addMsg('char-intro-card',
+            '<div class="cic-avatar">' + esc(vp.avatar) + '</div>' +
+            '<div class="cic-body">' +
+              '<div class="cic-name">' + esc(vp.name) + ' <span class="cic-bot">虚拟角色</span></div>' +
+              (vp.intro ? '<div class="cic-intro">' + esc(vp.intro) + '</div>' : '') +
+            '</div>');
+        }
+      }
+      break;
+    }
+
+    case 'user_left':
+      addSystemMsg(msg.content + ' 离开了房间');
+      if (msg.users) updatePlayers(msg.users);
+      break;
+
+    case 'users':
+      if (msg.users) updatePlayers(msg.users);
+      break;
+
+    case 'chat_bcast': {
+      const isSelf = msg.from === myUserName;
+      const cls = isSelf ? 'chat-self' : 'chat-other';
+      addMsg(cls, '<div class="msg-sender">' + esc(msg.from) + '</div>' + renderMarkdown(msg.content));
+      break;
+    }
+
+    case 'agent':
+      streamEl = null;
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + renderMarkdown(msg.content));
+      break;
+
+    case 'stream':
+      if (!streamEl) {
+        streamEl = addMsg('agent streaming', '<div class="msg-sender">🐢 主持人</div><span class="stream-text"></span>');
+      }
+      streamEl.querySelector('.stream-text').textContent += msg.content;
+      scrollToBottom();
+      break;
+
+    case 'stream_end':
+      if (streamEl) {
+        streamEl.classList.remove('streaming');
+        // Re-render accumulated text as Markdown
+        const textSpan = streamEl.querySelector('.stream-text');
+        if (textSpan) {
+          const raw = textSpan.textContent;
+          const sender = streamEl.querySelector('.msg-sender');
+          streamEl.innerHTML = (sender ? sender.outerHTML : '') + renderMarkdown(raw);
+        }
+      }
+      streamEl = null;
+      break;
+
+    case 'whisper':
+      addMsg('whisper-msg', '<div class="msg-sender">🔮 ' + esc(msg.from || '主持人') + ' 悄悄对你说</div>' + renderMarkdown(msg.content));
+      break;
+
+    case 'system':
+      addSystemMsg(msg.content);
+      break;
+
+    case 'game_state':
+      updateGameState(msg.state);
+      addMsg('game-state-msg', esc(msg.content));
+      break;
+
+    case 'choice_card': {
+      const c = msg.choices;
+      if (!c) break;
+      let html = '<div class="msg-sender">' + esc(msg.from || '🤖') + ' 发起了一个选择</div>';
+      html += '<div class="cc-question">' + esc(c.question) + '</div>';
+      html += '<div class="cc-options">';
+      (c.options || []).forEach((opt, idx) => {
+        html += '<div class="cc-option" data-idx="' + idx + '">' + esc(opt) + '</div>';
+      });
+      html += '</div>';
+      const el = addMsg('choice-card-msg', html);
+      // 绑定点击
+      el.querySelectorAll('.cc-option').forEach(optEl => {
+        optEl.addEventListener('click', function() {
+          if (this.classList.contains('selected')) return;
+          el.querySelectorAll('.cc-option').forEach(o => o.classList.remove('selected'));
+          this.classList.add('selected');
+          el.querySelectorAll('.cc-option').forEach(o => {
+            o.style.pointerEvents = 'none';
+            o.style.opacity = o === this ? '1' : '0.5';
+          });
+          wsSend({ type: 'chat', content: this.textContent });
+        });
+      });
+      break;
+    }
+
+    case 'error':
+      addMsg('error-msg', '⚠️ ' + esc(msg.content));
+      break;
+  }
+}
+
+function renderHistory(h) {
+  switch (h.type) {
+    case 'chat':
+      const isSelf = h.from === myUserName;
+      addMsg(isSelf ? 'chat-self' : 'chat-other',
+        '<div class="msg-sender">' + esc(h.from) + '</div>' + renderMarkdown(h.content));
+      break;
+    case 'agent':
+      addMsg('agent', '<div class="msg-sender">🐢 主持人</div>' + renderMarkdown(h.content));
+      break;
+    case 'system':
+      addSystemMsg(h.content);
+      break;
+    case 'whisper':
+      addMsg('whisper-msg', '<div class="msg-sender">🔮 悄悄话</div>' + esc(h.content));
+      break;
+    case 'choice':
+      addMsg('choice-card-msg',
+        '<div class="msg-sender">' + esc(h.from) + '</div>' +
+        '<div class="cc-question">' + esc(h.content) + '</div>' +
+        '<div style="font-size:0.8em;color:var(--text-dim);font-style:italic;">（选择题已结束）</div>');
+      break;
+    default:
+      addSystemMsg(h.content);
+  }
+}
+
+// ── Key bindings ──
+document.getElementById('join-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') joinRoom();
+});
+</script>
+</body>
+</html>

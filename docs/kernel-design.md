@@ -752,11 +752,12 @@ kernel/
 │   └── depth.go           # 委派深度限制
 │
 ├── skill/                 # 技能系统
-│   ├── skill.go           # Provider 接口, Manager
-│   ├── config.go          # 配置加载 (YAML)
-│   ├── mcp.go             # MCP Server 集成
+│   ├── skill.go           # Provider 接口, Deps
 │   ├── prompt.go          # SKILL.md 解析
 │   └── manager.go         # SkillManager
+│
+├── mcp/                   # MCP 协议集成
+│   └── mcp.go             # MCPServer Provider（连接/发现/工具代理）
 │
 ├── appkit/              # 应用脚手架工具箱
 │   ├── appkit.go        # ContextWithSignal, CommonFlags, Banner
@@ -858,9 +859,9 @@ kernel.Run(ctx, session)
 SessionResult{Success: true, Steps: 4}
 ```
 
-### 9.3 miniroom (多人实时 Agent 游戏)
+### 9.3 mossroom (多人实时 Agent 游戏)
 
-| miniroom 特性 | Kernel 映射 | 应用层构建 |
+| mossroom 特性 | Kernel 映射 | 应用层构建 |
 |---|---|---|
 | Per-Room Agent | 独立 Kernel 实例 + Session | Room 管理、WebSocket 路由 |
 | 游戏主持人 | AgentLoop + SystemPrompt 模板 | Script Registry、模板渲染 |
@@ -870,7 +871,7 @@ SessionResult{Success: true, Steps: 4}
 | 游戏状态 | Session.State + 自定义 Tool | GameState 枚举 |
 | 多轮对话 | Session 复用 (多次 Run) | 消息队列串行化 |
 
-**架构验证结论**：miniroom 使用了 Per-Instance Kernel 模式（每房间独立 Kernel + Session），通过自定义 `RoomIO` 实现 `port.UserIO` 将 Agent 输出广播到 WebSocket 客户端，同时跳过了 Sandbox 和内置文件工具——验证了 Kernel 的最小化组合能力。
+**架构验证结论**：mossroom 使用了 Per-Instance Kernel 模式（每房间独立 Kernel + Session），通过自定义 `RoomIO` 实现 `port.UserIO` 将 Agent 输出广播到 WebSocket 客户端，同时跳过了 Sandbox 和内置文件工具——验证了 Kernel 的最小化组合能力。
 
 ### 9.4 多界面对接
 

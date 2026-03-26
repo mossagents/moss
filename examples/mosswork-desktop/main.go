@@ -1,4 +1,4 @@
-// miniwork-desktop 是基于 Wails v3 的桌面端 AI 助手。
+// mosswork-desktop 是基于 Wails v3 的桌面端 AI 助手。
 //
 // 演示 moss kernel 接入桌面端的能力：
 //   - 对话式任务交互（流式输出）
@@ -34,7 +34,7 @@ var defaultManagerPromptTemplate string
 var defaultWorkerPromptTemplate string
 
 func main() {
-	appconfig.SetAppName("miniwork-desktop")
+	appconfig.SetAppName("mosswork-desktop")
 	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
@@ -108,7 +108,7 @@ func parseFlags() config {
 		trust:     "trusted",
 		workers:   3,
 	}
-	fs := flag.NewFlagSet("miniwork-desktop", flag.ContinueOnError)
+	fs := flag.NewFlagSet("mosswork-desktop", flag.ContinueOnError)
 	appkit.BindAppFlags(fs, common)
 	fs.IntVar(&c.workers, "workers", 3, "Max parallel workers")
 	if err := fs.Parse(os.Args[1:]); err != nil {

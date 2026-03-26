@@ -133,8 +133,8 @@ slog.Info("Application shutdown complete")
 
 编译命令:
 ```bash
-cd examples/miniwork-desktop
-go build -o ./bin/miniwork-desktop.exe .
+cd examples/mosswork-desktop
+go build -o ./bin/mosswork-desktop.exe .
 ```
 
 ## 预期效果
