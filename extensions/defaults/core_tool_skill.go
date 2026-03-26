@@ -3,7 +3,7 @@ package defaults
 import (
 	"context"
 
-	toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
+	toolbuiltins "github.com/mossagents/moss/extensions/toolbuiltins"
 	"github.com/mossagents/moss/skill"
 )
 

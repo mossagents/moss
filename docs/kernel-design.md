@@ -525,7 +525,7 @@ Pattern 支持 glob 语法：`tool.*`、`session.completed`、`*`（全部）。
 
 ```go
 // Logger 记录每个 phase 的开始/结束/耗时
-func Logger(writer io.Writer) middleware.Middleware
+func Logger() middleware.Middleware
 ```
 
 ---
@@ -704,7 +704,7 @@ kernel/
 ├── kernel_test.go         # 集成测试
 ├── option.go              # functional options: WithLLM, WithSandbox, Use, ...
 ├── setup.go               # SetupWithDefaults, SetupOption
-├── setup_test.go
+├── kernel_boot_test.go
 │
 ├── port/                  # Port 接口（零依赖，纯类型定义）
 │   ├── types.go           # Message, Role, ToolCall, ToolResult, TokenUsage

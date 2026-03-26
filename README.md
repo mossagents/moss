@@ -275,8 +275,7 @@ moss/
 │   ├── tool/                # Tool System
 │   │   ├── tool.go          # ToolSpec, ToolHandler, RiskLevel
 │   │   ├── registry.go      # Registry 接口 + map 实现
-│   │   ├── scoped.go        # ScopedRegistry (工具白名单视图)
-│   │   └── builtins/        # 内置工具 + BuiltinTool
+│   │   └── scoped.go        # ScopedRegistry (工具白名单视图)
 │   ├── session/             # Session Management
 │   │   ├── session.go       # Session, Budget, SessionConfig
 │   │   ├── manager.go       # Manager 接口 + 内存实现
@@ -310,7 +309,8 @@ moss/
 │       ├── mock_sandbox.go  # MemorySandbox
 │       └── mock_io.go       # RecorderIO
 ├── extensions/              # 官方维护的可选扩展
-│   └── defaults/            # 默认装配（builtin / MCP / skills / agents）
+│   ├── toolbuiltins/        # 内置工具实现（read_file/write_file/...）
+│   └── defaults/            # 默认装配（core tool skill / MCP / skills / agents）
 ├── agentkit/                # 应用脚手架工具箱
 │   ├── agentkit.go          # ContextWithSignal, AppFlags, Banner
 │   ├── repl.go              # REPL 引擎

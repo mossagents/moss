@@ -251,7 +251,7 @@ kernel/loop                         (imports 以上所有)
 kernel/kernel.go                    (Kernel 入口，组合所有子系统)
     ↑ references
 skill                               (Skill 管理，imports tool, middleware, sandbox, port)
-extensions/defaults/core_tool_skill.go (默认 core skill 装配，imports skill, kernel/tool/builtins)
+extensions/defaults/core_tool_skill.go (默认 core skill 装配，imports skill, extensions/toolbuiltins)
 extensions/skillsx, extensions/agentsx (skill/agent feature API 的扩展入口)
 extensions/knowledgex               (knowledge + embedder 组合扩展)
 extensions/defaults/setup.go        (默认扩展装配，imports skill, builtins)
