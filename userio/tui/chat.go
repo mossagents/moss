@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
@@ -37,24 +38,30 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn      func(string)  // 发送用户消息给 agent
-	skillListFn func() string // 查询已加载 skills
-	pendAsk     *bridgeAsk    // 当前阻塞的 Ask 请求
-	finished    bool          // session 已结束
-	result      string        // 最终结果
+	sendFn        func(string)  // 发送用户消息给 agent
+	skillListFn   func() string // 查询已加载 skills
+	sessionInfoFn func() string
+	offloadFn     func(keepRecent int, note string) (string, error)
+	taskListFn    func(status string, limit int) (string, error)
+	taskQueryFn   func(taskID string) (string, error)
+	taskCancelFn  func(taskID, reason string) (string, error)
+	pendAsk       *bridgeAsk // 当前阻塞的 Ask 请求
+	finished      bool       // session 已结束
+	result        string     // 最终结果
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
 	// 配置显示
 	provider  string
+	model     string
 	workspace string
 
 	sidebarTitle  string
 	renderSidebar func() string
 }
 
-func newChatModel(provider, workspace string) chatModel {
+func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
 	ta.Placeholder = "输入消息... (Enter 发送, /help 查看命令)"
 	ta.Focus()
@@ -66,6 +73,7 @@ func newChatModel(provider, workspace string) chatModel {
 	return chatModel{
 		textarea:  ta,
 		provider:  provider,
+		model:     model,
 		workspace: workspace,
 	}
 }
@@ -290,6 +298,9 @@ func (m chatModel) View() string {
 	// 顶栏
 	header := titleStyle.Render("🌿 moss")
 	info := statusBarStyle.Render(fmt.Sprintf("  %s │ %s", m.provider, m.workspace))
+	if m.model != "" {
+		info = statusBarStyle.Render(fmt.Sprintf("  %s (%s) │ %s", m.provider, m.model, m.workspace))
+	}
 	b.WriteString(header + info + "\n")
 	b.WriteString(strings.Repeat("─", m.width) + "\n")
 
@@ -383,6 +394,126 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/session":
+		info := "session 信息不可用。"
+		if m.sessionInfoFn != nil {
+			info = m.sessionInfoFn()
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/offload":
+		if m.offloadFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "offload_context 工具不可用。"})
+			m.refreshViewport()
+			return m, nil
+		}
+		keepRecent := 20
+		note := "manual offload from TUI"
+		if len(args) >= 1 {
+			v, err := strconv.Atoi(args[0])
+			if err != nil || v <= 0 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /offload [keep_recent:int] [note...]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			keepRecent = v
+		}
+		if len(args) >= 2 {
+			note = strings.Join(args[1:], " ")
+		}
+		out, err := m.offloadFn(keepRecent, note)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("offload 失败: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/tasks":
+		if m.taskListFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "后台任务工具不可用。"})
+			m.refreshViewport()
+			return m, nil
+		}
+		status := ""
+		limit := 20
+		if len(args) >= 1 {
+			status = strings.TrimSpace(strings.ToLower(args[0]))
+			switch status {
+			case "", "running", "completed", "failed", "cancelled":
+			default:
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /tasks [running|completed|failed|cancelled] [limit]"})
+				m.refreshViewport()
+				return m, nil
+			}
+		}
+		if len(args) >= 2 {
+			v, err := strconv.Atoi(args[1])
+			if err != nil || v <= 0 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /tasks [status] [limit:int]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit = v
+		}
+		out, err := m.taskListFn(status, limit)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("获取任务列表失败: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/task":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "用法:\n  /task <task_id>\n  /task cancel <task_id> [reason...]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		if args[0] == "cancel" {
+			if m.taskCancelFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "取消任务工具不可用。"})
+				m.refreshViewport()
+				return m, nil
+			}
+			if len(args) < 2 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /task cancel <task_id> [reason...]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			taskID := strings.TrimSpace(args[1])
+			reason := "cancelled by user from TUI"
+			if len(args) >= 3 {
+				reason = strings.Join(args[2:], " ")
+			}
+			out, err := m.taskCancelFn(taskID, reason)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("取消任务失败: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		if m.taskQueryFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "查询任务工具不可用。"})
+			m.refreshViewport()
+			return m, nil
+		}
+		taskID := strings.TrimSpace(args[0])
+		out, err := m.taskQueryFn(taskID)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("查询任务失败: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/config":
 		return m.handleConfigCommand(args)
 
@@ -392,6 +523,11 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /config        查看当前配置\n" +
 			"  /config set <key> <value>  设置配置项 (provider/model/base_url/api_key)\n" +
 			"  /skills        查看已加载的 skills\n" +
+			"  /session       查看当前 session 概览\n" +
+			"  /offload [keep_recent] [note]  压缩上下文并持久化快照\n" +
+			"  /tasks [status] [limit]  列出后台任务\n" +
+			"  /task <id>     查询后台任务详情\n" +
+			"  /task cancel <id> [reason]  取消后台任务\n" +
 			"  /clear         清空对话记录\n" +
 			"  /help          显示此帮助\n" +
 			"  /exit          退出 moss"

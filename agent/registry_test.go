@@ -106,4 +106,16 @@ func TestTaskTracker(t *testing.T) {
 	if got.Status != TaskFailed {
 		t.Errorf("status = %q, want failed", got.Status)
 	}
+
+	tt.Add(&Task{ID: "t3", AgentName: "coder", Goal: "x", Status: TaskRunning})
+	tt.Add(&Task{ID: "t4", AgentName: "reviewer", Goal: "y", Status: TaskCompleted})
+	running := tt.List(TaskFilter{Status: TaskRunning})
+	if len(running) == 0 {
+		t.Fatal("expected running tasks from List")
+	}
+	for _, task := range running {
+		if task.Status != TaskRunning {
+			t.Fatalf("unexpected task status from List: %+v", task)
+		}
+	}
 }

@@ -34,6 +34,12 @@ func RegisterTools(reg tool.Registry, agents *Registry, tracker *TaskTracker, de
 	if err := registerQuery(reg, tracker); err != nil {
 		return err
 	}
+	if err := registerListTasks(reg, tracker); err != nil {
+		return err
+	}
+	if err := registerCancelTask(reg, tracker); err != nil {
+		return err
+	}
 	return registerTask(reg, agents, tracker, delegator)
 }
 
@@ -160,6 +166,117 @@ func registerQuery(reg tool.Registry, tracker *TaskTracker) error {
 	return reg.Register(spec, handler)
 }
 
+type listTasksInput struct {
+	Status string `json:"status"`
+	Agent  string `json:"agent"`
+	Limit  int    `json:"limit"`
+}
+
+func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "list_tasks",
+		Description: "列出后台任务，支持按状态或 agent 过滤。",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"status": {"type":"string","description":"可选: running|completed|failed|cancelled"},
+				"agent": {"type":"string","description":"可选: 按 agent 名称过滤"},
+				"limit": {"type":"integer","description":"可选: 最多返回条数（默认20，最大100）"}
+			}
+		}`),
+		Risk: tool.RiskLow,
+	}
+	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in listTasksInput
+		if len(strings.TrimSpace(string(input))) > 0 {
+			if err := json.Unmarshal(input, &in); err != nil {
+				return nil, fmt.Errorf("parse input: %w", err)
+			}
+		}
+		filter := TaskFilter{
+			AgentName: strings.TrimSpace(in.Agent),
+		}
+		if in.Status != "" {
+			status := TaskStatus(strings.TrimSpace(in.Status))
+			switch status {
+			case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+				filter.Status = status
+			default:
+				return nil, fmt.Errorf("invalid status %q", in.Status)
+			}
+		}
+		limit := in.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		if limit > 100 {
+			limit = 100
+		}
+		tasks := tracker.List(filter)
+		if len(tasks) > limit {
+			tasks = tasks[:limit]
+		}
+		return json.Marshal(map[string]any{
+			"tasks": tasks,
+			"count": len(tasks),
+		})
+	}
+	return reg.Register(spec, handler)
+}
+
+type cancelTaskInput struct {
+	TaskID string `json:"task_id"`
+	Reason string `json:"reason"`
+}
+
+func registerCancelTask(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "cancel_task",
+		Description: "取消后台任务（若任务仍在运行）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"task_id":{"type":"string","description":"要取消的任务 ID"},
+				"reason":{"type":"string","description":"可选: 取消原因"}
+			},
+			"required":["task_id"]
+		}`),
+		Risk:         tool.RiskMedium,
+		Capabilities: []string{"delegation"},
+	}
+	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in cancelTaskInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		taskID := strings.TrimSpace(in.TaskID)
+		if taskID == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		task, ok := tracker.Get(taskID)
+		if !ok {
+			return nil, fmt.Errorf("task %q not found", taskID)
+		}
+		if task.Status != TaskRunning {
+			return json.Marshal(map[string]any{
+				"task_id": task.ID,
+				"agent":   task.AgentName,
+				"status":  task.Status,
+				"error":   task.Error,
+				"note":    "task is not running",
+			})
+		}
+		reason := strings.TrimSpace(in.Reason)
+		if reason == "" {
+			reason = "cancelled by user"
+		}
+		tracker.Cancel(taskID, reason)
+		updated, _ := tracker.Get(taskID)
+		return json.Marshal(updated)
+	}
+	return reg.Register(spec, handler)
+}
+
 // ── task（统一入口） ───────────────────────────────────
 
 type taskInput struct {
@@ -167,20 +284,25 @@ type taskInput struct {
 	Agent  string `json:"agent"`
 	Task   string `json:"task"`
 	TaskID string `json:"task_id"`
+	Status string `json:"status"`
+	Limit  int    `json:"limit"`
+	Reason string `json:"reason"`
 }
 
 func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
 	spec := tool.ToolSpec{
-		Name: "task",
-		Description: "Unified delegation tool. mode=sync delegates and waits; mode=background starts async work; " +
-			"mode=query checks an existing async task.",
+		Name:        "task",
+		Description: "Unified delegation tool. mode=sync/background/query plus list/cancel for async lifecycle.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"mode": {"type": "string", "description": "One of: sync, background, query (default: sync)"},
+				"mode": {"type": "string", "description": "One of: sync, background, query, list, cancel (default: sync)"},
 				"agent": {"type": "string", "description": "Target agent name (required for sync/background)"},
 				"task": {"type": "string", "description": "Task description (required for sync/background)"},
-				"task_id": {"type": "string", "description": "Task ID returned by background mode (required for query)"}
+				"task_id": {"type": "string", "description": "Task ID returned by background mode (required for query/cancel)"},
+				"status": {"type": "string", "description": "Optional status filter for mode=list"},
+				"limit": {"type": "integer", "description": "Optional max results for mode=list"},
+				"reason": {"type": "string", "description": "Optional cancel reason for mode=cancel"}
 			}
 		}`),
 		Risk:         tool.RiskMedium,
@@ -243,8 +365,59 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 			resp := buildTaskResponse(task)
 			resp["mode"] = "query"
 			return json.Marshal(resp)
+		case "list":
+			filter := TaskFilter{
+				AgentName: strings.TrimSpace(in.Agent),
+			}
+			if in.Status != "" {
+				status := TaskStatus(strings.TrimSpace(in.Status))
+				switch status {
+				case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+					filter.Status = status
+				default:
+					return nil, fmt.Errorf("invalid status %q", in.Status)
+				}
+			}
+			limit := in.Limit
+			if limit <= 0 {
+				limit = 20
+			}
+			if limit > 100 {
+				limit = 100
+			}
+			tasks := tracker.List(filter)
+			if len(tasks) > limit {
+				tasks = tasks[:limit]
+			}
+			return json.Marshal(map[string]any{
+				"mode":  "list",
+				"tasks": tasks,
+				"count": len(tasks),
+			})
+		case "cancel":
+			taskID := strings.TrimSpace(in.TaskID)
+			if taskID == "" {
+				return nil, fmt.Errorf("task_id is required for mode=cancel")
+			}
+			task, ok := tracker.Get(taskID)
+			if !ok {
+				return nil, fmt.Errorf("task %q not found", taskID)
+			}
+			reason := strings.TrimSpace(in.Reason)
+			if reason == "" {
+				reason = "cancelled by user"
+			}
+			if task.Status == TaskRunning {
+				tracker.Cancel(taskID, reason)
+				task, _ = tracker.Get(taskID)
+			}
+			return json.Marshal(map[string]any{
+				"mode":   "cancel",
+				"task":   task,
+				"status": task.Status,
+			})
 		default:
-			return nil, fmt.Errorf("unsupported task mode %q (expected sync, background, query)", mode)
+			return nil, fmt.Errorf("unsupported task mode %q (expected sync, background, query, list, cancel)", mode)
 		}
 	}
 
@@ -269,10 +442,11 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 		Goal:      goal,
 		Status:    TaskRunning,
 	}
-	tracker.Add(task)
+	taskCtx, cancel := context.WithCancel(ctx)
+	tracker.AddWithCancel(task, cancel)
 
 	go func() {
-		result, err := runAgent(ctx, agents, delegator, agentName, goal)
+		result, err := runAgent(taskCtx, agents, delegator, agentName, goal)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				tracker.Cancel(taskID, err.Error())

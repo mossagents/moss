@@ -1,10 +1,15 @@
 package tui
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/extensions/skillsx"
@@ -55,6 +60,185 @@ type agentState struct {
 	trust   string
 	mu      sync.Mutex
 	running bool // 是否正在执行 loop
+}
+
+func (a *agentState) sessionSummary() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sess == nil {
+		return "当前没有活动 session。"
+	}
+	dialogCount := 0
+	for _, msg := range a.sess.Messages {
+		if msg.Role != port.RoleSystem {
+			dialogCount++
+		}
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Session: %s\n", a.sess.ID))
+	b.WriteString(fmt.Sprintf("Status: %s\n", a.sess.Status))
+	b.WriteString(fmt.Sprintf("Messages: %d (dialog: %d)\n", len(a.sess.Messages), dialogCount))
+	b.WriteString(fmt.Sprintf("Budget: steps %d/%d, tokens %d/%d",
+		a.sess.Budget.UsedSteps, a.sess.Budget.MaxSteps,
+		a.sess.Budget.UsedTokens, a.sess.Budget.MaxTokens,
+	))
+	if v, ok := a.sess.GetState("last_offload_snapshot"); ok {
+		b.WriteString(fmt.Sprintf("\nLast offload snapshot: %v", v))
+	}
+	if v, ok := a.sess.GetState("last_offload_at"); ok {
+		b.WriteString(fmt.Sprintf("\nLast offload time: %v", v))
+	}
+	return b.String()
+}
+
+func (a *agentState) invokeTool(ctx context.Context, name string, input any) (json.RawMessage, error) {
+	_, handler, ok := a.k.ToolRegistry().Get(name)
+	if !ok {
+		return nil, fmt.Errorf("tool %q not available in current runtime", name)
+	}
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tool input: %w", err)
+	}
+	return handler(ctx, raw)
+}
+
+func formatJSON(raw json.RawMessage) string {
+	var out bytes.Buffer
+	if err := json.Indent(&out, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return out.String()
+}
+
+func (a *agentState) offloadContext(keepRecent int, note string) (string, error) {
+	a.mu.Lock()
+	sess := a.sess
+	a.mu.Unlock()
+	if sess == nil {
+		return "", errors.New("no active session")
+	}
+	if keepRecent <= 0 {
+		keepRecent = 20
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	raw, err := a.invokeTool(ctx, "offload_context", map[string]any{
+		"session_id":  sess.ID,
+		"keep_recent": keepRecent,
+		"note":        note,
+	})
+	if err != nil {
+		return "", err
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return formatJSON(raw), nil
+	}
+	status, _ := resp["status"].(string)
+	switch status {
+	case "noop":
+		return fmt.Sprintf("无需 offload：当前对话长度未超过 keep_recent=%d。", keepRecent), nil
+	case "offloaded":
+		return "已完成上下文 offload。\n" + formatJSON(raw), nil
+	default:
+		return formatJSON(raw), nil
+	}
+}
+
+type taskView struct {
+	ID        string `json:"id"`
+	AgentName string `json:"agent_name"`
+	Goal      string `json:"goal"`
+	Status    string `json:"status"`
+	Error     string `json:"error"`
+}
+
+func formatTaskList(raw json.RawMessage) string {
+	var payload struct {
+		Tasks []taskView `json:"tasks"`
+		Count int        `json:"count"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return formatJSON(raw)
+	}
+	if len(payload.Tasks) == 0 {
+		return "当前没有匹配的后台任务。"
+	}
+	sort.Slice(payload.Tasks, func(i, j int) bool { return payload.Tasks[i].ID < payload.Tasks[j].ID })
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Tasks (%d):\n", payload.Count))
+	for _, t := range payload.Tasks {
+		line := fmt.Sprintf("- %s | %s | %s", t.ID, t.AgentName, t.Status)
+		if t.Goal != "" {
+			line += " | " + t.Goal
+		}
+		if t.Error != "" {
+			line += " | err: " + t.Error
+		}
+		b.WriteString(line + "\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (a *agentState) listTasks(status string, limit int) (string, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	input := map[string]any{
+		"status": strings.TrimSpace(status),
+		"limit":  limit,
+	}
+	raw, err := a.invokeTool(ctx, "list_tasks", input)
+	if err != nil {
+		raw, err = a.invokeTool(ctx, "task", map[string]any{
+			"mode":   "list",
+			"status": strings.TrimSpace(status),
+			"limit":  limit,
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	return formatTaskList(raw), nil
+}
+
+func (a *agentState) queryTask(taskID string) (string, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	raw, err := a.invokeTool(ctx, "query_agent", map[string]any{"task_id": taskID})
+	if err != nil {
+		raw, err = a.invokeTool(ctx, "task", map[string]any{
+			"mode":    "query",
+			"task_id": taskID,
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	return formatJSON(raw), nil
+}
+
+func (a *agentState) cancelTask(taskID, reason string) (string, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	raw, err := a.invokeTool(ctx, "cancel_task", map[string]any{
+		"task_id": taskID,
+		"reason":  reason,
+	})
+	if err != nil {
+		raw, err = a.invokeTool(ctx, "task", map[string]any{
+			"mode":    "cancel",
+			"task_id": taskID,
+			"reason":  reason,
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+	return formatJSON(raw), nil
 }
 
 // appendAndRun 追加用户消息到 session 并重新执行 agent loop。
@@ -114,7 +298,7 @@ func Run(cfg Config) error {
 			Workspace: cfg.Workspace,
 		}
 		m.state = stateChat
-		m.chat = newChatModel(wCfg.Provider, wCfg.Workspace)
+		m.chat = newChatModel(wCfg.Provider, wCfg.Model, wCfg.Workspace)
 		m.chat.sidebarTitle = cfg.SidebarTitle
 		m.chat.renderSidebar = cfg.RenderSidebar
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
@@ -176,7 +360,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cfg := m.welcome.config()
 		// 持久化用户选择的 provider/model 到 ~/.moss/config.yaml
 		saveWelcomeConfig(cfg)
-		m.chat = newChatModel(cfg.Provider, cfg.Workspace)
+		m.chat = newChatModel(cfg.Provider, cfg.Model, cfg.Workspace)
 		m.chat.sidebarTitle = m.config.SidebarTitle
 		m.chat.renderSidebar = m.config.RenderSidebar
 		m.state = stateChat
@@ -219,6 +403,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Workspace: m.config.Workspace,
 		}
 		m.chat.provider = m.config.Provider
+		m.chat.model = sm.model
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
 
@@ -228,6 +413,19 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		agent := ready.agent
 		m.chat.sendFn = func(text string) {
 			go agent.appendAndRun(text)
+		}
+		m.chat.sessionInfoFn = agent.sessionSummary
+		m.chat.offloadFn = func(keepRecent int, note string) (string, error) {
+			return agent.offloadContext(keepRecent, note)
+		}
+		m.chat.taskListFn = func(status string, limit int) (string, error) {
+			return agent.listTasks(status, limit)
+		}
+		m.chat.taskQueryFn = func(taskID string) (string, error) {
+			return agent.queryTask(taskID)
+		}
+		m.chat.taskCancelFn = func(taskID, reason string) (string, error) {
+			return agent.cancelTask(taskID, reason)
 		}
 		m.chat.skillListFn = func() string {
 			skills := skillsx.Manager(agent.k).List()
@@ -246,6 +444,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
+			m.chat.model = m.config.Model
 			connInfo += " (" + m.config.Model + ")"
 		}
 		m.chat.streaming = false

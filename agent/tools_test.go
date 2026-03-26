@@ -290,6 +290,8 @@ func TestTaskToolModeValidation(t *testing.T) {
 		{Mode: "sync", Task: "missing agent"},
 		{Mode: "background", Agent: "worker"},
 		{Mode: "query"},
+		{Mode: "cancel"},
+		{Mode: "list", Status: "not-a-status"},
 		{Mode: "invalid"},
 	}
 	for _, c := range cases {
@@ -297,6 +299,89 @@ func TestTaskToolModeValidation(t *testing.T) {
 		if _, err := taskHandler(context.Background(), input); err == nil {
 			t.Fatalf("expected validation error for input: %+v", c)
 		}
+	}
+}
+
+func TestListAndCancelTaskTools(t *testing.T) {
+	agents := NewRegistry()
+	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	tracker := NewTaskTracker()
+
+	started := make(chan struct{}, 1)
+	released := make(chan struct{}, 1)
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			started <- struct{}{}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-released:
+				return &loop.SessionResult{Success: true, Output: "done"}, nil
+			}
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+
+	_, spawnHandler, ok := reg.Get("spawn_agent")
+	if !ok {
+		t.Fatal("spawn_agent not registered")
+	}
+	_, listHandler, ok := reg.Get("list_tasks")
+	if !ok {
+		t.Fatal("list_tasks not registered")
+	}
+	_, cancelHandler, ok := reg.Get("cancel_task")
+	if !ok {
+		t.Fatal("cancel_task not registered")
+	}
+
+	spawnInput, _ := json.Marshal(spawnInput{Agent: "worker", Task: "blocking work"})
+	raw, err := spawnHandler(context.Background(), spawnInput)
+	if err != nil {
+		t.Fatalf("spawn_agent: %v", err)
+	}
+	var spawnResp map[string]string
+	if err := json.Unmarshal(raw, &spawnResp); err != nil {
+		t.Fatal(err)
+	}
+	taskID := spawnResp["task_id"]
+	if taskID == "" {
+		t.Fatal("expected task_id")
+	}
+	<-started
+
+	listInput, _ := json.Marshal(map[string]any{"status": "running", "limit": 10})
+	listRaw, err := listHandler(context.Background(), listInput)
+	if err != nil {
+		t.Fatalf("list_tasks: %v", err)
+	}
+	var listResp struct {
+		Tasks []Task `json:"tasks"`
+		Count int    `json:"count"`
+	}
+	if err := json.Unmarshal(listRaw, &listResp); err != nil {
+		t.Fatal(err)
+	}
+	if listResp.Count == 0 {
+		t.Fatalf("expected running task in list response: %s", string(listRaw))
+	}
+
+	cancelInput, _ := json.Marshal(map[string]any{"task_id": taskID, "reason": "stop now"})
+	cancelRaw, err := cancelHandler(context.Background(), cancelInput)
+	if err != nil {
+		t.Fatalf("cancel_task: %v", err)
+	}
+	var cancelled Task
+	if err := json.Unmarshal(cancelRaw, &cancelled); err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.Status != TaskCancelled {
+		t.Fatalf("expected cancelled status, got %s", cancelled.Status)
 	}
 }
 

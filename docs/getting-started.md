@@ -140,6 +140,11 @@ moss version
 | `/model <name>` | 切换模型 |
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
+| `/session` | 查看当前会话摘要（ID/预算/消息量） |
+| `/offload [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
+| `/tasks [status] [limit]` | 列出后台任务（支持状态过滤） |
+| `/task <id>` | 查询单个后台任务详情 |
+| `/task cancel <id> [reason]` | 取消后台任务 |
 
 ---
 

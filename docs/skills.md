@@ -281,3 +281,19 @@ k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 | 工具 | 风险等级 | 参数 | 说明 |
 |---|---|---|---|
 | `offload_context` | Medium | `session_id`, `keep_recent`, `note` | 持久化旧上下文快照并压缩当前会话消息 |
+
+---
+
+## Async Delegation Lifecycle
+
+除了 `delegate_agent` / `spawn_agent` / `query_agent` / `task`，现在也支持后台任务生命周期管理工具：
+
+| 工具 | 风险等级 | 参数 | 说明 |
+|---|---|---|---|
+| `list_tasks` | Low | `status`, `agent`, `limit` | 列出后台任务并支持过滤 |
+| `cancel_task` | Medium | `task_id`, `reason` | 取消运行中的后台任务 |
+
+`task` 工具也支持扩展模式：
+
+- `mode=list`：按过滤条件列任务
+- `mode=cancel`：取消指定任务

@@ -98,6 +98,36 @@
 
 ---
 
+## Unreleased — Async Orchestration + TUI UX (Phase 6/7, partial)
+
+### 新增
+
+- Agent 异步委派生命周期工具：
+  - `list_tasks`
+  - `cancel_task`
+- `task` 工具扩展模式：
+  - `mode=list`
+  - `mode=cancel`
+- TUI 新增斜杠命令：
+  - `/session`
+  - `/offload`
+  - `/tasks`
+  - `/task`
+  - `/task cancel`
+
+### 变更
+
+- `agent.Task` 增加 `created_at` / `updated_at`
+- `TaskTracker` 支持任务列表查询与可取消后台任务的 cancel hook
+- `BuildDeepAgentKernel` 默认排除 `list_tasks` / `cancel_task` 不注入 general-purpose 子代理
+- restricted 模式默认审批策略新增 `cancel_task`
+
+### 兼容性
+
+- 向后兼容：原有 `delegate_agent` / `spawn_agent` / `query_agent` / `task`（sync/background/query）行为保持不变。
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更
