@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -117,5 +118,59 @@ func TestManagerNotify(t *testing.T) {
 	got, _ := m.Get(s.ID)
 	if len(got.Messages) != 1 || got.Messages[0].Content != "hello" {
 		t.Fatalf("Messages = %v, want 1 message with 'hello'", got.Messages)
+	}
+}
+
+type dummyManager struct {
+	cancelCount int32
+}
+
+func (m *dummyManager) Create(_ context.Context, _ SessionConfig) (*Session, error) {
+	return &Session{ID: "dummy"}, nil
+}
+
+func (m *dummyManager) Get(_ string) (*Session, bool) { return &Session{ID: "dummy"}, true }
+func (m *dummyManager) List() []*Session              { return []*Session{} }
+func (m *dummyManager) Notify(_ string, _ port.Message) error {
+	return nil
+}
+func (m *dummyManager) Cancel(_ string) error {
+	atomic.AddInt32(&m.cancelCount, 1)
+	return nil
+}
+
+func TestWithCancelHook_WrapsNonAwareManager(t *testing.T) {
+	base := &dummyManager{}
+	var hooked int32
+	m := WithCancelHook(base, func(string) { atomic.AddInt32(&hooked, 1) })
+
+	if err := m.Cancel("sess_x"); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if got := atomic.LoadInt32(&base.cancelCount); got != 1 {
+		t.Fatalf("base cancel count = %d, want 1", got)
+	}
+	if got := atomic.LoadInt32(&hooked); got != 1 {
+		t.Fatalf("hook called = %d, want 1", got)
+	}
+}
+
+func TestWithCancelHook_UsesAwareManager(t *testing.T) {
+	base := NewManager()
+	sess, err := base.Create(context.Background(), SessionConfig{Goal: "x"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var hooked int32
+	m := WithCancelHook(base, func(string) { atomic.AddInt32(&hooked, 1) })
+	if m != base {
+		t.Fatal("aware manager should be returned as-is")
+	}
+
+	if err := m.Cancel(sess.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	if got := atomic.LoadInt32(&hooked); got != 1 {
+		t.Fatalf("hook called = %d, want 1", got)
 	}
 }

@@ -18,10 +18,23 @@ type Manager interface {
 	Notify(id string, msg port.Message) error // 跨 Session 注入消息
 }
 
+// CancelHookAware 是可选扩展契约：实现后可接收 Session.Cancel 的回调。
+// Kernel 装配层会通过该回调把 Session 取消贯通到运行中的 run cancellation。
+type CancelHookAware interface {
+	SetCancelHook(func(id string))
+}
+
 type memoryManager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 	nextID   int
+	onCancel func(id string)
+}
+
+type cancelHookManager struct {
+	base Manager
+	mu   sync.RWMutex
+
 	onCancel func(id string)
 }
 
@@ -32,14 +45,26 @@ func NewManager() Manager {
 	}
 }
 
-// AttachCancelHook 为支持内存实现的 SessionManager 安装取消回调。
-// 非内存实现将被忽略，以保持 Manager 接口最小稳定。
-func AttachCancelHook(m Manager, onCancel func(id string)) {
-	if mm, ok := m.(*memoryManager); ok {
-		mm.mu.Lock()
-		mm.onCancel = onCancel
-		mm.mu.Unlock()
+// WithCancelHook 将取消回调安装到给定 Manager，并返回可用的 Manager。
+// 若 m 实现了 CancelHookAware，会直接设置回调；否则返回一个包装器来提供该能力。
+func WithCancelHook(m Manager, onCancel func(id string)) Manager {
+	if m == nil {
+		return nil
 	}
+	if aware, ok := m.(CancelHookAware); ok {
+		aware.SetCancelHook(onCancel)
+		return m
+	}
+	return &cancelHookManager{
+		base:     m,
+		onCancel: onCancel,
+	}
+}
+
+func (m *memoryManager) SetCancelHook(onCancel func(id string)) {
+	m.mu.Lock()
+	m.onCancel = onCancel
+	m.mu.Unlock()
 }
 
 func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, error) {
@@ -105,4 +130,39 @@ func (m *memoryManager) Notify(id string, msg port.Message) error {
 	}
 	s.Messages = append(s.Messages, msg)
 	return nil
+}
+
+func (m *cancelHookManager) SetCancelHook(onCancel func(id string)) {
+	m.mu.Lock()
+	m.onCancel = onCancel
+	m.mu.Unlock()
+}
+
+func (m *cancelHookManager) Create(ctx context.Context, cfg SessionConfig) (*Session, error) {
+	return m.base.Create(ctx, cfg)
+}
+
+func (m *cancelHookManager) Get(id string) (*Session, bool) {
+	return m.base.Get(id)
+}
+
+func (m *cancelHookManager) List() []*Session {
+	return m.base.List()
+}
+
+func (m *cancelHookManager) Cancel(id string) error {
+	if err := m.base.Cancel(id); err != nil {
+		return err
+	}
+	m.mu.RLock()
+	onCancel := m.onCancel
+	m.mu.RUnlock()
+	if onCancel != nil {
+		onCancel(id)
+	}
+	return nil
+}
+
+func (m *cancelHookManager) Notify(id string, msg port.Message) error {
+	return m.base.Notify(id, msg)
 }

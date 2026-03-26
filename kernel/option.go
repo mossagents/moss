@@ -68,8 +68,7 @@ func WithSessionManager(m session.Manager) Option {
 		if m == nil {
 			return
 		}
-		k.sessions = m
-		session.AttachCancelHook(m, func(id string) {
+		k.sessions = session.WithCancelHook(m, func(id string) {
 			k.runs.cancelSessionRuns(id)
 		})
 	}

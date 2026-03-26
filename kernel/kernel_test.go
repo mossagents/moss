@@ -27,6 +27,25 @@ func (b *blockingLLM) Complete(ctx context.Context, _ port.CompletionRequest) (*
 	return nil, ctx.Err()
 }
 
+type nonHookSessionManager struct {
+	base session.Manager
+}
+
+func newNonHookSessionManager() *nonHookSessionManager {
+	return &nonHookSessionManager{base: session.NewManager()}
+}
+
+func (m *nonHookSessionManager) Create(ctx context.Context, cfg session.SessionConfig) (*session.Session, error) {
+	return m.base.Create(ctx, cfg)
+}
+
+func (m *nonHookSessionManager) Get(id string) (*session.Session, bool) { return m.base.Get(id) }
+func (m *nonHookSessionManager) List() []*session.Session               { return m.base.List() }
+func (m *nonHookSessionManager) Cancel(id string) error                 { return m.base.Cancel(id) }
+func (m *nonHookSessionManager) Notify(id string, msg port.Message) error {
+	return m.base.Notify(id, msg)
+}
+
 func TestKernelIntegration(t *testing.T) {
 	// MockLLM: 先请求 tool call，然后 text 回复
 	mock := &kt.MockLLM{
@@ -278,6 +297,57 @@ func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
 	k := New(
 		WithLLM(bl),
 		WithUserIO(&port.NoOpIO{}),
+	)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "cancel", MaxSteps: 5})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, runErr := k.Run(context.Background(), sess)
+		runErrCh <- runErr
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for atomic.LoadInt32(&bl.calls) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("LLM was not called before timeout")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	if err := k.SessionManager().Cancel(sess.ID); err != nil {
+		t.Fatalf("SessionManager.Cancel: %v", err)
+	}
+
+	select {
+	case runErr := <-runErrCh:
+		if runErr == nil {
+			t.Fatal("expected run error after session cancel")
+		}
+		if !stderrors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got: %v", runErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight run did not exit after session cancel")
+	}
+}
+
+func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) {
+	bl := &blockingLLM{}
+	mgr := newNonHookSessionManager()
+	k := New(
+		WithLLM(bl),
+		WithUserIO(&port.NoOpIO{}),
+		WithSessionManager(mgr),
 	)
 
 	if err := k.Boot(context.Background()); err != nil {
