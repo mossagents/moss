@@ -10,7 +10,6 @@ import (
 	"github.com/mossagents/moss/extensions/agentsx"
 	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
-	toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/skill"
 )
@@ -66,7 +65,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 
 	// 1. 注册内置工具 skill
 	if cfg.builtin {
-		if err := skillsx.Manager(k).Register(ctx, &toolbuiltins.BuiltinTool{}, deps); err != nil {
+		if err := skillsx.Manager(k).Register(ctx, &coreToolSkill{}, deps); err != nil {
 			return err
 		}
 	}

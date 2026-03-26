@@ -273,6 +273,55 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 	}
 }
 
+func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
+	bl := &blockingLLM{}
+	k := New(
+		WithLLM(bl),
+		WithUserIO(&port.NoOpIO{}),
+	)
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "cancel", MaxSteps: 5})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, runErr := k.Run(context.Background(), sess)
+		runErrCh <- runErr
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for atomic.LoadInt32(&bl.calls) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("LLM was not called before timeout")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	if err := k.SessionManager().Cancel(sess.ID); err != nil {
+		t.Fatalf("SessionManager.Cancel: %v", err)
+	}
+
+	select {
+	case runErr := <-runErrCh:
+		if runErr == nil {
+			t.Fatal("expected run error after session cancel")
+		}
+		if !stderrors.Is(runErr, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got: %v", runErr)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight run did not exit after session cancel")
+	}
+}
+
 func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
 	tests := []struct {
 		name string

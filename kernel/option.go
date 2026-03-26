@@ -64,7 +64,15 @@ func WithToolRegistry(r tool.Registry) Option {
 
 // WithSessionManager 替换默认的 Session Manager。
 func WithSessionManager(m session.Manager) Option {
-	return func(k *Kernel) { k.sessions = m }
+	return func(k *Kernel) {
+		if m == nil {
+			return
+		}
+		k.sessions = m
+		session.AttachCancelHook(m, func(id string) {
+			k.runs.cancelSessionRuns(id)
+		})
+	}
 }
 
 // WithLoopConfig 配置 Agent Loop 参数。

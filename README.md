@@ -16,7 +16,7 @@
 │              Middleware Chain                          │
 │  (PolicyCheck, EventEmitter, Logger, 自定义)          │
 ├──────────────────────────────────────────────────────┤
-│  KERNEL: Loop + Tool + Session + Sandbox              │
+│  KERNEL: Loop + Tool + Session + Middleware           │
 ├──────────────────────────────────────────────────────┤
 │  Ports: LLM (Complete/Stream) + UserIO (Send/Ask)     │
 ├──────────────────────────────────────────────────────┤
@@ -32,7 +32,7 @@
 | **Tool** | 能力注册、查找、执行 | System Calls |
 | **Session** | 执行上下文 (消息+状态+预算) | Process + Memory |
 | **Middleware** | 统一扩展点 (Policy/Events/Logger) | Kernel Modules |
-| **Sandbox** | 执行隔离 (文件+命令) | Namespaces/cgroups |
+| **Workspace/Executor** | 文件与命令执行抽象 | Filesystem + Process Isolation |
 
 ### Port 接口
 

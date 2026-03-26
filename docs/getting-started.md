@@ -336,7 +336,7 @@ kernel boot failed:
 go test ./... -count=1
 ```
 
-使用 `kernel/testing` 包中的 Mock 适配器编写测试：
+使用顶层 `testing` 包中的 Mock 适配器编写测试：
 
 ```go
 import kt "github.com/mossagents/moss/testing"

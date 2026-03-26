@@ -22,11 +22,24 @@ type memoryManager struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 	nextID   int
+	onCancel func(id string)
 }
 
 // NewManager 创建基于内存的默认 SessionManager 实现。
 func NewManager() Manager {
-	return &memoryManager{sessions: make(map[string]*Session)}
+	return &memoryManager{
+		sessions: make(map[string]*Session),
+	}
+}
+
+// AttachCancelHook 为支持内存实现的 SessionManager 安装取消回调。
+// 非内存实现将被忽略，以保持 Manager 接口最小稳定。
+func AttachCancelHook(m Manager, onCancel func(id string)) {
+	if mm, ok := m.(*memoryManager); ok {
+		mm.mu.Lock()
+		mm.onCancel = onCancel
+		mm.mu.Unlock()
+	}
 }
 
 func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, error) {
@@ -68,13 +81,18 @@ func (m *memoryManager) List() []*Session {
 
 func (m *memoryManager) Cancel(id string) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
 	if !ok {
+		m.mu.Unlock()
 		return fmt.Errorf("session %q not found", id)
 	}
 	s.Status = StatusCancelled
 	s.EndedAt = time.Now()
+	onCancel := m.onCancel
+	m.mu.Unlock()
+	if onCancel != nil {
+		onCancel(id)
+	}
 	return nil
 }
 

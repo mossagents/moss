@@ -174,6 +174,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	}
 
 	sess.Status = session.StatusCompleted
+	sess.EndedAt = time.Now()
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
 
@@ -513,7 +514,12 @@ func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Sessio
 }
 
 func (l *AgentLoop) fail(sess *session.Session, usage port.TokenUsage, err error) *SessionResult {
-	sess.Status = session.StatusFailed
+	if errors.Is(err, context.Canceled) || sess.Status == session.StatusCancelled {
+		sess.Status = session.StatusCancelled
+	} else {
+		sess.Status = session.StatusFailed
+	}
+	sess.EndedAt = time.Now()
 	return &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,

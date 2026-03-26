@@ -79,7 +79,7 @@
 ### 新增
 
 - **`Kernel.SetupWithDefaults()`** — 一行代码替代 30+ 行手动注册
-  - 自动注册 BuiltinTool（6 个内置工具）
+  - 自动注册 Core Tool Skill（6 个内置工具）
   - 自动加载 MCP Skills（从 `~/.moss/config.yaml` 和 `./moss.yaml`）
   - 自动发现 Skills（从标准目录的 `SKILL.md`）
   - 支持 `SetupOption`：`WithoutBuiltin()`, `WithoutMCPServers()`, `WithoutSkills()`
@@ -121,7 +121,7 @@
 
 - **Skill 接口** + `SkillManager` — 统一扩展入口
 - **MCP Client** — 通过 MCP 协议连接外部工具服务器（stdio / SSE）
-- **BuiltinTool** — 内置 6 工具的 Provider 封装
+- **Core Tool Skill** — 内置 6 工具的默认 Provider 封装
 - **Skill** — 兼容 skills.sh 的 `SKILL.md` 系统提示词注入
 - `DiscoverSkills()` — 从标准目录自动发现
 - CLI 输出已加载的 Skills 信息

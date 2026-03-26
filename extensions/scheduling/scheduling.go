@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/mossagents/moss/kernel"
-	toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
+	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
 )
 
@@ -23,7 +23,12 @@ func WithScheduler(s *scheduler.Scheduler) kernel.Option {
 
 // RegisterTools 为调度器注册标准工具集。
 func RegisterTools(k *kernel.Kernel, sched *scheduler.Scheduler) error {
-	return toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched)
+	return RegisterScheduleTools(k.ToolRegistry(), sched)
+}
+
+// RegisterToolRegistry 为调度器注册标准工具集。
+func RegisterToolRegistry(reg tool.Registry, sched *scheduler.Scheduler) error {
+	return RegisterScheduleTools(reg, sched)
 }
 
 func ensureState(k *kernel.Kernel) *state {

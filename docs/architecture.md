@@ -38,9 +38,9 @@ loop {
 │  (PolicyCheck, EventEmitter, Logger, 自定义 Middleware)       │
 ├──────────────────────────────────────────────────────────────┤
 │                         KERNEL                                │
-│  ┌────────┐  ┌────────┐  ┌──────────┐  ┌──────────┐        │
-│  │  Loop  │  │  Tool  │  │ Session  │  │ Sandbox  │        │
-│  └────────┘  └────────┘  └──────────┘  └──────────┘        │
+│  ┌────────┐  ┌────────┐  ┌──────────┐  ┌──────────────┐    │
+│  │  Loop  │  │  Tool  │  │ Session  │  │  Middleware  │    │
+│  └────────┘  └────────┘  └──────────┘  └──────────────┘    │
 ├──────────────────────────────────────────────────────────────┤
 │                     Ports (Interfaces)                         │
 │  ┌─────────────────────┐  ┌─────────────────────┐           │
@@ -68,7 +68,7 @@ Kernel 层**零外部依赖**（仅 Go stdlib + 自身子包）。
 | **Tool** | 能力注册、查找、执行 | System Calls |
 | **Session** | 执行上下文 (消息+状态+预算) | Process + Memory |
 | **Middleware** | 统一扩展点 (合并 Hook/Policy/Event) | Kernel Modules |
-| **Sandbox** | 执行隔离 (文件+命令) | Namespaces / cgroups |
+| **Workspace/Executor Ports** | 文件与命令执行抽象 | Filesystem + Process Isolation |
 
 ### Port 接口
 
@@ -250,8 +250,8 @@ kernel/loop                         (imports 以上所有)
     ↑ references
 kernel/kernel.go                    (Kernel 入口，组合所有子系统)
     ↑ references
-kernel/skill                        (Skill 管理，imports tool, middleware, sandbox, port)
-kernel/tool/builtins                (最小内置工具 skill，imports skill, port, sandbox, tool)
+skill                               (Skill 管理，imports tool, middleware, sandbox, port)
+extensions/defaults/core_tool_skill.go (默认 core skill 装配，imports skill, kernel/tool/builtins)
 extensions/skillsx, extensions/agentsx (skill/agent feature API 的扩展入口)
 extensions/knowledgex               (knowledge + embedder 组合扩展)
 extensions/defaults/setup.go        (默认扩展装配，imports skill, builtins)
@@ -274,7 +274,7 @@ cmd/moss                            (CLI/TUI 入口)
 | 结构化 UserIO (Send/Ask) | 取代原始文本 IO，无缝对接所有界面 |
 | Approval 非独立概念 | PolicyCheck MW + UserIO.Ask(Confirm) 组合实现 |
 | Task/Plan/Agent 在上层 | Kernel 只有 Session，编排逻辑不属于最小核心 |
-| Sandbox 保持独立 | 安全隔离是一等公民，显式接口便于审计 |
+| Sandbox 保持独立 | 作为核心外官方实现层，避免污染 kernel 最小边界 |
 | Kernel 零外部依赖 | 仅 Go stdlib，确保长期稳定演化 |
 
 ---

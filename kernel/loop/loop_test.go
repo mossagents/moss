@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -306,6 +307,67 @@ func TestLoopParallelToolCalls(t *testing.T) {
 	if toolResults != 2 {
 		t.Fatalf("expected 2 tool results, got %d", toolResults)
 	}
+}
+
+func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
+	bl := &blockingLLM{}
+	l := &AgentLoop{
+		LLM:   bl,
+		Tools: tool.NewRegistry(),
+		IO:    kt.NewRecorderIO(),
+	}
+	sess := &session.Session{
+		ID:       "cancelled-loop",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "wait"}},
+		Budget:   session.Budget{MaxSteps: 5},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		_, err := l.Run(ctx, sess)
+		runErrCh <- err
+	}()
+
+	deadline := time.After(500 * time.Millisecond)
+	for atomic.LoadInt32(&bl.calls) == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("LLM was not called before timeout")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	cancel()
+
+	select {
+	case err := <-runErrCh:
+		if err == nil {
+			t.Fatal("expected cancellation error")
+		}
+		if !stderrors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("run did not exit after cancellation")
+	}
+
+	if sess.Status != session.StatusCancelled {
+		t.Fatalf("status = %q, want %q", sess.Status, session.StatusCancelled)
+	}
+	if sess.EndedAt.IsZero() {
+		t.Fatal("ended_at should be set on cancellation")
+	}
+}
+
+type blockingLLM struct {
+	calls int32
+}
+
+func (b *blockingLLM) Complete(ctx context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	atomic.AddInt32(&b.calls, 1)
+	<-ctx.Done()
+	return nil, ctx.Err()
 }
 
 type flakyLLM struct {

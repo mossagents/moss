@@ -45,6 +45,9 @@ func New(opts ...Option) *Kernel {
 		shutdownCh: make(chan struct{}),
 		runs:       newRunSupervisor(),
 	}
+	session.AttachCancelHook(k.sessions, func(id string) {
+		k.runs.cancelSessionRuns(id)
+	})
 	for _, opt := range opts {
 		opt(k)
 	}

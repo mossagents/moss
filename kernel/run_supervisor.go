@@ -79,6 +79,16 @@ func (s *runSupervisor) beginShutdown() {
 	s.mu.Unlock()
 }
 
+func (s *runSupervisor) cancelSessionRuns(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, rec := range s.runs {
+		if rec.sessionID == sessionID {
+			rec.cancel()
+		}
+	}
+}
+
 func (s *runSupervisor) wait(ctx context.Context) {
 	done := make(chan struct{})
 	go func() {

@@ -6,13 +6,12 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/logging"
 )
 
 // Logger 构造日志 middleware，记录每个 phase 的开始/结束/耗时。
 // 使用 slog 输出结构化日志。
 func Logger() middleware.Middleware {
-	logger := logging.GetLogger()
+	logger := slog.Default()
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		start := time.Now()
 

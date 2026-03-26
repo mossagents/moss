@@ -1,4 +1,4 @@
-package builtins
+package scheduling
 
 import (
 	"context"
@@ -10,8 +10,7 @@ import (
 	"github.com/mossagents/moss/scheduler"
 )
 
-// RegisterScheduleTools 注册调度相关的内置工具。
-// 需要在 Kernel 设置好 Scheduler 后调用。
+// RegisterScheduleTools 注册调度相关工具。
 func RegisterScheduleTools(reg tool.Registry, sched *scheduler.Scheduler) error {
 	tools := []struct {
 		spec    tool.ToolSpec
@@ -28,8 +27,6 @@ func RegisterScheduleTools(reg tool.Registry, sched *scheduler.Scheduler) error 
 	}
 	return nil
 }
-
-// ─── schedule_task ──────────────────────────────────
 
 var scheduleTaskSpec = tool.ToolSpec{
 	Name: "schedule_task",
@@ -67,7 +64,6 @@ func scheduleTaskHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-
 		job := scheduler.Job{
 			ID:       params.ID,
 			Schedule: params.Schedule,
@@ -78,11 +74,9 @@ func scheduleTaskHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 				MaxSteps: 30,
 			},
 		}
-
 		if err := sched.AddJob(job); err != nil {
 			return nil, fmt.Errorf("schedule task: %w", err)
 		}
-
 		return json.Marshal(map[string]any{
 			"status":   "scheduled",
 			"id":       params.ID,
@@ -92,8 +86,6 @@ func scheduleTaskHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 		})
 	}
 }
-
-// ─── list_schedules ─────────────────────────────────
 
 var listSchedulesSpec = tool.ToolSpec{
 	Name:         "list_schedules",
@@ -106,7 +98,6 @@ var listSchedulesSpec = tool.ToolSpec{
 func listSchedulesHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		jobs := sched.ListJobs()
-
 		type jobInfo struct {
 			ID       string `json:"id"`
 			Schedule string `json:"schedule"`
@@ -115,15 +106,9 @@ func listSchedulesHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 			LastRun  string `json:"last_run,omitempty"`
 			NextRun  string `json:"next_run,omitempty"`
 		}
-
 		infos := make([]jobInfo, len(jobs))
 		for i, j := range jobs {
-			infos[i] = jobInfo{
-				ID:       j.ID,
-				Schedule: j.Schedule,
-				Goal:     j.Goal,
-				RunCount: j.RunCount,
-			}
+			infos[i] = jobInfo{ID: j.ID, Schedule: j.Schedule, Goal: j.Goal, RunCount: j.RunCount}
 			if !j.LastRun.IsZero() {
 				infos[i].LastRun = j.LastRun.Format("2006-01-02 15:04:05")
 			}
@@ -131,15 +116,9 @@ func listSchedulesHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 				infos[i].NextRun = j.NextRun.Format("2006-01-02 15:04:05")
 			}
 		}
-
-		return json.Marshal(map[string]any{
-			"count": len(infos),
-			"jobs":  infos,
-		})
+		return json.Marshal(map[string]any{"count": len(infos), "jobs": infos})
 	}
 }
-
-// ─── cancel_schedule ────────────────────────────────
 
 var cancelScheduleSpec = tool.ToolSpec{
 	Name:        "cancel_schedule",
@@ -163,11 +142,9 @@ func cancelScheduleHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-
 		if err := sched.RemoveJob(params.ID); err != nil {
 			return nil, err
 		}
-
 		return json.Marshal(map[string]any{
 			"status":    "cancelled",
 			"id":        params.ID,

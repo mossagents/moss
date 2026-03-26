@@ -1,6 +1,6 @@
 # 🧩 技能系统 (Skills)
 
-Moss 的技能系统支持三种类型的扩展：**BuiltinTool**（内置工具）、**MCPServer**（外部 MCP 服务器）、**Skill**（系统提示词注入）。
+Moss 的技能系统支持三种类型的扩展：**Core Tool Skill**（默认内置工具技能）、**MCPServer**（外部 MCP 服务器）、**Skill**（系统提示词注入）。
 
 ---
 
@@ -10,7 +10,7 @@ Moss 的技能系统支持三种类型的扩展：**BuiltinTool**（内置工具
 ┌─────────────────────────────────────────┐
 │            Skill Manager                 │
 │  ┌───────────┐ ┌─────────┐ ┌────────┐  │
-│  │BuiltinTool│ │MCPServer│ │ Skill  │  │
+│  │Core Tool  │ │MCPServer│ │ Skill  │  │
 │  │ (6 tools) │ │(MCP srv)│ │(SKILL) │  │
 │  └───────────┘ └─────────┘ └────────┘  │
 ├─────────────────────────────────────────┤
@@ -47,18 +47,16 @@ type Deps struct {
 
 ---
 
-## BuiltinTool
+## Core Tool Skill
 
 内置核心工具集，提供文件操作、命令执行和用户交互能力。
 
-**注册方式**：通过 `defaults.Setup` 自动装配，或手动注册：
+**注册方式**：通过 `defaults.Setup` 自动装配（推荐）：
 
 ```go
-import "github.com/mossagents/moss/extensions/skillsx"
-import toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
+import "github.com/mossagents/moss/extensions/defaults"
 
-core := &toolbuiltins.BuiltinTool{}
-skillsx.Manager(k).Register(ctx, core, skillsx.Deps(k))
+defaults.Setup(ctx, k, workspaceDir)
 ```
 
 **提供的 6 个工具**：
@@ -206,7 +204,7 @@ manager.ShutdownAll(ctx)
 推荐使用 `defaults.Setup` 一键装配所有标准技能：
 
 ```go
-// 默认行为：注册 BuiltinTool + 加载 MCP Servers + 发现 Skills
+// 默认行为：注册 Core Tool Skill + 加载 MCP Servers + 发现 Skills
 defaults.Setup(ctx, k, workspaceDir)
 
 // 选择性禁用
