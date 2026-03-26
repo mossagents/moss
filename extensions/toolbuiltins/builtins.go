@@ -18,7 +18,7 @@ import (
 func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
 	names := []string{}
 	if ws != nil || sb != nil {
-		names = append(names, "read_file", "write_file", "list_files", "search_text")
+		names = append(names, "read_file", "write_file", "edit_file", "glob", "list_files", "search_text")
 	}
 	if exec != nil || sb != nil {
 		names = append(names, "run_command")
@@ -42,6 +42,8 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.
 		tools = append(tools,
 			entry{readFileSpec, readFileHandlerWS(ws)},
 			entry{writeFileSpec, writeFileHandlerWS(ws)},
+			entry{editFileSpec, editFileHandlerWS(ws)},
+			entry{globSpec, globHandlerWS(ws)},
 			entry{listFilesSpec, listFilesHandlerWS(ws)},
 			entry{searchTextSpec, searchTextHandlerWS(ws)},
 		)
@@ -49,6 +51,8 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.
 		tools = append(tools,
 			entry{readFileSpec, readFileHandler(sb)},
 			entry{writeFileSpec, writeFileHandler(sb)},
+			entry{editFileSpec, editFileHandler(sb)},
+			entry{globSpec, globHandler(sb)},
 			entry{listFilesSpec, listFilesHandler(sb)},
 			entry{searchTextSpec, searchTextHandler(sb)},
 		)
@@ -133,6 +137,91 @@ func writeFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
 			return nil, err
 		}
 		return json.Marshal(map[string]string{"status": "ok", "path": params.Path})
+	}
+}
+
+// ─── edit_file ───────────────────────────────────────
+
+var editFileSpec = tool.ToolSpec{
+	Name:        "edit_file",
+	Description: "Edit a file by replacing old_string with new_string. Supports replace_all mode.",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"path": {"type": "string", "description": "File path (relative to workspace root)"},
+			"old_string": {"type": "string", "description": "Text to replace"},
+			"new_string": {"type": "string", "description": "Replacement text"},
+			"replace_all": {"type": "boolean", "description": "Whether to replace all occurrences (default: false)"}
+		},
+		"required": ["path", "old_string", "new_string"]
+	}`),
+	Risk:         tool.RiskHigh,
+	Capabilities: []string{"filesystem"},
+}
+
+func editFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Path       string `json:"path"`
+			OldString  string `json:"old_string"`
+			NewString  string `json:"new_string"`
+			ReplaceAll bool   `json:"replace_all"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+
+		data, err := sb.ReadFile(params.Path)
+		if err != nil {
+			return nil, err
+		}
+		updated, occurrences, err := applyEdit(string(data), params.OldString, params.NewString, params.ReplaceAll)
+		if err != nil {
+			return nil, err
+		}
+		if err := sb.WriteFile(params.Path, []byte(updated)); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"status":      "ok",
+			"path":        params.Path,
+			"occurrences": occurrences,
+		})
+	}
+}
+
+// ─── glob ────────────────────────────────────────────
+
+var globSpec = tool.ToolSpec{
+	Name:        "glob",
+	Description: "Find files by glob pattern. Optionally scope search under a relative path.",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"pattern": {"type": "string", "description": "Glob pattern (e.g., \"**/*.go\")"},
+			"path": {"type": "string", "description": "Optional relative directory prefix"}
+		},
+		"required": ["pattern"]
+	}`),
+	Risk:         tool.RiskLow,
+	Capabilities: []string{"filesystem"},
+}
+
+func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Pattern string `json:"pattern"`
+			Path    string `json:"path"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		pattern := scopedPattern(params.Pattern, params.Path)
+		files, err := sb.ListFiles(pattern)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(files)
 	}
 }
 
@@ -333,6 +422,55 @@ func writeFileHandlerWS(ws port.Workspace) tool.ToolHandler {
 	}
 }
 
+func editFileHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Path       string `json:"path"`
+			OldString  string `json:"old_string"`
+			NewString  string `json:"new_string"`
+			ReplaceAll bool   `json:"replace_all"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+
+		data, err := ws.ReadFile(ctx, params.Path)
+		if err != nil {
+			return nil, err
+		}
+		updated, occurrences, err := applyEdit(string(data), params.OldString, params.NewString, params.ReplaceAll)
+		if err != nil {
+			return nil, err
+		}
+		if err := ws.WriteFile(ctx, params.Path, []byte(updated)); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"status":      "ok",
+			"path":        params.Path,
+			"occurrences": occurrences,
+		})
+	}
+}
+
+func globHandlerWS(ws port.Workspace) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			Pattern string `json:"pattern"`
+			Path    string `json:"path"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		pattern := scopedPattern(params.Pattern, params.Path)
+		files, err := ws.ListFiles(ctx, pattern)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(files)
+	}
+}
+
 func listFilesHandlerWS(ws port.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
@@ -443,4 +581,28 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+func applyEdit(content, oldString, newString string, replaceAll bool) (string, int, error) {
+	if oldString == "" {
+		return "", 0, fmt.Errorf("old_string cannot be empty")
+	}
+	occurrences := strings.Count(content, oldString)
+	if occurrences == 0 {
+		return "", 0, fmt.Errorf("old_string not found")
+	}
+	if !replaceAll && occurrences > 1 {
+		return "", 0, fmt.Errorf("old_string appears %d times; set replace_all=true to replace all occurrences", occurrences)
+	}
+	if replaceAll {
+		return strings.ReplaceAll(content, oldString, newString), occurrences, nil
+	}
+	return strings.Replace(content, oldString, newString, 1), 1, nil
+}
+
+func scopedPattern(pattern, scopePath string) string {
+	if scopePath == "" || scopePath == "." {
+		return pattern
+	}
+	return filepath.Join(scopePath, pattern)
 }

@@ -157,9 +157,12 @@ Moss 按以下优先级自动发现 SKILL.md（项目级 > 全局）：
 |---|---|
 | `.agents/skills/SKILL.md` | 项目 |
 | `.agents/skills/*/SKILL.md` | 项目（多 skill） |
+| `.agent/skills/SKILL.md` | 项目 |
+| `.agent/skills/*/SKILL.md` | 项目（多 skill） |
 | `.moss/skills/SKILL.md` | 项目 |
 | `.moss/skills/*/SKILL.md` | 项目（多 skill） |
 | `~/.copilot/skills/SKILL.md` | 全局 |
+| `~/.agent/skills/SKILL.md` | 全局 |
 | `~/.moss/skills/SKILL.md` | 全局 |
 | `~/.config/agents/skills/SKILL.md` | 全局 (Unix) |
 

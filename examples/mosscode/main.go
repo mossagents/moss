@@ -2,7 +2,7 @@
 //
 // 演示如何用 moss kernel 构建一个交互式编程助手：
 //   - Bubble Tea TUI 交互界面
-//   - 6 个内置工具（read_file, write_file, list_files, search_text, run_command, ask_user）
+//   - 8 个内置工具（read_file, write_file, edit_file, glob, list_files, search_text, run_command, ask_user）
 //   - 信任等级（trusted: 自动执行 / restricted: 危险操作需确认）
 //
 // 用法:

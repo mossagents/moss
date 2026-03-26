@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -188,6 +189,100 @@ Custom instructions here.
 	}
 	if !names["my-skill"] {
 		t.Error("missing my-skill skill")
+	}
+}
+
+func TestDiscoverSkills_ProjectAgentDir(t *testing.T) {
+	workspace := t.TempDir()
+
+	dir := filepath.Join(workspace, ".agent", "skills", "local-agent-skill")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: local-agent-skill
+description: Loaded from .agent
+---
+Project-local .agent skill.
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := DiscoverSkills(workspace)
+	for _, s := range skills {
+		if s.name == "local-agent-skill" {
+			return
+		}
+	}
+
+	t.Fatal("missing local-agent-skill from .agent/skills")
+}
+
+func TestDiscoverSkills_GlobalAgentDir(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	dir := filepath.Join(home, ".agent", "skills", "global-agent-skill")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: global-agent-skill
+description: Loaded from ~/.agent
+---
+Global .agent skill.
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := DiscoverSkills(workspace)
+	for _, s := range skills {
+		if s.name == "global-agent-skill" {
+			return
+		}
+	}
+
+	t.Fatal("missing global-agent-skill from ~/.agent/skills")
+}
+
+func TestDiscoverSkills_ProjectAgentPrecedenceOverAppDir(t *testing.T) {
+	workspace := t.TempDir()
+
+	for dir, body := range map[string]string{
+		filepath.Join(workspace, ".agent", "skills", "shared-skill"): "loaded from .agent",
+		filepath.Join(workspace, ".moss", "skills", "shared-skill"):  "loaded from .moss",
+	} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: shared-skill
+description: precedence test
+---
+`+body+`
+`), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	skills := DiscoverSkills(workspace)
+	count := 0
+	for _, s := range skills {
+		if s.name != "shared-skill" {
+			continue
+		}
+		count++
+		if s.body != "loaded from .agent" {
+			t.Fatalf("shared-skill body = %q, want %q", s.body, "loaded from .agent")
+		}
+		if !strings.Contains(s.source, filepath.Join(".agent", "skills", "shared-skill", "SKILL.md")) {
+			t.Fatalf("shared-skill source = %q, want .agent path", s.source)
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 shared-skill, got %d", count)
 	}
 }
 

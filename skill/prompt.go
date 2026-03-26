@@ -125,14 +125,15 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 // DiscoverSkills 扫描标准目录，发现所有 SKILL.md 文件。
 // 按以下优先级扫描（project → global）：
 //
-//	Project: .agents/skills/, .moss/skills/
-//	Global:  ~/.copilot/skills/, ~/.config/agents/skills/, ~/.moss/skills/
+//	Project: .agents/skills/, .agent/skills/, .moss/skills/
+//	Global:  ~/.copilot/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
 func DiscoverSkills(workspace string) []*Skill {
 	var skills []*Skill
 
 	// Project-level 目录
 	projectDirs := []string{
 		filepath.Join(workspace, ".agents", "skills"),
+		filepath.Join(workspace, ".agent", "skills"),
 		filepath.Join(workspace, "."+appconfig.AppName(), "skills"),
 	}
 
@@ -142,6 +143,7 @@ func DiscoverSkills(workspace string) []*Skill {
 	if home != "" {
 		globalDirs = append(globalDirs,
 			filepath.Join(home, ".copilot", "skills"),
+			filepath.Join(home, ".agent", "skills"),
 			filepath.Join(home, "."+appconfig.AppName(), "skills"),
 		)
 		if runtime.GOOS != "windows" {

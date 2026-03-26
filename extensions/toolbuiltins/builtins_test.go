@@ -143,7 +143,7 @@ func TestRegisterAll(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "list_files", "search_text", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -207,6 +207,72 @@ func TestWriteFile(t *testing.T) {
 	}
 	if sb.files["/ws/out.txt"] != "new content" {
 		t.Errorf("file not written, files: %v", sb.files)
+	}
+}
+
+func TestEditFile(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/doc.txt": "hello moss",
+	})
+	handler := editFileHandler(sb)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"path":       "doc.txt",
+		"old_string": "moss",
+		"new_string": "world",
+	}))
+	if err != nil {
+		t.Fatalf("editFile: %v", err)
+	}
+
+	var resp map[string]any
+	json.Unmarshal(result, &resp)
+	if resp["status"] != "ok" {
+		t.Errorf("expected status ok, got %v", resp["status"])
+	}
+	if sb.files["/ws/doc.txt"] != "hello world" {
+		t.Errorf("unexpected edited content: %q", sb.files["/ws/doc.txt"])
+	}
+}
+
+func TestEditFileRequireReplaceAll(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/doc.txt": "moss moss",
+	})
+	handler := editFileHandler(sb)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]any{
+		"path":       "doc.txt",
+		"old_string": "moss",
+		"new_string": "x",
+	}))
+	if err == nil {
+		t.Fatal("expected replace_all guidance error")
+	}
+}
+
+func TestGlobTool(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/a.go":        "",
+		"/ws/sub/b.go":    "",
+		"/ws/sub/readme":  "",
+		"/ws/notes/test":  "",
+		"/ws/notes/x.txt": "",
+	})
+	handler := globHandler(sb)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"pattern": "**/*.go",
+		"path":    ".",
+	}))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+
+	var files []string
+	json.Unmarshal(result, &files)
+	if len(files) != 5 {
+		t.Errorf("expected 5 files from mock list, got %d", len(files))
 	}
 }
 
@@ -341,6 +407,8 @@ func TestToolRiskLevels(t *testing.T) {
 	}{
 		{"read_file", tool.RiskLow},
 		{"write_file", tool.RiskHigh},
+		{"edit_file", tool.RiskHigh},
+		{"glob", tool.RiskLow},
 		{"list_files", tool.RiskLow},
 		{"search_text", tool.RiskLow},
 		{"run_command", tool.RiskHigh},
@@ -372,6 +440,8 @@ func TestInvalidInput(t *testing.T) {
 	}{
 		{"read_file", readFileHandler(sb)},
 		{"write_file", writeFileHandler(sb)},
+		{"edit_file", editFileHandler(sb)},
+		{"glob", globHandler(sb)},
 		{"list_files", listFilesHandler(sb)},
 		{"search_text", searchTextHandler(sb)},
 		{"run_command", runCommandHandler(sb)},
@@ -409,7 +479,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "list_files", "search_text", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -454,6 +524,29 @@ func TestWriteFileWS(t *testing.T) {
 	}
 }
 
+func TestEditFileWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{"a.txt": "hello moss"}}
+	handler := editFileHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"path":       "a.txt",
+		"old_string": "moss",
+		"new_string": "team",
+	}))
+	if err != nil {
+		t.Fatalf("editFileWS: %v", err)
+	}
+
+	var resp map[string]any
+	json.Unmarshal(result, &resp)
+	if resp["status"] != "ok" {
+		t.Errorf("expected status ok, got %v", resp["status"])
+	}
+	if ws.files["a.txt"] != "hello team" {
+		t.Errorf("unexpected content: %q", ws.files["a.txt"])
+	}
+}
+
 func TestListFilesWS(t *testing.T) {
 	ws := &mockWorkspace{files: map[string]string{
 		"a.go": "", "b.go": "", "dir/c.txt": "",
@@ -469,6 +562,27 @@ func TestListFilesWS(t *testing.T) {
 	json.Unmarshal(result, &files)
 	if len(files) != 3 {
 		t.Errorf("expected 3 files, got %d: %v", len(files), files)
+	}
+}
+
+func TestGlobWS(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{
+		"a.go": "",
+		"b.go": "",
+	}}
+	handler := globHandlerWS(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"pattern": "*.go",
+	}))
+	if err != nil {
+		t.Fatalf("globWS: %v", err)
+	}
+
+	var files []string
+	json.Unmarshal(result, &files)
+	if len(files) != 2 {
+		t.Errorf("expected 2 files, got %d", len(files))
 	}
 }
 

@@ -5,7 +5,7 @@ mosscode 是一个类 Claude Code 的极简代码助手示例，当前为默认 
 ## 功能
 
 - 基于 Moss Kernel 的交互式代码助手
-- 内置 6 个核心工具（read_file、write_file、list_files、search_text、run_command、ask_user）
+- 内置 8 个核心工具（read_file、write_file、edit_file、glob、list_files、search_text、run_command、ask_user）
 - 支持 provider/model/base_url/api_key 配置
 - 支持 system prompt 模板覆盖
 

@@ -79,7 +79,7 @@
 ### 新增
 
 - **`Kernel.SetupWithDefaults()`** — 一行代码替代 30+ 行手动注册
-  - 自动注册 Core Tool Skill（6 个内置工具）
+  - 自动注册 Core Tool Skill（现为 8 个内置工具）
   - 自动加载 MCP Skills（从 `~/.moss/config.yaml` 和 `./moss.yaml`）
   - 自动发现 Skills（从标准目录的 `SKILL.md`）
   - 支持 `SetupOption`：`WithoutBuiltin()`, `WithoutMCPServers()`, `WithoutSkills()`

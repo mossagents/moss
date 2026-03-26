@@ -46,7 +46,7 @@ func TestSetup(t *testing.T) {
 	for _, ts := range tools {
 		toolNames[ts.Name] = true
 	}
-	for _, name := range []string{"read_file", "write_file", "list_files", "search_text", "run_command", "ask_user"} {
+	for _, name := range []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user"} {
 		if !toolNames[name] {
 			t.Errorf("expected tool %q to be registered", name)
 		}
@@ -97,7 +97,7 @@ func TestSetup_NoSandbox(t *testing.T) {
 	if !toolNames["ask_user"] {
 		t.Error("expected ask_user to be registered without sandbox")
 	}
-	for _, name := range []string{"read_file", "write_file", "list_files", "search_text", "run_command"} {
+	for _, name := range []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command"} {
 		if toolNames[name] {
 			t.Errorf("tool %q should not be registered without sandbox", name)
 		}

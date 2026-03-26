@@ -43,7 +43,7 @@ func WithoutSkills() Option {
 // 这是推荐的快速开始方式，但归属于扩展层而非 kernel core。
 //
 // 默认行为:
-//   - 注册 6 个内置工具（read_file, write_file, list_files, search_text, run_command, ask_user）
+//   - 注册 8 个内置工具（read_file, write_file, edit_file, glob, list_files, search_text, run_command, ask_user）
 //   - 从 ~/.moss/config.yaml 和 ./moss.yaml 加载 MCP servers
 //   - 从标准目录发现 SKILL.md skills
 //   - 从标准目录加载 Agent 配置
