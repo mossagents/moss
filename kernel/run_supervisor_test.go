@@ -72,3 +72,39 @@ func TestRunSupervisorWaitReturnsOnContextDone(t *testing.T) {
 	// Cleanup unfinished run record.
 	s.end(runID)
 }
+
+func TestRunSupervisorBeginRejectsConcurrentSameSession(t *testing.T) {
+	s := newRunSupervisor()
+
+	_, runID, err := s.begin(context.Background(), "same-session", runKindForeground)
+	if err != nil {
+		t.Fatalf("first begin: %v", err)
+	}
+	defer s.end(runID)
+
+	_, _, err = s.begin(context.Background(), "same-session", runKindForeground)
+	if err == nil {
+		t.Fatal("expected second begin to fail for same session")
+	}
+
+	var kerr *kerrors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrSessionRunning {
+		t.Fatalf("expected ErrSessionRunning, got: %v", err)
+	}
+}
+
+func TestRunSupervisorBeginAllowsDifferentSessions(t *testing.T) {
+	s := newRunSupervisor()
+
+	_, runID1, err := s.begin(context.Background(), "s-1", runKindForeground)
+	if err != nil {
+		t.Fatalf("first begin: %v", err)
+	}
+	defer s.end(runID1)
+
+	_, runID2, err := s.begin(context.Background(), "s-2", runKindForeground)
+	if err != nil {
+		t.Fatalf("second begin for different session should succeed: %v", err)
+	}
+	defer s.end(runID2)
+}

@@ -45,6 +45,11 @@ func (s *runSupervisor) begin(parent context.Context, sessionID string, kind run
 	if s.closing {
 		return nil, "", kerrors.New(kerrors.ErrShutdown, "kernel is shutting down")
 	}
+	for _, rec := range s.runs {
+		if rec.sessionID == sessionID {
+			return nil, "", kerrors.New(kerrors.ErrSessionRunning, fmt.Sprintf("session %q already has an active run", sessionID))
+		}
+	}
 
 	id := fmt.Sprintf("run_%d", atomic.AddUint64(&s.nextID, 1))
 	runCtx, cancel := context.WithCancel(parent)
