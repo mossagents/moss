@@ -6,13 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agentsx"
 	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
-	appconfig "github.com/mossagents/moss/kernel/config"
-	"github.com/mossagents/moss/kernel/logging"
-	"github.com/mossagents/moss/kernel/skill"
 	toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
+	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/skill"
 )
 
 // Option 控制默认扩展装配行为。

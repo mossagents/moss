@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	appconfig "github.com/mossagents/moss/config"
 	core "github.com/mossagents/moss/contrib/core"
-	appconfig "github.com/mossagents/moss/kernel/config"
 	"github.com/mossagents/moss/kernel/tool"
 )
 

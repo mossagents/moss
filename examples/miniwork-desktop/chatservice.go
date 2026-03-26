@@ -14,9 +14,9 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/scheduler"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/scheduler"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

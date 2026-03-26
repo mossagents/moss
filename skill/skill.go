@@ -5,8 +5,8 @@ import (
 
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // Provider 是可加载的能力单元：一组工具 + 系统提示词 + 可选中间件。

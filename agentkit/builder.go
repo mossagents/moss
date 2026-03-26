@@ -9,7 +9,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // BuildConfig 描述 agentkit.BuildKernel 的可选默认装配行为。

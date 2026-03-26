@@ -3,32 +3,20 @@ package kernel
 import (
 	"context"
 	"sort"
-
-	"github.com/mossagents/moss/kernel/agent"
-	"github.com/mossagents/moss/kernel/bootstrap"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/scheduler"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/skill"
+	"sync"
 )
 
+// ExtensionStateKey 标识一个扩展状态槽。
+type ExtensionStateKey string
+
 type extensionState struct {
-	skills    *skill.Manager
-	bootstrap *bootstrap.Context
-	sched     *scheduler.Scheduler
-	store     session.SessionStore
-	agents    *agent.Registry
-	tasks     *agent.TaskTracker
+	mu sync.RWMutex
+
+	values map[ExtensionStateKey]any
 
 	bootHooks     []orderedBootHook
 	shutdownHooks []orderedShutdownHook
 	promptHooks   []orderedPromptHook
-
-	skillHooksReady     bool
-	bootstrapHooksReady bool
-	schedulerHooksReady bool
-	storeHooksReady     bool
-	agentHooksReady     bool
 }
 
 type orderedBootHook struct {
@@ -48,12 +36,11 @@ type orderedPromptHook struct {
 
 func newExtensionState() *extensionState {
 	return &extensionState{
-		skills: skill.NewManager(),
+		values: make(map[ExtensionStateKey]any),
 	}
 }
 
-// ExtensionBridge 提供扩展层对非 core 运行时部件的桥接配置入口。
-// 这些能力不再作为 kernel root 的一等构造选项暴露。
+// ExtensionBridge 提供扩展层对非 core 生命周期与状态槽的通用接入入口。
 type ExtensionBridge struct {
 	k *Kernel
 }
@@ -71,7 +58,11 @@ func (k *Kernel) extensionState() *extensionState {
 }
 
 func (k *Kernel) bootExtensions(ctx context.Context) error {
-	hooks := append([]orderedBootHook(nil), k.extensionState().bootHooks...)
+	ext := k.extensionState()
+	ext.mu.RLock()
+	hooks := append([]orderedBootHook(nil), ext.bootHooks...)
+	ext.mu.RUnlock()
+
 	sort.SliceStable(hooks, func(i, j int) bool { return hooks[i].order < hooks[j].order })
 	for _, hook := range hooks {
 		if hook.run == nil {
@@ -85,7 +76,11 @@ func (k *Kernel) bootExtensions(ctx context.Context) error {
 }
 
 func (k *Kernel) shutdownExtensions(ctx context.Context) error {
-	hooks := append([]orderedShutdownHook(nil), k.extensionState().shutdownHooks...)
+	ext := k.extensionState()
+	ext.mu.RLock()
+	hooks := append([]orderedShutdownHook(nil), ext.shutdownHooks...)
+	ext.mu.RUnlock()
+
 	sort.SliceStable(hooks, func(i, j int) bool { return hooks[i].order < hooks[j].order })
 	for _, hook := range hooks {
 		if hook.run == nil {
@@ -100,7 +95,12 @@ func (k *Kernel) shutdownExtensions(ctx context.Context) error {
 
 func (k *Kernel) extendSystemPrompt(base string) string {
 	sysPrompt := base
-	hooks := append([]orderedPromptHook(nil), k.extensionState().promptHooks...)
+
+	ext := k.extensionState()
+	ext.mu.RLock()
+	hooks := append([]orderedPromptHook(nil), ext.promptHooks...)
+	ext.mu.RUnlock()
+
 	sort.SliceStable(hooks, func(i, j int) bool { return hooks[i].order < hooks[j].order })
 	for _, hook := range hooks {
 		if hook.run == nil {
@@ -119,7 +119,10 @@ func (k *Kernel) extendSystemPrompt(base string) string {
 
 // OnBoot 注册一个按顺序执行的扩展启动 hook。
 func (b *ExtensionBridge) OnBoot(order int, hook func(context.Context, *Kernel) error) {
-	b.k.extensionState().bootHooks = append(b.k.extensionState().bootHooks, orderedBootHook{
+	ext := b.k.extensionState()
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.bootHooks = append(ext.bootHooks, orderedBootHook{
 		order: order,
 		run:   hook,
 	})
@@ -127,7 +130,10 @@ func (b *ExtensionBridge) OnBoot(order int, hook func(context.Context, *Kernel) 
 
 // OnShutdown 注册一个按顺序执行的扩展关停 hook。
 func (b *ExtensionBridge) OnShutdown(order int, hook func(context.Context, *Kernel) error) {
-	b.k.extensionState().shutdownHooks = append(b.k.extensionState().shutdownHooks, orderedShutdownHook{
+	ext := b.k.extensionState()
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.shutdownHooks = append(ext.shutdownHooks, orderedShutdownHook{
 		order: order,
 		run:   hook,
 	})
@@ -135,164 +141,41 @@ func (b *ExtensionBridge) OnShutdown(order int, hook func(context.Context, *Kern
 
 // OnSystemPrompt 注册一个系统提示词增强 hook。
 func (b *ExtensionBridge) OnSystemPrompt(order int, hook func(*Kernel) string) {
-	b.k.extensionState().promptHooks = append(b.k.extensionState().promptHooks, orderedPromptHook{
+	ext := b.k.extensionState()
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.promptHooks = append(ext.promptHooks, orderedPromptHook{
 		order: order,
 		run:   hook,
 	})
 }
 
-// SkillManager 返回 Skill 管理器。
-func (b *ExtensionBridge) SkillManager() *skill.Manager {
-	b.ensureSkillHooks()
+// State 返回指定 key 的扩展状态。
+func (b *ExtensionBridge) State(key ExtensionStateKey) (any, bool) {
 	ext := b.k.extensionState()
-	if ext.skills == nil {
-		ext.skills = skill.NewManager()
-	}
-	return ext.skills
+	ext.mu.RLock()
+	defer ext.mu.RUnlock()
+	value, ok := ext.values[key]
+	return value, ok
 }
 
-// SkillDeps 返回当前 Kernel 的 Skill 依赖。
-func (b *ExtensionBridge) SkillDeps() skill.Deps {
-	return skill.Deps{
-		ToolRegistry: b.k.tools,
-		Middleware:   b.k.chain,
-		Sandbox:      b.k.sandbox,
-		UserIO:       b.k.io,
-		Workspace:    b.k.workspace,
-		Executor:     b.k.executor,
-	}
-}
-
-// AgentRegistry 返回 Agent 注册表。
-// 若此前未显式配置，则按需创建一个默认注册表，供扩展层装配使用。
-func (b *ExtensionBridge) AgentRegistry() *agent.Registry {
-	b.ensureAgentHooks()
+// SetState 写入指定 key 的扩展状态。
+func (b *ExtensionBridge) SetState(key ExtensionStateKey, value any) {
 	ext := b.k.extensionState()
-	if ext.agents == nil {
-		ext.agents = agent.NewRegistry()
-	}
-	return ext.agents
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.values[key] = value
 }
 
-// TaskTracker 返回异步任务跟踪器（可能为 nil）。
-func (b *ExtensionBridge) TaskTracker() *agent.TaskTracker {
-	return b.k.extensionState().tasks
-}
-
-// SetSkillManager 替换当前 Skill Manager。
-func (b *ExtensionBridge) SetSkillManager(m *skill.Manager) {
-	b.ensureSkillHooks()
-	b.k.extensionState().skills = m
-}
-
-// SetSessionStore 设置 Session 持久化存储。
-func (b *ExtensionBridge) SetSessionStore(s session.SessionStore) {
-	b.ensureStoreHooks()
-	b.k.extensionState().store = s
-}
-
-// SetScheduler 设置定时任务调度器。
-func (b *ExtensionBridge) SetScheduler(s *scheduler.Scheduler) {
-	b.ensureSchedulerHooks()
-	b.k.extensionState().sched = s
-}
-
-// SetBootstrap 设置引导上下文。
-func (b *ExtensionBridge) SetBootstrap(ctx *bootstrap.Context) {
-	b.ensureBootstrapHooks()
-	b.k.extensionState().bootstrap = ctx
-}
-
-// SetAgentRegistry 设置 Agent 注册表。
-func (b *ExtensionBridge) SetAgentRegistry(r *agent.Registry) {
-	b.ensureAgentHooks()
-	b.k.extensionState().agents = r
-}
-
-func (b *ExtensionBridge) ensureSkillHooks() {
+// LoadOrStoreState 返回已有状态；若不存在则存入给定值并返回该值。
+// 返回值 loaded 表示是否命中了已有状态。
+func (b *ExtensionBridge) LoadOrStoreState(key ExtensionStateKey, value any) (actual any, loaded bool) {
 	ext := b.k.extensionState()
-	if ext.skillHooksReady {
-		return
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	if actual, loaded = ext.values[key]; loaded {
+		return actual, true
 	}
-	ext.skillHooksReady = true
-	b.OnShutdown(300, func(ctx context.Context, _ *Kernel) error {
-		if ext.skills == nil {
-			return nil
-		}
-		return ext.skills.ShutdownAll(ctx)
-	})
-	b.OnSystemPrompt(200, func(_ *Kernel) string {
-		if ext.skills == nil {
-			return ""
-		}
-		return ext.skills.SystemPromptAdditions()
-	})
-}
-
-func (b *ExtensionBridge) ensureBootstrapHooks() {
-	ext := b.k.extensionState()
-	if ext.bootstrapHooksReady {
-		return
-	}
-	ext.bootstrapHooksReady = true
-	b.OnSystemPrompt(100, func(_ *Kernel) string {
-		if ext.bootstrap == nil {
-			return ""
-		}
-		return ext.bootstrap.SystemPromptSection()
-	})
-}
-
-func (b *ExtensionBridge) ensureSchedulerHooks() {
-	ext := b.k.extensionState()
-	if ext.schedulerHooksReady {
-		return
-	}
-	ext.schedulerHooksReady = true
-	b.OnShutdown(200, func(_ context.Context, _ *Kernel) error {
-		if ext.sched != nil {
-			ext.sched.Stop()
-		}
-		return nil
-	})
-}
-
-func (b *ExtensionBridge) ensureStoreHooks() {
-	ext := b.k.extensionState()
-	if ext.storeHooksReady {
-		return
-	}
-	ext.storeHooksReady = true
-	b.OnShutdown(100, func(ctx context.Context, _ *Kernel) error {
-		if ext.store == nil {
-			return nil
-		}
-		for _, sess := range b.k.sessions.List() {
-			if sess.Status == session.StatusRunning {
-				sess.Status = session.StatusPaused
-			}
-			ext.store.Save(ctx, sess)
-		}
-		return nil
-	})
-}
-
-func (b *ExtensionBridge) ensureAgentHooks() {
-	ext := b.k.extensionState()
-	if ext.agentHooksReady {
-		return
-	}
-	ext.agentHooksReady = true
-	b.OnBoot(100, func(_ context.Context, k *Kernel) error {
-		if ext.agents == nil || len(ext.agents.List()) == 0 {
-			return nil
-		}
-		if ext.tasks == nil {
-			ext.tasks = agent.NewTaskTracker()
-		}
-		if err := agent.RegisterTools(k.tools, ext.agents, ext.tasks, k); err != nil {
-			return kerrors.Wrap(kerrors.ErrInternal, "register agent delegation tools", err)
-		}
-		return nil
-	})
+	ext.values[key] = value
+	return value, false
 }

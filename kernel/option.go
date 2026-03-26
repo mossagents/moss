@@ -8,9 +8,9 @@ import (
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // Option 是 Kernel 的函数式配置选项。

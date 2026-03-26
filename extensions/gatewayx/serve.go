@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/mossagents/moss/gateway"
+	"github.com/mossagents/moss/gateway/channel"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/gateway"
-	"github.com/mossagents/moss/kernel/gateway/channel"
 	"github.com/mossagents/moss/kernel/session"
 )
 

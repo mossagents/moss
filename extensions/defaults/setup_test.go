@@ -7,7 +7,7 @@ import (
 	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
-	kt "github.com/mossagents/moss/kernel/testing"
+	kt "github.com/mossagents/moss/testing"
 )
 
 func TestSetup(t *testing.T) {

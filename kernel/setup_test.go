@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
-	kt "github.com/mossagents/moss/kernel/testing"
+	kt "github.com/mossagents/moss/testing"
 )
 
 func TestBoot_RequiresLLMAndUserIO(t *testing.T) {

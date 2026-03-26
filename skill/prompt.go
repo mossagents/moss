@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	appconfig "github.com/mossagents/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/config"
 	"gopkg.in/yaml.v3"
 )
 

@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/knowledge"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/knowledge"
 )
 
 // NewMemoryStore 返回官方提供的内存知识库实现。

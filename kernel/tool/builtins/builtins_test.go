@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // ── mock sandbox ─────────────────────────────────────

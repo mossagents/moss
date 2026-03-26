@@ -13,8 +13,8 @@ import (
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
-	kt "github.com/mossagents/moss/kernel/testing"
 	"github.com/mossagents/moss/kernel/tool"
+	kt "github.com/mossagents/moss/testing"
 )
 
 type blockingLLM struct {
@@ -393,5 +393,39 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 		if order[i] != wantOrder[i] {
 			t.Fatalf("hook order[%d] = %q, want %q (full=%v)", i, order[i], wantOrder[i], order)
 		}
+	}
+}
+
+func TestExtensionBridgeStateSlots(t *testing.T) {
+	k := New()
+	bridge := Extensions(k)
+
+	if _, ok := bridge.State("missing"); ok {
+		t.Fatal("missing state should not exist")
+	}
+
+	actual, loaded := bridge.LoadOrStoreState("slot", "first")
+	if loaded {
+		t.Fatal("first LoadOrStoreState should store new value")
+	}
+	if got := actual.(string); got != "first" {
+		t.Fatalf("stored value = %q, want %q", got, "first")
+	}
+
+	actual, loaded = bridge.LoadOrStoreState("slot", "second")
+	if !loaded {
+		t.Fatal("second LoadOrStoreState should load existing value")
+	}
+	if got := actual.(string); got != "first" {
+		t.Fatalf("loaded value = %q, want %q", got, "first")
+	}
+
+	bridge.SetState("slot", "updated")
+	value, ok := bridge.State("slot")
+	if !ok {
+		t.Fatal("expected slot state to exist")
+	}
+	if got := value.(string); got != "updated" {
+		t.Fatalf("state value = %q, want %q", got, "updated")
 	}
 }

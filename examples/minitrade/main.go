@@ -20,12 +20,12 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/agentkit"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	appconfig "github.com/mossagents/moss/kernel/config"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/scheduler"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/scheduler"
 )
 
 //go:embed templates/trading_prompt.tmpl

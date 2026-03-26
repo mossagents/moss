@@ -20,7 +20,7 @@ import (
 	"syscall"
 
 	"github.com/mossagents/moss/agentkit"
-	appconfig "github.com/mossagents/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

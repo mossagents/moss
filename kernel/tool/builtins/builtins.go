@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // RegisteredToolNames 返回给定配置下会注册的工具名列表。

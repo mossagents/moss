@@ -11,9 +11,9 @@ import (
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
@@ -170,6 +170,21 @@ func (k *Kernel) ToolRegistry() tool.Registry {
 // SessionManager 返回 Session 管理器。
 func (k *Kernel) SessionManager() session.Manager {
 	return k.sessions
+}
+
+// Middleware 返回中间件链。
+func (k *Kernel) Middleware() *middleware.Chain {
+	return k.chain
+}
+
+// UserIO 返回默认交互端口（可能为 nil）。
+func (k *Kernel) UserIO() port.UserIO {
+	return k.io
+}
+
+// Sandbox 返回沙箱抽象（可能为 nil）。
+func (k *Kernel) Sandbox() sandbox.Sandbox {
+	return k.sandbox
 }
 
 // Workspace 返回工作区抽象（可能为 nil）。

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	appconfig "github.com/mossagents/moss/kernel/config"
 	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/scheduler"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/scheduler"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {

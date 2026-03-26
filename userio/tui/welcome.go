@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	appconfig "github.com/mossagents/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/config"
 )
 
 // welcomeState 表示欢迎界面的焦点字段。

@@ -15,10 +15,10 @@ import (
 	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/agentkit"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/logging"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/sandbox"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/sandbox"
 	"golang.org/x/net/websocket"
 )
 

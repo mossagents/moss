@@ -30,14 +30,14 @@ import (
 
 	"github.com/mossagents/moss/adapters/embedding"
 	"github.com/mossagents/moss/agentkit"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/kernel"
-	appconfig "github.com/mossagents/moss/kernel/config"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/scheduler"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/scheduler"
 	mossTUI "github.com/mossagents/moss/userio/tui"
 )
 

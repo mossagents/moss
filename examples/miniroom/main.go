@@ -18,8 +18,8 @@ import (
 	"net/http"
 
 	"github.com/mossagents/moss/agentkit"
-	appconfig "github.com/mossagents/moss/kernel/config"
-	"github.com/mossagents/moss/kernel/logging"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/logging"
 	"golang.org/x/net/websocket"
 )
 

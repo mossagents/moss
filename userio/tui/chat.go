@@ -8,7 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	appconfig "github.com/mossagents/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 

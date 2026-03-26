@@ -339,7 +339,7 @@ go test ./... -count=1
 使用 `kernel/testing` 包中的 Mock 适配器编写测试：
 
 ```go
-import kt "github.com/mossagents/moss/kernel/testing"
+import kt "github.com/mossagents/moss/testing"
 
 mock := &kt.MockLLM{
     Responses: []port.CompletionResponse{

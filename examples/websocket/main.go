@@ -21,9 +21,9 @@ import (
 	"sync"
 
 	"github.com/mossagents/moss/agentkit"
-	"github.com/mossagents/moss/kernel/logging"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
 	"golang.org/x/net/websocket"
 )
 

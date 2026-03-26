@@ -459,9 +459,9 @@ Phase 1 全部为新增接口和可选功能，**零破坏性变更**。
 ```
 kernel/kerr         → 零依赖（纯 Go）
 kernel/port/observer → kernel/port（现有）
-kernel/port/workspace → kernel/sandbox（Output, ResourceLimits 类型）
-kernel/sandbox/memory → kernel/port/workspace
-kernel/sandbox/scoped → kernel/port/workspace
+kernel/port/workspace → sandbox（Output, ResourceLimits 类型）
+sandbox/memory → kernel/port/workspace
+sandbox/scoped → kernel/port/workspace
 kernel/retry/breaker → 零依赖（纯 Go）
 ```
 
