@@ -29,7 +29,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/adapters/embedding"
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/kernel"
@@ -50,9 +50,9 @@ func main() {
 
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
-	flags := agentkit.ParseAppFlags()
+	flags := appkit.ParseAppFlags()
 
-	ctx, cancel := agentkit.ContextWithSignal(context.Background())
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	if err := run(ctx, flags, mode); err != nil {
@@ -61,7 +61,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, flags *agentkit.AppFlags, mode string) error {
+func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
 	if mode == "gateway" {
 		return runGateway(ctx, flags)
 	}
@@ -71,12 +71,12 @@ func run(ctx context.Context, flags *agentkit.AppFlags, mode string) error {
 }
 
 type miniclawRuntime struct {
-	flags *agentkit.AppFlags
+	flags *appkit.AppFlags
 	store session.SessionStore
 	sched *scheduler.Scheduler
 }
 
-func launchTUI(flags *agentkit.AppFlags) error {
+func launchTUI(flags *appkit.AppFlags) error {
 	var activeRuntime *miniclawRuntime
 
 	return mossTUI.Run(mossTUI.Config{
@@ -87,7 +87,7 @@ func launchTUI(flags *agentkit.AppFlags) error {
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
 		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
-			runtimeFlags := &agentkit.AppFlags{
+			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
 				Workspace: wsDir,
@@ -121,7 +121,7 @@ func launchTUI(flags *agentkit.AppFlags) error {
 	})
 }
 
-func runGateway(ctx context.Context, flags *agentkit.AppFlags) error {
+func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	userIO := port.NewConsoleIO()
 	k, runtime, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
@@ -138,7 +138,7 @@ func runGateway(ctx context.Context, flags *agentkit.AppFlags) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	agentkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
+	appkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
 		map[string]string{
 			"Provider":  flags.Provider,
 			"Model":     modelName,
@@ -149,14 +149,14 @@ func runGateway(ctx context.Context, flags *agentkit.AppFlags) error {
 		"Ask me anything — I can search the web, manage files, schedule tasks, and more.",
 	)
 
-	return agentkit.Serve(ctx, agentkit.ServeConfig{
+	return appkit.Serve(ctx, appkit.ServeConfig{
 		Prompt:       "🐾 > ",
 		SessionStore: runtime.store,
 		SystemPrompt: buildSystemPrompt(flags.Workspace),
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *agentkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
 	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -167,12 +167,12 @@ func buildMiniclawKernel(ctx context.Context, flags *agentkit.AppFlags, io port.
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
 	knStore := knowledgex.NewMemoryStore()
 
-	k, err := agentkit.BuildKernelWithExtensions(ctx, flags, io,
-		agentkit.WithSessionStore(store),
-		agentkit.WithScheduling(sched),
-		agentkit.WithLoadedBootstrapContext(flags.Workspace, "miniclaw"),
-		agentkit.WithKnowledge(knStore, embedder),
-		agentkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+		appkit.WithSessionStore(store),
+		appkit.WithScheduling(sched),
+		appkit.WithLoadedBootstrapContext(flags.Workspace, "miniclaw"),
+		appkit.WithKnowledge(knStore, embedder),
+		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
 			return registerWebTools(built)
 		}),
 	)

@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
@@ -32,7 +32,7 @@ import (
 var tradingPromptTemplate string
 
 type config struct {
-	flags   *agentkit.AppFlags
+	flags   *appkit.AppFlags
 	capital float64
 }
 
@@ -42,7 +42,7 @@ func main() {
 
 	cfg := parseFlags()
 
-	ctx, cancel := agentkit.ContextWithSignal(context.Background())
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	if err := run(ctx, cfg); err != nil {
@@ -54,7 +54,7 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
-	cfg.flags = agentkit.ParseAppFlags()
+	cfg.flags = appkit.ParseAppFlags()
 	return cfg
 }
 
@@ -74,10 +74,10 @@ func run(ctx context.Context, cfg *config) error {
 	sched := scheduler.New()
 	userIO := port.NewConsoleIO()
 
-	k, err := agentkit.BuildKernelWithExtensions(ctx, cfg.flags, userIO,
-		agentkit.WithSessionStore(store),
-		agentkit.WithScheduling(sched),
-		agentkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+	k, err := appkit.BuildKernelWithExtensions(ctx, cfg.flags, userIO,
+		appkit.WithSessionStore(store),
+		appkit.WithScheduling(sched),
+		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
 			if err := registerTradeTools(built.ToolRegistry(), mkt); err != nil {
 				return fmt.Errorf("register trade tools: %w", err)
 			}
@@ -169,7 +169,7 @@ func run(ctx context.Context, cfg *config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	agentkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
+	appkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
 		map[string]string{
 			"Provider": cfg.flags.Provider,
 			"Model":    modelName,
@@ -181,7 +181,7 @@ func run(ctx context.Context, cfg *config) error {
 		"Type /help for commands, /exit to quit.",
 	)
 
-	return agentkit.REPL(ctx, agentkit.REPLConfig{
+	return appkit.REPL(ctx, appkit.REPLConfig{
 		Prompt:      "💰 > ",
 		AppName:     "minitrade",
 		CompactKeep: 8,

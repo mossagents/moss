@@ -24,7 +24,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
@@ -53,7 +53,7 @@ func main() {
 		return
 	}
 
-	ctx, cancel := agentkit.ContextWithSignal(context.Background())
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	if err := run(ctx, cfg); err != nil {
@@ -80,7 +80,7 @@ type config struct {
 }
 
 func parseFlags() config {
-	common := &agentkit.AppFlags{}
+	common := &appkit.AppFlags{}
 	c := config{
 		workspace: ".",
 		trust:     "trusted",
@@ -88,7 +88,7 @@ func parseFlags() config {
 	}
 	fs := flag.NewFlagSet("miniwork", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	agentkit.BindAppFlags(fs, common)
+	appkit.BindAppFlags(fs, common)
 	fs.StringVar(&c.goal, "goal", "", "Goal for one-shot workflow execution; omit to launch TUI")
 	fs.IntVar(&c.workers, "workers", 3, "Max parallel workers")
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -205,7 +205,7 @@ func run(ctx context.Context, cfg config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	agentkit.PrintBanner("miniwork — Orchestrator", map[string]string{
+	appkit.PrintBanner("miniwork — Orchestrator", map[string]string{
 		"Provider":  cfg.provider,
 		"Model":     modelName,
 		"Workspace": cfg.workspace,
@@ -404,7 +404,7 @@ func buildWorkerPrompt(workspace string) string {
 
 func buildKernelForConfig(cfg config, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  cfg.provider,
 		Model:     cfg.model,
 		Workspace: cfg.workspace,

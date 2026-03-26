@@ -1,4 +1,4 @@
-package agentkit
+package appkit
 
 import "fmt"
 
@@ -6,7 +6,7 @@ import "fmt"
 //
 // 用法：
 //
-//	agentkit.PrintBanner("minitrade", map[string]string{
+//	appkit.PrintBanner("minitrade", map[string]string{
 //	    "Provider":  "openai",
 //	    "Model":     "gpt-4o",
 //	    "Workspace": ".",

@@ -1,4 +1,4 @@
-package agentkit
+package appkit
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/mossagents/moss/sandbox"
 )
 
-// BuildConfig 描述 agentkit.BuildKernel 的可选默认装配行为。
+// BuildConfig 描述 appkit.BuildKernel 的可选默认装配行为。
 type BuildConfig struct {
 	// DefaultLLMRetry 会在未显式禁用时注入 kernel.WithLLMRetry。
 	DefaultLLMRetry *retry.Config
@@ -21,7 +21,7 @@ type BuildConfig struct {
 	// 这些选项会传递给 extensions/defaults.Setup。
 	DefaultSetupOptions []defaults.Option
 
-	// Extensions 描述 agentkit 层统一的推荐扩展装配单元。
+	// Extensions 描述 appkit 层统一的推荐扩展装配单元。
 	// 它们可同时携带 kernel.Option 与 build 后安装动作。
 	Extensions []Extension
 }
@@ -39,16 +39,16 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, extraOpts
 	return BuildKernelWithConfig(ctx, flags, io, BuildConfig{}, extraOpts...)
 }
 
-// BuildKernelWithExtensions 根据 AppFlags 构建 Kernel，并按顺序装配 agentkit 扩展。
+// BuildKernelWithExtensions 根据 AppFlags 构建 Kernel，并按顺序装配 appkit 扩展。
 func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io port.UserIO, exts ...Extension) (*kernel.Kernel, error) {
 	return BuildKernelWithConfig(ctx, flags, io, BuildConfig{
 		Extensions: exts,
 	})
 }
 
-// BuildKernelWithConfig 在标准装配基础上，允许附加 agentkit 级默认行为。
+// BuildKernelWithConfig 在标准装配基础上，允许附加 appkit 级默认行为。
 //
-// 这用于把常见运行时默认值收敛在 agentkit，而不是散落在各个示例应用中。
+// 这用于把常见运行时默认值收敛在 appkit，而不是散落在各个示例应用中。
 func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO, cfg BuildConfig, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	llm, err := adapters.BuildLLM(flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {

@@ -177,7 +177,7 @@ import (
     "context"
     "os"
 
-    "github.com/mossagents/moss/agentkit"
+    "github.com/mossagents/moss/appkit"
     "github.com/mossagents/moss/kernel/port"
     "github.com/mossagents/moss/kernel/session"
 )
@@ -185,8 +185,8 @@ import (
 func main() {
     ctx := context.Background()
 
-    // 1. 用 agentkit 构建推荐配置的 Kernel
-    k, _ := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+    // 1. 用 appkit 构建推荐配置的 Kernel
+    k, _ := appkit.BuildKernel(ctx, &appkit.AppFlags{
         Provider:  "openai",
         Workspace: ".",
         APIKey:    os.Getenv("OPENAI_API_KEY"),
@@ -212,14 +212,14 @@ func main() {
 
 ### 自定义 Setup
 
-推荐做法是继续使用 `agentkit.BuildKernelWithConfig` / `agentkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `defaults.Setup`。
+推荐做法是继续使用 `appkit.BuildKernelWithConfig` / `appkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `defaults.Setup`。
 
 ```go
-// 统一通过 agentkit 装配官方扩展
-k, err := agentkit.BuildKernelWithExtensions(ctx, flags, io,
-    agentkit.WithSessionStore(store),
-    agentkit.WithScheduling(sched),
-    agentkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+// 统一通过 appkit 装配官方扩展
+k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+    appkit.WithSessionStore(store),
+    appkit.WithScheduling(sched),
+    appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
         return registerMyTools(k.ToolRegistry())
     }),
 )

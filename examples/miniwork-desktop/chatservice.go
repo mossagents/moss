@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -247,7 +247,7 @@ func (s *ChatService) IsRunning() bool {
 func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	ctx := context.Background()
 	sched := scheduler.New()
-	k, err := agentkit.BuildKernelWithExtensions(ctx, &agentkit.AppFlags{
+	k, err := appkit.BuildKernelWithExtensions(ctx, &appkit.AppFlags{
 		Provider:  s.cfg.provider,
 		Model:     s.cfg.model,
 		Workspace: s.cfg.workspace,
@@ -255,8 +255,8 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		APIKey:    s.cfg.apiKey,
 		BaseURL:   s.cfg.baseURL,
 	}, s.wailsIO,
-		agentkit.WithScheduling(sched),
-		agentkit.AfterBuild(func(buildCtx context.Context, built *kernel.Kernel) error {
+		appkit.WithScheduling(sched),
+		appkit.AfterBuild(func(buildCtx context.Context, built *kernel.Kernel) error {
 			return registerOrchestrationTools(built, buildCtx, s.cfg, s.tracker)
 		}),
 	)

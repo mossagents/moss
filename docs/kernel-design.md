@@ -758,8 +758,8 @@ kernel/
 │   ├── prompt.go          # SKILL.md 解析
 │   └── manager.go         # SkillManager
 │
-├── agentkit/              # 应用脚手架工具箱
-│   ├── agentkit.go        # ContextWithSignal, CommonFlags, Banner
+├── appkit/              # 应用脚手架工具箱
+│   ├── appkit.go        # ContextWithSignal, CommonFlags, Banner
 │   ├── repl.go            # REPL 引擎
 │   └── serve.go           # HTTP Serve 脚手架
 │

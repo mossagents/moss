@@ -1,4 +1,4 @@
-package agentkit
+package appkit
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 // Installer 在 Kernel 创建后执行扩展安装逻辑。
 type Installer func(context.Context, *kernel.Kernel) error
 
-// Extension 描述 agentkit 层统一的扩展装配单元。
+// Extension 描述 appkit 层统一的扩展装配单元。
 // 它可以同时提供 Kernel 选项和 build 后安装动作。
 type Extension interface {
 	apply(*extensionPlan)
@@ -35,7 +35,7 @@ func (f extensionFunc) apply(plan *extensionPlan) {
 	f(plan)
 }
 
-// WithKernelOptions 将原始 kernel.Option 纳入 agentkit 统一装配路径。
+// WithKernelOptions 将原始 kernel.Option 纳入 appkit 统一装配路径。
 func WithKernelOptions(opts ...kernel.Option) Extension {
 	return extensionFunc(func(plan *extensionPlan) {
 		plan.options = append(plan.options, opts...)

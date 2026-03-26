@@ -211,7 +211,7 @@ type NoOpObserver struct{}
 
 ### 3.4 优雅关停
 
-**现状问题**：`agentkit` 的 SIGINT 处理直接 `os.Exit`，进行中的请求丢失。
+**现状问题**：`appkit` 的 SIGINT 处理直接 `os.Exit`，进行中的请求丢失。
 
 ```go
 // kernel/kernel.go 新增方法

@@ -74,14 +74,14 @@ import (
     "context"
     "os"
 
-    "github.com/mossagents/moss/agentkit"
+    "github.com/mossagents/moss/appkit"
     "github.com/mossagents/moss/kernel/port"
     "github.com/mossagents/moss/kernel/session"
 )
 
 func main() {
     ctx := context.Background()
-    k, _ := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+    k, _ := appkit.BuildKernel(ctx, &appkit.AppFlags{
         Provider:  "openai",
         Workspace: ".",
         APIKey:    os.Getenv("OPENAI_API_KEY"),
@@ -311,8 +311,8 @@ moss/
 ├── extensions/              # 官方维护的可选扩展
 │   ├── toolbuiltins/        # 内置工具实现（read_file/write_file/...）
 │   └── defaults/            # 默认装配（core tool skill / MCP / skills / agents）
-├── agentkit/                # 应用脚手架工具箱
-│   ├── agentkit.go          # ContextWithSignal, AppFlags, Banner
+├── appkit/                # 应用脚手架工具箱
+│   ├── appkit.go          # ContextWithSignal, AppFlags, Banner
 │   ├── repl.go              # REPL 引擎
 │   └── serve.go             # Gateway Serve 脚手架
 └── docs/                    # 文档

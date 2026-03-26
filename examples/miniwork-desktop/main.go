@@ -19,7 +19,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -102,14 +102,14 @@ type config struct {
 }
 
 func parseFlags() config {
-	common := &agentkit.AppFlags{}
+	common := &appkit.AppFlags{}
 	c := config{
 		workspace: ".",
 		trust:     "trusted",
 		workers:   3,
 	}
 	fs := flag.NewFlagSet("miniwork-desktop", flag.ContinueOnError)
-	agentkit.BindAppFlags(fs, common)
+	appkit.BindAppFlags(fs, common)
 	fs.IntVar(&c.workers, "workers", 3, "Max parallel workers")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

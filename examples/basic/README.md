@@ -5,7 +5,7 @@
 ## 特点
 
 - **零配置文件**：无需 `moss.yaml` 或模板文件
-- **一行装配**：`agentkit.BuildKernel` 自动完成 LLM 适配器、工具注册、技能加载
+- **一行装配**：`appkit.BuildKernel` 自动完成 LLM 适配器、工具注册、技能加载
 - **REPL 交互**：终端命令行对话，支持 `/help`、`/clear`、`/exit`
 - **6 个内置工具**：read_file、write_file、list_files、search_text、run_command、ask_user
 
@@ -26,13 +26,13 @@ go run . --provider claude
 
 ```go
 // 1. 解析 CLI 参数 + 合并配置文件 + 环境变量
-flags := agentkit.ParseAppFlags()
+flags := appkit.ParseAppFlags()
 
 // 2. 创建 Kernel（自动装配工具、技能、MCP servers）
-k, err := agentkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
 
 // 3. 启动 REPL 交互
-agentkit.REPL(ctx, agentkit.REPLConfig{...}, k, sess)
+appkit.REPL(ctx, appkit.REPLConfig{...}, k, sess)
 ```
 
 总共约 60 行代码，展示了 moss kernel 作为库的最小集成方式。

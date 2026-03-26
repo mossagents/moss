@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
@@ -34,7 +34,7 @@ func main() {
 	appconfig.SetAppName("minicode")
 	_ = appconfig.EnsureAppDir()
 
-	flags := agentkit.ParseAppFlags()
+	flags := appkit.ParseAppFlags()
 
 	if err := launchTUI(flags.Provider, flags.Model, flags.Workspace, flags.Trust, flags.APIKey, flags.BaseURL); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -57,7 +57,7 @@ func launchTUI(provider, model, workspace, trust, apiKey, baseURL string) error 
 
 func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  provider,
 		Model:     model,
 		Workspace: wsDir,
