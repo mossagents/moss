@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // CLI 是基于 stdin/stdout 的终端 Channel 实现。

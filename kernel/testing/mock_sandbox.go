@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/sandbox"
 )
 
 // MemorySandbox 是基于内存的 Sandbox 测试桩。

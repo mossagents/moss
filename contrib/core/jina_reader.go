@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 var JinaReaderSpec = tool.ToolSpec{

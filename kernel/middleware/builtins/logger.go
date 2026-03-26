@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mossagi/moss/kernel/logging"
-	"github.com/mossagi/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/logging"
+	"github.com/mossagents/moss/kernel/middleware"
 )
 
 // Logger 构造日志 middleware，记录每个 phase 的开始/结束/耗时。

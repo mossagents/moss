@@ -1,8 +1,8 @@
-module github.com/mossagi/moss/examples/basic
+module github.com/mossagents/moss/examples/basic
 
 go 1.24.2
 
-require github.com/mossagi/moss v0.0.0
+require github.com/mossagents/moss v0.0.0
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1 // indirect
@@ -24,4 +24,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/mossagi/moss => ../..
+replace github.com/mossagents/moss => ../..

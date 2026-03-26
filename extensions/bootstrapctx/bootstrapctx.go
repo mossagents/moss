@@ -1,8 +1,8 @@
 package bootstrapctx
 
 import (
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/bootstrap"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/bootstrap"
 )
 
 // WithContext 将引导上下文作为标准扩展接入 Kernel。

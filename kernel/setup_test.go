@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagi/moss/kernel/port"
-	kt "github.com/mossagi/moss/kernel/testing"
+	"github.com/mossagents/moss/kernel/port"
+	kt "github.com/mossagents/moss/kernel/testing"
 )
 
 func TestBoot_RequiresLLMAndUserIO(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	. "github.com/mossagi/moss/kernel/config"
+	. "github.com/mossagents/moss/kernel/config"
 )
 
 // --- fakeSkill for testing ---

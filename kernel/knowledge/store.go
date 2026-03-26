@@ -10,7 +10,7 @@ package knowledge
 import (
 	"context"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // Document 表示已摄入知识库的一个文档。

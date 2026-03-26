@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel/errors"
-	"github.com/mossagi/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/middleware"
 )
 
 // RateLimiter 构造速率限制 middleware。

@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // Job 表示一个定时任务。

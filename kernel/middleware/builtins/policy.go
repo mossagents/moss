@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // PolicyDecision 表示权限决策。

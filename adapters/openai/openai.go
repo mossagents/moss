@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/ssestream"

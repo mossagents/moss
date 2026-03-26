@@ -3,7 +3,7 @@ package agent
 import (
 	"testing"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestRegistry_RegisterAndGet(t *testing.T) {

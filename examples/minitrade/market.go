@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ─── Market Simulation ──────────────────────────────

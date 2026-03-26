@@ -17,9 +17,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mossagi/moss/agentkit"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/logging"
+	"github.com/mossagents/moss/agentkit"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/logging"
 	"golang.org/x/net/websocket"
 )
 

@@ -10,8 +10,8 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/tool"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // MCPServer 通过 MCP 协议连接外部 skill server，发现并注册工具。

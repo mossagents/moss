@@ -3,16 +3,16 @@ package agentkit
 import (
 	"context"
 
-	"github.com/mossagi/moss/extensions/bootstrapctx"
-	"github.com/mossagi/moss/extensions/knowledgex"
-	"github.com/mossagi/moss/extensions/scheduling"
-	"github.com/mossagi/moss/extensions/sessionstore"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/bootstrap"
-	"github.com/mossagi/moss/kernel/knowledge"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/scheduler"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/extensions/bootstrapctx"
+	"github.com/mossagents/moss/extensions/knowledgex"
+	"github.com/mossagents/moss/extensions/scheduling"
+	"github.com/mossagents/moss/extensions/sessionstore"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/bootstrap"
+	"github.com/mossagents/moss/kernel/knowledge"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/scheduler"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // Installer 在 Kernel 创建后执行扩展安装逻辑。

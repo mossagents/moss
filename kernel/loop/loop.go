@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
-	kerrors "github.com/mossagi/moss/kernel/errors"
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/retry"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // LoopConfig 配置 Agent Loop 的行为。

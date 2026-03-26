@@ -7,13 +7,13 @@
 ## 安装
 
 ```bash
-go install github.com/mossagi/moss/cmd/moss@latest
+go install github.com/mossagents/moss/cmd/moss@latest
 ```
 
 或从源码构建：
 
 ```bash
-git clone https://github.com/mossagi/moss.git
+git clone https://github.com/mossagents/moss.git
 cd moss
 go build -o moss ./cmd/moss/
 ```
@@ -177,9 +177,9 @@ import (
     "context"
     "os"
 
-    "github.com/mossagi/moss/agentkit"
-    "github.com/mossagi/moss/kernel/port"
-    "github.com/mossagi/moss/kernel/session"
+    "github.com/mossagents/moss/agentkit"
+    "github.com/mossagents/moss/kernel/port"
+    "github.com/mossagents/moss/kernel/session"
 )
 
 func main() {
@@ -339,7 +339,7 @@ go test ./... -count=1
 使用 `kernel/testing` 包中的 Mock 适配器编写测试：
 
 ```go
-import kt "github.com/mossagi/moss/kernel/testing"
+import kt "github.com/mossagents/moss/kernel/testing"
 
 mock := &kt.MockLLM{
     Responses: []port.CompletionResponse{

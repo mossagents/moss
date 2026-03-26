@@ -28,17 +28,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/adapters/embedding"
-	"github.com/mossagi/moss/agentkit"
-	"github.com/mossagi/moss/extensions/knowledgex"
-	"github.com/mossagi/moss/kernel"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/scheduler"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
-	mossTUI "github.com/mossagi/moss/userio/tui"
+	"github.com/mossagents/moss/adapters/embedding"
+	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/extensions/knowledgex"
+	"github.com/mossagents/moss/kernel"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/scheduler"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	mossTUI "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl

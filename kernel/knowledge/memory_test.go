@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // mockEmbedder 用简单的基于词频的"嵌入"做测试（不需要真实 API）。

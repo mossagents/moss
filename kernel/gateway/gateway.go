@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/mossagi/moss/kernel/loop"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // Kernel 是 Gateway 所需的 Kernel 子集接口。

@@ -3,9 +3,9 @@ package agentkit
 import (
 	"context"
 
-	"github.com/mossagi/moss/extensions/gatewayx"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/extensions/gatewayx"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // ServeConfig 配置 Gateway Serve 模式。

@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // ─── toAnthropicMessages ─────────────────────────────

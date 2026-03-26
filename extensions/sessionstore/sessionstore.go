@@ -1,8 +1,8 @@
 package sessionstore
 
 import (
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // WithStore 将 SessionStore 作为标准扩展接入 Kernel。

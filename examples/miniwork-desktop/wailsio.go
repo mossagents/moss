@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // WailsUserIO 实现 port.UserIO，通过 Wails 事件系统与桌面前端通信。

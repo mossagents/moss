@@ -3,10 +3,10 @@ package skill
 import (
 	"context"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // Provider 是可加载的能力单元：一组工具 + 系统提示词 + 可选中间件。

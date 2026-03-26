@@ -3,7 +3,7 @@ package agent
 import (
 	"sync"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // TaskStatus 表示异步委派任务的状态。

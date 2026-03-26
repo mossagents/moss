@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // MemoryWorkspace 是基于内存的 Workspace 实现。

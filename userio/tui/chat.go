@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/port"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // sessionResultMsg 表示 agent session 结束。

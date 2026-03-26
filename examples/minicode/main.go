@@ -18,12 +18,12 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mossagi/moss/agentkit"
-	"github.com/mossagi/moss/kernel"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/userio/tui"
+	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/kernel"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl

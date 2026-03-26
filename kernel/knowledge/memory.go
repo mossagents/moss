@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // MemoryStore 是基于内存的知识库实现，使用余弦相似度进行搜索。

@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	appconfig "github.com/mossagi/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/kernel/config"
 )
 
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。

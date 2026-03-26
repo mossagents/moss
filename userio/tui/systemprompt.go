@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"strings"
 
-	appconfig "github.com/mossagi/moss/kernel/config"
+	appconfig "github.com/mossagents/moss/kernel/config"
 )
 
 //go:embed templates/system_prompt.tmpl

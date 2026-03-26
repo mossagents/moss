@@ -1,13 +1,13 @@
-module github.com/mossagi/moss/examples/miniwork-desktop
+module github.com/mossagents/moss/examples/miniwork-desktop
 
 go 1.25
 
 require (
-	github.com/mossagi/moss v0.0.0
+	github.com/mossagents/moss v0.0.0
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 )
 
-replace github.com/mossagi/moss => ../..
+replace github.com/mossagents/moss => ../..
 
 require (
 	dario.cat/mergo v1.0.2 // indirect

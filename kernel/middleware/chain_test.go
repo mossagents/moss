@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestChainOrdering(t *testing.T) {

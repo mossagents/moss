@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // cliUserIO 是基于终端的 UserIO 实现（用于 run 命令的 CLI 模式）。

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/loop"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 
 	"github.com/google/uuid"
 )

@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
-	kt "github.com/mossagi/moss/kernel/testing"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
+	kt "github.com/mossagents/moss/kernel/testing"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestLoopTextOnly(t *testing.T) {

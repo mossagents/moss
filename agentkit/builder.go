@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mossagi/moss/adapters"
-	"github.com/mossagi/moss/extensions/defaults"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/retry"
-	"github.com/mossagi/moss/kernel/sandbox"
+	"github.com/mossagents/moss/adapters"
+	"github.com/mossagents/moss/extensions/defaults"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/sandbox"
 )
 
 // BuildConfig 描述 agentkit.BuildKernel 的可选默认装配行为。

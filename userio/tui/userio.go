@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // bridgeMsg 是从 UserIO 桥接到 Bubble Tea 的消息类型。

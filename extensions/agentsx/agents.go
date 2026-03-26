@@ -1,8 +1,8 @@
 package agentsx
 
 import (
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/agent"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/agent"
 )
 
 // WithRegistry 设置 Agent 注册表。

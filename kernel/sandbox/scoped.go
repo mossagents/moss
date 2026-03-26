@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // ScopedWorkspace 为 Workspace 添加路径前缀隔离。

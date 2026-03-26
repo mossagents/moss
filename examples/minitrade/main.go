@@ -19,13 +19,13 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/mossagi/moss/agentkit"
-	"github.com/mossagi/moss/kernel"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/scheduler"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/kernel"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/scheduler"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 //go:embed templates/trading_prompt.tmpl

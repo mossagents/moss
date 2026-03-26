@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // REPLConfig 配置 REPL 引擎。

@@ -7,7 +7,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ─── Technical Analysis ─────────────────────────────

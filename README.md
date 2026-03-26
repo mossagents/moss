@@ -46,7 +46,7 @@
 ### 安装
 
 ```bash
-go install github.com/mossagi/moss/cmd/moss@latest
+go install github.com/mossagents/moss/cmd/moss@latest
 ```
 
 ### CLI 使用
@@ -74,9 +74,9 @@ import (
     "context"
     "os"
 
-    "github.com/mossagi/moss/agentkit"
-    "github.com/mossagi/moss/kernel/port"
-    "github.com/mossagi/moss/kernel/session"
+    "github.com/mossagents/moss/agentkit"
+    "github.com/mossagents/moss/kernel/port"
+    "github.com/mossagents/moss/kernel/session"
 )
 
 func main() {

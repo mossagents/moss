@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 var WeatherSpec = tool.ToolSpec{

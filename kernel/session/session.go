@@ -3,7 +3,7 @@ package session
 import (
 	"time"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // SessionStatus 表示 Session 的生命周期状态。

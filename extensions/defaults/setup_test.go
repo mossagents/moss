@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/mossagi/moss/extensions/skillsx"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/port"
-	kt "github.com/mossagi/moss/kernel/testing"
+	"github.com/mossagents/moss/extensions/skillsx"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/port"
+	kt "github.com/mossagents/moss/kernel/testing"
 )
 
 func TestSetup(t *testing.T) {

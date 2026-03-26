@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	kerrors "github.com/mossagi/moss/kernel/errors"
-	"github.com/mossagi/moss/kernel/loop"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
-	kt "github.com/mossagi/moss/kernel/testing"
-	"github.com/mossagi/moss/kernel/tool"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
+	kt "github.com/mossagents/moss/kernel/testing"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 type blockingLLM struct {

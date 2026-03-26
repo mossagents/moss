@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestParseSchedule(t *testing.T) {

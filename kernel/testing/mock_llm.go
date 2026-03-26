@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // MockLLM 是可编程的 LLM 测试桩。

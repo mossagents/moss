@@ -1,9 +1,9 @@
 package scheduling
 
 import (
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/scheduler"
-	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/scheduler"
+	toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
 )
 
 // WithScheduler 将调度器作为标准扩展接入 Kernel。

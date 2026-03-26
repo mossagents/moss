@@ -5,7 +5,7 @@ import (
 	"path"
 	"time"
 
-	"github.com/mossagi/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/middleware"
 )
 
 // Event 表示一个系统事件。

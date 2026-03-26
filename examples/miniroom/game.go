@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	core "github.com/mossagi/moss/contrib/core"
-	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/tool"
+	core "github.com/mossagents/moss/contrib/core"
+	appconfig "github.com/mossagents/moss/kernel/config"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 //go:embed templates/*.tmpl

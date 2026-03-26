@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // RegisteredToolNames 返回给定配置下会注册的工具名列表。

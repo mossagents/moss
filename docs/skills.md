@@ -54,8 +54,8 @@ type Deps struct {
 **注册方式**：通过 `defaults.Setup` 自动装配，或手动注册：
 
 ```go
-import "github.com/mossagi/moss/extensions/skillsx"
-import toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
+import "github.com/mossagents/moss/extensions/skillsx"
+import toolbuiltins "github.com/mossagents/moss/kernel/tool/builtins"
 
 core := &toolbuiltins.BuiltinTool{}
 skillsx.Manager(k).Register(ctx, core, skillsx.Deps(k))

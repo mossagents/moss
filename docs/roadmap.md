@@ -158,7 +158,7 @@ sess, _ := k.SessionManager().Restore(sessionID, events)
 
 ```bash
 # 克隆并构建
-git clone https://github.com/mossagi/moss.git
+git clone https://github.com/mossagents/moss.git
 cd moss
 go build ./...
 

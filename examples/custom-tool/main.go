@@ -19,10 +19,10 @@ import (
 	"math/rand/v2"
 	"os"
 
-	"github.com/mossagi/moss/agentkit"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func main() {

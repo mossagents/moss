@@ -7,10 +7,10 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagi/moss/extensions/skillsx"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/extensions/skillsx"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 const appVersion = "0.3.0"

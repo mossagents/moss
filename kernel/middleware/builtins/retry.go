@@ -5,8 +5,8 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/retry"
 )
 
 // RetryConfig 复用 retry.Config，避免维护两套重试配置定义。

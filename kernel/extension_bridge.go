@@ -4,12 +4,12 @@ import (
 	"context"
 	"sort"
 
-	"github.com/mossagi/moss/kernel/agent"
-	"github.com/mossagi/moss/kernel/bootstrap"
-	kerrors "github.com/mossagi/moss/kernel/errors"
-	"github.com/mossagi/moss/kernel/scheduler"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
+	"github.com/mossagents/moss/kernel/agent"
+	"github.com/mossagents/moss/kernel/bootstrap"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/scheduler"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/skill"
 )
 
 type extensionState struct {

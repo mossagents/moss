@@ -6,14 +6,14 @@ import (
 	"sync"
 	"time"
 
-	kerrors "github.com/mossagi/moss/kernel/errors"
-	"github.com/mossagi/moss/kernel/loop"
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/middleware/builtins"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。

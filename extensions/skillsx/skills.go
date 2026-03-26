@@ -1,8 +1,8 @@
 package skillsx
 
 import (
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/skill"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/skill"
 )
 
 // WithManager 替换当前 Skill Manager。

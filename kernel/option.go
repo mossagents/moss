@@ -4,13 +4,13 @@ import (
 	"context"
 	"os"
 
-	"github.com/mossagi/moss/kernel/loop"
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/retry"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // Option 是 Kernel 的函数式配置选项。

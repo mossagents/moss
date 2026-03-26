@@ -3,7 +3,7 @@ package builtins
 import (
 	"context"
 
-	"github.com/mossagi/moss/kernel/skill"
+	"github.com/mossagents/moss/kernel/skill"
 )
 
 // BuiltinTool 将内置 6 个工具包装为 Provider 接口。

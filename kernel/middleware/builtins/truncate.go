@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // TruncateConfig 配置自动 token 截断行为。

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagi/moss/adapters/claude"
-	"github.com/mossagi/moss/adapters/openai"
-	"github.com/mossagi/moss/kernel/port"
+	"github.com/mossagents/moss/adapters/claude"
+	"github.com/mossagents/moss/adapters/openai"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 // BuildLLM 根据 provider 名称构建 LLM 实例。

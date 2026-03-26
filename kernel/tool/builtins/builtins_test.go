@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ── mock sandbox ─────────────────────────────────────

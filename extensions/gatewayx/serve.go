@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/gateway"
-	"github.com/mossagi/moss/kernel/gateway/channel"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/gateway"
+	"github.com/mossagents/moss/kernel/gateway/channel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // ServeConfig 配置 Gateway Serve 模式。

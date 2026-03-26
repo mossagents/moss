@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagi/moss/kernel/middleware"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestRetry_SuccessOnFirstAttempt(t *testing.T) {

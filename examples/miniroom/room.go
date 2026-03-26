@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagi/moss/adapters"
-	"github.com/mossagi/moss/agentkit"
-	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/logging"
-	"github.com/mossagi/moss/kernel/port"
-	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/session"
+	"github.com/mossagents/moss/adapters"
+	"github.com/mossagents/moss/agentkit"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/logging"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/sandbox"
+	"github.com/mossagents/moss/kernel/session"
 	"golang.org/x/net/websocket"
 )
 

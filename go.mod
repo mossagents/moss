@@ -1,4 +1,4 @@
-module github.com/mossagi/moss
+module github.com/mossagents/moss
 
 go 1.24.2
 
