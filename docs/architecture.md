@@ -115,6 +115,10 @@ type Registry interface {
 | `search_text` | Low | 正则搜索文件内容 |
 | `run_command` | High | 执行 shell 命令 |
 | `ask_user` | Medium | 向用户请求输入 |
+| `read_memory` | Low | 读取持久 `/memories` 文件 |
+| `write_memory` | High | 写入持久 `/memories` 文件 |
+| `list_memories` | Low | 列出持久 `/memories` 文件 |
+| `delete_memory` | High | 删除持久 `/memories` 文件 |
 
 ### Session
 

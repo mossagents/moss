@@ -2,16 +2,21 @@ package appkit
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/extensions/bootstrapctx"
 	"github.com/mossagents/moss/extensions/knowledgex"
+	"github.com/mossagents/moss/extensions/memoryx"
 	"github.com/mossagents/moss/extensions/scheduling"
 	"github.com/mossagents/moss/extensions/sessionstore"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/knowledge"
+	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/scheduler"
 )
 
@@ -78,5 +83,29 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 func WithKnowledge(store knowledge.Store, embedder port.Embedder) Extension {
 	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 		return knowledgex.RegisterTools(k, store, embedder)
+	})
+}
+
+// WithPersistentMemories 装配 /memories 命名空间的持久化工具。
+// memoriesDir 指向持久化目录（建议位于应用数据目录下）。
+func WithPersistentMemories(memoriesDir string) Extension {
+	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		if memoriesDir == "" {
+			return fmt.Errorf("memories dir is empty")
+		}
+		absDir, err := filepath.Abs(memoriesDir)
+		if err != nil {
+			return fmt.Errorf("resolve memories dir: %w", err)
+		}
+		if err := os.MkdirAll(absDir, 0755); err != nil {
+			return fmt.Errorf("create memories dir: %w", err)
+		}
+		sb, err := sandbox.NewLocal(absDir)
+		if err != nil {
+			return fmt.Errorf("memory sandbox: %w", err)
+		}
+		ws := sandbox.NewLocalWorkspace(sb)
+		memoryx.WithWorkspace(ws)(k)
+		return memoryx.RegisterTools(k.ToolRegistry(), ws)
 	})
 }

@@ -22,6 +22,8 @@ type DeepAgentConfig struct {
 	AppName                 string
 	EnableSessionStore      *bool
 	SessionStoreDir         string
+	EnablePersistentMemories *bool
+	MemoryDir               string
 	EnableBootstrapContext  *bool
 	EnsureGeneralPurpose    *bool
 	GeneralPurposeName      string
@@ -37,6 +39,7 @@ func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
 		AppName:                appconfig.AppName(),
 		EnableSessionStore:     boolPtr(true),
+		EnablePersistentMemories: boolPtr(true),
 		EnableBootstrapContext: boolPtr(true),
 		EnsureGeneralPurpose:   boolPtr(true),
 		GeneralPurposeName:     "general-purpose",
@@ -63,6 +66,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		if cfg.SessionStoreDir != "" {
 			effective.SessionStoreDir = cfg.SessionStoreDir
+		}
+		if cfg.EnablePersistentMemories != nil {
+			effective.EnablePersistentMemories = cfg.EnablePersistentMemories
+		}
+		if cfg.MemoryDir != "" {
+			effective.MemoryDir = cfg.MemoryDir
 		}
 		if cfg.EnableBootstrapContext != nil {
 			effective.EnableBootstrapContext = cfg.EnableBootstrapContext
@@ -109,6 +118,18 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		exts = append(exts, WithSessionStore(store))
 	}
 
+	if valueOrDefault(effective.EnablePersistentMemories, true) {
+		memDir := effective.MemoryDir
+		if memDir == "" {
+			if appDir := appconfig.AppDir(); appDir != "" {
+				memDir = filepath.Join(appDir, "memories")
+			} else {
+				memDir = filepath.Join(flags.Workspace, "."+effective.AppName, "memories")
+			}
+		}
+		exts = append(exts, WithPersistentMemories(memDir))
+	}
+
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
 		exts = append(exts, WithLoadedBootstrapContext(flags.Workspace, effective.AppName))
 	}
@@ -129,7 +150,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "edit_file", "run_command", "spawn_agent", "task"),
+			builtins.RequireApprovalFor("write_file", "edit_file", "run_command", "spawn_agent", "task", "write_memory", "delete_memory"),
 			builtins.DefaultAllow(),
 		)
 	}

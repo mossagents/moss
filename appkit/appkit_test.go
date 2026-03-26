@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"testing"
@@ -169,6 +170,28 @@ func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
 	for _, name := range []string{"schedule_task", "list_schedules", "cancel_schedule"} {
 		if !toolNames[name] {
 			t.Fatalf("expected scheduling tool %q to be registered", name)
+		}
+	}
+}
+
+func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
+	memDir := filepath.Join(t.TempDir(), "memories")
+	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+	}, nil, WithPersistentMemories(memDir))
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+
+	tools := k.ToolRegistry().List()
+	toolNames := make(map[string]bool, len(tools))
+	for _, spec := range tools {
+		toolNames[spec.Name] = true
+	}
+	for _, name := range []string{"read_memory", "write_memory", "list_memories", "delete_memory"} {
+		if !toolNames[name] {
+			t.Fatalf("expected memory tool %q to be registered", name)
 		}
 	}
 }

@@ -27,6 +27,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	}
 	for _, name := range []string{
 		"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user",
+		"read_memory", "write_memory", "list_memories", "delete_memory",
 	} {
 		if !toolNames[name] {
 			t.Fatalf("expected built-in tool %q", name)
@@ -59,6 +60,9 @@ func TestBuildDeepAgentKernel_DisableGeneralPurpose(t *testing.T) {
 	disable := false
 	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
 		EnsureGeneralPurpose: &disable,
+		EnableSessionStore:   &disable,
+		EnablePersistentMemories: &disable,
+		EnableBootstrapContext:   &disable,
 	})
 	if err != nil {
 		t.Fatalf("BuildDeepAgentKernel: %v", err)

@@ -241,3 +241,24 @@ defaults.Setup(ctx, k, workspaceDir,
 ```
 
 加载过程中的警告会通过 slog 输出到 stderr，日志级别为 `WARN`。可通过 `logging.ConfigureLogging()` 调整日志级别。
+
+---
+
+## Persistent Memories (`/memories`)
+
+deep harness 可通过 appkit 扩展装配一个持久 memory 命名空间（目录形态持久化，跨会话可复用）：
+
+```go
+k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+  appkit.WithPersistentMemories("C:\\data\\myapp\\memories"),
+)
+```
+
+会自动注册 4 个 memory 工具：
+
+| 工具 | 风险等级 | 参数 | 说明 |
+|---|---|---|---|
+| `read_memory` | Low | `path` | 读取持久记忆文件 |
+| `write_memory` | High | `path`, `content` | 写入/更新持久记忆文件 |
+| `list_memories` | Low | `pattern` | 列出持久记忆文件（glob） |
+| `delete_memory` | High | `path` | 删除持久记忆文件 |

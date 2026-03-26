@@ -218,6 +218,7 @@ func main() {
 // 统一通过 appkit 装配官方扩展
 k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
     appkit.WithSessionStore(store),
+    appkit.WithPersistentMemories("./.moss/memories"),
     appkit.WithScheduling(sched),
     appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
         return registerMyTools(k.ToolRegistry())

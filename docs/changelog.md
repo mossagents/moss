@@ -51,6 +51,29 @@
 
 ---
 
+## Unreleased — Persistent Memories (Phase 4, partial)
+
+### 新增
+
+- `extensions/memoryx`：持久 memory 命名空间扩展
+  - 工具：`read_memory` / `write_memory` / `list_memories` / `delete_memory`
+  - prompt 提示：声明 `/memories` 持久语义
+- `appkit.WithPersistentMemories(memoriesDir)`：按目录装配持久记忆工具
+- `BuildDeepAgentKernel` 默认接入持久记忆（可配置关闭）
+
+### 变更
+
+- `DeepAgentConfig` 新增：
+  - `EnablePersistentMemories`
+  - `MemoryDir`
+- restricted 模式默认审批策略新增 `write_memory` 与 `delete_memory`
+
+### 兼容性
+
+- 向后兼容：memory 能力为扩展层加法，不影响 kernel 核心 API。
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更
