@@ -8,6 +8,7 @@ import (
 
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/extensions/bootstrapctx"
+	"github.com/mossagents/moss/extensions/compactx"
 	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/extensions/memoryx"
 	"github.com/mossagents/moss/extensions/scheduling"
@@ -57,6 +58,17 @@ func AfterBuild(installer Installer) Extension {
 // WithSessionStore 按官方推荐方式装配 SessionStore 扩展。
 func WithSessionStore(store session.SessionStore) Extension {
 	return WithKernelOptions(sessionstore.WithStore(store))
+}
+
+// WithContextOffload 装配上下文 offload（压缩）工具。
+// 依赖可持久化的 SessionStore（建议与 WithSessionStore 配套使用）。
+func WithContextOffload(store session.SessionStore) Extension {
+	return extensionFunc(func(plan *extensionPlan) {
+		plan.options = append(plan.options, compactx.WithSessionStore(store))
+		plan.installers = append(plan.installers, func(_ context.Context, k *kernel.Kernel) error {
+			return compactx.RegisterTools(k.ToolRegistry(), store, k.SessionManager())
+		})
+	})
 }
 
 // WithBootstrapContext 按官方推荐方式装配 bootstrap 上下文扩展。

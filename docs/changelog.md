@@ -74,6 +74,30 @@
 
 ---
 
+## Unreleased — Context Offload (Phase 5, partial)
+
+### 新增
+
+- `extensions/compactx`：上下文 offload 扩展
+  - 工具：`offload_context`
+  - 能力：将旧对话快照保存到 `SessionStore`，并压缩当前 session 消息
+- `kernel/session/context.go`：
+  - `LastNDialogMessages`
+  - `BuildCompactedMessages`
+- `appkit.WithContextOffload(store)`：统一装配 context offload 工具
+- `BuildDeepAgentKernel` 默认启用 context offload（在启用 session store 时）
+
+### 变更
+
+- `DeepAgentConfig` 新增 `EnableContextOffload`
+- restricted 模式默认审批策略新增 `offload_context`
+
+### 兼容性
+
+- 向后兼容：offload 为扩展层能力，显式调用工具时才生效；可通过配置关闭。
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更

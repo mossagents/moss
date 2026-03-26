@@ -13,6 +13,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
 )
@@ -193,6 +194,24 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 		if !toolNames[name] {
 			t.Fatalf("expected memory tool %q to be registered", name)
 		}
+	}
+}
+
+func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+	}, nil, WithContextOffload(store))
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+
+	if _, _, ok := k.ToolRegistry().Get("offload_context"); !ok {
+		t.Fatal("expected offload_context tool to be registered")
 	}
 }
 

@@ -262,3 +262,22 @@ k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 | `write_memory` | High | `path`, `content` | 写入/更新持久记忆文件 |
 | `list_memories` | Low | `pattern` | 列出持久记忆文件（glob） |
 | `delete_memory` | High | `path` | 删除持久记忆文件 |
+
+---
+
+## Context Offload (`offload_context`)
+
+当会话过长时，可用上下文 offload 工具把早期对话快照持久化到 SessionStore，并仅保留最近对话：
+
+```go
+k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+  appkit.WithSessionStore(store),
+  appkit.WithContextOffload(store),
+)
+```
+
+工具：
+
+| 工具 | 风险等级 | 参数 | 说明 |
+|---|---|---|---|
+| `offload_context` | Medium | `session_id`, `keep_recent`, `note` | 持久化旧上下文快照并压缩当前会话消息 |

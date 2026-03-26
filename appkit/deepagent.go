@@ -19,33 +19,35 @@ import (
 // DeepAgentConfig 描述 deep-agent 风格装配的配置项。
 // 零值通过 BuildDeepAgentKernel 的默认值补齐。
 type DeepAgentConfig struct {
-	AppName                 string
-	EnableSessionStore      *bool
-	SessionStoreDir         string
+	AppName                  string
+	EnableSessionStore       *bool
+	SessionStoreDir          string
 	EnablePersistentMemories *bool
-	MemoryDir               string
-	EnableBootstrapContext  *bool
-	EnsureGeneralPurpose    *bool
-	GeneralPurposeName      string
-	GeneralPurposePrompt    string
-	GeneralPurposeDesc      string
-	GeneralPurposeMaxSteps  int
-	DefaultSetupOptions     []defaults.Option
-	AdditionalAppExtensions []Extension
+	MemoryDir                string
+	EnableContextOffload     *bool
+	EnableBootstrapContext   *bool
+	EnsureGeneralPurpose     *bool
+	GeneralPurposeName       string
+	GeneralPurposePrompt     string
+	GeneralPurposeDesc       string
+	GeneralPurposeMaxSteps   int
+	DefaultSetupOptions      []defaults.Option
+	AdditionalAppExtensions  []Extension
 }
 
 // DefaultDeepAgentConfig 返回 deep-agent 装配默认配置。
 func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
-		AppName:                appconfig.AppName(),
-		EnableSessionStore:     boolPtr(true),
+		AppName:                  appconfig.AppName(),
+		EnableSessionStore:       boolPtr(true),
 		EnablePersistentMemories: boolPtr(true),
-		EnableBootstrapContext: boolPtr(true),
-		EnsureGeneralPurpose:   boolPtr(true),
-		GeneralPurposeName:     "general-purpose",
-		GeneralPurposePrompt:   "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
-		GeneralPurposeDesc:     "General-purpose agent for delegated tasks that need context isolation.",
-		GeneralPurposeMaxSteps: 50,
+		EnableContextOffload:     boolPtr(true),
+		EnableBootstrapContext:   boolPtr(true),
+		EnsureGeneralPurpose:     boolPtr(true),
+		GeneralPurposeName:       "general-purpose",
+		GeneralPurposePrompt:     "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
+		GeneralPurposeDesc:       "General-purpose agent for delegated tasks that need context isolation.",
+		GeneralPurposeMaxSteps:   50,
 	}
 }
 
@@ -72,6 +74,9 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		if cfg.MemoryDir != "" {
 			effective.MemoryDir = cfg.MemoryDir
+		}
+		if cfg.EnableContextOffload != nil {
+			effective.EnableContextOffload = cfg.EnableContextOffload
 		}
 		if cfg.EnableBootstrapContext != nil {
 			effective.EnableBootstrapContext = cfg.EnableBootstrapContext
@@ -116,6 +121,9 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 			return nil, fmt.Errorf("session store: %w", err)
 		}
 		exts = append(exts, WithSessionStore(store))
+		if valueOrDefault(effective.EnableContextOffload, true) {
+			exts = append(exts, WithContextOffload(store))
+		}
 	}
 
 	if valueOrDefault(effective.EnablePersistentMemories, true) {
@@ -150,7 +158,10 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "edit_file", "run_command", "spawn_agent", "task", "write_memory", "delete_memory"),
+			builtins.RequireApprovalFor(
+				"write_file", "edit_file", "run_command", "spawn_agent", "task",
+				"write_memory", "delete_memory", "offload_context",
+			),
 			builtins.DefaultAllow(),
 		)
 	}

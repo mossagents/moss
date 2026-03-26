@@ -218,6 +218,7 @@ func main() {
 // 统一通过 appkit 装配官方扩展
 k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
     appkit.WithSessionStore(store),
+    appkit.WithContextOffload(store),
     appkit.WithPersistentMemories("./.moss/memories"),
     appkit.WithScheduling(sched),
     appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
@@ -225,6 +226,8 @@ k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
     }),
 )
 ```
+
+`WithContextOffload` 依赖可持久化的 `SessionStore`，会注册 `offload_context` 工具，用于手动压缩长会话并把历史快照保存到 store。
 
 更底层时，`defaults.Setup` 仍支持选择性禁用：
 
