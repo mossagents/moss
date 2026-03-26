@@ -19,9 +19,10 @@ import (
 type Option func(*config)
 
 type config struct {
-	builtin    bool
-	mcpServers bool
-	skills     bool
+	builtin           bool
+	mcpServers        bool
+	skills            bool
+	progressiveSkills bool
 }
 
 // WithoutBuiltin 禁用内置核心工具注册。
@@ -39,6 +40,14 @@ func WithoutSkills() Option {
 	return func(c *config) { c.skills = false }
 }
 
+// WithProgressiveSkills 启用按需技能模式（默认关闭）。
+// 开启后将：
+//   1) 发现 SKILL.md 但不立即全部加载
+//   2) 注册 list_skills / activate_skill 工具供运行时按需激活
+func WithProgressiveSkills() Option {
+	return func(c *config) { c.progressiveSkills = true }
+}
+
 // Setup 装配官方默认扩展（BuiltinTool、MCP servers、Skills、Agent configs）。
 // 这是推荐的快速开始方式，但归属于扩展层而非 kernel core。
 //
@@ -53,9 +62,10 @@ func WithoutSkills() Option {
 //	defaults.Setup(ctx, k, ".", defaults.WithoutMCPServers(), defaults.WithoutSkills())
 func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...Option) error {
 	cfg := &config{
-		builtin:    true,
-		mcpServers: true,
-		skills:     true,
+		builtin:           true,
+		mcpServers:        true,
+		skills:            true,
+		progressiveSkills: false,
 	}
 	for _, opt := range opts {
 		opt(cfg)
@@ -93,13 +103,29 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 
 	// 3. 发现并加载 SKILL.md skills
 	if cfg.skills {
-		skills := skill.DiscoverSkills(workspaceDir)
-		for _, ps := range skills {
-			if err := skillsx.Manager(k).Register(ctx, ps, deps); err != nil {
-				logger.WarnContext(ctx, "failed to load skill",
-					slog.String("skill", ps.Metadata().Name),
-					slog.Any("error", err),
-				)
+		manifests := skill.DiscoverSkillManifests(workspaceDir)
+		if cfg.progressiveSkills {
+			skillsx.SetManifests(k, manifests)
+			skillsx.EnableProgressive(k)
+			if err := skillsx.RegisterProgressiveTools(k); err != nil {
+				return err
+			}
+		} else {
+			for _, mf := range manifests {
+				ps, err := skill.ParseSkillMD(mf.Source)
+				if err != nil {
+					logger.WarnContext(ctx, "failed to parse skill",
+						slog.String("source", mf.Source),
+						slog.Any("error", err),
+					)
+					continue
+				}
+				if err := skillsx.Manager(k).Register(ctx, ps, deps); err != nil {
+					logger.WarnContext(ctx, "failed to load skill",
+						slog.String("skill", ps.Metadata().Name),
+						slog.Any("error", err),
+					)
+				}
 			}
 		}
 	}

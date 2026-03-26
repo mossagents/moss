@@ -319,6 +319,46 @@ Content
 	}
 }
 
+func TestDiscoverSkillManifests(t *testing.T) {
+	workspace := t.TempDir()
+
+	dir := filepath.Join(workspace, ".agent", "skills", "manifest-skill")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: manifest-skill
+description: listed without loading full prompt
+---
+# Big Prompt
+
+Body content.
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifests := DiscoverSkillManifests(workspace)
+	if len(manifests) == 0 {
+		t.Fatal("expected at least one discovered manifest")
+	}
+	var got *Manifest
+	for i := range manifests {
+		if manifests[i].Name == "manifest-skill" {
+			got = &manifests[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("missing manifest-skill manifest")
+	}
+	if got.Description != "listed without loading full prompt" {
+		t.Fatalf("description = %q", got.Description)
+	}
+	if !strings.Contains(got.Source, filepath.Join(".agent", "skills", "manifest-skill", "SKILL.md")) {
+		t.Fatalf("unexpected source path: %q", got.Source)
+	}
+}
+
 func TestParseSkillMD_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")

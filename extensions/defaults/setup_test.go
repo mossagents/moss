@@ -2,6 +2,9 @@ package defaults
 
 import (
 	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mossagents/moss/extensions/skillsx"
@@ -101,5 +104,60 @@ func TestSetup_NoSandbox(t *testing.T) {
 		if toolNames[name] {
 			t.Errorf("tool %q should not be registered without sandbox", name)
 		}
+	}
+}
+
+func TestSetup_WithProgressiveSkills(t *testing.T) {
+	mock := &kt.MockLLM{}
+	io := &port.NoOpIO{}
+	sb := kt.NewMemorySandbox()
+
+	k := kernel.New(
+		kernel.WithLLM(mock),
+		kernel.WithUserIO(io),
+		kernel.WithSandbox(sb),
+	)
+
+	workspace := t.TempDir()
+	dir := filepath.Join(workspace, ".agent", "skills", "demo")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: demo
+description: progressive demo
+---
+Demo body.
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	if err := Setup(ctx, k, workspace, WithoutMCPServers(), WithProgressiveSkills()); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+
+	if _, ok := skillsx.Manager(k).Get("demo"); ok {
+		t.Fatal("demo skill should not be eagerly loaded in progressive mode")
+	}
+
+	_, listHandler, ok := k.ToolRegistry().Get("list_skills")
+	if !ok {
+		t.Fatal("expected list_skills to be registered")
+	}
+	raw, err := listHandler(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list_skills: %v", err)
+	}
+	var listed []map[string]any
+	if err := json.Unmarshal(raw, &listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed) != 1 || listed[0]["name"] != "demo" {
+		t.Fatalf("unexpected listed skills: %+v", listed)
+	}
+
+	if _, _, ok := k.ToolRegistry().Get("activate_skill"); !ok {
+		t.Fatal("expected activate_skill to be registered")
 	}
 }

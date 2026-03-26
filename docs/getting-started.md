@@ -234,6 +234,11 @@ defaults.Setup(ctx, k, ".",
     defaults.WithoutSkills(),
 )
 
+// 启用按需 Skill 加载（启动时不注入全部 SKILL.md 正文）
+defaults.Setup(ctx, k, ".",
+    defaults.WithProgressiveSkills(),
+)
+
 // 完全自定义：不使用 defaults.Setup
 k := kernel.New(
     kernel.WithLLM(myLLM),

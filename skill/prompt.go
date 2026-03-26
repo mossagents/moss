@@ -22,6 +22,14 @@ type Skill struct {
 	source      string // 文件来源路径
 }
 
+// Manifest 描述一个可发现的 SKILL.md（不包含正文内容）。
+// 用于按需激活场景，避免在发现阶段注入全部提示词。
+type Manifest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Source      string `json:"source"`
+}
+
 var _ Provider = (*Skill)(nil)
 
 // skillFrontmatter 是 SKILL.md 的 YAML frontmatter 结构。
@@ -122,13 +130,27 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 	return strings.Join(fmLines, "\n"), strings.Join(bodyLines, "\n"), nil
 }
 
-// DiscoverSkills 扫描标准目录，发现所有 SKILL.md 文件。
+// DiscoverSkills 扫描标准目录并加载 SKILL.md 内容。
 // 按以下优先级扫描（project → global）：
 //
 //	Project: .agents/skills/, .agent/skills/, .moss/skills/
 //	Global:  ~/.copilot/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
 func DiscoverSkills(workspace string) []*Skill {
+	manifests := DiscoverSkillManifests(workspace)
 	var skills []*Skill
+	for _, mf := range manifests {
+		s, err := ParseSkillMD(mf.Source)
+		if err != nil {
+			continue
+		}
+		skills = append(skills, s)
+	}
+	return skills
+}
+
+// DiscoverSkillManifests 扫描标准目录，返回可按需激活的技能清单（不加载正文）。
+func DiscoverSkillManifests(workspace string) []Manifest {
+	var manifests []Manifest
 
 	// Project-level 目录
 	projectDirs := []string{
@@ -157,45 +179,58 @@ func DiscoverSkills(workspace string) []*Skill {
 
 	// 扫描 project 目录（优先级高）
 	for _, dir := range projectDirs {
-		for _, s := range scanSkillDir(dir) {
-			if !seen[s.name] {
-				seen[s.name] = true
-				skills = append(skills, s)
+		for _, m := range scanSkillManifestDir(dir) {
+			if !seen[m.Name] {
+				seen[m.Name] = true
+				manifests = append(manifests, m)
 			}
 		}
 	}
 
 	// 扫描 global 目录
 	for _, dir := range globalDirs {
-		for _, s := range scanSkillDir(dir) {
-			if !seen[s.name] {
-				seen[s.name] = true
-				skills = append(skills, s)
+		for _, m := range scanSkillManifestDir(dir) {
+			if !seen[m.Name] {
+				seen[m.Name] = true
+				manifests = append(manifests, m)
 			}
 		}
 	}
 
+	return manifests
+}
+
+// scanSkillDir 扫描目录并加载 Skill 内容。
+func scanSkillDir(dir string) []*Skill {
+	var skills []*Skill
+	for _, mf := range scanSkillManifestDir(dir) {
+		s, err := ParseSkillMD(mf.Source)
+		if err != nil {
+			continue
+		}
+		skills = append(skills, s)
+	}
 	return skills
 }
 
-// scanSkillDir 扫描目录中的 SKILL.md 文件。
+// scanSkillManifestDir 扫描目录中的 SKILL.md 文件。
 // 支持两种结构：
 //
 //	skills/SKILL.md          （根目录直接有 SKILL.md）
 //	skills/<name>/SKILL.md   （子目录中有 SKILL.md）
-func scanSkillDir(dir string) []*Skill {
-	var skills []*Skill
+func scanSkillManifestDir(dir string) []Manifest {
+	var manifests []Manifest
 
 	// 检查根目录的 SKILL.md
 	rootSkill := filepath.Join(dir, "SKILL.md")
-	if s, err := ParseSkillMD(rootSkill); err == nil {
-		skills = append(skills, s)
+	if m, err := parseSkillManifestFile(rootSkill); err == nil {
+		manifests = append(manifests, m)
 	}
 
 	// 扫描一级子目录
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return skills
+		return manifests
 	}
 
 	for _, entry := range entries {
@@ -203,10 +238,33 @@ func scanSkillDir(dir string) []*Skill {
 			continue
 		}
 		skillFile := filepath.Join(dir, entry.Name(), "SKILL.md")
-		if s, err := ParseSkillMD(skillFile); err == nil {
-			skills = append(skills, s)
+		if m, err := parseSkillManifestFile(skillFile); err == nil {
+			manifests = append(manifests, m)
 		}
 	}
 
-	return skills
+	return manifests
+}
+
+func parseSkillManifestFile(path string) (Manifest, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Manifest{}, err
+	}
+	fm, _, err := splitFrontmatter(string(data))
+	if err != nil {
+		return Manifest{}, err
+	}
+	var meta skillFrontmatter
+	if err := yaml.Unmarshal([]byte(fm), &meta); err != nil {
+		return Manifest{}, err
+	}
+	if strings.TrimSpace(meta.Name) == "" {
+		return Manifest{}, fmt.Errorf("missing name")
+	}
+	return Manifest{
+		Name:        strings.TrimSpace(meta.Name),
+		Description: strings.TrimSpace(meta.Description),
+		Source:      path,
+	}, nil
 }

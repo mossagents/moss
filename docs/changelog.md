@@ -29,6 +29,28 @@
 
 ---
 
+## Unreleased — Progressive Skills (Phase 3)
+
+### 新增
+
+- `skill.DiscoverSkillManifests(workspace)`：仅发现 Skill 元信息（名称/描述/来源），不加载正文
+- `defaults.WithProgressiveSkills()`：启用按需技能加载模式（默认仍为 eager）
+- 按需技能工具：
+  - `list_skills`：列出可用技能与加载状态
+  - `activate_skill`：按名称激活并加载 `SKILL.md`
+
+### 变更
+
+- `defaults.Setup` 的 Skill 发现逻辑改为 manifest 驱动：
+  - eager 模式：发现 manifest 后立即加载全部 skill（兼容旧行为）
+  - progressive 模式：仅注册清单，运行时按需激活
+
+### 兼容性
+
+- 向后兼容：未启用 `WithProgressiveSkills()` 时行为与此前一致。
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更
