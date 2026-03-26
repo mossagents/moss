@@ -59,14 +59,16 @@ import "github.com/mossagents/moss/extensions/defaults"
 defaults.Setup(ctx, k, workspaceDir)
 ```
 
-**提供的 6 个工具**：
+**提供的 8 个工具**：
 
 | 工具 | 风险等级 | 参数 | 说明 |
 |---|---|---|---|
 | `read_file` | Low | `path` | 读取文件内容 |
 | `write_file` | High | `path`, `content` | 写入文件，自动创建父目录 |
+| `edit_file` | High | `path`, `old_string`, `new_string`, `replace_all` | 按字符串替换编辑文件 |
+| `glob` | Low | `pattern`, `path` | 按 glob 模式查找文件（可限定子路径） |
 | `list_files` | Low | `pattern` | Glob 模式列出文件，支持 `**` 递归 |
-| `search_text` | Low | `pattern`, `glob`, `max_results` | 正则搜索文件内容 |
+| `search_text` | Low | `pattern`, `glob`, `max_results` | 正则（RE2）搜索文件内容 |
 | `run_command` | High | `command`, `args` | 执行 shell 命令 |
 | `ask_user` | Medium | `prompt`, `type`, `options` | 向用户请求输入 |
 

@@ -323,6 +323,43 @@ func TestSearchText(t *testing.T) {
 	}
 }
 
+func TestSearchTextRegex(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/main.go": "func main() {}\n",
+		"/ws/lib.go":  "func helper() {}\n",
+	})
+	handler := searchTextHandler(sb)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": `^func main\(`}))
+	if err != nil {
+		t.Fatalf("searchText regex: %v", err)
+	}
+
+	var matches []searchMatch
+	json.Unmarshal(result, &matches)
+	if len(matches) != 1 {
+		t.Fatalf("expected 1 regex match, got %d: %+v", len(matches), matches)
+	}
+	if matches[0].File != "main.go" {
+		t.Fatalf("expected main.go match, got %+v", matches[0])
+	}
+}
+
+func TestSearchTextInvalidRegex(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/main.go": "func main() {}\n",
+	})
+	handler := searchTextHandler(sb)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "("}))
+	if err == nil {
+		t.Fatal("expected invalid regex error")
+	}
+	if !strings.Contains(err.Error(), "invalid regex pattern") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestSearchTextMaxResults(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{
 		"/ws/data.txt": "aaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\n",
@@ -602,6 +639,21 @@ func TestSearchTextWS(t *testing.T) {
 	json.Unmarshal(result, &matches)
 	if len(matches) < 2 {
 		t.Errorf("expected at least 2 matches, got %d: %+v", len(matches), matches)
+	}
+}
+
+func TestSearchTextWSInvalidRegex(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{
+		"main.go": "func main() {}\n",
+	}}
+	handler := searchTextHandlerWS(ws)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "("}))
+	if err == nil {
+		t.Fatal("expected invalid regex error")
+	}
+	if !strings.Contains(err.Error(), "invalid regex pattern") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

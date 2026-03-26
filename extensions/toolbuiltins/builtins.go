@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -265,7 +266,7 @@ var searchTextSpec = tool.ToolSpec{
 	InputSchema: json.RawMessage(`{
 		"type": "object",
 		"properties": {
-			"pattern":  {"type": "string", "description": "Text to search for (case-sensitive substring match)"},
+			"pattern":  {"type": "string", "description": "Regex pattern to match (RE2 syntax, case-sensitive by default)"},
 			"glob":     {"type": "string", "description": "File glob to scope the search (default: \"**/*\")"},
 			"max_results": {"type": "integer", "description": "Maximum number of results (default: 50)"}
 		},
@@ -297,6 +298,10 @@ func searchTextHandler(sb sandbox.Sandbox) tool.ToolHandler {
 		if params.MaxResults <= 0 {
 			params.MaxResults = 50
 		}
+		re, err := regexp.Compile(params.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern: %w", err)
+		}
 
 		files, err := sb.ListFiles(params.Glob)
 		if err != nil {
@@ -324,7 +329,7 @@ func searchTextHandler(sb sandbox.Sandbox) tool.ToolHandler {
 				if len(matches) >= params.MaxResults {
 					break
 				}
-				if strings.Contains(line, params.Pattern) {
+				if re.MatchString(line) {
 					matches = append(matches, searchMatch{
 						File: relPath,
 						Line: i + 1,
@@ -503,6 +508,10 @@ func searchTextHandlerWS(ws port.Workspace) tool.ToolHandler {
 		if params.MaxResults <= 0 {
 			params.MaxResults = 50
 		}
+		re, err := regexp.Compile(params.Pattern)
+		if err != nil {
+			return nil, fmt.Errorf("invalid regex pattern: %w", err)
+		}
 
 		files, err := ws.ListFiles(ctx, params.Glob)
 		if err != nil {
@@ -523,7 +532,7 @@ func searchTextHandlerWS(ws port.Workspace) tool.ToolHandler {
 				if len(matches) >= params.MaxResults {
 					break
 				}
-				if strings.Contains(line, params.Pattern) {
+				if re.MatchString(line) {
 					matches = append(matches, searchMatch{
 						File: file,
 						Line: i + 1,

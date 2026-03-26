@@ -129,7 +129,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "edit_file", "run_command", "spawn_agent"),
+			builtins.RequireApprovalFor("write_file", "edit_file", "run_command", "spawn_agent", "task"),
 			builtins.DefaultAllow(),
 		)
 	}
@@ -147,7 +147,7 @@ func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentC
 	toolNames := make([]string, 0, len(toolSpecs))
 	for _, spec := range toolSpecs {
 		switch spec.Name {
-		case "delegate_agent", "spawn_agent", "query_agent":
+		case "delegate_agent", "spawn_agent", "query_agent", "task":
 			continue
 		default:
 			toolNames = append(toolNames, spec.Name)

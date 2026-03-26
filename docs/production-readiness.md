@@ -409,7 +409,7 @@ Phase 1 是当前需要立即执行的部分，拆解为可独立完成的 PR：
 
 ### PR-4: 内置工具使用 Workspace/Executor ✅
 
-- ✅ `extensions/toolbuiltins/` 中 read_file / write_file / list_files / search_text 支持 Workspace
+- ✅ `extensions/toolbuiltins/` 中 read_file / write_file / edit_file / glob / list_files / search_text 支持 Workspace
 - ✅ run_command 支持 Executor
 - ✅ 当 Workspace/Executor 未设置时，回退到 Sandbox（向后兼容）
 - ✅ 新增 7 个 Workspace/Executor 测试 + 原有测试全部通过

@@ -192,6 +192,114 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	}
 }
 
+func TestTaskToolSyncBackgroundQuery(t *testing.T) {
+	agents := NewRegistry()
+	agents.Register(AgentConfig{
+		Name:         "worker",
+		SystemPrompt: "Work.",
+		Tools:        []string{},
+	})
+
+	tracker := NewTaskTracker()
+	done := make(chan struct{})
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			if sess.Config.Goal == "background work" {
+				defer close(done)
+			}
+			return &loop.SessionResult{
+				SessionID:  sess.ID,
+				Success:    true,
+				Output:     "ok: " + sess.Config.Goal,
+				TokensUsed: port.TokenUsage{TotalTokens: 10},
+			}, nil
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, taskHandler, ok := reg.Get("task")
+	if !ok {
+		t.Fatal("task tool not registered")
+	}
+
+	// sync mode
+	syncInput, _ := json.Marshal(taskInput{Mode: "sync", Agent: "worker", Task: "do sync"})
+	syncResult, err := taskHandler(context.Background(), syncInput)
+	if err != nil {
+		t.Fatalf("task sync: %v", err)
+	}
+	var syncResp map[string]string
+	if err := json.Unmarshal(syncResult, &syncResp); err != nil {
+		t.Fatal(err)
+	}
+	if syncResp["status"] != "completed" || syncResp["mode"] != "sync" {
+		t.Fatalf("unexpected sync response: %+v", syncResp)
+	}
+
+	// background mode
+	bgInput, _ := json.Marshal(taskInput{Mode: "background", Agent: "worker", Task: "background work"})
+	bgResult, err := taskHandler(context.Background(), bgInput)
+	if err != nil {
+		t.Fatalf("task background: %v", err)
+	}
+	var bgResp map[string]string
+	if err := json.Unmarshal(bgResult, &bgResp); err != nil {
+		t.Fatal(err)
+	}
+	taskID := bgResp["task_id"]
+	if taskID == "" {
+		t.Fatalf("expected task_id from background response: %+v", bgResp)
+	}
+	<-done
+
+	// query mode
+	queryInput, _ := json.Marshal(taskInput{Mode: "query", TaskID: taskID})
+	queryResult, err := taskHandler(context.Background(), queryInput)
+	if err != nil {
+		t.Fatalf("task query: %v", err)
+	}
+	var queryResp map[string]string
+	if err := json.Unmarshal(queryResult, &queryResp); err != nil {
+		t.Fatal(err)
+	}
+	if queryResp["mode"] != "query" || queryResp["status"] != "completed" {
+		t.Fatalf("unexpected query response: %+v", queryResp)
+	}
+}
+
+func TestTaskToolModeValidation(t *testing.T) {
+	agents := NewRegistry()
+	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	tracker := NewTaskTracker()
+	delegator := &mockDelegator{registry: tool.NewRegistry()}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, taskHandler, ok := reg.Get("task")
+	if !ok {
+		t.Fatal("task tool not registered")
+	}
+
+	cases := []taskInput{
+		{Mode: "sync", Task: "missing agent"},
+		{Mode: "background", Agent: "worker"},
+		{Mode: "query"},
+		{Mode: "invalid"},
+	}
+	for _, c := range cases {
+		input, _ := json.Marshal(c)
+		if _, err := taskHandler(context.Background(), input); err == nil {
+			t.Fatalf("expected validation error for input: %+v", c)
+		}
+	}
+}
+
 func TestScopedToolIsolation(t *testing.T) {
 	agents := NewRegistry()
 	agents.Register(AgentConfig{

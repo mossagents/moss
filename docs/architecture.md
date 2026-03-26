@@ -109,6 +109,8 @@ type Registry interface {
 |---|---|---|
 | `read_file` | Low | 读取文件内容 |
 | `write_file` | High | 写入文件（自动创建目录） |
+| `edit_file` | High | 按 old/new 字符串安全替换文件内容 |
+| `glob` | Low | 按 glob 模式查找文件 |
 | `list_files` | Low | Glob 模式列出文件 |
 | `search_text` | Low | 正则搜索文件内容 |
 | `run_command` | High | 执行 shell 命令 |
