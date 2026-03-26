@@ -1,8 +1,8 @@
-// Package appkit 提供构建 MOSS 应用的公共脚手架工具。
+// Package agentkit 提供构建 MOSS 应用的公共脚手架工具。
 //
 // 包含信号处理、REPL 引擎、配置解析等在多个示例中重复出现的能力，
 // 下沉到框架层以简化上层应用的构建。
-package appkit
+package agentkit
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 //
 // 用法：
 //
-//	ctx, cancel := appkit.ContextWithSignal(context.Background())
+//	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 //	defer cancel()
 func ContextWithSignal(parent context.Context) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(parent)

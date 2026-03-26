@@ -20,7 +20,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
@@ -31,12 +31,12 @@ import (
 var staticFS embed.FS
 
 func main() {
-	flags := appkit.ParseAppFlags()
+	flags := agentkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	appkit.PrintBannerWithHint("websocket", map[string]string{
+	agentkit.PrintBannerWithHint("websocket", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
 		"Listen":   "http://localhost:8090",
@@ -64,12 +64,12 @@ func main() {
 	}
 }
 
-func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websocket.Conn) {
+func handleConnection(ctx context.Context, flags *agentkit.AppFlags, conn *websocket.Conn) {
 	defer conn.Close()
 
 	wsIO := &WebSocketIO{conn: conn}
 
-	k, err := appkit.BuildKernel(ctx, flags, wsIO)
+	k, err := agentkit.BuildKernel(ctx, flags, wsIO)
 	if err != nil {
 		websocket.JSON.Send(conn, wsMsg{Type: "error", Content: err.Error()})
 		return

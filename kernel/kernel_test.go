@@ -9,6 +9,7 @@ import (
 	"time"
 
 	kerrors "github.com/mossagi/moss/kernel/errors"
+	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
@@ -269,5 +270,128 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("in-flight run did not exit after shutdown")
+	}
+}
+
+func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*Kernel, *session.Session) (*loop.SessionResult, error)
+	}{
+		{
+			name: "Run",
+			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
+				return k.Run(context.Background(), sess)
+			},
+		},
+		{
+			name: "RunWithUserIO",
+			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
+				return k.RunWithUserIO(context.Background(), sess, kt.NewRecorderIO())
+			},
+		},
+		{
+			name: "RunWithTools",
+			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
+				return k.RunWithTools(context.Background(), sess, k.ToolRegistry())
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bl := &blockingLLM{}
+			k := New(
+				WithLLM(bl),
+				WithUserIO(&port.NoOpIO{}),
+			)
+
+			if err := k.Boot(context.Background()); err != nil {
+				t.Fatalf("Boot: %v", err)
+			}
+
+			sess, err := k.NewSession(context.Background(), session.SessionConfig{
+				Goal:     "timeout",
+				MaxSteps: 5,
+				Timeout:  30 * time.Millisecond,
+			})
+			if err != nil {
+				t.Fatalf("NewSession: %v", err)
+			}
+			sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+
+			start := time.Now()
+			_, err = tt.run(k, sess)
+			if err == nil {
+				t.Fatal("expected timeout error")
+			}
+			if !stderrors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("expected context.DeadlineExceeded, got %v", err)
+			}
+			if time.Since(start) > time.Second {
+				t.Fatalf("run exceeded expected timeout window: %v", time.Since(start))
+			}
+		})
+	}
+}
+
+func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&port.NoOpIO{}),
+	)
+	bridge := Extensions(k)
+
+	var order []string
+	bridge.OnBoot(20, func(context.Context, *Kernel) error {
+		order = append(order, "boot-20")
+		return nil
+	})
+	bridge.OnBoot(10, func(context.Context, *Kernel) error {
+		order = append(order, "boot-10")
+		return nil
+	})
+	bridge.OnShutdown(20, func(context.Context, *Kernel) error {
+		order = append(order, "shutdown-20")
+		return nil
+	})
+	bridge.OnShutdown(10, func(context.Context, *Kernel) error {
+		order = append(order, "shutdown-10")
+		return nil
+	})
+	bridge.OnSystemPrompt(20, func(*Kernel) string { return "prompt-20" })
+	bridge.OnSystemPrompt(10, func(*Kernel) string { return "prompt-10" })
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{
+		Goal:         "test",
+		SystemPrompt: "base",
+		MaxSteps:     1,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if len(sess.Messages) == 0 {
+		t.Fatal("expected system prompt message to be injected")
+	}
+	if got, want := sess.Messages[0].Content, "base\n\nprompt-10\n\nprompt-20"; got != want {
+		t.Fatalf("system prompt = %q, want %q", got, want)
+	}
+
+	if err := k.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+
+	wantOrder := []string{"boot-10", "boot-20", "shutdown-10", "shutdown-20"}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("hook order len = %d, want %d (%v)", len(order), len(wantOrder), order)
+	}
+	for i := range wantOrder {
+		if order[i] != wantOrder[i] {
+			t.Fatalf("hook order[%d] = %q, want %q (full=%v)", i, order[i], wantOrder[i], order)
+		}
 	}
 }

@@ -7,8 +7,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/mossagi/moss/agentkit"
+	"github.com/mossagi/moss/extensions/skillsx"
 	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/appkit"
 	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
@@ -77,8 +78,8 @@ Environment:
 // launchTUI 启动 Bubble Tea TUI 界面。
 func launchTUI(args []string) {
 	fs := flag.NewFlagSet("moss", flag.ExitOnError)
-	f := &appkit.AppFlags{}
-	appkit.BindAppFlags(fs, f)
+	f := &agentkit.AppFlags{}
+	agentkit.BindAppFlags(fs, f)
 	_ = fs.Parse(args)
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
@@ -102,8 +103,8 @@ func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
-	f := &appkit.AppFlags{}
-	appkit.BindAppFlags(fs, f)
+	f := &agentkit.AppFlags{}
+	agentkit.BindAppFlags(fs, f)
 
 	if err := fs.Parse(args); err != nil {
 		logger.Error("error parsing flags", slog.Any("error", err))
@@ -119,11 +120,11 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
-	k, err := appkit.BuildKernel(ctx, f, cliIO)
+	k, err := agentkit.BuildKernel(ctx, f, cliIO)
 	if err != nil {
 		logger.Error("error initializing kernel", slog.Any("error", err))
 		os.Exit(1)
@@ -141,7 +142,7 @@ func runCmd(args []string) {
 	fmt.Printf("Workspace: %s\n", f.Workspace)
 	fmt.Printf("Mode: %s | Trust: %s\n", *mode, f.Trust)
 
-	skills := k.SkillManager().List()
+	skills := skillsx.Manager(k).List()
 	if len(skills) > 0 {
 		fmt.Printf("Skills: ")
 		for i, s := range skills {
@@ -183,7 +184,7 @@ func runCmd(args []string) {
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
 func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
+	k, err := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
 		Provider:  provider,
 		Model:     model,
 		Workspace: wsDir,

@@ -17,7 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/agentkit"
 	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"golang.org/x/net/websocket"
@@ -30,12 +30,12 @@ func main() {
 	appconfig.SetAppName("miniroom")
 	_ = appconfig.EnsureAppDir()
 
-	flags := appkit.ParseAppFlags()
+	flags := agentkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	appkit.PrintBannerWithHint("miniroom", map[string]string{
+	agentkit.PrintBannerWithHint("miniroom", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
 		"Scripts":  "🐢 海龟汤 / 🕵️ 谁是卧底",

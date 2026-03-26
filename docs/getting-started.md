@@ -177,27 +177,22 @@ import (
     "context"
     "os"
 
-    "github.com/mossagi/moss/adapters/openai"
-    "github.com/mossagi/moss/kernel"
+    "github.com/mossagi/moss/agentkit"
     "github.com/mossagi/moss/kernel/port"
-    "github.com/mossagi/moss/kernel/sandbox"
     "github.com/mossagi/moss/kernel/session"
 )
 
 func main() {
     ctx := context.Background()
 
-    // 1. 创建 Kernel
-    k := kernel.New(
-        kernel.WithLLM(openai.New(os.Getenv("OPENAI_API_KEY"))),
-        kernel.WithUserIO(port.NewPrintfIO(os.Stdout)),
-        kernel.WithSandbox(must(sandbox.NewLocal("."))),
-    )
+    // 1. 用 agentkit 构建推荐配置的 Kernel
+    k, _ := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+        Provider:  "openai",
+        Workspace: ".",
+        APIKey:    os.Getenv("OPENAI_API_KEY"),
+    }, port.NewPrintfIO(os.Stdout))
 
-    // 2. 一键注册所有标准技能
-    k.SetupWithDefaults(ctx, ".")
-
-    // 3. 启动并运行
+    // 2. 启动并运行
     k.Boot(ctx)
     defer k.Shutdown(ctx)
 
@@ -211,28 +206,35 @@ func main() {
     })
 
     result, _ := k.Run(ctx, sess)
-    // result.Output 包含最终回复
     _ = result
-}
-
-func must[T any](v T, err error) T {
-    if err != nil { panic(err) }
-    return v
 }
 ```
 
 ### 自定义 Setup
 
-`SetupWithDefaults` 支持选择性禁用：
+推荐做法是继续使用 `agentkit.BuildKernelWithConfig` / `agentkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `defaults.Setup`。
+
+```go
+// 统一通过 agentkit 装配官方扩展
+k, err := agentkit.BuildKernelWithExtensions(ctx, flags, io,
+    agentkit.WithSessionStore(store),
+    agentkit.WithScheduling(sched),
+    agentkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+        return registerMyTools(k.ToolRegistry())
+    }),
+)
+```
+
+更底层时，`defaults.Setup` 仍支持选择性禁用：
 
 ```go
 // 只注册核心工具，不加载 MCP 和 Skill
-k.SetupWithDefaults(ctx, ".",
-    kernel.WithoutMCPServers(),
-    kernel.WithoutSkills(),
+defaults.Setup(ctx, k, ".",
+    defaults.WithoutMCPServers(),
+    defaults.WithoutSkills(),
 )
 
-// 完全自定义：不使用 SetupWithDefaults
+// 完全自定义：不使用 defaults.Setup
 k := kernel.New(
     kernel.WithLLM(myLLM),
     kernel.WithUserIO(&port.NoOpIO{}),

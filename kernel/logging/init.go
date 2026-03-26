@@ -45,4 +45,3 @@ func ConfigureLogging(level slog.Level, format string, w io.Writer) error {
 	defaultLogger = slog.New(handler)
 	return nil
 }
-

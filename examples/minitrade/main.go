@@ -19,21 +19,20 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/appkit"
 	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
-	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
 //go:embed templates/trading_prompt.tmpl
 var tradingPromptTemplate string
 
 type config struct {
-	flags   *appkit.AppFlags
+	flags   *agentkit.AppFlags
 	capital float64
 }
 
@@ -43,7 +42,7 @@ func main() {
 
 	cfg := parseFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	if err := run(ctx, cfg); err != nil {
@@ -55,7 +54,7 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
-	cfg.flags = appkit.ParseAppFlags()
+	cfg.flags = agentkit.ParseAppFlags()
 	return cfg
 }
 
@@ -75,27 +74,21 @@ func run(ctx context.Context, cfg *config) error {
 	sched := scheduler.New()
 	userIO := port.NewConsoleIO()
 
-	k, err := appkit.BuildKernel(ctx, cfg.flags, userIO,
-		kernel.WithSessionStore(store),
-		kernel.WithScheduler(sched),
+	k, err := agentkit.BuildKernelWithExtensions(ctx, cfg.flags, userIO,
+		agentkit.WithSessionStore(store),
+		agentkit.WithScheduling(sched),
+		agentkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+			if err := registerTradeTools(built.ToolRegistry(), mkt); err != nil {
+				return fmt.Errorf("register trade tools: %w", err)
+			}
+			if err := registerAnalysisTools(built.ToolRegistry(), mkt); err != nil {
+				return fmt.Errorf("register analysis tools: %w", err)
+			}
+			return nil
+		}),
 	)
 	if err != nil {
 		return err
-	}
-
-	// 注册交易工具
-	if err := registerTradeTools(k.ToolRegistry(), mkt); err != nil {
-		return fmt.Errorf("register trade tools: %w", err)
-	}
-
-	// 注册技术分析工具
-	if err := registerAnalysisTools(k.ToolRegistry(), mkt); err != nil {
-		return fmt.Errorf("register analysis tools: %w", err)
-	}
-
-	// 注册调度工具
-	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
-		return fmt.Errorf("register schedule tools: %w", err)
 	}
 
 	// 策略：下单需要审批
@@ -176,7 +169,7 @@ func run(ctx context.Context, cfg *config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	appkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
+	agentkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
 		map[string]string{
 			"Provider": cfg.flags.Provider,
 			"Model":    modelName,
@@ -188,7 +181,7 @@ func run(ctx context.Context, cfg *config) error {
 		"Type /help for commands, /exit to quit.",
 	)
 
-	return appkit.REPL(ctx, appkit.REPLConfig{
+	return agentkit.REPL(ctx, agentkit.REPLConfig{
 		Prompt:      "💰 > ",
 		AppName:     "minitrade",
 		CompactKeep: 8,

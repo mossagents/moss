@@ -1,17 +1,27 @@
-package builtins
+package knowledgex
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 
+	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
-// RegisterKnowledgeTools 注册知识库相关的内置工具。
-func RegisterKnowledgeTools(reg tool.Registry, store knowledge.Store, embedder port.Embedder) error {
+// NewMemoryStore 返回官方提供的内存知识库实现。
+func NewMemoryStore() *knowledge.MemoryStore {
+	return knowledge.NewMemoryStore()
+}
+
+// RegisterTools 将 knowledge 能力作为标准扩展工具集接入 Kernel。
+func RegisterTools(k *kernel.Kernel, store knowledge.Store, embedder port.Embedder) error {
+	return register(k.ToolRegistry(), store, embedder)
+}
+
+func register(reg tool.Registry, store knowledge.Store, embedder port.Embedder) error {
 	tools := []struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -27,8 +37,6 @@ func RegisterKnowledgeTools(reg tool.Registry, store knowledge.Store, embedder p
 	}
 	return nil
 }
-
-// ─── ingest_document ────────────────────────────────
 
 var ingestDocSpec = tool.ToolSpec{
 	Name: "ingest_document",
@@ -64,7 +72,6 @@ func ingestDocHandler(store knowledge.Store, embedder port.Embedder) tool.ToolHa
 		}
 
 		chunks := knowledge.ChunkText(params.Text, params.ChunkSize, 0)
-
 		if err := store.Add(ctx, embedder, params.ID, params.Source, chunks, nil); err != nil {
 			return nil, fmt.Errorf("ingest document: %w", err)
 		}
@@ -80,8 +87,6 @@ func ingestDocHandler(store knowledge.Store, embedder port.Embedder) tool.ToolHa
 		})
 	}
 }
-
-// ─── knowledge_search ───────────────────────────────
 
 var knowledgeSearchSpec = tool.ToolSpec{
 	Name: "knowledge_search",
@@ -128,8 +133,6 @@ func knowledgeSearchHandler(store knowledge.Store, embedder port.Embedder) tool.
 		})
 	}
 }
-
-// ─── knowledge_list ─────────────────────────────────
 
 var knowledgeListSpec = tool.ToolSpec{
 	Name:         "knowledge_list",

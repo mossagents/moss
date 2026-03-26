@@ -4,16 +4,12 @@ import (
 	"context"
 	"os"
 
-	"github.com/mossagi/moss/kernel/agent"
-	"github.com/mossagi/moss/kernel/bootstrap"
 	"github.com/mossagi/moss/kernel/loop"
 	"github.com/mossagi/moss/kernel/middleware"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/retry"
 	"github.com/mossagi/moss/kernel/sandbox"
-	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
-	"github.com/mossagi/moss/kernel/skill"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
@@ -74,46 +70,6 @@ func WithSessionManager(m session.Manager) Option {
 // WithLoopConfig 配置 Agent Loop 参数。
 func WithLoopConfig(cfg loop.LoopConfig) Option {
 	return func(k *Kernel) { k.loopCfg = cfg }
-}
-
-// WithSkillManager 替换默认的 Skill Manager。
-func WithSkillManager(m *skill.Manager) Option {
-	return func(k *Kernel) { k.skills = m }
-}
-
-// WithSessionStore 设置 Session 持久化存储。
-func WithSessionStore(s session.SessionStore) Option {
-	return func(k *Kernel) { k.store = s }
-}
-
-// WithScheduler 设置定时任务调度器。
-func WithScheduler(s *scheduler.Scheduler) Option {
-	return func(k *Kernel) { k.sched = s }
-}
-
-// WithEmbedder 设置文本嵌入模型。
-func WithEmbedder(e port.Embedder) Option {
-	return func(k *Kernel) { k.embedder = e }
-}
-
-// WithChannel 追加一个消息通道。
-func WithChannel(ch port.Channel) Option {
-	return func(k *Kernel) { k.channels = append(k.channels, ch) }
-}
-
-// WithRouter 设置会话路由器。
-func WithRouter(r *session.Router) Option {
-	return func(k *Kernel) { k.router = r }
-}
-
-// WithBootstrap 设置引导上下文。
-func WithBootstrap(b *bootstrap.Context) Option {
-	return func(k *Kernel) { k.bootstrap = b }
-}
-
-// WithAgentRegistry 设置 Agent 注册表。
-func WithAgentRegistry(r *agent.Registry) Option {
-	return func(k *Kernel) { k.agents = r }
 }
 
 // WithObserver 设置运行时事件观察者。

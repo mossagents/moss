@@ -19,19 +19,19 @@ import (
 	"math/rand/v2"
 	"os"
 
-	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/tool"
 )
 
 func main() {
-	flags := appkit.ParseAppFlags()
+	flags := agentkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+	k, err := agentkit.BuildKernel(ctx, flags, port.NewConsoleIO())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -47,7 +47,7 @@ func main() {
 	defer k.Shutdown(ctx)
 
 	tools := k.ToolRegistry().List()
-	appkit.PrintBannerWithHint("custom-tool", map[string]string{
+	agentkit.PrintBannerWithHint("custom-tool", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
 		"Tools":    fmt.Sprintf("%d loaded", len(tools)),
@@ -66,7 +66,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := appkit.REPL(ctx, appkit.REPLConfig{
+	if err := agentkit.REPL(ctx, agentkit.REPLConfig{
 		Prompt:  "you> ",
 		AppName: "custom-tool",
 	}, k, sess); err != nil {

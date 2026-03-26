@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/mossagi/moss/adapters"
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/sandbox"
@@ -496,11 +496,11 @@ func (io *RoomIO) Ask(_ context.Context, _ port.InputRequest) (port.InputRespons
 type RoomManager struct {
 	mu    sync.Mutex
 	rooms map[string]*Room
-	flags *appkit.AppFlags
+	flags *agentkit.AppFlags
 }
 
 // NewRoomManager 创建房间管理器。
-func NewRoomManager(flags *appkit.AppFlags) *RoomManager {
+func NewRoomManager(flags *agentkit.AppFlags) *RoomManager {
 	return &RoomManager{
 		rooms: make(map[string]*Room),
 		flags: flags,

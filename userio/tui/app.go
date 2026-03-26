@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagi/moss/extensions/skillsx"
 	"github.com/mossagi/moss/kernel"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
@@ -229,7 +230,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go agent.appendAndRun(text)
 		}
 		m.chat.skillListFn = func() string {
-			skills := agent.k.SkillManager().List()
+			skills := skillsx.Manager(agent.k).List()
 			if len(skills) == 0 {
 				return "暂无已加载的 skill。"
 			}

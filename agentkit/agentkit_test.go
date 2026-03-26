@@ -1,15 +1,19 @@
-package appkit
+package agentkit
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"reflect"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/mossagi/moss/kernel"
 	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/retry"
+	"github.com/mossagi/moss/kernel/scheduler"
+	"github.com/mossagi/moss/kernel/tool"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
@@ -106,6 +110,66 @@ func TestBuildKernelWithConfig_DefaultLLMRetry(t *testing.T) {
 	}
 	if time.Duration(llmRetry.FieldByName("InitialDelay").Int()) != 5*time.Millisecond {
 		t.Fatalf("InitialDelay = %v, want %v", time.Duration(llmRetry.FieldByName("InitialDelay").Int()), 5*time.Millisecond)
+	}
+}
+
+func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
+	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+	}, nil,
+		WithKernelOptions(kernel.WithParallelToolCalls()),
+		AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+			return k.ToolRegistry().Register(tool.ToolSpec{
+				Name:        "test_extension_tool",
+				Description: "test tool",
+				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+			}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+				return json.RawMessage(`{"ok":true}`), nil
+			})
+		}),
+	)
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+
+	kv := reflect.ValueOf(k).Elem()
+	loopCfg := kv.FieldByName("loopCfg")
+	if !loopCfg.FieldByName("ParallelToolCall").Bool() {
+		t.Fatal("expected ParallelToolCall to be enabled by extension options")
+	}
+
+	tools := k.ToolRegistry().List()
+	found := false
+	for _, spec := range tools {
+		if spec.Name == "test_extension_tool" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected test_extension_tool to be registered by extension installer")
+	}
+}
+
+func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
+	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+	}, nil, WithScheduling(scheduler.New()))
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+
+	tools := k.ToolRegistry().List()
+	toolNames := make(map[string]bool, len(tools))
+	for _, spec := range tools {
+		toolNames[spec.Name] = true
+	}
+	for _, name := range []string{"schedule_task", "list_schedules", "cancel_schedule"} {
+		if !toolNames[name] {
+			t.Fatalf("expected scheduling tool %q to be registered", name)
+		}
 	}
 }
 

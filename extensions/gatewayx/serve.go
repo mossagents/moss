@@ -1,4 +1,4 @@
-package appkit
+package gatewayx
 
 import (
 	"context"
@@ -19,6 +19,9 @@ type ServeConfig struct {
 	// SystemPrompt 为 Gateway 创建 Session 时注入的系统提示词。
 	SystemPrompt string
 
+	// SessionStore 为 Gateway 路由提供可选的会话持久化支持。
+	SessionStore session.SessionStore
+
 	// RouterConfig 会话路由配置。
 	RouterConfig session.RouterConfig
 
@@ -26,39 +29,32 @@ type ServeConfig struct {
 	OnError func(error)
 }
 
-// Serve 以 Gateway 模式运行：CLI Channel → Router → Kernel.Run → 回复。
-//
-// 这是 REPL 的 Gateway 替代方案，基于 P0 引入的 Channel + Router 抽象。
-// 与 REPL 不同，Serve 通过 Channel 接口驱动，可扩展到 WebSocket 等通道。
-func Serve(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
-	// 构建 Router
+// ServeCLI 以 CLI Channel + Router + Gateway 的组合方式运行。
+func ServeCLI(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 	mgr := k.SessionManager()
-	store := k.SessionStore()
 	routerCfg := cfg.RouterConfig
 	if routerCfg.DefaultConfig.SystemPrompt == "" {
 		routerCfg.DefaultConfig.SystemPrompt = cfg.SystemPrompt
 	}
-	router := session.NewRouter(routerCfg, mgr, store)
+	router := session.NewRouter(routerCfg, mgr, cfg.SessionStore)
 
-	// 构建 CLI Channel
 	prompt := cfg.Prompt
 	if prompt == "" {
 		prompt = "> "
 	}
 	cli := channel.NewCLI(channel.WithPrompt(prompt))
 
-	// 构建 Gateway
 	onError := cfg.OnError
 	if onError == nil {
 		onError = func(err error) {
 			fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n\n", err)
 		}
 	}
+
 	gw := gateway.New(k, router,
 		gateway.WithSystemPrompt(cfg.SystemPrompt),
 		gateway.WithOnError(onError),
 	)
 	gw.AddChannel(cli)
-
 	return gw.Serve(ctx)
 }

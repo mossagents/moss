@@ -29,17 +29,15 @@ import (
 	"time"
 
 	"github.com/mossagi/moss/adapters/embedding"
+	"github.com/mossagi/moss/agentkit"
+	"github.com/mossagi/moss/extensions/knowledgex"
 	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/appkit"
-	"github.com/mossagi/moss/kernel/bootstrap"
 	appconfig "github.com/mossagi/moss/kernel/config"
-	"github.com/mossagi/moss/kernel/knowledge"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/tool"
-	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 	mossTUI "github.com/mossagi/moss/userio/tui"
 )
 
@@ -52,9 +50,9 @@ func main() {
 
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
-	flags := appkit.ParseAppFlags()
+	flags := agentkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
 	if err := run(ctx, flags, mode); err != nil {
@@ -63,7 +61,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
+func run(ctx context.Context, flags *agentkit.AppFlags, mode string) error {
 	if mode == "gateway" {
 		return runGateway(ctx, flags)
 	}
@@ -73,12 +71,12 @@ func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
 }
 
 type miniclawRuntime struct {
-	flags *appkit.AppFlags
+	flags *agentkit.AppFlags
 	store session.SessionStore
 	sched *scheduler.Scheduler
 }
 
-func launchTUI(flags *appkit.AppFlags) error {
+func launchTUI(flags *agentkit.AppFlags) error {
 	var activeRuntime *miniclawRuntime
 
 	return mossTUI.Run(mossTUI.Config{
@@ -89,7 +87,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
 		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
-			runtimeFlags := &appkit.AppFlags{
+			runtimeFlags := &agentkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
 				Workspace: wsDir,
@@ -123,7 +121,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 	})
 }
 
-func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
+func runGateway(ctx context.Context, flags *agentkit.AppFlags) error {
 	userIO := port.NewConsoleIO()
 	k, runtime, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
@@ -140,7 +138,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	appkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
+	agentkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
 		map[string]string{
 			"Provider":  flags.Provider,
 			"Model":     modelName,
@@ -151,13 +149,14 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 		"Ask me anything — I can search the web, manage files, schedule tasks, and more.",
 	)
 
-	return appkit.Serve(ctx, appkit.ServeConfig{
+	return agentkit.Serve(ctx, agentkit.ServeConfig{
 		Prompt:       "🐾 > ",
+		SessionStore: runtime.store,
 		SystemPrompt: buildSystemPrompt(flags.Workspace),
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *agentkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
 	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -166,24 +165,19 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 
 	sched := scheduler.New()
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
-	knStore := knowledge.NewMemoryStore()
+	knStore := knowledgex.NewMemoryStore()
 
-	k, err := appkit.BuildKernel(ctx, flags, io,
-		kernel.WithSessionStore(store),
-		kernel.WithScheduler(sched),
-		kernel.WithEmbedder(embedder),
+	k, err := agentkit.BuildKernelWithExtensions(ctx, flags, io,
+		agentkit.WithSessionStore(store),
+		agentkit.WithScheduling(sched),
+		agentkit.WithLoadedBootstrapContext(flags.Workspace, "miniclaw"),
+		agentkit.WithKnowledge(knStore, embedder),
+		agentkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+			return registerWebTools(built)
+		}),
 	)
 	if err != nil {
 		return nil, nil, err
-	}
-	if err := registerWebTools(k); err != nil {
-		return nil, nil, fmt.Errorf("register web tools: %w", err)
-	}
-	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
-		return nil, nil, fmt.Errorf("register schedule tools: %w", err)
-	}
-	if err := toolbuiltins.RegisterKnowledgeTools(k.ToolRegistry(), knStore, embedder); err != nil {
-		return nil, nil, fmt.Errorf("register knowledge tools: %w", err)
 	}
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
@@ -525,14 +519,6 @@ func stripTags(s string) string {
 func buildSystemPrompt(workspace string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
 	prompt := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
-
-	// 注入 bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md 等）
-	bootstrap.SetAppName("miniclaw")
-	bctx := bootstrap.Load(workspace)
-	if section := bctx.SystemPromptSection(); section != "" {
-		prompt = prompt + "\n\n" + section
-	}
-
 	return prompt
 }
 

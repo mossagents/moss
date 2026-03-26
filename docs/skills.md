@@ -51,13 +51,14 @@ type Deps struct {
 
 内置核心工具集，提供文件操作、命令执行和用户交互能力。
 
-**注册方式**：通过 `SetupWithDefaults` 自动注册，或手动注册：
+**注册方式**：通过 `defaults.Setup` 自动装配，或手动注册：
 
 ```go
+import "github.com/mossagi/moss/extensions/skillsx"
 import toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 
 core := &toolbuiltins.BuiltinTool{}
-k.SkillManager().Register(ctx, core, k.SkillDeps())
+skillsx.Manager(k).Register(ctx, core, skillsx.Deps(k))
 ```
 
 **提供的 6 个工具**：
@@ -168,7 +169,7 @@ Moss 按以下优先级自动发现 SKILL.md（项目级 > 全局）：
 
 ```go
 ps, err := skill.ParseSkillMD("/path/to/SKILL.md")
-k.SkillManager().Register(ctx, ps, k.SkillDeps())
+skillsx.Manager(k).Register(ctx, ps, skillsx.Deps(k))
 ```
 
 ---
@@ -200,19 +201,19 @@ manager.ShutdownAll(ctx)
 
 ---
 
-## SetupWithDefaults
+## defaults.Setup
 
-推荐使用 `SetupWithDefaults` 一键注册所有标准技能：
+推荐使用 `defaults.Setup` 一键装配所有标准技能：
 
 ```go
 // 默认行为：注册 BuiltinTool + 加载 MCP Servers + 发现 Skills
-k.SetupWithDefaults(ctx, workspaceDir)
+defaults.Setup(ctx, k, workspaceDir)
 
 // 选择性禁用
-k.SetupWithDefaults(ctx, workspaceDir,
-  kernel.WithoutBuiltin(),        // 不注册内置 6 工具
-  kernel.WithoutMCPServers(),     // 不加载 MCP 配置
-  kernel.WithoutSkills(),         // 不发现 SKILL.md
+defaults.Setup(ctx, k, workspaceDir,
+  defaults.WithoutBuiltin(),        // 不注册内置 6 工具
+  defaults.WithoutMCPServers(),     // 不加载 MCP 配置
+  defaults.WithoutSkills(),         // 不发现 SKILL.md
 )
 ```
 

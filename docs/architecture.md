@@ -251,8 +251,12 @@ kernel/loop                         (imports 以上所有)
 kernel/kernel.go                    (Kernel 入口，组合所有子系统)
     ↑ references
 kernel/skill                        (Skill 管理，imports tool, middleware, sandbox, port)
-kernel/tool/builtins                (内置工具，imports skill, port, sandbox, tool)
-kernel/setup.go                     (SetupWithDefaults，imports skill, builtins)
+kernel/tool/builtins                (最小内置工具 skill，imports skill, port, sandbox, tool)
+extensions/skillsx, extensions/agentsx (skill/agent feature API 的扩展入口)
+extensions/knowledgex               (knowledge + embedder 组合扩展)
+extensions/defaults/setup.go        (默认扩展装配，imports skill, builtins)
+    ↑ used by
+agentkit                            (开发者友好装配)
     ↑ used by
 cmd/moss                            (CLI/TUI 入口)
 ```
@@ -335,7 +339,7 @@ sess, _ := k.NewSession(ctx, cfg)
 | LLM Port, UserIO Port | **稳定** | 接口已验证：CLI/TUI/WebSocket/REPL |
 | Skill (BuiltinTool / MCP / SKILL.md) | **稳定** | 三种扩展方式均已使用 |
 | Agent (委派/深度限制) | **可用** | 已在 miniwork 验证 |
-| appkit (REPL / Flags / Serve) | **可用** | 应用脚手架工具箱 |
+| agentkit (REPL / Flags / Serve) | **可用** | 应用脚手架工具箱 |
 | Gateway / Channel | **实验性** | 框架已搭建，未完整集成到主流程 |
 | Knowledge / Embedder | **实验性** | 接口定义完成，尚无示例使用 |
 | Scheduler | **可用** | 独立调度器，可按需启用 |

@@ -79,15 +79,22 @@ func SetAppName(name string) { appName = name }
 // 优先级: 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
 // 每个文件只取最高优先级的版本。
 func Load(workspace string) *Context {
+	return LoadWithAppName(workspace, appName)
+}
+
+// LoadWithAppName 从工作区和全局目录加载引导上下文，并显式指定应用名。
+// 优先级: 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
+// 每个文件只取最高优先级的版本。
+func LoadWithAppName(workspace, name string) *Context {
 	ctx := &Context{}
 
 	// 构建搜索目录列表（优先级从高到低）
 	dirs := []string{
 		filepath.Join(workspace, ".agents"),
-		filepath.Join(workspace, "."+appName),
+		filepath.Join(workspace, "."+name),
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, "."+appName))
+		dirs = append(dirs, filepath.Join(home, "."+name))
 	}
 
 	for _, bf := range bootstrapFiles {

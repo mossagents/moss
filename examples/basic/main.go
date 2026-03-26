@@ -1,7 +1,7 @@
 // basic 是 moss kernel 的最简集成示例。
 //
 // 演示如何用最少代码启动一个可对话的 Agent：
-//   - 使用 appkit 解析参数和构建 Kernel
+//   - 使用 agentkit 解析参数和构建 Kernel
 //   - REPL 交互
 //   - 6 个内置工具自动注册
 //
@@ -16,18 +16,18 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mossagi/moss/kernel/appkit"
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/session"
 )
 
 func main() {
-	flags := appkit.ParseAppFlags()
+	flags := agentkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := agentkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+	k, err := agentkit.BuildKernel(ctx, flags, port.NewConsoleIO())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -39,7 +39,7 @@ func main() {
 	}
 	defer k.Shutdown(ctx)
 
-	appkit.PrintBanner("basic", map[string]string{
+	agentkit.PrintBanner("basic", map[string]string{
 		"Provider":  flags.Provider,
 		"Model":     flags.Model,
 		"Workspace": flags.Workspace,
@@ -57,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := appkit.REPL(ctx, appkit.REPLConfig{
+	if err := agentkit.REPL(ctx, agentkit.REPLConfig{
 		Prompt:  "you> ",
 		AppName: "basic",
 	}, k, sess); err != nil {

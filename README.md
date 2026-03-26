@@ -74,27 +74,19 @@ import (
     "context"
     "os"
 
-    "github.com/mossagi/moss/adapters/openai"
-    "github.com/mossagi/moss/kernel"
+    "github.com/mossagi/moss/agentkit"
     "github.com/mossagi/moss/kernel/port"
-    "github.com/mossagi/moss/kernel/sandbox"
     "github.com/mossagi/moss/kernel/session"
 )
 
 func main() {
     ctx := context.Background()
+    k, _ := agentkit.BuildKernel(ctx, &agentkit.AppFlags{
+        Provider:  "openai",
+        Workspace: ".",
+        APIKey:    os.Getenv("OPENAI_API_KEY"),
+    }, port.NewPrintfIO(os.Stdout))
 
-    // 1. 创建 Kernel — 注入 LLM、UserIO、Sandbox
-    k := kernel.New(
-        kernel.WithLLM(openai.New(os.Getenv("OPENAI_API_KEY"))),
-        kernel.WithUserIO(port.NewPrintfIO(os.Stdout)),
-        kernel.WithSandbox(must(sandbox.NewLocal("."))),
-    )
-
-    // 2. 一键注册标准技能（BuiltinTool + MCPServer + Skill）
-    k.SetupWithDefaults(ctx, ".")
-
-    // 3. 启动并运行
     k.Boot(ctx)
     defer k.Shutdown(ctx)
 
@@ -109,11 +101,6 @@ func main() {
 
     result, _ := k.Run(ctx, sess)
     _ = result // result.Output 包含最终回复
-}
-
-func must[T any](v T, err error) T {
-    if err != nil { panic(err) }
-    return v
 }
 ```
 
@@ -276,7 +263,7 @@ moss/
 ├── kernel/                  # Agent Runtime Kernel (零外部依赖)
 │   ├── kernel.go            # Kernel 入口 (New/Boot/Run/Shutdown)
 │   ├── option.go            # 函数式选项 (WithLLM/WithSandbox/Use...)
-│   ├── setup.go             # SetupWithDefaults + SetupOption
+│   ├── ...
 │   ├── port/                # Port 接口 (纯类型定义)
 │   │   ├── types.go         # Message, Role, ToolCall, ToolResult
 │   │   ├── llm.go           # LLM, StreamingLLM, CompletionRequest
@@ -315,10 +302,6 @@ moss/
 │   │   ├── config.go        # Config 加载/保存/合并
 │   │   ├── mcp.go           # MCP Skill (外部工具服务器)
 │   │   └── prompt.go        # Skill (SKILL.md 注入)
-│   ├── appkit/              # 应用脚手架工具箱
-│   │   ├── appkit.go        # ContextWithSignal, CommonFlags, Banner
-│   │   ├── repl.go          # REPL 引擎
-│   │   └── serve.go         # HTTP Serve 脚手架
 │   ├── gateway/             # 消息网关 [实验性]
 │   ├── knowledge/           # 知识系统 [实验性]
 │   ├── scheduler/           # 定时任务调度器
@@ -326,6 +309,12 @@ moss/
 │       ├── mock_llm.go      # MockLLM, MockStreamingLLM
 │       ├── mock_sandbox.go  # MemorySandbox
 │       └── mock_io.go       # RecorderIO
+├── extensions/              # 官方维护的可选扩展
+│   └── defaults/            # 默认装配（builtin / MCP / skills / agents）
+├── agentkit/                # 应用脚手架工具箱
+│   ├── agentkit.go          # ContextWithSignal, AppFlags, Banner
+│   ├── repl.go              # REPL 引擎
+│   └── serve.go             # Gateway Serve 脚手架
 └── docs/                    # 文档
     ├── architecture.md      # 架构设计
     ├── getting-started.md   # 快速开始 & 库集成指南

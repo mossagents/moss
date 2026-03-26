@@ -20,13 +20,13 @@ func TestParseSchedule(t *testing.T) {
 		{"@every 1h", time.Hour, false, false},
 		{"@every 1h30m", 90 * time.Minute, false, false},
 		{"@every 5s", 5 * time.Second, false, false},
-			{"@after 10m", 10 * time.Minute, true, false},
+		{"@after 10m", 10 * time.Minute, true, false},
 		{"@once", 0, true, false},
 		{"@every 100ms", 0, false, true}, // too short
-			{"@after 100ms", 0, false, true}, // too short
+		{"@after 100ms", 0, false, true}, // too short
 		{"bad expr", 0, false, true},     // unsupported
 		{"@every bad", 0, false, true},   // invalid duration
-			{"@after bad", 0, false, true},   // invalid duration
+		{"@after bad", 0, false, true},   // invalid duration
 	}
 
 	for _, tt := range tests {

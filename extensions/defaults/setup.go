@@ -1,4 +1,4 @@
-package kernel
+package defaults
 
 import (
 	"context"
@@ -6,50 +6,53 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mossagi/moss/kernel/agent"
+	"github.com/mossagi/moss/extensions/agentsx"
+	"github.com/mossagi/moss/extensions/skillsx"
+	"github.com/mossagi/moss/kernel"
 	appconfig "github.com/mossagi/moss/kernel/config"
 	"github.com/mossagi/moss/kernel/logging"
 	"github.com/mossagi/moss/kernel/skill"
 	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 )
 
-// SetupOption 控制 SetupWithDefaults 的行为。
-type SetupOption func(*setupConfig)
+// Option 控制默认扩展装配行为。
+type Option func(*config)
 
-type setupConfig struct {
+type config struct {
 	builtin    bool
 	mcpServers bool
 	skills     bool
 }
 
 // WithoutBuiltin 禁用内置核心工具注册。
-func WithoutBuiltin() SetupOption {
-	return func(c *setupConfig) { c.builtin = false }
+func WithoutBuiltin() Option {
+	return func(c *config) { c.builtin = false }
 }
 
 // WithoutMCPServers 禁用 MCP server 自动加载。
-func WithoutMCPServers() SetupOption {
-	return func(c *setupConfig) { c.mcpServers = false }
+func WithoutMCPServers() Option {
+	return func(c *config) { c.mcpServers = false }
 }
 
 // WithoutSkills 禁用 SKILL.md 自动发现。
-func WithoutSkills() SetupOption {
-	return func(c *setupConfig) { c.skills = false }
+func WithoutSkills() Option {
+	return func(c *config) { c.skills = false }
 }
 
-// SetupWithDefaults 注册标准技能（BuiltinTool、MCP servers、Skills）。
-// 这是库用户推荐的快速开始方式，一行代码替代手动注册流程。
+// Setup 装配官方默认扩展（BuiltinTool、MCP servers、Skills、Agent configs）。
+// 这是推荐的快速开始方式，但归属于扩展层而非 kernel core。
 //
 // 默认行为:
 //   - 注册 6 个内置工具（read_file, write_file, list_files, search_text, run_command, ask_user）
 //   - 从 ~/.moss/config.yaml 和 ./moss.yaml 加载 MCP servers
 //   - 从标准目录发现 SKILL.md skills
+//   - 从标准目录加载 Agent 配置
 //
-// 可通过 SetupOption 选择性禁用：
+// 可通过 Option 选择性禁用：
 //
-//	k.SetupWithDefaults(ctx, ".", kernel.WithoutMCPServers(), kernel.WithoutSkills())
-func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opts ...SetupOption) error {
-	cfg := &setupConfig{
+//	defaults.Setup(ctx, k, ".", defaults.WithoutMCPServers(), defaults.WithoutSkills())
+func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...Option) error {
+	cfg := &config{
 		builtin:    true,
 		mcpServers: true,
 		skills:     true,
@@ -59,11 +62,11 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 	}
 
 	logger := logging.GetLogger()
-	deps := k.SkillDeps()
+	deps := skillsx.Deps(k)
 
 	// 1. 注册内置工具 skill
 	if cfg.builtin {
-		if err := k.skills.Register(ctx, &toolbuiltins.BuiltinTool{}, deps); err != nil {
+		if err := skillsx.Manager(k).Register(ctx, &toolbuiltins.BuiltinTool{}, deps); err != nil {
 			return err
 		}
 	}
@@ -79,7 +82,7 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 				continue
 			}
 			mcpServer := skill.NewMCPServer(sc)
-			if err := k.skills.Register(ctx, mcpServer, deps); err != nil {
+			if err := skillsx.Manager(k).Register(ctx, mcpServer, deps); err != nil {
 				logger.WarnContext(ctx, "failed to load MCP server",
 					slog.String("server", sc.Name),
 					slog.Any("error", err),
@@ -92,7 +95,7 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 	if cfg.skills {
 		skills := skill.DiscoverSkills(workspaceDir)
 		for _, ps := range skills {
-			if err := k.skills.Register(ctx, ps, deps); err != nil {
+			if err := skillsx.Manager(k).Register(ctx, ps, deps); err != nil {
 				logger.WarnContext(ctx, "failed to load skill",
 					slog.String("skill", ps.Metadata().Name),
 					slog.Any("error", err),
@@ -102,17 +105,15 @@ func (k *Kernel) SetupWithDefaults(ctx context.Context, workspaceDir string, opt
 	}
 
 	// 4. 发现并加载 Agent 配置（.agents/agents/ 目录）
-	if k.agents == nil {
-		k.agents = agent.NewRegistry()
-	}
 	agentDirs := []string{
 		filepath.Join(workspaceDir, ".agents", "agents"),
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		agentDirs = append(agentDirs, filepath.Join(home, ".moss", "agents"))
 	}
+	registry := agentsx.Registry(k)
 	for _, dir := range agentDirs {
-		if err := k.agents.LoadDir(dir); err != nil {
+		if err := registry.LoadDir(dir); err != nil {
 			logger.WarnContext(ctx, "failed to load agents",
 				slog.String("dir", dir),
 				slog.Any("error", err),

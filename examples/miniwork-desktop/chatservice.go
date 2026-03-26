@@ -10,14 +10,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mossagi/moss/agentkit"
 	"github.com/mossagi/moss/kernel"
-	"github.com/mossagi/moss/kernel/appkit"
 	"github.com/mossagi/moss/kernel/middleware/builtins"
 	"github.com/mossagi/moss/kernel/port"
 	"github.com/mossagi/moss/kernel/scheduler"
 	"github.com/mossagi/moss/kernel/session"
 	"github.com/mossagi/moss/kernel/tool"
-	toolbuiltins "github.com/mossagi/moss/kernel/tool/builtins"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -248,26 +247,23 @@ func (s *ChatService) IsRunning() bool {
 func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	ctx := context.Background()
 	sched := scheduler.New()
-	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
+	k, err := agentkit.BuildKernelWithExtensions(ctx, &agentkit.AppFlags{
 		Provider:  s.cfg.provider,
 		Model:     s.cfg.model,
 		Workspace: s.cfg.workspace,
 		Trust:     s.cfg.trust,
 		APIKey:    s.cfg.apiKey,
 		BaseURL:   s.cfg.baseURL,
-	}, s.wailsIO, kernel.WithScheduler(sched))
+	}, s.wailsIO,
+		agentkit.WithScheduling(sched),
+		agentkit.AfterBuild(func(buildCtx context.Context, built *kernel.Kernel) error {
+			return registerOrchestrationTools(built, buildCtx, s.cfg, s.tracker)
+		}),
+	)
 	if err != nil {
 		return nil, err
 	}
 	s.sched = sched
-
-	if err := toolbuiltins.RegisterScheduleTools(k.ToolRegistry(), sched); err != nil {
-		return nil, fmt.Errorf("register schedule tools: %w", err)
-	}
-
-	if err := registerOrchestrationTools(k, ctx, s.cfg, s.tracker); err != nil {
-		return nil, fmt.Errorf("register orchestration tools: %w", err)
-	}
 
 	if s.cfg.trust == "restricted" {
 		k.WithPolicy(
