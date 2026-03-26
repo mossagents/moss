@@ -147,16 +147,16 @@ moss version
 
 仓库内置示例：
 
-- `examples/minicode`：代码助手（默认 TUI）
-- `examples/miniwork`：多 Agent 编排
-- `examples/miniclaw`：Web 抓取 Agent
-- `examples/minitrade`：有状态自主循环 Agent（内置 trading 领域适配器）
-- `examples/miniroom`：多人实时 Agent 游戏（WebSocket + Per-Room Kernel）
+- `examples/mosscode`：代码助手（默认 TUI）
+- `examples/mosswork`：多 Agent 编排
+- `examples/mossclaw`：Web 抓取 Agent
+- `examples/mossquant`：有状态自主循环 Agent（内置 trading 领域适配器）
+- `examples/mossroom`：多人实时 Agent 游戏（WebSocket + Per-Room Kernel）
 
-快速体验（以 minicode 为例）：
+快速体验（以 mosscode 为例）：
 
 ```bash
-cd examples/minicode
+cd examples/mosscode
 go run .
 ```
 

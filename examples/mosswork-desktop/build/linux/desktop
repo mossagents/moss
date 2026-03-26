@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
 Name=My Product
-Comment=A miniwork-desktop application
+Comment=A mosswork-desktop application
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/miniwork-desktop.exe %u
+Exec=/usr/local/bin/mosswork-desktop.exe %u
 Terminal=false
 Type=Application
-Icon=miniwork-desktop.exe
+Icon=mosswork-desktop.exe
 Categories=Utility;
-StartupWMClass=miniwork-desktop.exe
+StartupWMClass=mosswork-desktop.exe
 
  

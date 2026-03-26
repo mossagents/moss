@@ -42,7 +42,7 @@ func TestEmpty(t *testing.T) {
 
 func TestSystemPromptSection(t *testing.T) {
 	ctx := &Context{
-		Identity: "I am miniclaw",
+		Identity: "I am mossclaw",
 		Soul:     "Friendly",
 	}
 

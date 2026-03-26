@@ -11,7 +11,7 @@ import (
 // ConsoleIO 是面向终端的 UserIO 实现，支持读写交互。
 //
 // 输出带有 emoji 前缀的格式化消息，Ask 通过标准输入读取用户回复。
-// 适用于 REPL 类应用（miniclaw、miniloop 等）。
+// 适用于 REPL 类应用（mossclaw、mossquant 等）。
 type ConsoleIO struct {
 	W io.Writer
 	R io.Reader

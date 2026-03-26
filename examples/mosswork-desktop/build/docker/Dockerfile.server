@@ -1,5 +1,5 @@
 # Wails Server Mode Dockerfile
-# Multi-stage build for minimal image size
+# Multi-stage build for mossmal image size
 
 # Build stage
 FROM golang:alpine AS builder
@@ -21,7 +21,7 @@ RUN go mod tidy
 # Build the server binary
 RUN go build -tags server -ldflags="-s -w" -o server .
 
-# Runtime stage - minimal image
+# Runtime stage - mossmal image
 FROM gcr.io/distroless/static-debian12
 
 # Copy the binary

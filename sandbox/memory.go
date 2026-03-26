@@ -13,7 +13,7 @@ import (
 )
 
 // MemoryWorkspace 是基于内存的 Workspace 实现。
-// 适用于：测试、短生命周期 Agent、miniroom 每房间独立文件系统。
+// 适用于：测试、短生命周期 Agent、mossroom 每房间独立文件系统。
 // 线程安全。
 type MemoryWorkspace struct {
 	mu       sync.RWMutex

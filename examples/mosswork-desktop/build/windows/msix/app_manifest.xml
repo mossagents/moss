@@ -8,7 +8,7 @@
   IgnorableNamespaces="uap3">
   
   <Identity 
-    Name="com.example.miniworkdesktopwails"
+    Name="dev.deeploop.mossworkdesktop"
     Publisher="CN=My Company"
     Version="0.1.0.0" 
     ProcessorArchitecture="x64" />
@@ -16,7 +16,7 @@
   <Properties>
     <DisplayName>My Product</DisplayName>
     <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A miniwork-desktop application</Description>
+    <Description>A mosswork-desktop application</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -29,10 +29,10 @@
   </Resources>
   
   <Applications>
-    <Application Id="com.example.miniworkdesktopwails" Executable="miniwork-desktop.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="dev.deeploop.mossworkdesktop" Executable="mosswork-desktop.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="My Product"
-        Description="A miniwork-desktop application"
+        Description="A mosswork-desktop application"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -41,7 +41,7 @@
       </uap:VisualElements>
       
       <Extensions>
-        <desktop:Extension Category="windows.fullTrustProcess" Executable="miniwork-desktop.exe" />
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="mosswork-desktop.exe" />
         
         
       </Extensions>

@@ -51,11 +51,11 @@ k := kernel.New(
 
 | 示例 | 模式 | 验证能力 |
 |---|---|---|
-| `minicode` | 单 Agent TUI | Kernel + TUI + builtin tools |
-| `miniwork` | 多 Agent 编排 | Agent 委派 (Manager/Worker) |
-| `miniclaw` | Web 抓取 | 自定义 tool + sandbox |
-| `minitrade` | 有状态循环 | Session 状态 + 领域适配器 |
-| `miniroom` | 多人实时 | Per-Instance Kernel + WebSocket UserIO + 自定义工具集 |
+| `mosscode` | 单 Agent TUI | Kernel + TUI + builtin tools |
+| `mosswork` | 多 Agent 编排 | Agent 委派 (Manager/Worker) |
+| `mossclaw` | Web 抓取 | 自定义 tool + sandbox |
+| `mossquant` | 有状态循环 | Session 状态 + 领域适配器 |
+| `mossroom` | 多人实时 | Per-Instance Kernel + WebSocket UserIO + 自定义工具集 |
 
 ### API 文档自动生成
 

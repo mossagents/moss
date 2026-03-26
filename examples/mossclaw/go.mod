@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/miniclaw
+module github.com/mossagents/moss/examples/mossclaw
 
 go 1.24.2
 

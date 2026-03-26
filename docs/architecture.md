@@ -283,7 +283,7 @@ cmd/moss                            (CLI/TUI 入口)
 
 ### 多轮会话复用 (Reusable Session)
 
-REPL 和 miniroom 等场景需要在同一个 Session 上反复调用 `k.Run()`，每次追加新的 user message 后运行 Agent Loop。这是 Kernel 支持的核心使用模式：
+REPL 和 mossroom 等场景需要在同一个 Session 上反复调用 `k.Run()`，每次追加新的 user message 后运行 Agent Loop。这是 Kernel 支持的核心使用模式：
 
 ```go
 // 创建一次 Session
@@ -304,7 +304,7 @@ for {
 
 ### Per-Instance Kernel（多实例隔离）
 
-当应用需要多个独立 Agent 时（如 miniroom 的每房间一Agent），为每个实例创建独立的 Kernel + Session：
+当应用需要多个独立 Agent 时（如 mossroom 的每房间一Agent），为每个实例创建独立的 Kernel + Session：
 
 ```go
 // 每个房间/用户拥有独立 Kernel
@@ -338,7 +338,7 @@ sess, _ := k.NewSession(ctx, cfg)
 | Loop, Tool, Session, Middleware, Sandbox | **稳定** | 核心 5 概念，API 稳定 |
 | LLM Port, UserIO Port | **稳定** | 接口已验证：CLI/TUI/WebSocket/REPL |
 | Skill (BuiltinTool / MCP / SKILL.md) | **稳定** | 三种扩展方式均已使用 |
-| Agent (委派/深度限制) | **可用** | 已在 miniwork 验证 |
+| Agent (委派/深度限制) | **可用** | 已在 mosswork 验证 |
 | appkit (REPL / Flags / Serve) | **可用** | 应用脚手架工具箱 |
 | Gateway / Channel | **实验性** | 框架已搭建，未完整集成到主流程 |
 | Knowledge / Embedder | **实验性** | 接口定义完成，尚无示例使用 |

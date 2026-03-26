@@ -2,8 +2,8 @@
 set -e
 
 # Build configuration
-APP_NAME="miniwork-desktop.exe"
-BUNDLE_ID="com.example.miniworkdesktopwails"
+APP_NAME="mosswork-desktop.exe"
+BUNDLE_ID="dev.deeploop.mossworkdesktop"
 VERSION="0.1.0"
 BUILD_NUMBER="0.1.0"
 BUILD_DIR="build/ios"

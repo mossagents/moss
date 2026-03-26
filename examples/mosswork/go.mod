@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/miniwork
+module github.com/mossagents/moss/examples/mosswork
 
 go 1.24.2
 

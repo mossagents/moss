@@ -1,6 +1,6 @@
-# minicode
+# mosscode
 
-minicode 是一个类 Claude Code 的极简代码助手示例，当前为默认 TUI 交互。
+mosscode 是一个类 Claude Code 的极简代码助手示例，当前为默认 TUI 交互。
 
 ## 功能
 
@@ -12,7 +12,7 @@ minicode 是一个类 Claude Code 的极简代码助手示例，当前为默认 
 ## 运行
 
 ```bash
-cd examples/minicode
+cd examples/mosscode
 go run .
 ```
 
@@ -25,8 +25,8 @@ go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:808
 
 ## 配置
 
-- 全局配置目录：`~/.minicode`
-- 全局配置文件：`~/.minicode/config.yaml`
+- 全局配置目录：`~/.mosscode`
+- 全局配置文件：`~/.mosscode/config.yaml`
 
 示例：
 
@@ -39,7 +39,7 @@ api_key: ""
 
 ## System Prompt 模板覆盖
 
-- 项目级（优先）：`./.minicode/system_prompt.tmpl`
-- 全局级：`~/.minicode/system_prompt.tmpl`
+- 项目级（优先）：`./.mosscode/system_prompt.tmpl`
+- 全局级：`~/.mosscode/system_prompt.tmpl`
 
 默认模板文件：`templates/system_prompt.tmpl`

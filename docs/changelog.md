@@ -34,9 +34,9 @@
 ### 变更
 
 - **architecture.md**：新增应用模式指南（多轮会话复用、Per-Instance Kernel、自定义 UserIO 适配器）和子系统成熟度表
-- **kernel-design.md**：更新目录结构（补充 agent/, skill/, appkit/, gateway/, knowledge/, scheduler/ 等实际包），新增 Session 多轮复用说明，新增 miniroom 架构验证案例
+- **kernel-design.md**：更新目录结构（补充 agent/, skill/, appkit/, gateway/, knowledge/, scheduler/ 等实际包），新增 Session 多轮复用说明，新增 mossroom 架构验证案例
 - **roadmap.md**：更新已完成模块表（补充 Agent 委派、Session 持久化、Gateway/Knowledge 实验性标注），更新示例列表
-- **README.md**：示例应用表补充 miniroom 和 minitrade，项目结构树补充 agent/、appkit/、gateway/、knowledge/、scheduler/ 等包
+- **README.md**：示例应用表补充 mossroom 和 mossquant，项目结构树补充 agent/、appkit/、gateway/、knowledge/、scheduler/ 等包
 - **getting-started.md**：更新示例应用列表
 
 ---
@@ -48,10 +48,10 @@
 ### 新增
 
 - 新增 4 个示例应用：
-  - `examples/minicode`（代码助手）
-  - `examples/miniwork`（多 Agent 编排）
-  - `examples/miniclaw`（Web 抓取）
-  - `examples/miniloop`（有状态自主循环 Agent，内置 trading 领域）
+  - `examples/mosscode`（代码助手）
+  - `examples/mosswork`（多 Agent 编排）
+  - `examples/mossclaw`（Web 抓取）
+  - `examples/mossquant`（有状态自主循环 Agent，内置 trading 领域）
 - 新增应用名配置能力：`skill.SetAppName(name)` / `skill.AppName()`
   - 支持将全局配置目录从 `~/.moss` 切换到 `~/.<appName>`
 - 新增 system prompt 模板机制（Moss 和 examples）
@@ -60,7 +60,7 @@
 
 ### 变更
 
-- `minicode` 由 REPL 迁移为默认 TUI 交互方式
+- `mosscode` 由 REPL 迁移为默认 TUI 交互方式
 - 全局配置策略统一为 `config.yaml`（不再使用 `config.yml`）
 - 配置目录初始化时自动创建配置模板文件（首次创建）
 

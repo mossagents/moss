@@ -1,4 +1,4 @@
-// miniclaw 是一个个人 AI 助理示例，对标 OpenClaw (openclaw.ai)。
+// mossclaw 是一个个人 AI 助理示例，对标 OpenClaw (openclaw.ai)。
 //
 // 演示如何用 moss kernel 构建具有丰富能力的个人 AI 助理：
 //   - 网络访问工具：fetch_url（抓取网页内容）、extract_links（提取链接）
@@ -45,7 +45,7 @@ import (
 var defaultSystemPromptTemplate string
 
 func main() {
-	appconfig.SetAppName("miniclaw")
+	appconfig.SetAppName("mossclaw")
 	_ = appconfig.EnsureAppDir()
 
 	var mode string
@@ -70,14 +70,14 @@ func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
 
 }
 
-type miniclawRuntime struct {
+type mossclawRuntime struct {
 	flags *appkit.AppFlags
 	store session.SessionStore
 	sched *scheduler.Scheduler
 }
 
 func launchTUI(flags *appkit.AppFlags) error {
-	var activeRuntime *miniclawRuntime
+	var activeRuntime *mossclawRuntime
 
 	return mossTUI.Run(mossTUI.Config{
 		Provider:  flags.Provider,
@@ -138,7 +138,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	appkit.PrintBannerWithHint("miniclaw — Personal AI Assistant",
+	appkit.PrintBannerWithHint("mossclaw — Personal AI Assistant",
 		map[string]string{
 			"Provider":  flags.Provider,
 			"Model":     modelName,
@@ -156,7 +156,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *miniclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {
 	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -170,7 +170,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 		appkit.WithSessionStore(store),
 		appkit.WithScheduling(sched),
-		appkit.WithLoadedBootstrapContext(flags.Workspace, "miniclaw"),
+		appkit.WithLoadedBootstrapContext(flags.Workspace, "mossclaw"),
 		appkit.WithKnowledge(knStore, embedder),
 		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
 			return registerWebTools(built)
@@ -186,10 +186,10 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 		)
 	}
 
-	return k, &miniclawRuntime{flags: flags, store: store, sched: sched}, nil
+	return k, &mossclawRuntime{flags: flags, store: store, sched: sched}, nil
 }
 
-func (r *miniclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io port.UserIO) {
+func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io port.UserIO) {
 	r.sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
 		_ = io.Send(jobCtx, port.OutputMessage{
 			Type:    port.OutputProgress,
@@ -408,7 +408,7 @@ func doFetch(ctx context.Context, url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", "miniclaw/1.0 (moss personal assistant)")
+	req.Header.Set("User-Agent", "mossclaw/1.0 (moss personal assistant)")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain,*/*")
 
 	resp, err := httpClient.Do(req)

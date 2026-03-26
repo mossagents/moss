@@ -440,7 +440,7 @@ func TestLoadGlobalConfig_YAMLOnly(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	SetAppName("minicode")
+	SetAppName("mosscode")
 	t.Cleanup(func() { SetAppName("moss") })
 
 	if err := os.MkdirAll(AppDir(), 0700); err != nil {
@@ -465,7 +465,7 @@ func TestLoadGlobalConfig_MissingReturnsEmpty(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	SetAppName("minicode")
+	SetAppName("mosscode")
 	t.Cleanup(func() { SetAppName("moss") })
 
 	cfg, err := LoadGlobalConfig()
@@ -485,7 +485,7 @@ func TestEnsureMossDir_CreatesYAMLByDefault(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	SetAppName("minicode")
+	SetAppName("mosscode")
 	t.Cleanup(func() { SetAppName("moss") })
 
 	if err := EnsureAppDir(); err != nil {
@@ -502,7 +502,7 @@ func TestRenderSystemPrompt_UsesGlobalTemplate(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	SetAppName("minicode")
+	SetAppName("mosscode")
 	t.Cleanup(func() { SetAppName("moss") })
 
 	if err := os.MkdirAll(AppDir(), 0700); err != nil {
@@ -514,11 +514,11 @@ func TestRenderSystemPrompt_UsesGlobalTemplate(t *testing.T) {
 	}
 
 	rendered := RenderSystemPrompt(".", "default {{.App}}", map[string]any{
-		"App":       "minicode",
+		"App":       "mosscode",
 		"OS":        "windows",
 		"Workspace": ".",
 	})
-	if rendered != "You are minicode on windows in ." {
+	if rendered != "You are mosscode on windows in ." {
 		t.Fatalf("unexpected rendered prompt: %q", rendered)
 	}
 }
@@ -528,7 +528,7 @@ func TestRenderSystemPrompt_ProjectTemplateOverridesGlobal(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	SetAppName("miniwork")
+	SetAppName("mosswork")
 	t.Cleanup(func() { SetAppName("moss") })
 
 	workspace := t.TempDir()

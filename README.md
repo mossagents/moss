@@ -198,11 +198,11 @@ skills:
 作为库集成时，可在启动早期设置应用名：
 
 ```go
-skill.SetAppName("minicode")
+skill.SetAppName("mosscode")
 _ = skill.EnsureMossDir()
 ```
 
-此时全局配置目录会从 `~/.moss` 变为 `~/.minicode`（全局配置文件固定为 `config.yaml`）。
+此时全局配置目录会从 `~/.moss` 变为 `~/.mosscode`（全局配置文件固定为 `config.yaml`）。
 
 ### System Prompt 模板覆盖
 
@@ -219,16 +219,16 @@ Moss 与 examples 现已支持通过模板文件覆盖默认 system prompt：
 
 | 示例 | 说明 | 入口 |
 |---|---|---|
-| `minicode` | 代码助手（默认 TUI） | `examples/minicode/main.go` |
-| `miniwork` | 多 Agent 任务编排（Manager/Worker） | `examples/miniwork/main.go` |
-| `miniclaw` | Web 抓取 Agent | `examples/miniclaw/main.go` |
-| `minitrade` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/minitrade/main.go` |
-| `miniroom` | 多人实时 Agent 游戏（WebSocket + Per-Room Kernel） | `examples/miniroom/main.go` |
+| `mosscode` | 代码助手（默认 TUI） | `examples/mosscode/main.go` |
+| `mosswork` | 多 Agent 任务编排（Manager/Worker） | `examples/mosswork/main.go` |
+| `mossclaw` | Web 抓取 Agent | `examples/mossclaw/main.go` |
+| `mossquant` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/mossquant/main.go` |
+| `mossroom` | 多人实时 Agent 游戏（WebSocket + Per-Room Kernel） | `examples/mossroom/main.go` |
 
 运行方式（示例）：
 
 ```bash
-cd examples/minicode
+cd examples/mosscode
 go run .
 ```
 
@@ -255,11 +255,11 @@ moss/
 │   ├── router.go             # 多模型动态路由 (ModelRouter)
 │   └── router_test.go
 ├── examples/                # 示例应用
-│   ├── minicode/            # 代码助手（TUI）
-│   ├── miniwork/            # 多 Agent 编排
-│   ├── miniclaw/            # Web 抓取
-│   ├── minitrade/           # 有状态循环 Agent（模拟交易）
-│   └── miniroom/            # 多人实时 Agent 游戏（WebSocket）
+│   ├── mosscode/            # 代码助手（TUI）
+│   ├── mosswork/            # 多 Agent 编排
+│   ├── mossclaw/            # Web 抓取
+│   ├── mossquant/           # 有状态循环 Agent（模拟交易）
+│   └── mossroom/            # 多人实时 Agent 游戏（WebSocket）
 ├── kernel/                  # Agent Runtime Kernel (零外部依赖)
 │   ├── kernel.go            # Kernel 入口 (New/Boot/Run/Shutdown)
 │   ├── option.go            # 函数式选项 (WithLLM/WithSandbox/Use...)
@@ -396,7 +396,7 @@ go test ./... -count=1
 |---|---|
 | [架构设计](docs/architecture.md) | 分层架构、核心概念、依赖图 |
 | [快速开始](docs/getting-started.md) | 安装、CLI 用法、库集成指南 |
-| [Examples 指南](examples/minicode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
+| [Examples 指南](examples/mosscode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
 | [技能系统](docs/skills.md) | BuiltinTool、MCPServer、Skill 详解 |
 | [内核设计](docs/kernel-design.md) | 原始设计文档（第一性原理、接口定义、流程图） |
 | [开发日志](docs/changelog.md) | 版本变更记录 |

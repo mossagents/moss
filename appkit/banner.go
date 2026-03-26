@@ -6,7 +6,7 @@ import "fmt"
 //
 // 用法：
 //
-//	appkit.PrintBanner("minitrade", map[string]string{
+//	appkit.PrintBanner("mossquant", map[string]string{
 //	    "Provider":  "openai",
 //	    "Model":     "gpt-4o",
 //	    "Workspace": ".",

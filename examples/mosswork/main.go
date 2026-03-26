@@ -1,4 +1,4 @@
-// miniwork 是一个多 Agent 工作流编排示例。
+// mosswork 是一个多 Agent 工作流编排示例。
 //
 // 演示如何用 moss kernel 构建 Manager → Worker 的委派模式：
 //   - Manager Agent 接收用户目标，拆分为子任务
@@ -41,7 +41,7 @@ var defaultManagerPromptTemplate string
 var defaultWorkerPromptTemplate string
 
 func main() {
-	appconfig.SetAppName("miniwork")
+	appconfig.SetAppName("mosswork")
 	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
@@ -86,7 +86,7 @@ func parseFlags() config {
 		trust:     "trusted",
 		workers:   3,
 	}
-	fs := flag.NewFlagSet("miniwork", flag.ContinueOnError)
+	fs := flag.NewFlagSet("mosswork", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	appkit.BindAppFlags(fs, common)
 	fs.StringVar(&c.goal, "goal", "", "Goal for one-shot workflow execution; omit to launch TUI")
@@ -113,10 +113,10 @@ func parseFlags() config {
 }
 
 func printUsage() {
-	fmt.Print(`miniwork — Multi-Agent Workflow Orchestrator
+	fmt.Print(`mosswork — Multi-Agent Workflow Orchestrator
 
 Usage:
-	miniwork [flags]
+	mosswork [flags]
 
 AppFlags:
 	--goal        Goal for one-shot workflow execution; omit to launch TUI
@@ -205,7 +205,7 @@ func run(ctx context.Context, cfg config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	appkit.PrintBanner("miniwork — Orchestrator", map[string]string{
+	appkit.PrintBanner("mosswork — Orchestrator", map[string]string{
 		"Provider":  cfg.provider,
 		"Model":     modelName,
 		"Workspace": cfg.workspace,

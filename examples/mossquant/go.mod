@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/minitrade
+module github.com/mossagents/moss/examples/mossquant
 
 go 1.24.2
 

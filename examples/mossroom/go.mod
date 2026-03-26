@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/miniroom
+module github.com/mossagents/moss/examples/mossroom
 
 go 1.25
 

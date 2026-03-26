@@ -1,4 +1,4 @@
-// minitrade 是一个量化交易 AI Agent POC。
+// mossquant 是一个量化交易 AI Agent POC。
 //
 // 基于 moss kernel 构建，集成模拟市场（10 种资产、5 秒 tick）、
 // 交易工具（下单/查询/投资组合）、技术分析、定时调度等能力。
@@ -37,7 +37,7 @@ type config struct {
 }
 
 func main() {
-	appconfig.SetAppName("minitrade")
+	appconfig.SetAppName("mossquant")
 	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
@@ -169,7 +169,7 @@ func run(ctx context.Context, cfg *config) error {
 	if modelName == "" {
 		modelName = "(default)"
 	}
-	appkit.PrintBannerWithHint("minitrade — Quantitative Trading Agent",
+	appkit.PrintBannerWithHint("mossquant — Quantitative Trading Agent",
 		map[string]string{
 			"Provider": cfg.flags.Provider,
 			"Model":    modelName,
@@ -183,7 +183,7 @@ func run(ctx context.Context, cfg *config) error {
 
 	return appkit.REPL(ctx, appkit.REPLConfig{
 		Prompt:      "💰 > ",
-		AppName:     "minitrade",
+		AppName:     "mossquant",
 		CompactKeep: 8,
 	}, k, sess)
 }

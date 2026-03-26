@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="miniwork-desktop.exe"
+        Path="mosswork-desktop.exe"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,17 +18,17 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A miniwork-desktop application">
+        PackageDescription="A mosswork-desktop application">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.example.miniworkdesktopwails"
-                Description="A miniwork-desktop application"
+                Id="dev.deeploop.mossworkdesktop"
+                Description="A mosswork-desktop application"
                 DisplayName="My Product"
-                ExecutableName="miniwork-desktop.exe"
+                ExecutableName="mosswork-desktop.exe"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A miniwork-desktop application</Description>
+            <Description>A mosswork-desktop application</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="miniwork-desktop.msix" />
+    <SaveLocation PackagePath="mosswork-desktop.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

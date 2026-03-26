@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/minicode
+module github.com/mossagents/moss/examples/mosscode
 
 go 1.24.2
 

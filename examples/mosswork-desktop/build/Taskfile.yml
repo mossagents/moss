@@ -167,7 +167,7 @@ tasks:
   build:docker:
     summary: Builds a Docker image for server mode deployment
     desc: |
-      Creates a minimal Docker image containing the server mode binary.
+      Creates a mossmal Docker image containing the server mode binary.
       The image is based on distroless for security and small size.
       Usage: task build:docker [TAG=myapp:latest]
     cmds:

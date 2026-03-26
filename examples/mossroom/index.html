@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🎮 miniroom — 多人游戏房间</title>
+<title>🎮 mossroom — 多人游戏房间</title>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
@@ -883,7 +883,7 @@
 </div>
 
 <div id="header">
-  <h1>🎮 miniroom</h1>
+  <h1>🎮 mossroom</h1>
   <span id="header-info"></span>
   <button id="btn-leave" onclick="leaveRoom()">退出房间</button>
 </div>
@@ -891,7 +891,7 @@
 <!-- Landing View -->
 <div id="landing" class="view active">
   <div class="landing-logo">🎮</div>
-  <div class="landing-title">miniroom</div>
+  <div class="landing-title">mossroom</div>
   <div class="landing-sub">多人在线游戏房间</div>
 
   <!-- 剧本选择 -->
@@ -976,13 +976,13 @@ const scriptHints = {
 // ── Profile management ──
 function loadProfile() {
   try {
-    const raw = localStorage.getItem('miniroom_profile');
+    const raw = localStorage.getItem('mossroom_profile');
     return raw ? JSON.parse(raw) : null;
   } catch { return null; }
 }
 
 function saveProfile(gender, name) {
-  localStorage.setItem('miniroom_profile', JSON.stringify({ gender, name }));
+  localStorage.setItem('mossroom_profile', JSON.stringify({ gender, name }));
 }
 
 function selectGender(g) {
@@ -1022,12 +1022,12 @@ checkProfile();
 
 // ── LocalStorage helpers ──
 function saveIdentity(room, uid, uname) {
-  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  const data = JSON.parse(localStorage.getItem('mossroom_ids') || '{}');
   data[room] = { uid, uname };
-  localStorage.setItem('miniroom_ids', JSON.stringify(data));
+  localStorage.setItem('mossroom_ids', JSON.stringify(data));
 }
 function loadIdentity(room) {
-  const data = JSON.parse(localStorage.getItem('miniroom_ids') || '{}');
+  const data = JSON.parse(localStorage.getItem('mossroom_ids') || '{}');
   return data[room] || null;
 }
 

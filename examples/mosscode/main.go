@@ -1,4 +1,4 @@
-// minicode 是一个类 Claude Code 的极简 Code Agent 示例（TUI）。
+// mosscode 是一个类 Claude Code 的极简 Code Agent 示例（TUI）。
 //
 // 演示如何用 moss kernel 构建一个交互式编程助手：
 //   - Bubble Tea TUI 交互界面
@@ -30,8 +30,8 @@ import (
 var defaultSystemPromptTemplate string
 
 func main() {
-	// 配置目录使用 ~/.minicode
-	appconfig.SetAppName("minicode")
+	// 配置目录使用 ~/.mosscode
+	appconfig.SetAppName("mosscode")
 	_ = appconfig.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()

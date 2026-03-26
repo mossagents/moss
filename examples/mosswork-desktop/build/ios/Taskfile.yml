@@ -89,7 +89,7 @@ tasks:
             --compile "$TMP_AC" \
             --app-icon AppIcon \
             --platform iphonesimulator \
-            --minimum-deployment-target 15.0 \
+            --mossmum-deployment-target 15.0 \
             --product-type com.apple.product-type.application \
             --target-device iphone \
             --target-device ipad \
@@ -239,7 +239,7 @@ tasks:
             --compile "$TMP_AC" \
             --app-icon AppIcon \
             --platform iphonesimulator \
-            --minimum-deployment-target 15.0 \
+            --mossmum-deployment-target 15.0 \
             --product-type com.apple.product-type.application \
             --target-device iphone \
             --target-device ipad \

@@ -1,4 +1,4 @@
-// miniroom 是一个 Agent 驱动的多人文字解密游戏（海龟汤）。
+// mossroom 是一个 Agent 驱动的多人文字解密游戏（海龟汤）。
 //
 // 通过 WebSocket 接入，每个房间拥有独立的 Kernel 和 Session，
 // Agent 作为游戏主持人引导玩家通过是非题推理出隐藏的真相。
@@ -27,7 +27,7 @@ import (
 var staticFS embed.FS
 
 func main() {
-	appconfig.SetAppName("miniroom")
+	appconfig.SetAppName("mossroom")
 	_ = appconfig.EnsureAppDir()
 
 	flags := appkit.ParseAppFlags()
@@ -35,7 +35,7 @@ func main() {
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	appkit.PrintBannerWithHint("miniroom", map[string]string{
+	appkit.PrintBannerWithHint("mossroom", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
 		"Scripts":  "🐢 海龟汤 / 🕵️ 谁是卧底",

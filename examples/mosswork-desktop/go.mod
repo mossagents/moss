@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/miniwork-desktop
+module github.com/mossagents/moss/examples/mosswork-desktop
 
 go 1.25
 

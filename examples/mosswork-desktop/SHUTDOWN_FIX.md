@@ -1,7 +1,7 @@
 # 应用关闭进程问题修复
 
 ## 问题描述
-关闭 miniwork-desktop 桌面应用后，终端中的进程不会立即关闭，导致僵尸进程存在。
+关闭 mosswork-desktop 桌面应用后，终端中的进程不会立即关闭，导致僵尸进程存在。
 
 ## 根本原因
 1. **FileService 缺少生命周期管理** - `ServiceShutdown` 方法未实现
