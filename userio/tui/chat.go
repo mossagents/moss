@@ -232,25 +232,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
-	if m.streaming {
-		m.queuedInputs = append(m.queuedInputs, text)
-		m.textarea.Reset()
-		m.adjustInputHeight()
-		m.refreshViewport()
-		return m, nil
-	}
-
-	m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
-	m.textarea.Reset()
-	m.adjustInputHeight()
-	m.adjustInputHeight()
-	m.streaming = true
-	m.refreshViewport()
-
-	if m.sendFn != nil {
-		m.sendFn(text)
-	}
-	return m, nil
+	return m.dispatchUserSubmission(text, text)
 }
 
 func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
@@ -518,6 +500,16 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
 		m.refreshViewport()
 		return m, nil
+
+	case "/skill":
+		if len(args) < 2 {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /skill <name> <task...>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		name := strings.TrimSpace(args[0])
+		task := strings.TrimSpace(strings.Join(args[1:], " "))
+		return m.invokeSkillLikeCommand(name, task, input)
 
 	case "/session":
 		if len(args) >= 2 && strings.ToLower(args[0]) == "restore" {
@@ -835,6 +827,8 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /config        Show current config\n" +
 			"  /config set <key> <value>  Set config key (provider/model/base_url/api_key)\n" +
 			"  /skills        Show discovered user skills and activation state\n" +
+			"  /skill <name> <task...>  Invoke a specific skill/tool by name\n" +
+			"  /<name> <task...>  Shortcut for /skill <name> <task...>\n" +
 			"  /session       Show current session summary\n" +
 			"  /session restore <id>  Restore a persisted session\n" +
 			"  /sessions [limit]  List persisted sessions\n" +
@@ -863,6 +857,16 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, nil
 
 	default:
+		if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
+			name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))
+			task := strings.TrimSpace(strings.Join(args, " "))
+			if task == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /<skill_or_tool_name> <task...>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			return m.invokeSkillLikeCommand(name, task, input)
+		}
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgSystem,
 			content: fmt.Sprintf("Unknown command: %s (use /help to list commands)", cmd),
@@ -1069,6 +1073,36 @@ func truncateForQueue(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatModel, tea.Cmd) {
+	if name == "" || task == "" {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /skill <name> <task...>"})
+		m.refreshViewport()
+		return m, nil
+	}
+	prompt := fmt.Sprintf("Use skill or tool '%s' to complete this request:\n%s", name, task)
+	return m.dispatchUserSubmission(displayText, prompt)
+}
+
+func (m chatModel) dispatchUserSubmission(displayText, runText string) (chatModel, tea.Cmd) {
+	if m.streaming {
+		m.queuedInputs = append(m.queuedInputs, runText)
+		m.textarea.Reset()
+		m.adjustInputHeight()
+		m.refreshViewport()
+		return m, nil
+	}
+	m.messages = append(m.messages, chatMessage{kind: msgUser, content: strings.TrimSpace(displayText)})
+	m.textarea.Reset()
+	m.adjustInputHeight()
+	m.adjustInputHeight()
+	m.streaming = true
+	m.refreshViewport()
+	if m.sendFn != nil {
+		m.sendFn(runText)
+	}
+	return m, nil
 }
 
 // valueOrDefault 返回 s 或 defaultVal。

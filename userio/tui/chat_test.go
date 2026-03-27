@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -233,6 +234,42 @@ func TestSendWhileRunning_QueuesInput(t *testing.T) {
 	}
 	if updated.textarea.Value() != "" {
 		t.Fatalf("expected textarea reset, got %q", updated.textarea.Value())
+	}
+}
+
+func TestSlashSkillCommandDispatchesPrompt(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	sent := ""
+	m.sendFn = func(text string) { sent = text }
+
+	updated, _ := m.handleSlashCommand("/skill http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
+	if !updated.streaming {
+		t.Fatal("expected streaming true after slash skill command")
+	}
+	if !strings.Contains(sent, "http_request") || !strings.Contains(sent, "mossagents.github.io") {
+		t.Fatalf("unexpected dispatched prompt: %q", sent)
+	}
+}
+
+func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	sent := ""
+	m.sendFn = func(text string) { sent = text }
+
+	updated, _ := m.handleSlashCommand("/http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
+	if !updated.streaming {
+		t.Fatal("expected streaming true after slash shortcut command")
+	}
+	if !strings.Contains(sent, "http_request") || !strings.Contains(sent, "mossagents.github.io") {
+		t.Fatalf("unexpected dispatched prompt: %q", sent)
 	}
 }
 
