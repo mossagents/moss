@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestSlashCommandSessionInfo(t *testing.T) {
@@ -116,5 +117,76 @@ func TestEscDoubleCancelsRun(t *testing.T) {
 	last := updated2.messages[len(updated2.messages)-1]
 	if last.kind != msgSystem {
 		t.Fatalf("expected system message, got %v", last.kind)
+	}
+}
+
+func TestAskFormSingleSelectAndConfirm(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan port.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: port.InputRequest{
+			Type:   port.InputForm,
+			Prompt: "Choose one",
+			Fields: []port.InputField{
+				{Name: "database", Type: port.InputFieldSingleSelect, Options: []string{"PostgreSQL", "MySQL"}, Required: true},
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		got, _ := resp.Form["database"].(string)
+		if got != "MySQL" {
+			t.Fatalf("expected MySQL, got %q", got)
+		}
+	default:
+		t.Fatal("expected form response")
+	}
+}
+
+func TestAskFormMultiSelectToggle(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan port.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: port.InputRequest{
+			Type:   port.InputForm,
+			Prompt: "Choose features",
+			Fields: []port.InputField{
+				{Name: "features", Type: port.InputFieldMultiSelect, Options: []string{"A", "B", "C"}, Required: true},
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		arr, _ := resp.Form["features"].([]string)
+		if len(arr) != 2 || arr[0] != "A" || arr[1] != "C" {
+			t.Fatalf("unexpected selected features: %#v", arr)
+		}
+	default:
+		t.Fatal("expected form response")
 	}
 }

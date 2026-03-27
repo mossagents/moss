@@ -90,6 +90,71 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 		}
 		return InputResponse{Selected: sel - 1}, nil
 
+	case InputForm:
+		form := make(map[string]any, len(req.Fields))
+		for _, field := range req.Fields {
+			title := field.Title
+			if strings.TrimSpace(title) == "" {
+				title = field.Name
+			}
+			switch field.Type {
+			case InputFieldBoolean:
+				fmt.Fprintf(c.W, "%s [y/N]: ", title)
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return InputResponse{}, err
+				}
+				answer := strings.TrimSpace(strings.ToLower(line))
+				form[field.Name] = answer == "y" || answer == "yes" || answer == "true"
+			case InputFieldSingleSelect:
+				for i, opt := range field.Options {
+					fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
+				}
+				fmt.Fprintf(c.W, "%s: ", title)
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return InputResponse{}, err
+				}
+				var sel int
+				if _, err := fmt.Sscanf(strings.TrimSpace(line), "%d", &sel); err != nil || sel < 1 || sel > len(field.Options) {
+					if len(field.Options) > 0 {
+						form[field.Name] = field.Options[0]
+					}
+				} else {
+					form[field.Name] = field.Options[sel-1]
+				}
+			case InputFieldMultiSelect:
+				for i, opt := range field.Options {
+					fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
+				}
+				fmt.Fprintf(c.W, "%s (comma-separated indexes): ", title)
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return InputResponse{}, err
+				}
+				line = strings.TrimSpace(line)
+				chosen := []string{}
+				if line != "" {
+					parts := strings.Split(line, ",")
+					for _, p := range parts {
+						var idx int
+						if _, err := fmt.Sscanf(strings.TrimSpace(p), "%d", &idx); err == nil && idx >= 1 && idx <= len(field.Options) {
+							chosen = append(chosen, field.Options[idx-1])
+						}
+					}
+				}
+				form[field.Name] = chosen
+			default:
+				fmt.Fprintf(c.W, "%s: ", title)
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					return InputResponse{}, err
+				}
+				form[field.Name] = strings.TrimSpace(line)
+			}
+		}
+		return InputResponse{Form: form}, nil
+
 	default:
 		fmt.Fprintf(c.W, "%s: ", req.Prompt)
 		line, err := reader.ReadString('\n')

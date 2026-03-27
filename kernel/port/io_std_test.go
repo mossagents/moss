@@ -35,6 +35,23 @@ func TestNoOpIO_Ask(t *testing.T) {
 	if resp.Selected != 0 {
 		t.Errorf("expected Selected=0, got %d", resp.Selected)
 	}
+
+	resp, err = io.Ask(context.Background(), InputRequest{
+		Type: InputForm,
+		Fields: []InputField{
+			{Name: "db", Type: InputFieldSingleSelect, Options: []string{"pg", "mysql"}},
+			{Name: "cache", Type: InputFieldBoolean},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Form["db"] != "pg" {
+		t.Fatalf("expected db=pg, got %v", resp.Form["db"])
+	}
+	if resp.Form["cache"] != false {
+		t.Fatalf("expected cache=false, got %v", resp.Form["cache"])
+	}
 }
 
 func TestPrintfIO_Send(t *testing.T) {

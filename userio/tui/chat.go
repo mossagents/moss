@@ -48,6 +48,7 @@ type chatModel struct {
 	taskQueryFn   func(taskID string) (string, error)
 	taskCancelFn  func(taskID, reason string) (string, error)
 	pendAsk       *bridgeAsk // 当前阻塞的 Ask 请求
+	askForm       *askFormState
 	finished      bool       // session 已结束
 	result        string     // 最终结果
 
@@ -100,6 +101,15 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.pendAsk != nil && m.askForm != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				return m.handleCtrlC()
+			case "esc":
+				return m.handleEsc()
+			}
+			return m.handleAskKey(msg)
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			return m.handleCtrlC()
@@ -161,6 +171,9 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 
 	// 如果有阻塞的 Ask 请求，回复它
 	if m.pendAsk != nil {
+		if m.askForm != nil {
+			return m.submitAskForm()
+		}
 		ask := m.pendAsk
 		m.pendAsk = nil
 		m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
@@ -216,16 +229,10 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 
 	if msg.ask != nil {
 		m.pendAsk = msg.ask
-		// 显示提问
-		prompt := msg.ask.request.Prompt
-		if len(msg.ask.request.Options) > 0 {
-			for i, opt := range msg.ask.request.Options {
-				prompt += fmt.Sprintf("\n  %d) %s", i+1, opt)
-			}
-		}
-		m.messages = append(m.messages, chatMessage{kind: msgAssistant, content: prompt})
+		m.askForm = newAskFormState(msg.ask.request)
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Interactive input requested. Use Tab to navigate and Enter to confirm."})
+		m.activateAskField()
 		m.refreshViewport()
-		m.textarea.Focus()
 	}
 
 	return m, nil
@@ -340,7 +347,9 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 输入区
-	if m.streaming {
+	if m.pendAsk != nil && m.askForm != nil {
+		b.WriteString(m.renderAskForm(m.mainWidth() - 2))
+	} else if m.streaming {
 		b.WriteString(runningStyle.Render("  ● Running...  (Esc Esc to cancel current run)"))
 	} else {
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
@@ -353,7 +362,9 @@ func (m chatModel) View() string {
 		toolHint = "Ctrl+T expand tools"
 	}
 	status := mutedStyle.Render(fmt.Sprintf("/help commands │ %s │ Esc Esc cancel run │ Ctrl+C clear input (double Ctrl+C quit)", toolHint))
-	if m.pendAsk != nil {
+	if m.pendAsk != nil && m.askForm != nil {
+		status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+	} else if m.pendAsk != nil {
 		status = mutedStyle.Render("Type your reply and press Enter │ Esc Esc cancel run │ Ctrl+C clear input")
 	}
 	b.WriteString(status)

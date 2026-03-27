@@ -28,6 +28,29 @@ func (n *NoOpIO) Ask(_ context.Context, req InputRequest) (InputResponse, error)
 			return InputResponse{Selected: 0}, nil
 		}
 		return InputResponse{}, nil
+	case InputForm:
+		form := map[string]any{}
+		for _, f := range req.Fields {
+			if f.Default != nil {
+				form[f.Name] = f.Default
+				continue
+			}
+			switch f.Type {
+			case InputFieldBoolean:
+				form[f.Name] = false
+			case InputFieldMultiSelect:
+				form[f.Name] = []string{}
+			case InputFieldSingleSelect:
+				if len(f.Options) > 0 {
+					form[f.Name] = f.Options[0]
+				} else {
+					form[f.Name] = ""
+				}
+			default:
+				form[f.Name] = ""
+			}
+		}
+		return InputResponse{Form: form}, nil
 	default:
 		return InputResponse{}, nil
 	}
@@ -78,6 +101,29 @@ func (p *PrintfIO) Ask(_ context.Context, req InputRequest) (InputResponse, erro
 		return InputResponse{Approved: true}, nil
 	case InputSelect:
 		return InputResponse{Selected: 0}, nil
+	case InputForm:
+		form := map[string]any{}
+		for _, f := range req.Fields {
+			if f.Default != nil {
+				form[f.Name] = f.Default
+				continue
+			}
+			switch f.Type {
+			case InputFieldBoolean:
+				form[f.Name] = true
+			case InputFieldMultiSelect:
+				form[f.Name] = []string{}
+			case InputFieldSingleSelect:
+				if len(f.Options) > 0 {
+					form[f.Name] = f.Options[0]
+				} else {
+					form[f.Name] = ""
+				}
+			default:
+				form[f.Name] = ""
+			}
+		}
+		return InputResponse{Form: form}, nil
 	default:
 		return InputResponse{}, nil
 	}
@@ -121,6 +167,29 @@ func (b *BufferIO) Ask(_ context.Context, req InputRequest) (InputResponse, erro
 		return InputResponse{Approved: true}, nil
 	case InputSelect:
 		return InputResponse{Selected: 0}, nil
+	case InputForm:
+		form := map[string]any{}
+		for _, f := range req.Fields {
+			if f.Default != nil {
+				form[f.Name] = f.Default
+				continue
+			}
+			switch f.Type {
+			case InputFieldBoolean:
+				form[f.Name] = true
+			case InputFieldMultiSelect:
+				form[f.Name] = []string{}
+			case InputFieldSingleSelect:
+				if len(f.Options) > 0 {
+					form[f.Name] = f.Options[0]
+				} else {
+					form[f.Name] = ""
+				}
+			default:
+				form[f.Name] = ""
+			}
+		}
+		return InputResponse{Form: form}, nil
 	default:
 		return InputResponse{Value: ""}, nil
 	}

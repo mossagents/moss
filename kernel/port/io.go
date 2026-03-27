@@ -37,14 +37,40 @@ const (
 	InputFreeText InputType = "free_text" // 自由文本输入
 	InputConfirm  InputType = "confirm"   // y/n 确认
 	InputSelect   InputType = "select"    // 从选项中选择
+	InputForm     InputType = "form"      // 结构化表单
 )
+
+// InputFieldType 表示表单字段类型。
+type InputFieldType string
+
+const (
+	InputFieldString      InputFieldType = "string"
+	InputFieldBoolean     InputFieldType = "boolean"
+	InputFieldSingleSelect InputFieldType = "single_select"
+	InputFieldMultiSelect InputFieldType = "multi_select"
+	InputFieldNumber      InputFieldType = "number"
+	InputFieldInteger     InputFieldType = "integer"
+)
+
+// InputField 描述 InputForm 中的单个字段。
+type InputField struct {
+	Name        string         `json:"name"`
+	Type        InputFieldType `json:"type"`
+	Title       string         `json:"title,omitempty"`
+	Description string         `json:"description,omitempty"`
+	Required    bool           `json:"required,omitempty"`
+	Options     []string       `json:"options,omitempty"`
+	Default     any            `json:"default,omitempty"`
+}
 
 // InputRequest 是向用户发出的输入请求。
 type InputRequest struct {
-	Type    InputType      `json:"type"`
-	Prompt  string         `json:"prompt"`
-	Options []string       `json:"options,omitempty"`
-	Meta    map[string]any `json:"meta,omitempty"`
+	Type         InputType      `json:"type"`
+	Prompt       string         `json:"prompt"`
+	Options      []string       `json:"options,omitempty"`
+	Fields       []InputField   `json:"fields,omitempty"`
+	ConfirmLabel string         `json:"confirm_label,omitempty"`
+	Meta         map[string]any `json:"meta,omitempty"`
 }
 
 // InputResponse 是用户对输入请求的回复。
@@ -52,4 +78,5 @@ type InputResponse struct {
 	Value    string `json:"value,omitempty"`
 	Selected int    `json:"selected,omitempty"`
 	Approved bool   `json:"approved,omitempty"`
+	Form     map[string]any `json:"form,omitempty"`
 }

@@ -74,12 +74,21 @@ func (e *notFoundError) Error() string { return "file not found: " + e.path }
 type mockUserIO struct {
 	lastQuestion string
 	response     string
+	lastReq      port.InputRequest
+	formResponse map[string]any
 }
 
 func (m *mockUserIO) Send(_ context.Context, _ port.OutputMessage) error { return nil }
 
 func (m *mockUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
 	m.lastQuestion = req.Prompt
+	m.lastReq = req
+	if req.Type == port.InputForm {
+		if m.formResponse != nil {
+			return port.InputResponse{Form: m.formResponse}, nil
+		}
+		return port.InputResponse{Form: map[string]any{}}, nil
+	}
 	return port.InputResponse{Value: m.response}, nil
 }
 
@@ -154,7 +163,7 @@ func TestRegisterAll(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -312,11 +321,11 @@ func TestSearchText(t *testing.T) {
 		"/ws/main.go":  "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
 		"/ws/other.go": "package other\n\nfunc other() {}\n",
 	})
-	handler := searchTextHandler(sb)
+	handler := grepHandler(sb)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "main"}))
 	if err != nil {
-		t.Fatalf("searchText: %v", err)
+		t.Fatalf("grep: %v", err)
 	}
 
 	var matches []searchMatch
@@ -339,11 +348,11 @@ func TestSearchTextRegex(t *testing.T) {
 		"/ws/main.go": "func main() {}\n",
 		"/ws/lib.go":  "func helper() {}\n",
 	})
-	handler := searchTextHandler(sb)
+	handler := grepHandler(sb)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": `^func main\(`}))
 	if err != nil {
-		t.Fatalf("searchText regex: %v", err)
+		t.Fatalf("grep regex: %v", err)
 	}
 
 	var matches []searchMatch
@@ -360,7 +369,7 @@ func TestSearchTextInvalidRegex(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{
 		"/ws/main.go": "func main() {}\n",
 	})
-	handler := searchTextHandler(sb)
+	handler := grepHandler(sb)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "("}))
 	if err == nil {
@@ -375,14 +384,14 @@ func TestSearchTextMaxResults(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{
 		"/ws/data.txt": "aaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\n",
 	})
-	handler := searchTextHandler(sb)
+	handler := grepHandler(sb)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"pattern":     "aaa",
 		"max_results": 3,
 	}))
 	if err != nil {
-		t.Fatalf("searchText: %v", err)
+		t.Fatalf("grep: %v", err)
 	}
 
 	var matches []searchMatch
@@ -448,6 +457,57 @@ func TestAskUserNilIO(t *testing.T) {
 	}
 }
 
+func TestAskUserWithRequestedSchema(t *testing.T) {
+	io := &mockUserIO{
+		formResponse: map[string]any{
+			"database": "PostgreSQL",
+			"cache":    true,
+			"features": []string{"A", "C"},
+		},
+	}
+	handler := askUserHandler(io)
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"question": "Choose options",
+		"requestedSchema": map[string]any{
+			"properties": map[string]any{
+				"database": map[string]any{
+					"type":  "string",
+					"title": "Database",
+					"enum":  []string{"PostgreSQL", "MySQL"},
+				},
+				"cache": map[string]any{
+					"type":  "boolean",
+					"title": "Enable Cache",
+				},
+				"features": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "string",
+						"enum": []string{"A", "B", "C"},
+					},
+				},
+			},
+			"required": []string{"database"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("askUser with schema: %v", err)
+	}
+	if io.lastReq.Type != port.InputForm {
+		t.Fatalf("expected InputForm request, got %s", io.lastReq.Type)
+	}
+	if len(io.lastReq.Fields) != 3 {
+		t.Fatalf("expected 3 fields, got %d", len(io.lastReq.Fields))
+	}
+	var out map[string]any
+	if err := json.Unmarshal(result, &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out["database"] != "PostgreSQL" {
+		t.Fatalf("unexpected database value: %v", out["database"])
+	}
+}
+
 func TestToolRiskLevels(t *testing.T) {
 	cases := []struct {
 		name string
@@ -458,7 +518,7 @@ func TestToolRiskLevels(t *testing.T) {
 		{"edit_file", tool.RiskHigh},
 		{"glob", tool.RiskLow},
 		{"list_files", tool.RiskLow},
-		{"search_text", tool.RiskLow},
+		{"grep", tool.RiskLow},
 		{"run_command", tool.RiskHigh},
 		{"ask_user", tool.RiskLow},
 	}
@@ -491,7 +551,7 @@ func TestInvalidInput(t *testing.T) {
 		{"edit_file", editFileHandler(sb)},
 		{"glob", globHandler(sb)},
 		{"list_files", listFilesHandler(sb)},
-		{"search_text", searchTextHandler(sb)},
+		{"grep", grepHandler(sb)},
 		{"run_command", runCommandHandler(sb)},
 		{"ask_user", askUserHandler(&mockUserIO{})},
 	}
@@ -527,7 +587,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -639,11 +699,11 @@ func TestSearchTextWS(t *testing.T) {
 		"main.go":  "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
 		"other.go": "package other\n\nfunc other() {}\n",
 	}}
-	handler := searchTextHandlerWS(ws)
+	handler := grepHandlerWS(ws)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "main"}))
 	if err != nil {
-		t.Fatalf("searchTextWS: %v", err)
+		t.Fatalf("grepWS: %v", err)
 	}
 
 	var matches []searchMatch
@@ -657,7 +717,7 @@ func TestSearchTextWSInvalidRegex(t *testing.T) {
 	ws := &mockWorkspace{files: map[string]string{
 		"main.go": "func main() {}\n",
 	}}
-	handler := searchTextHandlerWS(ws)
+	handler := grepHandlerWS(ws)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "("}))
 	if err == nil {

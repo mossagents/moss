@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -21,7 +23,7 @@ const maxInlineCommandOutput = 8000
 func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
 	names := []string{}
 	if ws != nil || sb != nil {
-		names = append(names, "read_file", "write_file", "edit_file", "glob", "list_files", "search_text")
+		names = append(names, "read_file", "write_file", "edit_file", "glob", "list_files", "grep")
 	}
 	if exec != nil || sb != nil {
 		names = append(names, "run_command")
@@ -48,7 +50,7 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.
 			entry{editFileSpec, editFileHandlerWS(ws)},
 			entry{globSpec, globHandlerWS(ws)},
 			entry{listFilesSpec, listFilesHandlerWS(ws)},
-			entry{searchTextSpec, searchTextHandlerWS(ws)},
+			entry{grepSpec, grepHandlerWS(ws)},
 		)
 	} else if sb != nil {
 		tools = append(tools,
@@ -57,7 +59,7 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.
 			entry{editFileSpec, editFileHandler(sb)},
 			entry{globSpec, globHandler(sb)},
 			entry{listFilesSpec, listFilesHandler(sb)},
-			entry{searchTextSpec, searchTextHandler(sb)},
+			entry{grepSpec, grepHandler(sb)},
 		)
 	}
 
@@ -260,10 +262,10 @@ func listFilesHandler(sb sandbox.Sandbox) tool.ToolHandler {
 	}
 }
 
-// ─── search_text ─────────────────────────────────────
+// ─── grep ────────────────────────────────────────────
 
-var searchTextSpec = tool.ToolSpec{
-	Name:        "search_text",
+var grepSpec = tool.ToolSpec{
+	Name:        "grep",
 	Description: "Search for a text pattern in files under the workspace. Returns matching lines with file paths and line numbers.",
 	InputSchema: json.RawMessage(`{
 		"type": "object",
@@ -284,7 +286,7 @@ type searchMatch struct {
 	Text string `json:"text"`
 }
 
-func searchTextHandler(sb sandbox.Sandbox) tool.ToolHandler {
+func grepHandler(sb sandbox.Sandbox) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Pattern    string `json:"pattern"`
@@ -501,7 +503,7 @@ func listFilesHandlerWS(ws port.Workspace) tool.ToolHandler {
 	}
 }
 
-func searchTextHandlerWS(ws port.Workspace) tool.ToolHandler {
+func grepHandlerWS(ws port.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Pattern    string `json:"pattern"`
@@ -558,11 +560,12 @@ func searchTextHandlerWS(ws port.Workspace) tool.ToolHandler {
 
 var askUserSpec = tool.ToolSpec{
 	Name:        "ask_user",
-	Description: "Ask the user a question and wait for their response. Use this when you need clarification or confirmation.",
+	Description: "Ask the user a question and wait for their response. Supports free text and schema-driven forms.",
 	InputSchema: json.RawMessage(`{
 		"type": "object",
 		"properties": {
-			"question": {"type": "string", "description": "The question to ask the user"}
+			"question": {"type": "string", "description": "The question to ask the user"},
+			"requestedSchema": {"type": "object", "description": "Optional JSON Schema-like definition for structured input"}
 		},
 		"required": ["question"]
 	}`),
@@ -573,7 +576,8 @@ var askUserSpec = tool.ToolSpec{
 func askUserHandler(io port.UserIO) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
-			Question string `json:"question"`
+			Question        string         `json:"question"`
+			RequestedSchema map[string]any `json:"requestedSchema"`
 		}
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
@@ -581,15 +585,160 @@ func askUserHandler(io port.UserIO) tool.ToolHandler {
 		if io == nil {
 			return json.Marshal("ask_user: no user IO available")
 		}
-		resp, err := io.Ask(ctx, port.InputRequest{
+		req := port.InputRequest{
 			Type:   port.InputFreeText,
 			Prompt: params.Question,
-		})
+		}
+		fields, err := buildAskUserFields(params.RequestedSchema)
 		if err != nil {
 			return nil, err
 		}
+		if len(fields) > 0 {
+			req.Type = port.InputForm
+			req.Fields = fields
+			req.ConfirmLabel = "Confirm"
+		}
+		resp, err := io.Ask(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		if req.Type == port.InputForm {
+			return json.Marshal(resp.Form)
+		}
 		return json.Marshal(resp.Value)
 	}
+}
+
+func buildAskUserFields(schema map[string]any) ([]port.InputField, error) {
+	if len(schema) == 0 {
+		return nil, nil
+	}
+	propsAny, ok := schema["properties"]
+	if !ok {
+		return nil, nil
+	}
+	props, ok := propsAny.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("requestedSchema.properties must be an object")
+	}
+	requiredSet := map[string]bool{}
+	if reqAny, ok := schema["required"].([]any); ok {
+		for _, name := range reqAny {
+			if s, ok := name.(string); ok {
+				requiredSet[s] = true
+			}
+		}
+	}
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	fields := make([]port.InputField, 0, len(keys))
+	for _, name := range keys {
+		rawDef, ok := props[name].(map[string]any)
+		if !ok {
+			continue
+		}
+		field := port.InputField{
+			Name:        name,
+			Title:       toString(rawDef["title"]),
+			Description: toString(rawDef["description"]),
+			Required:    requiredSet[name],
+		}
+		if field.Title == "" {
+			field.Title = name
+		}
+		ftype := strings.ToLower(toString(rawDef["type"]))
+		switch ftype {
+		case "boolean":
+			field.Type = port.InputFieldBoolean
+		case "array":
+			field.Type = port.InputFieldMultiSelect
+		case "number":
+			field.Type = port.InputFieldNumber
+		case "integer":
+			field.Type = port.InputFieldInteger
+		default:
+			if enum := toStringSlice(rawDef["enum"]); len(enum) > 0 {
+				field.Type = port.InputFieldSingleSelect
+				field.Options = enum
+			} else {
+				field.Type = port.InputFieldString
+			}
+		}
+		if field.Type == port.InputFieldMultiSelect {
+			items, _ := rawDef["items"].(map[string]any)
+			field.Options = toStringSlice(items["enum"])
+		}
+		if def, ok := rawDef["default"]; ok {
+			field.Default = normalizeDefaultForField(field.Type, def)
+		}
+		fields = append(fields, field)
+	}
+	return fields, nil
+}
+
+func toString(v any) string {
+	s, _ := v.(string)
+	return strings.TrimSpace(s)
+}
+
+func toStringSlice(v any) []string {
+	items, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, it := range items {
+		if s, ok := it.(string); ok {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+func normalizeDefaultForField(ft port.InputFieldType, v any) any {
+	switch ft {
+	case port.InputFieldBoolean:
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	case port.InputFieldNumber:
+		switch n := v.(type) {
+		case float64:
+			return n
+		case int:
+			return float64(n)
+		case string:
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+				return parsed
+			}
+		}
+	case port.InputFieldInteger:
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case string:
+			if parsed, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
+				return parsed
+			}
+		}
+	case port.InputFieldMultiSelect:
+		if vals := toStringSlice(v); len(vals) > 0 {
+			return vals
+		}
+	default:
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return v
 }
 
 // ─── helpers ─────────────────────────────────────────
