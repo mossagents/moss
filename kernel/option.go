@@ -47,6 +47,21 @@ func WithExecutor(exec port.Executor) Option {
 	return func(k *Kernel) { k.executor = exec }
 }
 
+// WithTaskRuntime 设置 TaskRuntime Port。
+func WithTaskRuntime(tasks port.TaskRuntime) Option {
+	return func(k *Kernel) { k.tasks = tasks }
+}
+
+// WithMailbox 设置 Mailbox Port。
+func WithMailbox(mailbox port.Mailbox) Option {
+	return func(k *Kernel) { k.mailbox = mailbox }
+}
+
+// WithWorkspaceIsolation 设置 WorkspaceIsolation Port。
+func WithWorkspaceIsolation(isolation port.WorkspaceIsolation) Option {
+	return func(k *Kernel) { k.isolation = isolation }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }

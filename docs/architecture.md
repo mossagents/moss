@@ -351,6 +351,7 @@ sess, _ := k.NewSession(ctx, cfg)
 | 子系统 | 成熟度 | 说明 |
 |---|---|---|
 | Loop, Tool, Session, Middleware, Sandbox | **稳定** | 核心 5 概念，API 稳定 |
+| TaskRuntime / Mailbox / WorkspaceIsolation Ports | **可用（POC）** | 协作任务图、异步邮箱、任务级隔离工作区端口 |
 | LLM Port, UserIO Port | **稳定** | 接口已验证：CLI/TUI/WebSocket/REPL |
 | Skill (BuiltinTool / MCP / SKILL.md) | **稳定** | 三种扩展方式均已使用 |
 | Agent (委派/深度限制) | **可用** | 已在 mosswork 验证 |

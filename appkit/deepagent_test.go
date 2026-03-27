@@ -36,10 +36,14 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 		"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user",
 		"read_memory", "write_memory", "list_memories", "delete_memory",
 		"offload_context", "compact_conversation", "write_todos", "update_task",
+		"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace",
 	} {
 		if !toolNames[name] {
 			t.Fatalf("expected built-in tool %q", name)
 		}
+	}
+	if k.WorkspaceIsolation() == nil {
+		t.Fatal("expected workspace isolation to be configured")
 	}
 
 	reg := agentsx.Registry(k)
@@ -79,6 +83,24 @@ func TestBuildDeepAgentKernel_DisableGeneralPurpose(t *testing.T) {
 
 	if _, ok := agentsx.Registry(k).Get("general-purpose"); ok {
 		t.Fatal("general-purpose should not be auto-created when disabled")
+	}
+}
+
+func TestBuildDeepAgentKernel_DisableWorkspaceIsolation(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "trusted",
+	}
+	disable := false
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
+		EnableWorkspaceIsolation: &disable,
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	if k.WorkspaceIsolation() != nil {
+		t.Fatal("workspace isolation should be disabled")
 	}
 }
 

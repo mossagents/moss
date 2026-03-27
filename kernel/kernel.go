@@ -23,6 +23,9 @@ type Kernel struct {
 	sandbox   sandbox.Sandbox
 	workspace port.Workspace
 	executor  port.Executor
+	tasks     port.TaskRuntime
+	mailbox   port.Mailbox
+	isolation port.WorkspaceIsolation
 	tools     tool.Registry
 	sessions  session.Manager
 	chain     *middleware.Chain
@@ -203,6 +206,21 @@ func (k *Kernel) Workspace() port.Workspace {
 // Executor 返回命令执行器（可能为 nil）。
 func (k *Kernel) Executor() port.Executor {
 	return k.executor
+}
+
+// TaskRuntime 返回任务运行时端口（可能为 nil）。
+func (k *Kernel) TaskRuntime() port.TaskRuntime {
+	return k.tasks
+}
+
+// Mailbox 返回代理邮箱端口（可能为 nil）。
+func (k *Kernel) Mailbox() port.Mailbox {
+	return k.mailbox
+}
+
+// WorkspaceIsolation 返回工作区隔离端口（可能为 nil）。
+func (k *Kernel) WorkspaceIsolation() port.WorkspaceIsolation {
+	return k.isolation
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

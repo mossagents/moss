@@ -236,6 +236,9 @@ k, err := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
 - `write_todos` 规划工具
 - `compact_conversation` + `offload_context` 上下文管理
 - `task` / `update_task` / `list_tasks` / `cancel_task` 异步任务生命周期
+- `plan_task` / `claim_task` 任务图协作工具
+- `send_mail` / `read_mailbox` 代理异步邮箱
+- `acquire_workspace` / `release_workspace` 任务级工作区隔离
 - `PatchToolCalls` 中间件（自动补齐缺失 tool result）
 
 ```go

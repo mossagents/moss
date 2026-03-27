@@ -602,3 +602,15 @@ func TestExtensionBridgeStateSlots(t *testing.T) {
 		t.Fatalf("state value = %q, want %q", got, "updated")
 	}
 }
+
+func TestKernelPortAccessors(t *testing.T) {
+	tasks := port.NewMemoryTaskRuntime()
+	mailbox := port.NewMemoryMailbox()
+	k := New(
+		WithTaskRuntime(tasks),
+		WithMailbox(mailbox),
+	)
+	if k.TaskRuntime() == nil || k.Mailbox() == nil {
+		t.Fatal("expected task runtime and mailbox accessors to return configured ports")
+	}
+}

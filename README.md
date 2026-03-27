@@ -400,6 +400,13 @@ k, _ := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
 
 默认包含 `write_todos`、`compact_conversation`、`update_task`，并启用 `PatchToolCalls` 以自动修补不完整工具调用历史。
 
+POC 阶段还新增了协作核心能力：
+
+- 任务图工具：`plan_task`、`claim_task`（依赖就绪后认领）
+- 代理邮箱：`send_mail`、`read_mailbox`（异步消息）
+- 工作区隔离：`acquire_workspace`、`release_workspace`（任务级目录隔离）
+- restricted 策略增强：命令片段 deny + 关键路径审批（路径/命令粒度）
+
 ## 测试
 
 ```bash

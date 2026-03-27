@@ -10,13 +10,14 @@ import (
 )
 
 // TaskStatus 表示异步委派任务的状态。
-type TaskStatus string
+type TaskStatus = port.TaskStatus
 
 const (
-	TaskRunning   TaskStatus = "running"
-	TaskCompleted TaskStatus = "completed"
-	TaskFailed    TaskStatus = "failed"
-	TaskCancelled TaskStatus = "cancelled"
+	TaskPending   TaskStatus = port.TaskPending
+	TaskRunning   TaskStatus = port.TaskRunning
+	TaskCompleted TaskStatus = port.TaskCompleted
+	TaskFailed    TaskStatus = port.TaskFailed
+	TaskCancelled TaskStatus = port.TaskCancelled
 )
 
 // Task 表示一个异步委派任务。
@@ -39,6 +40,7 @@ type TaskTracker struct {
 	tasks   map[string]*Task
 	cancels map[string]context.CancelFunc
 	rev     map[string]int64
+	runtime port.TaskRuntime
 }
 
 // NewTaskTracker 创建 TaskTracker。
@@ -48,6 +50,13 @@ func NewTaskTracker() *TaskTracker {
 		cancels: make(map[string]context.CancelFunc),
 		rev:     make(map[string]int64),
 	}
+}
+
+// NewTaskTrackerWithRuntime 创建带 TaskRuntime 镜像的 TaskTracker。
+func NewTaskTrackerWithRuntime(runtime port.TaskRuntime) *TaskTracker {
+	tt := NewTaskTracker()
+	tt.runtime = runtime
+	return tt
 }
 
 // Add 注册一个新任务。
@@ -77,6 +86,7 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	if cancel != nil {
 		t.cancels[task.ID] = cancel
 	}
+	t.mirror(cp)
 	return nextRev
 }
 
@@ -142,6 +152,7 @@ func (t *TaskTracker) completeIf(id string, revision int64, result string, token
 		task.Tokens = tokens
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
+		t.mirror(*task)
 	}
 }
 
@@ -169,6 +180,7 @@ func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 		task.Error = errMsg
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
+		t.mirror(*task)
 	}
 }
 
@@ -195,6 +207,7 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 			task.Status = TaskCancelled
 			task.Error = errMsg
 			task.UpdatedAt = time.Now()
+			t.mirror(*task)
 		}
 		delete(t.cancels, id)
 	}
@@ -202,4 +215,22 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 	if cancelFn != nil {
 		cancelFn()
 	}
+}
+
+func (t *TaskTracker) mirror(task Task) {
+	if t.runtime == nil {
+		return
+	}
+	_ = t.runtime.UpsertTask(context.Background(), port.TaskRecord{
+		ID:          task.ID,
+		AgentName:   task.AgentName,
+		Goal:        task.Goal,
+		Status:      port.TaskStatus(task.Status),
+		ClaimedBy:   task.AgentName,
+		Result:      task.Result,
+		Error:       task.Error,
+		CreatedAt:   task.CreatedAt,
+		UpdatedAt:   task.UpdatedAt,
+		WorkspaceID: "",
+	})
 }

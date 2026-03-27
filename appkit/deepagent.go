@@ -3,6 +3,7 @@ package appkit
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // DeepAgentConfig 描述 deep-agent 风格装配的配置项。
@@ -31,6 +33,8 @@ type DeepAgentConfig struct {
 	GeneralPurposePrompt     string
 	GeneralPurposeDesc       string
 	GeneralPurposeMaxSteps   int
+	EnableWorkspaceIsolation *bool
+	IsolationRootDir         string
 	DefaultSetupOptions      []defaults.Option
 	AdditionalAppExtensions  []Extension
 }
@@ -48,6 +52,7 @@ func DefaultDeepAgentConfig() DeepAgentConfig {
 		GeneralPurposePrompt:     "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
 		GeneralPurposeDesc:       "General-purpose agent for delegated tasks that need context isolation.",
 		GeneralPurposeMaxSteps:   50,
+		EnableWorkspaceIsolation: boolPtr(true),
 	}
 }
 
@@ -96,6 +101,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		if cfg.GeneralPurposeMaxSteps > 0 {
 			effective.GeneralPurposeMaxSteps = cfg.GeneralPurposeMaxSteps
 		}
+		if cfg.EnableWorkspaceIsolation != nil {
+			effective.EnableWorkspaceIsolation = cfg.EnableWorkspaceIsolation
+		}
+		if cfg.IsolationRootDir != "" {
+			effective.IsolationRootDir = cfg.IsolationRootDir
+		}
 		if len(cfg.DefaultSetupOptions) > 0 {
 			effective.DefaultSetupOptions = cfg.DefaultSetupOptions
 		}
@@ -138,6 +149,24 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		exts = append(exts, WithPersistentMemories(memDir))
 	}
+	if valueOrDefault(effective.EnableWorkspaceIsolation, true) {
+		isolationRoot := effective.IsolationRootDir
+		if isolationRoot == "" {
+			if appDir := appconfig.AppDir(); appDir != "" {
+				isolationRoot = filepath.Join(appDir, "workspaces")
+			} else {
+				isolationRoot = filepath.Join(flags.Workspace, "."+effective.AppName, "workspaces")
+			}
+		}
+		if err := os.MkdirAll(isolationRoot, 0755); err != nil {
+			return nil, fmt.Errorf("workspace isolation root: %w", err)
+		}
+		isolation, err := sandbox.NewLocalWorkspaceIsolation(isolationRoot)
+		if err != nil {
+			return nil, fmt.Errorf("workspace isolation: %w", err)
+		}
+		exts = append(exts, WithKernelOptions(kernel.WithWorkspaceIsolation(isolation)))
+	}
 	exts = append(exts, WithPlanning())
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
@@ -161,10 +190,13 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
+			builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
+			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
 			builtins.RequireApprovalFor(
 				"write_file", "edit_file", "run_command", "spawn_agent", "task",
 				"cancel_task", "update_task",
 				"write_memory", "delete_memory", "offload_context",
+				"acquire_workspace", "release_workspace",
 			),
 			builtins.DefaultAllow(),
 		)

@@ -12,6 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 )
 
 // mockDelegator 模拟 Kernel 的委派能力。
@@ -626,5 +627,106 @@ func TestSpawnAgent_CancelledContext(t *testing.T) {
 			t.Fatalf("expected task status cancelled, got %s", task.Status)
 		case <-time.After(10 * time.Millisecond):
 		}
+	}
+}
+
+func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTrackerWithRuntime(port.NewMemoryTaskRuntime())
+	delegator := &mockDelegator{registry: tool.NewRegistry()}
+	reg := tool.NewRegistry()
+	isolation, err := sandbox.NewLocalWorkspaceIsolation(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := RuntimeDeps{
+		TaskRuntime: port.NewMemoryTaskRuntime(),
+		Mailbox:     port.NewMemoryMailbox(),
+		Isolation:   isolation,
+	}
+	if err := RegisterToolsWithDeps(reg, agents, tracker, delegator, deps); err != nil {
+		t.Fatalf("RegisterToolsWithDeps: %v", err)
+	}
+	for _, name := range []string{"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace"} {
+		if _, _, ok := reg.Get(name); !ok {
+			t.Fatalf("expected tool %q", name)
+		}
+	}
+}
+
+func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
+	rt := port.NewMemoryTaskRuntime()
+	mb := port.NewMemoryMailbox()
+	iso, err := sandbox.NewLocalWorkspaceIsolation(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTrackerWithRuntime(rt)
+	reg := tool.NewRegistry()
+	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{
+		TaskRuntime: rt,
+		Mailbox:     mb,
+		Isolation:   iso,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, plan, _ := reg.Get("plan_task")
+	_, claim, _ := reg.Get("claim_task")
+	_, sendMail, _ := reg.Get("send_mail")
+	_, readMailbox, _ := reg.Get("read_mailbox")
+	_, acquire, _ := reg.Get("acquire_workspace")
+	_, release, _ := reg.Get("release_workspace")
+
+	if _, err := plan(context.Background(), json.RawMessage(`{"id":"t-dep","goal":"dep done"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertTask(context.Background(), port.TaskRecord{ID: "t-dep", Goal: "dep done", Status: port.TaskCompleted}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := plan(context.Background(), json.RawMessage(`{"id":"t-main","agent":"worker","goal":"main","depends_on":["t-dep"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	claimedRaw, err := claim(context.Background(), json.RawMessage(`{"claimer":"worker-1","agent":"worker"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(claimedRaw), `"claimed"`) {
+		t.Fatalf("expected claimed status, got %s", string(claimedRaw))
+	}
+
+	if _, err := sendMail(context.Background(), json.RawMessage(`{"from":"worker-1","to":"manager","content":"done?"}`)); err != nil {
+		t.Fatal(err)
+	}
+	mailRaw, err := readMailbox(context.Background(), json.RawMessage(`{"owner":"manager","limit":10}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mailRaw), `"count":1`) {
+		t.Fatalf("expected one mail, got %s", string(mailRaw))
+	}
+
+	acquireRaw, err := acquire(context.Background(), json.RawMessage(`{"task_id":"t-main"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var acquireResp map[string]any
+	if err := json.Unmarshal(acquireRaw, &acquireResp); err != nil {
+		t.Fatal(err)
+	}
+	wsID, _ := acquireResp["workspace_id"].(string)
+	if wsID == "" {
+		t.Fatalf("expected workspace_id in acquire response: %s", string(acquireRaw))
+	}
+	releaseInput, _ := json.Marshal(map[string]any{"workspace_id": wsID})
+	if _, err := release(context.Background(), releaseInput); err != nil {
+		t.Fatal(err)
 	}
 }
