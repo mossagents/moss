@@ -12,7 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const planningStateKey kernel.ExtensionStateKey = "planningx.state"
+const planningStateKey kernel.ExtensionStateKey = "planning.state"
 const planningTodosStateKey = "planning.todos"
 
 type planningState struct {

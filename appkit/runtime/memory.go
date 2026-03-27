@@ -10,7 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const memoryStateKey kernel.ExtensionStateKey = "memoryx.state"
+const memoryStateKey kernel.ExtensionStateKey = "memory.state"
 
 type state struct {
 	workspace port.Workspace

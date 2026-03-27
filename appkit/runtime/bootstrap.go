@@ -5,7 +5,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 )
 
-const bootstrapStateKey kernel.ExtensionStateKey = "bootstrapctx.state"
+const bootstrapStateKey kernel.ExtensionStateKey = "bootstrap.state"
 
 type bootstrapState struct {
 	ctx *bootstrap.Context

@@ -14,8 +14,8 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const contextStateKey kernel.ExtensionStateKey = "contextx.state"
-const offloadStateKey kernel.ExtensionStateKey = "compactx.state"
+const contextStateKey kernel.ExtensionStateKey = "context.state"
+const offloadStateKey kernel.ExtensionStateKey = "compact.state"
 
 type contextState struct {
 	store                    session.SessionStore

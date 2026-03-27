@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	skillsStateKey kernel.ExtensionStateKey = "skillsx.state"
-	agentsStateKey kernel.ExtensionStateKey = "agentsx.state"
+	skillsStateKey kernel.ExtensionStateKey = "skills.state"
+	agentsStateKey kernel.ExtensionStateKey = "agents.state"
 )
 
 type config struct {
