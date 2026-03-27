@@ -381,7 +381,7 @@ func (m chatModel) View() string {
 	if m.pendAsk != nil && m.askForm != nil {
 		b.WriteString(m.renderAskForm(m.mainWidth() - 2))
 	} else if m.streaming {
-		b.WriteString(runningStyle.Render("  ● Running...  (Esc Esc to cancel current run)"))
+		b.WriteString(runningStyle.Render("  ● Running...  (double Esc to cancel current run)"))
 	} else {
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	}
@@ -393,7 +393,7 @@ func (m chatModel) View() string {
 		toolHint = "Ctrl+O expand tools"
 	}
 	leftStatus := fmt.Sprintf("/help commands │ %s", toolHint)
-	rightStatus := "↑↓ history │ Esc Esc cancel run │ Ctrl+C clear (double quit)"
+	rightStatus := "↑↓ history │ double Esc cancel run │ Ctrl+C clear (double quit)"
 	status := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		mutedStyle.Width(m.mainWidth()/2).Render(leftStatus),
@@ -402,7 +402,7 @@ func (m chatModel) View() string {
 	if m.pendAsk != nil && m.askForm != nil {
 		status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
 	} else if m.pendAsk != nil {
-		status = mutedStyle.Render("Type your reply and press Enter │ Esc Esc cancel run │ Ctrl+C clear input")
+		status = mutedStyle.Render("Type your reply and press Enter │ double Esc cancel run │ Ctrl+C clear input")
 	}
 	b.WriteString(status)
 
@@ -818,7 +818,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /trust <trusted|restricted>  Switch trust and rebuild runtime\n" +
 			"  /clear         Clear conversation\n" +
 			"\nKeyboard shortcuts:\n" +
-			"  Esc Esc        Cancel current running generation/tool execution\n" +
+			"  double Esc     Cancel current running generation/tool execution\n" +
 			"  Ctrl+C         Clear input (press twice quickly to quit)\n" +
 			"  Ctrl+O         Collapse/expand tool messages\n" +
 			"  Up/Down        Navigate persisted input history\n" +
