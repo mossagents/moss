@@ -646,8 +646,16 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if len(runtimeOnly) > 0 {
-				sb.WriteString("\n\nRuntime built-in skills (not user-installed): ")
-				sb.WriteString(strings.Join(runtimeOnly, ", "))
+				sb.WriteString("\n\nRuntime built-in tools:\n")
+				specs := agent.k.ToolRegistry().List()
+				toolNames := make([]string, 0, len(specs))
+				for _, spec := range specs {
+					toolNames = append(toolNames, spec.Name)
+				}
+				sort.Strings(toolNames)
+				for _, name := range toolNames {
+					sb.WriteString("  - " + name + "\n")
+				}
 			}
 			return "```text\n" + sb.String() + "\n```"
 		}
