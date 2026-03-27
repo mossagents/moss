@@ -3,6 +3,9 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"sync"
+
+	"github.com/charmbracelet/glamour"
 )
 
 // msgKind 区分消息类型。
@@ -25,6 +28,8 @@ type chatMessage struct {
 	content string
 }
 
+var markdownRendererCache sync.Map // map[int]*glamour.TermRenderer
+
 // renderMessage 渲染单条消息为带样式的字符串。
 func renderMessage(m chatMessage, width int) string {
 	maxContent := width - 4
@@ -35,14 +40,14 @@ func renderMessage(m chatMessage, width int) string {
 	switch m.kind {
 	case msgUser:
 		label := userLabelStyle.Render("You")
-		return fmt.Sprintf("\n%s\n%s", label, wrapText(m.content, maxContent))
+		return fmt.Sprintf("\n%s\n%s", label, renderMarkdown(m.content, maxContent))
 
 	case msgAssistant:
 		label := assistantLabelStyle.Render("🤖 moss")
-		return fmt.Sprintf("\n%s\n%s", label, wrapText(m.content, maxContent))
+		return fmt.Sprintf("\n%s\n%s", label, renderMarkdown(m.content, maxContent))
 
 	case msgSystem:
-		return systemStyle.Render(fmt.Sprintf("\n  ● %s", m.content))
+		return systemStyle.Render(fmt.Sprintf("\n  ● %s", renderMarkdown(m.content, maxContent)))
 
 	case msgToolStart:
 		return toolLabelStyle.Render(fmt.Sprintf("  🔧 %s", m.content))
@@ -52,7 +57,7 @@ func renderMessage(m chatMessage, width int) string {
 		if len(text) > 200 {
 			text = text[:200] + "..."
 		}
-		return toolResultStyle.Render(fmt.Sprintf("  ✅ %s", text))
+		return toolResultStyle.Render(fmt.Sprintf("  ✅ %s", renderMarkdown(text, maxContent)))
 
 	case msgToolError:
 		return toolErrorStyle.Render(fmt.Sprintf("  ❌ %s", m.content))
@@ -68,6 +73,39 @@ func renderMessage(m chatMessage, width int) string {
 	}
 }
 
+func renderMarkdown(content string, width int) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	if width < 20 {
+		width = 20
+	}
+	renderer, err := markdownRenderer(width)
+	if err != nil {
+		return wrapText(content, width)
+	}
+	out, err := renderer.Render(content)
+	if err != nil {
+		return wrapText(content, width)
+	}
+	return strings.TrimRight(out, "\n")
+}
+
+func markdownRenderer(width int) (*glamour.TermRenderer, error) {
+	if v, ok := markdownRendererCache.Load(width); ok {
+		return v.(*glamour.TermRenderer), nil
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return nil, err
+	}
+	markdownRendererCache.Store(width, r)
+	return r, nil
+}
+
 // isToolMsg 判断消息是否属于可折叠的工具类别。
 func isToolMsg(kind msgKind) bool {
 	return kind == msgToolStart || kind == msgToolResult
@@ -77,7 +115,7 @@ func isToolMsg(kind msgKind) bool {
 // 当 toolCollapsed 为 true 时，连续的工具消息会折叠为一行摘要。
 func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) string {
 	if len(messages) == 0 {
-		return mutedStyle.Render("\n  输入消息开始对话...\n")
+		return mutedStyle.Render("\n  Type a message to start...\n")
 	}
 	var b strings.Builder
 	i := 0
@@ -90,7 +128,7 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 				count++
 			}
 			b.WriteString(collapsedToolStyle.Render(
-				fmt.Sprintf("  ▶ %d 个工具调用 (Ctrl+T 展开)", count)))
+				fmt.Sprintf("  ▶ %d tool calls (Ctrl+T to expand)", count)))
 			b.WriteString("\n")
 			i += count
 		} else {
