@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -12,6 +14,10 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
+)
+
+const (
+	maxInputHistory = 500
 )
 
 // sessionResultMsg 表示 agent session 结束。
@@ -71,8 +77,10 @@ type chatModel struct {
 	workspace string
 	trust     string
 
-	sidebarTitle  string
-	renderSidebar func() string
+	inputHistory  []string
+	historyCursor int
+	historyDraft  string
+	historyPath   string
 
 	now       func() time.Time
 	lastEscAt time.Time
@@ -89,12 +97,15 @@ func newChatModel(provider, model, workspace string) chatModel {
 	ta.KeyMap.InsertNewline.SetKeys("shift+enter")
 
 	return chatModel{
-		textarea:  ta,
-		provider:  provider,
-		model:     model,
-		workspace: workspace,
-		trust:     "trusted",
-		now:       time.Now,
+		textarea:      ta,
+		provider:      provider,
+		model:         model,
+		workspace:     workspace,
+		trust:         "trusted",
+		toolCollapsed: true,
+		inputHistory:  loadInputHistory(defaultHistoryPath(), maxInputHistory),
+		historyPath:   defaultHistoryPath(),
+		now:           time.Now,
 	}
 }
 
@@ -127,10 +138,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m.handleCtrlC()
 		case "esc":
 			return m.handleEsc()
-		case "ctrl+t":
+		case "ctrl+o":
 			m.toolCollapsed = !m.toolCollapsed
 			m.refreshViewport()
 			return m, nil
+		case "up", "down":
+			return m.handleHistoryNavigation(msg.String())
 		case "enter":
 			return m.handleSend()
 		}
@@ -161,6 +174,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
 		m.adjustInputHeight()
+		m.historyCursor = len(m.inputHistory)
+		m.historyDraft = m.textarea.Value()
 		cmds = append(cmds, cmd)
 	}
 
@@ -176,6 +191,9 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	if text == "" {
 		return m, nil
 	}
+	m.recordInputHistory(text)
+	m.historyCursor = len(m.inputHistory)
+	m.historyDraft = ""
 
 	// 斜杠命令
 	if strings.HasPrefix(text, "/") {
@@ -271,10 +289,11 @@ func (m *chatModel) refreshViewport() {
 
 func (m *chatModel) recalcLayout() {
 	headerH := 2 // 顶栏
+	metaH := 1
 	inputH := m.inputBoxHeight()
 	statusH := 1 // 底部状态栏
 
-	vpHeight := m.height - headerH - inputH - statusH
+	vpHeight := m.height - headerH - metaH - inputH - statusH
 	if vpHeight < 3 {
 		vpHeight = 3
 	}
@@ -317,33 +336,11 @@ func (m *chatModel) adjustInputHeight() {
 	m.textarea.SetHeight(lines)
 }
 
-func (m chatModel) sidebarVisible() bool {
-	return m.width >= 100
-}
-
-func (m chatModel) sidebarWidth() int {
-	if !m.sidebarVisible() {
-		return 0
-	}
-	width := m.width / 3
-	if width < 32 {
-		width = 32
-	}
-	if width > 46 {
-		width = 46
-	}
-	return width
-}
-
 func (m chatModel) mainWidth() int {
-	if !m.sidebarVisible() {
-		return m.width
-	}
-	mainWidth := m.width - m.sidebarWidth() - 1
-	if mainWidth < 40 {
+	if m.width < 40 {
 		return 40
 	}
-	return mainWidth
+	return m.width
 }
 
 func (m chatModel) View() string {
@@ -363,29 +360,21 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", m.width) + "\n")
 
-	// 消息区
-	body := m.viewport.View()
-	if m.sidebarVisible() {
-		title := strings.TrimSpace(m.sidebarTitle)
-		if title == "" {
-			title = "Control Center"
-		}
-		sidebarContent := m.renderBuiltinSidebar()
-		if m.renderSidebar != nil {
-			external := strings.TrimSpace(m.renderSidebar())
-			if external != "" {
-				sidebarContent += "\n\n" + sidebarSectionTitleStyle.Render("Workspace") + "\n" + external
-			}
-		}
-		body = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
-			sidebarBoxStyle.Width(m.sidebarWidth()).Render(
-				sidebarTitleStyle.Render(title)+"\n\n"+sidebarContent,
-			),
-		)
+	// 输入框上方元信息（左右）
+	leftMeta := fmt.Sprintf("State: %s  Provider: %s", valueOrDefaultRunState(m.streaming), m.provider)
+	if strings.TrimSpace(m.model) != "" {
+		leftMeta = fmt.Sprintf("%s (%s)", leftMeta, m.model)
 	}
-	b.WriteString(body)
+	rightMeta := fmt.Sprintf("Trust: %s  Messages: %d", m.trust, len(m.messages))
+	b.WriteString(lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		mutedStyle.Width(m.mainWidth()/2).Render(leftMeta),
+		mutedStyle.Width(m.mainWidth()-m.mainWidth()/2).Align(lipgloss.Right).Render(rightMeta),
+	))
+	b.WriteString("\n")
+
+	// 消息区
+	b.WriteString(m.viewport.View())
 	b.WriteString("\n")
 
 	// 输入区
@@ -399,11 +388,17 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 底部状态
-	toolHint := "Ctrl+T collapse tools"
+	toolHint := "Ctrl+O collapse tools"
 	if m.toolCollapsed {
-		toolHint = "Ctrl+T expand tools"
+		toolHint = "Ctrl+O expand tools"
 	}
-	status := mutedStyle.Render(fmt.Sprintf("/help commands │ %s │ Esc Esc cancel run │ Ctrl+C clear input (double Ctrl+C quit)", toolHint))
+	leftStatus := fmt.Sprintf("/help commands │ %s", toolHint)
+	rightStatus := "↑↓ history │ Esc Esc cancel run │ Ctrl+C clear (double quit)"
+	status := lipgloss.JoinHorizontal(
+		lipgloss.Top,
+		mutedStyle.Width(m.mainWidth()/2).Render(leftStatus),
+		mutedStyle.Width(m.mainWidth()-m.mainWidth()/2).Align(lipgloss.Right).Render(rightStatus),
+	)
 	if m.pendAsk != nil && m.askForm != nil {
 		status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
 	} else if m.pendAsk != nil {
@@ -412,57 +407,6 @@ func (m chatModel) View() string {
 	b.WriteString(status)
 
 	return b.String()
-}
-
-func (m chatModel) renderBuiltinSidebar() string {
-	runState := "idle"
-	if m.streaming {
-		runState = "running"
-	}
-	toolCount := 0
-	progressCount := 0
-	lastTool := "none"
-	for i := len(m.messages) - 1; i >= 0; i-- {
-		msg := m.messages[i]
-		if msg.kind == msgToolStart || msg.kind == msgToolResult || msg.kind == msgToolError {
-			toolCount++
-			if lastTool == "none" {
-				lastTool = strings.TrimSpace(msg.content)
-				if len(lastTool) > 50 {
-					lastTool = lastTool[:50] + "..."
-				}
-			}
-		}
-		if msg.kind == msgProgress {
-			progressCount++
-		}
-	}
-	var sb strings.Builder
-	sb.WriteString(sidebarSectionTitleStyle.Render("Session"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("State: %s\n", runState))
-	sb.WriteString(fmt.Sprintf("Provider: %s\n", m.provider))
-	if strings.TrimSpace(m.model) != "" {
-		sb.WriteString(fmt.Sprintf("Model: %s\n", m.model))
-	}
-	if strings.TrimSpace(m.trust) != "" {
-		sb.WriteString(fmt.Sprintf("Trust: %s\n", m.trust))
-	}
-	sb.WriteString(fmt.Sprintf("Messages: %d\n", len(m.messages)))
-	sb.WriteString("\n")
-	sb.WriteString(sidebarSectionTitleStyle.Render("Tools"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Events: %d\n", toolCount))
-	sb.WriteString(fmt.Sprintf("Progress: %d\n", progressCount))
-	sb.WriteString(fmt.Sprintf("Last: %s\n", lastTool))
-	sb.WriteString("\n")
-	sb.WriteString(sidebarSectionTitleStyle.Render("Keys"))
-	sb.WriteString("\n")
-	sb.WriteString("Esc Esc  cancel current run\n")
-	sb.WriteString("Ctrl+T   toggle tool fold\n")
-	sb.WriteString("Ctrl+C   clear input\n")
-	sb.WriteString("Ctrl+C×2 quit")
-	return sb.String()
 }
 
 func (m chatModel) handleEsc() (chatModel, tea.Cmd) {
@@ -876,7 +820,8 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"\nKeyboard shortcuts:\n" +
 			"  Esc Esc        Cancel current running generation/tool execution\n" +
 			"  Ctrl+C         Clear input (press twice quickly to quit)\n" +
-			"  Ctrl+T         Collapse/expand tool messages\n" +
+			"  Ctrl+O         Collapse/expand tool messages\n" +
+			"  Up/Down        Navigate persisted input history\n" +
 			"  Shift+Enter    Insert newline\n" +
 			"  /help          Show this help\n" +
 			"  /exit          Exit mosscode"
@@ -979,6 +924,108 @@ func maskKey(key string) string {
 		return "****"
 	}
 	return key[:4] + "****" + key[len(key)-4:]
+}
+
+func valueOrDefaultRunState(running bool) string {
+	if running {
+		return "running"
+	}
+	return "idle"
+}
+
+func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd) {
+	if len(m.inputHistory) == 0 {
+		return m, nil
+	}
+	if direction == "up" {
+		if m.historyCursor >= len(m.inputHistory) {
+			m.historyDraft = m.textarea.Value()
+			m.historyCursor = len(m.inputHistory)
+		}
+		if m.historyCursor > 0 {
+			m.historyCursor--
+			m.textarea.SetValue(m.inputHistory[m.historyCursor])
+			m.adjustInputHeight()
+		}
+		return m, nil
+	}
+	if direction == "down" {
+		if m.historyCursor < len(m.inputHistory) {
+			m.historyCursor++
+			if m.historyCursor == len(m.inputHistory) {
+				m.textarea.SetValue(m.historyDraft)
+			} else {
+				m.textarea.SetValue(m.inputHistory[m.historyCursor])
+			}
+			m.adjustInputHeight()
+		}
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *chatModel) recordInputHistory(input string) {
+	input = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(input, "\r\n", " "), "\n", " "))
+	if input == "" {
+		return
+	}
+	filtered := make([]string, 0, len(m.inputHistory)+1)
+	for _, item := range m.inputHistory {
+		if item != input {
+			filtered = append(filtered, item)
+		}
+	}
+	filtered = append(filtered, input)
+	if len(filtered) > maxInputHistory {
+		filtered = filtered[len(filtered)-maxInputHistory:]
+	}
+	m.inputHistory = filtered
+	m.historyCursor = len(m.inputHistory)
+	_ = saveInputHistory(m.historyPath, m.inputHistory)
+}
+
+func defaultHistoryPath() string {
+	appDir := appconfig.AppDir()
+	if appDir == "" {
+		return ""
+	}
+	return filepath.Join(appDir, "input_history")
+}
+
+func loadInputHistory(path string, max int) []string {
+	if path == "" || max <= 0 {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		v := strings.TrimSpace(line)
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) > max {
+		out = out[len(out)-max:]
+	}
+	return out
+}
+
+func saveInputHistory(path string, history []string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	payload := strings.Join(history, "\n")
+	if payload != "" {
+		payload += "\n"
+	}
+	return os.WriteFile(path, []byte(payload), 0o600)
 }
 
 // valueOrDefault 返回 s 或 defaultVal。

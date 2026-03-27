@@ -450,8 +450,6 @@ func Run(cfg Config) error {
 		}
 		m.state = stateChat
 		m.chat = newChatModel(wCfg.Provider, wCfg.Model, wCfg.Workspace)
-		m.chat.sidebarTitle = cfg.SidebarTitle
-		m.chat.renderSidebar = cfg.RenderSidebar
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
 	} else {
 		m.state = stateWelcome
@@ -515,8 +513,6 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 持久化用户选择的 provider/model 到 ~/.moss/config.yaml
 		saveWelcomeConfig(cfg)
 		m.chat = newChatModel(cfg.Provider, cfg.Model, cfg.Workspace)
-		m.chat.sidebarTitle = m.config.SidebarTitle
-		m.chat.renderSidebar = m.config.RenderSidebar
 		m.state = stateChat
 
 		// 将当前窗口尺寸传递给 chatModel，避免它因未收到 WindowSizeMsg 而卡在 "加载中"

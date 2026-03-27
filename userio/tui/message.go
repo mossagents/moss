@@ -128,7 +128,7 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 				count++
 			}
 			b.WriteString(collapsedToolStyle.Render(
-				fmt.Sprintf("  ▶ %d tool calls (Ctrl+T to expand)", count)))
+				fmt.Sprintf("  ▶ %d tool calls (Ctrl+O to expand)", count)))
 			b.WriteString("\n")
 			i += count
 		} else {
