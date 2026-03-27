@@ -316,6 +316,43 @@ func TestListFiles(t *testing.T) {
 	}
 }
 
+func TestListFilesExcludesHiddenByDefault(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/a.go":         "",
+		"/ws/.git/config":  "",
+		"/ws/.moss/x.json": "",
+	})
+	handler := listFilesHandler(sb)
+	result, err := handler(context.Background(), toJSON(t, map[string]any{"pattern": "**/*"}))
+	if err != nil {
+		t.Fatalf("listFiles hidden filter: %v", err)
+	}
+	var files []string
+	_ = json.Unmarshal(result, &files)
+	if len(files) != 1 || files[0] != "a.go" {
+		t.Fatalf("expected only a.go, got %v", files)
+	}
+}
+
+func TestListFilesMaxResults(t *testing.T) {
+	sb := newMockSandbox("/ws", map[string]string{
+		"/ws/a.go": "", "/ws/b.go": "", "/ws/c.go": "",
+	})
+	handler := listFilesHandler(sb)
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"pattern":     "**/*",
+		"max_results": 2,
+	}))
+	if err != nil {
+		t.Fatalf("listFiles max_results: %v", err)
+	}
+	var files []string
+	_ = json.Unmarshal(result, &files)
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got %d (%v)", len(files), files)
+	}
+}
+
 func TestSearchText(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{
 		"/ws/main.go":  "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
@@ -670,6 +707,24 @@ func TestListFilesWS(t *testing.T) {
 	json.Unmarshal(result, &files)
 	if len(files) != 3 {
 		t.Errorf("expected 3 files, got %d: %v", len(files), files)
+	}
+}
+
+func TestListFilesWSExcludesHiddenByDefault(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{
+		"a.go":         "",
+		".git/config":  "",
+		".moss/x.json": "",
+	}}
+	handler := listFilesHandlerWS(ws)
+	result, err := handler(context.Background(), toJSON(t, map[string]any{"pattern": "**/*"}))
+	if err != nil {
+		t.Fatalf("listFilesWS hidden filter: %v", err)
+	}
+	var files []string
+	_ = json.Unmarshal(result, &files)
+	if len(files) != 1 || files[0] != "a.go" {
+		t.Fatalf("expected only a.go, got %v", files)
 	}
 }
 

@@ -234,13 +234,14 @@ func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
 
 var listFilesSpec = tool.ToolSpec{
 	Name:        "list_files",
-	Description: "List files matching a glob pattern relative to the workspace root.",
+	Description: "List files matching a glob pattern relative to the workspace root. Hidden files are excluded by default.",
 	InputSchema: json.RawMessage(`{
 		"type": "object",
 		"properties": {
-			"pattern": {"type": "string", "description": "Glob pattern (e.g., \"**/*.go\", \"src/\")"}
-		},
-		"required": ["pattern"]
+			"pattern": {"type": "string", "description": "Glob pattern (default: \"**/*\")"},
+			"max_results": {"type": "integer", "description": "Maximum files to return (default: 200, hard cap: 1000)"},
+			"include_hidden": {"type": "boolean", "description": "Whether to include hidden files/dirs like .git (default: false)"}
+		}
 	}`),
 	Risk:         tool.RiskLow,
 	Capabilities: []string{"filesystem"},
@@ -249,16 +250,27 @@ var listFilesSpec = tool.ToolSpec{
 func listFilesHandler(sb sandbox.Sandbox) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
-			Pattern string `json:"pattern"`
+			Pattern       string `json:"pattern"`
+			MaxResults    int    `json:"max_results"`
+			IncludeHidden bool   `json:"include_hidden"`
 		}
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
+		if strings.TrimSpace(params.Pattern) == "" {
+			params.Pattern = "**/*"
+		}
+		limit := normalizeMaxResults(params.MaxResults)
 		files, err := sb.ListFiles(params.Pattern)
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(files)
+		root, _ := sb.ResolvePath(".")
+		filtered := normalizeAndFilterPaths(files, root, params.IncludeHidden)
+		if len(filtered) > limit {
+			filtered = filtered[:limit]
+		}
+		return json.Marshal(filtered)
 	}
 }
 
@@ -490,16 +502,26 @@ func globHandlerWS(ws port.Workspace) tool.ToolHandler {
 func listFilesHandlerWS(ws port.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
-			Pattern string `json:"pattern"`
+			Pattern       string `json:"pattern"`
+			MaxResults    int    `json:"max_results"`
+			IncludeHidden bool   `json:"include_hidden"`
 		}
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
+		if strings.TrimSpace(params.Pattern) == "" {
+			params.Pattern = "**/*"
+		}
+		limit := normalizeMaxResults(params.MaxResults)
 		files, err := ws.ListFiles(ctx, params.Pattern)
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(files)
+		filtered := normalizeAndFilterPaths(files, "", params.IncludeHidden)
+		if len(filtered) > limit {
+			filtered = filtered[:limit]
+		}
+		return json.Marshal(filtered)
 	}
 }
 
@@ -748,6 +770,48 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+func normalizeMaxResults(n int) int {
+	if n <= 0 {
+		return 200
+	}
+	if n > 1000 {
+		return 1000
+	}
+	return n
+}
+
+func normalizeAndFilterPaths(paths []string, root string, includeHidden bool) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		candidate := p
+		if strings.TrimSpace(root) != "" {
+			if rel, err := filepath.Rel(root, p); err == nil {
+				candidate = rel
+			}
+		}
+		candidate = filepath.Clean(candidate)
+		if candidate == "." || candidate == "" {
+			continue
+		}
+		norm := strings.ReplaceAll(candidate, "\\", "/")
+		if !includeHidden {
+			skip := false
+			for _, part := range strings.Split(norm, "/") {
+				if strings.HasPrefix(part, ".") {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
+		}
+		out = append(out, norm)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func marshalCommandOutput(ctx context.Context, output any, writeFile func(path string, data []byte) error) (json.RawMessage, error) {
