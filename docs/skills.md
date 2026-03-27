@@ -51,12 +51,12 @@ type Deps struct {
 
 内置核心工具集，提供文件操作、命令执行和用户交互能力。
 
-**注册方式**：通过 `defaults.Setup` 自动装配（推荐）：
+**注册方式**：通过 `runtime.Setup` 自动装配（推荐）：
 
 ```go
-import "github.com/mossagents/moss/extensions/defaults"
+import runtime "github.com/mossagents/moss/appkit/runtime"
 
-defaults.Setup(ctx, k, workspaceDir)
+runtime.Setup(ctx, k, workspaceDir)
 ```
 
 **提供的 8 个工具**：
@@ -68,7 +68,7 @@ defaults.Setup(ctx, k, workspaceDir)
 | `edit_file` | High | `path`, `old_string`, `new_string`, `replace_all` | 按字符串替换编辑文件 |
 | `glob` | Low | `pattern`, `path` | 按 glob 模式查找文件（可限定子路径） |
 | `list_files` | Low | `pattern` | Glob 模式列出文件，支持 `**` 递归 |
-| `search_text` | Low | `pattern`, `glob`, `max_results` | 正则（RE2）搜索文件内容 |
+| `grep` | Low | `pattern`, `glob`, `max_results` | 正则（RE2）搜索文件内容 |
 | `run_command` | High | `command`, `args` | 执行 shell 命令 |
 | `ask_user` | Medium | `prompt`, `type`, `options` | 向用户请求输入 |
 
@@ -76,7 +76,7 @@ defaults.Setup(ctx, k, workspaceDir)
 
 ## MCP Provider（mcp 包）
 
-通过 [MCP 协议](https://modelcontextprotocol.io/) 连接外部工具服务器。实现位于 `github.com/mossagents/moss/mcp` 包（`mcp.NewMCPServer(...)`），并由 `extensions/defaults.Setup` 统一装配。
+通过 [MCP 协议](https://modelcontextprotocol.io/) 连接外部工具服务器。实现位于 `github.com/mossagents/moss/mcp` 包（`mcp.NewMCPServer(...)`），并由 `runtime.Setup` 统一装配。
 
 ### 配置
 
@@ -172,18 +172,18 @@ Moss 按以下优先级自动发现 SKILL.md（项目级 > 全局）：
 
 ```go
 ps, err := skill.ParseSkillMD("/path/to/SKILL.md")
-skillsx.Manager(k).Register(ctx, ps, skillsx.Deps(k))
+runtime.SkillsManager(k).Register(ctx, ps, runtime.Deps(k))
 ```
 
 ### 按需加载（Progressive Skills）
 
-默认模式下，`defaults.Setup` 会把已发现的 `SKILL.md` 全部立即加载到系统提示词。
+默认模式下，`runtime.Setup` 会把已发现的 `SKILL.md` 全部立即加载到系统提示词。
 
 若希望降低首轮上下文占用，可启用按需加载：
 
 ```go
-defaults.Setup(ctx, k, workspaceDir,
-  defaults.WithProgressiveSkills(),
+runtime.Setup(ctx, k, workspaceDir,
+  runtime.WithProgressiveSkills(true),
 )
 ```
 
@@ -224,19 +224,19 @@ manager.ShutdownAll(ctx)
 
 ---
 
-## defaults.Setup
+## runtime.Setup
 
-推荐使用 `defaults.Setup` 一键装配所有标准技能：
+推荐使用 `runtime.Setup` 一键装配所有标准技能：
 
 ```go
 // 默认行为：注册 Core Tool Skill + 加载 MCP Servers + 发现 Skills
-defaults.Setup(ctx, k, workspaceDir)
+runtime.Setup(ctx, k, workspaceDir)
 
 // 选择性禁用
-defaults.Setup(ctx, k, workspaceDir,
-  defaults.WithoutBuiltin(),        // 不注册内置 8 工具
-  defaults.WithoutMCPServers(),     // 不加载 MCP 配置
-  defaults.WithoutSkills(),         // 不发现 SKILL.md
+runtime.Setup(ctx, k, workspaceDir,
+  runtime.WithBuiltinTools(false),  // 不注册内置 8 工具
+  runtime.WithMCPServers(false),    // 不加载 MCP 配置
+  runtime.WithSkills(false),        // 不发现 SKILL.md
 )
 ```
 

@@ -51,6 +51,43 @@
 
 ---
 
+## Unreleased — Runtime Consolidation (Phase 1/2)
+
+### 新增
+
+- 新增 `appkit/runtime` 作为运行时装配入口：
+  - `runtime.Setup(ctx, k, workspaceDir, opts...)`
+  - `runtime.WithBuiltinTools(bool)`
+  - `runtime.WithMCPServers(bool)`
+  - `runtime.WithSkills(bool)`
+  - `runtime.WithProgressiveSkills(bool)`
+  - `runtime.WithAgents(bool)`
+- 新增 runtime facade API：
+  - `runtime.SkillsManager`
+  - `runtime.SkillManifests`
+  - `runtime.SetSkillManifests`
+  - `runtime.EnableProgressiveSkills`
+  - `runtime.RegisterProgressiveSkillTools`
+  - `runtime.AgentRegistry`
+
+### 变更
+
+- `appkit`、`cmd/moss`、`userio/tui` 已切换到 `appkit/runtime` API 路径。
+- `extensions/defaults`、`extensions/skillsx`、`extensions/agentsx` 已调整为兼容 shim（转发到 runtime）。
+
+### 迁移说明
+
+- 推荐从旧 API 迁移到新 API：
+  - `defaults.Setup` -> `runtime.Setup`
+  - `defaults.WithoutBuiltin` -> `runtime.WithBuiltinTools(false)`
+  - `defaults.WithoutMCPServers` -> `runtime.WithMCPServers(false)`
+  - `defaults.WithoutSkills` -> `runtime.WithSkills(false)`
+  - `defaults.WithProgressiveSkills` -> `runtime.WithProgressiveSkills(true)`
+  - `skillsx.Manager` -> `runtime.SkillsManager`
+  - `agentsx.Registry` -> `runtime.AgentRegistry`
+
+---
+
 ## Unreleased — Persistent Memories (Phase 4, partial)
 
 ### 新增

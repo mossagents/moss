@@ -217,7 +217,7 @@ func main() {
 
 ### 自定义 Setup
 
-推荐做法是继续使用 `appkit.BuildKernelWithConfig` / `appkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `defaults.Setup`。
+推荐做法是继续使用 `appkit.BuildKernelWithConfig` / `appkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `runtime.Setup`。
 
 ### Deep Agent 预设（推荐）
 
@@ -256,21 +256,23 @@ k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 
 `WithContextOffload` 依赖可持久化的 `SessionStore`，会注册 `offload_context` 工具，用于手动压缩长会话并把历史快照保存到 store。
 
-更底层时，`defaults.Setup` 仍支持选择性禁用：
+更底层时，`runtime.Setup` 仍支持选择性禁用：
 
 ```go
+import runtime "github.com/mossagents/moss/appkit/runtime"
+
 // 只注册核心工具，不加载 MCP 和 Skill
-defaults.Setup(ctx, k, ".",
-    defaults.WithoutMCPServers(),
-    defaults.WithoutSkills(),
+runtime.Setup(ctx, k, ".",
+    runtime.WithMCPServers(false),
+    runtime.WithSkills(false),
 )
 
 // 启用按需 Skill 加载（启动时不注入全部 SKILL.md 正文）
-defaults.Setup(ctx, k, ".",
-    defaults.WithProgressiveSkills(),
+runtime.Setup(ctx, k, ".",
+    runtime.WithProgressiveSkills(true),
 )
 
-// 完全自定义：不使用 defaults.Setup
+// 完全自定义：不使用 runtime.Setup
 k := kernel.New(
     kernel.WithLLM(myLLM),
     kernel.WithUserIO(&port.NoOpIO{}),
