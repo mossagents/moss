@@ -1,5 +1,11 @@
 # 🚀 快速开始
 
+> **Moss**: *Agent harness for Go: compose fast, run safely.*  
+> **Moss**：*面向 Go 的 Agent Harness：快速装配，安全运行。*
+>
+> **MossCode**: *A coding-agent harness grounded in your workspace.*  
+> **MossCode**：*扎根于你的工作区上下文的代码 Agent Harness。*
+
 本文档介绍如何使用 Moss——既可以作为终端 AI 助手直接使用，也可以作为**第三方库**嵌入到其他应用中。
 
 ---
