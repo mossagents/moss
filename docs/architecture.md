@@ -103,7 +103,7 @@ type Registry interface {
 }
 ```
 
-**内置 8 个核心工具**：
+**内置 9 个核心工具**：
 
 | 工具 | 风险 | 说明 |
 |---|---|---|
@@ -114,6 +114,7 @@ type Registry interface {
 | `list_files` | Low | Glob 模式列出文件 |
 | `grep` | Low | 正则搜索文件内容 |
 | `run_command` | High | 执行 shell 命令 |
+| `http_request` | High | 发送 HTTP 请求并返回状态、响应头和响应体 |
 | `ask_user` | Medium | 向用户请求输入 |
 | `read_memory` | Low | 读取持久 `/memories` 文件 |
 | `write_memory` | High | 写入持久 `/memories` 文件 |

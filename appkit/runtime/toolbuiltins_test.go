@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -163,7 +165,7 @@ func TestRegisterBuiltinTools(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -600,6 +602,7 @@ func TestToolRiskLevels(t *testing.T) {
 		{"ls", tool.RiskLow},
 		{"grep", tool.RiskLow},
 		{"run_command", tool.RiskHigh},
+		{"http_request", tool.RiskHigh},
 		{"ask_user", tool.RiskLow},
 	}
 
@@ -633,6 +636,7 @@ func TestInvalidInput(t *testing.T) {
 		{"ls", listFilesHandler(sb)},
 		{"grep", grepHandler(sb)},
 		{"run_command", runCommandHandler(sb)},
+		{"http_request", httpRequestHandler()},
 		{"ask_user", askUserHandler(&mockUserIO{})},
 	}
 
@@ -641,6 +645,42 @@ func TestInvalidInput(t *testing.T) {
 		if err == nil {
 			t.Errorf("%s: expected error for invalid JSON", c.name)
 		}
+	}
+}
+
+func TestHTTPRequestTool(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.Header.Get("X-Test") != "ok" {
+			t.Fatalf("header X-Test = %q, want ok", r.Header.Get("X-Test"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	handler := httpRequestHandler()
+	out, err := handler(context.Background(), toJSON(t, map[string]any{
+		"url":     srv.URL,
+		"method":  "POST",
+		"headers": map[string]string{"X-Test": "ok"},
+		"body":    `{"hello":"world"}`,
+	}))
+	if err != nil {
+		t.Fatalf("http_request: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if int(resp["status_code"].(float64)) != http.StatusCreated {
+		t.Fatalf("status_code = %v, want %d", resp["status_code"], http.StatusCreated)
+	}
+	if !strings.Contains(resp["body"].(string), `"ok":true`) {
+		t.Fatalf("unexpected body: %s", resp["body"].(string))
 	}
 }
 
@@ -667,7 +707,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))

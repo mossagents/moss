@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
@@ -16,6 +20,7 @@ import (
 )
 
 const maxInlineCommandOutput = 8000
+const maxHTTPResponseBodyBytes = 256 * 1024
 
 // RegisteredToolNames 返回给定配置下会注册的工具名列表。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
@@ -28,7 +33,7 @@ func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port
 	if exec != nil || sb != nil {
 		names = append(names, "run_command")
 	}
-	names = append(names, "ask_user")
+	names = append(names, "http_request", "ask_user")
 	return names
 }
 
@@ -70,6 +75,7 @@ func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO,
 		tools = append(tools, entry{runCommandSpec, runCommandHandler(sb)})
 	}
 
+	tools = append(tools, entry{httpRequestSpec, httpRequestHandler()})
 	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
 
 	for _, t := range tools {
@@ -373,6 +379,121 @@ var runCommandSpec = tool.ToolSpec{
 	}`),
 	Risk:         tool.RiskHigh,
 	Capabilities: []string{"execution"},
+}
+
+// ─── http_request ─────────────────────────────────────
+
+var httpRequestSpec = tool.ToolSpec{
+	Name:        "http_request",
+	Description: "Send an HTTP request and return status, headers, and body.",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {
+			"url": {"type": "string", "description": "Request URL (http/https)"},
+			"method": {"type": "string", "description": "HTTP method, default GET"},
+			"headers": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional request headers"},
+			"body": {"type": "string", "description": "Optional request body"},
+			"timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30, max 120)"},
+			"follow_redirects": {"type": "boolean", "description": "Whether to follow redirects (default true)"}
+		},
+		"required": ["url"]
+	}`),
+	Risk:         tool.RiskHigh,
+	Capabilities: []string{"network"},
+}
+
+func httpRequestHandler() tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params struct {
+			URL             string            `json:"url"`
+			Method          string            `json:"method"`
+			Headers         map[string]string `json:"headers"`
+			Body            string            `json:"body"`
+			TimeoutSeconds  int               `json:"timeout_seconds"`
+			FollowRedirects *bool             `json:"follow_redirects"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		rawURL := strings.TrimSpace(params.URL)
+		if rawURL == "" {
+			return nil, fmt.Errorf("url is required")
+		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid url: %w", err)
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return nil, fmt.Errorf("url scheme must be http or https")
+		}
+		method := strings.ToUpper(strings.TrimSpace(params.Method))
+		if method == "" {
+			method = http.MethodGet
+		}
+		timeout := 30 * time.Second
+		if params.TimeoutSeconds > 0 {
+			if params.TimeoutSeconds > 120 {
+				params.TimeoutSeconds = 120
+			}
+			timeout = time.Duration(params.TimeoutSeconds) * time.Second
+		}
+		reqCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+
+		var bodyReader io.Reader
+		if params.Body != "" {
+			bodyReader = strings.NewReader(params.Body)
+		}
+		req, err := http.NewRequestWithContext(reqCtx, method, rawURL, bodyReader)
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		for k, v := range params.Headers {
+			if strings.TrimSpace(k) == "" {
+				continue
+			}
+			req.Header.Set(k, v)
+		}
+		if params.Body != "" && req.Header.Get("Content-Type") == "" {
+			req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+		}
+
+		client := &http.Client{}
+		followRedirects := true
+		if params.FollowRedirects != nil {
+			followRedirects = *params.FollowRedirects
+		}
+		if !followRedirects {
+			client.CheckRedirect = func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		bodyData, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseBodyBytes+1))
+		if err != nil {
+			return nil, err
+		}
+		truncated := len(bodyData) > maxHTTPResponseBodyBytes
+		if truncated {
+			bodyData = bodyData[:maxHTTPResponseBodyBytes]
+		}
+		return json.Marshal(map[string]any{
+			"status_code":    resp.StatusCode,
+			"status":         resp.Status,
+			"headers":        resp.Header,
+			"body":           string(bodyData),
+			"body_truncated": truncated,
+			"url":            rawURL,
+			"method":         method,
+		})
+	}
 }
 
 func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {

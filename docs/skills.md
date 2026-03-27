@@ -59,7 +59,7 @@ import runtime "github.com/mossagents/moss/appkit/runtime"
 runtime.Setup(ctx, k, workspaceDir)
 ```
 
-**提供的 8 个工具**：
+**提供的 9 个工具**：
 
 | 工具 | 风险等级 | 参数 | 说明 |
 |---|---|---|---|
@@ -70,6 +70,7 @@ runtime.Setup(ctx, k, workspaceDir)
 | `list_files` | Low | `pattern` | Glob 模式列出文件，支持 `**` 递归 |
 | `grep` | Low | `pattern`, `glob`, `max_results` | 正则（RE2）搜索文件内容 |
 | `run_command` | High | `command`, `args` | 执行 shell 命令 |
+| `http_request` | High | `url`, `method`, `headers`, `body`, `timeout_seconds`, `follow_redirects` | 发送 HTTP 请求并返回响应 |
 | `ask_user` | Medium | `prompt`, `type`, `options` | 向用户请求输入 |
 
 ---
