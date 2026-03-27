@@ -57,6 +57,7 @@ type agentState struct {
 	sess    *session.Session
 	ctx     context.Context
 	cancel  context.CancelFunc
+	runCancel context.CancelFunc
 	bridge  *BridgeIO
 	trust   string
 	mu      sync.Mutex
@@ -250,14 +251,17 @@ func (a *agentState) appendAndRun(text string) {
 		return // 防止重复执行
 	}
 	a.running = true
+	runCtx, runCancel := context.WithCancel(a.ctx)
+	a.runCancel = runCancel
 	a.mu.Unlock()
 
 	a.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: text})
 
-	result, err := a.k.Run(a.ctx, a.sess)
+	result, err := a.k.Run(runCtx, a.sess)
 
 	a.mu.Lock()
 	a.running = false
+	a.runCancel = nil
 	a.mu.Unlock()
 
 	if a.bridge.program != nil {
@@ -267,6 +271,16 @@ func (a *agentState) appendAndRun(text string) {
 		}
 		a.bridge.program.Send(msg)
 	}
+}
+
+func (a *agentState) cancelCurrentRun() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.running || a.runCancel == nil {
+		return false
+	}
+	a.runCancel()
+	return true
 }
 
 // appModel 是顶层 Bubble Tea Model。
@@ -415,6 +429,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.sendFn = func(text string) {
 			go agent.appendAndRun(text)
 		}
+		m.chat.cancelRunFn = agent.cancelCurrentRun
 		m.chat.sessionInfoFn = agent.sessionSummary
 		m.chat.offloadFn = func(keepRecent int, note string) (string, error) {
 			return agent.offloadContext(keepRecent, note)

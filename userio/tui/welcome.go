@@ -32,6 +32,7 @@ type welcomeModel struct {
 	input     textarea.Model // 复用 textarea 作为单行输入
 	confirmed bool
 	cancelled bool
+	now       func() tea.Msg
 }
 
 // WelcomeConfig 是欢迎界面收集的配置。
@@ -146,7 +147,7 @@ func (m welcomeModel) View() string {
 	var b strings.Builder
 
 	// Logo
-	logo := titleStyle.Render("🌿 moss")
+	logo := titleStyle.Render("🌿 mosscode")
 	version := mutedStyle.Render(" v" + appVersion)
 	b.WriteString("\n" + logo + version + "\n\n")
 
@@ -191,7 +192,7 @@ func (m welcomeModel) View() string {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("  Tab/↑↓ 切换  Enter 确认  Esc 退出"))
+	b.WriteString(mutedStyle.Render("  Tab/↑↓ switch  Enter confirm  Esc quit  Ctrl+C quit"))
 	b.WriteString("\n")
 
 	return b.String()

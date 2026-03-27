@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -39,6 +40,7 @@ type chatModel struct {
 
 	// agent 交互
 	sendFn        func(string)  // 发送用户消息给 agent
+	cancelRunFn   func() bool   // 取消当前运行中的任务
 	skillListFn   func() string // 查询已加载 skills
 	sessionInfoFn func() string
 	offloadFn     func(keepRecent int, note string) (string, error)
@@ -59,11 +61,15 @@ type chatModel struct {
 
 	sidebarTitle  string
 	renderSidebar func() string
+
+	now       func() time.Time
+	lastEscAt time.Time
+	lastCtrlC time.Time
 }
 
 func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
-	ta.Placeholder = "输入消息... (Enter 发送, /help 查看命令)"
+	ta.Placeholder = "Type a message... (Enter to send, /help for commands)"
 	ta.Focus()
 	ta.SetHeight(3)
 	ta.ShowLineNumbers = false
@@ -75,6 +81,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		provider:  provider,
 		model:     model,
 		workspace: workspace,
+		now:       time.Now,
 	}
 }
 
@@ -95,7 +102,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
-			return m, func() tea.Msg { return cancelMsg{} }
+			return m.handleCtrlC()
+		case "esc":
+			return m.handleEsc()
 		case "ctrl+t":
 			m.toolCollapsed = !m.toolCollapsed
 			m.refreshViewport()
@@ -260,7 +269,7 @@ func (m *chatModel) recalcLayout() {
 }
 
 func (m chatModel) sidebarVisible() bool {
-	return m.renderSidebar != nil && m.width >= 100
+	return m.width >= 100
 }
 
 func (m chatModel) sidebarWidth() int {
@@ -271,8 +280,8 @@ func (m chatModel) sidebarWidth() int {
 	if width < 32 {
 		width = 32
 	}
-	if width > 42 {
-		width = 42
+	if width > 46 {
+		width = 46
 	}
 	return width
 }
@@ -290,33 +299,41 @@ func (m chatModel) mainWidth() int {
 
 func (m chatModel) View() string {
 	if !m.ready {
-		return "加载中..."
+		return "Loading..."
 	}
 
 	var b strings.Builder
 
 	// 顶栏
-	header := titleStyle.Render("🌿 moss")
+	header := titleStyle.Render("🌿 mosscode")
 	info := statusBarStyle.Render(fmt.Sprintf("  %s │ %s", m.provider, m.workspace))
 	if m.model != "" {
 		info = statusBarStyle.Render(fmt.Sprintf("  %s (%s) │ %s", m.provider, m.model, m.workspace))
 	}
-	b.WriteString(header + info + "\n")
+	b.WriteString(topBarStyle.Render(header + info))
+	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", m.width) + "\n")
 
 	// 消息区
 	body := m.viewport.View()
 	if m.sidebarVisible() {
-		sidebarContent := "暂无摘要。"
+		title := strings.TrimSpace(m.sidebarTitle)
+		if title == "" {
+			title = "Control Center"
+		}
+		sidebarContent := m.renderBuiltinSidebar()
 		if m.renderSidebar != nil {
-			sidebarContent = m.renderSidebar()
+			external := strings.TrimSpace(m.renderSidebar())
+			if external != "" {
+				sidebarContent += "\n\n" + sidebarSectionTitleStyle.Render("Workspace") + "\n" + external
+			}
 		}
 		body = lipgloss.JoinHorizontal(
 			lipgloss.Top,
-			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
 			sidebarBoxStyle.Width(m.sidebarWidth()).Render(
-				sidebarTitleStyle.Render(m.sidebarTitle)+"\n\n"+sidebarContent,
+				sidebarTitleStyle.Render(title)+"\n\n"+sidebarContent,
 			),
+			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
 		)
 	}
 	b.WriteString(body)
@@ -324,24 +341,99 @@ func (m chatModel) View() string {
 
 	// 输入区
 	if m.streaming {
-		b.WriteString(mutedStyle.Render("  ● 思考中..."))
+		b.WriteString(runningStyle.Render("  ● Running...  (Esc Esc to cancel current run)"))
 	} else {
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	}
 	b.WriteString("\n")
 
 	// 底部状态
-	toolHint := "Ctrl+T 折叠工具"
+	toolHint := "Ctrl+T collapse tools"
 	if m.toolCollapsed {
-		toolHint = "Ctrl+T 展开工具"
+		toolHint = "Ctrl+T expand tools"
 	}
-	status := mutedStyle.Render(fmt.Sprintf("/help 查看命令 │ %s │ Ctrl+C 退出", toolHint))
+	status := mutedStyle.Render(fmt.Sprintf("/help commands │ %s │ Esc Esc cancel run │ Ctrl+C clear input (double Ctrl+C quit)", toolHint))
 	if m.pendAsk != nil {
-		status = mutedStyle.Render("输入回复后按 Enter 发送 │ /help 查看命令")
+		status = mutedStyle.Render("Type your reply and press Enter │ Esc Esc cancel run │ Ctrl+C clear input")
 	}
 	b.WriteString(status)
 
 	return b.String()
+}
+
+func (m chatModel) renderBuiltinSidebar() string {
+	runState := "idle"
+	if m.streaming {
+		runState = "running"
+	}
+	toolCount := 0
+	progressCount := 0
+	lastTool := "none"
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		msg := m.messages[i]
+		if msg.kind == msgToolStart || msg.kind == msgToolResult || msg.kind == msgToolError {
+			toolCount++
+			if lastTool == "none" {
+				lastTool = strings.TrimSpace(msg.content)
+				if len(lastTool) > 50 {
+					lastTool = lastTool[:50] + "..."
+				}
+			}
+		}
+		if msg.kind == msgProgress {
+			progressCount++
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString(sidebarSectionTitleStyle.Render("Session"))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("State: %s\n", runState))
+	sb.WriteString(fmt.Sprintf("Provider: %s\n", m.provider))
+	if strings.TrimSpace(m.model) != "" {
+		sb.WriteString(fmt.Sprintf("Model: %s\n", m.model))
+	}
+	sb.WriteString(fmt.Sprintf("Messages: %d\n", len(m.messages)))
+	sb.WriteString("\n")
+	sb.WriteString(sidebarSectionTitleStyle.Render("Tools"))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("Events: %d\n", toolCount))
+	sb.WriteString(fmt.Sprintf("Progress: %d\n", progressCount))
+	sb.WriteString(fmt.Sprintf("Last: %s\n", lastTool))
+	sb.WriteString("\n")
+	sb.WriteString(sidebarSectionTitleStyle.Render("Keys"))
+	sb.WriteString("\n")
+	sb.WriteString("Esc Esc  cancel current run\n")
+	sb.WriteString("Ctrl+T   toggle tool fold\n")
+	sb.WriteString("Ctrl+C   clear input\n")
+	sb.WriteString("Ctrl+C×2 quit")
+	return sb.String()
+}
+
+func (m chatModel) handleEsc() (chatModel, tea.Cmd) {
+	now := m.now()
+	if !m.lastEscAt.IsZero() && now.Sub(m.lastEscAt) <= 500*time.Millisecond {
+		m.lastEscAt = time.Time{}
+		if m.cancelRunFn != nil && m.cancelRunFn() {
+			m.streaming = false
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Current run cancelled by user (Esc Esc)."})
+			m.refreshViewport()
+		}
+		return m, nil
+	}
+	m.lastEscAt = now
+	return m, nil
+}
+
+func (m chatModel) handleCtrlC() (chatModel, tea.Cmd) {
+	now := m.now()
+	if !m.lastCtrlC.IsZero() && now.Sub(m.lastCtrlC) <= 500*time.Millisecond {
+		return m, func() tea.Msg { return cancelMsg{} }
+	}
+	m.lastCtrlC = now
+	m.textarea.Reset()
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Input cleared. Press Ctrl+C again quickly to exit."})
+	m.refreshViewport()
+	return m, nil
 }
 
 // handleSlashCommand 处理 / 开头的斜杠命令。
@@ -354,7 +446,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	switch cmd {
 	case "/exit", "/quit":
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "再见 👋"})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Goodbye 👋"})
 		m.refreshViewport()
 		return m, func() tea.Msg { return cancelMsg{} }
 
@@ -362,7 +454,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		if len(args) == 0 {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgSystem,
-				content: fmt.Sprintf("当前模型: %s\n用法: /model <模型名称>", m.provider),
+				content: fmt.Sprintf("Current model: %s\nUsage: /model <model>", m.provider),
 			})
 			m.refreshViewport()
 			return m, nil
@@ -370,7 +462,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		newModel := strings.Join(args, " ")
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgSystem,
-			content: fmt.Sprintf("正在切换到模型 %s...", newModel),
+			content: fmt.Sprintf("Switching model to %s...", newModel),
 		})
 		m.streaming = true
 		m.refreshViewport()
@@ -380,13 +472,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.messages = nil
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgSystem,
-			content: "对话已清空。",
+			content: "Conversation cleared.",
 		})
 		m.refreshViewport()
 		return m, nil
 
 	case "/skills":
-		info := "skill 信息不可用。"
+		info := "Skill information is unavailable."
 		if m.skillListFn != nil {
 			info = m.skillListFn()
 		}
@@ -395,7 +487,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case "/session":
-		info := "session 信息不可用。"
+		info := "Session information is unavailable."
 		if m.sessionInfoFn != nil {
 			info = m.sessionInfoFn()
 		}
@@ -405,7 +497,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/offload":
 		if m.offloadFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "offload_context 工具不可用。"})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "offload_context tool is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -414,7 +506,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		if len(args) >= 1 {
 			v, err := strconv.Atoi(args[0])
 			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /offload [keep_recent:int] [note...]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /offload [keep_recent:int] [note...]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -425,7 +517,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		out, err := m.offloadFn(keepRecent, note)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("offload 失败: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("offload failed: %v", err)})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
@@ -434,7 +526,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/tasks":
 		if m.taskListFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "后台任务工具不可用。"})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background task tool is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -445,7 +537,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			switch status {
 			case "", "running", "completed", "failed", "cancelled":
 			default:
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /tasks [running|completed|failed|cancelled] [limit]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /tasks [running|completed|failed|cancelled] [limit]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -453,7 +545,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		if len(args) >= 2 {
 			v, err := strconv.Atoi(args[1])
 			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /tasks [status] [limit:int]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /tasks [status] [limit:int]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -461,7 +553,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		out, err := m.taskListFn(status, limit)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("获取任务列表失败: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list tasks: %v", err)})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
@@ -470,18 +562,18 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/task":
 		if len(args) == 0 {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "用法:\n  /task <task_id>\n  /task cancel <task_id> [reason...]"})
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /task <task_id>\n  /task cancel <task_id> [reason...]"})
 			m.refreshViewport()
 			return m, nil
 		}
 		if args[0] == "cancel" {
 			if m.taskCancelFn == nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "取消任务工具不可用。"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Task cancellation tool is unavailable."})
 				m.refreshViewport()
 				return m, nil
 			}
 			if len(args) < 2 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "用法: /task cancel <task_id> [reason...]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /task cancel <task_id> [reason...]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -492,7 +584,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			}
 			out, err := m.taskCancelFn(taskID, reason)
 			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("取消任务失败: %v", err)})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to cancel task: %v", err)})
 			} else {
 				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 			}
@@ -500,14 +592,14 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 		if m.taskQueryFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "查询任务工具不可用。"})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Task query tool is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
 		taskID := strings.TrimSpace(args[0])
 		out, err := m.taskQueryFn(taskID)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("查询任务失败: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to query task: %v", err)})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
@@ -518,19 +610,24 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.handleConfigCommand(args)
 
 	case "/help":
-		help := "可用命令:\n" +
-			"  /model [名称]  查看或切换模型\n" +
-			"  /config        查看当前配置\n" +
-			"  /config set <key> <value>  设置配置项 (provider/model/base_url/api_key)\n" +
-			"  /skills        查看已加载的 skills\n" +
-			"  /session       查看当前 session 概览\n" +
-			"  /offload [keep_recent] [note]  压缩上下文并持久化快照\n" +
-			"  /tasks [status] [limit]  列出后台任务\n" +
-			"  /task <id>     查询后台任务详情\n" +
-			"  /task cancel <id> [reason]  取消后台任务\n" +
-			"  /clear         清空对话记录\n" +
-			"  /help          显示此帮助\n" +
-			"  /exit          退出 moss"
+		help := "Available commands:\n" +
+			"  /model [name]  Show or switch model\n" +
+			"  /config        Show current config\n" +
+			"  /config set <key> <value>  Set config key (provider/model/base_url/api_key)\n" +
+			"  /skills        Show discovered user skills and activation state\n" +
+			"  /session       Show current session summary\n" +
+			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
+			"  /tasks [status] [limit]  List background tasks\n" +
+			"  /task <id>     Query task details\n" +
+			"  /task cancel <id> [reason]  Cancel a background task\n" +
+			"  /clear         Clear conversation\n" +
+			"\nKeyboard shortcuts:\n" +
+			"  Esc Esc        Cancel current running generation/tool execution\n" +
+			"  Ctrl+C         Clear input (press twice quickly to quit)\n" +
+			"  Ctrl+T         Collapse/expand tool messages\n" +
+			"  Shift+Enter    Insert newline\n" +
+			"  /help          Show this help\n" +
+			"  /exit          Exit mosscode"
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: help})
 		m.refreshViewport()
 		return m, nil
@@ -538,7 +635,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	default:
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgSystem,
-			content: fmt.Sprintf("未知命令: %s (输入 /help 查看可用命令)", cmd),
+			content: fmt.Sprintf("Unknown command: %s (use /help to list commands)", cmd),
 		})
 		m.refreshViewport()
 		return m, nil
@@ -549,7 +646,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 	cfgPath := appconfig.DefaultGlobalConfigPath()
 	if cfgPath == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "无法确定配置目录。"})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Unable to determine config directory."})
 		m.refreshViewport()
 		return m, nil
 	}
@@ -557,15 +654,15 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 	// /config — 显示当前配置
 	if len(args) == 0 {
 		cfg, _ := appconfig.LoadConfig(cfgPath)
-		apiKeyDisplay := "(未设置)"
+		apiKeyDisplay := "(not set)"
 		if cfg.APIKey != "" {
 			apiKeyDisplay = maskKey(cfg.APIKey)
 		}
-		info := fmt.Sprintf("配置文件: %s\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
+		info := fmt.Sprintf("Config file: %s\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
 			cfgPath,
-			valueOrDefault(cfg.Provider, "(未设置)"),
-			valueOrDefault(cfg.Model, "(未设置)"),
-			valueOrDefault(cfg.BaseURL, "(未设置)"),
+			valueOrDefault(cfg.Provider, "(not set)"),
+			valueOrDefault(cfg.Model, "(not set)"),
+			valueOrDefault(cfg.BaseURL, "(not set)"),
 			apiKeyDisplay,
 		)
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
@@ -591,7 +688,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		default:
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
-				content: fmt.Sprintf("未知配置项: %s (支持: provider, model, base_url, api_key)", key),
+				content: fmt.Sprintf("Unknown config key: %s (supported: provider, model, base_url, api_key)", key),
 			})
 			m.refreshViewport()
 			return m, nil
@@ -600,7 +697,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
-				content: fmt.Sprintf("保存配置失败: %v", err),
+				content: fmt.Sprintf("Failed to save config: %v", err),
 			})
 		} else {
 			display := value
@@ -609,7 +706,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 			}
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgSystem,
-				content: fmt.Sprintf("已设置 %s = %s\n提示: 部分设置需要重启 moss 或使用 /model 切换后生效。", key, display),
+				content: fmt.Sprintf("Set %s = %s\nNote: some settings require restarting moss or switching via /model.", key, display),
 			})
 		}
 		m.refreshViewport()
@@ -618,7 +715,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 
 	m.messages = append(m.messages, chatMessage{
 		kind:    msgSystem,
-		content: "用法:\n  /config              查看当前配置\n  /config set <key> <value>  设置配置项",
+		content: "Usage:\n  /config              Show current config\n  /config set <key> <value>  Set config key",
 	})
 	m.refreshViewport()
 	return m, nil

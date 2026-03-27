@@ -22,6 +22,9 @@ var (
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
+	topBarStyle = lipgloss.NewStyle().
+			Padding(0, 1)
+
 	userLabelStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(colorUser)
@@ -42,6 +45,10 @@ var (
 	progressStyle = lipgloss.NewStyle().
 			Foreground(colorMuted).
 			Italic(true)
+
+	runningStyle = lipgloss.NewStyle().
+			Foreground(colorPrimary).
+			Bold(true)
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(colorError).
@@ -67,6 +74,10 @@ var (
 	sidebarTitleStyle = lipgloss.NewStyle().
 				Bold(true).
 				Foreground(colorPrimary)
+
+	sidebarSectionTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorAssistant)
 
 	collapsedToolStyle = lipgloss.NewStyle().
 				Foreground(colorTool).
