@@ -1,48 +1,26 @@
 package scheduling
 
 import (
-	"context"
-
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
 )
 
-const stateKey kernel.ExtensionStateKey = "scheduling.state"
-
-type state struct {
-	scheduler *scheduler.Scheduler
-}
-
 // WithScheduler 将调度器作为标准扩展接入 Kernel。
+// Deprecated: use runtime.WithScheduler.
 func WithScheduler(s *scheduler.Scheduler) kernel.Option {
-	return func(k *kernel.Kernel) {
-		ensureState(k).scheduler = s
-	}
+	return runtime.WithScheduler(s)
 }
 
 // RegisterTools 为调度器注册标准工具集。
+// Deprecated: use runtime.RegisterSchedulerTools.
 func RegisterTools(k *kernel.Kernel, sched *scheduler.Scheduler) error {
-	return RegisterScheduleTools(k.ToolRegistry(), sched)
+	return runtime.RegisterSchedulerTools(k, sched)
 }
 
 // RegisterToolRegistry 为调度器注册标准工具集。
+// Deprecated: use runtime.RegisterSchedulerToolRegistry.
 func RegisterToolRegistry(reg tool.Registry, sched *scheduler.Scheduler) error {
-	return RegisterScheduleTools(reg, sched)
-}
-
-func ensureState(k *kernel.Kernel) *state {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(stateKey, &state{})
-	st := actual.(*state)
-	if loaded {
-		return st
-	}
-	bridge.OnShutdown(200, func(_ context.Context, _ *kernel.Kernel) error {
-		if st.scheduler != nil {
-			st.scheduler.Stop()
-		}
-		return nil
-	})
-	return st
+	return runtime.RegisterSchedulerToolRegistry(reg, sched)
 }
