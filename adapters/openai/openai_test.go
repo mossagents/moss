@@ -106,7 +106,7 @@ func TestToOpenAITools(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 		},
 		{
-			Name:        "list_files",
+			Name:        "ls",
 			Description: "",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
@@ -489,3 +489,4 @@ func TestStreamIterator_TextAndToolCallMixed(t *testing.T) {
 		t.Error("second chunk should be tool call")
 	}
 }
+

@@ -23,7 +23,7 @@ const maxInlineCommandOutput = 8000
 func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
 	names := []string{}
 	if ws != nil || sb != nil {
-		names = append(names, "read_file", "write_file", "edit_file", "glob", "list_files", "grep")
+		names = append(names, "read_file", "write_file", "edit_file", "glob", "ls", "grep")
 	}
 	if exec != nil || sb != nil {
 		names = append(names, "run_command")
@@ -230,10 +230,10 @@ func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
 	}
 }
 
-// ─── list_files ──────────────────────────────────────
+// ─── ls ───────────────────────────────────────────────
 
 var listFilesSpec = tool.ToolSpec{
-	Name:        "list_files",
+	Name:        "ls",
 	Description: "List files matching a glob pattern relative to the workspace root. Hidden files are excluded by default.",
 	InputSchema: json.RawMessage(`{
 		"type": "object",

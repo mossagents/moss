@@ -120,7 +120,7 @@ func TestToAnthropicTools(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 		},
 		{
-			Name:        "list_files",
+			Name:        "ls",
 			Description: "",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
@@ -518,3 +518,4 @@ func TestMessageConversion_RoundTrip(t *testing.T) {
 		}
 	}
 }
+

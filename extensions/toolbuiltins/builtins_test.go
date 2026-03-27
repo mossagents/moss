@@ -163,7 +163,7 @@ func TestRegisterAll(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -554,7 +554,7 @@ func TestToolRiskLevels(t *testing.T) {
 		{"write_file", tool.RiskHigh},
 		{"edit_file", tool.RiskHigh},
 		{"glob", tool.RiskLow},
-		{"list_files", tool.RiskLow},
+		{"ls", tool.RiskLow},
 		{"grep", tool.RiskLow},
 		{"run_command", tool.RiskHigh},
 		{"ask_user", tool.RiskLow},
@@ -587,7 +587,7 @@ func TestInvalidInput(t *testing.T) {
 		{"write_file", writeFileHandler(sb)},
 		{"edit_file", editFileHandler(sb)},
 		{"glob", globHandler(sb)},
-		{"list_files", listFilesHandler(sb)},
+		{"ls", listFilesHandler(sb)},
 		{"grep", grepHandler(sb)},
 		{"run_command", runCommandHandler(sb)},
 		{"ask_user", askUserHandler(&mockUserIO{})},
@@ -624,7 +624,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -862,3 +862,4 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 		t.Errorf("expected workspace content, got %q", content)
 	}
 }
+

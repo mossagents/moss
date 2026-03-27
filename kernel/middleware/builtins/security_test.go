@@ -34,7 +34,7 @@ func TestIdentity_HasRole(t *testing.T) {
 
 func TestRBAC_AllowByRole(t *testing.T) {
 	rules := []RBACRule{
-		{Role: "viewer", Tools: []string{"read_file", "list_files"}, Action: RBACAllow},
+		{Role: "viewer", Tools: []string{"read_file", "ls"}, Action: RBACAllow},
 		{Role: "viewer", Tools: []string{"*"}, Action: RBACDeny},
 	}
 	mw := RBAC(rules)
@@ -224,3 +224,4 @@ func TestRiskBasedPolicy(t *testing.T) {
 		t.Fatalf("high risk should require approval, got %s", d)
 	}
 }
+

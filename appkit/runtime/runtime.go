@@ -411,7 +411,7 @@ func (s *coreToolSkill) Metadata() skill.Metadata {
 		Description: "Built-in filesystem editing/search, command execution, and user interaction tools",
 		Tools:       s.toolNames,
 		Prompts: []string{
-			"You have access to built-in tools: read_file, write_file, edit_file, glob, list_files, grep, run_command, ask_user.",
+			"You have access to built-in tools: read_file, write_file, edit_file, glob, ls, grep, run_command, ask_user.",
 		},
 	}
 }

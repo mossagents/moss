@@ -33,7 +33,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 		toolNames[spec.Name] = true
 	}
 	for _, name := range []string{
-		"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user",
+		"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user",
 		"read_memory", "write_memory", "list_memories", "delete_memory",
 		"offload_context", "compact_conversation", "write_todos", "update_task",
 		"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace",
@@ -139,3 +139,4 @@ func TestBuildDeepAgentKernel_PatchesOrphanToolCalls(t *testing.T) {
 		t.Fatalf("unexpected patch content %q", last.ToolResults[0].Content)
 	}
 }
+
