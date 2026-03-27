@@ -72,6 +72,7 @@ New package structure:
 Introduce canonical app APIs:
 
 - `appkit.BuildKernelWithRuntime(ctx context.Context, flags *AppFlags, io port.UserIO, opts ...runtime.Option) (*kernel.Kernel, error)`
+- `appkit/runtime.Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...runtime.Option) error` (canonical replacement for `extensions/defaults.Setup`)
 - `runtime.Option` model:
   - `runtime.WithBuiltinTools(enabled bool)`
   - `runtime.WithMCPServers(enabled bool)`
@@ -83,7 +84,7 @@ Introduce canonical app APIs:
 - appkit forwarding helpers:
   - `appkit.WithRuntimeDefaults()`
   - `appkit.WithRuntimeProgressiveSkills()`
-  - `appkit.WithRuntimeWithoutMCP()`
+  - `appkit.WithRuntimeNoMCPServers()`
 
 Legacy paths:
 
@@ -136,6 +137,9 @@ Legacy paths:
 - Keep explicit error propagation and contextual wrapping.
 - No broad catches.
 - Preserve current warning behavior for non-fatal load failures (parse/load warnings).
+- Fatal/non-fatal definitions used in this document:
+  - Fatal: returns non-nil error from runtime setup/build and blocks kernel boot/session creation.
+  - Non-fatal: logs warning and continues runtime setup.
 
 ## Testing Strategy
 
@@ -174,7 +178,10 @@ Legacy paths:
 - Temporary shim tests to ensure parity during deprecation window.
 - Deprecation warning mechanism:
   - During N and N+1, each shim package includes `Deprecated:` doc comments and changelog migration entries.
-  - CI enforces shim import usage only in shim tests (no new internal production imports from `extensions/*`).
+  - CI enforcement:
+    - Add a repository check script using `go list -deps` + grep to fail if non-shim packages import `github.com/mossagents/moss/extensions/`.
+    - Allowlist only shim package tests during N and N+1.
+    - Remove allowlist entries at N+2.
 
 ### Legacy-to-Runtime Symbol Mapping (authoritative)
 
@@ -191,6 +198,12 @@ Legacy paths:
 - `extensions/agentsx.Registry` -> `appkit/runtime.AgentRegistry`
 
 ## Migration Plan
+
+Version binding:
+
+- N = first release containing `appkit/runtime` (planned `v0.4.0`)
+- N+1 = migration grace release (planned `v0.5.0`)
+- N+2 = shim removal release (planned `v0.6.0`)
 
 ### Phase 1 — Introduce Runtime Package
 
