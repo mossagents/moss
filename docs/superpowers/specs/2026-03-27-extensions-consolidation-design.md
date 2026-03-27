@@ -81,6 +81,10 @@ Introduce canonical app APIs:
   - `runtime.WithAgents(enabled bool)`
   - `runtime.WithSessionStore(store session.SessionStore)`
   - `runtime.WithPlanning(enabled bool)`
+- Option conflict rules (deterministic):
+  - `WithSkills(false)` + `WithProgressiveSkills(true)` => setup returns fatal config error.
+  - Last-write-wins for repeated identical option keys.
+  - `WithSessionStore(nil)` => fatal config error.
 - appkit forwarding helpers:
   - `appkit.WithRuntimeDefaults()`
   - `appkit.WithRuntimeProgressiveSkills()`
@@ -101,7 +105,9 @@ Legacy paths:
 - Interface boundary:
   - Input: `workspace`, runtime config, kernel skill manager state.
   - Output: manifest set + registered/activated providers.
-  - Errors: invalid manifest parse, duplicate/unknown activation target, registration failures.
+  - Errors:
+    - setup-time parse/register failures for individual skills are non-fatal warnings.
+    - runtime API call failures (`activate_skill` invalid input/not found/register failure) are fatal for that tool call and returned explicitly.
 
 ### MCP
 
@@ -164,6 +170,12 @@ Legacy paths:
   - Defaults setup:
     - built-in core tools registration parity
     - `WithoutXxx`/`WithProgressiveSkills` option parity
+  - Bootstrap:
+    - same context discovery precedence and optional-file behavior
+  - Context/Planning:
+    - same tool registration set and policy hooks
+  - Sessionstore:
+    - same store attach/offload integration behavior and persistence semantics
 
 ### Stability/Regression
 
