@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	appconfig "github.com/mossagents/moss/config"
@@ -134,7 +134,7 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 // 按以下优先级扫描（project → global）：
 //
 //	Project: .agents/skills/, .agent/skills/, .moss/skills/
-//	Global:  ~/.copilot/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
+//	Global:  ~/.copilot/skills/, ~/.copilot/installed-plugins/**/skills/, ~/.agents/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
 func DiscoverSkills(workspace string) []*Skill {
 	manifests := DiscoverSkillManifests(workspace)
 	var skills []*Skill
@@ -152,11 +152,17 @@ func DiscoverSkills(workspace string) []*Skill {
 func DiscoverSkillManifests(workspace string) []Manifest {
 	var manifests []Manifest
 
+	appDir := "." + appconfig.AppName()
+	legacyAppDir := ".moss"
+
 	// Project-level 目录
 	projectDirs := []string{
 		filepath.Join(workspace, ".agents", "skills"),
 		filepath.Join(workspace, ".agent", "skills"),
-		filepath.Join(workspace, "."+appconfig.AppName(), "skills"),
+		filepath.Join(workspace, appDir, "skills"),
+	}
+	if appDir != legacyAppDir {
+		projectDirs = append(projectDirs, filepath.Join(workspace, legacyAppDir, "skills"))
 	}
 
 	// Global-level 目录
@@ -165,14 +171,14 @@ func DiscoverSkillManifests(workspace string) []Manifest {
 	if home != "" {
 		globalDirs = append(globalDirs,
 			filepath.Join(home, ".copilot", "skills"),
+			filepath.Join(home, ".agents", "skills"),
 			filepath.Join(home, ".agent", "skills"),
-			filepath.Join(home, "."+appconfig.AppName(), "skills"),
+			filepath.Join(home, appDir, "skills"),
 		)
-		if runtime.GOOS != "windows" {
-			globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))
-		} else {
-			globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))
+		if appDir != legacyAppDir {
+			globalDirs = append(globalDirs, filepath.Join(home, legacyAppDir, "skills"))
 		}
+		globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))
 	}
 
 	seen := make(map[string]bool) // 去重：skill name → loaded
@@ -196,7 +202,31 @@ func DiscoverSkillManifests(workspace string) []Manifest {
 			}
 		}
 	}
+	if home != "" {
+		for _, m := range scanInstalledPluginSkillManifestDirs(filepath.Join(home, ".copilot", "installed-plugins")) {
+			if !seen[m.Name] {
+				seen[m.Name] = true
+				manifests = append(manifests, m)
+			}
+		}
+	}
 
+	return manifests
+}
+
+// scanInstalledPluginSkillManifestDirs 扫描 ~/.copilot/installed-plugins 下所有 */skills 目录。
+func scanInstalledPluginSkillManifestDirs(root string) []Manifest {
+	var manifests []Manifest
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d == nil || !d.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(d.Name(), "skills") {
+			return nil
+		}
+		manifests = append(manifests, scanSkillManifestDir(path)...)
+		return filepath.SkipDir
+	})
 	return manifests
 }
 

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestParseSkillMDContent_Valid(t *testing.T) {
@@ -247,6 +249,35 @@ Global .agent skill.
 	t.Fatal("missing global-agent-skill from ~/.agent/skills")
 }
 
+func TestDiscoverSkills_GlobalAgentsDir(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	dir := filepath.Join(home, ".agents", "skills", "global-agents-skill")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(`---
+name: global-agents-skill
+description: Loaded from ~/.agents
+---
+Global .agents skill.
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := DiscoverSkills(workspace)
+	for _, s := range skills {
+		if s.name == "global-agents-skill" {
+			return
+		}
+	}
+
+	t.Fatal("missing global-agents-skill from ~/.agents/skills")
+}
+
 func TestDiscoverSkills_ProjectAgentPrecedenceOverAppDir(t *testing.T) {
 	workspace := t.TempDir()
 
@@ -357,6 +388,86 @@ Body content.
 	if !strings.Contains(got.Source, filepath.Join(".agent", "skills", "manifest-skill", "SKILL.md")) {
 		t.Fatalf("unexpected source path: %q", got.Source)
 	}
+}
+
+func TestDiscoverSkillManifests_AppDirIncludesLegacyMoss(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+
+	projectLegacyDir := filepath.Join(workspace, ".moss", "skills", "legacy-project")
+	if err := os.MkdirAll(projectLegacyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectLegacyDir, "SKILL.md"), []byte(`---
+name: legacy-project
+description: legacy project path
+---
+legacy project body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	globalLegacyDir := filepath.Join(home, ".moss", "skills", "legacy-global")
+	if err := os.MkdirAll(globalLegacyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalLegacyDir, "SKILL.md"), []byte(`---
+name: legacy-global
+description: legacy global path
+---
+legacy global body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifests := DiscoverSkillManifests(workspace)
+	byName := map[string]Manifest{}
+	for _, mf := range manifests {
+		byName[mf.Name] = mf
+	}
+
+	if _, ok := byName["legacy-project"]; !ok {
+		t.Fatal("missing legacy-project from .moss/skills")
+	}
+	if _, ok := byName["legacy-global"]; !ok {
+		t.Fatal("missing legacy-global from ~/.moss/skills")
+	}
+}
+
+func TestDiscoverSkillManifests_GlobalInstalledPluginsSkills(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	pluginSkillDir := filepath.Join(home, ".copilot", "installed-plugins", "awesome-copilot", "project-planning", "skills", "create-implementation-plan")
+	if err := os.MkdirAll(pluginSkillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(pluginSkillDir, "SKILL.md"), []byte(`---
+name: create-implementation-plan
+description: create implementation plans
+---
+plan body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifests := DiscoverSkillManifests(workspace)
+	for _, mf := range manifests {
+		if mf.Name == "create-implementation-plan" {
+			if !strings.Contains(mf.Source, filepath.Join("installed-plugins", "awesome-copilot", "project-planning", "skills", "create-implementation-plan", "SKILL.md")) {
+				t.Fatalf("unexpected source: %q", mf.Source)
+			}
+			return
+		}
+	}
+	t.Fatal("missing create-implementation-plan from ~/.copilot/installed-plugins/**/skills")
 }
 
 func TestParseSkillMD_File(t *testing.T) {
