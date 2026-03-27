@@ -3,28 +3,33 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/mossagents/moss/agent"
+	appconfig "github.com/mossagents/moss/config"
+	toolbuiltins "github.com/mossagents/moss/extensions/toolbuiltins"
 	"github.com/mossagents/moss/extensions/agentsx"
-	"github.com/mossagents/moss/extensions/defaults"
 	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/mcp"
 	"github.com/mossagents/moss/skill"
 )
 
 type config struct {
-	builtin        bool
-	mcpServers     bool
-	skills         bool
-	progressive    bool
-	agents         bool
-	sessionStore   session.SessionStore
+	builtin         bool
+	mcpServers      bool
+	skills          bool
+	progressive     bool
+	agents          bool
+	sessionStore    session.SessionStore
 	sessionStoreSet bool
-	planning       bool
+	planning        bool
 }
 
-// Option controls runtime setup behavior.
 type Option func(*config)
 
 func defaultConfig() config {
@@ -44,8 +49,8 @@ func WithSkills(enabled bool) Option       { return func(c *config) { c.skills =
 func WithProgressiveSkills(enabled bool) Option {
 	return func(c *config) { c.progressive = enabled }
 }
-func WithAgents(enabled bool) Option { return func(c *config) { c.agents = enabled } }
-func WithPlanning(enabled bool) Option { return func(c *config) { c.planning = enabled } }
+func WithAgents(enabled bool) Option       { return func(c *config) { c.agents = enabled } }
+func WithPlanning(enabled bool) Option     { return func(c *config) { c.planning = enabled } }
 func WithSessionStore(store session.SessionStore) Option {
 	return func(c *config) {
 		c.sessionStore = store
@@ -69,28 +74,85 @@ func resolve(opts ...Option) (config, error) {
 	return cfg, nil
 }
 
-// Setup composes default runtime features onto an existing kernel.
 func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...Option) error {
 	cfg, err := resolve(opts...)
 	if err != nil {
 		return err
 	}
-	var mapped []defaults.Option
-	if !cfg.builtin {
-		mapped = append(mapped, defaults.WithoutBuiltin())
+	logger := logging.GetLogger()
+	deps := skillsx.Deps(k)
+
+	if cfg.builtin {
+		if err := skillsx.Manager(k).Register(ctx, &coreToolSkill{}, deps); err != nil {
+			return err
+		}
 	}
-	if !cfg.mcpServers {
-		mapped = append(mapped, defaults.WithoutMCPServers())
+
+	if cfg.mcpServers {
+		globalCfg, _ := appconfig.LoadGlobalConfig()
+		projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
+		merged := appconfig.MergeConfigs(globalCfg, projectCfg)
+
+		for _, sc := range merged.Skills {
+			if !sc.IsEnabled() || !sc.IsMCP() {
+				continue
+			}
+			mcpServer := mcp.NewMCPServer(sc)
+			if err := skillsx.Manager(k).Register(ctx, mcpServer, deps); err != nil {
+				logger.WarnContext(ctx, "failed to load MCP server",
+					slog.String("server", sc.Name),
+					slog.Any("error", err),
+				)
+			}
+		}
 	}
-	if !cfg.skills {
-		mapped = append(mapped, defaults.WithoutSkills())
+
+	if cfg.skills {
+		manifests := skill.DiscoverSkillManifests(workspaceDir)
+		if cfg.progressive {
+			skillsx.SetManifests(k, manifests)
+			skillsx.EnableProgressive(k)
+			if err := skillsx.RegisterProgressiveTools(k); err != nil {
+				return err
+			}
+		} else {
+			for _, mf := range manifests {
+				ps, err := skill.ParseSkillMD(mf.Source)
+				if err != nil {
+					logger.WarnContext(ctx, "failed to parse skill",
+						slog.String("source", mf.Source),
+						slog.Any("error", err),
+					)
+					continue
+				}
+				if err := skillsx.Manager(k).Register(ctx, ps, deps); err != nil {
+					logger.WarnContext(ctx, "failed to load skill",
+						slog.String("skill", ps.Metadata().Name),
+						slog.Any("error", err),
+					)
+				}
+			}
+		}
 	}
-	if cfg.progressive {
-		mapped = append(mapped, defaults.WithProgressiveSkills())
+
+	if cfg.agents {
+		agentDirs := []string{
+			filepath.Join(workspaceDir, ".agents", "agents"),
+		}
+		if home, err := os.UserHomeDir(); err == nil {
+			agentDirs = append(agentDirs, filepath.Join(home, ".moss", "agents"))
+		}
+		registry := agentsx.Registry(k)
+		for _, dir := range agentDirs {
+			if err := registry.LoadDir(dir); err != nil {
+				logger.WarnContext(ctx, "failed to load agents",
+					slog.String("dir", dir),
+					slog.Any("error", err),
+				)
+			}
+		}
 	}
-	if err := defaults.Setup(ctx, k, workspaceDir, mapped...); err != nil {
-		return err
-	}
+
 	return nil
 }
 
@@ -117,3 +179,26 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 func AgentRegistry(k *kernel.Kernel) *agent.Registry {
 	return agentsx.Registry(k)
 }
+
+type coreToolSkill struct {
+	toolNames []string
+}
+
+func (s *coreToolSkill) Metadata() skill.Metadata {
+	return skill.Metadata{
+		Name:        "core",
+		Version:     "0.3.0",
+		Description: "Built-in filesystem editing/search, command execution, and user interaction tools",
+		Tools:       s.toolNames,
+		Prompts: []string{
+			"You have access to built-in tools: read_file, write_file, edit_file, glob, list_files, grep, run_command, ask_user.",
+		},
+	}
+}
+
+func (s *coreToolSkill) Init(ctx context.Context, deps skill.Deps) error {
+	s.toolNames = toolbuiltins.RegisteredToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
+	return toolbuiltins.RegisterAll(deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
+}
+
+func (s *coreToolSkill) Shutdown(_ context.Context) error { return nil }
