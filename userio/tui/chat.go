@@ -330,10 +330,10 @@ func (m chatModel) View() string {
 		}
 		body = lipgloss.JoinHorizontal(
 			lipgloss.Top,
+			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
 			sidebarBoxStyle.Width(m.sidebarWidth()).Render(
 				sidebarTitleStyle.Render(title)+"\n\n"+sidebarContent,
 			),
-			lipgloss.NewStyle().Width(m.mainWidth()).Render(body),
 		)
 	}
 	b.WriteString(body)
