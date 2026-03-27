@@ -360,6 +360,39 @@ func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
 	}
 }
 
+func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "echo_json"}, func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in map[string]any
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, err
+		}
+		return json.Marshal(in)
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+
+	l := &AgentLoop{Tools: reg, IO: kt.NewRecorderIO()}
+	sess := &session.Session{ID: "sess-json-repair", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
+
+	call := port.ToolCall{
+		ID:        "c1",
+		Name:      "echo_json",
+		Arguments: json.RawMessage(`{"a":1`),
+	}
+	result := l.executeSingleToolCall(context.Background(), sess, call)
+	if result.IsError {
+		t.Fatalf("expected repaired args to succeed, got error: %s", result.Content)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(result.Content), &out); err != nil {
+		t.Fatalf("decode result: %v", err)
+	}
+	if out["a"] != float64(1) {
+		t.Fatalf("unexpected result: %+v", out)
+	}
+}
+
 type blockingLLM struct {
 	calls int32
 }
@@ -389,10 +422,14 @@ type flakyStreamingLLM struct {
 	failures int32
 	calls    int32
 	chunks   []port.StreamChunk
+	resp     *port.CompletionResponse
 }
 
 func (f *flakyStreamingLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
-	return nil, nil
+	if f.resp != nil {
+		return f.resp, nil
+	}
+	return nil, context.DeadlineExceeded
 }
 
 func (f *flakyStreamingLLM) Stream(_ context.Context, _ port.CompletionRequest) (port.StreamIterator, error) {
@@ -433,6 +470,35 @@ func (it *errIterator) Next() (port.StreamChunk, error) {
 }
 
 func (it *errIterator) Close() error { return nil }
+
+type toolThenErrIterator struct {
+	calls int
+}
+
+func (it *toolThenErrIterator) Next() (port.StreamChunk, error) {
+	it.calls++
+	switch it.calls {
+	case 1:
+		tc := port.ToolCall{ID: "call_t", Name: "noop", Arguments: json.RawMessage(`{"x":1}`)}
+		return port.StreamChunk{ToolCall: &tc}, nil
+	case 2:
+		return port.StreamChunk{}, io.ErrUnexpectedEOF
+	default:
+		return port.StreamChunk{}, io.EOF
+	}
+}
+
+func (it *toolThenErrIterator) Close() error { return nil }
+
+type toolThenErrLLM struct{}
+
+func (t *toolThenErrLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	return nil, nil
+}
+
+func (t *toolThenErrLLM) Stream(_ context.Context, _ port.CompletionRequest) (port.StreamIterator, error) {
+	return &toolThenErrIterator{}, nil
+}
 
 func TestLoopLLMRetry_Sync(t *testing.T) {
 	l := &AgentLoop{
@@ -481,6 +547,11 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 			{Delta: "ok"},
 			{Done: true, Usage: &port.TokenUsage{TotalTokens: 3}},
 		},
+		resp: &port.CompletionResponse{
+			Message:    port.Message{Role: port.RoleAssistant, Content: "fallback"},
+			StopReason: "end_turn",
+			Usage:      port.TokenUsage{TotalTokens: 2},
+		},
 	}
 	l := &AgentLoop{
 		LLM:   streamLLM,
@@ -506,10 +577,54 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if result.Output != "ok" {
-		t.Fatalf("Output = %q, want ok", result.Output)
+	if result.Output != "fallback" && result.Output != "ok" {
+		t.Fatalf("Output = %q, want fallback|ok", result.Output)
 	}
-	if got := atomic.LoadInt32(&streamLLM.calls); got != 2 {
-		t.Fatalf("expected 2 stream attempts, got %d", got)
+	if got := atomic.LoadInt32(&streamLLM.calls); got != 1 {
+		t.Fatalf("expected 1 stream attempt with sync fallback, got %d", got)
+	}
+}
+
+func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "noop"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	}); err != nil {
+		t.Fatalf("register noop: %v", err)
+	}
+	l := &AgentLoop{
+		LLM:   &toolThenErrLLM{},
+		Tools: reg,
+		IO:    kt.NewRecorderIO(),
+		Config: LoopConfig{
+			LLMRetry: RetryConfig{
+				MaxRetries:   1,
+				InitialDelay: time.Millisecond,
+				MaxDelay:     5 * time.Millisecond,
+			},
+		},
+	}
+	sess := &session.Session{
+		ID:       "test-tail-json-error",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "run"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	foundToolResult := false
+	for _, m := range sess.Messages {
+		if len(m.ToolResults) > 0 {
+			foundToolResult = true
+			break
+		}
+	}
+	if !foundToolResult {
+		t.Fatal("expected tool result appended despite stream tail json error")
 	}
 }

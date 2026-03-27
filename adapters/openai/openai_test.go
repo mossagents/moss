@@ -416,6 +416,32 @@ func TestStreamIterator_EmptyToolArgs(t *testing.T) {
 	}
 }
 
+func TestStreamIterator_TruncatedEscapedToolArgs_Repaired(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-8","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_z","type":"function","function":{"name":"echo","arguments":"{\"path\":\"C:\\\\Users\\\\foo\\\""}}]},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-8","object":"chat.completion.chunk","created":1,"model":"gpt-4o",
+		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
+	}`))
+
+	var tc *port.ToolCall
+	for _, p := range it.pending {
+		if p.ToolCall != nil {
+			tc = p.ToolCall
+		}
+	}
+	if tc == nil {
+		t.Fatal("expected tool call")
+	}
+	if !json.Valid(tc.Arguments) {
+		t.Fatalf("expected repaired valid JSON args, got %s", tc.Arguments)
+	}
+}
+
 func TestStreamIterator_UsageTracking(t *testing.T) {
 	it := newTestIterator()
 
@@ -489,4 +515,3 @@ func TestStreamIterator_TextAndToolCallMixed(t *testing.T) {
 		t.Error("second chunk should be tool call")
 	}
 }
-

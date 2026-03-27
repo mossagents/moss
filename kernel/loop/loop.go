@@ -2,10 +2,12 @@ package loop
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -255,6 +257,11 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 			l.recordBreakerSuccess()
 			return callAttemptResult{resp: resp, streamed: true}
 		}
+		// 流式失败时，尝试一次同步 fallback（同一轮内，避免直接把流式抖动暴露给用户）。
+		if fallbackResp, fallbackErr := l.LLM.Complete(ctx, req); fallbackErr == nil {
+			l.recordBreakerSuccess()
+			return callAttemptResult{resp: fallbackResp, streamed: false}
+		}
 
 		l.recordBreakerFailure()
 		var streamErr *retryableCallError
@@ -292,7 +299,16 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 			break
 		}
 		if err != nil {
-			return nil, &retryableCallError{err: err, retryable: !emittedContent}
+			if emittedContent && len(toolCalls) > 0 && isRecoverableStreamTailError(err) {
+				stopReason = "tool_use"
+				if l.IO != nil {
+					l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
+				}
+				break
+			}
+			// 只要还没产生可执行的 tool call，就允许上层重试。
+			retryable := !emittedContent || len(toolCalls) == 0
+			return nil, &retryableCallError{err: err, retryable: retryable}
 		}
 
 		if chunk.Delta != "" {
@@ -338,6 +354,14 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		Usage:      usage,
 		StopReason: stopReason,
 	}, nil
+}
+
+func isRecoverableStreamTailError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unexpected end of json input") || strings.Contains(msg, "unexpected eof")
 }
 
 func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
@@ -414,10 +438,11 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		ToolName:  call.Name,
 		CallID:    call.ID,
 	})
+	repairedArgs := repairToolArguments(call.Arguments)
 
 	// 执行工具
 	toolStart := time.Now()
-	output, err := handler(toolCtx, call.Arguments)
+	output, err := handler(toolCtx, repairedArgs)
 	toolDur := time.Since(toolStart)
 
 	var result port.ToolResult
@@ -460,6 +485,78 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 
 	return result
+}
+
+func repairToolArguments(args json.RawMessage) json.RawMessage {
+	trimmed := strings.TrimSpace(string(args))
+	if trimmed == "" {
+		return json.RawMessage(`{}`)
+	}
+	if json.Valid([]byte(trimmed)) {
+		return json.RawMessage(trimmed)
+	}
+	repaired := repairTruncatedJSON(trimmed)
+	if json.Valid([]byte(repaired)) {
+		return json.RawMessage(repaired)
+	}
+	return args
+}
+
+func repairTruncatedJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	stack := make([]rune, 0, 8)
+	inString := false
+	escaped := false
+
+	for _, r := range s {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, r)
+		case '}':
+			if len(stack) > 0 && stack[len(stack)-1] == '{' {
+				stack = stack[:len(stack)-1]
+			}
+		case ']':
+			if len(stack) > 0 && stack[len(stack)-1] == '[' {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if inString && escaped {
+		s += `\`
+		escaped = false
+	}
+	if inString {
+		s += `"`
+	}
+	s = strings.TrimRight(s, ", \t\r\n")
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i] == '{' {
+			s += "}"
+		} else {
+			s += "]"
+		}
+	}
+	return s
 }
 
 func (l *AgentLoop) withSideEffectsLock(fn func()) {

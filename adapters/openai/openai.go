@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/openai/openai-go"
@@ -307,11 +308,17 @@ func (it *streamIterator) Next() (port.StreamChunk, error) {
 			return port.StreamChunk{}, io.EOF
 		}
 		if !it.stream.Next() {
+			// 即使 SSE 末尾报错，也先尽量 flush 已累积的工具参数，减少截断影响。
+			it.flushToolCalls()
 			if err := it.stream.Err(); err != nil {
+				if len(it.pending) > 0 {
+					chunk := it.pending[0]
+					it.pending = it.pending[1:]
+					return chunk, nil
+				}
 				return port.StreamChunk{}, err
 			}
-			// 流结束，发出已累积的工具调用和完成信号
-			it.flushToolCalls()
+			// 流正常结束，发出完成信号
 			it.pending = append(it.pending, port.StreamChunk{
 				Done:  true,
 				Usage: &it.usage,
@@ -373,6 +380,7 @@ func (it *streamIterator) flushToolCalls() {
 		if args == "" {
 			args = "{}"
 		}
+		args = normalizeJSONArguments(args)
 		tc := port.ToolCall{
 			ID:        tb.id,
 			Name:      tb.name,
@@ -386,4 +394,74 @@ func (it *streamIterator) flushToolCalls() {
 func (it *streamIterator) Close() error {
 	it.done = true
 	return it.stream.Close()
+}
+
+func normalizeJSONArguments(args string) string {
+	trimmed := strings.TrimSpace(args)
+	if trimmed == "" {
+		return "{}"
+	}
+	if json.Valid([]byte(trimmed)) {
+		return trimmed
+	}
+	repaired := repairTruncatedJSON(trimmed)
+	if json.Valid([]byte(repaired)) {
+		return repaired
+	}
+	return trimmed
+}
+
+func repairTruncatedJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	stack := make([]rune, 0, 8)
+	inString := false
+	escaped := false
+	for _, r := range s {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, r)
+		case '}':
+			if len(stack) > 0 && stack[len(stack)-1] == '{' {
+				stack = stack[:len(stack)-1]
+			}
+		case ']':
+			if len(stack) > 0 && stack[len(stack)-1] == '[' {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+	if inString && escaped {
+		s += `\`
+	}
+	if inString {
+		s += `"`
+	}
+	s = strings.TrimRight(s, ", \t\r\n")
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i] == '{' {
+			s += "}"
+		} else {
+			s += "]"
+		}
+	}
+	return s
 }
