@@ -112,7 +112,7 @@ type Registry interface {
 | `edit_file` | High | 按 old/new 字符串安全替换文件内容 |
 | `glob` | Low | 按 glob 模式查找文件 |
 | `list_files` | Low | Glob 模式列出文件 |
-| `search_text` | Low | 正则搜索文件内容 |
+| `grep` | Low | 正则搜索文件内容 |
 | `run_command` | High | 执行 shell 命令 |
 | `ask_user` | Medium | 向用户请求输入 |
 | `read_memory` | Low | 读取持久 `/memories` 文件 |
@@ -266,10 +266,10 @@ kernel/loop                         (imports 以上所有)
 kernel/kernel.go                    (Kernel 入口，组合所有子系统)
     ↑ references
 skill                               (Skill 管理，imports tool, middleware, sandbox, port)
-extensions/defaults/core_tool_skill.go (默认 core skill 装配，imports skill, extensions/toolbuiltins)
-extensions/skillsx, extensions/agentsx (skill/agent feature API 的扩展入口)
+appkit/runtime                      (runtime 主装配层：skills/agents/mcp/builtin 组合入口)
+extensions/defaults, extensions/skillsx, extensions/agentsx (兼容 shim，转发到 appkit/runtime)
 extensions/knowledgex               (knowledge + embedder 组合扩展)
-extensions/defaults/setup.go        (默认扩展装配，imports skill, builtins)
+extensions/toolbuiltins             (内置工具定义与注册实现，被 appkit/runtime 复用)
     ↑ used by
 appkit                            (开发者友好装配)
     ↑ used by
