@@ -1,183 +1,140 @@
-# 🌿 Moss
+# Moss
 
-**Minimal Agent Runtime Kernel** — 5 核心概念 + 2 Port 接口，零外部依赖。
+**Batteries-included agent runtime for Go.**  
+**面向 Go 的“开箱即用”智能体运行时。**
 
-> 类比 Linux Kernel：核心最小化、接口稳定、可扩展。  
-> Kernel 只提供 Agent 运行的不可约原语，所有业务逻辑在上层应用中实现。  
-> **设计为库优先 (library-first)**，可以嵌入到任何 Go 应用中作为 AI Agent 基座。
+Moss gives you a ready-to-run agent stack (CLI + runtime + extension surface) while keeping the core composable and library-first.  
+Moss 提供可直接运行的智能体栈（CLI + Runtime + 扩展面），同时保持核心可组合、可嵌入（library-first）。
 
-## 架构
+---
 
-```
-┌──────────────────────────────────────────────────────┐
-│              Applications / Agents                    │
-│  (CLI, TUI, Web 服务, 自定义 Agent, ...)              │
-├──────────────────────────────────────────────────────┤
-│              Middleware Chain                          │
-│  (PolicyCheck, EventEmitter, Logger, 自定义)          │
-├──────────────────────────────────────────────────────┤
-│  KERNEL: Loop + Tool + Session + Middleware           │
-├──────────────────────────────────────────────────────┤
-│  Ports: LLM (Complete/Stream) + UserIO (Send/Ask)     │
-├──────────────────────────────────────────────────────┤
-│  Adapters: Claude / OpenAI / 自定义                    │
-└──────────────────────────────────────────────────────┘
-```
+## Why Moss / 为什么选择 Moss
 
-### 核心概念
+- **Start fast**: run a coding agent in terminal with `moss` in minutes.  
+  **快速启动**：几分钟内用 `moss` 在终端跑起代码智能体。
+- **Build your own**: integrate as a Go library and control runtime behavior.  
+  **可深度集成**：作为 Go 库嵌入现有系统，按需控制运行时行为。
+- **Production-minded defaults**: policy, sandbox, sessions, tools, and extension hooks.  
+  **面向生产的默认能力**：策略、沙箱、会话、工具系统与扩展钩子齐备。
 
-| 概念 | 职责 | 类比 |
-|---|---|---|
-| **Loop** | Agent 执行循环 (think→act→observe) | Process Scheduler |
-| **Tool** | 能力注册、查找、执行 | System Calls |
-| **Session** | 执行上下文 (消息+状态+预算) | Process + Memory |
-| **Middleware** | 统一扩展点 (Policy/Events/Logger) | Kernel Modules |
-| **Workspace/Executor** | 文件与命令执行抽象 | Filesystem + Process Isolation |
+---
 
-### Port 接口
+## What's included / 开箱包含
 
-| Port | 职责 |
-|---|---|
-| **LLM** | 模型调用 (Complete + Stream) |
-| **UserIO** | 结构化交互协议 (Send + Ask) |
+- **Planning & task tracking**: built-in task-flow capabilities (e.g. deepagent preset tools).  
+  **任务规划与追踪**：内置任务流能力（如 deepagent 预设工具）。
+- **Filesystem + command execution**: file tools and command execution with trust-level policy.  
+  **文件与命令执行**：文件工具与命令执行，支持 trust-level 策略控制。
+- **Sub-agent delegation**: task delegation patterns for multi-agent workflows.  
+  **子代理委派**：支持多代理工作流中的任务拆分与委派。
+- **Interactive TUI + headless run**: use `moss` for TUI, `moss run --goal ...` for scripted flow.  
+  **交互式 TUI + 非交互运行**：`moss` 启动 TUI，`moss run --goal ...` 用于脚本化执行。
+- **Extension-friendly architecture**: middleware, adapters, and appkit assembly APIs.  
+  **扩展友好架构**：中间件、适配器与 appkit 装配 API。
 
-## 快速开始
+---
 
-### 安装
+## Quickstart / 快速开始
+
+### 1) Install CLI / 安装 CLI
 
 ```bash
 go install github.com/mossagents/moss/cmd/moss@latest
 ```
 
-### CLI 使用
+### 2) Run in terminal / 在终端运行
 
 ```bash
+# Interactive TUI (default)
 # 交互式 TUI（默认）
 moss
 
-# 带参数启动
-moss --provider openai --model gpt-4o
+# Non-interactive run
+# 非交互执行
+moss run --goal "Fix the bug in main.go" --workspace .
 
-# 非交互式
-moss run --goal "Fix the bug in main.go" --workspace ./project
-
-# 版本信息
+# Version
+# 版本
 moss version
 ```
 
-### 作为库集成（3 步）
+### 3) Embed as a Go library / 作为 Go 库集成
 
 ```go
 package main
 
 import (
-    "context"
-    "os"
+	"context"
+	"os"
 
-    "github.com/mossagents/moss/appkit"
-    "github.com/mossagents/moss/kernel/port"
-    "github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func main() {
-    ctx := context.Background()
-    k, _ := appkit.BuildKernel(ctx, &appkit.AppFlags{
-        Provider:  "openai",
-        Workspace: ".",
-        APIKey:    os.Getenv("OPENAI_API_KEY"),
-    }, port.NewPrintfIO(os.Stdout))
+	ctx := context.Background()
 
-    k.Boot(ctx)
-    defer k.Shutdown(ctx)
+	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
+		Provider:  "openai",
+		Model:     "gpt-4o",
+		Workspace: ".",
+		APIKey:    os.Getenv("OPENAI_API_KEY"),
+	}, port.NewConsoleIO())
+	if err != nil {
+		panic(err)
+	}
 
-    sess, _ := k.NewSession(ctx, session.SessionConfig{
-        Goal:     "Fix the bug in main.go",
-        MaxSteps: 50,
-    })
-    sess.AppendMessage(port.Message{
-        Role:    port.RoleUser,
-        Content: "Fix the bug in main.go",
-    })
+	if err := k.Boot(ctx); err != nil {
+		panic(err)
+	}
+	defer k.Shutdown(ctx)
 
-    result, _ := k.Run(ctx, sess)
-    _ = result // result.Output 包含最终回复
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:     "Fix the bug in main.go",
+		MaxSteps: 50,
+	})
+	if err != nil {
+		panic(err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "Fix the bug in main.go"})
+
+	result, err := k.Run(ctx, sess)
+	if err != nil {
+		panic(err)
+	}
+	println(result.Output)
 }
 ```
 
-### 动态模型路由（按任务能力选择模型）
+> For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`.  
+> 如果你希望按官方推荐路径装配扩展，使用 `appkit.BuildKernelWithExtensions(...)`。
 
-Moss 支持在一个配置文件中声明多个模型，并按任务需求动态路由：
+---
 
-- 可配置模型能力（如 `image_generation`、`reasoning`）
-- 可配置成本等级（`cost_tier`）
-- 可按任务约束选择低成本或高能力模型
-- 找不到可用模型时返回详细错误
+## CLI at a glance / CLI 能力速览
 
-示例配置 `models.yaml`：
+### `moss`
 
-```yaml
-models:
-    - name: gpt-4o
-        provider: openai
-        model: gpt-4o
-        cost_tier: 3
-        capabilities: [text_generation, code_generation, image_understanding, function_calling, reasoning]
-        is_default: true
+Launches interactive TUI.  
+启动交互式 TUI。
 
-    - name: gpt-4o-mini
-        provider: openai
-        model: gpt-4o-mini
-        cost_tier: 1
-        capabilities: [text_generation, code_generation, function_calling]
+### `moss run --goal "..."`
 
-    - name: image-gen
-        provider: openai
-        model: gpt-image-1
-        cost_tier: 2
-        capabilities: [image_generation]
-```
+Runs one goal with flags like `--workspace`, `--provider`, `--model`, `--trust`.  
+以单目标执行，支持 `--workspace`、`--provider`、`--model`、`--trust` 等参数。
 
-在 Kernel 中启用路由器：
+### `moss version`
 
-```go
-router, err := adapters.NewModelRouterFromFile("models.yaml")
-if err != nil {
-        panic(err)
-}
+Prints CLI version.  
+输出 CLI 版本。
 
-k := kernel.New(
-        kernel.WithLLM(router),
-        kernel.WithUserIO(port.NewPrintfIO(os.Stdout)),
-        kernel.WithSandbox(must(sandbox.NewLocal("."))),
-)
-```
+---
 
-为单次任务声明能力需求：
+## Configuration / 配置
 
-```go
-sess, _ := k.NewSession(ctx, session.SessionConfig{
-        Goal: "生成一张海报图",
-        ModelConfig: port.ModelConfig{
-                Requirements: &port.TaskRequirement{
-                        Capabilities: []port.ModelCapability{port.CapImageGeneration},
-                        MaxCostTier:  2,
-                        PreferCheap:  true,
-                },
-        },
-})
-```
-
-### 标准 UserIO 实现
-
-| 实现 | 场景 | 用法 |
-|---|---|---|
-| `NoOpIO` | 后台任务、纯自动化 | `&port.NoOpIO{}` |
-| `PrintfIO` | CLI、日志输出 | `port.NewPrintfIO(os.Stdout)` |
-| `BufferIO` | 测试 | `port.NewBufferIO()` |
-
-## 配置
-
-全局配置文件 `~/.moss/config.yaml`：
+Global config path: `~/.moss/config.yaml`  
+全局配置路径：`~/.moss/config.yaml`
 
 ```yaml
 provider: openai
@@ -191,236 +148,114 @@ skills:
     args: ["-y", "@example/mcp-server"]
 ```
 
-**优先级**：CLI 参数 > 配置文件 > 环境变量 (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`)
+Priority: CLI flags > config file > env vars  
+优先级：CLI 参数 > 配置文件 > 环境变量
 
-### 第三方应用自定义配置目录
+Common env vars / 常用环境变量：
 
-作为库集成时，可在启动早期设置应用名：
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `ANTHROPIC_API_KEY`
 
-```go
-skill.SetAppName("mosscode")
-_ = skill.EnsureMossDir()
-```
+---
 
-此时全局配置目录会从 `~/.moss` 变为 `~/.mosscode`（全局配置文件固定为 `config.yaml`）。
+## Architecture / 架构
 
-### System Prompt 模板覆盖
+Moss is organized into a minimal runtime core plus top-level feature packages.  
+Moss 由最小运行时核心与顶层功能包组成。
 
-Moss 与 examples 现已支持通过模板文件覆盖默认 system prompt：
+- `kernel/`: runtime primitives (loop, tool, session, middleware, port).  
+  `kernel/`：运行时原语（loop、tool、session、middleware、port）。
+- `appkit/`: high-level assembly helpers.  
+  `appkit/`：高层装配工具。
+- `agent/`, `skill/`, `bootstrap/`, `knowledge/`, `scheduler/`, `gateway/`: feature/support packages.  
+  `agent/`、`skill/`、`bootstrap/`、`knowledge/`、`scheduler/`、`gateway/`：功能与支撑包。
+- `cmd/moss/`: terminal CLI and TUI entrypoints.  
+  `cmd/moss/`：终端 CLI 与 TUI 入口。
 
-- 项目级（优先）：`./.<appName>/system_prompt.tmpl`
-- 全局级：`~/.<appName>/system_prompt.tmpl`
+---
 
-未提供覆盖模板时，使用内置默认模板。
+## Presets & customization / 预设与定制
 
-## 示例应用
+- Use `presets/deepagent` for deepagents-style defaults (planning, context compaction, task lifecycle).  
+  使用 `presets/deepagent` 可获得 deepagents 风格默认能力（规划、上下文压缩、任务生命周期）。
+- Add middleware for policy, audit, events, and guardrails.  
+  通过 middleware 扩展策略、审计、事件与防护逻辑。
+- Add custom tools/skills/MCP servers via runtime setup and config.  
+  通过 runtime setup 与配置扩展自定义工具、技能和 MCP 服务。
 
-仓库内置 5 个示例应用：
+---
 
-| 示例 | 说明 | 入口 |
-|---|---|---|
-| `mosscode` | 代码助手（默认 TUI） | `examples/mosscode/main.go` |
-| `mosswork` | 多 Agent 任务编排（Manager/Worker） | `examples/mosswork/main.go` |
-| `mossclaw` | Web 抓取 Agent | `examples/mossclaw/main.go` |
-| `mossquant` | 有状态自主循环 Agent（可插拔领域适配器） | `examples/mossquant/main.go` |
-| `mossroom` | 多人实时 Agent 游戏（WebSocket + Per-Room Kernel） | `examples/mossroom/main.go` |
+## Examples / 示例
 
-运行方式（示例）：
+Reference applications live in `examples/`:
+示例应用位于 `examples/`：
+
+- `examples/mosscode/` - coding assistant
+- `examples/mosswork/` - multi-agent orchestration
+- `examples/mossclaw/` - web automation/scraping workflows
+- `examples/mossquant/` - stateful autonomous loop patterns
+- `examples/mossroom/` - realtime multi-user agent game
+
+Run any example:
+运行任一示例：
 
 ```bash
 cd examples/mosscode
 go run .
 ```
 
-每个示例目录下均提供独立 README 说明。
+---
 
-## 项目结构
+## Documentation / 文档导航
 
-```
-moss/
-├── cmd/moss/                # CLI 入口
-│   ├── main.go              # 命令路由 + 配置加载 + Kernel 构建
-│   ├── tui/                 # Bubble Tea 交互式 TUI
-│   │   ├── app.go           # 状态机 (Welcome → Chat)
-│   │   ├── welcome.go       # 配置输入页
-│   │   ├── chat.go          # 聊天页 + 斜杠命令
-│   │   ├── message.go       # 消息渲染 (8 种类型)
-│   │   ├── userio.go        # BridgeIO (TUI ↔ Kernel 桥接)
-│   │   ├── systemprompt.go  # 系统提示词构建
-│   │   └── styles.go        # Lipgloss 样式
-│   └── tui_test.go
-├── adapters/                # LLM Adapter 实现
-│   ├── claude/              # Anthropic Claude (SDK)
-│   └── openai/              # OpenAI 兼容 (SDK)
-│   ├── router.go             # 多模型动态路由 (ModelRouter)
-│   └── router_test.go
-├── examples/                # 示例应用
-│   ├── mosscode/            # 代码助手（TUI）
-│   ├── mosswork/            # 多 Agent 编排
-│   ├── mossclaw/            # Web 抓取
-│   ├── mossquant/           # 有状态循环 Agent（模拟交易）
-│   └── mossroom/            # 多人实时 Agent 游戏（WebSocket）
-├── kernel/                  # Agent Runtime Kernel (零外部依赖)
-│   ├── kernel.go            # Kernel 入口 (New/Boot/Run/Shutdown)
-│   ├── option.go            # 函数式选项 (WithLLM/WithSandbox/Use...)
-│   ├── ...
-│   ├── port/                # Port 接口 (纯类型定义)
-│   │   ├── types.go         # Message, Role, ToolCall, ToolResult
-│   │   ├── llm.go           # LLM, StreamingLLM, CompletionRequest
-│   │   ├── capability.go    # 模型能力标签 + TaskRequirement
-│   │   ├── io.go            # UserIO, OutputMessage, InputRequest
-│   │   ├── io_std.go        # NoOpIO, PrintfIO, BufferIO
-│   │   ├── channel.go       # Channel, InboundMessage, OutboundMessage
-│   │   └── embedder.go      # Embedder 接口
-│   ├── tool/                # Tool System
-│   │   ├── tool.go          # ToolSpec, ToolHandler, RiskLevel
-│   │   ├── registry.go      # Registry 接口 + map 实现
-│   │   └── scoped.go        # ScopedRegistry (工具白名单视图)
-│   ├── session/             # Session Management
-│   │   ├── session.go       # Session, Budget, SessionConfig
-│   │   ├── manager.go       # Manager 接口 + 内存实现
-│   │   ├── router.go        # Router (DMScope 路由)
-│   │   ├── store.go         # SessionStore 接口
-│   │   └── store_file.go    # 文件持久化实现
-│   ├── middleware/           # Middleware Chain (洋葱模型)
-│   │   ├── middleware.go     # Middleware 类型, Phase, Context
-│   │   ├── chain.go         # Chain 执行
-│   │   └── builtins/        # PolicyCheck, EventEmitter, Logger, PatchToolCalls
-│   ├── loop/                # Agent Loop
-│   │   └── loop.go          # think→act→observe + streaming + 重试
-│   ├── sandbox/             # Sandbox (执行隔离)
-│   │   ├── sandbox.go       # Sandbox 接口
-│   │   └── local.go         # LocalSandbox (路径逃逸保护)
-│   ├── agent/               # Agent 委派系统
-│   │   ├── config.go        # AgentConfig (YAML)
-│   │   ├── registry.go      # Agent Registry
-│   │   ├── tools.go         # delegate_agent / spawn_agent
-│   │   └── depth.go         # 委派深度限制
-│   ├── skill/               # 技能系统
-│   │   ├── skill.go         # Skill 接口 + Manager
-│   │   ├── config.go        # Config 加载/保存/合并
-│   │   └── prompt.go        # Skill (SKILL.md 注入)
-│   ├── mcp/                 # MCP 协议集成
-│   │   └── mcp.go           # MCP Provider（外部工具服务器）
-│   ├── gateway/             # 消息网关 [实验性]
-│   ├── knowledge/           # 知识系统 [实验性]
-│   ├── scheduler/           # 定时任务调度器
-│   └── testing/             # Mock 适配器
-│       ├── mock_llm.go      # MockLLM, MockStreamingLLM
-│       ├── mock_sandbox.go  # MemorySandbox
-│       └── mock_io.go       # RecorderIO
-├── appkit/                # 应用脚手架工具箱
-│   ├── appkit.go          # ContextWithSignal, AppFlags, Banner
-│   ├── repl.go              # REPL 引擎
-│   └── serve.go             # Gateway Serve 脚手架
-├── presets/                 # 官方预设装配（如 deepagent）
-└── docs/                    # 文档
-    ├── architecture.md      # 架构设计
-    ├── getting-started.md   # 快速开始 & 库集成指南
-    ├── skills.md            # 技能系统详解
-    ├── kernel-design.md     # 原始内核设计文档
-    ├── changelog.md         # 开发日志
-    └── roadmap.md           # 路线图
-```
+- [Getting Started](docs/getting-started.md) / [快速开始](docs/getting-started.md)
+- [Architecture](docs/architecture.md) / [架构设计](docs/architecture.md)
+- [Skills](docs/skills.md) / [技能系统](docs/skills.md)
+- [Kernel Design](docs/kernel-design.md) / [内核设计](docs/kernel-design.md)
+- [Production Readiness](docs/production-readiness.md) / [生产准备度](docs/production-readiness.md)
+- [Changelog](docs/changelog.md) / [变更日志](docs/changelog.md)
+- [Roadmap](docs/roadmap.md) / [路线图](docs/roadmap.md)
 
-## 扩展
+---
 
-### 自定义 Middleware
+## FAQ
 
-```go
-func myMiddleware(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-    if mc.Phase == middleware.BeforeToolCall {
-        log.Printf("Tool: %s", mc.Tool.Name)
-    }
-    return next(ctx)
-}
+### Is Moss only for CLI usage? / Moss 只能用于 CLI 吗？
 
-k := kernel.New(kernel.Use(myMiddleware))
-```
+No. CLI is one entrypoint. Moss is designed to be embedded as a Go library as well.  
+不是。CLI 只是入口之一。Moss 也被设计为可嵌入的 Go 库。
 
-### 自定义 LLM Adapter
+### Can I control risky operations? / 我能控制高风险操作吗？
 
-```go
-type MyLLM struct{}
+Yes. Use trust levels and policy middleware to require approvals for sensitive tools/commands.  
+可以。通过 trust level 与策略中间件可对敏感工具/命令启用审批。
 
-func (m *MyLLM) Complete(ctx context.Context, req port.CompletionRequest) (*port.CompletionResponse, error) {
-    return &port.CompletionResponse{
-        Message:    port.Message{Role: port.RoleAssistant, Content: "..."},
-        StopReason: "end_turn",
-    }, nil
-}
-```
+### Can I bring my own model/provider? / 我能接入自定义模型或供应商吗？
 
-### 自定义 UserIO Adapter
+Yes. Moss provides adapter-based integration and model routing patterns.  
+可以。Moss 提供基于适配器的模型集成与路由模式。
 
-```go
-type WebSocketIO struct{ conn *websocket.Conn }
+---
 
-func (ws *WebSocketIO) Send(ctx context.Context, msg port.OutputMessage) error {
-    return ws.conn.WriteJSON(msg)
-}
+## Security model / 安全模型
 
-func (ws *WebSocketIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
-    ws.conn.WriteJSON(req)
-    var resp port.InputResponse
-    ws.conn.ReadJSON(&resp)
-    return resp, nil
-}
-```
+Moss follows a tool-boundary model: the agent can do what exposed tools allow.  
+Moss 采用工具边界安全模型：Agent 能做的事由你暴露的工具能力决定。
 
-### 策略与事件
+Enforce constraints at sandbox, policy, and tool levels instead of relying on prompt-only restrictions.  
+建议在 sandbox、policy 与 tool 层实施约束，而不是仅依赖提示词限制。
 
-```go
-// 权限策略
-k.WithPolicy(
-    builtins.RequireApprovalFor("write_file", "run_command"),
-    builtins.DefaultAllow(),
-)
+---
 
-// 事件监听
-k.OnEvent("tool.*", func(e builtins.Event) {
-    log.Printf("[%s] %v", e.Type, e.Data)
-})
-```
-
-### Deep Agent 预设
-
-如果你希望获得 deepagents 风格默认能力（规划、上下文压缩、异步任务生命周期），可使用：
-
-```go
-import "github.com/mossagents/moss/presets/deepagent"
-
-k, _ := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
-    AppName: "myapp",
-})
-```
-
-默认包含 `write_todos`、`compact_conversation`、`update_task`，并启用 `PatchToolCalls` 以自动修补不完整工具调用历史。
-
-POC 阶段还新增了协作核心能力：
-
-- 任务图工具：`plan_task`、`claim_task`（依赖就绪后认领）
-- 代理邮箱：`send_mail`、`read_mailbox`（异步消息）
-- 工作区隔离：`acquire_workspace`、`release_workspace`（任务级目录隔离）
-- restricted 策略增强：命令片段 deny + 关键路径审批（路径/命令粒度）
-
-## 测试
+## Development checks / 开发校验
 
 ```bash
-go test ./... -count=1
+go test ./...
+go build ./...
 ```
 
-## 文档
-
-| 文档 | 说明 |
-|---|---|
-| [架构设计](docs/architecture.md) | 分层架构、核心概念、依赖图 |
-| [快速开始](docs/getting-started.md) | 安装、CLI 用法、库集成指南 |
-| [Examples 指南](examples/mosscode/README.md) | 示例应用入口（其余示例 README 在对应目录） |
-| [技能系统](docs/skills.md) | Core Tool Skill、MCP（mcp 包）、Skill 详解 |
-| [内核设计](docs/kernel-design.md) | 原始设计文档（第一性原理、接口定义、流程图） |
-| [开发日志](docs/changelog.md) | 版本变更记录 |
-| [路线图](docs/roadmap.md) | 后续规划 (P1/P2/P3) |
+---
 
 ## License
 
