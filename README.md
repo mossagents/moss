@@ -1,10 +1,13 @@
 # Moss
 
-**Batteries-included agent runtime for Go.**  
-**面向 Go 的“开箱即用”智能体运行时。**
+**Agent harness for Go: compose fast, run safely.**  
+**面向 Go 的 Agent Harness：快速装配，安全运行。**
 
 Moss gives you a ready-to-run agent stack (CLI + runtime + extension surface) while keeping the core composable and library-first.  
 Moss 提供可直接运行的智能体栈（CLI + Runtime + 扩展面），同时保持核心可组合、可嵌入（library-first）。
+
+> **MossCode**: *A coding-agent harness grounded in your workspace.*  
+> **MossCode**：*扎根于你的工作区上下文的代码 Agent Harness。*
 
 ---
 
