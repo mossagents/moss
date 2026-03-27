@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagents/moss/extensions/agentsx"
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -33,7 +33,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 		toolNames[spec.Name] = true
 	}
 	for _, name := range []string{
-		"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user",
+		"read_file", "write_file", "edit_file", "glob", "list_files", "grep", "run_command", "ask_user",
 		"read_memory", "write_memory", "list_memories", "delete_memory",
 		"offload_context", "compact_conversation", "write_todos", "update_task",
 		"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace",
@@ -46,7 +46,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 		t.Fatal("expected workspace isolation to be configured")
 	}
 
-	reg := agentsx.Registry(k)
+	reg := runtime.AgentRegistry(k)
 	gp, ok := reg.Get("general-purpose")
 	if !ok {
 		t.Fatal("expected general-purpose agent preset")
@@ -81,7 +81,7 @@ func TestBuildDeepAgentKernel_DisableGeneralPurpose(t *testing.T) {
 		t.Fatalf("BuildDeepAgentKernel: %v", err)
 	}
 
-	if _, ok := agentsx.Registry(k).Get("general-purpose"); ok {
+	if _, ok := runtime.AgentRegistry(k).Get("general-purpose"); ok {
 		t.Fatal("general-purpose should not be auto-created when disabled")
 	}
 }

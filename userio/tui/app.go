@@ -12,10 +12,11 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/extensions/skillsx"
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/skill"
 )
 
 const appVersion = "0.3.0"
@@ -66,7 +67,7 @@ func (a *agentState) sessionSummary() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.sess == nil {
-		return "当前没有活动 session。"
+		return "No active session."
 	}
 	dialogCount := 0
 	for _, msg := range a.sess.Messages {
@@ -138,9 +139,9 @@ func (a *agentState) offloadContext(keepRecent int, note string) (string, error)
 	status, _ := resp["status"].(string)
 	switch status {
 	case "noop":
-		return fmt.Sprintf("无需 offload：当前对话长度未超过 keep_recent=%d。", keepRecent), nil
+		return fmt.Sprintf("No offload needed: conversation length does not exceed keep_recent=%d.", keepRecent), nil
 	case "offloaded":
-		return "已完成上下文 offload。\n" + formatJSON(raw), nil
+		return "Context offload completed.\n" + formatJSON(raw), nil
 	default:
 		return formatJSON(raw), nil
 	}
@@ -163,7 +164,7 @@ func formatTaskList(raw json.RawMessage) string {
 		return formatJSON(raw)
 	}
 	if len(payload.Tasks) == 0 {
-		return "当前没有匹配的后台任务。"
+		return "No matching background tasks."
 	}
 	sort.Slice(payload.Tasks, func(i, j int) bool { return payload.Tasks[i].ID < payload.Tasks[j].ID })
 	var b strings.Builder
@@ -428,17 +429,38 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return agent.cancelTask(taskID, reason)
 		}
 		m.chat.skillListFn = func() string {
-			skills := skillsx.Manager(agent.k).List()
-			if len(skills) == 0 {
-				return "暂无已加载的 skill。"
+			manifests := runtime.SkillManifests(agent.k)
+			if len(manifests) == 0 {
+				manifests = skill.DiscoverSkillManifests(m.config.Workspace)
 			}
+			sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
 			var sb strings.Builder
-			sb.WriteString("已加载的 skills:\n")
-			for _, s := range skills {
-				sb.WriteString(fmt.Sprintf("  • %s v%s — %s\n", s.Name, s.Version, s.Description))
-				if len(s.Tools) > 0 {
-					sb.WriteString(fmt.Sprintf("    工具: %s\n", strings.Join(s.Tools, ", ")))
+			if len(manifests) == 0 {
+				sb.WriteString("No user-installed SKILL.md skills were found.")
+			} else {
+				sb.WriteString("Discovered user skills:\n")
+				for _, mf := range manifests {
+					loaded := "inactive"
+					if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
+						loaded = "active"
+					}
+					if strings.TrimSpace(mf.Description) == "" {
+						sb.WriteString(fmt.Sprintf("  • %s [%s]\n", mf.Name, loaded))
+					} else {
+						sb.WriteString(fmt.Sprintf("  • %s [%s] — %s\n", mf.Name, loaded, mf.Description))
+					}
 				}
+			}
+			loaded := runtime.SkillsManager(agent.k).List()
+			runtimeOnly := make([]string, 0, len(loaded))
+			for _, s := range loaded {
+				if s.Name == "core" {
+					runtimeOnly = append(runtimeOnly, s.Name)
+				}
+			}
+			if len(runtimeOnly) > 0 {
+				sb.WriteString("\n\nRuntime built-in skills (not user-installed): ")
+				sb.WriteString(strings.Join(runtimeOnly, ", "))
 			}
 			return sb.String()
 		}
@@ -450,7 +472,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.streaming = false
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgSystem,
-			content: fmt.Sprintf("已连接到 %s", connInfo),
+			content: fmt.Sprintf("Connected to %s", connInfo),
 		})
 		m.chat.refreshViewport()
 		return m, nil
@@ -468,18 +490,18 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 
 		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, provider, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 		if err != nil {
-			return sessionResultMsg{err: fmt.Errorf("初始化 kernel 失败: %w", err)}
+			return sessionResultMsg{err: fmt.Errorf("failed to initialize kernel: %w", err)}
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		if err := k.Boot(ctx); err != nil {
 			cancel()
-			return sessionResultMsg{err: fmt.Errorf("启动 kernel 失败: %w", err)}
+			return sessionResultMsg{err: fmt.Errorf("failed to boot kernel: %w", err)}
 		}
 		if cfg.AfterBoot != nil {
 			if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
 				cancel()
-				return sessionResultMsg{err: fmt.Errorf("初始化运行时失败: %w", err)}
+				return sessionResultMsg{err: fmt.Errorf("failed to initialize runtime: %w", err)}
 			}
 		}
 
@@ -517,7 +539,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		sess, err := k.NewSession(ctx, sessCfg)
 		if err != nil {
 			cancel()
-			return sessionResultMsg{err: fmt.Errorf("创建 session 失败: %w", err)}
+			return sessionResultMsg{err: fmt.Errorf("failed to create session: %w", err)}
 		}
 
 		agent := &agentState{

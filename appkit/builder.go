@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/adapters"
-	"github.com/mossagents/moss/extensions/defaults"
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
@@ -17,9 +17,8 @@ type BuildConfig struct {
 	// DefaultLLMRetry 会在未显式禁用时注入 kernel.WithLLMRetry。
 	DefaultLLMRetry *retry.Config
 
-	// DefaultSetupOptions 控制默认扩展装配行为。
-	// 这些选项会传递给 extensions/defaults.Setup。
-	DefaultSetupOptions []defaults.Option
+	// DefaultSetupOptions controls runtime setup behavior.
+	DefaultSetupOptions []runtime.Option
 
 	// Extensions 描述 appkit 层统一的推荐扩展装配单元。
 	// 它们可同时携带 kernel.Option 与 build 后安装动作。
@@ -79,7 +78,7 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 
 	k := kernel.New(opts...)
 
-	if err := defaults.Setup(ctx, k, flags.Workspace, cfg.DefaultSetupOptions...); err != nil {
+	if err := runtime.Setup(ctx, k, flags.Workspace, cfg.DefaultSetupOptions...); err != nil {
 		return nil, err
 	}
 	for _, installer := range plan.installers {

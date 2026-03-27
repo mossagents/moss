@@ -8,9 +8,8 @@ import (
 	"sort"
 
 	"github.com/mossagents/moss/agent"
+	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/extensions/agentsx"
-	"github.com/mossagents/moss/extensions/defaults"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -35,7 +34,7 @@ type DeepAgentConfig struct {
 	GeneralPurposeMaxSteps   int
 	EnableWorkspaceIsolation *bool
 	IsolationRootDir         string
-	DefaultSetupOptions      []defaults.Option
+	DefaultSetupOptions      []runtime.Option
 	AdditionalAppExtensions  []Extension
 }
 
@@ -206,7 +205,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 }
 
 func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentConfig) error {
-	reg := agentsx.Registry(k)
+	reg := runtime.AgentRegistry(k)
 	if _, ok := reg.Get(cfg.GeneralPurposeName); ok {
 		return nil
 	}

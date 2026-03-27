@@ -8,8 +8,8 @@ import (
 	"os"
 
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/extensions/skillsx"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -142,7 +142,7 @@ func runCmd(args []string) {
 	fmt.Printf("Workspace: %s\n", f.Workspace)
 	fmt.Printf("Mode: %s | Trust: %s\n", *mode, f.Trust)
 
-	skills := skillsx.Manager(k).List()
+	skills := runtime.SkillsManager(k).List()
 	if len(skills) > 0 {
 		fmt.Printf("Skills: ")
 		for i, s := range skills {
