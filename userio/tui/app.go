@@ -649,9 +649,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				sb.WriteString("\n\nRuntime built-in skills (not user-installed): ")
 				sb.WriteString(strings.Join(runtimeOnly, ", "))
 			}
-			out := sb.String()
-			out = strings.ReplaceAll(out, "\n", "  \n")
-			return out
+			return "```text\n" + sb.String() + "\n```"
 		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
