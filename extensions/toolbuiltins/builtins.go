@@ -13,6 +13,8 @@ import (
 	"github.com/mossagents/moss/sandbox"
 )
 
+const maxInlineCommandOutput = 8000
+
 // RegisteredToolNames 返回给定配置下会注册的工具名列表。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
@@ -61,7 +63,7 @@ func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.
 
 	// 命令执行：优先 Executor，回退 Sandbox
 	if exec != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerExec(exec)})
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerExec(exec, ws)})
 	} else if sb != nil {
 		tools = append(tools, entry{runCommandSpec, runCommandHandler(sb)})
 	}
@@ -372,11 +374,13 @@ func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(output)
+		return marshalCommandOutput(ctx, output, func(path string, data []byte) error {
+			return sb.WriteFile(path, data)
+		})
 	}
 }
 
-func runCommandHandlerExec(exec port.Executor) tool.ToolHandler {
+func runCommandHandlerExec(exec port.Executor, ws port.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -389,7 +393,12 @@ func runCommandHandlerExec(exec port.Executor) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(output)
+		return marshalCommandOutput(ctx, output, func(path string, data []byte) error {
+			if ws == nil {
+				return fmt.Errorf("workspace is nil")
+			}
+			return ws.WriteFile(ctx, path, data)
+		})
 	}
 }
 
@@ -590,6 +599,37 @@ func truncateString(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+func marshalCommandOutput(ctx context.Context, output any, writeFile func(path string, data []byte) error) (json.RawMessage, error) {
+	raw, err := json.Marshal(output)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) <= maxInlineCommandOutput {
+		return raw, nil
+	}
+	meta, ok := port.ToolCallContextFromContext(ctx)
+	if !ok || meta.SessionID == "" || meta.CallID == "" {
+		return raw, nil
+	}
+	path := filepath.Join(".moss", "large_tool_results", fmt.Sprintf("%s_%s.json", meta.SessionID, meta.CallID))
+	if writeFile != nil && path != "" {
+		if werr := writeFile(path, raw); werr == nil {
+			preview := string(raw)
+			if len(preview) > 1200 {
+				preview = preview[:1200] + "...(truncated)"
+			}
+			return json.Marshal(map[string]any{
+				"offloaded":     true,
+				"path":          path,
+				"preview":       preview,
+				"message":       "Large command output was offloaded. Use read_file on the returned path.",
+				"original_size": len(raw),
+			})
+		}
+	}
+	return raw, nil
 }
 
 func applyEdit(content, oldString, newString string, replaceAll bool) (string, int, error) {

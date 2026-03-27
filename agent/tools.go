@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/port"
@@ -38,6 +39,9 @@ func RegisterTools(reg tool.Registry, agents *Registry, tracker *TaskTracker, de
 		return err
 	}
 	if err := registerCancelTask(reg, tracker); err != nil {
+		return err
+	}
+	if err := registerUpdateTask(reg, agents, tracker, delegator); err != nil {
 		return err
 	}
 	return registerTask(reg, agents, tracker, delegator)
@@ -277,6 +281,54 @@ func registerCancelTask(reg tool.Registry, tracker *TaskTracker) error {
 	return reg.Register(spec, handler)
 }
 
+type updateTaskInput struct {
+	TaskID string `json:"task_id"`
+	Task   string `json:"task"`
+}
+
+func registerUpdateTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
+	spec := tool.ToolSpec{
+		Name:        "update_task",
+		Description: "Update a running background task with follow-up instructions. Keeps the same task_id.",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"task_id":{"type":"string","description":"Task ID to update"},
+				"task":{"type":"string","description":"Follow-up instructions"}
+			},
+			"required":["task_id","task"]
+		}`),
+		Risk:         tool.RiskMedium,
+		Capabilities: []string{"delegation"},
+	}
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in updateTaskInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		taskID := strings.TrimSpace(in.TaskID)
+		if taskID == "" {
+			return nil, fmt.Errorf("task_id is required")
+		}
+		taskText := strings.TrimSpace(in.Task)
+		if taskText == "" {
+			return nil, fmt.Errorf("task is required")
+		}
+		updated, err := updateBackgroundTask(ctx, agents, tracker, delegator, taskID, taskText)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"task_id":  updated.ID,
+			"agent":    updated.AgentName,
+			"status":   updated.Status,
+			"revision": updated.Revision,
+			"goal":     updated.Goal,
+		})
+	}
+	return reg.Register(spec, handler)
+}
+
 // ── task（统一入口） ───────────────────────────────────
 
 type taskInput struct {
@@ -292,14 +344,14 @@ type taskInput struct {
 func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
 	spec := tool.ToolSpec{
 		Name:        "task",
-		Description: "Unified delegation tool. mode=sync/background/query plus list/cancel for async lifecycle.",
+		Description: "Unified delegation tool. mode=sync/background/query/list/cancel/update for async lifecycle.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"mode": {"type": "string", "description": "One of: sync, background, query, list, cancel (default: sync)"},
+				"mode": {"type": "string", "description": "One of: sync, background, query, list, cancel, update (default: sync)"},
 				"agent": {"type": "string", "description": "Target agent name (required for sync/background)"},
-				"task": {"type": "string", "description": "Task description (required for sync/background)"},
-				"task_id": {"type": "string", "description": "Task ID returned by background mode (required for query/cancel)"},
+				"task": {"type": "string", "description": "Task description (required for sync/background/update)"},
+				"task_id": {"type": "string", "description": "Task ID returned by background mode (required for query/cancel/update)"},
 				"status": {"type": "string", "description": "Optional status filter for mode=list"},
 				"limit": {"type": "integer", "description": "Optional max results for mode=list"},
 				"reason": {"type": "string", "description": "Optional cancel reason for mode=cancel"}
@@ -416,8 +468,28 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 				"task":   task,
 				"status": task.Status,
 			})
+		case "update":
+			taskID := strings.TrimSpace(in.TaskID)
+			if taskID == "" {
+				return nil, fmt.Errorf("task_id is required for mode=update")
+			}
+			taskText := strings.TrimSpace(in.Task)
+			if taskText == "" {
+				return nil, fmt.Errorf("task is required for mode=update")
+			}
+			updated, err := updateBackgroundTask(ctx, agents, tracker, delegator, taskID, taskText)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(map[string]any{
+				"mode":     "update",
+				"task_id":  updated.ID,
+				"agent":    updated.AgentName,
+				"status":   updated.Status,
+				"revision": updated.Revision,
+			})
 		default:
-			return nil, fmt.Errorf("unsupported task mode %q (expected sync, background, query, list, cancel)", mode)
+			return nil, fmt.Errorf("unsupported task mode %q (expected sync, background, query, list, cancel, update)", mode)
 		}
 	}
 
@@ -436,28 +508,9 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 	}
 
 	taskID := uuid.New().String()
-	task := &Task{
-		ID:        taskID,
-		AgentName: agentName,
-		Goal:      goal,
-		Status:    TaskRunning,
+	if _, err := launchBackgroundTask(ctx, agents, tracker, delegator, taskID, agentName, goal, time.Time{}); err != nil {
+		return "", err
 	}
-	taskCtx, cancel := context.WithCancel(ctx)
-	tracker.AddWithCancel(task, cancel)
-
-	go func() {
-		result, err := runAgent(taskCtx, agents, delegator, agentName, goal)
-		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				tracker.Cancel(taskID, err.Error())
-				return
-			}
-			tracker.Fail(taskID, err.Error())
-			return
-		}
-		tracker.Complete(taskID, result.Output, result.TokensUsed)
-	}()
-
 	return taskID, nil
 }
 
@@ -517,4 +570,63 @@ func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentN
 	}
 
 	return result, nil
+}
+
+func launchBackgroundTask(
+	ctx context.Context,
+	agents *Registry,
+	tracker *TaskTracker,
+	delegator Delegator,
+	taskID, agentName, goal string,
+	createdAt time.Time,
+) (*Task, error) {
+	task := &Task{
+		ID:        taskID,
+		AgentName: agentName,
+		Goal:      goal,
+		Status:    TaskRunning,
+		CreatedAt: createdAt,
+	}
+	taskCtx, cancel := context.WithCancel(ctx)
+	revision := tracker.Start(task, cancel)
+
+	go func(rev int64) {
+		result, err := runAgent(taskCtx, agents, delegator, agentName, goal)
+		if err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				tracker.CancelIf(taskID, rev, err.Error())
+				return
+			}
+			tracker.FailIf(taskID, rev, err.Error())
+			return
+		}
+		tracker.CompleteIf(taskID, rev, result.Output, result.TokensUsed)
+	}(revision)
+
+	updated, _ := tracker.Get(taskID)
+	return updated, nil
+}
+
+func updateBackgroundTask(
+	ctx context.Context,
+	agents *Registry,
+	tracker *TaskTracker,
+	delegator Delegator,
+	taskID string,
+	update string,
+) (*Task, error) {
+	task, ok := tracker.Get(taskID)
+	if !ok {
+		return nil, fmt.Errorf("task %q not found", taskID)
+	}
+	if task.Status != TaskRunning {
+		return nil, fmt.Errorf("task %q is not running", taskID)
+	}
+	newGoal := strings.TrimSpace(task.Goal + "\n\nFollow-up update: " + strings.TrimSpace(update))
+	createdAt := task.CreatedAt
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+	tracker.CancelIf(taskID, task.Revision, "restarted with updated instructions")
+	return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
 }

@@ -219,6 +219,25 @@ func main() {
 
 推荐做法是继续使用 `appkit.BuildKernelWithConfig` / `appkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `defaults.Setup`。
 
+### Deep Agent 预设（推荐）
+
+对于需要 deepagents 风格能力（规划 TODO、上下文压缩、异步子任务生命周期）的应用，推荐使用：
+
+```go
+import "github.com/mossagents/moss/presets/deepagent"
+
+k, err := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
+    AppName: "myapp",
+})
+```
+
+该预设默认接入：
+
+- `write_todos` 规划工具
+- `compact_conversation` + `offload_context` 上下文管理
+- `task` / `update_task` / `list_tasks` / `cancel_task` 异步任务生命周期
+- `PatchToolCalls` 中间件（自动补齐缺失 tool result）
+
 ```go
 // 统一通过 appkit 装配官方扩展
 k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,

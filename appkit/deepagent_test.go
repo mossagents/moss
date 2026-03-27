@@ -2,10 +2,14 @@ package appkit
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/extensions/agentsx"
+	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
@@ -19,6 +23,9 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDeepAgentKernel: %v", err)
 	}
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
 
 	tools := k.ToolRegistry().List()
 	toolNames := map[string]bool{}
@@ -28,7 +35,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	for _, name := range []string{
 		"read_file", "write_file", "edit_file", "glob", "list_files", "search_text", "run_command", "ask_user",
 		"read_memory", "write_memory", "list_memories", "delete_memory",
-		"offload_context",
+		"offload_context", "compact_conversation", "write_todos", "update_task",
 	} {
 		if !toolNames[name] {
 			t.Fatalf("expected built-in tool %q", name)
@@ -72,5 +79,41 @@ func TestBuildDeepAgentKernel_DisableGeneralPurpose(t *testing.T) {
 
 	if _, ok := agentsx.Registry(k).Get("general-purpose"); ok {
 		t.Fatal("general-purpose should not be auto-created when disabled")
+	}
+}
+
+func TestBuildDeepAgentKernel_PatchesOrphanToolCalls(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "restricted",
+	}
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, nil)
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "x"})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{
+		Role: port.RoleAssistant,
+		ToolCalls: []port.ToolCall{
+			{ID: "orphan-1", Name: "run_command", Arguments: json.RawMessage(`{"command":"echo"}`)},
+		},
+	})
+	mc := &middleware.Context{Session: sess}
+	if err := k.Middleware().Run(context.Background(), middleware.BeforeLLM, mc); err != nil {
+		t.Fatalf("middleware run: %v", err)
+	}
+	last := sess.Messages[len(sess.Messages)-1]
+	if last.Role != port.RoleTool || len(last.ToolResults) != 1 {
+		t.Fatalf("expected patched tool message, got %+v", last)
+	}
+	if last.ToolResults[0].CallID != "orphan-1" || !last.ToolResults[0].IsError {
+		t.Fatalf("unexpected patched result %+v", last.ToolResults[0])
+	}
+	if !strings.Contains(last.ToolResults[0].Content, "missing tool result patched") {
+		t.Fatalf("unexpected patch content %q", last.ToolResults[0].Content)
 	}
 }

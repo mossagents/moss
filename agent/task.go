@@ -28,6 +28,7 @@ type Task struct {
 	Result    string          `json:"result,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	Tokens    port.TokenUsage `json:"tokens,omitempty"`
+	Revision  int64           `json:"revision,omitempty"`
 	CreatedAt time.Time       `json:"created_at,omitempty"`
 	UpdatedAt time.Time       `json:"updated_at,omitempty"`
 }
@@ -37,6 +38,7 @@ type TaskTracker struct {
 	mu      sync.RWMutex
 	tasks   map[string]*Task
 	cancels map[string]context.CancelFunc
+	rev     map[string]int64
 }
 
 // NewTaskTracker 创建 TaskTracker。
@@ -44,20 +46,29 @@ func NewTaskTracker() *TaskTracker {
 	return &TaskTracker{
 		tasks:   make(map[string]*Task),
 		cancels: make(map[string]context.CancelFunc),
+		rev:     make(map[string]int64),
 	}
 }
 
 // Add 注册一个新任务。
 func (t *TaskTracker) Add(task *Task) {
-	t.AddWithCancel(task, nil)
+	t.Start(task, nil)
 }
 
 // AddWithCancel 注册一个新任务，并记录其取消函数。
 func (t *TaskTracker) AddWithCancel(task *Task, cancel context.CancelFunc) {
+	t.Start(task, cancel)
+}
+
+// Start 以新的 revision 启动任务，并返回该 revision。
+func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	cp := *task
 	now := time.Now()
+	nextRev := t.rev[task.ID] + 1
+	t.rev[task.ID] = nextRev
+	cp.Revision = nextRev
 	if cp.CreatedAt.IsZero() {
 		cp.CreatedAt = now
 	}
@@ -66,6 +77,7 @@ func (t *TaskTracker) AddWithCancel(task *Task, cancel context.CancelFunc) {
 	if cancel != nil {
 		t.cancels[task.ID] = cancel
 	}
+	return nextRev
 }
 
 // Get 按 ID 查找任务。
@@ -107,9 +119,21 @@ func (t *TaskTracker) List(filter TaskFilter) []*Task {
 
 // Complete 将任务标记为完成。
 func (t *TaskTracker) Complete(id, result string, tokens port.TokenUsage) {
+	t.completeIf(id, 0, result, tokens)
+}
+
+// CompleteIf 在 revision 匹配时将任务标记为完成。
+func (t *TaskTracker) CompleteIf(id string, revision int64, result string, tokens port.TokenUsage) {
+	t.completeIf(id, revision, result, tokens)
+}
+
+func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens port.TokenUsage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if task, ok := t.tasks[id]; ok {
+		if revision > 0 && task.Revision != revision {
+			return
+		}
 		if task.Status != TaskRunning {
 			return
 		}
@@ -123,9 +147,21 @@ func (t *TaskTracker) Complete(id, result string, tokens port.TokenUsage) {
 
 // Fail 将任务标记为失败。
 func (t *TaskTracker) Fail(id, errMsg string) {
+	t.failIf(id, 0, errMsg)
+}
+
+// FailIf 在 revision 匹配时将任务标记为失败。
+func (t *TaskTracker) FailIf(id string, revision int64, errMsg string) {
+	t.failIf(id, revision, errMsg)
+}
+
+func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if task, ok := t.tasks[id]; ok {
+		if revision > 0 && task.Revision != revision {
+			return
+		}
 		if task.Status != TaskRunning {
 			return
 		}
@@ -138,10 +174,23 @@ func (t *TaskTracker) Fail(id, errMsg string) {
 
 // Cancel 将任务标记为已取消。
 func (t *TaskTracker) Cancel(id, errMsg string) {
+	t.cancelIf(id, 0, errMsg)
+}
+
+// CancelIf 在 revision 匹配时将任务标记为取消并触发对应 cancel 函数。
+func (t *TaskTracker) CancelIf(id string, revision int64, errMsg string) {
+	t.cancelIf(id, revision, errMsg)
+}
+
+func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 	t.mu.Lock()
 	task, ok := t.tasks[id]
 	cancelFn := t.cancels[id]
 	if ok {
+		if revision > 0 && task.Revision != revision {
+			t.mu.Unlock()
+			return
+		}
 		if task.Status == TaskRunning {
 			task.Status = TaskCancelled
 			task.Error = errMsg

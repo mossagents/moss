@@ -27,6 +27,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/presets/deepagent"
 	mossTUI "github.com/mossagents/moss/userio/tui"
 )
 
@@ -185,7 +186,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 }
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, error) {
-	return appkit.BuildDeepAgentKernel(ctx, flags, io, &appkit.DeepAgentConfig{
+	return deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
 		AppName: appName,
 	})
 }

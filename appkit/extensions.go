@@ -9,8 +9,10 @@ import (
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/extensions/bootstrapctx"
 	"github.com/mossagents/moss/extensions/compactx"
+	"github.com/mossagents/moss/extensions/contextx"
 	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/extensions/memoryx"
+	"github.com/mossagents/moss/extensions/planningx"
 	"github.com/mossagents/moss/extensions/scheduling"
 	"github.com/mossagents/moss/extensions/sessionstore"
 	"github.com/mossagents/moss/kernel"
@@ -60,6 +62,11 @@ func WithSessionStore(store session.SessionStore) Extension {
 	return WithKernelOptions(sessionstore.WithStore(store))
 }
 
+// WithPlanning 装配 write_todos 规划工具。
+func WithPlanning() Extension {
+	return WithKernelOptions(planningx.WithSessionManager(nil))
+}
+
 // WithContextOffload 装配上下文 offload（压缩）工具。
 // 依赖可持久化的 SessionStore（建议与 WithSessionStore 配套使用）。
 func WithContextOffload(store session.SessionStore) Extension {
@@ -68,6 +75,19 @@ func WithContextOffload(store session.SessionStore) Extension {
 		plan.installers = append(plan.installers, func(_ context.Context, k *kernel.Kernel) error {
 			return compactx.RegisterTools(k.ToolRegistry(), store, k.SessionManager())
 		})
+	})
+}
+
+// WithContextManagement 装配自动上下文压缩与 compact_conversation 工具。
+func WithContextManagement(store session.SessionStore, opts ...contextx.Option) Extension {
+	return extensionFunc(func(plan *extensionPlan) {
+		ko := []kernel.Option{
+			contextx.WithSessionStore(store),
+		}
+		if len(opts) > 0 {
+			ko = append(ko, contextx.Configure(opts...))
+		}
+		plan.options = append(plan.options, ko...)
 	})
 }
 

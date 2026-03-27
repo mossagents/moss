@@ -20,6 +20,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/presets/deepagent"
 	"github.com/mossagents/moss/scheduler"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -320,7 +321,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		APIKey:    s.cfg.apiKey,
 		BaseURL:   s.cfg.baseURL,
 	}
-	deepCfg := appkit.DefaultDeepAgentConfig()
+	deepCfg := deepagent.DefaultConfig()
 	deepCfg.AppName = appconfig.AppName()
 	deepCfg.EnableSessionStore = boolRef(true)
 	deepCfg.EnablePersistentMemories = boolRef(true)
@@ -332,7 +333,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		appkit.WithScheduling(sched),
 	}
 
-	k, err := appkit.BuildDeepAgentKernel(ctx, flags, s.wailsIO, &deepCfg)
+	k, err := deepagent.BuildKernel(ctx, flags, s.wailsIO, &deepCfg)
 	if err != nil {
 		return nil, err
 	}

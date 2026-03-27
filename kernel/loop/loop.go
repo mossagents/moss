@@ -409,9 +409,15 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		}
 	}
 
+	toolCtx := port.WithToolCallContext(ctx, port.ToolCallContext{
+		SessionID: sess.ID,
+		ToolName:  call.Name,
+		CallID:    call.ID,
+	})
+
 	// 执行工具
 	toolStart := time.Now()
-	output, err := handler(ctx, call.Arguments)
+	output, err := handler(toolCtx, call.Arguments)
 	toolDur := time.Since(toolStart)
 
 	var result port.ToolResult

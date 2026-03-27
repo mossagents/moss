@@ -185,6 +185,11 @@ func (k *Kernel) UserIO() port.UserIO {
 	return k.io
 }
 
+// LLM 返回默认模型端口（可能为 nil）。
+func (k *Kernel) LLM() port.LLM {
+	return k.llm
+}
+
 // Sandbox 返回沙箱抽象（可能为 nil）。
 func (k *Kernel) Sandbox() sandbox.Sandbox {
 	return k.sandbox

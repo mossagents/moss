@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -291,6 +293,8 @@ func TestTaskToolModeValidation(t *testing.T) {
 		{Mode: "background", Agent: "worker"},
 		{Mode: "query"},
 		{Mode: "cancel"},
+		{Mode: "update", TaskID: "x"},
+		{Mode: "update", Task: "x"},
 		{Mode: "list", Status: "not-a-status"},
 		{Mode: "invalid"},
 	}
@@ -298,6 +302,105 @@ func TestTaskToolModeValidation(t *testing.T) {
 		input, _ := json.Marshal(c)
 		if _, err := taskHandler(context.Background(), input); err == nil {
 			t.Fatalf("expected validation error for input: %+v", c)
+		}
+	}
+}
+
+func TestUpdateTaskRestartsSameID(t *testing.T) {
+	agents := NewRegistry()
+	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	tracker := NewTaskTracker()
+
+	firstStarted := make(chan struct{}, 1)
+	var calls int32
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			n := atomic.AddInt32(&calls, 1)
+			if n == 1 {
+				firstStarted <- struct{}{}
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return &loop.SessionResult{
+				SessionID:  sess.ID,
+				Success:    true,
+				Output:     "updated: " + sess.Config.Goal,
+				TokensUsed: port.TokenUsage{TotalTokens: 5},
+			}, nil
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+
+	_, spawnHandler, ok := reg.Get("spawn_agent")
+	if !ok {
+		t.Fatal("spawn_agent not registered")
+	}
+	_, updateHandler, ok := reg.Get("update_task")
+	if !ok {
+		t.Fatal("update_task not registered")
+	}
+
+	spawnInputRaw, _ := json.Marshal(spawnInput{
+		Agent: "worker",
+		Task:  "initial task",
+	})
+	spawnRaw, err := spawnHandler(context.Background(), spawnInputRaw)
+	if err != nil {
+		t.Fatalf("spawn_agent: %v", err)
+	}
+	var spawnResp map[string]string
+	if err := json.Unmarshal(spawnRaw, &spawnResp); err != nil {
+		t.Fatal(err)
+	}
+	taskID := spawnResp["task_id"]
+	if taskID == "" {
+		t.Fatal("missing task_id")
+	}
+	<-firstStarted
+
+	updateInputRaw, _ := json.Marshal(map[string]string{
+		"task_id": taskID,
+		"task":    "please include extra checks",
+	})
+	updateRaw, err := updateHandler(context.Background(), updateInputRaw)
+	if err != nil {
+		t.Fatalf("update_task: %v", err)
+	}
+	var updateResp map[string]any
+	if err := json.Unmarshal(updateRaw, &updateResp); err != nil {
+		t.Fatal(err)
+	}
+	if updateResp["task_id"] != taskID {
+		t.Fatalf("expected same task_id, got %+v", updateResp)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		task, ok := tracker.Get(taskID)
+		if !ok {
+			t.Fatalf("task %q not found", taskID)
+		}
+		if task.Status == TaskCompleted {
+			if task.Revision < 2 {
+				t.Fatalf("expected revision >=2 after update, got %d", task.Revision)
+			}
+			if !strings.Contains(task.Goal, "Follow-up update") {
+				t.Fatalf("expected follow-up marker in goal, got %q", task.Goal)
+			}
+			if !strings.Contains(task.Goal, "please include extra checks") {
+				t.Fatalf("expected updated goal content, got %q", task.Goal)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("task not completed after update, current status=%s", task.Status)
+		case <-time.After(10 * time.Millisecond):
 		}
 	}
 }

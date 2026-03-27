@@ -128,6 +128,37 @@
 
 ---
 
+## Unreleased — Deepagents parity hardening
+
+### 新增
+
+- `extensions/planningx`：
+  - `write_todos` 规划工具（会话级 todo 状态写入 `session.State["planning.todos"]`）
+- `extensions/contextx`：
+  - `compact_conversation` 工具
+  - `AutoCompactMiddleware`（阈值触发总结 + 快照 offload）
+- `agent` 异步生命周期增强：
+  - `update_task` 工具
+  - `task mode=update`
+  - Task `revision` 防并发回写覆盖
+- `kernel/middleware/builtins.PatchToolCalls()`：
+  - 在 `BeforeLLM` 阶段补齐缺失的 tool result（修复孤儿 tool_call 历史）
+- `presets/deepagent` 包：
+  - 新入口 `deepagent.BuildKernel` / `deepagent.DefaultConfig`
+
+### 变更
+
+- `kernel/loop` 在执行工具时注入 `ToolCallContext`（session_id/tool_name/call_id）
+- `run_command` 在输出过大时自动 offload 到 `.moss/large_tool_results/*.json`，并返回路径与预览
+- `BuildDeepAgentKernel` 默认挂载 `PatchToolCalls`，并将 `update_task` 从 general-purpose 工具白名单中排除
+- 示例 `examples/mosscode` 与 `examples/mosswork-desktop` 迁移到 `presets/deepagent`
+
+### 兼容性
+
+- 兼容：`appkit.BuildDeepAgentKernel` 保留，`presets/deepagent` 为新增推荐入口。
+
+---
+
 ## v0.3.0 — 架构审查与文档更新 (2026-03-25)
 
 ### 变更

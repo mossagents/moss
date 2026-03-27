@@ -285,7 +285,7 @@ moss/
 │   ├── middleware/           # Middleware Chain (洋葱模型)
 │   │   ├── middleware.go     # Middleware 类型, Phase, Context
 │   │   ├── chain.go         # Chain 执行
-│   │   └── builtins/        # PolicyCheck, EventEmitter, Logger
+│   │   └── builtins/        # PolicyCheck, EventEmitter, Logger, PatchToolCalls
 │   ├── loop/                # Agent Loop
 │   │   └── loop.go          # think→act→observe + streaming + 重试
 │   ├── sandbox/             # Sandbox (执行隔离)
@@ -316,6 +316,7 @@ moss/
 │   ├── appkit.go          # ContextWithSignal, AppFlags, Banner
 │   ├── repl.go              # REPL 引擎
 │   └── serve.go             # Gateway Serve 脚手架
+├── presets/                 # 官方预设装配（如 deepagent）
 └── docs/                    # 文档
     ├── architecture.md      # 架构设计
     ├── getting-started.md   # 快速开始 & 库集成指南
@@ -384,6 +385,20 @@ k.OnEvent("tool.*", func(e builtins.Event) {
     log.Printf("[%s] %v", e.Type, e.Data)
 })
 ```
+
+### Deep Agent 预设
+
+如果你希望获得 deepagents 风格默认能力（规划、上下文压缩、异步任务生命周期），可使用：
+
+```go
+import "github.com/mossagents/moss/presets/deepagent"
+
+k, _ := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
+    AppName: "myapp",
+})
+```
+
+默认包含 `write_todos`、`compact_conversation`、`update_task`，并启用 `PatchToolCalls` 以自动修补不完整工具调用历史。
 
 ## 测试
 

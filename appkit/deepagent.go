@@ -123,6 +123,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		exts = append(exts, WithSessionStore(store))
 		if valueOrDefault(effective.EnableContextOffload, true) {
 			exts = append(exts, WithContextOffload(store))
+			exts = append(exts, WithContextManagement(store))
 		}
 	}
 
@@ -137,6 +138,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		exts = append(exts, WithPersistentMemories(memDir))
 	}
+	exts = append(exts, WithPlanning())
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
 		exts = append(exts, WithLoadedBootstrapContext(flags.Workspace, effective.AppName))
@@ -155,12 +157,13 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 			return nil, err
 		}
 	}
+	k.Middleware().Use(builtins.PatchToolCalls())
 
 	if flags.Trust == "restricted" {
 		k.WithPolicy(
 			builtins.RequireApprovalFor(
 				"write_file", "edit_file", "run_command", "spawn_agent", "task",
-				"cancel_task",
+				"cancel_task", "update_task",
 				"write_memory", "delete_memory", "offload_context",
 			),
 			builtins.DefaultAllow(),
@@ -180,7 +183,7 @@ func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentC
 	toolNames := make([]string, 0, len(toolSpecs))
 	for _, spec := range toolSpecs {
 		switch spec.Name {
-		case "delegate_agent", "spawn_agent", "query_agent", "task", "list_tasks", "cancel_task":
+		case "delegate_agent", "spawn_agent", "query_agent", "task", "list_tasks", "cancel_task", "update_task":
 			continue
 		default:
 			toolNames = append(toolNames, spec.Name)

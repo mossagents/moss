@@ -132,6 +132,17 @@ func (m *mockExecutor) Execute(_ context.Context, cmd string, args []string) (po
 	}, nil
 }
 
+type mockExecutorLarge struct {
+	stdout string
+}
+
+func (m *mockExecutorLarge) Execute(_ context.Context, _ string, _ []string) (port.ExecOutput, error) {
+	return port.ExecOutput{
+		Stdout:   m.stdout,
+		ExitCode: 0,
+	}, nil
+}
+
 // ── tests ────────────────────────────────────────────
 
 func TestRegisterAll(t *testing.T) {
@@ -659,7 +670,7 @@ func TestSearchTextWSInvalidRegex(t *testing.T) {
 
 func TestRunCommandExec(t *testing.T) {
 	exec := &mockExecutor{}
-	handler := runCommandHandlerExec(exec)
+	handler := runCommandHandlerExec(exec, &mockWorkspace{files: map[string]string{}})
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"command": "echo",
@@ -673,6 +684,42 @@ func TestRunCommandExec(t *testing.T) {
 	json.Unmarshal(result, &output)
 	if !strings.Contains(output.Stdout, "echo") {
 		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
+	}
+}
+
+func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
+	exec := &mockExecutorLarge{
+		stdout: strings.Repeat("x", maxInlineCommandOutput+256),
+	}
+	ws := &mockWorkspace{files: map[string]string{}}
+	handler := runCommandHandlerExec(exec, ws)
+	ctx := port.WithToolCallContext(context.Background(), port.ToolCallContext{
+		SessionID: "sess-1",
+		ToolName:  "run_command",
+		CallID:    "call-1",
+	})
+
+	result, err := handler(ctx, toJSON(t, map[string]any{
+		"command": "echo",
+		"args":    []string{"hello"},
+	}))
+	if err != nil {
+		t.Fatalf("runCommandExec: %v", err)
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(result, &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out["offloaded"] != true {
+		t.Fatalf("expected offloaded response, got %+v", out)
+	}
+	path, _ := out["path"].(string)
+	if path == "" {
+		t.Fatalf("expected non-empty offload path, got %+v", out)
+	}
+	if _, ok := ws.files[path]; !ok {
+		t.Fatalf("expected offloaded file %q", path)
 	}
 }
 
