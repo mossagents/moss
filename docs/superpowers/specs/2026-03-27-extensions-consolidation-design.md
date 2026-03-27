@@ -71,8 +71,19 @@ New package structure:
 
 Introduce canonical app APIs:
 
-- `appkit.BuildKernelWithRuntime(...)`
-- `appkit.WithRuntime...` helper options
+- `appkit.BuildKernelWithRuntime(ctx context.Context, flags *AppFlags, io port.UserIO, opts ...runtime.Option) (*kernel.Kernel, error)`
+- `runtime.Option` model:
+  - `runtime.WithBuiltinTools(enabled bool)`
+  - `runtime.WithMCPServers(enabled bool)`
+  - `runtime.WithSkills(enabled bool)`
+  - `runtime.WithProgressiveSkills(enabled bool)`
+  - `runtime.WithAgents(enabled bool)`
+  - `runtime.WithSessionStore(store session.Store)` (or equivalent existing store type)
+  - `runtime.WithPlanning(enabled bool)`
+- appkit forwarding helpers:
+  - `appkit.WithRuntimeDefaults()`
+  - `appkit.WithRuntimeProgressiveSkills()`
+  - `appkit.WithRuntimeWithoutMCP()`
 
 Legacy paths:
 
@@ -86,15 +97,27 @@ Legacy paths:
 - Progressive semantics unchanged:
   - `list_skills` lists discovered manifests and loaded state.
   - `activate_skill` loads by name with explicit errors on invalid input.
+- Interface boundary:
+  - Input: `workspace`, runtime config, kernel skill manager state.
+  - Output: manifest set + registered/activated providers.
+  - Errors: invalid manifest parse, duplicate/unknown activation target, registration failures.
 
 ### MCP
 
 - Continue merged config load from global + project config.
 - Preserve enabled/isMCP filtering behavior.
+- Interface boundary:
+  - Input: merged config skill entries.
+  - Output: registered MCP-backed providers.
+  - Errors: non-fatal per-server load warnings, fatal only on runtime bootstrap contract violations.
 
 ### Agents
 
 - Preserve default project/global agent directory loading behavior.
+- Interface boundary:
+  - Input: workspace + home directory roots.
+  - Output: loaded agent descriptors in registry.
+  - Errors: per-directory load warnings without hard-failing kernel boot unless registry contract fails.
 
 ## Error Handling
 
@@ -111,6 +134,20 @@ Legacy paths:
   - skills discovery + progressive activation
   - MCP loading
   - agent registry load
+- Required parity matrix before shim removal:
+  - Skills:
+    - discovered list includes project/global paths and precedence ordering
+    - `/skills`-facing data includes active/inactive states
+    - progressive activation idempotency (`already_loaded`) preserved
+  - MCP:
+    - only enabled + MCP-typed entries register
+    - invalid server configs warn and continue
+  - Agents:
+    - project/global directories scanned
+    - malformed agent configs warn and continue
+  - Defaults setup:
+    - built-in core tools registration parity
+    - `WithoutXxx`/`WithProgressiveSkills` option parity
 
 ### Stability/Regression
 
@@ -151,6 +188,10 @@ Exit criteria:
 
 - Keep `extensions/*` forwarding to runtime.
 - Mark as deprecated in code/docs/changelog.
+- Timeline contract:
+  - Release N: ship `appkit/runtime` + deprecation shims.
+  - Release N+1: keep shims and publish migration warnings in docs/changelog.
+  - Release N+2: remove shims and legacy imports.
 
 Exit criteria:
 
@@ -158,7 +199,7 @@ Exit criteria:
 
 ### Phase 4 — Remove Shims
 
-- Delete deprecated shims after the defined window.
+- Delete deprecated shims at Release N+2.
 - Remove dead code/tests.
 
 Exit criteria:
