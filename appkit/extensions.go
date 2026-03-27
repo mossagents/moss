@@ -6,15 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
-	"github.com/mossagents/moss/extensions/bootstrapctx"
-	"github.com/mossagents/moss/extensions/compactx"
-	"github.com/mossagents/moss/extensions/contextx"
 	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/extensions/memoryx"
-	"github.com/mossagents/moss/extensions/planningx"
-	"github.com/mossagents/moss/extensions/scheduling"
-	"github.com/mossagents/moss/extensions/sessionstore"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -59,33 +54,33 @@ func AfterBuild(installer Installer) Extension {
 
 // WithSessionStore 按官方推荐方式装配 SessionStore 扩展。
 func WithSessionStore(store session.SessionStore) Extension {
-	return WithKernelOptions(sessionstore.WithStore(store))
+	return WithKernelOptions(runtime.WithKernelSessionStore(store))
 }
 
 // WithPlanning 装配 write_todos 规划工具。
 func WithPlanning() Extension {
-	return WithKernelOptions(planningx.WithSessionManager(nil))
+	return WithKernelOptions(runtime.WithPlanningDefaults())
 }
 
 // WithContextOffload 装配上下文 offload（压缩）工具。
 // 依赖可持久化的 SessionStore（建议与 WithSessionStore 配套使用）。
 func WithContextOffload(store session.SessionStore) Extension {
 	return extensionFunc(func(plan *extensionPlan) {
-		plan.options = append(plan.options, compactx.WithSessionStore(store))
+		plan.options = append(plan.options, runtime.WithOffloadSessionStore(store))
 		plan.installers = append(plan.installers, func(_ context.Context, k *kernel.Kernel) error {
-			return compactx.RegisterTools(k.ToolRegistry(), store, k.SessionManager())
+			return runtime.RegisterOffloadTools(k.ToolRegistry(), store, k.SessionManager())
 		})
 	})
 }
 
 // WithContextManagement 装配自动上下文压缩与 compact_conversation 工具。
-func WithContextManagement(store session.SessionStore, opts ...contextx.Option) Extension {
+func WithContextManagement(store session.SessionStore, opts ...runtime.ContextOption) Extension {
 	return extensionFunc(func(plan *extensionPlan) {
 		ko := []kernel.Option{
-			contextx.WithSessionStore(store),
+			runtime.WithContextSessionStore(store),
 		}
 		if len(opts) > 0 {
-			ko = append(ko, contextx.Configure(opts...))
+			ko = append(ko, runtime.ConfigureContext(opts...))
 		}
 		plan.options = append(plan.options, ko...)
 	})
@@ -93,20 +88,20 @@ func WithContextManagement(store session.SessionStore, opts ...contextx.Option) 
 
 // WithBootstrapContext 按官方推荐方式装配 bootstrap 上下文扩展。
 func WithBootstrapContext(ctx *bootstrap.Context) Extension {
-	return WithKernelOptions(bootstrapctx.WithContext(ctx))
+	return WithKernelOptions(runtime.WithBootstrapContext(ctx))
 }
 
 // WithLoadedBootstrapContext 根据工作区和应用名加载 bootstrap 上下文并装配。
 func WithLoadedBootstrapContext(workspace, appName string) Extension {
-	return WithKernelOptions(bootstrapctx.WithLoadedContext(workspace, appName))
+	return WithKernelOptions(runtime.WithLoadedBootstrapContext(workspace, appName))
 }
 
 // WithScheduling 按官方推荐方式装配调度器扩展，并注册标准调度工具。
 func WithScheduling(s *scheduler.Scheduler) Extension {
 	return extensionFunc(func(plan *extensionPlan) {
-		plan.options = append(plan.options, scheduling.WithScheduler(s))
+		plan.options = append(plan.options, runtime.WithScheduler(s))
 		plan.installers = append(plan.installers, func(_ context.Context, k *kernel.Kernel) error {
-			return scheduling.RegisterTools(k, s)
+			return runtime.RegisterSchedulerTools(k, s)
 		})
 	})
 }

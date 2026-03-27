@@ -3,7 +3,7 @@ package appkit
 import (
 	"context"
 
-	"github.com/mossagents/moss/extensions/gatewayx"
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 )
@@ -31,7 +31,7 @@ type ServeConfig struct {
 // 这是 REPL 的 Gateway 替代方案，基于 P0 引入的 Channel + Router 抽象。
 // 与 REPL 不同，Serve 通过 Channel 接口驱动，可扩展到 WebSocket 等通道。
 func Serve(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
-	return gatewayx.ServeCLI(ctx, gatewayx.ServeConfig{
+	return runtime.ServeCLI(ctx, runtime.ServeConfig{
 		Prompt:       cfg.Prompt,
 		SystemPrompt: cfg.SystemPrompt,
 		SessionStore: cfg.SessionStore,
