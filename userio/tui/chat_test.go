@@ -273,6 +273,29 @@ func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
 	}
 }
 
+func TestSlashAutocompleteHintsAndTabCompletion(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	m.textarea.SetValue("/sk")
+	m.refreshSlashHints()
+	hints := m.currentSlashHints()
+	if len(hints) == 0 {
+		t.Fatal("expected slash hints for /sk")
+	}
+	if hints[0] != "/skill" && hints[0] != "/skills" {
+		t.Fatalf("unexpected first hint: %q", hints[0])
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if !strings.HasPrefix(updated.textarea.Value(), "/skill") && !strings.HasPrefix(updated.textarea.Value(), "/skills") {
+		t.Fatalf("expected tab completion, got %q", updated.textarea.Value())
+	}
+}
+
 func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true

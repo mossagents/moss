@@ -83,6 +83,7 @@ type chatModel struct {
 	historyCursor int
 	historyDraft  string
 	historyPath   string
+	slashHints    []string
 
 	now       func() time.Time
 	lastEscAt time.Time
@@ -145,7 +146,16 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		case "up", "down":
+			if hints := m.currentSlashHints(); len(hints) > 0 {
+				return m, nil
+			}
 			return m.handleHistoryNavigation(msg.String())
+		case "tab":
+			if m.applySlashCompletion() {
+				m.adjustInputHeight()
+				return m, nil
+			}
+			return m, nil
 		case "enter":
 			return m.handleSend()
 		}
@@ -185,6 +195,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.adjustInputHeight()
 		m.historyCursor = len(m.inputHistory)
 		m.historyDraft = m.textarea.Value()
+		m.refreshSlashHints()
 		cmds = append(cmds, cmd)
 	}
 
@@ -395,6 +406,10 @@ func (m chatModel) View() string {
 	} else {
 		if m.streaming {
 			b.WriteString(runningStyle.Render("  ● Running... (double Esc to cancel current run)"))
+			b.WriteString("\n")
+		}
+		if hints := m.currentSlashHints(); len(hints) > 0 {
+			b.WriteString(mutedStyle.Render("  Slash suggestions: " + strings.Join(hints, "  │  ") + "  (Tab to complete)"))
 			b.WriteString("\n")
 		}
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
@@ -1073,6 +1088,61 @@ func truncateForQueue(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+func (m *chatModel) refreshSlashHints() {
+	text := strings.TrimSpace(m.textarea.Value())
+	m.slashHints = filterSlashHints(text)
+}
+
+func (m chatModel) currentSlashHints() []string {
+	if m.streaming || m.pendAsk != nil {
+		return nil
+	}
+	return m.slashHints
+}
+
+func (m *chatModel) applySlashCompletion() bool {
+	hints := m.currentSlashHints()
+	if len(hints) == 0 {
+		return false
+	}
+	current := strings.TrimSpace(m.textarea.Value())
+	if strings.Contains(current, " ") {
+		return false
+	}
+	m.textarea.SetValue(hints[0] + " ")
+	m.refreshSlashHints()
+	return true
+}
+
+var slashCandidates = []string{
+	"/help", "/skills", "/skill", "/session", "/sessions", "/offload", "/tasks", "/task",
+	"/config", "/git", "/budget", "/permissions", "/trust", "/model", "/clear", "/exit", "/quit",
+	"/http_request",
+}
+
+func filterSlashHints(input string) []string {
+	if !strings.HasPrefix(input, "/") {
+		return nil
+	}
+	if strings.Contains(input, " ") {
+		return nil
+	}
+	lower := strings.ToLower(input)
+	hints := make([]string, 0, 8)
+	for _, c := range slashCandidates {
+		if strings.HasPrefix(c, lower) {
+			hints = append(hints, c)
+		}
+	}
+	if len(hints) == 0 {
+		return nil
+	}
+	if len(hints) > 8 {
+		hints = hints[:8]
+	}
+	return hints
 }
 
 func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatModel, tea.Cmd) {
