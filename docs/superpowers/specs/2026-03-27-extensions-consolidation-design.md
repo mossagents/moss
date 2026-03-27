@@ -12,7 +12,7 @@ In scope:
 
 - Consolidate extension orchestration into `appkit/runtime`.
 - Migrate internal imports (`appkit`, `cmd`, `examples`, `userio/tui`) to the new runtime path.
-- Keep `extensions/*` as temporary compatibility shims for one release window, then remove.
+- Keep `extensions/*` as temporary compatibility shims for exactly two releases (N and N+1), then remove at N+2.
 - Preserve current behavior for skills discovery/progressive activation, MCP loading, and agent registry loading.
 - Update architecture/changelog/migration docs.
 
@@ -65,7 +65,7 @@ New package structure:
 
 - Forward calls/types to `appkit/runtime`.
 - Mark as deprecated in comments/docs.
-- Remove after one release window.
+- Remove at Release N+2.
 
 ## API Surface Plan
 
@@ -78,7 +78,7 @@ Introduce canonical app APIs:
   - `runtime.WithSkills(enabled bool)`
   - `runtime.WithProgressiveSkills(enabled bool)`
   - `runtime.WithAgents(enabled bool)`
-  - `runtime.WithSessionStore(store session.Store)` (or equivalent existing store type)
+  - `runtime.WithSessionStore(store session.SessionStore)`
   - `runtime.WithPlanning(enabled bool)`
 - appkit forwarding helpers:
   - `appkit.WithRuntimeDefaults()`
@@ -118,6 +118,18 @@ Legacy paths:
   - Input: workspace + home directory roots.
   - Output: loaded agent descriptors in registry.
   - Errors: per-directory load warnings without hard-failing kernel boot unless registry contract fails.
+
+### Runtime Contracts (explicit unit boundaries)
+
+| Unit | Inputs | Outputs | Fatal Errors | Non-fatal Errors |
+|------|--------|---------|--------------|------------------|
+| `setup` | app flags + runtime options + workspace | fully wired kernel runtime | invalid option combinations, missing required deps | none |
+| `skills` | workspace paths + skill manager + progressive flag | manifests + registered/activated skill providers + progressive tools | progressive tool registration failure | parse/register warnings for individual skills |
+| `mcp` | merged config skills entries | registered MCP providers | config read/merge contract failure | per-server load warnings |
+| `agents` | workspace/home agent directories | populated agent registry | registry initialization failure | per-directory parse/load warnings |
+| `sessionstore` | session store config/instance | attached store + optional context/offload hooks | store creation/attach failure | none |
+| `bootstrap` | workspace + app name | loaded bootstrap context | context loader contract failure | missing optional files |
+| `context/planning` | enabled flags + store/session deps | registered runtime tools/hooks | tool registration failure | none |
 
 ## Error Handling
 
@@ -160,6 +172,23 @@ Legacy paths:
 
 - Compile-time checks for new import surfaces in internal call-sites.
 - Temporary shim tests to ensure parity during deprecation window.
+- Deprecation warning mechanism:
+  - During N and N+1, each shim package includes `Deprecated:` doc comments and changelog migration entries.
+  - CI enforces shim import usage only in shim tests (no new internal production imports from `extensions/*`).
+
+### Legacy-to-Runtime Symbol Mapping (authoritative)
+
+- `extensions/defaults.Setup` -> `appkit/runtime.Setup`
+- `extensions/defaults.WithoutBuiltin` -> `appkit/runtime.WithBuiltinTools(false)`
+- `extensions/defaults.WithoutMCPServers` -> `appkit/runtime.WithMCPServers(false)`
+- `extensions/defaults.WithoutSkills` -> `appkit/runtime.WithSkills(false)`
+- `extensions/defaults.WithProgressiveSkills` -> `appkit/runtime.WithProgressiveSkills(true)`
+- `extensions/skillsx.Manager` -> `appkit/runtime.SkillsManager`
+- `extensions/skillsx.Manifests` -> `appkit/runtime.SkillManifests`
+- `extensions/skillsx.SetManifests` -> `appkit/runtime.SetSkillManifests`
+- `extensions/skillsx.EnableProgressive` -> `appkit/runtime.EnableProgressiveSkills`
+- `extensions/skillsx.RegisterProgressiveTools` -> `appkit/runtime.RegisterProgressiveSkillTools`
+- `extensions/agentsx.Registry` -> `appkit/runtime.AgentRegistry`
 
 ## Migration Plan
 
