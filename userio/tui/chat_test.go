@@ -214,3 +214,47 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 		t.Fatal("expected form response")
 	}
 }
+
+func TestSendWhileRunning_QueuesInput(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.streaming = true
+
+	m.textarea.SetValue("queued message")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(updated.queuedInputs) != 1 {
+		t.Fatalf("queued inputs=%d, want 1", len(updated.queuedInputs))
+	}
+	if updated.queuedInputs[0] != "queued message" {
+		t.Fatalf("queued input=%q", updated.queuedInputs[0])
+	}
+	if updated.textarea.Value() != "" {
+		t.Fatalf("expected textarea reset, got %q", updated.textarea.Value())
+	}
+}
+
+func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.streaming = true
+	m.queuedInputs = []string{"next one"}
+	sent := ""
+	m.sendFn = func(text string) { sent = text }
+
+	updated, _ := m.Update(sessionResultMsg{})
+	if sent != "next one" {
+		t.Fatalf("sendFn called with %q, want next one", sent)
+	}
+	if len(updated.queuedInputs) != 0 {
+		t.Fatalf("expected queue drained, got %d", len(updated.queuedInputs))
+	}
+	if !updated.streaming {
+		t.Fatal("expected streaming to continue with dequeued message")
+	}
+}

@@ -77,6 +77,8 @@ type chatModel struct {
 	workspace string
 	trust     string
 
+	queuedInputs []string
+
 	inputHistory  []string
 	historyCursor int
 	historyDraft  string
@@ -164,13 +166,21 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if msg.output != "" {
 			m.result = msg.output
 		}
+		if len(m.queuedInputs) > 0 && m.sendFn != nil {
+			next := m.queuedInputs[0]
+			m.queuedInputs = m.queuedInputs[1:]
+			m.messages = append(m.messages, chatMessage{kind: msgUser, content: next})
+			m.streaming = true
+			m.finished = false
+			m.sendFn(next)
+		}
 		m.refreshViewport()
 		m.textarea.Focus()
 		return m, nil
 	}
 
 	// 更新子组件
-	if m.pendAsk == nil && !m.streaming {
+	if m.pendAsk == nil {
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
 		m.adjustInputHeight()
@@ -223,6 +233,14 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
+	if m.streaming {
+		m.queuedInputs = append(m.queuedInputs, text)
+		m.textarea.Reset()
+		m.adjustInputHeight()
+		m.refreshViewport()
+		return m, nil
+	}
+
 	m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
 	m.textarea.Reset()
 	m.adjustInputHeight()
@@ -378,11 +396,26 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 输入区
+	if len(m.queuedInputs) > 0 {
+		queueLines := make([]string, 0, len(m.queuedInputs)+1)
+		queueLines = append(queueLines, fmt.Sprintf("Queued messages (%d)", len(m.queuedInputs)))
+		for i, q := range m.queuedInputs {
+			if i >= 3 {
+				queueLines = append(queueLines, fmt.Sprintf("...and %d more", len(m.queuedInputs)-i))
+				break
+			}
+			queueLines = append(queueLines, fmt.Sprintf("%d) %s", i+1, truncateForQueue(q, m.mainWidth()-12)))
+		}
+		b.WriteString(mutedStyle.Render("  " + strings.Join(queueLines, "  │  ")))
+		b.WriteString("\n")
+	}
 	if m.pendAsk != nil && m.askForm != nil {
 		b.WriteString(m.renderAskForm(m.mainWidth() - 2))
-	} else if m.streaming {
-		b.WriteString(runningStyle.Render("  ● Running...  (double Esc to cancel current run)"))
 	} else {
+		if m.streaming {
+			b.WriteString(runningStyle.Render("  ● Running... (double Esc to cancel current run)"))
+			b.WriteString("\n")
+		}
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	}
 	b.WriteString("\n")
@@ -821,6 +854,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  double Esc     Cancel current running generation/tool execution\n" +
 			"  Ctrl+C         Clear input (press twice quickly to quit)\n" +
 			"  Ctrl+O         Collapse/expand tool messages\n" +
+			"  Enter (running) Queue message to run after current task\n" +
 			"  Up/Down        Navigate persisted input history\n" +
 			"  Shift+Enter    Insert newline\n" +
 			"  /help          Show this help\n" +
@@ -1026,6 +1060,16 @@ func saveInputHistory(path string, history []string) error {
 		payload += "\n"
 	}
 	return os.WriteFile(path, []byte(payload), 0o600)
+}
+
+func truncateForQueue(s string, max int) string {
+	if max < 12 {
+		max = 12
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 // valueOrDefault 返回 s 或 defaultVal。
