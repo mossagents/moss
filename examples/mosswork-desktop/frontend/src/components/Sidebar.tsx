@@ -1,48 +1,71 @@
 import { Plus } from "lucide-react";
-import type { AppConfig } from "@/lib/types";
+import type { AppConfig, SessionSummary } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface SidebarProps {
   config: AppConfig | null;
   isRunning: boolean;
   onNewSession: () => void;
+  sessions: SessionSummary[];
+  currentSessionId?: string;
+  onResumeSession: (id: string) => void;
 }
 
-export default function Sidebar({ config, isRunning, onNewSession }: SidebarProps) {
+export default function Sidebar({
+  config,
+  isRunning,
+  onNewSession,
+  sessions,
+  currentSessionId,
+  onResumeSession,
+}: SidebarProps) {
   const initials = config?.provider?.[0]?.toUpperCase() ?? "M";
   const modelLabel = config?.model || "AI Agent";
   const providerLabel = config?.provider || "mosswork";
+  const recent = sessions.slice(0, 8);
 
   return (
     <aside className="h-screen w-64 fixed left-0 top-0 bg-surface-container flex flex-col p-4 overflow-y-auto z-50 select-none shadow-botanical-sidebar">
-      {/* Brand */}
-      <div className="mb-8 px-2 pt-4">
+      <div className="mb-6 px-2 pt-4">
         <h1 className="text-2xl font-bold text-on-surface tracking-tight font-headline">mosswork</h1>
-        <p className="text-xs text-on-surface-variant font-medium opacity-70">Botanical Intelligence</p>
+        <p className="text-xs text-on-surface-variant font-medium opacity-70">Lightweight Cowork Desktop</p>
       </div>
 
-      {/* New Session button */}
       <button
         onClick={onNewSession}
         disabled={isRunning}
         className={cn(
-          "mb-8 w-full py-3 px-4 bg-primary text-on-primary rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-90",
-          isRunning && "opacity-50 pointer-events-none"
+          "mb-6 w-full py-3 px-4 bg-primary text-on-primary rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-transform active:scale-90",
+          isRunning && "opacity-50 pointer-events-none",
         )}
       >
         <Plus size={18} />
         新对话
       </button>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1">
-        <NavItem icon="local_library" label="Library" />
-        <NavItem icon="history" label="Recents" />
-        <NavItem icon="space_dashboard" label="Workspace" active />
-        <NavItem icon="settings" label="Settings" />
-      </nav>
+      <div className="mb-3 px-2 text-[10px] font-bold tracking-widest uppercase text-on-surface-variant/70">最近会话</div>
+      <div className="space-y-1 mb-6">
+        {recent.length === 0 && (
+          <div className="text-xs text-on-surface-variant px-2 py-1">暂无历史会话</div>
+        )}
+        {recent.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onResumeSession(s.id)}
+            className={cn(
+              "w-full text-left px-3 py-2 rounded-lg text-xs transition-colors",
+              s.id === currentSessionId
+                ? "bg-surface-container-lowest text-on-surface"
+                : "text-on-surface-variant hover:bg-surface-container-low",
+            )}
+            title={s.goal}
+          >
+            <div className="font-semibold truncate">{s.goal || s.id}</div>
+            <div className="text-[10px] opacity-70 truncate">{s.id}</div>
+          </button>
+        ))}
+      </div>
 
-      {/* User Profile */}
       <div className="mt-auto pt-4 flex items-center gap-3 px-2">
         <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center shrink-0">
           <span className="text-sm font-bold text-on-surface-variant">{initials}</span>
@@ -54,35 +77,10 @@ export default function Sidebar({ config, isRunning, onNewSession }: SidebarProp
         <span
           className={cn(
             "w-2 h-2 rounded-full shrink-0",
-            isRunning ? "status-dot-active animate-pulse" : "status-dot-inactive"
+            isRunning ? "status-dot-active animate-pulse" : "status-dot-inactive",
           )}
         />
       </div>
     </aside>
-  );
-}
-
-function NavItem({
-  icon,
-  label,
-  active,
-}: {
-  icon: string;
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <a
-      href="#"
-      className={cn(
-        "flex items-center gap-3 px-4 py-3 rounded-xl transition-colors",
-        active
-          ? "bg-surface-container-lowest text-on-surface shadow-sm"
-          : "text-on-surface-variant hover:bg-surface-container-lowest/50"
-      )}
-    >
-      <span className="material-symbols-outlined text-xl">{icon}</span>
-      <span className="font-bold text-base tracking-tight font-headline">{label}</span>
-    </a>
   );
 }

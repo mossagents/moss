@@ -4,7 +4,7 @@
 import {
   ChatService as _Chat,
   FileService as _File,
-} from "../../bindings/github.com/mossagents/moss/examples/mosswork-desktop";
+} from "../../bindings/github.com/mossagents/moss/examples/miniwork-desktop";
 
 export const ChatService = {
   sendMessage: (content: string) => _Chat.SendMessage(content),
@@ -16,6 +16,7 @@ export const ChatService = {
   newSession: () => _Chat.NewSession(),
   getConfig: () => _Chat.GetConfig(),
   isRunning: () => _Chat.IsRunning(),
+  sendCommand: (command: string) => _Chat.SendMessage(command),
 };
 
 export const FileService = {

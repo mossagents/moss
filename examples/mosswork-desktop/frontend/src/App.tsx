@@ -18,6 +18,9 @@ import type {
   ToolResultData,
   DoneData,
   ErrorData,
+  DashboardState,
+  SessionSummary,
+  ScheduleEntry,
 } from "@/lib/types";
 import Sidebar from "@/components/Sidebar";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea";
@@ -68,6 +71,27 @@ function convertChatMessage(message: ChatMessage): ThreadMessageLike {
   };
 }
 
+function normalizeWorkerState(input: any): WorkerState | null {
+  if (!input || typeof input !== "object") return null;
+  const tasks = Array.isArray(input.tasks)
+    ? input.tasks.map((t: any) => ({
+      id: String(t?.id ?? ""),
+      description: String(t?.description ?? t?.id ?? ""),
+      status: String(t?.status ?? "queued") as WorkerState["tasks"][number]["status"],
+      steps: Number(t?.steps ?? 0),
+      error: t?.error ? String(t.error) : undefined,
+    }))
+    : [];
+
+  return {
+    state: input.state === "running" ? "running" : "completed",
+    running: Number(input.running ?? 0),
+    succeeded: Number(input.succeeded ?? 0),
+    failed: Number(input.failed ?? 0),
+    tasks,
+  };
+}
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
@@ -75,8 +99,10 @@ export default function App() {
   const [askData, setAskData] = useState<AskData | null>(null);
   const [workerState, setWorkerState] = useState<WorkerState | null>(null);
   const [pendingFiles, setPendingFiles] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
 
-  // Track the current streaming assistant message id
   const streamingIdRef = useRef<string | null>(null);
   const pendingFilesRef = useRef<string[]>([]);
 
@@ -84,14 +110,11 @@ export default function App() {
     pendingFilesRef.current = pendingFiles;
   }, [pendingFiles]);
 
-  // Load config on mount
   useEffect(() => {
     ChatService.getConfig()
       .then((c: any) => setConfig(c as AppConfig))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
-
-  // ─── Event handlers ───────────────────────────────
 
   const appendAssistantChunk = useCallback((content: string) => {
     const currentStreamingId = streamingIdRef.current;
@@ -107,7 +130,6 @@ export default function App() {
       return;
     }
 
-    // Create a new streaming message once and keep updater pure for StrictMode.
     const id = nextId();
     streamingIdRef.current = id;
     setMessages((prev) => [
@@ -124,7 +146,6 @@ export default function App() {
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
-    console.log("[chat:stream]", typeof data, data);
     appendAssistantChunk(data?.content ?? "");
   });
 
@@ -140,7 +161,6 @@ export default function App() {
   });
 
   useWailsEvent<StreamData>("chat:text", (data) => {
-    // Finalize any streaming then add text block
     streamingIdRef.current = null;
     const id = nextId();
     setMessages((prev) => [
@@ -160,7 +180,6 @@ export default function App() {
         ];
         return [...prev.slice(0, -1), { ...last, tools }];
       }
-      // Create a new assistant message with tool
       const id = nextId();
       return [
         ...prev,
@@ -191,22 +210,15 @@ export default function App() {
     });
   });
 
-  useWailsEvent<string>("chat:progress", () => {
-    // Progress events just maintain the running indicator
-  });
-
   useWailsEvent<AskData>("chat:ask", (data) => {
     setAskData(data);
   });
 
   useWailsEvent<DoneData>("chat:done", (data) => {
-    console.log("[chat:done]", data);
-
     const finalOutput = data?.output?.trim();
     const streamingId = streamingIdRef.current;
 
     setMessages((prev) => {
-      // Always clear streaming flag on the current streaming message if present.
       if (streamingId) {
         let foundStreaming = false;
         const next = prev.map((m) => {
@@ -218,11 +230,9 @@ export default function App() {
             streaming: false,
           };
         });
-
         if (foundStreaming) return next;
       }
 
-      // Fallback: patch last assistant message, or append one if none exists.
       if (finalOutput) {
         for (let i = prev.length - 1; i >= 0; i--) {
           if (prev[i]?.role === "assistant") {
@@ -231,7 +241,6 @@ export default function App() {
             return updated;
           }
         }
-
         const id = nextId();
         return [
           ...prev,
@@ -242,13 +251,14 @@ export default function App() {
       return prev;
     });
 
+    if (data?.session_id) {
+      setCurrentSessionId(data.session_id);
+    }
     streamingIdRef.current = null;
     setIsRunning(false);
-    setWorkerState(null);
   });
 
   useWailsEvent<ErrorData>("chat:error", (data) => {
-    console.error("[chat:error]", data);
     streamingIdRef.current = null;
     setIsRunning(false);
     const msg = data?.message || (typeof data === "string" ? data : "Unknown error");
@@ -259,27 +269,59 @@ export default function App() {
     ]);
   });
 
-  useWailsEvent("chat:cancelled", (data: any) => {
-    console.log("[chat:cancelled]", data);
+  useWailsEvent("chat:cancelled", () => {
     streamingIdRef.current = null;
     setIsRunning(false);
     const id = nextId();
     setMessages((prev) => [
       ...prev,
-      { id, role: "system", content: "\u5df2\u53d6\u6d88\u6267\u884c", timestamp: Date.now() },
+      { id, role: "system", content: "已取消执行", timestamp: Date.now() },
     ]);
   });
 
-  useWailsEvent<string>("worker:update", (data) => {
-    try {
-      const parsed = typeof data === "string" ? JSON.parse(data) : data;
-      setWorkerState(parsed as WorkerState);
-    } catch {
-      // ignore parse errors
-    }
+  useWailsEvent<DashboardState>("desktop:dashboard", (data) => {
+    if (!data || typeof data !== "object") return;
+    if (Array.isArray(data.sessions)) setSessions(data.sessions);
+    if (Array.isArray(data.schedules)) setSchedules(data.schedules);
+    if (typeof data.current_session_id === "string") setCurrentSessionId(data.current_session_id);
+    const ws = normalizeWorkerState((data as DashboardState).worker);
+    if (ws) setWorkerState(ws);
   });
 
-  // ─── User actions ─────────────────────────────────
+  useWailsEvent<SessionSummary[]>("desktop:sessions", (data) => {
+    if (Array.isArray(data)) setSessions(data);
+  });
+
+  useWailsEvent<ScheduleEntry[]>("desktop:schedules", (data) => {
+    if (Array.isArray(data)) setSchedules(data);
+  });
+
+  useWailsEvent<any>("worker:update", (data) => {
+    let raw = data;
+    if (typeof data === "string") {
+      try {
+        raw = JSON.parse(data);
+      } catch {
+        raw = null;
+      }
+    }
+    const ws = normalizeWorkerState(raw);
+    if (ws) setWorkerState(ws);
+  });
+
+  const handleRunCommand = useCallback(async (cmd: string) => {
+    setIsRunning(true);
+    try {
+      await ChatService.sendCommand(cmd);
+    } catch (err: any) {
+      setIsRunning(false);
+      const id = nextId();
+      setMessages((prev) => [
+        ...prev,
+        { id, role: "system", content: `Failed: ${err?.message ?? err}`, timestamp: Date.now() },
+      ]);
+    }
+  }, []);
 
   const handleSend = useCallback(
     async (content: string, files?: string[]) => {
@@ -310,29 +352,33 @@ export default function App() {
   const handleStop = useCallback(async () => {
     try {
       await ChatService.stopAgent();
-    } catch {}
+    } catch { }
   }, []);
 
   const handleNewSession = useCallback(async () => {
     try {
       await ChatService.newSession();
       setMessages([]);
-      setWorkerState(null);
       setPendingFiles([]);
       streamingIdRef.current = null;
-    } catch {}
+      setWorkerState(null);
+    } catch { }
   }, []);
+
+  const handleResumeSession = useCallback(async (id: string) => {
+    await handleRunCommand(`/resume ${id}`);
+  }, [handleRunCommand]);
 
   const handleAskResponse = useCallback(async (response: string) => {
     setAskData(null);
     try {
       await ChatService.respondToAsk(response);
-    } catch {}
+    } catch { }
   }, []);
 
   const handleAskDismiss = useCallback(() => {
     setAskData(null);
-    ChatService.respondToAsk("").catch(() => {});
+    ChatService.respondToAsk("").catch(() => { });
   }, []);
 
   const handlePickAttachments = useCallback(async () => {
@@ -341,7 +387,7 @@ export default function App() {
       if (picked?.length) {
         setPendingFiles((prev) => [...prev, ...picked]);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleRemoveAttachment = useCallback((index: number) => {
@@ -376,34 +422,39 @@ export default function App() {
   const lastRole = messages[messages.length - 1]?.role;
   const showTypingIndicator = isRunning && !hasStreamingAssistant && lastRole !== "assistant";
 
-  // ─── Render ───────────────────────────────────────
-
   return (
     <div className="flex h-full w-full bg-background text-on-surface">
-      {/* Title bar drag region */}
       <div className="wails-drag fixed top-0 left-0 right-0 h-8 z-60" />
 
-      {/* Left sidebar */}
       <Sidebar
         config={config}
         isRunning={isRunning}
         onNewSession={handleNewSession}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        onResumeSession={handleResumeSession}
       />
 
-      {/* Right panel */}
-      <RightPanel config={config} isRunning={isRunning} />
+      <RightPanel
+        config={config}
+        isRunning={isRunning}
+        sessions={sessions}
+        schedules={schedules}
+        onRunCommand={handleRunCommand}
+      />
 
-      {/* Main content */}
       <main className="absolute left-64 right-80 top-0 bottom-0 flex flex-col bg-background">
-        {/* Top bar */}
-        <TopBar onNewSession={handleNewSession} />
+        <TopBar
+          onNewSession={handleNewSession}
+          onOffload={() => handleRunCommand("/offload 20 topbar")}
+          onShowDashboard={() => handleRunCommand("/dashboard")}
+          currentSessionId={currentSessionId}
+        />
 
         <AssistantRuntimeProvider runtime={runtime}>
-          {/* Chat area — starts below topbar, ends above input */}
           <div className="flex-1 overflow-hidden relative mt-16">
             <AssistantThreadArea showTypingIndicator={showTypingIndicator} />
 
-            {/* Worker panel (overlays bottom of chat area) */}
             {workerState && workerState.tasks.length > 0 && (
               <div className="absolute bottom-0 left-0 right-0 pb-2">
                 <WorkerPanel state={workerState} />
@@ -411,7 +462,6 @@ export default function App() {
             )}
           </div>
 
-          {/* Input bar */}
           <div className="relative h-36 shrink-0">
             <AssistantComposerBar
               isRunning={isRunning}
@@ -424,7 +474,6 @@ export default function App() {
         </AssistantRuntimeProvider>
       </main>
 
-      {/* Ask dialog overlay */}
       {askData && (
         <AskDialog
           data={askData}

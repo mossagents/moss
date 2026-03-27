@@ -15,11 +15,8 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
     <div className="mx-4 md:mx-8 mb-2 animate-fade-in">
       <div className="max-w-4xl mx-auto">
         <div className="bg-surface-container-lowest rounded-2xl px-5 py-4 border border-outline-variant/20 shadow-sm">
-          {/* Header */}
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">
-              Agent 进度
-            </p>
+            <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Agent 进度</p>
             <div className="flex items-center gap-3 text-xs text-on-surface-variant">
               {state.running > 0 && (
                 <span className="flex items-center gap-1 text-primary">
@@ -42,18 +39,16 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
             </div>
           </div>
 
-          {/* Progress bar */}
           <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden mb-3">
             <div
               className={cn(
                 "progress-fill h-full rounded-full transition-all duration-500",
-                isCompleted && state.failed > 0 ? "bg-error" : "bg-primary"
+                isCompleted && state.failed > 0 ? "bg-error" : "bg-primary",
               )}
-              style={{ '--progress-width': `${pct}%` } as React.CSSProperties}
+              style={{ "--progress-width": `${pct}%` } as React.CSSProperties}
             />
           </div>
 
-          {/* Task chips */}
           <div className="flex flex-wrap gap-1.5">
             {state.tasks.map((task) => (
               <TaskChip key={task.id} task={task} />
@@ -66,32 +61,32 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
 }
 
 function TaskChip({ task }: { task: WorkerTask }) {
+  const status =
+    task.status === "completed"
+      ? "done"
+      : task.status === "cancelled"
+        ? "failed"
+        : task.status;
+
   return (
     <div
       className={cn(
         "flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors",
-        task.status === "running"
+        status === "running"
           ? "bg-primary/8 border-primary/20 text-on-surface pulse-glow"
-          : task.status === "done"
-          ? "bg-primary-container/40 border-primary-container text-on-primary-container"
-          : task.status === "failed"
-          ? "bg-error-container/20 border-error-container/30 text-error"
-          : "bg-surface-container border-outline-variant/30 text-on-surface-variant"
+          : status === "done"
+            ? "bg-primary-container/40 border-primary-container text-on-primary-container"
+            : status === "failed"
+              ? "bg-error-container/20 border-error-container/30 text-error"
+              : "bg-surface-container border-outline-variant/30 text-on-surface-variant",
       )}
+      title={task.error || task.description}
     >
-      {task.status === "running" && (
-        <span className="material-symbols-outlined text-xs animate-spin-1s">refresh</span>
-      )}
-      {task.status === "done" && (
-        <span className="material-symbols-outlined text-xs">check</span>
-      )}
-      {task.status === "failed" && (
-        <span className="material-symbols-outlined text-xs">close</span>
-      )}
-      {task.status === "queued" && (
-        <span className="material-symbols-outlined text-xs">schedule</span>
-      )}
-      <span className="truncate max-w-45">{task.description}</span>
+      {status === "running" && <span className="material-symbols-outlined text-xs animate-spin-1s">refresh</span>}
+      {status === "done" && <span className="material-symbols-outlined text-xs">check</span>}
+      {status === "failed" && <span className="material-symbols-outlined text-xs">close</span>}
+      {status === "queued" && <span className="material-symbols-outlined text-xs">schedule</span>}
+      <span className="truncate max-w-45">{task.description || task.id}</span>
     </div>
   );
 }

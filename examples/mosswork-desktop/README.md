@@ -1,59 +1,59 @@
-# Welcome to Your New Wails3 Project!
+# mosswork-desktop
 
-Congratulations on generating your Wails3 application! This README will guide you through the next steps to get your project up and running.
+`mosswork-desktop` is a lightweight but production-oriented desktop cowork assistant built on `moss` + Wails.
 
-## Getting Started
+## What it includes
 
-1. Navigate to your project directory in the terminal.
+- Deep harness runtime (`appkit.BuildDeepAgentKernel`)
+- Persistent sessions (`~/.mosswork-desktop/sessions`)
+- Persistent memories (`~/.mosswork-desktop/memories`)
+- Context offload (`offload_context`)
+- Async task lifecycle (`task`, `list_tasks`, `cancel_task`)
+- Scheduler with persistence (`~/.mosswork-desktop/schedules/jobs.json`)
+- Desktop dashboard events (`desktop:dashboard`, `desktop:sessions`, `desktop:schedules`)
 
-2. To run your application in development mode, use the following command:
+## Runtime slash commands
 
-   ```
-   wails3 dev
-   ```
+Type these directly in chat input:
 
-   This will start your application and enable hot-reloading for both frontend and backend changes.
+- `/session` - show current session summary
+- `/sessions` - list persisted sessions
+- `/resume <session_id>` - resume a session
+- `/offload [keep_recent] [note]` - compact context
+- `/tasks [status] [limit]` - list async tasks
+- `/task <task_id>` - query task result
+- `/task cancel <task_id> [reason]` - cancel task
+- `/schedules` - list schedules
+- `/schedule <id> <@every|@after|@once> <goal>` - create schedule
+- `/schedule-cancel <id>` - remove schedule
+- `/dashboard` - print dashboard snapshot
 
-3. To build your application for production, use:
+## Configure
 
-   ```
-   wails3 build
-   ```
+Environment variable precedence follows appkit defaults. Desktop-specific prefix is:
 
-   This will create a production-ready executable in the `build` directory.
+- `MOSSWORK_DESKTOP_*` (falls back to `MOSS_*`)
 
-## Exploring Wails3 Features
+Common values:
 
-Now that you have your project set up, it's time to explore the features that Wails3 offers:
+- `MOSSWORK_DESKTOP_PROVIDER`
+- `MOSSWORK_DESKTOP_MODEL`
+- `MOSSWORK_DESKTOP_API_KEY`
+- `MOSSWORK_DESKTOP_BASE_URL`
+- `MOSSWORK_DESKTOP_WORKSPACE`
 
-1. **Check out the examples**: The best way to learn is by example. Visit the `examples` directory in the `v3/examples` directory to see various sample applications.
+## Development
 
-2. **Run an example**: To run any of the examples, navigate to the example's directory and use:
+```bash
+cd examples/mosswork-desktop/frontend
+npm install
+npm run build
 
-   ```
-   go run .
-   ```
+cd ..
+# Requires Wails v3 toolchain
+wails3 dev
+```
 
-   Note: Some examples may be under development during the alpha phase.
+## Notes
 
-3. **Explore the documentation**: Visit the [Wails3 documentation](https://v3.wails.io/) for in-depth guides and API references.
-
-4. **Join the community**: Have questions or want to share your progress? Join the [Wails Discord](https://discord.gg/JDdSxwjhGf) or visit the [Wails discussions on GitHub](https://github.com/wailsapp/wails/discussions).
-
-## Project Structure
-
-Take a moment to familiarize yourself with your project structure:
-
-- `frontend/`: Contains your frontend code (HTML, CSS, JavaScript/TypeScript)
-- `main.go`: The entry point of your Go backend
-- `app.go`: Define your application structure and methods here
-- `wails.json`: Configuration file for your Wails project
-
-## Next Steps
-
-1. Modify the frontend in the `frontend/` directory to create your desired UI.
-2. Add backend functionality in `main.go`.
-3. Use `wails3 dev` to see your changes in real-time.
-4. When ready, build your application with `wails3 build`.
-
-Happy coding with Wails3! If you encounter any issues or have questions, don't hesitate to consult the documentation or reach out to the Wails community.
+- In this environment, Go toolchain is `1.24.2`, while example module targets `go 1.25`, so `go test ./...` may fail locally until matching toolchain is installed.

@@ -1,5 +1,3 @@
-// ─── Message types ──────────────────────────────────
-
 export type MessageRole = "user" | "assistant" | "system";
 
 export interface ChatMessage {
@@ -16,8 +14,6 @@ export interface ToolExecution {
   status: "running" | "done" | "error";
   result?: string;
 }
-
-// ─── Event data shapes ─────────────────────────────
 
 export interface StreamData {
   content: string;
@@ -52,7 +48,13 @@ export interface ErrorData {
   message: string;
 }
 
-// ─── Worker tracking ────────────────────────────────
+export interface WorkerTask {
+  id: string;
+  description: string;
+  status: "queued" | "running" | "done" | "failed" | "completed" | "cancelled";
+  steps: number;
+  error?: string;
+}
 
 export interface WorkerState {
   state: "running" | "completed";
@@ -62,14 +64,32 @@ export interface WorkerState {
   tasks: WorkerTask[];
 }
 
-export interface WorkerTask {
+export interface SessionSummary {
   id: string;
-  description: string;
-  status: "queued" | "running" | "done" | "failed";
+  goal: string;
+  mode?: string;
+  status: string;
   steps: number;
+  created_at: string;
+  ended_at?: string;
+  current?: boolean;
 }
 
-// ─── Config ──────────────────────────────────────────
+export interface ScheduleEntry {
+  id: string;
+  schedule: string;
+  goal: string;
+  run_count: number;
+  last_run?: string;
+  next_run?: string;
+}
+
+export interface DashboardState {
+  current_session_id?: string;
+  sessions?: SessionSummary[];
+  schedules?: ScheduleEntry[];
+  worker?: WorkerState;
+}
 
 export interface AppConfig {
   provider: string;

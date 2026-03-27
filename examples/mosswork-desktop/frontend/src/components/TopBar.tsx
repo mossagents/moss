@@ -1,37 +1,33 @@
 interface TopBarProps {
   onNewSession: () => void;
+  onOffload: () => void;
+  onShowDashboard: () => void;
+  currentSessionId?: string;
 }
 
-export default function TopBar({ onNewSession }: TopBarProps) {
+export default function TopBar({ onNewSession, onOffload, onShowDashboard, currentSessionId }: TopBarProps) {
+  const shortSession = currentSessionId ? currentSessionId.slice(0, 10) : "—";
+
   return (
     <header className="fixed top-0 right-80 left-64 h-16 z-40 flex justify-between items-center px-8 bg-white/80 backdrop-blur-md border-botanical-bottom">
-      {/* Left: search + nav */}
-      <div className="flex items-center gap-6">
-        <div className="flex items-center bg-surface-container-low px-4 py-1.5 rounded-full w-60">
-          <span className="material-symbols-outlined text-on-surface-variant text-lg mr-2">search</span>
-          <input
-            className="bg-transparent border-none outline-none focus:ring-0 text-sm w-full placeholder:text-on-surface-variant/60 text-on-surface"
-            placeholder="搜索…"
-            type="text"
-          />
+      <div className="flex items-center gap-4">
+        <div className="text-xs text-on-surface-variant">
+          当前会话：<span className="font-semibold text-on-surface">{shortSession}</span>
         </div>
-        <nav className="flex gap-6 items-center">
-          <a
-            href="#"
-            className="text-on-surface-variant text-sm font-medium hover:text-primary transition-colors"
-          >
-            任务
-          </a>
-          <a
-            href="#"
-            className="text-on-surface-variant text-sm font-medium hover:text-primary transition-colors"
-          >
-            历史
-          </a>
-        </nav>
+        <button
+          onClick={onShowDashboard}
+          className="text-xs px-3 py-1.5 rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container-high transition-colors"
+        >
+          仪表盘
+        </button>
+        <button
+          onClick={onOffload}
+          className="text-xs px-3 py-1.5 rounded-full bg-surface-container-low text-on-surface hover:bg-surface-container-high transition-colors"
+        >
+          Offload
+        </button>
       </div>
 
-      {/* Right: actions */}
       <div className="flex items-center gap-3">
         <button
           onClick={onNewSession}
@@ -41,9 +37,6 @@ export default function TopBar({ onNewSession }: TopBarProps) {
         </button>
         <button className="text-on-surface-variant hover:text-primary transition-colors opacity-80 hover:opacity-100">
           <span className="material-symbols-outlined">notifications</span>
-        </button>
-        <button className="text-on-surface-variant hover:text-primary transition-colors opacity-80 hover:opacity-100">
-          <span className="material-symbols-outlined">account_circle</span>
         </button>
       </div>
     </header>
