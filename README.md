@@ -309,9 +309,6 @@ moss/
 │       ├── mock_llm.go      # MockLLM, MockStreamingLLM
 │       ├── mock_sandbox.go  # MemorySandbox
 │       └── mock_io.go       # RecorderIO
-├── extensions/              # 官方维护的可选扩展
-│   ├── toolbuiltins/        # 内置工具实现（read_file/write_file/...）
-│   └── defaults/            # 默认装配（core tool skill / MCP / skills / agents）
 ├── appkit/                # 应用脚手架工具箱
 │   ├── appkit.go          # ContextWithSignal, AppFlags, Banner
 │   ├── repl.go              # REPL 引擎

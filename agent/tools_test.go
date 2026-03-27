@@ -46,13 +46,13 @@ func TestDelegateAgent(t *testing.T) {
 	agents.Register(AgentConfig{
 		Name:         "researcher",
 		SystemPrompt: "You research.",
-		Tools:        []string{"search_text"},
+		Tools:        []string{"grep"},
 		MaxSteps:     10,
 	})
 
 	tracker := NewTaskTracker()
 	parentReg := tool.NewRegistry()
-	parentReg.Register(tool.ToolSpec{Name: "search_text"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	parentReg.Register(tool.ToolSpec{Name: "grep"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"search result"`), nil
 	})
 

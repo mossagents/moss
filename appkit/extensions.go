@@ -8,8 +8,6 @@ import (
 
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
-	"github.com/mossagents/moss/extensions/knowledgex"
-	"github.com/mossagents/moss/extensions/memoryx"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -109,7 +107,7 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 // WithKnowledge 按官方推荐方式注册知识库工具集。
 func WithKnowledge(store knowledge.Store, embedder port.Embedder) Extension {
 	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
-		return knowledgex.RegisterTools(k, store, embedder)
+		return runtime.RegisterKnowledgeTools(k, store, embedder)
 	})
 }
 
@@ -132,7 +130,7 @@ func WithPersistentMemories(memoriesDir string) Extension {
 			return fmt.Errorf("memory sandbox: %w", err)
 		}
 		ws := sandbox.NewLocalWorkspace(sb)
-		memoryx.WithWorkspace(ws)(k)
-		return memoryx.RegisterTools(k.ToolRegistry(), ws)
+		runtime.WithMemoryWorkspace(ws)(k)
+		return runtime.RegisterMemoryToolsCompat(k.ToolRegistry(), ws)
 	})
 }

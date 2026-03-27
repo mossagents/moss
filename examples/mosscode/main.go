@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mossagents/moss/appkit"
@@ -102,12 +103,13 @@ Flags:
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
 	return mossTUI.Run(mossTUI.Config{
-		Provider:  flags.Provider,
-		Model:     flags.Model,
-		Workspace: flags.Workspace,
-		Trust:     flags.Trust,
-		BaseURL:   flags.BaseURL,
-		APIKey:    flags.APIKey,
+		Provider:        flags.Provider,
+		Model:           flags.Model,
+		Workspace:       flags.Workspace,
+		Trust:           flags.Trust,
+		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
+		BaseURL:         flags.BaseURL,
+		APIKey:          flags.APIKey,
 		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,

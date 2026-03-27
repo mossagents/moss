@@ -16,7 +16,7 @@ func TestPatchToolCalls_BackfillsMissingResults(t *testing.T) {
 			{
 				Role: port.RoleAssistant,
 				ToolCalls: []port.ToolCall{
-					{ID: "call_1", Name: "search_text"},
+					{ID: "call_1", Name: "grep"},
 					{ID: "call_2", Name: "read_file"},
 				},
 			},
@@ -54,7 +54,7 @@ func TestPatchToolCalls_NoPatchWhenComplete(t *testing.T) {
 		Messages: []port.Message{
 			{
 				Role:      port.RoleAssistant,
-				ToolCalls: []port.ToolCall{{ID: "call_1", Name: "search_text"}},
+				ToolCalls: []port.ToolCall{{ID: "call_1", Name: "grep"}},
 			},
 			{
 				Role: port.RoleTool,

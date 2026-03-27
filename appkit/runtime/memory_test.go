@@ -1,4 +1,4 @@
-package memoryx
+package runtime
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
 
-	if err := RegisterTools(reg, ws); err != nil {
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
@@ -84,7 +84,7 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 
 func TestRegisterMemoryTools_NilWorkspace(t *testing.T) {
 	reg := tool.NewRegistry()
-	if err := RegisterTools(reg, nil); err == nil {
+	if err := RegisterMemoryToolsCompat(reg, nil); err == nil {
 		t.Fatal("expected nil workspace error")
 	}
 }
@@ -93,7 +93,7 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&port.NoOpIO{}),
-		WithWorkspace(sandbox.NewMemoryWorkspace()),
+		WithMemoryWorkspace(sandbox.NewMemoryWorkspace()),
 	)
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -114,4 +114,3 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 		t.Fatalf("expected memory prompt hint, got %q", sess.Messages[0].Content)
 	}
 }
-

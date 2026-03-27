@@ -14,7 +14,7 @@ func TestParseConfigFile(t *testing.T) {
 description: "Research assistant"
 system_prompt: "You are a research expert."
 tools:
-  - search_text
+  - grep
   - read_file
 max_steps: 20
 trust_level: restricted
@@ -37,7 +37,7 @@ trust_level: restricted
 	if cfg.SystemPrompt != "You are a research expert." {
 		t.Errorf("system_prompt = %q", cfg.SystemPrompt)
 	}
-	if len(cfg.Tools) != 2 || cfg.Tools[0] != "search_text" {
+	if len(cfg.Tools) != 2 || cfg.Tools[0] != "grep" {
 		t.Errorf("tools = %v", cfg.Tools)
 	}
 	if cfg.MaxSteps != 20 {
@@ -94,7 +94,7 @@ func TestLoadConfigsFromDir(t *testing.T) {
 	files := map[string]string{
 		"researcher.yaml": `name: researcher
 system_prompt: "Research."
-tools: [search_text]
+tools: [grep]
 `,
 		"coder.yml": `name: coder
 system_prompt: "Code."

@@ -1,4 +1,4 @@
-package builtins
+package runtime
 
 import (
 	"context"
@@ -154,12 +154,12 @@ func (m *mockExecutorLarge) Execute(_ context.Context, _ string, _ []string) (po
 
 // ── tests ────────────────────────────────────────────
 
-func TestRegisterAll(t *testing.T) {
+func TestRegisterBuiltinTools(t *testing.T) {
 	reg := tool.NewRegistry()
 	sb := newMockSandbox("/ws", nil)
 	io := &mockUserIO{}
 
-	if err := RegisterAll(reg, sb, io, nil, nil); err != nil {
+	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
@@ -545,6 +545,49 @@ func TestAskUserWithRequestedSchema(t *testing.T) {
 	}
 }
 
+func TestAskUserWithRequestedSchemaStringRequired(t *testing.T) {
+	io := &mockUserIO{
+		formResponse: map[string]any{
+			"database": "PostgreSQL",
+		},
+	}
+	handler := askUserHandler(io)
+	_, err := handler(context.Background(), toJSON(t, map[string]any{
+		"question": "Choose options",
+		"requestedSchema": map[string]any{
+			"properties": map[string]any{
+				"database": map[string]any{
+					"type": "string",
+					"enum": []string{"PostgreSQL", "MySQL"},
+				},
+			},
+			"required": []string{"database"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("askUser with string required: %v", err)
+	}
+	if len(io.lastReq.Fields) != 1 {
+		t.Fatalf("expected 1 field, got %d", len(io.lastReq.Fields))
+	}
+	if !io.lastReq.Fields[0].Required {
+		t.Fatal("expected required field")
+	}
+}
+
+func TestAskUserInputRetryUnexpectedEOF(t *testing.T) {
+	io := &mockUserIO{response: "ok"}
+	handler := askUserHandler(io)
+	// Missing trailing brace should be auto-repaired for ask_user input.
+	_, err := handler(context.Background(), json.RawMessage(`{"question":"Continue?","requestedSchema":{"properties":{"db":{"type":"string","enum":["a","b"]}},"required":["db"]}`))
+	if err != nil {
+		t.Fatalf("expected retry success, got error: %v", err)
+	}
+	if io.lastReq.Type != port.InputForm {
+		t.Fatalf("expected InputForm after retry, got %s", io.lastReq.Type)
+	}
+}
+
 func TestToolRiskLevels(t *testing.T) {
 	cases := []struct {
 		name string
@@ -563,7 +606,7 @@ func TestToolRiskLevels(t *testing.T) {
 	reg := tool.NewRegistry()
 	sb := newMockSandbox("/ws", nil)
 	io := &mockUserIO{}
-	RegisterAll(reg, sb, io, nil, nil)
+	RegisterBuiltinTools(reg, sb, io, nil, nil)
 
 	for _, c := range cases {
 		spec, _, ok := reg.Get(c.name)
@@ -620,7 +663,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 	exec := &mockExecutor{}
 	io := &mockUserIO{}
 
-	if err := RegisterAll(reg, nil, io, ws, exec); err != nil {
+	if err := RegisterBuiltinTools(reg, nil, io, ws, exec); err != nil {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
@@ -844,7 +887,7 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{"/ws/ws.txt": "from sandbox"})
 
 	reg := tool.NewRegistry()
-	RegisterAll(reg, sb, &mockUserIO{}, ws, nil)
+	RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil)
 
 	_, handler, ok := reg.Get("read_file")
 	if !ok {
@@ -862,4 +905,3 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 		t.Errorf("expected workspace content, got %q", content)
 	}
 }
-

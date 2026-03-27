@@ -28,6 +28,11 @@ type switchModelMsg struct {
 	model string
 }
 
+// switchTrustMsg 通知 app 切换 trust level。
+type switchTrustMsg struct {
+	trust string
+}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -39,18 +44,23 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn        func(string)  // 发送用户消息给 agent
-	cancelRunFn   func() bool   // 取消当前运行中的任务
-	skillListFn   func() string // 查询已加载 skills
-	sessionInfoFn func() string
-	offloadFn     func(keepRecent int, note string) (string, error)
-	taskListFn    func(status string, limit int) (string, error)
-	taskQueryFn   func(taskID string) (string, error)
-	taskCancelFn  func(taskID, reason string) (string, error)
-	pendAsk       *bridgeAsk // 当前阻塞的 Ask 请求
-	askForm       *askFormState
-	finished      bool       // session 已结束
-	result        string     // 最终结果
+	sendFn              func(string)  // 发送用户消息给 agent
+	cancelRunFn         func() bool   // 取消当前运行中的任务
+	skillListFn         func() string // 查询已加载 skills
+	sessionInfoFn       func() string
+	offloadFn           func(keepRecent int, note string) (string, error)
+	taskListFn          func(status string, limit int) (string, error)
+	taskQueryFn         func(taskID string) (string, error)
+	taskCancelFn        func(taskID, reason string) (string, error)
+	sessionListFn       func(limit int) (string, error)
+	sessionRestoreFn    func(sessionID string) (string, error)
+	gitRunFn            func(cmd string, args []string) (string, error)
+	permissionSummaryFn func() string
+	setPermissionFn     func(toolName, mode string) (string, error)
+	pendAsk             *bridgeAsk // 当前阻塞的 Ask 请求
+	askForm             *askFormState
+	finished            bool   // session 已结束
+	result              string // 最终结果
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
@@ -59,6 +69,7 @@ type chatModel struct {
 	provider  string
 	model     string
 	workspace string
+	trust     string
 
 	sidebarTitle  string
 	renderSidebar func() string
@@ -72,7 +83,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (Enter to send, /help for commands)"
 	ta.Focus()
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 4096
 	ta.KeyMap.InsertNewline.SetKeys("shift+enter")
@@ -82,6 +93,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		provider:  provider,
 		model:     model,
 		workspace: workspace,
+		trust:     "trusted",
 		now:       time.Now,
 	}
 }
@@ -148,6 +160,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	if m.pendAsk == nil && !m.streaming {
 		var cmd tea.Cmd
 		m.textarea, cmd = m.textarea.Update(msg)
+		m.adjustInputHeight()
 		cmds = append(cmds, cmd)
 	}
 
@@ -178,6 +191,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		m.pendAsk = nil
 		m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
 		m.textarea.Reset()
+		m.adjustInputHeight()
 		m.refreshViewport()
 
 		// 构造回复
@@ -193,6 +207,8 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	// 普通用户消息
 	m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
 	m.textarea.Reset()
+	m.adjustInputHeight()
+	m.adjustInputHeight()
 	m.streaming = true
 	m.refreshViewport()
 
@@ -255,7 +271,7 @@ func (m *chatModel) refreshViewport() {
 
 func (m *chatModel) recalcLayout() {
 	headerH := 2 // 顶栏
-	inputH := 5  // 输入区（含边框）
+	inputH := m.inputBoxHeight()
 	statusH := 1 // 底部状态栏
 
 	vpHeight := m.height - headerH - inputH - statusH
@@ -272,7 +288,33 @@ func (m *chatModel) recalcLayout() {
 	}
 
 	m.textarea.SetWidth(m.width - 4)
+	m.adjustInputHeight()
 	m.refreshViewport()
+}
+
+func (m *chatModel) inputBoxHeight() int {
+	h := m.textarea.Height() + 2
+	if h < 3 {
+		return 3
+	}
+	if h > 7 {
+		return 7
+	}
+	return h
+}
+
+func (m *chatModel) adjustInputHeight() {
+	lines := 1
+	if v := m.textarea.Value(); v != "" {
+		lines = strings.Count(v, "\n") + 1
+	}
+	if lines < 1 {
+		lines = 1
+	}
+	if lines > 5 {
+		lines = 5
+	}
+	m.textarea.SetHeight(lines)
 }
 
 func (m chatModel) sidebarVisible() bool {
@@ -403,6 +445,9 @@ func (m chatModel) renderBuiltinSidebar() string {
 	if strings.TrimSpace(m.model) != "" {
 		sb.WriteString(fmt.Sprintf("Model: %s\n", m.model))
 	}
+	if strings.TrimSpace(m.trust) != "" {
+		sb.WriteString(fmt.Sprintf("Trust: %s\n", m.trust))
+	}
 	sb.WriteString(fmt.Sprintf("Messages: %d\n", len(m.messages)))
 	sb.WriteString("\n")
 	sb.WriteString(sidebarSectionTitleStyle.Render("Tools"))
@@ -442,6 +487,7 @@ func (m chatModel) handleCtrlC() (chatModel, tea.Cmd) {
 	}
 	m.lastCtrlC = now
 	m.textarea.Reset()
+	m.adjustInputHeight()
 	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Input cleared. Press Ctrl+C again quickly to exit."})
 	m.refreshViewport()
 	return m, nil
@@ -498,11 +544,57 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case "/session":
+		if len(args) >= 2 && strings.ToLower(args[0]) == "restore" {
+			if m.sessionRestoreFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session restore is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			id := strings.TrimSpace(args[1])
+			if id == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /session restore <session_id>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			out, err := m.sessionRestoreFn(id)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to restore session: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
 		info := "Session information is unavailable."
 		if m.sessionInfoFn != nil {
 			info = m.sessionInfoFn()
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/sessions":
+		if m.sessionListFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session list is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		limit := 20
+		if len(args) >= 1 {
+			v, err := strconv.Atoi(args[0])
+			if err != nil || v <= 0 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /sessions [limit:int]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit = v
+		}
+		out, err := m.sessionListFn(limit)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list sessions: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
 		m.refreshViewport()
 		return m, nil
 
@@ -620,6 +712,147 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	case "/config":
 		return m.handleConfigCommand(args)
 
+	case "/git":
+		if m.gitRunFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Git workflow commands are unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /git status\n  /git diff [path]\n  /git commit <message>\n  /git pr [args...]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		sub := strings.ToLower(args[0])
+		switch sub {
+		case "status":
+			out, err := m.gitRunFn("git", []string{"--no-pager", "status", "--short"})
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git status failed: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+		case "diff":
+			cmdArgs := []string{"--no-pager", "diff"}
+			if len(args) > 1 {
+				cmdArgs = append(cmdArgs, args[1:]...)
+			}
+			out, err := m.gitRunFn("git", cmdArgs)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git diff failed: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+		case "commit":
+			if len(args) < 2 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /git commit <message>"})
+			} else {
+				msg := strings.Join(args[1:], " ")
+				out, err := m.gitRunFn("git", []string{"commit", "-m", msg})
+				if err != nil {
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git commit failed: %v", err)})
+				} else {
+					m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+				}
+			}
+		case "pr":
+			prArgs := []string{"pr"}
+			if len(args) > 1 {
+				prArgs = append(prArgs, args[1:]...)
+			} else {
+				prArgs = append(prArgs, "status")
+			}
+			out, err := m.gitRunFn("gh", prArgs)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("gh pr failed: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /git status | /git diff [path] | /git commit <message> | /git pr [args...]"})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/budget":
+		info := "Budget information is unavailable."
+		if m.sessionInfoFn != nil {
+			info = m.sessionInfoFn()
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/permissions":
+		if len(args) == 0 {
+			info := "Permission policy information is unavailable."
+			if m.permissionSummaryFn != nil {
+				info = m.permissionSummaryFn()
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+			m.refreshViewport()
+			return m, nil
+		}
+		if strings.ToLower(args[0]) == "trust" {
+			if len(args) < 2 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /permissions trust <trusted|restricted>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			nextTrust := strings.ToLower(strings.TrimSpace(args[1]))
+			if nextTrust != "trusted" && nextTrust != "restricted" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "trust must be trusted or restricted"})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching trust to %s...", nextTrust)})
+			m.streaming = true
+			m.refreshViewport()
+			return m, func() tea.Msg { return switchTrustMsg{trust: nextTrust} }
+		}
+		if strings.ToLower(args[0]) == "set" {
+			if len(args) < 3 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /permissions set <tool_name> <allow|ask|deny|reset>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			if m.setPermissionFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Runtime permissions are unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			toolName := strings.TrimSpace(args[1])
+			mode := strings.ToLower(strings.TrimSpace(args[2]))
+			out, err := m.setPermissionFn(toolName, mode)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to set permission: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /permissions\n  /permissions trust <trusted|restricted>\n  /permissions set <tool_name> <allow|ask|deny|reset>"})
+		m.refreshViewport()
+		return m, nil
+
+	case "/trust":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current trust: %s\nUsage: /trust <trusted|restricted>", m.trust)})
+			m.refreshViewport()
+			return m, nil
+		}
+		nextTrust := strings.ToLower(strings.TrimSpace(args[0]))
+		if nextTrust != "trusted" && nextTrust != "restricted" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "trust must be trusted or restricted"})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching trust to %s...", nextTrust)})
+		m.streaming = true
+		m.refreshViewport()
+		return m, func() tea.Msg { return switchTrustMsg{trust: nextTrust} }
+
 	case "/help":
 		help := "Available commands:\n" +
 			"  /model [name]  Show or switch model\n" +
@@ -627,10 +860,18 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /config set <key> <value>  Set config key (provider/model/base_url/api_key)\n" +
 			"  /skills        Show discovered user skills and activation state\n" +
 			"  /session       Show current session summary\n" +
+			"  /session restore <id>  Restore a persisted session\n" +
+			"  /sessions [limit]  List persisted sessions\n" +
 			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
 			"  /tasks [status] [limit]  List background tasks\n" +
 			"  /task <id>     Query task details\n" +
 			"  /task cancel <id> [reason]  Cancel a background task\n" +
+			"  /git status|diff|commit|pr  Common git workflow helpers\n" +
+			"  /budget        Show budget/context summary\n" +
+			"  /permissions   Show runtime permission summary\n" +
+			"  /permissions set <tool> <allow|ask|deny|reset>\n" +
+			"  /permissions trust <trusted|restricted>\n" +
+			"  /trust <trusted|restricted>  Switch trust and rebuild runtime\n" +
 			"  /clear         Clear conversation\n" +
 			"\nKeyboard shortcuts:\n" +
 			"  Esc Esc        Cancel current running generation/tool execution\n" +

@@ -11,7 +11,6 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
-	toolbuiltins "github.com/mossagents/moss/extensions/toolbuiltins"
 	"github.com/mossagents/moss/kernel"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/port"
@@ -42,12 +41,12 @@ type Option func(*config)
 
 func defaultConfig() config {
 	return config{
-		builtin:    true,
-		mcpServers: true,
-		skills:     true,
+		builtin:     true,
+		mcpServers:  true,
+		skills:      true,
 		progressive: false,
-		agents:     true,
-		planning:   true,
+		agents:      true,
+		planning:    true,
 	}
 }
 
@@ -417,8 +416,8 @@ func (s *coreToolSkill) Metadata() skill.Metadata {
 }
 
 func (s *coreToolSkill) Init(ctx context.Context, deps skill.Deps) error {
-	s.toolNames = toolbuiltins.RegisteredToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
-	return toolbuiltins.RegisterAll(deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
+	s.toolNames = RegisteredBuiltinToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
+	return RegisterBuiltinTools(deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
 }
 
 func (s *coreToolSkill) Shutdown(_ context.Context) error { return nil }

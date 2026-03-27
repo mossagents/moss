@@ -14,6 +14,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/skill"
@@ -35,6 +37,7 @@ type Config struct {
 	Model              string
 	Workspace          string
 	Trust              string
+	SessionStoreDir    string
 	BaseURL            string
 	APIKey             string
 	BuildKernel        func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
@@ -53,15 +56,17 @@ type kernelReadyMsg struct {
 // agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
 // 使用指针共享，避免 Bubble Tea 值语义问题。
 type agentState struct {
-	k       *kernel.Kernel
-	sess    *session.Session
-	ctx     context.Context
-	cancel  context.CancelFunc
-	runCancel context.CancelFunc
-	bridge  *BridgeIO
-	trust   string
-	mu      sync.Mutex
-	running bool // 是否正在执行 loop
+	k           *kernel.Kernel
+	sess        *session.Session
+	store       session.SessionStore
+	ctx         context.Context
+	cancel      context.CancelFunc
+	runCancel   context.CancelFunc
+	bridge      *BridgeIO
+	trust       string
+	permissions map[string]string
+	mu          sync.Mutex
+	running     bool // 是否正在执行 loop
 }
 
 func (a *agentState) sessionSummary() string {
@@ -90,7 +95,138 @@ func (a *agentState) sessionSummary() string {
 	if v, ok := a.sess.GetState("last_offload_at"); ok {
 		b.WriteString(fmt.Sprintf("\nLast offload time: %v", v))
 	}
+	b.WriteString(fmt.Sprintf("\nTrust: %s", a.trust))
 	return b.String()
+}
+
+func (a *agentState) listPersistedSessions(limit int) (string, error) {
+	a.mu.Lock()
+	store := a.store
+	a.mu.Unlock()
+	if store == nil {
+		return "", fmt.Errorf("session store is unavailable")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	summaries, err := store.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].CreatedAt > summaries[j].CreatedAt })
+	if len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
+	if len(summaries) == 0 {
+		return "No persisted sessions found.", nil
+	}
+	var b strings.Builder
+	b.WriteString("Persisted sessions:\n")
+	for _, s := range summaries {
+		b.WriteString(fmt.Sprintf("- %s | %s | %s | steps=%d | created=%s\n", s.ID, s.Status, s.Mode, s.Steps, s.CreatedAt))
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func (a *agentState) restoreSession(sessionID string) (string, error) {
+	a.mu.Lock()
+	store := a.store
+	a.mu.Unlock()
+	if store == nil {
+		return "", fmt.Errorf("session store is unavailable")
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	defer cancel()
+	loaded, err := store.Load(ctx, sessionID)
+	if err != nil {
+		return "", err
+	}
+	if loaded == nil {
+		return "", fmt.Errorf("session %q not found", sessionID)
+	}
+	a.mu.Lock()
+	a.sess = loaded
+	a.mu.Unlock()
+	return fmt.Sprintf("Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages)), nil
+}
+
+func (a *agentState) setPermission(toolName, mode string) (string, error) {
+	toolName = strings.TrimSpace(toolName)
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if toolName == "" {
+		return "", fmt.Errorf("tool name is required")
+	}
+	switch mode {
+	case "allow", "ask", "deny", "reset":
+	default:
+		return "", fmt.Errorf("mode must be allow|ask|deny|reset")
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.permissions == nil {
+		a.permissions = map[string]string{}
+	}
+	if mode == "reset" {
+		delete(a.permissions, toolName)
+		return fmt.Sprintf("Permission reset for %s.", toolName), nil
+	}
+	a.permissions[toolName] = mode
+	return fmt.Sprintf("Permission updated: %s -> %s", toolName, mode), nil
+}
+
+func (a *agentState) permissionSummary() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Trust: %s\n", a.trust))
+	if len(a.permissions) == 0 {
+		b.WriteString("Overrides: none")
+		return b.String()
+	}
+	keys := make([]string, 0, len(a.permissions))
+	for k := range a.permissions {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	b.WriteString("Overrides:\n")
+	for _, k := range keys {
+		b.WriteString(fmt.Sprintf("- %s: %s\n", k, a.permissions[k]))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
+	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
+		if mc.Phase == middleware.BeforeToolCall && mc.Tool != nil {
+			a.mu.Lock()
+			mode := a.permissions[mc.Tool.Name]
+			a.mu.Unlock()
+			switch mode {
+			case "deny":
+				return builtins.ErrDenied
+			case "ask":
+				if mc.IO != nil {
+					resp, err := mc.IO.Ask(ctx, port.InputRequest{
+						Type:   port.InputConfirm,
+						Prompt: "Allow tool " + mc.Tool.Name + "?",
+						Meta:   map[string]any{"tool": mc.Tool.Name, "input": mc.Input},
+					})
+					if err != nil {
+						return err
+					}
+					if !resp.Approved {
+						return builtins.ErrDenied
+					}
+				}
+				return next(ctx)
+			case "allow":
+				return next(ctx)
+			}
+		}
+		return next(ctx)
+	}
 }
 
 func (a *agentState) invokeTool(ctx context.Context, name string, input any) (json.RawMessage, error) {
@@ -332,6 +468,9 @@ func Run(cfg Config) error {
 func (m appModel) Init() tea.Cmd {
 	if m.state == stateChat {
 		// 跳过 Welcome 直接进入 Chat，同时启动 textarea 光标闪烁和 kernel 初始化
+		if strings.TrimSpace(m.config.Trust) != "" {
+			m.chat.trust = m.config.Trust
+		}
 		return tea.Batch(m.chat.Init(), m.initCmd)
 	}
 	return m.welcome.Init()
@@ -419,6 +558,24 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chat.provider = m.config.Provider
 		m.chat.model = sm.model
+		m.chat.trust = m.config.Trust
+		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+	}
+
+	// 切换 trust：关闭旧 kernel，用新 trust 重建
+	if st, ok := msg.(switchTrustMsg); ok {
+		if m.agent != nil && m.agent.cancel != nil {
+			m.agent.cancel()
+		}
+		m.agent = nil
+		m.chat.sendFn = nil
+		m.config.Trust = st.trust
+		wCfg := WelcomeConfig{
+			Provider:  m.config.Provider,
+			Model:     m.config.Model,
+			Workspace: m.config.Workspace,
+		}
+		m.chat.trust = st.trust
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
 
@@ -430,7 +587,14 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			go agent.appendAndRun(text)
 		}
 		m.chat.cancelRunFn = agent.cancelCurrentRun
+		m.chat.trust = m.config.Trust
 		m.chat.sessionInfoFn = agent.sessionSummary
+		m.chat.sessionListFn = func(limit int) (string, error) {
+			return agent.listPersistedSessions(limit)
+		}
+		m.chat.sessionRestoreFn = func(sessionID string) (string, error) {
+			return agent.restoreSession(sessionID)
+		}
 		m.chat.offloadFn = func(keepRecent int, note string) (string, error) {
 			return agent.offloadContext(keepRecent, note)
 		}
@@ -442,6 +606,18 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chat.taskCancelFn = func(taskID, reason string) (string, error) {
 			return agent.cancelTask(taskID, reason)
+		}
+		m.chat.permissionSummaryFn = agent.permissionSummary
+		m.chat.setPermissionFn = agent.setPermission
+		m.chat.gitRunFn = func(cmd string, args []string) (string, error) {
+			raw, err := agent.invokeTool(agent.ctx, "run_command", map[string]any{
+				"command": cmd,
+				"args":    args,
+			})
+			if err != nil {
+				return "", err
+			}
+			return formatJSON(raw), nil
 		}
 		m.chat.skillListFn = func() string {
 			manifests := runtime.SkillManifests(agent.k)
@@ -484,6 +660,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.chat.model = m.config.Model
 			connInfo += " (" + m.config.Model + ")"
 		}
+		if m.config.Trust != "" {
+			connInfo += " [" + m.config.Trust + "]"
+		}
 		m.chat.streaming = false
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgSystem,
@@ -512,6 +691,10 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		if err := k.Boot(ctx); err != nil {
 			cancel()
 			return sessionResultMsg{err: fmt.Errorf("failed to boot kernel: %w", err)}
+		}
+		var store session.SessionStore
+		if strings.TrimSpace(cfg.SessionStoreDir) != "" {
+			store, _ = session.NewFileStore(cfg.SessionStoreDir)
 		}
 		if cfg.AfterBoot != nil {
 			if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
@@ -558,13 +741,17 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		}
 
 		agent := &agentState{
-			k:      k,
-			sess:   sess,
-			ctx:    ctx,
-			cancel: cancel,
-			bridge: bridge,
-			trust:  cfg.Trust,
+			k:           k,
+			sess:        sess,
+			store:       store,
+			ctx:         ctx,
+			cancel:      cancel,
+			bridge:      bridge,
+			trust:       cfg.Trust,
+			permissions: map[string]string{},
 		}
+
+		k.Middleware().Use(agent.permissionOverrideMiddleware())
 
 		return kernelReadyMsg{agent: agent}
 	}

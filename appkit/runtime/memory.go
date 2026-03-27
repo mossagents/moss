@@ -1,4 +1,4 @@
-package memoryx
+package runtime
 
 import (
 	"context"
@@ -10,27 +10,27 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const stateKey kernel.ExtensionStateKey = "memoryx.state"
+const memoryStateKey kernel.ExtensionStateKey = "memoryx.state"
 
 type state struct {
 	workspace port.Workspace
 }
 
 // WithWorkspace 将持久化 memory 工作区接入 Kernel。
-func WithWorkspace(ws port.Workspace) kernel.Option {
+func WithMemoryWorkspace(ws port.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
-		ensureState(k).workspace = ws
+		ensureMemoryState(k).workspace = ws
 	}
 }
 
 // RegisterTools 为 memory 命名空间注册标准工具集。
-func RegisterTools(reg tool.Registry, ws port.Workspace) error {
+func RegisterMemoryToolsCompat(reg tool.Registry, ws port.Workspace) error {
 	return RegisterMemoryTools(reg, ws)
 }
 
-func ensureState(k *kernel.Kernel) *state {
+func ensureMemoryState(k *kernel.Kernel) *state {
 	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(stateKey, &state{})
+	actual, loaded := bridge.LoadOrStoreState(memoryStateKey, &state{})
 	st := actual.(*state)
 	if loaded {
 		return st
@@ -189,4 +189,3 @@ func deleteMemoryHandler(ws port.Workspace) tool.ToolHandler {
 		return json.Marshal(map[string]string{"status": "deleted", "path": in.Path})
 	}
 }
-

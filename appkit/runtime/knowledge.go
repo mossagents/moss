@@ -1,4 +1,4 @@
-package knowledgex
+package runtime
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 )
 
 // NewMemoryStore 返回官方提供的内存知识库实现。
-func NewMemoryStore() *knowledge.MemoryStore {
+func NewMemoryKnowledgeStore() *knowledge.MemoryStore {
 	return knowledge.NewMemoryStore()
 }
 
 // RegisterTools 将 knowledge 能力作为标准扩展工具集接入 Kernel。
-func RegisterTools(k *kernel.Kernel, store knowledge.Store, embedder port.Embedder) error {
+func RegisterKnowledgeTools(k *kernel.Kernel, store knowledge.Store, embedder port.Embedder) error {
 	return register(k.ToolRegistry(), store, embedder)
 }
 

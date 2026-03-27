@@ -1,4 +1,4 @@
-package builtins
+package runtime
 
 import (
 	"context"
@@ -20,7 +20,7 @@ const maxInlineCommandOutput = 8000
 // RegisteredToolNames 返回给定配置下会注册的工具名列表。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
-func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
+func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
 	names := []string{}
 	if ws != nil || sb != nil {
 		names = append(names, "read_file", "write_file", "edit_file", "glob", "ls", "grep")
@@ -34,7 +34,7 @@ func RegisteredToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Execut
 
 // RegisterAll 注册所有内置工具到 registry。
 // 优先使用 Workspace/Executor 接口；未提供时回退到 Sandbox。
-func RegisterAll(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
+func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
 	type entry struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -601,7 +601,7 @@ func askUserHandler(io port.UserIO) tool.ToolHandler {
 			Question        string         `json:"question"`
 			RequestedSchema map[string]any `json:"requestedSchema"`
 		}
-		if err := json.Unmarshal(input, &params); err != nil {
+		if err := unmarshalAskUserInputWithRetry(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 		if io == nil {
@@ -649,6 +649,10 @@ func buildAskUserFields(schema map[string]any) ([]port.InputField, error) {
 			if s, ok := name.(string); ok {
 				requiredSet[s] = true
 			}
+		}
+	} else if reqStr, ok := schema["required"].([]string); ok {
+		for _, name := range reqStr {
+			requiredSet[name] = true
 		}
 	}
 	keys := make([]string, 0, len(props))
@@ -867,4 +871,81 @@ func scopedPattern(pattern, scopePath string) string {
 		return pattern
 	}
 	return filepath.Join(scopePath, pattern)
+}
+
+func unmarshalAskUserInputWithRetry(raw json.RawMessage, out any) error {
+	if err := json.Unmarshal(raw, out); err == nil {
+		return nil
+	} else if !isUnexpectedJSONEOF(err) {
+		return err
+	}
+
+	repaired := repairTruncatedJSON(string(raw))
+	if strings.TrimSpace(repaired) == "" {
+		return fmt.Errorf("unexpected end of JSON input")
+	}
+	return json.Unmarshal([]byte(repaired), out)
+}
+
+func isUnexpectedJSONEOF(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unexpected end of JSON input") || strings.Contains(msg, "unexpected EOF")
+}
+
+func repairTruncatedJSON(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	stack := make([]rune, 0, 8)
+	inString := false
+	escaped := false
+
+	for _, r := range s {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if r == '\\' {
+				escaped = true
+				continue
+			}
+			if r == '"' {
+				inString = false
+			}
+			continue
+		}
+		switch r {
+		case '"':
+			inString = true
+		case '{', '[':
+			stack = append(stack, r)
+		case '}':
+			if len(stack) > 0 && stack[len(stack)-1] == '{' {
+				stack = stack[:len(stack)-1]
+			}
+		case ']':
+			if len(stack) > 0 && stack[len(stack)-1] == '[' {
+				stack = stack[:len(stack)-1]
+			}
+		}
+	}
+
+	if inString {
+		s += `"`
+	}
+	s = strings.TrimRight(s, ", \t\r\n")
+
+	for i := len(stack) - 1; i >= 0; i-- {
+		if stack[i] == '{' {
+			s += "}"
+		} else {
+			s += "]"
+		}
+	}
+	return s
 }

@@ -266,10 +266,7 @@ kernel/loop                         (imports 以上所有)
 kernel/kernel.go                    (Kernel 入口，组合所有子系统)
     ↑ references
 skill                               (Skill 管理，imports tool, middleware, sandbox, port)
-appkit/runtime                      (runtime 主装配层：skills/agents/mcp/builtin 组合入口)
-extensions/defaults, extensions/skillsx, extensions/agentsx (兼容 shim，转发到 appkit/runtime)
-extensions/knowledgex               (knowledge + embedder 组合扩展)
-extensions/toolbuiltins             (内置工具定义与注册实现，被 appkit/runtime 复用)
+appkit/runtime                      (runtime 主装配层：skills/agents/mcp/knowledge/memory/builtin 组合入口)
     ↑ used by
 appkit                            (开发者友好装配)
     ↑ used by

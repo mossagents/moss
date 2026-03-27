@@ -12,7 +12,7 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 	cfg := AgentConfig{
 		Name:         "researcher",
 		SystemPrompt: "Research.",
-		Tools:        []string{"search_text"},
+		Tools:        []string{"grep"},
 	}
 	if err := r.Register(cfg); err != nil {
 		t.Fatal(err)

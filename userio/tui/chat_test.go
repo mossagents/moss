@@ -51,6 +51,30 @@ func TestSlashCommandTaskCancel(t *testing.T) {
 	}
 }
 
+func TestNewChatModelInputHeightDefaultAndClamp(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	if got := m.textarea.Height(); got != 1 {
+		t.Fatalf("default textarea height=%d, want 1", got)
+	}
+	m.textarea.SetValue("1\n2\n3\n4\n5\n6")
+	m.adjustInputHeight()
+	if got := m.textarea.Height(); got != 5 {
+		t.Fatalf("clamped textarea height=%d, want 5", got)
+	}
+}
+
+func TestSlashCommandSessionsUnavailable(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/sessions")
+	if len(updated.messages) == 0 {
+		t.Fatal("expected message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError {
+		t.Fatalf("expected error kind, got %v", last.kind)
+	}
+}
+
 func TestCtrlCSingleClearsInput(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true

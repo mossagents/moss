@@ -30,8 +30,8 @@ import (
 
 	"github.com/mossagents/moss/adapters/embedding"
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/extensions/knowledgex"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -123,7 +123,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 
 func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	userIO := port.NewConsoleIO()
-	k, runtime, err := buildMiniclawKernel(ctx, flags, userIO)
+	k, rt, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
 		return err
 	}
@@ -132,7 +132,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 		return err
 	}
 	defer k.Shutdown(ctx)
-	runtime.startScheduler(ctx, k, userIO)
+	rt.startScheduler(ctx, k, userIO)
 
 	modelName := flags.Model
 	if modelName == "" {
@@ -151,7 +151,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 
 	return appkit.Serve(ctx, appkit.ServeConfig{
 		Prompt:       "🐾 > ",
-		SessionStore: runtime.store,
+		SessionStore: rt.store,
 		SystemPrompt: buildSystemPrompt(flags.Workspace),
 	}, k)
 }
@@ -165,7 +165,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 
 	sched := scheduler.New()
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
-	knStore := knowledgex.NewMemoryStore()
+	knStore := runtime.NewMemoryKnowledgeStore()
 
 	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 		appkit.WithSessionStore(store),

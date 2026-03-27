@@ -73,7 +73,7 @@
 ### 变更
 
 - `appkit`、`cmd/moss`、`userio/tui` 已切换到 `appkit/runtime` API 路径。
-- `extensions/defaults`、`extensions/skillsx`、`extensions/agentsx` 已调整为兼容 shim（转发到 runtime）。
+- 旧 `extensions/*` shim 已移除，统一通过 `appkit/runtime` 与 `appkit` 装配。
 
 ### 迁移说明
 
@@ -92,7 +92,7 @@
 
 ### 新增
 
-- `extensions/memoryx`：持久 memory 命名空间扩展
+- `appkit/runtime`：持久 memory 命名空间工具
   - 工具：`read_memory` / `write_memory` / `list_memories` / `delete_memory`
   - prompt 提示：声明 `/memories` 持久语义
 - `appkit.WithPersistentMemories(memoriesDir)`：按目录装配持久记忆工具
@@ -115,7 +115,7 @@
 
 ### 新增
 
-- `extensions/compactx`：上下文 offload 扩展
+- `appkit/runtime`：上下文 offload 能力
   - 工具：`offload_context`
   - 能力：将旧对话快照保存到 `SessionStore`，并压缩当前 session 消息
 - `kernel/session/context.go`：
@@ -169,9 +169,9 @@
 
 ### 新增
 
-- `extensions/planningx`：
+- `appkit/runtime`（planning）：
   - `write_todos` 规划工具（会话级 todo 状态写入 `session.State["planning.todos"]`）
-- `extensions/contextx`：
+- `appkit/runtime`（context）：
   - `compact_conversation` 工具
   - `AutoCompactMiddleware`（阈值触发总结 + 快照 offload）
 - `agent` 异步生命周期增强：
