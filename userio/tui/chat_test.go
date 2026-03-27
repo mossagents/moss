@@ -257,4 +257,9 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	if !updated.streaming {
 		t.Fatal("expected streaming to continue with dequeued message")
 	}
+	for _, msg := range updated.messages {
+		if msg.kind == msgUser && msg.content == "next one" {
+			t.Fatal("queued message should not be appended to chat message list before execution output")
+		}
+	}
 }

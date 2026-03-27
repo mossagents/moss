@@ -169,7 +169,6 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if len(m.queuedInputs) > 0 && m.sendFn != nil {
 			next := m.queuedInputs[0]
 			m.queuedInputs = m.queuedInputs[1:]
-			m.messages = append(m.messages, chatMessage{kind: msgUser, content: next})
 			m.streaming = true
 			m.finished = false
 			m.sendFn(next)
@@ -400,7 +399,7 @@ func (m chatModel) View() string {
 		queueLines := make([]string, 0, len(m.queuedInputs)+1)
 		queueLines = append(queueLines, fmt.Sprintf("Queued messages (%d)", len(m.queuedInputs)))
 		for i, q := range m.queuedInputs {
-			if i >= 3 {
+			if i >= 5 {
 				queueLines = append(queueLines, fmt.Sprintf("...and %d more", len(m.queuedInputs)-i))
 				break
 			}
