@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 )
 
 var defaultLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -43,5 +44,32 @@ func ConfigureLogging(level slog.Level, format string, w io.Writer) error {
 	}
 
 	defaultLogger = slog.New(handler)
+	slog.SetDefault(defaultLogger)
 	return nil
+}
+
+// ConfigureDebugFileWhenEnabled 在 MOSS_DEBUG=1 时启用应用目录 debug.log 落盘。
+// 返回值：
+//   - enabled: 是否已启用文件日志
+//   - path: 日志文件路径（仅 enabled=true 时非空）
+//   - closer: 调用方可在退出时关闭
+func ConfigureDebugFileWhenEnabled(appDir string) (enabled bool, path string, closer io.Closer, err error) {
+	if os.Getenv("MOSS_DEBUG") != "1" {
+		return false, "", nil, nil
+	}
+	if appDir == "" {
+		return false, "", nil, os.ErrInvalid
+	}
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		return false, "", nil, err
+	}
+	path = filepath.Join(appDir, "debug.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return false, "", nil, err
+	}
+	handler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
+	defaultLogger = slog.New(handler)
+	slog.SetDefault(defaultLogger)
+	return true, path, f, nil
 }

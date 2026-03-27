@@ -21,11 +21,19 @@ import (
 const version = "0.3.0"
 
 func main() {
-	logger := logging.GetLogger()
-
 	// 确保 ~/.moss 配置目录存在
 	if err := appconfig.EnsureAppDir(); err != nil {
-		logger.Warn("cannot create config dir", slog.Any("error", err))
+		logging.GetLogger().Warn("cannot create config dir", slog.Any("error", err))
+	}
+	if enabled, path, closer, err := logging.ConfigureDebugFileWhenEnabled(appconfig.AppDir()); err != nil {
+		logging.GetLogger().Warn("cannot enable debug file logging", slog.Any("error", err))
+	} else {
+		if closer != nil {
+			defer closer.Close()
+		}
+		if enabled {
+			logging.GetLogger().Info("debug file logging enabled", slog.String("path", path))
+		}
 	}
 
 	// 无参数默认进入 TUI
@@ -99,7 +107,6 @@ func launchTUI(args []string) {
 }
 
 func runCmd(args []string) {
-	logger := logging.GetLogger()
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
@@ -107,7 +114,7 @@ func runCmd(args []string) {
 	appkit.BindAppFlags(fs, f)
 
 	if err := fs.Parse(args); err != nil {
-		logger.Error("error parsing flags", slog.Any("error", err))
+		logging.GetLogger().Error("error parsing flags", slog.Any("error", err))
 		os.Exit(1)
 	}
 	f.MergeGlobalConfig()
@@ -126,13 +133,13 @@ func runCmd(args []string) {
 	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
 	k, err := appkit.BuildKernel(ctx, f, cliIO)
 	if err != nil {
-		logger.Error("error initializing kernel", slog.Any("error", err))
+		logging.GetLogger().Error("error initializing kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
 	applyPolicy(k, f.Trust)
 
 	if err := k.Boot(ctx); err != nil {
-		logger.Error("error booting kernel", slog.Any("error", err))
+		logging.GetLogger().Error("error booting kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer k.Shutdown(ctx)
@@ -162,7 +169,7 @@ func runCmd(args []string) {
 		MaxSteps:   50,
 	})
 	if err != nil {
-		logger.Error("error creating session", slog.Any("error", err))
+		logging.GetLogger().Error("error creating session", slog.Any("error", err))
 		os.Exit(1)
 	}
 	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: *goal})
@@ -170,7 +177,7 @@ func runCmd(args []string) {
 	result, err := k.Run(ctx, sess)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Run failed: %v\n", err)
-		logger.Error("run failed", slog.Any("error", err))
+		logging.GetLogger().Error("run failed", slog.Any("error", err))
 		os.Exit(1)
 	}
 

@@ -159,6 +159,7 @@ Common env vars / 常用环境变量：
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
 - `ANTHROPIC_API_KEY`
+- `MOSS_DEBUG=1`（开启 `~/.moss/debug.log` 调试日志落盘）
 
 ---
 
