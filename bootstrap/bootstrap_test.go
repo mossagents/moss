@@ -89,6 +89,25 @@ func TestPriority(t *testing.T) {
 	}
 }
 
+func TestLoadFromWorkspaceRootAgentsFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("root-agents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	agentsDir := filepath.Join(dir, ".agents")
+	if err := os.MkdirAll(agentsDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("agents-dir"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := Load(dir)
+	if ctx.Agents != "root-agents" {
+		t.Errorf("Agents = %q, want %q (should prefer workspace root AGENTS.md)", ctx.Agents, "root-agents")
+	}
+}
+
 func contains(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(s) > 0 && containsStr(s, sub))
 }

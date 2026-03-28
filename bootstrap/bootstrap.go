@@ -3,7 +3,7 @@
 // 引导文件定义了 Agent 的身份、灵魂、工具提示和用户画像。
 // 支持按优先级从项目目录和全局目录加载：
 //
-//	项目: <workspace>/.agents/, <workspace>/.<appName>/
+//	项目: <workspace>/, <workspace>/.agents/, <workspace>/.<appName>/
 //	全局: ~/.<appName>/
 //
 // 文件列表：
@@ -76,20 +76,21 @@ var appName = "moss"
 func SetAppName(name string) { appName = name }
 
 // Load 从工作区和全局目录加载引导上下文。
-// 优先级: 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
+// 优先级: 项目根目录 > 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
 // 每个文件只取最高优先级的版本。
 func Load(workspace string) *Context {
 	return LoadWithAppName(workspace, appName)
 }
 
 // LoadWithAppName 从工作区和全局目录加载引导上下文，并显式指定应用名。
-// 优先级: 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
+// 优先级: 项目根目录 > 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
 // 每个文件只取最高优先级的版本。
 func LoadWithAppName(workspace, name string) *Context {
 	ctx := &Context{}
 
 	// 构建搜索目录列表（优先级从高到低）
 	dirs := []string{
+		workspace,
 		filepath.Join(workspace, ".agents"),
 		filepath.Join(workspace, "."+name),
 	}

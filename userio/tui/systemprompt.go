@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"strings"
 
+	"github.com/mossagents/moss/bootstrap"
 	appconfig "github.com/mossagents/moss/config"
 )
 
@@ -16,6 +17,12 @@ var defaultSystemPromptTemplate string
 func buildSystemPrompt(workspace string, skillPrompts ...string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
 	base := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+
+	if bctx := bootstrap.Load(workspace); bctx != nil {
+		if sec := strings.TrimSpace(bctx.SystemPromptSection()); sec != "" {
+			base += "\n## Bootstrap Context\n" + sec
+		}
+	}
 
 	if len(skillPrompts) > 0 {
 		base += "\n## Additional Skills\n" + strings.Join(skillPrompts, "\n")
