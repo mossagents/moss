@@ -69,6 +69,52 @@ type agentState struct {
 	running     bool // 是否正在执行 loop
 }
 
+func renderSkillsSummary(agent *agentState, workspace string) string {
+	manifests := runtime.SkillManifests(agent.k)
+	if len(manifests) == 0 {
+		manifests = skill.DiscoverSkillManifests(workspace)
+	}
+	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
+
+	var sb strings.Builder
+	if len(manifests) == 0 {
+		sb.WriteString("No user-installed SKILL.md skills were found.")
+	} else {
+		sb.WriteString("Discovered user skills:\n")
+		for _, mf := range manifests {
+			loaded := "inactive"
+			if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
+				loaded = "active"
+			}
+			if strings.TrimSpace(mf.Description) == "" {
+				sb.WriteString(fmt.Sprintf("  • %s [%s]\n", mf.Name, loaded))
+			} else {
+				sb.WriteString(fmt.Sprintf("  • %s [%s] — %s\n", mf.Name, loaded, mf.Description))
+			}
+		}
+	}
+
+	builtinSet := make(map[string]struct{})
+	for _, name := range runtime.RegisteredBuiltinToolNames(agent.k.Sandbox(), agent.k.Workspace(), agent.k.Executor()) {
+		builtinSet[name] = struct{}{}
+	}
+	var builtinNames []string
+	for _, spec := range agent.k.ToolRegistry().List() {
+		if _, ok := builtinSet[spec.Name]; ok {
+			builtinNames = append(builtinNames, spec.Name)
+		}
+	}
+	sort.Strings(builtinNames)
+	if len(builtinNames) > 0 {
+		sb.WriteString("\n\nRuntime builtin tools:\n")
+		for _, name := range builtinNames {
+			sb.WriteString("  - " + name + "\n")
+		}
+	}
+
+	return "```text\n" + sb.String() + "\n```"
+}
+
 func (a *agentState) sessionSummary() string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -616,48 +662,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return formatJSON(raw), nil
 		}
 		m.chat.skillListFn = func() string {
-			manifests := runtime.SkillManifests(agent.k)
-			if len(manifests) == 0 {
-				manifests = skill.DiscoverSkillManifests(m.config.Workspace)
-			}
-			sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
-			var sb strings.Builder
-			if len(manifests) == 0 {
-				sb.WriteString("No user-installed SKILL.md skills were found.")
-			} else {
-				sb.WriteString("Discovered user skills:\n")
-				for _, mf := range manifests {
-					loaded := "inactive"
-					if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
-						loaded = "active"
-					}
-					if strings.TrimSpace(mf.Description) == "" {
-						sb.WriteString(fmt.Sprintf("  • %s [%s]\n", mf.Name, loaded))
-					} else {
-						sb.WriteString(fmt.Sprintf("  • %s [%s] — %s\n", mf.Name, loaded, mf.Description))
-					}
-				}
-			}
-			loaded := runtime.SkillsManager(agent.k).List()
-			runtimeOnly := make([]string, 0, len(loaded))
-			for _, s := range loaded {
-				if s.Name == "builtin-tools" {
-					runtimeOnly = append(runtimeOnly, s.Name)
-				}
-			}
-			if len(runtimeOnly) > 0 {
-				sb.WriteString("\n\nRuntime builtin tools:\n")
-				specs := agent.k.ToolRegistry().List()
-				toolNames := make([]string, 0, len(specs))
-				for _, spec := range specs {
-					toolNames = append(toolNames, spec.Name)
-				}
-				sort.Strings(toolNames)
-				for _, name := range toolNames {
-					sb.WriteString("  - " + name + "\n")
-				}
-			}
-			return "```text\n" + sb.String() + "\n```"
+			return renderSkillsSummary(agent, m.config.Workspace)
 		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
