@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit/runtime"
@@ -13,6 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/sandbox"
 )
@@ -173,6 +175,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	}
 
 	k, err := BuildKernelWithConfig(ctx, flags, io, BuildConfig{
+		DefaultLLMRetry: &retry.Config{
+			MaxRetries:   2,
+			InitialDelay: 300 * time.Millisecond,
+			MaxDelay:     2 * time.Second,
+			Multiplier:   2.0,
+		},
 		DefaultSetupOptions: effective.DefaultSetupOptions,
 		Extensions:          exts,
 	})

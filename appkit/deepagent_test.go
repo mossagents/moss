@@ -3,8 +3,10 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/middleware"
@@ -140,3 +142,23 @@ func TestBuildDeepAgentKernel_PatchesOrphanToolCalls(t *testing.T) {
 	}
 }
 
+func TestBuildDeepAgentKernel_DefaultLLMRetryInjected(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "restricted",
+	}
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, nil)
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	kv := reflect.ValueOf(k).Elem()
+	loopCfg := kv.FieldByName("loopCfg")
+	llmRetry := loopCfg.FieldByName("LLMRetry")
+	if llmRetry.FieldByName("MaxRetries").Int() <= 0 {
+		t.Fatalf("expected default LLM retry enabled, got %d", llmRetry.FieldByName("MaxRetries").Int())
+	}
+	if time.Duration(llmRetry.FieldByName("InitialDelay").Int()) <= 0 {
+		t.Fatalf("expected positive retry initial delay")
+	}
+}
