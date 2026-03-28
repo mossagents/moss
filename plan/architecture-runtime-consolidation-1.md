@@ -41,7 +41,7 @@ This implementation plan executes the approved architecture decision to move ext
 | TASK-002 | Implement runtime option model in `appkit/runtime/options.go` including `WithBuiltinTools`, `WithMCPServers`, `WithSkills`, `WithProgressiveSkills`, `WithAgents`, `WithSessionStore(session.SessionStore)`, `WithPlanning`, and explicit validation helpers. |  |  |
 | TASK-003 | Port `extensions/skillsx/skills.go` into `appkit/runtime/skills.go` and preserve progressive tool names and behavior (`list_skills`, `activate_skill`). |  |  |
 | TASK-004 | Port `extensions/agentsx/agents.go` into `appkit/runtime/agents.go` and preserve registry behavior. |  |  |
-| TASK-005 | Port `extensions/toolbuiltins/builtins.go` integration into `appkit/runtime/builtin_tools.go` (runtime wiring layer, not kernel ownership change). |  |  |
+| TASK-005 | Port `extensions/toolbuiltins/builtins.go` integration into `appkit/runtime/builtintools.go` (runtime wiring layer, not kernel ownership change). |  |  |
 | TASK-006 | Implement `appkit/runtime/mcp.go` by lifting MCP load logic currently in `extensions/defaults/setup.go` and preserving enabled/MCP filtering and warning behavior. |  |  |
 | TASK-007 | Implement `appkit/runtime/context.go`, `planning.go`, `sessionstore.go`, `bootstrap.go` by consolidating thin adapters from `extensions/contextx`, `extensions/planningx`, `extensions/sessionstore`, `extensions/bootstrapctx`, `extensions/compactx`, `extensions/scheduling`, `extensions/gatewayx` where applicable. |  |  |
 | TASK-008 | Port and adapt tests into `appkit/runtime/*_test.go`, reusing cases from `extensions/skillsx/skills_test.go`, `extensions/defaults/setup_test.go`, `extensions/contextx/context_test.go`, `extensions/planningx/planning_test.go`, `extensions/compactx/compact_test.go`. |  |  |
@@ -100,7 +100,7 @@ This implementation plan executes the approved architecture decision to move ext
 - **FILE-002**: `appkit/runtime/options.go` — runtime option model and conflict validation.
 - **FILE-003**: `appkit/runtime/skills.go` — skill state/progressive tool orchestration.
 - **FILE-004**: `appkit/runtime/agents.go` — agent registry orchestration.
-- **FILE-005**: `appkit/runtime/builtin_tools.go` — built-in tools runtime wiring.
+- **FILE-005**: `appkit/runtime/builtintools.go` — builtin tools runtime wiring.
 - **FILE-006**: `appkit/runtime/mcp.go` — MCP loading integration.
 - **FILE-007**: `appkit/runtime/context.go` — context/offload orchestration.
 - **FILE-008**: `appkit/runtime/planning.go` — planning hooks/tools orchestration.

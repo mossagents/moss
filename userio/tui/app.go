@@ -641,12 +641,12 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			loaded := runtime.SkillsManager(agent.k).List()
 			runtimeOnly := make([]string, 0, len(loaded))
 			for _, s := range loaded {
-				if s.Name == "core" {
+				if s.Name == "builtin-tools" {
 					runtimeOnly = append(runtimeOnly, s.Name)
 				}
 			}
 			if len(runtimeOnly) > 0 {
-				sb.WriteString("\n\nRuntime built-in tools:\n")
+				sb.WriteString("\n\nRuntime builtin tools:\n")
 				specs := agent.k.ToolRegistry().List()
 				toolNames := make([]string, 0, len(specs))
 				for _, spec := range specs {

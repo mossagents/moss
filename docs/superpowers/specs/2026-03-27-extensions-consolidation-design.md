@@ -47,7 +47,7 @@ New package structure:
   - Replaces `extensions/skillsx` state management and progressive tools (`list_skills`, `activate_skill`).
 - `appkit/runtime/agents.go`
   - Replaces `extensions/agentsx` registry glue.
-- `appkit/runtime/builtin_tools.go`
+- `appkit/runtime/builtintools.go`
   - Replaces `extensions/toolbuiltins` wiring wrapper.
 - `appkit/runtime/mcp.go`
   - MCP load path from merged config.

@@ -90,7 +90,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	deps := Deps(k)
 
 	if cfg.builtin {
-		if err := SkillsManager(k).Register(ctx, &coreToolSkill{}, deps); err != nil {
+		if err := SkillsManager(k).Register(ctx, &builtinToolsProvider{}, deps); err != nil {
 			return err
 		}
 	}
@@ -399,25 +399,31 @@ func WithWorkspaceIsolation(isolation port.WorkspaceIsolation) kernel.Option {
 	}
 }
 
-type coreToolSkill struct {
+// builtinToolsProvider adapts runtime-owned builtin tools into the shared skill lifecycle.
+// It exists so runtime can manage builtin tools, prompt skills, and MCP-backed providers uniformly,
+// while keeping their ownership and behavior distinct:
+//   - builtin tools: first-party tools implemented in appkit/runtime
+//   - skills: provider abstraction and prompt injection model in package skill
+//   - MCP: external tool servers bridged by package mcp
+type builtinToolsProvider struct {
 	toolNames []string
 }
 
-func (s *coreToolSkill) Metadata() skill.Metadata {
+func (s *builtinToolsProvider) Metadata() skill.Metadata {
 	return skill.Metadata{
-		Name:        "core",
+		Name:        "builtin-tools",
 		Version:     "0.3.0",
-		Description: "Built-in filesystem editing/search, command execution, HTTP requests, and user interaction tools",
+		Description: "Runtime-owned builtin tools for filesystem, command execution, HTTP requests, and user interaction",
 		Tools:       s.toolNames,
 		Prompts: []string{
-			"You have access to built-in tools: read_file, write_file, edit_file, glob, ls, grep, run_command, http_request, ask_user.",
+			"You have access to built-in runtime tools: read_file, write_file, edit_file, glob, ls, grep, run_command, http_request, ask_user.",
 		},
 	}
 }
 
-func (s *coreToolSkill) Init(ctx context.Context, deps skill.Deps) error {
+func (s *builtinToolsProvider) Init(ctx context.Context, deps skill.Deps) error {
 	s.toolNames = RegisteredBuiltinToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
 	return RegisterBuiltinTools(deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
 }
 
-func (s *coreToolSkill) Shutdown(_ context.Context) error { return nil }
+func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }

@@ -13,8 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Skill 代表一个 skills.sh 兼容的 SKILL.md 文件。
-// 它将 SKILL.md 的正文注入到 system prompt 中，不注册任何工具。
+// Skill 代表一个 skills.sh 兼容的 SKILL.md prompt skill。
+// 它只将 SKILL.md 的正文注入到 system prompt 中，不注册任何工具，
+// 也不会替代 runtime builtin tools 或 MCP providers。
 type Skill struct {
 	name        string
 	description string

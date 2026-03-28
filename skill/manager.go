@@ -7,19 +7,20 @@ import (
 	"sync"
 )
 
-// Manager 管理所有已加载的 skills。
+// Manager 管理所有已加载的 providers。
+// builtin tools、prompt skills、MCP providers 都通过它统一完成注册、生命周期和提示词聚合。
 type Manager struct {
 	mu     sync.RWMutex
 	skills map[string]Provider
 	order  []string // 按加载顺序保存 skill 名称
 }
 
-// NewManager 创建 SkillManager。
+// NewManager 创建 provider manager。
 func NewManager() *Manager {
 	return &Manager{skills: make(map[string]Provider)}
 }
 
-// Register 注册并初始化一个 skill。
+// Register 注册并初始化一个 provider。
 func (m *Manager) Register(ctx context.Context, s Provider, deps Deps) error {
 	meta := s.Metadata()
 	m.mu.Lock()
@@ -48,7 +49,7 @@ func (m *Manager) Register(ctx context.Context, s Provider, deps Deps) error {
 	return nil
 }
 
-// Unregister 注销并关闭一个 skill。
+// Unregister 注销并关闭一个 provider。
 func (m *Manager) Unregister(ctx context.Context, name string) error {
 	m.mu.Lock()
 	s, exists := m.skills[name]
@@ -68,7 +69,7 @@ func (m *Manager) Unregister(ctx context.Context, name string) error {
 	return s.Shutdown(ctx)
 }
 
-// List 返回所有已加载 skill 的元信息（按加载顺序）。
+// List 返回所有已加载 provider 的元信息（按加载顺序）。
 func (m *Manager) List() []Metadata {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -81,7 +82,7 @@ func (m *Manager) List() []Metadata {
 	return result
 }
 
-// Get 按名称查找 skill。
+// Get 按名称查找 provider。
 func (m *Manager) Get(name string) (Provider, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -89,7 +90,7 @@ func (m *Manager) Get(name string) (Provider, bool) {
 	return s, ok
 }
 
-// SystemPromptAdditions 汇总所有 skill 提供的 system prompt 片段。
+// SystemPromptAdditions 汇总所有 provider 提供的 system prompt 片段。
 func (m *Manager) SystemPromptAdditions() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -104,7 +105,7 @@ func (m *Manager) SystemPromptAdditions() string {
 	return strings.Join(parts, "\n\n")
 }
 
-// ShutdownAll 关闭所有 skill（逆序）。
+// ShutdownAll 关闭所有 provider（逆序）。
 func (m *Manager) ShutdownAll(ctx context.Context) error {
 	m.mu.Lock()
 	names := make([]string, len(m.order))

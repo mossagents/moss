@@ -103,7 +103,16 @@ type Registry interface {
 }
 ```
 
-**内置 9 个核心工具**：
+**runtime builtin tools** 是由 `appkit/runtime` 直接实现并注册的一组 first-party tool。  
+它们与 `skill` 包中的 provider 抽象、以及 `mcp` 包中的外部工具桥接是三个不同概念：
+
+- **builtin tools**：runtime 自带实现，直接注册到 `ToolRegistry`
+- **skills**：统一生命周期与提示词聚合的 provider 抽象
+- **MCP**：通过协议把外部 server 的工具桥接进本地 runtime
+
+它们在运行时可以一起工作，但在分包、所有权和权限边界上应当明确区分。
+
+**内置工具**：
 
 | 工具 | 风险 | 说明 |
 |---|---|---|

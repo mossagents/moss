@@ -22,7 +22,8 @@ import (
 const maxInlineCommandOutput = 8000
 const maxHTTPResponseBodyBytes = 256 * 1024
 
-// RegisteredToolNames 返回给定配置下会注册的工具名列表。
+// RegisteredBuiltinToolNames 返回 runtime 一方自带的 builtin tools 名称列表。
+// 这些工具由 appkit/runtime 直接提供，不是 prompt skills，也不是通过 MCP 桥接的外部工具。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
 func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
@@ -37,8 +38,9 @@ func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port
 	return names
 }
 
-// RegisterAll 注册所有内置工具到 registry。
+// RegisterBuiltinTools 注册 runtime 自带的 builtin tools 到 registry。
 // 优先使用 Workspace/Executor 接口；未提供时回退到 Sandbox。
+// builtin tools 是 first-party runtime capability，不经过 skill prompt 解析，也不依赖 MCP transport。
 func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
 	type entry struct {
 		spec    tool.ToolSpec

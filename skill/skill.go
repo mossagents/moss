@@ -9,7 +9,12 @@ import (
 	"github.com/mossagents/moss/sandbox"
 )
 
-// Provider 是可加载的能力单元：一组工具 + 系统提示词 + 可选中间件。
+// Provider 是 runtime 可加载的能力单元抽象。
+// 它统一了三类来源不同的能力：
+//   - runtime 自带的 builtin tools provider
+//   - 通过 SKILL.md 注入提示词的 prompt skill
+//   - 通过 MCP 连接外部工具服务的 provider
+// Provider 是统一生命周期接口，不意味着这些能力在来源、权限边界或实现方式上等价。
 type Provider interface {
 	// Metadata 返回 skill 的元信息。
 	Metadata() Metadata
@@ -21,7 +26,7 @@ type Provider interface {
 	Shutdown(ctx context.Context) error
 }
 
-// Metadata 描述 skill 的元信息。
+// Metadata 描述 provider 的元信息。
 type Metadata struct {
 	Name        string   `json:"name" yaml:"name"`
 	Version     string   `json:"version" yaml:"version"`
@@ -30,7 +35,7 @@ type Metadata struct {
 	Prompts     []string `json:"prompts,omitempty" yaml:"prompts,omitempty"` // 注入到 system prompt 的片段
 }
 
-// Deps 是 skill 初始化时可用的依赖。
+// Deps 是 provider 初始化时可用的依赖。
 type Deps struct {
 	ToolRegistry tool.Registry
 	Middleware   *middleware.Chain

@@ -15,7 +15,9 @@ import (
 	"github.com/mossagents/moss/skill"
 )
 
-// MCPServer 通过 MCP 协议连接外部 skill server，发现并注册工具。
+// MCPServer 通过 MCP 协议连接外部工具服务器，并将远端工具桥接到本地 ToolRegistry。
+// 它实现了 skill.Provider，以便纳入统一生命周期管理，但它不是 prompt skill，
+// 也不是 appkit/runtime 内建的 builtin tools。
 type MCPServer struct {
 	cfg       appconfig.SkillConfig
 	client    mcpclient.MCPClient
@@ -64,7 +66,8 @@ func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
 		return fmt.Errorf("mcp list tools %s: %w", s.cfg.Name, err)
 	}
 
-	// 4. 将 MCP tools 注册到 ToolRegistry
+	// 4. 将 MCP tools 注册到 ToolRegistry。
+	// 远端工具会加上 "<server>_" 前缀，和 runtime builtin tools 明确区分。
 	prefix := s.cfg.Name + "_"
 	for _, t := range toolsResult.Tools {
 		mcpTool := t // capture
