@@ -196,6 +196,7 @@ Reference applications live in `examples/`:
 示例应用位于 `examples/`：
 
 - `examples/mosscode/` - coding assistant
+- `examples/mossresearch/` - deep research orchestrator with delegated web research
 - `examples/mosswork/` - multi-agent orchestration
 - `examples/mossclaw/` - web automation/scraping workflows
 - `examples/mossquant/` - stateful autonomous loop patterns
