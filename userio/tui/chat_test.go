@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -61,6 +62,27 @@ func TestNewChatModelInputHeightDefaultAndClamp(t *testing.T) {
 	m.adjustInputHeight()
 	if got := m.textarea.Height(); got != 5 {
 		t.Fatalf("clamped textarea height=%d, want 5", got)
+	}
+}
+
+func TestAdjustInputHeightCountsSoftWrappedLines(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 14
+	m.textarea.SetWidth(m.inputWrapWidth())
+	m.textarea.SetValue("123456789012345")
+	m.adjustInputHeight()
+	if got := m.textarea.Height(); got != 2 {
+		t.Fatalf("wrapped textarea height=%d, want 2", got)
+	}
+}
+
+func TestNewChatModelSupportsMultilineBindings(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	keys := m.textarea.KeyMap.InsertNewline.Keys()
+	for _, want := range []string{"shift+enter", "alt+enter", "ctrl+j"} {
+		if !slices.Contains(keys, want) {
+			t.Fatalf("missing multiline binding %q in %v", want, keys)
+		}
 	}
 }
 

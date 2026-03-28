@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
@@ -92,12 +93,14 @@ type chatModel struct {
 
 func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
-	ta.Placeholder = "Type a message... (Enter to send, /help for commands)"
+	ta.Placeholder = "Type a message... (Enter to send, Shift+Enter/Alt+Enter/Ctrl+J for newline)"
 	ta.Focus()
 	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
 	ta.CharLimit = 4096
-	ta.KeyMap.InsertNewline.SetKeys("shift+enter")
+	// Bubble Tea does not reliably expose Shift+Enter on all terminals, so keep it
+	// as a best-effort binding and add portable fallbacks for multiline input.
+	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "alt+enter", "ctrl+j")
 
 	return chatModel{
 		textarea:      ta,
@@ -316,7 +319,11 @@ func (m *chatModel) recalcLayout() {
 		m.viewport.Height = vpHeight
 	}
 
-	m.textarea.SetWidth(m.width - 4)
+	inputWidth := m.width - 4
+	if inputWidth < 1 {
+		inputWidth = 1
+	}
+	m.textarea.SetWidth(inputWidth)
 	m.adjustInputHeight()
 	m.refreshViewport()
 }
@@ -333,10 +340,7 @@ func (m *chatModel) inputBoxHeight() int {
 }
 
 func (m *chatModel) adjustInputHeight() {
-	lines := 1
-	if v := m.textarea.Value(); v != "" {
-		lines = strings.Count(v, "\n") + 1
-	}
+	lines := wrappedLineCount(m.textarea.Value(), m.inputWrapWidth())
 	if lines < 1 {
 		lines = 1
 	}
@@ -344,6 +348,34 @@ func (m *chatModel) adjustInputHeight() {
 		lines = 5
 	}
 	m.textarea.SetHeight(lines)
+}
+
+func (m *chatModel) inputWrapWidth() int {
+	width := m.width - 4
+	if width < 1 {
+		width = 1
+	}
+	return width
+}
+
+func wrappedLineCount(text string, width int) int {
+	if width < 1 {
+		width = 1
+	}
+	if text == "" {
+		return 1
+	}
+
+	total := 0
+	for _, line := range strings.Split(text, "\n") {
+		lineWidth := runewidth.StringWidth(line)
+		if lineWidth == 0 {
+			total++
+			continue
+		}
+		total += (lineWidth + width - 1) / width
+	}
+	return total
 }
 
 func (m chatModel) mainWidth() int {
