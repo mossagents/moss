@@ -939,7 +939,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		if cfg.APIKey != "" {
 			apiKeyDisplay = maskKey(cfg.APIKey)
 		}
-		info := fmt.Sprintf("Config file: %s\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
+		info := fmt.Sprintf("Config file: `%s`\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
 			cfgPath,
 			valueOrDefault(cfg.Provider, "(not set)"),
 			valueOrDefault(cfg.Model, "(not set)"),
