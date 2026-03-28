@@ -16,14 +16,14 @@ type state struct {
 	workspace port.Workspace
 }
 
-// WithWorkspace 将持久化 memory 工作区接入 Kernel。
+// WithMemoryWorkspace 将持久化 memory 工作区接入 Kernel。
 func WithMemoryWorkspace(ws port.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureMemoryState(k).workspace = ws
 	}
 }
 
-// RegisterTools 为 memory 命名空间注册标准工具集。
+// RegisterMemoryToolsCompat 为 memory 命名空间注册标准工具集。
 func RegisterMemoryToolsCompat(reg tool.Registry, ws port.Workspace) error {
 	return RegisterMemoryTools(reg, ws)
 }
