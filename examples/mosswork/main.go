@@ -101,6 +101,7 @@ func parseFlags() config {
 	}
 	common.MergeGlobalConfig()
 	common.MergeEnv("MINIWORK", "MOSS")
+	common.ApplyDefaults()
 
 	c.provider = common.Provider
 	c.model = common.Model

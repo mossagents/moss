@@ -80,6 +80,7 @@ func parseFlags() *config {
 	}
 	cfg.flags.MergeGlobalConfig()
 	cfg.flags.MergeEnv("MOSSCODE", "MOSS")
+	cfg.flags.ApplyDefaults()
 	return cfg
 }
 

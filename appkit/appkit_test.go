@@ -47,15 +47,27 @@ func TestDefaultTemplateContext(t *testing.T) {
 }
 
 func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
-	// Test with a new AppFlags - should have defaults
-	f := &AppFlags{
-		Provider: "openai",
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+	if err := os.MkdirAll(appconfig.AppDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
 	}
-	f.MergeGlobalConfig()
+	if err := os.WriteFile(appconfig.DefaultGlobalConfigPath(), []byte("provider: claude\nmodel: sonnet\n"), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
 
-	// Provider should remain "openai" since it was explicitly set
-	if f.Provider != "openai" {
-		t.Errorf("Provider = %v, want openai", f.Provider)
+	f := &AppFlags{}
+	f.MergeGlobalConfig()
+	f.ApplyDefaults()
+
+	if f.Provider != "claude" {
+		t.Fatalf("Provider = %v, want claude", f.Provider)
+	}
+	if f.Model != "sonnet" {
+		t.Fatalf("Model = %v, want sonnet", f.Model)
 	}
 }
 
@@ -65,6 +77,7 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 
 	f := &AppFlags{}
 	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
 
 	if f.Provider != "claude" {
 		t.Fatalf("Provider = %q, want claude", f.Provider)
@@ -74,6 +87,20 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 	}
 	if _, ok := os.LookupEnv("MOSS_PROVIDER"); !ok {
 		t.Fatal("expected env to be set during test")
+	}
+}
+
+func TestCommonFlags_ApplyDefaults(t *testing.T) {
+	f := &AppFlags{}
+	f.ApplyDefaults()
+	if f.Provider != "openai" {
+		t.Fatalf("Provider = %q, want openai", f.Provider)
+	}
+	if f.Workspace != "." {
+		t.Fatalf("Workspace = %q, want .", f.Workspace)
+	}
+	if f.Trust != "trusted" {
+		t.Fatalf("Trust = %q, want trusted", f.Trust)
 	}
 }
 

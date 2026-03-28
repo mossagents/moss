@@ -91,6 +91,7 @@ func launchTUI(args []string) {
 	_ = fs.Parse(args)
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
 
 	if err := tui.Run(tui.Config{
 		Provider:    f.Provider,
@@ -119,6 +120,7 @@ func runCmd(args []string) {
 	}
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
 
 	if *goal == "" {
 		fmt.Fprintln(os.Stderr, "error: --goal is required for 'run' command")

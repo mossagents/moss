@@ -26,15 +26,16 @@ func ParseAppFlags() *AppFlags {
 	flag.Parse()
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
 	return f
 }
 
 // BindAppFlags 将通用参数注册到指定 FlagSet。
 func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
-	fs.StringVar(&f.Provider, "provider", "openai", "LLM provider: claude|openai")
+	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai")
 	fs.StringVar(&f.Model, "model", "", "Model name")
-	fs.StringVar(&f.Workspace, "workspace", ".", "Workspace directory")
-	fs.StringVar(&f.Trust, "trust", "trusted", "Trust level: trusted|restricted")
+	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
+	fs.StringVar(&f.Trust, "trust", "", "Trust level: trusted|restricted")
 	fs.StringVar(&f.APIKey, "api-key", "", "API key (overrides env)")
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 }
@@ -59,6 +60,13 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		f.APIKey = FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
 		f.BaseURL = FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
 	}
+}
+
+// ApplyDefaults 在 CLI、配置文件、环境变量合并完成后补齐默认值。
+func (f *AppFlags) ApplyDefaults() {
+	f.Provider = FirstNonEmpty(f.Provider, "openai")
+	f.Workspace = FirstNonEmpty(f.Workspace, ".")
+	f.Trust = FirstNonEmpty(f.Trust, "trusted")
 }
 
 func (f *AppFlags) mergeGlobalConfig() {
