@@ -197,6 +197,7 @@ Reference applications live in `examples/`:
 
 - `examples/mosscode/` - coding assistant
 - `examples/mossresearch/` - deep research orchestrator with delegated web research
+- `examples/mosswriter/` - content builder agent with filesystem-driven writing workflows
 - `examples/mosswork/` - multi-agent orchestration
 - `examples/mossclaw/` - web automation/scraping workflows
 - `examples/mossquant/` - stateful autonomous loop patterns
