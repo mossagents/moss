@@ -59,6 +59,7 @@ type chatModel struct {
 	taskListFn          func(status string, limit int) (string, error)
 	taskQueryFn         func(taskID string) (string, error)
 	taskCancelFn        func(taskID, reason string) (string, error)
+	scheduleListFn      func() (string, error)
 	sessionListFn       func(limit int) (string, error)
 	sessionRestoreFn    func(sessionID string) (string, error)
 	gitRunFn            func(cmd string, args []string) (string, error)
@@ -161,6 +162,16 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m, nil
 		case "enter":
 			return m.handleSend()
+		}
+
+	case tea.MouseMsg:
+		switch msg.String() {
+		case "wheel up":
+			m.viewport.LineUp(3)
+			return m, nil
+		case "wheel down":
+			m.viewport.LineDown(3)
+			return m, nil
 		}
 
 	case bridgeMsg:
@@ -454,7 +465,7 @@ func (m chatModel) View() string {
 		toolHint = "Ctrl+O expand tools"
 	}
 	leftStatus := fmt.Sprintf("/help commands │ %s", toolHint)
-	rightStatus := "↑↓ history │ double Esc cancel run │ Ctrl+C clear (double quit)"
+	rightStatus := "↑↓ history │ mouse wheel scrolls output │ double Esc cancel run │ Ctrl+C clear (double quit)"
 	status := lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		mutedStyle.Width(m.mainWidth()/2).Render(leftStatus),
@@ -731,6 +742,21 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	case "/config":
 		return m.handleConfigCommand(args)
 
+	case "/schedules":
+		if m.scheduleListFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Schedule listing is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.scheduleListFn()
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list schedules: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/git":
 		if m.gitRunFn == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Git workflow commands are unavailable."})
@@ -887,6 +913,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /tasks [status] [limit]  List background tasks\n" +
 			"  /task <id>     Query task details\n" +
 			"  /task cancel <id> [reason]  Cancel a background task\n" +
+			"  /schedules     Show background scheduled jobs\n" +
 			"  /git status|diff|commit|pr  Common git workflow helpers\n" +
 			"  /budget        Show budget/context summary\n" +
 			"  /permissions   Show runtime permission summary\n" +
@@ -1161,7 +1188,7 @@ func (m *chatModel) applySlashCompletion() bool {
 
 var slashCandidates = []string{
 	"/help", "/skills", "/skill", "/session", "/sessions", "/offload", "/tasks", "/task",
-	"/config", "/git", "/budget", "/permissions", "/trust", "/model", "/clear", "/exit", "/quit",
+	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }
 

@@ -72,8 +72,8 @@ type frontMatterHolding struct {
 
 var (
 	frontMatterPattern  = regexp.MustCompile(`(?s)\A---\s*\n(.*?)\n---\s*(.*)\z`)
-	dateAtPricePattern  = regexp.MustCompile(`(?i)(?P<date>\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?)\s*(?:以|at)\s*(?P<price>\d+(?:\.\d+)?)\s*(?P<currency>元|人民币|美元|usd|cny|rmb)?\s*(?:每|/|per)\s*(?P<price_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)\s*(?:的价格)?\s*(?:购入|买入|买了|bought)\s*(?P<asset>[\p{Han}A-Za-z./+\-]+?)\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<qty_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)`)
-	boughtOnPattern     = regexp.MustCompile(`(?i)(?:在|on)\s*(?P<date>\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?)\s*(?:以|at)\s*(?P<price>\d+(?:\.\d+)?)\s*(?P<currency>元|人民币|美元|usd|cny|rmb)?\s*(?:每|/|per)\s*(?P<price_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin).*?(?P<asset>[\p{Han}A-Za-z./+\-]+?)\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<qty_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)`)
+	dateAtPricePattern  = regexp.MustCompile(`(?i)(?P<date>\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?)\s*(?:以|at)\s*(?P<price>\d+(?:\.\d+)?)\s*(?P<currency>元|人民币|美元|usd|cny|rmb)?\s*(?:每|/|per)\s*(?P<price_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)\s*(?:的价格)?\s*(?:购入|买入|买了|购买|bought)\s*(?P<asset>[\p{Han}A-Za-z./+\-]{1,16}?)\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<qty_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)`)
+	boughtOnPattern     = regexp.MustCompile(`(?i)(?:在|on)\s*(?P<date>\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?)\s*(?:以|at)\s*(?P<price>\d+(?:\.\d+)?)\s*(?P<currency>元|人民币|美元|usd|cny|rmb)?\s*(?:每|/|per)\s*(?P<price_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin).*?(?:购入|买入|买了|购买|bought)?\s*(?P<asset>[\p{Han}A-Za-z./+\-]{1,16}?)\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<qty_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)`)
 	plainHoldingPattern = regexp.MustCompile(`(?i)(?:持有|关注持仓|holding|hold)\s*(?P<asset>[\p{Han}A-Za-z./+\-]+?)\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<qty_unit>克|g|gram|grams|股|share|shares|盎司|oz|ounce|ounces|枚|coin)`)
 )
 
@@ -293,6 +293,7 @@ func parseHoldingStatement(line string) (Holding, bool) {
 		qty, _ := strconv.ParseFloat(matches["qty"], 64)
 		cost, _ := strconv.ParseFloat(matches["price"], 64)
 		asset := normalizeAssetName(matches["asset"])
+		asset = cleanExtractedAsset(asset)
 		if asset == "" {
 			return Holding{}, false
 		}
@@ -474,7 +475,7 @@ Start by calling get_investor_profile.
 Then gather up-to-date information for these tracked assets: %s.
 Also research these relevant factors: %s.
 
-Use jina_search and jina_reader to find current price drivers, official policy updates, and important global events. For every material source you rely on, call assess_source_credibility and prefer medium/high credibility evidence.
+Use jina_search and jina_reader to find current price drivers, official policy updates, and important global events. Keep the external research compact: use a small search result set, read only the highest-value pages, do not treat words like 今日/最新 as proof of recency, and for every material source you rely on call assess_source_credibility while preferring medium/high credibility evidence.
 
 Before finalizing the recommendation, delegate a final audit to investment-reviewer so the thesis is checked for risk fit, source quality, and missing caveats.
 
@@ -574,6 +575,15 @@ func normalizeAssetName(asset string) string {
 	default:
 		return asset
 	}
+}
+
+func cleanExtractedAsset(asset string) string {
+	asset = strings.TrimSpace(asset)
+	for _, prefix := range []string{"的价格", "价格", "购买", "买入", "购入", "买了", "持有"} {
+		asset = strings.TrimPrefix(asset, prefix)
+	}
+	asset = strings.Trim(asset, " ：:，,。；;")
+	return normalizeAssetName(asset)
 }
 
 func inferSymbol(asset string) string {

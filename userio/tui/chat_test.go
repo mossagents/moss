@@ -53,6 +53,21 @@ func TestSlashCommandTaskCancel(t *testing.T) {
 	}
 }
 
+func TestSlashCommandSchedules(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.scheduleListFn = func() (string, error) {
+		return "Schedules:\n- review | @every 10m", nil
+	}
+	updated, _ := m.handleSlashCommand("/schedules")
+	if len(updated.messages) == 0 {
+		t.Fatal("expected schedules output message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.content != "Schedules:\n- review | @every 10m" {
+		t.Fatalf("unexpected schedules content: %q", last.content)
+	}
+}
+
 func TestNewChatModelInputHeightDefaultAndClamp(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	if got := m.textarea.Height(); got != 1 {

@@ -46,6 +46,7 @@ type Config struct {
 	AfterBoot          func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt  func(workspace string) string
 	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
+	ScheduleList       func() (string, error)
 	SidebarTitle       string
 	RenderSidebar      func() string
 }
@@ -507,7 +508,7 @@ func Run(cfg Config) error {
 		m.welcome = newWelcomeModel(defaultAPIType, defaultProviderName, cfg.Model, cfg.Workspace)
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	bridge.SetProgram(p)
 
 	_, err := p.Run()
@@ -685,6 +686,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.taskCancelFn = func(taskID, reason string) (string, error) {
 			return agent.cancelTask(taskID, reason)
 		}
+		m.chat.scheduleListFn = m.config.ScheduleList
 		m.chat.permissionSummaryFn = agent.permissionSummary
 		m.chat.setPermissionFn = agent.setPermission
 		m.chat.gitRunFn = func(cmd string, args []string) (string, error) {

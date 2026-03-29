@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -135,6 +136,12 @@ func launchTUI(cfg *config) error {
 				},
 			}
 		},
+		ScheduleList: func() (string, error) {
+			if rt == nil {
+				return "Scheduler is not ready yet.", nil
+			}
+			return rt.listSchedules(), nil
+		},
 	})
 }
 
@@ -256,6 +263,10 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io p
 		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
 		result, err := k.Run(jobCtx, jobSess)
 		if err != nil {
+			reportPath, reportErr := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, fmt.Sprintf("Scheduled advisory run failed.\n\nError: %v\n\nWhen external research tools are unavailable, rerun after configuring JINA_API_KEY or reduce the scope to manual/local analysis.", err))
+			if reportErr == nil {
+				sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] fallback report: %s", job.ID, reportPath))
+			}
 			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
 			return
 		}
@@ -323,6 +334,36 @@ func sendOutput(ctx context.Context, io port.UserIO, outputType port.OutputType,
 		Type:    outputType,
 		Content: content,
 	})
+}
+
+func (r *mossquantRuntime) listSchedules() string {
+	if r == nil || r.sched == nil {
+		return "Scheduler is unavailable."
+	}
+	jobs := r.sched.ListJobs()
+	if len(jobs) == 0 {
+		return "No background scheduled jobs."
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Schedules (%d):\n", len(jobs)))
+	for _, job := range jobs {
+		b.WriteString(fmt.Sprintf("- %s | %s", job.ID, job.Schedule))
+		if !job.NextRun.IsZero() {
+			b.WriteString(" | next: " + job.NextRun.Format("2006-01-02 15:04:05"))
+		}
+		if !job.LastRun.IsZero() {
+			b.WriteString(" | last: " + job.LastRun.Format("2006-01-02 15:04:05"))
+		}
+		if job.RunCount > 0 {
+			b.WriteString(fmt.Sprintf(" | runs: %d", job.RunCount))
+		}
+		if goal := strings.TrimSpace(job.Goal); goal != "" {
+			b.WriteString(" | " + goal)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func workspaceProvided() bool {

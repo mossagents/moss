@@ -152,6 +152,7 @@ go run . --workspace D:\Codes\my-portfolio
 | 命令 | 说明 |
 |------|------|
 | `/help` | 显示帮助 |
+| `/schedules` | 显示后台定时任务 |
 | `/clear` | 清空对话历史 |
 | `/compact` | 压缩到最近 8 条消息 |
 | `/exit` | 退出 |
