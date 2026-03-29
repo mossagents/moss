@@ -7,8 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -200,6 +198,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for content workflows."
 	deepCfg.AdditionalAppExtensions = []appkit.Extension{
+		appkit.WithJinaTools(),
 		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerWriterTools(k.ToolRegistry()); err != nil {
 				return err
@@ -254,8 +253,6 @@ func registerWriterTools(reg tool.Registry) error {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
 	}{
-		{jinaSearchSpec, jinaSearchHandler()},
-		{jinaReaderSpec, jinaReaderHandler()},
 		{thinkToolSpec, thinkToolHandler()},
 		{makeSlugSpec, makeSlugHandler()},
 		{generateImageBriefSpec, generateImageBriefHandler()},
@@ -351,158 +348,6 @@ func generateImageBriefHandler() tool.ToolHandler {
 			"brief": brief,
 		})
 	}
-}
-
-var jinaSearchSpec = tool.ToolSpec{
-	Name:        "jina_search",
-	Description: "Search the web via Jina Search and return extracted result content.",
-	InputSchema: json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"query":{"type":"string","description":"search query"},
-			"count":{"type":"integer","description":"result count (1-20)"},
-			"gl":{"type":"string","description":"country code, e.g. us/cn"},
-			"hl":{"type":"string","description":"language code, e.g. en/zh-CN"}
-		},
-		"required":["query"]
-	}`),
-	Risk:         tool.RiskLow,
-	Capabilities: []string{"search", "web", "research"},
-}
-
-func jinaSearchHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			Query string `json:"query"`
-			Count int    `json:"count"`
-			GL    string `json:"gl"`
-			HL    string `json:"hl"`
-		}
-		if err := json.Unmarshal(input, &params); err != nil {
-			return nil, fmt.Errorf("parse input: %w", err)
-		}
-		if strings.TrimSpace(params.Query) == "" {
-			return nil, fmt.Errorf("query is required")
-		}
-		if params.Count <= 0 || params.Count > 20 {
-			params.Count = 5
-		}
-
-		endpoint := "https://s.jina.ai/" + url.QueryEscape(params.Query)
-		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Retain-Images", "none")
-		if key := os.Getenv("JINA_API_KEY"); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		q := req.URL.Query()
-		if params.GL != "" {
-			q.Set("gl", params.GL)
-		}
-		if params.HL != "" {
-			q.Set("hl", params.HL)
-		}
-		q.Set("count", fmt.Sprintf("%d", params.Count))
-		req.URL.RawQuery = q.Encode()
-
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("jina search %s: %s", resp.Status, strings.TrimSpace(string(body)))
-		}
-		return unwrapJinaPayload(body)
-	}
-}
-
-var jinaReaderSpec = tool.ToolSpec{
-	Name:        "jina_reader",
-	Description: "Read a webpage via Jina Reader and return extracted content.",
-	InputSchema: json.RawMessage(`{
-		"type":"object",
-		"properties":{
-			"url":{"type":"string","description":"target page url"},
-			"target_selector":{"type":"string","description":"optional CSS selector to focus on"},
-			"remove_selector":{"type":"string","description":"optional CSS selector to remove"},
-			"token_budget":{"type":"integer","description":"optional max token budget"}
-		},
-		"required":["url"]
-	}`),
-	Risk:         tool.RiskLow,
-	Capabilities: []string{"reader", "web", "research"},
-}
-
-func jinaReaderHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			URL            string `json:"url"`
-			TargetSelector string `json:"target_selector"`
-			RemoveSelector string `json:"remove_selector"`
-			TokenBudget    int    `json:"token_budget"`
-		}
-		if err := json.Unmarshal(input, &params); err != nil {
-			return nil, fmt.Errorf("parse input: %w", err)
-		}
-		if strings.TrimSpace(params.URL) == "" {
-			return nil, fmt.Errorf("url is required")
-		}
-
-		req, err := http.NewRequest(http.MethodGet, "https://r.jina.ai/"+params.URL, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Retain-Images", "none")
-		if key := os.Getenv("JINA_API_KEY"); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		if params.TargetSelector != "" {
-			req.Header.Set("X-Target-Selector", params.TargetSelector)
-		}
-		if params.RemoveSelector != "" {
-			req.Header.Set("X-Remove-Selector", params.RemoveSelector)
-		}
-		if params.TokenBudget > 0 {
-			req.Header.Set("X-Token-Budget", fmt.Sprintf("%d", params.TokenBudget))
-		}
-
-		client := &http.Client{Timeout: 60 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("jina reader %s: %s", resp.Status, strings.TrimSpace(string(body)))
-		}
-		return unwrapJinaPayload(body)
-	}
-}
-
-func unwrapJinaPayload(body []byte) (json.RawMessage, error) {
-	var envelope struct {
-		Code   int             `json:"code"`
-		Status int             `json:"status"`
-		Data   json.RawMessage `json:"data"`
-	}
-	if err := json.Unmarshal(body, &envelope); err == nil && len(envelope.Data) > 0 {
-		return envelope.Data, nil
-	}
-	return json.Marshal(string(body))
 }
 
 func slugify(s string) string {

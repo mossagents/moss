@@ -179,6 +179,7 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io port.UserIO) (*ke
 	k, err := appkit.BuildKernelWithExtensions(ctx, r.flags, io,
 		appkit.WithSessionStore(r.store),
 		appkit.WithScheduling(r.sched),
+		appkit.WithJinaTools(),
 		appkit.WithPersistentMemories(memoriesDir),
 		appkit.WithLoadedBootstrapContext(r.flags.Workspace, "mossquant"),
 		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
@@ -193,9 +194,6 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io port.UserIO) (*ke
 			}
 			if err := registerCredibilityTools(built.ToolRegistry()); err != nil {
 				return fmt.Errorf("register credibility tools: %w", err)
-			}
-			if err := registerResearchTools(built.ToolRegistry()); err != nil {
-				return fmt.Errorf("register research tools: %w", err)
 			}
 			if err := registerResearchAgents(built, r.flags); err != nil {
 				return fmt.Errorf("register research agents: %w", err)

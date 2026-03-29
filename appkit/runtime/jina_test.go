@@ -1,10 +1,62 @@
-package main
+package runtime
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 )
+
+func TestNewJinaReaderRequestEscapesNestedURL(t *testing.T) {
+	req, err := newJinaReaderRequest(context.Background(), jinaReaderParams{
+		URL:            "https://example.com/article?id=123&lang=en",
+		TargetSelector: "main",
+		RemoveSelector: ".ads",
+		TokenBudget:    2048,
+	})
+	if err != nil {
+		t.Fatalf("newJinaReaderRequest: %v", err)
+	}
+	if got, want := req.URL.String(), "https://r.jina.ai/https:%2F%2Fexample.com%2Farticle%3Fid=123&lang=en"; got != want {
+		t.Fatalf("request URL = %q, want %q", got, want)
+	}
+	if req.Header.Get("X-Target-Selector") != "main" {
+		t.Fatal("missing target selector header")
+	}
+	if req.Header.Get("X-Remove-Selector") != ".ads" {
+		t.Fatal("missing remove selector header")
+	}
+	if req.Header.Get("X-Token-Budget") != "2048" {
+		t.Fatal("missing token budget header")
+	}
+}
+
+func TestNewJinaSearchRequestUsesContextAndQuery(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req, err := newJinaSearchRequest(ctx, jinaSearchParams{
+		Query: "agent memory",
+		Count: 5,
+		GL:    "us",
+		HL:    "en",
+	})
+	if err != nil {
+		t.Fatalf("newJinaSearchRequest: %v", err)
+	}
+	if req.Context() != ctx {
+		t.Fatal("request did not keep provided context")
+	}
+	if got, want := req.URL.Query().Get("count"), "5"; got != want {
+		t.Fatalf("count query = %q, want %q", got, want)
+	}
+	if got, want := req.URL.Query().Get("gl"), "us"; got != want {
+		t.Fatalf("gl query = %q, want %q", got, want)
+	}
+	if got, want := req.URL.Query().Get("hl"), "en"; got != want {
+		t.Fatalf("hl query = %q, want %q", got, want)
+	}
+}
 
 func TestCompactJinaPayloadReaderTruncatesLongContent(t *testing.T) {
 	payload := map[string]any{
@@ -17,7 +69,6 @@ func TestCompactJinaPayloadReaderTruncatesLongContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-
 	compacted, err := unwrapJinaPayload(body, "reader")
 	if err != nil {
 		t.Fatalf("unwrap payload: %v", err)
@@ -51,7 +102,6 @@ func TestCompactJinaPayloadSearchLimitsResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-
 	compacted, err := unwrapJinaPayload(body, "search")
 	if err != nil {
 		t.Fatalf("unwrap payload: %v", err)
@@ -84,7 +134,6 @@ func TestCompactJinaPayloadSearchParsesNestedJSONString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal outer payload: %v", err)
 	}
-
 	compacted, err := unwrapJinaPayload(body, "search")
 	if err != nil {
 		t.Fatalf("unwrap payload: %v", err)

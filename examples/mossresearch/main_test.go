@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,70 +73,5 @@ func TestResearchArtifactPathsStayInWorkspace(t *testing.T) {
 	}
 	if got := finalReportPath(workspace); got != filepath.Join(workspace, outputDirName, "final_report.md") {
 		t.Fatalf("finalReportPath = %q", got)
-	}
-}
-
-func TestNewJinaReaderRequestEscapesNestedURL(t *testing.T) {
-	req, err := newJinaReaderRequest(context.Background(), jinaReaderParams{
-		URL:            "https://example.com/article?id=123&lang=en",
-		TargetSelector: "main",
-		RemoveSelector: ".ads",
-		TokenBudget:    2048,
-	})
-	if err != nil {
-		t.Fatalf("newJinaReaderRequest: %v", err)
-	}
-
-	if got, want := req.URL.String(), "https://r.jina.ai/https:%2F%2Fexample.com%2Farticle%3Fid=123&lang=en"; got != want {
-		t.Fatalf("request URL = %q, want %q", got, want)
-	}
-	if req.Header.Get("X-Target-Selector") != "main" {
-		t.Fatalf("missing target selector header")
-	}
-	if req.Header.Get("X-Remove-Selector") != ".ads" {
-		t.Fatalf("missing remove selector header")
-	}
-	if req.Header.Get("X-Token-Budget") != "2048" {
-		t.Fatalf("missing token budget header")
-	}
-}
-
-func TestNewJinaSearchRequestUsesContextAndQuery(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	req, err := newJinaSearchRequest(ctx, jinaSearchParams{
-		Query: "agent memory",
-		Count: 5,
-		GL:    "us",
-		HL:    "en",
-	})
-	if err != nil {
-		t.Fatalf("newJinaSearchRequest: %v", err)
-	}
-
-	if req.Context() != ctx {
-		t.Fatalf("request did not keep provided context")
-	}
-	if got, want := req.URL.Query().Get("count"), "5"; got != want {
-		t.Fatalf("count query = %q, want %q", got, want)
-	}
-	if got, want := req.URL.Query().Get("gl"), "us"; got != want {
-		t.Fatalf("gl query = %q, want %q", got, want)
-	}
-	if got, want := req.URL.Query().Get("hl"), "en"; got != want {
-		t.Fatalf("hl query = %q, want %q", got, want)
-	}
-}
-
-func TestUnwrapJinaPayloadPassesThroughRawJSON(t *testing.T) {
-	body := []byte(`{"items":[{"title":"example"}]}`)
-
-	got, err := unwrapJinaPayload(body)
-	if err != nil {
-		t.Fatalf("unwrapJinaPayload: %v", err)
-	}
-	if string(got) != string(body) {
-		t.Fatalf("unwrapJinaPayload = %q, want raw JSON body", string(got))
 	}
 }

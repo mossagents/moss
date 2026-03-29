@@ -104,6 +104,13 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 	})
 }
 
+// WithJinaTools 装配 Jina Search/Reader 工具。
+func WithJinaTools() Extension {
+	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		return runtime.RegisterJinaTools(k.ToolRegistry())
+	})
+}
+
 // WithKnowledge 按官方推荐方式注册知识库工具集。
 func WithKnowledge(store knowledge.Store, embedder port.Embedder) Extension {
 	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
