@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	core "github.com/mossagents/moss/contrib/core"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/contrib/core/tools"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -114,9 +115,9 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(chatAsSpec, chatAsHandler(room))
 	_ = reg.Register(askChoiceSpec, askChoiceHandler(room))
 	_ = reg.Register(getTimeSpec, getTimeHandler())
-	core.RegisterWeather(reg)
-	core.RegisterJinaSearch(reg)
-	core.RegisterJinaReader(reg)
+	tools.RegisterWeather(reg)
+	tools.RegisterJinaSearch(reg)
+	tools.RegisterJinaReader(reg)
 	_ = reg.Register(setReminderSpec, setReminderHandler(room))
 	_ = reg.Register(randomPickSpec, randomPickHandler())
 	_ = reg.Register(updateGameContextSpec, updateGameContextHandler(room))
