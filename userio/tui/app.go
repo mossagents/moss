@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/runtime"
+	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
@@ -491,8 +492,9 @@ func Run(cfg Config) error {
 	}
 
 	// 如果 CLI 已提供足够配置，跳过 Welcome 直接进入 Chat
-	defaultAPIType := effectiveAPIType(cfg.APIType, cfg.Provider)
-	defaultProviderName := displayProviderName(defaultAPIType, cfg.ProviderName)
+	defaultProvider := configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName)
+	defaultAPIType := defaultProvider.EffectiveAPIType()
+	defaultProviderName := defaultProvider.DisplayName()
 	if defaultAPIType != "" && cfg.Workspace != "" {
 		wCfg := WelcomeConfig{
 			APIType:      defaultAPIType,
@@ -501,7 +503,7 @@ func Run(cfg Config) error {
 			Workspace:    cfg.Workspace,
 		}
 		m.state = stateChat
-		m.chat = newChatModel(displayProviderName(wCfg.APIType, wCfg.ProviderName), wCfg.Model, wCfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
 	} else {
 		m.state = stateWelcome
@@ -552,30 +554,6 @@ func (m appModel) View() string {
 	return ""
 }
 
-func effectiveAPIType(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func displayProviderName(apiType, providerName string) string {
-	apiType = strings.TrimSpace(apiType)
-	providerName = strings.TrimSpace(providerName)
-	switch {
-	case providerName == "":
-		return apiType
-	case apiType == "":
-		return providerName
-	case strings.EqualFold(apiType, providerName):
-		return providerName
-	default:
-		return fmt.Sprintf("%s (%s)", providerName, apiType)
-	}
-}
-
 func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.welcome, cmd = m.welcome.Update(msg)
@@ -593,7 +571,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.ProviderName = cfg.ProviderName
 		m.config.Model = cfg.Model
 		m.config.Workspace = cfg.Workspace
-		m.chat = newChatModel(displayProviderName(cfg.APIType, cfg.ProviderName), cfg.Model, cfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
 		m.state = stateChat
 
 		// 将当前窗口尺寸传递给 chatModel，避免它因未收到 WindowSizeMsg 而卡在 "加载中"
@@ -628,13 +606,15 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// 更新 config 中的 model
 		m.config.Model = sm.model
+		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
 		wCfg := WelcomeConfig{
-			APIType:      effectiveAPIType(m.config.APIType, m.config.Provider),
-			ProviderName: displayProviderName(effectiveAPIType(m.config.APIType, m.config.Provider), m.config.ProviderName),
+			APIType:      identity.APIType,
+			ProviderName: identity.Name,
+			Provider:     identity.Provider,
 			Model:        sm.model,
 			Workspace:    m.config.Workspace,
 		}
-		m.chat.provider = displayProviderName(wCfg.APIType, wCfg.ProviderName)
+		m.chat.provider = identity.Label()
 		m.chat.model = sm.model
 		m.chat.trust = m.config.Trust
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
@@ -648,9 +628,11 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agent = nil
 		m.chat.sendFn = nil
 		m.config.Trust = st.trust
+		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
 		wCfg := WelcomeConfig{
-			APIType:      effectiveAPIType(m.config.APIType, m.config.Provider),
-			ProviderName: displayProviderName(effectiveAPIType(m.config.APIType, m.config.Provider), m.config.ProviderName),
+			APIType:      identity.APIType,
+			ProviderName: identity.Name,
+			Provider:     identity.Provider,
 			Model:        m.config.Model,
 			Workspace:    m.config.Workspace,
 		}
@@ -727,7 +709,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 // initKernelCmd 异步创建 kernel + session。
 func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
-		apiType := strings.ToLower(effectiveAPIType(wCfg.APIType, cfg.APIType, cfg.Provider))
+		apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 
 		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 		if err != nil {

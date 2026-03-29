@@ -84,9 +84,10 @@ func (f *AppFlags) mergeGlobalConfig() {
 		globalCfg = &config.Config{}
 	}
 
-	f.APIType = FirstNonEmpty(f.APIType, globalCfg.APIType, globalCfg.Provider)
-	f.Name = FirstNonEmpty(f.Name, globalCfg.Name)
-	f.Provider = FirstNonEmpty(f.Provider, globalCfg.Provider, globalCfg.APIType, "openai")
+	identity := globalCfg.ProviderIdentity()
+	f.APIType = FirstNonEmpty(f.APIType, identity.APIType)
+	f.Name = FirstNonEmpty(f.Name, identity.Name)
+	f.Provider = FirstNonEmpty(f.Provider, identity.Provider, "openai")
 	f.Model = FirstNonEmpty(f.Model, globalCfg.Model)
 	f.APIKey = FirstNonEmpty(f.APIKey, globalCfg.APIKey)
 	f.BaseURL = FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
@@ -97,21 +98,23 @@ func (f *AppFlags) normalizeProviderFields() {
 	if f == nil {
 		return
 	}
-	f.APIType = FirstNonEmpty(f.APIType, f.Provider)
-	f.Provider = FirstNonEmpty(f.Provider, f.APIType)
-	f.Name = FirstNonEmpty(f.Name, f.APIType, f.Provider)
+	identity := f.ProviderIdentity()
+	f.APIType = identity.APIType
+	f.Provider = identity.Provider
+	f.Name = identity.Name
+}
+
+func (f *AppFlags) ProviderIdentity() config.ProviderIdentity {
+	if f == nil {
+		return config.ProviderIdentity{}
+	}
+	return config.NormalizeProviderIdentity(f.APIType, f.Provider, f.Name)
 }
 
 func (f *AppFlags) EffectiveAPIType() string {
-	if f == nil {
-		return ""
-	}
-	return FirstNonEmpty(f.APIType, f.Provider)
+	return f.ProviderIdentity().EffectiveAPIType()
 }
 
 func (f *AppFlags) DisplayProviderName() string {
-	if f == nil {
-		return ""
-	}
-	return FirstNonEmpty(f.Name, f.EffectiveAPIType())
+	return f.ProviderIdentity().DisplayName()
 }

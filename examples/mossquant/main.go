@@ -89,10 +89,11 @@ func launchTUI(cfg *config) error {
 			return "```text\n" + strings.TrimSpace(rt.profile.SummaryMarkdown()) + "\n```"
 		},
 		BuildKernel: func(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+			identity := appconfig.NormalizeProviderIdentity(apiType, apiType, flags.DisplayProviderName())
 			runtimeFlags := &appkit.AppFlags{
-				APIType:   apiType,
-				Provider:  apiType,
-				Name:      flags.DisplayProviderName(),
+				APIType:   identity.APIType,
+				Provider:  identity.Provider,
+				Name:      identity.Name,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,

@@ -1019,10 +1019,11 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		cfg, _ := config.LoadConfig(cfgPath)
 		switch key {
 		case "api_type", "apitype", "provider":
-			cfg.APIType = value
-			cfg.Provider = value
+			identity := config.NormalizeProviderIdentity(value, value, cfg.Name)
+			cfg.APIType = identity.APIType
+			cfg.Provider = identity.Provider
 			if strings.TrimSpace(cfg.Name) == "" {
-				cfg.Name = value
+				cfg.Name = identity.Name
 			}
 		case "name":
 			cfg.Name = value

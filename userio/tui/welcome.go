@@ -212,10 +212,11 @@ func (m welcomeModel) View() string {
 }
 
 func (m welcomeModel) config() WelcomeConfig {
+	identity := config.NormalizeProviderIdentity(m.apiType, m.apiType, m.providerName)
 	return WelcomeConfig{
-		APIType:      m.apiType,
-		ProviderName: m.providerName,
-		Provider:     m.apiType,
+		APIType:      identity.APIType,
+		ProviderName: identity.Name,
+		Provider:     identity.Provider,
 		Model:        m.model,
 		Workspace:    m.workspace,
 	}
@@ -229,8 +230,9 @@ func saveWelcomeConfig(wCfg WelcomeConfig) {
 		return
 	}
 	existing, _ := config.LoadConfig(cfgPath)
-	existing.APIType = wCfg.APIType
-	existing.Name = wCfg.ProviderName
+	identity := config.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName)
+	existing.APIType = identity.APIType
+	existing.Name = identity.Name
 	existing.Provider = ""
 	existing.Model = wCfg.Model
 	_ = config.SaveConfig(cfgPath, existing)

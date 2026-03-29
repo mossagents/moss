@@ -197,10 +197,11 @@ func runCmd(args []string) {
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
 func buildKernelWithIO(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
+	identity := config.NormalizeProviderIdentity(apiType, apiType, apiType)
 	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
-		APIType:   apiType,
-		Provider:  apiType,
-		Name:      apiType,
+		APIType:   identity.APIType,
+		Provider:  identity.Provider,
+		Name:      identity.Name,
 		Model:     model,
 		Workspace: wsDir,
 		Trust:     trust,

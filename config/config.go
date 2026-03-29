@@ -76,6 +76,12 @@ type SkillConfig struct {
 	Enabled   *bool             `yaml:"enabled,omitempty"`
 }
 
+type ProviderIdentity struct {
+	APIType  string
+	Provider string
+	Name     string
+}
+
 func (sc SkillConfig) IsEnabled() bool {
 	if sc.Enabled == nil {
 		return true
@@ -85,6 +91,45 @@ func (sc SkillConfig) IsEnabled() bool {
 
 func (sc SkillConfig) IsMCP() bool {
 	return sc.Transport == "stdio" || sc.Transport == "sse"
+}
+
+func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity {
+	apiType = strings.TrimSpace(apiType)
+	provider = strings.TrimSpace(provider)
+	name = strings.TrimSpace(name)
+
+	apiType = firstNonEmpty(apiType, provider)
+	provider = firstNonEmpty(provider, apiType)
+	name = firstNonEmpty(name, apiType, provider)
+
+	return ProviderIdentity{
+		APIType:  apiType,
+		Provider: provider,
+		Name:     name,
+	}
+}
+
+func (p ProviderIdentity) EffectiveAPIType() string {
+	return firstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider))
+}
+
+func (p ProviderIdentity) DisplayName() string {
+	return firstNonEmpty(strings.TrimSpace(p.Name), p.EffectiveAPIType())
+}
+
+func (p ProviderIdentity) Label() string {
+	apiType := p.EffectiveAPIType()
+	name := p.DisplayName()
+	switch {
+	case name == "":
+		return apiType
+	case apiType == "":
+		return name
+	case strings.EqualFold(apiType, name):
+		return name
+	default:
+		return fmt.Sprintf("%s (%s)", name, apiType)
+	}
 }
 
 func LoadConfig(path string) (*Config, error) {
@@ -148,23 +193,25 @@ func (c *Config) normalizeProviderFields() {
 	if c == nil {
 		return
 	}
-	c.APIType = firstNonEmpty(c.APIType, c.Provider)
-	c.Provider = firstNonEmpty(c.Provider, c.APIType)
-	c.Name = firstNonEmpty(c.Name, c.APIType, c.Provider)
+	identity := c.ProviderIdentity()
+	c.APIType = identity.APIType
+	c.Provider = identity.Provider
+	c.Name = identity.Name
+}
+
+func (c *Config) ProviderIdentity() ProviderIdentity {
+	if c == nil {
+		return ProviderIdentity{}
+	}
+	return NormalizeProviderIdentity(c.APIType, c.Provider, c.Name)
 }
 
 func (c *Config) EffectiveAPIType() string {
-	if c == nil {
-		return ""
-	}
-	return firstNonEmpty(c.APIType, c.Provider)
+	return c.ProviderIdentity().EffectiveAPIType()
 }
 
 func (c *Config) DisplayProviderName() string {
-	if c == nil {
-		return ""
-	}
-	return firstNonEmpty(c.Name, c.EffectiveAPIType())
+	return c.ProviderIdentity().DisplayName()
 }
 
 func DefaultGlobalConfigPath() string {

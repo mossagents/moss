@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 	"gopkg.in/yaml.v3"
 )
@@ -93,10 +94,7 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 
 	r := &ModelRouter{}
 	for _, p := range profiles {
-		apiType := strings.TrimSpace(p.APIType)
-		if apiType == "" {
-			apiType = strings.TrimSpace(p.Provider)
-		}
+		apiType := config.NormalizeProviderIdentity(p.APIType, p.Provider, "").EffectiveAPIType()
 		llm, err := BuildLLM(apiType, p.Model, p.APIKey, p.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("model router: build %q: %w", p.Name, err)
