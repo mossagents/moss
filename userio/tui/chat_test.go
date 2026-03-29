@@ -7,8 +7,44 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/port"
 )
+
+type fakeScheduleController struct {
+	listFn     func() ([]runtime.ScheduleItem, error)
+	listTextFn func() (string, error)
+	cancelFn   func(string) (string, error)
+	runNowFn   func(string) (string, error)
+}
+
+func (f fakeScheduleController) List() ([]runtime.ScheduleItem, error) {
+	if f.listFn == nil {
+		return nil, nil
+	}
+	return f.listFn()
+}
+
+func (f fakeScheduleController) ListText() (string, error) {
+	if f.listTextFn == nil {
+		return "", nil
+	}
+	return f.listTextFn()
+}
+
+func (f fakeScheduleController) Cancel(id string) (string, error) {
+	if f.cancelFn == nil {
+		return "", nil
+	}
+	return f.cancelFn(id)
+}
+
+func (f fakeScheduleController) RunNow(id string) (string, error) {
+	if f.runNowFn == nil {
+		return "", nil
+	}
+	return f.runNowFn(id)
+}
 
 func TestSlashCommandSessionInfo(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
@@ -55,8 +91,10 @@ func TestSlashCommandTaskCancel(t *testing.T) {
 
 func TestSlashCommandSchedules(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
-		return []ScheduleItem{{ID: "review", Schedule: "@every 10m", Goal: "Run review"}}, nil
+	m.scheduleCtrl = fakeScheduleController{
+		listFn: func() ([]runtime.ScheduleItem, error) {
+			return []runtime.ScheduleItem{{ID: "review", Schedule: "@every 10m", Goal: "Run review"}}, nil
+		},
 	}
 	updated, _ := m.handleSlashCommand("/schedules")
 	if updated.scheduleBrowser == nil {
@@ -72,24 +110,26 @@ func TestSlashCommandSchedules(t *testing.T) {
 
 func TestScheduleBrowserDelete(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	items := []ScheduleItem{
+	items := []runtime.ScheduleItem{
 		{ID: "old-job", Schedule: "@every 1h"},
 		{ID: "keep-job", Schedule: "@every 2h"},
 	}
-	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
-		cp := make([]ScheduleItem, len(items))
-		copy(cp, items)
-		return cp, nil
-	}
-	m.scheduleCancelFn = func(id string) (string, error) {
-		filtered := make([]ScheduleItem, 0, len(items))
-		for _, item := range items {
-			if item.ID != id {
-				filtered = append(filtered, item)
+	m.scheduleCtrl = fakeScheduleController{
+		listFn: func() ([]runtime.ScheduleItem, error) {
+			cp := make([]runtime.ScheduleItem, len(items))
+			copy(cp, items)
+			return cp, nil
+		},
+		cancelFn: func(id string) (string, error) {
+			filtered := make([]runtime.ScheduleItem, 0, len(items))
+			for _, item := range items {
+				if item.ID != id {
+					filtered = append(filtered, item)
+				}
 			}
-		}
-		items = filtered
-		return "deleted " + id, nil
+			items = filtered
+			return "deleted " + id, nil
+		},
 	}
 	updated, _ := m.handleSlashCommand("/schedules")
 	if updated.scheduleBrowser == nil {
@@ -112,13 +152,15 @@ func TestScheduleBrowserDelete(t *testing.T) {
 
 func TestScheduleBrowserRunNow(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
-		return []ScheduleItem{{ID: "review", Schedule: "@every 10m"}}, nil
-	}
 	called := ""
-	m.scheduleRunNowFn = func(id string) (string, error) {
-		called = id
-		return "started " + id, nil
+	m.scheduleCtrl = fakeScheduleController{
+		listFn: func() ([]runtime.ScheduleItem, error) {
+			return []runtime.ScheduleItem{{ID: "review", Schedule: "@every 10m"}}, nil
+		},
+		runNowFn: func(id string) (string, error) {
+			called = id
+			return "started " + id, nil
+		},
 	}
 	updated, _ := m.handleSlashCommand("/schedules")
 	if updated.scheduleBrowser == nil {

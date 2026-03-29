@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
@@ -59,10 +60,7 @@ type chatModel struct {
 	taskListFn          func(status string, limit int) (string, error)
 	taskQueryFn         func(taskID string) (string, error)
 	taskCancelFn        func(taskID, reason string) (string, error)
-	scheduleListFn      func() (string, error)
-	scheduleItemsFn     func() ([]ScheduleItem, error)
-	scheduleCancelFn    func(id string) (string, error)
-	scheduleRunNowFn    func(id string) (string, error)
+	scheduleCtrl        runtime.ScheduleController
 	sessionListFn       func(limit int) (string, error)
 	sessionRestoreFn    func(sessionID string) (string, error)
 	gitRunFn            func(cmd string, args []string) (string, error)
@@ -762,23 +760,23 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.handleConfigCommand(args)
 
 	case "/schedules":
-		if m.scheduleItemsFn != nil {
-			items, err := m.scheduleItemsFn()
-			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list schedules: %v", err)})
-				m.refreshViewport()
-				return m, nil
-			}
-			m.scheduleBrowser = newScheduleBrowserState(items)
-			m.refreshViewport()
-			return m, nil
-		}
-		if m.scheduleListFn == nil {
+		if m.scheduleCtrl == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Schedule listing is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.scheduleListFn()
+		items, err := m.scheduleCtrl.List()
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list schedules: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(items) > 0 {
+			m.scheduleBrowser = newScheduleBrowserState(items)
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.scheduleCtrl.ListText()
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list schedules: %v", err)})
 		} else {

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -138,29 +137,8 @@ func launchTUI(cfg *config) error {
 				},
 			}
 		},
-		ScheduleList: func() (string, error) {
-			if rt == nil {
-				return "Scheduler is not ready yet.", nil
-			}
-			return rt.listSchedules(), nil
-		},
-		ScheduleItems: func() ([]mosstui.ScheduleItem, error) {
-			if rt == nil {
-				return nil, nil
-			}
-			return rt.scheduleItems(), nil
-		},
-		ScheduleCancel: func(id string) (string, error) {
-			if rt == nil {
-				return "Scheduler is not ready yet.", nil
-			}
-			return rt.cancelSchedule(id)
-		},
-		ScheduleRunNow: func(id string) (string, error) {
-			if rt == nil {
-				return "Scheduler is not ready yet.", nil
-			}
-			return rt.runScheduleNow(id)
+		ScheduleController: runtime.SchedulerAdapter{
+			Scheduler: rt.sched,
 		},
 	})
 }
@@ -369,82 +347,6 @@ func sendOutput(ctx context.Context, io port.UserIO, outputType port.OutputType,
 		Type:    outputType,
 		Content: content,
 	})
-}
-
-func (r *mossquantRuntime) listSchedules() string {
-	if r == nil || r.sched == nil {
-		return "Scheduler is unavailable."
-	}
-	jobs := r.sched.ListJobs()
-	if len(jobs) == 0 {
-		return "No background scheduled jobs."
-	}
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Schedules (%d):\n", len(jobs)))
-	for _, job := range jobs {
-		b.WriteString(fmt.Sprintf("- %s | %s", job.ID, job.Schedule))
-		if !job.NextRun.IsZero() {
-			b.WriteString(" | next: " + job.NextRun.Format("2006-01-02 15:04:05"))
-		}
-		if !job.LastRun.IsZero() {
-			b.WriteString(" | last: " + job.LastRun.Format("2006-01-02 15:04:05"))
-		}
-		if job.RunCount > 0 {
-			b.WriteString(fmt.Sprintf(" | runs: %d", job.RunCount))
-		}
-		if goal := strings.TrimSpace(job.Goal); goal != "" {
-			b.WriteString(" | " + goal)
-		}
-		b.WriteString("\n")
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (r *mossquantRuntime) scheduleItems() []mosstui.ScheduleItem {
-	if r == nil || r.sched == nil {
-		return nil
-	}
-	jobs := r.sched.ListJobs()
-	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
-	items := make([]mosstui.ScheduleItem, 0, len(jobs))
-	for _, job := range jobs {
-		item := mosstui.ScheduleItem{
-			ID:       job.ID,
-			Schedule: job.Schedule,
-			Goal:     strings.TrimSpace(job.Goal),
-			RunCount: job.RunCount,
-		}
-		if !job.NextRun.IsZero() {
-			item.NextRun = job.NextRun.Format("2006-01-02 15:04:05")
-		}
-		if !job.LastRun.IsZero() {
-			item.LastRun = job.LastRun.Format("2006-01-02 15:04:05")
-		}
-		items = append(items, item)
-	}
-	return items
-}
-
-func (r *mossquantRuntime) cancelSchedule(id string) (string, error) {
-	if r == nil || r.sched == nil {
-		return "Scheduler is unavailable.", nil
-	}
-	if err := r.sched.RemoveJob(strings.TrimSpace(id)); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Schedule %s deleted.", strings.TrimSpace(id)), nil
-}
-
-func (r *mossquantRuntime) runScheduleNow(id string) (string, error) {
-	if r == nil || r.sched == nil {
-		return "Scheduler is not ready yet.", nil
-	}
-	id = strings.TrimSpace(id)
-	if err := r.sched.Trigger(id); err != nil {
-		return "", err
-	}
-	return fmt.Sprintf("Schedule %s started immediately.", id), nil
 }
 
 func workspaceProvided() bool {

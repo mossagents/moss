@@ -6,15 +6,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagents/moss/appkit/runtime"
 )
 
 type scheduleBrowserState struct {
-	items   []ScheduleItem
+	items   []runtime.ScheduleItem
 	cursor  int
 	message string
 }
 
-func newScheduleBrowserState(items []ScheduleItem) *scheduleBrowserState {
+func newScheduleBrowserState(items []runtime.ScheduleItem) *scheduleBrowserState {
 	return &scheduleBrowserState{items: items}
 }
 
@@ -43,12 +44,12 @@ func (m chatModel) handleScheduleBrowserKey(msg tea.KeyMsg) (chatModel, tea.Cmd)
 }
 
 func (m chatModel) refreshScheduleBrowser() (chatModel, tea.Cmd) {
-	if m.scheduleItemsFn == nil {
+	if m.scheduleCtrl == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Schedule listing is unavailable."})
 		m.refreshViewport()
 		return m, nil
 	}
-	items, err := m.scheduleItemsFn()
+	items, err := m.scheduleCtrl.List()
 	if err != nil {
 		if m.scheduleBrowser != nil {
 			m.scheduleBrowser.message = fmt.Sprintf("Refresh failed: %v", err)
@@ -78,13 +79,13 @@ func (m chatModel) runSelectedScheduleNow() (chatModel, tea.Cmd) {
 	if m.scheduleBrowser == nil || len(m.scheduleBrowser.items) == 0 {
 		return m, nil
 	}
-	if m.scheduleRunNowFn == nil {
+	if m.scheduleCtrl == nil {
 		m.scheduleBrowser.message = "Immediate execution is unavailable."
 		m.refreshViewport()
 		return m, nil
 	}
 	selected := m.scheduleBrowser.items[m.scheduleBrowser.cursor]
-	out, err := m.scheduleRunNowFn(selected.ID)
+	out, err := m.scheduleCtrl.RunNow(selected.ID)
 	if err != nil {
 		m.scheduleBrowser.message = fmt.Sprintf("Run failed: %v", err)
 	} else {
@@ -98,23 +99,23 @@ func (m chatModel) deleteSelectedSchedule() (chatModel, tea.Cmd) {
 	if m.scheduleBrowser == nil || len(m.scheduleBrowser.items) == 0 {
 		return m, nil
 	}
-	if m.scheduleCancelFn == nil {
+	if m.scheduleCtrl == nil {
 		m.scheduleBrowser.message = "Schedule deletion is unavailable."
 		m.refreshViewport()
 		return m, nil
 	}
 	selected := m.scheduleBrowser.items[m.scheduleBrowser.cursor]
-	out, err := m.scheduleCancelFn(selected.ID)
+	out, err := m.scheduleCtrl.Cancel(selected.ID)
 	if err != nil {
 		m.scheduleBrowser.message = fmt.Sprintf("Delete failed: %v", err)
 		m.refreshViewport()
 		return m, nil
 	}
-	items, listErr := []ScheduleItem(nil), error(nil)
-	if m.scheduleItemsFn != nil {
-		items, listErr = m.scheduleItemsFn()
+	items, listErr := []runtime.ScheduleItem(nil), error(nil)
+	if m.scheduleCtrl != nil {
+		items, listErr = m.scheduleCtrl.List()
 	}
-	if listErr == nil && m.scheduleItemsFn != nil {
+	if listErr == nil && m.scheduleCtrl != nil {
 		m.scheduleBrowser.items = items
 		if m.scheduleBrowser.cursor >= len(items) && len(items) > 0 {
 			m.scheduleBrowser.cursor = len(items) - 1

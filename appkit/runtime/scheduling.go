@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
@@ -17,10 +19,106 @@ type schedulingState struct {
 	scheduler *scheduler.Scheduler
 }
 
+type ScheduleItem struct {
+	ID       string
+	Schedule string
+	Goal     string
+	LastRun  string
+	NextRun  string
+	RunCount int
+}
+
+type ScheduleController interface {
+	List() ([]ScheduleItem, error)
+	ListText() (string, error)
+	Cancel(id string) (string, error)
+	RunNow(id string) (string, error)
+}
+
+type SchedulerAdapter struct {
+	Scheduler *scheduler.Scheduler
+}
+
 func WithScheduler(s *scheduler.Scheduler) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureSchedulingState(k).scheduler = s
 	}
+}
+
+func (a SchedulerAdapter) List() ([]ScheduleItem, error) {
+	if a.Scheduler == nil {
+		return nil, fmt.Errorf("scheduler is unavailable")
+	}
+	jobs := a.Scheduler.ListJobs()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	items := make([]ScheduleItem, 0, len(jobs))
+	for _, job := range jobs {
+		item := ScheduleItem{
+			ID:       job.ID,
+			Schedule: job.Schedule,
+			Goal:     strings.TrimSpace(job.Goal),
+			RunCount: job.RunCount,
+		}
+		if !job.NextRun.IsZero() {
+			item.NextRun = job.NextRun.Format("2006-01-02 15:04:05")
+		}
+		if !job.LastRun.IsZero() {
+			item.LastRun = job.LastRun.Format("2006-01-02 15:04:05")
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (a SchedulerAdapter) ListText() (string, error) {
+	items, err := a.List()
+	if err != nil {
+		return "", err
+	}
+	if len(items) == 0 {
+		return "No background scheduled jobs.", nil
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("Schedules (%d):\n", len(items)))
+	for _, item := range items {
+		b.WriteString(fmt.Sprintf("- %s | %s", item.ID, item.Schedule))
+		if item.NextRun != "" {
+			b.WriteString(" | next: " + item.NextRun)
+		}
+		if item.LastRun != "" {
+			b.WriteString(" | last: " + item.LastRun)
+		}
+		if item.RunCount > 0 {
+			b.WriteString(fmt.Sprintf(" | runs: %d", item.RunCount))
+		}
+		if item.Goal != "" {
+			b.WriteString(" | " + item.Goal)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func (a SchedulerAdapter) Cancel(id string) (string, error) {
+	if a.Scheduler == nil {
+		return "Scheduler is unavailable.", nil
+	}
+	id = strings.TrimSpace(id)
+	if err := a.Scheduler.RemoveJob(id); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Schedule %s deleted.", id), nil
+}
+
+func (a SchedulerAdapter) RunNow(id string) (string, error) {
+	if a.Scheduler == nil {
+		return "Scheduler is not ready yet.", nil
+	}
+	id = strings.TrimSpace(id)
+	if err := a.Scheduler.Trigger(id); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Schedule %s started immediately.", id), nil
 }
 
 func RegisterSchedulerTools(k *kernel.Kernel, sched *scheduler.Scheduler) error {
@@ -135,7 +233,10 @@ var listSchedulesSpec = tool.ToolSpec{
 
 func listSchedulesHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-		jobs := sched.ListJobs()
+		items, err := (SchedulerAdapter{Scheduler: sched}).List()
+		if err != nil {
+			return nil, err
+		}
 		type jobInfo struct {
 			ID       string `json:"id"`
 			Schedule string `json:"schedule"`
@@ -144,14 +245,15 @@ func listSchedulesHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 			LastRun  string `json:"last_run,omitempty"`
 			NextRun  string `json:"next_run,omitempty"`
 		}
-		infos := make([]jobInfo, len(jobs))
-		for i, j := range jobs {
-			infos[i] = jobInfo{ID: j.ID, Schedule: j.Schedule, Goal: j.Goal, RunCount: j.RunCount}
-			if !j.LastRun.IsZero() {
-				infos[i].LastRun = j.LastRun.Format("2006-01-02 15:04:05")
-			}
-			if !j.NextRun.IsZero() {
-				infos[i].NextRun = j.NextRun.Format("2006-01-02 15:04:05")
+		infos := make([]jobInfo, len(items))
+		for i, item := range items {
+			infos[i] = jobInfo{
+				ID:       item.ID,
+				Schedule: item.Schedule,
+				Goal:     item.Goal,
+				RunCount: item.RunCount,
+				LastRun:  item.LastRun,
+				NextRun:  item.NextRun,
 			}
 		}
 		return json.Marshal(map[string]any{"count": len(infos), "jobs": infos})
