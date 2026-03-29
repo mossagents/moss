@@ -369,19 +369,14 @@ func (r *mossquantRuntime) cancelSchedule(id string) (string, error) {
 }
 
 func (r *mossquantRuntime) runScheduleNow(id string) (string, error) {
-	if r == nil || r.sched == nil || r.kernel == nil || r.io == nil {
+	if r == nil || r.sched == nil {
 		return "Scheduler is not ready yet.", nil
 	}
-	job, ok := findJob(r.sched, strings.TrimSpace(id))
-	if !ok {
-		return "", fmt.Errorf("schedule not found: %s", id)
+	id = strings.TrimSpace(id)
+	if err := r.sched.Trigger(id); err != nil {
+		return "", err
 	}
-	runCtx := r.rootCtx
-	if runCtx == nil {
-		runCtx = context.Background()
-	}
-	go r.runScheduledJob(runCtx, job)
-	return fmt.Sprintf("Schedule %s started immediately.", job.ID), nil
+	return fmt.Sprintf("Schedule %s started immediately.", id), nil
 }
 
 func (r *mossquantRuntime) runScheduledJob(jobCtx context.Context, job scheduler.Job) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestFileJobStoreSaveLoad(t *testing.T) {
@@ -91,5 +92,68 @@ func TestSchedulerWithPersistence(t *testing.T) {
 	}
 	if jobs[0].ID != "persist-test" {
 		t.Errorf("recovered job ID = %q, want %q", jobs[0].ID, "persist-test")
+	}
+}
+
+func TestSchedulerPersistsRunStateAndOnceRemoval(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "jobs.json")
+
+	store, err := NewFileJobStore(path)
+	if err != nil {
+		t.Fatalf("NewFileJobStore: %v", err)
+	}
+
+	s := New(WithPersistence(store))
+	if err := s.AddJob(Job{ID: "loop", Schedule: "@every 1h", Goal: "test"}); err != nil {
+		t.Fatalf("AddJob loop: %v", err)
+	}
+	if err := s.AddJob(Job{ID: "once", Schedule: "@once", Goal: "run once"}); err != nil {
+		t.Fatalf("AddJob once: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx, func(_ context.Context, _ Job) {})
+	defer s.Stop()
+
+	if err := s.Trigger("loop"); err != nil {
+		t.Fatalf("Trigger loop: %v", err)
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	loaded, err := store.LoadJobs(context.Background())
+	if err != nil {
+		t.Fatalf("LoadJobs after trigger: %v", err)
+	}
+	foundLoop := false
+	for _, job := range loaded {
+		if job.ID == "loop" {
+			foundLoop = true
+			if job.RunCount < 1 {
+				t.Fatalf("expected persisted run_count >= 1, got %d", job.RunCount)
+			}
+			if job.LastRun.IsZero() {
+				t.Fatal("expected persisted last_run")
+			}
+			if job.NextRun.IsZero() {
+				t.Fatal("expected persisted next_run")
+			}
+		}
+	}
+	if !foundLoop {
+		t.Fatal("expected loop job to remain persisted")
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	loaded, err = store.LoadJobs(context.Background())
+	if err != nil {
+		t.Fatalf("LoadJobs after once fire: %v", err)
+	}
+	for _, job := range loaded {
+		if job.ID == "once" {
+			t.Fatal("expected once job to be removed from persisted store after firing")
+		}
 	}
 }

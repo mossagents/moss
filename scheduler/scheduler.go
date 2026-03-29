@@ -96,7 +96,9 @@ func (s *Scheduler) AddJob(job Job) error {
 
 	// 如果已存在，先停止
 	if existing, ok := s.jobs[job.ID]; ok {
-		existing.timer.Stop()
+		if existing.timer != nil {
+			existing.timer.Stop()
+		}
 		if existing.cancel != nil {
 			existing.cancel()
 		}
@@ -214,6 +216,28 @@ func (s *Scheduler) Count() int {
 	return len(s.jobs)
 }
 
+// Trigger 立即执行指定任务一次，不改变其调度表达式。
+func (s *Scheduler) Trigger(id string) error {
+	s.mu.Lock()
+	entry, ok := s.jobs[id]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("job not found: %s", id)
+	}
+	handler := s.handler
+	parent := s.parentCtx
+	if parent == nil {
+		parent = context.Background()
+	}
+	s.mu.Unlock()
+
+	if handler == nil {
+		return fmt.Errorf("scheduler handler is not set")
+	}
+	go s.fireNow(parent, id, entry)
+	return nil
+}
+
 func (s *Scheduler) scheduleEntry(entry *jobEntry, interval time.Duration, once bool) {
 	// job context 继承 parentCtx，这样全局 cancel 时 handler 内的 ctx 也会响应
 	parent := s.parentCtx
@@ -227,63 +251,84 @@ func (s *Scheduler) scheduleEntry(entry *jobEntry, interval time.Duration, once 
 
 	var fire func()
 	fire = func() {
-		s.mu.Lock()
-		// 检查 entry 是否仍有效（可能已被 handler 内 RemoveJob 移除）
-		current, exists := s.jobs[jobID]
-		if !exists || current != entry {
-			s.mu.Unlock()
-			return
-		}
-		entry.job.LastRun = time.Now()
-		entry.job.RunCount++
-		handler := s.handler
-		job := entry.job
-		lock := s.lock
+		s.executeFire(ctx, jobID, entry, interval, once, cancel, true, fire)
+	}
+
+	entry.timer = time.AfterFunc(interval, fire)
+}
+
+func (s *Scheduler) fireNow(parent context.Context, jobID string, entry *jobEntry) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	s.executeFire(ctx, jobID, entry, 0, false, func() {}, false, nil)
+}
+
+func (s *Scheduler) executeFire(ctx context.Context, jobID string, entry *jobEntry, interval time.Duration, once bool, cancel func(), reschedule bool, rearm func()) {
+	s.mu.Lock()
+	// 检查 entry 是否仍有效（可能已被 handler 内 RemoveJob 移除）
+	current, exists := s.jobs[jobID]
+	if !exists || current != entry {
 		s.mu.Unlock()
+		return
+	}
+	entry.job.LastRun = time.Now()
+	entry.job.RunCount++
+	handler := s.handler
+	job := entry.job
+	lock := s.lock
+	s.persistLocked()
+	s.mu.Unlock()
 
-		// 分布式锁：多实例部署时防止重复执行
-		acquired := true
-		var lockUnlock func()
-		if lock != nil {
-			u, lockErr := lock.TryLock(ctx, "scheduler:"+jobID, interval)
-			if lockErr != nil {
-				acquired = false
-			} else {
-				lockUnlock = u
+	// 分布式锁：多实例部署时防止重复执行
+	acquired := true
+	var lockUnlock func()
+	lockTTL := interval
+	if lockTTL <= 0 {
+		lockTTL = time.Minute
+	}
+	if lock != nil {
+		u, lockErr := lock.TryLock(ctx, "scheduler:"+jobID, lockTTL)
+		if lockErr != nil {
+			acquired = false
+		} else {
+			lockUnlock = u
+		}
+	}
+
+	if acquired && handler != nil {
+		handler(ctx, job)
+	}
+	if lockUnlock != nil {
+		lockUnlock()
+	}
+
+	if once {
+		// @once/@after 任务：handler 完成后才移除（不会 cancel 正在执行的 ctx）
+		s.mu.Lock()
+		if e, ok := s.jobs[jobID]; ok && e == entry {
+			if e.timer != nil {
+				e.timer.Stop()
 			}
+			delete(s.jobs, jobID)
+			s.persistLocked()
 		}
+		s.mu.Unlock()
+		cancel()
+		return
+	}
 
-		if acquired && handler != nil {
-			handler(ctx, job)
-		}
-		if lockUnlock != nil {
-			lockUnlock()
-		}
-
-		if once {
-			// @once 任务：handler 完成后才移除（不会 cancel 正在执行的 ctx）
-			s.mu.Lock()
-			if e, ok := s.jobs[jobID]; ok && e == entry {
-				if e.timer != nil {
-					e.timer.Stop()
-				}
-				delete(s.jobs, jobID)
-			}
-			s.mu.Unlock()
-			cancel()
-			return
-		}
-
+	if reschedule {
 		// 重新调度下一次执行
 		s.mu.Lock()
 		if e, ok := s.jobs[jobID]; ok && e == entry && s.running {
 			e.job.NextRun = time.Now().Add(interval)
-			e.timer = time.AfterFunc(interval, fire)
+			if rearm != nil {
+				e.timer = time.AfterFunc(interval, rearm)
+			}
+			s.persistLocked()
 		}
 		s.mu.Unlock()
 	}
-
-	entry.timer = time.AfterFunc(interval, fire)
 }
 
 func (s *Scheduler) stopAll() {

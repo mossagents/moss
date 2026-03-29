@@ -154,3 +154,38 @@ func TestSchedulerOnce(t *testing.T) {
 		t.Fatalf("expected 0 jobs after @once, got %d", s.Count())
 	}
 }
+
+func TestSchedulerTriggerRunsImmediately(t *testing.T) {
+	s := New()
+	if err := s.AddJob(Job{
+		ID:       "manual",
+		Schedule: "@every 1h",
+		Goal:     "manual trigger",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	triggered := make(chan string, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s.Start(ctx, func(_ context.Context, job Job) {
+		select {
+		case triggered <- job.ID:
+		default:
+		}
+	})
+	defer s.Stop()
+
+	if err := s.Trigger("manual"); err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+
+	select {
+	case got := <-triggered:
+		if got != "manual" {
+			t.Fatalf("unexpected triggered job: %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected triggered job to run immediately")
+	}
+}
