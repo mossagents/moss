@@ -16,7 +16,6 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"

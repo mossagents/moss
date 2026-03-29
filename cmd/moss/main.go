@@ -9,7 +9,6 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -22,10 +21,10 @@ const version = "0.3.0"
 
 func main() {
 	// 确保 ~/.moss 配置目录存在
-	if err := appconfig.EnsureAppDir(); err != nil {
+	if err := config.EnsureAppDir(); err != nil {
 		logging.GetLogger().Warn("cannot create config dir", slog.Any("error", err))
 	}
-	if enabled, path, closer, err := logging.ConfigureDebugFileWhenEnabled(appconfig.AppDir()); err != nil {
+	if enabled, path, closer, err := logging.ConfigureDebugFileWhenEnabled(config.AppDir()); err != nil {
 		logging.GetLogger().Warn("cannot enable debug file logging", slog.Any("error", err))
 	} else {
 		if closer != nil {

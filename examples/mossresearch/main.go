@@ -23,17 +23,32 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/presets/deepagent"
-	mossTUI "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
 var defaultSystemPromptTemplate string
 
 const appName = "mossresearch"
+const outputDirName = ".mossresearch"
 
 type config struct {
 	flags *appkit.AppFlags
 	goal  string
+}
+
+type jinaSearchParams struct {
+	Query string `json:"query"`
+	Count int    `json:"count"`
+	GL    string `json:"gl"`
+	HL    string `json:"hl"`
+}
+
+type jinaReaderParams struct {
+	URL            string `json:"url"`
+	TargetSelector string `json:"target_selector"`
+	RemoveSelector string `json:"remove_selector"`
+	TokenBudget    int    `json:"token_budget"`
 }
 
 func main() {
@@ -97,7 +112,7 @@ Flags:
 
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
-	return mossTUI.Run(mossTUI.Config{
+	return mosstui.Run(mosstui.Config{
 		Provider:        flags.Provider,
 		Model:           flags.Model,
 		Workspace:       flags.Workspace,
@@ -139,6 +154,9 @@ func runOneShot(ctx context.Context, cfg *config) error {
 		return err
 	}
 	defer k.Shutdown(ctx)
+	if err := writeResearchRequest(cfg.flags.Workspace, cfg.goal); err != nil {
+		return fmt.Errorf("write research request: %w", err)
+	}
 
 	modelName := cfg.flags.Model
 	if modelName == "" {
@@ -173,10 +191,13 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
+	if err := ensureFinalReport(cfg.flags.Workspace, result.Output); err != nil {
+		return fmt.Errorf("write final report: %w", err)
+	}
 
 	fmt.Println()
 	fmt.Printf("✅ Research completed (session: %s, steps: %d, tokens: %d)\n", result.SessionID, result.Steps, result.TokensUsed.TotalTokens)
-	reportPath := filepath.Join(cfg.flags.Workspace, ".mossresearch", "final_report.md")
+	reportPath := finalReportPath(cfg.flags.Workspace)
 	fmt.Printf("📄 Report path: %s\n", reportPath)
 	if strings.TrimSpace(result.Output) != "" {
 		fmt.Printf("\n%s\n", result.Output)
@@ -204,6 +225,50 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 func buildSystemPrompt(workspace string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
 	return appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+}
+
+func researchOutputDir(workspace string) string {
+	return filepath.Join(workspace, outputDirName)
+}
+
+func researchRequestPath(workspace string) string {
+	return filepath.Join(researchOutputDir(workspace), "research_request.md")
+}
+
+func finalReportPath(workspace string) string {
+	return filepath.Join(researchOutputDir(workspace), "final_report.md")
+}
+
+func ensureResearchOutputDir(workspace string) error {
+	return os.MkdirAll(researchOutputDir(workspace), 0o755)
+}
+
+func writeResearchRequest(workspace, goal string) error {
+	if err := ensureResearchOutputDir(workspace); err != nil {
+		return err
+	}
+	content := strings.TrimSpace(goal)
+	if content == "" {
+		content = "(empty research request)"
+	}
+	return os.WriteFile(researchRequestPath(workspace), []byte(content+"\n"), 0o644)
+}
+
+func ensureFinalReport(workspace, output string) error {
+	if err := ensureResearchOutputDir(workspace); err != nil {
+		return err
+	}
+	reportPath := finalReportPath(workspace)
+	if data, err := os.ReadFile(reportPath); err == nil && strings.TrimSpace(string(data)) != "" {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	content := strings.TrimSpace(output)
+	if content == "" {
+		content = "Research completed, but no final textual report was returned by the model. Review the session transcript and supporting files for details."
+	}
+	return os.WriteFile(reportPath, []byte(content+"\n"), 0o644)
 }
 
 func registerResearchTools(reg tool.Registry) error {
@@ -234,8 +299,8 @@ func registerResearchTools(reg tool.Registry) error {
 			return nil, fmt.Errorf("parse think_tool input: %w", err)
 		}
 		return json.Marshal(map[string]any{
-			"recorded":   true,
-			"thought":    strings.TrimSpace(params.Thought),
+			"recorded":    true,
+			"thought":     strings.TrimSpace(params.Thought),
 			"recorded_at": time.Now().Format(time.RFC3339),
 		})
 	}
@@ -263,13 +328,8 @@ var jinaSearchSpec = tool.ToolSpec{
 }
 
 func jinaSearchHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			Query string `json:"query"`
-			Count int    `json:"count"`
-			GL    string `json:"gl"`
-			HL    string `json:"hl"`
-		}
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params jinaSearchParams
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("parse input: %w", err)
 		}
@@ -280,26 +340,10 @@ func jinaSearchHandler() tool.ToolHandler {
 			params.Count = 5
 		}
 
-		endpoint := "https://s.jina.ai/" + url.QueryEscape(params.Query)
-		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		req, err := newJinaSearchRequest(ctx, params)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Retain-Images", "none")
-		if key := os.Getenv("JINA_API_KEY"); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		q := req.URL.Query()
-		if params.GL != "" {
-			q.Set("gl", params.GL)
-		}
-		if params.HL != "" {
-			q.Set("hl", params.HL)
-		}
-		q.Set("count", fmt.Sprintf("%d", params.Count))
-		req.URL.RawQuery = q.Encode()
-
 		client := &http.Client{Timeout: 30 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -335,13 +379,8 @@ var jinaReaderSpec = tool.ToolSpec{
 }
 
 func jinaReaderHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			URL            string `json:"url"`
-			TargetSelector string `json:"target_selector"`
-			RemoveSelector string `json:"remove_selector"`
-			TokenBudget    int    `json:"token_budget"`
-		}
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var params jinaReaderParams
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("parse input: %w", err)
 		}
@@ -349,25 +388,10 @@ func jinaReaderHandler() tool.ToolHandler {
 			return nil, fmt.Errorf("url is required")
 		}
 
-		req, err := http.NewRequest(http.MethodGet, "https://r.jina.ai/"+params.URL, nil)
+		req, err := newJinaReaderRequest(ctx, params)
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("X-Retain-Images", "none")
-		if key := os.Getenv("JINA_API_KEY"); key != "" {
-			req.Header.Set("Authorization", "Bearer "+key)
-		}
-		if params.TargetSelector != "" {
-			req.Header.Set("X-Target-Selector", params.TargetSelector)
-		}
-		if params.RemoveSelector != "" {
-			req.Header.Set("X-Remove-Selector", params.RemoveSelector)
-		}
-		if params.TokenBudget > 0 {
-			req.Header.Set("X-Token-Budget", fmt.Sprintf("%d", params.TokenBudget))
-		}
-
 		client := &http.Client{Timeout: 60 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
@@ -394,7 +418,52 @@ func unwrapJinaPayload(body []byte) (json.RawMessage, error) {
 	if err := json.Unmarshal(body, &envelope); err == nil && len(envelope.Data) > 0 {
 		return envelope.Data, nil
 	}
-	return json.Marshal(string(body))
+	return body, nil
+}
+
+func newJinaSearchRequest(ctx context.Context, params jinaSearchParams) (*http.Request, error) {
+	endpoint := "https://s.jina.ai/" + url.QueryEscape(params.Query)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Retain-Images", "none")
+	if key := os.Getenv("JINA_API_KEY"); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	q := req.URL.Query()
+	if params.GL != "" {
+		q.Set("gl", params.GL)
+	}
+	if params.HL != "" {
+		q.Set("hl", params.HL)
+	}
+	q.Set("count", fmt.Sprintf("%d", params.Count))
+	req.URL.RawQuery = q.Encode()
+	return req, nil
+}
+
+func newJinaReaderRequest(ctx context.Context, params jinaReaderParams) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://r.jina.ai/"+url.PathEscape(params.URL), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Retain-Images", "none")
+	if key := os.Getenv("JINA_API_KEY"); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if params.TargetSelector != "" {
+		req.Header.Set("X-Target-Selector", params.TargetSelector)
+	}
+	if params.RemoveSelector != "" {
+		req.Header.Set("X-Remove-Selector", params.RemoveSelector)
+	}
+	if params.TokenBudget > 0 {
+		req.Header.Set("X-Token-Budget", fmt.Sprintf("%d", params.TokenBudget))
+	}
+	return req, nil
 }
 
 func registerResearchAgents(k *kernel.Kernel, flags *appkit.AppFlags) error {

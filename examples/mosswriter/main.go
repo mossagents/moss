@@ -24,7 +24,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/presets/deepagent"
-	mossTUI "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/userio/tui"
 	"gopkg.in/yaml.v3"
 )
 
@@ -107,7 +107,7 @@ Flags:
 
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
-	return mossTUI.Run(mossTUI.Config{
+	return mosstui.Run(mosstui.Config{
 		Provider:        flags.Provider,
 		Model:           flags.Model,
 		Workspace:       flags.Workspace,
@@ -268,9 +268,9 @@ func registerWriterTools(reg tool.Registry) error {
 }
 
 var thinkToolSpec = tool.ToolSpec{
-	Name:        "think_tool",
-	Description: "Record a short reflection about writing, research gaps, or next steps.",
-	InputSchema: json.RawMessage(`{"type":"object","properties":{"thought":{"type":"string"}},"required":["thought"]}`),
+	Name:         "think_tool",
+	Description:  "Record a short reflection about writing, research gaps, or next steps.",
+	InputSchema:  json.RawMessage(`{"type":"object","properties":{"thought":{"type":"string"}},"required":["thought"]}`),
 	Risk:         tool.RiskLow,
 	Capabilities: []string{"thinking", "writing"},
 }
@@ -292,9 +292,9 @@ func thinkToolHandler() tool.ToolHandler {
 }
 
 var makeSlugSpec = tool.ToolSpec{
-	Name:        "make_slug",
-	Description: "Create a filesystem-safe slug from a title or topic.",
-	InputSchema: json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`),
+	Name:         "make_slug",
+	Description:  "Create a filesystem-safe slug from a title or topic.",
+	InputSchema:  json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`),
 	Risk:         tool.RiskLow,
 	Capabilities: []string{"writing", "filesystem"},
 }

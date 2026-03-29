@@ -1,5 +1,7 @@
 # moss runtime artifacts
 .moss/
+.mossresearch/
+.mosswriter/
 .agents/
 
 # Go build artifacts

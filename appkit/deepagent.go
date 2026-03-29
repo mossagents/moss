@@ -10,7 +10,7 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -43,7 +43,7 @@ type DeepAgentConfig struct {
 // DefaultDeepAgentConfig 返回 deep-agent 装配默认配置。
 func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
-		AppName:                  appconfig.AppName(),
+		AppName:                  config.AppName(),
 		EnableSessionStore:       boolPtr(true),
 		EnablePersistentMemories: boolPtr(true),
 		EnableContextOffload:     boolPtr(true),
@@ -122,7 +122,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	if valueOrDefault(effective.EnableSessionStore, true) {
 		storeDir := effective.SessionStoreDir
 		if storeDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
+			if appDir := config.AppDir(); appDir != "" {
 				storeDir = filepath.Join(appDir, "sessions")
 			} else {
 				storeDir = filepath.Join(flags.Workspace, "."+effective.AppName, "sessions")
@@ -142,7 +142,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	if valueOrDefault(effective.EnablePersistentMemories, true) {
 		memDir := effective.MemoryDir
 		if memDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
+			if appDir := config.AppDir(); appDir != "" {
 				memDir = filepath.Join(appDir, "memories")
 			} else {
 				memDir = filepath.Join(flags.Workspace, "."+effective.AppName, "memories")
@@ -153,7 +153,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	if valueOrDefault(effective.EnableWorkspaceIsolation, true) {
 		isolationRoot := effective.IsolationRootDir
 		if isolationRoot == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
+			if appDir := config.AppDir(); appDir != "" {
 				isolationRoot = filepath.Join(appDir, "workspaces")
 			} else {
 				isolationRoot = filepath.Join(flags.Workspace, "."+effective.AppName, "workspaces")

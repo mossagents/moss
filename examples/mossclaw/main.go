@@ -38,7 +38,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
-	mossTUI "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -79,7 +79,7 @@ type mossclawRuntime struct {
 func launchTUI(flags *appkit.AppFlags) error {
 	var activeRuntime *mossclawRuntime
 
-	return mossTUI.Run(mossTUI.Config{
+	return mosstui.Run(mosstui.Config{
 		Provider:  flags.Provider,
 		Model:     flags.Model,
 		Workspace: flags.Workspace,

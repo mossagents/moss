@@ -29,7 +29,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/presets/deepagent"
-	mossTUI "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -103,7 +103,7 @@ Flags:
 
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
-	return mossTUI.Run(mossTUI.Config{
+	return mosstui.Run(mosstui.Config{
 		Provider:        flags.Provider,
 		Model:           flags.Model,
 		Workspace:       flags.Workspace,

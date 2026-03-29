@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/bootstrap"
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -15,8 +15,8 @@ var defaultSystemPromptTemplate string
 // 风格：类 Claude Code / Cursor 的通用编程助手。
 // skillPrompts 是来自 SkillManager 的额外提示片段。
 func buildSystemPrompt(workspace string, skillPrompts ...string) string {
-	ctx := appconfig.DefaultTemplateContext(workspace)
-	base := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+	ctx := config.DefaultTemplateContext(workspace)
+	base := config.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
 
 	if bctx := bootstrap.Load(workspace); bctx != nil {
 		if sec := strings.TrimSpace(bctx.SystemPromptSection()); sec != "" {

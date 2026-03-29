@@ -10,7 +10,7 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/skill"
 )
@@ -19,7 +19,7 @@ import (
 // 它实现了 skill.Provider，以便纳入统一生命周期管理，但它不是 prompt skill，
 // 也不是 appkit/runtime 内建的 builtin tools。
 type MCPServer struct {
-	cfg       appconfig.SkillConfig
+	cfg       config.SkillConfig
 	client    mcpclient.MCPClient
 	toolNames []string
 }
@@ -27,7 +27,7 @@ type MCPServer struct {
 var _ skill.Provider = (*MCPServer)(nil)
 
 // NewMCPServer 根据配置创建 MCPServer（但不连接，连接在 Init 时执行）。
-func NewMCPServer(cfg appconfig.SkillConfig) *MCPServer {
+func NewMCPServer(cfg config.SkillConfig) *MCPServer {
 	return &MCPServer{cfg: cfg}
 }
 

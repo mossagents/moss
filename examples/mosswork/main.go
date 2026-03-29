@@ -31,7 +31,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	mossTUI "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/manager_system_prompt.tmpl
@@ -135,7 +135,7 @@ func launchTUI(cfg config) error {
 	tracker := newOrchestrationTracker(nil)
 	cfg.tracker = tracker
 
-	return mossTUI.Run(mossTUI.Config{
+	return mosstui.Run(mosstui.Config{
 		Provider:  cfg.provider,
 		Model:     cfg.model,
 		Workspace: cfg.workspace,

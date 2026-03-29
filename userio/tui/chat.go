@@ -13,7 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 
@@ -925,7 +925,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 // handleConfigCommand 处理 /config 命令。
 func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
-	cfgPath := appconfig.DefaultGlobalConfigPath()
+	cfgPath := config.DefaultGlobalConfigPath()
 	if cfgPath == "" {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Unable to determine config directory."})
 		m.refreshViewport()
@@ -934,7 +934,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 
 	// /config — 显示当前配置
 	if len(args) == 0 {
-		cfg, _ := appconfig.LoadConfig(cfgPath)
+		cfg, _ := config.LoadConfig(cfgPath)
 		apiKeyDisplay := "(not set)"
 		if cfg.APIKey != "" {
 			apiKeyDisplay = maskKey(cfg.APIKey)
@@ -956,7 +956,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		key := strings.ToLower(args[1])
 		value := strings.Join(args[2:], " ")
 
-		cfg, _ := appconfig.LoadConfig(cfgPath)
+		cfg, _ := config.LoadConfig(cfgPath)
 		switch key {
 		case "provider":
 			cfg.Provider = value
@@ -975,7 +975,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 
-		if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
+		if err := config.SaveConfig(cfgPath, cfg); err != nil {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
 				content: fmt.Sprintf("Failed to save config: %v", err),
@@ -1069,7 +1069,7 @@ func (m *chatModel) recordInputHistory(input string) {
 }
 
 func defaultHistoryPath() string {
-	appDir := appconfig.AppDir()
+	appDir := config.AppDir()
 	if appDir == "" {
 		return ""
 	}

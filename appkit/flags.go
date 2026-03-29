@@ -4,7 +4,7 @@ import (
 	"flag"
 	"os"
 
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 )
 
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。
@@ -70,9 +70,9 @@ func (f *AppFlags) ApplyDefaults() {
 }
 
 func (f *AppFlags) mergeGlobalConfig() {
-	globalCfg, err := appconfig.LoadGlobalConfig()
+	globalCfg, err := config.LoadGlobalConfig()
 	if err != nil || globalCfg == nil {
-		globalCfg = &appconfig.Config{}
+		globalCfg = &config.Config{}
 	}
 
 	f.Provider = FirstNonEmpty(f.Provider, globalCfg.Provider, "openai")

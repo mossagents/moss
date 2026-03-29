@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	appconfig "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/config"
 )
 
 func TestParseSkillMDContent_Valid(t *testing.T) {
@@ -396,8 +396,8 @@ func TestDiscoverSkillManifests_AppDirIncludesLegacyMoss(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	appconfig.SetAppName("mosscode")
-	t.Cleanup(func() { appconfig.SetAppName("moss") })
+	config.SetAppName("mosscode")
+	t.Cleanup(func() { config.SetAppName("moss") })
 
 	projectLegacyDir := filepath.Join(workspace, ".moss", "skills", "legacy-project")
 	if err := os.MkdirAll(projectLegacyDir, 0755); err != nil {

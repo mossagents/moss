@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
@@ -19,7 +19,7 @@ import (
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
-	ctx := appconfig.DefaultTemplateContext("/workspace")
+	ctx := config.DefaultTemplateContext("/workspace")
 
 	if ctx["OS"] != runtime.GOOS {
 		t.Errorf("OS = %v, want %v", ctx["OS"], runtime.GOOS)
@@ -50,12 +50,12 @@ func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	appconfig.SetAppName("mosscode")
-	t.Cleanup(func() { appconfig.SetAppName("moss") })
-	if err := os.MkdirAll(appconfig.AppDir(), 0700); err != nil {
+	config.SetAppName("mosscode")
+	t.Cleanup(func() { config.SetAppName("moss") })
+	if err := os.MkdirAll(config.AppDir(), 0700); err != nil {
 		t.Fatalf("prepare config dir: %v", err)
 	}
-	if err := os.WriteFile(appconfig.DefaultGlobalConfigPath(), []byte("provider: claude\nmodel: sonnet\n"), 0600); err != nil {
+	if err := os.WriteFile(config.DefaultGlobalConfigPath(), []byte("provider: claude\nmodel: sonnet\n"), 0600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -105,9 +105,9 @@ func TestCommonFlags_ApplyDefaults(t *testing.T) {
 }
 
 func TestRenderSystemPrompt(t *testing.T) {
-	ctx := appconfig.DefaultTemplateContext("/workspace")
+	ctx := config.DefaultTemplateContext("/workspace")
 	ctx["Capital"] = 123
-	prompt := appconfig.RenderSystemPrompt("/workspace", `OS={{.OS}} Workspace={{.Workspace}} Capital={{.Capital}}`, ctx)
+	prompt := config.RenderSystemPrompt("/workspace", `OS={{.OS}} Workspace={{.Workspace}} Capital={{.Capital}}`, ctx)
 	if prompt == "" {
 		t.Fatal("expected rendered prompt")
 	}
