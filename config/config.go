@@ -57,6 +57,8 @@ func EnsureAppDir() error {
 }
 
 type Config struct {
+	APIType  string        `yaml:"api_type,omitempty"`
+	Name     string        `yaml:"name,omitempty"`
 	Provider string        `yaml:"provider,omitempty"`
 	Model    string        `yaml:"model,omitempty"`
 	BaseURL  string        `yaml:"base_url,omitempty"`
@@ -97,6 +99,7 @@ func LoadConfig(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	cfg.normalizeProviderFields()
 	return &cfg, nil
 }
 
@@ -105,7 +108,10 @@ func SaveConfig(path string, cfg *Config) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create config dir %s: %w", dir, err)
 	}
-	data, err := yaml.Marshal(cfg)
+	copyCfg := *cfg
+	copyCfg.normalizeProviderFields()
+	copyCfg.Provider = ""
+	data, err := yaml.Marshal(&copyCfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
@@ -133,7 +139,32 @@ func MergeConfigs(configs ...*Config) *Config {
 		}
 	}
 
-	return &Config{Skills: result}
+	cfg := &Config{Skills: result}
+	cfg.normalizeProviderFields()
+	return cfg
+}
+
+func (c *Config) normalizeProviderFields() {
+	if c == nil {
+		return
+	}
+	c.APIType = firstNonEmpty(c.APIType, c.Provider)
+	c.Provider = firstNonEmpty(c.Provider, c.APIType)
+	c.Name = firstNonEmpty(c.Name, c.APIType, c.Provider)
+}
+
+func (c *Config) EffectiveAPIType() string {
+	if c == nil {
+		return ""
+	}
+	return firstNonEmpty(c.APIType, c.Provider)
+}
+
+func (c *Config) DisplayProviderName() string {
+	if c == nil {
+		return ""
+	}
+	return firstNonEmpty(c.Name, c.EffectiveAPIType())
 }
 
 func DefaultGlobalConfigPath() string {
@@ -245,7 +276,8 @@ func renderPromptTemplate(src string, data map[string]any) (string, error) {
 const defaultConfigTemplate = `# Global config for moss
 # Priority: CLI flags > config file > environment variables
 
-# provider: openai
+# api_type: openai
+# name: openai
 # model: gpt-4o
 # base_url: ""
 # api_key: ""
@@ -262,3 +294,12 @@ skills:
   #   transport: sse
   #   url: http://localhost:3000/sse
 `
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}

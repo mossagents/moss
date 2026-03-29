@@ -49,7 +49,7 @@ func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io port.Use
 //
 // 这用于把常见运行时默认值收敛在 appkit，而不是散落在各个示例应用中。
 func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO, cfg BuildConfig, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
-	llm, err := adapters.BuildLLM(flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
+	llm, err := adapters.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err
 	}

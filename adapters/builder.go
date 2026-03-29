@@ -9,15 +9,15 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 )
 
-// BuildLLM 根据 provider 名称构建 LLM 实例。
+// BuildLLM 根据 apiType 构建 LLM 实例。
 //
-// 支持的 provider：
+// 支持的 apiType：
 //   - "openai"：OpenAI 兼容 API（也适用于本地 LLM via base URL）
 //   - "claude" / "anthropic"：Anthropic Claude API
 //
 // apiKey 和 baseURL 为空时使用环境变量默认值。
-func BuildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
-	switch strings.ToLower(provider) {
+func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
+	switch strings.ToLower(apiType) {
 	case "claude", "anthropic":
 		var opts []claude.Option
 		if model != "" {
@@ -39,6 +39,6 @@ func BuildLLM(provider, model, apiKey, baseURL string) (port.LLM, error) {
 		return openai.New("", opts...), nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai)", provider)
+		return nil, fmt.Errorf("unknown api_type: %s (supported: claude, openai)", apiType)
 	}
 }

@@ -1,13 +1,4 @@
-// mossquant 是一个量化交易 AI Agent POC。
-//
-// 基于 moss kernel 构建，集成模拟市场（10 种资产、5 秒 tick）、
-// 交易工具（下单/查询/投资组合）、技术分析、定时调度等能力。
-// LLM 驱动决策，Agent 自主进行分析→规划→执行→监控的交易循环。
-//
-// 用法:
-//
-//	go run . --capital 100000
-//	go run . --provider openai --model gpt-4o --capital 50000
+// mossquant 是一个使用 TUI 交互的投资研究与决策参考 Agent。
 package main
 
 import (
@@ -17,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mossagents/moss/appkit"
@@ -26,14 +18,28 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/scheduler"
+	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/trading_prompt.tmpl
 var tradingPromptTemplate string
 
 type config struct {
-	flags   *appkit.AppFlags
-	capital float64
+	flags          *appkit.AppFlags
+	capital        float64
+	reviewInterval string
+	autoReview     bool
+}
+
+type mossquantRuntime struct {
+	flags          *appkit.AppFlags
+	capital        float64
+	reviewInterval string
+	autoReview     bool
+	profile        *InvestorProfile
+	market         *market
+	store          session.SessionStore
+	sched          *scheduler.Scheduler
 }
 
 func main() {
@@ -41,11 +47,7 @@ func main() {
 	_ = appconfig.EnsureAppDir()
 
 	cfg := parseFlags()
-
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
-	defer cancel()
-
-	if err := run(ctx, cfg); err != nil {
+	if err := launchTUI(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -54,91 +56,238 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{}
 	flag.Float64Var(&cfg.capital, "capital", 100000, "Starting capital ($)")
+	flag.StringVar(&cfg.reviewInterval, "review-interval", "10m", "Default advisory review interval (e.g. 10m, 1h, @every 30m)")
+	flag.BoolVar(&cfg.autoReview, "auto-review", true, "Automatically create the default periodic investment review job")
 	cfg.flags = appkit.ParseAppFlags()
+	if !workspaceProvided() && strings.TrimSpace(cfg.flags.Workspace) == "." {
+		cfg.flags.Workspace = appconfig.AppDir()
+	}
 	return cfg
 }
 
-func run(ctx context.Context, cfg *config) error {
-	capital := cfg.capital
+func launchTUI(cfg *config) error {
+	flags := cfg.flags
+	var rt *mossquantRuntime
+
+	return mosstui.Run(mosstui.Config{
+		APIType:         flags.EffectiveAPIType(),
+		ProviderName:    flags.DisplayProviderName(),
+		Provider:        flags.Provider,
+		Model:           flags.Model,
+		Workspace:       flags.Workspace,
+		Trust:           flags.Trust,
+		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
+		BaseURL:         flags.BaseURL,
+		APIKey:          flags.APIKey,
+		SidebarTitle:    "mossquant",
+		RenderSidebar: func() string {
+			if rt == nil || rt.profile == nil {
+				return "```text\nmossquant\nTUI investment advisor\n```"
+			}
+			return "```text\n" + strings.TrimSpace(rt.profile.SummaryMarkdown()) + "\n```"
+		},
+		BuildKernel: func(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+			runtimeFlags := &appkit.AppFlags{
+				APIType:   apiType,
+				Provider:  apiType,
+				Name:      flags.DisplayProviderName(),
+				Model:     model,
+				Workspace: wsDir,
+				Trust:     trust,
+				APIKey:    apiKey,
+				BaseURL:   baseURL,
+			}
+			var err error
+			rt, err = newMossquantRuntime(runtimeFlags, cfg.capital, cfg.reviewInterval, cfg.autoReview)
+			if err != nil {
+				return nil, err
+			}
+			return rt.buildKernel(context.Background(), io)
+		},
+		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error {
+			if rt == nil {
+				return nil
+			}
+			return rt.afterBoot(ctx, k, io)
+		},
+		BuildSystemPrompt: func(workspace string) string {
+			profile, err := loadInvestorProfile(workspace)
+			if err != nil {
+				profile = &InvestorProfile{}
+			}
+			interval := effectiveReviewInterval(profile, cfg.reviewInterval)
+			return buildSystemPrompt(workspace, cfg.capital, interval, profile)
+		},
+		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+			profile, err := loadInvestorProfile(workspace)
+			if err != nil {
+				profile = &InvestorProfile{}
+			}
+			return session.SessionConfig{
+				Goal:         "interactive investment research and advisory assistant",
+				Mode:         "interactive",
+				TrustLevel:   trust,
+				SystemPrompt: systemPrompt,
+				MaxSteps:     120,
+				Metadata: map[string]any{
+					"risk_tolerance": profile.DisplayRiskTolerance(),
+					"tracked_assets": profile.TrackedAssets(),
+				},
+			}
+		},
+	})
+}
+
+func newMossquantRuntime(flags *appkit.AppFlags, capital float64, reviewInterval string, autoReview bool) (*mossquantRuntime, error) {
 	if capital <= 0 {
 		capital = 100000
 	}
-	mkt := newMarket(capital)
-
-	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
-	store, err := session.NewFileStore(storeDir)
+	profile, err := loadInvestorProfile(flags.Workspace)
 	if err != nil {
-		return fmt.Errorf("session store: %w", err)
+		return nil, fmt.Errorf("load investor profile: %w", err)
 	}
+	store, err := session.NewFileStore(filepath.Join(appconfig.AppDir(), "sessions"))
+	if err != nil {
+		return nil, fmt.Errorf("session store: %w", err)
+	}
+	jobStore, err := scheduler.NewFileJobStore(filepath.Join(appconfig.AppDir(), "jobs.json"))
+	if err != nil {
+		return nil, fmt.Errorf("scheduler store: %w", err)
+	}
+	return &mossquantRuntime{
+		flags:          flags,
+		capital:        capital,
+		reviewInterval: reviewInterval,
+		autoReview:     autoReview,
+		profile:        profile,
+		market:         newMarket(capital),
+		store:          store,
+		sched:          scheduler.New(scheduler.WithPersistence(jobStore)),
+	}, nil
+}
 
-	sched := scheduler.New()
-	userIO := port.NewConsoleIO()
+func (r *mossquantRuntime) buildKernel(ctx context.Context, io port.UserIO) (*kernel.Kernel, error) {
+	memoriesDir := filepath.Join(appconfig.AppDir(), "memories")
+	profile := r.profile
 
-	k, err := appkit.BuildKernelWithExtensions(ctx, cfg.flags, userIO,
-		appkit.WithSessionStore(store),
-		appkit.WithScheduling(sched),
+	k, err := appkit.BuildKernelWithExtensions(ctx, r.flags, io,
+		appkit.WithSessionStore(r.store),
+		appkit.WithScheduling(r.sched),
+		appkit.WithPersistentMemories(memoriesDir),
+		appkit.WithLoadedBootstrapContext(r.flags.Workspace, "mossquant"),
 		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
-			if err := registerTradeTools(built.ToolRegistry(), mkt); err != nil {
+			if err := registerTradeTools(built.ToolRegistry(), r.market); err != nil {
 				return fmt.Errorf("register trade tools: %w", err)
 			}
-			if err := registerAnalysisTools(built.ToolRegistry(), mkt); err != nil {
+			if err := registerAnalysisTools(built.ToolRegistry(), r.market); err != nil {
 				return fmt.Errorf("register analysis tools: %w", err)
+			}
+			if err := registerProfileTools(built.ToolRegistry(), r.flags.Workspace, profile); err != nil {
+				return fmt.Errorf("register profile tools: %w", err)
+			}
+			if err := registerCredibilityTools(built.ToolRegistry()); err != nil {
+				return fmt.Errorf("register credibility tools: %w", err)
+			}
+			if err := registerResearchTools(built.ToolRegistry()); err != nil {
+				return fmt.Errorf("register research tools: %w", err)
+			}
+			if err := registerResearchAgents(built, r.flags); err != nil {
+				return fmt.Errorf("register research agents: %w", err)
 			}
 			return nil
 		}),
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// 策略：下单需要审批
 	k.WithPolicy(
 		builtins.RequireApprovalFor("place_order"),
 		builtins.DefaultAllow(),
 	)
-
-	// 事件：交易执行日志
 	k.OnEvent("tool.completed", func(e builtins.Event) {
 		if data, ok := e.Data.(map[string]any); ok {
 			if name, _ := data["tool"].(string); name == "place_order" {
-				fmt.Printf("  📊 [event] Trade executed at %s\n", e.Timestamp.Format("15:04:05"))
+				sendOutput(context.Background(), io, port.OutputProgress, fmt.Sprintf("📊 Simulated trade executed at %s", e.Timestamp.Format("15:04:05")))
 			}
 		}
 	})
+	return k, nil
+}
 
-	if err := k.Boot(ctx); err != nil {
-		return err
+func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io port.UserIO) error {
+	r.profile, _ = loadInvestorProfile(r.flags.Workspace)
+	if r.profile == nil {
+		r.profile = &InvestorProfile{}
 	}
-	defer k.Shutdown(ctx)
 
-	// 启动定时调度器
-	sysPrompt := buildSystemPrompt(cfg.flags.Workspace, capital)
-	sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
-		fmt.Fprintf(os.Stdout, "\n⏰ Scheduled [%s]: %s\n", job.ID, job.Goal)
-		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
-			Goal:         job.Goal,
-			Mode:         "scheduled",
-			TrustLevel:   "restricted",
-			SystemPrompt: sysPrompt,
-			MaxSteps:     30,
-		})
+	r.sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
+		currentProfile, err := loadInvestorProfile(r.flags.Workspace)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ❌ schedule session: %v\n", err)
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to load profile: %v", job.ID, err))
+			currentProfile = r.profile
+		}
+		interval := effectiveReviewInterval(currentProfile, r.reviewInterval)
+		jobPrompt := buildSystemPrompt(r.flags.Workspace, r.capital, interval, currentProfile)
+
+		jobCfg := job.Config
+		if jobCfg.Goal == "" {
+			jobCfg.Goal = job.Goal
+		}
+		if jobCfg.Mode == "" {
+			jobCfg.Mode = "scheduled"
+		}
+		if jobCfg.TrustLevel == "" {
+			jobCfg.TrustLevel = r.flags.Trust
+		}
+		if jobCfg.SystemPrompt == "" {
+			jobCfg.SystemPrompt = jobPrompt
+		}
+		if jobCfg.MaxSteps <= 0 {
+			jobCfg.MaxSteps = 40
+		}
+
+		sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] started", job.ID))
+		jobSess, err := k.NewSession(jobCtx, jobCfg)
+		if err != nil {
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err))
 			return
 		}
 		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
 		result, err := k.Run(jobCtx, jobSess)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "  ❌ schedule run: %v\n", err)
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
 			return
 		}
-		_ = store.Save(jobCtx, jobSess)
-		fmt.Fprintf(os.Stdout, "  ✅ [%s] done (%d steps)\n\n", job.ID, result.Steps)
-	})
-	defer sched.Stop()
+		if err := r.store.Save(jobCtx, jobSess); err != nil {
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save session: %v", job.ID, err))
+		}
+		reportPath, err := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, result.Output)
+		if err != nil {
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save report: %v", job.ID, err))
+		}
 
-	// 启动市场行情（每 5 秒 tick）
-	mktDone := make(chan struct{})
+		summary := strings.TrimSpace(result.Output)
+		if summary == "" {
+			summary = fmt.Sprintf("Advisory run completed. Report saved to %s", reportPath)
+		}
+		sendOutput(jobCtx, io, port.OutputText, fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary))
+		if reportPath != "" {
+			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] report: %s", job.ID, reportPath))
+		}
+		sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps))
+	})
+
+	if r.autoReview {
+		schedule, created, err := ensureDefaultReviewJob(r.sched, r.profile, r.reviewInterval, r.flags.Trust)
+		if err != nil {
+			return fmt.Errorf("default review schedule: %w", err)
+		}
+		if created {
+			sendOutput(ctx, io, port.OutputProgress, fmt.Sprintf("Default investment review scheduled: %s", schedule))
+		}
+	}
+
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
@@ -146,50 +295,44 @@ func run(ctx context.Context, cfg *config) error {
 			select {
 			case <-ctx.Done():
 				return
-			case <-mktDone:
-				return
 			case <-ticker.C:
-				mkt.tick()
+				r.market.tick()
 			}
 		}
 	}()
-	defer close(mktDone)
 
-	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         "quantitative trading assistant",
-		Mode:         "interactive",
-		TrustLevel:   "restricted",
-		SystemPrompt: sysPrompt,
-	})
-	if err != nil {
-		return fmt.Errorf("session: %w", err)
-	}
-
-	modelName := cfg.flags.Model
-	if modelName == "" {
-		modelName = "(default)"
-	}
-	appkit.PrintBannerWithHint("mossquant — Quantitative Trading Agent",
-		map[string]string{
-			"Provider": cfg.flags.Provider,
-			"Model":    modelName,
-			"Capital":  fmt.Sprintf("$%.2f", capital),
-			"Symbols":  fmt.Sprintf("%d available", len(mkt.prices)),
-			"Tools":    fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
-		},
-		"Market is live! Prices update every 5 seconds.",
-		"Type /help for commands, /exit to quit.",
-	)
-
-	return appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:      "💰 > ",
-		AppName:     "mossquant",
-		CompactKeep: 8,
-	}, k, sess)
+	sendOutput(ctx, io, port.OutputProgress, fmt.Sprintf("mossquant TUI ready — tracking %d assets, risk tolerance: %s", len(r.profile.TrackedAssets()), r.profile.DisplayRiskTolerance()))
+	return nil
 }
 
-func buildSystemPrompt(workspace string, capital float64) string {
+func buildSystemPrompt(workspace string, capital float64, reviewInterval string, profile *InvestorProfile) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
 	ctx["Capital"] = capital
+	ctx["ReviewInterval"] = reviewInterval
+	ctx["ProfileSummary"] = profile.SummaryMarkdown()
+	ctx["TrackedAssets"] = profile.TrackedAssets()
+	ctx["RiskTolerance"] = profile.DisplayRiskTolerance()
 	return appconfig.RenderSystemPrompt(workspace, tradingPromptTemplate, ctx)
+}
+
+func sendOutput(ctx context.Context, io port.UserIO, outputType port.OutputType, content string) {
+	if io == nil || strings.TrimSpace(content) == "" {
+		return
+	}
+	_ = io.Send(ctx, port.OutputMessage{
+		Type:    outputType,
+		Content: content,
+	})
+}
+
+func workspaceProvided() bool {
+	for i, arg := range os.Args[1:] {
+		if arg == "--workspace" || strings.HasPrefix(arg, "--workspace=") {
+			return true
+		}
+		if arg == "-workspace" && i+2 <= len(os.Args[1:]) {
+			return true
+		}
+	}
+	return false
 }

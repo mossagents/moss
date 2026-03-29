@@ -17,7 +17,10 @@ type ModelProfile struct {
 	// Name 模型配置的唯一标识名，用于日志和调试。
 	Name string `yaml:"name"`
 
-	// Provider 模型提供方: "openai" / "claude" / "anthropic"
+	// APIType API 协议类型: "openai" / "claude" / "anthropic"
+	APIType string `yaml:"api_type,omitempty"`
+
+	// Provider 兼容旧配置，等价于 APIType。
 	Provider string `yaml:"provider"`
 
 	// Model 具体的模型名称，如 "gpt-4o", "claude-sonnet-4-20250514"
@@ -90,7 +93,11 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 
 	r := &ModelRouter{}
 	for _, p := range profiles {
-		llm, err := BuildLLM(p.Provider, p.Model, p.APIKey, p.BaseURL)
+		apiType := strings.TrimSpace(p.APIType)
+		if apiType == "" {
+			apiType = strings.TrimSpace(p.Provider)
+		}
+		llm, err := BuildLLM(apiType, p.Model, p.APIKey, p.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("model router: build %q: %w", p.Name, err)
 		}
@@ -117,13 +124,13 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 //
 //	models:
 //	  - name: gpt-4o
-//	    provider: openai
+//	    api_type: openai
 //	    model: gpt-4o
 //	    cost_tier: 3
 //	    capabilities: [text_generation, code_generation, image_understanding, function_calling, reasoning]
 //	    is_default: true
 //	  - name: gpt-4o-mini
-//	    provider: openai
+//	    api_type: openai
 //	    model: gpt-4o-mini
 //	    cost_tier: 1
 //	    capabilities: [text_generation, code_generation, function_calling]

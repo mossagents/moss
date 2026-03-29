@@ -514,9 +514,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/model":
 		if len(args) == 0 {
+			currentModel := m.model
+			if strings.TrimSpace(currentModel) == "" {
+				currentModel = "(default)"
+			}
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgSystem,
-				content: fmt.Sprintf("Current model: %s\nUsage: /model <model>", m.provider),
+				content: fmt.Sprintf("Current model: %s\nProvider: %s\nUsage: /model <model>", currentModel, m.provider),
 			})
 			m.refreshViewport()
 			return m, nil
@@ -872,7 +876,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		help := "Available commands:\n" +
 			"  /model [name]  Show or switch model\n" +
 			"  /config        Show current config\n" +
-			"  /config set <key> <value>  Set config key (provider/model/base_url/api_key)\n" +
+			"  /config set <key> <value>  Set config key (api_type/name/model/base_url/api_key)\n" +
 			"  /skills        Show discovered user skills and activation state\n" +
 			"  /skill <name> <task...>  Invoke a specific skill/tool by name\n" +
 			"  /<name> <task...>  Shortcut for /skill <name> <task...>\n" +
@@ -939,9 +943,10 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		if cfg.APIKey != "" {
 			apiKeyDisplay = maskKey(cfg.APIKey)
 		}
-		info := fmt.Sprintf("Config file: `%s`\n\n  provider: %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
+		info := fmt.Sprintf("Config file: `%s`\n\n  api_type: %s\n  name:     %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
 			cfgPath,
-			valueOrDefault(cfg.Provider, "(not set)"),
+			valueOrDefault(cfg.EffectiveAPIType(), "(not set)"),
+			valueOrDefault(cfg.DisplayProviderName(), "(not set)"),
 			valueOrDefault(cfg.Model, "(not set)"),
 			valueOrDefault(cfg.BaseURL, "(not set)"),
 			apiKeyDisplay,
@@ -958,8 +963,14 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 
 		cfg, _ := config.LoadConfig(cfgPath)
 		switch key {
-		case "provider":
+		case "api_type", "apitype", "provider":
+			cfg.APIType = value
 			cfg.Provider = value
+			if strings.TrimSpace(cfg.Name) == "" {
+				cfg.Name = value
+			}
+		case "name":
+			cfg.Name = value
 		case "model":
 			cfg.Model = value
 		case "base_url", "baseurl":
@@ -969,7 +980,7 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		default:
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
-				content: fmt.Sprintf("Unknown config key: %s (supported: provider, model, base_url, api_key)", key),
+				content: fmt.Sprintf("Unknown config key: %s (supported: api_type, name, model, base_url, api_key)", key),
 			})
 			m.refreshViewport()
 			return m, nil

@@ -9,6 +9,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
+	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -66,19 +67,21 @@ AppFlags:
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
-  --provider    LLM provider: claude|openai (default from config or "claude")
-  --model       Model name (default from config or provider default)
+  --api-type    LLM API type: claude|openai (default from config or "openai")
+  --name        LLM provider display name, e.g. openai|deepseek
+  --provider    Deprecated alias for --api-type
+  --model       Model name (default from config or API default)
   --base-url    LLM API base URL (override config)
   --api-key     LLM API key (override config)
 
 Config:
-  ~/.moss/config.yaml    Global configuration (provider, model, base_url, api_key, skills)
+  ~/.moss/config.yaml    Global configuration (api_type, name, model, base_url, api_key, skills)
   ./moss.yaml            Project-level skill configuration
 
 Environment:
-  ANTHROPIC_API_KEY  Fallback when provider=claude and no api_key in config.
-  OPENAI_API_KEY     Fallback when provider=openai and no api_key in config.
-  OPENAI_BASE_URL    Fallback when provider=openai and no base_url in config.
+  ANTHROPIC_API_KEY  Fallback when api_type=claude and no api_key in config.
+  OPENAI_API_KEY     Fallback when api_type=openai and no api_key in config.
+  OPENAI_BASE_URL    Fallback when api_type=openai and no base_url in config.
 `)
 }
 
@@ -93,13 +96,15 @@ func launchTUI(args []string) {
 	f.ApplyDefaults()
 
 	if err := tui.Run(tui.Config{
-		Provider:    f.Provider,
-		Model:       f.Model,
-		Workspace:   f.Workspace,
-		Trust:       f.Trust,
-		BaseURL:     f.BaseURL,
-		APIKey:      f.APIKey,
-		BuildKernel: buildKernelWithIO,
+		APIType:      f.EffectiveAPIType(),
+		ProviderName: f.DisplayProviderName(),
+		Provider:     f.Provider,
+		Model:        f.Model,
+		Workspace:    f.Workspace,
+		Trust:        f.Trust,
+		BaseURL:      f.BaseURL,
+		APIKey:       f.APIKey,
+		BuildKernel:  buildKernelWithIO,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -190,10 +195,12 @@ func runCmd(args []string) {
 }
 
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
-func buildKernelWithIO(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+func buildKernelWithIO(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
 	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
-		Provider:  provider,
+		APIType:   apiType,
+		Provider:  apiType,
+		Name:      apiType,
 		Model:     model,
 		Workspace: wsDir,
 		Trust:     trust,

@@ -71,6 +71,34 @@ func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
 	}
 }
 
+func TestCommonFlags_MergeGlobalConfig_APITypeAndName(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	config.SetAppName("mosscode")
+	t.Cleanup(func() { config.SetAppName("moss") })
+	if err := os.MkdirAll(config.AppDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	if err := os.WriteFile(config.DefaultGlobalConfigPath(), []byte("api_type: openai\nname: deepseek\nmodel: deepseek-chat\n"), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	f := &AppFlags{}
+	f.MergeGlobalConfig()
+	f.ApplyDefaults()
+
+	if f.APIType != "openai" {
+		t.Fatalf("APIType = %q, want openai", f.APIType)
+	}
+	if f.Name != "deepseek" {
+		t.Fatalf("Name = %q, want deepseek", f.Name)
+	}
+	if f.Provider != "openai" {
+		t.Fatalf("Provider alias = %q, want openai", f.Provider)
+	}
+}
+
 func TestCommonFlags_MergeEnv(t *testing.T) {
 	t.Setenv("MOSS_PROVIDER", "claude")
 	t.Setenv("MOSS_MODEL", "claude-sonnet")
@@ -87,6 +115,26 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 	}
 	if _, ok := os.LookupEnv("MOSS_PROVIDER"); !ok {
 		t.Fatal("expected env to be set during test")
+	}
+}
+
+func TestCommonFlags_MergeEnv_APITypeAndName(t *testing.T) {
+	t.Setenv("MOSS_API_TYPE", "openai")
+	t.Setenv("MOSS_NAME", "deepseek")
+	t.Setenv("MOSS_MODEL", "deepseek-chat")
+
+	f := &AppFlags{}
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	if f.APIType != "openai" {
+		t.Fatalf("APIType = %q, want openai", f.APIType)
+	}
+	if f.Name != "deepseek" {
+		t.Fatalf("Name = %q, want deepseek", f.Name)
+	}
+	if f.Provider != "openai" {
+		t.Fatalf("Provider alias = %q, want openai", f.Provider)
 	}
 }
 

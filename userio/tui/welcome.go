@@ -14,7 +14,8 @@ import (
 type welcomeField int
 
 const (
-	fieldProvider welcomeField = iota
+	fieldAPIType welcomeField = iota
+	fieldProviderName
 	fieldModel
 	fieldWorkspace
 	fieldStart
@@ -23,26 +24,29 @@ const (
 
 // welcomeModel 是欢迎/配置界面。
 type welcomeModel struct {
-	provider  string
-	model     string
-	workspace string
-	focus     welcomeField
-	width     int
-	height    int
-	input     textarea.Model // 复用 textarea 作为单行输入
-	confirmed bool
-	cancelled bool
-	now       func() tea.Msg
+	apiType      string
+	providerName string
+	model        string
+	workspace    string
+	focus        welcomeField
+	width        int
+	height       int
+	input        textarea.Model // 复用 textarea 作为单行输入
+	confirmed    bool
+	cancelled    bool
+	now          func() tea.Msg
 }
 
 // WelcomeConfig 是欢迎界面收集的配置。
 type WelcomeConfig struct {
-	Provider  string
-	Model     string
-	Workspace string
+	APIType      string
+	ProviderName string
+	Provider     string
+	Model        string
+	Workspace    string
 }
 
-func newWelcomeModel(defaultProvider, defaultModel, defaultWorkspace string) welcomeModel {
+func newWelcomeModel(defaultAPIType, defaultProviderName, defaultModel, defaultWorkspace string) welcomeModel {
 	ta := textarea.New()
 	ta.Placeholder = ""
 	ta.SetHeight(1)
@@ -52,11 +56,12 @@ func newWelcomeModel(defaultProvider, defaultModel, defaultWorkspace string) wel
 	ta.Focus()
 
 	return welcomeModel{
-		provider:  defaultProvider,
-		model:     defaultModel,
-		workspace: defaultWorkspace,
-		focus:     fieldProvider,
-		input:     ta,
+		apiType:      defaultAPIType,
+		providerName: defaultProviderName,
+		model:        defaultModel,
+		workspace:    defaultWorkspace,
+		focus:        fieldAPIType,
+		input:        ta,
 	}
 }
 
@@ -114,9 +119,13 @@ func (m welcomeModel) Update(msg tea.Msg) (welcomeModel, tea.Cmd) {
 func (m *welcomeModel) applyCurrentField() {
 	val := strings.TrimSpace(m.input.Value())
 	switch m.focus {
-	case fieldProvider:
+	case fieldAPIType:
 		if val != "" {
-			m.provider = val
+			m.apiType = val
+		}
+	case fieldProviderName:
+		if val != "" {
+			m.providerName = val
 		}
 	case fieldModel:
 		m.model = val // 允许为空，表示使用 provider 默认模型
@@ -129,8 +138,11 @@ func (m *welcomeModel) applyCurrentField() {
 
 func (m *welcomeModel) syncInput() {
 	switch m.focus {
-	case fieldProvider:
-		m.input.SetValue(m.provider)
+	case fieldAPIType:
+		m.input.SetValue(m.apiType)
+		m.input.Focus()
+	case fieldProviderName:
+		m.input.SetValue(m.providerName)
 		m.input.Focus()
 	case fieldModel:
 		m.input.SetValue(m.model)
@@ -161,7 +173,8 @@ func (m welcomeModel) View() string {
 		value string
 		field welcomeField
 	}{
-		{"Provider", m.provider, fieldProvider},
+		{"API Type", m.apiType, fieldAPIType},
+		{"Provider Name", m.providerName, fieldProviderName},
 		{"Model", modelDisplay, fieldModel},
 		{"Workspace", m.workspace, fieldWorkspace},
 	}
@@ -200,21 +213,25 @@ func (m welcomeModel) View() string {
 
 func (m welcomeModel) config() WelcomeConfig {
 	return WelcomeConfig{
-		Provider:  m.provider,
-		Model:     m.model,
-		Workspace: m.workspace,
+		APIType:      m.apiType,
+		ProviderName: m.providerName,
+		Provider:     m.apiType,
+		Model:        m.model,
+		Workspace:    m.workspace,
 	}
 }
 
-// saveWelcomeConfig 将用户选择的配置（provider, model）持久化到 ~/.moss/config.yaml。
-// 仅更新 provider 和 model 字段，保留已有的 api_key, base_url, skills 等配置。
+// saveWelcomeConfig 将用户选择的配置（api_type, name, model）持久化到 ~/.moss/config.yaml。
+// 仅更新模型连接相关字段，保留已有的 api_key, base_url, skills 等配置。
 func saveWelcomeConfig(wCfg WelcomeConfig) {
 	cfgPath := config.DefaultGlobalConfigPath()
 	if cfgPath == "" {
 		return
 	}
 	existing, _ := config.LoadConfig(cfgPath)
-	existing.Provider = wCfg.Provider
+	existing.APIType = wCfg.APIType
+	existing.Name = wCfg.ProviderName
+	existing.Provider = ""
 	existing.Model = wCfg.Model
 	_ = config.SaveConfig(cfgPath, existing)
 }

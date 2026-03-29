@@ -10,6 +10,8 @@ import (
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。
 // 解析优先级：CLI flag > 全局配置文件 > 环境变量 > 默认值。
 type AppFlags struct {
+	APIType   string
+	Name      string
 	Provider  string
 	Model     string
 	Workspace string
@@ -32,6 +34,8 @@ func ParseAppFlags() *AppFlags {
 
 // BindAppFlags 将通用参数注册到指定 FlagSet。
 func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
+	fs.StringVar(&f.APIType, "api-type", "", "LLM API type: claude|openai")
+	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai|deepseek")
 	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai")
 	fs.StringVar(&f.Model, "model", "", "Model name")
 	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
@@ -53,6 +57,8 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		if prefix == "" {
 			continue
 		}
+		f.APIType = FirstNonEmpty(f.APIType, os.Getenv(prefix+"_API_TYPE"), os.Getenv(prefix+"_PROVIDER"))
+		f.Name = FirstNonEmpty(f.Name, os.Getenv(prefix+"_NAME"))
 		f.Provider = FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"))
 		f.Model = FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
 		f.Workspace = FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
@@ -64,7 +70,10 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 
 // ApplyDefaults 在 CLI、配置文件、环境变量合并完成后补齐默认值。
 func (f *AppFlags) ApplyDefaults() {
-	f.Provider = FirstNonEmpty(f.Provider, "openai")
+	f.normalizeProviderFields()
+	f.APIType = FirstNonEmpty(f.APIType, "openai")
+	f.Name = FirstNonEmpty(f.Name, f.APIType)
+	f.Provider = FirstNonEmpty(f.Provider, f.APIType)
 	f.Workspace = FirstNonEmpty(f.Workspace, ".")
 	f.Trust = FirstNonEmpty(f.Trust, "trusted")
 }
@@ -75,8 +84,34 @@ func (f *AppFlags) mergeGlobalConfig() {
 		globalCfg = &config.Config{}
 	}
 
-	f.Provider = FirstNonEmpty(f.Provider, globalCfg.Provider, "openai")
+	f.APIType = FirstNonEmpty(f.APIType, globalCfg.APIType, globalCfg.Provider)
+	f.Name = FirstNonEmpty(f.Name, globalCfg.Name)
+	f.Provider = FirstNonEmpty(f.Provider, globalCfg.Provider, globalCfg.APIType, "openai")
 	f.Model = FirstNonEmpty(f.Model, globalCfg.Model)
 	f.APIKey = FirstNonEmpty(f.APIKey, globalCfg.APIKey)
 	f.BaseURL = FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
+	f.normalizeProviderFields()
+}
+
+func (f *AppFlags) normalizeProviderFields() {
+	if f == nil {
+		return
+	}
+	f.APIType = FirstNonEmpty(f.APIType, f.Provider)
+	f.Provider = FirstNonEmpty(f.Provider, f.APIType)
+	f.Name = FirstNonEmpty(f.Name, f.APIType, f.Provider)
+}
+
+func (f *AppFlags) EffectiveAPIType() string {
+	if f == nil {
+		return ""
+	}
+	return FirstNonEmpty(f.APIType, f.Provider)
+}
+
+func (f *AppFlags) DisplayProviderName() string {
+	if f == nil {
+		return ""
+	}
+	return FirstNonEmpty(f.Name, f.EffectiveAPIType())
 }
