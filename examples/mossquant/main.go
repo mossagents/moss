@@ -41,6 +41,9 @@ type mossquantRuntime struct {
 	market         *market
 	store          session.SessionStore
 	sched          *scheduler.Scheduler
+	rootCtx        context.Context
+	kernel         *kernel.Kernel
+	io             port.UserIO
 }
 
 func main() {
@@ -142,6 +145,24 @@ func launchTUI(cfg *config) error {
 			}
 			return rt.listSchedules(), nil
 		},
+		ScheduleItems: func() ([]mosstui.ScheduleItem, error) {
+			if rt == nil {
+				return nil, nil
+			}
+			return rt.scheduleItems(), nil
+		},
+		ScheduleCancel: func(id string) (string, error) {
+			if rt == nil {
+				return "Scheduler is not ready yet.", nil
+			}
+			return rt.cancelSchedule(id)
+		},
+		ScheduleRunNow: func(id string) (string, error) {
+			if rt == nil {
+				return "Scheduler is not ready yet.", nil
+			}
+			return rt.runScheduleNow(id)
+		},
 	})
 }
 
@@ -227,75 +248,21 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io p
 	if r.profile == nil {
 		r.profile = &InvestorProfile{}
 	}
+	r.rootCtx = ctx
+	r.kernel = k
+	r.io = io
 
 	r.sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
-		currentProfile, err := loadInvestorProfile(r.flags.Workspace)
-		if err != nil {
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to load profile: %v", job.ID, err))
-			currentProfile = r.profile
-		}
-		interval := effectiveReviewInterval(currentProfile, r.reviewInterval)
-		jobPrompt := buildSystemPrompt(r.flags.Workspace, r.capital, interval, currentProfile)
-
-		jobCfg := job.Config
-		if jobCfg.Goal == "" {
-			jobCfg.Goal = job.Goal
-		}
-		if jobCfg.Mode == "" {
-			jobCfg.Mode = "scheduled"
-		}
-		if jobCfg.TrustLevel == "" {
-			jobCfg.TrustLevel = r.flags.Trust
-		}
-		if jobCfg.SystemPrompt == "" {
-			jobCfg.SystemPrompt = jobPrompt
-		}
-		if jobCfg.MaxSteps <= 0 {
-			jobCfg.MaxSteps = 40
-		}
-
-		sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] started", job.ID))
-		jobSess, err := k.NewSession(jobCtx, jobCfg)
-		if err != nil {
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err))
-			return
-		}
-		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
-		result, err := k.Run(jobCtx, jobSess)
-		if err != nil {
-			reportPath, reportErr := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, fmt.Sprintf("Scheduled advisory run failed.\n\nError: %v\n\nWhen external research tools are unavailable, rerun after configuring JINA_API_KEY or reduce the scope to manual/local analysis.", err))
-			if reportErr == nil {
-				sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] fallback report: %s", job.ID, reportPath))
-			}
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
-			return
-		}
-		if err := r.store.Save(jobCtx, jobSess); err != nil {
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save session: %v", job.ID, err))
-		}
-		reportPath, err := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, result.Output)
-		if err != nil {
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save report: %v", job.ID, err))
-		}
-
-		summary := strings.TrimSpace(result.Output)
-		if summary == "" {
-			summary = fmt.Sprintf("Advisory run completed. Report saved to %s", reportPath)
-		}
-		sendOutput(jobCtx, io, port.OutputText, fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary))
-		if reportPath != "" {
-			sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] report: %s", job.ID, reportPath))
-		}
-		sendOutput(jobCtx, io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps))
+		r.runScheduledJob(jobCtx, job)
 	})
 
 	if r.autoReview {
-		schedule, created, err := ensureDefaultReviewJob(r.sched, r.profile, r.reviewInterval, r.flags.Trust)
+		schedule, changed, err := ensureDefaultReviewJob(r.sched, r.profile, r.reviewInterval, r.flags.Trust)
 		if err != nil {
 			return fmt.Errorf("default review schedule: %w", err)
 		}
-		if created {
-			sendOutput(ctx, io, port.OutputProgress, fmt.Sprintf("Default investment review scheduled: %s", schedule))
+		if changed {
+			sendOutput(ctx, io, port.OutputProgress, fmt.Sprintf("Investment review schedule synced: %s", schedule))
 		}
 	}
 
@@ -364,6 +331,118 @@ func (r *mossquantRuntime) listSchedules() string {
 		b.WriteString("\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (r *mossquantRuntime) scheduleItems() []mosstui.ScheduleItem {
+	if r == nil || r.sched == nil {
+		return nil
+	}
+	jobs := r.sched.ListJobs()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	items := make([]mosstui.ScheduleItem, 0, len(jobs))
+	for _, job := range jobs {
+		item := mosstui.ScheduleItem{
+			ID:       job.ID,
+			Schedule: job.Schedule,
+			Goal:     strings.TrimSpace(job.Goal),
+			RunCount: job.RunCount,
+		}
+		if !job.NextRun.IsZero() {
+			item.NextRun = job.NextRun.Format("2006-01-02 15:04:05")
+		}
+		if !job.LastRun.IsZero() {
+			item.LastRun = job.LastRun.Format("2006-01-02 15:04:05")
+		}
+		items = append(items, item)
+	}
+	return items
+}
+
+func (r *mossquantRuntime) cancelSchedule(id string) (string, error) {
+	if r == nil || r.sched == nil {
+		return "Scheduler is unavailable.", nil
+	}
+	if err := r.sched.RemoveJob(strings.TrimSpace(id)); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Schedule %s deleted.", strings.TrimSpace(id)), nil
+}
+
+func (r *mossquantRuntime) runScheduleNow(id string) (string, error) {
+	if r == nil || r.sched == nil || r.kernel == nil || r.io == nil {
+		return "Scheduler is not ready yet.", nil
+	}
+	job, ok := findJob(r.sched, strings.TrimSpace(id))
+	if !ok {
+		return "", fmt.Errorf("schedule not found: %s", id)
+	}
+	runCtx := r.rootCtx
+	if runCtx == nil {
+		runCtx = context.Background()
+	}
+	go r.runScheduledJob(runCtx, job)
+	return fmt.Sprintf("Schedule %s started immediately.", job.ID), nil
+}
+
+func (r *mossquantRuntime) runScheduledJob(jobCtx context.Context, job scheduler.Job) {
+	currentProfile, err := loadInvestorProfile(r.flags.Workspace)
+	if err != nil {
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to load profile: %v", job.ID, err))
+		currentProfile = r.profile
+	}
+	interval := effectiveReviewInterval(currentProfile, r.reviewInterval)
+	jobPrompt := buildSystemPrompt(r.flags.Workspace, r.capital, interval, currentProfile)
+
+	jobCfg := job.Config
+	if jobCfg.Goal == "" {
+		jobCfg.Goal = job.Goal
+	}
+	if jobCfg.Mode == "" {
+		jobCfg.Mode = "scheduled"
+	}
+	if jobCfg.TrustLevel == "" {
+		jobCfg.TrustLevel = r.flags.Trust
+	}
+	if jobCfg.SystemPrompt == "" {
+		jobCfg.SystemPrompt = jobPrompt
+	}
+	if jobCfg.MaxSteps <= 0 {
+		jobCfg.MaxSteps = 40
+	}
+
+	sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] started", job.ID))
+	jobSess, err := r.kernel.NewSession(jobCtx, jobCfg)
+	if err != nil {
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err))
+		return
+	}
+	jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
+	result, err := r.kernel.Run(jobCtx, jobSess)
+	if err != nil {
+		reportPath, reportErr := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, fmt.Sprintf("Scheduled advisory run failed.\n\nError: %v\n\nWhen external research tools are unavailable, rerun after configuring JINA_API_KEY or reduce the scope to manual/local analysis.", err))
+		if reportErr == nil {
+			sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] fallback report: %s", job.ID, reportPath))
+		}
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
+		return
+	}
+	if err := r.store.Save(jobCtx, jobSess); err != nil {
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save session: %v", job.ID, err))
+	}
+	reportPath, err := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, result.Output)
+	if err != nil {
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save report: %v", job.ID, err))
+	}
+
+	summary := strings.TrimSpace(result.Output)
+	if summary == "" {
+		summary = fmt.Sprintf("Advisory run completed. Report saved to %s", reportPath)
+	}
+	sendOutput(jobCtx, r.io, port.OutputText, fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary))
+	if reportPath != "" {
+		sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] report: %s", job.ID, reportPath))
+	}
+	sendOutput(jobCtx, r.io, port.OutputProgress, fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps))
 }
 
 func workspaceProvided() bool {

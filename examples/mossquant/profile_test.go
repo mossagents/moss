@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/mossagents/moss/scheduler"
+)
 
 func TestParseInvestorProfileTextFrontMatter(t *testing.T) {
 	text := `---
@@ -75,5 +80,57 @@ func TestParseHoldingStatementChineseWithPurchaseVerb(t *testing.T) {
 	}
 	if holding.Quantity != 10 {
 		t.Fatalf("unexpected quantity: %v", holding.Quantity)
+	}
+}
+
+func TestNormalizeScheduleChineseMinutes(t *testing.T) {
+	if got := normalizeSchedule("60分钟"); got != "@every 60m" {
+		t.Fatalf("unexpected schedule: %q", got)
+	}
+}
+
+func TestParseInvestorProfileTextInlineIntervalWithoutColon(t *testing.T) {
+	profile, err := parseInvestorProfileText("复盘频率 60分钟")
+	if err != nil {
+		t.Fatalf("parseInvestorProfileText: %v", err)
+	}
+	if profile.ReviewInterval != "60分钟" {
+		t.Fatalf("unexpected review interval: %q", profile.ReviewInterval)
+	}
+}
+
+func TestEnsureDefaultReviewJobUpdatesExistingSchedule(t *testing.T) {
+	sched := scheduler.New()
+	sched.Start(context.Background(), func(context.Context, scheduler.Job) {})
+	if err := sched.AddJob(scheduler.Job{
+		ID:       "investment-review",
+		Schedule: "@every 10m",
+		Goal:     "old goal",
+	}); err != nil {
+		t.Fatalf("seed job: %v", err)
+	}
+
+	profile := &InvestorProfile{
+		ReviewInterval: "60分钟",
+		Holdings: []Holding{
+			{Asset: "黄金"},
+		},
+	}
+	schedule, changed, err := ensureDefaultReviewJob(sched, profile, "10m", "trusted")
+	if err != nil {
+		t.Fatalf("ensureDefaultReviewJob: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected existing job to be updated")
+	}
+	if schedule != "@every 60m" {
+		t.Fatalf("unexpected normalized schedule: %q", schedule)
+	}
+	job, ok := findJob(sched, "investment-review")
+	if !ok {
+		t.Fatal("expected investment-review job to exist")
+	}
+	if job.Schedule != "@every 60m" {
+		t.Fatalf("unexpected stored schedule: %q", job.Schedule)
 	}
 }

@@ -55,16 +55,81 @@ func TestSlashCommandTaskCancel(t *testing.T) {
 
 func TestSlashCommandSchedules(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.scheduleListFn = func() (string, error) {
-		return "Schedules:\n- review | @every 10m", nil
+	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
+		return []ScheduleItem{{ID: "review", Schedule: "@every 10m", Goal: "Run review"}}, nil
 	}
 	updated, _ := m.handleSlashCommand("/schedules")
-	if len(updated.messages) == 0 {
-		t.Fatal("expected schedules output message")
+	if updated.scheduleBrowser == nil {
+		t.Fatal("expected interactive schedule browser")
 	}
-	last := updated.messages[len(updated.messages)-1]
-	if last.content != "Schedules:\n- review | @every 10m" {
-		t.Fatalf("unexpected schedules content: %q", last.content)
+	if len(updated.scheduleBrowser.items) != 1 {
+		t.Fatalf("unexpected schedule count: %d", len(updated.scheduleBrowser.items))
+	}
+	if updated.scheduleBrowser.items[0].ID != "review" {
+		t.Fatalf("unexpected schedule id: %q", updated.scheduleBrowser.items[0].ID)
+	}
+}
+
+func TestScheduleBrowserDelete(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	items := []ScheduleItem{
+		{ID: "old-job", Schedule: "@every 1h"},
+		{ID: "keep-job", Schedule: "@every 2h"},
+	}
+	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
+		cp := make([]ScheduleItem, len(items))
+		copy(cp, items)
+		return cp, nil
+	}
+	m.scheduleCancelFn = func(id string) (string, error) {
+		filtered := make([]ScheduleItem, 0, len(items))
+		for _, item := range items {
+			if item.ID != id {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
+		return "deleted " + id, nil
+	}
+	updated, _ := m.handleSlashCommand("/schedules")
+	if updated.scheduleBrowser == nil {
+		t.Fatal("expected schedule browser")
+	}
+	updated, _ = updated.handleScheduleBrowserKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	if updated.scheduleBrowser == nil {
+		t.Fatal("expected schedule browser to stay open")
+	}
+	if len(updated.scheduleBrowser.items) != 1 {
+		t.Fatalf("expected one remaining schedule, got %d", len(updated.scheduleBrowser.items))
+	}
+	if updated.scheduleBrowser.items[0].ID != "keep-job" {
+		t.Fatalf("unexpected remaining schedule: %q", updated.scheduleBrowser.items[0].ID)
+	}
+	if !strings.Contains(updated.scheduleBrowser.message, "deleted old-job") {
+		t.Fatalf("unexpected browser message: %q", updated.scheduleBrowser.message)
+	}
+}
+
+func TestScheduleBrowserRunNow(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.scheduleItemsFn = func() ([]ScheduleItem, error) {
+		return []ScheduleItem{{ID: "review", Schedule: "@every 10m"}}, nil
+	}
+	called := ""
+	m.scheduleRunNowFn = func(id string) (string, error) {
+		called = id
+		return "started " + id, nil
+	}
+	updated, _ := m.handleSlashCommand("/schedules")
+	if updated.scheduleBrowser == nil {
+		t.Fatal("expected schedule browser")
+	}
+	updated, _ = updated.handleScheduleBrowserKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+	if called != "review" {
+		t.Fatalf("unexpected run-now id: %q", called)
+	}
+	if !strings.Contains(updated.scheduleBrowser.message, "started review") {
+		t.Fatalf("unexpected browser message: %q", updated.scheduleBrowser.message)
 	}
 }
 

@@ -47,8 +47,20 @@ type Config struct {
 	BuildSystemPrompt  func(workspace string) string
 	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
 	ScheduleList       func() (string, error)
+	ScheduleItems      func() ([]ScheduleItem, error)
+	ScheduleCancel     func(id string) (string, error)
+	ScheduleRunNow     func(id string) (string, error)
 	SidebarTitle       string
 	RenderSidebar      func() string
+}
+
+type ScheduleItem struct {
+	ID       string
+	Schedule string
+	Goal     string
+	LastRun  string
+	NextRun  string
+	RunCount int
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -687,6 +699,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return agent.cancelTask(taskID, reason)
 		}
 		m.chat.scheduleListFn = m.config.ScheduleList
+		m.chat.scheduleItemsFn = m.config.ScheduleItems
+		m.chat.scheduleCancelFn = m.config.ScheduleCancel
+		m.chat.scheduleRunNowFn = m.config.ScheduleRunNow
 		m.chat.permissionSummaryFn = agent.permissionSummary
 		m.chat.setPermissionFn = agent.setPermission
 		m.chat.gitRunFn = func(cmd string, args []string) (string, error) {

@@ -60,6 +60,9 @@ type chatModel struct {
 	taskQueryFn         func(taskID string) (string, error)
 	taskCancelFn        func(taskID, reason string) (string, error)
 	scheduleListFn      func() (string, error)
+	scheduleItemsFn     func() ([]ScheduleItem, error)
+	scheduleCancelFn    func(id string) (string, error)
+	scheduleRunNowFn    func(id string) (string, error)
 	sessionListFn       func(limit int) (string, error)
 	sessionRestoreFn    func(sessionID string) (string, error)
 	gitRunFn            func(cmd string, args []string) (string, error)
@@ -67,6 +70,7 @@ type chatModel struct {
 	setPermissionFn     func(toolName, mode string) (string, error)
 	pendAsk             *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm             *askFormState
+	scheduleBrowser     *scheduleBrowserState
 	finished            bool   // session 已结束
 	result              string // 最终结果
 
@@ -131,6 +135,17 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.scheduleBrowser != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				return m.handleCtrlC()
+			case "esc":
+				m.scheduleBrowser = nil
+				m.refreshViewport()
+				return m, nil
+			}
+			return m.handleScheduleBrowserKey(msg)
+		}
 		if m.pendAsk != nil && m.askForm != nil {
 			switch msg.String() {
 			case "ctrl+c":
@@ -446,6 +461,8 @@ func (m chatModel) View() string {
 	}
 	if m.pendAsk != nil && m.askForm != nil {
 		b.WriteString(m.renderAskForm(m.mainWidth() - 2))
+	} else if m.scheduleBrowser != nil {
+		b.WriteString(m.renderScheduleBrowser(m.mainWidth() - 2))
 	} else {
 		if m.streaming {
 			b.WriteString(runningStyle.Render("  ● Running... (double Esc to cancel current run)"))
@@ -473,6 +490,8 @@ func (m chatModel) View() string {
 	)
 	if m.pendAsk != nil && m.askForm != nil {
 		status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+	} else if m.scheduleBrowser != nil {
+		status = mutedStyle.Render("↑↓ choose schedule │ e run now │ d delete │ r refresh │ Esc close")
 	} else if m.pendAsk != nil {
 		status = mutedStyle.Render("Type your reply and press Enter │ double Esc cancel run │ Ctrl+C clear input")
 	}
@@ -743,6 +762,17 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.handleConfigCommand(args)
 
 	case "/schedules":
+		if m.scheduleItemsFn != nil {
+			items, err := m.scheduleItemsFn()
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list schedules: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.scheduleBrowser = newScheduleBrowserState(items)
+			m.refreshViewport()
+			return m, nil
+		}
 		if m.scheduleListFn == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Schedule listing is unavailable."})
 			m.refreshViewport()
@@ -913,7 +943,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /tasks [status] [limit]  List background tasks\n" +
 			"  /task <id>     Query task details\n" +
 			"  /task cancel <id> [reason]  Cancel a background task\n" +
-			"  /schedules     Show background scheduled jobs\n" +
+			"  /schedules     Open interactive scheduled jobs list\n" +
 			"  /git status|diff|commit|pr  Common git workflow helpers\n" +
 			"  /budget        Show budget/context summary\n" +
 			"  /permissions   Show runtime permission summary\n" +

@@ -199,22 +199,22 @@ func applyInlineAssignments(profile *InvestorProfile, body string) {
 		switch {
 		case hasPrefixedLabel(line, "风险承受能力", "风险偏好", "risk tolerance", "risk profile"):
 			if profile.RiskTolerance == "" {
-				profile.RiskTolerance = strings.TrimSpace(valueAfterColon(line))
+				profile.RiskTolerance = strings.TrimSpace(valueAfterLabel(line, "风险承受能力", "风险偏好", "risk tolerance", "risk profile"))
 			}
 		case hasPrefixedLabel(line, "投资倾向", "投资风格", "investment style"):
 			if profile.InvestmentStyle == "" {
-				profile.InvestmentStyle = strings.TrimSpace(valueAfterColon(line))
+				profile.InvestmentStyle = strings.TrimSpace(valueAfterLabel(line, "投资倾向", "投资风格", "investment style"))
 			}
 		case hasPrefixedLabel(line, "复盘频率", "review interval", "cadence", "schedule"):
 			if profile.ReviewInterval == "" {
-				profile.ReviewInterval = strings.TrimSpace(valueAfterColon(line))
+				profile.ReviewInterval = strings.TrimSpace(valueAfterLabel(line, "复盘频率", "review interval", "cadence", "schedule"))
 			}
 		case hasPrefixedLabel(line, "关注标的", "watchlist", "关注资产"):
-			profile.Watchlist = append(profile.Watchlist, splitCSVLike(valueAfterColon(line))...)
+			profile.Watchlist = append(profile.Watchlist, splitCSVLike(valueAfterLabel(line, "关注标的", "watchlist", "关注资产"))...)
 		case hasPrefixedLabel(line, "决策因素", "影响因素", "factors", "decision factors"):
-			profile.DecisionFactors = append(profile.DecisionFactors, splitCSVLike(valueAfterColon(line))...)
+			profile.DecisionFactors = append(profile.DecisionFactors, splitCSVLike(valueAfterLabel(line, "决策因素", "影响因素", "factors", "decision factors"))...)
 		case hasPrefixedLabel(line, "约束", "constraints"):
-			profile.Constraints = append(profile.Constraints, splitCSVLike(valueAfterColon(line))...)
+			profile.Constraints = append(profile.Constraints, splitCSVLike(valueAfterLabel(line, "约束", "constraints"))...)
 		}
 	}
 }
@@ -439,13 +439,14 @@ func effectiveReviewInterval(profile *InvestorProfile, fallback string) string {
 
 func ensureDefaultReviewJob(sched *scheduler.Scheduler, profile *InvestorProfile, fallbackInterval, trust string) (string, bool, error) {
 	schedule := normalizeSchedule(effectiveReviewInterval(profile, fallbackInterval))
-	if hasJob(sched, "investment-review") {
-		return schedule, false, nil
-	}
 	if profile == nil || profile.Empty() {
 		return schedule, false, nil
 	}
 	goal := buildDefaultReviewGoal(profile)
+	existing, hasExisting := findJob(sched, "investment-review")
+	if hasExisting && existing.Schedule == schedule && strings.TrimSpace(existing.Goal) == strings.TrimSpace(goal) {
+		return schedule, false, nil
+	}
 	job := scheduler.Job{
 		ID:       "investment-review",
 		Schedule: schedule,
@@ -517,7 +518,7 @@ func hasPrefixedLabel(line string, labels ...string) bool {
 	lower := strings.ToLower(strings.TrimSpace(line))
 	for _, label := range labels {
 		label = strings.ToLower(strings.TrimSpace(label))
-		if strings.HasPrefix(lower, label+":") || strings.HasPrefix(lower, label+"：") {
+		if strings.HasPrefix(lower, label+":") || strings.HasPrefix(lower, label+"：") || strings.HasPrefix(lower, label+" ") {
 			return true
 		}
 	}
@@ -527,6 +528,22 @@ func hasPrefixedLabel(line string, labels ...string) bool {
 func valueAfterColon(line string) string {
 	if idx := strings.IndexAny(line, ":："); idx >= 0 {
 		return strings.TrimSpace(line[idx+1:])
+	}
+	return ""
+}
+
+func valueAfterLabel(line string, labels ...string) string {
+	if value := valueAfterColon(line); value != "" {
+		return value
+	}
+	trimmed := strings.TrimSpace(line)
+	lower := strings.ToLower(trimmed)
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		labelLower := strings.ToLower(label)
+		if strings.HasPrefix(lower, labelLower+" ") {
+			return strings.TrimSpace(trimmed[len(label):])
+		}
 	}
 	return ""
 }
@@ -763,6 +780,24 @@ func normalizeSchedule(value string) string {
 	if strings.HasPrefix(value, "@") {
 		return value
 	}
+	replacer := strings.NewReplacer(
+		"分钟", "m",
+		"分", "m",
+		"小时", "h",
+		"时", "h",
+		"天", "24h",
+		"周", "168h",
+		"月", "720h",
+		"个", "",
+		" ", "",
+	)
+	normalized := replacer.Replace(strings.ToLower(value))
+	normalized = strings.TrimSpace(normalized)
+	if normalized != "" {
+		if _, err := time.ParseDuration(normalized); err == nil {
+			return "@every " + normalized
+		}
+	}
 	return "@every " + value
 }
 
@@ -773,6 +808,15 @@ func hasJob(sched *scheduler.Scheduler, id string) bool {
 		}
 	}
 	return false
+}
+
+func findJob(sched *scheduler.Scheduler, id string) (scheduler.Job, bool) {
+	for _, job := range sched.ListJobs() {
+		if job.ID == id {
+			return job, true
+		}
+	}
+	return scheduler.Job{}, false
 }
 
 func firstNonEmpty(values ...string) string {
