@@ -33,6 +33,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -190,47 +191,53 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 }
 
 func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io port.UserIO) {
-	r.sched.Start(ctx, func(jobCtx context.Context, job scheduler.Job) {
-		_ = io.Send(jobCtx, port.OutputMessage{
-			Type:    port.OutputProgress,
-			Content: fmt.Sprintf("Scheduled task [%s] started: %s", job.ID, job.Goal),
-		})
-
-		jobSess, err := k.NewSession(jobCtx, session.SessionConfig{
-			Goal:         job.Goal,
-			Mode:         "scheduled",
-			TrustLevel:   r.flags.Trust,
-			SystemPrompt: buildSystemPrompt(r.flags.Workspace),
-			MaxSteps:     30,
-		})
-		if err != nil {
-			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
-			return
-		}
-
-		jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
-		jobIO := newScheduledTaskIO(job)
-		result, err := k.RunWithUserIO(jobCtx, jobSess, jobIO)
-		if err != nil {
-			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
-			return
-		}
-		_ = r.store.Save(jobCtx, jobSess)
-
-		summary := strings.TrimSpace(result.Output)
-		if summary == "" {
-			summary = strings.TrimSpace(jobIO.FinalText())
-		}
-		if summary != "" {
+	_ = runtime.StartScheduledRunner(ctx, runtime.ScheduledRunnerConfig{
+		Kernel:       k,
+		Scheduler:    r.sched,
+		SessionStore: r.store,
+		DefaultIO:    io,
+		BuildSessionConfig: func(_ context.Context, job scheduler.Job) (session.SessionConfig, error) {
+			return session.SessionConfig{
+				Goal:         job.Goal,
+				Mode:         "scheduled",
+				TrustLevel:   r.flags.Trust,
+				SystemPrompt: buildSystemPrompt(r.flags.Workspace),
+				MaxSteps:     30,
+			}, nil
+		},
+		BeforeRun: func(jobCtx context.Context, job scheduler.Job) {
 			_ = io.Send(jobCtx, port.OutputMessage{
-				Type:    port.OutputText,
-				Content: fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary),
+				Type:    port.OutputProgress,
+				Content: fmt.Sprintf("Scheduled task [%s] started: %s", job.ID, job.Goal),
 			})
-		}
-		_ = io.Send(jobCtx, port.OutputMessage{
-			Type:    port.OutputProgress,
-			Content: fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps),
-		})
+		},
+		RunIO: func(_ context.Context, job scheduler.Job) port.UserIO {
+			return newScheduledTaskIO(job)
+		},
+		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
+			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
+		},
+		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ port.UserIO) {
+			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
+		},
+		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO port.UserIO) {
+			summary := strings.TrimSpace(result.Output)
+			if summary == "" {
+				if capture, ok := runIO.(*scheduledTaskIO); ok {
+					summary = strings.TrimSpace(capture.FinalText())
+				}
+			}
+			if summary != "" {
+				_ = io.Send(jobCtx, port.OutputMessage{
+					Type:    port.OutputText,
+					Content: fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary),
+				})
+			}
+			_ = io.Send(jobCtx, port.OutputMessage{
+				Type:    port.OutputProgress,
+				Content: fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps),
+			})
+		},
 	})
 }
 
