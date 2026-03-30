@@ -17,13 +17,23 @@ import (
 type GitWorktreeSnapshotStore struct {
 	root    string
 	timeout time.Duration
+	observer port.Observer
 }
 
 func NewGitWorktreeSnapshotStore(root string) *GitWorktreeSnapshotStore {
 	return &GitWorktreeSnapshotStore{
 		root:    root,
 		timeout: 10 * time.Second,
+		observer: port.NoOpObserver{},
 	}
+}
+
+func (s *GitWorktreeSnapshotStore) SetObserver(observer port.Observer) {
+	if observer == nil {
+		s.observer = port.NoOpObserver{}
+		return
+	}
+	s.observer = observer
 }
 
 func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.WorktreeSnapshotRequest) (*port.WorktreeSnapshot, error) {
@@ -47,6 +57,7 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	}
 	snapshot := &port.WorktreeSnapshot{
 		ID:        newSnapshotID(capture.HeadSHA),
+		SessionID: strings.TrimSpace(req.SessionID),
 		Mode:      port.WorktreeSnapshotGhostState,
 		RepoRoot:  repoRoot,
 		Note:      strings.TrimSpace(req.Note),
@@ -57,6 +68,18 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	if err := persistSnapshot(filepath.Join(gitDir, "moss-snapshots"), snapshot); err != nil {
 		return nil, err
 	}
+	s.observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionSnapshotCreated,
+		SessionID: snapshot.SessionID,
+		Timestamp: snapshot.CreatedAt,
+		Data: map[string]any{
+			"snapshot_id": snapshot.ID,
+			"mode":        snapshot.Mode,
+			"repo_root":   snapshot.RepoRoot,
+			"patch_count": len(snapshot.Patches),
+			"note":        snapshot.Note,
+		},
+	})
 	return snapshot, nil
 }
 
@@ -104,6 +127,24 @@ func (s *GitWorktreeSnapshotStore) List(ctx context.Context) ([]port.WorktreeSna
 		}
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
+	return out, nil
+}
+
+func (s *GitWorktreeSnapshotStore) FindBySession(ctx context.Context, sessionID string) ([]port.WorktreeSnapshot, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, nil
+	}
+	items, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]port.WorktreeSnapshot, 0, len(items))
+	for _, item := range items {
+		if item.SessionID == sessionID {
+			out = append(out, item)
+		}
+	}
 	return out, nil
 }
 

@@ -16,6 +16,7 @@ const (
 	ExecutionToolCompleted    ExecutionEventType = "tool.completed"
 	ExecutionApprovalRequest  ExecutionEventType = "approval.requested"
 	ExecutionApprovalResolved ExecutionEventType = "approval.resolved"
+	ExecutionSnapshotCreated  ExecutionEventType = "snapshot.created"
 )
 
 // ExecutionEvent 是运行时统一结构化事件。

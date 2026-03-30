@@ -13,6 +13,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
@@ -984,8 +985,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 // handleConfigCommand 处理 /config 命令。
 func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
-	cfgPath := config.DefaultGlobalConfigPath()
-	if cfgPath == "" {
+	if _, err := product.ConfigPath(); err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Unable to determine config directory."})
 		m.refreshViewport()
 		return m, nil
@@ -993,20 +993,12 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 
 	// /config — 显示当前配置
 	if len(args) == 0 {
-		cfg, _ := config.LoadConfig(cfgPath)
-		apiKeyDisplay := "(not set)"
-		if cfg.APIKey != "" {
-			apiKeyDisplay = maskKey(cfg.APIKey)
+		info, err := product.ShowConfig(nil, true)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Failed to load config: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
 		}
-		info := fmt.Sprintf("Config file: `%s`\n\n  api_type: %s\n  name:     %s\n  model:    %s\n  base_url: %s\n  api_key:  %s",
-			cfgPath,
-			valueOrDefault(cfg.EffectiveAPIType(), "(not set)"),
-			valueOrDefault(cfg.DisplayProviderName(), "(not set)"),
-			valueOrDefault(cfg.Model, "(not set)"),
-			valueOrDefault(cfg.BaseURL, "(not set)"),
-			apiKeyDisplay,
-		)
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
 		m.refreshViewport()
 		return m, nil
 	}
@@ -1016,42 +1008,13 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 		key := strings.ToLower(args[1])
 		value := strings.Join(args[2:], " ")
 
-		cfg, _ := config.LoadConfig(cfgPath)
-		switch key {
-		case "api_type", "apitype", "provider":
-			identity := config.NormalizeProviderIdentity(value, value, cfg.Name)
-			cfg.APIType = identity.APIType
-			cfg.Provider = identity.Provider
-			if strings.TrimSpace(cfg.Name) == "" {
-				cfg.Name = identity.Name
-			}
-		case "name":
-			cfg.Name = value
-		case "model":
-			cfg.Model = value
-		case "base_url", "baseurl":
-			cfg.BaseURL = value
-		case "api_key", "apikey":
-			cfg.APIKey = value
-		default:
-			m.messages = append(m.messages, chatMessage{
-				kind:    msgError,
-				content: fmt.Sprintf("Unknown config key: %s (supported: api_type, name, model, base_url, api_key)", key),
-			})
-			m.refreshViewport()
-			return m, nil
-		}
-
-		if err := config.SaveConfig(cfgPath, cfg); err != nil {
+		display, err := product.SetConfig(key, value, true)
+		if err != nil {
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgError,
 				content: fmt.Sprintf("Failed to save config: %v", err),
 			})
 		} else {
-			display := value
-			if key == "api_key" || key == "apikey" {
-				display = maskKey(value)
-			}
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgSystem,
 				content: fmt.Sprintf("Set %s = %s\nNote: some settings require restarting moss or switching via /model.", key, display),

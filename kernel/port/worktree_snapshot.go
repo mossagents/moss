@@ -24,6 +24,7 @@ type PatchSnapshotRef struct {
 // WorktreeSnapshot 描述一次 ghost-state 或真实 worktree 快照。
 type WorktreeSnapshot struct {
 	ID        string               `json:"id"`
+	SessionID string               `json:"session_id,omitempty"`
 	Mode      WorktreeSnapshotMode `json:"mode"`
 	RepoRoot  string               `json:"repo_root"`
 	Note      string               `json:"note,omitempty"`
@@ -34,8 +35,9 @@ type WorktreeSnapshot struct {
 
 // WorktreeSnapshotRequest 描述创建快照的请求。
 type WorktreeSnapshotRequest struct {
-	Capture *RepoState `json:"capture,omitempty"`
-	Note    string     `json:"note,omitempty"`
+	SessionID string     `json:"session_id,omitempty"`
+	Capture   *RepoState `json:"capture,omitempty"`
+	Note      string     `json:"note,omitempty"`
 }
 
 // WorktreeSnapshotStore 提供 worktree/ghost-state 快照能力。
@@ -43,6 +45,7 @@ type WorktreeSnapshotStore interface {
 	Create(ctx context.Context, req WorktreeSnapshotRequest) (*WorktreeSnapshot, error)
 	Load(ctx context.Context, id string) (*WorktreeSnapshot, error)
 	List(ctx context.Context) ([]WorktreeSnapshot, error)
+	FindBySession(ctx context.Context, sessionID string) ([]WorktreeSnapshot, error)
 }
 
 var (

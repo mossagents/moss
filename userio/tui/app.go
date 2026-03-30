@@ -41,6 +41,7 @@ type Config struct {
 	Workspace          string
 	Trust              string
 	SessionStoreDir    string
+	InitialSessionID   string
 	BaseURL            string
 	APIKey             string
 	BuildKernel        func(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
@@ -753,41 +754,58 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			}
 		}
 
-		// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
-		sysPrompt := buildSystemPrompt(wCfg.Workspace)
-		if cfg.BuildSystemPrompt != nil {
-			sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace)
-		}
-		sessCfg := session.SessionConfig{
-			Goal:         "interactive",
-			Mode:         "interactive",
-			TrustLevel:   cfg.Trust,
-			MaxSteps:     200,
-			SystemPrompt: sysPrompt,
-		}
-		if cfg.BuildSessionConfig != nil {
-			sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, sysPrompt)
-			if sessCfg.SystemPrompt == "" {
-				sessCfg.SystemPrompt = sysPrompt
+		var sess *session.Session
+		if strings.TrimSpace(cfg.InitialSessionID) != "" {
+			if store == nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("failed to load session %q: session store is unavailable", cfg.InitialSessionID)}
 			}
-			if sessCfg.TrustLevel == "" {
-				sessCfg.TrustLevel = cfg.Trust
+			sess, err = store.Load(ctx, cfg.InitialSessionID)
+			if err != nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("failed to load session %q: %w", cfg.InitialSessionID, err)}
 			}
-			if sessCfg.Goal == "" {
-				sessCfg.Goal = "interactive"
+			if sess == nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("session %q not found", cfg.InitialSessionID)}
 			}
-			if sessCfg.Mode == "" {
-				sessCfg.Mode = "interactive"
+		} else {
+			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
+			sysPrompt := buildSystemPrompt(wCfg.Workspace)
+			if cfg.BuildSystemPrompt != nil {
+				sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace)
 			}
-			if sessCfg.MaxSteps == 0 {
-				sessCfg.MaxSteps = 200
+			sessCfg := session.SessionConfig{
+				Goal:         "interactive",
+				Mode:         "interactive",
+				TrustLevel:   cfg.Trust,
+				MaxSteps:     200,
+				SystemPrompt: sysPrompt,
 			}
-		}
+			if cfg.BuildSessionConfig != nil {
+				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, sysPrompt)
+				if sessCfg.SystemPrompt == "" {
+					sessCfg.SystemPrompt = sysPrompt
+				}
+				if sessCfg.TrustLevel == "" {
+					sessCfg.TrustLevel = cfg.Trust
+				}
+				if sessCfg.Goal == "" {
+					sessCfg.Goal = "interactive"
+				}
+				if sessCfg.Mode == "" {
+					sessCfg.Mode = "interactive"
+				}
+				if sessCfg.MaxSteps == 0 {
+					sessCfg.MaxSteps = 200
+				}
+			}
 
-		sess, err := k.NewSession(ctx, sessCfg)
-		if err != nil {
-			cancel()
-			return sessionResultMsg{err: fmt.Errorf("failed to create session: %w", err)}
+			sess, err = k.NewSession(ctx, sessCfg)
+			if err != nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("failed to create session: %w", err)}
+			}
 		}
 
 		agent := &agentState{

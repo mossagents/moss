@@ -77,6 +77,13 @@ func (k *Kernel) Boot(ctx context.Context) error {
 	if len(errs) > 0 {
 		return kerrors.New(kerrors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
+	if aware, ok := k.snapshots.(interface{ SetObserver(port.Observer) }); ok {
+		observer := k.observer
+		if observer == nil {
+			observer = port.NoOpObserver{}
+		}
+		aware.SetObserver(observer)
+	}
 	return k.bootExtensions(ctx)
 }
 

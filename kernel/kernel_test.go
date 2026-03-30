@@ -23,6 +23,10 @@ type recordingObserver struct {
 	events []port.ExecutionEvent
 }
 
+type observerAwareSnapshotStore struct {
+	observer port.Observer
+}
+
 func (o *recordingObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
 func (o *recordingObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
 func (o *recordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
@@ -41,6 +45,26 @@ func (o *recordingObserver) snapshot() []port.ExecutionEvent {
 	out := make([]port.ExecutionEvent, len(o.events))
 	copy(out, o.events)
 	return out
+}
+
+func (s *observerAwareSnapshotStore) SetObserver(observer port.Observer) {
+	s.observer = observer
+}
+
+func (*observerAwareSnapshotStore) Create(context.Context, port.WorktreeSnapshotRequest) (*port.WorktreeSnapshot, error) {
+	return nil, nil
+}
+
+func (*observerAwareSnapshotStore) Load(context.Context, string) (*port.WorktreeSnapshot, error) {
+	return nil, nil
+}
+
+func (*observerAwareSnapshotStore) List(context.Context) ([]port.WorktreeSnapshot, error) {
+	return nil, nil
+}
+
+func (*observerAwareSnapshotStore) FindBySession(context.Context, string) ([]port.WorktreeSnapshot, error) {
+	return nil, nil
 }
 
 type blockingLLM struct {
@@ -230,6 +254,23 @@ func TestKernelBootRequiresLLM(t *testing.T) {
 	k := New()
 	if err := k.Boot(context.Background()); err == nil {
 		t.Fatal("expected error when LLM not configured")
+	}
+}
+
+func TestKernelBootWiresObserverIntoSnapshotStore(t *testing.T) {
+	obs := &recordingObserver{}
+	store := &observerAwareSnapshotStore{}
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&port.NoOpIO{}),
+		WithObserver(obs),
+		WithWorktreeSnapshots(store),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if store.observer != obs {
+		t.Fatal("expected snapshot store observer to be wired during boot")
 	}
 }
 
