@@ -25,6 +25,8 @@ type DeepAgentConfig struct {
 	AppName                  string
 	EnableSessionStore       *bool
 	SessionStoreDir          string
+	EnableTaskRuntime        *bool
+	TaskRuntimeDir           string
 	EnablePersistentMemories *bool
 	MemoryDir                string
 	EnableContextOffload     *bool
@@ -45,6 +47,7 @@ func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
 		AppName:                  config.AppName(),
 		EnableSessionStore:       boolPtr(true),
+		EnableTaskRuntime:        boolPtr(true),
 		EnablePersistentMemories: boolPtr(true),
 		EnableContextOffload:     boolPtr(true),
 		EnableBootstrapContext:   boolPtr(true),
@@ -74,6 +77,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		if cfg.SessionStoreDir != "" {
 			effective.SessionStoreDir = cfg.SessionStoreDir
+		}
+		if cfg.EnableTaskRuntime != nil {
+			effective.EnableTaskRuntime = cfg.EnableTaskRuntime
+		}
+		if cfg.TaskRuntimeDir != "" {
+			effective.TaskRuntimeDir = cfg.TaskRuntimeDir
 		}
 		if cfg.EnablePersistentMemories != nil {
 			effective.EnablePersistentMemories = cfg.EnablePersistentMemories
@@ -137,6 +146,21 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 			exts = append(exts, WithContextOffload(store))
 			exts = append(exts, WithContextManagement(store))
 		}
+	}
+	if valueOrDefault(effective.EnableTaskRuntime, true) {
+		taskDir := effective.TaskRuntimeDir
+		if taskDir == "" {
+			if appDir := config.AppDir(); appDir != "" {
+				taskDir = filepath.Join(appDir, "tasks")
+			} else {
+				taskDir = filepath.Join(flags.Workspace, "."+effective.AppName, "tasks")
+			}
+		}
+		taskRuntime, err := port.NewFileTaskRuntime(taskDir)
+		if err != nil {
+			return nil, fmt.Errorf("task runtime: %w", err)
+		}
+		exts = append(exts, WithKernelOptions(kernel.WithTaskRuntime(taskRuntime)))
 	}
 
 	if valueOrDefault(effective.EnablePersistentMemories, true) {

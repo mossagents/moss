@@ -47,6 +47,9 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	if k.WorkspaceIsolation() == nil {
 		t.Fatal("expected workspace isolation to be configured")
 	}
+	if k.TaskRuntime() == nil {
+		t.Fatal("expected task runtime to be configured")
+	}
 
 	reg := runtime.AgentRegistry(k)
 	gp, ok := reg.Get("general-purpose")
@@ -103,6 +106,24 @@ func TestBuildDeepAgentKernel_DisableWorkspaceIsolation(t *testing.T) {
 	}
 	if k.WorkspaceIsolation() != nil {
 		t.Fatal("workspace isolation should be disabled")
+	}
+}
+
+func TestBuildDeepAgentKernel_DisableTaskRuntime(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "trusted",
+	}
+	disable := false
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
+		EnableTaskRuntime: &disable,
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	if k.TaskRuntime() != nil {
+		t.Fatal("task runtime should be disabled")
 	}
 }
 

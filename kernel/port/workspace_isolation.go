@@ -3,11 +3,15 @@ package port
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // WorkspaceLease 表示一次隔离工作区租约。
 type WorkspaceLease struct {
 	WorkspaceID string    `json:"workspace_id"`
+	TaskID      string    `json:"task_id,omitempty"`
+	AcquiredAt  time.Time `json:"acquired_at,omitempty"`
+	Recovered   bool      `json:"recovered,omitempty"`
 	Workspace   Workspace `json:"-"`
 	Executor    Executor  `json:"-"`
 }
@@ -20,4 +24,3 @@ type WorkspaceIsolation interface {
 
 // ErrIsolationUnavailable 表示未配置隔离器。
 var ErrIsolationUnavailable = errors.New("workspace isolation is unavailable")
-

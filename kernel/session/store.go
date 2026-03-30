@@ -31,11 +31,22 @@ type SessionStore interface {
 
 // SessionSummary 是 Session 的摘要信息，用于列表展示。
 type SessionSummary struct {
-	ID        string        `json:"id"`
-	Goal      string        `json:"goal"`
-	Mode      string        `json:"mode,omitempty"`
-	Status    SessionStatus `json:"status"`
-	Steps     int           `json:"steps"`
-	CreatedAt string        `json:"created_at"`
-	EndedAt   string        `json:"ended_at,omitempty"`
+	ID          string        `json:"id"`
+	Goal        string        `json:"goal"`
+	Mode        string        `json:"mode,omitempty"`
+	Status      SessionStatus `json:"status"`
+	Recoverable bool          `json:"recoverable,omitempty"`
+	Steps       int           `json:"steps"`
+	CreatedAt   string        `json:"created_at"`
+	EndedAt     string        `json:"ended_at,omitempty"`
+}
+
+// IsRecoverableStatus 判断给定状态的 Session 是否适合作为 resume 候选。
+func IsRecoverableStatus(status SessionStatus) bool {
+	switch status {
+	case StatusCreated, StatusRunning, StatusPaused, StatusFailed:
+		return true
+	default:
+		return false
+	}
 }

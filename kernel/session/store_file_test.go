@@ -172,3 +172,58 @@ func TestFileStoreOverwrite(t *testing.T) {
 		t.Fatalf("expected 1 file, got %d", len(entries))
 	}
 }
+
+func TestFileStoreListMarksRecoverableSessions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	if err := store.Save(ctx, &Session{
+		ID:        "paused",
+		Status:    StatusPaused,
+		Config:    SessionConfig{Goal: "resume me"},
+		CreatedAt: time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, &Session{
+		ID:        "completed",
+		Status:    StatusCompleted,
+		Config:    SessionConfig{Goal: "done"},
+		CreatedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := store.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+	if summaries[0].ID != "completed" {
+		t.Fatalf("expected newest session first, got %q", summaries[0].ID)
+	}
+	var seenPaused, seenCompleted bool
+	for _, summary := range summaries {
+		switch summary.ID {
+		case "paused":
+			seenPaused = true
+			if !summary.Recoverable {
+				t.Fatal("paused session should be recoverable")
+			}
+		case "completed":
+			seenCompleted = true
+			if summary.Recoverable {
+				t.Fatal("completed session should not be recoverable")
+			}
+		}
+	}
+	if !seenPaused || !seenCompleted {
+		t.Fatalf("missing expected summaries: %+v", summaries)
+	}
+}

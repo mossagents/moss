@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -93,15 +94,19 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		}
 
 		summaries = append(summaries, SessionSummary{
-			ID:        sess.ID,
-			Goal:      sess.Config.Goal,
-			Mode:      sess.Config.Mode,
-			Status:    sess.Status,
-			Steps:     sess.Budget.UsedSteps,
-			CreatedAt: sess.CreatedAt.Format("2006-01-02 15:04:05"),
-			EndedAt:   endedAt,
+			ID:          sess.ID,
+			Goal:        sess.Config.Goal,
+			Mode:        sess.Config.Mode,
+			Status:      sess.Status,
+			Recoverable: IsRecoverableStatus(sess.Status),
+			Steps:       sess.Budget.UsedSteps,
+			CreatedAt:   sess.CreatedAt.Format("2006-01-02 15:04:05"),
+			EndedAt:     endedAt,
 		})
 	}
+	sort.Slice(summaries, func(i, j int) bool {
+		return summaries[i].CreatedAt > summaries[j].CreatedAt
+	})
 	return summaries, nil
 }
 

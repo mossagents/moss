@@ -40,3 +40,37 @@ func TestLocalWorkspaceIsolation_AcquireRelease(t *testing.T) {
 	}
 }
 
+func TestLocalWorkspaceIsolation_RestoresLeaseJournal(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+
+	iso1, err := NewLocalWorkspaceIsolation(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease1, err := iso1.Acquire(ctx, "task:recover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease1.Recovered {
+		t.Fatal("first acquire should not be marked recovered")
+	}
+
+	iso2, err := NewLocalWorkspaceIsolation(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease2, err := iso2.Acquire(ctx, "task:recover")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lease2.WorkspaceID != lease1.WorkspaceID {
+		t.Fatalf("expected restored workspace id %q, got %q", lease1.WorkspaceID, lease2.WorkspaceID)
+	}
+	if !lease2.Recovered {
+		t.Fatal("expected recovered lease after restart")
+	}
+	if lease2.TaskID != "task:recover" {
+		t.Fatalf("expected task id task:recover, got %q", lease2.TaskID)
+	}
+}
