@@ -194,6 +194,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	}
 	exts = append(exts, WithKernelOptions(kernel.WithRepoStateCapture(sandbox.NewGitRepoStateCapture(flags.Workspace))))
 	exts = append(exts, WithKernelOptions(kernel.WithPatchApply(sandbox.NewGitPatchApply(flags.Workspace))))
+	exts = append(exts, WithKernelOptions(kernel.WithPatchRevert(sandbox.NewGitPatchRevert(flags.Workspace))))
 	exts = append(exts, WithPlanning())
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {

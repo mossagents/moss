@@ -72,6 +72,11 @@ func WithPatchApply(apply port.PatchApply) Option {
 	return func(k *Kernel) { k.patches = apply }
 }
 
+// WithPatchRevert 设置 PatchRevert Port。
+func WithPatchRevert(revert port.PatchRevert) Option {
+	return func(k *Kernel) { k.reverts = revert }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }

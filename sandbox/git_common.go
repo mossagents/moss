@@ -46,3 +46,16 @@ func isGitRepoError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "not a git repository")
 }
+
+func resolveGitRepo(ctx context.Context, root string, timeout time.Duration) (string, string, *gitPatchJournal, error) {
+	runner := gitRunner{root: root, timeout: timeout}
+	repoRoot, err := runner.run(ctx, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", "", nil, err
+	}
+	gitDir, err := runner.run(ctx, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolve git dir: %w", err)
+	}
+	return repoRoot, gitDir, newGitPatchJournal(gitDir), nil
+}

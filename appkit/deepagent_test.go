@@ -56,6 +56,9 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	if k.PatchApply() == nil {
 		t.Fatal("expected patch apply to be configured")
 	}
+	if k.PatchRevert() == nil {
+		t.Fatal("expected patch revert to be configured")
+	}
 
 	reg := runtime.AgentRegistry(k)
 	gp, ok := reg.Get("general-purpose")
