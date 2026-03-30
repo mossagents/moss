@@ -32,6 +32,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/gateway"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
@@ -63,12 +64,30 @@ func main() {
 }
 
 func run(ctx context.Context, flags *appkit.AppFlags, mode string) error {
+	if err := prepareP2Resilience(flags.Workspace); err != nil {
+		return err
+	}
 	if mode == "gateway" {
 		return runGateway(ctx, flags)
 	}
 
 	return launchTUI(flags)
 
+}
+
+func prepareP2Resilience(workspace string) error {
+	if workspace == "" {
+		workspace = "."
+	}
+	_, err := gateway.ValidateRuntimeAssets(workspace, gateway.AssetModeBestEffort)
+	if err != nil {
+		return fmt.Errorf("validate runtime assets: %w", err)
+	}
+	_ = gateway.NewRetryBudget(8)
+	_ = gateway.NewProfileRotator([]gateway.ModelProfile{
+		{Name: "primary", Provider: "default"},
+	})
+	return nil
 }
 
 type mossclawRuntime struct {

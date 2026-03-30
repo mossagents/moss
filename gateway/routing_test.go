@@ -50,4 +50,3 @@ func TestBuildSessionKeyScopes(t *testing.T) {
 		t.Fatalf("main key=%q", got)
 	}
 }
-

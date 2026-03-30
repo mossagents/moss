@@ -137,4 +137,3 @@ func TestDeliveryQueue_DeadLetterOnExhaustedRetry(t *testing.T) {
 		t.Fatal("deadletter should not be empty")
 	}
 }
-

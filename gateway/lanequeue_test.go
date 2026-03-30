@@ -69,4 +69,3 @@ func TestLaneQueue_ParallelAcrossLanes(t *testing.T) {
 		t.Fatalf("expected parallel execution, elapsed=%v", elapsed)
 	}
 }
-

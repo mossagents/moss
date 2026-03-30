@@ -76,10 +76,10 @@ func WithDeliveryDir(dir string) Option {
 
 // Gateway 是嵌入式消息网关，组合 Channel → Router → Kernel。
 type Gateway struct {
-	kernel   Kernel
-	router   *session.Router
-	channels []port.Channel
-	config   Config
+	kernel     Kernel
+	router     *session.Router
+	channels   []port.Channel
+	config     Config
 	chanByName map[string]port.Channel
 }
 

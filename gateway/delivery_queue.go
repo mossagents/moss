@@ -76,17 +76,17 @@ type messageState struct {
 }
 
 type DeliveryQueue struct {
-	mu         sync.Mutex
-	queue      []messageState
-	sender     func(context.Context, OutboundMessage) error
-	policy     ExponentialRetryPolicy
-	queuePath  string
-	dlqPath    string
-	started    bool
-	stopCh     chan struct{}
-	wg         sync.WaitGroup
-	wakeCh     chan struct{}
-	recovered  bool
+	mu        sync.Mutex
+	queue     []messageState
+	sender    func(context.Context, OutboundMessage) error
+	policy    ExponentialRetryPolicy
+	queuePath string
+	dlqPath   string
+	started   bool
+	stopCh    chan struct{}
+	wg        sync.WaitGroup
+	wakeCh    chan struct{}
+	recovered bool
 }
 
 func NewDeliveryQueue(baseDir string, sender func(context.Context, OutboundMessage) error) (*DeliveryQueue, error) {
@@ -402,4 +402,3 @@ func senderForChannel(ch port.Channel) func(context.Context, OutboundMessage) er
 		})
 	}
 }
-

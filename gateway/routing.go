@@ -8,9 +8,9 @@ import (
 type RouteScope string
 
 const (
-	RouteScopeMain                RouteScope = "main"
-	RouteScopePerPeer             RouteScope = "per-peer"
-	RouteScopePerChannelPeer      RouteScope = "per-channel-peer"
+	RouteScopeMain                  RouteScope = "main"
+	RouteScopePerPeer               RouteScope = "per-peer"
+	RouteScopePerChannelPeer        RouteScope = "per-channel-peer"
 	RouteScopePerAccountChannelPeer RouteScope = "per-account-channel-peer"
 )
 
@@ -109,4 +109,3 @@ func BuildSessionKey(agentID string, scope RouteScope, meta RouteMeta) string {
 	}
 	return fmt.Sprintf("agent:%s:main", aid)
 }
-
