@@ -145,43 +145,58 @@ This keeps the mutation path explicit and isolates product workflow from the cor
 Introduce a persisted `ChangeOperation` record with the following fields:
 
 - `id`
+- `repo_root`
+- `base_head_sha`
 - `session_id`
 - `patch_id`
 - `checkpoint_id`
 - `summary`
 - `target_files`
 - `status`
-- `degraded`
-- `degraded_reason`
+- `recovery_mode`
+- `recovery_details`
+- `rollback_mode`
+- `rollback_details`
 - `created_at`
 - `rolled_back_at`
 
 Recommended semantics:
 
 - `id`: product-facing identifier for rollback and inspection
+- `repo_root`: resolved git root used to scope list/show/rollback to the active repository
+- `base_head_sha`: the repository `HEAD` seen before apply; used to validate later recovery attempts
 - `session_id`: persisted session lineage if the change originated from a session
 - `patch_id`: patch journal identity when exact reverse application is possible
 - `checkpoint_id`: optional pre-apply checkpoint for broader recovery
 - `summary`: short operator-facing description of what was applied
 - `target_files`: files touched by the patch
-- `status`: `applied` or `rolled_back`
-- `degraded`: whether recovery metadata is incomplete or rollback had to downgrade
-- `degraded_reason`: explicit reason for downgrade or limited recovery
+- `status`: `preparing`, `applied`, `rolled_back`, `apply_inconsistent`, or `rollback_inconsistent`
+- `recovery_mode`: what recovery artifacts were captured at apply time, for example `patch+capture` or `patch+capture+checkpoint`
+- `recovery_details`: apply-time notes about missing or partial recovery metadata
+- `rollback_mode`: empty until rollback, then `exact` or `capture_restore`
+- `rollback_details`: rollback outcome notes, including whether the rollback used a degraded whole-repo restore path
 
-The record should also retain the pre-apply repository capture used for fallback rollback. This may be embedded or stored as a referenced artifact, but it must be durable enough to support later rollback in the normal product path.
+The record should also retain the pre-apply repository capture used for recovery analysis. This may be embedded or stored as a referenced artifact, but it must be durable enough to support later operator-driven recovery flows.
 
 ## Recovery Model
 
 Every successful apply should capture a recovery point before mutating the repo.
 
+Important constraint: the current `RepoState` capture is not a full content snapshot. It records the repo root, `HEAD`, branch, and file-status metadata. The current capture-based restore path can restore tracked files from committed `HEAD` and prune untracked files, but it does not reconstruct arbitrary pre-apply staged or unstaged tracked content.
+
+Because of that, v1 must require a clean repository before `apply`.
+
 Recovery point strategy:
 
-1. always capture repository state through the existing repo-state capture path
-2. when a persisted session is available, attempt to create a checkpoint as well
-3. do not fail apply solely because checkpoint creation is unavailable
-4. fail apply if the repo capture required for fallback recovery cannot be created
+1. validate that the active repository is clean before apply
+2. always capture repository state through the existing repo-state capture path
+3. when a persisted session is available, attempt to create a checkpoint as well
+4. do not fail apply solely because checkpoint creation is unavailable
+5. fail apply if the repo capture required for recovery analysis cannot be created
 
 This keeps exact rollback lightweight while still attaching a stronger session-aware recovery primitive whenever available.
+
+In v1, repo-capture recovery is a last-resort whole-repo recovery option, not a normal change-scoped rollback mechanism.
 
 ## Command Surface
 
@@ -191,7 +206,7 @@ Keep `review` as the inspection entrypoint and add explicit mutation surfaces:
 
 - `mosscode review [status|snapshots|snapshot <id>|changes|change <id>]`
 - `mosscode apply --patch-file <path> [--summary <text>] [--session <id>] [--json]`
-- `mosscode rollback --change <id> [--json]`
+- `mosscode rollback --change <id> [--allow-capture-restore] [--json]`
 - `mosscode changes list [--limit N] [--json]`
 - `mosscode changes show <id> [--json]`
 
@@ -199,6 +214,7 @@ Notes:
 
 - `apply` requires explicit patch input, initially from a file path
 - `rollback` operates on `change id`, not raw `patch_id`
+- `--allow-capture-restore` is an explicit operator opt-in for broad whole-repo recovery when exact rollback is unavailable
 - `review changes` is a convenience alias over `changes list`
 - `review change <id>` is a convenience alias over `changes show`
 
@@ -209,12 +225,12 @@ Add slash commands that mirror the CLI:
 - `/changes list [limit]`
 - `/changes show <id>`
 - `/apply <patch_file> [summary...]`
-- `/rollback <change_id>`
+- `/rollback <change_id> [restore]`
 
 TUI behavior should:
 
 - surface clear success/failure system messages
-- show whether rollback was exact or degraded
+- show whether rollback was exact or whether an operator-triggered whole-repo restore was used
 - keep transcript continuity for inspection commands
 - avoid silently switching sessions during apply/rollback
 
@@ -224,14 +240,16 @@ TUI behavior should:
 
 - only accept explicit patch input
 - never infer a patch from the current dirty tree
+- require a clean repository before apply
 - capture the pre-apply repo state first
 - attempt checkpoint creation when a persisted session is supplied or inferable
 - call the existing structured patch-apply port
-- persist a `ChangeOperation` only after apply succeeds
+- create a `ChangeOperation` in `preparing` state before mutating the repo
+- finalize the `ChangeOperation` to `applied` only after mutation and metadata persistence both succeed
 
 If patch apply fails:
 
-- no change record is created
+- the `ChangeOperation` must not be finalized to `applied`
 - the error is surfaced directly
 - no success-shaped fallback is returned
 
@@ -242,23 +260,29 @@ If patch apply fails:
 Rollback order:
 
 1. load the `ChangeOperation`
-2. validate it is in `applied` status
+2. validate it is in `applied` status and that `repo_root` matches the active repository
 3. try exact reverse application through `patch_id`
-4. if exact patch rollback is unavailable, fall back to the saved pre-apply repo capture
-5. persist the rollback result and mark the change record accordingly
+4. if exact patch rollback is unavailable, fail by default and surface the recovery options
+5. only if the operator explicitly opts in to capture restore, validate strict whole-repo restore preconditions and then use the saved pre-apply repo capture
+6. persist the rollback result and mark the change record accordingly
 
-Exact rollback is the preferred path. Fallback rollback is allowed, but it must set:
+Exact rollback is the preferred path.
 
-- `degraded = true`
-- `degraded_reason` with a concrete explanation
+Capture-based restore is allowed only as an explicit operator action because it is repo-wide rather than change-scoped. It can revert unrelated later work if used carelessly.
 
-Examples of degraded rollback causes:
+Capture restore preconditions:
 
-- patch journal entry missing
-- patch reverse application unavailable in current kernel
-- recovery had to use repo capture instead of reverse patch
+- active `repo_root` matches the record
+- active `HEAD` still matches `base_head_sha`
+- the operator has requested `--allow-capture-restore` or `restore`
+- the worktree is otherwise clean before the restore is attempted
 
-There must be no silent downgrade that looks identical to an exact rollback.
+Rollback reporting rules:
+
+- exact reverse patch sets `rollback_mode = exact`
+- capture-based restore sets `rollback_mode = capture_restore`
+- capture-based restore must describe the whole-repo blast radius in output
+- there must be no silent downgrade that looks identical to an exact rollback
 
 ## Persistence
 
@@ -270,7 +294,8 @@ Requirements:
 - load by ID
 - create operation
 - update operation after rollback
-- preserve enough recovery metadata for exact or degraded rollback reporting
+- preserve enough recovery metadata for exact rollback and explicit whole-repo restore reporting
+- filter and validate operations by `repo_root`
 
 This store should be product-owned rather than kernel-owned because the concept is primarily an operator/product workflow layer, not a fundamental runtime execution primitive.
 
@@ -283,18 +308,21 @@ The operator should always be able to answer:
 - what files it touched
 - what recovery point was captured
 - whether rollback is still available
-- whether a rollback was exact or degraded
+- whether a rollback was exact or required whole-repo restore
 
 Recommended output details:
 
 - change ID
 - patch ID when present
 - checkpoint ID when present
+- repo root
+- base head sha
 - session ID when present
 - target files
 - created / rolled back timestamps
 - status
-- degraded flag and reason
+- recovery mode and details
+- rollback mode and details
 
 `review` output should expand naturally to include recent change operations so the operator can inspect repo state and mutation history from one surface.
 
@@ -305,23 +333,35 @@ The design intentionally avoids broad fallback behavior.
 Rules:
 
 - do not claim apply succeeded unless patch apply succeeded
-- do not claim exact rollback if recovery used repo capture fallback
+- do not claim exact rollback if recovery used capture restore
 - do not allow rollback for already rolled-back changes
 - do not accept missing patch input for apply
 - do not silently skip recovery-point creation required for rollback safety
+- do not run apply on a dirty repository
+- do not allow cross-repo rollback based on app-dir-global state
 
 When checkpoint creation fails but repo capture succeeds, apply may continue and should record that checkpoint recovery is unavailable.
 
-When exact rollback fails and repo capture succeeds, rollback may continue as degraded and must report that degraded state in both human-readable and JSON output.
+When exact rollback fails, rollback should fail by default and report the available explicit recovery option.
+
+When the operator opts into capture restore and the preconditions hold, rollback may continue with `rollback_mode = capture_restore` and must report that whole-repo recovery was used in both human-readable and JSON output.
+
+Because mutation and metadata persistence can fail independently, the orchestration must treat inconsistent states as first-class:
+
+- apply should persist a `preparing` operation before mutation
+- if the repo mutates but patch journal finalization or change-record finalization fails, mark the operation best-effort as `apply_inconsistent`
+- rollback should similarly mark `rollback_inconsistent` if the repo was changed but durable state update fails
+- CLI and TUI output must surface these as critical inconsistent states, not normal failures
+- implementation should emit audit-visible details so the operator can inspect and recover manually if needed
 
 ## Implementation Slices
 
-1. Add product-level `ChangeOperation` types and file-backed store
-2. Add runtime helpers to create recovery points, apply patches, persist operations, and roll back operations
+1. Add product-level `ChangeOperation` types, file-backed store, and state machine
+2. Add runtime helpers to validate clean repo state, create recovery points, apply patches, persist operations, and roll back operations
 3. Extend review reporting with change-operation list/detail modes
 4. Add CLI commands for `apply`, `rollback`, and `changes`
 5. Add TUI slash commands for `changes`, `apply`, and `rollback`
-6. Add regression tests across runtime, sandbox, CLI, and TUI surfaces
+6. Add regression tests across runtime, sandbox, CLI, and TUI surfaces, including inconsistent-state handling
 
 ## Testing Plan
 
@@ -331,8 +371,9 @@ At minimum, cover four layers.
 
 - apply creates a recovery point and persisted change operation
 - rollback transitions an operation from `applied` to `rolled_back`
-- degraded rollback is marked and explained
+- capture-restore rollback requires explicit opt-in and is marked clearly
 - review modes can list and show change operations
+- inconsistent apply / rollback persistence paths are surfaced correctly
 
 ### Sandbox
 
@@ -345,6 +386,7 @@ At minimum, cover four layers.
 - `apply` validates required patch input
 - `changes list/show` produce stable human and JSON output
 - `rollback --change <id>` reports exact vs degraded outcomes correctly
+- `rollback --change <id> --allow-capture-restore` is clearly labeled as whole-repo restore
 - `review changes` and `review change <id>` behave as aliases
 
 ### TUI
@@ -352,6 +394,7 @@ At minimum, cover four layers.
 - `/changes list` and `/changes show <id>` are discoverable and work
 - `/apply` success and validation failures are surfaced clearly
 - `/rollback` success and degraded rollback states are surfaced clearly
+- `/rollback <id> restore` is clearly labeled as whole-repo recovery
 - help text and slash completion include the new commands
 
 ## Acceptance Criteria
@@ -361,7 +404,9 @@ This milestone is complete when:
 - a successful apply produces a durable change record
 - the record can be listed and inspected later
 - rollback can target that record and revert the change
-- degraded rollback is explicit in both text and JSON output
+- whole-repo capture restore is explicit in both text and JSON output
+- dirty-repo apply is rejected
+- cross-repo rollback is rejected
 - `go test ./...` passes from repo root
 - `go build ./...` passes from repo root
 
