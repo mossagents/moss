@@ -15,7 +15,7 @@
 - 通过 `editor` 子 agent 做结构与语气润色
 - 支持 `jina_search` / `jina_reader` / `think_tool`
 - 提供 `make_slug` 与 `generate_image_brief` 工具，便于落盘内容与封面创意
-- 支持 TUI 与 `--goal` one-shot
+- 支持 TUI 与 `--prompt` one-shot
 
 ## 文件系统原语
 
@@ -39,8 +39,8 @@ go run .
 
 ```bash
 go run . --provider openai --model gpt-4o
-go run . --goal "Write a blog post about prompt engineering for backend teams"
-go run . --goal "Create a LinkedIn post about why context engineering matters"
+go run . --prompt "Write a blog post about prompt engineering for backend teams"
+go run . -p "Create a LinkedIn post about why context engineering matters"
 go run . --trust restricted
 ```
 

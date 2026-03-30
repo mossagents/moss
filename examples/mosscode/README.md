@@ -7,7 +7,7 @@
 - 基于 `appkit.BuildDeepAgentKernel` 的增强装配（轻量入口 + 生产向默认能力）
 - 内置 8 个核心工具 + 持久 memories + context offload + 异步任务生命周期工具
 - TUI 支持增强斜杠命令（`/session`、`/offload`、`/tasks`、`/task`）
-- 支持 one-shot 模式：`--goal "..."`
+- 支持 one-shot 模式：`--prompt "..."`
 - 支持 provider/model/base_url/api_key 配置
 - 支持 system prompt 模板覆盖
 
@@ -24,7 +24,8 @@ go run .
 go run . --provider openai --model gpt-4o
 go run . --provider openai --model Qwen/Qwen3-8B --base-url http://localhost:8080/v1
 go run . --trust restricted
-go run . --goal "Analyze flaky tests and propose a fix plan"
+go run . --prompt "Analyze flaky tests and propose a fix plan"
+go run . -p "Analyze flaky tests and propose a fix plan"
 ```
 
 ## 配置
@@ -51,6 +52,6 @@ api_key: ""
 ## 运行模式
 
 - **TUI（默认）**：`go run .`
-- **one-shot**：`go run . --goal "<your task>"`
+- **one-shot**：`go run . --prompt "<your task>"`
 
 当启用 `restricted` 信任级别时，危险工具会触发审批策略，适合更稳妥的生产使用。

@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -452,6 +453,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			IsError: true,
 		}
 	}
+	repairedArgs := repairToolArguments(call.Arguments)
 
 	// UserIO: 通知工具开始
 	l.withSideEffectsLock(func() {
@@ -459,7 +461,12 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			l.IO.Send(ctx, port.OutputMessage{
 				Type:    port.OutputToolStart,
 				Content: call.Name,
-				Meta:    map[string]any{"call_id": call.ID},
+				Meta: map[string]any{
+					"call_id":      call.ID,
+					"tool":         call.Name,
+					"risk":         string(spec.Risk),
+					"args_preview": previewToolArguments(repairedArgs),
+				},
 			})
 		}
 	})
@@ -490,8 +497,6 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		ToolName:  call.Name,
 		CallID:    call.ID,
 	})
-	repairedArgs := repairToolArguments(call.Arguments)
-
 	// 执行工具
 	toolStart := time.Now()
 	output, err := handler(toolCtx, repairedArgs)
@@ -547,7 +552,12 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			l.IO.Send(ctx, port.OutputMessage{
 				Type:    port.OutputToolResult,
 				Content: result.Content,
-				Meta:    map[string]any{"call_id": call.ID, "tool": call.Name, "is_error": result.IsError},
+				Meta: map[string]any{
+					"call_id":     call.ID,
+					"tool":        call.Name,
+					"is_error":    result.IsError,
+					"duration_ms": toolDur.Milliseconds(),
+				},
 			})
 		}
 	})
@@ -568,6 +578,21 @@ func repairToolArguments(args json.RawMessage) json.RawMessage {
 		return json.RawMessage(repaired)
 	}
 	return args
+}
+
+func previewToolArguments(args json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(args))
+	if trimmed == "" || trimmed == "{}" {
+		return ""
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, []byte(trimmed)); err == nil {
+		trimmed = compact.String()
+	}
+	if len(trimmed) > 160 {
+		return trimmed[:160] + "..."
+	}
+	return trimmed
 }
 
 func repairTruncatedJSON(s string) string {

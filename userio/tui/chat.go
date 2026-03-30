@@ -42,6 +42,11 @@ type switchTrustMsg struct {
 	trust string
 }
 
+// switchApprovalMsg 通知 app 切换 approval mode。
+type switchApprovalMsg struct {
+	mode string
+}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -64,6 +69,7 @@ type chatModel struct {
 	scheduleCtrl        runtime.ScheduleController
 	sessionListFn       func(limit int) (string, error)
 	sessionRestoreFn    func(sessionID string) (string, error)
+	newSessionFn        func() (string, error)
 	gitRunFn            func(cmd string, args []string) (string, error)
 	permissionSummaryFn func() string
 	setPermissionFn     func(toolName, mode string) (string, error)
@@ -77,10 +83,11 @@ type chatModel struct {
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
 	// 配置显示
-	provider  string
-	model     string
-	workspace string
-	trust     string
+	provider     string
+	model        string
+	workspace    string
+	trust        string
+	approvalMode string
 
 	queuedInputs []string
 
@@ -287,13 +294,13 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		case port.OutputProgress:
 			m.messages = append(m.messages, chatMessage{kind: msgProgress, content: o.Content})
 		case port.OutputToolStart:
-			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content})
+			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content, meta: o.Meta})
 		case port.OutputToolResult:
 			isErr, _ := o.Meta["is_error"].(bool)
 			if isErr {
-				m.messages = append(m.messages, chatMessage{kind: msgToolError, content: o.Content})
+				m.messages = append(m.messages, chatMessage{kind: msgToolError, content: o.Content, meta: o.Meta})
 			} else {
-				m.messages = append(m.messages, chatMessage{kind: msgToolResult, content: o.Content})
+				m.messages = append(m.messages, chatMessage{kind: msgToolResult, content: o.Content, meta: o.Meta})
 			}
 		}
 		m.refreshViewport()
@@ -410,6 +417,13 @@ func (m chatModel) mainWidth() int {
 	return m.width
 }
 
+func (m chatModel) displayApprovalMode() string {
+	if strings.TrimSpace(m.approvalMode) == "" {
+		return "(default)"
+	}
+	return m.approvalMode
+}
+
 func (m chatModel) View() string {
 	if !m.ready {
 		return "Loading..."
@@ -432,7 +446,7 @@ func (m chatModel) View() string {
 	if strings.TrimSpace(m.model) != "" {
 		leftMeta = fmt.Sprintf("%s (%s)", leftMeta, m.model)
 	}
-	rightMeta := fmt.Sprintf("Trust: %s  Messages: %d", m.trust, len(m.messages))
+	rightMeta := fmt.Sprintf("Trust: %s  Approval: %s  Messages: %d", m.trust, m.displayApprovalMode(), len(m.messages))
 	b.WriteString(lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		mutedStyle.Width(m.mainWidth()/2).Render(leftMeta),
@@ -618,6 +632,28 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			info = m.sessionInfoFn()
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/new":
+		if m.newSessionFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "New session creation is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.newSessionFn()
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create new session: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = []chatMessage{{kind: msgSystem, content: out}}
+		m.streaming = false
+		m.finished = false
+		m.result = ""
+		m.queuedInputs = nil
+		m.textarea.Reset()
+		m.adjustInputHeight()
 		m.refreshViewport()
 		return m, nil
 
@@ -927,6 +963,23 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, func() tea.Msg { return switchTrustMsg{trust: nextTrust} }
 
+	case "/approval":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current approval mode: %s\nUsage: /approval <read-only|confirm|full-auto>", m.displayApprovalMode())})
+			m.refreshViewport()
+			return m, nil
+		}
+		nextMode := product.NormalizeApprovalMode(args[0])
+		if err := product.ValidateApprovalMode(nextMode); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching approval mode to %s...", nextMode)})
+		m.streaming = true
+		m.refreshViewport()
+		return m, func() tea.Msg { return switchApprovalMsg{mode: nextMode} }
+
 	case "/help":
 		help := "Available commands:\n" +
 			"  /model [name]  Show or switch model\n" +
@@ -936,6 +989,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /skill <name> <task...>  Invoke a specific skill/tool by name\n" +
 			"  /<name> <task...>  Shortcut for /skill <name> <task...>\n" +
 			"  /session       Show current session summary\n" +
+			"  /new           Create and switch to a fresh session\n" +
 			"  /session restore <id>  Restore a persisted session\n" +
 			"  /sessions [limit]  List persisted sessions\n" +
 			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
@@ -949,6 +1003,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /permissions set <tool> <allow|ask|deny|reset>\n" +
 			"  /permissions trust <trusted|restricted>\n" +
 			"  /trust <trusted|restricted>  Switch trust and rebuild runtime\n" +
+			"  /approval <read-only|confirm|full-auto>  Switch approval mode and rebuild runtime\n" +
 			"  /clear         Clear conversation\n" +
 			"\nKeyboard shortcuts:\n" +
 			"  double Esc     Cancel current running generation/tool execution\n" +
@@ -1179,8 +1234,8 @@ func (m *chatModel) applySlashCompletion() bool {
 }
 
 var slashCandidates = []string{
-	"/help", "/skills", "/skill", "/session", "/sessions", "/offload", "/tasks", "/task",
-	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/model", "/clear", "/exit", "/quit",
+	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/offload", "/tasks", "/task",
+	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }
 

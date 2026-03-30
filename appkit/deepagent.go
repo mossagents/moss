@@ -22,41 +22,47 @@ import (
 // DeepAgentConfig 描述 deep-agent 风格装配的配置项。
 // 零值通过 BuildDeepAgentKernel 的默认值补齐。
 type DeepAgentConfig struct {
-	AppName                  string
-	EnableSessionStore       *bool
-	SessionStoreDir          string
-	EnableTaskRuntime        *bool
-	TaskRuntimeDir           string
-	EnablePersistentMemories *bool
-	MemoryDir                string
-	EnableContextOffload     *bool
-	EnableBootstrapContext   *bool
-	EnsureGeneralPurpose     *bool
-	GeneralPurposeName       string
-	GeneralPurposePrompt     string
-	GeneralPurposeDesc       string
-	GeneralPurposeMaxSteps   int
-	EnableWorkspaceIsolation *bool
-	IsolationRootDir         string
-	DefaultSetupOptions      []runtime.Option
-	AdditionalAppExtensions  []Extension
+	AppName                       string
+	EnableSessionStore            *bool
+	SessionStoreDir               string
+	EnableTaskRuntime             *bool
+	TaskRuntimeDir                string
+	EnablePersistentMemories      *bool
+	MemoryDir                     string
+	EnableContextOffload          *bool
+	EnableBootstrapContext        *bool
+	EnsureGeneralPurpose          *bool
+	GeneralPurposeName            string
+	GeneralPurposePrompt          string
+	GeneralPurposeDesc            string
+	GeneralPurposeMaxSteps        int
+	EnableWorkspaceIsolation      *bool
+	IsolationRootDir              string
+	EnableDefaultRestrictedPolicy *bool
+	EnableDefaultLLMRetry         *bool
+	LLMRetryConfig                *retry.Config
+	LLMBreakerConfig              *retry.BreakerConfig
+	DefaultSetupOptions           []runtime.Option
+	AdditionalAppExtensions       []Extension
 }
 
 // DefaultDeepAgentConfig 返回 deep-agent 装配默认配置。
 func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
-		AppName:                  config.AppName(),
-		EnableSessionStore:       boolPtr(true),
-		EnableTaskRuntime:        boolPtr(true),
-		EnablePersistentMemories: boolPtr(true),
-		EnableContextOffload:     boolPtr(true),
-		EnableBootstrapContext:   boolPtr(true),
-		EnsureGeneralPurpose:     boolPtr(true),
-		GeneralPurposeName:       "general-purpose",
-		GeneralPurposePrompt:     "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
-		GeneralPurposeDesc:       "General-purpose agent for delegated tasks that need context isolation.",
-		GeneralPurposeMaxSteps:   50,
-		EnableWorkspaceIsolation: boolPtr(true),
+		AppName:                       config.AppName(),
+		EnableSessionStore:            boolPtr(true),
+		EnableTaskRuntime:             boolPtr(true),
+		EnablePersistentMemories:      boolPtr(true),
+		EnableContextOffload:          boolPtr(true),
+		EnableBootstrapContext:        boolPtr(true),
+		EnsureGeneralPurpose:          boolPtr(true),
+		GeneralPurposeName:            "general-purpose",
+		GeneralPurposePrompt:          "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
+		GeneralPurposeDesc:            "General-purpose agent for delegated tasks that need context isolation.",
+		GeneralPurposeMaxSteps:        50,
+		EnableWorkspaceIsolation:      boolPtr(true),
+		EnableDefaultRestrictedPolicy: boolPtr(true),
+		EnableDefaultLLMRetry:         boolPtr(true),
 	}
 }
 
@@ -116,6 +122,18 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		if cfg.IsolationRootDir != "" {
 			effective.IsolationRootDir = cfg.IsolationRootDir
+		}
+		if cfg.EnableDefaultRestrictedPolicy != nil {
+			effective.EnableDefaultRestrictedPolicy = cfg.EnableDefaultRestrictedPolicy
+		}
+		if cfg.EnableDefaultLLMRetry != nil {
+			effective.EnableDefaultLLMRetry = cfg.EnableDefaultLLMRetry
+		}
+		if cfg.LLMRetryConfig != nil {
+			effective.LLMRetryConfig = cfg.LLMRetryConfig
+		}
+		if cfg.LLMBreakerConfig != nil {
+			effective.LLMBreakerConfig = cfg.LLMBreakerConfig
 		}
 		if len(cfg.DefaultSetupOptions) > 0 {
 			effective.DefaultSetupOptions = cfg.DefaultSetupOptions
@@ -202,13 +220,24 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		exts = append(exts, WithLoadedBootstrapContext(flags.Workspace, effective.AppName))
 	}
 
+	var defaultLLMRetry *retry.Config
+	if valueOrDefault(effective.EnableDefaultLLMRetry, true) {
+		defaultLLMRetry = effective.LLMRetryConfig
+		if defaultLLMRetry == nil {
+			defaultLLMRetry = &retry.Config{
+				MaxRetries:   2,
+				InitialDelay: 300 * time.Millisecond,
+				MaxDelay:     2 * time.Second,
+				Multiplier:   2.0,
+			}
+		}
+	}
+	if effective.LLMBreakerConfig != nil {
+		exts = append(exts, WithKernelOptions(kernel.WithLLMBreaker(*effective.LLMBreakerConfig)))
+	}
+
 	k, err := BuildKernelWithConfig(ctx, flags, io, BuildConfig{
-		DefaultLLMRetry: &retry.Config{
-			MaxRetries:   2,
-			InitialDelay: 300 * time.Millisecond,
-			MaxDelay:     2 * time.Second,
-			Multiplier:   2.0,
-		},
+		DefaultLLMRetry:     defaultLLMRetry,
 		DefaultSetupOptions: effective.DefaultSetupOptions,
 		Extensions:          exts,
 	})
@@ -223,7 +252,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	}
 	k.Middleware().Use(builtins.PatchToolCalls())
 
-	if flags.Trust == "restricted" {
+	if flags.Trust == "restricted" && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(
 			builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
 			builtins.RequireApprovalForPathPrefix(".git", ".moss"),

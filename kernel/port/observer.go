@@ -23,6 +23,26 @@ type Observer interface {
 	OnError(ctx context.Context, e ErrorEvent)
 }
 
+// JoinObservers 组合多个 Observer，按传入顺序依次分发事件。
+// nil Observer 会被忽略；当没有有效 Observer 时返回 NoOpObserver。
+func JoinObservers(observers ...Observer) Observer {
+	filtered := make([]Observer, 0, len(observers))
+	for _, observer := range observers {
+		if observer == nil {
+			continue
+		}
+		filtered = append(filtered, observer)
+	}
+	switch len(filtered) {
+	case 0:
+		return NoOpObserver{}
+	case 1:
+		return filtered[0]
+	default:
+		return joinedObserver(filtered)
+	}
+}
+
 // LLMCallEvent 记录一次 LLM 调用的指标。
 type LLMCallEvent struct {
 	SessionID  string        `json:"session_id"`
@@ -66,3 +86,41 @@ func (NoOpObserver) OnExecutionEvent(_ context.Context, _ ExecutionEvent) {}
 func (NoOpObserver) OnApproval(_ context.Context, _ ApprovalEvent)        {}
 func (NoOpObserver) OnSessionEvent(_ context.Context, _ SessionEvent)     {}
 func (NoOpObserver) OnError(_ context.Context, _ ErrorEvent)              {}
+
+type joinedObserver []Observer
+
+func (o joinedObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
+	for _, observer := range o {
+		observer.OnLLMCall(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
+	for _, observer := range o {
+		observer.OnToolCall(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnExecutionEvent(ctx context.Context, e ExecutionEvent) {
+	for _, observer := range o {
+		observer.OnExecutionEvent(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnApproval(ctx context.Context, e ApprovalEvent) {
+	for _, observer := range o {
+		observer.OnApproval(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnSessionEvent(ctx context.Context, e SessionEvent) {
+	for _, observer := range o {
+		observer.OnSessionEvent(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnError(ctx context.Context, e ErrorEvent) {
+	for _, observer := range o {
+		observer.OnError(ctx, e)
+	}
+}

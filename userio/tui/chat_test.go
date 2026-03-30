@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -217,6 +218,82 @@ func TestSlashCommandSessionsUnavailable(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError {
 		t.Fatalf("expected error kind, got %v", last.kind)
+	}
+}
+
+func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.messages = []chatMessage{
+		{kind: msgUser, content: "old message"},
+		{kind: msgAssistant, content: "old answer"},
+	}
+	m.streaming = true
+	m.finished = true
+	m.result = "done"
+	m.queuedInputs = []string{"queued"}
+	m.textarea.SetValue("/new")
+	m.newSessionFn = func() (string, error) {
+		return "Previous session sess_1 auto-saved.\nSwitched to new session sess_2.", nil
+	}
+
+	updated, _ := m.handleSlashCommand("/new")
+	if len(updated.messages) != 1 {
+		t.Fatalf("expected transcript reset to one notice, got %d messages", len(updated.messages))
+	}
+	last := updated.messages[0]
+	if last.kind != msgSystem {
+		t.Fatalf("expected system message, got %v", last.kind)
+	}
+	if !strings.Contains(last.content, "Switched to new session sess_2") {
+		t.Fatalf("unexpected /new output: %q", last.content)
+	}
+	if updated.streaming || updated.finished {
+		t.Fatal("expected fresh idle chat state after /new")
+	}
+	if updated.result != "" || len(updated.queuedInputs) != 0 {
+		t.Fatal("expected result and queue reset after /new")
+	}
+	if updated.textarea.Value() != "" {
+		t.Fatalf("expected cleared textarea, got %q", updated.textarea.Value())
+	}
+}
+
+func TestSlashCommandNewBusySessionRejected(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.newSessionFn = func() (string, error) {
+		return "", errors.New("cannot create a new session while a run is active")
+	}
+
+	updated, _ := m.handleSlashCommand("/new")
+	if len(updated.messages) == 0 {
+		t.Fatal("expected rejection message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError {
+		t.Fatalf("expected error kind, got %v", last.kind)
+	}
+	if !strings.Contains(last.content, "run is active") {
+		t.Fatalf("unexpected busy error: %q", last.content)
+	}
+}
+
+func TestHelpIncludesNewCommand(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/help")
+	if len(updated.messages) == 0 {
+		t.Fatal("expected help message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "/new           Create and switch to a fresh session") {
+		t.Fatalf("help missing /new command: %q", last.content)
 	}
 }
 
@@ -437,6 +514,21 @@ func TestSlashAutocompleteHintsAndTabCompletion(t *testing.T) {
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	if !strings.HasPrefix(updated.textarea.Value(), "/skill") && !strings.HasPrefix(updated.textarea.Value(), "/skills") {
 		t.Fatalf("expected tab completion, got %q", updated.textarea.Value())
+	}
+}
+
+func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	m.textarea.SetValue("/n")
+	m.refreshSlashHints()
+	hints := m.currentSlashHints()
+	if !slices.Contains(hints, "/new") {
+		t.Fatalf("expected /new in hints, got %v", hints)
 	}
 }
 

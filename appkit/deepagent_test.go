@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -193,5 +194,63 @@ func TestBuildDeepAgentKernel_DefaultLLMRetryInjected(t *testing.T) {
 	}
 	if time.Duration(llmRetry.FieldByName("InitialDelay").Int()) <= 0 {
 		t.Fatalf("expected positive retry initial delay")
+	}
+}
+
+func TestBuildDeepAgentKernel_CustomLLMGovernanceApplied(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "restricted",
+	}
+	enableRetry := true
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
+		EnableDefaultLLMRetry: &enableRetry,
+		LLMRetryConfig: &retry.Config{
+			MaxRetries:   4,
+			InitialDelay: 5 * time.Millisecond,
+			MaxDelay:     50 * time.Millisecond,
+			Multiplier:   1.5,
+		},
+		LLMBreakerConfig: &retry.BreakerConfig{
+			MaxFailures: 2,
+			ResetAfter:  200 * time.Millisecond,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	kv := reflect.ValueOf(k).Elem()
+	loopCfg := kv.FieldByName("loopCfg")
+	llmRetry := loopCfg.FieldByName("LLMRetry")
+	if llmRetry.FieldByName("MaxRetries").Int() != 4 {
+		t.Fatalf("MaxRetries=%d, want 4", llmRetry.FieldByName("MaxRetries").Int())
+	}
+	if time.Duration(llmRetry.FieldByName("MaxDelay").Int()) != 50*time.Millisecond {
+		t.Fatalf("MaxDelay=%v, want %v", time.Duration(llmRetry.FieldByName("MaxDelay").Int()), 50*time.Millisecond)
+	}
+	if loopCfg.FieldByName("LLMBreaker").IsNil() {
+		t.Fatal("expected LLM breaker to be configured")
+	}
+}
+
+func TestBuildDeepAgentKernel_DisableDefaultLLMRetry(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "restricted",
+	}
+	disableRetry := false
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
+		EnableDefaultLLMRetry: &disableRetry,
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	kv := reflect.ValueOf(k).Elem()
+	loopCfg := kv.FieldByName("loopCfg")
+	llmRetry := loopCfg.FieldByName("LLMRetry")
+	if llmRetry.FieldByName("MaxRetries").Int() != 0 {
+		t.Fatalf("expected default retry disabled, got %d", llmRetry.FieldByName("MaxRetries").Int())
 	}
 }

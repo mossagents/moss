@@ -40,11 +40,12 @@ type Config struct {
 	Model              string
 	Workspace          string
 	Trust              string
+	ApprovalMode       string
 	SessionStoreDir    string
 	InitialSessionID   string
 	BaseURL            string
 	APIKey             string
-	BuildKernel        func(wsDir, trust, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildKernel        func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 	AfterBoot          func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt  func(workspace string) string
 	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
@@ -61,17 +62,21 @@ type kernelReadyMsg struct {
 // agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
 // 使用指针共享，避免 Bubble Tea 值语义问题。
 type agentState struct {
-	k           *kernel.Kernel
-	sess        *session.Session
-	store       session.SessionStore
-	ctx         context.Context
-	cancel      context.CancelFunc
-	runCancel   context.CancelFunc
-	bridge      *BridgeIO
-	trust       string
-	permissions map[string]string
-	mu          sync.Mutex
-	running     bool // 是否正在执行 loop
+	k                  *kernel.Kernel
+	sess               *session.Session
+	store              session.SessionStore
+	ctx                context.Context
+	cancel             context.CancelFunc
+	runCancel          context.CancelFunc
+	bridge             *BridgeIO
+	workspace          string
+	trust              string
+	approvalMode       string
+	buildSystemPrompt  func(workspace string) string
+	buildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
+	permissions        map[string]string
+	mu                 sync.Mutex
+	running            bool // 是否正在执行 loop
 }
 
 func renderSkillsSummary(agent *agentState, workspace string) string {
@@ -147,6 +152,9 @@ func (a *agentState) sessionSummary() string {
 		b.WriteString(fmt.Sprintf("\nLast offload time: %v", v))
 	}
 	b.WriteString(fmt.Sprintf("\nTrust: %s", a.trust))
+	if strings.TrimSpace(a.approvalMode) != "" {
+		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
+	}
 	return b.String()
 }
 
@@ -203,6 +211,88 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	return fmt.Sprintf("Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages)), nil
 }
 
+func (a *agentState) createInteractiveSession() (*session.Session, error) {
+	a.mu.Lock()
+	k := a.k
+	ctx := a.ctx
+	workspace := a.workspace
+	trust := a.trust
+	buildPrompt := a.buildSystemPrompt
+	buildCfg := a.buildSessionConfig
+	a.mu.Unlock()
+	if k == nil {
+		return nil, errors.New("runtime is unavailable")
+	}
+	sysPrompt := buildSystemPrompt(workspace)
+	if buildPrompt != nil {
+		sysPrompt = buildPrompt(workspace)
+	}
+	sessCfg := session.SessionConfig{
+		Goal:         "interactive",
+		Mode:         "interactive",
+		TrustLevel:   trust,
+		MaxSteps:     200,
+		SystemPrompt: sysPrompt,
+	}
+	if buildCfg != nil {
+		sessCfg = buildCfg(workspace, trust, sysPrompt)
+		if sessCfg.SystemPrompt == "" {
+			sessCfg.SystemPrompt = sysPrompt
+		}
+		if sessCfg.TrustLevel == "" {
+			sessCfg.TrustLevel = trust
+		}
+		if sessCfg.Goal == "" {
+			sessCfg.Goal = "interactive"
+		}
+		if sessCfg.Mode == "" {
+			sessCfg.Mode = "interactive"
+		}
+		if sessCfg.MaxSteps == 0 {
+			sessCfg.MaxSteps = 200
+		}
+	}
+	return k.NewSession(ctx, sessCfg)
+}
+
+func (a *agentState) newSession() (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot create a new session while a run is active")
+	}
+	current := a.sess
+	store := a.store
+	ctx := a.ctx
+	a.mu.Unlock()
+
+	var notice string
+	if current != nil && sessionDialogCount(current) > 0 {
+		if store == nil {
+			return "", errors.New("session store is unavailable, cannot auto-save current session before switching")
+		}
+		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if err := store.Save(saveCtx, current); err != nil {
+			return "", fmt.Errorf("save current session %q: %w", current.ID, err)
+		}
+		notice = fmt.Sprintf("Previous session %s auto-saved. Use /session restore %s or /sessions to continue it later.", current.ID, current.ID)
+	}
+
+	next, err := a.createInteractiveSession()
+	if err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	a.sess = next
+	a.mu.Unlock()
+
+	if notice != "" {
+		return fmt.Sprintf("%s\nSwitched to new session %s.", notice, next.ID), nil
+	}
+	return fmt.Sprintf("Started new session %s.", next.ID), nil
+}
+
 func (a *agentState) setPermission(toolName, mode string) (string, error) {
 	toolName = strings.TrimSpace(toolName)
 	mode = strings.ToLower(strings.TrimSpace(mode))
@@ -232,6 +322,9 @@ func (a *agentState) permissionSummary() string {
 	defer a.mu.Unlock()
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Trust: %s\n", a.trust))
+	if strings.TrimSpace(a.approvalMode) != "" {
+		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
+	}
 	if len(a.permissions) == 0 {
 		b.WriteString("Overrides: none")
 		return b.String()
@@ -491,6 +584,19 @@ func (a *agentState) cancelCurrentRun() bool {
 	return true
 }
 
+func sessionDialogCount(sess *session.Session) int {
+	if sess == nil {
+		return 0
+	}
+	count := 0
+	for _, msg := range sess.Messages {
+		if msg.Role != port.RoleSystem {
+			count++
+		}
+	}
+	return count
+}
+
 // appModel 是顶层 Bubble Tea Model。
 type appModel struct {
 	state    appState
@@ -545,6 +651,9 @@ func (m appModel) Init() tea.Cmd {
 		if strings.TrimSpace(m.config.Trust) != "" {
 			m.chat.trust = m.config.Trust
 		}
+		if strings.TrimSpace(m.config.ApprovalMode) != "" {
+			m.chat.approvalMode = m.config.ApprovalMode
+		}
 		return tea.Batch(m.chat.Init(), m.initCmd)
 	}
 	return m.welcome.Init()
@@ -594,6 +703,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Model = cfg.Model
 		m.config.Workspace = cfg.Workspace
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		m.chat.approvalMode = m.config.ApprovalMode
 		m.state = stateChat
 
 		// 将当前窗口尺寸传递给 chatModel，避免它因未收到 WindowSizeMsg 而卡在 "加载中"
@@ -639,6 +749,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.provider = identity.Label()
 		m.chat.model = sm.model
 		m.chat.trust = m.config.Trust
+		m.chat.approvalMode = m.config.ApprovalMode
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
 
@@ -659,6 +770,26 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Workspace:    m.config.Workspace,
 		}
 		m.chat.trust = st.trust
+		m.chat.approvalMode = m.config.ApprovalMode
+		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+	}
+
+	if st, ok := msg.(switchApprovalMsg); ok {
+		if m.agent != nil && m.agent.cancel != nil {
+			m.agent.cancel()
+		}
+		m.agent = nil
+		m.chat.sendFn = nil
+		m.config.ApprovalMode = st.mode
+		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
+		wCfg := WelcomeConfig{
+			APIType:      identity.APIType,
+			ProviderName: identity.Name,
+			Provider:     identity.Provider,
+			Model:        m.config.Model,
+			Workspace:    m.config.Workspace,
+		}
+		m.chat.approvalMode = st.mode
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
 
@@ -671,12 +802,16 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chat.cancelRunFn = agent.cancelCurrentRun
 		m.chat.trust = m.config.Trust
+		m.chat.approvalMode = m.config.ApprovalMode
 		m.chat.sessionInfoFn = agent.sessionSummary
 		m.chat.sessionListFn = func(limit int) (string, error) {
 			return agent.listPersistedSessions(limit)
 		}
 		m.chat.sessionRestoreFn = func(sessionID string) (string, error) {
 			return agent.restoreSession(sessionID)
+		}
+		m.chat.newSessionFn = func() (string, error) {
+			return agent.newSession()
 		}
 		m.chat.offloadFn = func(keepRecent int, note string) (string, error) {
 			return agent.offloadContext(keepRecent, note)
@@ -714,6 +849,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.config.Trust != "" {
 			connInfo += " [" + m.config.Trust + "]"
 		}
+		if strings.TrimSpace(m.config.ApprovalMode) != "" {
+			connInfo += " {" + m.config.ApprovalMode + "}"
+		}
 		m.chat.streaming = false
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgSystem,
@@ -733,7 +871,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 
-		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
+		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 		if err != nil {
 			return sessionResultMsg{err: fmt.Errorf("failed to initialize kernel: %w", err)}
 		}
@@ -809,14 +947,18 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		}
 
 		agent := &agentState{
-			k:           k,
-			sess:        sess,
-			store:       store,
-			ctx:         ctx,
-			cancel:      cancel,
-			bridge:      bridge,
-			trust:       cfg.Trust,
-			permissions: map[string]string{},
+			k:                  k,
+			sess:               sess,
+			store:              store,
+			ctx:                ctx,
+			cancel:             cancel,
+			bridge:             bridge,
+			workspace:          wCfg.Workspace,
+			trust:              cfg.Trust,
+			approvalMode:       cfg.ApprovalMode,
+			buildSystemPrompt:  cfg.BuildSystemPrompt,
+			buildSessionConfig: cfg.BuildSessionConfig,
+			permissions:        map[string]string{},
 		}
 
 		k.Middleware().Use(agent.permissionOverrideMiddleware())

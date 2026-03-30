@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/skill"
 )
 
 func SessionStoreDir() string {
@@ -93,12 +95,13 @@ func SnapshotCountsBySession(ctx context.Context, workspace string) (map[string]
 }
 
 type DoctorReport struct {
-	App       string             `json:"app"`
-	Timestamp string             `json:"timestamp"`
-	Workspace string             `json:"workspace"`
-	Config    DoctorConfigReport `json:"config"`
-	Paths     DoctorPathsReport  `json:"paths"`
-	Health    DoctorHealthReport `json:"health"`
+	App        string                 `json:"app"`
+	Timestamp  string                 `json:"timestamp"`
+	Workspace  string                 `json:"workspace"`
+	Config     DoctorConfigReport     `json:"config"`
+	Governance DoctorGovernanceReport `json:"governance"`
+	Paths      DoctorPathsReport      `json:"paths"`
+	Health     DoctorHealthReport     `json:"health"`
 }
 
 type DoctorConfigReport struct {
@@ -115,6 +118,7 @@ type DoctorConfigReport struct {
 	BaseURLSet    bool     `json:"base_url_set"`
 	APIKeySet     bool     `json:"api_key_set"`
 	Trust         string   `json:"trust"`
+	ApprovalMode  string   `json:"approval_mode"`
 }
 
 type DoctorPathsReport struct {
@@ -123,14 +127,21 @@ type DoctorPathsReport struct {
 	MemoryDir          PathStatus `json:"memory_dir"`
 	TaskRuntimeDir     PathStatus `json:"task_runtime_dir"`
 	WorkspaceIsolation PathStatus `json:"workspace_isolation_dir"`
+	AuditLog           PathStatus `json:"audit_log"`
+	DebugLog           PathStatus `json:"debug_log"`
+}
+
+type DoctorGovernanceReport struct {
+	Model GovernanceReport `json:"model"`
 }
 
 type DoctorHealthReport struct {
-	Sessions  DoctorSessionHealth   `json:"sessions"`
-	Tasks     DoctorTaskHealth      `json:"tasks"`
-	Workspace DoctorWorkspaceHealth `json:"workspace"`
-	Repo      DoctorRepoHealth      `json:"repo"`
-	Snapshots DoctorSnapshotHealth  `json:"snapshots"`
+	Sessions   DoctorSessionHealth   `json:"sessions"`
+	Tasks      DoctorTaskHealth      `json:"tasks"`
+	Workspace  DoctorWorkspaceHealth `json:"workspace"`
+	Repo       DoctorRepoHealth      `json:"repo"`
+	Snapshots  DoctorSnapshotHealth  `json:"snapshots"`
+	Extensions DoctorExtensionHealth `json:"extensions"`
 }
 
 type PathStatus struct {
@@ -175,7 +186,17 @@ type DoctorSnapshotHealth struct {
 	Error              string `json:"error,omitempty"`
 }
 
-func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string) DoctorReport {
+type DoctorExtensionHealth struct {
+	Configured       int    `json:"configured"`
+	Enabled          int    `json:"enabled"`
+	Disabled         int    `json:"disabled"`
+	MCPServers       int    `json:"mcp_servers"`
+	PromptSkills     int    `json:"prompt_skills"`
+	DiscoveredSkills int    `json:"discovered_skills"`
+	Error            string `json:"error,omitempty"`
+}
+
+func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspace)
 	report := DoctorReport{
@@ -196,6 +217,10 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			BaseURLSet:    strings.TrimSpace(flags.BaseURL) != "",
 			APIKeySet:     strings.TrimSpace(flags.APIKey) != "",
 			Trust:         flags.Trust,
+			ApprovalMode:  NormalizeApprovalMode(approvalMode),
+		},
+		Governance: DoctorGovernanceReport{
+			Model: BuildGovernanceReport(workspace, governanceCfg),
 		},
 		Paths: DoctorPathsReport{
 			AppDir:             checkWritableDir(appconfig.AppDir()),
@@ -203,6 +228,8 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			MemoryDir:          checkWritableDir(MemoryDir()),
 			TaskRuntimeDir:     checkWritableDir(TaskRuntimeDir()),
 			WorkspaceIsolation: checkWritableDir(WorkspaceIsolationDir()),
+			AuditLog:           checkWritableFile(AuditLogPath()),
+			DebugLog:           checkWritableFile(DebugLogPath()),
 		},
 	}
 
@@ -230,6 +257,30 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 		report.Health.Workspace = DoctorWorkspaceHealth{Type: "local", Ready: false, Error: err.Error()}
 	} else {
 		report.Health.Workspace = DoctorWorkspaceHealth{Type: "local", Ready: true}
+	}
+
+	globalCfg, globalErr := appconfig.LoadGlobalConfig()
+	projectCfg, projectErr := appconfig.LoadConfig(projectConfigPath)
+	if globalErr != nil {
+		report.Health.Extensions.Error = globalErr.Error()
+	} else if projectErr != nil {
+		report.Health.Extensions.Error = projectErr.Error()
+	} else {
+		merged := appconfig.MergeConfigs(globalCfg, projectCfg)
+		report.Health.Extensions.Configured = len(merged.Skills)
+		for _, sc := range merged.Skills {
+			if sc.IsEnabled() {
+				report.Health.Extensions.Enabled++
+			} else {
+				report.Health.Extensions.Disabled++
+			}
+			if sc.IsMCP() {
+				report.Health.Extensions.MCPServers++
+			} else {
+				report.Health.Extensions.PromptSkills++
+			}
+		}
+		report.Health.Extensions.DiscoveredSkills = len(skill.DiscoverSkillManifests(workspace))
 	}
 
 	capture, err := sandbox.NewGitRepoStateCapture(workspace).Capture(ctx)
@@ -285,11 +336,32 @@ func RenderDoctorReport(report DoctorReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "mosscode doctor\n")
 	fmt.Fprintf(&b, "Workspace: %s\n", report.Workspace)
-	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s\n", report.Config.Name, firstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust)
+	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s\n",
+		report.Config.Name, firstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
 	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t\n",
 		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists)
+	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s router=%s",
+		report.Governance.Model.RetryEnabled,
+		report.Governance.Model.RetryMaxRetries,
+		firstNonEmpty(report.Governance.Model.RetryInitialDelay, "-"),
+		firstNonEmpty(report.Governance.Model.RetryMaxDelay, "-"),
+		report.Governance.Model.BreakerEnabled,
+		report.Governance.Model.BreakerMaxFailures,
+		firstNonEmpty(report.Governance.Model.BreakerResetAfter, "-"),
+		firstNonEmpty(report.Governance.Model.RouterConfig, "(disabled)"))
+	if report.Governance.Model.RouterEnabled {
+		fmt.Fprintf(&b, " default=%s models=%d",
+			firstNonEmpty(report.Governance.Model.RouterDefaultModel, "(unspecified)"),
+			report.Governance.Model.RouterModels)
+	}
+	if report.Governance.Model.Error != "" {
+		fmt.Fprintf(&b, " err=%s", report.Governance.Model.Error)
+	}
+	b.WriteString("\n")
 	fmt.Fprintf(&b, "Session store: %s\n", renderPathStatus(report.Paths.SessionStoreDir))
 	fmt.Fprintf(&b, "Memory dir: %s\n", renderPathStatus(report.Paths.MemoryDir))
+	fmt.Fprintf(&b, "Audit log: %s\n", renderPathStatus(report.Paths.AuditLog))
+	fmt.Fprintf(&b, "Debug log: %s\n", renderPathStatus(report.Paths.DebugLog))
 	fmt.Fprintf(&b, "Task runtime: type=%s ready=%t", report.Health.Tasks.Type, report.Health.Tasks.Ready)
 	if report.Health.Tasks.Error != "" {
 		fmt.Fprintf(&b, " err=%s", report.Health.Tasks.Error)
@@ -303,6 +375,13 @@ func RenderDoctorReport(report DoctorReport) string {
 	fmt.Fprintf(&b, "Sessions: recoverable=%d total=%d", report.Health.Sessions.Recoverable, report.Health.Sessions.Total)
 	if report.Health.Sessions.Error != "" {
 		fmt.Fprintf(&b, " err=%s", report.Health.Sessions.Error)
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "Extensions: configured=%d enabled=%d disabled=%d mcp=%d prompt=%d discovered=%d",
+		report.Health.Extensions.Configured, report.Health.Extensions.Enabled, report.Health.Extensions.Disabled,
+		report.Health.Extensions.MCPServers, report.Health.Extensions.PromptSkills, report.Health.Extensions.DiscoveredSkills)
+	if report.Health.Extensions.Error != "" {
+		fmt.Fprintf(&b, " err=%s", report.Health.Extensions.Error)
 	}
 	b.WriteString("\n")
 	if report.Health.Repo.Available {
@@ -429,8 +508,8 @@ func RenderReviewReport(report ReviewReport) string {
 		}
 		b.WriteString("Snapshots:\n")
 		for _, snapshot := range report.Snapshots {
-			fmt.Fprintf(&b, "- %s | head=%s | patches=%d | session=%s | note=%s\n",
-				snapshot.ID, firstNonEmpty(snapshot.Head, "(none)"), snapshot.PatchCount, firstNonEmpty(snapshot.SessionID, "(none)"), firstNonEmpty(snapshot.Note, "(none)"))
+			fmt.Fprintf(&b, "- %s | created=%s | head=%s | patches=%d | session=%s | note=%s\n",
+				snapshot.ID, snapshot.CreatedAt.UTC().Format(time.RFC3339), firstNonEmpty(snapshot.Head, "(none)"), snapshot.PatchCount, firstNonEmpty(snapshot.SessionID, "(none)"), firstNonEmpty(snapshot.Note, "(none)"))
 		}
 	case "snapshot":
 		if report.Snapshot == nil {
@@ -467,6 +546,9 @@ func summarizeSnapshots(items []port.WorktreeSnapshot) []ReviewSnapshotSummary {
 	for _, item := range items {
 		out = append(out, SummarizeSnapshot(item))
 	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
 	return out
 }
 
@@ -516,6 +598,29 @@ func checkWritableDir(path string) PathStatus {
 	name := f.Name()
 	_ = f.Close()
 	_ = os.Remove(name)
+	return status
+}
+
+func checkWritableFile(path string) PathStatus {
+	status := PathStatus{Path: path}
+	if strings.TrimSpace(path) == "" {
+		status.Error = "path is empty"
+		return status
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Exists = pathExists(path)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		status.Error = err.Error()
+		return status
+	}
+	status.Exists = true
+	status.Writable = true
+	_ = f.Close()
 	return status
 }
 

@@ -204,6 +204,16 @@ func (k *Kernel) LLM() port.LLM {
 	return k.llm
 }
 
+// SetLLM 在构建后更新默认模型端口。
+func (k *Kernel) SetLLM(llm port.LLM) {
+	k.llm = llm
+}
+
+// SetObserver 在构建后更新运行时事件观察者。
+func (k *Kernel) SetObserver(observer port.Observer) {
+	k.observer = observer
+}
+
 // Sandbox 返回沙箱抽象（可能为 nil）。
 func (k *Kernel) Sandbox() sandbox.Sandbox {
 	return k.sandbox

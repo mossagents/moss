@@ -32,8 +32,8 @@ var defaultSystemPromptTemplate string
 const appName = "mosswriter"
 
 type config struct {
-	flags *appkit.AppFlags
-	goal  string
+	flags  *appkit.AppFlags
+	prompt string
 }
 
 type subagentFileConfig struct {
@@ -52,7 +52,7 @@ func main() {
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	if strings.TrimSpace(cfg.goal) != "" {
+	if strings.TrimSpace(cfg.prompt) != "" {
 		if err := runOneShot(ctx, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
@@ -71,7 +71,8 @@ func parseFlags() *config {
 	fs := flag.NewFlagSet(appName, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	appkit.BindAppFlags(fs, cfg.flags)
-	fs.StringVar(&cfg.goal, "goal", "", "Run one-shot content creation for a single request")
+	fs.StringVar(&cfg.prompt, "prompt", "", "Run one-shot content creation for a single request")
+	fs.StringVar(&cfg.prompt, "p", cfg.prompt, "Shorthand for --prompt")
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		if err == flag.ErrHelp {
 			printUsage()
@@ -93,7 +94,7 @@ Usage:
   mosswriter [flags]
 
 Flags:
-  --goal        Run one-shot content creation for a single request
+  --prompt, -p  Run one-shot content creation for a single request
   --provider    LLM provider: claude|openai
   --model       Model name
   --workspace   Workspace directory (default: ".")
@@ -113,7 +114,7 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
@@ -160,13 +161,13 @@ func runOneShot(ctx context.Context, cfg *config) error {
 			"Mode":      "one-shot",
 			"Trust":     cfg.flags.Trust,
 			"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
-			"Goal":      cfg.goal,
+			"Prompt":    cfg.prompt,
 		},
 		"Uses deepagent defaults plus content-writing skills, delegated subagents, and writing utilities.",
 	)
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:         cfg.goal,
+		Goal:         cfg.prompt,
 		Mode:         "oneshot",
 		TrustLevel:   cfg.flags.Trust,
 		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace),
@@ -175,7 +176,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: cfg.goal})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: cfg.prompt})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {

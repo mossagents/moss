@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ const (
 type chatMessage struct {
 	kind    msgKind
 	content string
+	meta    map[string]any
 }
 
 var markdownRendererCache sync.Map // map[int]*glamour.TermRenderer
@@ -50,17 +52,17 @@ func renderMessage(m chatMessage, width int) string {
 		return systemStyle.Render(fmt.Sprintf("\n  ● %s", renderMarkdown(m.content, maxContent)))
 
 	case msgToolStart:
-		return toolLabelStyle.Render(fmt.Sprintf("  🔧 %s", m.content))
+		return renderToolStartMessage(m, maxContent)
 
 	case msgToolResult:
-		text := m.content
-		if len(text) > 200 {
-			text = text[:200] + "..."
-		}
-		return toolResultStyle.Render(fmt.Sprintf("  ✅ %s", renderMarkdown(text, maxContent)))
+		return renderToolResultMessage(m, maxContent)
 
 	case msgToolError:
-		return toolErrorStyle.Render(fmt.Sprintf("  ❌ %s", m.content))
+		if m.meta == nil {
+			m.meta = map[string]any{}
+		}
+		m.meta["is_error"] = true
+		return renderToolResultMessage(m, maxContent)
 
 	case msgProgress:
 		return progressStyle.Render(fmt.Sprintf("  ⏳ %s", m.content))
@@ -123,14 +125,21 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 		m := messages[i]
 		if toolCollapsed && isToolMsg(m.kind) {
 			// 计算连续工具消息数量
-			count := 0
+			msgCount := 0
+			callCount := 0
 			for j := i; j < len(messages) && isToolMsg(messages[j].kind); j++ {
-				count++
+				msgCount++
+				if messages[j].kind == msgToolStart {
+					callCount++
+				}
+			}
+			if callCount == 0 {
+				callCount = max(1, msgCount/2)
 			}
 			b.WriteString(collapsedToolStyle.Render(
-				fmt.Sprintf("  ▶ %d tool calls (Ctrl+O to expand)", count)))
+				fmt.Sprintf("  ▶ %d tool calls (Ctrl+O to expand)", callCount)))
 			b.WriteString("\n")
-			i += count
+			i += msgCount
 		} else {
 			b.WriteString(renderMessage(m, width))
 			b.WriteString("\n")
@@ -138,6 +147,111 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 		}
 	}
 	return b.String()
+}
+
+func renderToolStartMessage(m chatMessage, width int) string {
+	toolName := toolMetaString(m, "tool", m.content)
+	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  🔧 %s", toolName))}
+	var metaParts []string
+	if risk := toolMetaString(m, "risk", ""); risk != "" {
+		metaParts = append(metaParts, "risk="+risk)
+	}
+	if callID := toolMetaString(m, "call_id", ""); callID != "" {
+		metaParts = append(metaParts, "id="+callID)
+	}
+	if len(metaParts) > 0 {
+		lines = append(lines, mutedStyle.Render("     "+strings.Join(metaParts, " · ")))
+	}
+	if args := toolMetaString(m, "args_preview", ""); args != "" {
+		lines = append(lines, mutedStyle.Render(indentBlock(wrapText("args: "+args, max(20, width-5)), "     ")))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderToolResultMessage(m chatMessage, width int) string {
+	isErr, _ := m.meta["is_error"].(bool)
+	style := toolResultStyle
+	icon := "✅"
+	if isErr {
+		style = toolErrorStyle
+		icon = "❌"
+	}
+	toolName := toolMetaString(m, "tool", "tool")
+	header := fmt.Sprintf("  %s %s", icon, toolName)
+	if dur := toolMetaDuration(m.meta["duration_ms"]); dur > 0 {
+		header += fmt.Sprintf(" · %dms", dur)
+	}
+	lines := []string{style.Render(header)}
+	body := renderToolBody(m.content, max(20, width-5))
+	if body != "" {
+		lines = append(lines, indentBlock(body, "     "))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderToolBody(content string, width int) string {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return ""
+	}
+	if len(text) > 320 {
+		text = text[:320] + "..."
+	}
+	if looksStructured(text) {
+		return wrapText(text, width)
+	}
+	return renderMarkdown(text, width)
+}
+
+func looksStructured(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return false
+	}
+	if json.Valid([]byte(trimmed)) {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
+}
+
+func indentBlock(content, indent string) string {
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	for i, line := range lines {
+		lines[i] = indent + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func toolMetaString(m chatMessage, key, fallback string) string {
+	return metaString(m.meta, key, fallback)
+}
+
+func metaString(meta map[string]any, key, fallback string) string {
+	if meta == nil {
+		return fallback
+	}
+	value, _ := meta[key].(string)
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func toolMetaDuration(v any) int64 {
+	switch value := v.(type) {
+	case int:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
 }
 
 // wrapText 简单的文本换行。

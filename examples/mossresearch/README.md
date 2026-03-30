@@ -16,7 +16,7 @@
 - `researcher` 子 agent 负责聚焦式网页搜索与网页阅读
 - 将研究请求写入 `./.mossresearch/research_request.md`
 - 将最终报告写入 `./.mossresearch/final_report.md`
-- 支持多轮 TUI，也支持 `--goal` one-shot
+- 支持多轮 TUI，也支持 `--prompt` one-shot
 
 ## 运行
 
@@ -29,7 +29,8 @@ go run .
 
 ```bash
 go run . --provider openai --model gpt-4o
-go run . --goal "Compare local-first note-taking apps for engineering teams"
+go run . --prompt "Compare local-first note-taking apps for engineering teams"
+go run . -p "Compare local-first note-taking apps for engineering teams"
 go run . --trust restricted
 ```
 
