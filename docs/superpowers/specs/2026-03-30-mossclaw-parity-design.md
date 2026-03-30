@@ -39,10 +39,13 @@
 - 引入可靠投递队列：失败重试 + 指数退避 + 落盘恢复 + 死信
 - 在 `mossclaw` 中将用户输入路径与调度任务路径接入 lane + delivery
 
-#### 关键接口（草案）
+#### 关键接口（冻结契约）
 
+- `type Task func(context.Context) error`
+- `type Future interface { Wait(context.Context) error }`
+- `type OutboundMessage struct { MessageID string; Lane string; Payload []byte; Meta map[string]string }`
 - `type LaneQueue interface { Enqueue(lane string, fn Task) Future; Stats() LaneStats }`
-- `type DeliveryQueue interface { Publish(msg OutboundMessage) error; Start(ctx); Stop(ctx) error; Recover(ctx) error }`
+- `type DeliveryQueue interface { Publish(msg OutboundMessage) error; Recover(ctx context.Context) error; Start(ctx context.Context) error; Stop(ctx context.Context) error }`
 - `type RetryPolicy interface { ShouldRetry(error) bool; NextDelay(attempt int) time.Duration }`
 
 #### 接口契约（P0 必须明确）
@@ -53,6 +56,7 @@
   - 返回 `Future` 必须承载任务结果或错误，不允许丢失错误。
 - `DeliveryQueue.Start/Stop/Recover`：
   - `Start` 幂等；重复调用不应重复启动 worker。
+  - `Start` 返回错误时必须阻止服务进入就绪状态（失败可传播到启动入口）。
   - `Stop` 幂等；应等待 in-flight 任务在可配置超时内收敛。
   - `Recover` 仅允许在 `Start` 前执行；若重复执行应返回明确错误。
 - `Publish`：
@@ -81,6 +85,9 @@
     - `delivered`/`deadlettered` 视为终态，不再重放。
     - 其余状态按 `next_retry_at` 重入内存队列。
   - 当 `queue.jsonl` 超过阈值（默认 128MB）触发 compaction，写出仅含“未终态”快照。
+  - compaction 原子性：
+    - 先写 `queue.compact.tmp`，`fsync` 后再原子 `rename` 到 `queue.jsonl`。
+    - 发生崩溃时若存在 `.tmp`，下次启动优先丢弃 `.tmp` 并使用旧 `queue.jsonl` 重试 compaction。
 - 恢复策略：
   - 启动时逐行读取 `queue.jsonl` 重建内存队列。
   - 单条损坏记录：写入 `recovery_errors.log` 并跳过。
@@ -120,8 +127,12 @@
 
 #### 关键接口（草案）
 
+- `type InboundMeta struct { Channel string; AccountID string; GuildID string; PeerID string }`
+- `type Rule struct { Tier int; Priority int; AgentID string }`
+- `type InboundSink interface { Push(ctx context.Context, msg InboundMessage) error }`
+- `type InboundMessage struct { Meta InboundMeta; Text string; MessageID string }`
 - `type Router interface { Resolve(meta InboundMeta) (agentID string, sessionKey string, matched Rule, err error) }`
-- `type ChannelAdapter interface { Name() string; Start(ctx, sink InboundSink, onError func(error)) error; Stop(ctx) error }`
+- `type ChannelAdapter interface { Name() string; Start(ctx context.Context, sink InboundSink, onError func(error)) error; Stop(ctx context.Context) error }`
 
 #### 路由规则与 session key 规范（P1）
 
@@ -144,7 +155,7 @@
 - 读取失败时应调用 `onError(err)`，并按 backoff 自动重连（默认 backoff：100ms 起，2x 增长，上限 5s）。
 - 若 sink 背压（队列满）：
   - 先重试入队（短退避，默认 3 次；100ms/200ms/400ms），
-  - 超过阈值后返回明确丢弃错误并计数，不得静默丢弃。
+  - 超过阈值后通过 `onError(ErrBackpressureDrop)` 上报并计数，不得静默丢弃。
 - `Stop` 必须在超时内终止接收循环并释放资源。
 
 #### 验收标准
@@ -166,6 +177,10 @@
 - 模型调用层：仅对可重试错误（超时、5xx、限流）重试；最大重试默认 3。
 - 工具调用层：仅对声明可重试工具生效；副作用工具默认不重试。
 - 投递层：沿用 P0 delivery 策略并可覆盖最大重试次数。
+- 重试预算与取消优先级：
+  - 单请求总预算默认 8 次（跨三层共享）；任一层重试会消耗统一预算。
+  - 上下文取消（`ctx.Done`）优先级最高，触发后立即停止所有层重试。
+  - 当预算耗尽，返回 `ErrRetryBudgetExceeded` 并附带各层已用次数。
 - 认证轮换：
   - profile 顺序：`primary -> secondary -> tertiary`。
   - 当前 profile 失败达到阈值后切换下一个。
