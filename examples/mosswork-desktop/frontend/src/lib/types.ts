@@ -34,6 +34,15 @@ export interface AskData {
   type: string;
   prompt: string;
   options?: string[];
+  approval?: {
+    id: string;
+    kind: string;
+    session_id?: string;
+    tool_name?: string;
+    risk?: string;
+    prompt: string;
+    reason?: string;
+  };
   meta?: Record<string, any>;
 }
 

@@ -22,7 +22,15 @@ func (n *NoOpIO) Send(_ context.Context, _ OutputMessage) error {
 func (n *NoOpIO) Ask(_ context.Context, req InputRequest) (InputResponse, error) {
 	switch req.Type {
 	case InputConfirm:
-		return InputResponse{Approved: false}, nil
+		resp := InputResponse{Approved: false}
+		if req.Approval != nil {
+			resp.Decision = &ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  false,
+				Source:    "noop",
+			}
+		}
+		return resp, nil
 	case InputSelect:
 		if len(req.Options) > 0 {
 			return InputResponse{Selected: 0}, nil
@@ -98,7 +106,15 @@ func (p *PrintfIO) Ask(_ context.Context, req InputRequest) (InputResponse, erro
 	fmt.Fprintln(p.w, req.Prompt)
 	switch req.Type {
 	case InputConfirm:
-		return InputResponse{Approved: true}, nil
+		resp := InputResponse{Approved: true}
+		if req.Approval != nil {
+			resp.Decision = &ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  true,
+				Source:    "printf",
+			}
+		}
+		return resp, nil
 	case InputSelect:
 		return InputResponse{Selected: 0}, nil
 	case InputForm:
@@ -164,7 +180,15 @@ func (b *BufferIO) Ask(_ context.Context, req InputRequest) (InputResponse, erro
 
 	switch req.Type {
 	case InputConfirm:
-		return InputResponse{Approved: true}, nil
+		resp := InputResponse{Approved: true}
+		if req.Approval != nil {
+			resp.Decision = &ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  true,
+				Source:    "buffer",
+			}
+		}
+		return resp, nil
 	case InputSelect:
 		return InputResponse{Selected: 0}, nil
 	case InputForm:

@@ -80,6 +80,31 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	})
 }
 
+func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
+	data := map[string]any{
+		"id":           e.Request.ID,
+		"kind":         e.Request.Kind,
+		"tool":         e.Request.ToolName,
+		"risk":         e.Request.Risk,
+		"reason":       e.Request.Reason,
+		"requested_at": e.Request.RequestedAt.UTC().Format(time.RFC3339),
+	}
+	if e.Decision != nil {
+		data["approved"] = e.Decision.Approved
+		data["decision_source"] = e.Decision.Source
+		data["decided_at"] = e.Decision.DecidedAt.UTC().Format(time.RFC3339)
+		if e.Decision.Reason != "" {
+			data["decision_reason"] = e.Decision.Reason
+		}
+	}
+	a.write(auditEntry{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Type:      "approval_" + e.Type,
+		SessionID: e.SessionID,
+		Data:      data,
+	})
+}
+
 func (a *AuditLogger) OnSessionEvent(_ context.Context, e port.SessionEvent) {
 	a.write(auditEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),

@@ -44,13 +44,26 @@ func (c *cliUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputRes
 	reader := bufio.NewReader(c.reader)
 	switch req.Type {
 	case port.InputConfirm:
-		fmt.Fprintf(c.writer, "%s [y/N]: ", req.Prompt)
+		prompt := req.Prompt
+		if req.Approval != nil && req.Approval.ToolName != "" {
+			prompt = fmt.Sprintf("%s (tool=%s risk=%s)", req.Prompt, req.Approval.ToolName, req.Approval.Risk)
+		}
+		fmt.Fprintf(c.writer, "%s [y/N]: ", prompt)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return port.InputResponse{}, err
 		}
 		line = strings.TrimSpace(strings.ToLower(line))
-		return port.InputResponse{Approved: line == "y" || line == "yes"}, nil
+		approved := line == "y" || line == "yes"
+		var decision *port.ApprovalDecision
+		if req.Approval != nil {
+			decision = &port.ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  approved,
+				Source:    "cli",
+			}
+		}
+		return port.InputResponse{Approved: approved, Decision: decision}, nil
 
 	case port.InputSelect:
 		for i, opt := range req.Options {

@@ -24,13 +24,14 @@ const (
 
 // Context 携带当前执行阶段的上下文信息。
 type Context struct {
-	Phase   Phase
-	Session *session.Session
-	Tool    *tool.ToolSpec  // 仅 tool 相关 phase
-	Input   json.RawMessage // 工具输入（仅 BeforeToolCall）
-	Result  json.RawMessage // 工具结果（仅 AfterToolCall）
-	Error   error           // 错误信息（仅 OnError）
-	IO      port.UserIO     // 用户交互接口
+	Phase    Phase
+	Session  *session.Session
+	Tool     *tool.ToolSpec  // 仅 tool 相关 phase
+	Input    json.RawMessage // 工具输入（仅 BeforeToolCall）
+	Result   json.RawMessage // 工具结果（仅 AfterToolCall）
+	Error    error           // 错误信息（仅 OnError）
+	IO       port.UserIO     // 用户交互接口
+	Observer port.Observer   // 运行事件观察者
 }
 
 // Next 调用链中的下一个 middleware。

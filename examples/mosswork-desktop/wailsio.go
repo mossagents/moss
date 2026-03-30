@@ -54,10 +54,11 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 
 func (w *WailsUserIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
 	emitEvent("chat:ask", map[string]any{
-		"type":    string(req.Type),
-		"prompt":  req.Prompt,
-		"options": req.Options,
-		"meta":    req.Meta,
+		"type":     string(req.Type),
+		"prompt":   req.Prompt,
+		"options":  req.Options,
+		"approval": req.Approval,
+		"meta":     req.Meta,
 	})
 
 	select {

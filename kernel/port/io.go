@@ -44,12 +44,12 @@ const (
 type InputFieldType string
 
 const (
-	InputFieldString      InputFieldType = "string"
-	InputFieldBoolean     InputFieldType = "boolean"
+	InputFieldString       InputFieldType = "string"
+	InputFieldBoolean      InputFieldType = "boolean"
 	InputFieldSingleSelect InputFieldType = "single_select"
-	InputFieldMultiSelect InputFieldType = "multi_select"
-	InputFieldNumber      InputFieldType = "number"
-	InputFieldInteger     InputFieldType = "integer"
+	InputFieldMultiSelect  InputFieldType = "multi_select"
+	InputFieldNumber       InputFieldType = "number"
+	InputFieldInteger      InputFieldType = "integer"
 )
 
 // InputField 描述 InputForm 中的单个字段。
@@ -65,18 +65,20 @@ type InputField struct {
 
 // InputRequest 是向用户发出的输入请求。
 type InputRequest struct {
-	Type         InputType      `json:"type"`
-	Prompt       string         `json:"prompt"`
-	Options      []string       `json:"options,omitempty"`
-	Fields       []InputField   `json:"fields,omitempty"`
-	ConfirmLabel string         `json:"confirm_label,omitempty"`
-	Meta         map[string]any `json:"meta,omitempty"`
+	Type         InputType        `json:"type"`
+	Prompt       string           `json:"prompt"`
+	Options      []string         `json:"options,omitempty"`
+	Fields       []InputField     `json:"fields,omitempty"`
+	ConfirmLabel string           `json:"confirm_label,omitempty"`
+	Approval     *ApprovalRequest `json:"approval,omitempty"`
+	Meta         map[string]any   `json:"meta,omitempty"`
 }
 
 // InputResponse 是用户对输入请求的回复。
 type InputResponse struct {
-	Value    string `json:"value,omitempty"`
-	Selected int    `json:"selected,omitempty"`
-	Approved bool   `json:"approved,omitempty"`
-	Form     map[string]any `json:"form,omitempty"`
+	Value    string            `json:"value,omitempty"`
+	Selected int               `json:"selected,omitempty"`
+	Approved bool              `json:"approved,omitempty"`
+	Decision *ApprovalDecision `json:"decision,omitempty"`
+	Form     map[string]any    `json:"form,omitempty"`
 }

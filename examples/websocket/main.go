@@ -123,10 +123,12 @@ func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websock
 // ── WebSocket 消息协议 ──────────────────────────────
 
 type wsMsg struct {
-	Type    string   `json:"type"`               // user, assistant, system, error, stream, stream_end, tool_start, tool_result, ask
-	Content string   `json:"content"`            // 消息内容
-	AskType string   `json:"ask_type,omitempty"` // confirm, select, free_text
-	Options []string `json:"options,omitempty"`  // select 选项
+	Type     string                `json:"type"`               // user, assistant, system, error, stream, stream_end, tool_start, tool_result, ask
+	Content  string                `json:"content"`            // 消息内容
+	AskType  string                `json:"ask_type,omitempty"` // confirm, select, free_text
+	Options  []string              `json:"options,omitempty"`  // select 选项
+	Meta     map[string]any        `json:"meta,omitempty"`
+	Approval *port.ApprovalRequest `json:"approval,omitempty"`
 }
 
 // ── WebSocket UserIO 实现 ───────────────────────────
@@ -168,10 +170,12 @@ func (w *WebSocketIO) Ask(_ context.Context, req port.InputRequest) (port.InputR
 	w.mu.Lock()
 	askType := string(req.Type)
 	err := websocket.JSON.Send(w.conn, wsMsg{
-		Type:    "ask",
-		Content: req.Prompt,
-		AskType: askType,
-		Options: req.Options,
+		Type:     "ask",
+		Content:  req.Prompt,
+		AskType:  askType,
+		Options:  req.Options,
+		Meta:     req.Meta,
+		Approval: req.Approval,
 	})
 	w.mu.Unlock()
 	if err != nil {
@@ -187,6 +191,13 @@ func (w *WebSocketIO) Ask(_ context.Context, req port.InputRequest) (port.InputR
 	resp := port.InputResponse{Value: reply.Content}
 	if req.Type == port.InputConfirm {
 		resp.Approved = reply.Content == "y" || reply.Content == "yes"
+		if req.Approval != nil {
+			resp.Decision = &port.ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  resp.Approved,
+				Source:    "websocket",
+			}
+		}
 	}
 	return resp, nil
 }

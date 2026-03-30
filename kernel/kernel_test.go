@@ -136,6 +136,16 @@ func TestKernelIntegration(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
+	if len(io.Asked) == 0 {
+		t.Fatal("expected approval prompt to be asked")
+	}
+	if io.Asked[0].Approval == nil {
+		t.Fatal("expected structured approval request on confirm prompt")
+	}
+	if io.Asked[0].Approval.ToolName != "write_file" {
+		t.Fatalf("expected approval for write_file, got %+v", io.Asked[0].Approval)
+	}
+
 	// 验证结果
 	if !result.Success {
 		t.Fatalf("expected success, got error: %s", result.Error)

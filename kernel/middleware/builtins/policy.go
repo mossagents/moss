@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
@@ -45,15 +47,39 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 			return ErrDenied
 		case RequireApproval:
 			if mc.IO != nil {
+				approval := buildApprovalRequest(mc, "policy requires approval")
+				observer := mc.Observer
+				if observer == nil {
+					observer = port.NoOpObserver{}
+				}
+				observer.OnApproval(ctx, port.ApprovalEvent{
+					SessionID: approval.SessionID,
+					Type:      "requested",
+					Request:   *approval,
+				})
 				resp, err := mc.IO.Ask(ctx, port.InputRequest{
-					Type:   port.InputConfirm,
-					Prompt: "Allow tool " + mc.Tool.Name + "?",
-					Meta:   map[string]any{"tool": mc.Tool.Name, "input": mc.Input},
+					Type:     port.InputConfirm,
+					Prompt:   approval.Prompt,
+					Approval: approval,
+					Meta: map[string]any{
+						"tool":        mc.Tool.Name,
+						"input":       mc.Input,
+						"approval_id": approval.ID,
+						"reason":      approval.Reason,
+						"risk":        approval.Risk,
+					},
 				})
 				if err != nil {
 					return err
 				}
-				if !resp.Approved {
+				resolved := normalizeApprovalDecision(resp, approval)
+				observer.OnApproval(ctx, port.ApprovalEvent{
+					SessionID: approval.SessionID,
+					Type:      "resolved",
+					Request:   *approval,
+					Decision:  resolved,
+				})
+				if !resolved.Approved {
 					return ErrDenied
 				}
 			}
@@ -75,6 +101,51 @@ func severity(d PolicyDecision) int {
 		return 1
 	default:
 		return 0
+	}
+}
+
+func buildApprovalRequest(mc *middleware.Context, reason string) *port.ApprovalRequest {
+	sessionID := ""
+	if mc.Session != nil {
+		sessionID = mc.Session.ID
+	}
+	risk := ""
+	toolName := ""
+	prompt := "Allow requested action?"
+	if mc.Tool != nil {
+		toolName = mc.Tool.Name
+		risk = string(mc.Tool.Risk)
+		prompt = "Allow tool " + mc.Tool.Name + "?"
+	}
+	return &port.ApprovalRequest{
+		ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
+		Kind:        port.ApprovalKindTool,
+		SessionID:   sessionID,
+		ToolName:    toolName,
+		Risk:        risk,
+		Prompt:      prompt,
+		Reason:      reason,
+		Input:       append(json.RawMessage(nil), mc.Input...),
+		RequestedAt: time.Now().UTC(),
+	}
+}
+
+func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalRequest) *port.ApprovalDecision {
+	if resp.Decision != nil {
+		decision := *resp.Decision
+		if decision.RequestID == "" {
+			decision.RequestID = req.ID
+		}
+		if decision.DecidedAt.IsZero() {
+			decision.DecidedAt = time.Now().UTC()
+		}
+		return &decision
+	}
+	return &port.ApprovalDecision{
+		RequestID: req.ID,
+		Approved:  resp.Approved,
+		Source:    "user_io",
+		DecidedAt: time.Now().UTC(),
 	}
 }
 

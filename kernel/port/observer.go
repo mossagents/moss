@@ -13,6 +13,8 @@ type Observer interface {
 	OnLLMCall(ctx context.Context, e LLMCallEvent)
 	// OnToolCall 在工具调用完成后触发（无论成功或失败）。
 	OnToolCall(ctx context.Context, e ToolCallEvent)
+	// OnApproval 在审批请求发起和完成时触发。
+	OnApproval(ctx context.Context, e ApprovalEvent)
 	// OnSessionEvent 在 Session 生命周期事件时触发。
 	OnSessionEvent(ctx context.Context, e SessionEvent)
 	// OnError 在非预期错误发生时触发。
@@ -58,5 +60,6 @@ type NoOpObserver struct{}
 
 func (NoOpObserver) OnLLMCall(_ context.Context, _ LLMCallEvent)      {}
 func (NoOpObserver) OnToolCall(_ context.Context, _ ToolCallEvent)    {}
+func (NoOpObserver) OnApproval(_ context.Context, _ ApprovalEvent)    {}
 func (NoOpObserver) OnSessionEvent(_ context.Context, _ SessionEvent) {}
 func (NoOpObserver) OnError(_ context.Context, _ ErrorEvent)          {}

@@ -158,6 +158,41 @@ func TestAuditLogger_OnSessionEvent(t *testing.T) {
 	}
 }
 
+func TestAuditLogger_OnApproval(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewAuditLogger(&buf)
+
+	logger.OnApproval(context.Background(), port.ApprovalEvent{
+		SessionID: "s3",
+		Type:      "resolved",
+		Request: port.ApprovalRequest{
+			ID:          "approval-1",
+			Kind:        port.ApprovalKindTool,
+			ToolName:    "write_file",
+			Risk:        "high",
+			Reason:      "policy requires approval",
+			RequestedAt: time.Now(),
+		},
+		Decision: &port.ApprovalDecision{
+			RequestID: "approval-1",
+			Approved:  true,
+			Source:    "cli",
+			DecidedAt: time.Now(),
+		},
+	})
+
+	var entry auditEntry
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("parse audit entry: %v", err)
+	}
+	if entry.Type != "approval_resolved" {
+		t.Fatalf("expected approval_resolved, got %s", entry.Type)
+	}
+	if entry.SessionID != "s3" {
+		t.Fatalf("expected session s3, got %s", entry.SessionID)
+	}
+}
+
 // ── RateLimiter ───────────────────────────────────────
 
 func TestRateLimiter_AllowsBurst(t *testing.T) {
@@ -224,4 +259,3 @@ func TestRiskBasedPolicy(t *testing.T) {
 		t.Fatalf("high risk should require approval, got %s", d)
 	}
 }
-

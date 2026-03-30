@@ -67,13 +67,26 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 
 	switch req.Type {
 	case InputConfirm:
-		fmt.Fprintf(c.W, "%s [y/N]: ", req.Prompt)
+		prompt := req.Prompt
+		if req.Approval != nil && req.Approval.ToolName != "" {
+			prompt = fmt.Sprintf("%s (tool=%s risk=%s)", req.Prompt, req.Approval.ToolName, req.Approval.Risk)
+		}
+		fmt.Fprintf(c.W, "%s [y/N]: ", prompt)
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return InputResponse{}, err
 		}
 		answer := strings.TrimSpace(strings.ToLower(line))
-		return InputResponse{Approved: answer == "y" || answer == "yes"}, nil
+		approved := answer == "y" || answer == "yes"
+		var decision *ApprovalDecision
+		if req.Approval != nil {
+			decision = &ApprovalDecision{
+				RequestID: req.Approval.ID,
+				Approved:  approved,
+				Source:    "console",
+			}
+		}
+		return InputResponse{Approved: approved, Decision: decision}, nil
 
 	case InputSelect:
 		for i, opt := range req.Options {

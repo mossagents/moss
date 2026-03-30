@@ -258,13 +258,34 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 				return builtins.ErrDenied
 			case "ask":
 				if mc.IO != nil {
+					approval := &port.ApprovalRequest{
+						ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
+						Kind:        port.ApprovalKindTool,
+						SessionID:   mc.Session.ID,
+						ToolName:    mc.Tool.Name,
+						Risk:        string(mc.Tool.Risk),
+						Prompt:      "Allow tool " + mc.Tool.Name + "?",
+						Reason:      "permission override requires approval",
+						Input:       append(json.RawMessage(nil), mc.Input...),
+						RequestedAt: time.Now().UTC(),
+					}
 					resp, err := mc.IO.Ask(ctx, port.InputRequest{
-						Type:   port.InputConfirm,
-						Prompt: "Allow tool " + mc.Tool.Name + "?",
-						Meta:   map[string]any{"tool": mc.Tool.Name, "input": mc.Input},
+						Type:     port.InputConfirm,
+						Prompt:   approval.Prompt,
+						Approval: approval,
+						Meta: map[string]any{
+							"tool":        mc.Tool.Name,
+							"input":       mc.Input,
+							"approval_id": approval.ID,
+							"reason":      approval.Reason,
+							"risk":        approval.Risk,
+						},
 					})
 					if err != nil {
 						return err
+					}
+					if resp.Decision != nil {
+						resp.Approved = resp.Decision.Approved
 					}
 					if !resp.Approved {
 						return builtins.ErrDenied

@@ -595,11 +595,12 @@ func (l *AgentLoop) runMiddleware(ctx context.Context, phase middleware.Phase, s
 		return nil
 	}
 	mc := &middleware.Context{
-		Session: sess,
-		Tool:    t,
-		Input:   input,
-		Result:  result,
-		IO:      l.IO,
+		Session:  sess,
+		Tool:     t,
+		Input:    input,
+		Result:   result,
+		IO:       l.IO,
+		Observer: l.observer(),
 	}
 	return l.Chain.Run(ctx, phase, mc)
 }
@@ -609,9 +610,10 @@ func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Sessio
 		return
 	}
 	mc := &middleware.Context{
-		Session: sess,
-		Error:   err,
-		IO:      l.IO,
+		Session:  sess,
+		Error:    err,
+		IO:       l.IO,
+		Observer: l.observer(),
 	}
 	l.Chain.Run(ctx, middleware.OnError, mc)
 }
