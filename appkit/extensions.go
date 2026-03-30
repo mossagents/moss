@@ -8,6 +8,7 @@ import (
 
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
+	contribtools "github.com/mossagents/moss/contrib/tools"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -107,7 +108,7 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 // WithJinaTools 装配 Jina Search/Reader 工具。
 func WithJinaTools() Extension {
 	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
-		return runtime.RegisterJinaTools(k.ToolRegistry())
+		return contribtools.RegisterJinaTools(k.ToolRegistry())
 	})
 }
 

@@ -1,6 +1,6 @@
 module github.com/mossagents/moss
 
-go 1.24.2
+go 1.25
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
@@ -10,6 +10,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.45.0
+	github.com/mossagents/moss/contrib/tools v0.0.0
 	github.com/openai/openai-go v1.12.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -60,3 +61,5 @@ require (
 	golang.org/x/term v0.36.0 // indirect
 	golang.org/x/text v0.30.0 // indirect
 )
+
+replace github.com/mossagents/moss/contrib/tools => ./contrib/tools
