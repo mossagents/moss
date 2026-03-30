@@ -29,6 +29,7 @@ type Kernel struct {
 	repoState port.RepoStateCapture
 	patches   port.PatchApply
 	reverts   port.PatchRevert
+	snapshots port.WorktreeSnapshotStore
 	tools     tool.Registry
 	sessions  session.Manager
 	chain     *middleware.Chain
@@ -239,6 +240,11 @@ func (k *Kernel) PatchApply() port.PatchApply {
 // PatchRevert 返回结构化补丁回滚端口（可能为 nil）。
 func (k *Kernel) PatchRevert() port.PatchRevert {
 	return k.reverts
+}
+
+// WorktreeSnapshots 返回 worktree/ghost-state 快照端口（可能为 nil）。
+func (k *Kernel) WorktreeSnapshots() port.WorktreeSnapshotStore {
+	return k.snapshots
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

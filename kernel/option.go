@@ -77,6 +77,11 @@ func WithPatchRevert(revert port.PatchRevert) Option {
 	return func(k *Kernel) { k.reverts = revert }
 }
 
+// WithWorktreeSnapshots 设置 WorktreeSnapshotStore Port。
+func WithWorktreeSnapshots(store port.WorktreeSnapshotStore) Option {
+	return func(k *Kernel) { k.snapshots = store }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }

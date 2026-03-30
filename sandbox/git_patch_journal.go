@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -67,6 +68,31 @@ func (j *gitPatchJournal) Delete(patchID string) error {
 	}
 	delete(state, patchID)
 	return j.persistLocked(state)
+}
+
+func (j *gitPatchJournal) List() ([]port.PatchSnapshotRef, error) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	state, err := j.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]port.PatchSnapshotRef, 0, len(state))
+	for patchID, entry := range state {
+		out = append(out, port.PatchSnapshotRef{
+			PatchID:     patchID,
+			TargetFiles: append([]string(nil), entry.TargetFiles...),
+			Source:      entry.Source,
+			AppliedAt:   entry.AppliedAt,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].AppliedAt.Equal(out[j].AppliedAt) {
+			return out[i].PatchID < out[j].PatchID
+		}
+		return out[i].AppliedAt.Before(out[j].AppliedAt)
+	})
+	return out, nil
 }
 
 func (j *gitPatchJournal) loadLocked() (map[string]patchJournalEntry, error) {
