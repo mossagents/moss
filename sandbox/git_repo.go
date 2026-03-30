@@ -3,7 +3,6 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,22 +24,23 @@ func NewGitRepoStateCapture(root string) *GitRepoStateCapture {
 }
 
 func (c *GitRepoStateCapture) Capture(ctx context.Context) (*port.RepoState, error) {
-	repoRoot, err := c.git(ctx, "rev-parse", "--show-toplevel")
+	runner := gitRunner{root: c.root, timeout: c.timeout}
+	repoRoot, err := runner.run(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if isGitRepoError(err) {
 			return nil, port.ErrRepoUnavailable
 		}
 		return nil, err
 	}
-	head, err := c.git(ctx, "rev-parse", "HEAD")
+	head, err := runner.run(ctx, "rev-parse", "HEAD")
 	if err != nil {
 		return nil, fmt.Errorf("resolve HEAD: %w", err)
 	}
-	branch, err := c.git(ctx, "branch", "--show-current")
+	branch, err := runner.run(ctx, "branch", "--show-current")
 	if err != nil {
 		return nil, fmt.Errorf("resolve branch: %w", err)
 	}
-	statusOut, err := c.git(ctx, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching")
+	statusOut, err := runner.run(ctx, "status", "--porcelain=v1", "--untracked-files=all", "--ignored=matching")
 	if err != nil {
 		return nil, fmt.Errorf("capture status: %w", err)
 	}
@@ -55,21 +55,6 @@ func (c *GitRepoStateCapture) Capture(ctx context.Context) (*port.RepoState, err
 	parsePorcelain(state, statusOut)
 	state.IsDirty = len(state.Staged) > 0 || len(state.Unstaged) > 0 || len(state.Untracked) > 0
 	return state, nil
-}
-
-func (c *GitRepoStateCapture) git(ctx context.Context, args ...string) (string, error) {
-	if c.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.timeout)
-		defer cancel()
-	}
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = c.root
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
-	}
-	return strings.TrimSpace(string(out)), nil
 }
 
 func parsePorcelain(state *port.RepoState, raw string) {
@@ -115,9 +100,4 @@ func normalizePorcelainPath(path string) string {
 		path = path[idx+4:]
 	}
 	return filepath.Clean(strings.Trim(path, `"`))
-}
-
-func isGitRepoError(err error) bool {
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "not a git repository")
 }

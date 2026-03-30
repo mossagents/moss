@@ -67,6 +67,11 @@ func WithRepoStateCapture(capture port.RepoStateCapture) Option {
 	return func(k *Kernel) { k.repoState = capture }
 }
 
+// WithPatchApply 设置 PatchApply Port。
+func WithPatchApply(apply port.PatchApply) Option {
+	return func(k *Kernel) { k.patches = apply }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }
