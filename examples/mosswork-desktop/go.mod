@@ -9,6 +9,8 @@ require (
 
 replace github.com/mossagents/moss => ../..
 
+replace github.com/mossagents/moss/contrib/tools => ../../contrib/tools
+
 require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -42,6 +44,7 @@ require (
 	github.com/mark3labs/mcp-go v0.45.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mossagents/moss/contrib/tools v0.0.0 // indirect
 	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect

@@ -1,6 +1,6 @@
 module github.com/mossagents/moss/examples/basic
 
-go 1.24.2
+go 1.25
 
 require github.com/mossagents/moss v0.0.0
 
@@ -12,6 +12,7 @@ require (
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mark3labs/mcp-go v0.45.0 // indirect
+	github.com/mossagents/moss/contrib/tools v0.0.0 // indirect
 	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
@@ -25,3 +26,5 @@ require (
 )
 
 replace github.com/mossagents/moss => ../..
+
+replace github.com/mossagents/moss/contrib/tools => ../../contrib/tools
