@@ -16,6 +16,12 @@ export function GetConfig(): $CancellablePromise<{ [_ in string]?: any }> {
     });
 }
 
+export function GetDashboard(): $CancellablePromise<{ [_ in string]?: any }> {
+    return $Call.ByID(1605919923).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function IsRunning(): $CancellablePromise<boolean> {
     return $Call.ByID(2401099782);
 }
@@ -26,6 +32,10 @@ export function NewSession(): $CancellablePromise<void> {
 
 export function RespondToAsk(value: string, approved: boolean): $CancellablePromise<void> {
     return $Call.ByID(1013399822, value, approved);
+}
+
+export function ResumeSession(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3201944292, id);
 }
 
 export function SendMessage(content: string): $CancellablePromise<void> {
