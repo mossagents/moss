@@ -4,7 +4,7 @@ go 1.25
 
 require (
 	github.com/mossagents/moss v0.0.0
-	github.com/mossagents/moss/contrib/core v0.0.0
+	github.com/mossagents/moss/contrib/tools v0.0.0
 	golang.org/x/net v0.41.0
 )
 
@@ -30,4 +30,4 @@ require (
 
 replace github.com/mossagents/moss => ../..
 
-replace github.com/mossagents/moss/contrib/core => ../../contrib/core
+replace github.com/mossagents/moss/contrib/tools => ../../contrib/tools

@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/contrib/core
+module github.com/mossagents/moss/contrib/tools
 
 go 1.25
 

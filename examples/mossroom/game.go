@@ -8,7 +8,7 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/contrib/core/tools"
+	"github.com/mossagents/moss/contrib/tools"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
