@@ -27,7 +27,7 @@ The goal of this milestone is not to make the agent auto-write code into the wor
 - Persist a change record for every successful apply
 - Capture a pre-apply recovery point for every change
 - Prefer precise rollback through reverse patch application
-- Expose degraded recovery clearly when exact rollback is unavailable
+- Expose manual recovery artifacts clearly when exact rollback is unavailable
 - Reuse existing substrate instead of introducing a second recovery stack
 
 ## Non-goals
@@ -372,14 +372,14 @@ At minimum, cover four layers.
 
 - `apply` validates required patch input
 - `changes list/show` produce stable human and JSON output
-- `rollback --change <id>` reports exact vs degraded outcomes correctly
+- `rollback --change <id>` reports exact success vs explicit rollback failure with manual recovery artifacts correctly
 - `review changes` and `review change <id>` behave as aliases
 
 ### TUI
 
 - `/changes list` and `/changes show <id>` are discoverable and work
 - `/apply` success and validation failures are surfaced clearly
-- `/rollback` success and degraded rollback states are surfaced clearly
+- `/rollback` success and explicit rollback-failure recovery guidance are surfaced clearly
 - help text and slash completion include the new commands
 
 ## Acceptance Criteria
