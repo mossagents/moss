@@ -82,6 +82,16 @@ func WithWorktreeSnapshots(store port.WorktreeSnapshotStore) Option {
 	return func(k *Kernel) { k.snapshots = store }
 }
 
+// WithCheckpoints 设置 CheckpointStore Port。
+func WithCheckpoints(store port.CheckpointStore) Option {
+	return func(k *Kernel) { k.checkpoints = store }
+}
+
+// WithSessionStore 设置 SessionStore Port。
+func WithSessionStore(store session.SessionStore) Option {
+	return func(k *Kernel) { k.store = store }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }

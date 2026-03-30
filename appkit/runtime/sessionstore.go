@@ -17,6 +17,7 @@ type sessionStoreState struct {
 // WithKernelSessionStore attaches a SessionStore via extension bridge hooks.
 func WithKernelSessionStore(store session.SessionStore) kernel.Option {
 	return func(k *kernel.Kernel) {
+		kernel.WithSessionStore(store)(k)
 		ensureSessionStoreState(k).store = store
 	}
 }

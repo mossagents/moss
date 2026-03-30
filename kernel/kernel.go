@@ -18,24 +18,26 @@ import (
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
-	llm       port.LLM
-	io        port.UserIO
-	sandbox   sandbox.Sandbox
-	workspace port.Workspace
-	executor  port.Executor
-	tasks     port.TaskRuntime
-	mailbox   port.Mailbox
-	isolation port.WorkspaceIsolation
-	repoState port.RepoStateCapture
-	patches   port.PatchApply
-	reverts   port.PatchRevert
-	snapshots port.WorktreeSnapshotStore
-	tools     tool.Registry
-	sessions  session.Manager
-	chain     *middleware.Chain
-	loopCfg   loop.LoopConfig
-	observer  port.Observer
-	ext       *extensionState
+	llm         port.LLM
+	io          port.UserIO
+	sandbox     sandbox.Sandbox
+	workspace   port.Workspace
+	executor    port.Executor
+	tasks       port.TaskRuntime
+	mailbox     port.Mailbox
+	isolation   port.WorkspaceIsolation
+	repoState   port.RepoStateCapture
+	patches     port.PatchApply
+	reverts     port.PatchRevert
+	snapshots   port.WorktreeSnapshotStore
+	checkpoints port.CheckpointStore
+	store       session.SessionStore
+	tools       tool.Registry
+	sessions    session.Manager
+	chain       *middleware.Chain
+	loopCfg     loop.LoopConfig
+	observer    port.Observer
+	ext         *extensionState
 
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
@@ -78,6 +80,13 @@ func (k *Kernel) Boot(ctx context.Context) error {
 		return kerrors.New(kerrors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
 	if aware, ok := k.snapshots.(interface{ SetObserver(port.Observer) }); ok {
+		observer := k.observer
+		if observer == nil {
+			observer = port.NoOpObserver{}
+		}
+		aware.SetObserver(observer)
+	}
+	if aware, ok := k.checkpoints.(interface{ SetObserver(port.Observer) }); ok {
 		observer := k.observer
 		if observer == nil {
 			observer = port.NoOpObserver{}
@@ -262,6 +271,16 @@ func (k *Kernel) PatchRevert() port.PatchRevert {
 // WorktreeSnapshots 返回 worktree/ghost-state 快照端口（可能为 nil）。
 func (k *Kernel) WorktreeSnapshots() port.WorktreeSnapshotStore {
 	return k.snapshots
+}
+
+// Checkpoints 返回 checkpoint 存储端口（可能为 nil）。
+func (k *Kernel) Checkpoints() port.CheckpointStore {
+	return k.checkpoints
+}
+
+// SessionStore 返回会话持久化存储（可能为 nil）。
+func (k *Kernel) SessionStore() session.SessionStore {
+	return k.store
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

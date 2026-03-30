@@ -6,17 +6,20 @@ import "time"
 type ExecutionEventType string
 
 const (
-	ExecutionRunStarted       ExecutionEventType = "run.started"
-	ExecutionRunCompleted     ExecutionEventType = "run.completed"
-	ExecutionRunFailed        ExecutionEventType = "run.failed"
-	ExecutionRunCancelled     ExecutionEventType = "run.cancelled"
-	ExecutionLLMStarted       ExecutionEventType = "llm.started"
-	ExecutionLLMCompleted     ExecutionEventType = "llm.completed"
-	ExecutionToolStarted      ExecutionEventType = "tool.started"
-	ExecutionToolCompleted    ExecutionEventType = "tool.completed"
-	ExecutionApprovalRequest  ExecutionEventType = "approval.requested"
-	ExecutionApprovalResolved ExecutionEventType = "approval.resolved"
-	ExecutionSnapshotCreated  ExecutionEventType = "snapshot.created"
+	ExecutionRunStarted        ExecutionEventType = "run.started"
+	ExecutionRunCompleted      ExecutionEventType = "run.completed"
+	ExecutionRunFailed         ExecutionEventType = "run.failed"
+	ExecutionRunCancelled      ExecutionEventType = "run.cancelled"
+	ExecutionLLMStarted        ExecutionEventType = "llm.started"
+	ExecutionLLMCompleted      ExecutionEventType = "llm.completed"
+	ExecutionToolStarted       ExecutionEventType = "tool.started"
+	ExecutionToolCompleted     ExecutionEventType = "tool.completed"
+	ExecutionApprovalRequest   ExecutionEventType = "approval.requested"
+	ExecutionApprovalResolved  ExecutionEventType = "approval.resolved"
+	ExecutionSnapshotCreated   ExecutionEventType = "snapshot.created"
+	ExecutionCheckpointCreated ExecutionEventType = "checkpoint.created"
+	ExecutionSessionForked     ExecutionEventType = "session.forked"
+	ExecutionReplayPrepared    ExecutionEventType = "replay.prepared"
 )
 
 // ExecutionEvent 是运行时统一结构化事件。

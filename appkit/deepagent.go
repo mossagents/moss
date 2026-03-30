@@ -25,6 +25,8 @@ type DeepAgentConfig struct {
 	AppName                       string
 	EnableSessionStore            *bool
 	SessionStoreDir               string
+	EnableCheckpointStore         *bool
+	CheckpointStoreDir            string
 	EnableTaskRuntime             *bool
 	TaskRuntimeDir                string
 	EnablePersistentMemories      *bool
@@ -51,6 +53,7 @@ func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
 		AppName:                       config.AppName(),
 		EnableSessionStore:            boolPtr(true),
+		EnableCheckpointStore:         boolPtr(true),
 		EnableTaskRuntime:             boolPtr(true),
 		EnablePersistentMemories:      boolPtr(true),
 		EnableContextOffload:          boolPtr(true),
@@ -83,6 +86,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		if cfg.SessionStoreDir != "" {
 			effective.SessionStoreDir = cfg.SessionStoreDir
+		}
+		if cfg.EnableCheckpointStore != nil {
+			effective.EnableCheckpointStore = cfg.EnableCheckpointStore
+		}
+		if cfg.CheckpointStoreDir != "" {
+			effective.CheckpointStoreDir = cfg.CheckpointStoreDir
 		}
 		if cfg.EnableTaskRuntime != nil {
 			effective.EnableTaskRuntime = cfg.EnableTaskRuntime
@@ -164,6 +173,21 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 			exts = append(exts, WithContextOffload(store))
 			exts = append(exts, WithContextManagement(store))
 		}
+	}
+	if valueOrDefault(effective.EnableCheckpointStore, true) {
+		checkpointDir := effective.CheckpointStoreDir
+		if checkpointDir == "" {
+			if appDir := config.AppDir(); appDir != "" {
+				checkpointDir = filepath.Join(appDir, "checkpoints")
+			} else {
+				checkpointDir = filepath.Join(flags.Workspace, "."+effective.AppName, "checkpoints")
+			}
+		}
+		store, err := port.NewFileCheckpointStore(checkpointDir)
+		if err != nil {
+			return nil, fmt.Errorf("checkpoint store: %w", err)
+		}
+		exts = append(exts, WithKernelOptions(kernel.WithCheckpoints(store)))
 	}
 	if valueOrDefault(effective.EnableTaskRuntime, true) {
 		taskDir := effective.TaskRuntimeDir

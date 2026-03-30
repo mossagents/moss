@@ -22,6 +22,10 @@ func SessionStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "sessions")
 }
 
+func CheckpointStoreDir() string {
+	return filepath.Join(appconfig.AppDir(), "checkpoints")
+}
+
 func MemoryDir() string {
 	return filepath.Join(appconfig.AppDir(), "memories")
 }

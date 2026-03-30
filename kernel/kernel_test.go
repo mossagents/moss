@@ -27,6 +27,10 @@ type observerAwareSnapshotStore struct {
 	observer port.Observer
 }
 
+type observerAwareCheckpointStore struct {
+	observer port.Observer
+}
+
 func (o *recordingObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
 func (o *recordingObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
 func (o *recordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
@@ -51,6 +55,10 @@ func (s *observerAwareSnapshotStore) SetObserver(observer port.Observer) {
 	s.observer = observer
 }
 
+func (s *observerAwareCheckpointStore) SetObserver(observer port.Observer) {
+	s.observer = observer
+}
+
 func (*observerAwareSnapshotStore) Create(context.Context, port.WorktreeSnapshotRequest) (*port.WorktreeSnapshot, error) {
 	return nil, nil
 }
@@ -64,6 +72,22 @@ func (*observerAwareSnapshotStore) List(context.Context) ([]port.WorktreeSnapsho
 }
 
 func (*observerAwareSnapshotStore) FindBySession(context.Context, string) ([]port.WorktreeSnapshot, error) {
+	return nil, nil
+}
+
+func (*observerAwareCheckpointStore) Create(context.Context, port.CheckpointCreateRequest) (*port.CheckpointRecord, error) {
+	return nil, nil
+}
+
+func (*observerAwareCheckpointStore) Load(context.Context, string) (*port.CheckpointRecord, error) {
+	return nil, nil
+}
+
+func (*observerAwareCheckpointStore) List(context.Context) ([]port.CheckpointRecord, error) {
+	return nil, nil
+}
+
+func (*observerAwareCheckpointStore) FindBySession(context.Context, string) ([]port.CheckpointRecord, error) {
 	return nil, nil
 }
 
@@ -271,6 +295,23 @@ func TestKernelBootWiresObserverIntoSnapshotStore(t *testing.T) {
 	}
 	if store.observer != obs {
 		t.Fatal("expected snapshot store observer to be wired during boot")
+	}
+}
+
+func TestKernelBootWiresObserverIntoCheckpointStore(t *testing.T) {
+	obs := &recordingObserver{}
+	store := &observerAwareCheckpointStore{}
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&port.NoOpIO{}),
+		WithObserver(obs),
+		WithCheckpoints(store),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if store.observer != obs {
+		t.Fatal("expected checkpoint store observer to be wired during boot")
 	}
 }
 

@@ -87,6 +87,9 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		if err := json.Unmarshal(data, &sess); err != nil {
 			continue
 		}
+		if isHiddenCheckpointSnapshot(&sess) {
+			continue
+		}
 
 		endedAt := ""
 		if !sess.EndedAt.IsZero() {
@@ -145,4 +148,12 @@ func sanitizeID(id string) string {
 
 func (fs *FileStore) path(id string) string {
 	return filepath.Join(fs.dir, sanitizeID(id)+".json")
+}
+
+func isHiddenCheckpointSnapshot(sess *Session) bool {
+	if sess == nil || sess.Config.Metadata == nil {
+		return false
+	}
+	hidden, _ := sess.Config.Metadata["checkpoint_snapshot_hidden"].(bool)
+	return hidden
 }

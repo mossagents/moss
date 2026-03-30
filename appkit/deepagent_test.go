@@ -63,6 +63,9 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	if k.WorktreeSnapshots() == nil {
 		t.Fatal("expected worktree snapshots to be configured")
 	}
+	if k.Checkpoints() == nil {
+		t.Fatal("expected checkpoints to be configured")
+	}
 
 	reg := runtime.AgentRegistry(k)
 	gp, ok := reg.Get("general-purpose")
@@ -137,6 +140,24 @@ func TestBuildDeepAgentKernel_DisableTaskRuntime(t *testing.T) {
 	}
 	if k.TaskRuntime() != nil {
 		t.Fatal("task runtime should be disabled")
+	}
+}
+
+func TestBuildDeepAgentKernel_DisableCheckpointStore(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "trusted",
+	}
+	disable := false
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, &DeepAgentConfig{
+		EnableCheckpointStore: &disable,
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	if k.Checkpoints() != nil {
+		t.Fatal("checkpoint store should be disabled")
 	}
 }
 
