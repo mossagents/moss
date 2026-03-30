@@ -349,6 +349,17 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 			a.mu.Unlock()
 			switch mode {
 			case "deny":
+				if mc.IO != nil {
+					_ = mc.IO.Send(ctx, port.OutputMessage{
+						Type: port.OutputText,
+						Content: port.FormatDeniedMessage(
+							mc.Tool.Name,
+							"permission override denied tool execution",
+							"permission.override.deny",
+							port.EnforcementHardBlock,
+						),
+					})
+				}
 				return builtins.ErrDenied
 			case "ask":
 				if mc.IO != nil {
@@ -360,9 +371,12 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 						Risk:        string(mc.Tool.Risk),
 						Prompt:      "Allow tool " + mc.Tool.Name + "?",
 						Reason:      "permission override requires approval",
+						ReasonCode:  "permission.override.ask",
+						Enforcement: port.EnforcementRequireApproval,
 						Input:       append(json.RawMessage(nil), mc.Input...),
 						RequestedAt: time.Now().UTC(),
 					}
+					approval.Prompt = port.FormatApprovalPrompt(approval)
 					resp, err := mc.IO.Ask(ctx, port.InputRequest{
 						Type:     port.InputConfirm,
 						Prompt:   approval.Prompt,
@@ -372,6 +386,7 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 							"input":       mc.Input,
 							"approval_id": approval.ID,
 							"reason":      approval.Reason,
+							"reason_code": approval.ReasonCode,
 							"risk":        approval.Risk,
 						},
 					})
@@ -382,6 +397,15 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 						resp.Approved = resp.Decision.Approved
 					}
 					if !resp.Approved {
+						_ = mc.IO.Send(ctx, port.OutputMessage{
+							Type: port.OutputText,
+							Content: port.FormatDeniedMessage(
+								mc.Tool.Name,
+								approval.Reason,
+								approval.ReasonCode,
+								approval.Enforcement,
+							),
+						})
 						return builtins.ErrDenied
 					}
 				}

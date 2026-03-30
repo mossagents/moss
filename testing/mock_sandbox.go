@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -67,10 +68,10 @@ func (s *MemorySandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (s *MemorySandbox) Execute(_ context.Context, cmd string, args []string) (sandbox.Output, error) {
+func (s *MemorySandbox) Execute(_ context.Context, req port.ExecRequest) (sandbox.Output, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.Cmds = append(s.Cmds, ExecRecord{Cmd: cmd, Args: args})
+	s.Cmds = append(s.Cmds, ExecRecord{Cmd: req.Command, Args: req.Args})
 	return sandbox.Output{Stdout: "ok", ExitCode: 0}, nil
 }
 

@@ -3,8 +3,6 @@ package builtins
 import (
 	"encoding/json"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // RequireApprovalForPathPrefix 对路径参数命中指定前缀的调用触发审批。
@@ -17,18 +15,18 @@ func RequireApprovalForPathPrefix(prefixes ...string) PolicyRule {
 		}
 		normalized = append(normalized, p)
 	}
-	return func(_ tool.ToolSpec, input json.RawMessage) PolicyDecision {
-		path := extractStringField(input, "path")
+	return func(ctx PolicyContext) PolicyResult {
+		path := extractStringField(ctx.Input, "path")
 		if path == "" {
-			return Allow
+			return allowResult()
 		}
 		clean := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(path), "\\", "/"))
 		for _, p := range normalized {
 			if strings.HasPrefix(clean, p) {
-				return RequireApproval
+				return requireApprovalResult("path.protected_prefix", "path is protected and requires approval")
 			}
 		}
-		return Allow
+		return allowResult()
 	}
 }
 
@@ -42,17 +40,17 @@ func DenyCommandContaining(fragments ...string) PolicyRule {
 		}
 		parts = append(parts, f)
 	}
-	return func(spec tool.ToolSpec, input json.RawMessage) PolicyDecision {
-		if spec.Name != "run_command" {
-			return Allow
+	return func(ctx PolicyContext) PolicyResult {
+		if ctx.Tool.Name != "run_command" {
+			return allowResult()
 		}
-		command := strings.ToLower(extractStringField(input, "command"))
+		command := strings.ToLower(extractStringField(ctx.Input, "command"))
 		for _, f := range parts {
 			if strings.Contains(command, f) {
-				return Deny
+				return denyResult("command.fragment_denied", "command contains denied fragment")
 			}
 		}
-		return Allow
+		return allowResult()
 	}
 }
 
@@ -75,4 +73,3 @@ func extractStringField(input json.RawMessage, field string) string {
 		return ""
 	}
 }
-

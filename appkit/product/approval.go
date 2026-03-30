@@ -91,11 +91,14 @@ func ApplyApprovalMode(k *kernel.Kernel, mode string) (string, error) {
 func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
 	decision := builtins.Allow
 	for _, rule := range rules {
-		next := rule(spec, input)
-		if next == builtins.Deny {
+		next := rule(builtins.PolicyContext{
+			Tool:  spec,
+			Input: append([]byte(nil), input...),
+		})
+		if next.Decision == builtins.Deny {
 			return builtins.Deny
 		}
-		if next == builtins.RequireApproval {
+		if next.Decision == builtins.RequireApproval {
 			decision = builtins.RequireApproval
 		}
 	}

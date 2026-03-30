@@ -507,7 +507,10 @@ func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		output, err := sb.Execute(ctx, params.Command, params.Args)
+		output, err := sb.Execute(ctx, port.ExecRequest{
+			Command: params.Command,
+			Args:    params.Args,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -526,7 +529,10 @@ func runCommandHandlerExec(exec port.Executor, ws port.Workspace) tool.ToolHandl
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		output, err := exec.Execute(ctx, params.Command, params.Args)
+		output, err := exec.Execute(ctx, port.ExecRequest{
+			Command: params.Command,
+			Args:    params.Args,
+		})
 		if err != nil {
 			return nil, err
 		}

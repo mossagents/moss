@@ -187,11 +187,6 @@ type sandboxExecutorAdapter struct {
 	sb sandbox.Sandbox
 }
 
-func (a *sandboxExecutorAdapter) Execute(ctx context.Context, cmd string, args []string) (port.ExecOutput, error) {
-	out, err := a.sb.Execute(ctx, cmd, args)
-	return port.ExecOutput{
-		Stdout:   out.Stdout,
-		Stderr:   out.Stderr,
-		ExitCode: out.ExitCode,
-	}, err
+func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+	return a.sb.Execute(ctx, req)
 }

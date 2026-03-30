@@ -2,30 +2,38 @@ package builtins
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // PolicyDecision 表示权限决策。
-type PolicyDecision string
+type PolicyDecision = port.PolicyDecision
 
 const (
-	Allow           PolicyDecision = "allow"
-	Deny            PolicyDecision = "deny"
-	RequireApproval PolicyDecision = "require_approval"
+	Allow           PolicyDecision = port.PolicyAllow
+	Deny            PolicyDecision = port.PolicyDeny
+	RequireApproval PolicyDecision = port.PolicyRequireApproval
+)
+
+type PolicyContext = port.PolicyContext
+type PolicyResult = port.PolicyResult
+type EnforcementMode = port.EnforcementMode
+
+const (
+	EnforcementHardBlock       EnforcementMode = port.EnforcementHardBlock
+	EnforcementRequireApproval EnforcementMode = port.EnforcementRequireApproval
+	EnforcementSoftLimit       EnforcementMode = port.EnforcementSoftLimit
 )
 
 // ErrDenied 表示工具调用被 Policy 拒绝。
 var ErrDenied = errors.New("tool call denied by policy")
 
 // PolicyRule 评估单个工具调用的权限。
-type PolicyRule func(spec tool.ToolSpec, input json.RawMessage) PolicyDecision
+type PolicyRule func(ctx PolicyContext) PolicyResult
 
 // PolicyCheck 构造 policy middleware，遍历 rules 取最严格决策（Deny > RequireApproval > Allow）。
 func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
@@ -34,20 +42,32 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 			return next(ctx)
 		}
 
-		decision := Allow
+		policyCtx := buildPolicyContext(mc)
+		result := allowResult()
 		for _, rule := range rules {
-			d := rule(*mc.Tool, mc.Input)
-			if stricterThan(d, decision) {
-				decision = d
+			nextResult := normalizePolicyResult(rule(policyCtx))
+			if stricterThan(nextResult.Decision, result.Decision) || preferPolicyResult(nextResult, result) {
+				result = nextResult
 			}
 		}
 
-		switch decision {
+		switch result.Decision {
 		case Deny:
+			if mc.IO != nil {
+				_ = mc.IO.Send(ctx, port.OutputMessage{
+					Type: port.OutputText,
+					Content: port.FormatDeniedMessage(
+						mc.Tool.Name,
+						result.Reason.Message,
+						result.Reason.Code,
+						result.Enforcement,
+					),
+				})
+			}
 			return ErrDenied
 		case RequireApproval:
 			if mc.IO != nil {
-				approval := buildApprovalRequest(mc, "policy requires approval")
+				approval := buildApprovalRequest(mc, result)
 				observer := mc.Observer
 				if observer == nil {
 					observer = port.NoOpObserver{}
@@ -58,11 +78,13 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Request:   *approval,
 				})
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
-					Type:      port.ExecutionApprovalRequest,
-					SessionID: approval.SessionID,
-					Timestamp: time.Now().UTC(),
-					ToolName:  approval.ToolName,
-					Risk:      approval.Risk,
+					Type:        port.ExecutionApprovalRequest,
+					SessionID:   approval.SessionID,
+					Timestamp:   time.Now().UTC(),
+					ToolName:    approval.ToolName,
+					Risk:        approval.Risk,
+					ReasonCode:  approval.ReasonCode,
+					Enforcement: approval.Enforcement,
 					Data: map[string]any{
 						"approval_id": approval.ID,
 						"reason":      approval.Reason,
@@ -77,6 +99,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 						"input":       mc.Input,
 						"approval_id": approval.ID,
 						"reason":      approval.Reason,
+						"reason_code": approval.ReasonCode,
 						"risk":        approval.Risk,
 					},
 				})
@@ -91,11 +114,13 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Decision:  resolved,
 				})
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
-					Type:      port.ExecutionApprovalResolved,
-					SessionID: approval.SessionID,
-					Timestamp: time.Now().UTC(),
-					ToolName:  approval.ToolName,
-					Risk:      approval.Risk,
+					Type:        port.ExecutionApprovalResolved,
+					SessionID:   approval.SessionID,
+					Timestamp:   time.Now().UTC(),
+					ToolName:    approval.ToolName,
+					Risk:        approval.Risk,
+					ReasonCode:  approval.ReasonCode,
+					Enforcement: approval.Enforcement,
 					Data: map[string]any{
 						"approval_id": approval.ID,
 						"approved":    resolved.Approved,
@@ -110,6 +135,60 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 
 		return next(ctx)
 	}
+}
+
+func allowResult() PolicyResult {
+	return PolicyResult{Decision: Allow}
+}
+
+func denyResult(code, message string) PolicyResult {
+	return PolicyResult{
+		Decision:    Deny,
+		Enforcement: EnforcementHardBlock,
+		Reason: port.PolicyReason{
+			Code:    code,
+			Message: message,
+		},
+	}
+}
+
+func requireApprovalResult(code, message string) PolicyResult {
+	return PolicyResult{
+		Decision:    RequireApproval,
+		Enforcement: EnforcementRequireApproval,
+		Reason: port.PolicyReason{
+			Code:    code,
+			Message: message,
+		},
+	}
+}
+
+func normalizePolicyResult(result PolicyResult) PolicyResult {
+	if result.Decision == "" {
+		result.Decision = Allow
+	}
+	if result.Enforcement == "" {
+		switch result.Decision {
+		case Deny:
+			result.Enforcement = EnforcementHardBlock
+		case RequireApproval:
+			result.Enforcement = EnforcementRequireApproval
+		}
+	}
+	return result
+}
+
+func preferPolicyResult(a, b PolicyResult) bool {
+	if a.Decision != b.Decision {
+		return false
+	}
+	if b.Reason.Code == "" && a.Reason.Code != "" {
+		return true
+	}
+	if b.Reason.Message == "" && a.Reason.Message != "" {
+		return true
+	}
+	return false
 }
 
 func stricterThan(a, b PolicyDecision) bool {
@@ -127,7 +206,20 @@ func severity(d PolicyDecision) int {
 	}
 }
 
-func buildApprovalRequest(mc *middleware.Context, reason string) *port.ApprovalRequest {
+func buildPolicyContext(mc *middleware.Context) PolicyContext {
+	ctx := PolicyContext{
+		Tool:  *mc.Tool,
+		Input: append([]byte(nil), mc.Input...),
+	}
+	if mc.Session != nil {
+		ctx.SessionID = mc.Session.ID
+		ctx.SessionState = mc.Session.State
+		ctx.Identity = GetIdentity(mc.Session.State)
+	}
+	return ctx
+}
+
+func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.ApprovalRequest {
 	sessionID := ""
 	if mc.Session != nil {
 		sessionID = mc.Session.ID
@@ -146,9 +238,11 @@ func buildApprovalRequest(mc *middleware.Context, reason string) *port.ApprovalR
 		SessionID:   sessionID,
 		ToolName:    toolName,
 		Risk:        risk,
-		Prompt:      prompt,
-		Reason:      reason,
-		Input:       append(json.RawMessage(nil), mc.Input...),
+		Prompt:      port.FormatApprovalPrompt(&port.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
+		Reason:      result.Reason.Message,
+		ReasonCode:  result.Reason.Code,
+		Enforcement: result.Enforcement,
+		Input:       append([]byte(nil), mc.Input...),
 		RequestedAt: time.Now().UTC(),
 	}
 }
@@ -178,11 +272,11 @@ func DenyTool(names ...string) PolicyRule {
 	for _, n := range names {
 		set[n] = struct{}{}
 	}
-	return func(spec tool.ToolSpec, _ json.RawMessage) PolicyDecision {
-		if _, ok := set[spec.Name]; ok {
-			return Deny
+	return func(ctx PolicyContext) PolicyResult {
+		if _, ok := set[ctx.Tool.Name]; ok {
+			return denyResult("tool.denied", "tool is denied by policy")
 		}
-		return Allow
+		return allowResult()
 	}
 }
 
@@ -192,17 +286,17 @@ func RequireApprovalFor(names ...string) PolicyRule {
 	for _, n := range names {
 		set[n] = struct{}{}
 	}
-	return func(spec tool.ToolSpec, _ json.RawMessage) PolicyDecision {
-		if _, ok := set[spec.Name]; ok {
-			return RequireApproval
+	return func(ctx PolicyContext) PolicyResult {
+		if _, ok := set[ctx.Tool.Name]; ok {
+			return requireApprovalResult("tool.requires_approval", "tool requires approval by policy")
 		}
-		return Allow
+		return allowResult()
 	}
 }
 
 // DefaultAllow 创建默认放行的 PolicyRule。
 func DefaultAllow() PolicyRule {
-	return func(_ tool.ToolSpec, _ json.RawMessage) PolicyDecision {
-		return Allow
+	return func(_ PolicyContext) PolicyResult {
+		return allowResult()
 	}
 }

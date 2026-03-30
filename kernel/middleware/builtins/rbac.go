@@ -2,7 +2,6 @@ package builtins
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
@@ -123,11 +122,18 @@ func AuthMiddleware(auth port.Authenticator) middleware.Middleware {
 // RiskBasedPolicy 创建一个基于工具风险等级的 PolicyRule。
 // 对指定风险级别及以上的工具调用执行指定决策。
 func RiskBasedPolicy(minRisk tool.RiskLevel, decision PolicyDecision) PolicyRule {
-	return func(spec tool.ToolSpec, _ json.RawMessage) PolicyDecision {
-		if riskSeverity(spec.Risk) >= riskSeverity(minRisk) {
-			return decision
+	return func(ctx PolicyContext) PolicyResult {
+		if riskSeverity(ctx.Tool.Risk) < riskSeverity(minRisk) {
+			return allowResult()
 		}
-		return Allow
+		switch decision {
+		case Deny:
+			return denyResult("risk.threshold", "tool risk exceeds configured threshold")
+		case RequireApproval:
+			return requireApprovalResult("risk.threshold", "tool risk exceeds approval threshold")
+		default:
+			return allowResult()
+		}
 	}
 }
 

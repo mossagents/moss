@@ -48,6 +48,9 @@ func TestApprovalModePolicyRules(t *testing.T) {
 	if got := EvaluatePolicy(confirmRules, writeSpec, nil); got != builtins.RequireApproval {
 		t.Fatalf("confirm write_file=%s, want %s", got, builtins.RequireApproval)
 	}
+	if got := confirmRules[2](builtins.PolicyContext{Tool: writeSpec}); got.Reason.Code == "" {
+		t.Fatal("expected structured policy reason code for confirm mode")
+	}
 
 	fullAutoRules, err := ApprovalModePolicyRules(ApprovalModeFullAuto)
 	if err != nil {

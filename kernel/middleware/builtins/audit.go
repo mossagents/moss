@@ -93,6 +93,12 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e port.ExecutionEvent)
 	if e.Risk != "" {
 		data["risk"] = e.Risk
 	}
+	if e.ReasonCode != "" {
+		data["reason_code"] = e.ReasonCode
+	}
+	if e.Enforcement != "" {
+		data["enforcement"] = e.Enforcement
+	}
 	if e.Model != "" {
 		data["model"] = e.Model
 	}
@@ -120,6 +126,8 @@ func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
 		"tool":         e.Request.ToolName,
 		"risk":         e.Request.Risk,
 		"reason":       e.Request.Reason,
+		"reason_code":  e.Request.ReasonCode,
+		"enforcement":  e.Request.Enforcement,
 		"requested_at": e.Request.RequestedAt.UTC().Format(time.RFC3339),
 	}
 	if e.Decision != nil {

@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestLocalSandboxResolvePath(t *testing.T) {
@@ -78,9 +80,9 @@ func TestLocalSandboxExecute(t *testing.T) {
 	var out Output
 	var err error
 	if isWindows() {
-		out, err = s.Execute(context.Background(), "cmd", []string{"/C", "echo", "hello"})
+		out, err = s.Execute(context.Background(), port.ExecRequest{Command: "cmd", Args: []string{"/C", "echo", "hello"}})
 	} else {
-		out, err = s.Execute(context.Background(), "echo", []string{"hello"})
+		out, err = s.Execute(context.Background(), port.ExecRequest{Command: "echo", Args: []string{"hello"}})
 	}
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -148,9 +150,9 @@ func TestLocalSandboxExecuteShellCommand(t *testing.T) {
 	var out Output
 	var err error
 	if isWindows() {
-		out, err = s.Execute(context.Background(), "echo hello world", nil)
+		out, err = s.Execute(context.Background(), port.ExecRequest{Command: "echo hello world"})
 	} else {
-		out, err = s.Execute(context.Background(), "echo hello world", nil)
+		out, err = s.Execute(context.Background(), port.ExecRequest{Command: "echo hello world"})
 	}
 	if err != nil {
 		t.Fatalf("Execute shell: %v", err)
@@ -161,6 +163,115 @@ func TestLocalSandboxExecuteShellCommand(t *testing.T) {
 	if !contains(out.Stdout, "hello world") {
 		t.Fatalf("stdout = %q, expected to contain 'hello world'", out.Stdout)
 	}
+}
+
+func TestLocalSandboxExecuteWorkingDirMustBeAllowed(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "allowed"), 0755); err != nil {
+		t.Fatalf("mkdir allowed: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "blocked"), 0755); err != nil {
+		t.Fatalf("mkdir blocked: %v", err)
+	}
+
+	_, err := s.Execute(context.Background(), port.ExecRequest{
+		Command:      commandForNoop(),
+		Args:         argsForNoop(),
+		WorkingDir:   "blocked",
+		AllowedPaths: []string{"allowed"},
+	})
+	if err == nil {
+		t.Fatal("expected allowed path enforcement error")
+	}
+}
+
+func TestLocalSandboxExecuteClearEnvAndInjectEnv(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+
+	var req port.ExecRequest
+	if isWindows() {
+		req = port.ExecRequest{
+			Command:  "cmd",
+			Args:     []string{"/C", "echo", "%MOSS_SANDBOX_TEST%"},
+			ClearEnv: true,
+			Env:      map[string]string{"MOSS_SANDBOX_TEST": "sandboxed"},
+		}
+	} else {
+		req = port.ExecRequest{
+			Command:  "sh",
+			Args:     []string{"-c", "printf %s \"$MOSS_SANDBOX_TEST\""},
+			ClearEnv: true,
+			Env:      map[string]string{"MOSS_SANDBOX_TEST": "sandboxed"},
+		}
+	}
+	out, err := s.Execute(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Execute env: %v", err)
+	}
+	if !contains(out.Stdout, "sandboxed") {
+		t.Fatalf("stdout = %q, want injected env value", out.Stdout)
+	}
+}
+
+func TestLocalSandboxExecuteDisabledNetworkFallsBackToSoftLimit(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+
+	out, err := s.Execute(context.Background(), port.ExecRequest{
+		Command: commandForNoop(),
+		Args:    argsForNoop(),
+		Network: port.ExecNetworkPolicy{
+			Mode:            port.ExecNetworkDisabled,
+			PreferHardBlock: true,
+			AllowSoftLimit:  true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute disabled network: %v", err)
+	}
+	if out.Enforcement != port.EnforcementSoftLimit {
+		t.Fatalf("enforcement = %q, want %q", out.Enforcement, port.EnforcementSoftLimit)
+	}
+	if !out.Degraded {
+		t.Fatal("expected degraded soft-limit marker")
+	}
+	if out.Details == "" {
+		t.Fatal("expected degradation details")
+	}
+}
+
+func TestLocalSandboxExecuteDisabledNetworkHardBlockOnlyFails(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+
+	_, err := s.Execute(context.Background(), port.ExecRequest{
+		Command: commandForNoop(),
+		Args:    argsForNoop(),
+		Network: port.ExecNetworkPolicy{
+			Mode:            port.ExecNetworkDisabled,
+			PreferHardBlock: true,
+			AllowSoftLimit:  false,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected hard-block unavailable error")
+	}
+}
+
+func commandForNoop() string {
+	if isWindows() {
+		return "cmd"
+	}
+	return "echo"
+}
+
+func argsForNoop() []string {
+	if isWindows() {
+		return []string{"/C", "echo", "ok"}
+	}
+	return []string{"ok"}
 }
 
 func contains(s, substr string) bool {

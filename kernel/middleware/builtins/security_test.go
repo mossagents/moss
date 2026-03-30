@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,8 @@ func TestAuditLogger_OnApproval(t *testing.T) {
 			ToolName:    "write_file",
 			Risk:        "high",
 			Reason:      "policy requires approval",
+			ReasonCode:  "tool.requires_approval",
+			Enforcement: port.EnforcementRequireApproval,
 			RequestedAt: time.Now(),
 		},
 		Decision: &port.ApprovalDecision{
@@ -190,6 +193,13 @@ func TestAuditLogger_OnApproval(t *testing.T) {
 	}
 	if entry.SessionID != "s3" {
 		t.Fatalf("expected session s3, got %s", entry.SessionID)
+	}
+	data, ok := entry.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected approval data map, got %T", entry.Data)
+	}
+	if data["reason_code"] != "tool.requires_approval" {
+		t.Fatalf("expected reason_code, got %+v", data)
 	}
 }
 
@@ -285,13 +295,59 @@ func TestRateLimiter_RefillsOverTime(t *testing.T) {
 func TestRiskBasedPolicy(t *testing.T) {
 	rule := RiskBasedPolicy(tool.RiskHigh, RequireApproval)
 
-	d := rule(tool.ToolSpec{Name: "read_file", Risk: tool.RiskLow}, nil)
-	if d != Allow {
-		t.Fatalf("low risk should allow, got %s", d)
+	d := rule(PolicyContext{Tool: tool.ToolSpec{Name: "read_file", Risk: tool.RiskLow}})
+	if d.Decision != Allow {
+		t.Fatalf("low risk should allow, got %s", d.Decision)
 	}
 
-	d = rule(tool.ToolSpec{Name: "run_command", Risk: tool.RiskHigh}, nil)
-	if d != RequireApproval {
-		t.Fatalf("high risk should require approval, got %s", d)
+	d = rule(PolicyContext{Tool: tool.ToolSpec{Name: "run_command", Risk: tool.RiskHigh}})
+	if d.Decision != RequireApproval {
+		t.Fatalf("high risk should require approval, got %s", d.Decision)
+	}
+	if d.Reason.Code != "risk.threshold" {
+		t.Fatalf("expected reason code risk.threshold, got %q", d.Reason.Code)
+	}
+}
+
+func TestPolicyCheck_DenySendsHumanReadableMessage(t *testing.T) {
+	io := port.NewBufferIO()
+	sess := &session.Session{ID: "s1"}
+	mw := PolicyCheck(DenyTool("write_file"))
+	mc := &middleware.Context{
+		Phase:   middleware.BeforeToolCall,
+		Session: sess,
+		Tool:    &tool.ToolSpec{Name: "write_file"},
+		IO:      io,
+	}
+	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
+	if err != ErrDenied {
+		t.Fatalf("expected ErrDenied, got %v", err)
+	}
+	if len(io.Sent) == 0 {
+		t.Fatal("expected human-readable denial message")
+	}
+	if got := io.Sent[0].Content; !strings.Contains(got, "reason_code=tool.denied") {
+		t.Fatalf("expected reason code in denial message, got %q", got)
+	}
+}
+
+func TestPolicyCheck_ApprovalPromptIncludesReasonCode(t *testing.T) {
+	io := port.NewBufferIO()
+	sess := &session.Session{ID: "s1"}
+	mw := PolicyCheck(RequireApprovalFor("write_file"))
+	mc := &middleware.Context{
+		Phase:   middleware.BeforeToolCall,
+		Session: sess,
+		Tool:    &tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh},
+		IO:      io,
+	}
+	if err := mw(context.Background(), mc, func(_ context.Context) error { return nil }); err != nil {
+		t.Fatalf("expected approval flow to continue, got %v", err)
+	}
+	if len(io.Asked) == 0 {
+		t.Fatal("expected approval request")
+	}
+	if got := io.Asked[0].Prompt; !strings.Contains(got, "reason_code=tool.requires_approval") {
+		t.Fatalf("expected reason code in prompt, got %q", got)
 	}
 }

@@ -21,6 +21,35 @@ type Workspace interface {
 	DeleteFile(ctx context.Context, path string) error
 }
 
+// ExecNetworkMode 表示命令执行的网络策略。
+type ExecNetworkMode string
+
+const (
+	ExecNetworkDefault  ExecNetworkMode = "default"
+	ExecNetworkDisabled ExecNetworkMode = "disabled"
+	ExecNetworkEnabled  ExecNetworkMode = "enabled"
+)
+
+// ExecNetworkPolicy 描述命令执行时的网络限制期望。
+type ExecNetworkPolicy struct {
+	Mode            ExecNetworkMode `json:"mode,omitempty"`
+	AllowHosts      []string        `json:"allow_hosts,omitempty"`
+	PreferHardBlock bool            `json:"prefer_hard_block,omitempty"`
+	AllowSoftLimit  bool            `json:"allow_soft_limit,omitempty"`
+}
+
+// ExecRequest 是一次结构化命令执行请求。
+type ExecRequest struct {
+	Command      string            `json:"command"`
+	Args         []string          `json:"args,omitempty"`
+	WorkingDir   string            `json:"working_dir,omitempty"`
+	Timeout      time.Duration     `json:"timeout,omitempty"`
+	AllowedPaths []string          `json:"allowed_paths,omitempty"`
+	ClearEnv     bool              `json:"clear_env,omitempty"`
+	Env          map[string]string `json:"env,omitempty"`
+	Network      ExecNetworkPolicy `json:"network,omitempty"`
+}
+
 // FileInfo 描述文件元信息。
 type FileInfo struct {
 	Name    string    `json:"name"`
@@ -33,21 +62,24 @@ type FileInfo struct {
 // 与 Workspace 正交：可组合不同的 Workspace + Executor 实现。
 type Executor interface {
 	// Execute 在隔离环境中执行命令。
-	Execute(ctx context.Context, cmd string, args []string) (ExecOutput, error)
+	Execute(ctx context.Context, req ExecRequest) (ExecOutput, error)
 }
 
 // ExecOutput 是命令执行的结果。
 type ExecOutput struct {
-	Stdout   string `json:"stdout"`
-	Stderr   string `json:"stderr"`
-	ExitCode int    `json:"exit_code"`
+	Stdout      string          `json:"stdout"`
+	Stderr      string          `json:"stderr"`
+	ExitCode    int             `json:"exit_code"`
+	Enforcement EnforcementMode `json:"enforcement,omitempty"`
+	Degraded    bool            `json:"degraded,omitempty"`
+	Details     string          `json:"details,omitempty"`
 }
 
 // NoOpExecutor 拒绝所有命令执行，用于纯对话场景。
 type NoOpExecutor struct{}
 
-func (NoOpExecutor) Execute(_ context.Context, cmd string, _ []string) (ExecOutput, error) {
-	return ExecOutput{}, &executorDisabledError{cmd: cmd}
+func (NoOpExecutor) Execute(_ context.Context, req ExecRequest) (ExecOutput, error) {
+	return ExecOutput{}, &executorDisabledError{cmd: req.Command}
 }
 
 type executorDisabledError struct {

@@ -150,12 +150,21 @@ func (s *LocalSandbox) WriteFile(path string, content []byte) error {
 	return os.WriteFile(resolved, content, 0644)
 }
 
-func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (Output, error) {
-	timeout := s.limits.CommandTimeout
+func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+	timeout := req.Timeout
+	if timeout <= 0 {
+		timeout = s.limits.CommandTimeout
+	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
+	}
+
+	cmd := req.Command
+	args := append([]string(nil), req.Args...)
+	if strings.TrimSpace(cmd) == "" {
+		return port.ExecOutput{}, fmt.Errorf("command is required")
 	}
 
 	// 如果无参数且命令包含 shell 特殊字符，自动用 shell 包装。
@@ -171,7 +180,43 @@ func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (
 	}
 
 	c := exec.CommandContext(ctx, cmd, args...)
-	c.Dir = s.root
+	workDir := s.root
+	if wd := strings.TrimSpace(req.WorkingDir); wd != "" {
+		resolved, err := s.ResolvePath(wd)
+		if err != nil {
+			return port.ExecOutput{}, err
+		}
+		workDir = resolved
+	}
+	if len(req.AllowedPaths) > 0 {
+		allowedRoots, err := s.resolveAllowedRoots(req.AllowedPaths)
+		if err != nil {
+			return port.ExecOutput{}, err
+		}
+		if !isWithinAllowedRoots(workDir, allowedRoots) {
+			return port.ExecOutput{}, fmt.Errorf("working directory %q is outside allowed execution paths", workDir)
+		}
+	}
+	c.Dir = workDir
+
+	env, customized := buildCommandEnv(req)
+	outputMeta := port.ExecOutput{}
+	if req.Network.Mode == port.ExecNetworkDisabled {
+		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
+			return port.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
+		}
+		if !customized {
+			env = os.Environ()
+			customized = true
+		}
+		env = applySoftNetworkLimit(env)
+		outputMeta.Enforcement = port.EnforcementSoftLimit
+		outputMeta.Degraded = true
+		outputMeta.Details = "hard network isolation unavailable in local sandbox; applied soft network limit via environment"
+	}
+	if customized {
+		c.Env = env
+	}
 
 	var stdout, stderr strings.Builder
 	c.Stdout = &stdout
@@ -179,8 +224,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (
 
 	err := c.Run()
 	out := Output{
-		Stdout: stdout.String(),
-		Stderr: stderr.String(),
+		Stdout:      stdout.String(),
+		Stderr:      stderr.String(),
+		Enforcement: outputMeta.Enforcement,
+		Degraded:    outputMeta.Degraded,
+		Details:     outputMeta.Details,
 	}
 
 	if err != nil {
@@ -191,6 +239,68 @@ func (s *LocalSandbox) Execute(ctx context.Context, cmd string, args []string) (
 		}
 	}
 	return out, nil
+}
+
+func buildCommandEnv(req port.ExecRequest) ([]string, bool) {
+	customized := req.ClearEnv || len(req.Env) > 0
+	if !customized {
+		return nil, false
+	}
+	env := []string{}
+	if !req.ClearEnv {
+		env = os.Environ()
+	}
+	for key, value := range req.Env {
+		env = upsertEnv(env, key, value)
+	}
+	return env, true
+}
+
+func upsertEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	for i, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			env[i] = prefix + value
+			return env
+		}
+	}
+	return append(env, prefix+value)
+}
+
+func applySoftNetworkLimit(env []string) []string {
+	limited := append([]string(nil), env...)
+	for _, key := range []string{
+		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+		"http_proxy", "https_proxy", "all_proxy", "no_proxy",
+	} {
+		value := ""
+		if strings.EqualFold(key, "NO_PROXY") {
+			value = "*"
+		}
+		limited = upsertEnv(limited, key, value)
+	}
+	return limited
+}
+
+func (s *LocalSandbox) resolveAllowedRoots(paths []string) ([]string, error) {
+	roots := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		resolved, err := s.ResolvePath(candidate)
+		if err != nil {
+			return nil, err
+		}
+		roots = append(roots, resolved)
+	}
+	return roots, nil
+}
+
+func isWithinAllowedRoots(path string, roots []string) bool {
+	for _, root := range roots {
+		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 // needsShell 检查命令是否需要 shell 包装（包含空格、管道、重定向等）。
@@ -259,11 +369,6 @@ func NewLocalExecutor(sb *LocalSandbox) *LocalExecutor {
 	return &LocalExecutor{sb: sb}
 }
 
-func (e *LocalExecutor) Execute(ctx context.Context, cmd string, args []string) (port.ExecOutput, error) {
-	out, err := e.sb.Execute(ctx, cmd, args)
-	return port.ExecOutput{
-		Stdout:   out.Stdout,
-		Stderr:   out.Stderr,
-		ExitCode: out.ExitCode,
-	}, err
+func (e *LocalExecutor) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+	return e.sb.Execute(ctx, req)
 }

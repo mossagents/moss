@@ -56,9 +56,9 @@ func (m *mockSandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (m *mockSandbox) Execute(_ context.Context, cmd string, args []string) (sandbox.Output, error) {
+func (m *mockSandbox) Execute(_ context.Context, req port.ExecRequest) (sandbox.Output, error) {
 	return sandbox.Output{
-		Stdout:   "mock output for: " + cmd + " " + strings.Join(args, " "),
+		Stdout:   "mock output for: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
 }
@@ -136,9 +136,9 @@ func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
 
 type mockExecutor struct{}
 
-func (m *mockExecutor) Execute(_ context.Context, cmd string, args []string) (port.ExecOutput, error) {
+func (m *mockExecutor) Execute(_ context.Context, req port.ExecRequest) (port.ExecOutput, error) {
 	return port.ExecOutput{
-		Stdout:   "exec: " + cmd + " " + strings.Join(args, " "),
+		Stdout:   "exec: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
 }
@@ -147,7 +147,7 @@ type mockExecutorLarge struct {
 	stdout string
 }
 
-func (m *mockExecutorLarge) Execute(_ context.Context, _ string, _ []string) (port.ExecOutput, error) {
+func (m *mockExecutorLarge) Execute(_ context.Context, _ port.ExecRequest) (port.ExecOutput, error) {
 	return port.ExecOutput{
 		Stdout:   m.stdout,
 		ExitCode: 0,
