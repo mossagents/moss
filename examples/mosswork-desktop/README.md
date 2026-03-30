@@ -57,3 +57,7 @@ wails3 dev
 ## Notes
 
 - In this environment, Go toolchain is `1.24.2`, while example module targets `go 1.25`, so `go test ./...` may fail locally until matching toolchain is installed.
+- Validation recommendation:
+  - Use `go test ./...` for module tests.
+  - Use `go build .` for module build verification.
+  - Avoid treating `go build ./...` as a strict gate because helper packaging directories such as `build/ios` are not standalone runnable `main` packages.

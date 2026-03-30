@@ -261,6 +261,16 @@ go test ./...
 go build ./...
 ```
 
+For multi-module verification (root + `examples/*`), prefer validating each example at module root:
+
+```bash
+cd examples/<name>
+go test ./...
+go build .
+```
+
+Note: avoid using `go build ./...` as a strict pass/fail gate for every example module, because some packaging helper directories (for example `examples/mosswork-desktop/build/ios`) are not standalone runnable `main` packages.
+
 ---
 
 ## License
