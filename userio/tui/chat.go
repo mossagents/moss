@@ -327,36 +327,14 @@ func (m *chatModel) appendStream(delta string) {
 }
 
 func (m *chatModel) refreshViewport() {
+	m.syncViewportLayout()
 	content := renderAllMessages(m.messages, m.mainWidth(), m.toolCollapsed)
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
 }
 
 func (m *chatModel) recalcLayout() {
-	headerH := 2 // 顶栏
-	metaH := 1
-	inputH := m.inputBoxHeight()
-	statusH := 1 // 底部状态栏
-
-	vpHeight := m.height - headerH - metaH - inputH - statusH
-	if vpHeight < 3 {
-		vpHeight = 3
-	}
-
-	if !m.ready {
-		m.viewport = viewport.New(m.mainWidth(), vpHeight)
-		m.ready = true
-	} else {
-		m.viewport.Width = m.mainWidth()
-		m.viewport.Height = vpHeight
-	}
-
-	inputWidth := m.width - 4
-	if inputWidth < 1 {
-		inputWidth = 1
-	}
-	m.textarea.SetWidth(inputWidth)
-	m.adjustInputHeight()
+	m.syncViewportLayout()
 	m.refreshViewport()
 }
 
@@ -380,6 +358,56 @@ func (m *chatModel) adjustInputHeight() {
 		lines = 5
 	}
 	m.textarea.SetHeight(lines)
+}
+
+func (m *chatModel) syncViewportLayout() {
+	inputWidth := m.width - 4
+	if inputWidth < 1 {
+		inputWidth = 1
+	}
+	m.textarea.SetWidth(inputWidth)
+	m.adjustInputHeight()
+
+	headerH := 2 // 顶栏
+	metaH := 1
+	gapH := 2 // 消息区/输入区、输入区/状态栏之间的空行
+	inputH := m.visibleInputHeight()
+	statusH := 1
+
+	vpHeight := m.height - headerH - metaH - gapH - inputH - statusH
+	if vpHeight < 3 {
+		vpHeight = 3
+	}
+
+	if !m.ready {
+		m.viewport = viewport.New(m.mainWidth(), vpHeight)
+		m.ready = true
+		return
+	}
+	m.viewport.Width = m.mainWidth()
+	m.viewport.Height = vpHeight
+}
+
+func (m chatModel) visibleInputHeight() int {
+	extra := 0
+	if len(m.queuedInputs) > 0 {
+		extra++
+	}
+	switch {
+	case m.pendAsk != nil && m.askForm != nil:
+		return extra + lipgloss.Height(m.renderAskForm(m.mainWidth()-2))
+	case m.scheduleBrowser != nil:
+		return extra + lipgloss.Height(m.renderScheduleBrowser(m.mainWidth()-2))
+	default:
+		height := extra + m.inputBoxHeight()
+		if m.streaming {
+			height++
+		}
+		if len(m.currentSlashHints()) > 0 {
+			height++
+		}
+		return height
+	}
 }
 
 func (m *chatModel) inputWrapWidth() int {

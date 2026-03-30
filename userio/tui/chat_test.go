@@ -559,3 +559,23 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 		}
 	}
 }
+
+func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 24
+	m.recalcLayout()
+
+	m.streaming = true
+	m.refreshViewport()
+	runningHeight := m.viewport.Height
+
+	m.streaming = false
+	m.refreshViewport()
+	idleHeight := m.viewport.Height
+
+	if idleHeight != runningHeight+1 {
+		t.Fatalf("viewport height after running=%d idle=%d, want idle to recover one line", runningHeight, idleHeight)
+	}
+}
