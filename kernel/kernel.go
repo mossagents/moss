@@ -26,6 +26,7 @@ type Kernel struct {
 	tasks     port.TaskRuntime
 	mailbox   port.Mailbox
 	isolation port.WorkspaceIsolation
+	repoState port.RepoStateCapture
 	tools     tool.Registry
 	sessions  session.Manager
 	chain     *middleware.Chain
@@ -221,6 +222,11 @@ func (k *Kernel) Mailbox() port.Mailbox {
 // WorkspaceIsolation 返回工作区隔离端口（可能为 nil）。
 func (k *Kernel) WorkspaceIsolation() port.WorkspaceIsolation {
 	return k.isolation
+}
+
+// RepoStateCapture 返回仓库状态捕获端口（可能为 nil）。
+func (k *Kernel) RepoStateCapture() port.RepoStateCapture {
+	return k.repoState
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

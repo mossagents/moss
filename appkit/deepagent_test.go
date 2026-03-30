@@ -50,6 +50,9 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	if k.TaskRuntime() == nil {
 		t.Fatal("expected task runtime to be configured")
 	}
+	if k.RepoStateCapture() == nil {
+		t.Fatal("expected repo state capture to be configured")
+	}
 
 	reg := runtime.AgentRegistry(k)
 	gp, ok := reg.Get("general-purpose")

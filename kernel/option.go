@@ -62,6 +62,11 @@ func WithWorkspaceIsolation(isolation port.WorkspaceIsolation) Option {
 	return func(k *Kernel) { k.isolation = isolation }
 }
 
+// WithRepoStateCapture 设置 RepoStateCapture Port。
+func WithRepoStateCapture(capture port.RepoStateCapture) Option {
+	return func(k *Kernel) { k.repoState = capture }
+}
+
 // WithUserIO 设置 UserIO Port。
 func WithUserIO(io port.UserIO) Option {
 	return func(k *Kernel) { k.io = io }
