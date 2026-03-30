@@ -16,6 +16,7 @@ const defaultLLMBreakerReset = 30 * time.Second
 // GovernanceConfig 描述产品层暴露的模型治理配置。
 type GovernanceConfig struct {
 	RouterConfigPath   string
+	PricingCatalogPath string
 	LLMRetries         int
 	LLMRetryInitial    time.Duration
 	LLMRetryMaxDelay   time.Duration
@@ -29,6 +30,10 @@ type GovernanceReport struct {
 	RouterExists       bool   `json:"router_exists"`
 	RouterDefaultModel string `json:"router_default_model,omitempty"`
 	RouterModels       int    `json:"router_models"`
+	PricingCatalog     string `json:"pricing_catalog,omitempty"`
+	PricingExists      bool   `json:"pricing_exists"`
+	PricingModels      int    `json:"pricing_models"`
+	PricingError       string `json:"pricing_error,omitempty"`
 	RetryEnabled       bool   `json:"retry_enabled"`
 	RetryMaxRetries    int    `json:"retry_max_retries"`
 	RetryInitialDelay  string `json:"retry_initial_delay,omitempty"`
@@ -135,6 +140,17 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		report.BreakerResetAfter = cfg.LLMBreakerReset.String()
 	} else if report.BreakerEnabled {
 		report.BreakerResetAfter = defaultLLMBreakerReset.String()
+	}
+
+	pricingCatalog, pricingPath, pricingErr := OpenPricingCatalog(workspace, cfg.PricingCatalogPath)
+	if pricingPath != "" {
+		report.PricingCatalog = pricingPath
+		report.PricingExists = pathExists(pricingPath)
+	}
+	if pricingErr != nil {
+		report.PricingError = pricingErr.Error()
+	} else if pricingCatalog != nil {
+		report.PricingModels = len(pricingCatalog.Models)
 	}
 
 	path := ResolveRouterConfigPath(workspace, cfg.RouterConfigPath)

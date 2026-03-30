@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestResolveRouterConfigPathPrefersExplicit(t *testing.T) {
@@ -57,5 +59,26 @@ func TestGovernanceConfigDisableRetry(t *testing.T) {
 	}
 	if enabled == nil || *enabled {
 		t.Fatalf("expected retry disabled marker, got %+v", enabled)
+	}
+}
+
+func TestBuildGovernanceReportIncludesPricingCatalog(t *testing.T) {
+	appconfig.SetAppName("moss-test")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mosscode", "pricing.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("models:\n  gpt-5:\n    prompt_per_1m_usd: 1.0\n    completion_per_1m_usd: 2.0\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	report := BuildGovernanceReport(dir, GovernanceConfig{})
+	if report.PricingCatalog != path {
+		t.Fatalf("pricing catalog=%q, want %q", report.PricingCatalog, path)
+	}
+	if report.PricingModels != 1 {
+		t.Fatalf("pricing models=%d, want 1", report.PricingModels)
 	}
 }

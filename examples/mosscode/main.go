@@ -59,6 +59,7 @@ type config struct {
 	checkpointArgs  []string
 	explicitFlags   []string
 	observer        port.Observer
+	pricingCatalog  *product.PricingCatalog
 }
 
 func main() {
@@ -83,6 +84,13 @@ func main() {
 		defer auditCloser.Close()
 	}
 	cfg.observer = auditObserver
+	pricingCatalog, _, err := product.OpenPricingCatalog(cfg.flags.Workspace, cfg.governance.PricingCatalogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: load pricing catalog: %v\n", err)
+		os.Exit(1)
+	}
+	cfg.pricingCatalog = pricingCatalog
+	cfg.observer = product.NewPricingObserver(pricingCatalog, auditObserver)
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
@@ -237,6 +245,7 @@ func bindPromptFlags(fs *flag.FlagSet, cfg *config) {
 func bindProductFlags(fs *flag.FlagSet, cfg *config) {
 	fs.StringVar(&cfg.approvalMode, "approval", "", "Approval mode: read-only|confirm|full-auto")
 	fs.StringVar(&cfg.governance.RouterConfigPath, "router-config", cfg.governance.RouterConfigPath, "Model router config path")
+	fs.StringVar(&cfg.governance.PricingCatalogPath, "pricing-catalog", cfg.governance.PricingCatalogPath, "Pricing catalog YAML path")
 	fs.IntVar(&cfg.governance.LLMRetries, "llm-retries", cfg.governance.LLMRetries, "LLM retry attempts (0 disables retries)")
 	fs.DurationVar(&cfg.governance.LLMRetryInitial, "llm-retry-initial", cfg.governance.LLMRetryInitial, "Initial LLM retry backoff")
 	fs.DurationVar(&cfg.governance.LLMRetryMaxDelay, "llm-retry-max-delay", cfg.governance.LLMRetryMaxDelay, "Maximum LLM retry backoff")
@@ -291,6 +300,7 @@ Flags:
   --trust       Trust level: trusted|restricted
   --approval    Approval mode: read-only|confirm|full-auto (default: confirm)
   --router-config          Optional model router YAML path
+  --pricing-catalog       Optional pricing catalog YAML path
   --llm-retries            LLM retry attempts; 0 disables retries
   --llm-retry-initial      Initial LLM retry backoff (default: 300ms)
   --llm-retry-max-delay    Maximum LLM retry backoff (default: 2s)
@@ -745,6 +755,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		Status:       "failed",
 	}
 	var recorder *product.RecordingIO
+	traceRecorder := product.NewRunTraceRecorder()
 	var userIO port.UserIO
 	if cfg.execJSON {
 		recorder = product.NewRecordingIO(cfg.approvalMode)
@@ -752,7 +763,8 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	} else {
 		userIO = port.NewConsoleIO()
 	}
-	k, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, cfg.observer)
+	traceObserver := product.NewPricingObserver(cfg.pricingCatalog, traceRecorder)
+	k, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, port.JoinObservers(cfg.observer, traceObserver))
 	if err != nil {
 		report.Error = err.Error()
 		return report, err
@@ -804,6 +816,12 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	if recorder != nil {
 		report.Events = recorder.Events()
 	}
+	trace := traceRecorder.Snapshot()
+	report.PromptTokens = trace.PromptTokens
+	report.CompletionTokens = trace.CompletionTokens
+	report.Tokens = trace.TotalTokens
+	report.EstimatedCostUSD = trace.EstimatedCostUSD
+	report.Trace = trace.Timeline
 	if err != nil {
 		report.Error = err.Error()
 		return report, fmt.Errorf("run: %w", err)
@@ -811,12 +829,18 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	report.Status = "completed"
 	report.SessionID = result.SessionID
 	report.Steps = result.Steps
-	report.Tokens = result.TokensUsed.TotalTokens
+	if report.Tokens == 0 {
+		report.Tokens = result.TokensUsed.TotalTokens
+	}
 	report.Output = result.Output
 
 	if !cfg.execJSON {
 		fmt.Println()
-		fmt.Printf("✅ Done (session: %s, steps: %d, tokens: %d)\n", result.SessionID, result.Steps, result.TokensUsed.TotalTokens)
+		fmt.Printf("✅ Done (session: %s, steps: %d, tokens: %d", result.SessionID, result.Steps, report.Tokens)
+		if report.EstimatedCostUSD > 0 {
+			fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
+		}
+		fmt.Printf(")\n")
 		if strings.TrimSpace(result.Output) != "" {
 			fmt.Printf("\n%s\n", result.Output)
 		}

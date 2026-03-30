@@ -131,6 +131,7 @@ type DoctorPathsReport struct {
 	MemoryDir          PathStatus `json:"memory_dir"`
 	TaskRuntimeDir     PathStatus `json:"task_runtime_dir"`
 	WorkspaceIsolation PathStatus `json:"workspace_isolation_dir"`
+	PricingCatalog     PathStatus `json:"pricing_catalog"`
 	AuditLog           PathStatus `json:"audit_log"`
 	DebugLog           PathStatus `json:"debug_log"`
 }
@@ -232,6 +233,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			MemoryDir:          checkWritableDir(MemoryDir()),
 			TaskRuntimeDir:     checkWritableDir(TaskRuntimeDir()),
 			WorkspaceIsolation: checkWritableDir(WorkspaceIsolationDir()),
+			PricingCatalog:     checkWritableFile(defaultPricingCatalogPath(workspace, governanceCfg.PricingCatalogPath)),
 			AuditLog:           checkWritableFile(AuditLogPath()),
 			DebugLog:           checkWritableFile(DebugLogPath()),
 		},
@@ -358,12 +360,22 @@ func RenderDoctorReport(report DoctorReport) string {
 			firstNonEmpty(report.Governance.Model.RouterDefaultModel, "(unspecified)"),
 			report.Governance.Model.RouterModels)
 	}
+	if report.Governance.Model.PricingCatalog != "" {
+		fmt.Fprintf(&b, " pricing=%s", report.Governance.Model.PricingCatalog)
+		if report.Governance.Model.PricingModels > 0 {
+			fmt.Fprintf(&b, " pricing_models=%d", report.Governance.Model.PricingModels)
+		}
+	}
 	if report.Governance.Model.Error != "" {
 		fmt.Fprintf(&b, " err=%s", report.Governance.Model.Error)
+	}
+	if report.Governance.Model.PricingError != "" {
+		fmt.Fprintf(&b, " pricing_err=%s", report.Governance.Model.PricingError)
 	}
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "Session store: %s\n", renderPathStatus(report.Paths.SessionStoreDir))
 	fmt.Fprintf(&b, "Memory dir: %s\n", renderPathStatus(report.Paths.MemoryDir))
+	fmt.Fprintf(&b, "Pricing catalog: %s\n", renderPathStatus(report.Paths.PricingCatalog))
 	fmt.Fprintf(&b, "Audit log: %s\n", renderPathStatus(report.Paths.AuditLog))
 	fmt.Fprintf(&b, "Debug log: %s\n", renderPathStatus(report.Paths.DebugLog))
 	fmt.Fprintf(&b, "Task runtime: type=%s ready=%t", report.Health.Tasks.Type, report.Health.Tasks.Ready)
@@ -645,6 +657,18 @@ func listSnapshots(ctx context.Context, workspace string) ([]port.WorktreeSnapsh
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
 	return snapshots, nil
+}
+
+func defaultPricingCatalogPath(workspace, explicit string) string {
+	path := ResolvePricingCatalogPath(workspace, explicit)
+	if path != "" {
+		return path
+	}
+	candidates := pricingCatalogCandidates(workspace)
+	if len(candidates) == 0 {
+		return filepath.Join(appconfig.AppDir(), "pricing.yaml")
+	}
+	return candidates[0]
 }
 
 func detectedEnvVars() []string {

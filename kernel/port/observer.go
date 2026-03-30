@@ -45,13 +45,14 @@ func JoinObservers(observers ...Observer) Observer {
 
 // LLMCallEvent 记录一次 LLM 调用的指标。
 type LLMCallEvent struct {
-	SessionID  string        `json:"session_id"`
-	Model      string        `json:"model,omitempty"`
-	Duration   time.Duration `json:"duration_ms"`
-	Usage      TokenUsage    `json:"usage"`
-	StopReason string        `json:"stop_reason,omitempty"`
-	Streamed   bool          `json:"streamed"`
-	Error      error         `json:"-"`
+	SessionID        string        `json:"session_id"`
+	Model            string        `json:"model,omitempty"`
+	Duration         time.Duration `json:"duration_ms"`
+	Usage            TokenUsage    `json:"usage"`
+	EstimatedCostUSD float64       `json:"estimated_cost_usd,omitempty"`
+	StopReason       string        `json:"stop_reason,omitempty"`
+	Streamed         bool          `json:"streamed"`
+	Error            error         `json:"-"`
 }
 
 // ToolCallEvent 记录一次工具调用的指标。

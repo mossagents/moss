@@ -15,20 +15,24 @@ type ExecOutputEvent struct {
 }
 
 type ExecReport struct {
-	App          string            `json:"app"`
-	Goal         string            `json:"goal"`
-	Workspace    string            `json:"workspace"`
-	Provider     string            `json:"provider"`
-	Model        string            `json:"model,omitempty"`
-	Trust        string            `json:"trust"`
-	ApprovalMode string            `json:"approval_mode"`
-	SessionID    string            `json:"session_id,omitempty"`
-	Status       string            `json:"status"`
-	Steps        int               `json:"steps,omitempty"`
-	Tokens       int               `json:"tokens,omitempty"`
-	Output       string            `json:"output,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	Events       []ExecOutputEvent `json:"events,omitempty"`
+	App              string            `json:"app"`
+	Goal             string            `json:"goal"`
+	Workspace        string            `json:"workspace"`
+	Provider         string            `json:"provider"`
+	Model            string            `json:"model,omitempty"`
+	Trust            string            `json:"trust"`
+	ApprovalMode     string            `json:"approval_mode"`
+	SessionID        string            `json:"session_id,omitempty"`
+	Status           string            `json:"status"`
+	Steps            int               `json:"steps,omitempty"`
+	PromptTokens     int               `json:"prompt_tokens,omitempty"`
+	CompletionTokens int               `json:"completion_tokens,omitempty"`
+	Tokens           int               `json:"tokens,omitempty"`
+	EstimatedCostUSD float64           `json:"estimated_cost_usd,omitempty"`
+	Output           string            `json:"output,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	Events           []ExecOutputEvent `json:"events,omitempty"`
+	Trace            []TraceEvent      `json:"trace,omitempty"`
 }
 
 type RecordingIO struct {

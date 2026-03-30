@@ -141,6 +141,38 @@ func TestAuditLogger_OnToolCall(t *testing.T) {
 	}
 }
 
+func TestAuditLogger_OnLLMCallIncludesUsageAndCost(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewAuditLogger(&buf)
+
+	logger.OnLLMCall(context.Background(), port.LLMCallEvent{
+		SessionID: "s1",
+		Model:     "gpt-5",
+		Duration:  10 * time.Millisecond,
+		Usage: port.TokenUsage{
+			PromptTokens:     10,
+			CompletionTokens: 5,
+			TotalTokens:      15,
+		},
+		EstimatedCostUSD: 0.25,
+	})
+
+	var entry auditEntry
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("parse audit entry: %v", err)
+	}
+	data, ok := entry.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected llm_call data map, got %T", entry.Data)
+	}
+	if data["prompt_tokens"] != float64(10) || data["completion_tokens"] != float64(5) {
+		t.Fatalf("unexpected token data %+v", data)
+	}
+	if data["cost_usd"] != 0.25 {
+		t.Fatalf("unexpected cost data %+v", data)
+	}
+}
+
 func TestAuditLogger_OnSessionEvent(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)

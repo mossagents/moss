@@ -48,17 +48,23 @@ func (a *AuditLogger) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 	if e.Error != nil {
 		errMsg = e.Error.Error()
 	}
+	data := map[string]any{
+		"model":             e.Model,
+		"duration_ms":       e.Duration.Milliseconds(),
+		"prompt_tokens":     e.Usage.PromptTokens,
+		"completion_tokens": e.Usage.CompletionTokens,
+		"tokens":            e.Usage.TotalTokens,
+		"stop_reason":       e.StopReason,
+		"error":             errMsg,
+	}
+	if e.EstimatedCostUSD > 0 {
+		data["cost_usd"] = e.EstimatedCostUSD
+	}
 	a.write(auditEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Type:      "llm_call",
 		SessionID: e.SessionID,
-		Data: map[string]any{
-			"model":       e.Model,
-			"duration_ms": e.Duration.Milliseconds(),
-			"tokens":      e.Usage.TotalTokens,
-			"stop_reason": e.StopReason,
-			"error":       errMsg,
-		},
+		Data:      data,
 	})
 }
 
