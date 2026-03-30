@@ -27,6 +27,9 @@ type ServeConfig struct {
 
 	// DeliveryDir 为 gateway 可靠投递配置持久化目录（可选）。
 	DeliveryDir string
+
+	// RouteScope 会话路由键粒度（main/per-peer/per-channel-peer/per-account-channel-peer）。
+	RouteScope string
 }
 
 // Serve 以 Gateway 模式运行：CLI Channel → Router → Kernel.Run → 回复。
@@ -41,5 +44,6 @@ func Serve(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 		RouterConfig: cfg.RouterConfig,
 		OnError:      cfg.OnError,
 		DeliveryDir:  cfg.DeliveryDir,
+		RouteScope:   cfg.RouteScope,
 	}, k)
 }

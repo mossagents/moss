@@ -18,11 +18,18 @@ type ServeConfig struct {
 	RouterConfig session.RouterConfig
 	OnError      func(error)
 	DeliveryDir  string
+	RouteScope   string
 }
 
 func ServeCLI(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 	mgr := k.SessionManager()
 	routerCfg := cfg.RouterConfig
+	switch cfg.RouteScope {
+	case "per-peer":
+		routerCfg.DMScope = session.DMScopePerPeer
+	case "per-channel-peer":
+		routerCfg.DMScope = session.DMScopePerChannelPeer
+	}
 	if routerCfg.DefaultConfig.SystemPrompt == "" {
 		routerCfg.DefaultConfig.SystemPrompt = cfg.SystemPrompt
 	}

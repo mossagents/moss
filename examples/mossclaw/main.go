@@ -155,6 +155,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 		SessionStore: rt.store,
 		SystemPrompt: buildSystemPrompt(flags.Workspace),
 		DeliveryDir:  filepath.Join(appconfig.AppDir(), "delivery"),
+		RouteScope:   "per-peer",
 	}, k)
 }
 
