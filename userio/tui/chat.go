@@ -68,6 +68,10 @@ type chatModel struct {
 	taskCancelFn        func(taskID, reason string) (string, error)
 	scheduleCtrl        runtime.ScheduleController
 	sessionListFn       func(limit int) (string, error)
+	checkpointListFn    func(limit int) (string, error)
+	checkpointCreateFn  func(note string) (string, error)
+	checkpointForkFn    func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
+	checkpointReplayFn  func(checkpointID, mode string, restoreWorktree bool) (string, error)
 	sessionRestoreFn    func(sessionID string) (string, error)
 	newSessionFn        func() (string, error)
 	gitRunFn            func(cmd string, args []string) (string, error)
@@ -685,6 +689,148 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/checkpoint":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /checkpoint list [limit]\n  /checkpoint create [note]\n  /checkpoint fork [session <id>|checkpoint <id>] [restore]\n  /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "list":
+			if m.checkpointListFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint list is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit := 20
+			if len(args) >= 2 {
+				v, err := strconv.Atoi(args[1])
+				if err != nil || v <= 0 {
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list [limit:int]"})
+					m.refreshViewport()
+					return m, nil
+				}
+				limit = v
+			}
+			out, err := m.checkpointListFn(limit)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list checkpoints: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		case "create":
+			if m.checkpointCreateFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint creation is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			note := strings.TrimSpace(strings.Join(args[1:], " "))
+			out, err := m.checkpointCreateFn(note)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create checkpoint: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		case "fork":
+			if m.checkpointForkFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint fork is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			sourceKind := string(port.ForkSourceSession)
+			sourceID := ""
+			restore := false
+			rest := args[1:]
+			if len(rest) > 0 {
+				switch strings.ToLower(strings.TrimSpace(rest[0])) {
+				case "session", "checkpoint":
+					sourceKind = strings.ToLower(strings.TrimSpace(rest[0]))
+					if len(rest) < 2 || strings.TrimSpace(rest[1]) == "" {
+						m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id>] [restore]"})
+						m.refreshViewport()
+						return m, nil
+					}
+					sourceID = strings.TrimSpace(rest[1])
+					rest = rest[2:]
+				}
+			}
+			for _, item := range rest {
+				token := strings.ToLower(strings.TrimSpace(item))
+				if token == "restore" || token == "--restore-worktree" {
+					restore = true
+					continue
+				}
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id>] [restore]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork session: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.messages = []chatMessage{{kind: msgSystem, content: out}}
+			m.streaming = false
+			m.finished = false
+			m.result = ""
+			m.queuedInputs = nil
+			m.textarea.Reset()
+			m.adjustInputHeight()
+			m.refreshViewport()
+			return m, nil
+		case "replay":
+			if m.checkpointReplayFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint replay is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			checkpointID := strings.TrimSpace(args[1])
+			mode := ""
+			restore := false
+			for _, item := range args[2:] {
+				token := strings.ToLower(strings.TrimSpace(item))
+				switch token {
+				case "resume", "rerun":
+					mode = token
+				case "restore", "--restore-worktree":
+					restore = true
+				default:
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
+					m.refreshViewport()
+					return m, nil
+				}
+			}
+			out, err := m.checkpointReplayFn(checkpointID, mode, restore)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to replay checkpoint: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.messages = []chatMessage{{kind: msgSystem, content: out}}
+			m.streaming = false
+			m.finished = false
+			m.result = ""
+			m.queuedInputs = nil
+			m.textarea.Reset()
+			m.adjustInputHeight()
+			m.refreshViewport()
+			return m, nil
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list|create|fork|replay ..."})
+			m.refreshViewport()
+			return m, nil
+		}
+
 	case "/sessions":
 		if m.sessionListFn == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session list is unavailable."})
@@ -1020,6 +1166,10 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /new           Create and switch to a fresh session\n" +
 			"  /session restore <id>  Restore a persisted session\n" +
 			"  /sessions [limit]  List persisted sessions\n" +
+			"  /checkpoint list [limit]  List persisted checkpoints\n" +
+			"  /checkpoint create [note]  Create a checkpoint from the current session\n" +
+			"  /checkpoint fork [session <id>|checkpoint <id>] [restore]  Fork into a fresh session\n" +
+			"  /checkpoint replay <id> [resume|rerun] [restore]  Replay a checkpoint into a fresh session\n" +
 			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
 			"  /tasks [status] [limit]  List background tasks\n" +
 			"  /task <id>     Query task details\n" +
@@ -1262,7 +1412,7 @@ func (m *chatModel) applySlashCompletion() bool {
 }
 
 var slashCandidates = []string{
-	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/offload", "/tasks", "/task",
+	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/checkpoint", "/offload", "/tasks", "/task",
 	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }

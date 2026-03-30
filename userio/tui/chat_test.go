@@ -285,6 +285,60 @@ func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 	}
 }
 
+func TestSlashCommandCheckpointListSuccess(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.checkpointListFn = func(limit int) (string, error) {
+		if limit != 20 {
+			t.Fatalf("limit = %d, want 20", limit)
+		}
+		return "Checkpoints:\n- cp-1", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint list")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "cp-1") {
+		t.Fatalf("unexpected checkpoint list output: %+v", last)
+	}
+}
+
+func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.messages = []chatMessage{{kind: msgUser, content: "old"}}
+	m.streaming = true
+	m.finished = true
+	m.result = "done"
+	m.queuedInputs = []string{"queued"}
+	m.checkpointReplayFn = func(checkpointID, mode string, restore bool) (string, error) {
+		if checkpointID != "cp-1" || mode != "rerun" || !restore {
+			t.Fatalf("unexpected replay args id=%q mode=%q restore=%v", checkpointID, mode, restore)
+		}
+		return "Switched to replay session sess_2 from checkpoint cp-1 (rerun).", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint replay cp-1 rerun restore")
+	if len(updated.messages) != 1 {
+		t.Fatalf("expected transcript reset, got %d messages", len(updated.messages))
+	}
+	last := updated.messages[0]
+	if last.kind != msgSystem || !strings.Contains(last.content, "sess_2") {
+		t.Fatalf("unexpected replay output: %+v", last)
+	}
+	if updated.streaming || updated.finished || updated.result != "" || len(updated.queuedInputs) != 0 {
+		t.Fatal("expected fresh idle state after replay switch")
+	}
+}
+
+func TestHelpIncludesCheckpointCommands(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/help")
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "/checkpoint list [limit]") {
+		t.Fatalf("help missing checkpoint commands: %q", last.content)
+	}
+}
+
 func TestHelpIncludesNewCommand(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
@@ -529,6 +583,13 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	hints := m.currentSlashHints()
 	if !slices.Contains(hints, "/new") {
 		t.Fatalf("expected /new in hints, got %v", hints)
+	}
+
+	m.textarea.SetValue("/c")
+	m.refreshSlashHints()
+	hints = m.currentSlashHints()
+	if !slices.Contains(hints, "/checkpoint") {
+		t.Fatalf("expected /checkpoint in hints, got %v", hints)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
@@ -255,6 +256,179 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	return k.NewSession(ctx, sessCfg)
 }
 
+func (a *agentState) listPersistedCheckpoints(limit int) (string, error) {
+	a.mu.Lock()
+	k := a.k
+	ctx := a.ctx
+	a.mu.Unlock()
+	if k == nil || k.Checkpoints() == nil {
+		return "", fmt.Errorf("checkpoint store is unavailable")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	items, err := k.Checkpoints().List(reqCtx)
+	if err != nil {
+		return "", err
+	}
+	summaries := product.SummarizeCheckpoints(items)
+	if len(summaries) > limit {
+		summaries = summaries[:limit]
+	}
+	return product.RenderCheckpointSummaries(summaries), nil
+}
+
+func (a *agentState) createCheckpoint(note string) (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot create a checkpoint while a run is active")
+	}
+	k := a.k
+	sess := a.sess
+	ctx := a.ctx
+	a.mu.Unlock()
+	if k == nil || k.Checkpoints() == nil {
+		return "", fmt.Errorf("checkpoint store is unavailable")
+	}
+	if sess == nil {
+		return "", fmt.Errorf("active session is unavailable")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	record, err := k.CreateCheckpoint(reqCtx, sess, port.CheckpointCreateRequest{Note: strings.TrimSpace(note)})
+	if err != nil {
+		return "", err
+	}
+	summary := product.SummarizeCheckpoint(*record)
+	msg := fmt.Sprintf("Created checkpoint %s for session %s.", summary.ID, sess.ID)
+	if summary.SnapshotID != "" {
+		msg += fmt.Sprintf(" snapshot=%s.", summary.SnapshotID)
+	}
+	msg += fmt.Sprintf(" patches=%d lineage=%d.", summary.PatchCount, summary.LineageDepth)
+	if strings.TrimSpace(summary.Note) != "" {
+		msg += fmt.Sprintf(" note=%s.", summary.Note)
+	}
+	return msg, nil
+}
+
+func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot fork a session while a run is active")
+	}
+	current := a.sess
+	store := a.store
+	ctx := a.ctx
+	k := a.k
+	a.mu.Unlock()
+	if k == nil {
+		return "", fmt.Errorf("runtime is unavailable")
+	}
+	if sourceKind == "" {
+		sourceKind = string(port.ForkSourceSession)
+	}
+	if strings.TrimSpace(sourceID) == "" {
+		if sourceKind != string(port.ForkSourceSession) || current == nil {
+			return "", fmt.Errorf("source id is required")
+		}
+		sourceID = current.ID
+	}
+	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
+	if err != nil {
+		return "", err
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	next, result, err := k.ForkSession(reqCtx, port.ForkRequest{
+		SourceKind:      port.ForkSourceKind(sourceKind),
+		SourceID:        strings.TrimSpace(sourceID),
+		RestoreWorktree: restoreWorktree,
+	})
+	if err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	a.sess = next
+	a.mu.Unlock()
+	var b strings.Builder
+	if notice != "" {
+		b.WriteString(notice)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Switched to forked session %s from %s %s.", next.ID, result.SourceKind, result.SourceID)
+	if result.CheckpointID != "" {
+		fmt.Fprintf(&b, " checkpoint=%s.", result.CheckpointID)
+	}
+	if result.RestoredWorktree {
+		b.WriteString(" worktree restored.")
+	}
+	if result.Degraded && strings.TrimSpace(result.Details) != "" {
+		fmt.Fprintf(&b, " degraded=%s.", result.Details)
+	}
+	return b.String(), nil
+}
+
+func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree bool) (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot replay a checkpoint while a run is active")
+	}
+	current := a.sess
+	store := a.store
+	ctx := a.ctx
+	k := a.k
+	a.mu.Unlock()
+	if k == nil || k.Checkpoints() == nil {
+		return "", fmt.Errorf("checkpoint store is unavailable")
+	}
+	checkpointID = strings.TrimSpace(checkpointID)
+	if checkpointID == "" {
+		return "", fmt.Errorf("checkpoint id is required")
+	}
+	replayMode := port.ReplayMode(strings.ToLower(strings.TrimSpace(mode)))
+	if replayMode == "" {
+		replayMode = port.ReplayModeResume
+	}
+	if replayMode != port.ReplayModeResume && replayMode != port.ReplayModeRerun {
+		return "", fmt.Errorf("replay mode must be resume or rerun")
+	}
+	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
+	if err != nil {
+		return "", err
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	next, result, err := k.ReplayFromCheckpoint(reqCtx, port.ReplayRequest{
+		CheckpointID:    checkpointID,
+		Mode:            replayMode,
+		RestoreWorktree: restoreWorktree,
+	})
+	if err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	a.sess = next
+	a.mu.Unlock()
+	var b strings.Builder
+	if notice != "" {
+		b.WriteString(notice)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Switched to replay session %s from checkpoint %s (%s).", next.ID, result.CheckpointID, result.Mode)
+	if result.RestoredWorktree {
+		b.WriteString(" worktree restored.")
+	}
+	if result.Degraded && strings.TrimSpace(result.Details) != "" {
+		fmt.Fprintf(&b, " degraded=%s.", result.Details)
+	}
+	return b.String(), nil
+}
+
 func (a *agentState) newSession() (string, error) {
 	a.mu.Lock()
 	if a.running {
@@ -266,17 +440,9 @@ func (a *agentState) newSession() (string, error) {
 	ctx := a.ctx
 	a.mu.Unlock()
 
-	var notice string
-	if current != nil && sessionDialogCount(current) > 0 {
-		if store == nil {
-			return "", errors.New("session store is unavailable, cannot auto-save current session before switching")
-		}
-		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		defer cancel()
-		if err := store.Save(saveCtx, current); err != nil {
-			return "", fmt.Errorf("save current session %q: %w", current.ID, err)
-		}
-		notice = fmt.Sprintf("Previous session %s auto-saved. Use /session restore %s or /sessions to continue it later.", current.ID, current.ID)
+	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
+	if err != nil {
+		return "", err
 	}
 
 	next, err := a.createInteractiveSession()
@@ -291,6 +457,21 @@ func (a *agentState) newSession() (string, error) {
 		return fmt.Sprintf("%s\nSwitched to new session %s.", notice, next.ID), nil
 	}
 	return fmt.Sprintf("Started new session %s.", next.ID), nil
+}
+
+func autosaveSessionBeforeSwitch(current *session.Session, store session.SessionStore, ctx context.Context) (string, error) {
+	if current == nil || sessionDialogCount(current) == 0 {
+		return "", nil
+	}
+	if store == nil {
+		return "", errors.New("session store is unavailable, cannot auto-save current session before switching")
+	}
+	saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err := store.Save(saveCtx, current); err != nil {
+		return "", fmt.Errorf("save current session %q: %w", current.ID, err)
+	}
+	return fmt.Sprintf("Previous session %s auto-saved. Use /session restore %s or /sessions to continue it later.", current.ID, current.ID), nil
 }
 
 func (a *agentState) setPermission(toolName, mode string) (string, error) {
@@ -830,6 +1011,18 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.sessionInfoFn = agent.sessionSummary
 		m.chat.sessionListFn = func(limit int) (string, error) {
 			return agent.listPersistedSessions(limit)
+		}
+		m.chat.checkpointListFn = func(limit int) (string, error) {
+			return agent.listPersistedCheckpoints(limit)
+		}
+		m.chat.checkpointCreateFn = func(note string) (string, error) {
+			return agent.createCheckpoint(note)
+		}
+		m.chat.checkpointForkFn = func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
+			return agent.forkSession(sourceKind, sourceID, restoreWorktree)
+		}
+		m.chat.checkpointReplayFn = func(checkpointID, mode string, restoreWorktree bool) (string, error) {
+			return agent.replayCheckpoint(checkpointID, mode, restoreWorktree)
 		}
 		m.chat.sessionRestoreFn = func(sessionID string) (string, error) {
 			return agent.restoreSession(sessionID)

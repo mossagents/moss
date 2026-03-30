@@ -434,6 +434,16 @@ type ReviewSnapshotSummary struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type CheckpointSummary struct {
+	ID           string    `json:"id"`
+	SessionID    string    `json:"session_id,omitempty"`
+	SnapshotID   string    `json:"snapshot_id,omitempty"`
+	Note         string    `json:"note,omitempty"`
+	PatchCount   int       `json:"patch_count"`
+	LineageDepth int       `json:"lineage_depth"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 func BuildReviewReport(ctx context.Context, workspace string, args []string) (ReviewReport, error) {
 	mode := "status"
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
@@ -545,6 +555,25 @@ func SummarizeSnapshot(item port.WorktreeSnapshot) ReviewSnapshotSummary {
 	}
 }
 
+func SummarizeCheckpoint(item port.CheckpointRecord) CheckpointSummary {
+	sessionID := item.SessionID
+	for _, ref := range item.Lineage {
+		if ref.Kind == port.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+			sessionID = ref.ID
+			break
+		}
+	}
+	return CheckpointSummary{
+		ID:           item.ID,
+		SessionID:    sessionID,
+		SnapshotID:   item.WorktreeSnapshotID,
+		Note:         item.Note,
+		PatchCount:   len(item.PatchIDs),
+		LineageDepth: len(item.Lineage),
+		CreatedAt:    item.CreatedAt,
+	}
+}
+
 func summarizeSnapshots(items []port.WorktreeSnapshot) []ReviewSnapshotSummary {
 	out := make([]ReviewSnapshotSummary, 0, len(items))
 	for _, item := range items {
@@ -554,6 +583,56 @@ func summarizeSnapshots(items []port.WorktreeSnapshot) []ReviewSnapshotSummary {
 		return out[i].CreatedAt.After(out[j].CreatedAt)
 	})
 	return out
+}
+
+func SummarizeCheckpoints(items []port.CheckpointRecord) []CheckpointSummary {
+	out := make([]CheckpointSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, SummarizeCheckpoint(item))
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].CreatedAt.After(out[j].CreatedAt)
+	})
+	return out
+}
+
+func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error) {
+	store, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint store: %w", err)
+	}
+	items, err := store.List(ctx)
+	if err != nil {
+		if err == port.ErrCheckpointUnavailable {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("list checkpoints: %w", err)
+	}
+	out := SummarizeCheckpoints(items)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func RenderCheckpointSummaries(items []CheckpointSummary) string {
+	if len(items) == 0 {
+		return "Checkpoints: none"
+	}
+	var b strings.Builder
+	b.WriteString("Checkpoints:\n")
+	for _, item := range items {
+		fmt.Fprintf(&b, "- %s | created=%s | session=%s | snapshot=%s | patches=%d | lineage=%d | note=%s\n",
+			item.ID,
+			item.CreatedAt.UTC().Format(time.RFC3339),
+			firstNonEmpty(item.SessionID, "(none)"),
+			firstNonEmpty(item.SnapshotID, "(none)"),
+			item.PatchCount,
+			item.LineageDepth,
+			firstNonEmpty(item.Note, "(none)"),
+		)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func listSnapshots(ctx context.Context, workspace string) ([]port.WorktreeSnapshot, error) {

@@ -56,6 +56,7 @@ type config struct {
 	doctorJSON      bool
 	reviewJSON      bool
 	reviewArgs      []string
+	checkpointArgs  []string
 	explicitFlags   []string
 	observer        port.Observer
 }
@@ -112,6 +113,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	case "checkpoint":
+		if err := runCheckpoint(ctx, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	if err := launchTUI(cfg); err != nil {
@@ -146,6 +153,10 @@ func parseFlags() *config {
 		case "review":
 			cfg.command = "review"
 			parseReviewFlags(cfg, os.Args[2:])
+			return cfg
+		case "checkpoint":
+			cfg.command = "checkpoint"
+			cfg.checkpointArgs = append([]string(nil), os.Args[2:]...)
 			return cfg
 		case "help", "--help", "-h":
 			printUsage()
@@ -270,6 +281,7 @@ Usage:
   mosscode doctor [--json] [flags]
   mosscode config [show|path|set|unset] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
+  mosscode checkpoint <list|create|fork|replay> [flags]
 
 Flags:
   --prompt, -p           One-shot prompt for 'exec' or legacy root invocation
@@ -305,6 +317,14 @@ Review:
   snapshots     List saved worktree snapshots
   snapshot      Show a specific snapshot by ID
   --json        Emit machine-readable review output
+
+Checkpoint:
+  list [--json]                                             List persisted checkpoints
+  create --session <id> [--note <note>] [--json]            Create checkpoint from a persisted session
+  fork [--session <id> | --checkpoint <id>] [--restore-worktree] [--json]
+                                                             Fork a fresh session from a session/checkpoint
+  replay --checkpoint <id> [--mode resume|rerun] [--restore-worktree] [--json]
+                                                             Prepare a fresh replay session from a checkpoint
 
 Exec:
   --json        Emit machine-readable execution output
@@ -438,6 +458,257 @@ func runReview(ctx context.Context, cfg *config) error {
 		return nil
 	}
 	fmt.Print(product.RenderReviewReport(report))
+	return nil
+}
+
+type checkpointActionReport struct {
+	Mode             string                      `json:"mode"`
+	Checkpoints      []product.CheckpointSummary `json:"checkpoints,omitempty"`
+	Checkpoint       *product.CheckpointSummary  `json:"checkpoint,omitempty"`
+	SessionID        string                      `json:"session_id,omitempty"`
+	SourceKind       string                      `json:"source_kind,omitempty"`
+	SourceID         string                      `json:"source_id,omitempty"`
+	ReplayMode       string                      `json:"replay_mode,omitempty"`
+	RestoredWorktree bool                        `json:"restored_worktree,omitempty"`
+	Degraded         bool                        `json:"degraded,omitempty"`
+	Details          string                      `json:"details,omitempty"`
+	Note             string                      `json:"note,omitempty"`
+}
+
+func runCheckpoint(ctx context.Context, cfg *config) error {
+	if len(cfg.checkpointArgs) == 0 {
+		return fmt.Errorf("usage: mosscode checkpoint <list|create|fork|replay> [flags]")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.checkpointArgs[0])) {
+	case "list":
+		return runCheckpointList(ctx, cfg, cfg.checkpointArgs[1:])
+	case "create":
+		return runCheckpointCreate(ctx, cfg, cfg.checkpointArgs[1:])
+	case "fork":
+		return runCheckpointFork(ctx, cfg, cfg.checkpointArgs[1:])
+	case "replay":
+		return runCheckpointReplay(ctx, cfg, cfg.checkpointArgs[1:])
+	default:
+		return fmt.Errorf("unknown checkpoint command %q (supported: list, create, fork, replay)", cfg.checkpointArgs[0])
+	}
+}
+
+func runCheckpointList(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("checkpoint list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	jsonOut := false
+	limit := 20
+	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint list as JSON")
+	fs.IntVar(&limit, "limit", limit, "Maximum checkpoints to list")
+	parseCommonFlags(fs, cfg, args)
+	items, err := product.ListCheckpoints(ctx, limit)
+	if err != nil {
+		return err
+	}
+	report := checkpointActionReport{
+		Mode:        "list",
+		Checkpoints: items,
+	}
+	if jsonOut {
+		return printJSON(report)
+	}
+	fmt.Println(product.RenderCheckpointSummaries(items))
+	return nil
+}
+
+func runCheckpointCreate(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("checkpoint create", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	sessionID := ""
+	note := ""
+	jsonOut := false
+	fs.StringVar(&sessionID, "session", "", "Persisted session ID to checkpoint")
+	fs.StringVar(&note, "note", "", "Optional checkpoint note")
+	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint create output as JSON")
+	parseCommonFlags(fs, cfg, args)
+	if strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("usage: mosscode checkpoint create --session <id> [--note <note>] [--json]")
+	}
+	k, err := buildCheckpointKernel(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer k.Shutdown(ctx)
+	if err := k.Boot(ctx); err != nil {
+		return err
+	}
+	if k.SessionStore() == nil {
+		return fmt.Errorf("session store is unavailable")
+	}
+	sess, err := k.SessionStore().Load(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sess == nil {
+		return fmt.Errorf("session %q not found", sessionID)
+	}
+	record, err := k.CreateCheckpoint(ctx, sess, port.CheckpointCreateRequest{Note: strings.TrimSpace(note)})
+	if err != nil {
+		return err
+	}
+	summary := product.SummarizeCheckpoint(*record)
+	report := checkpointActionReport{
+		Mode:       "create",
+		Checkpoint: &summary,
+		Note:       note,
+	}
+	if jsonOut {
+		return printJSON(report)
+	}
+	fmt.Printf("Created checkpoint %s for session %s.\n", summary.ID, summary.SessionID)
+	if summary.SnapshotID != "" {
+		fmt.Printf("Snapshot: %s\n", summary.SnapshotID)
+	}
+	fmt.Printf("Patches: %d | Lineage: %d\n", summary.PatchCount, summary.LineageDepth)
+	if strings.TrimSpace(summary.Note) != "" {
+		fmt.Printf("Note: %s\n", summary.Note)
+	}
+	return nil
+}
+
+func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("checkpoint fork", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	sessionID := ""
+	checkpointID := ""
+	restoreWorktree := false
+	jsonOut := false
+	fs.StringVar(&sessionID, "session", "", "Fork from this session ID (prefers latest checkpoint for that session)")
+	fs.StringVar(&checkpointID, "checkpoint", "", "Fork directly from this checkpoint ID")
+	fs.BoolVar(&restoreWorktree, "restore-worktree", false, "Attempt worktree restore when forking from checkpoint state")
+	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint fork output as JSON")
+	parseCommonFlags(fs, cfg, args)
+	sourceKind := port.ForkSourceSession
+	sourceID := strings.TrimSpace(sessionID)
+	if strings.TrimSpace(checkpointID) != "" {
+		if sourceID != "" {
+			return fmt.Errorf("use either --session or --checkpoint, not both")
+		}
+		sourceKind = port.ForkSourceCheckpoint
+		sourceID = strings.TrimSpace(checkpointID)
+	}
+	if sourceID == "" {
+		return fmt.Errorf("usage: mosscode checkpoint fork [--session <id> | --checkpoint <id>] [--restore-worktree] [--json]")
+	}
+	k, err := buildCheckpointKernel(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer k.Shutdown(ctx)
+	if err := k.Boot(ctx); err != nil {
+		return err
+	}
+	sess, result, err := k.ForkSession(ctx, port.ForkRequest{
+		SourceKind:      sourceKind,
+		SourceID:        sourceID,
+		RestoreWorktree: restoreWorktree,
+	})
+	if err != nil {
+		return err
+	}
+	report := checkpointActionReport{
+		Mode:             "fork",
+		SessionID:        sess.ID,
+		SourceKind:       string(result.SourceKind),
+		SourceID:         result.SourceID,
+		RestoredWorktree: result.RestoredWorktree,
+		Degraded:         result.Degraded,
+		Details:          result.Details,
+	}
+	if jsonOut {
+		return printJSON(report)
+	}
+	fmt.Printf("Prepared forked session %s from %s %s.\n", sess.ID, result.SourceKind, result.SourceID)
+	if result.RestoredWorktree {
+		fmt.Println("Worktree restored.")
+	}
+	if result.Degraded && strings.TrimSpace(result.Details) != "" {
+		fmt.Printf("Degraded: %s\n", result.Details)
+	}
+	fmt.Printf("Use `mosscode resume --session %s` to continue.\n", sess.ID)
+	return nil
+}
+
+func runCheckpointReplay(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("checkpoint replay", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	checkpointID := ""
+	mode := string(port.ReplayModeResume)
+	restoreWorktree := false
+	jsonOut := false
+	fs.StringVar(&checkpointID, "checkpoint", "", "Checkpoint ID to replay")
+	fs.StringVar(&mode, "mode", mode, "Replay mode: resume|rerun")
+	fs.BoolVar(&restoreWorktree, "restore-worktree", false, "Attempt worktree restore before replay")
+	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint replay output as JSON")
+	parseCommonFlags(fs, cfg, args)
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if checkpointID == "" {
+		return fmt.Errorf("usage: mosscode checkpoint replay --checkpoint <id> [--mode resume|rerun] [--restore-worktree] [--json]")
+	}
+	if mode != string(port.ReplayModeResume) && mode != string(port.ReplayModeRerun) {
+		return fmt.Errorf("replay mode must be resume or rerun")
+	}
+	k, err := buildCheckpointKernel(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer k.Shutdown(ctx)
+	if err := k.Boot(ctx); err != nil {
+		return err
+	}
+	sess, result, err := k.ReplayFromCheckpoint(ctx, port.ReplayRequest{
+		CheckpointID:    checkpointID,
+		Mode:            port.ReplayMode(mode),
+		RestoreWorktree: restoreWorktree,
+	})
+	if err != nil {
+		return err
+	}
+	report := checkpointActionReport{
+		Mode:             "replay",
+		SessionID:        sess.ID,
+		ReplayMode:       string(result.Mode),
+		RestoredWorktree: result.RestoredWorktree,
+		Degraded:         result.Degraded,
+		Details:          result.Details,
+	}
+	if jsonOut {
+		return printJSON(report)
+	}
+	fmt.Printf("Prepared replay session %s from checkpoint %s (%s).\n", sess.ID, result.CheckpointID, result.Mode)
+	if result.RestoredWorktree {
+		fmt.Println("Worktree restored.")
+	}
+	if result.Degraded && strings.TrimSpace(result.Details) != "" {
+		fmt.Printf("Degraded: %s\n", result.Details)
+	}
+	fmt.Printf("Use `mosscode resume --session %s` to continue.\n", sess.ID)
+	return nil
+}
+
+func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, error) {
+	return buildKernel(ctx, cfg.flags, &port.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
+}
+
+func printJSON(v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
 	return nil
 }
 
