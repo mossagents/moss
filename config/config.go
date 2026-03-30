@@ -98,7 +98,7 @@ func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity 
 	provider = strings.TrimSpace(provider)
 	name = strings.TrimSpace(name)
 
-	apiType = firstNonEmpty(apiType, provider)
+	apiType = firstNonEmpty(provider, apiType)
 	provider = firstNonEmpty(provider, apiType)
 	name = firstNonEmpty(name, apiType, provider)
 

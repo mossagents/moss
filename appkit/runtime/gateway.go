@@ -17,6 +17,7 @@ type ServeConfig struct {
 	SessionStore session.SessionStore
 	RouterConfig session.RouterConfig
 	OnError      func(error)
+	DeliveryDir  string
 }
 
 func ServeCLI(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
@@ -36,7 +37,14 @@ func ServeCLI(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 	if onError == nil {
 		onError = func(err error) { fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n\n", err) }
 	}
-	gw := gateway.New(k, router, gateway.WithSystemPrompt(cfg.SystemPrompt), gateway.WithOnError(onError))
+	opts := []gateway.Option{
+		gateway.WithSystemPrompt(cfg.SystemPrompt),
+		gateway.WithOnError(onError),
+	}
+	if cfg.DeliveryDir != "" {
+		opts = append(opts, gateway.WithDeliveryDir(cfg.DeliveryDir))
+	}
+	gw := gateway.New(k, router, opts...)
 	gw.AddChannel(cli)
 	return gw.Serve(ctx)
 }

@@ -154,6 +154,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 		Prompt:       "🐾 > ",
 		SessionStore: rt.store,
 		SystemPrompt: buildSystemPrompt(flags.Workspace),
+		DeliveryDir:  filepath.Join(appconfig.AppDir(), "delivery"),
 	}, k)
 }
 

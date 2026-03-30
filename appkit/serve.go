@@ -24,6 +24,9 @@ type ServeConfig struct {
 
 	// OnError 可选的错误回调。
 	OnError func(error)
+
+	// DeliveryDir 为 gateway 可靠投递配置持久化目录（可选）。
+	DeliveryDir string
 }
 
 // Serve 以 Gateway 模式运行：CLI Channel → Router → Kernel.Run → 回复。
@@ -37,5 +40,6 @@ func Serve(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 		SessionStore: cfg.SessionStore,
 		RouterConfig: cfg.RouterConfig,
 		OnError:      cfg.OnError,
+		DeliveryDir:  cfg.DeliveryDir,
 	}, k)
 }

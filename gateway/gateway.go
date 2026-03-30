@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/port"
@@ -34,6 +35,15 @@ type Config struct {
 
 	// OnError 可选的错误回调，默认打印到 stderr。
 	OnError func(err error)
+
+	// LaneQueue 用于按 lane 串行化任务执行；为空则使用默认实现。
+	LaneQueue *LaneQueue
+
+	// DeliveryQueue 用于可靠投递；为空且 DeliveryDir 非空时自动创建。
+	DeliveryQueue *DeliveryQueue
+
+	// DeliveryDir 配置可靠投递持久化目录。
+	DeliveryDir string
 }
 
 // Option 是 Gateway 的函数式配置选项。
@@ -49,12 +59,28 @@ func WithOnError(fn func(error)) Option {
 	return func(c *Config) { c.OnError = fn }
 }
 
+// WithLaneQueue 注入自定义 LaneQueue。
+func WithLaneQueue(q *LaneQueue) Option {
+	return func(c *Config) { c.LaneQueue = q }
+}
+
+// WithDeliveryQueue 注入自定义 DeliveryQueue。
+func WithDeliveryQueue(q *DeliveryQueue) Option {
+	return func(c *Config) { c.DeliveryQueue = q }
+}
+
+// WithDeliveryDir 配置自动创建 DeliveryQueue 的持久化目录。
+func WithDeliveryDir(dir string) Option {
+	return func(c *Config) { c.DeliveryDir = dir }
+}
+
 // Gateway 是嵌入式消息网关，组合 Channel → Router → Kernel。
 type Gateway struct {
 	kernel   Kernel
 	router   *session.Router
 	channels []port.Channel
 	config   Config
+	chanByName map[string]port.Channel
 }
 
 // New 创建 Gateway。
@@ -64,15 +90,17 @@ func New(k Kernel, router *session.Router, opts ...Option) *Gateway {
 		opt(&cfg)
 	}
 	return &Gateway{
-		kernel: k,
-		router: router,
-		config: cfg,
+		kernel:     k,
+		router:     router,
+		config:     cfg,
+		chanByName: make(map[string]port.Channel),
 	}
 }
 
 // AddChannel 注册一个消息通道。必须在 Serve 之前调用。
 func (gw *Gateway) AddChannel(ch port.Channel) {
 	gw.channels = append(gw.channels, ch)
+	gw.chanByName[ch.Name()] = ch
 }
 
 // Serve 启动 Gateway 消息分发循环。
@@ -80,6 +108,30 @@ func (gw *Gateway) AddChannel(ch port.Channel) {
 func (gw *Gateway) Serve(ctx context.Context) error {
 	if len(gw.channels) == 0 {
 		return fmt.Errorf("gateway: no channels registered")
+	}
+
+	if gw.config.LaneQueue == nil {
+		gw.config.LaneQueue = NewLaneQueue()
+	}
+	if gw.config.DeliveryQueue == nil && gw.config.DeliveryDir != "" {
+		dq, err := NewDeliveryQueue(gw.config.DeliveryDir, gw.sendOutbound)
+		if err != nil {
+			return err
+		}
+		gw.config.DeliveryQueue = dq
+	}
+	if gw.config.DeliveryQueue != nil {
+		if err := gw.config.DeliveryQueue.Recover(ctx); err != nil {
+			return err
+		}
+		if err := gw.config.DeliveryQueue.Start(ctx); err != nil {
+			return err
+		}
+		defer func() {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = gw.config.DeliveryQueue.Stop(stopCtx)
+		}()
 	}
 
 	// Fan-in: 合并所有 Channel 的入站消息到一个 channel
@@ -99,10 +151,12 @@ func (gw *Gateway) Serve(ctx context.Context) error {
 				return nil
 			}
 			wg.Add(1)
-			go func(m inboundWithChannel) {
+			lane := fmt.Sprintf("%s:%s", msg.msg.ChannelName, msg.msg.SenderID)
+			_ = gw.config.LaneQueue.Enqueue(lane, func(_ context.Context) error {
 				defer wg.Done()
-				gw.handleMessage(ctx, m)
-			}(msg)
+				gw.handleMessage(ctx, msg)
+				return nil
+			})
 		}
 	}
 }
@@ -165,12 +219,23 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 
 	// 4. 回复到原始 Channel
 	if result.Output != "" {
-		outMsg := port.OutboundMessage{
-			To:      msg.SenderID,
-			Content: result.Output,
-		}
-		if err := m.ch.Send(ctx, outMsg); err != nil {
-			gw.onError(fmt.Errorf("send reply to %s/%s: %w", msg.ChannelName, msg.SenderID, err))
+		if gw.config.DeliveryQueue != nil {
+			err := gw.config.DeliveryQueue.Publish(OutboundMessage{
+				Channel: msg.ChannelName,
+				To:      msg.SenderID,
+				Content: result.Output,
+			})
+			if err != nil {
+				gw.onError(fmt.Errorf("queue reply to %s/%s: %w", msg.ChannelName, msg.SenderID, err))
+			}
+		} else {
+			outMsg := port.OutboundMessage{
+				To:      msg.SenderID,
+				Content: result.Output,
+			}
+			if err := m.ch.Send(ctx, outMsg); err != nil {
+				gw.onError(fmt.Errorf("send reply to %s/%s: %w", msg.ChannelName, msg.SenderID, err))
+			}
 		}
 	}
 }
@@ -179,4 +244,16 @@ func (gw *Gateway) onError(err error) {
 	if gw.config.OnError != nil {
 		gw.config.OnError(err)
 	}
+}
+
+func (gw *Gateway) sendOutbound(ctx context.Context, msg OutboundMessage) error {
+	ch, ok := gw.chanByName[msg.Channel]
+	if !ok {
+		return fmt.Errorf("channel %q not found", msg.Channel)
+	}
+	return ch.Send(ctx, port.OutboundMessage{
+		To:       msg.To,
+		Content:  msg.Content,
+		Metadata: msg.Metadata,
+	})
 }
