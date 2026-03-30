@@ -92,6 +92,15 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 
 	// OnSessionStart
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionRunStarted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"mode": sess.Config.Mode,
+			"goal": sess.Config.Goal,
+		},
+	})
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
 
 	var lastOutput string
@@ -112,6 +121,12 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		}
 
 		// 2. LLM 调用
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionLLMStarted,
+			SessionID: sess.ID,
+			Timestamp: time.Now().UTC(),
+			Model:     sess.Config.ModelConfig.Model,
+		})
 		llmStart := time.Now()
 		resp, streamed, err := l.callLLM(ctx, sess)
 		llmDur := time.Since(llmStart)
@@ -121,6 +136,14 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			})
 			l.observer().OnError(ctx, port.ErrorEvent{
 				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
+			})
+			l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+				Type:      port.ExecutionLLMCompleted,
+				SessionID: sess.ID,
+				Timestamp: time.Now().UTC(),
+				Model:     sess.Config.ModelConfig.Model,
+				Duration:  llmDur,
+				Error:     err.Error(),
 			})
 			l.runErrorMiddleware(ctx, sess, err)
 			return l.fail(sess, totalUsage, err), err
@@ -132,6 +155,18 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			Usage:      resp.Usage,
 			StopReason: resp.StopReason,
 			Streamed:   streamed,
+		})
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionLLMCompleted,
+			SessionID: sess.ID,
+			Timestamp: time.Now().UTC(),
+			Model:     sess.Config.ModelConfig.Model,
+			Duration:  llmDur,
+			Data: map[string]any{
+				"stop_reason": resp.StopReason,
+				"streamed":    streamed,
+				"tokens":      resp.Usage.TotalTokens,
+			},
 		})
 
 		totalUsage.PromptTokens += resp.Usage.PromptTokens
@@ -178,6 +213,15 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionRunCompleted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"steps":  sess.Budget.UsedSteps,
+			"tokens": totalUsage.TotalTokens,
+		},
+	})
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
 
 	return &SessionResult{
@@ -419,6 +463,14 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			})
 		}
 	})
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionToolStarted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		ToolName:  call.Name,
+		CallID:    call.ID,
+		Risk:      string(spec.Risk),
+	})
 
 	// BeforeToolCall middleware
 	var beforeErr error
@@ -467,6 +519,22 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		Duration:  toolDur,
 		Error:     err,
 	})
+	event := port.ExecutionEvent{
+		Type:      port.ExecutionToolCompleted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		ToolName:  call.Name,
+		CallID:    call.ID,
+		Risk:      string(spec.Risk),
+		Duration:  toolDur,
+		Data: map[string]any{
+			"is_error": result.IsError,
+		},
+	}
+	if err != nil {
+		event.Error = err.Error()
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 
 	// AfterToolCall middleware
 	l.withSideEffectsLock(func() {
@@ -619,12 +687,24 @@ func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Sessio
 }
 
 func (l *AgentLoop) fail(sess *session.Session, usage port.TokenUsage, err error) *SessionResult {
+	eventType := port.ExecutionRunFailed
 	if errors.Is(err, context.Canceled) || sess.Status == session.StatusCancelled {
 		sess.Status = session.StatusCancelled
+		eventType = port.ExecutionRunCancelled
 	} else {
 		sess.Status = session.StatusFailed
 	}
 	sess.EndedAt = time.Now()
+	l.observer().OnExecutionEvent(context.Background(), port.ExecutionEvent{
+		Type:      eventType,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		Error:     err.Error(),
+		Data: map[string]any{
+			"steps":  sess.Budget.UsedSteps,
+			"tokens": usage.TotalTokens,
+		},
+	})
 	return &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,

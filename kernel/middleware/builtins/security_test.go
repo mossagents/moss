@@ -193,6 +193,42 @@ func TestAuditLogger_OnApproval(t *testing.T) {
 	}
 }
 
+func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewAuditLogger(&buf)
+
+	logger.OnExecutionEvent(context.Background(), port.ExecutionEvent{
+		Type:      port.ExecutionToolCompleted,
+		SessionID: "s4",
+		Timestamp: time.Now(),
+		ToolName:  "write_file",
+		CallID:    "call-1",
+		Risk:      "high",
+		Duration:  25 * time.Millisecond,
+		Data: map[string]any{
+			"is_error": false,
+		},
+	})
+
+	var entry auditEntry
+	if err := json.Unmarshal(buf.Bytes(), &entry); err != nil {
+		t.Fatalf("parse audit entry: %v", err)
+	}
+	if entry.Type != "execution_event" {
+		t.Fatalf("expected execution_event, got %s", entry.Type)
+	}
+	if entry.SessionID != "s4" {
+		t.Fatalf("expected session s4, got %s", entry.SessionID)
+	}
+	data, ok := entry.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map data, got %T", entry.Data)
+	}
+	if got := data["type"]; got != string(port.ExecutionToolCompleted) {
+		t.Fatalf("expected execution type %s, got %v", port.ExecutionToolCompleted, got)
+	}
+}
+
 // ── RateLimiter ───────────────────────────────────────
 
 func TestRateLimiter_AllowsBurst(t *testing.T) {

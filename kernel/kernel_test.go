@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,6 +17,31 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
 )
+
+type recordingObserver struct {
+	mu     sync.Mutex
+	events []port.ExecutionEvent
+}
+
+func (o *recordingObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
+func (o *recordingObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
+func (o *recordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
+func (o *recordingObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
+func (o *recordingObserver) OnError(context.Context, port.ErrorEvent)          {}
+
+func (o *recordingObserver) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.events = append(o.events, e)
+}
+
+func (o *recordingObserver) snapshot() []port.ExecutionEvent {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]port.ExecutionEvent, len(o.events))
+	copy(out, o.events)
+	return out
+}
 
 type blockingLLM struct {
 	calls int32
@@ -84,9 +110,11 @@ func TestKernelIntegration(t *testing.T) {
 		return port.InputResponse{Approved: true}, nil
 	}
 
+	obs := &recordingObserver{}
 	k := New(
 		WithLLM(mock),
 		WithUserIO(io),
+		WithObserver(obs),
 	)
 
 	// 注册工具
@@ -170,6 +198,31 @@ func TestKernelIntegration(t *testing.T) {
 	// 验证事件被触发
 	if len(events) == 0 {
 		t.Fatal("expected tool events")
+	}
+
+	execEvents := obs.snapshot()
+	if len(execEvents) == 0 {
+		t.Fatal("expected execution events")
+	}
+	expected := map[port.ExecutionEventType]bool{
+		port.ExecutionRunStarted:       false,
+		port.ExecutionLLMStarted:       false,
+		port.ExecutionLLMCompleted:     false,
+		port.ExecutionToolStarted:      false,
+		port.ExecutionToolCompleted:    false,
+		port.ExecutionApprovalRequest:  false,
+		port.ExecutionApprovalResolved: false,
+		port.ExecutionRunCompleted:     false,
+	}
+	for _, e := range execEvents {
+		if _, ok := expected[e.Type]; ok {
+			expected[e.Type] = true
+		}
+	}
+	for typ, seen := range expected {
+		if !seen {
+			t.Fatalf("expected execution event %s", typ)
+		}
 	}
 }
 

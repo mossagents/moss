@@ -57,6 +57,17 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Type:      "requested",
 					Request:   *approval,
 				})
+				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+					Type:      port.ExecutionApprovalRequest,
+					SessionID: approval.SessionID,
+					Timestamp: time.Now().UTC(),
+					ToolName:  approval.ToolName,
+					Risk:      approval.Risk,
+					Data: map[string]any{
+						"approval_id": approval.ID,
+						"reason":      approval.Reason,
+					},
+				})
 				resp, err := mc.IO.Ask(ctx, port.InputRequest{
 					Type:     port.InputConfirm,
 					Prompt:   approval.Prompt,
@@ -78,6 +89,18 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Type:      "resolved",
 					Request:   *approval,
 					Decision:  resolved,
+				})
+				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+					Type:      port.ExecutionApprovalResolved,
+					SessionID: approval.SessionID,
+					Timestamp: time.Now().UTC(),
+					ToolName:  approval.ToolName,
+					Risk:      approval.Risk,
+					Data: map[string]any{
+						"approval_id": approval.ID,
+						"approved":    resolved.Approved,
+						"source":      resolved.Source,
+					},
 				})
 				if !resolved.Approved {
 					return ErrDenied

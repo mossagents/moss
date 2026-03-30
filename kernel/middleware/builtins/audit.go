@@ -80,6 +80,39 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	})
 }
 
+func (a *AuditLogger) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+	data := map[string]any{
+		"type": e.Type,
+	}
+	if e.ToolName != "" {
+		data["tool"] = e.ToolName
+	}
+	if e.CallID != "" {
+		data["call_id"] = e.CallID
+	}
+	if e.Risk != "" {
+		data["risk"] = e.Risk
+	}
+	if e.Model != "" {
+		data["model"] = e.Model
+	}
+	if e.Duration > 0 {
+		data["duration_ms"] = e.Duration.Milliseconds()
+	}
+	if e.Error != "" {
+		data["error"] = e.Error
+	}
+	for k, v := range e.Data {
+		data[k] = v
+	}
+	a.write(auditEntry{
+		Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
+		Type:      "execution_event",
+		SessionID: e.SessionID,
+		Data:      data,
+	})
+}
+
 func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
 	data := map[string]any{
 		"id":           e.Request.ID,
