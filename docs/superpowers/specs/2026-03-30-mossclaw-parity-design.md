@@ -74,10 +74,25 @@
   - `deadletter.jsonl`：超过最大重试的失败记录。
 - `queue.jsonl` 记录字段最小集合：
   - `message_id`, `lane`, `payload`, `attempt`, `next_retry_at`, `created_at`, `last_error`
+- `queue.jsonl` 状态语义（append-only）：
+  - 仅追加事件，不做原地更新。
+  - 事件类型：`enqueued`, `attempted`, `delivered`, `deadlettered`。
+  - 恢复时按 `message_id` 聚合最后状态：
+    - `delivered`/`deadlettered` 视为终态，不再重放。
+    - 其余状态按 `next_retry_at` 重入内存队列。
+  - 当 `queue.jsonl` 超过阈值（默认 128MB）触发 compaction，写出仅含“未终态”快照。
 - 恢复策略：
   - 启动时逐行读取 `queue.jsonl` 重建内存队列。
   - 单条损坏记录：写入 `recovery_errors.log` 并跳过。
   - 连续损坏超过阈值（默认 100 条）则中止恢复并上报错误。
+
+#### 启动编排归属（P0）
+
+- `mossclaw` 运行时装配器负责固定顺序：`Recover -> Start`。
+- `Recover` 失败策略：
+  - `strict` 模式：启动失败并退出（默认用于 gateway）。
+  - `best-effort` 模式：记录错误后继续启动（默认用于 tui）。
+- 该策略必须可配置，并在启动日志中明确打印当前模式。
 
 #### 数据流
 
@@ -104,7 +119,7 @@
 #### 关键接口（草案）
 
 - `type Router interface { Resolve(meta InboundMeta) (agentID string, sessionKey string, matched Rule, err error) }`
-- `type ChannelAdapter interface { Name() string; Start(ctx, sink InboundSink) error; Stop(ctx) error }`
+- `type ChannelAdapter interface { Name() string; Start(ctx, sink InboundSink, onError func(error)) error; Stop(ctx) error }`
 
 #### 路由规则与 session key 规范（P1）
 
@@ -124,7 +139,7 @@
 #### ChannelAdapter 契约（P1）
 
 - `Start` 必须非阻塞返回；内部事件循环独立 goroutine。
-- 读取失败时应上报 `OnError`，并按 backoff 自动重连。
+- 读取失败时应调用 `onError(err)`，并按 backoff 自动重连。
 - 若 sink 背压（队列满）：
   - 先重试入队（短退避），
   - 超过阈值后返回明确丢弃错误并计数，不得静默丢弃。
