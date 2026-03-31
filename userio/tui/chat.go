@@ -322,7 +322,13 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
-	return m.dispatchUserSubmission(text, text)
+	runText, err := expandInlineFileMentions(text, m.workspace)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned files: %v", err)})
+		m.refreshViewport()
+		return m, nil
+	}
+	return m.dispatchUserSubmission(text, runText)
 }
 
 func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
@@ -1489,6 +1495,31 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/search":
+		query := strings.TrimSpace(strings.Join(args, " "))
+		if query == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /search <query>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		return m.invokeSkillLikeCommand("jina_search", query, input)
+
+	case "/open":
+		target := strings.TrimSpace(strings.Join(args, " "))
+		if target == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /open <path[:line]>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := openWorkspacePath(m.workspace, target)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("open failed: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/init":
 		out, err := product.InitWorkspaceBootstrap(m.workspace, config.AppName())
 		if err != nil {
@@ -1748,6 +1779,8 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/fork", Summary: "Branch into a fresh session", Section: "Core"},
 	{Name: "/plan", Summary: "Switch to planning mode", Section: "Core"},
 	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Core"},
+	{Name: "/search", Summary: "Search the web via Jina", Section: "Core"},
+	{Name: "/open", Summary: "Open a file in the local editor", Section: "Core"},
 	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
 	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},

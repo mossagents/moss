@@ -362,6 +362,19 @@ func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
 	}
 }
 
+func TestSlashCommandSearchDispatchesPrompt(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	dispatched := ""
+	m.sendFn = func(text string) { dispatched = text }
+	updated, _ := m.handleSlashCommand("/search recent golang releases")
+	if !updated.streaming {
+		t.Fatal("expected /search to start a run")
+	}
+	if !strings.Contains(dispatched, "jina_search") || !strings.Contains(dispatched, "golang releases") {
+		t.Fatalf("unexpected /search prompt: %q", dispatched)
+	}
+}
+
 func TestSlashCommandPlanReturnsPlanningSwitchMsg(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, cmd := m.handleSlashCommand("/plan Draft a migration plan")
