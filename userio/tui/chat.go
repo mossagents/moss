@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,7 +51,9 @@ type switchApprovalMsg struct {
 }
 
 type switchProfileMsg struct {
-	profile string
+	profile     string
+	prompt      string
+	displayText string
 }
 
 // chatModel 是对话主界面。
@@ -685,16 +688,12 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.invokeSkillLikeCommand(name, task, input)
 
 	case "/session":
-		if len(args) > 0 {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current live-session summary moved to /status in the next phase. Use /resume to restore saved sessions."})
-			m.refreshViewport()
-			return m, nil
-		}
-		info := "Session information is unavailable."
-		if m.sessionInfoFn != nil {
-			info = m.sessionInfoFn()
-		}
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current session summary moved to /status. Use /resume to continue saved sessions."})
+		m.refreshViewport()
+		return m, nil
+
+	case "/status":
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.renderStatusSummary()})
 		m.refreshViewport()
 		return m, nil
 
@@ -1060,8 +1059,65 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/diff":
+		if m.gitRunFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Diff inspection is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		cmdArgs := []string{"--no-pager", "diff"}
+		if len(args) > 0 {
+			cmdArgs = append(cmdArgs, "--")
+			cmdArgs = append(cmdArgs, args...)
+		}
+		out, err := m.gitRunFn("git", cmdArgs)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git diff failed: %v", err)})
+		} else if strings.TrimSpace(out) == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "No diff."})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/review":
+		report, err := product.BuildReviewReport(context.Background(), m.workspace, args)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("review failed: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderReviewReport(report)})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/sessions":
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Saved-session browsing moved to /resume. Use /resume to list recent sessions or /resume <session_id> to continue one."})
+		m.refreshViewport()
+		return m, nil
+
+	case "/mcp":
+		if len(args) == 0 || strings.EqualFold(args[0], "list") {
+			servers, err := product.ListMCPServers(m.workspace, m.trust)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list MCP servers: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderMCPServerList(servers)})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		if strings.EqualFold(args[0], "show") && len(args) == 2 {
+			servers, err := product.GetMCPServer(m.workspace, m.trust, args[1])
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to show MCP server: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderMCPServerDetail(servers)})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /mcp\n  /mcp list\n  /mcp show <name>"})
 		m.refreshViewport()
 		return m, nil
 
@@ -1273,11 +1329,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case "/budget":
-		info := "Budget information is unavailable."
-		if m.sessionInfoFn != nil {
-			info = m.sessionInfoFn()
-		}
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Budget summary moved into /status."})
 		m.refreshViewport()
 		return m, nil
 
@@ -1403,6 +1455,19 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.streaming = true
 		m.refreshViewport()
 		return m, func() tea.Msg { return switchProfileMsg{profile: profileName} }
+
+	case "/plan":
+		prompt := strings.TrimSpace(strings.Join(args, " "))
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Switching to planning mode..."})
+		m.streaming = true
+		m.refreshViewport()
+		return m, func() tea.Msg {
+			return switchProfileMsg{
+				profile:     "planning",
+				prompt:      prompt,
+				displayText: input,
+			}
+		}
 
 	case "/help":
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: renderSlashHelp()})
@@ -1641,16 +1706,21 @@ type slashCommandDef struct {
 var slashCommandCatalog = []slashCommandDef{
 	{Name: "/help", Summary: "Show command help", Section: "Core"},
 	{Name: "/new", Summary: "Start a fresh conversation", Section: "Core"},
+	{Name: "/status", Summary: "Show the current runtime summary", Section: "Core"},
 	{Name: "/resume", Summary: "List or resume saved sessions", Section: "Core"},
 	{Name: "/fork", Summary: "Branch into a fresh session", Section: "Core"},
+	{Name: "/plan", Summary: "Switch to planning mode", Section: "Core"},
 	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
 	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
+	{Name: "/diff", Summary: "Show the current git diff", Section: "Review and recovery"},
+	{Name: "/review", Summary: "Review working tree state", Section: "Review and recovery"},
 	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
 	{Name: "/apply", Summary: "Apply an explicit patch file", Section: "Review and recovery"},
 	{Name: "/rollback", Summary: "Roll back a persisted change", Section: "Review and recovery"},
 	{Name: "/checkpoint", Summary: "List, inspect, create, or replay checkpoints", Section: "Review and recovery"},
 	{Name: "/git", Summary: "Run common git and gh helpers", Section: "Review and recovery"},
+	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Runtime"},
 	{Name: "/tasks", Summary: "List background tasks", Section: "Runtime"},
 	{Name: "/task", Summary: "Inspect or cancel a background task", Section: "Runtime"},
 	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Runtime"},
@@ -1660,8 +1730,6 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/trust", Summary: "Switch trust posture", Section: "Runtime"},
 	{Name: "/approval", Summary: "Switch approval posture", Section: "Runtime"},
 	{Name: "/profile", Summary: "Show or switch profile", Section: "Runtime"},
-	{Name: "/session", Summary: "Show the current live session summary", Section: "Runtime"},
-	{Name: "/budget", Summary: "Show budget and context summary", Section: "Runtime"},
 	{Name: "/skills", Summary: "List discovered skills", Section: "Skills and tools"},
 	{Name: "/skill", Summary: "Invoke a named skill", Section: "Skills and tools"},
 	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Skills and tools"},
@@ -1727,6 +1795,26 @@ func renderSlashHelp() string {
 	b.WriteString("  Up/Down        Navigate persisted input history\n")
 	b.WriteString("  Shift+Enter    Insert newline\n")
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m chatModel) renderStatusSummary() string {
+	var b strings.Builder
+	b.WriteString("Runtime status:\n")
+	fmt.Fprintf(&b, "Provider: %s\n", valueOrDefaultString(m.provider, "(default)"))
+	fmt.Fprintf(&b, "Model: %s\n", valueOrDefaultString(m.model, "(default)"))
+	fmt.Fprintf(&b, "Workspace: %s\n", valueOrDefaultString(m.workspace, "."))
+	fmt.Fprintf(&b, "Run state: %s\n", valueOrDefaultRunState(m.streaming))
+	fmt.Fprintf(&b, "Trust: %s\n", valueOrDefaultString(m.trust, "(unknown)"))
+	fmt.Fprintf(&b, "Profile: %s\n", valueOrDefaultString(m.profile, "default"))
+	fmt.Fprintf(&b, "Approval: %s", valueOrDefaultString(m.approvalMode, "(default)"))
+	if m.sessionInfoFn != nil {
+		info := strings.TrimSpace(m.sessionInfoFn())
+		if info != "" {
+			b.WriteString("\n\n")
+			b.WriteString(info)
+		}
+	}
+	return b.String()
 }
 
 func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatModel, tea.Cmd) {

@@ -1367,15 +1367,17 @@ func sessionDialogCount(sess *session.Session) int {
 
 // appModel 是顶层 Bubble Tea Model。
 type appModel struct {
-	state    appState
-	welcome  welcomeModel
-	chat     chatModel
-	config   Config
-	bridgeIO *BridgeIO
-	agent    *agentState // 共享指针，跨值传递保持一致
-	width    int
-	height   int
-	initCmd  tea.Cmd // 直接进入 chat 时的初始化命令
+	state               appState
+	welcome             welcomeModel
+	chat                chatModel
+	config              Config
+	bridgeIO            *BridgeIO
+	agent               *agentState // 共享指针，跨值传递保持一致
+	width               int
+	height              int
+	initCmd             tea.Cmd // 直接进入 chat 时的初始化命令
+	postInitDisplayText string
+	postInitRunText     string
 }
 
 // Run 启动 TUI 应用。
@@ -1605,6 +1607,8 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.profile = resolved.Name
 		m.chat.trust = resolved.Trust
 		m.chat.approvalMode = resolved.ApprovalMode
+		m.postInitDisplayText = strings.TrimSpace(st.displayText)
+		m.postInitRunText = strings.TrimSpace(st.prompt)
 		if strings.TrimSpace(checkpointMsg) != "" {
 			m.chat.messages = append(m.chat.messages, chatMessage{
 				kind:    msgSystem,
@@ -1715,6 +1719,17 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				continue
 			}
 			m.chat.messages = append(m.chat.messages, chatMessage{kind: msgSystem, content: strings.TrimSpace(notice)})
+		}
+		if strings.TrimSpace(m.postInitRunText) != "" {
+			displayText := m.postInitDisplayText
+			runText := m.postInitRunText
+			m.postInitDisplayText = ""
+			m.postInitRunText = ""
+			nextChat, cmd := m.chat.dispatchUserSubmission(displayText, runText)
+			m.chat = nextChat
+			m.chat.refreshViewport()
+			go agent.publishProgressReplay()
+			return m, cmd
 		}
 		m.chat.refreshViewport()
 		go agent.publishProgressReplay()

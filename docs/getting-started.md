@@ -143,12 +143,16 @@ moss version
 | `/help` | 显示帮助 |
 | `/exit` | 退出 |
 | `/clear` | 清空对话 |
+| `/status` | 查看当前运行时摘要（模型/工作区/姿态/会话） |
 | `/model <name>` | 切换模型 |
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
-| `/session` | 查看当前会话摘要（ID/预算/消息量） |
 | `/resume [session_id|latest]` | 查看可恢复会话或恢复指定会话 |
 | `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有会话/检查点分叉新会话 |
+| `/plan [prompt]` | 切换到 planning 模式，并可直接附带计划提示 |
+| `/diff [path]` | 查看当前 git diff |
+| `/review [mode]` | 查看当前仓库评审摘要 |
+| `/mcp [list\|show <name>]` | 查看 MCP 服务状态 |
 | `/compact [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
 | `/tasks [status] [limit]` | 列出后台任务（支持状态过滤） |
 | `/task <id>` | 查询单个后台任务详情 |

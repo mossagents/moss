@@ -48,15 +48,18 @@ func (f fakeScheduleController) RunNow(id string) (string, error) {
 	return f.runNowFn(id)
 }
 
-func TestSlashCommandSessionInfo(t *testing.T) {
+func TestSlashCommandStatusSummary(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
+	m.trust = "trusted"
+	m.profile = "coding"
+	m.approvalMode = "confirm"
 	m.sessionInfoFn = func() string { return "session summary" }
-	updated, _ := m.handleSlashCommand("/session")
+	updated, _ := m.handleSlashCommand("/status")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected a system message")
 	}
 	last := updated.messages[len(updated.messages)-1]
-	if last.content != "session summary" {
+	if !strings.Contains(last.content, "Runtime status:") || !strings.Contains(last.content, "session summary") {
 		t.Fatalf("unexpected message content: %q", last.content)
 	}
 }
@@ -81,6 +84,15 @@ func TestLegacySessionRestoreCommandShowsGuidance(t *testing.T) {
 	updated, _ := m.handleSlashCommand("/session restore sess-123")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError || !strings.Contains(last.content, "/resume") {
+		t.Fatalf("unexpected legacy session guidance: %+v", last)
+	}
+}
+
+func TestLegacySessionCommandShowsGuidance(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/session")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "/status") {
 		t.Fatalf("unexpected legacy session guidance: %+v", last)
 	}
 }
@@ -289,6 +301,28 @@ func TestLegacyOffloadCommandShowsGuidance(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError || !strings.Contains(last.content, "/compact") {
 		t.Fatalf("unexpected legacy offload guidance: %+v", last)
+	}
+}
+
+func TestSlashCommandPlanReturnsPlanningSwitchMsg(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, cmd := m.handleSlashCommand("/plan Draft a migration plan")
+	if !updated.streaming {
+		t.Fatal("expected /plan to mark chat as streaming")
+	}
+	if cmd == nil {
+		t.Fatal("expected switch command")
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(switchProfileMsg)
+	if !ok {
+		t.Fatalf("expected switchProfileMsg, got %T", msg)
+	}
+	if switchMsg.profile != "planning" {
+		t.Fatalf("profile = %q, want planning", switchMsg.profile)
+	}
+	if !strings.Contains(switchMsg.prompt, "migration plan") {
+		t.Fatalf("unexpected inline plan prompt: %q", switchMsg.prompt)
 	}
 }
 
@@ -539,7 +573,7 @@ func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
+	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }
@@ -548,7 +582,7 @@ func TestHelpIncludesChangeCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	for _, want := range []string{"/changes", "/apply", "/rollback"} {
+	for _, want := range []string{"/diff", "/review", "/changes", "/apply", "/rollback"} {
 		if !strings.Contains(last.content, want) {
 			t.Fatalf("help missing %q in %q", want, last.content)
 		}
