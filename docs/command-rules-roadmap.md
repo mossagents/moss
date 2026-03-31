@@ -119,6 +119,7 @@ If we step back from `command rules` specifically, the next major implementation
    - next: add interactive install/add flows and richer in-product governance UX
 
 4. **Restore posture auto-rebuild**
-   - upgrade restore / replay / fork from fail-fast to rebuilding runtimes from persisted posture
+   - restore / replay / fork now auto-rebuild runtimes from persisted posture instead of fail-fast mismatch errors
+   - legacy sessions still warn and preserve the previous conservative fallback behavior
 
 These are all valid next moves, but the highest continuity path is still **Command rules phase 2**, because it directly builds on the new profile and execution-policy foundation.

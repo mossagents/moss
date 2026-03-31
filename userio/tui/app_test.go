@@ -57,7 +57,7 @@ func TestSwitchProfileRejectsActiveRun(t *testing.T) {
 	}
 }
 
-func TestValidateRuntimeCompatibilityRejectsRecordedMismatch(t *testing.T) {
+func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	current := postureFromRuntime("default", "trusted", "confirm", runtime.ResolveExecutionPolicyForWorkspace("", "trusted", "confirm"))
 	target := runtime.SessionPostureFromSession(&session.Session{
 		ID: "sess-1",
@@ -73,16 +73,19 @@ func TestValidateRuntimeCompatibilityRejectsRecordedMismatch(t *testing.T) {
 		},
 	})
 
-	_, err := validateRuntimeCompatibility("sess-1", current, target)
-	if err == nil {
-		t.Fatal("expected posture mismatch error")
+	plan, err := planPostureRebuild("sess-1", current, target)
+	if err != nil {
+		t.Fatalf("planPostureRebuild: %v", err)
 	}
-	if !strings.Contains(err.Error(), "requires recorded posture") {
-		t.Fatalf("unexpected error: %v", err)
+	if !plan.Rebuild {
+		t.Fatal("expected posture mismatch to require runtime rebuild")
+	}
+	if !strings.Contains(plan.Notice, "auto-rebuilt") {
+		t.Fatalf("unexpected rebuild notice: %q", plan.Notice)
 	}
 }
 
-func TestValidateRuntimeCompatibilityLegacyWarns(t *testing.T) {
+func TestPlanPostureRebuildLegacyWarns(t *testing.T) {
 	current := postureFromRuntime("coding", "restricted", "full-auto", runtime.ResolveExecutionPolicyForWorkspace("", "restricted", "full-auto"))
 	target := runtime.SessionPostureFromSession(&session.Session{
 		ID: "legacy-1",
@@ -91,11 +94,14 @@ func TestValidateRuntimeCompatibilityLegacyWarns(t *testing.T) {
 		},
 	})
 
-	warning, err := validateRuntimeCompatibility("legacy-1", current, target)
+	plan, err := planPostureRebuild("legacy-1", current, target)
 	if err != nil {
-		t.Fatalf("validateRuntimeCompatibility: %v", err)
+		t.Fatalf("planPostureRebuild: %v", err)
 	}
-	if !strings.Contains(warning, "predates profile persistence") {
-		t.Fatalf("expected legacy warning, got %q", warning)
+	if plan.Rebuild {
+		t.Fatal("legacy session should not trigger rebuild")
+	}
+	if !strings.Contains(plan.Notice, "predates profile persistence") {
+		t.Fatalf("expected legacy warning, got %q", plan.Notice)
 	}
 }

@@ -84,11 +84,23 @@ type agentState struct {
 	approvalMode          string
 	baseObserver          port.Observer
 	buildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
+	buildKernel           func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	afterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	buildSystemPrompt     func(workspace, trust string) string
 	buildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	apiType               string
+	model                 string
+	apiKey                string
+	baseURL               string
 	permissions           map[string]string
 	mu                    sync.Mutex
 	running               bool // 是否正在执行 loop
+}
+
+type postureRebuildPlan struct {
+	Rebuild  bool
+	Resolved runtime.ResolvedProfile
+	Notice   string
 }
 
 func renderSkillsSummary(agent *agentState, workspace string) string {
@@ -242,11 +254,11 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	if loaded == nil {
 		return "", fmt.Errorf("session %q not found", sessionID)
 	}
-	warning, err := a.validateSessionPosture(loaded)
+	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
 	if err != nil {
 		return "", err
 	}
-	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
+	warning, err := a.ensureRuntimePosture(loaded.ID, runtime.SessionPostureFromSession(loaded))
 	if err != nil {
 		return "", err
 	}
@@ -544,13 +556,17 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	if err != nil {
 		return "", err
 	}
-	if _, err := a.validateSessionPosture(sourceSession); err != nil {
-		return "", err
-	}
 	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
 	if err != nil {
 		return "", err
 	}
+	if _, err := a.ensureRuntimePosture(sourceSession.ID, runtime.SessionPostureFromSession(sourceSession)); err != nil {
+		return "", err
+	}
+	a.mu.Lock()
+	k = a.k
+	ctx = a.ctx
+	a.mu.Unlock()
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if sourceKind == string(port.ForkSourceCheckpoint) {
@@ -629,9 +645,16 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	if err != nil {
 		return "", err
 	}
-	if _, err := a.validateSessionPosture(sourceSession); err != nil {
+	cancel()
+	if _, err := a.ensureRuntimePosture(sourceSession.ID, runtime.SessionPostureFromSession(sourceSession)); err != nil {
 		return "", err
 	}
+	a.mu.Lock()
+	k = a.k
+	ctx = a.ctx
+	a.mu.Unlock()
+	reqCtx, cancel = context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	next, result, err := k.ReplayFromCheckpoint(reqCtx, port.ReplayRequest{
 		CheckpointID:    record.ID,
 		Mode:            replayMode,
@@ -762,12 +785,21 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 	}
 }
 
-func (a *agentState) validateSessionPosture(sess *session.Session) (string, error) {
+func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.SessionPosture) (string, error) {
 	a.mu.Lock()
 	current := postureFromRuntime(a.profile, a.trust, a.approvalMode, runtime.ExecutionPolicyOf(a.k))
 	a.mu.Unlock()
-	target := runtime.SessionPostureFromSession(sess)
-	return validateRuntimeCompatibility(sess.ID, current, target)
+	plan, err := planPostureRebuild(sessionID, current, target)
+	if err != nil {
+		return "", err
+	}
+	if !plan.Rebuild {
+		return plan.Notice, nil
+	}
+	if err := a.rebuildRuntime(plan); err != nil {
+		return "", err
+	}
+	return plan.Notice, nil
 }
 
 func postureFromRuntime(profile, trust, approval string, policy runtime.ExecutionPolicy) runtime.SessionPosture {
@@ -788,7 +820,7 @@ func postureWarningForSession(sess *session.Session) string {
 	return fmt.Sprintf("Warning: session %s predates profile persistence; trust was inferred as %s and the current runtime approval/profile will be used.", sess.ID, posture.EffectiveTrust)
 }
 
-func validateRuntimeCompatibility(sessionID string, current, target runtime.SessionPosture) (string, error) {
+func planPostureRebuild(sessionID string, current, target runtime.SessionPosture) (postureRebuildPlan, error) {
 	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
 	targetApproval := product.NormalizeApprovalMode(target.EffectiveApproval)
@@ -796,18 +828,25 @@ func validateRuntimeCompatibility(sessionID string, current, target runtime.Sess
 
 	if target.Legacy {
 		if currentTrust != targetTrust {
-			return "", fmt.Errorf("session %s predates profile persistence and requires trust=%s, but current runtime trust=%s; switch to a matching trust/profile before continuing", sessionID, targetTrust, currentTrust)
+			return postureRebuildPlan{}, fmt.Errorf("session %s predates profile persistence and requires trust=%s, but current runtime trust=%s; switch to a matching trust/profile before continuing", sessionID, targetTrust, currentTrust)
 		}
-		return postureWarningForRuntime(sessionID, targetTrust), nil
+		return postureRebuildPlan{Notice: postureWarningForRuntime(sessionID, targetTrust)}, nil
 	}
 
-	if currentTrust != targetTrust || currentApproval != targetApproval {
-		return "", fmt.Errorf("session %s requires recorded posture (%s), but current runtime is (%s); switch to a matching profile/posture before continuing", sessionID, formatPosture(target), formatPosture(current))
+	if currentTrust == targetTrust && currentApproval == targetApproval {
+		if !target.HasExecution || reflect.DeepEqual(target.ExecutionPolicy, current.ExecutionPolicy) {
+			return postureRebuildPlan{}, nil
+		}
 	}
-	if target.HasExecution && !reflect.DeepEqual(target.ExecutionPolicy, current.ExecutionPolicy) {
-		return "", fmt.Errorf("session %s requires a different recorded execution policy (%s), but current runtime is (%s); switch to a matching profile/posture before continuing", sessionID, formatPosture(target), formatPosture(current))
+	resolved, err := runtime.ResolveProfileFromPosture(target.Profile, target)
+	if err != nil {
+		return postureRebuildPlan{}, err
 	}
-	return "", nil
+	return postureRebuildPlan{
+		Rebuild:  true,
+		Resolved: resolved,
+		Notice:   fmt.Sprintf("Runtime auto-rebuilt to recorded posture for session %s (%s).", sessionID, formatPosture(target)),
+	}, nil
 }
 
 func postureWarningForRuntime(sessionID, trust string) string {
@@ -832,6 +871,66 @@ func formatPosture(posture runtime.SessionPosture) string {
 		return "profile=legacy"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
+	a.mu.Lock()
+	buildKernel := a.buildKernel
+	afterBoot := a.afterBoot
+	workspace := a.workspace
+	bridge := a.bridge
+	apiType := a.apiType
+	model := a.model
+	apiKey := a.apiKey
+	baseURL := a.baseURL
+	currentProfile := strings.TrimSpace(a.profile)
+	oldCancel := a.cancel
+	oldRunCancel := a.runCancel
+	a.mu.Unlock()
+
+	if buildKernel == nil {
+		return fmt.Errorf("runtime rebuild is unavailable")
+	}
+	if currentProfile == "" {
+		currentProfile = "default"
+	}
+	k, ctx, cancel, err := buildRuntimeKernel(Config{
+		Trust:        plan.Resolved.Trust,
+		Profile:      currentProfile,
+		ApprovalMode: plan.Resolved.ApprovalMode,
+		APIKey:       apiKey,
+		BaseURL:      baseURL,
+		BuildKernel:  buildKernel,
+		AfterBoot:    afterBoot,
+	}, WelcomeConfig{
+		APIType:   apiType,
+		Model:     model,
+		Workspace: workspace,
+	}, bridge)
+	if err != nil {
+		return err
+	}
+	if err := product.ApplyResolvedProfile(k, plan.Resolved); err != nil {
+		cancel()
+		return fmt.Errorf("apply rebuilt posture: %w", err)
+	}
+	if oldRunCancel != nil {
+		oldRunCancel()
+	}
+	if oldCancel != nil {
+		oldCancel()
+	}
+	k.Middleware().Use(a.permissionOverrideMiddleware())
+	a.mu.Lock()
+	a.k = k
+	a.ctx = ctx
+	a.cancel = cancel
+	a.runCancel = nil
+	a.trust = plan.Resolved.Trust
+	a.profile = strings.TrimSpace(plan.Resolved.Name)
+	a.approvalMode = plan.Resolved.ApprovalMode
+	a.mu.Unlock()
+	return nil
 }
 
 func (a *agentState) setPermission(toolName, mode string) (string, error) {
@@ -1615,26 +1714,13 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
-
-		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
+		k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
 		if err != nil {
-			return sessionResultMsg{err: fmt.Errorf("failed to initialize kernel: %w", err)}
-		}
-
-		ctx, cancel := context.WithCancel(context.Background())
-		if err := k.Boot(ctx); err != nil {
-			cancel()
-			return sessionResultMsg{err: fmt.Errorf("failed to boot kernel: %w", err)}
+			return sessionResultMsg{err: err}
 		}
 		var store session.SessionStore
 		if strings.TrimSpace(cfg.SessionStoreDir) != "" {
 			store, _ = session.NewFileStore(cfg.SessionStoreDir)
-		}
-		if cfg.AfterBoot != nil {
-			if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("failed to initialize runtime: %w", err)}
-			}
 		}
 
 		var (
@@ -1655,13 +1741,39 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 				cancel()
 				return sessionResultMsg{err: fmt.Errorf("session %q not found", cfg.InitialSessionID)}
 			}
-			warning, err := validateRuntimeCompatibility(cfg.InitialSessionID, postureFromRuntime(cfg.Profile, cfg.Trust, cfg.ApprovalMode, runtime.ExecutionPolicyOf(k)), runtime.SessionPostureFromSession(sess))
+			plan, err := planPostureRebuild(cfg.InitialSessionID, postureFromRuntime(cfg.Profile, cfg.Trust, cfg.ApprovalMode, runtime.ExecutionPolicyOf(k)), runtime.SessionPostureFromSession(sess))
 			if err != nil {
 				cancel()
 				return sessionResultMsg{err: err}
 			}
-			if strings.TrimSpace(warning) != "" {
-				notices = append(notices, warning)
+			if plan.Rebuild {
+				cancel()
+				rebuildProfile := strings.TrimSpace(cfg.Profile)
+				if rebuildProfile == "" {
+					rebuildProfile = "default"
+				}
+				k, ctx, cancel, err = buildRuntimeKernel(Config{
+					Trust:        plan.Resolved.Trust,
+					Profile:      rebuildProfile,
+					ApprovalMode: plan.Resolved.ApprovalMode,
+					APIKey:       cfg.APIKey,
+					BaseURL:      cfg.BaseURL,
+					BuildKernel:  cfg.BuildKernel,
+					AfterBoot:    cfg.AfterBoot,
+				}, wCfg, bridge)
+				if err != nil {
+					return sessionResultMsg{err: err}
+				}
+				if err := product.ApplyResolvedProfile(k, plan.Resolved); err != nil {
+					cancel()
+					return sessionResultMsg{err: fmt.Errorf("apply rebuilt posture: %w", err)}
+				}
+				cfg.Trust = plan.Resolved.Trust
+				cfg.Profile = strings.TrimSpace(plan.Resolved.Name)
+				cfg.ApprovalMode = plan.Resolved.ApprovalMode
+			}
+			if strings.TrimSpace(plan.Notice) != "" {
+				notices = append(notices, plan.Notice)
 			}
 		} else {
 			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
@@ -1715,8 +1827,14 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			approvalMode:          cfg.ApprovalMode,
 			baseObserver:          cfg.BaseObserver,
 			buildRunTraceObserver: cfg.BuildRunTraceObserver,
+			buildKernel:           cfg.BuildKernel,
+			afterBoot:             cfg.AfterBoot,
 			buildSystemPrompt:     cfg.BuildSystemPrompt,
 			buildSessionConfig:    cfg.BuildSessionConfig,
+			apiType:               apiType,
+			model:                 wCfg.Model,
+			apiKey:                cfg.APIKey,
+			baseURL:               cfg.BaseURL,
 			permissions:           map[string]string{},
 		}
 
@@ -1724,4 +1842,24 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 
 		return kernelReadyMsg{agent: agent, notices: notices}
 	}
+}
+
+func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernel.Kernel, context.Context, context.CancelFunc, error) {
+	apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
+	k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to initialize kernel: %w", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := k.Boot(ctx); err != nil {
+		cancel()
+		return nil, nil, nil, fmt.Errorf("failed to boot kernel: %w", err)
+	}
+	if cfg.AfterBoot != nil {
+		if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
+			cancel()
+			return nil, nil, nil, fmt.Errorf("failed to initialize runtime: %w", err)
+		}
+	}
+	return k, ctx, cancel, nil
 }
