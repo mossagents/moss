@@ -150,6 +150,8 @@ moss version
 | `/init` | 初始化 `AGENTS.md` 与 `.mosscode/commands/` 工作流目录 |
 | `/search <query>` | 通过 Jina 搜索网页内容 |
 | `/open <path[:line]>` | 在本地编辑器中打开文件 |
+| `/debug-config` | 查看配置源、目录、日志与命令目录 |
+| `/theme [default\|plain]` | 查看或切换当前 TUI 主题 |
 | `/resume [session_id|latest]` | 查看可恢复会话或恢复指定会话 |
 | `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有会话/检查点分叉新会话 |
 | `/plan [prompt]` | 切换到 planning 模式，并可直接附带计划提示 |
@@ -177,6 +179,11 @@ moss version
 - 图片路径也可以被引用，但当前 TUI 仅会附加路径说明；真正的图片解码仍待后续多模态消息能力补齐。
 - `/search` 会引导模型优先调用 `jina_search`。
 - `/open` 会优先使用 VS Code `code -g`，否则退回系统默认编辑器。
+
+### 诊断与 Shell 体验
+
+- `mosscode debug-config` 会汇总配置源、目录、日志与命令目录，便于排查环境问题。
+- `mosscode completion powershell|bash|zsh` 可输出对应 shell 的补全脚本。
 
 ## 示例应用
 

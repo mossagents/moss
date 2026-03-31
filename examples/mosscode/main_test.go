@@ -103,6 +103,34 @@ func TestRunInitCreatesAgentsTemplate(t *testing.T) {
 	}
 }
 
+func TestRunDebugConfigOutputsSummary(t *testing.T) {
+	appconfig.SetAppName(appName)
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	cfg := &config{
+		flags:      &appkit.AppFlags{Workspace: t.TempDir(), Provider: "openai", Model: "gpt-5", Trust: "trusted", Profile: "coding"},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	out, err := captureStdout(func() error { return runDebugConfig(cfg) })
+	if err != nil {
+		t.Fatalf("runDebugConfig: %v", err)
+	}
+	if !strings.Contains(out, "mosscode debug-config") || !strings.Contains(out, "Global config:") {
+		t.Fatalf("unexpected debug-config output: %q", out)
+	}
+}
+
+func TestRunCompletionPowerShellOutputsCompleter(t *testing.T) {
+	cfg := &config{completionArgs: []string{"powershell"}}
+	out, err := captureStdout(func() error { return runCompletion(cfg) })
+	if err != nil {
+		t.Fatalf("runCompletion: %v", err)
+	}
+	if !strings.Contains(out, "Register-ArgumentCompleter") || !strings.Contains(out, "debug-config") {
+		t.Fatalf("unexpected completion output: %q", out)
+	}
+}
+
 func TestRunCheckpointShowJSON(t *testing.T) {
 	appconfig.SetAppName(appName)
 	t.Setenv("APPDATA", t.TempDir())

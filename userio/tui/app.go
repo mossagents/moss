@@ -1378,6 +1378,7 @@ type appModel struct {
 	initCmd             tea.Cmd // 直接进入 chat 时的初始化命令
 	postInitDisplayText string
 	postInitRunText     string
+	theme               string
 }
 
 // Run 启动 TUI 应用。
@@ -1401,7 +1402,13 @@ func Run(cfg Config) error {
 			Workspace:    cfg.Workspace,
 		}
 		m.state = stateChat
+		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		if strings.TrimSpace(theme) != "" {
+			m.chat.theme = theme
+			applyTheme(theme)
+		}
+		m.theme = m.chat.theme
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
 	} else {
 		m.state = stateWelcome
@@ -1472,7 +1479,13 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.ProviderName = cfg.ProviderName
 		m.config.Model = cfg.Model
 		m.config.Workspace = cfg.Workspace
+		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		if strings.TrimSpace(theme) != "" {
+			m.chat.theme = theme
+			applyTheme(theme)
+		}
+		m.theme = m.chat.theme
 		m.chat.approvalMode = m.config.ApprovalMode
 		m.state = stateChat
 
@@ -1682,6 +1695,19 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.scheduleCtrl = m.config.ScheduleController
 		m.chat.permissionSummaryFn = agent.permissionSummary
 		m.chat.setPermissionFn = agent.setPermission
+		m.chat.debugConfigFn = func() string {
+			report := product.BuildDebugConfigReport(
+				configpkg.AppName(),
+				m.config.Workspace,
+				m.chat.provider,
+				m.chat.model,
+				m.chat.trust,
+				m.chat.approvalMode,
+				m.chat.profile,
+				m.chat.theme,
+			)
+			return product.RenderDebugConfigReport(report)
+		}
 		m.chat.gitRunFn = func(cmd string, args []string) (string, error) {
 			raw, err := agent.invokeTool(agent.ctx, "run_command", map[string]any{
 				"command": cmd,
@@ -1741,6 +1767,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	var cmd tea.Cmd
 	m.chat, cmd = m.chat.Update(msg)
+	m.theme = m.chat.theme
 	return m, cmd
 }
 

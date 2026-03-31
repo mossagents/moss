@@ -91,6 +91,7 @@ type chatModel struct {
 	gitRunFn            func(cmd string, args []string) (string, error)
 	permissionSummaryFn func() string
 	setPermissionFn     func(toolName, mode string) (string, error)
+	debugConfigFn       func() string
 	pendAsk             *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm             *askFormState
 	scheduleBrowser     *scheduleBrowserState
@@ -110,6 +111,7 @@ type chatModel struct {
 	trust          string
 	profile        string
 	approvalMode   string
+	theme          string
 	customCommands []product.CustomCommand
 
 	queuedInputs []string
@@ -135,6 +137,8 @@ func newChatModel(provider, model, workspace string) chatModel {
 	// Bubble Tea does not reliably expose Shift+Enter on all terminals, so keep it
 	// as a best-effort binding and add portable fallbacks for multiline input.
 	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "alt+enter", "ctrl+j")
+	theme := resolveThemeName(os.Getenv("MOSSCODE_THEME"))
+	applyTheme(theme)
 
 	return chatModel{
 		textarea:      ta,
@@ -142,6 +146,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		model:         model,
 		workspace:     workspace,
 		trust:         "trusted",
+		theme:         theme,
 		toolCollapsed: true,
 		inputHistory:  loadInputHistory(defaultHistoryPath(), maxInputHistory),
 		historyPath:   defaultHistoryPath(),
@@ -1495,6 +1500,33 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/debug-config":
+		if m.debugConfigFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Debug config view is unavailable."})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.debugConfigFn()})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/theme":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current theme: %s", m.theme)})
+			m.refreshViewport()
+			return m, nil
+		}
+		raw := strings.ToLower(strings.TrimSpace(args[0]))
+		if raw != themeDefault && raw != themePlain {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /theme [default|plain]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.theme = raw
+		applyTheme(raw)
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switched theme to %s.", raw)})
+		m.refreshViewport()
+		return m, nil
+
 	case "/search":
 		query := strings.TrimSpace(strings.Join(args, " "))
 		if query == "" {
@@ -1781,6 +1813,8 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Core"},
 	{Name: "/search", Summary: "Search the web via Jina", Section: "Core"},
 	{Name: "/open", Summary: "Open a file in the local editor", Section: "Core"},
+	{Name: "/debug-config", Summary: "Show config, paths, and logs", Section: "Core"},
+	{Name: "/theme", Summary: "Show or switch TUI theme", Section: "Core"},
 	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
 	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
@@ -1888,6 +1922,7 @@ func (m chatModel) renderStatusSummary() string {
 	fmt.Fprintf(&b, "Run state: %s\n", valueOrDefaultRunState(m.streaming))
 	fmt.Fprintf(&b, "Trust: %s\n", valueOrDefaultString(m.trust, "(unknown)"))
 	fmt.Fprintf(&b, "Profile: %s\n", valueOrDefaultString(m.profile, "default"))
+	fmt.Fprintf(&b, "Theme: %s\n", valueOrDefaultString(m.theme, themeDefault))
 	fmt.Fprintf(&b, "Approval: %s", valueOrDefaultString(m.approvalMode, "(default)"))
 	if m.sessionInfoFn != nil {
 		info := strings.TrimSpace(m.sessionInfoFn())

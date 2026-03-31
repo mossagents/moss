@@ -56,6 +56,7 @@ func TestSlashCommandStatusSummary(t *testing.T) {
 	m.trust = "trusted"
 	m.profile = "coding"
 	m.approvalMode = "confirm"
+	m.theme = "plain"
 	m.sessionInfoFn = func() string { return "session summary" }
 	updated, _ := m.handleSlashCommand("/status")
 	if len(updated.messages) == 0 {
@@ -64,6 +65,25 @@ func TestSlashCommandStatusSummary(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if !strings.Contains(last.content, "Runtime status:") || !strings.Contains(last.content, "session summary") {
 		t.Fatalf("unexpected message content: %q", last.content)
+	}
+}
+
+func TestSlashCommandThemeSwitch(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/theme plain")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "plain") || updated.theme != "plain" {
+		t.Fatalf("unexpected theme switch output: %+v", last)
+	}
+}
+
+func TestSlashCommandDebugConfig(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.debugConfigFn = func() string { return "debug config" }
+	updated, _ := m.handleSlashCommand("/debug-config")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || last.content != "debug config" {
+		t.Fatalf("unexpected debug config output: %+v", last)
 	}
 }
 
@@ -644,7 +664,7 @@ func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/init") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
+	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/init") || !strings.Contains(last.content, "/debug-config") || !strings.Contains(last.content, "/theme") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }

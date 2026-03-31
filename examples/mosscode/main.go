@@ -58,9 +58,11 @@ type config struct {
 	resumeLatest    bool
 	configArgs      []string
 	doctorJSON      bool
+	debugConfigJSON bool
 	reviewJSON      bool
 	reviewArgs      []string
 	forkArgs        []string
+	completionArgs  []string
 	checkpointArgs  []string
 	applyArgs       []string
 	rollbackArgs    []string
@@ -125,6 +127,12 @@ func main() {
 	case "doctor":
 		exitOnCommandError(runDoctor(ctx, cfg))
 		return
+	case "debug-config":
+		exitOnCommandError(runDebugConfig(cfg))
+		return
+	case "completion":
+		exitOnCommandError(runCompletion(cfg))
+		return
 	case "config":
 		exitOnCommandError(runConfig(cfg))
 		return
@@ -177,6 +185,14 @@ func parseFlags() *config {
 		case "doctor":
 			cfg.command = "doctor"
 			parseDoctorFlags(cfg, os.Args[2:])
+			return cfg
+		case "debug-config":
+			cfg.command = "debug-config"
+			parseDebugConfigFlags(cfg, os.Args[2:])
+			return cfg
+		case "completion":
+			cfg.command = "completion"
+			cfg.completionArgs = append([]string(nil), os.Args[2:]...)
 			return cfg
 		case "config":
 			cfg.command = "config"
@@ -240,6 +256,15 @@ func parseDoctorFlags(cfg *config, args []string) {
 	fs.SetOutput(io.Discard)
 	appkit.BindAppFlags(fs, cfg.flags)
 	fs.BoolVar(&cfg.doctorJSON, "json", false, "Emit doctor output as JSON")
+	bindProductFlags(fs, cfg)
+	parseCommonFlags(fs, cfg, args)
+}
+
+func parseDebugConfigFlags(cfg *config, args []string) {
+	fs := flag.NewFlagSet("debug-config", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	fs.BoolVar(&cfg.debugConfigJSON, "json", false, "Emit debug-config output as JSON")
 	bindProductFlags(fs, cfg)
 	parseCommonFlags(fs, cfg, args)
 }
@@ -330,6 +355,8 @@ Usage:
   mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [flags]
   mosscode init [flags]
   mosscode doctor [--json] [flags]
+  mosscode debug-config [--json] [flags]
+  mosscode completion <powershell|bash|zsh>
   mosscode config [show|path|set|unset|mcp] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
   mosscode checkpoint <list|show|create|replay> [flags]
@@ -524,6 +551,99 @@ func runDoctor(ctx context.Context, cfg *config) error {
 	}
 	fmt.Print(product.RenderDoctorReport(report))
 	return nil
+}
+
+func runDebugConfig(cfg *config) error {
+	resolved, err := resolveProfileForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	report := product.BuildDebugConfigReport(
+		appName,
+		cfg.flags.Workspace,
+		cfg.flags.DisplayProviderName(),
+		cfg.flags.Model,
+		resolved.Trust,
+		resolved.ApprovalMode,
+		resolved.Name,
+		currentThemeName(),
+	)
+	if cfg.debugConfigJSON {
+		return printJSON(report)
+	}
+	fmt.Println(product.RenderDebugConfigReport(report))
+	return nil
+}
+
+func runCompletion(cfg *config) error {
+	if len(cfg.completionArgs) != 1 {
+		return fmt.Errorf("usage: mosscode completion <powershell|bash|zsh>")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.completionArgs[0])) {
+	case "powershell":
+		fmt.Print(renderPowerShellCompletion())
+		return nil
+	case "bash":
+		fmt.Print(renderBashCompletion())
+		return nil
+	case "zsh":
+		fmt.Print(renderZshCompletion())
+		return nil
+	default:
+		return fmt.Errorf("unsupported shell %q (supported: powershell, bash, zsh)", cfg.completionArgs[0])
+	}
+}
+
+func currentThemeName() string {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MOSSCODE_THEME"))) {
+	case "plain":
+		return "plain"
+	default:
+		return "default"
+	}
+}
+
+func renderPowerShellCompletion() string {
+	return `Register-ArgumentCompleter -CommandName mosscode -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $commands = @('exec','resume','fork','init','doctor','debug-config','completion','config','review','checkpoint','apply','rollback','changes')
+    $commands | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+`
+}
+
+func renderBashCompletion() string {
+	return `_mosscode_completions() {
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local commands="exec resume fork init doctor debug-config completion config review checkpoint apply rollback changes"
+    COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
+}
+complete -F _mosscode_completions mosscode
+`
+}
+
+func renderZshCompletion() string {
+	return `#compdef mosscode
+local -a commands
+commands=(
+  'exec:run one-shot prompt'
+  'resume:resume saved conversation'
+  'fork:fork from session or checkpoint'
+  'init:scaffold AGENTS.md and commands'
+  'doctor:run diagnostics'
+  'debug-config:show config and path diagnostics'
+  'completion:emit shell completion script'
+  'config:manage persisted config'
+  'review:inspect working tree review state'
+  'checkpoint:manage checkpoints'
+  'apply:apply explicit patch'
+  'rollback:rollback a change'
+  'changes:list or inspect persisted changes'
+)
+_describe 'command' commands
+`
 }
 
 func runConfig(cfg *config) error {
