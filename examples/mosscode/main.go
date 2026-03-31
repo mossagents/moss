@@ -31,6 +31,7 @@ import (
 	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
@@ -321,6 +322,7 @@ Flags:
   --provider    LLM provider: claude|openai
   --model       Model name
   --workspace   Workspace directory (default: ".")
+  --profile     Profile: default|coding|research|planning|readonly
   --trust       Trust level: trusted|restricted
   --approval    Approval mode: read-only|confirm|full-auto (default: confirm)
   --router-config          Optional model router YAML path
@@ -388,12 +390,20 @@ Exec:
 
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
+	resolved, err := resolveProfileForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	flags.Trust = resolved.Trust
+	flags.Profile = resolved.Name
+	cfg.approvalMode = resolved.ApprovalMode
 	return mosstui.Run(mosstui.Config{
 		Provider:         flags.Provider,
 		Model:            flags.Model,
 		Workspace:        flags.Workspace,
-		Trust:            flags.Trust,
-		ApprovalMode:     cfg.approvalMode,
+		Trust:            resolved.Trust,
+		Profile:          resolved.Name,
+		ApprovalMode:     resolved.ApprovalMode,
 		SessionStoreDir:  product.SessionStoreDir(),
 		BaseURL:          flags.BaseURL,
 		APIKey:           flags.APIKey,
@@ -403,26 +413,43 @@ func launchTUI(cfg *config) error {
 			recorder := product.NewRunTraceRecorder()
 			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  provider,
+				Provider:  apiType,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
+				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
-			return buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
+			k, _, err := buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
+			return k, err
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
-			return session.SessionConfig{
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
+			resolvedProfile, err := appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+				Workspace:        workspace,
+				RequestedProfile: profile,
+				Trust:            trust,
+				ApprovalMode:     approvalMode,
+			})
+			if err != nil {
+				resolvedProfile = appruntime.ResolvedProfile{
+					Name:            profile,
+					TaskMode:        profile,
+					Trust:           trust,
+					ApprovalMode:    approvalMode,
+					ExecutionPolicy: appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode),
+				}
+			}
+			return appruntime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
-			}
+			}, resolvedProfile)
 		},
 	})
 }
@@ -841,7 +868,8 @@ func runCheckpointReplay(ctx context.Context, cfg *config, args []string) error 
 }
 
 func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, error) {
-	return buildKernel(ctx, cfg.flags, &port.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
+	k, _, err := buildKernel(ctx, cfg.flags, &port.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
+	return k, err
 }
 
 func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (product.ChangeRuntime, func(), error) {
@@ -888,6 +916,14 @@ func exitOnCommandError(err error) {
 }
 
 func runExec(ctx context.Context, cfg *config) int {
+	resolved, err := resolveProfileForConfig(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		return 1
+	}
+	cfg.flags.Trust = resolved.Trust
+	cfg.flags.Profile = resolved.Name
+	cfg.approvalMode = resolved.ApprovalMode
 	report, err := executeOneShot(ctx, cfg)
 	if cfg.execJSON {
 		data, marshalErr := json.MarshalIndent(report, "", "  ")
@@ -1092,7 +1128,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		userIO = port.NewConsoleIO()
 	}
 	traceObserver := product.NewPricingObserver(cfg.pricingCatalog, traceRecorder)
-	k, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, port.JoinObservers(cfg.observer, traceObserver))
+	k, resolved, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, port.JoinObservers(cfg.observer, traceObserver))
 	if err != nil {
 		report.Error = err.Error()
 		return report, err
@@ -1114,8 +1150,9 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 				"Model":     modelName,
 				"Workspace": cfg.flags.Workspace,
 				"Mode":      "one-shot",
-				"Trust":     cfg.flags.Trust,
-				"Approval":  cfg.approvalMode,
+				"Profile":   resolved.Name,
+				"Trust":     resolved.Trust,
+				"Approval":  resolved.ApprovalMode,
 				"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
 				"Prompt":    cfg.prompt,
 			},
@@ -1123,16 +1160,14 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		)
 	}
 
-	sess, err := k.NewSession(ctx, session.SessionConfig{
+	sessCfg := appruntime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 		Goal:         cfg.prompt,
 		Mode:         "oneshot",
-		TrustLevel:   cfg.flags.Trust,
-		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace, cfg.flags.Trust),
+		TrustLevel:   resolved.Trust,
+		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace, resolved.Trust),
 		MaxSteps:     80,
-		Metadata: map[string]any{
-			"approval_mode": cfg.approvalMode,
-		},
-	})
+	}, resolved)
+	sess, err := k.NewSession(ctx, sessCfg)
 	if err != nil {
 		report.Error = err.Error()
 		return report, fmt.Errorf("create session: %w", err)
@@ -1176,11 +1211,17 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	return report, nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, approvalMode string, governance product.GovernanceConfig, observer port.Observer) (*kernel.Kernel, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, approvalMode string, governance product.GovernanceConfig, observer port.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
+	resolved, err := resolveProfileForFlags(flags, approvalMode)
+	if err != nil {
+		return nil, appruntime.ResolvedProfile{}, err
+	}
+	flags.Trust = resolved.Trust
+	flags.Profile = resolved.Name
 	disableDefaultPolicy := false
 	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("load model router: %w", err)
+		return nil, appruntime.ResolvedProfile{}, fmt.Errorf("load model router: %w", err)
 	}
 	failoverCfg, failoverEnabled := governance.FailoverConfig()
 	useFailover := failoverEnabled && router != nil
@@ -1200,24 +1241,68 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, ap
 		LLMBreakerConfig:              breakerCfg,
 	})
 	if err != nil {
-		return nil, err
+		return nil, appruntime.ResolvedProfile{}, err
 	}
 	if router != nil {
 		var llm port.LLM = router
 		if useFailover {
 			failoverLLM, err := adapters.NewFailoverLLM(router, failoverCfg)
 			if err != nil {
-				return nil, fmt.Errorf("build failover llm: %w", err)
+				return nil, appruntime.ResolvedProfile{}, fmt.Errorf("build failover llm: %w", err)
 			}
 			llm = failoverLLM
 		}
 		k.SetLLM(llm)
 	}
 	k.SetObserver(product.ComposeStateObserver(k, observer))
-	if _, err := product.ApplyApprovalModeWithTrust(k, flags.Trust, approvalMode); err != nil {
-		return nil, err
+	if err := product.ApplyResolvedProfile(k, resolved); err != nil {
+		return nil, appruntime.ResolvedProfile{}, err
 	}
-	return k, nil
+	return k, resolved, nil
+}
+
+func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (appruntime.ResolvedProfile, error) {
+	return appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+		Workspace:        flags.Workspace,
+		RequestedProfile: flags.Profile,
+		Trust:            flags.Trust,
+		ApprovalMode:     approvalMode,
+	})
+}
+
+func resolveProfileForConfig(cfg *config) (appruntime.ResolvedProfile, error) {
+	trust := ""
+	if hasExplicitFlag(cfg.explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
+		trust = cfg.flags.Trust
+	}
+	approval := ""
+	if hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
+		approval = cfg.approvalMode
+	}
+	return appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+		Workspace:        cfg.flags.Workspace,
+		RequestedProfile: cfg.flags.Profile,
+		Trust:            trust,
+		ApprovalMode:     approval,
+	})
+}
+
+func hasExplicitFlag(explicit []string, name string) bool {
+	for _, item := range explicit {
+		if item == name {
+			return true
+		}
+	}
+	return false
+}
+
+func envConfigured(keys ...string) bool {
+	for _, key := range keys {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildSystemPrompt(workspace, trust string) string {

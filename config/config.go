@@ -77,13 +77,15 @@ func EnsureAppDir() error {
 }
 
 type Config struct {
-	APIType  string        `yaml:"api_type,omitempty"`
-	Name     string        `yaml:"name,omitempty"`
-	Provider string        `yaml:"provider,omitempty"`
-	Model    string        `yaml:"model,omitempty"`
-	BaseURL  string        `yaml:"base_url,omitempty"`
-	APIKey   string        `yaml:"api_key,omitempty"`
-	Skills   []SkillConfig `yaml:"skills,omitempty"`
+	APIType        string                   `yaml:"api_type,omitempty"`
+	Name           string                   `yaml:"name,omitempty"`
+	Provider       string                   `yaml:"provider,omitempty"`
+	Model          string                   `yaml:"model,omitempty"`
+	BaseURL        string                   `yaml:"base_url,omitempty"`
+	APIKey         string                   `yaml:"api_key,omitempty"`
+	DefaultProfile string                   `yaml:"default_profile,omitempty"`
+	Profiles       map[string]ProfileConfig `yaml:"profiles,omitempty"`
+	Skills         []SkillConfig            `yaml:"skills,omitempty"`
 }
 
 type SkillConfig struct {
@@ -94,6 +96,27 @@ type SkillConfig struct {
 	URL       string            `yaml:"url,omitempty"`
 	Env       map[string]string `yaml:"env,omitempty"`
 	Enabled   *bool             `yaml:"enabled,omitempty"`
+}
+
+type ProfileConfig struct {
+	Label     string                 `yaml:"label,omitempty"`
+	TaskMode  string                 `yaml:"task_mode,omitempty"`
+	Trust     string                 `yaml:"trust,omitempty"`
+	Approval  string                 `yaml:"approval,omitempty"`
+	Session   SessionProfileConfig   `yaml:"session,omitempty"`
+	Execution ExecutionProfileConfig `yaml:"execution,omitempty"`
+}
+
+type SessionProfileConfig struct {
+	MaxSteps  int `yaml:"max_steps,omitempty"`
+	MaxTokens int `yaml:"max_tokens,omitempty"`
+}
+
+type ExecutionProfileConfig struct {
+	CommandAccess string `yaml:"command_access,omitempty"`
+	HTTPAccess    string `yaml:"http_access,omitempty"`
+	CommandTimeout string `yaml:"command_timeout,omitempty"`
+	HTTPTimeout    string `yaml:"http_timeout,omitempty"`
 }
 
 type ProviderIdentity struct {
@@ -258,6 +281,21 @@ func LoadGlobalConfig() (*Config, error) {
 
 func DefaultProjectConfigPath(workspace string) string {
 	return filepath.Join(workspace, "moss.yaml")
+}
+
+func LoadProjectConfig(workspace string) (*Config, error) {
+	path := DefaultProjectConfigPath(workspace)
+	if path == "" {
+		return &Config{}, nil
+	}
+	return LoadConfig(path)
+}
+
+func LoadProjectConfigForTrust(workspace, trust string) (*Config, error) {
+	if !ProjectAssetsAllowed(trust) {
+		return &Config{}, nil
+	}
+	return LoadProjectConfig(workspace)
 }
 
 func DefaultGlobalSystemPromptTemplatePath() string {

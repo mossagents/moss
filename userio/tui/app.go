@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -44,17 +45,18 @@ type Config struct {
 	Model                 string
 	Workspace             string
 	Trust                 string
+	Profile               string
 	ApprovalMode          string
 	SessionStoreDir       string
 	InitialSessionID      string
 	BaseURL               string
 	APIKey                string
 	BaseObserver          port.Observer
-	BuildKernel           func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildKernel           func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 	BuildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
 	AfterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt     func(workspace, trust string) string
-	BuildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
+	BuildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	ScheduleController    runtime.ScheduleController
 	SidebarTitle          string
 	RenderSidebar         func() string
@@ -62,7 +64,8 @@ type Config struct {
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
 type kernelReadyMsg struct {
-	agent *agentState
+	agent   *agentState
+	notices []string
 }
 
 // agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
@@ -77,11 +80,12 @@ type agentState struct {
 	bridge                *BridgeIO
 	workspace             string
 	trust                 string
+	profile               string
 	approvalMode          string
 	baseObserver          port.Observer
 	buildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
 	buildSystemPrompt     func(workspace, trust string) string
-	buildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
+	buildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	permissions           map[string]string
 	mu                    sync.Mutex
 	running               bool // 是否正在执行 loop
@@ -160,6 +164,9 @@ func (a *agentState) sessionSummary() string {
 		b.WriteString(fmt.Sprintf("\nLast offload time: %v", v))
 	}
 	b.WriteString(fmt.Sprintf("\nTrust: %s", a.trust))
+	if strings.TrimSpace(a.profile) != "" {
+		b.WriteString(fmt.Sprintf("\nProfile: %s", a.profile))
+	}
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
@@ -192,19 +199,35 @@ func (a *agentState) listPersistedSessions(limit int) (string, error) {
 	var b strings.Builder
 	b.WriteString("Persisted sessions:\n")
 	for _, s := range summaries {
-		b.WriteString(fmt.Sprintf("- %s | %s | %s | steps=%d | created=%s\n", s.ID, s.Status, s.Mode, s.Steps, s.CreatedAt))
+		b.WriteString(fmt.Sprintf("- %s | %s | %s", s.ID, s.Status, s.Mode))
+		if strings.TrimSpace(s.Profile) != "" {
+			b.WriteString(fmt.Sprintf(" | profile=%s", s.Profile))
+		}
+		if strings.TrimSpace(s.EffectiveTrust) != "" {
+			b.WriteString(fmt.Sprintf(" | trust=%s", s.EffectiveTrust))
+		}
+		if strings.TrimSpace(s.EffectiveApproval) != "" {
+			b.WriteString(fmt.Sprintf(" | approval=%s", s.EffectiveApproval))
+		}
+		b.WriteString(fmt.Sprintf(" | steps=%d | created=%s\n", s.Steps, s.CreatedAt))
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
 }
 
 func (a *agentState) restoreSession(sessionID string) (string, error) {
 	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot restore a session while a run is active")
+	}
+	current := a.sess
 	store := a.store
+	ctx := a.ctx
 	a.mu.Unlock()
 	if store == nil {
 		return "", fmt.Errorf("session store is unavailable")
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	loaded, err := store.Load(ctx, sessionID)
 	if err != nil {
@@ -213,11 +236,35 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	if loaded == nil {
 		return "", fmt.Errorf("session %q not found", sessionID)
 	}
+	warning, err := a.validateSessionPosture(loaded)
+	if err != nil {
+		return "", err
+	}
+	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
+	if err != nil {
+		return "", err
+	}
 	a.mu.Lock()
 	a.sess = loaded
+	posture := runtime.SessionPostureFromSession(loaded)
+	if strings.TrimSpace(posture.Profile) != "" {
+		a.profile = posture.Profile
+	}
+	a.trust = posture.EffectiveTrust
+	a.approvalMode = posture.EffectiveApproval
 	a.mu.Unlock()
 	a.publishProgressReplay()
-	return fmt.Sprintf("Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages)), nil
+	var b strings.Builder
+	if notice != "" {
+		b.WriteString(notice)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages))
+	if warning != "" {
+		b.WriteString("\n")
+		b.WriteString(warning)
+	}
+	return b.String(), nil
 }
 
 func (a *agentState) createInteractiveSession() (*session.Session, error) {
@@ -226,6 +273,8 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	ctx := a.ctx
 	workspace := a.workspace
 	trust := a.trust
+	approvalMode := a.approvalMode
+	profile := a.profile
 	buildPrompt := a.buildSystemPrompt
 	buildCfg := a.buildSessionConfig
 	a.mu.Unlock()
@@ -244,7 +293,7 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		SystemPrompt: sysPrompt,
 	}
 	if buildCfg != nil {
-		sessCfg = buildCfg(workspace, trust, sysPrompt)
+		sessCfg = buildCfg(workspace, trust, approvalMode, profile, sysPrompt)
 		if sessCfg.SystemPrompt == "" {
 			sessCfg.SystemPrompt = sysPrompt
 		}
@@ -374,6 +423,21 @@ func (a *agentState) createCheckpoint(note string) (string, error) {
 	return msg, nil
 }
 
+func (a *agentState) prepareProfileSwitch(nextProfile string) (string, error) {
+	a.mu.Lock()
+	running := a.running
+	a.mu.Unlock()
+	if running {
+		return "", errors.New("cannot switch profile while a run is active")
+	}
+	note := fmt.Sprintf("profile switch to %s", strings.TrimSpace(nextProfile))
+	msg, err := a.createCheckpoint(note)
+	if err != nil {
+		return "", fmt.Errorf("checkpoint before profile switch: %w", err)
+	}
+	return msg, nil
+}
+
 func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 	a.mu.Lock()
 	if a.running {
@@ -470,6 +534,13 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 			sourceID = current.ID
 		}
 	}
+	sourceSession, warning, err := a.loadForkSourceSession(ctx, sourceKind, sourceID, current)
+	if err != nil {
+		return "", err
+	}
+	if _, err := a.validateSessionPosture(sourceSession); err != nil {
+		return "", err
+	}
 	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
 	if err != nil {
 		return "", err
@@ -510,6 +581,10 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	if result.Degraded && strings.TrimSpace(result.Details) != "" {
 		fmt.Fprintf(&b, " degraded=%s.", result.Details)
 	}
+	if warning != "" {
+		b.WriteString("\n")
+		b.WriteString(warning)
+	}
 	return b.String(), nil
 }
 
@@ -544,6 +619,13 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	if err != nil {
 		return "", err
 	}
+	sourceSession, warning, err := loadCheckpointSourceSession(reqCtx, store, record)
+	if err != nil {
+		return "", err
+	}
+	if _, err := a.validateSessionPosture(sourceSession); err != nil {
+		return "", err
+	}
 	next, result, err := k.ReplayFromCheckpoint(reqCtx, port.ReplayRequest{
 		CheckpointID:    record.ID,
 		Mode:            replayMode,
@@ -567,6 +649,10 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	}
 	if result.Degraded && strings.TrimSpace(result.Details) != "" {
 		fmt.Fprintf(&b, " degraded=%s.", result.Details)
+	}
+	if warning != "" {
+		b.WriteString("\n")
+		b.WriteString(warning)
 	}
 	return b.String(), nil
 }
@@ -615,6 +701,131 @@ func autosaveSessionBeforeSwitch(current *session.Session, store session.Session
 		return "", fmt.Errorf("save current session %q: %w", current.ID, err)
 	}
 	return fmt.Sprintf("Previous session %s auto-saved. Use /session restore %s or /sessions to continue it later.", current.ID, current.ID), nil
+}
+
+func loadCheckpointSourceSession(ctx context.Context, store session.SessionStore, record *port.CheckpointRecord) (*session.Session, string, error) {
+	if record == nil {
+		return nil, "", port.ErrCheckpointNotFound
+	}
+	if store == nil {
+		return nil, "", fmt.Errorf("session store is unavailable")
+	}
+	loaded, err := store.Load(ctx, record.SessionID)
+	if err != nil {
+		return nil, "", err
+	}
+	if loaded == nil {
+		return nil, "", fmt.Errorf("session %q not found", record.SessionID)
+	}
+	warning := postureWarningForSession(loaded)
+	return loaded, warning, nil
+}
+
+func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sourceID string, current *session.Session) (*session.Session, string, error) {
+	a.mu.Lock()
+	store := a.store
+	k := a.k
+	a.mu.Unlock()
+	switch port.ForkSourceKind(sourceKind) {
+	case port.ForkSourceCheckpoint:
+		if k == nil || k.Checkpoints() == nil {
+			return nil, "", fmt.Errorf("checkpoint store is unavailable")
+		}
+		record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
+		if err != nil {
+			return nil, "", err
+		}
+		return loadCheckpointSourceSession(ctx, store, record)
+	case port.ForkSourceSession:
+		if current != nil && strings.TrimSpace(current.ID) == strings.TrimSpace(sourceID) {
+			return current, postureWarningForSession(current), nil
+		}
+		if store == nil {
+			return nil, "", fmt.Errorf("session store is unavailable")
+		}
+		loaded, err := store.Load(ctx, sourceID)
+		if err != nil {
+			return nil, "", err
+		}
+		if loaded == nil {
+			return nil, "", fmt.Errorf("session %q not found", sourceID)
+		}
+		return loaded, postureWarningForSession(loaded), nil
+	default:
+		return nil, "", fmt.Errorf("unsupported fork source kind %q", sourceKind)
+	}
+}
+
+func (a *agentState) validateSessionPosture(sess *session.Session) (string, error) {
+	a.mu.Lock()
+	current := postureFromRuntime(a.profile, a.trust, a.approvalMode, runtime.ExecutionPolicyOf(a.k))
+	a.mu.Unlock()
+	target := runtime.SessionPostureFromSession(sess)
+	return validateRuntimeCompatibility(sess.ID, current, target)
+}
+
+func postureFromRuntime(profile, trust, approval string, policy runtime.ExecutionPolicy) runtime.SessionPosture {
+	return runtime.SessionPosture{
+		Profile:           strings.TrimSpace(profile),
+		EffectiveTrust:    configpkg.NormalizeTrustLevel(trust),
+		EffectiveApproval: product.NormalizeApprovalMode(approval),
+		ExecutionPolicy:   policy,
+		HasExecution:      true,
+	}
+}
+
+func postureWarningForSession(sess *session.Session) string {
+	posture := runtime.SessionPostureFromSession(sess)
+	if !posture.Legacy {
+		return ""
+	}
+	return fmt.Sprintf("Warning: session %s predates profile persistence; trust was inferred as %s and the current runtime approval/profile will be used.", sess.ID, posture.EffectiveTrust)
+}
+
+func validateRuntimeCompatibility(sessionID string, current, target runtime.SessionPosture) (string, error) {
+	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
+	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
+	targetApproval := product.NormalizeApprovalMode(target.EffectiveApproval)
+	currentApproval := product.NormalizeApprovalMode(current.EffectiveApproval)
+
+	if target.Legacy {
+		if currentTrust != targetTrust {
+			return "", fmt.Errorf("session %s predates profile persistence and requires trust=%s, but current runtime trust=%s; switch to a matching trust/profile before continuing", sessionID, targetTrust, currentTrust)
+		}
+		return postureWarningForRuntime(sessionID, targetTrust), nil
+	}
+
+	if currentTrust != targetTrust || currentApproval != targetApproval {
+		return "", fmt.Errorf("session %s requires recorded posture (%s), but current runtime is (%s); switch to a matching profile/posture before continuing", sessionID, formatPosture(target), formatPosture(current))
+	}
+	if target.HasExecution && !reflect.DeepEqual(target.ExecutionPolicy, current.ExecutionPolicy) {
+		return "", fmt.Errorf("session %s requires a different recorded execution policy (%s), but current runtime is (%s); switch to a matching profile/posture before continuing", sessionID, formatPosture(target), formatPosture(current))
+	}
+	return "", nil
+}
+
+func postureWarningForRuntime(sessionID, trust string) string {
+	return fmt.Sprintf("Warning: session %s predates profile persistence; trust was inferred as %s and the current runtime approval/profile will be used.", sessionID, trust)
+}
+
+func formatPosture(posture runtime.SessionPosture) string {
+	parts := []string{}
+	if strings.TrimSpace(posture.Profile) != "" {
+		parts = append(parts, "profile="+strings.TrimSpace(posture.Profile))
+	}
+	if strings.TrimSpace(posture.EffectiveTrust) != "" {
+		parts = append(parts, "trust="+configpkg.NormalizeTrustLevel(posture.EffectiveTrust))
+	}
+	if strings.TrimSpace(posture.EffectiveApproval) != "" {
+		parts = append(parts, "approval="+product.NormalizeApprovalMode(posture.EffectiveApproval))
+	}
+	if strings.TrimSpace(posture.TaskMode) != "" {
+		parts = append(parts, "task="+strings.TrimSpace(posture.TaskMode))
+	}
+	if len(parts) == 0 {
+		return "profile=legacy"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (a *agentState) setPermission(toolName, mode string) (string, error) {
@@ -1157,6 +1368,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.provider = identity.Label()
 		m.chat.model = sm.model
 		m.chat.trust = m.config.Trust
+		m.chat.profile = m.config.Profile
 		m.chat.approvalMode = m.config.ApprovalMode
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
@@ -1178,6 +1390,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Workspace:    m.config.Workspace,
 		}
 		m.chat.trust = st.trust
+		m.chat.profile = m.config.Profile
 		m.chat.approvalMode = m.config.ApprovalMode
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
@@ -1197,7 +1410,59 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Model:        m.config.Model,
 			Workspace:    m.config.Workspace,
 		}
+		m.chat.profile = m.config.Profile
 		m.chat.approvalMode = st.mode
+		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+	}
+
+	if st, ok := msg.(switchProfileMsg); ok {
+		checkpointMsg := ""
+		if m.agent != nil {
+			var err error
+			checkpointMsg, err = m.agent.prepareProfileSwitch(st.profile)
+			if err != nil {
+				m.chat.messages = append(m.chat.messages, chatMessage{kind: msgError, content: err.Error()})
+				m.chat.streaming = false
+				m.chat.refreshViewport()
+				return m, nil
+			}
+		}
+		if m.agent != nil && m.agent.cancel != nil {
+			m.agent.cancel()
+		}
+		m.agent = nil
+		m.chat.sendFn = nil
+		resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+			Workspace:        m.config.Workspace,
+			RequestedProfile: st.profile,
+		})
+		if err != nil {
+			m.chat.messages = append(m.chat.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to switch profile: %v", err)})
+			m.chat.streaming = false
+			m.chat.refreshViewport()
+			return m, nil
+		}
+		m.config.Profile = resolved.Name
+		m.config.Trust = resolved.Trust
+		m.config.ApprovalMode = resolved.ApprovalMode
+		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
+		wCfg := WelcomeConfig{
+			APIType:      identity.APIType,
+			ProviderName: identity.Name,
+			Provider:     identity.Provider,
+			Model:        m.config.Model,
+			Workspace:    m.config.Workspace,
+		}
+		m.chat.profile = resolved.Name
+		m.chat.trust = resolved.Trust
+		m.chat.approvalMode = resolved.ApprovalMode
+		if strings.TrimSpace(checkpointMsg) != "" {
+			m.chat.messages = append(m.chat.messages, chatMessage{
+				kind:    msgSystem,
+				content: checkpointMsg + "\nStarting a fresh session with the new profile.",
+			})
+			m.chat.refreshViewport()
+		}
 		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 	}
 
@@ -1210,6 +1475,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.chat.cancelRunFn = agent.cancelCurrentRun
 		m.chat.trust = m.config.Trust
+		m.chat.profile = m.config.Profile
 		m.chat.approvalMode = m.config.ApprovalMode
 		m.chat.sessionInfoFn = agent.sessionSummary
 		m.chat.sessionListFn = func(limit int) (string, error) {
@@ -1295,6 +1561,12 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			kind:    msgSystem,
 			content: fmt.Sprintf("Connected to %s", connInfo),
 		})
+		for _, notice := range ready.notices {
+			if strings.TrimSpace(notice) == "" {
+				continue
+			}
+			m.chat.messages = append(m.chat.messages, chatMessage{kind: msgSystem, content: strings.TrimSpace(notice)})
+		}
 		m.chat.refreshViewport()
 		go agent.publishProgressReplay()
 		return m, nil
@@ -1310,7 +1582,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 
-		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
+		k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 		if err != nil {
 			return sessionResultMsg{err: fmt.Errorf("failed to initialize kernel: %w", err)}
 		}
@@ -1331,7 +1603,10 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			}
 		}
 
-		var sess *session.Session
+		var (
+			sess    *session.Session
+			notices []string
+		)
 		if strings.TrimSpace(cfg.InitialSessionID) != "" {
 			if store == nil {
 				cancel()
@@ -1345,6 +1620,14 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			if sess == nil {
 				cancel()
 				return sessionResultMsg{err: fmt.Errorf("session %q not found", cfg.InitialSessionID)}
+			}
+			warning, err := validateRuntimeCompatibility(cfg.InitialSessionID, postureFromRuntime(cfg.Profile, cfg.Trust, cfg.ApprovalMode, runtime.ExecutionPolicyOf(k)), runtime.SessionPostureFromSession(sess))
+			if err != nil {
+				cancel()
+				return sessionResultMsg{err: err}
+			}
+			if strings.TrimSpace(warning) != "" {
+				notices = append(notices, warning)
 			}
 		} else {
 			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
@@ -1360,7 +1643,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 				SystemPrompt: sysPrompt,
 			}
 			if cfg.BuildSessionConfig != nil {
-				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, sysPrompt)
+				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, sysPrompt)
 				if sessCfg.SystemPrompt == "" {
 					sessCfg.SystemPrompt = sysPrompt
 				}
@@ -1394,6 +1677,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			bridge:                bridge,
 			workspace:             wCfg.Workspace,
 			trust:                 cfg.Trust,
+			profile:               cfg.Profile,
 			approvalMode:          cfg.ApprovalMode,
 			baseObserver:          cfg.BaseObserver,
 			buildRunTraceObserver: cfg.BuildRunTraceObserver,
@@ -1404,6 +1688,6 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 
 		k.Middleware().Use(agent.permissionOverrideMiddleware())
 
-		return kernelReadyMsg{agent: agent}
+		return kernelReadyMsg{agent: agent, notices: notices}
 	}
 }

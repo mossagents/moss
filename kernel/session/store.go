@@ -34,6 +34,10 @@ type SessionSummary struct {
 	ID          string        `json:"id"`
 	Goal        string        `json:"goal"`
 	Mode        string        `json:"mode,omitempty"`
+	Profile     string        `json:"profile,omitempty"`
+	EffectiveTrust string     `json:"effective_trust,omitempty"`
+	EffectiveApproval string  `json:"effective_approval,omitempty"`
+	TaskMode    string        `json:"task_mode,omitempty"`
 	Status      SessionStatus `json:"status"`
 	Recoverable bool          `json:"recoverable,omitempty"`
 	Steps       int           `json:"steps"`

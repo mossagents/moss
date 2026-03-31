@@ -22,6 +22,7 @@ const (
 type SessionConfig struct {
 	Goal         string           `json:"goal"`
 	Mode         string           `json:"mode,omitempty"`
+	Profile      string           `json:"profile,omitempty"`
 	TrustLevel   string           `json:"trust_level,omitempty"`
 	MaxSteps     int              `json:"max_steps,omitempty"`
 	MaxTokens    int              `json:"max_tokens,omitempty"`

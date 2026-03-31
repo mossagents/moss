@@ -109,6 +109,22 @@ func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, e
 	return mode, nil
 }
 
+func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) error {
+	if k == nil {
+		return fmt.Errorf("kernel is nil")
+	}
+	mode := NormalizeApprovalMode(profile.ApprovalMode)
+	if err := ValidateApprovalMode(mode); err != nil {
+		return err
+	}
+	runtime.SetExecutionPolicy(k, profile.ExecutionPolicy)
+	rules := approvalModePolicyRulesForPolicy(mode, profile.ExecutionPolicy)
+	if len(rules) > 0 {
+		k.WithPolicy(rules...)
+	}
+	return nil
+}
+
 func filterToolNames(items []string, excluded ...string) []string {
 	if len(items) == 0 {
 		return nil

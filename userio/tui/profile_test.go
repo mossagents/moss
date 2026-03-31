@@ -1,0 +1,59 @@
+package tui
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	appconfig "github.com/mossagents/moss/config"
+)
+
+func TestSlashCommandProfileList(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+
+	appDir := filepath.Join(home, ".mosscode")
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatalf("mkdir app dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  sandboxed:\n    label: Sandboxed\n"), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.trust = appconfig.TrustTrusted
+	updated, _ := m.handleSlashCommand("/profile list")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem {
+		t.Fatalf("expected system message, got %v", last.kind)
+	}
+	for _, want := range []string{"Available profiles:", "- default", "- sandboxed"} {
+		if !strings.Contains(last.content, want) {
+			t.Fatalf("profile list missing %q:\n%s", want, last.content)
+		}
+	}
+}
+
+func TestSlashCommandProfileSetReturnsSwitchMsg(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, cmd := m.handleSlashCommand("/profile set research")
+	if !updated.streaming {
+		t.Fatal("expected profile switch to mark chat as streaming")
+	}
+	if cmd == nil {
+		t.Fatal("expected switch command")
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(switchProfileMsg)
+	if !ok {
+		t.Fatalf("expected switchProfileMsg, got %T", msg)
+	}
+	if switchMsg.profile != "research" {
+		t.Fatalf("profile = %q, want research", switchMsg.profile)
+	}
+}

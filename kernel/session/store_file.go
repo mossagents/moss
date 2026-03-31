@@ -96,15 +96,20 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			endedAt = sess.EndedAt.Format("2006-01-02 15:04:05")
 		}
 
+		profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(&sess)
 		summaries = append(summaries, SessionSummary{
-			ID:          sess.ID,
-			Goal:        sess.Config.Goal,
-			Mode:        sess.Config.Mode,
-			Status:      sess.Status,
-			Recoverable: IsRecoverableStatus(sess.Status),
-			Steps:       sess.Budget.UsedSteps,
-			CreatedAt:   sess.CreatedAt.Format("2006-01-02 15:04:05"),
-			EndedAt:     endedAt,
+			ID:                sess.ID,
+			Goal:              sess.Config.Goal,
+			Mode:              sess.Config.Mode,
+			Profile:           profile,
+			EffectiveTrust:    effectiveTrust,
+			EffectiveApproval: effectiveApproval,
+			TaskMode:          taskMode,
+			Status:            sess.Status,
+			Recoverable:       IsRecoverableStatus(sess.Status),
+			Steps:             sess.Budget.UsedSteps,
+			CreatedAt:         sess.CreatedAt.Format("2006-01-02 15:04:05"),
+			EndedAt:           endedAt,
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {

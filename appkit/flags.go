@@ -16,6 +16,7 @@ type AppFlags struct {
 	Model     string
 	Workspace string
 	Trust     string
+	Profile   string
 	APIKey    string
 	BaseURL   string
 }
@@ -40,6 +41,7 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.Model, "model", "", "Model name")
 	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
 	fs.StringVar(&f.Trust, "trust", "", "Trust level: trusted|restricted")
+	fs.StringVar(&f.Profile, "profile", "", "Profile name")
 	fs.StringVar(&f.APIKey, "api-key", "", "API key (overrides env)")
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 }
@@ -63,6 +65,7 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		f.Model = FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
 		f.Workspace = FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
 		f.Trust = FirstNonEmpty(f.Trust, os.Getenv(prefix+"_TRUST"))
+		f.Profile = FirstNonEmpty(f.Profile, os.Getenv(prefix+"_PROFILE"))
 		f.APIKey = FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
 		f.BaseURL = FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
 	}

@@ -49,6 +49,10 @@ type switchApprovalMsg struct {
 	mode string
 }
 
+type switchProfileMsg struct {
+	profile string
+}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -101,6 +105,7 @@ type chatModel struct {
 	model        string
 	workspace    string
 	trust        string
+	profile      string
 	approvalMode string
 
 	queuedInputs []string
@@ -516,7 +521,7 @@ func (m chatModel) View() string {
 	if strings.TrimSpace(m.model) != "" {
 		leftMeta = fmt.Sprintf("%s (%s)", leftMeta, m.model)
 	}
-	rightMeta := fmt.Sprintf("Trust: %s  Approval: %s  Messages: %d", m.trust, m.displayApprovalMode(), len(m.messages))
+	rightMeta := fmt.Sprintf("Profile: %s  Trust: %s  Approval: %s  Messages: %d", valueOrDefaultString(m.profile, "default"), m.trust, m.displayApprovalMode(), len(m.messages))
 	b.WriteString(lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		mutedStyle.Width(m.mainWidth()/2).Render(leftMeta),
@@ -1349,6 +1354,42 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, func() tea.Msg { return switchApprovalMsg{mode: nextMode} }
 
+	case "/profile":
+		if len(args) == 0 {
+			current := valueOrDefaultString(m.profile, "default")
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current profile: %s\nUsage: /profile list\n       /profile set <name>", current)})
+			m.refreshViewport()
+			return m, nil
+		}
+		if strings.EqualFold(args[0], "list") {
+			names, err := runtime.ProfileNamesForWorkspace(m.workspace, m.trust)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Available profiles:\n- %s", strings.Join(names, "\n- "))})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		profileName := strings.TrimSpace(args[0])
+		if strings.EqualFold(args[0], "set") {
+			if len(args) < 2 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /profile set <name>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			profileName = strings.TrimSpace(args[1])
+		}
+		if profileName == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "profile name cannot be empty"})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching profile to %s...", profileName)})
+		m.streaming = true
+		m.refreshViewport()
+		return m, func() tea.Msg { return switchProfileMsg{profile: profileName} }
+
 	case "/help":
 		help := "Available commands:\n" +
 			"  /model [name]  Show or switch model\n" +
@@ -1381,6 +1422,9 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /permissions   Show runtime permission summary\n" +
 			"  /permissions set <tool> <allow|ask|deny|reset>\n" +
 			"  /permissions trust <trusted|restricted>\n" +
+			"  /profile [name]  Show or switch profile\n" +
+			"  /profile list    List available profiles\n" +
+			"  /profile set <name>  Rebuild runtime with a new profile\n" +
 			"  /trust <trusted|restricted>  Switch trust and rebuild runtime\n" +
 			"  /approval <read-only|confirm|full-auto>  Switch approval mode and rebuild runtime\n" +
 			"  /clear         Clear conversation\n" +
@@ -1479,6 +1523,13 @@ func valueOrDefaultRunState(running bool) string {
 		return "running"
 	}
 	return "idle"
+}
+
+func valueOrDefaultString(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return strings.TrimSpace(value)
 }
 
 func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd) {
@@ -1614,7 +1665,7 @@ func (m *chatModel) applySlashCompletion() bool {
 
 var slashCandidates = []string{
 	"/help", "/skills", "/skill", "/session", "/trace", "/new", "/sessions", "/changes", "/apply", "/rollback", "/checkpoint", "/offload", "/tasks", "/task",
-	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
+	"/config", "/schedules", "/git", "/budget", "/permissions", "/profile", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }
 
