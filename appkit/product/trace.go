@@ -51,6 +51,8 @@ type RunTraceSummary struct {
 	CostAvailable bool
 }
 
+const defaultTraceDetailLimit = 20
+
 func NewRunTraceRecorder() *RunTraceRecorder {
 	return &RunTraceRecorder{}
 }
@@ -225,9 +227,43 @@ func cloneTraceData(in map[string]any) map[string]any {
 }
 
 func RenderRunTraceSummary(summary RunTraceSummary) string {
+	lines := renderRunTraceOverview("Run summary:", summary)
+	if events := SelectKeyTraceEvents(summary.Trace, 5); len(events) > 0 {
+		lines = append(lines, "  key events:")
+		for _, event := range events {
+			lines = append(lines, "    - "+event)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func RenderRunTraceDetail(summary RunTraceSummary, limit int) string {
+	lines := renderRunTraceOverview("Last run trace:", summary)
+	totalEvents := len(summary.Trace.Timeline)
+	if totalEvents == 0 {
+		lines = append(lines, "  timeline: no trace events recorded")
+		return strings.Join(lines, "\n")
+	}
+	if limit <= 0 {
+		limit = defaultTraceDetailLimit
+	}
+	events := summary.Trace.Timeline
+	start := 0
+	if limit < len(events) {
+		start = len(events) - limit
+		events = events[start:]
+	}
+	lines = append(lines, fmt.Sprintf("  timeline: showing %d of %d events", len(events), totalEvents))
+	for i, event := range events {
+		lines = append(lines, fmt.Sprintf("    %02d. %s", start+i+1, formatTraceEventDetail(event)))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderRunTraceOverview(title string, summary RunTraceSummary) []string {
 	status := normalizeRunTraceStatus(summary.Status, summary.Error)
 	lines := []string{
-		"Run summary:",
+		title,
 		fmt.Sprintf("  status: %s", status),
 		fmt.Sprintf("  steps: %d", summary.Steps),
 		fmt.Sprintf("  llm calls: %d", summary.Trace.LLMCalls),
@@ -238,22 +274,19 @@ func RenderRunTraceSummary(summary RunTraceSummary) string {
 			summary.Trace.CompletionTokens,
 			summary.Trace.TotalTokens,
 		),
-	}
-	if summary.CostAvailable && summary.Trace.EstimatedCostUSD > 0 {
-		lines = append(lines, fmt.Sprintf("  cost: $%.6f", summary.Trace.EstimatedCostUSD))
-	} else {
-		lines = append(lines, "  cost: unavailable")
+		renderTraceCostLine(summary),
 	}
 	if msg := strings.TrimSpace(summary.Error); msg != "" {
 		lines = append(lines, fmt.Sprintf("  error: %s", msg))
 	}
-	if events := SelectKeyTraceEvents(summary.Trace, 5); len(events) > 0 {
-		lines = append(lines, "  key events:")
-		for _, event := range events {
-			lines = append(lines, "    - "+event)
-		}
+	return lines
+}
+
+func renderTraceCostLine(summary RunTraceSummary) string {
+	if summary.CostAvailable && summary.Trace.EstimatedCostUSD > 0 {
+		return fmt.Sprintf("  cost: $%.6f", summary.Trace.EstimatedCostUSD)
 	}
-	return strings.Join(lines, "\n")
+	return "  cost: unavailable"
 }
 
 func SelectKeyTraceEvents(trace RunTrace, limit int) []string {
@@ -408,6 +441,122 @@ func summarizeSlowestTraceEvent(trace RunTrace) (traceEventSummary, bool) {
 		index:    bestIndex,
 		message:  fmt.Sprintf("Slowest LLM call: %s (%s)", valueOrUnknown(best.Model, "configured model"), formatDuration(best.DurationMS)),
 	}, true
+}
+
+func formatTraceEventDetail(event TraceEvent) string {
+	details := make([]string, 0, 10)
+	switch event.Kind {
+	case "session":
+		details = append(details, "[session]", valueOrUnknown(event.Type, "event"))
+	case "approval":
+		details = append(details, "[approval]", valueOrUnknown(event.Type, "event"))
+		details = append(details, "tool="+valueOrUnknown(event.ToolName, "tool"))
+		if reasonCode := stringData(event.Data, "reason_code"); reasonCode != "" {
+			details = append(details, "reason_code="+reasonCode)
+		}
+		if approved, ok := boolData(event.Data, "approved"); ok {
+			details = append(details, fmt.Sprintf("approved=%t", approved))
+		}
+		if source := stringData(event.Data, "source"); source != "" {
+			details = append(details, "source="+source)
+		}
+	case "llm_call":
+		details = append(details, "[llm]", "model="+valueOrUnknown(event.Model, "configured model"))
+		if stop := strings.TrimSpace(event.Type); stop != "" {
+			details = append(details, "stop="+stop)
+		}
+		details = appendTraceCommonDetails(details, event)
+		if event.TotalTokens > 0 {
+			details = append(details, fmt.Sprintf("tokens=%d", event.TotalTokens))
+		}
+		if event.EstimatedCostUSD > 0 {
+			details = append(details, fmt.Sprintf("cost=$%.6f", event.EstimatedCostUSD))
+		}
+	case "tool_call":
+		details = append(details, "[tool]", valueOrUnknown(event.ToolName, "tool"))
+		details = appendTraceCommonDetails(details, event)
+	case "execution_event":
+		details = append(details, "[execution]", valueOrUnknown(event.Type, "event"))
+		if strings.TrimSpace(event.Model) != "" {
+			details = append(details, "model="+event.Model)
+		}
+		if strings.TrimSpace(event.ToolName) != "" {
+			details = append(details, "tool="+event.ToolName)
+		}
+		details = appendTraceCommonDetails(details, event)
+		details = append(details, formatTraceDataPairs(event.Data)...)
+	case "error":
+		details = append(details, "[error]", valueOrUnknown(event.Type, "runtime"))
+		if strings.TrimSpace(event.Error) != "" {
+			details = append(details, "message="+event.Error)
+		}
+	default:
+		details = append(details, "["+valueOrUnknown(event.Kind, "event")+"]")
+		details = appendTraceCommonDetails(details, event)
+		details = append(details, formatTraceDataPairs(event.Data)...)
+	}
+	return strings.Join(details, " ")
+}
+
+func appendTraceCommonDetails(details []string, event TraceEvent) []string {
+	if event.DurationMS > 0 {
+		details = append(details, "duration="+formatDuration(event.DurationMS))
+	}
+	if strings.TrimSpace(event.Error) != "" {
+		details = append(details, "error="+event.Error)
+	}
+	return details
+}
+
+func formatTraceDataPairs(data map[string]any) []string {
+	if len(data) == 0 {
+		return nil
+	}
+	keys := []string{
+		"candidate_model",
+		"failover_to",
+		"attempt_index",
+		"candidate_retry",
+		"breaker_state",
+		"outcome",
+		"stop_reason",
+		"streamed",
+		"tokens",
+		"steps",
+		"mode",
+		"goal",
+	}
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		v, ok := data[key]
+		if !ok {
+			continue
+		}
+		if value := formatTraceDataValue(v); value != "" {
+			out = append(out, key+"="+value)
+		}
+	}
+	return out
+}
+
+func formatTraceDataValue(v any) string {
+	switch value := v.(type) {
+	case string:
+		return strings.TrimSpace(value)
+	case bool:
+		if value {
+			return "true"
+		}
+		return "false"
+	case int:
+		return strconv.Itoa(value)
+	case int64:
+		return strconv.FormatInt(value, 10)
+	case float64:
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	default:
+		return ""
+	}
 }
 
 func normalizeRunTraceStatus(status, errMsg string) string {

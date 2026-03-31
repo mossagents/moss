@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/port"
 )
@@ -57,6 +58,43 @@ func TestSlashCommandSessionInfo(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if last.content != "session summary" {
 		t.Fatalf("unexpected message content: %q", last.content)
+	}
+}
+
+func TestSlashCommandTraceUnavailable(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/trace")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "No run trace is available yet") {
+		t.Fatalf("unexpected /trace unavailable output: %+v", last)
+	}
+}
+
+func TestSlashCommandTraceRendersLastTrace(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.lastTrace = &product.RunTraceSummary{
+		Status: "completed",
+		Steps:  2,
+		Trace: product.RunTrace{
+			PromptTokens:     12,
+			CompletionTokens: 6,
+			TotalTokens:      18,
+			LLMCalls:         1,
+			Timeline: []product.TraceEvent{
+				{Kind: "session", Type: "running"},
+				{Kind: "llm_call", Model: "gpt-5", Type: "end_turn", DurationMS: 42, TotalTokens: 18},
+			},
+		},
+	}
+	updated, _ := m.handleSlashCommand("/trace 1")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem {
+		t.Fatalf("expected system trace message, got %v", last.kind)
+	}
+	for _, want := range []string{"Last run trace:", "timeline: showing 1 of 2 events", "[llm] model=gpt-5 stop=end_turn duration=42ms tokens=18"} {
+		if !strings.Contains(last.content, want) {
+			t.Fatalf("trace output missing %q:\n%s", want, last.content)
+		}
 	}
 }
 
@@ -379,7 +417,7 @@ func TestHelpIncludesCheckpointCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/checkpoint list [limit]") {
+	if !strings.Contains(last.content, "/checkpoint list [limit]") || !strings.Contains(last.content, "/trace [limit]") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }
@@ -668,6 +706,13 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	if !slices.Contains(hints, "/changes") {
 		t.Fatalf("expected /changes in hints, got %v", hints)
 	}
+
+	m.textarea.SetValue("/tr")
+	m.refreshSlashHints()
+	hints = m.currentSlashHints()
+	if !slices.Contains(hints, "/trace") {
+		t.Fatalf("expected /trace in hints, got %v", hints)
+	}
 }
 
 func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
@@ -717,6 +762,35 @@ func TestSessionResult_AppendsTraceSummary(t *testing.T) {
 	}
 	if !strings.Contains(last.content, "Run summary:") {
 		t.Fatalf("unexpected summary message: %q", last.content)
+	}
+}
+
+func TestSessionResult_StoresTraceForLaterCommand(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	trace := &product.RunTraceSummary{
+		Status: "completed",
+		Steps:  1,
+		Trace: product.RunTrace{
+			LLMCalls: 1,
+			Timeline: []product.TraceEvent{{Kind: "llm_call", Model: "gpt-5", Type: "end_turn"}},
+		},
+	}
+	updated, _ := m.Update(sessionResultMsg{
+		trace:        trace,
+		traceSummary: "Run summary:\n  status: completed",
+	})
+	if updated.lastTrace == nil {
+		t.Fatal("expected last trace to be stored")
+	}
+	updated, _ = updated.handleSlashCommand("/trace")
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "Last run trace:") {
+		t.Fatalf("expected trace detail output, got %q", last.content)
 	}
 }
 

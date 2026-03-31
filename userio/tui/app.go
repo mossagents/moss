@@ -903,13 +903,15 @@ func (a *agentState) appendAndRun(text string) {
 			if result != nil {
 				steps = result.Steps
 			}
-			msg.traceSummary = product.RenderRunTraceSummary(product.RunTraceSummary{
+			traceSummary := &product.RunTraceSummary{
 				Status:        runTraceStatus(result, err),
 				Steps:         steps,
 				Trace:         trace,
 				Error:         runTraceError(result, err),
 				CostAvailable: trace.EstimatedCostUSD > 0,
-			})
+			}
+			msg.trace = traceSummary
+			msg.traceSummary = product.RenderRunTraceSummary(*traceSummary)
 		}
 		a.bridge.program.Send(msg)
 	}

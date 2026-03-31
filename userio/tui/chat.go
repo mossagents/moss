@@ -26,6 +26,7 @@ const (
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
 	output       string
+	trace        *product.RunTraceSummary
 	traceSummary string
 	err          error
 }
@@ -87,6 +88,7 @@ type chatModel struct {
 	scheduleBrowser     *scheduleBrowserState
 	finished            bool   // session 已结束
 	result              string // 最终结果
+	lastTrace           *product.RunTraceSummary
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
@@ -216,6 +218,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.finished = true
 		if msg.err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		}
+		if msg.trace != nil {
+			traceCopy := *msg.trace
+			m.lastTrace = &traceCopy
 		}
 		if strings.TrimSpace(msg.traceSummary) != "" {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: msg.traceSummary})
@@ -662,6 +668,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			if err != nil {
 				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to restore session: %v", err)})
 			} else {
+				m.lastTrace = nil
 				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 			}
 			m.refreshViewport()
@@ -672,6 +679,26 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			info = m.sessionInfoFn()
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/trace":
+		limit := 20
+		if len(args) >= 1 {
+			v, err := strconv.Atoi(strings.TrimSpace(args[0]))
+			if err != nil || v <= 0 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /trace [limit:int]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit = v
+		}
+		if m.lastTrace == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "No run trace is available yet. Run a task first."})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderRunTraceDetail(*m.lastTrace, limit)})
 		m.refreshViewport()
 		return m, nil
 
@@ -691,6 +718,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.streaming = false
 		m.finished = false
 		m.result = ""
+		m.lastTrace = nil
 		m.queuedInputs = nil
 		m.textarea.Reset()
 		m.adjustInputHeight()
@@ -786,6 +814,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.streaming = false
 			m.finished = false
 			m.result = ""
+			m.lastTrace = nil
 			m.queuedInputs = nil
 			m.textarea.Reset()
 			m.adjustInputHeight()
@@ -828,6 +857,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.streaming = false
 			m.finished = false
 			m.result = ""
+			m.lastTrace = nil
 			m.queuedInputs = nil
 			m.textarea.Reset()
 			m.adjustInputHeight()
@@ -1269,6 +1299,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /skill <name> <task...>  Invoke a specific skill/tool by name\n" +
 			"  /<name> <task...>  Shortcut for /skill <name> <task...>\n" +
 			"  /session       Show current session summary\n" +
+			"  /trace [limit] Show the last run trace with recent timeline events\n" +
 			"  /new           Create and switch to a fresh session\n" +
 			"  /session restore <id>  Restore a persisted session\n" +
 			"  /sessions [limit]  List persisted sessions\n" +
@@ -1522,7 +1553,7 @@ func (m *chatModel) applySlashCompletion() bool {
 }
 
 var slashCandidates = []string{
-	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/changes", "/apply", "/rollback", "/checkpoint", "/offload", "/tasks", "/task",
+	"/help", "/skills", "/skill", "/session", "/trace", "/new", "/sessions", "/changes", "/apply", "/rollback", "/checkpoint", "/offload", "/tasks", "/task",
 	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }

@@ -92,3 +92,37 @@ func TestRenderRunTraceSummaryShowsUnavailableCostWhenMissing(t *testing.T) {
 		t.Fatalf("expected unavailable cost fallback, got:\n%s", summary)
 	}
 }
+
+func TestRenderRunTraceDetailIncludesTimelineAndLimit(t *testing.T) {
+	detail := RenderRunTraceDetail(RunTraceSummary{
+		Status: "completed",
+		Steps:  3,
+		Trace: RunTrace{
+			PromptTokens:     10,
+			CompletionTokens: 5,
+			TotalTokens:      15,
+			LLMCalls:         1,
+			ToolCalls:        1,
+			Timeline: []TraceEvent{
+				{Kind: "session", Type: "running"},
+				{Kind: "approval", Type: "resolved", ToolName: "run_command", Data: map[string]any{"approved": true, "source": "user"}},
+				{Kind: "llm_call", Model: "gpt-5", Type: "tool_use", DurationMS: 120, TotalTokens: 15},
+				{Kind: "tool_call", ToolName: "run_command", DurationMS: 900},
+			},
+		},
+	}, 2)
+
+	for _, want := range []string{
+		"Last run trace:",
+		"timeline: showing 2 of 4 events",
+		"[llm] model=gpt-5 stop=tool_use duration=120ms tokens=15",
+		"[tool] run_command duration=900ms",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("detail missing %q:\n%s", want, detail)
+		}
+	}
+	if strings.Contains(detail, "[session] running") {
+		t.Fatalf("expected detail limit to show only recent events:\n%s", detail)
+	}
+}
