@@ -685,25 +685,8 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.invokeSkillLikeCommand(name, task, input)
 
 	case "/session":
-		if len(args) >= 2 && strings.ToLower(args[0]) == "restore" {
-			if m.sessionRestoreFn == nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session restore is unavailable."})
-				m.refreshViewport()
-				return m, nil
-			}
-			id := strings.TrimSpace(args[1])
-			if id == "" {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /session restore <session_id>"})
-				m.refreshViewport()
-				return m, nil
-			}
-			out, err := m.sessionRestoreFn(id)
-			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to restore session: %v", err)})
-			} else {
-				m.lastTrace = nil
-				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-			}
+		if len(args) > 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current live-session summary moved to /status in the next phase. Use /resume to restore saved sessions."})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -712,6 +695,47 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			info = m.sessionInfoFn()
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
+
+	case "/resume":
+		if len(args) == 0 {
+			if m.sessionListFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Resume listing is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			out, err := m.sessionListFn(20)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list resumable sessions: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) > 1 || m.sessionRestoreFn == nil {
+			if m.sessionRestoreFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Resume is unavailable."})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /resume [session_id|latest]"})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
+		id := strings.TrimSpace(args[0])
+		if id == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /resume [session_id|latest]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.sessionRestoreFn(id)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to resume session: %v", err)})
+		} else {
+			m.lastTrace = nil
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
 		m.refreshViewport()
 		return m, nil
 
@@ -760,7 +784,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/checkpoint":
 		if len(args) == 0 {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /checkpoint list [limit]\n  /checkpoint show <checkpoint_id|latest>\n  /checkpoint create [note]\n  /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]\n  /checkpoint replay [<checkpoint_id|latest>] [resume|rerun] [restore]"})
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /checkpoint list [limit]\n  /checkpoint show <checkpoint_id|latest>\n  /checkpoint create [note]\n  /checkpoint replay [<checkpoint_id|latest>] [resume|rerun] [restore]"})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -823,62 +847,6 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			}
 			m.refreshViewport()
 			return m, nil
-		case "fork":
-			if m.checkpointForkFn == nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint fork is unavailable."})
-				m.refreshViewport()
-				return m, nil
-			}
-			sourceKind := string(port.ForkSourceSession)
-			sourceID := ""
-			restore := false
-			rest := args[1:]
-			if len(rest) > 0 {
-				switch strings.ToLower(strings.TrimSpace(rest[0])) {
-				case "session", "checkpoint":
-					sourceKind = strings.ToLower(strings.TrimSpace(rest[0]))
-					if sourceKind == string(port.ForkSourceSession) && (len(rest) < 2 || strings.TrimSpace(rest[1]) == "") {
-						m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
-						m.refreshViewport()
-						return m, nil
-					}
-					if len(rest) >= 2 && strings.TrimSpace(rest[1]) != "" {
-						sourceID = strings.TrimSpace(rest[1])
-						rest = rest[2:]
-					} else {
-						rest = rest[1:]
-					}
-				case "latest":
-					sourceKind = string(port.ForkSourceCheckpoint)
-					rest = rest[1:]
-				}
-			}
-			for _, item := range rest {
-				token := strings.ToLower(strings.TrimSpace(item))
-				if token == "restore" || token == "--restore-worktree" {
-					restore = true
-					continue
-				}
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
-				m.refreshViewport()
-				return m, nil
-			}
-			out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
-			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork session: %v", err)})
-				m.refreshViewport()
-				return m, nil
-			}
-			m.messages = []chatMessage{{kind: msgSystem, content: out}}
-			m.streaming = false
-			m.finished = false
-			m.result = ""
-			m.lastTrace = nil
-			m.queuedInputs = nil
-			m.textarea.Reset()
-			m.adjustInputHeight()
-			m.refreshViewport()
-			return m, nil
 		case "replay":
 			if m.checkpointReplayFn == nil {
 				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint replay is unavailable."})
@@ -927,11 +895,72 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.adjustInputHeight()
 			m.refreshViewport()
 			return m, nil
+		case "fork":
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint branching moved to /fork. Use /fork [session <id>|checkpoint <id|latest>|latest] [restore]."})
+			m.refreshViewport()
+			return m, nil
 		default:
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list|show|create|fork|replay ..."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list|show|create|replay ..."})
 			m.refreshViewport()
 			return m, nil
 		}
+
+	case "/fork":
+		if m.checkpointForkFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Fork is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		sourceKind := string(port.ForkSourceSession)
+		sourceID := ""
+		restore := false
+		rest := args
+		if len(rest) > 0 {
+			switch strings.ToLower(strings.TrimSpace(rest[0])) {
+			case "session", "checkpoint":
+				sourceKind = strings.ToLower(strings.TrimSpace(rest[0]))
+				if sourceKind == string(port.ForkSourceSession) && (len(rest) < 2 || strings.TrimSpace(rest[1]) == "") {
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
+					m.refreshViewport()
+					return m, nil
+				}
+				if len(rest) >= 2 && strings.TrimSpace(rest[1]) != "" {
+					sourceID = strings.TrimSpace(rest[1])
+					rest = rest[2:]
+				} else {
+					rest = rest[1:]
+				}
+			case "latest":
+				sourceKind = string(port.ForkSourceCheckpoint)
+				rest = rest[1:]
+			}
+		}
+		for _, item := range rest {
+			token := strings.ToLower(strings.TrimSpace(item))
+			if token == "restore" || token == "--restore-worktree" {
+				restore = true
+				continue
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork session: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = []chatMessage{{kind: msgSystem, content: out}}
+		m.streaming = false
+		m.finished = false
+		m.result = ""
+		m.lastTrace = nil
+		m.queuedInputs = nil
+		m.textarea.Reset()
+		m.adjustInputHeight()
+		m.refreshViewport()
+		return m, nil
 
 	case "/changes":
 		if len(args) == 0 {
@@ -1032,42 +1061,22 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case "/sessions":
-		if m.sessionListFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session list is unavailable."})
-			m.refreshViewport()
-			return m, nil
-		}
-		limit := 20
-		if len(args) >= 1 {
-			v, err := strconv.Atoi(args[0])
-			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /sessions [limit:int]"})
-				m.refreshViewport()
-				return m, nil
-			}
-			limit = v
-		}
-		out, err := m.sessionListFn(limit)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list sessions: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Saved-session browsing moved to /resume. Use /resume to list recent sessions or /resume <session_id> to continue one."})
 		m.refreshViewport()
 		return m, nil
 
-	case "/offload":
+	case "/compact":
 		if m.offloadFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "offload_context tool is unavailable."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Context compaction is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
 		keepRecent := 20
-		note := "manual offload from TUI"
+		note := "manual compact from TUI"
 		if len(args) >= 1 {
 			v, err := strconv.Atoi(args[0])
 			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /offload [keep_recent:int] [note...]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /compact [keep_recent:int] [note...]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -1078,10 +1087,15 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		out, err := m.offloadFn(keepRecent, note)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("offload failed: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("compact failed: %v", err)})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/offload":
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Transcript compaction moved to /compact. Use /compact [keep_recent] [note]."})
 		m.refreshViewport()
 		return m, nil
 
@@ -1391,53 +1405,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m, func() tea.Msg { return switchProfileMsg{profile: profileName} }
 
 	case "/help":
-		help := "Available commands:\n" +
-			"  /model [name]  Show or switch model\n" +
-			"  /config        Show current config\n" +
-			"  /config set <key> <value>  Set config key (api_type/name/model/base_url/api_key)\n" +
-			"  /skills        Show discovered user skills and activation state\n" +
-			"  /skill <name> <task...>  Invoke a specific skill/tool by name\n" +
-			"  /<name> <task...>  Shortcut for /skill <name> <task...>\n" +
-			"  /session       Show current session summary\n" +
-			"  /trace [limit] Show the last run trace with recent timeline events\n" +
-			"  /new           Create and switch to a fresh session\n" +
-			"  /session restore <id>  Restore a persisted session\n" +
-			"  /sessions [limit]  List persisted sessions\n" +
-			"  /changes list [limit]  List persisted change operations\n" +
-			"  /changes show <id>  Show a specific persisted change operation\n" +
-			"  /apply <patch_file> [summary...]  Apply an explicit patch file\n" +
-			"  /rollback <id>  Roll back a specific persisted change\n" +
-			"  /checkpoint list [limit]  List persisted checkpoints\n" +
-			"  /checkpoint show <id|latest>  Inspect a persisted checkpoint\n" +
-			"  /checkpoint create [note]  Create a checkpoint from the current session\n" +
-			"  /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]  Fork into a fresh session\n" +
-			"  /checkpoint replay [<id|latest>] [resume|rerun] [restore]  Replay a checkpoint into a fresh session\n" +
-			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
-			"  /tasks [status] [limit]  List background tasks\n" +
-			"  /task <id>     Query task details\n" +
-			"  /task cancel <id> [reason]  Cancel a background task\n" +
-			"  /schedules     Open interactive scheduled jobs list\n" +
-			"  /git status|diff|commit|pr  Common git workflow helpers\n" +
-			"  /budget        Show budget/context summary\n" +
-			"  /permissions   Show runtime permission summary\n" +
-			"  /permissions set <tool> <allow|ask|deny|reset>\n" +
-			"  /permissions trust <trusted|restricted>\n" +
-			"  /profile [name]  Show or switch profile\n" +
-			"  /profile list    List available profiles\n" +
-			"  /profile set <name>  Rebuild runtime with a new profile\n" +
-			"  /trust <trusted|restricted>  Switch trust and rebuild runtime\n" +
-			"  /approval <read-only|confirm|full-auto>  Switch approval mode and rebuild runtime\n" +
-			"  /clear         Clear conversation\n" +
-			"\nKeyboard shortcuts:\n" +
-			"  double Esc     Cancel current running generation/tool execution\n" +
-			"  Ctrl+C         Clear input (press twice quickly to quit)\n" +
-			"  Ctrl+O         Collapse/expand tool messages\n" +
-			"  Enter (running) Queue message to run after current task\n" +
-			"  Up/Down        Navigate persisted input history\n" +
-			"  Shift+Enter    Insert newline\n" +
-			"  /help          Show this help\n" +
-			"  /exit          Exit mosscode"
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: help})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: renderSlashHelp()})
 		m.refreshViewport()
 		return m, nil
 
@@ -1663,10 +1631,42 @@ func (m *chatModel) applySlashCompletion() bool {
 	return true
 }
 
-var slashCandidates = []string{
-	"/help", "/skills", "/skill", "/session", "/trace", "/new", "/sessions", "/changes", "/apply", "/rollback", "/checkpoint", "/offload", "/tasks", "/task",
-	"/config", "/schedules", "/git", "/budget", "/permissions", "/profile", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
-	"/http_request",
+type slashCommandDef struct {
+	Name        string
+	Summary     string
+	Section     string
+	HiddenInNav bool
+}
+
+var slashCommandCatalog = []slashCommandDef{
+	{Name: "/help", Summary: "Show command help", Section: "Core"},
+	{Name: "/new", Summary: "Start a fresh conversation", Section: "Core"},
+	{Name: "/resume", Summary: "List or resume saved sessions", Section: "Core"},
+	{Name: "/fork", Summary: "Branch into a fresh session", Section: "Core"},
+	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
+	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
+	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
+	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
+	{Name: "/apply", Summary: "Apply an explicit patch file", Section: "Review and recovery"},
+	{Name: "/rollback", Summary: "Roll back a persisted change", Section: "Review and recovery"},
+	{Name: "/checkpoint", Summary: "List, inspect, create, or replay checkpoints", Section: "Review and recovery"},
+	{Name: "/git", Summary: "Run common git and gh helpers", Section: "Review and recovery"},
+	{Name: "/tasks", Summary: "List background tasks", Section: "Runtime"},
+	{Name: "/task", Summary: "Inspect or cancel a background task", Section: "Runtime"},
+	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Runtime"},
+	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime"},
+	{Name: "/config", Summary: "Show or update config values", Section: "Runtime"},
+	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime"},
+	{Name: "/trust", Summary: "Switch trust posture", Section: "Runtime"},
+	{Name: "/approval", Summary: "Switch approval posture", Section: "Runtime"},
+	{Name: "/profile", Summary: "Show or switch profile", Section: "Runtime"},
+	{Name: "/session", Summary: "Show the current live session summary", Section: "Runtime"},
+	{Name: "/budget", Summary: "Show budget and context summary", Section: "Runtime"},
+	{Name: "/skills", Summary: "List discovered skills", Section: "Skills and tools"},
+	{Name: "/skill", Summary: "Invoke a named skill", Section: "Skills and tools"},
+	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Skills and tools"},
+	{Name: "/exit", Summary: "Exit mosscode", Section: "Core"},
+	{Name: "/quit", Summary: "Exit mosscode", Section: "Core", HiddenInNav: true},
 }
 
 func filterSlashHints(input string) []string {
@@ -1678,9 +1678,12 @@ func filterSlashHints(input string) []string {
 	}
 	lower := strings.ToLower(input)
 	hints := make([]string, 0, 8)
-	for _, c := range slashCandidates {
-		if strings.HasPrefix(c, lower) {
-			hints = append(hints, c)
+	for _, cmd := range slashCommandCatalog {
+		if cmd.HiddenInNav {
+			continue
+		}
+		if strings.HasPrefix(cmd.Name, lower) {
+			hints = append(hints, cmd.Name)
 		}
 	}
 	if len(hints) == 0 {
@@ -1690,6 +1693,40 @@ func filterSlashHints(input string) []string {
 		hints = hints[:8]
 	}
 	return hints
+}
+
+func renderSlashHelp() string {
+	sections := []string{"Core", "Review and recovery", "Runtime", "Skills and tools"}
+	var b strings.Builder
+	b.WriteString("Available commands:\n")
+	for _, section := range sections {
+		first := true
+		for _, cmd := range slashCommandCatalog {
+			if cmd.HiddenInNav || cmd.Section != section {
+				continue
+			}
+			if first {
+				b.WriteString("\n")
+				b.WriteString(section)
+				b.WriteString(":\n")
+				first = false
+			}
+			fmt.Fprintf(&b, "  %-14s %s\n", cmd.Name, cmd.Summary)
+		}
+	}
+	b.WriteString("\nCheckpoint details:\n")
+	b.WriteString("  /checkpoint list [limit]\n")
+	b.WriteString("  /checkpoint show <id|latest>\n")
+	b.WriteString("  /checkpoint create [note]\n")
+	b.WriteString("  /checkpoint replay [<id|latest>] [resume|rerun] [restore]\n")
+	b.WriteString("\nKeyboard shortcuts:\n")
+	b.WriteString("  double Esc     Cancel current running generation/tool execution\n")
+	b.WriteString("  Ctrl+C         Clear input (press twice quickly to quit)\n")
+	b.WriteString("  Ctrl+O         Collapse/expand tool messages\n")
+	b.WriteString("  Enter (running) Queue message to run after current task\n")
+	b.WriteString("  Up/Down        Navigate persisted input history\n")
+	b.WriteString("  Shift+Enter    Insert newline\n")
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatModel, tea.Cmd) {

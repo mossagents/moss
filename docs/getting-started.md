@@ -147,7 +147,9 @@ moss version
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
 | `/session` | 查看当前会话摘要（ID/预算/消息量） |
-| `/offload [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
+| `/resume [session_id|latest]` | 查看可恢复会话或恢复指定会话 |
+| `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有会话/检查点分叉新会话 |
+| `/compact [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
 | `/tasks [status] [limit]` | 列出后台任务（支持状态过滤） |
 | `/task <id>` | 查询单个后台任务详情 |
 | `/task cancel <id> [reason]` | 取消后台任务 |

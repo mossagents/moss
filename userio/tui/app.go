@@ -241,9 +241,25 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	current := a.sess
 	store := a.store
 	ctx := a.ctx
+	workspace := a.workspace
 	a.mu.Unlock()
 	if store == nil {
 		return "", fmt.Errorf("session store is unavailable")
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if strings.EqualFold(sessionID, "latest") {
+		summaries, _, err := product.ListResumeCandidates(ctx, workspace)
+		if err != nil {
+			return "", err
+		}
+		selected, _, err := product.SelectResumeSummary(summaries, "", true)
+		if err != nil {
+			return "", err
+		}
+		if selected == nil {
+			return "", fmt.Errorf("no recoverable sessions found")
+		}
+		sessionID = selected.ID
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -729,7 +745,7 @@ func autosaveSessionBeforeSwitch(current *session.Session, store session.Session
 	if err := store.Save(saveCtx, current); err != nil {
 		return "", fmt.Errorf("save current session %q: %w", current.ID, err)
 	}
-	return fmt.Sprintf("Previous session %s auto-saved. Use /session restore %s or /sessions to continue it later.", current.ID, current.ID), nil
+	return fmt.Sprintf("Previous session %s auto-saved. Use /resume %s or /resume to continue it later.", current.ID, current.ID), nil
 }
 
 func loadCheckpointSourceSession(ctx context.Context, store session.SessionStore, record *port.CheckpointRecord) (*session.Session, string, error) {

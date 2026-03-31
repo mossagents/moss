@@ -1,209 +1,282 @@
-# MossCode vs Codex CLI: Gap Analysis and Optimization Directions
+# MossCode vs Codex CLI: Latest Product Review
 
-## Context
+## Context and scope
 
-`mosscode` aims to become a production-usable coding agent product while preserving `moss` as a reusable, custom-model-friendly runtime core.
+This document captures the latest parity review after re-reading the Codex CLI Features and Slash Commands documentation and re-checking the current `moss` / `mosscode` implementation.
 
-This document compares the current `MossCode` / `Moss` capability surface against the core product expectations established by `OpenAI Codex CLI`, then identifies the most important optimization directions.
+Current constraints:
 
-Assumption for this analysis:
+- `mosscode` targets custom model backends.
+- **Auth/Login remains out of scope for now.**
+- Future parity work should prioritize **concept alignment + command alignment + UI/UX alignment** with Codex CLI.
+- That alignment must **not** expand `moss` kernel beyond a minimal, stable runtime core.
+- `mosscode` is still in **POC stage**, so product-layer parity work may directly refactor concepts, commands, and UX flows without preserving backward compatibility.
 
-- `mosscode` currently targets custom model backends.
-- **Auth/Login is out of scope for now.**
+In practice, this means:
 
-That means the highest-priority parity work shifts away from identity and toward trust boundaries, execution safety, governance, and operational productization.
+- `moss` should own generic runtime primitives.
+- `mosscode` should own Codex-style command names, product flows, interaction patterns, and TUI information architecture.
 
-## Codex CLI Core Product Modules
+## Executive summary
 
-Codex CLI can be usefully decomposed into the following product modules:
+### Overall judgment
 
-1. **Configuration and trust model**
-   - user / project / system / profile / CLI layering
-   - trusted-project gate before loading project-scoped config
-   - managed defaults and requirements
+`mosscode` is now **personally production-usable for a single developer, local repository, custom-model workflow**.
 
-2. **Sandbox, approvals, and network control**
-   - read-only / workspace-write / full-access modes
-   - protected paths
-   - outbound network policy
-   - approval escalation model
-   - command rules / exec policy
+It is **not yet at Codex CLI product-completeness**, but the main remaining gap is now **product surface coherence**, not fundamental runtime capability.
 
-3. **Core coding-agent workflow**
-   - code understanding
-   - editing and command execution
-   - debugging and review
-   - task automation
+### Why the judgment changed
 
-4. **Customization layer**
-   - `AGENTS.md`
-   - skills
+Compared with the earlier review, MossCode has already closed several high-value gaps:
+
+- trusted project / trust-aware capability loading
+- shared execution policy for command + HTTP
+- indexed state/history and notification surface
+- profiles / task modes as runtime posture
+- command-rules phase 2
+- lifecycle hooks
+- MCP management UX
+- restore posture auto-rebuild
+
+So the main bottleneck is no longer "missing core substrate". It is now:
+
+1. **Codex-style concept and naming consistency**
+2. **Codex-style slash command and IA consistency**
+3. **Codex-style UI/UX polish for the most common workflows**
+
+Because MossCode is still a POC, these gaps should be closed primarily through **direct product refactoring**, not long-lived compatibility layers.
+
+## Completed parity foundation
+
+The following work is now materially in place:
+
+### Core safety and governance
+
+- trust-aware loading for project config / bootstrap / skills / agents
+- stronger execution policy visibility and unified command / HTTP policy
+- approval / trust / profile posture persisted and enforced
+
+### State, recovery, and durability
+
+- file-backed session store
+- indexed state/history catalog
+- run trace and notification surface
+- checkpoint create / fork / replay
+- change apply / rollback
+- restore / replay / fork auto-rebuild to recorded posture
+
+### Extensibility and operator surfaces
+
+- session lifecycle hooks
+- pre/post tool lifecycle hooks
+- MCP config management (`list` / `show` / `enable` / `disable`)
+- doctor visibility for MCP and execution policy
+
+## Codex CLI subsystem list
+
+For parity work, Codex CLI can be decomposed into the following product subsystems:
+
+1. **Session and workflow control**
+   - interactive TUI
+   - one-shot / exec mode
+   - new / resume / fork / agent-thread switching
+
+2. **Runtime posture control**
+   - model selection
+   - permissions / approvals
+   - sandbox posture
+   - trust / writable roots / plan mode
+
+3. **Conversation and transcript control**
+   - clear / compact / copy
+   - status and token visibility
+   - keyboard-first control surface
+
+4. **Code review and change inspection**
+   - diff
+   - review
+   - working tree / commit / base-branch inspection
+
+5. **Extensibility and ecosystem**
    - MCP
+   - apps / connectors
    - subagents
-   - hooks
-   - rules
+   - custom slash commands
+   - `AGENTS.md`
 
-5. **Operational product surface**
-   - install / update / distribution
-   - state storage and history
-   - notifications
-   - diagnostics
-   - logs and observability
+6. **Diagnostics and operator tooling**
+   - debug-config
+   - features
+   - statusline
+   - theme
+   - completion / install ergonomics
 
-6. **Enterprise governance**
-   - managed policy
-   - feature constraints
-   - MCP allowlists
-   - telemetry and audit integrations
+7. **External context and multimodal input**
+   - image input
+   - web search
+   - file mention / fuzzy file attach
+   - editor handoff
 
-## Current MossCode / Moss Position
+8. **Remote execution workflows**
+   - cloud tasks
+   - background task visibility / remote retries
 
-### Already strong
+## Latest subsystem-by-subsystem audit
 
-`MossCode` and `Moss` already have a surprisingly strong coding-agent substrate:
+| Codex subsystem | MossCode status | Readiness | Main remaining gap |
+|---|---|---|---|
+| Session and workflow control | TUI, one-shot exec, resume, checkpoint fork/replay, new session are all present | **Strong** | Codex-style thread/agent model and command naming are not unified yet |
+| Runtime posture control | model / trust / approval / profile switching are implemented; posture can auto-rebuild on restore | **Strong** | needs Codex-style naming and more coherent operator UX |
+| Conversation and transcript control | clear, task queueing, input history, offload/context compaction exist | **Partial** | lacks first-class Codex-compatible `/status`, `/compact`, `/copy` product surface |
+| Code review and change inspection | review, git helpers, checkpoint, change apply/rollback are present | **Partial-strong** | review/diff are not yet presented with Codex-style entry points and IA |
+| Extensibility and ecosystem | skills, MCP, hooks, delegated/background tasks exist | **Partial-strong** | custom slash command UX, `AGENTS.md` scaffold, and agent-thread UX remain incomplete |
+| Diagnostics and operator tooling | doctor, config visibility, execution policy visibility, MCP visibility exist | **Partial** | missing Codex-style `/debug-config`, feature flags, statusline/theme/completion polish |
+| External context and multimodal input | file-oriented workflows are strong, but multimodal remains limited | **Weak** | image input, web search, editor handoff, and Codex-style mention UX are not first-class yet |
+| Remote execution workflows | local async tasks and schedules exist | **Partial** | no Codex-cloud-like remote task surface; thread UX also needs work |
 
-- interactive TUI + one-shot flows
-- file, command, memory, task, offload, delegation, and checkpoint flows
-- approval modes (`read-only`, `confirm`, `full-auto`)
-- audit logger and observer abstractions
-- structured task / checkpoint / rollback primitives
-- custom model integration and router/failover governance
+## Personal production-readiness verdict
 
-In particular, `checkpoint`, `fork`, `replay`, and `change operation` flows give `MossCode` a stronger explicit recovery story than many coding-agent CLIs.
+### Yes, for the current target use case
 
-### Main product gaps
+`mosscode` can reasonably be called **personally production-usable** when the user profile is:
 
-Without considering Auth/Login, the highest-value product gaps are:
+- single user
+- local repository
+- custom model backend
+- terminal-first workflow
+- willing to use advanced commands rather than only polished shortcuts
 
-1. **Trusted project boundary**
-   - project config, project prompt templates, project skills, project agents, and project bootstrap context are still too easy to load implicitly
-   - trust today mostly affects approval posture, not project capability loading
+This is because the high-risk production concerns are now largely covered:
 
-2. **Execution isolation depth**
-   - current local sandbox is closer to a constrained executor than a Codex-class strong sandbox
-   - network isolation is explicitly degraded in local mode
+- trust gating
+- execution policy
+- approval modes
+- session durability
+- checkpoint / rollback recovery
+- operator diagnostics
 
-3. **Layered governance**
-   - profile layers now exist, and a first `run_command` command-rules slice is in place
-   - the remaining gap is the broader governance surface: managed defaults, requirements, HTTP-side rules, auditability, and policy-pack style distribution
+### Not yet Codex-grade in product finish
 
-4. **Extension governance**
-   - MCP and skills exist, but there is not yet a full product control plane for project trust, allow/deny policy, lifecycle hooks, and operator-visible enablement state
+The gap to Codex CLI is now mostly in the product shell:
 
-5. **Operational maturity**
-   - install / upgrade / packaging / diagnostics / observability are improving, but not yet at fully productized CLI level
+- the mental model is not yet Codex-aligned
+- command naming is still MossCode-native in several places
+- the highest-frequency workflows are not yet surfaced through the same command and TUI grammar as Codex
 
-## Recommended Optimization Directions
+## Alignment principles going forward
 
-## P0: Required before calling MossCode a production-grade standalone product
+To reduce future divergence, parity work should follow these rules:
 
-### 1. Trusted project / trusted workspace
+### 1. Directly adopt Codex-compatible concept names
 
-Make project-scoped capability loading explicit:
+If Codex and MossCode already describe the same user-facing workflow, prefer directly replacing MossCode-native naming in `mosscode` with Codex-compatible naming.
 
-- project `moss.yaml`
-- project system prompt templates
-- project `AGENTS.md` / bootstrap files
-- project `SKILL.md`
-- project `.agents/agents`
-- project MCP definitions
+Examples:
 
-When trust is restricted, the runtime should still work, but only with:
+- status
+- diff
+- review
+- mcp
+- plan
+- compact
+- resume
+- fork
+- agent
 
-- global config
-- global skills
-- global agents
-- global bootstrap context
+### 2. Refactor command names directly in `mosscode`
 
-### 2. Stronger sandbox and network control
+Because `mosscode` is still a POC, prefer replacing older product command names instead of maintaining compatibility aliases for long periods.
 
-Upgrade from path-gated local execution to a clearer execution-security model:
+Compatibility should be preserved only where stable shared-runtime contracts, persisted data, or public reusable APIs would otherwise be put at unnecessary risk.
 
-- protected roots
-- writable root control
-- explicit network mode
-- stronger command execution boundaries
-- future-ready container / OS-enforced isolation path
+### 3. Align UI/UX in the product layer, not in the kernel
 
-### 3. Layered configuration and managed policy
+Codex-style command palette, help grouping, picker flows, footer/header layout, and interaction pacing should live in `mosscode`, not `moss`.
 
-Add a first-class configuration model for:
+### 4. Keep `moss` kernel minimal and stable
 
-- user vs project vs system layering
-- project trust gating
-- profile selection
-- managed defaults
-- non-overridable requirements / policy constraints
+Only sink a capability into `moss` if it is a reusable runtime primitive, not just a Codex-style product interaction.
 
-### 4. Operational product loop
+## What should sink into `moss` vs stay in `mosscode`
 
-Strengthen:
+| Capability area | `moss` / shared runtime | `mosscode` product layer |
+|---|---|---|
+| session lifecycle and persistence contracts | yes | product-specific session browsers and slash UX |
+| task / background runtime abstractions | yes | agent-thread pickers and Codex-style `/agent` UX |
+| execution policy / trust / approval contracts | yes | human-facing permission flows and wording |
+| checkpoint / replay / rollback primitives | yes | Codex-style review, diff, and recovery navigation |
+| hook/event contracts | yes | operator-facing hook management UX |
+| MCP runtime lifecycle and trust-aware loading | shared runtime / appkit | `mcp` management commands, visibility, wizard UX |
+| context offload / summarization primitives | yes | `/compact` UX, transcript control, copy/status flows |
+| slash command registry and aliases | no | yes |
+| TUI layout, statusline, picker IA, theme | no | yes |
+| `AGENTS.md` scaffold and custom slash command authoring | no | yes |
+| image attach, web search entry, editor handoff UX | only shared input primitives if needed | yes |
 
-- packaging and release ergonomics
-- upgrade / migration behavior
-- stable log locations
-- machine-readable diagnostics
-- operator-visible runtime state
+## Highest-leverage remaining gaps
 
-## P1: Needed soon after P0
+### 1. TUI parity pack
 
-- hooks / lifecycle extensions — core session lifecycle and pre/post tool hooks are implemented through the extension bridge and appkit; richer operator UX and broader governance flows remain
-- command rules / exec policy — core first slice is implemented for `run_command` and `http_request`, with rule-hit audit events and doctor/TUI visibility; broader governance UX and policy-pack ergonomics remain
-- MCP management UX — core operator surface is implemented with `config mcp list/show/enable/disable` and doctor-level per-server visibility; interactive install/wizard flows and deeper governance UX remain
-- profiles / task modes — largely implemented; remaining work is mostly hardening and follow-up ergonomics
-- unified state store and indexed history — implemented
-- notification surface for long-running work — implemented
+The next highest-value work is a Codex-style TUI parity pack centered on:
 
-## P2: Enterprise / scale work
+- `/status`
+- `/diff`
+- `/review`
+- `/mcp`
+- `/plan`
+- `/compact`
 
-- OTel / metrics / SIEM export
-- policy packs and org-level governance
-- IDE distribution and fleet rollout
-- extension / skill marketplace and version governance
+This is the fastest way to improve both discoverability and UX parity without destabilizing the core runtime, and it can be implemented as a direct product-shell refactor.
 
-## What Moss Core Should Strengthen First
+### 2. Thread / agent UX
 
-The most important `moss` core work, in order, is:
+MossCode already has sessions, tasks, delegation, and checkpoints, but the user-facing mental model is still not Codex-like.
 
-1. **trusted-project-aware capability loading**
-2. **stronger execution isolation substrate**
-3. **unified policy model**
-4. **unified state layer**
-5. **telemetry and rule-system foundation**
+The missing step is to make thread/agent navigation first-class in the product layer.
 
-## Recommended Phase Order
+### 3. Custom command and instruction surface
 
-### Phase 1
+Codex exposes a stronger product story around:
 
-**Trusted project / configuration governance**
+- `/init`
+- custom slash commands
+- persistent repository instructions
 
-Make trust affect what project-scoped capabilities are allowed to load.
+MossCode should align here without changing kernel abstractions unnecessarily.
 
-### Phase 2
+### 4. Multimodal and external context
 
-**Sandbox and network policy strengthening**
+The remaining major product gap is:
 
-Make execution isolation less dependent on conventions and more dependent on enforced policy.
+- image input
+- web search
+- editor handoff
+- mention/file attach UX
 
-### Phase 3
+### 5. Operator polish
 
-**Layered governance and operator controls**
+Still needed:
 
-Introduce profiles, managed defaults, requirements, and a clearer runtime policy model.
+- debug-config
+- feature flags
+- statusline management
+- theme UX
+- shell completion
+- install / update / release ergonomics
 
-### Phase 4
+## Recommended next order
 
-**Operational hardening**
+1. **TUI parity pack**
+2. **Thread / agent UX**
+3. **Custom commands + `AGENTS.md` scaffold**
+4. **External context / multimodal UX**
+5. **Operator polish**
 
-Converge diagnostics, install/update flow, observability, and runtime state visibility.
+## Bottom line
 
-## Immediate Implementation Recommendation
+The current state is:
 
-Start with **Phase 1: trusted project / configuration governance**.
+- **`moss` core: strong enough**
+- **`mosscode` product: usable, but not yet Codex-consistent**
 
-Reasons:
-
-- it addresses the most obvious safety gap relative to Codex CLI
-- it is foundational for later policy work
-- it has a bounded implementation surface
-- it improves both `MossCode` and `Moss` core behavior without requiring Auth/Login
+Therefore the next phase should optimize for **product convergence**, not another large round of kernel expansion.

@@ -61,6 +61,30 @@ func TestSlashCommandSessionInfo(t *testing.T) {
 	}
 }
 
+func TestSlashCommandResumeRestoresSession(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.sessionRestoreFn = func(sessionID string) (string, error) {
+		if sessionID != "sess-123" {
+			t.Fatalf("unexpected session id: %s", sessionID)
+		}
+		return "Restored session sess-123.", nil
+	}
+	updated, _ := m.handleSlashCommand("/resume sess-123")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "sess-123") {
+		t.Fatalf("unexpected resume output: %+v", last)
+	}
+}
+
+func TestLegacySessionRestoreCommandShowsGuidance(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/session restore sess-123")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "/resume") {
+		t.Fatalf("unexpected legacy session guidance: %+v", last)
+	}
+}
+
 func TestSlashCommandTraceUnavailable(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/trace")
@@ -247,15 +271,24 @@ func TestNewChatModelSupportsMultilineBindings(t *testing.T) {
 	}
 }
 
-func TestSlashCommandSessionsUnavailable(t *testing.T) {
+func TestSlashCommandResumeUnavailable(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	updated, _ := m.handleSlashCommand("/sessions")
+	updated, _ := m.handleSlashCommand("/resume")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected message")
 	}
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError {
 		t.Fatalf("expected error kind, got %v", last.kind)
+	}
+}
+
+func TestLegacyOffloadCommandShowsGuidance(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/offload")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "/compact") {
+		t.Fatalf("unexpected legacy offload guidance: %+v", last)
 	}
 }
 
@@ -483,7 +516,7 @@ func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
 	}
 }
 
-func TestSlashCommandCheckpointForkLatestShorthand(t *testing.T) {
+func TestSlashCommandForkLatestShorthand(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
 	m.width = 120
@@ -495,18 +528,18 @@ func TestSlashCommandCheckpointForkLatestShorthand(t *testing.T) {
 		}
 		return "Switched to forked session sess_latest from checkpoint cp-latest.", nil
 	}
-	updated, _ := m.handleSlashCommand("/checkpoint fork latest restore")
+	updated, _ := m.handleSlashCommand("/fork latest restore")
 	last := updated.messages[0]
 	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
 		t.Fatalf("unexpected fork latest output: %+v", last)
 	}
 }
 
-func TestHelpIncludesCheckpointCommands(t *testing.T) {
+func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/checkpoint list [limit]") || !strings.Contains(last.content, "/checkpoint show <id|latest>") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace [limit]") {
+	if !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }
@@ -515,7 +548,7 @@ func TestHelpIncludesChangeCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	for _, want := range []string{"/changes list [limit]", "/apply <patch_file> [summary...]", "/rollback <id>"} {
+	for _, want := range []string{"/changes", "/apply", "/rollback"} {
 		if !strings.Contains(last.content, want) {
 			t.Fatalf("help missing %q in %q", want, last.content)
 		}
@@ -529,7 +562,7 @@ func TestHelpIncludesNewCommand(t *testing.T) {
 		t.Fatal("expected help message")
 	}
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/new           Create and switch to a fresh session") {
+	if !strings.Contains(last.content, "/new") {
 		t.Fatalf("help missing /new command: %q", last.content)
 	}
 }
@@ -771,8 +804,8 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	m.textarea.SetValue("/c")
 	m.refreshSlashHints()
 	hints = m.currentSlashHints()
-	if !slices.Contains(hints, "/checkpoint") {
-		t.Fatalf("expected /checkpoint in hints, got %v", hints)
+	if !slices.Contains(hints, "/checkpoint") || !slices.Contains(hints, "/compact") {
+		t.Fatalf("expected /checkpoint and /compact in hints, got %v", hints)
 	}
 
 	m.textarea.SetValue("/a")
@@ -785,8 +818,8 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	m.textarea.SetValue("/r")
 	m.refreshSlashHints()
 	hints = m.currentSlashHints()
-	if !slices.Contains(hints, "/rollback") {
-		t.Fatalf("expected /rollback in hints, got %v", hints)
+	if !slices.Contains(hints, "/rollback") || !slices.Contains(hints, "/resume") {
+		t.Fatalf("expected /rollback and /resume in hints, got %v", hints)
 	}
 
 	m.textarea.SetValue("/ch")

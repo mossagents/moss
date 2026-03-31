@@ -60,6 +60,7 @@ type config struct {
 	doctorJSON      bool
 	reviewJSON      bool
 	reviewArgs      []string
+	forkArgs        []string
 	checkpointArgs  []string
 	applyArgs       []string
 	rollbackArgs    []string
@@ -115,6 +116,9 @@ func main() {
 	case "resume":
 		exitOnCommandError(runResume(ctx, cfg))
 		return
+	case "fork":
+		exitOnCommandError(runFork(ctx, cfg))
+		return
 	case "doctor":
 		exitOnCommandError(runDoctor(ctx, cfg))
 		return
@@ -158,6 +162,10 @@ func parseFlags() *config {
 		case "resume":
 			cfg.command = "resume"
 			parseResumeFlags(cfg, os.Args[2:])
+			return cfg
+		case "fork":
+			cfg.command = "fork"
+			cfg.forkArgs = append([]string(nil), os.Args[2:]...)
 			return cfg
 		case "doctor":
 			cfg.command = "doctor"
@@ -312,10 +320,11 @@ Usage:
   mosscode [flags]
   mosscode exec --prompt "Fix flaky tests" [flags]
   mosscode resume [--latest | --session <id>] [flags]
+  mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [flags]
   mosscode doctor [--json] [flags]
   mosscode config [show|path|set|unset|mcp] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
-  mosscode checkpoint <list|show|create|fork|replay> [flags]
+  mosscode checkpoint <list|show|create|replay> [flags]
 
 Flags:
   --prompt, -p           One-shot prompt for 'exec' or legacy root invocation
@@ -343,6 +352,13 @@ Resume:
   --latest      Resume the latest recoverable session
   --session     Resume a specific recoverable session by ID
 
+Fork:
+  --session             Fork from a specific persisted session
+  --checkpoint          Fork from a specific persisted checkpoint
+  --latest              Fork from the latest persisted checkpoint
+  --restore-worktree    Restore checkpoint worktree when possible
+  --json                Emit machine-readable fork output
+
 Doctor:
   --json        Emit machine-readable diagnostic output
 
@@ -368,10 +384,8 @@ Checkpoint:
   list [--json]                                             List persisted checkpoints
   show <id|latest> [--json]                                 Inspect a persisted checkpoint
   create --session <id> [--note <note>] [--json]            Create checkpoint from a persisted session
-  fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]
-                                                              Fork a fresh session from a session/checkpoint
   replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]
-                                                               Prepare a fresh replay session from a checkpoint
+                                                                Prepare a fresh replay session from a checkpoint
 
 Apply:
   --patch-file <path>   Apply an explicit patch file
@@ -475,6 +489,10 @@ func runResume(ctx context.Context, cfg *config) error {
 	fmt.Printf("Resuming session %s (status=%s steps=%d snapshots=%d)\n",
 		selected.ID, selected.Status, selected.Steps, snapshotCounts[selected.ID])
 	return launchTUI(cfg)
+}
+
+func runFork(ctx context.Context, cfg *config) error {
+	return runCheckpointFork(ctx, cfg, cfg.forkArgs)
 }
 
 func runDoctor(ctx context.Context, cfg *config) error {
@@ -618,7 +636,7 @@ type changeActionReport struct {
 
 func runCheckpoint(ctx context.Context, cfg *config) error {
 	if len(cfg.checkpointArgs) == 0 {
-		return fmt.Errorf("usage: mosscode checkpoint <list|show|create|fork|replay> [flags]")
+		return fmt.Errorf("usage: mosscode checkpoint <list|show|create|replay> [flags]")
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.checkpointArgs[0])) {
 	case "list":
@@ -628,11 +646,11 @@ func runCheckpoint(ctx context.Context, cfg *config) error {
 	case "create":
 		return runCheckpointCreate(ctx, cfg, cfg.checkpointArgs[1:])
 	case "fork":
-		return runCheckpointFork(ctx, cfg, cfg.checkpointArgs[1:])
+		return fmt.Errorf("checkpoint branching moved to `mosscode fork`; use `mosscode fork [--session <id> | --checkpoint <id|latest> | --latest]`")
 	case "replay":
 		return runCheckpointReplay(ctx, cfg, cfg.checkpointArgs[1:])
 	default:
-		return fmt.Errorf("unknown checkpoint command %q (supported: list, show, create, fork, replay)", cfg.checkpointArgs[0])
+		return fmt.Errorf("unknown checkpoint command %q (supported: list, show, create, replay)", cfg.checkpointArgs[0])
 	}
 }
 
@@ -757,7 +775,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config, args []string) error 
 }
 
 func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
-	fs := flag.NewFlagSet("checkpoint fork", flag.ContinueOnError)
+	fs := flag.NewFlagSet("fork", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	appkit.BindAppFlags(fs, cfg.flags)
 	bindProductFlags(fs, cfg)
@@ -770,7 +788,7 @@ func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
 	fs.StringVar(&checkpointID, "checkpoint", "", "Fork directly from this checkpoint ID")
 	fs.BoolVar(&latest, "latest", false, "Fork from the latest persisted checkpoint")
 	fs.BoolVar(&restoreWorktree, "restore-worktree", false, "Attempt worktree restore when forking from checkpoint state")
-	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint fork output as JSON")
+	fs.BoolVar(&jsonOut, "json", false, "Emit fork output as JSON")
 	parseCommonFlags(fs, cfg, args)
 	sessionID = strings.TrimSpace(sessionID)
 	checkpointID = strings.TrimSpace(checkpointID)
@@ -793,7 +811,7 @@ func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
 		sourceID = checkpointID
 	}
 	if sourceKind == port.ForkSourceSession && sourceID == "" {
-		return fmt.Errorf("usage: mosscode checkpoint fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
+		return fmt.Errorf("usage: mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
 	if err != nil {

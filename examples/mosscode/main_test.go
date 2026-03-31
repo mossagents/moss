@@ -60,6 +60,30 @@ func TestRunCheckpointCreateRequiresSession(t *testing.T) {
 	}
 }
 
+func TestRunCheckpointForkRedirectsToTopLevelCommand(t *testing.T) {
+	cfg := &config{
+		flags:          &appkit.AppFlags{},
+		governance:     product.DefaultGovernanceConfig(),
+		checkpointArgs: []string{"fork"},
+	}
+	err := runCheckpoint(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "mosscode fork") {
+		t.Fatalf("expected fork redirect error, got %v", err)
+	}
+}
+
+func TestRunForkRequiresSource(t *testing.T) {
+	cfg := &config{
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
+		forkArgs:   []string{},
+	}
+	err := runFork(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "usage: mosscode fork") {
+		t.Fatalf("expected fork usage error, got %v", err)
+	}
+}
+
 func TestRunCheckpointShowJSON(t *testing.T) {
 	appconfig.SetAppName(appName)
 	t.Setenv("APPDATA", t.TempDir())
