@@ -90,6 +90,8 @@ type chatModel struct {
 	finished            bool   // session 已结束
 	result              string // 最终结果
 	lastTrace           *product.RunTraceSummary
+	currentSessionID    string
+	progress            executionProgressState
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
@@ -211,6 +213,20 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m.handleBridge(msg)
 
 	case refreshMsg:
+		m.refreshViewport()
+		return m, nil
+
+	case notificationProgressMsg:
+		if msg.SetCurrent && strings.TrimSpace(msg.Snapshot.SessionID) != "" {
+			m.currentSessionID = strings.TrimSpace(msg.Snapshot.SessionID)
+			m.progress = msg.Snapshot
+			m.refreshViewport()
+			return m, nil
+		}
+		if strings.TrimSpace(msg.Snapshot.SessionID) == "" || (m.currentSessionID != "" && strings.TrimSpace(msg.Snapshot.SessionID) != m.currentSessionID) {
+			return m, nil
+		}
+		m.progress = msg.Snapshot
 		m.refreshViewport()
 		return m, nil
 
@@ -388,7 +404,7 @@ func (m *chatModel) syncViewportLayout() {
 	m.adjustInputHeight()
 
 	headerH := 2 // 顶栏
-	metaH := 1
+	metaH := 1 + m.visibleProgressHeight()
 	gapH := 2 // 消息区/输入区、输入区/状态栏之间的空行
 	inputH := m.visibleInputHeight()
 	statusH := 1
@@ -427,6 +443,13 @@ func (m chatModel) visibleInputHeight() int {
 		}
 		return height
 	}
+}
+
+func (m chatModel) visibleProgressHeight() int {
+	if m.progress.renderLine(m.now(), m.mainWidth()) == "" {
+		return 0
+	}
+	return 1
 }
 
 func (m *chatModel) inputWrapWidth() int {
@@ -500,6 +523,10 @@ func (m chatModel) View() string {
 		mutedStyle.Width(m.mainWidth()-m.mainWidth()/2).Align(lipgloss.Right).Render(rightMeta),
 	))
 	b.WriteString("\n")
+	if progressLine := m.progress.renderLine(m.now(), m.mainWidth()); progressLine != "" {
+		b.WriteString(progressLine)
+		b.WriteString("\n")
+	}
 
 	// 消息区
 	b.WriteString(m.viewport.View())

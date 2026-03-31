@@ -79,14 +79,16 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	sess.Status = session.StatusRunning
 
 	// OnSessionStart
+	runStartedAt := time.Now().UTC()
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionRunStarted,
 		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
+		Timestamp: runStartedAt,
 		Data: map[string]any{
-			"mode": sess.Config.Mode,
-			"goal": sess.Config.Goal,
+			"mode":      sess.Config.Mode,
+			"goal":      sess.Config.Goal,
+			"max_steps": sess.Budget.MaxSteps,
 		},
 	})
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
@@ -102,6 +104,19 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		if ctx.Err() != nil {
 			return l.fail(sess, totalUsage, ctx.Err()), ctx.Err()
 		}
+		iteration := i + 1
+		iterationStartedAt := time.Now().UTC()
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionIterationStarted,
+			SessionID: sess.ID,
+			Timestamp: iterationStartedAt,
+			Data: map[string]any{
+				"iteration":      iteration,
+				"max_iterations": maxIter,
+				"max_steps":      sess.Budget.MaxSteps,
+				"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
+			},
+		})
 
 		// 1. BeforeLLM middleware
 		if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
@@ -191,15 +206,33 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 				})
 			}
 
-			// 自定义停止条件
-			if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
-				break
-			}
+		}
+		progressAt := time.Now().UTC()
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionIterationProgress,
+			SessionID: sess.ID,
+			Timestamp: progressAt,
+			Model:     metadata.ActualModel,
+			Data: map[string]any{
+				"iteration":      iteration,
+				"max_iterations": maxIter,
+				"max_steps":      sess.Budget.MaxSteps,
+				"elapsed_ms":     progressAt.Sub(runStartedAt).Milliseconds(),
+				"llm_calls":      1,
+				"tool_calls":     len(resp.ToolCalls),
+				"stop_reason":    resp.StopReason,
+				"streamed":       streamed,
+				"tokens":         resp.Usage.TotalTokens,
+			},
+		})
+		// 自定义停止条件
+		if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
+			break
+		}
 
-			// end_turn 停止
-			if resp.StopReason == "end_turn" {
-				break
-			}
+		// end_turn 停止
+		if resp.StopReason == "end_turn" {
+			break
 		}
 	}
 

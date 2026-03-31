@@ -10,6 +10,8 @@ const (
 	ExecutionRunCompleted      ExecutionEventType = "run.completed"
 	ExecutionRunFailed         ExecutionEventType = "run.failed"
 	ExecutionRunCancelled      ExecutionEventType = "run.cancelled"
+	ExecutionIterationStarted  ExecutionEventType = "iteration.started"
+	ExecutionIterationProgress ExecutionEventType = "iteration.progress"
 	ExecutionLLMStarted        ExecutionEventType = "llm.started"
 	ExecutionLLMCompleted      ExecutionEventType = "llm.completed"
 	ExecutionToolStarted       ExecutionEventType = "tool.started"

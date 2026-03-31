@@ -216,6 +216,7 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	a.mu.Lock()
 	a.sess = loaded
 	a.mu.Unlock()
+	a.publishProgressReplay()
 	return fmt.Sprintf("Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages)), nil
 }
 
@@ -493,6 +494,7 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	a.mu.Lock()
 	a.sess = next
 	a.mu.Unlock()
+	a.publishProgressReplay()
 	var b strings.Builder
 	if notice != "" {
 		b.WriteString(notice)
@@ -553,6 +555,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	a.mu.Lock()
 	a.sess = next
 	a.mu.Unlock()
+	a.publishProgressReplay()
 	var b strings.Builder
 	if notice != "" {
 		b.WriteString(notice)
@@ -591,6 +594,7 @@ func (a *agentState) newSession() (string, error) {
 	a.mu.Lock()
 	a.sess = next
 	a.mu.Unlock()
+	a.publishProgressReplay()
 
 	if notice != "" {
 		return fmt.Sprintf("%s\nSwitched to new session %s.", notice, next.ID), nil
@@ -904,12 +908,13 @@ func (a *agentState) appendAndRun(text string) {
 
 	a.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: text})
 	var traceRecorder *product.RunTraceRecorder
+	progressObserver := newExecutionProgressObserver(a.bridge, a.sess)
 	if traceFactory != nil {
 		recorder, runObserver := traceFactory()
 		traceRecorder = recorder
-		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k)))
+		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	} else {
-		a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
+		a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	}
 
 	result, err := a.k.Run(runCtx, a.sess)
@@ -943,6 +948,15 @@ func (a *agentState) appendAndRun(text string) {
 		}
 		a.bridge.program.Send(msg)
 	}
+}
+
+func (a *agentState) publishProgressReplay() {
+	a.mu.Lock()
+	k := a.k
+	sess := a.sess
+	bridge := a.bridge
+	a.mu.Unlock()
+	publishProgressReplay(bridge, k, sess)
 }
 
 func runTraceStatus(result *loop.SessionResult, err error) string {
@@ -1262,6 +1276,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.skillListFn = func() string {
 			return renderSkillsSummary(agent, m.config.Workspace)
 		}
+		if agent.sess != nil {
+			m.chat.currentSessionID = agent.sess.ID
+		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
 			m.chat.model = m.config.Model
@@ -1279,6 +1296,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			content: fmt.Sprintf("Connected to %s", connInfo),
 		})
 		m.chat.refreshViewport()
+		go agent.publishProgressReplay()
 		return m, nil
 	}
 

@@ -69,15 +69,15 @@ type StatePage struct {
 }
 
 type StateCatalogHealth struct {
-	Enabled    bool      `json:"enabled"`
-	Ready      bool      `json:"ready"`
-	Entries    int       `json:"entries"`
-	LastError  string    `json:"last_error,omitempty"`
-	UpdatedAt  time.Time `json:"updated_at,omitempty"`
-	Catalog    string    `json:"catalog,omitempty"`
-	EventDir   string    `json:"event_dir,omitempty"`
-	Schema     int       `json:"schema"`
-	Degraded   bool      `json:"degraded"`
+	Enabled   bool      `json:"enabled"`
+	Ready     bool      `json:"ready"`
+	Entries   int       `json:"entries"`
+	LastError string    `json:"last_error,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	Catalog   string    `json:"catalog,omitempty"`
+	EventDir  string    `json:"event_dir,omitempty"`
+	Schema    int       `json:"schema"`
+	Degraded  bool      `json:"degraded"`
 }
 
 type StateCatalog struct {
@@ -646,11 +646,11 @@ func StateEntryFromTask(task port.TaskRecord) (StateEntry, bool) {
 		CreatedAt:  task.CreatedAt.UTC(),
 		UpdatedAt:  task.UpdatedAt.UTC(),
 		Metadata: marshalStateMetadata(map[string]any{
-			"agent_name":  task.AgentName,
-			"claimed_by":  task.ClaimedBy,
-			"depends_on":  append([]string(nil), task.DependsOn...),
-			"result":      task.Result,
-			"error":       task.Error,
+			"agent_name":   task.AgentName,
+			"claimed_by":   task.ClaimedBy,
+			"depends_on":   append([]string(nil), task.DependsOn...),
+			"result":       task.Result,
+			"error":        task.Error,
 			"workspace_id": task.WorkspaceID,
 		}),
 	}, true
@@ -677,13 +677,14 @@ func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
 		CreatedAt:  event.Timestamp.UTC(),
 		UpdatedAt:  event.Timestamp.UTC(),
 		Metadata: marshalStateMetadata(map[string]any{
-			"tool_name":    event.ToolName,
-			"model":        event.Model,
-			"risk":         event.Risk,
-			"reason_code":  event.ReasonCode,
-			"enforcement":  event.Enforcement,
-			"duration_ms":  event.Duration.Milliseconds(),
-			"data":         event.Data,
+			"event_type":  event.Type,
+			"tool_name":   event.ToolName,
+			"model":       event.Model,
+			"risk":        event.Risk,
+			"reason_code": event.ReasonCode,
+			"enforcement": event.Enforcement,
+			"duration_ms": event.Duration.Milliseconds(),
+			"data":        event.Data,
 		}),
 	}
 }
@@ -836,11 +837,11 @@ func NewStateCatalogObserver(catalog *StateCatalog) port.Observer {
 	return &stateCatalogObserver{catalog: catalog}
 }
 
-func (o *stateCatalogObserver) OnLLMCall(_ context.Context, _ port.LLMCallEvent)          {}
-func (o *stateCatalogObserver) OnToolCall(_ context.Context, _ port.ToolCallEvent)        {}
-func (o *stateCatalogObserver) OnApproval(_ context.Context, _ port.ApprovalEvent)        {}
-func (o *stateCatalogObserver) OnSessionEvent(_ context.Context, _ port.SessionEvent)     {}
-func (o *stateCatalogObserver) OnError(_ context.Context, _ port.ErrorEvent)              {}
+func (o *stateCatalogObserver) OnLLMCall(_ context.Context, _ port.LLMCallEvent)      {}
+func (o *stateCatalogObserver) OnToolCall(_ context.Context, _ port.ToolCallEvent)    {}
+func (o *stateCatalogObserver) OnApproval(_ context.Context, _ port.ApprovalEvent)    {}
+func (o *stateCatalogObserver) OnSessionEvent(_ context.Context, _ port.SessionEvent) {}
+func (o *stateCatalogObserver) OnError(_ context.Context, _ port.ErrorEvent)          {}
 func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event port.ExecutionEvent) {
 	if err := o.catalog.AppendExecutionEvent(event); err != nil {
 		o.catalog.markError(err)

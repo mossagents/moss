@@ -64,6 +64,19 @@ func (b *BridgeIO) Refresh() {
 	p.Send(refreshMsg{})
 }
 
+func (b *BridgeIO) SendProgress(snapshot executionProgressState, setCurrent bool) {
+	b.mu.Lock()
+	p := b.program
+	b.mu.Unlock()
+	if p == nil {
+		return
+	}
+	p.Send(notificationProgressMsg{
+		Snapshot:   snapshot,
+		SetCurrent: setCurrent,
+	})
+}
+
 // Ask 向用户请求输入（阻塞当前 goroutine，等待 TUI 回复）。
 func (b *BridgeIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
 	b.mu.Lock()

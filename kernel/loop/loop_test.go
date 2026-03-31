@@ -124,6 +124,78 @@ func TestLoopToolCall(t *testing.T) {
 	}
 }
 
+func TestLoopExecutionProgressEvents(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{
+			{
+				Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 9},
+			},
+		},
+	}
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM:      mock,
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:       "test-progress-events",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	types := make([]port.ExecutionEventType, 0, len(observer.execution))
+	for _, event := range observer.execution {
+		types = append(types, event.Type)
+	}
+	wantOrder := []port.ExecutionEventType{
+		port.ExecutionRunStarted,
+		port.ExecutionIterationStarted,
+		port.ExecutionLLMStarted,
+		port.ExecutionLLMCompleted,
+		port.ExecutionIterationProgress,
+		port.ExecutionRunCompleted,
+	}
+	lastIndex := -1
+	for _, want := range wantOrder {
+		found := -1
+		for i := lastIndex + 1; i < len(types); i++ {
+			if types[i] == want {
+				found = i
+				break
+			}
+		}
+		if found < 0 {
+			t.Fatalf("execution events missing %s in order: %v", want, types)
+		}
+		lastIndex = found
+	}
+	var progress port.ExecutionEvent
+	found := false
+	for _, event := range observer.execution {
+		if event.Type == port.ExecutionIterationProgress {
+			progress = event
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected iteration.progress event")
+	}
+	if got := progress.Data["iteration"]; got != 1 {
+		t.Fatalf("progress iteration = %v, want 1", got)
+	}
+	if got := progress.Data["stop_reason"]; got != "end_turn" {
+		t.Fatalf("progress stop_reason = %v, want end_turn", got)
+	}
+}
+
 func TestLoopPolicyDeny(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
