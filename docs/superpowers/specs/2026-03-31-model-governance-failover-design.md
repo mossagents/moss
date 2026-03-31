@@ -49,6 +49,11 @@ Responsibilities are split as follows:
 
 This gives us a clean reliability layer without turning routing into recovery policy or pushing multi-candidate logic into the loop.
 
+This approach does require two small but explicit loop-facing integrations for v1:
+
+- a way for the selected final model and failover-attempt summary to flow back through the response or error path so session-aware observer events can be emitted correctly
+- a way for streaming failures to distinguish safe pre-emission startup failure from unsafe post-emission failure
+
 ## Alternatives Considered
 
 ### A. Router-internal failover
@@ -126,6 +131,7 @@ Layer responsibilities:
   - disable loop-level LLM retry/breaker when the wrapper is active
 - `kernel/loop`
   - remain unchanged in its public shape
+  - accept small internal changes for selected-model reporting and streaming safety
   - continue to call a single `port.LLM`
 
 This keeps the loop stable and makes failover an opt-in assembly choice rather than a new execution substrate.
@@ -161,6 +167,7 @@ Important integration rule:
 
 - when failover is disabled, keep the current loop-level retry and breaker wiring
 - when failover is enabled and a router is available, move retry and breaker ownership into `FailoverLLM`
+- when failover is enabled and a router is available, `deepagent.BuildKernel` must be called with loop-level LLM retry disabled and loop-level LLM breaker omitted
 - when failover is enabled but no router is configured, do not silently invent a candidate chain; keep current single-model behavior
 
 This avoids double retries and ensures breaker state is tracked per candidate rather than per overall request.
@@ -182,6 +189,14 @@ When failover is enabled, `FailoverLLM` should request the ordered chain and tru
 
 When failover is disabled, the first candidate remains the effective model exactly as it does today.
 
+For the common nil/empty-requirements case, v1 should define deterministic fallback ordering explicitly:
+
+- candidate 0 is the configured default model
+- remaining configured models follow in file order
+- the default model is not duplicated if it also appears in the remainder set
+
+This preserves current primary-model behavior while making failover useful for ordinary runs.
+
 ## Runtime Failover Semantics
 
 The failover loop for synchronous calls should be:
@@ -195,17 +210,16 @@ The failover loop for synchronous calls should be:
    - on non-recoverable failure, continue only if the failure class is allowed for failover
 3. if all candidates fail, return an aggregated error that names each candidate and failure reason
 
-v1 failover triggers should be conservative:
+v1 failover triggers should be defined in terms of implementable existing contracts, not provider-specific error guesswork:
 
-- provider request failure
-- transport failure
-- gateway/service unavailability
-- breaker-open rejection for the current candidate
+- breaker-open rejection for the current candidate when `LLMFailoverOnBreakerOpen` is true
+- errors that the effective retry classifier would treat as retryable for that candidate
 
 v1 should not fail over for:
 
+- context cancellation
 - subjective answer quality
-- content-policy refusal
+- policy/content refusals unless they are already classified as retryable by the active retry policy
 - downstream tool execution failures after the LLM step succeeded
 - cases where visible output or executable tool calls have already been emitted
 
@@ -222,6 +236,12 @@ v1 rules:
 
 This avoids mixing outputs from multiple models into one user-visible response and avoids duplicate side effects from tool-calling streams.
 
+To make this implementable against the current loop, v1 must also change the internal streaming error contract:
+
+- `streamLLM` and failover streaming paths must distinguish safe pre-emission startup failure from unsafe post-emission failure
+- `callLLMOnce` may only perform sync fallback after a streaming error when the error is explicitly marked safe for fallback
+- post-emission streaming failures must return directly without sync fallback
+
 ## Retry and Breaker Ownership
 
 The existing loop-level retry and breaker implementation assumes a single LLM instance. That assumption breaks down once one request can move across multiple candidates.
@@ -236,11 +256,25 @@ Per-candidate breaker state may be held in-memory inside the wrapper or a compan
 
 This is the simplest way to keep breaker decisions scoped to an individual provider/model rather than accidentally opening the circuit for the entire candidate chain.
 
+Candidate breaker identity should be keyed by stable router profile identity, preferably `ModelProfile.Name`.
+
 ## Observability and Doctor Surfaces
 
-v1 should reuse existing observer interfaces instead of introducing a new observer contract.
+v1 should reuse existing observer interfaces instead of introducing a new observer contract, but it cannot do that purely inside the wrapper with today's response shape.
 
-`port.LLMCallEvent` should continue to describe the final executed successful or failed call. Intermediate failover activity should be surfaced through `OnExecutionEvent` and trace timeline entries.
+The spec therefore requires a small response/error propagation mechanism so loop-owned observer emission can stay session-aware:
+
+- successful responses must carry the actual selected model
+- successful responses should also be able to carry failover-attempt summary data for execution-event emission
+- failover exhaustion errors should carry ordered attempt detail
+
+`kernel/loop` should then:
+
+- stop assuming `sess.Config.ModelConfig.Model` is the actual served model when routing/failover is active
+- use propagated actual-model metadata for `LLMCallEvent` and `ExecutionLLMCompleted`
+- allow `ExecutionLLMStarted` to omit `Model` or mark it as requested/unknown when actual candidate selection is deferred to runtime
+
+`port.LLMCallEvent` should continue to describe the final executed successful or failed call. Intermediate failover activity should be surfaced through `OnExecutionEvent` and trace timeline entries emitted by the loop after it receives the attempt metadata.
 
 Recommended execution event data:
 
@@ -321,6 +355,7 @@ Extend `examples/mosscode` tests to validate:
 
 - build path keeps existing single-model behavior when failover is disabled
 - failover-enabled build path wraps the router and disables loop-level retry/breaker ownership
+- failover-enabled build path does not leave loop sync fallback active for unsafe post-emission streaming errors
 - doctor JSON/text includes the new failover settings
 
 ### Acceptance criteria
@@ -330,6 +365,7 @@ The milestone is complete when all of the following are true:
 - a router-backed run can recover from primary model failure by switching to a compatible secondary candidate
 - breaker-open on the first candidate does not terminate the whole request if another candidate exists
 - partial streamed output never silently switches to a second candidate
+- successful routed/failover calls report the actual serving model rather than only the requested model config
 - doctor and trace surfaces explain why failover happened and which model finally served the request
 - failover disabled preserves current behavior
 - repo validation still passes with `go test ./...` and `go build ./...`
@@ -339,9 +375,11 @@ The milestone is complete when all of the following are true:
 This milestone should be implemented as a focused production-hardening batch:
 
 1. extend router candidate selection
-2. add the failover wrapper and tests
-3. extend governance config/reporting
-4. wire `mosscode` assembly and doctor output
-5. run targeted and full validation
+2. add selected-model / attempt-metadata propagation through the LLM response and error path
+3. tighten loop streaming fallback semantics so only safe pre-emission failures can fall back
+4. add the failover wrapper and tests
+5. extend governance config/reporting
+6. wire `mosscode` assembly and doctor output
+7. run targeted and full validation
 
 No TUI-specific interaction work is required beyond surfacing the resulting doctor/governance information through existing product outputs.
