@@ -53,7 +53,7 @@ type Config struct {
 	BuildKernel           func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 	BuildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
 	AfterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
-	BuildSystemPrompt     func(workspace string) string
+	BuildSystemPrompt     func(workspace, trust string) string
 	BuildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
 	ScheduleController    runtime.ScheduleController
 	SidebarTitle          string
@@ -80,7 +80,7 @@ type agentState struct {
 	approvalMode          string
 	baseObserver          port.Observer
 	buildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
-	buildSystemPrompt     func(workspace string) string
+	buildSystemPrompt     func(workspace, trust string) string
 	buildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
 	permissions           map[string]string
 	mu                    sync.Mutex
@@ -90,7 +90,7 @@ type agentState struct {
 func renderSkillsSummary(agent *agentState, workspace string) string {
 	manifests := runtime.SkillManifests(agent.k)
 	if len(manifests) == 0 {
-		manifests = skill.DiscoverSkillManifests(workspace)
+		manifests = skill.DiscoverSkillManifestsForTrust(workspace, agent.trust)
 	}
 	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
 
@@ -231,9 +231,9 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	if k == nil {
 		return nil, errors.New("runtime is unavailable")
 	}
-	sysPrompt := buildSystemPrompt(workspace)
+	sysPrompt := buildSystemPrompt(workspace, trust)
 	if buildPrompt != nil {
-		sysPrompt = buildPrompt(workspace)
+		sysPrompt = buildPrompt(workspace, trust)
 	}
 	sessCfg := session.SessionConfig{
 		Goal:         "interactive",
@@ -285,6 +285,23 @@ func (a *agentState) listPersistedCheckpoints(limit int) (string, error) {
 		summaries = summaries[:limit]
 	}
 	return product.RenderCheckpointSummaries(summaries), nil
+}
+
+func (a *agentState) showPersistedCheckpoint(checkpointID string) (string, error) {
+	a.mu.Lock()
+	k := a.k
+	ctx := a.ctx
+	a.mu.Unlock()
+	if k == nil || k.Checkpoints() == nil {
+		return "", fmt.Errorf("checkpoint store is unavailable")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	detail, err := product.LoadCheckpointWithStore(reqCtx, k.Checkpoints(), checkpointID)
+	if err != nil {
+		return "", err
+	}
+	return product.RenderCheckpointDetail(detail), nil
 }
 
 func (a *agentState) listPersistedChanges(limit int) (string, error) {
@@ -443,10 +460,14 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 		sourceKind = string(port.ForkSourceSession)
 	}
 	if strings.TrimSpace(sourceID) == "" {
-		if sourceKind != string(port.ForkSourceSession) || current == nil {
+		if sourceKind == string(port.ForkSourceCheckpoint) {
+			sourceID = ""
+		} else if current == nil {
 			return "", fmt.Errorf("source id is required")
 		}
-		sourceID = current.ID
+		if sourceKind == string(port.ForkSourceSession) {
+			sourceID = current.ID
+		}
 	}
 	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
 	if err != nil {
@@ -454,6 +475,13 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	if sourceKind == string(port.ForkSourceCheckpoint) {
+		record, err := product.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), sourceID)
+		if err != nil {
+			return "", err
+		}
+		sourceID = record.ID
+	}
 	next, result, err := k.ForkSession(reqCtx, port.ForkRequest{
 		SourceKind:      port.ForkSourceKind(sourceKind),
 		SourceID:        strings.TrimSpace(sourceID),
@@ -497,10 +525,6 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	if k == nil || k.Checkpoints() == nil {
 		return "", fmt.Errorf("checkpoint store is unavailable")
 	}
-	checkpointID = strings.TrimSpace(checkpointID)
-	if checkpointID == "" {
-		return "", fmt.Errorf("checkpoint id is required")
-	}
 	replayMode := port.ReplayMode(strings.ToLower(strings.TrimSpace(mode)))
 	if replayMode == "" {
 		replayMode = port.ReplayModeResume
@@ -514,8 +538,12 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	record, err := product.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), checkpointID)
+	if err != nil {
+		return "", err
+	}
 	next, result, err := k.ReplayFromCheckpoint(reqCtx, port.ReplayRequest{
-		CheckpointID:    checkpointID,
+		CheckpointID:    record.ID,
 		Mode:            replayMode,
 		RestoreWorktree: restoreWorktree,
 	})
@@ -879,13 +907,13 @@ func (a *agentState) appendAndRun(text string) {
 	if traceFactory != nil {
 		recorder, runObserver := traceFactory()
 		traceRecorder = recorder
-		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver))
+		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k)))
 	} else {
-		a.k.SetObserver(baseObserver)
+		a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 	}
 
 	result, err := a.k.Run(runCtx, a.sess)
-	a.k.SetObserver(baseObserver)
+	a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 
 	a.mu.Lock()
 	a.running = false
@@ -1188,6 +1216,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.checkpointListFn = func(limit int) (string, error) {
 			return agent.listPersistedCheckpoints(limit)
 		}
+		m.chat.checkpointShowFn = func(checkpointID string) (string, error) {
+			return agent.showPersistedCheckpoint(checkpointID)
+		}
 		m.chat.checkpointCreateFn = func(note string) (string, error) {
 			return agent.createCheckpoint(note)
 		}
@@ -1299,9 +1330,9 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			}
 		} else {
 			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
-			sysPrompt := buildSystemPrompt(wCfg.Workspace)
+			sysPrompt := buildSystemPrompt(wCfg.Workspace, cfg.Trust)
 			if cfg.BuildSystemPrompt != nil {
-				sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace)
+				sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace, cfg.Trust)
 			}
 			sessCfg := session.SessionConfig{
 				Goal:         "interactive",

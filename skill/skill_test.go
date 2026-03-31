@@ -553,3 +553,48 @@ func TestRenderSystemPrompt_ProjectTemplateOverridesGlobal(t *testing.T) {
 		t.Fatalf("project template should override global template, got: %q", rendered)
 	}
 }
+
+func TestRenderSystemPromptForTrust_RestrictedIgnoresProjectTemplate(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	SetAppName("mosswork")
+	t.Cleanup(func() { SetAppName("moss") })
+
+	workspace := t.TempDir()
+
+	if err := os.MkdirAll(AppDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	if err := os.WriteFile(DefaultGlobalSystemPromptTemplatePath(), []byte("global {{.Scope}}"), 0600); err != nil {
+		t.Fatalf("write global template: %v", err)
+	}
+
+	projectPath := DefaultProjectSystemPromptTemplatePath(workspace)
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0700); err != nil {
+		t.Fatalf("prepare project template dir: %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("project {{.Scope}}"), 0600); err != nil {
+		t.Fatalf("write project template: %v", err)
+	}
+
+	rendered := RenderSystemPromptForTrust(workspace, TrustRestricted, "default {{.Scope}}", map[string]any{"Scope": "prompt"})
+	if rendered != "global prompt" {
+		t.Fatalf("restricted mode should ignore project template, got: %q", rendered)
+	}
+}
+
+func TestNormalizeTrustLevel(t *testing.T) {
+	tests := map[string]string{
+		"":           TrustTrusted,
+		"trusted":    TrustTrusted,
+		"restricted": TrustRestricted,
+		"unknown":    TrustRestricted,
+	}
+	for input, want := range tests {
+		if got := NormalizeTrustLevel(input); got != want {
+			t.Fatalf("NormalizeTrustLevel(%q)=%q, want %q", input, got, want)
+		}
+	}
+}

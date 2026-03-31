@@ -314,7 +314,7 @@ Usage:
   mosscode doctor [--json] [flags]
   mosscode config [show|path|set|unset] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
-  mosscode checkpoint <list|create|fork|replay> [flags]
+  mosscode checkpoint <list|show|create|fork|replay> [flags]
 
 Flags:
   --prompt, -p           One-shot prompt for 'exec' or legacy root invocation
@@ -360,11 +360,12 @@ Review:
 
 Checkpoint:
   list [--json]                                             List persisted checkpoints
+  show <id|latest> [--json]                                 Inspect a persisted checkpoint
   create --session <id> [--note <note>] [--json]            Create checkpoint from a persisted session
-  fork [--session <id> | --checkpoint <id>] [--restore-worktree] [--json]
-                                                             Fork a fresh session from a session/checkpoint
-  replay --checkpoint <id> [--mode resume|rerun] [--restore-worktree] [--json]
-                                                              Prepare a fresh replay session from a checkpoint
+  fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]
+                                                              Fork a fresh session from a session/checkpoint
+  replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]
+                                                               Prepare a fresh replay session from a checkpoint
 
 Apply:
   --patch-file <path>   Apply an explicit patch file
@@ -524,6 +525,7 @@ type checkpointActionReport struct {
 	Mode             string                      `json:"mode"`
 	Checkpoints      []product.CheckpointSummary `json:"checkpoints,omitempty"`
 	Checkpoint       *product.CheckpointSummary  `json:"checkpoint,omitempty"`
+	CheckpointDetail *product.CheckpointDetail   `json:"checkpoint_detail,omitempty"`
 	SessionID        string                      `json:"session_id,omitempty"`
 	SourceKind       string                      `json:"source_kind,omitempty"`
 	SourceID         string                      `json:"source_id,omitempty"`
@@ -543,11 +545,13 @@ type changeActionReport struct {
 
 func runCheckpoint(ctx context.Context, cfg *config) error {
 	if len(cfg.checkpointArgs) == 0 {
-		return fmt.Errorf("usage: mosscode checkpoint <list|create|fork|replay> [flags]")
+		return fmt.Errorf("usage: mosscode checkpoint <list|show|create|fork|replay> [flags]")
 	}
 	switch strings.ToLower(strings.TrimSpace(cfg.checkpointArgs[0])) {
 	case "list":
 		return runCheckpointList(ctx, cfg, cfg.checkpointArgs[1:])
+	case "show":
+		return runCheckpointShow(ctx, cfg, cfg.checkpointArgs[1:])
 	case "create":
 		return runCheckpointCreate(ctx, cfg, cfg.checkpointArgs[1:])
 	case "fork":
@@ -555,7 +559,7 @@ func runCheckpoint(ctx context.Context, cfg *config) error {
 	case "replay":
 		return runCheckpointReplay(ctx, cfg, cfg.checkpointArgs[1:])
 	default:
-		return fmt.Errorf("unknown checkpoint command %q (supported: list, create, fork, replay)", cfg.checkpointArgs[0])
+		return fmt.Errorf("unknown checkpoint command %q (supported: list, show, create, fork, replay)", cfg.checkpointArgs[0])
 	}
 }
 
@@ -581,6 +585,44 @@ func runCheckpointList(ctx context.Context, cfg *config, args []string) error {
 		return printJSON(report)
 	}
 	fmt.Println(product.RenderCheckpointSummaries(items))
+	return nil
+}
+
+func runCheckpointShow(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("checkpoint show", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	jsonOut := false
+	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint detail as JSON")
+	checkpointID := ""
+	parseArgs := args
+	if len(args) > 0 {
+		first := strings.TrimSpace(args[0])
+		if first != "" && !strings.HasPrefix(first, "-") {
+			checkpointID = first
+			parseArgs = args[1:]
+		}
+	}
+	parseCommonFlags(fs, cfg, parseArgs)
+	if checkpointID == "" && fs.NArg() == 1 {
+		checkpointID = strings.TrimSpace(fs.Arg(0))
+	}
+	if checkpointID == "" || fs.NArg() > 1 {
+		return fmt.Errorf("usage: mosscode checkpoint show <id|latest> [--json]")
+	}
+	detail, err := product.LoadCheckpoint(ctx, checkpointID)
+	if err != nil {
+		return err
+	}
+	report := checkpointActionReport{
+		Mode:             "show",
+		CheckpointDetail: detail,
+	}
+	if jsonOut {
+		return printJSON(report)
+	}
+	fmt.Println(product.RenderCheckpointDetail(detail))
 	return nil
 }
 
@@ -648,24 +690,37 @@ func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
 	bindProductFlags(fs, cfg)
 	sessionID := ""
 	checkpointID := ""
+	latest := false
 	restoreWorktree := false
 	jsonOut := false
 	fs.StringVar(&sessionID, "session", "", "Fork from this session ID (prefers latest checkpoint for that session)")
 	fs.StringVar(&checkpointID, "checkpoint", "", "Fork directly from this checkpoint ID")
+	fs.BoolVar(&latest, "latest", false, "Fork from the latest persisted checkpoint")
 	fs.BoolVar(&restoreWorktree, "restore-worktree", false, "Attempt worktree restore when forking from checkpoint state")
 	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint fork output as JSON")
 	parseCommonFlags(fs, cfg, args)
+	sessionID = strings.TrimSpace(sessionID)
+	checkpointID = strings.TrimSpace(checkpointID)
 	sourceKind := port.ForkSourceSession
-	sourceID := strings.TrimSpace(sessionID)
-	if strings.TrimSpace(checkpointID) != "" {
+	sourceID := sessionID
+	if latest {
+		if sessionID != "" {
+			return fmt.Errorf("use either --session or --latest, not both")
+		}
+		if checkpointID != "" && !strings.EqualFold(checkpointID, "latest") {
+			return fmt.Errorf("use either --checkpoint <id> or --latest, not both")
+		}
+		sourceKind = port.ForkSourceCheckpoint
+		sourceID = ""
+	} else if checkpointID != "" {
 		if sourceID != "" {
 			return fmt.Errorf("use either --session or --checkpoint, not both")
 		}
 		sourceKind = port.ForkSourceCheckpoint
-		sourceID = strings.TrimSpace(checkpointID)
+		sourceID = checkpointID
 	}
-	if sourceID == "" {
-		return fmt.Errorf("usage: mosscode checkpoint fork [--session <id> | --checkpoint <id>] [--restore-worktree] [--json]")
+	if sourceKind == port.ForkSourceSession && sourceID == "" {
+		return fmt.Errorf("usage: mosscode checkpoint fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
 	if err != nil {
@@ -674,6 +729,13 @@ func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
 	defer k.Shutdown(ctx)
 	if err := k.Boot(ctx); err != nil {
 		return err
+	}
+	if sourceKind == port.ForkSourceCheckpoint {
+		record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
+		if err != nil {
+			return err
+		}
+		sourceID = record.ID
 	}
 	sess, result, err := k.ForkSession(ctx, port.ForkRequest{
 		SourceKind:      sourceKind,
@@ -712,17 +774,26 @@ func runCheckpointReplay(ctx context.Context, cfg *config, args []string) error 
 	appkit.BindAppFlags(fs, cfg.flags)
 	bindProductFlags(fs, cfg)
 	checkpointID := ""
+	latest := false
 	mode := string(port.ReplayModeResume)
 	restoreWorktree := false
 	jsonOut := false
 	fs.StringVar(&checkpointID, "checkpoint", "", "Checkpoint ID to replay")
+	fs.BoolVar(&latest, "latest", false, "Replay the latest persisted checkpoint")
 	fs.StringVar(&mode, "mode", mode, "Replay mode: resume|rerun")
 	fs.BoolVar(&restoreWorktree, "restore-worktree", false, "Attempt worktree restore before replay")
 	fs.BoolVar(&jsonOut, "json", false, "Emit checkpoint replay output as JSON")
 	parseCommonFlags(fs, cfg, args)
+	checkpointID = strings.TrimSpace(checkpointID)
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	if checkpointID == "" {
-		return fmt.Errorf("usage: mosscode checkpoint replay --checkpoint <id> [--mode resume|rerun] [--restore-worktree] [--json]")
+	if latest {
+		if checkpointID != "" && !strings.EqualFold(checkpointID, "latest") {
+			return fmt.Errorf("use either --checkpoint <id> or --latest, not both")
+		}
+		checkpointID = ""
+	}
+	if checkpointID == "" && !latest {
+		return fmt.Errorf("usage: mosscode checkpoint replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]")
 	}
 	if mode != string(port.ReplayModeResume) && mode != string(port.ReplayModeRerun) {
 		return fmt.Errorf("replay mode must be resume or rerun")
@@ -735,8 +806,12 @@ func runCheckpointReplay(ctx context.Context, cfg *config, args []string) error 
 	if err := k.Boot(ctx); err != nil {
 		return err
 	}
+	record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), checkpointID)
+	if err != nil {
+		return err
+	}
 	sess, result, err := k.ReplayFromCheckpoint(ctx, port.ReplayRequest{
-		CheckpointID:    checkpointID,
+		CheckpointID:    record.ID,
 		Mode:            port.ReplayMode(mode),
 		RestoreWorktree: restoreWorktree,
 	})
@@ -1052,7 +1127,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		Goal:         cfg.prompt,
 		Mode:         "oneshot",
 		TrustLevel:   cfg.flags.Trust,
-		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace),
+		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace, cfg.flags.Trust),
 		MaxSteps:     80,
 		Metadata: map[string]any{
 			"approval_mode": cfg.approvalMode,
@@ -1138,16 +1213,16 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, ap
 		}
 		k.SetLLM(llm)
 	}
-	k.SetObserver(port.JoinObservers(observer))
-	if _, err := product.ApplyApprovalMode(k, approvalMode); err != nil {
+	k.SetObserver(product.ComposeStateObserver(k, observer))
+	if _, err := product.ApplyApprovalModeWithTrust(k, flags.Trust, approvalMode); err != nil {
 		return nil, err
 	}
 	return k, nil
 }
 
-func buildSystemPrompt(workspace string) string {
+func buildSystemPrompt(workspace, trust string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
-	return appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 }
 
 func effectiveFlags() *appkit.AppFlags {

@@ -138,6 +138,15 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 //	Global:  ~/.copilot/skills/, ~/.copilot/installed-plugins/**/skills/, ~/.agents/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
 func DiscoverSkills(workspace string) []*Skill {
 	manifests := DiscoverSkillManifests(workspace)
+	return discoverSkillsFromManifests(manifests)
+}
+
+func DiscoverSkillsForTrust(workspace, trust string) []*Skill {
+	manifests := DiscoverSkillManifestsForTrust(workspace, trust)
+	return discoverSkillsFromManifests(manifests)
+}
+
+func discoverSkillsFromManifests(manifests []Manifest) []*Skill {
 	var skills []*Skill
 	for _, mf := range manifests {
 		s, err := ParseSkillMD(mf.Source)
@@ -151,6 +160,28 @@ func DiscoverSkills(workspace string) []*Skill {
 
 // DiscoverSkillManifests 扫描标准目录，返回可按需激活的技能清单（不加载正文）。
 func DiscoverSkillManifests(workspace string) []Manifest {
+	return DiscoverSkillManifestsWithOptions(workspace, DiscoverOptions{
+		IncludeProject:          true,
+		IncludeGlobal:           true,
+		IncludeInstalledPlugins: true,
+	})
+}
+
+func DiscoverSkillManifestsForTrust(workspace, trust string) []Manifest {
+	return DiscoverSkillManifestsWithOptions(workspace, DiscoverOptions{
+		IncludeProject:          appconfig.ProjectAssetsAllowed(trust),
+		IncludeGlobal:           true,
+		IncludeInstalledPlugins: true,
+	})
+}
+
+type DiscoverOptions struct {
+	IncludeProject          bool
+	IncludeGlobal           bool
+	IncludeInstalledPlugins bool
+}
+
+func DiscoverSkillManifestsWithOptions(workspace string, opts DiscoverOptions) []Manifest {
 	var manifests []Manifest
 
 	appDir := "." + appconfig.AppName()
@@ -185,25 +216,29 @@ func DiscoverSkillManifests(workspace string) []Manifest {
 	seen := make(map[string]bool) // 去重：skill name → loaded
 
 	// 扫描 project 目录（优先级高）
-	for _, dir := range projectDirs {
-		for _, m := range scanSkillManifestDir(dir) {
-			if !seen[m.Name] {
-				seen[m.Name] = true
-				manifests = append(manifests, m)
+	if opts.IncludeProject {
+		for _, dir := range projectDirs {
+			for _, m := range scanSkillManifestDir(dir) {
+				if !seen[m.Name] {
+					seen[m.Name] = true
+					manifests = append(manifests, m)
+				}
 			}
 		}
 	}
 
 	// 扫描 global 目录
-	for _, dir := range globalDirs {
-		for _, m := range scanSkillManifestDir(dir) {
-			if !seen[m.Name] {
-				seen[m.Name] = true
-				manifests = append(manifests, m)
+	if opts.IncludeGlobal {
+		for _, dir := range globalDirs {
+			for _, m := range scanSkillManifestDir(dir) {
+				if !seen[m.Name] {
+					seen[m.Name] = true
+					manifests = append(manifests, m)
+				}
 			}
 		}
 	}
-	if home != "" {
+	if opts.IncludeInstalledPlugins && home != "" {
 		for _, m := range scanInstalledPluginSkillManifestDirs(filepath.Join(home, ".copilot", "installed-plugins")) {
 			if !seen[m.Name] {
 				seen[m.Name] = true

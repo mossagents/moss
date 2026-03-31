@@ -3,6 +3,7 @@ package skill
 import (
 	"context"
 
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
@@ -14,6 +15,7 @@ import (
 //   - runtime 自带的 builtin tools provider
 //   - 通过 SKILL.md 注入提示词的 prompt skill
 //   - 通过 MCP 连接外部工具服务的 provider
+//
 // Provider 是统一生命周期接口，不意味着这些能力在来源、权限边界或实现方式上等价。
 type Provider interface {
 	// Metadata 返回 skill 的元信息。
@@ -37,6 +39,7 @@ type Metadata struct {
 
 // Deps 是 provider 初始化时可用的依赖。
 type Deps struct {
+	Kernel       *kernel.Kernel
 	ToolRegistry tool.Registry
 	Middleware   *middleware.Chain
 	Sandbox      sandbox.Sandbox

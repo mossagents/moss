@@ -662,6 +662,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	if err != nil {
 		event.Error = err.Error()
 	}
+	appendToolExecutionMetadata(&event, output)
 	l.observer().OnExecutionEvent(ctx, event)
 
 	// AfterToolCall middleware
@@ -686,6 +687,24 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 
 	return result
+}
+
+func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMessage) {
+	if event == nil || len(output) == 0 {
+		return
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(output, &payload); err != nil {
+		return
+	}
+	if event.Data == nil {
+		event.Data = map[string]any{}
+	}
+	for _, key := range []string{"enforcement", "degraded", "details", "url", "method", "status_code", "follow_redirects"} {
+		if value, ok := payload[key]; ok {
+			event.Data[key] = value
+		}
+	}
 }
 
 func repairToolArguments(args json.RawMessage) json.RawMessage {

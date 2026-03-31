@@ -151,6 +151,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 			CreatedAt: time.Now(),
 			EndedAt:   time.Now(),
 		}
+		session.MarkHistoryHidden(snapshot)
 		if err := store.Save(ctx, snapshot); err != nil {
 			return nil, fmt.Errorf("save offload snapshot: %w", err)
 		}
@@ -370,6 +371,7 @@ func compactWithSummary(
 		CreatedAt: time.Now(),
 		EndedAt:   time.Now(),
 	}
+	session.MarkHistoryHidden(snapshot)
 	if err := store.Save(ctx, snapshot); err != nil {
 		return nil, fmt.Errorf("save summary snapshot: %w", err)
 	}

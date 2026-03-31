@@ -19,6 +19,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	appconfig "github.com/mossagents/moss/config"
 )
 
 // Context 包含所有引导文件的内容，用于注入 system prompt。
@@ -79,20 +81,30 @@ func SetAppName(name string) { appName = name }
 // 优先级: 项目根目录 > 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
 // 每个文件只取最高优先级的版本。
 func Load(workspace string) *Context {
-	return LoadWithAppName(workspace, appName)
+	return LoadWithAppNameAndTrust(workspace, appName, appconfig.TrustTrusted)
 }
 
 // LoadWithAppName 从工作区和全局目录加载引导上下文，并显式指定应用名。
 // 优先级: 项目根目录 > 项目 .agents/ > 项目 .<appName>/ > 全局 ~/.<appName>/
 // 每个文件只取最高优先级的版本。
 func LoadWithAppName(workspace, name string) *Context {
+	return LoadWithAppNameAndTrust(workspace, name, appconfig.TrustTrusted)
+}
+
+func LoadWithTrust(workspace, trust string) *Context {
+	return LoadWithAppNameAndTrust(workspace, appName, trust)
+}
+
+func LoadWithAppNameAndTrust(workspace, name, trust string) *Context {
 	ctx := &Context{}
 
-	// 构建搜索目录列表（优先级从高到低）
-	dirs := []string{
-		workspace,
-		filepath.Join(workspace, ".agents"),
-		filepath.Join(workspace, "."+name),
+	var dirs []string
+	if appconfig.ProjectAssetsAllowed(trust) {
+		dirs = append(dirs,
+			workspace,
+			filepath.Join(workspace, ".agents"),
+			filepath.Join(workspace, "."+name),
+		)
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		dirs = append(dirs, filepath.Join(home, "."+name))

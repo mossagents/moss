@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
@@ -42,6 +44,10 @@ func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port
 // 优先使用 Workspace/Executor 接口；未提供时回退到 Sandbox。
 // builtin tools 是 first-party runtime capability，不经过 skill prompt 解析，也不依赖 MCP transport。
 func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
+	return RegisterBuiltinToolsForKernel(nil, reg, sb, io, ws, exec)
+}
+
+func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandbox.Sandbox, io port.UserIO, ws port.Workspace, exec port.Executor) error {
 	type entry struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -72,12 +78,12 @@ func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io port.UserIO,
 
 	// 命令执行：优先 Executor，回退 Sandbox
 	if exec != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerExec(exec, ws)})
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerExecWithPolicy(k, exec, ws)})
 	} else if sb != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandler(sb)})
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerWithPolicy(k, sb)})
 	}
 
-	tools = append(tools, entry{httpRequestSpec, httpRequestHandler()})
+	tools = append(tools, entry{httpRequestSpec, httpRequestHandlerWithPolicy(k)})
 	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
 
 	for _, t := range tools {
@@ -396,7 +402,7 @@ var httpRequestSpec = tool.ToolSpec{
 			"headers": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional request headers"},
 			"body": {"type": "string", "description": "Optional request body"},
 			"timeout_seconds": {"type": "integer", "description": "Request timeout in seconds (default 30, max 120)"},
-			"follow_redirects": {"type": "boolean", "description": "Whether to follow redirects (default true)"}
+			"follow_redirects": {"type": "boolean", "description": "Whether to follow redirects (default false)"}
 		},
 		"required": ["url"]
 	}`),
@@ -405,6 +411,10 @@ var httpRequestSpec = tool.ToolSpec{
 }
 
 func httpRequestHandler() tool.ToolHandler {
+	return httpRequestHandlerWithPolicy(nil)
+}
+
+func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			URL             string            `json:"url"`
@@ -421,24 +431,30 @@ func httpRequestHandler() tool.ToolHandler {
 		if rawURL == "" {
 			return nil, fmt.Errorf("url is required")
 		}
+		policy := effectiveExecutionPolicy(k, nil, nil)
+		if policy.HTTP.Access == ExecutionAccessDeny {
+			return nil, fmt.Errorf("http_request is disabled by execution policy")
+		}
 		parsed, err := url.Parse(rawURL)
 		if err != nil {
 			return nil, fmt.Errorf("invalid url: %w", err)
-		}
-		scheme := strings.ToLower(parsed.Scheme)
-		if scheme != "http" && scheme != "https" {
-			return nil, fmt.Errorf("url scheme must be http or https")
 		}
 		method := strings.ToUpper(strings.TrimSpace(params.Method))
 		if method == "" {
 			method = http.MethodGet
 		}
-		timeout := 30 * time.Second
+		if err := validateHTTPRequestPolicy(parsed, method, policy.HTTP); err != nil {
+			return nil, err
+		}
+		timeout := policy.HTTP.DefaultTimeout
+		if timeout <= 0 {
+			timeout = 30 * time.Second
+		}
 		if params.TimeoutSeconds > 0 {
-			if params.TimeoutSeconds > 120 {
-				params.TimeoutSeconds = 120
-			}
 			timeout = time.Duration(params.TimeoutSeconds) * time.Second
+		}
+		if policy.HTTP.MaxTimeout > 0 && timeout > policy.HTTP.MaxTimeout {
+			timeout = policy.HTTP.MaxTimeout
 		}
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -462,13 +478,17 @@ func httpRequestHandler() tool.ToolHandler {
 		}
 
 		client := &http.Client{}
-		followRedirects := true
+		followRedirects := policy.HTTP.FollowRedirects
 		if params.FollowRedirects != nil {
-			followRedirects = *params.FollowRedirects
+			followRedirects = followRedirects && *params.FollowRedirects
 		}
 		if !followRedirects {
 			client.CheckRedirect = func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
+			}
+		} else {
+			client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+				return validateHTTPRequestPolicy(req.URL, req.Method, policy.HTTP)
 			}
 		}
 
@@ -487,18 +507,23 @@ func httpRequestHandler() tool.ToolHandler {
 			bodyData = bodyData[:maxHTTPResponseBodyBytes]
 		}
 		return json.Marshal(map[string]any{
-			"status_code":    resp.StatusCode,
-			"status":         resp.Status,
-			"headers":        resp.Header,
-			"body":           string(bodyData),
-			"body_truncated": truncated,
-			"url":            rawURL,
-			"method":         method,
+			"status_code":      resp.StatusCode,
+			"status":           resp.Status,
+			"headers":          resp.Header,
+			"body":             string(bodyData),
+			"body_truncated":   truncated,
+			"url":              rawURL,
+			"method":           method,
+			"follow_redirects": followRedirects,
 		})
 	}
 }
 
 func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	return runCommandHandlerWithPolicy(nil, sb)
+}
+
+func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -507,10 +532,11 @@ func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		output, err := sb.Execute(ctx, port.ExecRequest{
-			Command: params.Command,
-			Args:    params.Args,
-		})
+		policy := effectiveExecutionPolicy(k, sb, nil)
+		if policy.Command.Access == ExecutionAccessDeny {
+			return nil, fmt.Errorf("run_command is disabled by execution policy")
+		}
+		output, err := sb.Execute(ctx, buildExecRequest(params.Command, params.Args, policy))
 		if err != nil {
 			return nil, err
 		}
@@ -521,6 +547,10 @@ func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
 }
 
 func runCommandHandlerExec(exec port.Executor, ws port.Workspace) tool.ToolHandler {
+	return runCommandHandlerExecWithPolicy(nil, exec, ws)
+}
+
+func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec port.Executor, ws port.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -529,10 +559,11 @@ func runCommandHandlerExec(exec port.Executor, ws port.Workspace) tool.ToolHandl
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		output, err := exec.Execute(ctx, port.ExecRequest{
-			Command: params.Command,
-			Args:    params.Args,
-		})
+		policy := effectiveExecutionPolicy(k, nil, ws)
+		if policy.Command.Access == ExecutionAccessDeny {
+			return nil, fmt.Errorf("run_command is disabled by execution policy")
+		}
+		output, err := exec.Execute(ctx, buildExecRequest(params.Command, params.Args, policy))
 		if err != nil {
 			return nil, err
 		}
@@ -1000,6 +1031,66 @@ func scopedPattern(pattern, scopePath string) string {
 		return pattern
 	}
 	return filepath.Join(scopePath, pattern)
+}
+
+func effectiveExecutionPolicy(k *kernel.Kernel, sb sandbox.Sandbox, ws port.Workspace) ExecutionPolicy {
+	if k != nil {
+		return ExecutionPolicyOf(k)
+	}
+	workspace := ""
+	if sb != nil {
+		if root, err := sb.ResolvePath("."); err == nil {
+			workspace = root
+		}
+	}
+	return resolveExecutionPolicy(appconfig.TrustTrusted, "full-auto", commandPolicyDefaults(sb, workspace, ws))
+}
+
+func buildExecRequest(command string, args []string, policy ExecutionPolicy) port.ExecRequest {
+	req := port.ExecRequest{
+		Command:  command,
+		Args:     append([]string(nil), args...),
+		Timeout:  policy.Command.DefaultTimeout,
+		ClearEnv: policy.Command.ClearEnv,
+		Env:      cloneStringMap(policy.Command.Env),
+		Network:  policy.Command.Network,
+	}
+	if len(policy.Command.AllowedPaths) > 0 {
+		req.WorkingDir = "."
+		req.AllowedPaths = append([]string(nil), policy.Command.AllowedPaths...)
+	}
+	if policy.Command.MaxTimeout > 0 && req.Timeout > policy.Command.MaxTimeout {
+		req.Timeout = policy.Command.MaxTimeout
+	}
+	return req
+}
+
+func validateHTTPRequestPolicy(parsed *url.URL, method string, policy HTTPExecutionPolicy) error {
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	if !containsFolded(policy.AllowedSchemes, scheme) {
+		return fmt.Errorf("url scheme %q is not allowed by execution policy", scheme)
+	}
+	method = strings.ToUpper(strings.TrimSpace(method))
+	if !containsFolded(policy.AllowedMethods, method) {
+		return fmt.Errorf("http method %q is not allowed by execution policy", method)
+	}
+	if len(policy.AllowedHosts) > 0 {
+		host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+		if !containsFolded(policy.AllowedHosts, host) {
+			return fmt.Errorf("url host %q is not allowed by execution policy", host)
+		}
+	}
+	return nil
+}
+
+func containsFolded(items []string, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	for _, item := range items {
+		if strings.ToLower(strings.TrimSpace(item)) == target {
+			return true
+		}
+	}
+	return false
 }
 
 func unmarshalAskUserInputWithRetry(raw json.RawMessage, out any) error {

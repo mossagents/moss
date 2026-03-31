@@ -21,8 +21,16 @@ func WithLoadedBootstrapContext(workspace, appName string) kernel.Option {
 	return WithBootstrapContext(bootstrap.LoadWithAppName(workspace, appName))
 }
 
+func WithLoadedBootstrapContextWithTrust(workspace, appName, trust string) kernel.Option {
+	return WithBootstrapContext(bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust))
+}
+
 func LoadBootstrapContext(workspace, appName string) *bootstrap.Context {
 	return bootstrap.LoadWithAppName(workspace, appName)
+}
+
+func LoadBootstrapContextWithTrust(workspace, appName, trust string) *bootstrap.Context {
+	return bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust)
 }
 
 func ensureBootstrapState(k *kernel.Kernel) *bootstrapState {

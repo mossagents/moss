@@ -77,6 +77,14 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Type:      "requested",
 					Request:   *approval,
 				})
+				requestData := map[string]any{
+					"approval_id": approval.ID,
+					"reason":      approval.Reason,
+					"reason_code": approval.ReasonCode,
+				}
+				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
+					requestData[k] = v
+				}
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
 					Type:        port.ExecutionApprovalRequest,
 					SessionID:   approval.SessionID,
@@ -85,10 +93,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Risk:        approval.Risk,
 					ReasonCode:  approval.ReasonCode,
 					Enforcement: approval.Enforcement,
-					Data: map[string]any{
-						"approval_id": approval.ID,
-						"reason":      approval.Reason,
-					},
+					Data:        requestData,
 				})
 				resp, err := mc.IO.Ask(ctx, port.InputRequest{
 					Type:     port.InputConfirm,
@@ -113,6 +118,15 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Request:   *approval,
 					Decision:  resolved,
 				})
+				resolvedData := map[string]any{
+					"approval_id": approval.ID,
+					"approved":    resolved.Approved,
+					"source":      resolved.Source,
+					"reason_code": approval.ReasonCode,
+				}
+				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
+					resolvedData[k] = v
+				}
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
 					Type:        port.ExecutionApprovalResolved,
 					SessionID:   approval.SessionID,
@@ -121,11 +135,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Risk:        approval.Risk,
 					ReasonCode:  approval.ReasonCode,
 					Enforcement: approval.Enforcement,
-					Data: map[string]any{
-						"approval_id": approval.ID,
-						"approved":    resolved.Approved,
-						"source":      resolved.Source,
-					},
+					Data:        resolvedData,
 				})
 				if !resolved.Approved {
 					return ErrDenied

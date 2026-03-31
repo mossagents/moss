@@ -10,18 +10,25 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	appruntime "github.com/mossagents/moss/appkit/runtime"
 )
 
 type FileChangeStore struct {
-	dir string
-	mu  sync.Mutex
+	dir     string
+	mu      sync.Mutex
+	catalog *appruntime.StateCatalog
 }
 
 func NewFileChangeStore(dir string) (*FileChangeStore, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create change store dir: %w", err)
 	}
-	return &FileChangeStore{dir: dir}, nil
+	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
+	if err != nil && StateCatalogEnabled() {
+		return nil, fmt.Errorf("state catalog: %w", err)
+	}
+	return &FileChangeStore{dir: dir, catalog: catalog}, nil
 }
 
 func OpenChangeStore() (*FileChangeStore, error) {
@@ -46,6 +53,9 @@ func (fs *FileChangeStore) Save(_ context.Context, item *ChangeOperation) error 
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("replace change operation: %w", err)
+	}
+	if fs.catalog != nil {
+		fs.catalog.BestEffortUpsert(stateEntryFromChange(item))
 	}
 	return nil
 }
@@ -75,6 +85,9 @@ func (fs *FileChangeStore) Delete(_ context.Context, id string) error {
 	path := fs.path(id)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete change operation %s: %w", id, err)
+	}
+	if fs.catalog != nil {
+		fs.catalog.BestEffortDelete(appruntime.StateKindChange, id)
 	}
 	return nil
 }
@@ -143,4 +156,47 @@ func newChangeID(repoRoot string) string {
 		base = "repo"
 	}
 	return fmt.Sprintf("change-%s-%d", base, time.Now().UnixNano())
+}
+
+func stateEntryFromChange(item *ChangeOperation) appruntime.StateEntry {
+	if item == nil {
+		return appruntime.StateEntry{}
+	}
+	sortTime := item.CreatedAt
+	if !item.RolledBackAt.IsZero() {
+		sortTime = item.RolledBackAt
+	}
+	return appruntime.StateEntry{
+		Kind:       appruntime.StateKindChange,
+		RecordID:   item.ID,
+		SessionID:  strings.TrimSpace(item.SessionID),
+		RepoRoot:   canonicalRepoRoot(item.RepoRoot),
+		Status:     string(item.Status),
+		Title:      firstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
+		Summary:    strings.Join(compactStrings(item.TargetFiles), ", "),
+		SearchText: strings.ToLower(strings.TrimSpace(strings.Join(compactStrings([]string{item.ID, item.SessionID, item.RepoRoot, item.Summary, item.RecoveryDetails, item.RollbackDetails, strings.Join(item.TargetFiles, " ")}), " "))),
+		SortTime:   sortTime.UTC(),
+		CreatedAt:  item.CreatedAt.UTC(),
+		UpdatedAt:  sortTime.UTC(),
+		Metadata: marshalChangeStateMetadata(item),
+	}
+}
+
+func marshalChangeStateMetadata(item *ChangeOperation) json.RawMessage {
+	if item == nil {
+		return nil
+	}
+	data, err := json.Marshal(map[string]any{
+		"patch_id":         item.PatchID,
+		"checkpoint_id":    item.CheckpointID,
+		"target_files":     append([]string(nil), item.TargetFiles...),
+		"recovery_mode":    item.RecoveryMode,
+		"recovery_details": item.RecoveryDetails,
+		"rollback_mode":    item.RollbackMode,
+		"rollback_details": item.RollbackDetails,
+	})
+	if err != nil {
+		return nil
+	}
+	return data
 }

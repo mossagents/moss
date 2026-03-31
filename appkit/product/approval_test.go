@@ -3,6 +3,8 @@ package product
 import (
 	"testing"
 
+	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -48,7 +50,14 @@ func TestApprovalModePolicyRules(t *testing.T) {
 	if got := EvaluatePolicy(confirmRules, writeSpec, nil); got != builtins.RequireApproval {
 		t.Fatalf("confirm write_file=%s, want %s", got, builtins.RequireApproval)
 	}
-	if got := confirmRules[2](builtins.PolicyContext{Tool: writeSpec}); got.Reason.Code == "" {
+	foundStructuredReason := false
+	for _, rule := range confirmRules {
+		if got := rule(builtins.PolicyContext{Tool: writeSpec}); got.Decision == builtins.RequireApproval && got.Reason.Code != "" {
+			foundStructuredReason = true
+			break
+		}
+	}
+	if !foundStructuredReason {
 		t.Fatal("expected structured policy reason code for confirm mode")
 	}
 
@@ -58,5 +67,26 @@ func TestApprovalModePolicyRules(t *testing.T) {
 	}
 	if got := EvaluatePolicy(fullAutoRules, writeSpec, nil); got != builtins.Allow {
 		t.Fatalf("full-auto write_file=%s, want %s", got, builtins.Allow)
+	}
+}
+
+func TestApplyApprovalModeWithTrustStoresExecutionPolicy(t *testing.T) {
+	k := kernel.New()
+	mode, err := ApplyApprovalModeWithTrust(k, "restricted", ApprovalModeConfirm)
+	if err != nil {
+		t.Fatalf("ApplyApprovalModeWithTrust: %v", err)
+	}
+	if mode != ApprovalModeConfirm {
+		t.Fatalf("mode = %q, want %q", mode, ApprovalModeConfirm)
+	}
+	policy := runtime.ExecutionPolicyOf(k)
+	if policy.Command.Access != runtime.ExecutionAccessRequireApproval {
+		t.Fatalf("command access = %q, want %q", policy.Command.Access, runtime.ExecutionAccessRequireApproval)
+	}
+	if policy.Command.Network.Mode != "disabled" {
+		t.Fatalf("command network mode = %q, want disabled", policy.Command.Network.Mode)
+	}
+	if policy.HTTP.Access != runtime.ExecutionAccessRequireApproval {
+		t.Fatalf("http access = %q, want %q", policy.HTTP.Access, runtime.ExecutionAccessRequireApproval)
 	}
 }

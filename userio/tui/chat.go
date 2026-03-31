@@ -75,6 +75,7 @@ type chatModel struct {
 	applyChangeFn       func(patchFile, summary string) (string, error)
 	rollbackChangeFn    func(changeID string) (string, error)
 	checkpointListFn    func(limit int) (string, error)
+	checkpointShowFn    func(checkpointID string) (string, error)
 	checkpointCreateFn  func(note string) (string, error)
 	checkpointForkFn    func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
 	checkpointReplayFn  func(checkpointID, mode string, restoreWorktree bool) (string, error)
@@ -727,7 +728,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/checkpoint":
 		if len(args) == 0 {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /checkpoint list [limit]\n  /checkpoint create [note]\n  /checkpoint fork [session <id>|checkpoint <id>] [restore]\n  /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /checkpoint list [limit]\n  /checkpoint show <checkpoint_id|latest>\n  /checkpoint create [note]\n  /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]\n  /checkpoint replay [<checkpoint_id|latest>] [resume|rerun] [restore]"})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -751,6 +752,25 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			out, err := m.checkpointListFn(limit)
 			if err != nil {
 				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list checkpoints: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		case "show":
+			if m.checkpointShowFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint detail is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint show <checkpoint_id|latest>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			out, err := m.checkpointShowFn(strings.TrimSpace(args[1]))
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to show checkpoint: %v", err)})
 			} else {
 				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 			}
@@ -785,13 +805,20 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 				switch strings.ToLower(strings.TrimSpace(rest[0])) {
 				case "session", "checkpoint":
 					sourceKind = strings.ToLower(strings.TrimSpace(rest[0]))
-					if len(rest) < 2 || strings.TrimSpace(rest[1]) == "" {
-						m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id>] [restore]"})
+					if sourceKind == string(port.ForkSourceSession) && (len(rest) < 2 || strings.TrimSpace(rest[1]) == "") {
+						m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
 						m.refreshViewport()
 						return m, nil
 					}
-					sourceID = strings.TrimSpace(rest[1])
-					rest = rest[2:]
+					if len(rest) >= 2 && strings.TrimSpace(rest[1]) != "" {
+						sourceID = strings.TrimSpace(rest[1])
+						rest = rest[2:]
+					} else {
+						rest = rest[1:]
+					}
+				case "latest":
+					sourceKind = string(port.ForkSourceCheckpoint)
+					rest = rest[1:]
 				}
 			}
 			for _, item := range rest {
@@ -800,7 +827,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 					restore = true
 					continue
 				}
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id>] [restore]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
 				m.refreshViewport()
 				return m, nil
 			}
@@ -826,15 +853,20 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 				m.refreshViewport()
 				return m, nil
 			}
-			if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
-				m.refreshViewport()
-				return m, nil
-			}
-			checkpointID := strings.TrimSpace(args[1])
+			checkpointID := ""
 			mode := ""
 			restore := false
-			for _, item := range args[2:] {
+			rest := args[1:]
+			if len(rest) > 0 {
+				first := strings.ToLower(strings.TrimSpace(rest[0]))
+				switch first {
+				case "", "resume", "rerun", "restore", "--restore-worktree":
+				default:
+					checkpointID = strings.TrimSpace(rest[0])
+					rest = rest[1:]
+				}
+			}
+			for _, item := range rest {
 				token := strings.ToLower(strings.TrimSpace(item))
 				switch token {
 				case "resume", "rerun":
@@ -842,7 +874,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 				case "restore", "--restore-worktree":
 					restore = true
 				default:
-					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint replay <checkpoint_id> [resume|rerun] [restore]"})
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint replay [<checkpoint_id|latest>] [resume|rerun] [restore]"})
 					m.refreshViewport()
 					return m, nil
 				}
@@ -864,7 +896,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		default:
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list|create|fork|replay ..."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /checkpoint list|show|create|fork|replay ..."})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -1308,9 +1340,10 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /apply <patch_file> [summary...]  Apply an explicit patch file\n" +
 			"  /rollback <id>  Roll back a specific persisted change\n" +
 			"  /checkpoint list [limit]  List persisted checkpoints\n" +
+			"  /checkpoint show <id|latest>  Inspect a persisted checkpoint\n" +
 			"  /checkpoint create [note]  Create a checkpoint from the current session\n" +
-			"  /checkpoint fork [session <id>|checkpoint <id>] [restore]  Fork into a fresh session\n" +
-			"  /checkpoint replay <id> [resume|rerun] [restore]  Replay a checkpoint into a fresh session\n" +
+			"  /checkpoint fork [session <id>|checkpoint <id|latest>|latest] [restore]  Fork into a fresh session\n" +
+			"  /checkpoint replay [<id|latest>] [resume|rerun] [restore]  Replay a checkpoint into a fresh session\n" +
 			"  /offload [keep_recent] [note]  Compact context and persist snapshot\n" +
 			"  /tasks [status] [limit]  List background tasks\n" +
 			"  /task <id>     Query task details\n" +

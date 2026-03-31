@@ -227,3 +227,44 @@ func TestFileStoreListMarksRecoverableSessions(t *testing.T) {
 		t.Fatalf("missing expected summaries: %+v", summaries)
 	}
 }
+
+func TestFileStoreListSkipsHistoryHiddenSessions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	visible := &Session{
+		ID:        "visible",
+		Status:    StatusCompleted,
+		Config:    SessionConfig{Goal: "visible"},
+		CreatedAt: time.Now().Add(-time.Minute),
+	}
+	hidden := &Session{
+		ID:        "hidden",
+		Status:    StatusCompleted,
+		Config:    SessionConfig{Goal: "hidden"},
+		CreatedAt: time.Now(),
+	}
+	MarkHistoryHidden(hidden)
+
+	if err := store.Save(ctx, visible); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(ctx, hidden); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := store.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 visible summary, got %d", len(summaries))
+	}
+	if summaries[0].ID != "visible" {
+		t.Fatalf("expected visible summary, got %q", summaries[0].ID)
+	}
+}

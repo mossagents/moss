@@ -60,6 +60,76 @@ func TestRunCheckpointCreateRequiresSession(t *testing.T) {
 	}
 }
 
+func TestRunCheckpointShowJSON(t *testing.T) {
+	appconfig.SetAppName(appName)
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
+	if err != nil {
+		t.Fatalf("NewFileCheckpointStore: %v", err)
+	}
+	record, err := store.Create(context.Background(), port.CheckpointCreateRequest{
+		SessionID: "sess-1",
+		PatchIDs:  []string{"patch-1", "patch-2"},
+		Metadata:  map[string]any{"source": "test"},
+		Note:      "before inspect",
+	})
+	if err != nil {
+		t.Fatalf("Create checkpoint: %v", err)
+	}
+
+	cfg := &config{
+		flags:          &appkit.AppFlags{},
+		governance:     product.DefaultGovernanceConfig(),
+		checkpointArgs: []string{"show", record.ID, "--json"},
+	}
+	out, err := captureStdout(func() error {
+		return runCheckpoint(context.Background(), cfg)
+	})
+	if err != nil {
+		t.Fatalf("runCheckpoint show: %v", err)
+	}
+	if !strings.Contains(out, "\"mode\": \"show\"") || !strings.Contains(out, "\"checkpoint_detail\"") || !strings.Contains(out, "\"metadata_keys\": [") {
+		t.Fatalf("unexpected checkpoint show json: %s", out)
+	}
+}
+
+func TestRunCheckpointShowLatestJSON(t *testing.T) {
+	appconfig.SetAppName(appName)
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
+	if err != nil {
+		t.Fatalf("NewFileCheckpointStore: %v", err)
+	}
+	first, err := store.Create(context.Background(), port.CheckpointCreateRequest{SessionID: "sess-1", Note: "first"})
+	if err != nil {
+		t.Fatalf("Create first checkpoint: %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	second, err := store.Create(context.Background(), port.CheckpointCreateRequest{SessionID: "sess-2", Note: "second"})
+	if err != nil {
+		t.Fatalf("Create second checkpoint: %v", err)
+	}
+
+	cfg := &config{
+		flags:          &appkit.AppFlags{},
+		governance:     product.DefaultGovernanceConfig(),
+		checkpointArgs: []string{"show", "latest", "--json"},
+	}
+	out, err := captureStdout(func() error {
+		return runCheckpoint(context.Background(), cfg)
+	})
+	if err != nil {
+		t.Fatalf("runCheckpoint show latest: %v", err)
+	}
+	if !strings.Contains(out, second.ID) || strings.Contains(out, first.ID) {
+		t.Fatalf("expected latest checkpoint %s in output, got %s", second.ID, out)
+	}
+}
+
 func TestRunApplyRequiresPatchFile(t *testing.T) {
 	cfg := &config{
 		flags:      &appkit.AppFlags{},
@@ -239,11 +309,15 @@ func captureStdout(run func() error) (string, error) {
 		return "", err
 	}
 	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		_ = r.Close()
+		done <- buf.String()
+	}()
 	runErr := run()
 	_ = w.Close()
 	os.Stdout = original
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	_ = r.Close()
-	return buf.String(), runErr
+	return <-done, runErr
 }

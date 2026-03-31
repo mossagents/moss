@@ -50,3 +50,43 @@ func TestDenyCommandContaining(t *testing.T) {
 		t.Fatalf("expected reason code command.fragment_denied, got %q", got.Reason.Code)
 	}
 }
+
+func TestRequireApprovalForHTTPMethod(t *testing.T) {
+	rule := RequireApprovalForHTTPMethod("GET", "POST")
+	if got := rule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: []byte(`{"url":"https://example.com","method":"GET"}`),
+	}); got.Decision != Allow {
+		t.Fatalf("expected allow, got %s", got.Decision)
+	}
+	if got := rule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: []byte(`{"url":"https://example.com","method":"PUT"}`),
+	}); got.Decision != RequireApproval {
+		t.Fatalf("expected require approval, got %s", got.Decision)
+	}
+}
+
+func TestRequireApprovalForURLHostAndDenyURLHost(t *testing.T) {
+	requireRule := RequireApprovalForURLHost("example.com")
+	if got := requireRule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: []byte(`{"url":"https://example.com/api"}`),
+	}); got.Decision != Allow {
+		t.Fatalf("expected allow, got %s", got.Decision)
+	}
+	if got := requireRule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: []byte(`{"url":"https://api.other.dev"}`),
+	}); got.Decision != RequireApproval {
+		t.Fatalf("expected require approval, got %s", got.Decision)
+	}
+
+	denyRule := DenyURLHost("blocked.dev")
+	if got := denyRule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: []byte(`{"url":"https://blocked.dev"}`),
+	}); got.Decision != Deny {
+		t.Fatalf("expected deny, got %s", got.Decision)
+	}
+}

@@ -172,7 +172,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	return appkit.Serve(ctx, appkit.ServeConfig{
 		Prompt:       "🐾 > ",
 		SessionStore: rt.store,
-		SystemPrompt: buildSystemPrompt(flags.Workspace),
+		SystemPrompt: buildSystemPrompt(flags.Workspace, flags.Trust),
 		DeliveryDir:  filepath.Join(appconfig.AppDir(), "delivery"),
 		RouteScope:   "per-peer",
 	}, k)
@@ -192,7 +192,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 		appkit.WithSessionStore(store),
 		appkit.WithScheduling(sched),
-		appkit.WithLoadedBootstrapContext(flags.Workspace, "mossclaw"),
+		appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, "mossclaw", flags.Trust),
 		appkit.WithKnowledge(knStore, embedder),
 		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
 			return registerWebTools(built)
@@ -222,7 +222,7 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 				Goal:         job.Goal,
 				Mode:         "scheduled",
 				TrustLevel:   r.flags.Trust,
-				SystemPrompt: buildSystemPrompt(r.flags.Workspace),
+				SystemPrompt: buildSystemPrompt(r.flags.Workspace, r.flags.Trust),
 				MaxSteps:     30,
 			}, nil
 		},
@@ -544,9 +544,9 @@ func stripTags(s string) string {
 
 // ─── System Prompt ──────────────────────────────────
 
-func buildSystemPrompt(workspace string) string {
+func buildSystemPrompt(workspace, trust string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
-	prompt := appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+	prompt := appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 	return prompt
 }
 

@@ -338,6 +338,57 @@ func TestSlashCommandCheckpointListSuccess(t *testing.T) {
 	}
 }
 
+func TestSlashCommandCheckpointShowSuccess(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.checkpointShowFn = func(checkpointID string) (string, error) {
+		if checkpointID != "cp-1" {
+			t.Fatalf("checkpointID = %q, want cp-1", checkpointID)
+		}
+		return "Checkpoint: cp-1\n  metadata: source, trigger", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint show cp-1")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Checkpoint: cp-1") {
+		t.Fatalf("unexpected checkpoint show output: %+v", last)
+	}
+}
+
+func TestSlashCommandCheckpointShowLatestSuccess(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.checkpointShowFn = func(checkpointID string) (string, error) {
+		if checkpointID != "latest" {
+			t.Fatalf("checkpointID = %q, want latest", checkpointID)
+		}
+		return "Checkpoint: cp-latest", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint show latest")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
+		t.Fatalf("unexpected checkpoint show latest output: %+v", last)
+	}
+}
+
+func TestSlashCommandCheckpointShowUnavailable(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/checkpoint show cp-1")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "Checkpoint detail is unavailable") {
+		t.Fatalf("unexpected checkpoint show unavailable output: %+v", last)
+	}
+}
+
+func TestSlashCommandCheckpointShowRequiresID(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.checkpointShowFn = func(checkpointID string) (string, error) {
+		return "", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint show")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "Usage: /checkpoint show <checkpoint_id|latest>") {
+		t.Fatalf("unexpected checkpoint show validation output: %+v", last)
+	}
+}
+
 func TestSlashCommandChangesListSuccess(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.changeListFn = func(limit int) (string, error) {
@@ -413,11 +464,49 @@ func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 	}
 }
 
+func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.checkpointReplayFn = func(checkpointID, mode string, restore bool) (string, error) {
+		if checkpointID != "" || mode != "rerun" || !restore {
+			t.Fatalf("unexpected replay args id=%q mode=%q restore=%v", checkpointID, mode, restore)
+		}
+		return "Switched to replay session sess_latest from checkpoint cp-latest (rerun).", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint replay rerun restore")
+	last := updated.messages[0]
+	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
+		t.Fatalf("unexpected replay latest output: %+v", last)
+	}
+}
+
+func TestSlashCommandCheckpointForkLatestShorthand(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.checkpointForkFn = func(sourceKind, sourceID string, restore bool) (string, error) {
+		if sourceKind != string(port.ForkSourceCheckpoint) || sourceID != "" || !restore {
+			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restore)
+		}
+		return "Switched to forked session sess_latest from checkpoint cp-latest.", nil
+	}
+	updated, _ := m.handleSlashCommand("/checkpoint fork latest restore")
+	last := updated.messages[0]
+	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
+		t.Fatalf("unexpected fork latest output: %+v", last)
+	}
+}
+
 func TestHelpIncludesCheckpointCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/checkpoint list [limit]") || !strings.Contains(last.content, "/trace [limit]") {
+	if !strings.Contains(last.content, "/checkpoint list [limit]") || !strings.Contains(last.content, "/checkpoint show <id|latest>") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace [limit]") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }

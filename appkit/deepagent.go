@@ -155,6 +155,16 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	var exts []Extension
 	exts = append(exts, effective.AdditionalAppExtensions...)
 
+	var stateCatalog *runtime.StateCatalog
+	if appDir := config.AppDir(); appDir != "" {
+		catalog, err := runtime.NewStateCatalog(filepath.Join(appDir, "state"), filepath.Join(appDir, "state", "events"), runtime.StateCatalogEnabledFromEnv())
+		if err != nil {
+			return nil, fmt.Errorf("state catalog: %w", err)
+		}
+		stateCatalog = catalog
+		exts = append(exts, WithKernelOptions(runtime.WithStateCatalog(stateCatalog)))
+	}
+
 	if valueOrDefault(effective.EnableSessionStore, true) {
 		storeDir := effective.SessionStoreDir
 		if storeDir == "" {
@@ -164,10 +174,12 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 				storeDir = filepath.Join(flags.Workspace, "."+effective.AppName, "sessions")
 			}
 		}
-		store, err := session.NewFileStore(storeDir)
+		rawStore, err := session.NewFileStore(storeDir)
 		if err != nil {
 			return nil, fmt.Errorf("session store: %w", err)
 		}
+		var store session.SessionStore = rawStore
+		store = runtime.WrapSessionStore(store, stateCatalog)
 		exts = append(exts, WithSessionStore(store))
 		if valueOrDefault(effective.EnableContextOffload, true) {
 			exts = append(exts, WithContextOffload(store))
@@ -187,7 +199,8 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		if err != nil {
 			return nil, fmt.Errorf("checkpoint store: %w", err)
 		}
-		exts = append(exts, WithKernelOptions(kernel.WithCheckpoints(store)))
+		checkpointStore := runtime.WrapCheckpointStore(store, stateCatalog)
+		exts = append(exts, WithKernelOptions(kernel.WithCheckpoints(checkpointStore)))
 	}
 	if valueOrDefault(effective.EnableTaskRuntime, true) {
 		taskDir := effective.TaskRuntimeDir
@@ -202,7 +215,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		if err != nil {
 			return nil, fmt.Errorf("task runtime: %w", err)
 		}
-		exts = append(exts, WithKernelOptions(kernel.WithTaskRuntime(taskRuntime)))
+		exts = append(exts, WithKernelOptions(kernel.WithTaskRuntime(runtime.WrapTaskRuntime(taskRuntime, stateCatalog))))
 	}
 
 	if valueOrDefault(effective.EnablePersistentMemories, true) {
@@ -241,7 +254,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	exts = append(exts, WithPlanning())
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
-		exts = append(exts, WithLoadedBootstrapContext(flags.Workspace, effective.AppName))
+		exts = append(exts, WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
 	}
 
 	var defaultLLMRetry *retry.Config
@@ -276,7 +289,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	}
 	k.Middleware().Use(builtins.PatchToolCalls())
 
-	if flags.Trust == "restricted" && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
+	if config.NormalizeTrustLevel(flags.Trust) == config.TrustRestricted && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(
 			builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
 			builtins.RequireApprovalForPathPrefix(".git", ".moss"),

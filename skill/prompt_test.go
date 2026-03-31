@@ -470,6 +470,51 @@ plan body
 	t.Fatal("missing create-implementation-plan from ~/.copilot/installed-plugins/**/skills")
 }
 
+func TestDiscoverSkillManifestsForTrust_RestrictedSkipsProject(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	projectDir := filepath.Join(workspace, ".agents", "skills", "project-skill")
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "SKILL.md"), []byte(`---
+name: project-skill
+description: project-only skill
+---
+project body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	globalDir := filepath.Join(home, ".agents", "skills", "global-skill")
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalDir, "SKILL.md"), []byte(`---
+name: global-skill
+description: global-only skill
+---
+global body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifests := DiscoverSkillManifestsForTrust(workspace, config.TrustRestricted)
+	names := map[string]bool{}
+	for _, mf := range manifests {
+		names[mf.Name] = true
+	}
+	if names["project-skill"] {
+		t.Fatal("restricted trust should skip project skill manifests")
+	}
+	if !names["global-skill"] {
+		t.Fatal("restricted trust should still include global skill manifests")
+	}
+}
+
 func TestParseSkillMD_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "SKILL.md")

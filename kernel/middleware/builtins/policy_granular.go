@@ -2,6 +2,8 @@ package builtins
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
 	"strings"
 )
 
@@ -54,6 +56,51 @@ func DenyCommandContaining(fragments ...string) PolicyRule {
 	}
 }
 
+// RequireApprovalForHTTPMethod 对不在允许集合中的 HTTP method 触发审批。
+func RequireApprovalForHTTPMethod(methods ...string) PolicyRule {
+	allowed := normalizeUpperSet(methods)
+	return func(ctx PolicyContext) PolicyResult {
+		if ctx.Tool.Name != "http_request" || len(allowed) == 0 {
+			return allowResult()
+		}
+		method := extractHTTPMethod(ctx.Input)
+		if method == "" || containsSet(allowed, method) {
+			return allowResult()
+		}
+		return requireApprovalResult("network.http_method_requires_approval", fmt.Sprintf("http method %s requires approval", method))
+	}
+}
+
+// RequireApprovalForURLHost 对不在允许集合中的 URL host 触发审批。
+func RequireApprovalForURLHost(hosts ...string) PolicyRule {
+	allowed := normalizeLowerSet(hosts)
+	return func(ctx PolicyContext) PolicyResult {
+		if ctx.Tool.Name != "http_request" || len(allowed) == 0 {
+			return allowResult()
+		}
+		host := extractURLHost(ctx.Input)
+		if host == "" || containsSet(allowed, host) {
+			return allowResult()
+		}
+		return requireApprovalResult("network.host_requires_approval", fmt.Sprintf("url host %s requires approval", host))
+	}
+}
+
+// DenyURLHost 直接拒绝命中的 URL host。
+func DenyURLHost(hosts ...string) PolicyRule {
+	denied := normalizeLowerSet(hosts)
+	return func(ctx PolicyContext) PolicyResult {
+		if ctx.Tool.Name != "http_request" || len(denied) == 0 {
+			return allowResult()
+		}
+		host := extractURLHost(ctx.Input)
+		if host == "" || !containsSet(denied, host) {
+			return allowResult()
+		}
+		return denyResult("network.host_denied", fmt.Sprintf("url host %s is denied by policy", host))
+	}
+}
+
 func extractStringField(input json.RawMessage, field string) string {
 	if len(input) == 0 {
 		return ""
@@ -72,4 +119,71 @@ func extractStringField(input json.RawMessage, field string) string {
 	default:
 		return ""
 	}
+}
+
+func extractURLHost(input json.RawMessage) string {
+	rawURL := extractStringField(input, "url")
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+}
+
+func extractHTTPMethod(input json.RawMessage) string {
+	method := strings.ToUpper(strings.TrimSpace(extractStringField(input, "method")))
+	if method == "" {
+		return "GET"
+	}
+	return method
+}
+
+func extractPolicyInputDetails(toolName string, input json.RawMessage) map[string]any {
+	switch toolName {
+	case "http_request":
+		details := map[string]any{}
+		if host := extractURLHost(input); host != "" {
+			details["host"] = host
+		}
+		if method := extractHTTPMethod(input); method != "" {
+			details["method"] = method
+		}
+		if rawURL := extractStringField(input, "url"); rawURL != "" {
+			details["url"] = rawURL
+		}
+		if len(details) > 0 {
+			return details
+		}
+	}
+	return nil
+}
+
+func normalizeUpperSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToUpper(strings.TrimSpace(value))
+		if value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return set
+}
+
+func normalizeLowerSet(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return set
+}
+
+func containsSet(set map[string]struct{}, value string) bool {
+	_, ok := set[value]
+	return ok
 }

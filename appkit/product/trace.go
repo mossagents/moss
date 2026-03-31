@@ -358,6 +358,12 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 			from := valueOrUnknown(stringData(event.Data, "candidate_model"), event.Model)
 			to := valueOrUnknown(stringData(event.Data, "failover_to"), "next candidate")
 			return traceEventSummary{priority: 3, index: index, message: fmt.Sprintf("Failover switched from %s to %s", from, to)}, true
+		case "tool.completed":
+			if degraded, ok := boolData(event.Data, "degraded"); ok && degraded {
+				toolName := valueOrUnknown(event.ToolName, "tool")
+				enforcement := valueOrUnknown(stringData(event.Data, "enforcement"), "degraded")
+				return traceEventSummary{priority: 6, index: index, message: fmt.Sprintf("Tool %s completed with %s enforcement", toolName, enforcement)}, true
+			}
 		}
 	case "llm_call":
 		if strings.TrimSpace(event.Error) == "" {
@@ -525,6 +531,15 @@ func formatTraceDataPairs(data map[string]any) []string {
 		"steps",
 		"mode",
 		"goal",
+		"reason_code",
+		"approved",
+		"enforcement",
+		"degraded",
+		"details",
+		"url",
+		"method",
+		"status_code",
+		"follow_redirects",
 	}
 	out := make([]string, 0, len(keys))
 	for _, key := range keys {

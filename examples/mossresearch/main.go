@@ -164,7 +164,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 		Goal:         cfg.prompt,
 		Mode:         "oneshot",
 		TrustLevel:   cfg.flags.Trust,
-		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace),
+		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace, cfg.flags.Trust),
 		MaxSteps:     120,
 	})
 	if err != nil {
@@ -208,9 +208,9 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 	return deepagent.BuildKernel(ctx, flags, io, &deepCfg)
 }
 
-func buildSystemPrompt(workspace string) string {
+func buildSystemPrompt(workspace, trust string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
-	return appconfig.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 }
 
 func researchOutputDir(workspace string) string {

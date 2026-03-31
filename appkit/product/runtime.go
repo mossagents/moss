@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/appkit"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -18,8 +19,27 @@ import (
 	"github.com/mossagents/moss/skill"
 )
 
+const disableStateCatalogEnv = "MOSSCODE_DISABLE_STATE_CATALOG"
+
 func SessionStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "sessions")
+}
+
+func StateStoreDir() string {
+	return filepath.Join(appconfig.AppDir(), "state")
+}
+
+func StateEventDir() string {
+	return filepath.Join(StateStoreDir(), "events")
+}
+
+func StateCatalogEnabled() bool {
+	value := strings.TrimSpace(os.Getenv(disableStateCatalogEnv))
+	if value == "" {
+		return true
+	}
+	value = strings.ToLower(value)
+	return value != "1" && value != "true" && value != "yes" && value != "on"
 }
 
 func CheckpointStoreDir() string {
@@ -103,34 +123,54 @@ func SnapshotCountsBySession(ctx context.Context, workspace string) (map[string]
 }
 
 type DoctorReport struct {
-	App        string                 `json:"app"`
-	Timestamp  string                 `json:"timestamp"`
-	Workspace  string                 `json:"workspace"`
-	Config     DoctorConfigReport     `json:"config"`
-	Governance DoctorGovernanceReport `json:"governance"`
-	Paths      DoctorPathsReport      `json:"paths"`
-	Health     DoctorHealthReport     `json:"health"`
+	App        string                      `json:"app"`
+	Timestamp  string                      `json:"timestamp"`
+	Workspace  string                      `json:"workspace"`
+	Config     DoctorConfigReport          `json:"config"`
+	Execution  DoctorExecutionPolicyReport `json:"execution"`
+	Governance DoctorGovernanceReport      `json:"governance"`
+	Paths      DoctorPathsReport           `json:"paths"`
+	Health     DoctorHealthReport          `json:"health"`
 }
 
 type DoctorConfigReport struct {
-	ExplicitFlags []string `json:"explicit_flags,omitempty"`
-	DetectedEnv   []string `json:"detected_env,omitempty"`
-	GlobalConfig  string   `json:"global_config"`
-	GlobalExists  bool     `json:"global_exists"`
-	ProjectConfig string   `json:"project_config"`
-	ProjectExists bool     `json:"project_exists"`
-	APIType       string   `json:"api_type"`
-	Provider      string   `json:"provider"`
-	Name          string   `json:"name"`
-	Model         string   `json:"model,omitempty"`
-	BaseURLSet    bool     `json:"base_url_set"`
-	APIKeySet     bool     `json:"api_key_set"`
-	Trust         string   `json:"trust"`
-	ApprovalMode  string   `json:"approval_mode"`
+	ExplicitFlags        []string `json:"explicit_flags,omitempty"`
+	DetectedEnv          []string `json:"detected_env,omitempty"`
+	GlobalConfig         string   `json:"global_config"`
+	GlobalExists         bool     `json:"global_exists"`
+	ProjectConfig        string   `json:"project_config"`
+	ProjectExists        bool     `json:"project_exists"`
+	ProjectAssetsAllowed bool     `json:"project_assets_allowed"`
+	ProjectConfigActive  bool     `json:"project_config_active"`
+	APIType              string   `json:"api_type"`
+	Provider             string   `json:"provider"`
+	Name                 string   `json:"name"`
+	Model                string   `json:"model,omitempty"`
+	BaseURLSet           bool     `json:"base_url_set"`
+	APIKeySet            bool     `json:"api_key_set"`
+	Trust                string   `json:"trust"`
+	ApprovalMode         string   `json:"approval_mode"`
+}
+
+type DoctorExecutionPolicyReport struct {
+	CommandAccess             string   `json:"command_access"`
+	HTTPAccess                string   `json:"http_access"`
+	CommandNetworkMode        string   `json:"command_network_mode"`
+	CommandNetworkEnforcement string   `json:"command_network_enforcement"`
+	CommandNetworkDegraded    bool     `json:"command_network_degraded"`
+	CommandTimeoutSeconds     int      `json:"command_timeout_seconds"`
+	CommandAllowedPaths       int      `json:"command_allowed_paths"`
+	HTTPMethods               []string `json:"http_methods,omitempty"`
+	HTTPSchemes               []string `json:"http_schemes,omitempty"`
+	HTTPHostPolicy            string   `json:"http_host_policy"`
+	HTTPMaxTimeoutSeconds     int      `json:"http_max_timeout_seconds"`
+	HTTPFollowRedirects       bool     `json:"http_follow_redirects"`
 }
 
 type DoctorPathsReport struct {
 	AppDir             PathStatus `json:"app_dir"`
+	StateStoreDir      PathStatus `json:"state_store_dir"`
+	StateEventDir      PathStatus `json:"state_event_dir"`
 	SessionStoreDir    PathStatus `json:"session_store_dir"`
 	MemoryDir          PathStatus `json:"memory_dir"`
 	TaskRuntimeDir     PathStatus `json:"task_runtime_dir"`
@@ -145,12 +185,21 @@ type DoctorGovernanceReport struct {
 }
 
 type DoctorHealthReport struct {
+	State      DoctorStateCatalogHealth `json:"state"`
 	Sessions   DoctorSessionHealth   `json:"sessions"`
 	Tasks      DoctorTaskHealth      `json:"tasks"`
 	Workspace  DoctorWorkspaceHealth `json:"workspace"`
 	Repo       DoctorRepoHealth      `json:"repo"`
 	Snapshots  DoctorSnapshotHealth  `json:"snapshots"`
 	Extensions DoctorExtensionHealth `json:"extensions"`
+}
+
+type DoctorStateCatalogHealth struct {
+	Enabled   bool   `json:"enabled"`
+	Ready     bool   `json:"ready"`
+	Entries   int    `json:"entries"`
+	Degraded  bool   `json:"degraded"`
+	LastError string `json:"last_error,omitempty"`
 }
 
 type PathStatus struct {
@@ -208,31 +257,65 @@ type DoctorExtensionHealth struct {
 func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspace)
+	trust := appconfig.NormalizeTrustLevel(flags.Trust)
+	normalizedApprovalMode := NormalizeApprovalMode(approvalMode)
+	executionPolicy := appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, normalizedApprovalMode)
+	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
+	commandNetworkEnforcement := "none"
+	commandNetworkDegraded := false
+	if executionPolicy.Command.Access == appruntime.ExecutionAccessDeny {
+		commandNetworkEnforcement = "disabled"
+	} else if executionPolicy.Command.Network.Mode == port.ExecNetworkDisabled {
+		commandNetworkEnforcement = "soft-limit"
+		commandNetworkDegraded = true
+	}
+	httpHostPolicy := "open"
+	if len(executionPolicy.HTTP.AllowedHosts) > 0 {
+		httpHostPolicy = fmt.Sprintf("allowlist(%d)", len(executionPolicy.HTTP.AllowedHosts))
+	}
 	report := DoctorReport{
 		App:       appName,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Workspace: workspace,
 		Config: DoctorConfigReport{
-			ExplicitFlags: explicitFlags,
-			DetectedEnv:   detectedEnvVars(),
-			GlobalConfig:  globalConfigPath,
-			GlobalExists:  pathExists(globalConfigPath),
-			ProjectConfig: projectConfigPath,
-			ProjectExists: pathExists(projectConfigPath),
-			APIType:       flags.EffectiveAPIType(),
-			Provider:      flags.Provider,
-			Name:          flags.DisplayProviderName(),
-			Model:         flags.Model,
-			BaseURLSet:    strings.TrimSpace(flags.BaseURL) != "",
-			APIKeySet:     strings.TrimSpace(flags.APIKey) != "",
-			Trust:         flags.Trust,
-			ApprovalMode:  NormalizeApprovalMode(approvalMode),
+			ExplicitFlags:        explicitFlags,
+			DetectedEnv:          detectedEnvVars(),
+			GlobalConfig:         globalConfigPath,
+			GlobalExists:         pathExists(globalConfigPath),
+			ProjectConfig:        projectConfigPath,
+			ProjectExists:        pathExists(projectConfigPath),
+			ProjectAssetsAllowed: projectAssetsAllowed,
+			ProjectConfigActive:  projectAssetsAllowed && pathExists(projectConfigPath),
+			APIType:              flags.EffectiveAPIType(),
+			Provider:             flags.Provider,
+			Name:                 flags.DisplayProviderName(),
+			Model:                flags.Model,
+			BaseURLSet:           strings.TrimSpace(flags.BaseURL) != "",
+			APIKeySet:            strings.TrimSpace(flags.APIKey) != "",
+			Trust:                trust,
+			ApprovalMode:         normalizedApprovalMode,
+		},
+		Execution: DoctorExecutionPolicyReport{
+			CommandAccess:             string(executionPolicy.Command.Access),
+			HTTPAccess:                string(executionPolicy.HTTP.Access),
+			CommandNetworkMode:        string(executionPolicy.Command.Network.Mode),
+			CommandNetworkEnforcement: commandNetworkEnforcement,
+			CommandNetworkDegraded:    commandNetworkDegraded,
+			CommandTimeoutSeconds:     int(executionPolicy.Command.DefaultTimeout / time.Second),
+			CommandAllowedPaths:       len(executionPolicy.Command.AllowedPaths),
+			HTTPMethods:               append([]string(nil), executionPolicy.HTTP.AllowedMethods...),
+			HTTPSchemes:               append([]string(nil), executionPolicy.HTTP.AllowedSchemes...),
+			HTTPHostPolicy:            httpHostPolicy,
+			HTTPMaxTimeoutSeconds:     int(executionPolicy.HTTP.MaxTimeout / time.Second),
+			HTTPFollowRedirects:       executionPolicy.HTTP.FollowRedirects,
 		},
 		Governance: DoctorGovernanceReport{
 			Model: BuildGovernanceReport(workspace, governanceCfg),
 		},
 		Paths: DoctorPathsReport{
 			AppDir:             checkWritableDir(appconfig.AppDir()),
+			StateStoreDir:      checkWritableDir(StateStoreDir()),
+			StateEventDir:      checkWritableDir(StateEventDir()),
 			SessionStoreDir:    checkWritableDir(SessionStoreDir()),
 			MemoryDir:          checkWritableDir(MemoryDir()),
 			TaskRuntimeDir:     checkWritableDir(TaskRuntimeDir()),
@@ -241,6 +324,25 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			AuditLog:           checkWritableFile(AuditLogPath()),
 			DebugLog:           checkWritableFile(DebugLogPath()),
 		},
+	}
+
+	stateCatalog, stateErr := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
+	if stateErr != nil {
+		report.Health.State = DoctorStateCatalogHealth{
+			Enabled:   StateCatalogEnabled(),
+			Ready:     false,
+			Degraded:  true,
+			LastError: stateErr.Error(),
+		}
+	} else if stateCatalog != nil {
+		health := stateCatalog.Health()
+		report.Health.State = DoctorStateCatalogHealth{
+			Enabled:   health.Enabled,
+			Ready:     health.Ready,
+			Entries:   health.Entries,
+			Degraded:  health.Degraded,
+			LastError: health.LastError,
+		}
 	}
 
 	sessionStore, err := session.NewFileStore(SessionStoreDir())
@@ -270,7 +372,13 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 	}
 
 	globalCfg, globalErr := appconfig.LoadGlobalConfig()
-	projectCfg, projectErr := appconfig.LoadConfig(projectConfigPath)
+	var (
+		projectCfg *appconfig.Config
+		projectErr error
+	)
+	if projectAssetsAllowed {
+		projectCfg, projectErr = appconfig.LoadConfig(projectConfigPath)
+	}
 	if globalErr != nil {
 		report.Health.Extensions.Error = globalErr.Error()
 	} else if projectErr != nil {
@@ -290,7 +398,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 				report.Health.Extensions.PromptSkills++
 			}
 		}
-		report.Health.Extensions.DiscoveredSkills = len(skill.DiscoverSkillManifests(workspace))
+		report.Health.Extensions.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
 	}
 
 	capture, err := sandbox.NewGitRepoStateCapture(workspace).Capture(ctx)
@@ -348,8 +456,19 @@ func RenderDoctorReport(report DoctorReport) string {
 	fmt.Fprintf(&b, "Workspace: %s\n", report.Workspace)
 	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s\n",
 		report.Config.Name, firstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
-	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t\n",
-		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists)
+	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t project_allowed=%t project_active=%t\n",
+		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists, report.Config.ProjectAssetsAllowed, report.Config.ProjectConfigActive)
+	fmt.Fprintf(&b, "Execution policy: command=%s http=%s cmd_network=%s enforcement=%s degraded=%t timeout=%ds allowed_roots=%d http_methods=%s redirects=%t hosts=%s\n",
+		report.Execution.CommandAccess,
+		report.Execution.HTTPAccess,
+		report.Execution.CommandNetworkMode,
+		report.Execution.CommandNetworkEnforcement,
+		report.Execution.CommandNetworkDegraded,
+		report.Execution.CommandTimeoutSeconds,
+		report.Execution.CommandAllowedPaths,
+		renderList(report.Execution.HTTPMethods),
+		report.Execution.HTTPFollowRedirects,
+		report.Execution.HTTPHostPolicy)
 	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s failover=%t available=%t candidates=%d per_candidate_retries=%d breaker_open_failover=%t router=%s",
 		report.Governance.Model.RetryEnabled,
 		report.Governance.Model.RetryMaxRetries,
@@ -382,6 +501,14 @@ func RenderDoctorReport(report DoctorReport) string {
 		fmt.Fprintf(&b, " pricing_err=%s", report.Governance.Model.PricingError)
 	}
 	b.WriteString("\n")
+	fmt.Fprintf(&b, "State catalog: enabled=%t ready=%t entries=%d degraded=%t",
+		report.Health.State.Enabled, report.Health.State.Ready, report.Health.State.Entries, report.Health.State.Degraded)
+	if report.Health.State.LastError != "" {
+		fmt.Fprintf(&b, " err=%s", report.Health.State.LastError)
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "State dir: %s\n", renderPathStatus(report.Paths.StateStoreDir))
+	fmt.Fprintf(&b, "State events: %s\n", renderPathStatus(report.Paths.StateEventDir))
 	fmt.Fprintf(&b, "Session store: %s\n", renderPathStatus(report.Paths.SessionStoreDir))
 	fmt.Fprintf(&b, "Memory dir: %s\n", renderPathStatus(report.Paths.MemoryDir))
 	fmt.Fprintf(&b, "Pricing catalog: %s\n", renderPathStatus(report.Paths.PricingCatalog))
@@ -465,6 +592,20 @@ type CheckpointSummary struct {
 	PatchCount   int       `json:"patch_count"`
 	LineageDepth int       `json:"lineage_depth"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+type CheckpointDetail struct {
+	ID           string                      `json:"id"`
+	SessionID    string                      `json:"session_id,omitempty"`
+	SnapshotID   string                      `json:"snapshot_id,omitempty"`
+	Note         string                      `json:"note,omitempty"`
+	PatchIDs     []string                    `json:"patch_ids,omitempty"`
+	PatchCount   int                         `json:"patch_count"`
+	Lineage      []port.CheckpointLineageRef `json:"lineage,omitempty"`
+	LineageDepth int                         `json:"lineage_depth"`
+	Metadata     map[string]any              `json:"metadata,omitempty"`
+	MetadataKeys []string                    `json:"metadata_keys,omitempty"`
+	CreatedAt    time.Time                   `json:"created_at"`
 }
 
 func BuildReviewReport(ctx context.Context, workspace string, args []string) (ReviewReport, error) {
@@ -612,13 +753,7 @@ func SummarizeSnapshot(item port.WorktreeSnapshot) ReviewSnapshotSummary {
 }
 
 func SummarizeCheckpoint(item port.CheckpointRecord) CheckpointSummary {
-	sessionID := item.SessionID
-	for _, ref := range item.Lineage {
-		if ref.Kind == port.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
-			sessionID = ref.ID
-			break
-		}
-	}
+	sessionID := checkpointSessionID(item)
 	return CheckpointSummary{
 		ID:           item.ID,
 		SessionID:    sessionID,
@@ -626,6 +761,38 @@ func SummarizeCheckpoint(item port.CheckpointRecord) CheckpointSummary {
 		Note:         item.Note,
 		PatchCount:   len(item.PatchIDs),
 		LineageDepth: len(item.Lineage),
+		CreatedAt:    item.CreatedAt,
+	}
+}
+
+func checkpointSessionID(item port.CheckpointRecord) string {
+	sessionID := item.SessionID
+	for _, ref := range item.Lineage {
+		if ref.Kind == port.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+			sessionID = ref.ID
+			break
+		}
+	}
+	return sessionID
+}
+
+func DescribeCheckpoint(item port.CheckpointRecord) CheckpointDetail {
+	keys := make([]string, 0, len(item.Metadata))
+	for key := range item.Metadata {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return CheckpointDetail{
+		ID:           item.ID,
+		SessionID:    checkpointSessionID(item),
+		SnapshotID:   item.WorktreeSnapshotID,
+		Note:         item.Note,
+		PatchIDs:     append([]string(nil), item.PatchIDs...),
+		PatchCount:   len(item.PatchIDs),
+		Lineage:      append([]port.CheckpointLineageRef(nil), item.Lineage...),
+		LineageDepth: len(item.Lineage),
+		Metadata:     cloneAnyMap(item.Metadata),
+		MetadataKeys: keys,
 		CreatedAt:    item.CreatedAt,
 	}
 }
@@ -671,6 +838,55 @@ func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error
 	return out, nil
 }
 
+func ResolveCheckpointRecord(ctx context.Context, store port.CheckpointStore, selector string) (*port.CheckpointRecord, error) {
+	if store == nil {
+		return nil, port.ErrCheckpointUnavailable
+	}
+	selector = strings.TrimSpace(selector)
+	if selector == "" || strings.EqualFold(selector, "latest") {
+		items, err := store.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(items) == 0 {
+			return nil, port.ErrCheckpointNotFound
+		}
+		sort.Slice(items, func(i, j int) bool {
+			if items[i].CreatedAt.Equal(items[j].CreatedAt) {
+				return items[i].ID < items[j].ID
+			}
+			return items[i].CreatedAt.After(items[j].CreatedAt)
+		})
+		item := items[0]
+		return &item, nil
+	}
+	item, err := store.Load(ctx, selector)
+	if err != nil {
+		return nil, err
+	}
+	if item == nil {
+		return nil, port.ErrCheckpointNotFound
+	}
+	return item, nil
+}
+
+func LoadCheckpointWithStore(ctx context.Context, store port.CheckpointStore, selector string) (*CheckpointDetail, error) {
+	item, err := ResolveCheckpointRecord(ctx, store, selector)
+	if err != nil {
+		return nil, err
+	}
+	detail := DescribeCheckpoint(*item)
+	return &detail, nil
+}
+
+func LoadCheckpoint(ctx context.Context, checkpointID string) (*CheckpointDetail, error) {
+	store, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint store: %w", err)
+	}
+	return LoadCheckpointWithStore(ctx, store, checkpointID)
+}
+
 func listChangeOperationsByRepoRoot(ctx context.Context, repoRoot string, limit int) ([]ChangeSummary, error) {
 	store, err := OpenChangeStore()
 	if err != nil {
@@ -704,6 +920,62 @@ func RenderCheckpointSummaries(items []CheckpointSummary) string {
 		)
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+func RenderCheckpointDetail(item *CheckpointDetail) string {
+	if item == nil {
+		return "Checkpoint: not found"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Checkpoint: %s\n", item.ID)
+	fmt.Fprintf(&b, "  created:  %s\n", item.CreatedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "  session:  %s\n", firstNonEmpty(item.SessionID, "(none)"))
+	fmt.Fprintf(&b, "  snapshot: %s\n", firstNonEmpty(item.SnapshotID, "(none)"))
+	fmt.Fprintf(&b, "  patches:  %d", item.PatchCount)
+	if len(item.PatchIDs) > 0 {
+		fmt.Fprintf(&b, " (%s)", renderCheckpointPatchOverview(item.PatchIDs, 5))
+	}
+	b.WriteString("\n")
+	fmt.Fprintf(&b, "  lineage:  %d\n", item.LineageDepth)
+	fmt.Fprintf(&b, "  note:     %s\n", firstNonEmpty(item.Note, "(none)"))
+	if len(item.MetadataKeys) == 0 {
+		b.WriteString("  metadata: (none)\n")
+	} else {
+		fmt.Fprintf(&b, "  metadata: %s\n", strings.Join(item.MetadataKeys, ", "))
+	}
+	b.WriteString("  lineage refs:\n")
+	if len(item.Lineage) == 0 {
+		b.WriteString("    - (none)\n")
+	} else {
+		for _, ref := range item.Lineage {
+			fmt.Fprintf(&b, "    - %s %s\n", ref.Kind, firstNonEmpty(strings.TrimSpace(ref.ID), "(none)"))
+		}
+	}
+	b.WriteString("Next:\n")
+	fmt.Fprintf(&b, "  - mosscode checkpoint fork --checkpoint %s\n", item.ID)
+	fmt.Fprintf(&b, "  - mosscode checkpoint replay --checkpoint %s --mode resume\n", item.ID)
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func renderCheckpointPatchOverview(ids []string, limit int) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	if limit <= 0 || len(ids) <= limit {
+		return strings.Join(ids, ", ")
+	}
+	return fmt.Sprintf("%s, ... (+%d more)", strings.Join(ids[:limit], ", "), len(ids)-limit)
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func listSnapshots(ctx context.Context, workspace string) ([]port.WorktreeSnapshot, error) {

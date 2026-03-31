@@ -95,6 +95,11 @@ func WithLoadedBootstrapContext(workspace, appName string) Extension {
 	return WithKernelOptions(runtime.WithLoadedBootstrapContext(workspace, appName))
 }
 
+// WithLoadedBootstrapContextWithTrust 根据工作区、应用名和信任级别加载 bootstrap 上下文并装配。
+func WithLoadedBootstrapContextWithTrust(workspace, appName, trust string) Extension {
+	return WithKernelOptions(runtime.WithLoadedBootstrapContextWithTrust(workspace, appName, trust))
+}
+
 // WithScheduling 按官方推荐方式装配调度器扩展，并注册标准调度工具。
 func WithScheduling(s *scheduler.Scheduler) Extension {
 	return extensionFunc(func(plan *extensionPlan) {

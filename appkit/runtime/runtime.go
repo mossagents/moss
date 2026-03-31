@@ -32,6 +32,7 @@ type config struct {
 	skills          bool
 	progressive     bool
 	agents          bool
+	trust           string
 	sessionStore    session.SessionStore
 	sessionStoreSet bool
 	planning        bool
@@ -46,6 +47,7 @@ func defaultConfig() config {
 		skills:      true,
 		progressive: false,
 		agents:      true,
+		trust:       appconfig.TrustTrusted,
 		planning:    true,
 	}
 }
@@ -58,6 +60,9 @@ func WithProgressiveSkills(enabled bool) Option {
 }
 func WithAgents(enabled bool) Option   { return func(c *config) { c.agents = enabled } }
 func WithPlanning(enabled bool) Option { return func(c *config) { c.planning = enabled } }
+func WithWorkspaceTrust(trust string) Option {
+	return func(c *config) { c.trust = trust }
+}
 func WithSessionStore(store session.SessionStore) Option {
 	return func(c *config) {
 		c.sessionStore = store
@@ -88,6 +93,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	}
 	logger := logging.GetLogger()
 	deps := Deps(k)
+	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(cfg.trust)
 
 	if cfg.builtin {
 		if err := SkillsManager(k).Register(ctx, &builtinToolsProvider{}, deps); err != nil {
@@ -97,8 +103,11 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 
 	if cfg.mcpServers {
 		globalCfg, _ := appconfig.LoadGlobalConfig()
-		projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
-		merged := appconfig.MergeConfigs(globalCfg, projectCfg)
+		merged := appconfig.MergeConfigs(globalCfg)
+		if projectAssetsAllowed {
+			projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
+			merged = appconfig.MergeConfigs(globalCfg, projectCfg)
+		}
 		for _, sc := range merged.Skills {
 			if !sc.IsEnabled() || !sc.IsMCP() {
 				continue
@@ -114,7 +123,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	}
 
 	if cfg.skills {
-		manifests := skill.DiscoverSkillManifests(workspaceDir)
+		manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, cfg.trust)
 		if cfg.progressive {
 			SetSkillManifests(k, manifests)
 			EnableProgressiveSkills(k)
@@ -142,8 +151,9 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	}
 
 	if cfg.agents {
-		agentDirs := []string{
-			filepath.Join(workspaceDir, ".agents", "agents"),
+		agentDirs := []string{}
+		if projectAssetsAllowed {
+			agentDirs = append(agentDirs, filepath.Join(workspaceDir, ".agents", "agents"))
 		}
 		if home, err := os.UserHomeDir(); err == nil {
 			agentDirs = append(agentDirs, filepath.Join(home, ".moss", "agents"))
@@ -307,6 +317,7 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 
 func Deps(k *kernel.Kernel) skill.Deps {
 	return skill.Deps{
+		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
 		Middleware:   k.Middleware(),
 		Sandbox:      k.Sandbox(),
@@ -423,7 +434,7 @@ func (s *builtinToolsProvider) Metadata() skill.Metadata {
 
 func (s *builtinToolsProvider) Init(ctx context.Context, deps skill.Deps) error {
 	s.toolNames = RegisteredBuiltinToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
-	return RegisterBuiltinTools(deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
+	return RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
 }
 
 func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }

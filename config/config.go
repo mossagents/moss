@@ -14,9 +14,29 @@ import (
 
 var appName = "moss"
 
+const (
+	TrustTrusted    = "trusted"
+	TrustRestricted = "restricted"
+)
+
 func SetAppName(name string) { appName = name }
 
 func AppName() string { return appName }
+
+func NormalizeTrustLevel(trust string) string {
+	switch strings.ToLower(strings.TrimSpace(trust)) {
+	case "", TrustTrusted:
+		return TrustTrusted
+	case TrustRestricted:
+		return TrustRestricted
+	default:
+		return TrustRestricted
+	}
+}
+
+func ProjectAssetsAllowed(trust string) bool {
+	return NormalizeTrustLevel(trust) == TrustTrusted
+}
 
 func AppDir() string {
 	home, err := os.UserHomeDir()
@@ -253,15 +273,20 @@ func DefaultProjectSystemPromptTemplatePath(workspace string) string {
 }
 
 func LoadSystemPromptTemplate(workspace string) (string, error) {
-	projectPath := DefaultProjectSystemPromptTemplatePath(workspace)
-	if projectPath != "" {
-		if data, err := os.ReadFile(projectPath); err == nil {
-			return string(data), nil
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("read system prompt template %s: %w", projectPath, err)
+	return LoadSystemPromptTemplateForTrust(workspace, TrustTrusted)
+}
+
+func LoadSystemPromptTemplateForTrust(workspace, trust string) (string, error) {
+	if ProjectAssetsAllowed(trust) {
+		projectPath := DefaultProjectSystemPromptTemplatePath(workspace)
+		if projectPath != "" {
+			if data, err := os.ReadFile(projectPath); err == nil {
+				return string(data), nil
+			} else if !os.IsNotExist(err) {
+				return "", fmt.Errorf("read system prompt template %s: %w", projectPath, err)
+			}
 		}
 	}
-
 	globalPath := DefaultGlobalSystemPromptTemplatePath()
 	if globalPath != "" {
 		if data, err := os.ReadFile(globalPath); err == nil {
@@ -294,8 +319,12 @@ func DefaultTemplateContext(workspace string) map[string]any {
 }
 
 func RenderSystemPrompt(workspace, defaultTemplate string, data map[string]any) string {
+	return RenderSystemPromptForTrust(workspace, TrustTrusted, defaultTemplate, data)
+}
+
+func RenderSystemPromptForTrust(workspace, trust, defaultTemplate string, data map[string]any) string {
 	tplSrc := defaultTemplate
-	if loaded, err := LoadSystemPromptTemplate(workspace); err == nil && strings.TrimSpace(loaded) != "" {
+	if loaded, err := LoadSystemPromptTemplateForTrust(workspace, trust); err == nil && strings.TrimSpace(loaded) != "" {
 		tplSrc = loaded
 	}
 

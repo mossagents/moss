@@ -14,11 +14,11 @@ var defaultSystemPromptTemplate string
 // buildSystemPrompt 构造 Agent 的 system prompt。
 // 风格：类 Claude Code / Cursor 的通用编程助手。
 // skillPrompts 是来自 SkillManager 的额外提示片段。
-func buildSystemPrompt(workspace string, skillPrompts ...string) string {
+func buildSystemPrompt(workspace, trust string, skillPrompts ...string) string {
 	ctx := config.DefaultTemplateContext(workspace)
-	base := config.RenderSystemPrompt(workspace, defaultSystemPromptTemplate, ctx)
+	base := config.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 
-	if bctx := bootstrap.Load(workspace); bctx != nil {
+	if bctx := bootstrap.LoadWithAppNameAndTrust(workspace, config.AppName(), trust); bctx != nil {
 		if sec := strings.TrimSpace(bctx.SystemPromptSection()); sec != "" {
 			base += "\n## Bootstrap Context\n" + sec
 		}

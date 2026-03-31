@@ -12,10 +12,12 @@ import (
 
 	"github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
+	rt "github.com/mossagents/moss/appkit/runtime"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
@@ -287,6 +289,69 @@ func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
 
 	if _, _, ok := k.ToolRegistry().Get("offload_context"); !ok {
 		t.Fatal("expected offload_context tool to be registered")
+	}
+}
+
+func TestBuildKernelWithExtensions_TrustGatesProjectSkillsAndAgents(t *testing.T) {
+	workspace := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	skillDir := filepath.Join(workspace, ".agents", "skills", "project-skill")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(`---
+name: project-skill
+description: project only
+---
+project skill body
+`), 0o644); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+
+	agentDir := filepath.Join(workspace, ".agents", "agents")
+	if err := os.MkdirAll(agentDir, 0o755); err != nil {
+		t.Fatalf("mkdir agent dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(agentDir, "project-agent.yaml"), []byte(`name: project-agent
+description: "Project agent"
+system_prompt: "Project agent prompt."
+tools: [read_file]
+trust_level: restricted
+`), 0o644); err != nil {
+		t.Fatalf("write agent: %v", err)
+	}
+
+	restricted, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: workspace,
+		Trust:     "restricted",
+	}, &port.NoOpIO{})
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions restricted: %v", err)
+	}
+	if _, ok := rt.SkillsManager(restricted).Get("project-skill"); ok {
+		t.Fatal("restricted trust should not load project skill")
+	}
+	if _, ok := rt.AgentRegistry(restricted).Get("project-agent"); ok {
+		t.Fatal("restricted trust should not load project agent")
+	}
+
+	trusted, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+		Provider:  "openai",
+		Workspace: workspace,
+		Trust:     "trusted",
+	}, &port.NoOpIO{})
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions trusted: %v", err)
+	}
+	if _, ok := rt.SkillsManager(trusted).Get("project-skill"); !ok {
+		t.Fatal("trusted workspace should load project skill")
+	}
+	if _, ok := rt.AgentRegistry(trusted).Get("project-agent"); !ok {
+		t.Fatal("trusted workspace should load project agent")
 	}
 }
 

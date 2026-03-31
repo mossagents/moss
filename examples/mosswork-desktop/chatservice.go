@@ -821,6 +821,7 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 		CreatedAt: time.Now(),
 		EndedAt:   time.Now(),
 	}
+	session.MarkHistoryHidden(snapshot)
 	if err := s.store.Save(ctx, snapshot); err != nil {
 		return "", fmt.Errorf("save offload snapshot: %w", err)
 	}

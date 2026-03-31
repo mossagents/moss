@@ -78,7 +78,8 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 
 	k := kernel.New(opts...)
 
-	if err := runtime.Setup(ctx, k, flags.Workspace, cfg.DefaultSetupOptions...); err != nil {
+	setupOpts := append([]runtime.Option{runtime.WithWorkspaceTrust(flags.Trust)}, cfg.DefaultSetupOptions...)
+	if err := runtime.Setup(ctx, k, flags.Workspace, setupOpts...); err != nil {
 		return nil, err
 	}
 	for _, installer := range plan.installers {

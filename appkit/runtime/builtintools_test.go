@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
@@ -16,12 +19,30 @@ import (
 // ── mock sandbox ─────────────────────────────────────
 
 type mockSandbox struct {
-	root  string
-	files map[string]string // path → content (absolute paths)
+	root        string
+	files       map[string]string // path → content (absolute paths)
+	lastExecReq port.ExecRequest
 }
 
 func newMockSandbox(root string, files map[string]string) *mockSandbox {
-	return &mockSandbox{root: root, files: files}
+	originalRoot := root
+	if abs, err := filepath.Abs(root); err == nil {
+		root = abs
+	}
+	normalized := make(map[string]string, len(files))
+	for path, content := range files {
+		switch {
+		case strings.HasPrefix(path, originalRoot+"/"):
+			normalized[root+path[len(originalRoot):]] = content
+		case strings.HasPrefix(path, originalRoot+"\\"):
+			normalized[root+path[len(originalRoot):]] = content
+		case filepath.IsAbs(path):
+			normalized[path] = content
+		default:
+			normalized[filepath.Join(root, path)] = content
+		}
+	}
+	return &mockSandbox{root: root, files: normalized}
 }
 
 func (m *mockSandbox) ResolvePath(path string) (string, error) {
@@ -57,6 +78,7 @@ func (m *mockSandbox) WriteFile(path string, content []byte) error {
 }
 
 func (m *mockSandbox) Execute(_ context.Context, req port.ExecRequest) (sandbox.Output, error) {
+	m.lastExecReq = req
 	return sandbox.Output{
 		Stdout:   "mock output for: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
@@ -134,9 +156,12 @@ func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
 
 // ── mock executor ────────────────────────────────────
 
-type mockExecutor struct{}
+type mockExecutor struct {
+	lastReq port.ExecRequest
+}
 
 func (m *mockExecutor) Execute(_ context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+	m.lastReq = req
 	return port.ExecOutput{
 		Stdout:   "exec: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
@@ -227,7 +252,8 @@ func TestWriteFile(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %q", resp["status"])
 	}
-	if sb.files["/ws/out.txt"] != "new content" {
+	outPath, _ := sb.ResolvePath("out.txt")
+	if sb.files[outPath] != "new content" {
 		t.Errorf("file not written, files: %v", sb.files)
 	}
 }
@@ -252,8 +278,9 @@ func TestEditFile(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", resp["status"])
 	}
-	if sb.files["/ws/doc.txt"] != "hello world" {
-		t.Errorf("unexpected edited content: %q", sb.files["/ws/doc.txt"])
+	docPath, _ := sb.ResolvePath("doc.txt")
+	if sb.files[docPath] != "hello world" {
+		t.Errorf("unexpected edited content: %q", sb.files[docPath])
 	}
 }
 
@@ -459,6 +486,32 @@ func TestRunCommand(t *testing.T) {
 	}
 	if output.ExitCode != 0 {
 		t.Errorf("expected exit code 0, got %d", output.ExitCode)
+	}
+}
+
+func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
+	sb := newMockSandbox("/ws", nil)
+	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "restricted", "confirm")))
+	handler := runCommandHandlerWithPolicy(k, sb)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]any{
+		"command": "echo",
+		"args":    []string{"hello"},
+	}))
+	if err != nil {
+		t.Fatalf("runCommand: %v", err)
+	}
+	if sb.lastExecReq.Timeout != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", sb.lastExecReq.Timeout)
+	}
+	if sb.lastExecReq.WorkingDir != "." {
+		t.Fatalf("working dir = %q, want .", sb.lastExecReq.WorkingDir)
+	}
+	if len(sb.lastExecReq.AllowedPaths) != 1 || sb.lastExecReq.AllowedPaths[0] != sb.root {
+		t.Fatalf("allowed paths = %#v, want [%s]", sb.lastExecReq.AllowedPaths, sb.root)
+	}
+	if sb.lastExecReq.Network.Mode != port.ExecNetworkDisabled {
+		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, port.ExecNetworkDisabled)
 	}
 }
 
@@ -684,6 +737,53 @@ func TestHTTPRequestTool(t *testing.T) {
 	}
 }
 
+func TestHTTPRequestPolicyRejectsDisallowedMethod(t *testing.T) {
+	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "trusted", "full-auto")))
+	handler := httpRequestHandlerWithPolicy(k)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]any{
+		"url":    "https://example.com",
+		"method": "PUT",
+	}))
+	if err == nil {
+		t.Fatal("expected method policy error")
+	}
+	if !strings.Contains(err.Error(), "not allowed by execution policy") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHTTPRequestPolicyDisablesRedirectsByDefault(t *testing.T) {
+	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer final.Close()
+
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL, http.StatusFound)
+	}))
+	defer redirect.Close()
+
+	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "trusted", "full-auto")))
+	handler := httpRequestHandlerWithPolicy(k)
+	out, err := handler(context.Background(), toJSON(t, map[string]any{
+		"url": redirect.URL,
+	}))
+	if err != nil {
+		t.Fatalf("http_request: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if int(resp["status_code"].(float64)) != http.StatusFound {
+		t.Fatalf("status_code = %v, want %d", resp["status_code"], http.StatusFound)
+	}
+	if followed, _ := resp["follow_redirects"].(bool); followed {
+		t.Fatalf("expected follow_redirects=false, got %+v", resp)
+	}
+}
+
 // ── helper ───────────────────────────────────────────
 
 func toJSON(t *testing.T, v any) json.RawMessage {
@@ -882,6 +982,30 @@ func TestRunCommandExec(t *testing.T) {
 	json.Unmarshal(result, &output)
 	if !strings.Contains(output.Stdout, "echo") {
 		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
+	}
+}
+
+func TestRunCommandExecPolicyForwarding(t *testing.T) {
+	exec := &mockExecutor{}
+	ws := &mockWorkspace{files: map[string]string{}}
+	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace(".", "trusted", "confirm")))
+	handler := runCommandHandlerExecWithPolicy(k, exec, ws)
+
+	_, err := handler(context.Background(), toJSON(t, map[string]any{
+		"command": "echo",
+		"args":    []string{"hello"},
+	}))
+	if err != nil {
+		t.Fatalf("runCommandExec: %v", err)
+	}
+	if exec.lastReq.Timeout != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", exec.lastReq.Timeout)
+	}
+	if exec.lastReq.WorkingDir != "." {
+		t.Fatalf("working dir = %q, want .", exec.lastReq.WorkingDir)
+	}
+	if exec.lastReq.Network.Mode != port.ExecNetworkEnabled {
+		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, port.ExecNetworkEnabled)
 	}
 }
 
