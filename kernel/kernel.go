@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -99,6 +100,12 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 		}}, sess.Messages...)
 	}
 
+	k.emitSessionLifecycle(ctx, session.LifecycleEvent{
+		Stage:     session.LifecycleCreated,
+		Session:   sess,
+		Timestamp: time.Now().UTC(),
+	})
+
 	return sess, nil
 }
 
@@ -136,6 +143,12 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 		IO:       io,
 		Config:   k.loopCfg,
 		Observer: k.observer,
+		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
+			k.emitSessionLifecycle(ctx, event)
+		},
+		ToolLifecycleHook: func(ctx context.Context, event session.ToolLifecycleEvent) {
+			k.emitToolLifecycle(ctx, event)
+		},
 	}
 	return l.Run(runCtx, sess)
 }
@@ -221,6 +234,27 @@ func (k *Kernel) propagateObserver(observer port.Observer) {
 	if aware, ok := k.checkpoints.(interface{ SetObserver(port.Observer) }); ok {
 		aware.SetObserver(observer)
 	}
+}
+
+func (k *Kernel) observerOrNoOp() port.Observer {
+	if k.observer != nil {
+		return k.observer
+	}
+	return port.NoOpObserver{}
+}
+
+func contextOrBackground(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+func panicAsError(prefix string, value any) error {
+	if err, ok := value.(error); ok {
+		return fmt.Errorf("%s: %w", prefix, err)
+	}
+	return fmt.Errorf("%s: %v", prefix, value)
 }
 
 // Sandbox 返回沙箱抽象（可能为 nil）。

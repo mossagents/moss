@@ -147,8 +147,8 @@ Strengthen:
 
 ## P1: Needed soon after P0
 
-- hooks / lifecycle extensions — remaining
-- command rules / exec policy — in progress; `run_command` first slice is done, but `http_request`, management UX, and audit surfaces are still pending
+- hooks / lifecycle extensions — core session lifecycle and pre/post tool hooks are implemented through the extension bridge and appkit; richer operator UX and broader governance flows remain
+- command rules / exec policy — core first slice is implemented for `run_command` and `http_request`, with rule-hit audit events and doctor/TUI visibility; broader governance UX and policy-pack ergonomics remain
 - MCP management UX — remaining
 - profiles / task modes — largely implemented; remaining work is mostly hardening and follow-up ergonomics
 - unified state store and indexed history — implemented

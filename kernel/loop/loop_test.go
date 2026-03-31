@@ -629,6 +629,7 @@ func (it *toolThenErrIterator) Close() error { return nil }
 type recordingObserver struct {
 	llmCalls  []port.LLMCallEvent
 	execution []port.ExecutionEvent
+	errors    []port.ErrorEvent
 }
 
 func (o *recordingObserver) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
@@ -643,7 +644,9 @@ func (o *recordingObserver) OnExecutionEvent(_ context.Context, e port.Execution
 
 func (o *recordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
 func (o *recordingObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
-func (o *recordingObserver) OnError(context.Context, port.ErrorEvent)          {}
+func (o *recordingObserver) OnError(_ context.Context, e port.ErrorEvent) {
+	o.errors = append(o.errors, e)
+}
 
 func (o *recordingObserver) lastCompletedModel() string {
 	for i := len(o.execution) - 1; i >= 0; i-- {
@@ -701,6 +704,126 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&l.LLM.(*flakyLLM).calls); got != 3 {
 		t.Fatalf("expected 3 LLM calls, got %d", got)
+	}
+}
+
+func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
+	observer := &recordingObserver{}
+	var stages []session.LifecycleStage
+	l := &AgentLoop{
+		LLM: &kt.MockLLM{
+			Responses: []port.CompletionResponse{{
+				Message:    port.Message{Role: port.RoleAssistant, Content: "ok"},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 3},
+			}},
+		},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+		LifecycleHook: func(_ context.Context, event session.LifecycleEvent) {
+			stages = append(stages, event.Stage)
+			if event.Stage == session.LifecycleStarted {
+				panic("boom")
+			}
+		},
+	}
+
+	sess := &session.Session{
+		ID:       "test-lifecycle-panic",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	if got, want := len(observer.errors), 1; got != want {
+		t.Fatalf("error events = %d, want %d", got, want)
+	}
+	if got := observer.errors[0].Phase; got != "session_lifecycle_hook" {
+		t.Fatalf("error phase = %q, want session_lifecycle_hook", got)
+	}
+	wantStages := []session.LifecycleStage{session.LifecycleStarted, session.LifecycleCompleted}
+	if len(stages) != len(wantStages) {
+		t.Fatalf("stages len = %d, want %d (%v)", len(stages), len(wantStages), stages)
+	}
+	for i := range wantStages {
+		if stages[i] != wantStages[i] {
+			t.Fatalf("stages[%d] = %q, want %q", i, stages[i], wantStages[i])
+		}
+	}
+}
+
+func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
+	observer := &recordingObserver{}
+	chain := middleware.NewChain()
+	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	var events []session.ToolLifecycleEvent
+	reg := tool.NewRegistry()
+	reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		t.Fatal("tool should not be executed")
+		return nil, nil
+	})
+	l := &AgentLoop{
+		LLM: &kt.MockLLM{
+			Responses: []port.CompletionResponse{
+				{
+					Message: port.Message{
+						Role:      port.RoleAssistant,
+						ToolCalls: []port.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+					},
+					ToolCalls:  []port.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+					StopReason: "tool_use",
+					Usage:      port.TokenUsage{TotalTokens: 5},
+				},
+				{
+					Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+					StopReason: "end_turn",
+					Usage:      port.TokenUsage{TotalTokens: 3},
+				},
+			},
+		},
+		Tools:    reg,
+		Chain:    chain,
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+		ToolLifecycleHook: func(_ context.Context, event session.ToolLifecycleEvent) {
+			events = append(events, event)
+		},
+	}
+
+	sess := &session.Session{
+		ID:       "test-tool-lifecycle-denied",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "do the dangerous thing"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success after denied tool handling, got error: %s", result.Error)
+	}
+	if got, want := len(events), 2; got != want {
+		t.Fatalf("tool lifecycle events = %d, want %d", got, want)
+	}
+	if events[0].Stage != session.ToolLifecycleBefore {
+		t.Fatalf("first tool lifecycle stage = %q, want before", events[0].Stage)
+	}
+	if events[1].Stage != session.ToolLifecycleAfter {
+		t.Fatalf("second tool lifecycle stage = %q, want after", events[1].Stage)
+	}
+	if events[1].Error == nil {
+		t.Fatal("expected denied tool call to surface error in after hook")
+	}
+	if events[1].Result == nil || !events[1].Result.IsError {
+		t.Fatal("expected denied tool call to surface error result in after hook")
 	}
 }
 

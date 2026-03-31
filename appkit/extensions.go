@@ -51,6 +51,46 @@ func AfterBuild(installer Installer) Extension {
 	})
 }
 
+// SessionLifecycleRegistration 描述一个 Session 生命周期 hook 注册项。
+type SessionLifecycleRegistration struct {
+	Order int
+	Hook  session.LifecycleHook
+}
+
+// WithSessionLifecycleHooks 装配 Session 生命周期 hooks。
+func WithSessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Extension {
+	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		bridge := kernel.Extensions(k)
+		for _, hook := range hooks {
+			if hook.Hook == nil {
+				continue
+			}
+			bridge.OnSessionLifecycle(hook.Order, hook.Hook)
+		}
+		return nil
+	})
+}
+
+// ToolLifecycleRegistration 描述一个工具调用生命周期 hook 注册项。
+type ToolLifecycleRegistration struct {
+	Order int
+	Hook  session.ToolLifecycleHook
+}
+
+// WithToolLifecycleHooks 装配工具调用生命周期 hooks。
+func WithToolLifecycleHooks(hooks ...ToolLifecycleRegistration) Extension {
+	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		bridge := kernel.Extensions(k)
+		for _, hook := range hooks {
+			if hook.Hook == nil {
+				continue
+			}
+			bridge.OnToolLifecycle(hook.Order, hook.Hook)
+		}
+		return nil
+	})
+}
+
 // WithSessionStore 按官方推荐方式装配 SessionStore 扩展。
 func WithSessionStore(store session.SessionStore) Extension {
 	return WithKernelOptions(runtime.WithKernelSessionStore(store))

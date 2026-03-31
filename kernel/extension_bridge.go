@@ -2,8 +2,12 @@ package kernel
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"sync"
+
+	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // ExtensionStateKey 标识一个扩展状态槽。
@@ -17,6 +21,8 @@ type extensionState struct {
 	bootHooks     []orderedBootHook
 	shutdownHooks []orderedShutdownHook
 	promptHooks   []orderedPromptHook
+	sessionHooks  []orderedSessionHook
+	toolHooks     []orderedToolHook
 }
 
 type orderedBootHook struct {
@@ -32,6 +38,16 @@ type orderedShutdownHook struct {
 type orderedPromptHook struct {
 	order int
 	run   func(*Kernel) string
+}
+
+type orderedSessionHook struct {
+	order int
+	run   session.LifecycleHook
+}
+
+type orderedToolHook struct {
+	order int
+	run   session.ToolLifecycleHook
 }
 
 func newExtensionState() *extensionState {
@@ -117,6 +133,94 @@ func (k *Kernel) extendSystemPrompt(base string) string {
 	return sysPrompt
 }
 
+func (k *Kernel) sessionLifecycleHooks() []orderedSessionHook {
+	ext := k.extensionState()
+	ext.mu.RLock()
+	hooks := append([]orderedSessionHook(nil), ext.sessionHooks...)
+	ext.mu.RUnlock()
+
+	sort.SliceStable(hooks, func(i, j int) bool { return hooks[i].order < hooks[j].order })
+	return hooks
+}
+
+func (k *Kernel) emitSessionLifecycle(ctx context.Context, event session.LifecycleEvent) {
+	for _, hook := range k.sessionLifecycleHooks() {
+		if hook.run == nil {
+			continue
+		}
+		k.runSessionLifecycleHook(ctx, hook.run, event)
+	}
+}
+
+func (k *Kernel) toolLifecycleHooks() []orderedToolHook {
+	ext := k.extensionState()
+	ext.mu.RLock()
+	hooks := append([]orderedToolHook(nil), ext.toolHooks...)
+	ext.mu.RUnlock()
+
+	sort.SliceStable(hooks, func(i, j int) bool { return hooks[i].order < hooks[j].order })
+	return hooks
+}
+
+func (k *Kernel) emitToolLifecycle(ctx context.Context, event session.ToolLifecycleEvent) {
+	for _, hook := range k.toolLifecycleHooks() {
+		if hook.run == nil {
+			continue
+		}
+		k.runToolLifecycleHook(ctx, hook.run, event)
+	}
+}
+
+func (k *Kernel) runSessionLifecycleHook(ctx context.Context, hook session.LifecycleHook, event session.LifecycleEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			sessionID := ""
+			if event.Session != nil {
+				sessionID = event.Session.ID
+			}
+			err := panicAsError("session lifecycle hook panic", r)
+			slog.Default().ErrorContext(contextOrBackground(ctx), "session lifecycle hook panic",
+				slog.String("stage", string(event.Stage)),
+				slog.String("session_id", sessionID),
+				slog.Any("panic", r),
+			)
+			k.observerOrNoOp().OnError(contextOrBackground(ctx), port.ErrorEvent{
+				SessionID: sessionID,
+				Phase:     "session_lifecycle_hook",
+				Error:     err,
+				Message:   err.Error(),
+			})
+		}
+	}()
+	hook(contextOrBackground(ctx), event)
+}
+
+func (k *Kernel) runToolLifecycleHook(ctx context.Context, hook session.ToolLifecycleHook, event session.ToolLifecycleEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			sessionID := ""
+			if event.Session != nil {
+				sessionID = event.Session.ID
+			}
+			err := panicAsError("tool lifecycle hook panic", r)
+			slog.Default().ErrorContext(contextOrBackground(ctx), "tool lifecycle hook panic",
+				slog.String("stage", string(event.Stage)),
+				slog.String("session_id", sessionID),
+				slog.String("tool", event.ToolName),
+				slog.String("call_id", event.CallID),
+				slog.Any("panic", r),
+			)
+			k.observerOrNoOp().OnError(contextOrBackground(ctx), port.ErrorEvent{
+				SessionID: sessionID,
+				Phase:     "tool_lifecycle_hook",
+				Error:     err,
+				Message:   err.Error(),
+			})
+		}
+	}()
+	hook(contextOrBackground(ctx), event)
+}
+
 // OnBoot 注册一个按顺序执行的扩展启动 hook。
 func (b *ExtensionBridge) OnBoot(order int, hook func(context.Context, *Kernel) error) {
 	ext := b.k.extensionState()
@@ -145,6 +249,28 @@ func (b *ExtensionBridge) OnSystemPrompt(order int, hook func(*Kernel) string) {
 	ext.mu.Lock()
 	defer ext.mu.Unlock()
 	ext.promptHooks = append(ext.promptHooks, orderedPromptHook{
+		order: order,
+		run:   hook,
+	})
+}
+
+// OnSessionLifecycle 注册一个按顺序执行的 Session 生命周期 hook。
+func (b *ExtensionBridge) OnSessionLifecycle(order int, hook session.LifecycleHook) {
+	ext := b.k.extensionState()
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.sessionHooks = append(ext.sessionHooks, orderedSessionHook{
+		order: order,
+		run:   hook,
+	})
+}
+
+// OnToolLifecycle 注册一个按顺序执行的工具调用生命周期 hook。
+func (b *ExtensionBridge) OnToolLifecycle(order int, hook session.ToolLifecycleHook) {
+	ext := b.k.extensionState()
+	ext.mu.Lock()
+	defer ext.mu.Unlock()
+	ext.toolHooks = append(ext.toolHooks, orderedToolHook{
 		order: order,
 		run:   hook,
 	})

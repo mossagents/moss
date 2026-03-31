@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/rand"
 	"strings"
 	"sync"
@@ -48,13 +49,15 @@ func (c LoopConfig) maxIter() int {
 
 // AgentLoop 组合所有子系统，驱动 Agent 的 think→act→observe 循环。
 type AgentLoop struct {
-	LLM      port.LLM
-	Tools    tool.Registry
-	Chain    *middleware.Chain
-	IO       port.UserIO
-	Config   LoopConfig
-	Observer port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
-	sidefxMu sync.Mutex
+	LLM               port.LLM
+	Tools             tool.Registry
+	Chain             *middleware.Chain
+	IO                port.UserIO
+	Config            LoopConfig
+	Observer          port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	LifecycleHook     session.LifecycleHook
+	ToolLifecycleHook session.ToolLifecycleHook
+	sidefxMu          sync.Mutex
 }
 
 // SessionResult 是一次 Session 执行的结果。
@@ -92,6 +95,11 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		},
 	})
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
+	l.emitLifecycle(ctx, session.LifecycleEvent{
+		Stage:     session.LifecycleStarted,
+		Session:   sess,
+		Timestamp: runStartedAt,
+	})
 
 	var lastOutput string
 	var totalUsage port.TokenUsage
@@ -102,7 +110,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			break
 		}
 		if ctx.Err() != nil {
-			return l.fail(sess, totalUsage, ctx.Err()), ctx.Err()
+			return l.fail(ctx, sess, totalUsage, ctx.Err()), ctx.Err()
 		}
 		iteration := i + 1
 		iterationStartedAt := time.Now().UTC()
@@ -120,7 +128,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 
 		// 1. BeforeLLM middleware
 		if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
-			return l.fail(sess, totalUsage, err), err
+			return l.fail(ctx, sess, totalUsage, err), err
 		}
 
 		// 2. LLM 调用
@@ -151,7 +159,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 				Error:     err.Error(),
 			})
 			l.runErrorMiddleware(ctx, sess, err)
-			return l.fail(sess, totalUsage, err), err
+			return l.fail(ctx, sess, totalUsage, err), err
 		}
 
 		metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
@@ -184,7 +192,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 
 		// 3. AfterLLM middleware
 		if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
-			return l.fail(sess, totalUsage, err), err
+			return l.fail(ctx, sess, totalUsage, err), err
 		}
 
 		// 4. 追加 assistant 消息
@@ -194,7 +202,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		if len(resp.ToolCalls) > 0 {
 			if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
 				l.runErrorMiddleware(ctx, sess, err)
-				return l.fail(sess, totalUsage, err), err
+				return l.fail(ctx, sess, totalUsage, err), err
 			}
 		} else {
 			lastOutput = resp.Message.Content
@@ -249,14 +257,26 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		},
 	})
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
-
-	return &SessionResult{
+	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    true,
 		Output:     lastOutput,
 		Steps:      sess.Budget.UsedSteps,
 		TokensUsed: totalUsage,
-	}, nil
+	}
+	l.emitLifecycle(ctx, session.LifecycleEvent{
+		Stage:   session.LifecycleCompleted,
+		Session: sess,
+		Result: &session.LifecycleResult{
+			Success:    true,
+			Output:     lastOutput,
+			Steps:      sess.Budget.UsedSteps,
+			TokensUsed: totalUsage,
+		},
+		Timestamp: sess.EndedAt.UTC(),
+	})
+
+	return result, nil
 }
 
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
@@ -601,15 +621,35 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 }
 
 func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call port.ToolCall) port.ToolResult {
+	repairedArgs := repairToolArguments(call.Arguments)
+	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
+		Stage:     session.ToolLifecycleBefore,
+		Session:   sess,
+		ToolName:  call.Name,
+		CallID:    call.ID,
+		Arguments: repairedArgs,
+		Timestamp: time.Now().UTC(),
+	})
 	spec, handler, ok := l.Tools.Get(call.Name)
 	if !ok {
-		return port.ToolResult{
+		err := fmt.Errorf("tool %q not found", call.Name)
+		result := port.ToolResult{
 			CallID:  call.ID,
-			Content: fmt.Sprintf("tool %q not found", call.Name),
+			Content: err.Error(),
 			IsError: true,
 		}
+		l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
+			Stage:     session.ToolLifecycleAfter,
+			Session:   sess,
+			ToolName:  call.Name,
+			CallID:    call.ID,
+			Arguments: repairedArgs,
+			Result:    &result,
+			Error:     err,
+			Timestamp: time.Now().UTC(),
+		})
+		return result
 	}
-	repairedArgs := repairToolArguments(call.Arguments)
 
 	// UserIO: 通知工具开始
 	l.withSideEffectsLock(func() {
@@ -641,11 +681,23 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		beforeErr = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil)
 	})
 	if beforeErr != nil {
-		return port.ToolResult{
+		result := port.ToolResult{
 			CallID:  call.ID,
 			Content: beforeErr.Error(),
 			IsError: true,
 		}
+		l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
+			Stage:     session.ToolLifecycleAfter,
+			Session:   sess,
+			ToolName:  call.Name,
+			CallID:    call.ID,
+			Arguments: repairedArgs,
+			Result:    &result,
+			Risk:      string(spec.Risk),
+			Error:     beforeErr,
+			Timestamp: time.Now().UTC(),
+		})
+		return result
 	}
 
 	toolCtx := port.WithToolCallContext(ctx, port.ToolCallContext{
@@ -702,6 +754,18 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	l.withSideEffectsLock(func() {
 		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
 	})
+	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
+		Stage:     session.ToolLifecycleAfter,
+		Session:   sess,
+		ToolName:  call.Name,
+		CallID:    call.ID,
+		Arguments: repairedArgs,
+		Result:    &result,
+		Risk:      string(spec.Risk),
+		Duration:  toolDur,
+		Error:     err,
+		Timestamp: time.Now().UTC(),
+	})
 
 	// UserIO: 通知工具结果
 	l.withSideEffectsLock(func() {
@@ -720,6 +784,39 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 
 	return result
+}
+
+func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLifecycleEvent) {
+	if l.ToolLifecycleHook == nil {
+		return
+	}
+	callCtx := ctx
+	if callCtx == nil {
+		callCtx = context.Background()
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			sessionID := ""
+			if event.Session != nil {
+				sessionID = event.Session.ID
+			}
+			err := fmt.Errorf("tool lifecycle hook panic: %v", r)
+			slog.Default().ErrorContext(callCtx, "tool lifecycle hook panic",
+				slog.String("stage", string(event.Stage)),
+				slog.String("session_id", sessionID),
+				slog.String("tool", event.ToolName),
+				slog.String("call_id", event.CallID),
+				slog.Any("panic", r),
+			)
+			l.observer().OnError(context.Background(), port.ErrorEvent{
+				SessionID: sessionID,
+				Phase:     "tool_lifecycle_hook",
+				Error:     err,
+				Message:   err.Error(),
+			})
+		}
+	}()
+	l.ToolLifecycleHook(callCtx, event)
 }
 
 func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMessage) {
@@ -886,11 +983,40 @@ func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Sessio
 	l.Chain.Run(ctx, middleware.OnError, mc)
 }
 
-func (l *AgentLoop) fail(sess *session.Session, usage port.TokenUsage, err error) *SessionResult {
+func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEvent) {
+	if l.LifecycleHook == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			sessionID := ""
+			if event.Session != nil {
+				sessionID = event.Session.ID
+			}
+			err := fmt.Errorf("session lifecycle hook panic: %v", r)
+			slog.Default().ErrorContext(ctx, "session lifecycle hook panic",
+				slog.String("stage", string(event.Stage)),
+				slog.String("session_id", sessionID),
+				slog.Any("panic", r),
+			)
+			l.observer().OnError(context.Background(), port.ErrorEvent{
+				SessionID: sessionID,
+				Phase:     "session_lifecycle_hook",
+				Error:     err,
+				Message:   err.Error(),
+			})
+		}
+	}()
+	l.LifecycleHook(ctx, event)
+}
+
+func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.TokenUsage, err error) *SessionResult {
 	eventType := port.ExecutionRunFailed
+	stage := session.LifecycleFailed
 	if errors.Is(err, context.Canceled) || sess.Status == session.StatusCancelled {
 		sess.Status = session.StatusCancelled
 		eventType = port.ExecutionRunCancelled
+		stage = session.LifecycleCancelled
 	} else {
 		sess.Status = session.StatusFailed
 	}
@@ -905,11 +1031,24 @@ func (l *AgentLoop) fail(sess *session.Session, usage port.TokenUsage, err error
 			"tokens": usage.TotalTokens,
 		},
 	})
-	return &SessionResult{
+	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,
 		Steps:      sess.Budget.UsedSteps,
 		TokensUsed: usage,
 		Error:      err.Error(),
 	}
+	l.emitLifecycle(ctx, session.LifecycleEvent{
+		Stage:   stage,
+		Session: sess,
+		Result: &session.LifecycleResult{
+			Success:    false,
+			Steps:      sess.Budget.UsedSteps,
+			TokensUsed: usage,
+			Error:      err.Error(),
+		},
+		Error:     err,
+		Timestamp: sess.EndedAt.UTC(),
+	})
+	return result
 }

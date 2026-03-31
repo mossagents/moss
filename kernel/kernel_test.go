@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -732,6 +733,119 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 	}
 
 	wantOrder := []string{"boot-10", "boot-20", "shutdown-10", "shutdown-20"}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("hook order len = %d, want %d (%v)", len(order), len(wantOrder), order)
+	}
+	for i := range wantOrder {
+		if order[i] != wantOrder[i] {
+			t.Fatalf("hook order[%d] = %q, want %q (full=%v)", i, order[i], wantOrder[i], order)
+		}
+	}
+}
+
+func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{
+			Responses: []port.CompletionResponse{{
+				Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 3},
+			}},
+		}),
+		WithUserIO(&port.NoOpIO{}),
+	)
+	bridge := Extensions(k)
+
+	var order []string
+	bridge.OnSessionLifecycle(20, func(_ context.Context, event session.LifecycleEvent) {
+		order = append(order, fmt.Sprintf("%s-20", event.Stage))
+	})
+	bridge.OnSessionLifecycle(10, func(_ context.Context, event session.LifecycleEvent) {
+		order = append(order, fmt.Sprintf("%s-10", event.Stage))
+	})
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{
+		Goal:     "test lifecycle hooks",
+		MaxSteps: 1,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if _, err := k.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	wantOrder := []string{
+		"created-10", "created-20",
+		"started-10", "started-20",
+		"completed-10", "completed-20",
+	}
+	if len(order) != len(wantOrder) {
+		t.Fatalf("hook order len = %d, want %d (%v)", len(order), len(wantOrder), order)
+	}
+	for i := range wantOrder {
+		if order[i] != wantOrder[i] {
+			t.Fatalf("hook order[%d] = %q, want %q (full=%v)", i, order[i], wantOrder[i], order)
+		}
+	}
+}
+
+func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{
+			Responses: []port.CompletionResponse{
+				{
+					Message: port.Message{
+						Role:      port.RoleAssistant,
+						Content:   "",
+						ToolCalls: []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+					},
+					ToolCalls:  []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+					StopReason: "tool_use",
+					Usage:      port.TokenUsage{TotalTokens: 5},
+				},
+				{
+					Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+					StopReason: "end_turn",
+					Usage:      port.TokenUsage{TotalTokens: 3},
+				},
+			},
+		}),
+		WithUserIO(&port.NoOpIO{}),
+	)
+	k.ToolRegistry().Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"hello world"`), nil
+	})
+	bridge := Extensions(k)
+
+	var order []string
+	bridge.OnToolLifecycle(20, func(_ context.Context, event session.ToolLifecycleEvent) {
+		order = append(order, fmt.Sprintf("%s-20", event.Stage))
+	})
+	bridge.OnToolLifecycle(10, func(_ context.Context, event session.ToolLifecycleEvent) {
+		order = append(order, fmt.Sprintf("%s-10", event.Stage))
+	})
+
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{
+		Goal:     "test tool lifecycle hooks",
+		MaxSteps: 4,
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	if _, err := k.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	wantOrder := []string{"before-10", "before-20", "after-10", "after-20"}
 	if len(order) != len(wantOrder) {
 		t.Fatalf("hook order len = %d, want %d (%v)", len(order), len(wantOrder), order)
 	}

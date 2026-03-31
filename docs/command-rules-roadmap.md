@@ -111,8 +111,8 @@ If we step back from `command rules` specifically, the next major implementation
    - improve management surfaces and auditability
 
 2. **Hooks / lifecycle extensions**
-   - add operator-visible pre/post tool and session lifecycle hook points
-   - create a cleaner extensibility story aligned with Codex CLI
+   - session lifecycle hooks and pre/post tool hooks are now available through the extension bridge and appkit
+   - next: add richer operator-visible governance UX around these hook points
 
 3. **MCP management UX**
    - make server enablement, trust, source visibility, and governance clearer at the product layer
