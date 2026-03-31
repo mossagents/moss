@@ -162,7 +162,7 @@ func (a *agentState) sessionSummary() string {
 		}
 	}
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Session: %s\n", a.sess.ID))
+	b.WriteString(fmt.Sprintf("Current thread: %s\n", a.sess.ID))
 	b.WriteString(fmt.Sprintf("Status: %s\n", a.sess.Status))
 	b.WriteString(fmt.Sprintf("Messages: %d (dialog: %d)\n", len(a.sess.Messages), dialogCount))
 	b.WriteString(fmt.Sprintf("Budget: steps %d/%d, tokens %d/%d",
@@ -212,10 +212,10 @@ func (a *agentState) listPersistedSessions(limit int) (string, error) {
 		summaries = summaries[:limit]
 	}
 	if len(summaries) == 0 {
-		return "No persisted sessions found.", nil
+		return "No saved conversations found.", nil
 	}
 	var b strings.Builder
-	b.WriteString("Persisted sessions:\n")
+	b.WriteString("Saved conversations:\n")
 	for _, s := range summaries {
 		b.WriteString(fmt.Sprintf("- %s | %s | %s", s.ID, s.Status, s.Mode))
 		if strings.TrimSpace(s.Profile) != "" {
@@ -1178,7 +1178,7 @@ func formatTaskList(raw json.RawMessage) string {
 	}
 	sort.Slice(payload.Tasks, func(i, j int) bool { return payload.Tasks[i].ID < payload.Tasks[j].ID })
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("Tasks (%d):\n", payload.Count))
+	b.WriteString(fmt.Sprintf("Agent threads (%d):\n", payload.Count))
 	for _, t := range payload.Tasks {
 		line := fmt.Sprintf("- %s | %s | %s", t.ID, t.AgentName, t.Status)
 		if t.Goal != "" {

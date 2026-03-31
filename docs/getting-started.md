@@ -154,9 +154,10 @@ moss version
 | `/review [mode]` | 查看当前仓库评审摘要 |
 | `/mcp [list\|show <name>]` | 查看 MCP 服务状态 |
 | `/compact [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
-| `/tasks [status] [limit]` | 列出后台任务（支持状态过滤） |
-| `/task <id>` | 查询单个后台任务详情 |
-| `/task cancel <id> [reason]` | 取消后台任务 |
+| `/agent [list] [status] [limit]` | 列出后台 agent thread（支持状态过滤） |
+| `/agent current` | 查看当前会话 thread 的运行时摘要 |
+| `/agent <id>` | 查询单个后台 agent thread 详情 |
+| `/agent cancel <id> [reason]` | 取消后台 agent thread |
 
 ---
 

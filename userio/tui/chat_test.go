@@ -134,9 +134,10 @@ func TestSlashCommandTraceRendersLastTrace(t *testing.T) {
 	}
 }
 
-func TestSlashCommandTasksValidation(t *testing.T) {
+func TestSlashCommandAgentValidation(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	updated, _ := m.handleSlashCommand("/tasks bad")
+	m.taskListFn = func(status string, limit int) (string, error) { return "ok", nil }
+	updated, _ := m.handleSlashCommand("/agent bad")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected validation message")
 	}
@@ -146,7 +147,7 @@ func TestSlashCommandTasksValidation(t *testing.T) {
 	}
 }
 
-func TestSlashCommandTaskCancel(t *testing.T) {
+func TestSlashCommandAgentCancel(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.taskCancelFn = func(taskID, reason string) (string, error) {
 		if taskID != "t1" {
@@ -154,13 +155,28 @@ func TestSlashCommandTaskCancel(t *testing.T) {
 		}
 		return "cancelled", nil
 	}
-	updated, _ := m.handleSlashCommand("/task cancel t1 because")
+	m.taskListFn = func(status string, limit int) (string, error) { return "ok", nil }
+	updated, _ := m.handleSlashCommand("/agent cancel t1 because")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected cancel output message")
 	}
 	last := updated.messages[len(updated.messages)-1]
 	if last.content != "cancelled" {
 		t.Fatalf("unexpected message content: %q", last.content)
+	}
+}
+
+func TestLegacyTasksCommandsShowGuidance(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/tasks running")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "/agent") {
+		t.Fatalf("unexpected /tasks guidance: %+v", last)
+	}
+	updated, _ = m.handleSlashCommand("/task cancel t1")
+	last = updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "/agent") {
+		t.Fatalf("unexpected /task guidance: %+v", last)
 	}
 }
 
@@ -573,7 +589,7 @@ func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
+	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
 }

@@ -1155,67 +1155,71 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
-	case "/tasks":
+	case "/agent":
 		if m.taskListFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background task tool is unavailable."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread controls are unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
-		status := ""
-		limit := 20
-		if len(args) >= 1 {
-			status = strings.TrimSpace(strings.ToLower(args[0]))
-			switch status {
-			case "", "running", "completed", "failed", "cancelled":
-			default:
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /tasks [running|completed|failed|cancelled] [limit]"})
-				m.refreshViewport()
-				return m, nil
+		if len(args) == 0 || args[0] == "list" {
+			listArgs := args
+			if len(listArgs) > 0 && listArgs[0] == "list" {
+				listArgs = listArgs[1:]
 			}
-		}
-		if len(args) >= 2 {
-			v, err := strconv.Atoi(args[1])
-			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /tasks [status] [limit:int]"})
-				m.refreshViewport()
-				return m, nil
+			status := ""
+			limit := 20
+			if len(listArgs) >= 1 {
+				status = strings.TrimSpace(strings.ToLower(listArgs[0]))
+				switch status {
+				case "", "running", "completed", "failed", "cancelled":
+				default:
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /agent [list] [running|completed|failed|cancelled] [limit]"})
+					m.refreshViewport()
+					return m, nil
+				}
 			}
-			limit = v
+			if len(listArgs) >= 2 {
+				v, err := strconv.Atoi(listArgs[1])
+				if err != nil || v <= 0 {
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /agent [list] [status] [limit:int]"})
+					m.refreshViewport()
+					return m, nil
+				}
+				limit = v
+			}
+			out, err := m.taskListFn(status, limit)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list agent threads: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
 		}
-		out, err := m.taskListFn(status, limit)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list tasks: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-		m.refreshViewport()
-		return m, nil
-
-	case "/task":
-		if len(args) == 0 {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /task <task_id>\n  /task cancel <task_id> [reason...]"})
+		if args[0] == "current" {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.renderStatusSummary()})
 			m.refreshViewport()
 			return m, nil
 		}
 		if args[0] == "cancel" {
 			if m.taskCancelFn == nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Task cancellation tool is unavailable."})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread cancellation is unavailable."})
 				m.refreshViewport()
 				return m, nil
 			}
 			if len(args) < 2 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /task cancel <task_id> [reason...]"})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /agent cancel <agent_id> [reason...]"})
 				m.refreshViewport()
 				return m, nil
 			}
-			taskID := strings.TrimSpace(args[1])
+			agentID := strings.TrimSpace(args[1])
 			reason := "cancelled by user from TUI"
 			if len(args) >= 3 {
 				reason = strings.Join(args[2:], " ")
 			}
-			out, err := m.taskCancelFn(taskID, reason)
+			out, err := m.taskCancelFn(agentID, reason)
 			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to cancel task: %v", err)})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to cancel agent thread: %v", err)})
 			} else {
 				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 			}
@@ -1223,17 +1227,27 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 		if m.taskQueryFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Task query tool is unavailable."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread query is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
-		taskID := strings.TrimSpace(args[0])
-		out, err := m.taskQueryFn(taskID)
+		agentID := strings.TrimSpace(args[0])
+		out, err := m.taskQueryFn(agentID)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to query task: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to query agent thread: %v", err)})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/tasks":
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background agent controls moved to /agent. Use /agent [list], /agent current, /agent <id>, or /agent cancel <id>."})
+		m.refreshViewport()
+		return m, nil
+
+	case "/task":
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background agent controls moved to /agent. Use /agent <id> or /agent cancel <id> [reason]."})
 		m.refreshViewport()
 		return m, nil
 
@@ -1713,6 +1727,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
 	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
+	{Name: "/agent", Summary: "Inspect or cancel background agent threads", Section: "Core"},
 	{Name: "/diff", Summary: "Show the current git diff", Section: "Review and recovery"},
 	{Name: "/review", Summary: "Review working tree state", Section: "Review and recovery"},
 	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
@@ -1721,8 +1736,6 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/checkpoint", Summary: "List, inspect, create, or replay checkpoints", Section: "Review and recovery"},
 	{Name: "/git", Summary: "Run common git and gh helpers", Section: "Review and recovery"},
 	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Runtime"},
-	{Name: "/tasks", Summary: "List background tasks", Section: "Runtime"},
-	{Name: "/task", Summary: "Inspect or cancel a background task", Section: "Runtime"},
 	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Runtime"},
 	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime"},
 	{Name: "/config", Summary: "Show or update config values", Section: "Runtime"},
