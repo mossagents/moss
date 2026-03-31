@@ -18,6 +18,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -37,24 +38,26 @@ const (
 
 // Config 是启动 TUI 的配置。
 type Config struct {
-	APIType            string
-	ProviderName       string
-	Provider           string
-	Model              string
-	Workspace          string
-	Trust              string
-	ApprovalMode       string
-	SessionStoreDir    string
-	InitialSessionID   string
-	BaseURL            string
-	APIKey             string
-	BuildKernel        func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	AfterBoot          func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
-	BuildSystemPrompt  func(workspace string) string
-	BuildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
-	ScheduleController runtime.ScheduleController
-	SidebarTitle       string
-	RenderSidebar      func() string
+	APIType               string
+	ProviderName          string
+	Provider              string
+	Model                 string
+	Workspace             string
+	Trust                 string
+	ApprovalMode          string
+	SessionStoreDir       string
+	InitialSessionID      string
+	BaseURL               string
+	APIKey                string
+	BaseObserver          port.Observer
+	BuildKernel           func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
+	AfterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
+	BuildSystemPrompt     func(workspace string) string
+	BuildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
+	ScheduleController    runtime.ScheduleController
+	SidebarTitle          string
+	RenderSidebar         func() string
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -65,21 +68,23 @@ type kernelReadyMsg struct {
 // agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
 // 使用指针共享，避免 Bubble Tea 值语义问题。
 type agentState struct {
-	k                  *kernel.Kernel
-	sess               *session.Session
-	store              session.SessionStore
-	ctx                context.Context
-	cancel             context.CancelFunc
-	runCancel          context.CancelFunc
-	bridge             *BridgeIO
-	workspace          string
-	trust              string
-	approvalMode       string
-	buildSystemPrompt  func(workspace string) string
-	buildSessionConfig func(workspace, trust, systemPrompt string) session.SessionConfig
-	permissions        map[string]string
-	mu                 sync.Mutex
-	running            bool // 是否正在执行 loop
+	k                     *kernel.Kernel
+	sess                  *session.Session
+	store                 session.SessionStore
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	runCancel             context.CancelFunc
+	bridge                *BridgeIO
+	workspace             string
+	trust                 string
+	approvalMode          string
+	baseObserver          port.Observer
+	buildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
+	buildSystemPrompt     func(workspace string) string
+	buildSessionConfig    func(workspace, trust, systemPrompt string) session.SessionConfig
+	permissions           map[string]string
+	mu                    sync.Mutex
+	running               bool // 是否正在执行 loop
 }
 
 func renderSkillsSummary(agent *agentState, workspace string) string {
@@ -865,11 +870,22 @@ func (a *agentState) appendAndRun(text string) {
 	a.running = true
 	runCtx, runCancel := context.WithCancel(a.ctx)
 	a.runCancel = runCancel
+	baseObserver := a.baseObserver
+	traceFactory := a.buildRunTraceObserver
 	a.mu.Unlock()
 
 	a.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: text})
+	var traceRecorder *product.RunTraceRecorder
+	if traceFactory != nil {
+		recorder, runObserver := traceFactory()
+		traceRecorder = recorder
+		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver))
+	} else {
+		a.k.SetObserver(baseObserver)
+	}
 
 	result, err := a.k.Run(runCtx, a.sess)
+	a.k.SetObserver(baseObserver)
 
 	a.mu.Lock()
 	a.running = false
@@ -881,8 +897,45 @@ func (a *agentState) appendAndRun(text string) {
 		if result != nil {
 			msg.output = result.Output
 		}
+		if traceRecorder != nil {
+			trace := traceRecorder.Snapshot()
+			steps := 0
+			if result != nil {
+				steps = result.Steps
+			}
+			msg.traceSummary = product.RenderRunTraceSummary(product.RunTraceSummary{
+				Status:        runTraceStatus(result, err),
+				Steps:         steps,
+				Trace:         trace,
+				Error:         runTraceError(result, err),
+				CostAvailable: trace.EstimatedCostUSD > 0,
+			})
+		}
 		a.bridge.program.Send(msg)
 	}
+}
+
+func runTraceStatus(result *loop.SessionResult, err error) string {
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	if err != nil {
+		return "failed"
+	}
+	if result == nil || result.Success {
+		return "completed"
+	}
+	return "failed"
+}
+
+func runTraceError(result *loop.SessionResult, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if result != nil {
+		return result.Error
+	}
+	return ""
 }
 
 func (a *agentState) cancelCurrentRun() bool {
@@ -1282,18 +1335,20 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		}
 
 		agent := &agentState{
-			k:                  k,
-			sess:               sess,
-			store:              store,
-			ctx:                ctx,
-			cancel:             cancel,
-			bridge:             bridge,
-			workspace:          wCfg.Workspace,
-			trust:              cfg.Trust,
-			approvalMode:       cfg.ApprovalMode,
-			buildSystemPrompt:  cfg.BuildSystemPrompt,
-			buildSessionConfig: cfg.BuildSessionConfig,
-			permissions:        map[string]string{},
+			k:                     k,
+			sess:                  sess,
+			store:                 store,
+			ctx:                   ctx,
+			cancel:                cancel,
+			bridge:                bridge,
+			workspace:             wCfg.Workspace,
+			trust:                 cfg.Trust,
+			approvalMode:          cfg.ApprovalMode,
+			baseObserver:          cfg.BaseObserver,
+			buildRunTraceObserver: cfg.BuildRunTraceObserver,
+			buildSystemPrompt:     cfg.BuildSystemPrompt,
+			buildSessionConfig:    cfg.BuildSessionConfig,
+			permissions:           map[string]string{},
 		}
 
 		k.Middleware().Use(agent.permissionOverrideMiddleware())

@@ -25,8 +25,9 @@ const (
 
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
-	output string
-	err    error
+	output       string
+	traceSummary string
+	err          error
 }
 
 // cancelMsg 通知应用退出并清理资源。
@@ -215,6 +216,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.finished = true
 		if msg.err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		}
+		if strings.TrimSpace(msg.traceSummary) != "" {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: msg.traceSummary})
 		}
 		if msg.output != "" {
 			m.result = msg.output

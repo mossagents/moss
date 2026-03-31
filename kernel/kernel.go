@@ -79,20 +79,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 	if len(errs) > 0 {
 		return kerrors.New(kerrors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
-	if aware, ok := k.snapshots.(interface{ SetObserver(port.Observer) }); ok {
-		observer := k.observer
-		if observer == nil {
-			observer = port.NoOpObserver{}
-		}
-		aware.SetObserver(observer)
-	}
-	if aware, ok := k.checkpoints.(interface{ SetObserver(port.Observer) }); ok {
-		observer := k.observer
-		if observer == nil {
-			observer = port.NoOpObserver{}
-		}
-		aware.SetObserver(observer)
-	}
+	k.propagateObserver(k.observer)
 	return k.bootExtensions(ctx)
 }
 
@@ -221,6 +208,19 @@ func (k *Kernel) SetLLM(llm port.LLM) {
 // SetObserver 在构建后更新运行时事件观察者。
 func (k *Kernel) SetObserver(observer port.Observer) {
 	k.observer = observer
+	k.propagateObserver(observer)
+}
+
+func (k *Kernel) propagateObserver(observer port.Observer) {
+	if observer == nil {
+		observer = port.NoOpObserver{}
+	}
+	if aware, ok := k.snapshots.(interface{ SetObserver(port.Observer) }); ok {
+		aware.SetObserver(observer)
+	}
+	if aware, ok := k.checkpoints.(interface{ SetObserver(port.Observer) }); ok {
+		aware.SetObserver(observer)
+	}
 }
 
 // Sandbox 返回沙箱抽象（可能为 nil）。

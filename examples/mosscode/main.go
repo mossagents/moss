@@ -396,7 +396,12 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir:  product.SessionStoreDir(),
 		BaseURL:          flags.BaseURL,
 		APIKey:           flags.APIKey,
+		BaseObserver:     cfg.observer,
 		InitialSessionID: cfg.resumeSessionID,
+		BuildRunTraceObserver: func() (*product.RunTraceRecorder, port.Observer) {
+			recorder := product.NewRunTraceRecorder()
+			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)
+		},
 		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,

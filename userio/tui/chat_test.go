@@ -698,6 +698,28 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	}
 }
 
+func TestSessionResult_AppendsTraceSummary(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	updated, _ := m.Update(sessionResultMsg{
+		traceSummary: "Run summary:\n  status: completed\n  steps: 2",
+	})
+	if len(updated.messages) == 0 {
+		t.Fatal("expected summary message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem {
+		t.Fatalf("expected system message, got %v", last.kind)
+	}
+	if !strings.Contains(last.content, "Run summary:") {
+		t.Fatalf("unexpected summary message: %q", last.content)
+	}
+}
+
 func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true

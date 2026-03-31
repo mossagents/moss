@@ -274,6 +274,34 @@ func TestKernelIntegration(t *testing.T) {
 	}
 }
 
+func TestSetObserverUpdatesObserverAwareStores(t *testing.T) {
+	initial := &recordingObserver{}
+	snapshots := &observerAwareSnapshotStore{}
+	checkpoints := &observerAwareCheckpointStore{}
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&port.NoOpIO{}),
+		WithObserver(initial),
+		WithWorktreeSnapshots(snapshots),
+		WithCheckpoints(checkpoints),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if snapshots.observer != initial || checkpoints.observer != initial {
+		t.Fatal("expected initial observer to propagate on boot")
+	}
+
+	next := &recordingObserver{}
+	k.SetObserver(next)
+	if snapshots.observer != next {
+		t.Fatalf("snapshot store observer not updated: got %T want %T", snapshots.observer, next)
+	}
+	if checkpoints.observer != next {
+		t.Fatalf("checkpoint store observer not updated: got %T want %T", checkpoints.observer, next)
+	}
+}
+
 func TestKernelBootRequiresLLM(t *testing.T) {
 	k := New()
 	if err := k.Boot(context.Background()); err == nil {

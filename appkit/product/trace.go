@@ -2,6 +2,10 @@ package product
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,6 +41,14 @@ type RunTrace struct {
 type RunTraceRecorder struct {
 	mu    sync.Mutex
 	trace RunTrace
+}
+
+type RunTraceSummary struct {
+	Status        string
+	Steps         int
+	Trace         RunTrace
+	Error         string
+	CostAvailable bool
 }
 
 func NewRunTraceRecorder() *RunTraceRecorder {
@@ -105,6 +117,18 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionE
 }
 
 func (r *RunTraceRecorder) OnApproval(_ context.Context, e port.ApprovalEvent) {
+	data := map[string]any{
+		"id":          e.Request.ID,
+		"reason":      e.Request.Reason,
+		"reason_code": e.Request.ReasonCode,
+	}
+	if e.Decision != nil {
+		data["approved"] = e.Decision.Approved
+		data["source"] = e.Decision.Source
+		if strings.TrimSpace(e.Decision.Reason) != "" {
+			data["decision_reason"] = e.Decision.Reason
+		}
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -113,11 +137,7 @@ func (r *RunTraceRecorder) OnApproval(_ context.Context, e port.ApprovalEvent) {
 		SessionID: e.SessionID,
 		Type:      e.Type,
 		ToolName:  e.Request.ToolName,
-		Data: map[string]any{
-			"id":          e.Request.ID,
-			"reason":      e.Request.Reason,
-			"reason_code": e.Request.ReasonCode,
-		},
+		Data:      data,
 	})
 }
 
@@ -202,4 +222,255 @@ func cloneTraceData(in map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func RenderRunTraceSummary(summary RunTraceSummary) string {
+	status := normalizeRunTraceStatus(summary.Status, summary.Error)
+	lines := []string{
+		"Run summary:",
+		fmt.Sprintf("  status: %s", status),
+		fmt.Sprintf("  steps: %d", summary.Steps),
+		fmt.Sprintf("  llm calls: %d", summary.Trace.LLMCalls),
+		fmt.Sprintf("  tool calls: %d", summary.Trace.ToolCalls),
+		fmt.Sprintf(
+			"  tokens: prompt=%d completion=%d total=%d",
+			summary.Trace.PromptTokens,
+			summary.Trace.CompletionTokens,
+			summary.Trace.TotalTokens,
+		),
+	}
+	if summary.CostAvailable && summary.Trace.EstimatedCostUSD > 0 {
+		lines = append(lines, fmt.Sprintf("  cost: $%.6f", summary.Trace.EstimatedCostUSD))
+	} else {
+		lines = append(lines, "  cost: unavailable")
+	}
+	if msg := strings.TrimSpace(summary.Error); msg != "" {
+		lines = append(lines, fmt.Sprintf("  error: %s", msg))
+	}
+	if events := SelectKeyTraceEvents(summary.Trace, 5); len(events) > 0 {
+		lines = append(lines, "  key events:")
+		for _, event := range events {
+			lines = append(lines, "    - "+event)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func SelectKeyTraceEvents(trace RunTrace, limit int) []string {
+	if limit <= 0 {
+		return nil
+	}
+	candidates := make([]traceEventSummary, 0, len(trace.Timeline)+1)
+	for idx, event := range trace.Timeline {
+		if summary, ok := summarizeTraceEvent(event, idx); ok {
+			candidates = append(candidates, summary)
+		}
+	}
+	if slowest, ok := summarizeSlowestTraceEvent(trace); ok {
+		candidates = append(candidates, slowest)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].priority != candidates[j].priority {
+			return candidates[i].priority < candidates[j].priority
+		}
+		return candidates[i].index < candidates[j].index
+	})
+	out := make([]string, 0, limit)
+	seen := map[string]struct{}{}
+	for _, candidate := range candidates {
+		if _, ok := seen[candidate.message]; ok {
+			continue
+		}
+		seen[candidate.message] = struct{}{}
+		out = append(out, candidate.message)
+		if len(out) == limit {
+			break
+		}
+	}
+	return out
+}
+
+type traceEventSummary struct {
+	priority int
+	index    int
+	message  string
+}
+
+func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) {
+	switch event.Kind {
+	case "error":
+		if strings.TrimSpace(event.Error) == "" {
+			return traceEventSummary{}, false
+		}
+		msg := "Error: " + event.Error
+		if phase := strings.TrimSpace(event.Type); phase != "" {
+			msg = fmt.Sprintf("Error during %s: %s", phase, event.Error)
+		}
+		return traceEventSummary{priority: 0, index: index, message: msg}, true
+	case "approval":
+		msg := summarizeApprovalEvent(event)
+		if msg == "" {
+			return traceEventSummary{}, false
+		}
+		priority := 20
+		if approved, ok := boolData(event.Data, "approved"); ok && !approved {
+			priority = 2
+		}
+		return traceEventSummary{priority: priority, index: index, message: msg}, true
+	case "execution_event":
+		switch event.Type {
+		case "llm_failover_exhausted":
+			return traceEventSummary{priority: 1, index: index, message: "LLM failover exhausted all available candidates"}, true
+		case "llm_failover_switch":
+			from := valueOrUnknown(stringData(event.Data, "candidate_model"), event.Model)
+			to := valueOrUnknown(stringData(event.Data, "failover_to"), "next candidate")
+			return traceEventSummary{priority: 3, index: index, message: fmt.Sprintf("Failover switched from %s to %s", from, to)}, true
+		}
+	case "llm_call":
+		if strings.TrimSpace(event.Error) == "" {
+			return traceEventSummary{}, false
+		}
+		model := valueOrUnknown(event.Model, "configured model")
+		return traceEventSummary{
+			priority: 4,
+			index:    index,
+			message:  fmt.Sprintf("LLM call on %s failed%s", model, formatDurationSuffix(event.DurationMS)),
+		}, true
+	case "tool_call":
+		if strings.TrimSpace(event.Error) == "" {
+			return traceEventSummary{}, false
+		}
+		toolName := valueOrUnknown(event.ToolName, "tool")
+		return traceEventSummary{
+			priority: 5,
+			index:    index,
+			message:  fmt.Sprintf("Tool %s failed%s", toolName, formatDurationSuffix(event.DurationMS)),
+		}, true
+	}
+	return traceEventSummary{}, false
+}
+
+func summarizeApprovalEvent(event TraceEvent) string {
+	toolName := valueOrUnknown(event.ToolName, "tool")
+	reasonCode := strings.TrimSpace(stringData(event.Data, "reason_code"))
+	switch strings.TrimSpace(event.Type) {
+	case "requested":
+		if reasonCode != "" {
+			return fmt.Sprintf("Approval required for %s (%s)", toolName, reasonCode)
+		}
+		return fmt.Sprintf("Approval required for %s", toolName)
+	case "resolved":
+		if approved, ok := boolData(event.Data, "approved"); ok {
+			if approved {
+				return fmt.Sprintf("Approval granted for %s", toolName)
+			}
+			if reasonCode != "" {
+				return fmt.Sprintf("Approval denied for %s (%s)", toolName, reasonCode)
+			}
+			return fmt.Sprintf("Approval denied for %s", toolName)
+		}
+		return fmt.Sprintf("Approval resolved for %s", toolName)
+	default:
+		return ""
+	}
+}
+
+func summarizeSlowestTraceEvent(trace RunTrace) (traceEventSummary, bool) {
+	var best *TraceEvent
+	bestKind := ""
+	bestIndex := -1
+	for i := range trace.Timeline {
+		event := trace.Timeline[i]
+		if event.DurationMS <= 0 || strings.TrimSpace(event.Error) != "" {
+			continue
+		}
+		if event.Kind != "llm_call" && event.Kind != "tool_call" {
+			continue
+		}
+		if best == nil || event.DurationMS > best.DurationMS {
+			best = &event
+			bestKind = event.Kind
+			bestIndex = i
+		}
+	}
+	if best == nil {
+		return traceEventSummary{}, false
+	}
+	if bestKind == "tool_call" {
+		return traceEventSummary{
+			priority: 30,
+			index:    bestIndex,
+			message:  fmt.Sprintf("Slowest tool: %s (%s)", valueOrUnknown(best.ToolName, "tool"), formatDuration(best.DurationMS)),
+		}, true
+	}
+	return traceEventSummary{
+		priority: 30,
+		index:    bestIndex,
+		message:  fmt.Sprintf("Slowest LLM call: %s (%s)", valueOrUnknown(best.Model, "configured model"), formatDuration(best.DurationMS)),
+	}, true
+}
+
+func normalizeRunTraceStatus(status, errMsg string) string {
+	switch strings.TrimSpace(strings.ToLower(status)) {
+	case "completed", "failed", "cancelled":
+		return strings.TrimSpace(strings.ToLower(status))
+	}
+	if strings.Contains(strings.ToLower(errMsg), "context canceled") {
+		return "cancelled"
+	}
+	if strings.TrimSpace(errMsg) != "" {
+		return "failed"
+	}
+	return "completed"
+}
+
+func formatDurationSuffix(durationMS int64) string {
+	if durationMS <= 0 {
+		return ""
+	}
+	return " (" + formatDuration(durationMS) + ")"
+}
+
+func formatDuration(durationMS int64) string {
+	if durationMS < 1000 {
+		return strconv.FormatInt(durationMS, 10) + "ms"
+	}
+	return (time.Duration(durationMS) * time.Millisecond).String()
+}
+
+func boolData(data map[string]any, key string) (bool, bool) {
+	if len(data) == 0 {
+		return false, false
+	}
+	v, ok := data[key]
+	if !ok {
+		return false, false
+	}
+	b, ok := v.(bool)
+	return b, ok
+}
+
+func stringData(data map[string]any, key string) string {
+	if len(data) == 0 {
+		return ""
+	}
+	v, ok := data[key]
+	if !ok {
+		return ""
+	}
+	switch s := v.(type) {
+	case string:
+		return strings.TrimSpace(s)
+	case fmt.Stringer:
+		return strings.TrimSpace(s.String())
+	default:
+		return ""
+	}
+}
+
+func valueOrUnknown(value, fallback string) string {
+	if strings.TrimSpace(value) != "" {
+		return strings.TrimSpace(value)
+	}
+	return fallback
 }
