@@ -16,6 +16,7 @@ const (
 	ExecutionLLMCompleted      ExecutionEventType = "llm.completed"
 	ExecutionToolStarted       ExecutionEventType = "tool.started"
 	ExecutionToolCompleted     ExecutionEventType = "tool.completed"
+	ExecutionPolicyRuleMatched ExecutionEventType = "policy.rule_matched"
 	ExecutionApprovalRequest   ExecutionEventType = "approval.requested"
 	ExecutionApprovalResolved  ExecutionEventType = "approval.resolved"
 	ExecutionSnapshotCreated   ExecutionEventType = "snapshot.created"

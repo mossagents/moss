@@ -135,6 +135,39 @@ func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
 	}
 }
 
+func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+
+	appDir := filepath.Join(home, ".mosscode")
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatalf("mkdir app dir: %v", err)
+	}
+	configData := []byte("profiles:\n  guarded:\n    execution:\n      http_rules:\n        - name: api-host\n          match: \"api.example.com\"\n          methods: [GET]\n          access: require-approval\n")
+	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), configData, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
+		Workspace:        workspace,
+		RequestedProfile: "guarded",
+	})
+	if err != nil {
+		t.Fatalf("ResolveProfileForWorkspace: %v", err)
+	}
+	if len(resolved.ExecutionPolicy.HTTP.Rules) != 1 {
+		t.Fatalf("expected 1 http rule, got %d", len(resolved.ExecutionPolicy.HTTP.Rules))
+	}
+	rule := resolved.ExecutionPolicy.HTTP.Rules[0]
+	if rule.Name != "api-host" || rule.Match != "api.example.com" || rule.Access != ExecutionAccessRequireApproval || len(rule.Methods) != 1 || rule.Methods[0] != "GET" {
+		t.Fatalf("unexpected http rule: %+v", rule)
+	}
+}
+
 func TestExecutionPolicyRulesApplyCommandRules(t *testing.T) {
 	policy := ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
 	policy.Command.Rules = []CommandRule{{

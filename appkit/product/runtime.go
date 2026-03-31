@@ -155,6 +155,8 @@ type DoctorConfigReport struct {
 type DoctorExecutionPolicyReport struct {
 	CommandAccess             string   `json:"command_access"`
 	HTTPAccess                string   `json:"http_access"`
+	CommandRuleCount          int      `json:"command_rule_count"`
+	HTTPRuleCount             int      `json:"http_rule_count"`
 	CommandNetworkMode        string   `json:"command_network_mode"`
 	CommandNetworkEnforcement string   `json:"command_network_enforcement"`
 	CommandNetworkDegraded    bool     `json:"command_network_degraded"`
@@ -259,7 +261,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspace)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
 	normalizedApprovalMode := NormalizeApprovalMode(approvalMode)
-	executionPolicy := appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, normalizedApprovalMode)
+	executionPolicy := resolveDoctorExecutionPolicy(workspace, flags, explicitFlags, trust, normalizedApprovalMode)
 	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
 	commandNetworkEnforcement := "none"
 	commandNetworkDegraded := false
@@ -298,6 +300,8 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 		Execution: DoctorExecutionPolicyReport{
 			CommandAccess:             string(executionPolicy.Command.Access),
 			HTTPAccess:                string(executionPolicy.HTTP.Access),
+			CommandRuleCount:          len(executionPolicy.Command.Rules),
+			HTTPRuleCount:             len(executionPolicy.HTTP.Rules),
 			CommandNetworkMode:        string(executionPolicy.Command.Network.Mode),
 			CommandNetworkEnforcement: commandNetworkEnforcement,
 			CommandNetworkDegraded:    commandNetworkDegraded,
@@ -469,6 +473,9 @@ func RenderDoctorReport(report DoctorReport) string {
 		renderList(report.Execution.HTTPMethods),
 		report.Execution.HTTPFollowRedirects,
 		report.Execution.HTTPHostPolicy)
+	if report.Execution.CommandRuleCount > 0 || report.Execution.HTTPRuleCount > 0 {
+		fmt.Fprintf(&b, "Execution rules: command=%d http=%d\n", report.Execution.CommandRuleCount, report.Execution.HTTPRuleCount)
+	}
 	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s failover=%t available=%t candidates=%d per_candidate_retries=%d breaker_open_failover=%t router=%s",
 		report.Governance.Model.RetryEnabled,
 		report.Governance.Model.RetryMaxRetries,
@@ -548,6 +555,48 @@ func RenderDoctorReport(report DoctorReport) string {
 	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+func resolveDoctorExecutionPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) appruntime.ExecutionPolicy {
+	if flags == nil {
+		return appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode)
+	}
+	trustOverride := ""
+	if containsString(explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
+		trustOverride = trust
+	}
+	approvalOverride := ""
+	if containsString(explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
+		approvalOverride = approvalMode
+	}
+	resolved, err := appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+		Workspace:        workspace,
+		RequestedProfile: flags.Profile,
+		Trust:            trustOverride,
+		ApprovalMode:     approvalOverride,
+	})
+	if err == nil {
+		return resolved.ExecutionPolicy
+	}
+	return appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode)
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if strings.TrimSpace(item) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func envConfigured(keys ...string) bool {
+	for _, key := range keys {
+		if strings.TrimSpace(os.Getenv(key)) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type ReviewReport struct {

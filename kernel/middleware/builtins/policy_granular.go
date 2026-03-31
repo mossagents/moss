@@ -170,6 +170,9 @@ func extractPolicyInputDetails(toolName string, input json.RawMessage) map[strin
 		if rawURL := extractStringField(input, "url"); rawURL != "" {
 			details["url"] = rawURL
 		}
+		if timeout := extractStringField(input, "timeout_seconds"); timeout != "" {
+			details["timeout_seconds"] = timeout
+		}
 		if len(details) > 0 {
 			return details
 		}

@@ -88,6 +88,15 @@ type mockAuthenticator struct {
 	err      error
 }
 
+type executionEventRecorder struct {
+	port.NoOpObserver
+	events []port.ExecutionEvent
+}
+
+func (r *executionEventRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+	r.events = append(r.events, e)
+}
+
 func (m *mockAuthenticator) Authenticate(_ context.Context, _ string) (*port.Identity, error) {
 	return m.identity, m.err
 }
@@ -381,5 +390,41 @@ func TestPolicyCheck_ApprovalPromptIncludesReasonCode(t *testing.T) {
 	}
 	if got := io.Asked[0].Prompt; !strings.Contains(got, "reason_code=tool.requires_approval") {
 		t.Fatalf("expected reason code in prompt, got %q", got)
+	}
+}
+
+func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
+	io := port.NewBufferIO()
+	sess := &session.Session{ID: "s5"}
+	observer := &executionEventRecorder{}
+	mw := PolicyCheck(CommandRules(CommandPatternRule{
+		Name:   "git-push",
+		Match:  "git push*",
+		Access: Deny,
+	}))
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"push", "origin", "main"},
+	})
+	mc := &middleware.Context{
+		Phase:    middleware.BeforeToolCall,
+		Session:  sess,
+		Tool:     &tool.ToolSpec{Name: "run_command", Risk: tool.RiskHigh},
+		IO:       io,
+		Observer: observer,
+		Input:    input,
+	}
+	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
+	if err != ErrDenied {
+		t.Fatalf("expected ErrDenied, got %v", err)
+	}
+	if len(observer.events) == 0 {
+		t.Fatal("expected policy match event")
+	}
+	if observer.events[0].Type != port.ExecutionPolicyRuleMatched {
+		t.Fatalf("event type = %s", observer.events[0].Type)
+	}
+	if observer.events[0].Data["rule_name"] != "git-push" {
+		t.Fatalf("unexpected event data: %+v", observer.events[0].Data)
 	}
 }

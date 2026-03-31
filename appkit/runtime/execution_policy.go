@@ -41,12 +41,20 @@ type HTTPExecutionPolicy struct {
 	DefaultTimeout  time.Duration   `json:"default_timeout"`
 	MaxTimeout      time.Duration   `json:"max_timeout"`
 	FollowRedirects bool            `json:"follow_redirects"`
+	Rules           []HTTPRule      `json:"rules,omitempty"`
 }
 
 type CommandRule struct {
 	Name   string          `json:"name,omitempty"`
 	Match  string          `json:"match"`
 	Access ExecutionAccess `json:"access"`
+}
+
+type HTTPRule struct {
+	Name    string          `json:"name,omitempty"`
+	Match   string          `json:"match"`
+	Methods []string        `json:"methods,omitempty"`
+	Access  ExecutionAccess `json:"access"`
 }
 
 type ExecutionPolicy struct {
@@ -94,6 +102,7 @@ func ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode string) E
 
 func ExecutionPolicyRules(policy ExecutionPolicy) []builtins.PolicyRule {
 	rules := commandPolicyRules(policy.Command.Rules)
+	rules = append(rules, httpPolicyRules(policy.HTTP.Rules)...)
 	rules = append(rules,
 		builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
 	)
@@ -125,6 +134,22 @@ func commandPolicyRules(rules []CommandRule) []builtins.PolicyRule {
 		})
 	}
 	return []builtins.PolicyRule{builtins.CommandRules(converted...)}
+}
+
+func httpPolicyRules(rules []HTTPRule) []builtins.PolicyRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	converted := make([]builtins.HTTPPatternRule, 0, len(rules))
+	for _, rule := range rules {
+		converted = append(converted, builtins.HTTPPatternRule{
+			Name:    rule.Name,
+			Match:   rule.Match,
+			Methods: append([]string(nil), rule.Methods...),
+			Access:  commandRuleDecision(rule.Access),
+		})
+	}
+	return []builtins.PolicyRule{builtins.HTTPRules(converted...)}
 }
 
 func commandRuleDecision(access ExecutionAccess) builtins.PolicyDecision {
@@ -249,6 +274,7 @@ func cloneExecutionPolicy(policy ExecutionPolicy) ExecutionPolicy {
 	policy.HTTP.AllowedMethods = append([]string(nil), policy.HTTP.AllowedMethods...)
 	policy.HTTP.AllowedSchemes = append([]string(nil), policy.HTTP.AllowedSchemes...)
 	policy.HTTP.AllowedHosts = append([]string(nil), policy.HTTP.AllowedHosts...)
+	policy.HTTP.Rules = append([]HTTPRule(nil), policy.HTTP.Rules...)
 	return policy
 }
 

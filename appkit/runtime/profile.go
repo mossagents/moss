@@ -248,6 +248,13 @@ func ApplyProfileExecution(policy ExecutionPolicy, override appconfig.ExecutionP
 		}
 		policy.Command.Rules = rules
 	}
+	if len(override.HTTPRules) > 0 {
+		rules, err := normalizeProfileHTTPRules(override.HTTPRules)
+		if err != nil {
+			return ExecutionPolicy{}, err
+		}
+		policy.HTTP.Rules = rules
+	}
 	return policy, nil
 }
 
@@ -369,6 +376,9 @@ func mergeProfileConfig(base, overlay appconfig.ProfileConfig) appconfig.Profile
 	if len(overlay.Execution.CommandRules) > 0 {
 		base.Execution.CommandRules = append([]appconfig.CommandRuleConfig(nil), overlay.Execution.CommandRules...)
 	}
+	if len(overlay.Execution.HTTPRules) > 0 {
+		base.Execution.HTTPRules = append([]appconfig.HTTPRuleConfig(nil), overlay.Execution.HTTPRules...)
+	}
 	return base
 }
 
@@ -383,7 +393,8 @@ func isZeroProfileConfig(cfg appconfig.ProfileConfig) bool {
 		strings.TrimSpace(cfg.Execution.HTTPAccess) == "" &&
 		strings.TrimSpace(cfg.Execution.CommandTimeout) == "" &&
 		strings.TrimSpace(cfg.Execution.HTTPTimeout) == "" &&
-		len(cfg.Execution.CommandRules) == 0
+		len(cfg.Execution.CommandRules) == 0 &&
+		len(cfg.Execution.HTTPRules) == 0
 }
 
 func normalizeProfileAccess(value string) ExecutionAccess {
@@ -423,6 +434,34 @@ func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]Comman
 			Name:   strings.TrimSpace(rule.Name),
 			Match:  match,
 			Access: access,
+		})
+	}
+	return out, nil
+}
+
+func normalizeProfileHTTPRules(rules []appconfig.HTTPRuleConfig) ([]HTTPRule, error) {
+	if len(rules) == 0 {
+		return nil, nil
+	}
+	out := make([]HTTPRule, 0, len(rules))
+	for i, rule := range rules {
+		match := strings.TrimSpace(rule.Match)
+		if match == "" {
+			return nil, fmt.Errorf("http rule %d: match is required", i+1)
+		}
+		access := normalizeProfileAccess(rule.Access)
+		if access == "" {
+			name := strings.TrimSpace(rule.Name)
+			if name == "" {
+				name = fmt.Sprintf("#%d", i+1)
+			}
+			return nil, fmt.Errorf("http rule %s: access must be allow, require-approval, or deny", name)
+		}
+		out = append(out, HTTPRule{
+			Name:    strings.TrimSpace(rule.Name),
+			Match:   match,
+			Methods: normalizeStringSlice(rule.Methods),
+			Access:  access,
 		})
 	}
 	return out, nil

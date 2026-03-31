@@ -118,12 +118,20 @@ type ExecutionProfileConfig struct {
 	CommandTimeout string              `yaml:"command_timeout,omitempty"`
 	HTTPTimeout    string              `yaml:"http_timeout,omitempty"`
 	CommandRules   []CommandRuleConfig `yaml:"command_rules,omitempty"`
+	HTTPRules      []HTTPRuleConfig    `yaml:"http_rules,omitempty"`
 }
 
 type CommandRuleConfig struct {
 	Name   string `yaml:"name,omitempty"`
 	Match  string `yaml:"match,omitempty"`
 	Access string `yaml:"access,omitempty"`
+}
+
+type HTTPRuleConfig struct {
+	Name    string   `yaml:"name,omitempty"`
+	Match   string   `yaml:"match,omitempty"`
+	Methods []string `yaml:"methods,omitempty"`
+	Access  string   `yaml:"access,omitempty"`
 }
 
 type ProviderIdentity struct {

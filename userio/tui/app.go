@@ -170,6 +170,12 @@ func (a *agentState) sessionSummary() string {
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
+	if a.k != nil {
+		policy := runtime.ExecutionPolicyOf(a.k)
+		if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
+			b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
+		}
+	}
 	return b.String()
 }
 
@@ -871,6 +877,20 @@ func (a *agentState) permissionSummary() string {
 					label = strings.TrimSpace(rule.Match)
 				}
 				b.WriteString(fmt.Sprintf("- %s => %s (%s)\n", label, rule.Access, rule.Match))
+			}
+		}
+		if len(policy.HTTP.Rules) > 0 {
+			b.WriteString("HTTP rules:\n")
+			for _, rule := range policy.HTTP.Rules {
+				label := strings.TrimSpace(rule.Name)
+				if label == "" {
+					label = strings.TrimSpace(rule.Match)
+				}
+				methods := strings.Join(rule.Methods, ",")
+				if methods == "" {
+					methods = "*"
+				}
+				b.WriteString(fmt.Sprintf("- %s => %s (%s methods=%s)\n", label, rule.Access, rule.Match, methods))
 			}
 		}
 	}

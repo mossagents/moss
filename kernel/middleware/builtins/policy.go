@@ -50,6 +50,29 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 				result = nextResult
 			}
 		}
+		if mc.Observer != nil && len(result.Meta) > 0 {
+			data := map[string]any{}
+			for k, v := range result.Meta {
+				data[k] = v
+			}
+			for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
+				data[k] = v
+			}
+			sessionID := ""
+			if mc.Session != nil {
+				sessionID = mc.Session.ID
+			}
+			mc.Observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+				Type:        port.ExecutionPolicyRuleMatched,
+				SessionID:   sessionID,
+				Timestamp:   time.Now().UTC(),
+				ToolName:    mc.Tool.Name,
+				Risk:        string(mc.Tool.Risk),
+				ReasonCode:  result.Reason.Code,
+				Enforcement: result.Enforcement,
+				Data:        data,
+			})
+		}
 
 		switch result.Decision {
 		case Deny:
@@ -83,6 +106,9 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					"reason_code": approval.ReasonCode,
 				}
 				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
+					requestData[k] = v
+				}
+				for k, v := range result.Meta {
 					requestData[k] = v
 				}
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
@@ -125,6 +151,9 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					"reason_code": approval.ReasonCode,
 				}
 				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
+					resolvedData[k] = v
+				}
+				for k, v := range result.Meta {
 					resolvedData[k] = v
 				}
 				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
