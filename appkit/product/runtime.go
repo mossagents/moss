@@ -26,6 +26,10 @@ func CheckpointStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "checkpoints")
 }
 
+func ChangeStoreDir() string {
+	return filepath.Join(appconfig.AppDir(), "changes")
+}
+
 func MemoryDir() string {
 	return filepath.Join(appconfig.AppDir(), "memories")
 }
@@ -420,6 +424,8 @@ type ReviewReport struct {
 	Repo      ReviewRepoState         `json:"repo"`
 	Snapshots []ReviewSnapshotSummary `json:"snapshots,omitempty"`
 	Snapshot  *ReviewSnapshotSummary  `json:"snapshot,omitempty"`
+	Changes   []ChangeSummary         `json:"changes,omitempty"`
+	Change    *ChangeOperation        `json:"change,omitempty"`
 }
 
 type ReviewRepoState struct {
@@ -504,8 +510,31 @@ func BuildReviewReport(ctx context.Context, workspace string, args []string) (Re
 			}
 		}
 		return ReviewReport{}, fmt.Errorf("snapshot %q not found", args[1])
+	case "changes":
+		if !report.Repo.Available {
+			return report, nil
+		}
+		items, err := listChangeOperationsByRepoRoot(ctx, report.Repo.Root, 20)
+		if err != nil {
+			return ReviewReport{}, err
+		}
+		report.Changes = items
+		return report, nil
+	case "change":
+		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+			return ReviewReport{}, fmt.Errorf("usage: mosscode review change <id>")
+		}
+		if !report.Repo.Available {
+			return ReviewReport{}, fmt.Errorf("repository state capture is unavailable")
+		}
+		item, err := LoadChangeOperationByRepoRoot(ctx, report.Repo.Root, strings.TrimSpace(args[1]))
+		if err != nil {
+			return ReviewReport{}, err
+		}
+		report.Change = item
+		return report, nil
 	default:
-		return ReviewReport{}, fmt.Errorf("unknown review mode %q (supported: status, snapshots, snapshot)", mode)
+		return ReviewReport{}, fmt.Errorf("unknown review mode %q (supported: status, snapshots, snapshot, changes, change)", mode)
 	}
 }
 
@@ -550,6 +579,16 @@ func RenderReviewReport(report ReviewReport) string {
 		fmt.Fprintf(&b, "  head:    %s\n", firstNonEmpty(snapshot.Head, "(none)"))
 		fmt.Fprintf(&b, "  patches: %d\n", snapshot.PatchCount)
 		fmt.Fprintf(&b, "  note:    %s\n", firstNonEmpty(snapshot.Note, "(none)"))
+	case "changes":
+		if len(report.Changes) == 0 {
+			b.WriteString("Changes: none\n")
+			return b.String()
+		}
+		b.WriteString(RenderChangeSummaries(report.Changes))
+		b.WriteString("\n")
+	case "change":
+		b.WriteString(RenderChangeDetail(report.Change))
+		b.WriteString("\n")
 	}
 	return b.String()
 }
@@ -625,6 +664,21 @@ func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+func listChangeOperationsByRepoRoot(ctx context.Context, repoRoot string, limit int) ([]ChangeSummary, error) {
+	store, err := OpenChangeStore()
+	if err != nil {
+		return nil, err
+	}
+	items, err := store.ListByRepoRoot(ctx, repoRoot)
+	if err != nil {
+		return nil, err
+	}
+	if limit > 0 && len(items) > limit {
+		items = items[:limit]
+	}
+	return SummarizeChanges(items), nil
 }
 
 func RenderCheckpointSummaries(items []CheckpointSummary) string {

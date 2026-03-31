@@ -68,6 +68,10 @@ type chatModel struct {
 	taskCancelFn        func(taskID, reason string) (string, error)
 	scheduleCtrl        runtime.ScheduleController
 	sessionListFn       func(limit int) (string, error)
+	changeListFn        func(limit int) (string, error)
+	changeShowFn        func(changeID string) (string, error)
+	applyChangeFn       func(patchFile, summary string) (string, error)
+	rollbackChangeFn    func(changeID string) (string, error)
 	checkpointListFn    func(limit int) (string, error)
 	checkpointCreateFn  func(note string) (string, error)
 	checkpointForkFn    func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
@@ -831,6 +835,104 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 
+	case "/changes":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /changes list [limit]\n  /changes show <change_id>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "list":
+			if m.changeListFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change list is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit := 20
+			if len(args) >= 2 {
+				v, err := strconv.Atoi(args[1])
+				if err != nil || v <= 0 {
+					m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes list [limit:int]"})
+					m.refreshViewport()
+					return m, nil
+				}
+				limit = v
+			}
+			out, err := m.changeListFn(limit)
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list changes: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		case "show":
+			if m.changeShowFn == nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change detail is unavailable."})
+				m.refreshViewport()
+				return m, nil
+			}
+			if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes show <change_id>"})
+				m.refreshViewport()
+				return m, nil
+			}
+			out, err := m.changeShowFn(strings.TrimSpace(args[1]))
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to show change: %v", err)})
+			} else {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+			}
+			m.refreshViewport()
+			return m, nil
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes list|show ..."})
+			m.refreshViewport()
+			return m, nil
+		}
+
+	case "/apply":
+		if m.applyChangeFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change apply is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /apply <patch_file> [summary...]"})
+			m.refreshViewport()
+			return m, nil
+		}
+		patchFile := strings.TrimSpace(args[0])
+		summary := strings.TrimSpace(strings.Join(args[1:], " "))
+		out, err := m.applyChangeFn(patchFile, summary)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to apply change: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/rollback":
+		if m.rollbackChangeFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change rollback is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /rollback <change_id>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := m.rollbackChangeFn(strings.TrimSpace(args[0]))
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to roll back change: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/sessions":
 		if m.sessionListFn == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Session list is unavailable."})
@@ -1166,6 +1268,10 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			"  /new           Create and switch to a fresh session\n" +
 			"  /session restore <id>  Restore a persisted session\n" +
 			"  /sessions [limit]  List persisted sessions\n" +
+			"  /changes list [limit]  List persisted change operations\n" +
+			"  /changes show <id>  Show a specific persisted change operation\n" +
+			"  /apply <patch_file> [summary...]  Apply an explicit patch file\n" +
+			"  /rollback <id>  Roll back a specific persisted change\n" +
 			"  /checkpoint list [limit]  List persisted checkpoints\n" +
 			"  /checkpoint create [note]  Create a checkpoint from the current session\n" +
 			"  /checkpoint fork [session <id>|checkpoint <id>] [restore]  Fork into a fresh session\n" +
@@ -1412,7 +1518,7 @@ func (m *chatModel) applySlashCompletion() bool {
 }
 
 var slashCandidates = []string{
-	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/checkpoint", "/offload", "/tasks", "/task",
+	"/help", "/skills", "/skill", "/session", "/new", "/sessions", "/changes", "/apply", "/rollback", "/checkpoint", "/offload", "/tasks", "/task",
 	"/config", "/schedules", "/git", "/budget", "/permissions", "/trust", "/approval", "/model", "/clear", "/exit", "/quit",
 	"/http_request",
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -280,6 +282,41 @@ func (a *agentState) listPersistedCheckpoints(limit int) (string, error) {
 	return product.RenderCheckpointSummaries(summaries), nil
 }
 
+func (a *agentState) listPersistedChanges(limit int) (string, error) {
+	a.mu.Lock()
+	ctx := a.ctx
+	workspace := a.workspace
+	a.mu.Unlock()
+	if limit <= 0 {
+		limit = 20
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	items, err := product.ListChangeOperations(reqCtx, workspace, limit)
+	if err != nil {
+		return "", err
+	}
+	return product.RenderChangeSummaries(items), nil
+}
+
+func (a *agentState) showPersistedChange(changeID string) (string, error) {
+	a.mu.Lock()
+	ctx := a.ctx
+	workspace := a.workspace
+	a.mu.Unlock()
+	changeID = strings.TrimSpace(changeID)
+	if changeID == "" {
+		return "", fmt.Errorf("change id is required")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	item, err := product.LoadChangeOperation(reqCtx, workspace, changeID)
+	if err != nil {
+		return "", err
+	}
+	return product.RenderChangeDetail(item), nil
+}
+
 func (a *agentState) createCheckpoint(note string) (string, error) {
 	a.mu.Lock()
 	if a.running {
@@ -312,6 +349,75 @@ func (a *agentState) createCheckpoint(note string) (string, error) {
 		msg += fmt.Sprintf(" note=%s.", summary.Note)
 	}
 	return msg, nil
+}
+
+func (a *agentState) applyChange(patchFile, summary string) (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot apply a change while a run is active")
+	}
+	k := a.k
+	ctx := a.ctx
+	workspace := a.workspace
+	a.mu.Unlock()
+	if k == nil {
+		return "", fmt.Errorf("runtime is unavailable")
+	}
+	patchFile = strings.TrimSpace(patchFile)
+	if patchFile == "" {
+		return "", fmt.Errorf("patch file is required")
+	}
+	if !filepath.IsAbs(patchFile) {
+		patchFile = filepath.Join(workspace, patchFile)
+	}
+	data, err := os.ReadFile(patchFile)
+	if err != nil {
+		return "", fmt.Errorf("read patch file: %w", err)
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	item, err := product.ApplyChange(reqCtx, product.ChangeRuntimeFromKernel(workspace, k), product.ApplyChangeRequest{
+		Patch:   string(data),
+		Summary: strings.TrimSpace(summary),
+		Source:  port.PatchSourceUser,
+	})
+	if err != nil {
+		var opErr *product.ChangeOperationError
+		if errors.As(err, &opErr) && opErr.Operation != nil {
+			return "", fmt.Errorf("%s\nDetails: %s", product.RenderChangeDetail(opErr.Operation), opErr.Error())
+		}
+		return "", err
+	}
+	return product.RenderChangeDetail(item), nil
+}
+
+func (a *agentState) rollbackChange(changeID string) (string, error) {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return "", errors.New("cannot roll back a change while a run is active")
+	}
+	k := a.k
+	ctx := a.ctx
+	workspace := a.workspace
+	a.mu.Unlock()
+	if k == nil {
+		return "", fmt.Errorf("runtime is unavailable")
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	item, err := product.RollbackChange(reqCtx, product.ChangeRuntimeFromKernel(workspace, k), product.RollbackChangeRequest{
+		ChangeID: strings.TrimSpace(changeID),
+	})
+	if err != nil {
+		var opErr *product.ChangeOperationError
+		if errors.As(err, &opErr) && opErr.Operation != nil {
+			return "", fmt.Errorf("%s\nDetails: %s", product.RenderChangeDetail(opErr.Operation), opErr.Error())
+		}
+		return "", err
+	}
+	return product.RenderChangeDetail(item), nil
 }
 
 func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
@@ -1011,6 +1117,18 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.sessionInfoFn = agent.sessionSummary
 		m.chat.sessionListFn = func(limit int) (string, error) {
 			return agent.listPersistedSessions(limit)
+		}
+		m.chat.changeListFn = func(limit int) (string, error) {
+			return agent.listPersistedChanges(limit)
+		}
+		m.chat.changeShowFn = func(changeID string) (string, error) {
+			return agent.showPersistedChange(changeID)
+		}
+		m.chat.applyChangeFn = func(patchFile, summary string) (string, error) {
+			return agent.applyChange(patchFile, summary)
+		}
+		m.chat.rollbackChangeFn = func(changeID string) (string, error) {
+			return agent.rollbackChange(changeID)
 		}
 		m.chat.checkpointListFn = func(limit int) (string, error) {
 			return agent.listPersistedCheckpoints(limit)

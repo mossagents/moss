@@ -18,6 +18,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/presets/deepagent"
+	"github.com/mossagents/moss/sandbox"
 	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
@@ -57,9 +59,20 @@ type config struct {
 	reviewJSON      bool
 	reviewArgs      []string
 	checkpointArgs  []string
+	applyArgs       []string
+	rollbackArgs    []string
+	changesArgs     []string
 	explicitFlags   []string
 	observer        port.Observer
 	pricingCatalog  *product.PricingCatalog
+}
+
+type commandExitError struct {
+	code int
+}
+
+func (e *commandExitError) Error() string {
+	return ""
 }
 
 func main() {
@@ -98,34 +111,28 @@ func main() {
 	case "exec":
 		os.Exit(runExec(ctx, cfg))
 	case "resume":
-		if err := runResume(ctx, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		exitOnCommandError(runResume(ctx, cfg))
 		return
 	case "doctor":
-		if err := runDoctor(ctx, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		exitOnCommandError(runDoctor(ctx, cfg))
 		return
 	case "config":
-		if err := runConfig(cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		exitOnCommandError(runConfig(cfg))
 		return
 	case "review":
-		if err := runReview(ctx, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		exitOnCommandError(runReview(ctx, cfg))
 		return
 	case "checkpoint":
-		if err := runCheckpoint(ctx, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		exitOnCommandError(runCheckpoint(ctx, cfg))
+		return
+	case "apply":
+		exitOnCommandError(runApply(ctx, cfg))
+		return
+	case "rollback":
+		exitOnCommandError(runRollback(ctx, cfg))
+		return
+	case "changes":
+		exitOnCommandError(runChanges(ctx, cfg))
 		return
 	}
 
@@ -165,6 +172,18 @@ func parseFlags() *config {
 		case "checkpoint":
 			cfg.command = "checkpoint"
 			cfg.checkpointArgs = append([]string(nil), os.Args[2:]...)
+			return cfg
+		case "apply":
+			cfg.command = "apply"
+			cfg.applyArgs = append([]string(nil), os.Args[2:]...)
+			return cfg
+		case "rollback":
+			cfg.command = "rollback"
+			cfg.rollbackArgs = append([]string(nil), os.Args[2:]...)
+			return cfg
+		case "changes":
+			cfg.command = "changes"
+			cfg.changesArgs = append([]string(nil), os.Args[2:]...)
 			return cfg
 		case "help", "--help", "-h":
 			printUsage()
@@ -326,6 +345,8 @@ Review:
   status        Show repo change summary (default)
   snapshots     List saved worktree snapshots
   snapshot      Show a specific snapshot by ID
+  changes       List persisted change operations for the current repo
+  change        Show a specific persisted change operation by ID
   --json        Emit machine-readable review output
 
 Checkpoint:
@@ -334,7 +355,21 @@ Checkpoint:
   fork [--session <id> | --checkpoint <id>] [--restore-worktree] [--json]
                                                              Fork a fresh session from a session/checkpoint
   replay --checkpoint <id> [--mode resume|rerun] [--restore-worktree] [--json]
-                                                             Prepare a fresh replay session from a checkpoint
+                                                              Prepare a fresh replay session from a checkpoint
+
+Apply:
+  --patch-file <path>   Apply an explicit patch file
+  --summary <text>      Optional human-readable summary for the change
+  --session <id>        Optional persisted session ID for best-effort checkpoint creation
+  --json                Emit machine-readable apply output
+
+Rollback:
+  --change <id>         Roll back a specific persisted change by ID
+  --json                Emit machine-readable rollback output
+
+Changes:
+  list [--limit N] [--json]   List persisted change operations for the current repo
+  show <id> [--json]          Show a specific persisted change operation by ID
 
 Exec:
   --json        Emit machine-readable execution output
@@ -483,6 +518,13 @@ type checkpointActionReport struct {
 	Degraded         bool                        `json:"degraded,omitempty"`
 	Details          string                      `json:"details,omitempty"`
 	Note             string                      `json:"note,omitempty"`
+}
+
+type changeActionReport struct {
+	Mode    string                   `json:"mode"`
+	Change  *product.ChangeOperation `json:"change,omitempty"`
+	Changes []product.ChangeSummary  `json:"changes,omitempty"`
+	Details string                   `json:"details,omitempty"`
 }
 
 func runCheckpoint(ctx context.Context, cfg *config) error {
@@ -713,6 +755,28 @@ func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, er
 	return buildKernel(ctx, cfg.flags, &port.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
 }
 
+func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (product.ChangeRuntime, func(), error) {
+	rt := product.ChangeRuntime{
+		Workspace:        cfg.flags.Workspace,
+		RepoStateCapture: sandbox.NewGitRepoStateCapture(cfg.flags.Workspace),
+		PatchApply:       sandbox.NewGitPatchApply(cfg.flags.Workspace),
+		PatchRevert:      sandbox.NewGitPatchRevert(cfg.flags.Workspace),
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return rt, func() {}, nil
+	}
+	k, err := buildCheckpointKernel(ctx, cfg)
+	if err != nil {
+		return product.ChangeRuntime{}, nil, err
+	}
+	if err := k.Boot(ctx); err != nil {
+		return product.ChangeRuntime{}, nil, err
+	}
+	return product.ChangeRuntimeFromKernel(cfg.flags.Workspace, k), func() {
+		_ = k.Shutdown(ctx)
+	}, nil
+}
+
 func printJSON(v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
@@ -720,6 +784,18 @@ func printJSON(v any) error {
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+func exitOnCommandError(err error) {
+	if err == nil {
+		return
+	}
+	var exitErr *commandExitError
+	if errors.As(err, &exitErr) {
+		os.Exit(exitErr.code)
+	}
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	os.Exit(1)
 }
 
 func runExec(ctx context.Context, cfg *config) int {
@@ -741,6 +817,169 @@ func runExec(ctx context.Context, cfg *config) int {
 		return 1
 	}
 	return 0
+}
+
+func runApply(ctx context.Context, cfg *config) error {
+	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	patchFile := ""
+	summary := ""
+	sessionID := ""
+	jsonOut := false
+	fs.StringVar(&patchFile, "patch-file", "", "Apply an explicit patch file")
+	fs.StringVar(&summary, "summary", "", "Optional human-readable summary for the change")
+	fs.StringVar(&sessionID, "session", "", "Optional persisted session ID for checkpoint creation")
+	fs.BoolVar(&jsonOut, "json", false, "Emit apply output as JSON")
+	parseCommonFlags(fs, cfg, cfg.applyArgs)
+	if strings.TrimSpace(patchFile) == "" {
+		return fmt.Errorf("usage: mosscode apply --patch-file <path> [--summary <text>] [--session <id>] [--json]")
+	}
+	data, err := os.ReadFile(patchFile)
+	if err != nil {
+		return fmt.Errorf("read patch file: %w", err)
+	}
+	rt, cleanup, err := buildChangeRuntime(ctx, cfg, sessionID)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	item, err := product.ApplyChange(ctx, rt, product.ApplyChangeRequest{
+		Patch:     string(data),
+		Summary:   strings.TrimSpace(summary),
+		SessionID: strings.TrimSpace(sessionID),
+		Source:    port.PatchSourceUser,
+	})
+	report := changeActionReport{
+		Mode:   "apply",
+		Change: item,
+	}
+	if err != nil {
+		if opErr := (*product.ChangeOperationError)(nil); errors.As(err, &opErr) {
+			report.Change = opErr.Operation
+			report.Details = opErr.Error()
+			return emitChangeReport(report, jsonOut, true)
+		}
+		return err
+	}
+	return emitChangeReport(report, jsonOut, false)
+}
+
+func runRollback(ctx context.Context, cfg *config) error {
+	fs := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	changeID := ""
+	jsonOut := false
+	fs.StringVar(&changeID, "change", "", "Roll back a specific persisted change by ID")
+	fs.BoolVar(&jsonOut, "json", false, "Emit rollback output as JSON")
+	parseCommonFlags(fs, cfg, cfg.rollbackArgs)
+	if strings.TrimSpace(changeID) == "" {
+		return fmt.Errorf("usage: mosscode rollback --change <id> [--json]")
+	}
+	rt, cleanup, err := buildChangeRuntime(ctx, cfg, "")
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	item, err := product.RollbackChange(ctx, rt, product.RollbackChangeRequest{ChangeID: strings.TrimSpace(changeID)})
+	report := changeActionReport{
+		Mode:   "rollback",
+		Change: item,
+	}
+	if err != nil {
+		if opErr := (*product.ChangeOperationError)(nil); errors.As(err, &opErr) {
+			report.Change = opErr.Operation
+			report.Details = opErr.Error()
+			return emitChangeReport(report, jsonOut, true)
+		}
+		return err
+	}
+	return emitChangeReport(report, jsonOut, false)
+}
+
+func runChanges(ctx context.Context, cfg *config) error {
+	if len(cfg.changesArgs) == 0 {
+		return fmt.Errorf("usage: mosscode changes <list|show> [flags]")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.changesArgs[0])) {
+	case "list":
+		return runChangesList(ctx, cfg, cfg.changesArgs[1:])
+	case "show":
+		return runChangesShow(ctx, cfg, cfg.changesArgs[1:])
+	default:
+		return fmt.Errorf("unknown changes command %q (supported: list, show)", cfg.changesArgs[0])
+	}
+}
+
+func runChangesList(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("changes list", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	jsonOut := false
+	limit := 20
+	fs.BoolVar(&jsonOut, "json", false, "Emit changes list as JSON")
+	fs.IntVar(&limit, "limit", limit, "Maximum change operations to list")
+	parseCommonFlags(fs, cfg, args)
+	items, err := product.ListChangeOperations(ctx, cfg.flags.Workspace, limit)
+	if err != nil {
+		return err
+	}
+	report := changeActionReport{
+		Mode:    "list",
+		Changes: items,
+	}
+	return emitChangeReport(report, jsonOut, false)
+}
+
+func runChangesShow(ctx context.Context, cfg *config, args []string) error {
+	fs := flag.NewFlagSet("changes show", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	appkit.BindAppFlags(fs, cfg.flags)
+	bindProductFlags(fs, cfg)
+	jsonOut := false
+	fs.BoolVar(&jsonOut, "json", false, "Emit change detail as JSON")
+	parseCommonFlags(fs, cfg, args)
+	if len(fs.Args()) != 1 || strings.TrimSpace(fs.Args()[0]) == "" {
+		return fmt.Errorf("usage: mosscode changes show <id> [--json]")
+	}
+	item, err := product.LoadChangeOperation(ctx, cfg.flags.Workspace, strings.TrimSpace(fs.Args()[0]))
+	if err != nil {
+		return err
+	}
+	report := changeActionReport{
+		Mode:   "show",
+		Change: item,
+	}
+	return emitChangeReport(report, jsonOut, false)
+}
+
+func emitChangeReport(report changeActionReport, jsonOut, fail bool) error {
+	if jsonOut {
+		if err := printJSON(report); err != nil {
+			return err
+		}
+		if fail {
+			return &commandExitError{code: 1}
+		}
+		return nil
+	}
+	switch report.Mode {
+	case "list":
+		fmt.Println(product.RenderChangeSummaries(report.Changes))
+	case "show", "apply", "rollback":
+		fmt.Println(product.RenderChangeDetail(report.Change))
+	}
+	if strings.TrimSpace(report.Details) != "" {
+		fmt.Printf("Details: %s\n", report.Details)
+	}
+	if fail {
+		return &commandExitError{code: 1}
+	}
+	return nil
 }
 
 func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error) {
