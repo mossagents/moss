@@ -15,40 +15,52 @@ const defaultLLMBreakerReset = 30 * time.Second
 
 // GovernanceConfig 描述产品层暴露的模型治理配置。
 type GovernanceConfig struct {
-	RouterConfigPath   string
-	PricingCatalogPath string
-	LLMRetries         int
-	LLMRetryInitial    time.Duration
-	LLMRetryMaxDelay   time.Duration
-	LLMBreakerFailures int
-	LLMBreakerReset    time.Duration
+	RouterConfigPath               string
+	PricingCatalogPath             string
+	LLMRetries                     int
+	LLMRetryInitial                time.Duration
+	LLMRetryMaxDelay               time.Duration
+	LLMBreakerFailures             int
+	LLMBreakerReset                time.Duration
+	LLMFailoverEnabled             bool
+	LLMFailoverMaxCandidates       int
+	LLMFailoverPerCandidateRetries int
+	LLMFailoverOnBreakerOpen       bool
 }
 
 type GovernanceReport struct {
-	RouterConfig       string `json:"router_config,omitempty"`
-	RouterEnabled      bool   `json:"router_enabled"`
-	RouterExists       bool   `json:"router_exists"`
-	RouterDefaultModel string `json:"router_default_model,omitempty"`
-	RouterModels       int    `json:"router_models"`
-	PricingCatalog     string `json:"pricing_catalog,omitempty"`
-	PricingExists      bool   `json:"pricing_exists"`
-	PricingModels      int    `json:"pricing_models"`
-	PricingError       string `json:"pricing_error,omitempty"`
-	RetryEnabled       bool   `json:"retry_enabled"`
-	RetryMaxRetries    int    `json:"retry_max_retries"`
-	RetryInitialDelay  string `json:"retry_initial_delay,omitempty"`
-	RetryMaxDelay      string `json:"retry_max_delay,omitempty"`
-	BreakerEnabled     bool   `json:"breaker_enabled"`
-	BreakerMaxFailures int    `json:"breaker_max_failures"`
-	BreakerResetAfter  string `json:"breaker_reset_after,omitempty"`
-	Error              string `json:"error,omitempty"`
+	RouterConfig                string `json:"router_config,omitempty"`
+	RouterEnabled               bool   `json:"router_enabled"`
+	RouterExists                bool   `json:"router_exists"`
+	RouterDefaultModel          string `json:"router_default_model,omitempty"`
+	RouterModels                int    `json:"router_models"`
+	PricingCatalog              string `json:"pricing_catalog,omitempty"`
+	PricingExists               bool   `json:"pricing_exists"`
+	PricingModels               int    `json:"pricing_models"`
+	PricingError                string `json:"pricing_error,omitempty"`
+	RetryEnabled                bool   `json:"retry_enabled"`
+	RetryMaxRetries             int    `json:"retry_max_retries"`
+	RetryInitialDelay           string `json:"retry_initial_delay,omitempty"`
+	RetryMaxDelay               string `json:"retry_max_delay,omitempty"`
+	BreakerEnabled              bool   `json:"breaker_enabled"`
+	BreakerMaxFailures          int    `json:"breaker_max_failures"`
+	BreakerResetAfter           string `json:"breaker_reset_after,omitempty"`
+	FailoverEnabled             bool   `json:"failover_enabled"`
+	FailoverAvailable           bool   `json:"failover_available"`
+	FailoverMaxCandidates       int    `json:"failover_max_candidates"`
+	FailoverPerCandidateRetries int    `json:"failover_per_candidate_retries"`
+	FailoverOnBreakerOpen       bool   `json:"failover_on_breaker_open"`
+	Error                       string `json:"error,omitempty"`
 }
 
 func DefaultGovernanceConfig() GovernanceConfig {
 	return GovernanceConfig{
-		LLMRetries:       2,
-		LLMRetryInitial:  300 * time.Millisecond,
-		LLMRetryMaxDelay: 2 * time.Second,
+		LLMRetries:                     2,
+		LLMRetryInitial:                300 * time.Millisecond,
+		LLMRetryMaxDelay:               2 * time.Second,
+		LLMFailoverMaxCandidates:       2,
+		LLMFailoverPerCandidateRetries: 1,
+		LLMFailoverOnBreakerOpen:       true,
 	}
 }
 
@@ -84,6 +96,30 @@ func (c GovernanceConfig) BreakerConfig() *retry.BreakerConfig {
 	}
 }
 
+func (c GovernanceConfig) FailoverConfig() (adapters.FailoverConfig, bool) {
+	if !c.LLMFailoverEnabled {
+		return adapters.FailoverConfig{}, false
+	}
+	defaults := DefaultGovernanceConfig()
+	retryCfg := retry.Config{
+		MaxRetries: c.LLMFailoverPerCandidateRetries,
+	}
+	if retryCfg.MaxRetries < 0 {
+		retryCfg.MaxRetries = defaults.LLMFailoverPerCandidateRetries
+	}
+	if retryCfg.MaxRetries > 0 {
+		retryCfg.InitialDelay = durationOrDefault(c.LLMRetryInitial, defaults.LLMRetryInitial)
+		retryCfg.MaxDelay = durationOrDefault(c.LLMRetryMaxDelay, defaults.LLMRetryMaxDelay)
+		retryCfg.Multiplier = 2.0
+	}
+	return adapters.FailoverConfig{
+		MaxCandidates:         intOrDefault(c.LLMFailoverMaxCandidates, defaults.LLMFailoverMaxCandidates),
+		RetryConfig:           retryCfg,
+		BreakerConfig:         c.BreakerConfig(),
+		FailoverOnBreakerOpen: c.LLMFailoverOnBreakerOpen,
+	}, true
+}
+
 func ResolveRouterConfigPath(workspace, explicit string) string {
 	explicit = strings.TrimSpace(explicit)
 	if explicit != "" {
@@ -111,8 +147,12 @@ func OpenModelRouter(workspace, explicit string) (*adapters.ModelRouter, string,
 
 func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceReport {
 	report := GovernanceReport{
-		RetryEnabled:    cfg.LLMRetries > 0,
-		RetryMaxRetries: cfg.LLMRetries,
+		RetryEnabled:                cfg.LLMRetries > 0,
+		RetryMaxRetries:             cfg.LLMRetries,
+		FailoverEnabled:             cfg.LLMFailoverEnabled,
+		FailoverMaxCandidates:       intOrDefault(cfg.LLMFailoverMaxCandidates, DefaultGovernanceConfig().LLMFailoverMaxCandidates),
+		FailoverPerCandidateRetries: cfg.LLMFailoverPerCandidateRetries,
+		FailoverOnBreakerOpen:       cfg.LLMFailoverOnBreakerOpen,
 		RetryInitialDelay: func() string {
 			if cfg.LLMRetries <= 0 {
 				return ""
@@ -136,6 +176,9 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		BreakerEnabled:     cfg.LLMBreakerFailures > 0,
 		BreakerMaxFailures: cfg.LLMBreakerFailures,
 	}
+	if report.FailoverPerCandidateRetries < 0 {
+		report.FailoverPerCandidateRetries = DefaultGovernanceConfig().LLMFailoverPerCandidateRetries
+	}
 	if cfg.LLMBreakerReset > 0 {
 		report.BreakerResetAfter = cfg.LLMBreakerReset.String()
 	} else if report.BreakerEnabled {
@@ -155,6 +198,9 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 
 	path := ResolveRouterConfigPath(workspace, cfg.RouterConfigPath)
 	if path == "" {
+		if report.FailoverEnabled {
+			report.Error = "failover enabled but no router config found"
+		}
 		return report
 	}
 	report.RouterConfig = path
@@ -170,6 +216,7 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		return report
 	}
 	report.RouterEnabled = true
+	report.FailoverAvailable = report.FailoverEnabled
 	report.RouterDefaultModel = router.DefaultModel()
 	report.RouterModels = len(router.Models())
 	return report
@@ -189,6 +236,13 @@ func routerConfigCandidates(workspace string) []string {
 }
 
 func durationOrDefault(value, def time.Duration) time.Duration {
+	if value > 0 {
+		return value
+	}
+	return def
+}
+
+func intOrDefault(value, def int) int {
 	if value > 0 {
 		return value
 	}

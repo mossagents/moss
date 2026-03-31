@@ -471,6 +471,70 @@ func (it *errIterator) Next() (port.StreamChunk, error) {
 
 func (it *errIterator) Close() error { return nil }
 
+type metadataStreamingLLM struct {
+	chunks   []port.StreamChunk
+	metadata port.LLMCallMetadata
+}
+
+func (m *metadataStreamingLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	return nil, context.DeadlineExceeded
+}
+
+func (m *metadataStreamingLLM) Stream(_ context.Context, _ port.CompletionRequest) (port.StreamIterator, error) {
+	return &metadataIterator{chunks: m.chunks, metadata: m.metadata}, nil
+}
+
+type metadataIterator struct {
+	chunks   []port.StreamChunk
+	index    int
+	metadata port.LLMCallMetadata
+}
+
+func (it *metadataIterator) Next() (port.StreamChunk, error) {
+	if it.index >= len(it.chunks) {
+		return port.StreamChunk{}, io.EOF
+	}
+	chunk := it.chunks[it.index]
+	it.index++
+	return chunk, nil
+}
+
+func (it *metadataIterator) Close() error { return nil }
+
+func (it *metadataIterator) Metadata() port.LLMCallMetadata { return it.metadata }
+
+type postEmissionErrorLLM struct {
+	completeCalls int32
+}
+
+func (p *postEmissionErrorLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	atomic.AddInt32(&p.completeCalls, 1)
+	return &port.CompletionResponse{
+		Message:    port.Message{Role: port.RoleAssistant, Content: "fallback"},
+		StopReason: "end_turn",
+	}, nil
+}
+
+func (p *postEmissionErrorLLM) Stream(_ context.Context, _ port.CompletionRequest) (port.StreamIterator, error) {
+	return &postEmissionIterator{}, nil
+}
+
+type postEmissionIterator struct {
+	calls int
+}
+
+func (it *postEmissionIterator) Next() (port.StreamChunk, error) {
+	it.calls++
+	switch it.calls {
+	case 1:
+		return port.StreamChunk{Delta: "partial"}, nil
+	default:
+		return port.StreamChunk{}, context.DeadlineExceeded
+	}
+}
+
+func (it *postEmissionIterator) Close() error { return nil }
+
 type toolThenErrIterator struct {
 	calls int
 }
@@ -489,6 +553,34 @@ func (it *toolThenErrIterator) Next() (port.StreamChunk, error) {
 }
 
 func (it *toolThenErrIterator) Close() error { return nil }
+
+type recordingObserver struct {
+	llmCalls  []port.LLMCallEvent
+	execution []port.ExecutionEvent
+}
+
+func (o *recordingObserver) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
+	o.llmCalls = append(o.llmCalls, e)
+}
+
+func (o *recordingObserver) OnToolCall(context.Context, port.ToolCallEvent) {}
+
+func (o *recordingObserver) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+	o.execution = append(o.execution, e)
+}
+
+func (o *recordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
+func (o *recordingObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
+func (o *recordingObserver) OnError(context.Context, port.ErrorEvent)          {}
+
+func (o *recordingObserver) lastCompletedModel() string {
+	for i := len(o.execution) - 1; i >= 0; i-- {
+		if o.execution[i].Type == port.ExecutionLLMCompleted {
+			return o.execution[i].Model
+		}
+	}
+	return ""
+}
 
 type toolThenErrLLM struct{}
 
@@ -582,6 +674,106 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&streamLLM.calls); got != 1 {
 		t.Fatalf("expected 1 stream attempt with sync fallback, got %d", got)
+	}
+}
+
+func TestLoopLLMCallUsesActualModelMetadata(t *testing.T) {
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM: &kt.MockLLM{
+			Responses: []port.CompletionResponse{{
+				Message:    port.Message{Role: port.RoleAssistant, Content: "ok"},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 3},
+				Metadata:   &port.LLMCallMetadata{ActualModel: "router-picked"},
+			}},
+		},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+
+	sess := &session.Session{
+		ID:       "test-actual-model",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(observer.llmCalls) == 0 {
+		t.Fatal("expected LLM observer event")
+	}
+	if observer.llmCalls[0].Model != "router-picked" {
+		t.Fatalf("observer model = %q, want router-picked", observer.llmCalls[0].Model)
+	}
+	if got := observer.lastCompletedModel(); got != "router-picked" {
+		t.Fatalf("completed event model = %q, want router-picked", got)
+	}
+}
+
+func TestLoopStreamingUsesIteratorMetadataActualModel(t *testing.T) {
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM: &metadataStreamingLLM{
+			chunks: []port.StreamChunk{
+				{Delta: "streamed"},
+				{Done: true, Usage: &port.TokenUsage{TotalTokens: 2}},
+			},
+			metadata: port.LLMCallMetadata{ActualModel: "stream-router"},
+		},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+
+	sess := &session.Session{
+		ID:       "test-stream-model",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(observer.llmCalls) == 0 {
+		t.Fatal("expected LLM observer event")
+	}
+	if observer.llmCalls[0].Model != "stream-router" {
+		t.Fatalf("observer model = %q, want stream-router", observer.llmCalls[0].Model)
+	}
+}
+
+func TestLoopStreamingAfterVisibleOutputDoesNotSyncFallback(t *testing.T) {
+	streamLLM := &postEmissionErrorLLM{}
+	l := &AgentLoop{
+		LLM:   streamLLM,
+		Tools: tool.NewRegistry(),
+		IO:    kt.NewRecorderIO(),
+		Config: LoopConfig{
+			LLMRetry: RetryConfig{
+				MaxRetries:   1,
+				InitialDelay: time.Millisecond,
+				MaxDelay:     5 * time.Millisecond,
+			},
+		},
+	}
+
+	sess := &session.Session{
+		ID:       "test-post-emission-no-fallback",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+
+	if _, err := l.Run(context.Background(), sess); err == nil {
+		t.Fatal("expected streaming error")
+	}
+	if got := atomic.LoadInt32(&streamLLM.completeCalls); got != 0 {
+		t.Fatalf("expected no sync fallback after visible output, got %d complete calls", got)
 	}
 }
 

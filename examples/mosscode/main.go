@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	appconfig "github.com/mossagents/moss/config"
@@ -270,6 +271,10 @@ func bindProductFlags(fs *flag.FlagSet, cfg *config) {
 	fs.DurationVar(&cfg.governance.LLMRetryMaxDelay, "llm-retry-max-delay", cfg.governance.LLMRetryMaxDelay, "Maximum LLM retry backoff")
 	fs.IntVar(&cfg.governance.LLMBreakerFailures, "llm-breaker-failures", cfg.governance.LLMBreakerFailures, "Consecutive LLM failures before breaker opens (0 disables)")
 	fs.DurationVar(&cfg.governance.LLMBreakerReset, "llm-breaker-reset", cfg.governance.LLMBreakerReset, "How long the LLM breaker stays open before half-open retry")
+	fs.BoolVar(&cfg.governance.LLMFailoverEnabled, "llm-failover", cfg.governance.LLMFailoverEnabled, "Enable router-based runtime LLM failover")
+	fs.IntVar(&cfg.governance.LLMFailoverMaxCandidates, "llm-failover-max-candidates", cfg.governance.LLMFailoverMaxCandidates, "Maximum ordered router candidates to consider during failover")
+	fs.IntVar(&cfg.governance.LLMFailoverPerCandidateRetries, "llm-failover-retries", cfg.governance.LLMFailoverPerCandidateRetries, "Retry attempts per candidate model before switching")
+	fs.BoolVar(&cfg.governance.LLMFailoverOnBreakerOpen, "llm-failover-on-breaker-open", cfg.governance.LLMFailoverOnBreakerOpen, "Skip to the next candidate when a candidate breaker is open")
 }
 
 func parseCommonFlags(fs *flag.FlagSet, cfg *config, args []string) {
@@ -325,6 +330,10 @@ Flags:
   --llm-retry-max-delay    Maximum LLM retry backoff (default: 2s)
   --llm-breaker-failures   Consecutive LLM failures before breaker opens
   --llm-breaker-reset      Breaker reset window (default when enabled: 30s)
+  --llm-failover           Enable router-based runtime failover
+  --llm-failover-max-candidates  Max router candidates considered for failover (default: 2)
+  --llm-failover-retries   Retry attempts per candidate before switching (default: 1)
+  --llm-failover-on-breaker-open  Switch to next candidate when breaker is open (default: true)
   --api-key     API key
   --base-url    API base URL
 
@@ -1089,23 +1098,40 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, approvalMode string, governance product.GovernanceConfig, observer port.Observer) (*kernel.Kernel, error) {
 	disableDefaultPolicy := false
+	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("load model router: %w", err)
+	}
+	failoverCfg, failoverEnabled := governance.FailoverConfig()
+	useFailover := failoverEnabled && router != nil
 	retryCfg, retryEnabled := governance.RetryConfig()
+	breakerCfg := governance.BreakerConfig()
+	if useFailover {
+		disabled := false
+		retryEnabled = &disabled
+		retryCfg = nil
+		breakerCfg = nil
+	}
 	k, err := deepagent.BuildKernel(ctx, flags, io, &deepagent.Config{
 		AppName:                       appName,
 		EnableDefaultRestrictedPolicy: &disableDefaultPolicy,
 		EnableDefaultLLMRetry:         retryEnabled,
 		LLMRetryConfig:                retryCfg,
-		LLMBreakerConfig:              governance.BreakerConfig(),
+		LLMBreakerConfig:              breakerCfg,
 	})
 	if err != nil {
 		return nil, err
 	}
-	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
-	if err != nil {
-		return nil, fmt.Errorf("load model router: %w", err)
-	}
 	if router != nil {
-		k.SetLLM(router)
+		var llm port.LLM = router
+		if useFailover {
+			failoverLLM, err := adapters.NewFailoverLLM(router, failoverCfg)
+			if err != nil {
+				return nil, fmt.Errorf("build failover llm: %w", err)
+			}
+			llm = failoverLLM
+		}
+		k.SetLLM(llm)
 	}
 	k.SetObserver(port.JoinObservers(observer))
 	if _, err := product.ApplyApprovalMode(k, approvalMode); err != nil {
@@ -1173,6 +1199,18 @@ func applyGovernanceEnv(cfg *product.GovernanceConfig, explicitFlags []string) {
 	if _, ok := explicit["llm-breaker-reset"]; !ok {
 		cfg.LLMBreakerReset = firstEnvDuration(cfg.LLMBreakerReset, "MOSSCODE_LLM_BREAKER_RESET", "MOSS_LLM_BREAKER_RESET")
 	}
+	if _, ok := explicit["llm-failover"]; !ok {
+		cfg.LLMFailoverEnabled = firstEnvBool(cfg.LLMFailoverEnabled, "MOSSCODE_LLM_FAILOVER", "MOSS_LLM_FAILOVER")
+	}
+	if _, ok := explicit["llm-failover-max-candidates"]; !ok {
+		cfg.LLMFailoverMaxCandidates = firstEnvInt(cfg.LLMFailoverMaxCandidates, "MOSSCODE_LLM_FAILOVER_MAX_CANDIDATES", "MOSS_LLM_FAILOVER_MAX_CANDIDATES")
+	}
+	if _, ok := explicit["llm-failover-retries"]; !ok {
+		cfg.LLMFailoverPerCandidateRetries = firstEnvInt(cfg.LLMFailoverPerCandidateRetries, "MOSSCODE_LLM_FAILOVER_RETRIES", "MOSS_LLM_FAILOVER_RETRIES")
+	}
+	if _, ok := explicit["llm-failover-on-breaker-open"]; !ok {
+		cfg.LLMFailoverOnBreakerOpen = firstEnvBool(cfg.LLMFailoverOnBreakerOpen, "MOSSCODE_LLM_FAILOVER_ON_BREAKER_OPEN", "MOSS_LLM_FAILOVER_ON_BREAKER_OPEN")
+	}
 }
 
 func firstEnv(def string, keys ...string) string {
@@ -1206,6 +1244,21 @@ func firstEnvDuration(def time.Duration, keys ...string) time.Duration {
 			continue
 		}
 		parsed, err := time.ParseDuration(value)
+		if err == nil {
+			return parsed
+		}
+		fmt.Fprintf(os.Stderr, "warning: ignore invalid %s=%q\n", key, value)
+	}
+	return def
+}
+
+func firstEnvBool(def bool, keys ...string) bool {
+	for _, key := range keys {
+		value := strings.TrimSpace(os.Getenv(key))
+		if value == "" {
+			continue
+		}
+		parsed, err := strconv.ParseBool(value)
 		if err == nil {
 			return parsed
 		}

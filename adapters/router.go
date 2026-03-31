@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -153,7 +154,17 @@ func (r *ModelRouter) Complete(ctx context.Context, req port.CompletionRequest) 
 	if err != nil {
 		return nil, err
 	}
-	return rm.llm.Complete(ctx, req)
+	resp, err := rm.llm.Complete(ctx, req)
+	if err != nil {
+		return nil, attachModelMetadata(err, rm.profile.Name)
+	}
+	if resp.Metadata == nil {
+		resp.Metadata = &port.LLMCallMetadata{}
+	}
+	if strings.TrimSpace(resp.Metadata.ActualModel) == "" {
+		resp.Metadata.ActualModel = rm.profile.Name
+	}
+	return resp, nil
 }
 
 // Stream 根据请求中的 TaskRequirement 选择最优模型并以流式调用。
@@ -165,9 +176,23 @@ func (r *ModelRouter) Stream(ctx context.Context, req port.CompletionRequest) (p
 	}
 	sllm, ok := rm.llm.(port.StreamingLLM)
 	if !ok {
-		return nil, fmt.Errorf("model router: selected model %q does not support streaming", rm.profile.Name)
+		return nil, &port.LLMCallError{
+			Err:          fmt.Errorf("model router: selected model %q does not support streaming", rm.profile.Name),
+			Retryable:    true,
+			FallbackSafe: true,
+			Metadata:     port.LLMCallMetadata{ActualModel: rm.profile.Name},
+		}
 	}
-	return sllm.Stream(ctx, req)
+	iter, err := sllm.Stream(ctx, req)
+	if err != nil {
+		return nil, attachModelMetadata(err, rm.profile.Name)
+	}
+	return &routerStreamIterator{
+		inner: iter,
+		metadata: port.LLMCallMetadata{
+			ActualModel: rm.profile.Name,
+		},
+	}, nil
 }
 
 // Models 返回已注册的所有模型画像（只读副本）。
@@ -189,11 +214,19 @@ func (r *ModelRouter) DefaultModel() string {
 
 // selectModel 根据任务需求选择最优模型。
 func (r *ModelRouter) selectModel(req *port.TaskRequirement) (*routedModel, error) {
+	candidates, err := r.orderedCandidates(req)
+	if err != nil {
+		return nil, err
+	}
+	selected := candidates[0]
+	return &selected, nil
+}
+
+func (r *ModelRouter) orderedCandidates(req *port.TaskRequirement) ([]routedModel, error) {
 	if req == nil || len(req.Capabilities) == 0 {
-		return r.defaultModel, nil
+		return r.defaultOrderedCandidates(), nil
 	}
 
-	// 筛选满足所有能力需求的候选模型
 	var candidates []routedModel
 	for _, rm := range r.models {
 		if !rm.profile.HasAllCapabilities(req.Capabilities) {
@@ -209,7 +242,6 @@ func (r *ModelRouter) selectModel(req *port.TaskRequirement) (*routedModel, erro
 		return nil, r.noModelError(req)
 	}
 
-	// 排序：PreferCheap 时按成本升序，否则按能力数量降序（选最强的）
 	if req.PreferCheap {
 		sort.Slice(candidates, func(i, j int) bool {
 			return candidates[i].profile.CostTier < candidates[j].profile.CostTier
@@ -219,9 +251,27 @@ func (r *ModelRouter) selectModel(req *port.TaskRequirement) (*routedModel, erro
 			return len(candidates[i].profile.Capabilities) > len(candidates[j].profile.Capabilities)
 		})
 	}
+	return candidates, nil
+}
 
-	selected := candidates[0]
-	return &selected, nil
+func (r *ModelRouter) defaultOrderedCandidates() []routedModel {
+	if len(r.models) == 0 {
+		return nil
+	}
+	out := make([]routedModel, 0, len(r.models))
+	seen := map[string]struct{}{}
+	if r.defaultModel != nil {
+		out = append(out, *r.defaultModel)
+		seen[r.defaultModel.profile.Name] = struct{}{}
+	}
+	for _, rm := range r.models {
+		if _, ok := seen[rm.profile.Name]; ok {
+			continue
+		}
+		out = append(out, rm)
+		seen[rm.profile.Name] = struct{}{}
+	}
+	return out
 }
 
 // noModelError 生成详细的无模型可用错误信息。
@@ -256,4 +306,60 @@ func (r *ModelRouter) noModelError(req *port.TaskRequirement) error {
 	msg += "  已注册模型:\n" + strings.Join(available, "\n")
 
 	return fmt.Errorf("%s", msg)
+}
+
+type routerStreamIterator struct {
+	inner    port.StreamIterator
+	metadata port.LLMCallMetadata
+}
+
+func (it *routerStreamIterator) Next() (port.StreamChunk, error) {
+	return it.inner.Next()
+}
+
+func (it *routerStreamIterator) Close() error {
+	return it.inner.Close()
+}
+
+func (it *routerStreamIterator) Metadata() port.LLMCallMetadata {
+	if provider, ok := it.inner.(port.MetadataStreamIterator); ok {
+		meta := provider.Metadata()
+		if strings.TrimSpace(meta.ActualModel) == "" {
+			meta.ActualModel = it.metadata.ActualModel
+		}
+		return meta
+	}
+	return it.metadata
+}
+
+func attachModelMetadata(err error, model string) error {
+	if err == nil {
+		return nil
+	}
+	if callErr, ok := err.(*port.LLMCallError); ok {
+		if strings.TrimSpace(callErr.Metadata.ActualModel) != "" {
+			return err
+		}
+		merged := *callErr
+		merged.Metadata.ActualModel = model
+		return &merged
+	}
+	var callErr *port.LLMCallError
+	if errors.As(err, &callErr) {
+		if strings.TrimSpace(callErr.Metadata.ActualModel) != "" {
+			return err
+		}
+		return &port.LLMCallError{
+			Err:          err,
+			Retryable:    callErr.Retryable,
+			FallbackSafe: callErr.FallbackSafe,
+			Metadata:     port.LLMCallMetadata{ActualModel: model},
+		}
+	}
+	return &port.LLMCallError{
+		Err:          err,
+		Retryable:    true,
+		FallbackSafe: true,
+		Metadata:     port.LLMCallMetadata{ActualModel: model},
+	}
 }

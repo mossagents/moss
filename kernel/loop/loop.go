@@ -39,19 +39,6 @@ type callAttemptResult struct {
 	err       error
 }
 
-type retryableCallError struct {
-	err       error
-	retryable bool
-}
-
-func (e *retryableCallError) Error() string {
-	return e.err.Error()
-}
-
-func (e *retryableCallError) Unwrap() error {
-	return e.err
-}
-
 func (c LoopConfig) maxIter() int {
 	if c.MaxIterations <= 0 {
 		return 50
@@ -132,8 +119,10 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		resp, streamed, err := l.callLLM(ctx, sess)
 		llmDur := time.Since(llmStart)
 		if err != nil {
+			metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
+			l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 			l.observer().OnLLMCall(ctx, port.LLMCallEvent{
-				SessionID: sess.ID, Duration: llmDur, Error: err, Streamed: streamed,
+				SessionID: sess.ID, Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
 			})
 			l.observer().OnError(ctx, port.ErrorEvent{
 				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
@@ -142,7 +131,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 				Type:      port.ExecutionLLMCompleted,
 				SessionID: sess.ID,
 				Timestamp: time.Now().UTC(),
-				Model:     sess.Config.ModelConfig.Model,
+				Model:     metadata.ActualModel,
 				Duration:  llmDur,
 				Error:     err.Error(),
 			})
@@ -150,8 +139,11 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			return l.fail(sess, totalUsage, err), err
 		}
 
+		metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
+		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
 		l.observer().OnLLMCall(ctx, port.LLMCallEvent{
 			SessionID:  sess.ID,
+			Model:      metadata.ActualModel,
 			Duration:   llmDur,
 			Usage:      resp.Usage,
 			StopReason: resp.StopReason,
@@ -161,7 +153,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			Type:      port.ExecutionLLMCompleted,
 			SessionID: sess.ID,
 			Timestamp: time.Now().UTC(),
-			Model:     sess.Config.ModelConfig.Model,
+			Model:     metadata.ActualModel,
 			Duration:  llmDur,
 			Data: map[string]any{
 				"stop_reason": resp.StopReason,
@@ -289,7 +281,10 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	if b := l.Config.LLMBreaker; b != nil {
 		if !b.Allow() {
 			return callAttemptResult{
-				err:       kerrors.New(kerrors.ErrLLMRejected, "LLM circuit breaker is open: too many recent failures"),
+				err: &port.LLMCallError{
+					Err:       kerrors.New(kerrors.ErrLLMRejected, "LLM circuit breaker is open: too many recent failures"),
+					Retryable: false,
+				},
 				retryable: false,
 			}
 		}
@@ -302,18 +297,17 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 			l.recordBreakerSuccess()
 			return callAttemptResult{resp: resp, streamed: true}
 		}
-		// 流式失败时，尝试一次同步 fallback（同一轮内，避免直接把流式抖动暴露给用户）。
-		if fallbackResp, fallbackErr := l.LLM.Complete(ctx, req); fallbackErr == nil {
-			l.recordBreakerSuccess()
-			return callAttemptResult{resp: fallbackResp, streamed: false}
+		if llmErrorFallbackSafe(err) {
+			if fallbackResp, fallbackErr := l.LLM.Complete(ctx, req); fallbackErr == nil {
+				l.recordBreakerSuccess()
+				return callAttemptResult{resp: fallbackResp, streamed: false}
+			} else {
+				err = fallbackErr
+			}
 		}
 
 		l.recordBreakerFailure()
-		var streamErr *retryableCallError
-		if errors.As(err, &streamErr) {
-			return callAttemptResult{streamed: true, retryable: streamErr.retryable, err: err}
-		}
-		return callAttemptResult{streamed: true, retryable: true, err: err}
+		return callAttemptResult{streamed: true, retryable: llmErrorRetryable(err), err: err}
 	}
 
 	resp, err := l.LLM.Complete(ctx, req)
@@ -322,15 +316,19 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	} else {
 		l.recordBreakerSuccess()
 	}
-	return callAttemptResult{resp: resp, streamed: false, retryable: true, err: err}
+	return callAttemptResult{resp: resp, streamed: false, retryable: llmErrorRetryable(err), err: err}
 }
 
 func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req port.CompletionRequest) (*port.CompletionResponse, error) {
 	iter, err := sllm.Stream(ctx, req)
 	if err != nil {
-		return nil, &retryableCallError{err: err, retryable: true}
+		return nil, ensureLLMCallError(err, true, true, port.LLMCallMetadata{})
 	}
 	defer iter.Close()
+	var metadataProvider port.MetadataStreamIterator
+	if provider, ok := iter.(port.MetadataStreamIterator); ok {
+		metadataProvider = provider
+	}
 
 	var fullContent string
 	var toolCalls []port.ToolCall
@@ -351,9 +349,8 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 				}
 				break
 			}
-			// 只要还没产生可执行的 tool call，就允许上层重试。
-			retryable := !emittedContent || len(toolCalls) == 0
-			return nil, &retryableCallError{err: err, retryable: retryable}
+			safePreEmission := !emittedContent && len(toolCalls) == 0
+			return nil, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
 		}
 
 		if chunk.Delta != "" {
@@ -398,6 +395,7 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		ToolCalls:  toolCalls,
 		Usage:      usage,
 		StopReason: stopReason,
+		Metadata:   metadataPtr(streamMetadata(metadataProvider)),
 	}, nil
 }
 
@@ -407,6 +405,131 @@ func isRecoverableStreamTailError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "unexpected end of json input") || strings.Contains(msg, "unexpected eof")
+}
+
+func streamMetadata(provider port.MetadataStreamIterator) port.LLMCallMetadata {
+	if provider == nil {
+		return port.LLMCallMetadata{}
+	}
+	return provider.Metadata()
+}
+
+func metadataPtr(meta port.LLMCallMetadata) *port.LLMCallMetadata {
+	if strings.TrimSpace(meta.ActualModel) == "" && len(meta.Attempts) == 0 {
+		return nil
+	}
+	copyMeta := meta
+	return &copyMeta
+}
+
+func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata port.LLMCallMetadata) error {
+	if err == nil {
+		return nil
+	}
+	var callErr *port.LLMCallError
+	if errors.As(err, &callErr) {
+		merged := *callErr
+		merged.Metadata = mergeLLMMetadata(merged.Metadata, metadata)
+		return &merged
+	}
+	return &port.LLMCallError{
+		Err:          err,
+		Retryable:    retryable,
+		FallbackSafe: fallbackSafe,
+		Metadata:     metadata,
+	}
+}
+
+func mergeLLMMetadata(base, overlay port.LLMCallMetadata) port.LLMCallMetadata {
+	if strings.TrimSpace(base.ActualModel) == "" {
+		base.ActualModel = overlay.ActualModel
+	}
+	if len(overlay.Attempts) > 0 {
+		base.Attempts = append(base.Attempts, overlay.Attempts...)
+	}
+	return base
+}
+
+func llmErrorRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var callErr *port.LLMCallError
+	if errors.As(err, &callErr) {
+		return callErr.Retryable
+	}
+	return true
+}
+
+func llmErrorFallbackSafe(err error) bool {
+	var callErr *port.LLMCallError
+	if errors.As(err, &callErr) {
+		return callErr.FallbackSafe
+	}
+	return false
+}
+
+func llmMetadataFromResponse(defaultModel string, resp *port.CompletionResponse) port.LLMCallMetadata {
+	if resp == nil || resp.Metadata == nil {
+		return port.LLMCallMetadata{ActualModel: defaultModel}
+	}
+	meta := *resp.Metadata
+	if strings.TrimSpace(meta.ActualModel) == "" {
+		meta.ActualModel = defaultModel
+	}
+	return meta
+}
+
+func llmMetadataFromError(defaultModel string, err error) port.LLMCallMetadata {
+	var callErr *port.LLMCallError
+	if errors.As(err, &callErr) {
+		meta := callErr.Metadata
+		if strings.TrimSpace(meta.ActualModel) == "" {
+			meta.ActualModel = defaultModel
+		}
+		return meta
+	}
+	return port.LLMCallMetadata{ActualModel: defaultModel}
+}
+
+func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata port.LLMCallMetadata, exhausted bool) {
+	for _, attempt := range metadata.Attempts {
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionEventType("llm_failover_attempt"),
+			SessionID: sessionID,
+			Timestamp: time.Now().UTC(),
+			Model:     attempt.CandidateModel,
+			Data: map[string]any{
+				"candidate_model": attempt.CandidateModel,
+				"attempt_index":   attempt.AttemptIndex,
+				"candidate_retry": attempt.CandidateRetry,
+				"failure_reason":  attempt.FailureReason,
+				"breaker_state":   attempt.BreakerState,
+				"failover_to":     attempt.FailoverTo,
+				"outcome":         attempt.Outcome,
+			},
+		})
+		if strings.TrimSpace(attempt.FailoverTo) != "" {
+			l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+				Type:      port.ExecutionEventType("llm_failover_switch"),
+				SessionID: sessionID,
+				Timestamp: time.Now().UTC(),
+				Model:     attempt.CandidateModel,
+				Data: map[string]any{
+					"candidate_model": attempt.CandidateModel,
+					"failover_to":     attempt.FailoverTo,
+				},
+			})
+		}
+	}
+	if exhausted && len(metadata.Attempts) > 0 {
+		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:      port.ExecutionEventType("llm_failover_exhausted"),
+			SessionID: sessionID,
+			Timestamp: time.Now().UTC(),
+			Model:     metadata.ActualModel,
+		})
+	}
 }
 
 func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {

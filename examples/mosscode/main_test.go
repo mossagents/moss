@@ -166,6 +166,48 @@ func TestRunRollbackRequiresChange(t *testing.T) {
 	}
 }
 
+func TestApplyGovernanceEnvReadsFailoverSettings(t *testing.T) {
+	t.Setenv("MOSSCODE_LLM_FAILOVER", "true")
+	t.Setenv("MOSSCODE_LLM_FAILOVER_MAX_CANDIDATES", "3")
+	t.Setenv("MOSSCODE_LLM_FAILOVER_RETRIES", "2")
+	t.Setenv("MOSSCODE_LLM_FAILOVER_ON_BREAKER_OPEN", "false")
+
+	cfg := product.DefaultGovernanceConfig()
+	applyGovernanceEnv(&cfg, nil)
+
+	if !cfg.LLMFailoverEnabled {
+		t.Fatal("expected failover enabled from env")
+	}
+	if cfg.LLMFailoverMaxCandidates != 3 {
+		t.Fatalf("max candidates = %d, want 3", cfg.LLMFailoverMaxCandidates)
+	}
+	if cfg.LLMFailoverPerCandidateRetries != 2 {
+		t.Fatalf("per-candidate retries = %d, want 2", cfg.LLMFailoverPerCandidateRetries)
+	}
+	if cfg.LLMFailoverOnBreakerOpen {
+		t.Fatal("expected breaker-open failover override to false")
+	}
+}
+
+func TestRunDoctorJSONIncludesFailoverFields(t *testing.T) {
+	cfg := &config{
+		flags:      &appkit.AppFlags{Workspace: t.TempDir()},
+		governance: product.DefaultGovernanceConfig(),
+		doctorJSON: true,
+	}
+	cfg.governance.LLMFailoverEnabled = true
+
+	out, err := captureStdout(func() error {
+		return runDoctor(context.Background(), cfg)
+	})
+	if err != nil {
+		t.Fatalf("runDoctor: %v", err)
+	}
+	if !strings.Contains(out, "\"failover_enabled\": true") {
+		t.Fatalf("expected failover_enabled in doctor json, got %s", out)
+	}
+}
+
 func initRepoForCLIChangeTests(t *testing.T) string {
 	t.Helper()
 	repo := t.TempDir()

@@ -350,7 +350,7 @@ func RenderDoctorReport(report DoctorReport) string {
 		report.Config.Name, firstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
 	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t\n",
 		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists)
-	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s router=%s",
+	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s failover=%t available=%t candidates=%d per_candidate_retries=%d breaker_open_failover=%t router=%s",
 		report.Governance.Model.RetryEnabled,
 		report.Governance.Model.RetryMaxRetries,
 		firstNonEmpty(report.Governance.Model.RetryInitialDelay, "-"),
@@ -358,6 +358,11 @@ func RenderDoctorReport(report DoctorReport) string {
 		report.Governance.Model.BreakerEnabled,
 		report.Governance.Model.BreakerMaxFailures,
 		firstNonEmpty(report.Governance.Model.BreakerResetAfter, "-"),
+		report.Governance.Model.FailoverEnabled,
+		report.Governance.Model.FailoverAvailable,
+		report.Governance.Model.FailoverMaxCandidates,
+		report.Governance.Model.FailoverPerCandidateRetries,
+		report.Governance.Model.FailoverOnBreakerOpen,
 		firstNonEmpty(report.Governance.Model.RouterConfig, "(disabled)"))
 	if report.Governance.Model.RouterEnabled {
 		fmt.Fprintf(&b, " default=%s models=%d",

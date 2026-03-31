@@ -3,6 +3,7 @@ package product
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -62,6 +63,32 @@ func TestGovernanceConfigDisableRetry(t *testing.T) {
 	}
 }
 
+func TestGovernanceConfigBuildsFailoverConfig(t *testing.T) {
+	cfg := GovernanceConfig{
+		LLMFailoverEnabled:             true,
+		LLMFailoverMaxCandidates:       3,
+		LLMFailoverPerCandidateRetries: 2,
+		LLMRetryInitial:                25 * time.Millisecond,
+		LLMRetryMaxDelay:               75 * time.Millisecond,
+		LLMBreakerFailures:             2,
+		LLMBreakerReset:                3 * time.Second,
+		LLMFailoverOnBreakerOpen:       true,
+	}
+	failoverCfg, enabled := cfg.FailoverConfig()
+	if !enabled {
+		t.Fatal("expected failover to be enabled")
+	}
+	if failoverCfg.MaxCandidates != 3 {
+		t.Fatalf("max candidates = %d, want 3", failoverCfg.MaxCandidates)
+	}
+	if failoverCfg.RetryConfig.MaxRetries != 2 {
+		t.Fatalf("per-candidate retries = %d, want 2", failoverCfg.RetryConfig.MaxRetries)
+	}
+	if failoverCfg.BreakerConfig == nil || failoverCfg.BreakerConfig.MaxFailures != 2 {
+		t.Fatalf("breaker config = %+v, want failures=2", failoverCfg.BreakerConfig)
+	}
+}
+
 func TestBuildGovernanceReportIncludesPricingCatalog(t *testing.T) {
 	appconfig.SetAppName("moss-test")
 	t.Setenv("APPDATA", t.TempDir())
@@ -80,5 +107,41 @@ func TestBuildGovernanceReportIncludesPricingCatalog(t *testing.T) {
 	}
 	if report.PricingModels != 1 {
 		t.Fatalf("pricing models=%d, want 1", report.PricingModels)
+	}
+}
+
+func TestBuildGovernanceReportIncludesFailoverFields(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mosscode", "models.yaml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("models:\n  - name: default\n    provider: openai\n    model: gpt-4o-mini\n    cost_tier: 1\n    capabilities:\n      - text_generation\n    is_default: true\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	report := BuildGovernanceReport(dir, GovernanceConfig{
+		LLMFailoverEnabled:             true,
+		LLMFailoverMaxCandidates:       2,
+		LLMFailoverPerCandidateRetries: 1,
+		LLMFailoverOnBreakerOpen:       true,
+	})
+	if !report.FailoverEnabled {
+		t.Fatal("expected failover to be enabled in report")
+	}
+	if !report.FailoverAvailable {
+		t.Fatal("expected failover to be available when router config exists")
+	}
+	if report.FailoverMaxCandidates != 2 {
+		t.Fatalf("failover max candidates = %d, want 2", report.FailoverMaxCandidates)
+	}
+}
+
+func TestBuildGovernanceReportWarnsWhenFailoverHasNoRouter(t *testing.T) {
+	report := BuildGovernanceReport(t.TempDir(), GovernanceConfig{
+		LLMFailoverEnabled:       true,
+		LLMFailoverOnBreakerOpen: true,
+	})
+	if report.Error == "" || !strings.Contains(report.Error, "failover enabled") {
+		t.Fatalf("expected failover warning error, got %q", report.Error)
 	}
 }

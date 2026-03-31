@@ -52,12 +52,52 @@ type ModelConfig struct {
 	Requirements *TaskRequirement `json:"requirements,omitempty"`
 }
 
+// LLMCallAttempt 描述一次候选模型尝试的结果，用于 failover 观测。
+type LLMCallAttempt struct {
+	CandidateModel string `json:"candidate_model,omitempty"`
+	AttemptIndex   int    `json:"attempt_index,omitempty"`
+	CandidateRetry int    `json:"candidate_retry,omitempty"`
+	FailureReason  string `json:"failure_reason,omitempty"`
+	BreakerState   string `json:"breaker_state,omitempty"`
+	FailoverTo     string `json:"failover_to,omitempty"`
+	Outcome        string `json:"outcome,omitempty"`
+}
+
+// LLMCallMetadata 记录一次 LLM 调用的实际命中模型和 failover 尝试细节。
+type LLMCallMetadata struct {
+	ActualModel string           `json:"actual_model,omitempty"`
+	Attempts    []LLMCallAttempt `json:"attempts,omitempty"`
+}
+
 // CompletionResponse 是 LLM 返回的同步响应。
 type CompletionResponse struct {
-	Message    Message    `json:"message"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	Usage      TokenUsage `json:"usage"`
-	StopReason string     `json:"stop_reason"`
+	Message    Message          `json:"message"`
+	ToolCalls  []ToolCall       `json:"tool_calls,omitempty"`
+	Usage      TokenUsage       `json:"usage"`
+	StopReason string           `json:"stop_reason"`
+	Metadata   *LLMCallMetadata `json:"metadata,omitempty"`
+}
+
+// LLMCallError 为 LLM 调用错误附加重试、fallback 和观测元数据。
+type LLMCallError struct {
+	Err          error
+	Retryable    bool
+	FallbackSafe bool
+	Metadata     LLMCallMetadata
+}
+
+func (e *LLMCallError) Error() string {
+	if e == nil || e.Err == nil {
+		return ""
+	}
+	return e.Err.Error()
+}
+
+func (e *LLMCallError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 // ToolSpec 描述一个工具的声明信息，供 LLM 选择调用。
@@ -73,6 +113,11 @@ type StreamIterator interface {
 	Next() (StreamChunk, error)
 	// Close 释放迭代器资源。
 	Close() error
+}
+
+// MetadataStreamIterator 是可选接口，供流式 LLM 暴露实际命中模型和 failover 尝试元数据。
+type MetadataStreamIterator interface {
+	Metadata() LLMCallMetadata
 }
 
 // StreamChunk 是流式响应的一个片段。

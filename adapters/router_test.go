@@ -2,8 +2,12 @@ package adapters
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -27,8 +31,13 @@ type fakeStreamingLLM struct {
 }
 
 func (f *fakeStreamingLLM) Stream(_ context.Context, _ port.CompletionRequest) (port.StreamIterator, error) {
-	return nil, nil
+	return &emptyIterator{}, nil
 }
+
+type emptyIterator struct{}
+
+func (emptyIterator) Next() (port.StreamChunk, error) { return port.StreamChunk{}, io.EOF }
+func (emptyIterator) Close() error                    { return nil }
 
 // newTestRouter 创建测试用 ModelRouter，直接注入 fakeLLM。
 func newTestRouter(models []routedModel, defaultIdx int) *ModelRouter {
@@ -53,6 +62,26 @@ func TestSelectModel_NoRequirements_ReturnsDefault(t *testing.T) {
 	}
 	if rm.profile.Name != "expensive" {
 		t.Errorf("expected default model 'expensive', got %q", rm.profile.Name)
+	}
+}
+
+func TestOrderedCandidates_NoRequirements_DefaultFirstThenFileOrder(t *testing.T) {
+	models := []routedModel{
+		{profile: ModelProfile{Name: "cheap", CostTier: 1}, llm: &fakeLLM{name: "cheap"}},
+		{profile: ModelProfile{Name: "default", CostTier: 2, IsDefault: true}, llm: &fakeLLM{name: "default"}},
+		{profile: ModelProfile{Name: "strong", CostTier: 3}, llm: &fakeLLM{name: "strong"}},
+	}
+	r := newTestRouter(models, 1)
+
+	candidates, err := r.orderedCandidates(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := len(candidates), 3; got != want {
+		t.Fatalf("candidate count = %d, want %d", got, want)
+	}
+	if candidates[0].profile.Name != "default" || candidates[1].profile.Name != "cheap" || candidates[2].profile.Name != "strong" {
+		t.Fatalf("unexpected candidate order: %q, %q, %q", candidates[0].profile.Name, candidates[1].profile.Name, candidates[2].profile.Name)
 	}
 }
 
@@ -248,6 +277,9 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	if resp.Message.Content != "response from default" {
 		t.Errorf("expected default model response, got %q", resp.Message.Content)
 	}
+	if resp.Metadata == nil || resp.Metadata.ActualModel != "default" {
+		t.Fatalf("expected actual model metadata for default, got %+v", resp.Metadata)
+	}
 
 	// 指定需求 → 选择 vision 模型
 	resp, err = r.Complete(context.Background(), port.CompletionRequest{
@@ -262,6 +294,9 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	}
 	if resp.Message.Content != "response from vision" {
 		t.Errorf("expected vision model response, got %q", resp.Message.Content)
+	}
+	if resp.Metadata == nil || resp.Metadata.ActualModel != "vision" {
+		t.Fatalf("expected actual model metadata for vision, got %+v", resp.Metadata)
 	}
 }
 
@@ -295,9 +330,66 @@ func TestStream_StreamingModel_Works(t *testing.T) {
 	}
 	r := newTestRouter(models, 0)
 
-	_, err := r.Stream(context.Background(), port.CompletionRequest{})
+	iter, err := r.Stream(context.Background(), port.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	provider, ok := iter.(port.MetadataStreamIterator)
+	if !ok {
+		t.Fatal("expected metadata stream iterator")
+	}
+	if meta := provider.Metadata(); meta.ActualModel != "streamer" {
+		t.Fatalf("expected actual model metadata 'streamer', got %+v", meta)
+	}
+}
+
+func TestAttachModelMetadata_DirectLLMCallErrorCopiesInsteadOfMutating(t *testing.T) {
+	original := &port.LLMCallError{
+		Err:          io.ErrUnexpectedEOF,
+		Retryable:    true,
+		FallbackSafe: true,
+	}
+
+	got := attachModelMetadata(original, "primary")
+	if got == original {
+		t.Fatal("expected attachModelMetadata to return a copied error")
+	}
+	if strings.TrimSpace(original.Metadata.ActualModel) != "" {
+		t.Fatalf("original error metadata was mutated: %+v", original.Metadata)
+	}
+	var callErr *port.LLMCallError
+	if !errors.As(got, &callErr) {
+		t.Fatalf("expected LLMCallError, got %T", got)
+	}
+	if callErr.Metadata.ActualModel != "primary" {
+		t.Fatalf("actual model = %q, want primary", callErr.Metadata.ActualModel)
+	}
+}
+
+func TestAttachModelMetadata_WrappedLLMCallErrorPreservesWrapperAndFlags(t *testing.T) {
+	inner := &port.LLMCallError{
+		Err:          fmt.Errorf("provider rejected request"),
+		Retryable:    false,
+		FallbackSafe: false,
+	}
+	wrapped := fmt.Errorf("transport failure: %w", inner)
+
+	got := attachModelMetadata(wrapped, "primary")
+	if !strings.Contains(got.Error(), "transport failure") {
+		t.Fatalf("expected wrapper message to be preserved, got %v", got)
+	}
+	if strings.TrimSpace(inner.Metadata.ActualModel) != "" {
+		t.Fatalf("wrapped inner error metadata was mutated: %+v", inner.Metadata)
+	}
+	var callErr *port.LLMCallError
+	if !errors.As(got, &callErr) {
+		t.Fatalf("expected LLMCallError, got %T", got)
+	}
+	if callErr.Retryable || callErr.FallbackSafe {
+		t.Fatalf("expected original flags to be preserved, got retryable=%v fallbackSafe=%v", callErr.Retryable, callErr.FallbackSafe)
+	}
+	if callErr.Metadata.ActualModel != "primary" {
+		t.Fatalf("actual model = %q, want primary", callErr.Metadata.ActualModel)
 	}
 }
 
