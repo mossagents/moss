@@ -313,7 +313,7 @@ Usage:
   mosscode exec --prompt "Fix flaky tests" [flags]
   mosscode resume [--latest | --session <id>] [flags]
   mosscode doctor [--json] [flags]
-  mosscode config [show|path|set|unset] [args] [flags]
+  mosscode config [show|path|set|unset|mcp] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
   mosscode checkpoint <list|show|create|fork|replay> [flags]
 
@@ -351,6 +351,10 @@ Config:
   path          Print config file path
   set           Set provider/name/model/base_url in global config
   unset         Clear name/model/base_url in global config
+  mcp list                          List configured MCP servers across global/project config
+  mcp show <name>                  Show MCP server details
+  mcp enable <name> [global|project]   Enable an existing MCP entry
+  mcp disable <name> [global|project]  Disable an existing MCP entry
 
 Review:
   status        Show repo change summary (default)
@@ -526,8 +530,50 @@ func runConfig(cfg *config) error {
 		}
 		fmt.Printf("Cleared %s in %s\n", strings.ToLower(strings.TrimSpace(args[1])), cfgPath)
 		return showConfig(effectiveFlags())
+	case "mcp":
+		return runConfigMCP(cfg.flags, args[1:])
 	default:
-		return fmt.Errorf("unknown config command %q (supported: show, path, set, unset)", args[0])
+		return fmt.Errorf("unknown config command %q (supported: show, path, set, unset, mcp)", args[0])
+	}
+}
+
+func runConfigMCP(flags *appkit.AppFlags, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		servers, err := product.ListMCPServers(flags.Workspace, flags.Trust)
+		if err != nil {
+			return err
+		}
+		fmt.Print(product.RenderMCPServerList(servers))
+		return nil
+	}
+	switch args[0] {
+	case "show":
+		if len(args) != 2 {
+			return fmt.Errorf("usage: mosscode config mcp show <name>")
+		}
+		servers, err := product.GetMCPServer(flags.Workspace, flags.Trust, args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Print(product.RenderMCPServerDetail(servers))
+		return nil
+	case "enable", "disable":
+		if len(args) < 2 || len(args) > 3 {
+			return fmt.Errorf("usage: mosscode config mcp %s <name> [global|project]", args[0])
+		}
+		enabled := args[0] == "enable"
+		scope := ""
+		if len(args) == 3 {
+			scope = args[2]
+		}
+		server, err := product.SetMCPEnabled(flags.Workspace, args[1], scope, enabled)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Updated MCP %s [%s]: enabled=%t effective=%t status=%s\n", server.Name, server.Source, server.Enabled, server.Effective, server.Status)
+		return nil
+	default:
+		return fmt.Errorf("unknown mcp config command %q (supported: list, show, enable, disable)", args[0])
 	}
 }
 

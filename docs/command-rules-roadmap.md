@@ -115,7 +115,8 @@ If we step back from `command rules` specifically, the next major implementation
    - next: add richer operator-visible governance UX around these hook points
 
 3. **MCP management UX**
-   - make server enablement, trust, source visibility, and governance clearer at the product layer
+   - server enablement, source visibility, trust-aware status, and doctor-level per-server reporting are now available
+   - next: add interactive install/add flows and richer in-product governance UX
 
 4. **Restore posture auto-rebuild**
    - upgrade restore / replay / fork from fail-fast to rebuilding runtimes from persisted posture

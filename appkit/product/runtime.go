@@ -188,12 +188,12 @@ type DoctorGovernanceReport struct {
 
 type DoctorHealthReport struct {
 	State      DoctorStateCatalogHealth `json:"state"`
-	Sessions   DoctorSessionHealth   `json:"sessions"`
-	Tasks      DoctorTaskHealth      `json:"tasks"`
-	Workspace  DoctorWorkspaceHealth `json:"workspace"`
-	Repo       DoctorRepoHealth      `json:"repo"`
-	Snapshots  DoctorSnapshotHealth  `json:"snapshots"`
-	Extensions DoctorExtensionHealth `json:"extensions"`
+	Sessions   DoctorSessionHealth      `json:"sessions"`
+	Tasks      DoctorTaskHealth         `json:"tasks"`
+	Workspace  DoctorWorkspaceHealth    `json:"workspace"`
+	Repo       DoctorRepoHealth         `json:"repo"`
+	Snapshots  DoctorSnapshotHealth     `json:"snapshots"`
+	Extensions DoctorExtensionHealth    `json:"extensions"`
 }
 
 type DoctorStateCatalogHealth struct {
@@ -247,13 +247,14 @@ type DoctorSnapshotHealth struct {
 }
 
 type DoctorExtensionHealth struct {
-	Configured       int    `json:"configured"`
-	Enabled          int    `json:"enabled"`
-	Disabled         int    `json:"disabled"`
-	MCPServers       int    `json:"mcp_servers"`
-	PromptSkills     int    `json:"prompt_skills"`
-	DiscoveredSkills int    `json:"discovered_skills"`
-	Error            string `json:"error,omitempty"`
+	Configured       int                   `json:"configured"`
+	Enabled          int                   `json:"enabled"`
+	Disabled         int                   `json:"disabled"`
+	MCPServers       int                   `json:"mcp_servers"`
+	MCPServerStatus  []MCPServerConfigView `json:"mcp_server_status,omitempty"`
+	PromptSkills     int                   `json:"prompt_skills"`
+	DiscoveredSkills int                   `json:"discovered_skills"`
+	Error            string                `json:"error,omitempty"`
 }
 
 func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
@@ -402,6 +403,11 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 				report.Health.Extensions.PromptSkills++
 			}
 		}
+		if servers, err := ListMCPServers(workspace, trust); err != nil {
+			report.Health.Extensions.Error = err.Error()
+		} else {
+			report.Health.Extensions.MCPServerStatus = servers
+		}
 		report.Health.Extensions.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
 	}
 
@@ -543,6 +549,17 @@ func RenderDoctorReport(report DoctorReport) string {
 		fmt.Fprintf(&b, " err=%s", report.Health.Extensions.Error)
 	}
 	b.WriteString("\n")
+	for _, server := range report.Health.Extensions.MCPServerStatus {
+		fmt.Fprintf(&b, "  MCP %s [%s]: transport=%s enabled=%t effective=%t status=%s",
+			server.Name, server.Source, firstNonEmpty(server.Transport, "-"), server.Enabled, server.Effective, server.Status)
+		if server.Target != "" {
+			fmt.Fprintf(&b, " target=%s", server.Target)
+		}
+		if server.HasEnv {
+			fmt.Fprintf(&b, " env=%d", len(server.EnvKeys))
+		}
+		b.WriteString("\n")
+	}
 	if report.Health.Repo.Available {
 		fmt.Fprintf(&b, "Repo: available=true root=%s branch=%s dirty=%t\n", report.Health.Repo.Root, firstNonEmpty(report.Health.Repo.Branch, "(detached)"), report.Health.Repo.Dirty)
 	} else {

@@ -2,10 +2,14 @@ package product
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/mossagents/moss/appkit"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 )
@@ -120,6 +124,55 @@ func TestDescribeCheckpointSortsMetadataKeys(t *testing.T) {
 	}
 	if got, want := strings.Join(detail.MetadataKeys, ","), "alpha,zeta"; got != want {
 		t.Fatalf("metadata keys = %q, want %q", got, want)
+	}
+}
+
+func TestBuildDoctorReportIncludesMCPServerStatus(t *testing.T) {
+	tempHome := t.TempDir()
+	workspace := filepath.Join(tempHome, "workspace")
+	if err := os.MkdirAll(workspace, 0755); err != nil {
+		t.Fatalf("MkdirAll workspace: %v", err)
+	}
+	appconfig.SetAppName("moss-product-test")
+	t.Setenv("USERPROFILE", tempHome)
+	t.Setenv("HOME", tempHome)
+
+	globalCfg := &appconfig.Config{
+		Skills: []appconfig.SkillConfig{
+			{Name: "global-mcp", Transport: "stdio", Command: "node global.js"},
+		},
+	}
+	if err := appconfig.SaveConfig(appconfig.DefaultGlobalConfigPath(), globalCfg); err != nil {
+		t.Fatalf("SaveConfig global: %v", err)
+	}
+	projectCfg := &appconfig.Config{
+		Skills: []appconfig.SkillConfig{
+			{Name: "project-mcp", Transport: "sse", URL: "https://example.test/mcp"},
+		},
+	}
+	if err := appconfig.SaveConfig(appconfig.DefaultProjectConfigPath(workspace), projectCfg); err != nil {
+		t.Fatalf("SaveConfig project: %v", err)
+	}
+
+	report := BuildDoctorReport(context.Background(), "mosscode", workspace, &appkit.AppFlags{
+		Workspace: workspace,
+		Trust:     appconfig.TrustRestricted,
+	}, nil, "confirm", DefaultGovernanceConfig())
+	if got, want := len(report.Health.Extensions.MCPServerStatus), 2; got != want {
+		t.Fatalf("mcp server status count = %d, want %d", got, want)
+	}
+	foundSuppressed := false
+	for _, server := range report.Health.Extensions.MCPServerStatus {
+		if server.Name == "project-mcp" && server.Status == "suppressed_by_trust" {
+			foundSuppressed = true
+		}
+	}
+	if !foundSuppressed {
+		t.Fatalf("expected suppressed project MCP in doctor report: %+v", report.Health.Extensions.MCPServerStatus)
+	}
+	rendered := RenderDoctorReport(report)
+	if !strings.Contains(rendered, "MCP project-mcp [project]") {
+		t.Fatalf("doctor output missing MCP detail: %q", rendered)
 	}
 }
 

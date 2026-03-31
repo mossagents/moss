@@ -149,7 +149,7 @@ Strengthen:
 
 - hooks / lifecycle extensions — core session lifecycle and pre/post tool hooks are implemented through the extension bridge and appkit; richer operator UX and broader governance flows remain
 - command rules / exec policy — core first slice is implemented for `run_command` and `http_request`, with rule-hit audit events and doctor/TUI visibility; broader governance UX and policy-pack ergonomics remain
-- MCP management UX — remaining
+- MCP management UX — core operator surface is implemented with `config mcp list/show/enable/disable` and doctor-level per-server visibility; interactive install/wizard flows and deeper governance UX remain
 - profiles / task modes — largely implemented; remaining work is mostly hardening and follow-up ergonomics
 - unified state store and indexed history — implemented
 - notification surface for long-running work — implemented
