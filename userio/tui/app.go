@@ -1698,6 +1698,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if agent.sess != nil {
 			m.chat.currentSessionID = agent.sess.ID
 		}
+		if notice := m.chat.syncCustomCommands(); strings.TrimSpace(notice) != "" {
+			ready.notices = append(ready.notices, notice)
+		}
 		connInfo := m.chat.provider
 		if m.config.Model != "" {
 			m.chat.model = m.config.Model

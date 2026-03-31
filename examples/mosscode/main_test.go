@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +82,24 @@ func TestRunForkRequiresSource(t *testing.T) {
 	err := runFork(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "usage: mosscode fork") {
 		t.Fatalf("expected fork usage error, got %v", err)
+	}
+}
+
+func TestRunInitCreatesAgentsTemplate(t *testing.T) {
+	workspace := t.TempDir()
+	cfg := &config{
+		flags:      &appkit.AppFlags{Workspace: workspace},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	out, err := captureStdout(func() error { return runInit(cfg) })
+	if err != nil {
+		t.Fatalf("runInit: %v", err)
+	}
+	if !strings.Contains(out, "AGENTS.md") {
+		t.Fatalf("unexpected init output: %q", out)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "AGENTS.md")); err != nil {
+		t.Fatalf("expected AGENTS.md to exist: %v", err)
 	}
 }
 

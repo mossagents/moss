@@ -104,12 +104,13 @@ type chatModel struct {
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
 	// 配置显示
-	provider     string
-	model        string
-	workspace    string
-	trust        string
-	profile      string
-	approvalMode string
+	provider       string
+	model          string
+	workspace      string
+	trust          string
+	profile        string
+	approvalMode   string
+	customCommands []product.CustomCommand
 
 	queuedInputs []string
 
@@ -1484,11 +1485,33 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 
 	case "/help":
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: renderSlashHelp()})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.renderSlashHelp()})
+		m.refreshViewport()
+		return m, nil
+
+	case "/init":
+		out, err := product.InitWorkspaceBootstrap(m.workspace, config.AppName())
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("init failed: %v", err)})
+		} else {
+			if notice := m.syncCustomCommands(); notice != "" {
+				out += "\n" + notice
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
 		m.refreshViewport()
 		return m, nil
 
 	default:
+		if custom, ok := m.findCustomCommand(cmd); ok {
+			runText := product.RenderCustomCommandPrompt(custom, strings.TrimSpace(strings.Join(args, " ")), m.workspace)
+			if runText == "" {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("custom command /%s is empty", custom.Name)})
+				m.refreshViewport()
+				return m, nil
+			}
+			return m.dispatchUserSubmission(input, runText)
+		}
 		if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
 			name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))
 			task := strings.TrimSpace(strings.Join(args, " "))
@@ -1686,7 +1709,7 @@ func truncateForQueue(s string, max int) string {
 
 func (m *chatModel) refreshSlashHints() {
 	text := strings.TrimSpace(m.textarea.Value())
-	m.slashHints = filterSlashHints(text)
+	m.slashHints = filterSlashHints(text, m.customCommands)
 }
 
 func (m chatModel) currentSlashHints() []string {
@@ -1724,6 +1747,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/resume", Summary: "List or resume saved sessions", Section: "Core"},
 	{Name: "/fork", Summary: "Branch into a fresh session", Section: "Core"},
 	{Name: "/plan", Summary: "Switch to planning mode", Section: "Core"},
+	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Core"},
 	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
 	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
@@ -1750,7 +1774,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/quit", Summary: "Exit mosscode", Section: "Core", HiddenInNav: true},
 }
 
-func filterSlashHints(input string) []string {
+func filterSlashHints(input string, customCommands []product.CustomCommand) []string {
 	if !strings.HasPrefix(input, "/") {
 		return nil
 	}
@@ -1767,6 +1791,12 @@ func filterSlashHints(input string) []string {
 			hints = append(hints, cmd.Name)
 		}
 	}
+	for _, cmd := range customCommands {
+		name := "/" + cmd.Name
+		if strings.HasPrefix(name, lower) {
+			hints = append(hints, name)
+		}
+	}
 	if len(hints) == 0 {
 		return nil
 	}
@@ -1776,7 +1806,7 @@ func filterSlashHints(input string) []string {
 	return hints
 }
 
-func renderSlashHelp() string {
+func (m chatModel) renderSlashHelp() string {
 	sections := []string{"Core", "Review and recovery", "Runtime", "Skills and tools"}
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
@@ -1793,6 +1823,12 @@ func renderSlashHelp() string {
 				first = false
 			}
 			fmt.Fprintf(&b, "  %-14s %s\n", cmd.Name, cmd.Summary)
+		}
+	}
+	if len(m.customCommands) > 0 {
+		b.WriteString("\nCustom commands:\n")
+		for _, cmd := range m.customCommands {
+			fmt.Fprintf(&b, "  %-14s %s\n", "/"+cmd.Name, cmd.Summary)
 		}
 	}
 	b.WriteString("\nCheckpoint details:\n")
@@ -1828,6 +1864,44 @@ func (m chatModel) renderStatusSummary() string {
 		}
 	}
 	return b.String()
+}
+
+func (m *chatModel) syncCustomCommands() string {
+	commands, err := product.DiscoverCustomCommands(m.workspace, config.AppName(), m.trust)
+	if err != nil {
+		m.customCommands = nil
+		m.refreshSlashHints()
+		return fmt.Sprintf("warning: custom command discovery failed: %v", err)
+	}
+	reserved := make(map[string]struct{}, len(slashCommandCatalog))
+	for _, cmd := range slashCommandCatalog {
+		reserved[strings.TrimPrefix(cmd.Name, "/")] = struct{}{}
+	}
+	filtered := make([]product.CustomCommand, 0, len(commands))
+	skipped := 0
+	for _, cmd := range commands {
+		if _, exists := reserved[cmd.Name]; exists {
+			skipped++
+			continue
+		}
+		filtered = append(filtered, cmd)
+	}
+	m.customCommands = filtered
+	m.refreshSlashHints()
+	if skipped > 0 {
+		return fmt.Sprintf("warning: skipped %d custom commands because their names conflict with built-in commands", skipped)
+	}
+	return ""
+}
+
+func (m chatModel) findCustomCommand(name string) (product.CustomCommand, bool) {
+	target := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(name)), "/")
+	for _, cmd := range m.customCommands {
+		if cmd.Name == target {
+			return cmd, true
+		}
+	}
+	return product.CustomCommand{}, false
 }
 
 func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatModel, tea.Cmd) {

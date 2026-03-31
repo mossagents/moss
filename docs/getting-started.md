@@ -147,6 +147,7 @@ moss version
 | `/model <name>` | 切换模型 |
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
+| `/init` | 初始化 `AGENTS.md` 与 `.mosscode/commands/` 工作流目录 |
 | `/resume [session_id|latest]` | 查看可恢复会话或恢复指定会话 |
 | `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有会话/检查点分叉新会话 |
 | `/plan [prompt]` | 切换到 planning 模式，并可直接附带计划提示 |
@@ -160,6 +161,13 @@ moss version
 | `/agent cancel <id> [reason]` | 取消后台 agent thread |
 
 ---
+
+### 自定义工作流命令
+
+- `mosscode init` 或 TUI `/init` 会在工作区根目录创建 `AGENTS.md`，并准备 `.mosscode/commands/` 目录。
+- 自定义 slash command 使用 `.mosscode/commands/*.md` 或 `.agents/commands/*.md` 定义。
+- 文件名会映射成命令名，例如 `review-pr.md` -> `/review-pr`。
+- 在命令模板中可使用 `{{args}}` 与 `{{workspace}}` 占位；项目级命令仅在 trusted posture 下加载。
 
 ## 示例应用
 

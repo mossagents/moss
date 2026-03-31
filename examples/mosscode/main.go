@@ -119,6 +119,9 @@ func main() {
 	case "fork":
 		exitOnCommandError(runFork(ctx, cfg))
 		return
+	case "init":
+		exitOnCommandError(runInit(cfg))
+		return
 	case "doctor":
 		exitOnCommandError(runDoctor(ctx, cfg))
 		return
@@ -166,6 +169,10 @@ func parseFlags() *config {
 		case "fork":
 			cfg.command = "fork"
 			cfg.forkArgs = append([]string(nil), os.Args[2:]...)
+			return cfg
+		case "init":
+			cfg.command = "init"
+			parseLegacyFlags(cfg, os.Args[2:])
 			return cfg
 		case "doctor":
 			cfg.command = "doctor"
@@ -321,6 +328,7 @@ Usage:
   mosscode exec --prompt "Fix flaky tests" [flags]
   mosscode resume [--latest | --session <id>] [flags]
   mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [flags]
+  mosscode init [flags]
   mosscode doctor [--json] [flags]
   mosscode config [show|path|set|unset|mcp] [args] [flags]
   mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
@@ -493,6 +501,15 @@ func runResume(ctx context.Context, cfg *config) error {
 
 func runFork(ctx context.Context, cfg *config) error {
 	return runCheckpointFork(ctx, cfg, cfg.forkArgs)
+}
+
+func runInit(cfg *config) error {
+	out, err := product.InitWorkspaceBootstrap(cfg.flags.Workspace, appName)
+	if err != nil {
+		return err
+	}
+	fmt.Println(out)
+	return nil
 }
 
 func runDoctor(ctx context.Context, cfg *config) error {

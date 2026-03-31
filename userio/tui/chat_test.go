@@ -2,6 +2,8 @@ package tui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
+	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 
@@ -320,6 +323,45 @@ func TestLegacyOffloadCommandShowsGuidance(t *testing.T) {
 	}
 }
 
+func TestSlashCommandInitScaffoldsWorkspaceBootstrap(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	workspace := t.TempDir()
+	m := newChatModel("openai", "gpt-4o", workspace)
+	updated, _ := m.handleSlashCommand("/init")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "AGENTS.md") {
+		t.Fatalf("unexpected /init output: %+v", last)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "AGENTS.md")); err != nil {
+		t.Fatalf("expected AGENTS.md: %v", err)
+	}
+}
+
+func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	workspace := t.TempDir()
+	commandDir := filepath.Join(workspace, ".mosscode", "commands")
+	if err := os.MkdirAll(commandDir, 0o755); err != nil {
+		t.Fatalf("mkdir commands: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "review-pr.md"), []byte("Review this change: {{args}}"), 0o600); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	if notice := m.syncCustomCommands(); notice != "" {
+		t.Fatalf("syncCustomCommands notice: %s", notice)
+	}
+	dispatched := ""
+	m.sendFn = func(text string) { dispatched = text }
+	updated, _ := m.handleSlashCommand("/review-pr focus tests")
+	if !updated.streaming {
+		t.Fatal("expected custom command to start a run")
+	}
+	if !strings.Contains(dispatched, "focus tests") {
+		t.Fatalf("unexpected dispatched prompt: %q", dispatched)
+	}
+}
+
 func TestSlashCommandPlanReturnsPlanningSwitchMsg(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, cmd := m.handleSlashCommand("/plan Draft a migration plan")
@@ -589,8 +631,29 @@ func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
+	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/init") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
+	}
+}
+
+func TestHelpIncludesCustomCommands(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	workspace := t.TempDir()
+	commandDir := filepath.Join(workspace, ".mosscode", "commands")
+	if err := os.MkdirAll(commandDir, 0o755); err != nil {
+		t.Fatalf("mkdir commands: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "review-pr.md"), []byte("# Review repo"), 0o600); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	if notice := m.syncCustomCommands(); notice != "" {
+		t.Fatalf("syncCustomCommands notice: %s", notice)
+	}
+	updated, _ := m.handleSlashCommand("/help")
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "Custom commands:") || !strings.Contains(last.content, "/review-pr") {
+		t.Fatalf("help missing custom commands: %q", last.content)
 	}
 }
 
@@ -884,6 +947,32 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	hints = m.currentSlashHints()
 	if !slices.Contains(hints, "/trace") {
 		t.Fatalf("expected /trace in hints, got %v", hints)
+	}
+}
+
+func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	workspace := t.TempDir()
+	commandDir := filepath.Join(workspace, ".mosscode", "commands")
+	if err := os.MkdirAll(commandDir, 0o755); err != nil {
+		t.Fatalf("mkdir commands: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(commandDir, "review-pr.md"), []byte("Review repo"), 0o600); err != nil {
+		t.Fatalf("write command: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	if notice := m.syncCustomCommands(); notice != "" {
+		t.Fatalf("syncCustomCommands notice: %s", notice)
+	}
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.textarea.SetValue("/review-")
+	m.refreshSlashHints()
+	hints := m.currentSlashHints()
+	if !slices.Contains(hints, "/review-pr") {
+		t.Fatalf("expected /review-pr custom hint, got %v", hints)
 	}
 }
 
