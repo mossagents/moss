@@ -854,11 +854,25 @@ func (a *agentState) setPermission(toolName, mode string) (string, error) {
 
 func (a *agentState) permissionSummary() string {
 	a.mu.Lock()
+	k := a.k
 	defer a.mu.Unlock()
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Trust: %s\n", a.trust))
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
+	}
+	if k != nil {
+		policy := runtime.ExecutionPolicyOf(k)
+		if len(policy.Command.Rules) > 0 {
+			b.WriteString("Command rules:\n")
+			for _, rule := range policy.Command.Rules {
+				label := strings.TrimSpace(rule.Name)
+				if label == "" {
+					label = strings.TrimSpace(rule.Match)
+				}
+				b.WriteString(fmt.Sprintf("- %s => %s (%s)\n", label, rule.Access, rule.Match))
+			}
+		}
 	}
 	if len(a.permissions) == 0 {
 		b.WriteString("Overrides: none")

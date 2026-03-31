@@ -1,13 +1,16 @@
 package runtime
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
+	"github.com/mossagents/moss/kernel/middleware/builtins"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestProfileNamesForWorkspaceIncludesBuiltinsAndConfig(t *testing.T) {
@@ -96,5 +99,70 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 	}
 	if got := cfg.Metadata[session.MetadataEffectiveApproval]; got != "confirm" {
 		t.Fatalf("approval metadata = %v", got)
+	}
+}
+
+func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+
+	appDir := filepath.Join(home, ".mosscode")
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatalf("mkdir app dir: %v", err)
+	}
+	configData := []byte("profiles:\n  guarded:\n    execution:\n      command_rules:\n        - name: git-push\n          match: \"git push*\"\n          access: require-approval\n")
+	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), configData, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
+		Workspace:        workspace,
+		RequestedProfile: "guarded",
+	})
+	if err != nil {
+		t.Fatalf("ResolveProfileForWorkspace: %v", err)
+	}
+	if len(resolved.ExecutionPolicy.Command.Rules) != 1 {
+		t.Fatalf("expected 1 command rule, got %d", len(resolved.ExecutionPolicy.Command.Rules))
+	}
+	rule := resolved.ExecutionPolicy.Command.Rules[0]
+	if rule.Name != "git-push" || rule.Match != "git push*" || rule.Access != ExecutionAccessRequireApproval {
+		t.Fatalf("unexpected command rule: %+v", rule)
+	}
+}
+
+func TestExecutionPolicyRulesApplyCommandRules(t *testing.T) {
+	policy := ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
+	policy.Command.Rules = []CommandRule{{
+		Name:   "git-push",
+		Match:  "git push*",
+		Access: ExecutionAccessRequireApproval,
+	}}
+
+	rules := ExecutionPolicyRules(policy)
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"push", "origin", "main"},
+	})
+	result := builtins.Allow
+	for _, rule := range rules {
+		next := rule(builtins.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "run_command"},
+			Input: input,
+		})
+		if next.Decision == builtins.Deny {
+			result = builtins.Deny
+			break
+		}
+		if next.Decision == builtins.RequireApproval {
+			result = builtins.RequireApproval
+		}
+	}
+	if result != builtins.RequireApproval {
+		t.Fatalf("decision = %s, want %s", result, builtins.RequireApproval)
 	}
 }

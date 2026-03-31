@@ -30,6 +30,7 @@ type CommandExecutionPolicy struct {
 	ClearEnv       bool                   `json:"clear_env,omitempty"`
 	Env            map[string]string      `json:"env,omitempty"`
 	Network        port.ExecNetworkPolicy `json:"network"`
+	Rules          []CommandRule          `json:"rules,omitempty"`
 }
 
 type HTTPExecutionPolicy struct {
@@ -40,6 +41,12 @@ type HTTPExecutionPolicy struct {
 	DefaultTimeout  time.Duration   `json:"default_timeout"`
 	MaxTimeout      time.Duration   `json:"max_timeout"`
 	FollowRedirects bool            `json:"follow_redirects"`
+}
+
+type CommandRule struct {
+	Name   string          `json:"name,omitempty"`
+	Match  string          `json:"match"`
+	Access ExecutionAccess `json:"access"`
 }
 
 type ExecutionPolicy struct {
@@ -86,9 +93,10 @@ func ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode string) E
 }
 
 func ExecutionPolicyRules(policy ExecutionPolicy) []builtins.PolicyRule {
-	rules := []builtins.PolicyRule{
+	rules := commandPolicyRules(policy.Command.Rules)
+	rules = append(rules,
 		builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
-	}
+	)
 	switch policy.Command.Access {
 	case ExecutionAccessDeny:
 		rules = append(rules, builtins.DenyTool("run_command"))
@@ -102,6 +110,32 @@ func ExecutionPolicyRules(policy ExecutionPolicy) []builtins.PolicyRule {
 		rules = append(rules, builtins.RequireApprovalFor("http_request"))
 	}
 	return rules
+}
+
+func commandPolicyRules(rules []CommandRule) []builtins.PolicyRule {
+	if len(rules) == 0 {
+		return nil
+	}
+	converted := make([]builtins.CommandPatternRule, 0, len(rules))
+	for _, rule := range rules {
+		converted = append(converted, builtins.CommandPatternRule{
+			Name:   rule.Name,
+			Match:  rule.Match,
+			Access: commandRuleDecision(rule.Access),
+		})
+	}
+	return []builtins.PolicyRule{builtins.CommandRules(converted...)}
+}
+
+func commandRuleDecision(access ExecutionAccess) builtins.PolicyDecision {
+	switch access {
+	case ExecutionAccessDeny:
+		return builtins.Deny
+	case ExecutionAccessRequireApproval:
+		return builtins.RequireApproval
+	default:
+		return builtins.Allow
+	}
 }
 
 func ensureExecutionPolicyState(k *kernel.Kernel) *executionPolicyState {
@@ -211,6 +245,7 @@ func cloneExecutionPolicy(policy ExecutionPolicy) ExecutionPolicy {
 	policy.Command.AllowedPaths = append([]string(nil), policy.Command.AllowedPaths...)
 	policy.Command.Env = cloneStringMap(policy.Command.Env)
 	policy.Command.Network.AllowHosts = append([]string(nil), policy.Command.Network.AllowHosts...)
+	policy.Command.Rules = append([]CommandRule(nil), policy.Command.Rules...)
 	policy.HTTP.AllowedMethods = append([]string(nil), policy.HTTP.AllowedMethods...)
 	policy.HTTP.AllowedSchemes = append([]string(nil), policy.HTTP.AllowedSchemes...)
 	policy.HTTP.AllowedHosts = append([]string(nil), policy.HTTP.AllowedHosts...)

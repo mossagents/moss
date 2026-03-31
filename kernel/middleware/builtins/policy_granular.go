@@ -143,6 +143,22 @@ func extractHTTPMethod(input json.RawMessage) string {
 
 func extractPolicyInputDetails(toolName string, input json.RawMessage) map[string]any {
 	switch toolName {
+	case "run_command":
+		details := map[string]any{}
+		if command := extractStringField(input, "command"); command != "" {
+			details["command"] = command
+		}
+		if args := extractStringSliceField(input, "args"); len(args) > 0 {
+			details["args"] = args
+		}
+		if command, line := extractCommandTargets(input); command != "" || line != "" {
+			if line != "" {
+				details["command_line"] = line
+			}
+		}
+		if len(details) > 0 {
+			return details
+		}
 	case "http_request":
 		details := map[string]any{}
 		if host := extractURLHost(input); host != "" {
@@ -159,6 +175,39 @@ func extractPolicyInputDetails(toolName string, input json.RawMessage) map[strin
 		}
 	}
 	return nil
+}
+
+func extractStringSliceField(input json.RawMessage, field string) []string {
+	if len(input) == 0 {
+		return nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(input, &obj); err != nil {
+		return nil
+	}
+	raw, ok := obj[field]
+	if !ok || raw == nil {
+		return nil
+	}
+	values, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			out = append(out, text)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func normalizeUpperSet(values []string) map[string]struct{} {

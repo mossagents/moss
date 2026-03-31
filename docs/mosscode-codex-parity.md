@@ -84,7 +84,8 @@ Without considering Auth/Login, the highest-value product gaps are:
    - network isolation is explicitly degraded in local mode
 
 3. **Layered governance**
-   - there is no complete equivalent yet for profile layers, managed defaults, requirements, and command rules
+   - profile layers now exist, and a first `run_command` command-rules slice is in place
+   - the remaining gap is the broader governance surface: managed defaults, requirements, HTTP-side rules, auditability, and policy-pack style distribution
 
 4. **Extension governance**
    - MCP and skills exist, but there is not yet a full product control plane for project trust, allow/deny policy, lifecycle hooks, and operator-visible enablement state
@@ -146,12 +147,12 @@ Strengthen:
 
 ## P1: Needed soon after P0
 
-- hooks / lifecycle extensions
-- command rules / exec policy
-- MCP management UX
-- profiles / task modes
-- unified state store and indexed history
-- notification surface for long-running work
+- hooks / lifecycle extensions — remaining
+- command rules / exec policy — in progress; `run_command` first slice is done, but `http_request`, management UX, and audit surfaces are still pending
+- MCP management UX — remaining
+- profiles / task modes — largely implemented; remaining work is mostly hardening and follow-up ergonomics
+- unified state store and indexed history — implemented
+- notification surface for long-running work — implemented
 
 ## P2: Enterprise / scale work
 

@@ -241,6 +241,13 @@ func ApplyProfileExecution(policy ExecutionPolicy, override appconfig.ExecutionP
 		policy.HTTP.DefaultTimeout = dur
 		policy.HTTP.MaxTimeout = dur
 	}
+	if len(override.CommandRules) > 0 {
+		rules, err := normalizeProfileCommandRules(override.CommandRules)
+		if err != nil {
+			return ExecutionPolicy{}, err
+		}
+		policy.Command.Rules = rules
+	}
 	return policy, nil
 }
 
@@ -359,6 +366,9 @@ func mergeProfileConfig(base, overlay appconfig.ProfileConfig) appconfig.Profile
 	if strings.TrimSpace(overlay.Execution.HTTPTimeout) != "" {
 		base.Execution.HTTPTimeout = overlay.Execution.HTTPTimeout
 	}
+	if len(overlay.Execution.CommandRules) > 0 {
+		base.Execution.CommandRules = append([]appconfig.CommandRuleConfig(nil), overlay.Execution.CommandRules...)
+	}
 	return base
 }
 
@@ -372,7 +382,8 @@ func isZeroProfileConfig(cfg appconfig.ProfileConfig) bool {
 		strings.TrimSpace(cfg.Execution.CommandAccess) == "" &&
 		strings.TrimSpace(cfg.Execution.HTTPAccess) == "" &&
 		strings.TrimSpace(cfg.Execution.CommandTimeout) == "" &&
-		strings.TrimSpace(cfg.Execution.HTTPTimeout) == ""
+		strings.TrimSpace(cfg.Execution.HTTPTimeout) == "" &&
+		len(cfg.Execution.CommandRules) == 0
 }
 
 func normalizeProfileAccess(value string) ExecutionAccess {
@@ -388,6 +399,33 @@ func normalizeProfileAccess(value string) ExecutionAccess {
 	default:
 		return ""
 	}
+}
+
+func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]CommandRule, error) {
+	if len(rules) == 0 {
+		return nil, nil
+	}
+	out := make([]CommandRule, 0, len(rules))
+	for i, rule := range rules {
+		match := strings.TrimSpace(rule.Match)
+		if match == "" {
+			return nil, fmt.Errorf("command rule %d: match is required", i+1)
+		}
+		access := normalizeProfileAccess(rule.Access)
+		if access == "" {
+			name := strings.TrimSpace(rule.Name)
+			if name == "" {
+				name = fmt.Sprintf("#%d", i+1)
+			}
+			return nil, fmt.Errorf("command rule %s: access must be allow, require-approval, or deny", name)
+		}
+		out = append(out, CommandRule{
+			Name:   strings.TrimSpace(rule.Name),
+			Match:  match,
+			Access: access,
+		})
+	}
+	return out, nil
 }
 
 func metadataString(meta map[string]any, key string) string {
