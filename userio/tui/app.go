@@ -116,37 +116,44 @@ func renderSkillsSummary(agent *agentState, workspace string) string {
 	} else {
 		sb.WriteString("Discovered user skills:\n")
 		for _, mf := range manifests {
-			loaded := "inactive"
+			statusIcon := "⭕"
 			if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
-				loaded = "active"
+				statusIcon = "✅"
 			}
 			if strings.TrimSpace(mf.Description) == "" {
-				sb.WriteString(fmt.Sprintf("  • %s [%s]\n", mf.Name, loaded))
+				sb.WriteString(fmt.Sprintf("  • %s %s\n", statusIcon, mf.Name))
 			} else {
-				sb.WriteString(fmt.Sprintf("  • %s [%s] — %s\n", mf.Name, loaded, mf.Description))
+				sb.WriteString(fmt.Sprintf("  • %s %s — %s\n", statusIcon, mf.Name, mf.Description))
 			}
 		}
+		sb.WriteString("\nDirect slash usage:\n")
+		sb.WriteString("  /skill <name> <task...>\n")
+		sb.WriteString("  /<skill_or_tool_name> <task...>")
 	}
 
-	builtinSet := make(map[string]struct{})
-	for _, name := range runtime.RegisteredBuiltinToolNames(agent.k.Sandbox(), agent.k.Workspace(), agent.k.Executor()) {
-		builtinSet[name] = struct{}{}
-	}
-	var builtinNames []string
-	for _, spec := range agent.k.ToolRegistry().List() {
-		if _, ok := builtinSet[spec.Name]; ok {
-			builtinNames = append(builtinNames, spec.Name)
-		}
-	}
-	sort.Strings(builtinNames)
-	if len(builtinNames) > 0 {
-		sb.WriteString("\n\nRuntime builtin tools:\n")
-		for _, name := range builtinNames {
-			sb.WriteString("  - " + name + "\n")
-		}
-	}
+	return strings.TrimRight(sb.String(), "\n")
+}
 
-	return "```text\n" + sb.String() + "\n```"
+func discoveredSkillNames(agent *agentState, workspace string) []string {
+	manifests := runtime.SkillManifests(agent.k)
+	if len(manifests) == 0 {
+		manifests = skill.DiscoverSkillManifestsForTrust(workspace, agent.trust)
+	}
+	names := make([]string, 0, len(manifests))
+	seen := make(map[string]struct{}, len(manifests))
+	for _, mf := range manifests {
+		name := strings.TrimSpace(mf.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (a *agentState) sessionSummary() string {
@@ -1760,6 +1767,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.skillListFn = func() string {
 			return renderSkillsSummary(agent, m.config.Workspace)
 		}
+		m.chat.setDiscoveredSkills(discoveredSkillNames(agent, m.config.Workspace))
 		if agent.sess != nil {
 			m.chat.currentSessionID = agent.sess.ID
 		}

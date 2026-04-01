@@ -693,6 +693,9 @@ func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/init") || !strings.Contains(last.content, "/debug-config") || !strings.Contains(last.content, "/theme") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
 		t.Fatalf("help missing checkpoint commands: %q", last.content)
 	}
+	if !strings.Contains(last.content, "/skill <name> <task...>") || !strings.Contains(last.content, "/<skill_or_tool_name> <task...>") {
+		t.Fatalf("help missing direct skill usage guidance: %q", last.content)
+	}
 }
 
 func TestHelpIncludesCustomCommands(t *testing.T) {
@@ -1369,6 +1372,21 @@ func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
 	hints := m.currentSlashHints()
 	if !slices.Contains(hints, "/review-pr") {
 		t.Fatalf("expected /review-pr custom hint, got %v", hints)
+	}
+}
+
+func TestSlashAutocompleteHintsIncludeDiscoveredSkills(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.setDiscoveredSkills([]string{"wiki-researcher", "brainstorming"})
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.textarea.SetValue("/br")
+	m.refreshSlashHints()
+	hints := m.currentSlashHints()
+	if !slices.Contains(hints, "/brainstorming") {
+		t.Fatalf("expected /brainstorming discovered skill hint, got %v", hints)
 	}
 }
 

@@ -128,6 +128,7 @@ type chatModel struct {
 	statusLineItems      []string
 	experimentalFeatures []string
 	customCommands       []product.CustomCommand
+	discoveredSkills     []string
 
 	queuedInputs []string
 
@@ -540,7 +541,7 @@ func (m *chatModel) syncViewportLayout() {
 
 	headerH := 2 // 顶栏
 	metaH := 1 + m.visibleProgressHeight()
-	gapH := 2 // 消息区/输入区、输入区/状态栏之间的空行
+	gapH := 1 // 消息区/输入区、输入区/状态栏之间的空行
 	inputH := m.visibleInputHeight()
 	statusH := 1
 
@@ -2203,7 +2204,7 @@ func truncateDisplayWidth(s string, max int) string {
 
 func (m *chatModel) refreshSlashHints() {
 	text := strings.TrimSpace(m.textarea.Value())
-	m.slashHints = filterSlashHints(text, m.customCommands)
+	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills)
 }
 
 func (m chatModel) currentSlashHints() []string {
@@ -2279,7 +2280,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/quit", Summary: "Exit mosscode", Section: "Threads and core", HiddenInNav: true},
 }
 
-func filterSlashHints(input string, customCommands []product.CustomCommand) []string {
+func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string) []string {
 	if !strings.HasPrefix(input, "/") {
 		return nil
 	}
@@ -2288,17 +2289,39 @@ func filterSlashHints(input string, customCommands []product.CustomCommand) []st
 	}
 	lower := strings.ToLower(input)
 	hints := make([]string, 0, 8)
+	seen := make(map[string]struct{}, 16)
 	for _, cmd := range slashCommandCatalog {
 		if cmd.HiddenInNav {
 			continue
 		}
 		if strings.HasPrefix(cmd.Name, lower) {
+			if _, ok := seen[cmd.Name]; ok {
+				continue
+			}
+			seen[cmd.Name] = struct{}{}
 			hints = append(hints, cmd.Name)
 		}
 	}
 	for _, cmd := range customCommands {
 		name := "/" + cmd.Name
 		if strings.HasPrefix(name, lower) {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			hints = append(hints, name)
+		}
+	}
+	for _, skillName := range discoveredSkills {
+		name := "/" + strings.TrimPrefix(strings.TrimSpace(skillName), "/")
+		if name == "/" {
+			continue
+		}
+		if strings.HasPrefix(name, lower) {
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
 			hints = append(hints, name)
 		}
 	}
@@ -2337,6 +2360,9 @@ func (m chatModel) renderSlashHelp() string {
 			fmt.Fprintf(&b, "  %-14s %s\n", "/"+cmd.Name, cmd.Summary)
 		}
 	}
+	b.WriteString("\nDirect skill/tool usage:\n")
+	b.WriteString("  /skill <name> <task...>\n")
+	b.WriteString("  /<skill_or_tool_name> <task...>\n")
 	b.WriteString("\nCheckpoint details:\n")
 	b.WriteString("  /checkpoint list [limit]\n")
 	b.WriteString("  /checkpoint show <id|latest>\n")
@@ -2419,6 +2445,30 @@ func (m *chatModel) syncCustomCommands() string {
 		return fmt.Sprintf("warning: skipped %d custom commands because their names conflict with built-in commands", skipped)
 	}
 	return ""
+}
+
+func (m *chatModel) setDiscoveredSkills(names []string) {
+	if len(names) == 0 {
+		m.discoveredSkills = nil
+		m.refreshSlashHints()
+		return
+	}
+	sorted := make([]string, 0, len(names))
+	seen := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		normalized := strings.TrimPrefix(strings.TrimSpace(name), "/")
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		sorted = append(sorted, normalized)
+	}
+	sort.Strings(sorted)
+	m.discoveredSkills = sorted
+	m.refreshSlashHints()
 }
 
 func (m chatModel) findCustomCommand(name string) (product.CustomCommand, bool) {
