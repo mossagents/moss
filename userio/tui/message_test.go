@@ -60,6 +60,20 @@ func TestRenderMessage_ToolResultPreservesPlainTextLineBreaks(t *testing.T) {
 	}
 }
 
+func TestRenderMessage_ReadFilePreservesNumberedLineBreaks(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgToolResult,
+		content: "1. package main\n2. import \"fmt\"\n3. func main() {}",
+		meta:    map[string]any{"tool": "read_file"},
+	}, 80)
+	if !strings.Contains(out, "1. package main") ||
+		!strings.Contains(out, "2. import \"fmt\"") ||
+		!strings.Contains(out, "3. func main() {}") ||
+		strings.Contains(out, "1. package main 2. import \"fmt\"") {
+		t.Fatalf("read_file output lost numbered line breaks: %q", out)
+	}
+}
+
 func TestRenderMessage_ToolResultFormatsJSONObject(t *testing.T) {
 	out := renderMessage(chatMessage{
 		kind:    msgToolResult,

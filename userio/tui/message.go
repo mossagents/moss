@@ -242,7 +242,7 @@ func renderToolResultMessage(m chatMessage, width int) string {
 		header += fmt.Sprintf(" · %dms", dur)
 	}
 	lines := []string{style.Render(header)}
-	body := renderToolBody(m.content, max(20, width-5))
+	body := renderToolBody(toolName, m.content, max(20, width-5))
 	if body.summary != "" {
 		lines = append(lines, mutedStyle.Render("     "+body.summary))
 	}
@@ -257,10 +257,14 @@ type renderedToolBody struct {
 	content string
 }
 
-func renderToolBody(content string, width int) renderedToolBody {
+func renderToolBody(toolName, content string, width int) renderedToolBody {
 	text := strings.TrimSpace(content)
 	if text == "" {
 		return renderedToolBody{}
+	}
+
+	if toolName == "read_file" || toolName == "view" {
+		return renderedToolBody{content: wrapText(truncateToolBlock(text, 24, 1600), width)}
 	}
 
 	if value, ok := parseJSONObject(text); ok {
