@@ -679,7 +679,12 @@ func (m chatModel) renderFooterHelpLine() string {
 	if !m.toolCollapsed {
 		toolHint = "Ctrl+O collapse tools"
 	}
-	return fmt.Sprintf("/help  │  %s  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
+	base := fmt.Sprintf("/help  │  %s  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
+	status := strings.TrimSpace(m.renderStatusLine())
+	if status == "" {
+		return truncateDisplayWidth(base, m.mainWidth())
+	}
+	return truncateDisplayWidth(base+"  │  "+status, m.mainWidth())
 }
 
 func (m chatModel) View() string {
@@ -745,10 +750,6 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 底部状态
-	if m.pendAsk == nil && m.askForm == nil && m.scheduleBrowser == nil {
-		b.WriteString(mutedStyle.Render(m.renderFooterHelpLine()))
-		b.WriteString("\n")
-	}
 	status := mutedStyle.Render(m.renderStatusLine())
 	if m.pendAsk != nil && m.askForm != nil {
 		if m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
@@ -760,6 +761,8 @@ func (m chatModel) View() string {
 		status = mutedStyle.Render("↑↓ choose schedule │ e run now │ d delete │ r refresh │ Esc close")
 	} else if m.pendAsk != nil {
 		status = mutedStyle.Render("Type your reply and press Enter │ double Esc cancel run │ Ctrl+C clear input")
+	} else {
+		status = mutedStyle.Render(m.renderFooterHelpLine())
 	}
 	b.WriteString(status)
 
@@ -2172,6 +2175,30 @@ func truncateForQueue(s string, max int) string {
 		return s
 	}
 	return s[:max-3] + "..."
+}
+
+func truncateDisplayWidth(s string, max int) string {
+	if max < 8 {
+		max = 8
+	}
+	if runewidth.StringWidth(s) <= max {
+		return s
+	}
+	if max <= 3 {
+		return strings.Repeat(".", max)
+	}
+	var b strings.Builder
+	width := 0
+	for _, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if width+rw > max-3 {
+			break
+		}
+		b.WriteRune(r)
+		width += rw
+	}
+	b.WriteString("...")
+	return b.String()
 }
 
 func (m *chatModel) refreshSlashHints() {

@@ -1332,6 +1332,20 @@ func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 	}
 }
 
+func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 220
+	m.currentSessionID = "sess_1"
+	m.fastMode = true
+	line := m.renderFooterHelpLine()
+	if strings.Contains(line, "\n") {
+		t.Fatalf("expected single-line footer, got %q", line)
+	}
+	if !strings.Contains(line, "/help") || !strings.Contains(line, "thread=sess_1") || !strings.Contains(line, "fast=on") {
+		t.Fatalf("unexpected footer line: %q", line)
+	}
+}
+
 func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
 	configpkg.SetAppName("mosscode")
 	workspace := t.TempDir()
