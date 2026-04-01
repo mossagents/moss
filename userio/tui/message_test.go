@@ -34,3 +34,28 @@ func TestRenderAllMessages_CollapsedCountsToolCalls(t *testing.T) {
 		t.Fatalf("collapsed summary = %q, want call count", out)
 	}
 }
+
+func TestRenderMessage_SystemPreservesPlainTextLineBreaks(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgSystem,
+		content: "Available commands:\n/status  Show runtime status\n/resume  Resume saved conversation",
+	}, 80)
+	if !strings.Contains(out, "Available commands:") ||
+		!strings.Contains(out, "/status  Show runtime status") ||
+		strings.Contains(out, "Available commands: /status  Show runtime status") {
+		t.Fatalf("system message lost line breaks: %q", out)
+	}
+}
+
+func TestRenderMessage_ToolResultPreservesPlainTextLineBreaks(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgToolResult,
+		content: "Saved conversations:\nsess-1\nsess-2",
+		meta:    map[string]any{"tool": "list_threads"},
+	}, 80)
+	if !strings.Contains(out, "Saved conversations:") ||
+		!strings.Contains(out, "sess-1") ||
+		strings.Contains(out, "Saved conversations: sess-1") {
+		t.Fatalf("tool result lost line breaks: %q", out)
+	}
+}

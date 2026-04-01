@@ -49,7 +49,7 @@ func renderMessage(m chatMessage, width int) string {
 		return fmt.Sprintf("\n%s\n%s", label, renderMarkdown(m.content, maxContent))
 
 	case msgSystem:
-		return systemStyle.Render(fmt.Sprintf("\n  ● %s", renderMarkdown(m.content, maxContent)))
+		return systemStyle.Render(renderSystemMessage(m.content, maxContent))
 
 	case msgToolStart:
 		return renderToolStartMessage(m, maxContent)
@@ -82,6 +82,9 @@ func renderMarkdown(content string, width int) string {
 	if width < 20 {
 		width = 20
 	}
+	if shouldWrapAsPlainText(content) {
+		return wrapText(content, width)
+	}
 	renderer, err := markdownRenderer(width)
 	if err != nil {
 		return wrapText(content, width)
@@ -91,6 +94,61 @@ func renderMarkdown(content string, width int) string {
 		return wrapText(content, width)
 	}
 	return strings.TrimRight(out, "\n")
+}
+
+func renderSystemMessage(content string, width int) string {
+	wrapped := wrapText(content, width)
+	if wrapped == "" {
+		return "\n  ● "
+	}
+	lines := strings.Split(wrapped, "\n")
+	var b strings.Builder
+	b.WriteString("\n  ● ")
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n    ")
+		b.WriteString(line)
+	}
+	return b.String()
+}
+
+func shouldWrapAsPlainText(content string) bool {
+	if !strings.Contains(content, "\n") {
+		return false
+	}
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "#"),
+			strings.HasPrefix(line, "- "),
+			strings.HasPrefix(line, "* "),
+			strings.HasPrefix(line, "> "),
+			strings.HasPrefix(line, "```"),
+			isOrderedMarkdownLine(line),
+			strings.Contains(line, "|"):
+			return false
+		}
+	}
+	return true
+}
+
+func isOrderedMarkdownLine(line string) bool {
+	dot := strings.IndexByte(line, '.')
+	if dot <= 0 || dot >= len(line)-1 {
+		return false
+	}
+	if line[dot+1] != ' ' {
+		return false
+	}
+	for _, r := range line[:dot] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func markdownRenderer(width int) (*glamour.TermRenderer, error) {
