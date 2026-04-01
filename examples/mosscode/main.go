@@ -1443,9 +1443,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, ap
 		EnableDefaultLLMRetry:         retryEnabled,
 		LLMRetryConfig:                retryCfg,
 		LLMBreakerConfig:              breakerCfg,
-		AdditionalAppExtensions: []appkit.Extension{
-			appkit.WithJinaTools(),
-		},
+		AdditionalAppExtensions:       []appkit.Extension{},
 	})
 	if err != nil {
 		return nil, appruntime.ResolvedProfile{}, err
