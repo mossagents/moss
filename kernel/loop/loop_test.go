@@ -296,6 +296,45 @@ func TestLoopBudgetExhausted(t *testing.T) {
 	}
 }
 
+func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{
+			{
+				Message:    port.Message{Role: port.RoleAssistant, Content: "large token response"},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 11},
+			},
+		},
+	}
+
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+		IO:    kt.NewRecorderIO(),
+	}
+
+	sess := &session.Session{
+		ID:       "budget-tokens",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "test"}},
+		Budget:   session.Budget{MaxTokens: 10, MaxSteps: 10},
+	}
+
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success stop, got error %s", result.Error)
+	}
+	if result.Steps != 0 {
+		t.Fatalf("Steps = %d, want 0 because consume should be rejected", result.Steps)
+	}
+	if sess.Budget.UsedTokensValue() != 0 {
+		t.Fatalf("UsedTokens = %d, want 0", sess.Budget.UsedTokensValue())
+	}
+}
+
 func TestLoopParallelToolCalls(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{

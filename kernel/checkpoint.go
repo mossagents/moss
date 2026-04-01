@@ -342,8 +342,7 @@ func rerunSession(source *session.Session) *session.Session {
 	}
 	cloned.Messages = filtered
 	cloned.State = make(map[string]any)
-	cloned.Budget.UsedSteps = 0
-	cloned.Budget.UsedTokens = 0
+	cloned.Budget.ResetUsage()
 	cloned.Status = session.StatusCreated
 	cloned.EndedAt = time.Time{}
 	return cloned

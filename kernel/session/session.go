@@ -1,6 +1,7 @@
 package session
 
 import (
+	"sync"
 	"time"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -38,18 +39,58 @@ type Budget struct {
 	MaxSteps   int `json:"max_steps"`
 	UsedTokens int `json:"used_tokens"`
 	UsedSteps  int `json:"used_steps"`
+	mu         sync.Mutex
 }
 
 // Exhausted 返回预算是否已耗尽。
 func (b *Budget) Exhausted() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	return (b.MaxTokens > 0 && b.UsedTokens >= b.MaxTokens) ||
 		(b.MaxSteps > 0 && b.UsedSteps >= b.MaxSteps)
 }
 
 // Record 记录一次资源消耗。
 func (b *Budget) Record(tokens, steps int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.UsedTokens += tokens
 	b.UsedSteps += steps
+}
+
+// TryConsume 原子地检查并记录预算消耗。
+// 若记录后会超过预算上限，则返回 false 且不修改现有计数。
+func (b *Budget) TryConsume(tokens, steps int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	nextTokens := b.UsedTokens + tokens
+	nextSteps := b.UsedSteps + steps
+	if (b.MaxTokens > 0 && nextTokens > b.MaxTokens) ||
+		(b.MaxSteps > 0 && nextSteps > b.MaxSteps) {
+		return false
+	}
+	b.UsedTokens = nextTokens
+	b.UsedSteps = nextSteps
+	return true
+}
+
+func (b *Budget) UsedStepsValue() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.UsedSteps
+}
+
+func (b *Budget) UsedTokensValue() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.UsedTokens
+}
+
+func (b *Budget) ResetUsage() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.UsedSteps = 0
+	b.UsedTokens = 0
 }
 
 // Session 是 Agent 的执行上下文，包含对话历史、状态和预算。

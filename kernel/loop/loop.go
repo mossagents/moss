@@ -190,7 +190,9 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		totalUsage.PromptTokens += resp.Usage.PromptTokens
 		totalUsage.CompletionTokens += resp.Usage.CompletionTokens
 		totalUsage.TotalTokens += resp.Usage.TotalTokens
-		sess.Budget.Record(resp.Usage.TotalTokens, 1)
+		if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
+			break
+		}
 
 		// 3. AfterLLM middleware
 		if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
@@ -254,7 +256,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		SessionID: sess.ID,
 		Timestamp: time.Now().UTC(),
 		Data: map[string]any{
-			"steps":  sess.Budget.UsedSteps,
+			"steps":  sess.Budget.UsedStepsValue(),
 			"tokens": totalUsage.TotalTokens,
 		},
 	})
@@ -263,7 +265,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		SessionID:  sess.ID,
 		Success:    true,
 		Output:     lastOutput,
-		Steps:      sess.Budget.UsedSteps,
+		Steps:      sess.Budget.UsedStepsValue(),
 		TokensUsed: totalUsage,
 	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
@@ -272,7 +274,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		Result: &session.LifecycleResult{
 			Success:    true,
 			Output:     lastOutput,
-			Steps:      sess.Budget.UsedSteps,
+			Steps:      sess.Budget.UsedStepsValue(),
 			TokensUsed: totalUsage,
 		},
 		Timestamp: sess.EndedAt.UTC(),
@@ -1047,14 +1049,14 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		Timestamp: time.Now().UTC(),
 		Error:     err.Error(),
 		Data: map[string]any{
-			"steps":  sess.Budget.UsedSteps,
+			"steps":  sess.Budget.UsedStepsValue(),
 			"tokens": usage.TotalTokens,
 		},
 	})
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,
-		Steps:      sess.Budget.UsedSteps,
+		Steps:      sess.Budget.UsedStepsValue(),
 		TokensUsed: usage,
 		Error:      err.Error(),
 	}
@@ -1063,7 +1065,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		Session: sess,
 		Result: &session.LifecycleResult{
 			Success:    false,
-			Steps:      sess.Budget.UsedSteps,
+			Steps:      sess.Budget.UsedStepsValue(),
 			TokensUsed: usage,
 			Error:      err.Error(),
 		},

@@ -33,6 +33,25 @@ func TestBudgetExhaustedBySteps(t *testing.T) {
 	}
 }
 
+func TestBudgetTryConsumeAtomicBoundaries(t *testing.T) {
+	b := Budget{MaxTokens: 10, MaxSteps: 3}
+	if ok := b.TryConsume(5, 1); !ok {
+		t.Fatal("expected first consume to succeed")
+	}
+	if ok := b.TryConsume(5, 1); !ok {
+		t.Fatal("expected second consume to succeed at boundary")
+	}
+	if ok := b.TryConsume(1, 0); ok {
+		t.Fatal("expected token over-consume to fail")
+	}
+	if ok := b.TryConsume(0, 1); !ok {
+		t.Fatal("expected step consume to max boundary to succeed")
+	}
+	if ok := b.TryConsume(0, 1); ok {
+		t.Fatal("expected step over-consume to fail")
+	}
+}
+
 func TestSessionAppendAndTruncate(t *testing.T) {
 	s := &Session{
 		ID:       "test",

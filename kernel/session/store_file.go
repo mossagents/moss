@@ -107,7 +107,7 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			TaskMode:          taskMode,
 			Status:            sess.Status,
 			Recoverable:       IsRecoverableStatus(sess.Status),
-			Steps:             sess.Budget.UsedSteps,
+			Steps:             sess.Budget.UsedStepsValue(),
 			CreatedAt:         sess.CreatedAt.Format("2006-01-02 15:04:05"),
 			EndedAt:           endedAt,
 		})
