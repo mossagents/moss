@@ -52,6 +52,16 @@ func (f fakeScheduleController) RunNow(id string) (string, error) {
 	return f.runNowFn(id)
 }
 
+func applyAsyncChatCmd(t *testing.T, m chatModel, cmd tea.Cmd) chatModel {
+	t.Helper()
+	if cmd == nil {
+		t.Fatal("expected async command")
+	}
+	msg := cmd()
+	updated, _ := m.Update(msg)
+	return updated
+}
+
 func TestSlashCommandStatusSummary(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.trust = "trusted"
@@ -96,7 +106,11 @@ func TestSlashCommandResumeRestoresSession(t *testing.T) {
 		}
 		return "Restored session sess-123.", nil
 	}
-	updated, _ := m.handleSlashCommand("/resume sess-123")
+	updated, cmd := m.handleSlashCommand("/resume sess-123")
+	if !updated.streaming {
+		t.Fatal("expected /resume to enter busy state")
+	}
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "sess-123") {
 		t.Fatalf("unexpected resume output: %+v", last)
@@ -437,7 +451,11 @@ func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 		return "Previous thread sess_1 auto-saved.\nSwitched to new thread sess_2.", nil
 	}
 
-	updated, _ := m.handleSlashCommand("/new")
+	updated, cmd := m.handleSlashCommand("/new")
+	if !updated.streaming {
+		t.Fatal("expected /new to enter busy state")
+	}
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	if len(updated.messages) != 1 {
 		t.Fatalf("expected transcript reset to one notice, got %d messages", len(updated.messages))
 	}
@@ -469,7 +487,8 @@ func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 		return "", errors.New("cannot create a new thread while a run is active")
 	}
 
-	updated, _ := m.handleSlashCommand("/new")
+	updated, cmd := m.handleSlashCommand("/new")
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	if len(updated.messages) == 0 {
 		t.Fatal("expected rejection message")
 	}
@@ -610,7 +629,11 @@ func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 		}
 		return "Switched to replay session sess_2 from checkpoint cp-1 (rerun).", nil
 	}
-	updated, _ := m.handleSlashCommand("/checkpoint replay cp-1 rerun restore")
+	updated, cmd := m.handleSlashCommand("/checkpoint replay cp-1 rerun restore")
+	if !updated.streaming {
+		t.Fatal("expected replay to enter busy state")
+	}
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	if len(updated.messages) != 1 {
 		t.Fatalf("expected transcript reset, got %d messages", len(updated.messages))
 	}
@@ -635,7 +658,8 @@ func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
 		}
 		return "Switched to replay session sess_latest from checkpoint cp-latest (rerun).", nil
 	}
-	updated, _ := m.handleSlashCommand("/checkpoint replay rerun restore")
+	updated, cmd := m.handleSlashCommand("/checkpoint replay rerun restore")
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	last := updated.messages[0]
 	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
 		t.Fatalf("unexpected replay latest output: %+v", last)
@@ -654,7 +678,8 @@ func TestSlashCommandForkLatestShorthand(t *testing.T) {
 		}
 		return "Switched to forked thread sess_latest from checkpoint cp-latest.", nil
 	}
-	updated, _ := m.handleSlashCommand("/fork latest restore")
+	updated, cmd := m.handleSlashCommand("/fork latest restore")
+	updated = applyAsyncChatCmd(t, updated, cmd)
 	last := updated.messages[0]
 	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
 		t.Fatalf("unexpected fork latest output: %+v", last)

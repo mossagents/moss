@@ -60,6 +60,11 @@ type switchProfileMsg struct {
 	displayText string
 }
 
+type threadSwitchResultMsg struct {
+	output string
+	err    error
+}
+
 // chatModel 是对话主界面。
 type chatModel struct {
 	viewport  viewport.Model
@@ -306,6 +311,24 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		m.textarea.Focus()
 		return m, nil
+
+	case threadSwitchResultMsg:
+		m.streaming = false
+		if msg.err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = []chatMessage{{kind: msgSystem, content: msg.output}}
+		m.finished = false
+		m.result = ""
+		m.lastTrace = nil
+		m.queuedInputs = nil
+		m.textarea.Reset()
+		m.adjustInputHeight()
+		m.refreshViewport()
+		m.textarea.Focus()
+		return m, nil
 	}
 
 	// 更新子组件
@@ -370,6 +393,21 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		return m, nil
 	}
 	return m.dispatchUserSubmission(text, runText)
+}
+
+func (m chatModel) startThreadSwitch(statusText string, run func() (string, error)) (chatModel, tea.Cmd) {
+	if strings.TrimSpace(statusText) != "" {
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: statusText})
+	}
+	m.streaming = true
+	m.refreshViewport()
+	return m, func() tea.Msg {
+		out, err := run()
+		if err != nil {
+			return threadSwitchResultMsg{err: err}
+		}
+		return threadSwitchResultMsg{output: out}
+	}
 }
 
 func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
@@ -924,15 +962,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.sessionRestoreFn(id)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to resume thread: %v", err)})
-		} else {
-			m.lastTrace = nil
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-		m.refreshViewport()
-		return m, nil
+		return m.startThreadSwitch(fmt.Sprintf("Resuming thread %s...", id), func() (string, error) {
+			out, err := m.sessionRestoreFn(id)
+			if err != nil {
+				return "", fmt.Errorf("failed to resume thread: %v", err)
+			}
+			return out, nil
+		})
 
 	case "/trace":
 		limit := 20
@@ -960,22 +996,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.newSessionFn()
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create new thread: %v", err)})
-			m.refreshViewport()
-			return m, nil
-		}
-		m.messages = []chatMessage{{kind: msgSystem, content: out}}
-		m.streaming = false
-		m.finished = false
-		m.result = ""
-		m.lastTrace = nil
-		m.queuedInputs = nil
-		m.textarea.Reset()
-		m.adjustInputHeight()
-		m.refreshViewport()
-		return m, nil
+		return m.startThreadSwitch("Starting a fresh thread...", func() (string, error) {
+			out, err := m.newSessionFn()
+			if err != nil {
+				return "", fmt.Errorf("failed to create new thread: %v", err)
+			}
+			return out, nil
+		})
 
 	case "/checkpoint":
 		if len(args) == 0 {
@@ -1074,22 +1101,17 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 					return m, nil
 				}
 			}
-			out, err := m.checkpointReplayFn(checkpointID, mode, restore)
-			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to replay checkpoint: %v", err)})
-				m.refreshViewport()
-				return m, nil
+			label := "latest"
+			if strings.TrimSpace(checkpointID) != "" {
+				label = checkpointID
 			}
-			m.messages = []chatMessage{{kind: msgSystem, content: out}}
-			m.streaming = false
-			m.finished = false
-			m.result = ""
-			m.lastTrace = nil
-			m.queuedInputs = nil
-			m.textarea.Reset()
-			m.adjustInputHeight()
-			m.refreshViewport()
-			return m, nil
+			return m.startThreadSwitch(fmt.Sprintf("Replaying checkpoint %s...", label), func() (string, error) {
+				out, err := m.checkpointReplayFn(checkpointID, mode, restore)
+				if err != nil {
+					return "", fmt.Errorf("failed to replay checkpoint: %v", err)
+				}
+				return out, nil
+			})
 		case "fork":
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint branching moved to /fork. Use /fork [session <id>|checkpoint <id|latest>|latest] [restore]."})
 			m.refreshViewport()
@@ -1140,22 +1162,17 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork thread: %v", err)})
-			m.refreshViewport()
-			return m, nil
+		label := sourceKind
+		if strings.TrimSpace(sourceID) != "" {
+			label += " " + sourceID
 		}
-		m.messages = []chatMessage{{kind: msgSystem, content: out}}
-		m.streaming = false
-		m.finished = false
-		m.result = ""
-		m.lastTrace = nil
-		m.queuedInputs = nil
-		m.textarea.Reset()
-		m.adjustInputHeight()
-		m.refreshViewport()
-		return m, nil
+		return m.startThreadSwitch(fmt.Sprintf("Forking from %s...", strings.TrimSpace(label)), func() (string, error) {
+			out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
+			if err != nil {
+				return "", fmt.Errorf("failed to fork thread: %v", err)
+			}
+			return out, nil
+		})
 
 	case "/changes":
 		if len(args) == 0 {
