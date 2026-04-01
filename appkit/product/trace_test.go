@@ -61,19 +61,21 @@ func TestRenderRunTraceSummaryIncludesTotalsAndKeyEvents(t *testing.T) {
 	})
 
 	for _, want := range []string{
-		"status: failed",
-		"steps: 4",
-		"llm calls: 2",
-		"tool calls: 1",
-		"tokens: prompt=120 completion=80 total=200",
-		"cost: $0.125000",
-		"Approval denied for run_command (network)",
-		"Failover switched from gpt-4o to claude-sonnet",
-		"Slowest tool: run_command (900ms)",
+		"Run summary:",
+		"status=failed",
+		"steps=4",
+		"llm=2",
+		"tools=1",
+		"tokens=200",
+		"cost=$0.125000",
+		"error=run failed",
 	} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("summary missing %q:\n%s", want, summary)
 		}
+	}
+	if strings.Contains(summary, "\n") {
+		t.Fatalf("expected single-line summary, got:\n%s", summary)
 	}
 }
 
@@ -88,7 +90,7 @@ func TestRenderRunTraceSummaryShowsUnavailableCostWhenMissing(t *testing.T) {
 			LLMCalls:         1,
 		},
 	})
-	if !strings.Contains(summary, "cost: unavailable") {
+	if !strings.Contains(summary, "cost=n/a") {
 		t.Fatalf("expected unavailable cost fallback, got:\n%s", summary)
 	}
 }

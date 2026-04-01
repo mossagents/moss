@@ -227,14 +227,24 @@ func cloneTraceData(in map[string]any) map[string]any {
 }
 
 func RenderRunTraceSummary(summary RunTraceSummary) string {
-	lines := renderRunTraceOverview("Run summary:", summary)
-	if events := SelectKeyTraceEvents(summary.Trace, 5); len(events) > 0 {
-		lines = append(lines, "  key events:")
-		for _, event := range events {
-			lines = append(lines, "    - "+event)
-		}
+	status := normalizeRunTraceStatus(summary.Status, summary.Error)
+	parts := []string{
+		"Run summary:",
+		"status=" + status,
+		fmt.Sprintf("steps=%d", summary.Steps),
+		fmt.Sprintf("llm=%d", summary.Trace.LLMCalls),
+		fmt.Sprintf("tools=%d", summary.Trace.ToolCalls),
+		fmt.Sprintf("tokens=%d", summary.Trace.TotalTokens),
 	}
-	return strings.Join(lines, "\n")
+	if summary.CostAvailable && summary.Trace.EstimatedCostUSD > 0 {
+		parts = append(parts, fmt.Sprintf("cost=$%.6f", summary.Trace.EstimatedCostUSD))
+	} else {
+		parts = append(parts, "cost=n/a")
+	}
+	if msg := strings.TrimSpace(summary.Error); msg != "" {
+		parts = append(parts, "error="+msg)
+	}
+	return strings.Join(parts, " | ")
 }
 
 func RenderRunTraceDetail(summary RunTraceSummary, limit int) string {

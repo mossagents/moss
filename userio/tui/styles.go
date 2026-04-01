@@ -8,8 +8,8 @@ var (
 	colorMuted     = lipgloss.Color("#6B7280") // 灰色
 	colorSuccess   = lipgloss.Color("#10B981") // 绿色
 	colorError     = lipgloss.Color("#EF4444") // 红色
-	colorUser      = lipgloss.Color("#3B82F6") // 蓝色
-	colorAssistant = lipgloss.Color("#8B5CF6") // 淡紫
+	colorUser      = lipgloss.Color("#22C55E") // 绿色
+	colorAssistant = lipgloss.Color("#E11D48") // 玫红色
 	colorTool      = lipgloss.Color("#F59E0B") // 黄色
 )
 

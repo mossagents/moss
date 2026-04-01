@@ -1426,7 +1426,7 @@ func TestSessionResult_AppendsTraceSummary(t *testing.T) {
 	m.recalcLayout()
 
 	updated, _ := m.Update(sessionResultMsg{
-		traceSummary: "Run summary:\n  status: completed\n  steps: 2",
+		traceSummary: "Run summary: | status=completed | steps=2",
 	})
 	if len(updated.messages) == 0 {
 		t.Fatal("expected summary message")
