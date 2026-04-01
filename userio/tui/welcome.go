@@ -159,7 +159,7 @@ func (m welcomeModel) View() string {
 	var b strings.Builder
 
 	// Logo
-	logo := titleStyle.Render("🌿 mosscode")
+	logo := titleStyle.Render("mosscode")
 	version := mutedStyle.Render(" v" + appVersion)
 	b.WriteString("\n" + logo + version + "\n\n")
 

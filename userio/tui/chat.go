@@ -696,7 +696,7 @@ func (m chatModel) View() string {
 	var b strings.Builder
 
 	// 顶栏
-	header := titleStyle.Render("🌿 mosscode")
+	header := titleStyle.Render("mosscode")
 	infoText := strings.TrimSpace(m.provider)
 	if m.model != "" {
 		infoText += " (" + strings.TrimSpace(m.model) + ")"
@@ -809,7 +809,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	switch cmd {
 	case "/exit", "/quit":
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Goodbye 👋"})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Goodbye"})
 		m.refreshViewport()
 		return m, func() tea.Msg { return cancelMsg{} }
 

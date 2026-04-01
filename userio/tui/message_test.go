@@ -23,6 +23,32 @@ func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
 	}
 }
 
+func TestRenderMessage_UserUsesLeadingDotWithoutLegacyLabel(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgUser,
+		content: "hello world",
+	}, 80)
+	if !strings.Contains(out, "●") || !strings.Contains(out, "hello world") {
+		t.Fatalf("user message should use leading dot format: %q", out)
+	}
+	if strings.Contains(out, "You") {
+		t.Fatalf("user message should not show legacy label: %q", out)
+	}
+}
+
+func TestRenderMessage_AssistantUsesLeadingDotWithoutLegacyLabel(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgAssistant,
+		content: "hi there",
+	}, 80)
+	if !strings.Contains(out, "●") || !strings.Contains(out, "hi there") {
+		t.Fatalf("assistant message should use leading dot format: %q", out)
+	}
+	if strings.Contains(out, "moss") {
+		t.Fatalf("assistant message should not show legacy label: %q", out)
+	}
+}
+
 func TestRenderAllMessages_CollapsedCountsToolCalls(t *testing.T) {
 	out := renderAllMessages([]chatMessage{
 		{kind: msgToolStart, content: "glob"},
@@ -109,7 +135,7 @@ func TestRenderMessage_ToolErrorUsesErrorHeader(t *testing.T) {
 		content: "permission denied",
 		meta:    map[string]any{"tool": "run_command", "duration_ms": int64(12)},
 	}, 80)
-	for _, want := range []string{"❌ run_command · 12ms", "permission denied"} {
+	for _, want := range []string{"ERR run_command · 12ms", "permission denied"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("tool error missing %q in %q", want, out)
 		}

@@ -116,9 +116,9 @@ func renderSkillsSummary(agent *agentState, workspace string) string {
 	} else {
 		sb.WriteString("Discovered user skills:\n")
 		for _, mf := range manifests {
-			statusIcon := "⭕"
+			statusIcon := "[ ]"
 			if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
-				statusIcon = "✅"
+				statusIcon = "[x]"
 			}
 			if strings.TrimSpace(mf.Description) == "" {
 				sb.WriteString(fmt.Sprintf("  • %s %s\n", statusIcon, mf.Name))

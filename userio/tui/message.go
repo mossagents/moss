@@ -42,12 +42,10 @@ func renderMessage(m chatMessage, width int) string {
 
 	switch m.kind {
 	case msgUser:
-		label := userLabelStyle.Render("You")
-		return fmt.Sprintf("\n%s\n%s", label, renderMarkdown(m.content, maxContent))
+		return renderRoleMessage(m.content, maxContent, func(s string) string { return userLabelStyle.Render(s) })
 
 	case msgAssistant:
-		label := assistantLabelStyle.Render("🤖 moss")
-		return fmt.Sprintf("\n%s\n%s", label, renderMarkdown(m.content, maxContent))
+		return renderRoleMessage(m.content, maxContent, func(s string) string { return assistantLabelStyle.Render(s) })
 
 	case msgSystem:
 		return systemStyle.Render(renderSystemMessage(m.content, maxContent))
@@ -66,7 +64,7 @@ func renderMessage(m chatMessage, width int) string {
 		return renderToolResultMessage(m, maxContent)
 
 	case msgProgress:
-		return progressStyle.Render(fmt.Sprintf("  ⏳ %s", m.content))
+		return progressStyle.Render(fmt.Sprintf("  ... %s", m.content))
 
 	case msgError:
 		return errorStyle.Render(fmt.Sprintf("Error: %s", m.content))
@@ -74,6 +72,31 @@ func renderMessage(m chatMessage, width int) string {
 	default:
 		return m.content
 	}
+}
+
+func renderRoleMessage(content string, width int, dotRenderer func(string) string) string {
+	body := renderMarkdown(content, width)
+	body = strings.TrimLeft(body, "\n")
+	if strings.TrimSpace(body) == "" {
+		return "  " + dotRenderer("●")
+	}
+	lines := strings.Split(body, "\n")
+	for len(lines) > 0 && lines[0] == "" {
+		lines = lines[1:]
+	}
+	if len(lines) == 0 {
+		return "  " + dotRenderer("●")
+	}
+	var b strings.Builder
+	b.WriteString("  ")
+	b.WriteString(dotRenderer("●"))
+	b.WriteString(" ")
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n    ")
+		b.WriteString(line)
+	}
+	return b.String()
 }
 
 func renderMarkdown(content string, width int) string {
@@ -210,7 +233,7 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 
 func renderToolStartMessage(m chatMessage, width int) string {
 	toolName := toolMetaString(m, "tool", m.content)
-	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  🔧 %s", toolName))}
+	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  tool %s", toolName))}
 	var metaParts []string
 	if risk := toolMetaString(m, "risk", ""); risk != "" {
 		metaParts = append(metaParts, "risk="+risk)
@@ -231,10 +254,10 @@ func renderToolStartMessage(m chatMessage, width int) string {
 func renderToolResultMessage(m chatMessage, width int) string {
 	isErr, _ := m.meta["is_error"].(bool)
 	style := toolResultStyle
-	icon := "✅"
+	icon := "OK"
 	if isErr {
 		style = toolErrorStyle
-		icon = "❌"
+		icon = "ERR"
 	}
 	toolName := toolMetaString(m, "tool", "tool")
 	header := fmt.Sprintf("  %s %s", icon, toolName)
