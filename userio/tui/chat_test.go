@@ -1284,6 +1284,54 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	}
 }
 
+func TestVisibleInputHeightDoesNotChangeWithSlashHints(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	m.textarea.SetValue("hello")
+	m.refreshSlashHints()
+	withoutHints := m.visibleInputHeight()
+
+	m.textarea.SetValue("/re")
+	m.refreshSlashHints()
+	withHints := m.visibleInputHeight()
+
+	if withoutHints != withHints {
+		t.Fatalf("visible input height changed from %d to %d when slash hints appeared", withoutHints, withHints)
+	}
+}
+
+func TestRenderHeaderMetaLineIsCompact(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.streaming = false
+	m.currentSessionID = "sess_1"
+	m.profile = "planning"
+	m.trust = "trusted"
+	m.approvalMode = "confirm"
+	m.fastMode = true
+
+	line := m.renderHeaderMetaLine()
+	if !strings.Contains(line, "Idle") || !strings.Contains(line, "thread sess_1") || !strings.Contains(line, "planning · trusted · confirm · fast") {
+		t.Fatalf("unexpected compact header meta line: %q", line)
+	}
+	if strings.Contains(line, "Provider:") || strings.Contains(line, "Personality:") {
+		t.Fatalf("expected compact header without verbose labels, got %q", line)
+	}
+}
+
+func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.textarea.SetValue("hello")
+	m.refreshSlashHints()
+	line := m.renderSlashHintLine()
+	if !strings.Contains(line, "/help") || !strings.Contains(line, "Tab completes") {
+		t.Fatalf("unexpected fallback hint line: %q", line)
+	}
+}
+
 func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
 	configpkg.SetAppName("mosscode")
 	workspace := t.TempDir()

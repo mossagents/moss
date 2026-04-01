@@ -573,9 +573,7 @@ func (m chatModel) visibleInputHeight() int {
 		if m.streaming {
 			height++
 		}
-		if len(m.currentSlashHints()) > 0 {
-			height++
-		}
+		height++
 		return height
 	}
 }
@@ -629,6 +627,61 @@ func (m chatModel) displayApprovalMode() string {
 	return m.approvalMode
 }
 
+func (m chatModel) compactPostureSummary() string {
+	tokens := make([]string, 0, 4)
+	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
+		tokens = append(tokens, profile)
+	}
+	if trust := strings.TrimSpace(m.trust); trust != "" {
+		tokens = append(tokens, trust)
+	}
+	if approval := strings.TrimSpace(m.approvalMode); approval != "" {
+		tokens = append(tokens, approval)
+	}
+	if m.fastMode {
+		tokens = append(tokens, "fast")
+	}
+	return strings.Join(tokens, " · ")
+}
+
+func titleCaseWord(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if len(s) == 1 {
+		return strings.ToUpper(s)
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+func (m chatModel) renderHeaderMetaLine() string {
+	parts := []string{titleCaseWord(valueOrDefaultRunState(m.streaming))}
+	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
+		parts = append(parts, "thread "+threadID)
+	}
+	if posture := m.compactPostureSummary(); posture != "" {
+		parts = append(parts, posture)
+	}
+	return strings.Join(parts, "  │  ")
+}
+
+func (m chatModel) renderSlashHintLine() string {
+	hints := m.currentSlashHints()
+	if len(hints) == 0 {
+		return mutedStyle.Render("  /help for commands  │  Tab completes slash commands")
+	}
+	return mutedStyle.Render("  Suggestions: " + strings.Join(hints, "  │  ") + "  (Tab to complete)")
+}
+
+func (m chatModel) renderFooterHelpLine() string {
+	toolHint := "Ctrl+O expand tools"
+	if !m.toolCollapsed {
+		toolHint = "Ctrl+O collapse tools"
+	}
+	return fmt.Sprintf("/help  │  %s  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
+}
+
 func (m chatModel) View() string {
 	if !m.ready {
 		return "Loading..."
@@ -638,35 +691,20 @@ func (m chatModel) View() string {
 
 	// 顶栏
 	header := titleStyle.Render("🌿 mosscode")
-	info := statusBarStyle.Render(fmt.Sprintf("  %s │ %s", m.provider, m.workspace))
+	infoText := strings.TrimSpace(m.provider)
 	if m.model != "" {
-		info = statusBarStyle.Render(fmt.Sprintf("  %s (%s) │ %s", m.provider, m.model, m.workspace))
+		infoText += " (" + strings.TrimSpace(m.model) + ")"
 	}
+	if ws := valueOrDefaultString(m.workspace, "."); ws != "." && ws != "" {
+		infoText += " · " + filepath.Base(ws)
+	}
+	info := statusBarStyle.Render("  " + infoText)
 	b.WriteString(topBarStyle.Render(header + info))
 	b.WriteString("\n")
 	b.WriteString(strings.Repeat("─", m.width) + "\n")
 
-	// 输入框上方元信息（左右）
-	leftMeta := fmt.Sprintf("State: %s  Provider: %s", valueOrDefaultRunState(m.streaming), m.provider)
-	if strings.TrimSpace(m.model) != "" {
-		leftMeta = fmt.Sprintf("%s (%s)", leftMeta, m.model)
-	}
-	fastLabel := "off"
-	if m.fastMode {
-		fastLabel = "on"
-	}
-	rightMeta := fmt.Sprintf("Profile: %s  Trust: %s  Approval: %s  Personality: %s  Fast: %s",
-		valueOrDefaultString(m.profile, "default"),
-		m.trust,
-		m.displayApprovalMode(),
-		valueOrDefaultString(m.personality, product.PersonalityFriendly),
-		fastLabel,
-	)
-	b.WriteString(lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		mutedStyle.Width(m.mainWidth()/2).Render(leftMeta),
-		mutedStyle.Width(m.mainWidth()-m.mainWidth()/2).Align(lipgloss.Right).Render(rightMeta),
-	))
+	// 输入框上方元信息（精简）
+	b.WriteString(mutedStyle.Render(m.renderHeaderMetaLine()))
 	b.WriteString("\n")
 	if progressLine := m.progress.renderLine(m.now(), m.mainWidth()); progressLine != "" {
 		b.WriteString(progressLine)
@@ -700,21 +738,15 @@ func (m chatModel) View() string {
 			b.WriteString(runningStyle.Render("  ● Running... (double Esc to cancel current run)"))
 			b.WriteString("\n")
 		}
-		if hints := m.currentSlashHints(); len(hints) > 0 {
-			b.WriteString(mutedStyle.Render("  Slash suggestions: " + strings.Join(hints, "  │  ") + "  (Tab to complete)"))
-			b.WriteString("\n")
-		}
+		b.WriteString(m.renderSlashHintLine())
+		b.WriteString("\n")
 		b.WriteString(inputBorderStyle.Render(m.textarea.View()))
 	}
 	b.WriteString("\n")
 
 	// 底部状态
 	if m.pendAsk == nil && m.askForm == nil && m.scheduleBrowser == nil {
-		toolHint := "Ctrl+O collapse tools"
-		if m.toolCollapsed {
-			toolHint = "Ctrl+O expand tools"
-		}
-		b.WriteString(mutedStyle.Render(fmt.Sprintf("/help commands │ %s │ ↑↓ history │ mouse wheel scrolls output │ double Esc cancel run │ Ctrl+C clear (double quit)", toolHint)))
+		b.WriteString(mutedStyle.Render(m.renderFooterHelpLine()))
 		b.WriteString("\n")
 	}
 	status := mutedStyle.Render(m.renderStatusLine())
