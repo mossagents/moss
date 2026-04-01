@@ -60,8 +60,15 @@ func TestRBAC_AllowByRole(t *testing.T) {
 	// write_file 应拒绝
 	mc.Tool = &tool.ToolSpec{Name: "write_file"}
 	err = mw(context.Background(), mc, func(_ context.Context) error { return nil })
-	if err != ErrDenied {
+	if !stderrors.Is(err, ErrDenied) {
 		t.Fatalf("write_file should be denied, got: %v", err)
+	}
+	var denied *PolicyDeniedError
+	if !stderrors.As(err, &denied) {
+		t.Fatalf("expected PolicyDeniedError, got %T", err)
+	}
+	if denied.ReasonCode != "rbac.role_denied" {
+		t.Fatalf("expected reason code rbac.role_denied, got %q", denied.ReasonCode)
 	}
 }
 

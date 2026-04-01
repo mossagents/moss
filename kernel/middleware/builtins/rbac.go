@@ -82,7 +82,12 @@ func RBAC(rules []RBACRule) middleware.Middleware {
 			}
 			// 第一条匹配的规则
 			if rule.Action == RBACDeny {
-				return ErrDenied
+				return &PolicyDeniedError{
+					ToolName:    mc.Tool.Name,
+					ReasonCode:  "rbac.role_denied",
+					Reason:      "tool access denied by RBAC role policy",
+					Enforcement: EnforcementHardBlock,
+				}
 			}
 			return next(ctx)
 		}
