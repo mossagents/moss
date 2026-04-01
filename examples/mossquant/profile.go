@@ -476,7 +476,7 @@ Start by calling get_investor_profile.
 Then gather up-to-date information for these tracked assets: %s.
 Also research these relevant factors: %s.
 
-Use jina_search and jina_reader to find current price drivers, official policy updates, and important global events. Keep the external research compact: use a small search result set, read only the highest-value pages, do not treat words like 今日/最新 as proof of recency, and for every material source you rely on call assess_source_credibility while preferring medium/high credibility evidence.
+Use web_search and web_fetch to find current price drivers, official policy updates, and important global events. Keep the external research compact: shortlist sources with web_search, read only the highest-value pages with web_fetch, do not treat words like 今日/最新 as proof of recency, and for every material source you rely on call assess_source_credibility while preferring medium/high credibility evidence.
 
 Before finalizing the recommendation, delegate a final audit to investment-reviewer so the thesis is checked for risk fit, source quality, and missing caveats.
 

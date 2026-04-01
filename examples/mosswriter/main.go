@@ -114,23 +114,27 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  provider,
+				APIType:   apiType,
+				Provider:  apiType,
+				Name:      apiType,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
+				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			return buildKernel(context.Background(), runtimeFlags, io)
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
 				Goal:         "interactive content writing assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
+				Profile:      profile,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
 			}
@@ -199,7 +203,6 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for content workflows."
 	deepCfg.AdditionalAppExtensions = []appkit.Extension{
-		appkit.WithJinaTools(),
 		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerWriterTools(k.ToolRegistry()); err != nil {
 				return err

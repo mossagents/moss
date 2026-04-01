@@ -1993,7 +1993,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		return m.invokeSkillLikeCommand("jina_search", query, input)
+		return m.invokeSkillLikeCommand("web_search", query, input)
 
 	case "/open":
 		target := strings.TrimSpace(strings.Join(args, " "))

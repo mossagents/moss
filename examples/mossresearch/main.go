@@ -105,23 +105,27 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  provider,
+				APIType:   apiType,
+				Provider:  apiType,
+				Name:      apiType,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
+				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			return buildKernel(context.Background(), runtimeFlags, io)
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
 				Goal:         "interactive deep research assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
+				Profile:      profile,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
 			}
@@ -197,7 +201,6 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for research-adjacent tasks."
 	deepCfg.AdditionalAppExtensions = []appkit.Extension{
-		appkit.WithJinaTools(),
 		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerResearchTools(k.ToolRegistry()); err != nil {
 				return err
@@ -297,13 +300,11 @@ You are a focused research sub-agent. Today's date is %s.
 Your role is to gather evidence for the orchestrator, not to write the final polished report.
 
 Available research tools:
-- jina_search: search for candidate sources
-- jina_reader: read and extract webpage content
 - think_tool: reflect briefly after each search or read step
 
 Research rules:
 1. Start broad, then narrow only if needed.
-2. Use think_tool after each search pass to assess what is still missing.
+2. Use think_tool after each pass to assess what is still missing.
 3. Prefer authoritative or primary sources when possible.
 4. Stop after you have enough evidence to answer confidently.
 5. Return findings with inline citations and a final '### Sources' section.
@@ -317,9 +318,9 @@ Suggested budgets:
 	reg := runtime.AgentRegistry(k)
 	return reg.Register(agent.AgentConfig{
 		Name:         "researcher",
-		Description:  "Focused web research agent for gathering cited findings from web sources.",
+		Description:  "Focused research agent for gathering cited findings from available tools and project context.",
 		SystemPrompt: researcherPrompt,
-		Tools:        []string{"jina_search", "jina_reader", "think_tool"},
+		Tools:        []string{"think_tool", "read_file", "web_fetch"},
 		MaxSteps:     20,
 		TrustLevel:   flags.Trust,
 	})

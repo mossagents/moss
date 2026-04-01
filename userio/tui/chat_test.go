@@ -426,7 +426,7 @@ func TestSlashCommandSearchDispatchesPrompt(t *testing.T) {
 	if !updated.streaming {
 		t.Fatal("expected /search to start a run")
 	}
-	if !strings.Contains(dispatched, "jina_search") || !strings.Contains(dispatched, "golang releases") {
+	if !strings.Contains(dispatched, "web_search") || !strings.Contains(dispatched, "golang releases") {
 		t.Fatalf("unexpected /search prompt: %q", dispatched)
 	}
 }

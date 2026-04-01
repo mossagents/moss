@@ -88,7 +88,7 @@ func launchTUI(cfg *config) error {
 			}
 			return "```text\n" + strings.TrimSpace(rt.profile.SummaryMarkdown()) + "\n```"
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			identity := appconfig.NormalizeProviderIdentity(apiType, apiType, flags.DisplayProviderName())
 			runtimeFlags := &appkit.AppFlags{
 				APIType:   identity.APIType,
@@ -97,6 +97,7 @@ func launchTUI(cfg *config) error {
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
+				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
@@ -113,7 +114,7 @@ func launchTUI(cfg *config) error {
 			}
 			return rt.afterBoot(ctx, k, io)
 		},
-		BuildSystemPrompt: func(workspace string) string {
+		BuildSystemPrompt: func(workspace, trust string) string {
 			profile, err := loadInvestorProfile(workspace)
 			if err != nil {
 				profile = &InvestorProfile{}
@@ -121,7 +122,7 @@ func launchTUI(cfg *config) error {
 			interval := effectiveReviewInterval(profile, cfg.reviewInterval)
 			return buildSystemPrompt(workspace, cfg.capital, interval, profile)
 		},
-		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profileName, systemPrompt string) session.SessionConfig {
 			profile, err := loadInvestorProfile(workspace)
 			if err != nil {
 				profile = &InvestorProfile{}
@@ -130,6 +131,7 @@ func launchTUI(cfg *config) error {
 				Goal:         "interactive investment research and advisory assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
+				Profile:      profileName,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     120,
 				Metadata: map[string]any{
@@ -179,7 +181,6 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io port.UserIO) (*ke
 	k, err := appkit.BuildKernelWithExtensions(ctx, r.flags, io,
 		appkit.WithSessionStore(r.store),
 		appkit.WithScheduling(r.sched),
-		appkit.WithJinaTools(),
 		appkit.WithPersistentMemories(memoriesDir),
 		appkit.WithLoadedBootstrapContext(r.flags.Workspace, "mossquant"),
 		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {

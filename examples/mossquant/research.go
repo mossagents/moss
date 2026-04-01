@@ -19,13 +19,13 @@ Your job is to gather evidence for the main mossquant advisor, not to make the f
 
 Available tools:
 - get_investor_profile
-- jina_search
-- jina_reader
+- web_search
+- web_fetch
 - assess_source_credibility
 
 Rules:
 1. Start from the investor profile and tracked assets.
-2. Keep external evidence compact: use jina_search with a small result set and only read the few highest-value pages.
+2. Keep external evidence compact: use web_search to shortlist sources, then web_fetch only the highest-value pages.
 3. Prefer official, regulatory, exchange, central-bank, and top-tier news sources.
 4. Before trusting any important source, assess it with assess_source_credibility.
 5. Focus on current price drivers, policy changes, and geopolitical or macro events that materially affect the tracked assets.
@@ -39,7 +39,7 @@ Rules:
 		Name:         "market-researcher",
 		Description:  "Focused web researcher for asset news, policy updates, and macro/geopolitical drivers.",
 		SystemPrompt: researchPrompt,
-		Tools:        []string{"get_investor_profile", "jina_search", "jina_reader", "assess_source_credibility"},
+		Tools:        []string{"get_investor_profile", "web_search", "web_fetch", "assess_source_credibility"},
 		MaxSteps:     12,
 		TrustLevel:   flags.Trust,
 	}); err != nil {
@@ -53,8 +53,8 @@ Your role is to challenge and audit a draft recommendation before it is shown to
 
 Available tools:
 - get_investor_profile
-- jina_search
-- jina_reader
+- web_search
+- web_fetch
 - assess_source_credibility
 - get_market_data
 - analyze_market

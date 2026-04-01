@@ -116,8 +116,6 @@ func registerGameTools(reg tool.Registry, room *Room) {
 	_ = reg.Register(askChoiceSpec, askChoiceHandler(room))
 	_ = reg.Register(getTimeSpec, getTimeHandler())
 	tools.RegisterWeather(reg)
-	tools.RegisterJinaSearch(reg)
-	tools.RegisterJinaReader(reg)
 	_ = reg.Register(setReminderSpec, setReminderHandler(room))
 	_ = reg.Register(randomPickSpec, randomPickHandler())
 	_ = reg.Register(updateGameContextSpec, updateGameContextHandler(room))
