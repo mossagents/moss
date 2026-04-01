@@ -564,6 +564,74 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 	}
 }
 
+func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
+	observer := &recordingObserver{}
+	loopErr := kerrors.New(kerrors.ErrLLMCall, "llm failed")
+	l := &AgentLoop{
+		LLM:      &errorLLM{err: loopErr},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:       "test-llm-error-code",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 5},
+	}
+	if _, err := l.Run(context.Background(), sess); err == nil {
+		t.Fatal("expected run to fail")
+	}
+	var llmCompleted *port.ExecutionEvent
+	for i := range observer.execution {
+		ev := &observer.execution[i]
+		if ev.Type == port.ExecutionLLMCompleted && ev.Error != "" {
+			llmCompleted = ev
+			break
+		}
+	}
+	if llmCompleted == nil {
+		t.Fatal("expected llm.completed error event")
+	}
+	if got := llmCompleted.Data["error_code"]; got != string(kerrors.ErrLLMCall) {
+		t.Fatalf("expected error_code %s, got %v", kerrors.ErrLLMCall, got)
+	}
+}
+
+func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
+	observer := &recordingObserver{}
+	loopErr := kerrors.New(kerrors.ErrLLMCall, "llm failed")
+	l := &AgentLoop{
+		LLM:      &errorLLM{err: loopErr},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:       "test-run-failed-error-code",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Budget:   session.Budget{MaxSteps: 5},
+	}
+	if _, err := l.Run(context.Background(), sess); err == nil {
+		t.Fatal("expected run to fail")
+	}
+	var runFailed *port.ExecutionEvent
+	for i := range observer.execution {
+		ev := &observer.execution[i]
+		if ev.Type == port.ExecutionRunFailed {
+			runFailed = ev
+			break
+		}
+	}
+	if runFailed == nil {
+		t.Fatal("expected run.failed event")
+	}
+	if got := runFailed.Data["error_code"]; got != string(kerrors.ErrLLMCall) {
+		t.Fatalf("expected error_code %s, got %v", kerrors.ErrLLMCall, got)
+	}
+}
+
 type blockingLLM struct {
 	calls int32
 }
@@ -578,6 +646,14 @@ type flakyLLM struct {
 	failures int32
 	calls    int32
 	resp     port.CompletionResponse
+}
+
+type errorLLM struct {
+	err error
+}
+
+func (e *errorLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
+	return nil, e.err
 }
 
 func (f *flakyLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {

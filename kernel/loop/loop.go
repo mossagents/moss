@@ -151,14 +151,16 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			l.observer().OnError(ctx, port.ErrorEvent{
 				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
 			})
-			l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+			event := port.ExecutionEvent{
 				Type:      port.ExecutionLLMCompleted,
 				SessionID: sess.ID,
 				Timestamp: time.Now().UTC(),
 				Model:     metadata.ActualModel,
 				Duration:  llmDur,
 				Error:     err.Error(),
-			})
+			}
+			appendExecutionErrorMetadata(&event, err)
+			l.observer().OnExecutionEvent(ctx, event)
 			l.runErrorMiddleware(ctx, sess, err)
 			return l.fail(ctx, sess, totalUsage, err), err
 		}
@@ -898,7 +900,7 @@ func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMess
 	}
 }
 
-func appendToolErrorMetadata(event *port.ExecutionEvent, err error) {
+func appendExecutionErrorMetadata(event *port.ExecutionEvent, err error) {
 	if event == nil || err == nil {
 		return
 	}
@@ -915,6 +917,10 @@ func appendToolErrorMetadata(event *port.ExecutionEvent, err error) {
 			event.Data[k] = v
 		}
 	}
+}
+
+func appendToolErrorMetadata(event *port.ExecutionEvent, err error) {
+	appendExecutionErrorMetadata(event, err)
 }
 
 func appendToolErrorIOMetadata(meta map[string]any, err error) {
@@ -1136,7 +1142,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		sess.Status = session.StatusFailed
 	}
 	sess.EndedAt = time.Now()
-	l.observer().OnExecutionEvent(context.Background(), port.ExecutionEvent{
+	runEvent := port.ExecutionEvent{
 		Type:      eventType,
 		SessionID: sess.ID,
 		Timestamp: time.Now().UTC(),
@@ -1145,7 +1151,9 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 			"steps":  sess.Budget.UsedStepsValue(),
 			"tokens": usage.TotalTokens,
 		},
-	})
+	}
+	appendExecutionErrorMetadata(&runEvent, err)
+	l.observer().OnExecutionEvent(context.Background(), runEvent)
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,
