@@ -275,3 +275,126 @@ func TestBuildDeepAgentKernel_DisableDefaultLLMRetry(t *testing.T) {
 		t.Fatalf("expected default retry disabled, got %d", llmRetry.FieldByName("MaxRetries").Int())
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DeepAgentConfig.ApplyOver
+// ---------------------------------------------------------------------------
+
+func TestApplyOver_zeroValueDoesNotOverrideBase(t *testing.T) {
+	base := DefaultDeepAgentConfig()
+	overlay := DeepAgentConfig{} // all zero
+
+	result := overlay.ApplyOver(base)
+
+	if result.AppName != base.AppName {
+		t.Errorf("AppName: want %q got %q", base.AppName, result.AppName)
+	}
+	if result.GeneralPurposeMaxSteps != base.GeneralPurposeMaxSteps {
+		t.Errorf("GeneralPurposeMaxSteps: want %d got %d", base.GeneralPurposeMaxSteps, result.GeneralPurposeMaxSteps)
+	}
+	if result.EnableSessionStore == nil || *result.EnableSessionStore != *base.EnableSessionStore {
+		t.Errorf("EnableSessionStore: want %v got %v", base.EnableSessionStore, result.EnableSessionStore)
+	}
+}
+
+func TestApplyOver_nonZeroStringOverridesBase(t *testing.T) {
+	base := DefaultDeepAgentConfig()
+	overlay := DeepAgentConfig{AppName: "my-app"}
+
+	result := overlay.ApplyOver(base)
+
+	if result.AppName != "my-app" {
+		t.Errorf("AppName: want %q got %q", "my-app", result.AppName)
+	}
+	// unrelated fields must stay from base
+	if result.GeneralPurposeMaxSteps != base.GeneralPurposeMaxSteps {
+		t.Errorf("GeneralPurposeMaxSteps modified unexpectedly: %d", result.GeneralPurposeMaxSteps)
+	}
+}
+
+func TestApplyOver_nilPtrDoesNotOverrideBase(t *testing.T) {
+	base := DefaultDeepAgentConfig()
+	overlay := DeepAgentConfig{EnableSessionStore: nil} // nil ptr
+
+	result := overlay.ApplyOver(base)
+
+	if result.EnableSessionStore == nil {
+		t.Fatal("EnableSessionStore should not be nil after ApplyOver with nil overlay")
+	}
+	if *result.EnableSessionStore != *base.EnableSessionStore {
+		t.Errorf("EnableSessionStore: want %v got %v", *base.EnableSessionStore, *result.EnableSessionStore)
+	}
+}
+
+func TestApplyOver_nonNilPtrOverridesBase(t *testing.T) {
+	base := DefaultDeepAgentConfig() // EnableSessionStore = true
+	f := false
+	overlay := DeepAgentConfig{EnableSessionStore: &f}
+
+	result := overlay.ApplyOver(base)
+
+	if result.EnableSessionStore == nil || *result.EnableSessionStore != false {
+		t.Errorf("EnableSessionStore: want false got %v", result.EnableSessionStore)
+	}
+}
+
+func TestApplyOver_maxStepsZeroPreservesBase(t *testing.T) {
+	base := DefaultDeepAgentConfig() // GeneralPurposeMaxSteps = 50
+	overlay := DeepAgentConfig{GeneralPurposeMaxSteps: 0}
+
+	result := overlay.ApplyOver(base)
+
+	if result.GeneralPurposeMaxSteps != 50 {
+		t.Errorf("GeneralPurposeMaxSteps: want 50 got %d", result.GeneralPurposeMaxSteps)
+	}
+}
+
+func TestApplyOver_maxStepsPositiveOverridesBase(t *testing.T) {
+	base := DefaultDeepAgentConfig() // GeneralPurposeMaxSteps = 50
+	overlay := DeepAgentConfig{GeneralPurposeMaxSteps: 100}
+
+	result := overlay.ApplyOver(base)
+
+	if result.GeneralPurposeMaxSteps != 100 {
+		t.Errorf("GeneralPurposeMaxSteps: want 100 got %d", result.GeneralPurposeMaxSteps)
+	}
+}
+
+func TestApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
+	opt := runtime.WithBuiltinTools(false)
+	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt}}
+	overlay := DeepAgentConfig{DefaultSetupOptions: nil} // empty/nil
+
+	result := overlay.ApplyOver(base)
+
+	if len(result.DefaultSetupOptions) != 1 {
+		t.Errorf("DefaultSetupOptions: want 1 element got %d", len(result.DefaultSetupOptions))
+	}
+}
+
+func TestApplyOver_nonEmptySliceOverridesBase(t *testing.T) {
+	opt1 := runtime.WithBuiltinTools(false)
+	opt2 := runtime.WithAgents(false)
+	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1}}
+	overlay := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1, opt2}}
+
+	result := overlay.ApplyOver(base)
+
+	if len(result.DefaultSetupOptions) != 2 {
+		t.Errorf("DefaultSetupOptions: want 2 elements got %d", len(result.DefaultSetupOptions))
+	}
+}
+
+func TestApplyOver_pureFunction_doesNotMutateBase(t *testing.T) {
+	base := DefaultDeepAgentConfig()
+	origName := base.AppName
+	overlay := DeepAgentConfig{AppName: "changed"}
+
+	_ = overlay.ApplyOver(base)
+
+	// base must be unchanged (ApplyOver is a value receiver returning a new config)
+	if base.AppName != origName {
+		t.Errorf("base.AppName was mutated: want %q got %q", origName, base.AppName)
+	}
+}
+
