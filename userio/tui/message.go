@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -221,7 +222,8 @@ func renderToolStartMessage(m chatMessage, width int) string {
 		lines = append(lines, mutedStyle.Render("     "+strings.Join(metaParts, " · ")))
 	}
 	if args := toolMetaString(m, "args_preview", ""); args != "" {
-		lines = append(lines, mutedStyle.Render(indentBlock(wrapText("args: "+args, max(20, width-5)), "     ")))
+		lines = append(lines, mutedStyle.Render("     args"))
+		lines = append(lines, mutedStyle.Render(indentBlock(renderToolSnippet(args, max(20, width-5)), "       ")))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -241,35 +243,153 @@ func renderToolResultMessage(m chatMessage, width int) string {
 	}
 	lines := []string{style.Render(header)}
 	body := renderToolBody(m.content, max(20, width-5))
-	if body != "" {
-		lines = append(lines, indentBlock(body, "     "))
+	if body.summary != "" {
+		lines = append(lines, mutedStyle.Render("     "+body.summary))
+	}
+	if body.content != "" {
+		lines = append(lines, indentBlock(body.content, "     "))
 	}
 	return strings.Join(lines, "\n")
 }
 
-func renderToolBody(content string, width int) string {
-	text := strings.TrimSpace(content)
-	if text == "" {
-		return ""
-	}
-	if len(text) > 320 {
-		text = text[:320] + "..."
-	}
-	if looksStructured(text) {
-		return wrapText(text, width)
-	}
-	return renderMarkdown(text, width)
+type renderedToolBody struct {
+	summary string
+	content string
 }
 
-func looksStructured(content string) bool {
+func renderToolBody(content string, width int) renderedToolBody {
+	text := strings.TrimSpace(content)
+	if text == "" {
+		return renderedToolBody{}
+	}
+
+	if value, ok := parseJSONObject(text); ok {
+		return renderedToolBody{
+			summary: "JSON object",
+			content: truncateToolBlock(formatIndentedJSON(value), 14, 900),
+		}
+	}
+
+	if values, ok := parseJSONArray(text); ok {
+		return renderToolJSONArray(values, width)
+	}
+
+	text = truncateToolBlock(text, 14, 900)
+	if looksMarkdown(text) {
+		return renderedToolBody{content: renderMarkdown(text, width)}
+	}
+	return renderedToolBody{content: wrapText(text, width)}
+}
+
+func renderToolSnippet(content string, width int) string {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
-		return false
+		return ""
 	}
-	if json.Valid([]byte(trimmed)) {
-		return true
+	if value, ok := parseJSONObject(trimmed); ok {
+		return truncateToolBlock(formatIndentedJSON(value), 8, 400)
 	}
-	return strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
+	if values, ok := parseJSONArray(trimmed); ok {
+		body := renderToolJSONArray(values, width)
+		if body.summary == "" {
+			return body.content
+		}
+		if body.content == "" {
+			return body.summary
+		}
+		return body.summary + "\n" + body.content
+	}
+	return wrapText(truncateToolBlock(trimmed, 8, 400), width)
+}
+
+func looksMarkdown(content string) bool {
+	for _, raw := range strings.Split(content, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "#"),
+			strings.HasPrefix(line, "- "),
+			strings.HasPrefix(line, "* "),
+			strings.HasPrefix(line, "> "),
+			strings.HasPrefix(line, "```"),
+			isOrderedMarkdownLine(line),
+			strings.Contains(line, "|"):
+			return true
+		}
+	}
+	return false
+}
+
+func parseJSONObject(content string) (map[string]any, bool) {
+	var value map[string]any
+	if err := json.Unmarshal([]byte(content), &value); err != nil || value == nil {
+		return nil, false
+	}
+	return value, true
+}
+
+func parseJSONArray(content string) ([]any, bool) {
+	var value []any
+	if err := json.Unmarshal([]byte(content), &value); err != nil {
+		return nil, false
+	}
+	return value, true
+}
+
+func renderToolJSONArray(values []any, width int) renderedToolBody {
+	summary := fmt.Sprintf("JSON array · %d items", len(values))
+	if len(values) == 0 {
+		return renderedToolBody{summary: summary, content: "[]"}
+	}
+	limit := min(3, len(values))
+	lines := make([]string, 0, limit+1)
+	for i := 0; i < limit; i++ {
+		lines = append(lines, wrapText(fmt.Sprintf("%d. %s", i+1, compactJSON(values[i])), width))
+	}
+	if len(values) > limit {
+		lines = append(lines, fmt.Sprintf("... %d more items", len(values)-limit))
+	}
+	return renderedToolBody{
+		summary: summary,
+		content: strings.Join(lines, "\n"),
+	}
+}
+
+func formatIndentedJSON(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	var out bytes.Buffer
+	if err := json.Indent(&out, raw, "", "  "); err != nil {
+		return string(raw)
+	}
+	return out.String()
+}
+
+func compactJSON(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("%v", value)
+	}
+	var out bytes.Buffer
+	if err := json.Compact(&out, raw); err != nil {
+		return string(raw)
+	}
+	return out.String()
+}
+
+func truncateToolBlock(content string, maxLines, maxChars int) string {
+	if maxChars > 0 && len(content) > maxChars {
+		content = content[:maxChars] + "..."
+	}
+	lines := strings.Split(content, "\n")
+	if maxLines > 0 && len(lines) > maxLines {
+		lines = append(lines[:maxLines], fmt.Sprintf("... %d more lines", len(lines)-maxLines))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func indentBlock(content, indent string) string {
