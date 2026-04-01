@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/bootstrap"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -21,6 +22,8 @@ type ComposeInput struct {
 	ConfigInstructions  string
 	SessionInstructions string
 	ModelInstructions   string
+	ProfileName         string
+	TaskMode            string
 	Kernel              *kernel.Kernel
 	SkillPrompts        []string
 	RuntimeNotices      []string
@@ -41,6 +44,7 @@ const (
 	MetadataBaseSourceKey          = "prompt.debug.base_source"
 	MetadataDynamicSectionsKey     = "prompt.debug.dynamic_sections"
 	MetadataSourceChainKey         = "prompt.debug.source_chain"
+	MetadataProfileNameKey         = "profile"
 )
 
 func Compose(in ComposeInput) (ComposeOutput, error) {
@@ -72,6 +76,7 @@ func Compose(in ComposeInput) (ComposeOutput, error) {
 
 	caps := renderCapabilitiesSection(in.Kernel)
 	sections = append(sections, section{ID: "capabilities", Content: caps})
+	sections = append(sections, section{ID: "profile_mode", Content: renderProfileModeSection(in.ProfileName, in.TaskMode)})
 	sections = append(sections, section{ID: "skills", Content: renderSkillsSection(in.Kernel, in.SkillPrompts)})
 	sections = append(sections, section{ID: "runtime_notices", Content: renderRuntimeNoticesSection(in.RuntimeNotices)})
 
@@ -213,6 +218,35 @@ func renderRuntimeNoticesSection(notices []string) string {
 	return "## Runtime Notices\n" + strings.Join(parts, "\n")
 }
 
+func renderProfileModeSection(profileName, taskMode string) string {
+	profileName = strings.TrimSpace(profileName)
+	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
+	if profileName == "" && taskMode == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("## Operating Mode\n")
+	if profileName != "" {
+		fmt.Fprintf(&b, "- Active profile: %s\n", profileName)
+	}
+	if taskMode != "" {
+		fmt.Fprintf(&b, "- Task mode: %s\n", taskMode)
+	}
+	switch taskMode {
+	case "research":
+		b.WriteString("- Prefer broad reading, explicit evidence, and source-backed conclusions.\n")
+	case "planning":
+		b.WriteString("- Prioritize decomposition, sequencing, and risk-aware implementation planning.\n")
+	case "readonly":
+		b.WriteString("- Avoid mutating operations unless explicitly approved by the user.\n")
+	default:
+		if taskMode != "" {
+			b.WriteString("- Prioritize direct implementation with concise verification.\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 func SessionInstructionsFromMetadata(metadata map[string]any) (string, error) {
 	if len(metadata) == 0 {
 		return "", nil
@@ -226,6 +260,27 @@ func SessionInstructionsFromMetadata(metadata map[string]any) (string, error) {
 		return "", fmt.Errorf("metadata %q must be string", MetadataSessionInstructionsKey)
 	}
 	return strings.TrimSpace(text), nil
+}
+
+func ProfileModeFromMetadata(metadata map[string]any) (profileName, taskMode string, err error) {
+	if len(metadata) == 0 {
+		return "", "", nil
+	}
+	if raw, ok := metadata[session.MetadataTaskMode]; ok && raw != nil {
+		value, ok := raw.(string)
+		if !ok {
+			return "", "", fmt.Errorf("metadata %q must be string", session.MetadataTaskMode)
+		}
+		taskMode = strings.TrimSpace(value)
+	}
+	if raw, ok := metadata[MetadataProfileNameKey]; ok && raw != nil {
+		value, ok := raw.(string)
+		if !ok {
+			return "", "", fmt.Errorf("metadata %q must be string", MetadataProfileNameKey)
+		}
+		profileName = strings.TrimSpace(value)
+	}
+	return profileName, taskMode, nil
 }
 
 func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map[string]any {

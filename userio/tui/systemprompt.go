@@ -27,12 +27,18 @@ func composeSystemPrompt(workspace, trust string, k *kernel.Kernel, configInstru
 	if err != nil {
 		return "", err
 	}
+	profileName, taskMode, err := prompting.ProfileModeFromMetadata(metadata)
+	if err != nil {
+		return "", err
+	}
 	out, err := prompting.Compose(prompting.ComposeInput{
 		Workspace:           workspace,
 		Trust:               trust,
 		ConfigInstructions:  strings.TrimSpace(configInstructions),
 		SessionInstructions: sessionInstructions,
 		ModelInstructions:   strings.TrimSpace(modelInstructions),
+		ProfileName:         profileName,
+		TaskMode:            taskMode,
 		Kernel:              k,
 		SkillPrompts:        skillPrompts,
 	})

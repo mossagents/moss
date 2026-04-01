@@ -96,6 +96,17 @@ func launchTUI(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
+	resolvedProfile, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+		Workspace:        f.Workspace,
+		RequestedProfile: f.Profile,
+		Trust:            f.Trust,
+	})
+	if err != nil {
+		logging.GetLogger().Error("error resolving profile", slog.Any("error", err))
+		os.Exit(1)
+	}
+	f.Profile = resolvedProfile.Name
+	f.Trust = resolvedProfile.Trust
 	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
 	if err != nil {
 		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
@@ -134,6 +145,17 @@ func runCmd(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
+	resolvedProfile, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+		Workspace:        f.Workspace,
+		RequestedProfile: f.Profile,
+		Trust:            f.Trust,
+	})
+	if err != nil {
+		logging.GetLogger().Error("error resolving profile", slog.Any("error", err))
+		os.Exit(1)
+	}
+	f.Profile = resolvedProfile.Name
+	f.Trust = resolvedProfile.Trust
 	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
 	if err != nil {
 		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
@@ -183,6 +205,8 @@ func runCmd(args []string) {
 	fmt.Println()
 
 	meta := map[string]any{}
+	meta["profile"] = resolvedProfile.Name
+	meta[session.MetadataTaskMode] = resolvedProfile.TaskMode
 	sysPrompt, err := buildRunSystemPrompt(f.Workspace, f.Trust, configInstructions, modelInstructions, meta, k)
 	if err != nil {
 		logging.GetLogger().Error("error composing system prompt", slog.Any("error", err))
@@ -193,6 +217,7 @@ func runCmd(args []string) {
 		Goal:       *goal,
 		Mode:       *mode,
 		TrustLevel: f.Trust,
+		Profile:    resolvedProfile.Name,
 		MaxSteps:   50,
 		SystemPrompt: strings.TrimSpace(sysPrompt),
 		Metadata:     meta,
@@ -222,12 +247,18 @@ func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstruction
 	if err != nil {
 		return "", err
 	}
+	profileName, taskMode, err := prompting.ProfileModeFromMetadata(metadata)
+	if err != nil {
+		return "", err
+	}
 	out, err := prompting.Compose(prompting.ComposeInput{
 		Workspace:          workspace,
 		Trust:              trust,
 		ConfigInstructions: strings.TrimSpace(configInstructions),
 		SessionInstructions: sessionInstructions,
 		ModelInstructions:  strings.TrimSpace(modelInstructions),
+		ProfileName:        profileName,
+		TaskMode:           taskMode,
 		Kernel:             k,
 	})
 	if err != nil {

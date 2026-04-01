@@ -47,6 +47,8 @@ func TestCompose_DynamicSectionOrder(t *testing.T) {
 		Trust:              "trusted",
 		ModelInstructions:  "model-base",
 		Kernel:             k,
+		ProfileName:        "coding",
+		TaskMode:           "coding",
 		SkillPrompts:       []string{"skill-1"},
 		RuntimeNotices:     []string{"notice-1"},
 	})
@@ -55,9 +57,10 @@ func TestCompose_DynamicSectionOrder(t *testing.T) {
 	}
 	idxEnv := strings.Index(out.Prompt, "## Environment")
 	idxCaps := strings.Index(out.Prompt, "## Runtime Capabilities")
+	idxMode := strings.Index(out.Prompt, "## Operating Mode")
 	idxSkills := strings.Index(out.Prompt, "## Skills")
 	idxNotices := strings.Index(out.Prompt, "## Runtime Notices")
-	if !(idxEnv >= 0 && idxCaps > idxEnv && idxSkills > idxCaps && idxNotices > idxSkills) {
+	if !(idxEnv >= 0 && idxCaps > idxEnv && idxMode > idxCaps && idxSkills > idxMode && idxNotices > idxSkills) {
 		t.Fatalf("unexpected section order:\n%s", out.Prompt)
 	}
 }
@@ -120,5 +123,25 @@ func TestAttachComposeDebugMeta(t *testing.T) {
 	}
 	if got, _ := meta[MetadataSourceChainKey].(string); got == "" {
 		t.Fatal("expected source chain")
+	}
+}
+
+func TestCompose_ProfileTaskModeSection(t *testing.T) {
+	k := kernel.New(kernel.WithToolRegistry(tool.NewRegistry()))
+	out, err := Compose(ComposeInput{
+		Workspace:         t.TempDir(),
+		Trust:             "trusted",
+		ModelInstructions: "base",
+		ProfileName:       "research",
+		TaskMode:          "research",
+		Kernel:            k,
+	})
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	if !strings.Contains(out.Prompt, "## Operating Mode") ||
+		!strings.Contains(out.Prompt, "Active profile: research") ||
+		!strings.Contains(out.Prompt, "Task mode: research") {
+		t.Fatalf("missing operating mode section:\n%s", out.Prompt)
 	}
 }

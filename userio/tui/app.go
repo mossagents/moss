@@ -357,9 +357,16 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		Goal:         "interactive",
 		Mode:         "interactive",
 		TrustLevel:   trust,
+		Profile:      profile,
 		MaxSteps:     200,
 		SystemPrompt: sysPrompt,
 		Metadata:     metadata,
+	}
+	if strings.TrimSpace(profile) != "" {
+		metadata["profile"] = strings.TrimSpace(profile)
+		if _, ok := metadata[session.MetadataTaskMode]; !ok {
+			metadata[session.MetadataTaskMode] = strings.TrimSpace(profile)
+		}
 	}
 	if buildCfg != nil {
 		sessCfg = buildCfg(workspace, trust, approvalMode, profile, sysPrompt)
@@ -1936,9 +1943,16 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 				Goal:         "interactive",
 				Mode:         "interactive",
 				TrustLevel:   cfg.Trust,
+				Profile:      cfg.Profile,
 				MaxSteps:     200,
 				SystemPrompt: sysPrompt,
 				Metadata:     metadata,
+			}
+			if strings.TrimSpace(cfg.Profile) != "" {
+				metadata["profile"] = strings.TrimSpace(cfg.Profile)
+			}
+			if _, ok := metadata[session.MetadataTaskMode]; !ok && strings.TrimSpace(cfg.Profile) != "" {
+				metadata[session.MetadataTaskMode] = strings.TrimSpace(cfg.Profile)
 			}
 			if cfg.BuildSessionConfig != nil {
 				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, sysPrompt)
@@ -1947,6 +1961,9 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 				}
 				if len(sessCfg.Metadata) == 0 {
 					sessCfg.Metadata = metadata
+				}
+				if strings.TrimSpace(sessCfg.Profile) == "" {
+					sessCfg.Profile = cfg.Profile
 				}
 				if sessCfg.TrustLevel == "" {
 					sessCfg.TrustLevel = cfg.Trust
