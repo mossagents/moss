@@ -40,6 +40,7 @@ type LaneStats struct {
 }
 
 type laneItem struct {
+	ctx    context.Context
 	task   Task
 	future *future
 }
@@ -78,14 +79,17 @@ func (q *LaneQueue) SetLaneConcurrency(lane string, max int) {
 	}
 }
 
-func (q *LaneQueue) Enqueue(lane string, task Task) Future {
+func (q *LaneQueue) Enqueue(ctx context.Context, lane string, task Task) Future {
 	if lane == "" {
 		lane = "main"
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	fut := newFuture()
 	q.mu.Lock()
 	st := q.getOrCreateLaneLocked(lane)
-	st.queue = append(st.queue, laneItem{task: task, future: fut})
+	st.queue = append(st.queue, laneItem{ctx: ctx, task: task, future: fut})
 	q.pumpLaneLocked(lane, st)
 	q.mu.Unlock()
 	return fut
@@ -132,7 +136,7 @@ func (q *LaneQueue) runTask(lane string, item laneItem) {
 	if item.task == nil {
 		err = fmt.Errorf("nil task")
 	} else {
-		err = item.task(context.Background())
+		err = item.task(item.ctx)
 	}
 	item.future.resolve(err)
 

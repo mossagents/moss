@@ -37,3 +37,21 @@ func TestConfigProviderIdentityKeepsLegacyProviderCompatibility(t *testing.T) {
 		t.Fatalf("Name = %q, want claude", cfg.Name)
 	}
 }
+
+func TestSkillConfigIsRequiredDefaultFalse(t *testing.T) {
+	var sc SkillConfig
+	if sc.IsRequired() {
+		t.Fatal("IsRequired should be false by default")
+	}
+}
+
+func TestSkillConfigIsRequiredHonorsValue(t *testing.T) {
+	vTrue := true
+	vFalse := false
+	if !(SkillConfig{Required: &vTrue}).IsRequired() {
+		t.Fatal("IsRequired should be true when required=true")
+	}
+	if (SkillConfig{Required: &vFalse}).IsRequired() {
+		t.Fatal("IsRequired should be false when required=false")
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mossagents/moss/kernel/session"
@@ -43,14 +44,22 @@ type JobHandler func(ctx context.Context, job Job)
 
 // Scheduler 管理定时任务的执行。
 type Scheduler struct {
-	mu        sync.Mutex
-	jobs      map[string]*jobEntry
-	handler   JobHandler
-	parentCtx context.Context
-	cancel    context.CancelFunc
-	running   bool
-	store     JobStore // 可选，持久化存储
-	lock      Lock     // 可选，分布式锁
+	mu                 sync.Mutex
+	persistMu          sync.Mutex
+	persistSeq         uint64
+	persistedSeq       uint64
+	jobs               map[string]*jobEntry
+	handler            JobHandler
+	parentCtx          context.Context
+	cancel             context.CancelFunc
+	running            bool
+	store              JobStore // 可选，持久化存储
+	lock               Lock     // 可选，分布式锁
+	onPersistError     func(error)
+	persistErrCh       chan error
+	persistErrCancel   context.CancelFunc
+	persistErrWorkerWG sync.WaitGroup
+	persistErrDrops    atomic.Uint64
 }
 
 type jobEntry struct {
@@ -84,6 +93,12 @@ func WithLock(lock Lock) SchedulerOption {
 	return func(s *Scheduler) { s.lock = lock }
 }
 
+// WithPersistErrorHandler 设置持久化错误处理回调。
+// 回调通过有界异步队列分发，不会阻塞调度器主流程。
+func WithPersistErrorHandler(fn func(error)) SchedulerOption {
+	return func(s *Scheduler) { s.onPersistError = fn }
+}
+
 // AddJob 添加一个定时任务。如果已存在同 ID 的任务，先移除再添加。
 func (s *Scheduler) AddJob(job Job) error {
 	interval, once, err := parseSchedule(job.Schedule)
@@ -92,8 +107,6 @@ func (s *Scheduler) AddJob(job Job) error {
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	// 如果已存在，先停止
 	if existing, ok := s.jobs[job.ID]; ok {
 		if existing.timer != nil {
@@ -112,18 +125,19 @@ func (s *Scheduler) AddJob(job Job) error {
 	if s.running && s.handler != nil {
 		s.scheduleEntry(entry, interval, once)
 	}
-
-	s.persistLocked()
+	seq, snapshot := s.snapshotJobsLocked()
+	s.mu.Unlock()
+	s.persistSnapshot(seq, snapshot)
 	return nil
 }
 
 // RemoveJob 移除指定 ID 的任务。
 func (s *Scheduler) RemoveJob(id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	entry, ok := s.jobs[id]
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("job not found: %s", id)
 	}
 
@@ -134,8 +148,9 @@ func (s *Scheduler) RemoveJob(id string) error {
 		entry.cancel()
 	}
 	delete(s.jobs, id)
-
-	s.persistLocked()
+	seq, snapshot := s.snapshotJobsLocked()
+	s.mu.Unlock()
+	s.persistSnapshot(seq, snapshot)
 	return nil
 }
 
@@ -163,6 +178,7 @@ func (s *Scheduler) Start(ctx context.Context, handler JobHandler) {
 	s.parentCtx = ctx
 	s.handler = handler
 	s.running = true
+	s.startPersistErrorWorkerLocked()
 
 	// 从持久化存储恢复 jobs
 	if s.store != nil {
@@ -199,6 +215,7 @@ func (s *Scheduler) Stop() {
 		s.cancel()
 	}
 	s.running = false
+	s.stopPersistErrorWorkerLocked()
 	s.mu.Unlock()
 }
 
@@ -214,6 +231,11 @@ func (s *Scheduler) Count() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.jobs)
+}
+
+// PersistErrorDrops 返回持久化错误回调队列丢弃计数。
+func (s *Scheduler) PersistErrorDrops() uint64 {
+	return s.persistErrDrops.Load()
 }
 
 // Trigger 立即执行指定任务一次，不改变其调度表达式。
@@ -276,8 +298,9 @@ func (s *Scheduler) executeFire(ctx context.Context, jobID string, entry *jobEnt
 	handler := s.handler
 	job := entry.job
 	lock := s.lock
-	s.persistLocked()
+	seq, snapshot := s.snapshotJobsLocked()
 	s.mu.Unlock()
+	s.persistSnapshot(seq, snapshot)
 
 	// 分布式锁：多实例部署时防止重复执行
 	acquired := true
@@ -304,30 +327,40 @@ func (s *Scheduler) executeFire(ctx context.Context, jobID string, entry *jobEnt
 
 	if once {
 		// @once/@after 任务：handler 完成后才移除（不会 cancel 正在执行的 ctx）
+		var (
+			seq      uint64
+			snapshot []Job
+		)
 		s.mu.Lock()
 		if e, ok := s.jobs[jobID]; ok && e == entry {
 			if e.timer != nil {
 				e.timer.Stop()
 			}
 			delete(s.jobs, jobID)
-			s.persistLocked()
+			seq, snapshot = s.snapshotJobsLocked()
 		}
 		s.mu.Unlock()
+		s.persistSnapshot(seq, snapshot)
 		cancel()
 		return
 	}
 
 	if reschedule {
 		// 重新调度下一次执行
+		var (
+			seq      uint64
+			snapshot []Job
+		)
 		s.mu.Lock()
 		if e, ok := s.jobs[jobID]; ok && e == entry && s.running {
 			e.job.NextRun = time.Now().Add(interval)
 			if rearm != nil {
 				e.timer = time.AfterFunc(interval, rearm)
 			}
-			s.persistLocked()
+			seq, snapshot = s.snapshotJobsLocked()
 		}
 		s.mu.Unlock()
+		s.persistSnapshot(seq, snapshot)
 	}
 }
 
@@ -343,20 +376,98 @@ func (s *Scheduler) stopAll() {
 		}
 	}
 	s.running = false
+	s.stopPersistErrorWorkerLocked()
 }
 
-// persistLocked 在持有锁的状态下将 jobs 持久化到 store。
+// snapshotJobsLocked 在持有锁的状态下复制 jobs 快照。
 // 调用方必须已持有 s.mu。
-func (s *Scheduler) persistLocked() {
-	if s.store == nil {
-		return
+func (s *Scheduler) snapshotJobsLocked() (uint64, []Job) {
+	s.persistSeq++
+	if len(s.jobs) == 0 {
+		return s.persistSeq, nil
 	}
 	jobs := make([]Job, 0, len(s.jobs))
 	for _, e := range s.jobs {
 		jobs = append(jobs, e.job)
 	}
-	// 最佳努力持久化，不阻塞调度器
-	_ = s.store.SaveJobs(context.Background(), jobs)
+	return s.persistSeq, jobs
+}
+
+// persistSnapshot 在锁外持久化，避免阻塞调度器锁竞争路径。
+func (s *Scheduler) persistSnapshot(seq uint64, jobs []Job) {
+	if s.store == nil {
+		return
+	}
+	if seq == 0 {
+		return
+	}
+	if jobs == nil {
+		jobs = []Job{}
+	}
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
+	if seq < s.persistedSeq {
+		return
+	}
+	if err := s.store.SaveJobs(context.Background(), jobs); err != nil {
+		s.dispatchPersistError(err)
+		return
+	}
+	s.persistedSeq = seq
+}
+
+func (s *Scheduler) startPersistErrorWorkerLocked() {
+	if s.onPersistError == nil || s.persistErrCancel != nil {
+		return
+	}
+	if s.persistErrCh == nil {
+		s.persistErrCh = make(chan error, 64)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.persistErrCancel = cancel
+	s.persistErrWorkerWG.Add(1)
+	go func() {
+		defer s.persistErrWorkerWG.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case err := <-s.persistErrCh:
+				if err != nil {
+					s.onPersistError(err)
+				}
+			}
+		}
+	}()
+}
+
+func (s *Scheduler) stopPersistErrorWorkerLocked() {
+	cancel := s.persistErrCancel
+	if cancel == nil {
+		return
+	}
+	s.persistErrCancel = nil
+	cancel()
+	s.mu.Unlock()
+	s.persistErrWorkerWG.Wait()
+	s.mu.Lock()
+}
+
+func (s *Scheduler) dispatchPersistError(err error) {
+	if err == nil || s.onPersistError == nil {
+		return
+	}
+	s.mu.Lock()
+	ch := s.persistErrCh
+	s.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	select {
+	case ch <- err:
+	default:
+		s.persistErrDrops.Add(1)
+	}
 }
 
 // parseSchedule 解析调度表达式。

@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +12,21 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
 )
+
+type captureReporter struct {
+	events []string
+}
+
+func (c *captureReporter) Report(_ context.Context, capability string, critical bool, state string, err error) {
+	suffix := ""
+	if err != nil {
+		suffix = ":" + err.Error()
+	}
+	c.events = append(c.events, fmt.Sprintf("%s|%t|%s%s", capability, critical, state, suffix))
+}
 
 func TestResolve_ConflictSkillsAndProgressive(t *testing.T) {
 	_, err := resolve(WithSkills(false), WithProgressiveSkills(true))
@@ -40,6 +55,67 @@ func TestSetup_UsesDefaultsParity(t *testing.T) {
 		t.Fatal("expected skills manager")
 	}
 }
+
+func TestSetup_ReportsBuiltinCriticalFailure(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithSandbox(kt.NewMemorySandbox()),
+	)
+	_ = k.ToolRegistry().Register(toolSpecNoop("read_file"), toolHandlerNoop)
+	reporter := &captureReporter{}
+	err := Setup(context.Background(), k, ".", WithCapabilityReporter(reporter))
+	if err == nil {
+		t.Fatal("expected setup error when builtin tools registration conflicts")
+	}
+	found := false
+	for _, ev := range reporter.events {
+		if strings.HasPrefix(ev, "builtin-tools|true|failed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected builtin-tools critical failure report, got %v", reporter.events)
+	}
+}
+
+func TestSetup_ReportsDegradedOnOptionalSkillParseFailure(t *testing.T) {
+	ws := t.TempDir()
+	skillDir := filepath.Join(ws, ".agents", "skills", "broken-skill")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: builtin-tools\n---\ncontent"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithSandbox(kt.NewMemorySandbox()),
+	)
+	reporter := &captureReporter{}
+	if err := Setup(context.Background(), k, ws, WithCapabilityReporter(reporter)); err != nil {
+		t.Fatalf("setup should not fail on optional skill parse failure: %v", err)
+	}
+	found := false
+	for _, ev := range reporter.events {
+		if strings.Contains(ev, "degraded") && strings.Contains(ev, "skill:builtin-tools") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected degraded skill report, got %v", reporter.events)
+	}
+}
+
+func toolSpecNoop(name string) tool.ToolSpec {
+	return tool.ToolSpec{Name: name}
+}
+
+func toolHandlerNoop(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage("{}"), nil }
 
 // ---------------------------------------------------------------------------
 // collectAgentDirs

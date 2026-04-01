@@ -146,14 +146,25 @@ func TestSchedulerPersistsRunStateAndOnceRemoval(t *testing.T) {
 		t.Fatal("expected loop job to remain persisted")
 	}
 
-	time.Sleep(200 * time.Millisecond)
-	loaded, err = store.LoadJobs(context.Background())
-	if err != nil {
-		t.Fatalf("LoadJobs after once fire: %v", err)
-	}
-	for _, job := range loaded {
-		if job.ID == "once" {
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		loaded, err = store.LoadJobs(context.Background())
+		if err != nil {
+			t.Fatalf("LoadJobs after once fire: %v", err)
+		}
+		foundOnce := false
+		for _, job := range loaded {
+			if job.ID == "once" {
+				foundOnce = true
+				break
+			}
+		}
+		if !foundOnce {
+			break
+		}
+		if time.Now().After(deadline) {
 			t.Fatal("expected once job to be removed from persisted store after firing")
 		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

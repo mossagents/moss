@@ -2,12 +2,35 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/mossagents/moss/kernel/session"
 )
+
+type blockingStore struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingStore) SaveJobs(_ context.Context, _ []Job) error {
+	select {
+	case b.started <- struct{}{}:
+	default:
+	}
+	<-b.release
+	return nil
+}
+
+func (b *blockingStore) LoadJobs(_ context.Context) ([]Job, error) { return nil, nil }
+
+type failingStore struct{}
+
+func (failingStore) SaveJobs(_ context.Context, _ []Job) error { return errors.New("persist failed") }
+func (failingStore) LoadJobs(_ context.Context) ([]Job, error) { return nil, nil }
 
 func TestParseSchedule(t *testing.T) {
 	tests := []struct {
@@ -187,5 +210,74 @@ func TestSchedulerTriggerRunsImmediately(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected triggered job to run immediately")
+	}
+}
+
+func TestSchedulerPersistenceDoesNotHoldLock(t *testing.T) {
+	store := &blockingStore{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+	}
+	s := New(WithPersistence(store))
+
+	done := make(chan struct{})
+	go func() {
+		_ = s.AddJob(Job{ID: "lock-check", Schedule: "@every 1h", Goal: "check"})
+		close(done)
+	}()
+
+	select {
+	case <-store.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected save to start")
+	}
+
+	// If lock is not held during persist, Count should return immediately.
+	countDone := make(chan int, 1)
+	go func() {
+		countDone <- s.Count()
+	}()
+	select {
+	case c := <-countDone:
+		if c != 1 {
+			t.Fatalf("unexpected count: %d", c)
+		}
+	case <-time.After(300 * time.Millisecond):
+		t.Fatal("Count blocked, likely lock held during persistence")
+	}
+
+	close(store.release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("AddJob did not finish")
+	}
+}
+
+func TestSchedulerPersistErrorHandlerOverflowDrops(t *testing.T) {
+	var calls atomic.Int64
+	handler := func(error) {
+		calls.Add(1)
+		time.Sleep(20 * time.Millisecond)
+	}
+	s := New(WithPersistence(failingStore{}), WithPersistErrorHandler(handler))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.Start(ctx, func(context.Context, Job) {})
+	defer func() {
+		cancel()
+		s.Stop()
+	}()
+
+	for i := 0; i < 200; i++ {
+		_ = s.AddJob(Job{ID: "job-" + time.Now().Add(time.Duration(i)).Format("150405.000000000"), Schedule: "@every 1h", Goal: "overflow"})
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if s.PersistErrorDrops() == 0 {
+		t.Fatal("expected persist error drops > 0")
+	}
+	if calls.Load() == 0 {
+		t.Fatal("expected persist error handler to be called")
 	}
 }

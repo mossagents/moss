@@ -105,6 +105,7 @@ type SkillConfig struct {
 	URL       string            `yaml:"url,omitempty"`
 	Env       map[string]string `yaml:"env,omitempty"`
 	Enabled   *bool             `yaml:"enabled,omitempty"`
+	Required  *bool             `yaml:"required,omitempty"`
 }
 
 type ProfileConfig struct {
@@ -158,6 +159,13 @@ func (sc SkillConfig) IsEnabled() bool {
 
 func (sc SkillConfig) IsMCP() bool {
 	return sc.Transport == "stdio" || sc.Transport == "sse"
+}
+
+func (sc SkillConfig) IsRequired() bool {
+	if sc.Required == nil {
+		return false
+	}
+	return *sc.Required
 }
 
 func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity {

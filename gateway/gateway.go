@@ -167,9 +167,9 @@ func (gw *Gateway) Serve(ctx context.Context) error {
 			}
 			wg.Add(1)
 			lane := fmt.Sprintf("%s:%s", msg.msg.ChannelName, msg.msg.SenderID)
-			_ = gw.config.LaneQueue.Enqueue(lane, func(_ context.Context) error {
+			_ = gw.config.LaneQueue.Enqueue(ctx, lane, func(taskCtx context.Context) error {
 				defer wg.Done()
-				gw.handleMessage(ctx, msg)
+				gw.handleMessage(taskCtx, msg)
 				return nil
 			})
 		}

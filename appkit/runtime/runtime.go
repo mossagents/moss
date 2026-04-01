@@ -36,6 +36,7 @@ type config struct {
 	sessionStore    session.SessionStore
 	sessionStoreSet bool
 	planning        bool
+	capabilityReport CapabilityReporter
 }
 
 type Option func(*config)
@@ -49,6 +50,7 @@ func defaultConfig() config {
 		agents:      true,
 		trust:       appconfig.TrustTrusted,
 		planning:    true,
+		capabilityReport: noopCapabilityReporter{},
 	}
 }
 
@@ -69,6 +71,24 @@ func WithSessionStore(store session.SessionStore) Option {
 		c.sessionStoreSet = true
 	}
 }
+
+func WithCapabilityReporter(r CapabilityReporter) Option {
+	return func(c *config) {
+		if r == nil {
+			c.capabilityReport = noopCapabilityReporter{}
+			return
+		}
+		c.capabilityReport = r
+	}
+}
+
+type CapabilityReporter interface {
+	Report(ctx context.Context, capability string, critical bool, state string, err error)
+}
+
+type noopCapabilityReporter struct{}
+
+func (noopCapabilityReporter) Report(context.Context, string, bool, string, error) {}
 
 func resolve(opts ...Option) (config, error) {
 	cfg := defaultConfig()
@@ -91,22 +111,57 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	if err != nil {
 		return err
 	}
+	if err := setupRegisterPhase(ctx, k, workspaceDir, cfg); err != nil {
+		return err
+	}
+	if err := setupValidatePhase(ctx, k, workspaceDir, cfg); err != nil {
+		return err
+	}
+	return setupActivatePhase(ctx, k, workspaceDir, cfg)
+}
+
+func setupRegisterPhase(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	if cfg.builtin {
 		if err := setupBuiltinTools(ctx, k, cfg); err != nil {
+			cfg.capabilityReport.Report(ctx, "builtin-tools", true, "failed", err)
 			return err
 		}
+		cfg.capabilityReport.Report(ctx, "builtin-tools", true, "ready", nil)
 	}
 	if cfg.mcpServers {
-		setupMCPServers(ctx, k, workspaceDir, cfg)
+		if err := setupMCPServers(ctx, k, workspaceDir, cfg); err != nil {
+			return err
+		}
 	}
 	if cfg.skills {
 		if err := setupSkills(ctx, k, workspaceDir, cfg); err != nil {
+			cfg.capabilityReport.Report(ctx, "skills", true, "failed", err)
 			return err
 		}
+		cfg.capabilityReport.Report(ctx, "skills", true, "ready", nil)
 	}
 	if cfg.agents {
 		setupAgents(ctx, k, workspaceDir, cfg)
+		cfg.capabilityReport.Report(ctx, "agents", false, "ready", nil)
 	}
+	return nil
+}
+
+func setupValidatePhase(ctx context.Context, k *kernel.Kernel, _ string, cfg config) error {
+	// Validate that core runtime registration exists after register phase.
+	if cfg.builtin {
+		if _, ok := SkillsManager(k).Get("builtin-tools"); !ok {
+			err := fmt.Errorf("runtime validation failed: builtin-tools provider missing")
+			cfg.capabilityReport.Report(ctx, "runtime-validate", true, "failed", err)
+			return err
+		}
+	}
+	cfg.capabilityReport.Report(ctx, "runtime-validate", true, "ready", nil)
+	return nil
+}
+
+func setupActivatePhase(ctx context.Context, _ *kernel.Kernel, _ string, cfg config) error {
+	cfg.capabilityReport.Report(ctx, "runtime-activate", true, "ready", nil)
 	return nil
 }
 
@@ -114,7 +169,7 @@ func setupBuiltinTools(ctx context.Context, k *kernel.Kernel, cfg config) error 
 	return SkillsManager(k).Register(ctx, &builtinToolsProvider{}, Deps(k))
 }
 
-func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) {
+func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	logger := logging.GetLogger()
 	globalCfg, _ := appconfig.LoadGlobalConfig()
 	merged := appconfig.MergeConfigs(globalCfg)
@@ -128,12 +183,19 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 			continue
 		}
 		if err := SkillsManager(k).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+			cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
+			if sc.IsRequired() {
+				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)
+			}
 			logger.WarnContext(ctx, "failed to load MCP server",
 				slog.String("server", sc.Name),
 				slog.Any("error", err),
 			)
+			continue
 		}
+		cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "ready", nil)
 	}
+	return nil
 }
 
 func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
@@ -148,6 +210,7 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 	for _, mf := range manifests {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
+			cfg.capabilityReport.Report(ctx, "skill-manifest:"+mf.Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to parse skill",
 				slog.String("source", mf.Source),
 				slog.Any("error", err),
@@ -155,6 +218,7 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 			continue
 		}
 		if err := SkillsManager(k).Register(ctx, ps, deps); err != nil {
+			cfg.capabilityReport.Report(ctx, "skill:"+ps.Metadata().Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load skill",
 				slog.String("skill", ps.Metadata().Name),
 				slog.Any("error", err),
@@ -169,6 +233,7 @@ func setupAgents(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 	registry := AgentRegistry(k)
 	for _, dir := range collectAgentDirs(workspaceDir, cfg) {
 		if err := registry.LoadDir(dir); err != nil {
+			cfg.capabilityReport.Report(ctx, "agents:"+dir, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load agents",
 				slog.String("dir", dir),
 				slog.Any("error", err),

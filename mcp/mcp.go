@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -11,8 +12,15 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	config "github.com/mossagents/moss/config"
+	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/skill"
+)
+
+const (
+	maxMCPToolInputBytes  = 64 * 1024
+	maxMCPToolOutputBytes = 1024 * 1024
+	maxJSONDepth          = 64
 )
 
 // MCPServer 通过 MCP 协议连接外部工具服务器，并将远端工具桥接到本地 ToolRegistry。
@@ -156,12 +164,21 @@ func (s *MCPServer) buildEnv() []string {
 // makeHandler 为指定 MCP tool 创建 ToolHandler。
 func (s *MCPServer) makeHandler(mcpToolName string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		// 解析 input 为 map
+		if err := validateMCPInput(input); err != nil {
+			return nil, err
+		}
+
 		var args map[string]any
 		if len(input) > 0 {
-			if err := json.Unmarshal(input, &args); err != nil {
-				return nil, fmt.Errorf("unmarshal mcp tool input: %w", err)
+			var payload any
+			if err := json.Unmarshal(input, &payload); err != nil {
+				return nil, kerrors.Wrap(kerrors.ErrValidation, "unmarshal mcp tool input", err)
 			}
+			obj, ok := payload.(map[string]any)
+			if !ok {
+				return nil, kerrors.New(kerrors.ErrValidation, "mcp tool input must be a JSON object")
+			}
+			args = obj
 		}
 
 		req := mcp.CallToolRequest{}
@@ -170,10 +187,93 @@ func (s *MCPServer) makeHandler(mcpToolName string) tool.ToolHandler {
 
 		result, err := s.client.CallTool(ctx, req)
 		if err != nil {
-			return nil, fmt.Errorf("mcp call %s: %w", mcpToolName, err)
+			return nil, classifyMCPCallError(mcpToolName, err)
 		}
 
-		// 将结果转换为 JSON
-		return json.Marshal(result)
+		output, err := json.Marshal(result)
+		if err != nil {
+			return nil, kerrors.Wrap(kerrors.ErrInternal, "marshal mcp result", err)
+		}
+		if err := validateMCPOutput(output); err != nil {
+			return nil, err
+		}
+		return output, nil
+	}
+}
+
+func validateMCPInput(input json.RawMessage) error {
+	if len(input) > maxMCPToolInputBytes {
+		return kerrors.New(kerrors.ErrValidation, fmt.Sprintf("mcp tool input too large: %d bytes (max %d)", len(input), maxMCPToolInputBytes))
+	}
+	if len(input) == 0 {
+		return nil
+	}
+	if !json.Valid(input) {
+		return kerrors.New(kerrors.ErrValidation, "mcp tool input must be valid JSON")
+	}
+	if err := validateJSONDepth(input, maxJSONDepth); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateMCPOutput(output json.RawMessage) error {
+	if len(output) > maxMCPToolOutputBytes {
+		return kerrors.New(kerrors.ErrValidation, fmt.Sprintf("mcp tool output too large: %d bytes (max %d)", len(output), maxMCPToolOutputBytes))
+	}
+	if len(output) == 0 {
+		return nil
+	}
+	if !json.Valid(output) {
+		return kerrors.New(kerrors.ErrValidation, "mcp tool output must be valid JSON")
+	}
+	if err := validateJSONDepth(output, maxJSONDepth); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateJSONDepth(raw json.RawMessage, maxDepth int) error {
+	var payload any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return kerrors.Wrap(kerrors.ErrValidation, "decode JSON payload", err)
+	}
+	if depth(payload) > maxDepth {
+		return kerrors.New(kerrors.ErrValidation, fmt.Sprintf("json nesting depth exceeds max %d", maxDepth))
+	}
+	return nil
+}
+
+func depth(v any) int {
+	switch n := v.(type) {
+	case map[string]any:
+		d := 1
+		for _, child := range n {
+			if cd := 1 + depth(child); cd > d {
+				d = cd
+			}
+		}
+		return d
+	case []any:
+		d := 1
+		for _, child := range n {
+			if cd := 1 + depth(child); cd > d {
+				d = cd
+			}
+		}
+		return d
+	default:
+		return 1
+	}
+}
+
+func classifyMCPCallError(toolName string, err error) error {
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return kerrors.Wrap(kerrors.ErrLLMTimeout, fmt.Sprintf("mcp call %s timed out", toolName), err)
+	case errors.Is(err, context.Canceled):
+		return kerrors.Wrap(kerrors.ErrInternal, fmt.Sprintf("mcp call %s canceled", toolName), err)
+	default:
+		return kerrors.Wrap(kerrors.ErrInternal, fmt.Sprintf("mcp call %s failed", toolName), err)
 	}
 }
