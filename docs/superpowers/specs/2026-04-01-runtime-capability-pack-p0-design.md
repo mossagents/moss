@@ -97,7 +97,7 @@ Degraded mode requirements:
 
 Config contract for MCP criticality:
 
-- New config key under skill item: `required` (boolean, default `false`).
+- New config key under MCP-backed skill item only: `required` (boolean, default `false`).
 - Behavior:
   - `required: true` and MCP init failure => setup fails.
   - `required: false` or omitted and MCP init failure => degraded warning/event.
@@ -116,6 +116,10 @@ skills:
 Migration behavior:
 
 - Existing configs without `required` are treated as `required: false` (backward compatible default).
+- For non-MCP skills, `required` is ignored by runtime setup validation and should be flagged by config linter as unsupported key.
+- Validation ownership:
+  - parse-time schema check in `config` package.
+  - runtime enforcement in `appkit/runtime` MCP pack setup.
 
 ## Components and Data Flow (Section 2 - Approved)
 
@@ -182,6 +186,22 @@ Boundary semantics:
 - textual output must be valid UTF-8; invalid UTF-8 => `ErrValidation`.
 - JSON nesting depth must be `<= 64`; depth `> 64` => `ErrValidation`.
 
+Validation sequence (authoritative order):
+
+1. parse and validate input JSON schema/size
+2. run policy guard (`ToolGuard.ValidateInput`)
+3. call remote MCP tool
+4. validate raw remote response size
+5. project/normalize payload
+6. validate normalized payload type + size + UTF-8/depth
+7. run output guard (`ToolGuard.ValidateOutput`) and return
+
+Byte measurement points:
+
+- input size is measured on raw request bytes before JSON normalization.
+- raw response size is measured on raw MCP response bytes before projection.
+- normalized size is measured on final local payload bytes after projection/envelope serialization.
+
 Projection rules from MCP results:
 
 - MCP textual blocks map to local `"text"`.
@@ -205,12 +225,14 @@ Error taxonomy (P0):
 - `ErrUnavailable`: optional capability failed, runtime continues in degraded mode.
 - `ErrTimeout`: context deadline exceeded on queue/scheduler/remote MCP calls.
 - `ErrCanceled`: caller-driven cancellation on queue/scheduler/remote MCP calls.
+- `ErrRemote`: remote MCP transport/protocol/internal failure (non-timeout, non-cancel).
 
 Handling contract:
 
 - `ErrValidation`/`ErrDependency` in critical path => return error to caller and abort setup/operation.
 - `ErrUnavailable` in optional path => warn + emit degraded event + continue.
 - `ErrTimeout`/`ErrCanceled` => surface to caller; no silent retry loops in P0 unless existing bounded retry policy already applies.
+- `ErrRemote` => surface to caller with reason (`transport` | `protocol` | `internal`); retry only when existing bounded retry policy marks retryable.
 
 Timeout mapping rules:
 
@@ -245,10 +267,10 @@ Observability assertions:
   - `runtime.capability.degraded` (non-critical)
   - `mcp.validation.rejected` (guardrail hit)
 - Required counters (or observer events if metrics backend absent):
-- Required counters (or observer events if metrics backend absent):
   - `runtime_capability_failures_total{capability,critical}`
   - `mcp_validation_rejections_total{reason}`
   - `scheduler_persist_failures_total`
+  - `scheduler_persist_error_drops_total`
 
 CI observability rule:
 
@@ -256,6 +278,15 @@ CI observability rule:
   - metrics counters asserted when metrics sink exists; or
   - observer events asserted when metrics sink is absent.
 - It is invalid to skip both assertions.
+
+Unit-to-observability mapping:
+
+- P0-2 scheduler persistence:
+  - emits `scheduler_persist_failures_total` and `scheduler.persist.error.drop` log on callback overflow.
+- P0-3 bootstrap policy:
+  - emits `runtime_capability_failures_total` and `runtime.setup.failed` / `runtime.capability.degraded`.
+- P0-4 MCP hardening:
+  - emits `mcp_validation_rejections_total` and `mcp.validation.rejected`.
 
 P0 acceptance rule for observability backend:
 
@@ -347,10 +378,11 @@ Cons:
 
 ### Unit P0-5: Dependency Direction Guardrail
 
-- Files: CI/workflow and/or build check scripts.
+- Files: `.github/workflows/architecture-guard.yml` + `testing/arch_guard.ps1` (single rule implementation path).
 - Outcome: automated prevention of reverse dependency drift.
 - Acceptance:
   - CI fails if non-`cmd/*` packages import `cmd/*`.
+  - workflow invokes exactly `pwsh ./testing/arch_guard.ps1`.
 
 ## Out of Scope (P0)
 
