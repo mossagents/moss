@@ -1,32 +1,44 @@
 package tui
 
 import (
-	_ "embed"
 	"strings"
 
-	"github.com/mossagents/moss/bootstrap"
-	config "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/userio/prompting"
 )
 
-//go:embed templates/system_prompt.tmpl
-var defaultSystemPromptTemplate string
-
 // buildSystemPrompt 构造 Agent 的 system prompt。
-// 风格：类 Claude Code / Cursor 的通用编程助手。
 // skillPrompts 是来自 SkillManager 的额外提示片段。
-func buildSystemPrompt(workspace, trust string, skillPrompts ...string) string {
-	ctx := config.DefaultTemplateContext(workspace)
-	base := config.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
-
-	if bctx := bootstrap.LoadWithAppNameAndTrust(workspace, config.AppName(), trust); bctx != nil {
-		if sec := strings.TrimSpace(bctx.SystemPromptSection()); sec != "" {
-			base += "\n## Bootstrap Context\n" + sec
-		}
+func buildSystemPrompt(workspace, trust string, k *kernel.Kernel, skillPrompts ...string) (string, error) {
+	out, err := prompting.Compose(prompting.ComposeInput{
+		Workspace:    workspace,
+		Trust:        trust,
+		Kernel:       k,
+		SkillPrompts: skillPrompts,
+	})
+	if err != nil {
+		return "", err
 	}
+	return strings.TrimSpace(out.Prompt), nil
+}
 
-	if len(skillPrompts) > 0 {
-		base += "\n## Additional Skills\n" + strings.Join(skillPrompts, "\n")
+func composeSystemPrompt(workspace, trust string, k *kernel.Kernel, configInstructions, modelInstructions string, metadata map[string]any, skillPrompts ...string) (string, error) {
+	sessionInstructions, err := prompting.SessionInstructionsFromMetadata(metadata)
+	if err != nil {
+		return "", err
 	}
-
-	return base
+	out, err := prompting.Compose(prompting.ComposeInput{
+		Workspace:           workspace,
+		Trust:               trust,
+		ConfigInstructions:  strings.TrimSpace(configInstructions),
+		SessionInstructions: sessionInstructions,
+		ModelInstructions:   strings.TrimSpace(modelInstructions),
+		Kernel:              k,
+		SkillPrompts:        skillPrompts,
+	})
+	if err != nil {
+		return "", err
+	}
+	prompting.AttachComposeDebugMeta(metadata, out.DebugMeta)
+	return strings.TrimSpace(out.Prompt), nil
 }

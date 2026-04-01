@@ -25,6 +25,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/skill"
+	"github.com/mossagents/moss/userio/prompting"
 )
 
 const appVersion = "0.3.0"
@@ -57,6 +58,8 @@ type Config struct {
 	AfterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt     func(workspace, trust string) string
 	BuildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	PromptConfigInstructions string
+	PromptModelInstructions  string
 	ScheduleController    runtime.ScheduleController
 	SidebarTitle          string
 	RenderSidebar         func() string
@@ -88,6 +91,8 @@ type agentState struct {
 	afterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	buildSystemPrompt     func(workspace, trust string) string
 	buildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	promptConfigInstructions string
+	promptModelInstructions  string
 	apiType               string
 	model                 string
 	apiKey                string
@@ -196,6 +201,24 @@ func (a *agentState) sessionSummary() string {
 		}
 	}
 	return b.String()
+}
+
+func (a *agentState) promptDebugInfo() (baseSource, dynamicSections, sourceChain string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sess == nil || len(a.sess.Config.Metadata) == 0 {
+		return "", "", ""
+	}
+	if v, ok := a.sess.Config.Metadata[prompting.MetadataBaseSourceKey].(string); ok {
+		baseSource = strings.TrimSpace(v)
+	}
+	if v, ok := a.sess.Config.Metadata[prompting.MetadataDynamicSectionsKey].(string); ok {
+		dynamicSections = strings.TrimSpace(v)
+	}
+	if v, ok := a.sess.Config.Metadata[prompting.MetadataSourceChainKey].(string); ok {
+		sourceChain = strings.TrimSpace(v)
+	}
+	return baseSource, dynamicSections, sourceChain
 }
 
 func (a *agentState) listPersistedSessions(limit int) (string, error) {
@@ -322,7 +345,11 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	if k == nil {
 		return nil, errors.New("runtime is unavailable")
 	}
-	sysPrompt := buildSystemPrompt(workspace, trust)
+	metadata := map[string]any{}
+	sysPrompt, err := composeSystemPrompt(workspace, trust, k, a.promptConfigInstructions, a.promptModelInstructions, metadata)
+	if err != nil {
+		return nil, err
+	}
 	if buildPrompt != nil {
 		sysPrompt = buildPrompt(workspace, trust)
 	}
@@ -332,11 +359,15 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		TrustLevel:   trust,
 		MaxSteps:     200,
 		SystemPrompt: sysPrompt,
+		Metadata:     metadata,
 	}
 	if buildCfg != nil {
 		sessCfg = buildCfg(workspace, trust, approvalMode, profile, sysPrompt)
 		if sessCfg.SystemPrompt == "" {
 			sessCfg.SystemPrompt = sysPrompt
+		}
+		if len(sessCfg.Metadata) == 0 {
+			sessCfg.Metadata = metadata
 		}
 		if sessCfg.TrustLevel == "" {
 			sessCfg.TrustLevel = trust
@@ -370,10 +401,13 @@ func (a *agentState) refreshSystemPrompt() error {
 	if sess == nil {
 		return errors.New("active thread is unavailable")
 	}
-	if buildPrompt == nil {
-		return errors.New("system prompt builder is unavailable")
+	nextPrompt, err := composeSystemPrompt(workspace, trust, a.k, a.promptConfigInstructions, a.promptModelInstructions, sess.Config.Metadata)
+	if err != nil {
+		return err
 	}
-	nextPrompt := buildPrompt(workspace, trust)
+	if buildPrompt != nil {
+		nextPrompt = buildPrompt(workspace, trust)
+	}
 	a.mu.Lock()
 	sess.Config.SystemPrompt = nextPrompt
 	if len(sess.Messages) > 0 && sess.Messages[0].Role == port.RoleSystem {
@@ -1742,6 +1776,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.setPermissionFn = agent.setPermission
 		m.chat.refreshSystemPromptFn = agent.refreshSystemPrompt
 		m.chat.debugConfigFn = func() string {
+			baseSource, dynamicSections, sourceChain := agent.promptDebugInfo()
 			report := product.BuildDebugConfigReport(
 				configpkg.AppName(),
 				m.config.Workspace,
@@ -1751,6 +1786,9 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.chat.approvalMode,
 				m.chat.profile,
 				m.chat.theme,
+				baseSource,
+				dynamicSections,
+				sourceChain,
 			)
 			return product.RenderDebugConfigReport(report)
 		}
@@ -1885,7 +1923,12 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			}
 		} else {
 			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
-			sysPrompt := buildSystemPrompt(wCfg.Workspace, cfg.Trust)
+			metadata := map[string]any{}
+			sysPrompt, err := composeSystemPrompt(wCfg.Workspace, cfg.Trust, k, cfg.PromptConfigInstructions, cfg.PromptModelInstructions, metadata)
+			if err != nil {
+				cancel()
+				return sessionResultMsg{err: fmt.Errorf("failed to compose system prompt: %w", err)}
+			}
 			if cfg.BuildSystemPrompt != nil {
 				sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace, cfg.Trust)
 			}
@@ -1895,11 +1938,15 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 				TrustLevel:   cfg.Trust,
 				MaxSteps:     200,
 				SystemPrompt: sysPrompt,
+				Metadata:     metadata,
 			}
 			if cfg.BuildSessionConfig != nil {
 				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, sysPrompt)
 				if sessCfg.SystemPrompt == "" {
 					sessCfg.SystemPrompt = sysPrompt
+				}
+				if len(sessCfg.Metadata) == 0 {
+					sessCfg.Metadata = metadata
 				}
 				if sessCfg.TrustLevel == "" {
 					sessCfg.TrustLevel = cfg.Trust
@@ -1939,6 +1986,8 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			afterBoot:             cfg.AfterBoot,
 			buildSystemPrompt:     cfg.BuildSystemPrompt,
 			buildSessionConfig:    cfg.BuildSessionConfig,
+			promptConfigInstructions: cfg.PromptConfigInstructions,
+			promptModelInstructions:  cfg.PromptModelInstructions,
 			apiType:               apiType,
 			model:                 wCfg.Model,
 			apiKey:                cfg.APIKey,

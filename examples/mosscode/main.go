@@ -567,6 +567,9 @@ func runDebugConfig(cfg *config) error {
 		resolved.ApprovalMode,
 		resolved.Name,
 		currentThemeName(),
+		"",
+		"",
+		"",
 	)
 	if cfg.debugConfigJSON {
 		return printJSON(report)

@@ -81,6 +81,8 @@ type Config struct {
 	Name           string                   `yaml:"name,omitempty"`
 	Provider       string                   `yaml:"provider,omitempty"`
 	Model          string                   `yaml:"model,omitempty"`
+	BaseInstructions  string                `yaml:"base_instructions,omitempty"`
+	ModelInstructions string                `yaml:"model_instructions,omitempty"`
 	BaseURL        string                   `yaml:"base_url,omitempty"`
 	APIKey         string                   `yaml:"api_key,omitempty"`
 	DefaultProfile string                   `yaml:"default_profile,omitempty"`
@@ -328,6 +330,20 @@ func LoadProjectConfigForTrust(workspace, trust string) (*Config, error) {
 		return &Config{}, nil
 	}
 	return LoadProjectConfig(workspace)
+}
+
+func ResolvePromptInstructionLayers(workspace, trust string) (string, string, error) {
+	globalCfg, err := LoadGlobalConfig()
+	if err != nil {
+		return "", "", err
+	}
+	projectCfg, err := LoadProjectConfigForTrust(workspace, trust)
+	if err != nil {
+		return "", "", err
+	}
+	configInstructions := firstNonEmpty(projectCfg.BaseInstructions, globalCfg.BaseInstructions)
+	modelInstructions := firstNonEmpty(projectCfg.ModelInstructions, globalCfg.ModelInstructions)
+	return configInstructions, modelInstructions, nil
 }
 
 func DefaultGlobalSystemPromptTemplatePath() string {

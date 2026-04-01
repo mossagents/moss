@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/kernel"
 )
 
 func TestBuildSystemPrompt_LoadsWorkspaceAgentsMarkdown(t *testing.T) {
@@ -12,7 +14,10 @@ func TestBuildSystemPrompt_LoadsWorkspaceAgentsMarkdown(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ws, "AGENTS.md"), []byte("Be precise."), 0o600); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-	got := buildSystemPrompt(ws, "trusted")
+	got, err := buildSystemPrompt(ws, "trusted", kernel.New())
+	if err != nil {
+		t.Fatalf("build system prompt: %v", err)
+	}
 	if !strings.Contains(got, "## Bootstrap Context") {
 		t.Fatalf("expected bootstrap context section, got: %s", got)
 	}
@@ -26,7 +31,10 @@ func TestBuildSystemPrompt_RestrictedSkipsWorkspaceAgentsMarkdown(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(ws, "AGENTS.md"), []byte("Be precise."), 0o600); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-	got := buildSystemPrompt(ws, "restricted")
+	got, err := buildSystemPrompt(ws, "restricted", kernel.New())
+	if err != nil {
+		t.Fatalf("build system prompt: %v", err)
+	}
 	if strings.Contains(got, "## Bootstrap Context") || strings.Contains(got, "Be precise.") {
 		t.Fatalf("expected workspace bootstrap content to be skipped, got: %s", got)
 	}

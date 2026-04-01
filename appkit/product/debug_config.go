@@ -34,9 +34,12 @@ type DebugConfigReport struct {
 	RouterConfig     string   `json:"router_config"`
 	PricingCatalog   string   `json:"pricing_catalog"`
 	DetectedEnv      []string `json:"detected_env"`
+	PromptBaseSource      string `json:"prompt_base_source,omitempty"`
+	PromptDynamicSections string `json:"prompt_dynamic_sections,omitempty"`
+	PromptSourceChain     string `json:"prompt_source_chain,omitempty"`
 }
 
-func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile, theme string) DebugConfigReport {
+func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
 	return DebugConfigReport{
 		App:              appName,
 		Workspace:        workspace,
@@ -62,6 +65,9 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 		RouterConfig:     filepath.Join(appconfig.AppDir(), "models.yaml"),
 		PricingCatalog:   filepath.Join(appconfig.AppDir(), "pricing.yaml"),
 		DetectedEnv:      detectedEnvVars(),
+		PromptBaseSource:      strings.TrimSpace(promptBaseSource),
+		PromptDynamicSections: strings.TrimSpace(promptDynamicSections),
+		PromptSourceChain:     strings.TrimSpace(promptSourceChain),
 	}
 }
 
@@ -93,6 +99,15 @@ func RenderDebugConfigReport(report DebugConfigReport) string {
 	fmt.Fprintf(&b, "Router config: %s\n", renderDebugPath(report.RouterConfig))
 	fmt.Fprintf(&b, "Pricing catalog: %s\n", renderDebugPath(report.PricingCatalog))
 	fmt.Fprintf(&b, "Detected env: %s\n", renderList(report.DetectedEnv))
+	if strings.TrimSpace(report.PromptBaseSource) != "" {
+		fmt.Fprintf(&b, "Prompt base source: %s\n", report.PromptBaseSource)
+	}
+	if strings.TrimSpace(report.PromptDynamicSections) != "" {
+		fmt.Fprintf(&b, "Prompt dynamic sections: %s\n", report.PromptDynamicSections)
+	}
+	if strings.TrimSpace(report.PromptSourceChain) != "" {
+		fmt.Fprintf(&b, "Prompt source chain: %s\n", report.PromptSourceChain)
+	}
 	return strings.TrimRight(b.String(), "\n")
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
@@ -15,6 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/userio/prompting"
 	"github.com/mossagents/moss/userio/tui"
 )
 
@@ -94,6 +96,11 @@ func launchTUI(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
+	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
+	if err != nil {
+		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	if err := tui.Run(tui.Config{
 		APIType:      f.EffectiveAPIType(),
@@ -105,6 +112,8 @@ func launchTUI(args []string) {
 		BaseURL:      f.BaseURL,
 		APIKey:       f.APIKey,
 		BuildKernel:  buildKernelWithIO,
+		PromptConfigInstructions: configInstructions,
+		PromptModelInstructions:  modelInstructions,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -125,6 +134,11 @@ func runCmd(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
+	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
+	if err != nil {
+		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	if *goal == "" {
 		fmt.Fprintln(os.Stderr, "error: --goal is required for 'run' command")
@@ -168,11 +182,20 @@ func runCmd(args []string) {
 	}
 	fmt.Println()
 
+	meta := map[string]any{}
+	sysPrompt, err := buildRunSystemPrompt(f.Workspace, f.Trust, configInstructions, modelInstructions, meta, k)
+	if err != nil {
+		logging.GetLogger().Error("error composing system prompt", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	sess, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:       *goal,
 		Mode:       *mode,
 		TrustLevel: f.Trust,
 		MaxSteps:   50,
+		SystemPrompt: strings.TrimSpace(sysPrompt),
+		Metadata:     meta,
 	})
 	if err != nil {
 		logging.GetLogger().Error("error creating session", slog.Any("error", err))
@@ -192,6 +215,26 @@ func runCmd(args []string) {
 	if result.Output != "" {
 		fmt.Printf("\nResult:\n%s\n", result.Output)
 	}
+}
+
+func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstructions string, metadata map[string]any, k *kernel.Kernel) (string, error) {
+	sessionInstructions, err := prompting.SessionInstructionsFromMetadata(metadata)
+	if err != nil {
+		return "", err
+	}
+	out, err := prompting.Compose(prompting.ComposeInput{
+		Workspace:          workspace,
+		Trust:              trust,
+		ConfigInstructions: strings.TrimSpace(configInstructions),
+		SessionInstructions: sessionInstructions,
+		ModelInstructions:  strings.TrimSpace(modelInstructions),
+		Kernel:             k,
+	})
+	if err != nil {
+		return "", err
+	}
+	prompting.AttachComposeDebugMeta(metadata, out.DebugMeta)
+	return out.Prompt, nil
 }
 
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
