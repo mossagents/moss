@@ -245,3 +245,29 @@ Reason:
 - lowest kernel risk
 - directly implements the new "concept + command + UI/UX alignment" principle
 - takes advantage of the current POC window to simplify the product surface instead of carrying migration complexity
+
+## Current execution focus
+
+The next committed delivery order is:
+
+1. high-frequency Codex command gaps
+   - `/copy`
+   - `/mention`
+   - `/ps`
+   - `/statusline`
+2. session / thread / agent information architecture cleanup
+   - align help, status, resume, fork, and agent wording around the thread mental model
+3. interaction mode controls
+   - `/fast`
+   - `/personality`
+   - `/experimental`
+
+## Queued backlog after the current batch
+
+Keep the next product-surface gap explicitly queued in this document rather than silently dropping it:
+
+1. **multimodal and apps/connectors**
+   - first-class image attachment UX
+   - clearer multimodal input model in the TUI
+   - evaluate whether an `apps` / connectors surface should exist in `mosscode` as a product-layer feature
+   - only sink shared attachment primitives into `moss` if the product implementation proves that a reusable runtime contract is missing

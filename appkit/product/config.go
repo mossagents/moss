@@ -58,6 +58,16 @@ func ShowConfig(flags *appkit.AppFlags, showSensitive bool) (string, error) {
 	fmt.Fprintf(&b, "  name:     %s\n", firstNonEmpty(cfg.DisplayProviderName(), "(not set)"))
 	fmt.Fprintf(&b, "  model:    %s\n", firstNonEmpty(cfg.Model, "(not set)"))
 	fmt.Fprintf(&b, "  base_url: %s\n", firstNonEmpty(cfg.BaseURL, "(not set)"))
+	fmt.Fprintf(&b, "  tui.theme: %s\n", firstNonEmpty(cfg.TUI.Theme, "default"))
+	fmt.Fprintf(&b, "  tui.personality: %s\n", firstNonEmpty(cfg.TUI.Personality, PersonalityFriendly))
+	fastMode := "false"
+	if cfg.TUI.FastMode != nil && *cfg.TUI.FastMode {
+		fastMode = "true"
+	}
+	fmt.Fprintf(&b, "  tui.fast_mode: %s\n", fastMode)
+	if len(cfg.TUI.StatusLine) > 0 {
+		fmt.Fprintf(&b, "  tui.status_line: %s\n", strings.Join(cfg.TUI.StatusLine, ", "))
+	}
 	if showSensitive {
 		apiKeyDisplay := "(not set)"
 		if strings.TrimSpace(cfg.APIKey) != "" {

@@ -86,6 +86,15 @@ type Config struct {
 	DefaultProfile string                   `yaml:"default_profile,omitempty"`
 	Profiles       map[string]ProfileConfig `yaml:"profiles,omitempty"`
 	Skills         []SkillConfig            `yaml:"skills,omitempty"`
+	TUI            TUIConfig                `yaml:"tui,omitempty"`
+}
+
+type TUIConfig struct {
+	Theme        string   `yaml:"theme,omitempty"`
+	StatusLine   []string `yaml:"status_line,omitempty"`
+	Personality  string   `yaml:"personality,omitempty"`
+	FastMode     *bool    `yaml:"fast_mode,omitempty"`
+	Experimental []string `yaml:"experimental,omitempty"`
 }
 
 type SkillConfig struct {
@@ -410,6 +419,13 @@ const defaultConfigTemplate = `# Global config for moss
 # model: gpt-4o
 # base_url: ""
 # api_key: ""
+
+# tui:
+#   # theme: default
+#   # personality: friendly
+#   # fast_mode: false
+#   # status_line: [model, workspace, profile, approval, thread, messages]
+#   # experimental: [background-ps, composer-mentions, statusline-customization]
 
 skills:
   # Example MCP skill via stdio

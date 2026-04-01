@@ -80,6 +80,19 @@ func resolveMentionPath(workspace, raw string) (string, bool) {
 	return "", false
 }
 
+func mentionTokenForComposer(workspace, raw string) (string, error) {
+	path, ok := resolveMentionPath(workspace, raw)
+	if !ok {
+		return "", fmt.Errorf("mentioned path %q was not found", strings.TrimSpace(raw))
+	}
+	if strings.TrimSpace(workspace) != "" {
+		if rel, err := filepath.Rel(workspace, path); err == nil && !strings.HasPrefix(rel, "..") {
+			return "@" + filepath.Clean(rel), nil
+		}
+	}
+	return "@" + filepath.Clean(path), nil
+}
+
 func isImagePath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp":

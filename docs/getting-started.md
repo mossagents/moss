@@ -143,26 +143,35 @@ moss version
 | `/help` | 显示帮助 |
 | `/exit` | 退出 |
 | `/clear` | 清空对话 |
-| `/status` | 查看当前运行时摘要（模型/工作区/姿态/会话） |
+| `/status` | 查看当前运行时摘要（模型/工作区/姿态/当前 thread） |
 | `/model <name>` | 切换模型 |
+| `/fast <on\|off\|status>` | 切换或查看 fast interaction mode |
+| `/personality <friendly\|pragmatic\|none>` | 切换响应风格 |
 | `/config` | 查看配置 |
 | `/config set <key> <value>` | 修改配置 |
 | `/init` | 初始化 `AGENTS.md` 与 `.mosscode/commands/` 工作流目录 |
+| `/mention <path>` | 将 `@file` 引用插入 composer，下一次发送时自动附加文件内容 |
 | `/search <query>` | 通过 Jina 搜索网页内容 |
 | `/open <path[:line]>` | 在本地编辑器中打开文件 |
 | `/debug-config` | 查看配置源、目录、日志与命令目录 |
 | `/theme [default\|plain]` | 查看或切换当前 TUI 主题 |
-| `/resume [session_id|latest]` | 查看可恢复会话或恢复指定会话 |
-| `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有会话/检查点分叉新会话 |
+| `/statusline` | 查看当前 footer status line 配置与可用项 |
+| `/statusline set <items...>` | 设置 footer status line 项 |
+| `/statusline reset` | 恢复默认 footer status line |
+| `/experimental [enable\|disable <feature>]` | 查看或切换实验特性 |
+| `/resume [session_id\|latest]` | 查看可恢复 thread 或恢复指定 thread |
+| `/fork [session <id>\|checkpoint <id\|latest>\|latest] [restore]` | 从已有 thread/检查点分叉新 thread |
 | `/plan [prompt]` | 切换到 planning 模式，并可直接附带计划提示 |
 | `/diff [path]` | 查看当前 git diff |
 | `/review [mode]` | 查看当前仓库评审摘要 |
 | `/mcp [list\|show <name>]` | 查看 MCP 服务状态 |
 | `/compact [keep_recent] [note]` | 手动触发上下文压缩（调用 `offload_context`） |
+| `/copy` | 复制最近一次完成输出到系统剪贴板 |
 | `/agent [list] [status] [limit]` | 列出后台 agent thread（支持状态过滤） |
-| `/agent current` | 查看当前会话 thread 的运行时摘要 |
+| `/agent current` | 查看当前 thread 的运行时摘要 |
 | `/agent <id>` | 查询单个后台 agent thread 详情 |
 | `/agent cancel <id> [reason]` | 取消后台 agent thread |
+| `/ps [running\|completed\|failed\|cancelled\|all] [limit]` | 查看后台 agent activity 摘要 |
 
 ---
 
@@ -176,6 +185,7 @@ moss version
 ### 外部上下文入口
 
 - 普通消息里可直接写 `@relative/path/to/file.go`，发送时会自动把文件内容附加到 prompt。
+- `/mention <path>` 会把 `@path` 插入到 composer，便于在继续补充自然语言后一起发送。
 - 图片路径也可以被引用，但当前 TUI 仅会附加路径说明；真正的图片解码仍待后续多模态消息能力补齐。
 - `/search` 会引导模型优先调用 `jina_search`。
 - `/open` 会优先使用 VS Code `code -g`，否则退回系统默认编辑器。
@@ -183,6 +193,8 @@ moss version
 ### 诊断与 Shell 体验
 
 - `mosscode debug-config` 会汇总配置源、目录、日志与命令目录，便于排查环境问题。
+- `/statusline` 可查看或自定义 footer status items。
+- `/experimental` 可查看或切换当前产品层实验特性。
 - `mosscode completion powershell|bash|zsh` 可输出对应 shell 的补全脚本。
 
 ## 示例应用

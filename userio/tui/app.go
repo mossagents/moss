@@ -212,10 +212,10 @@ func (a *agentState) listPersistedSessions(limit int) (string, error) {
 		summaries = summaries[:limit]
 	}
 	if len(summaries) == 0 {
-		return "No saved conversations found.", nil
+		return "No saved threads found.", nil
 	}
 	var b strings.Builder
-	b.WriteString("Saved conversations:\n")
+	b.WriteString("Saved threads:\n")
 	for _, s := range summaries {
 		b.WriteString(fmt.Sprintf("- %s | %s | %s", s.ID, s.Status, s.Mode))
 		if strings.TrimSpace(s.Profile) != "" {
@@ -293,7 +293,7 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 		b.WriteString(notice)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Restored session %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages))
+	fmt.Fprintf(&b, "Resumed thread %s (%s, steps=%d, messages=%d).", loaded.ID, loaded.Status, loaded.Budget.UsedSteps, len(loaded.Messages))
 	if warning != "" {
 		b.WriteString("\n")
 		b.WriteString(warning)
@@ -345,6 +345,44 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		}
 	}
 	return k.NewSession(ctx, sessCfg)
+}
+
+func (a *agentState) refreshSystemPrompt() error {
+	a.mu.Lock()
+	if a.running {
+		a.mu.Unlock()
+		return errors.New("cannot refresh the thread prompt while a run is active")
+	}
+	sess := a.sess
+	store := a.store
+	ctx := a.ctx
+	workspace := a.workspace
+	trust := a.trust
+	buildPrompt := a.buildSystemPrompt
+	a.mu.Unlock()
+	if sess == nil {
+		return errors.New("active thread is unavailable")
+	}
+	if buildPrompt == nil {
+		return errors.New("system prompt builder is unavailable")
+	}
+	nextPrompt := buildPrompt(workspace, trust)
+	a.mu.Lock()
+	sess.Config.SystemPrompt = nextPrompt
+	if len(sess.Messages) > 0 && sess.Messages[0].Role == port.RoleSystem {
+		sess.Messages[0].Content = nextPrompt
+	} else {
+		sess.Messages = append([]port.Message{{Role: port.RoleSystem, Content: nextPrompt}}, sess.Messages...)
+	}
+	a.mu.Unlock()
+	if store != nil {
+		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if err := store.Save(saveCtx, sess); err != nil {
+			return fmt.Errorf("save updated thread prompt: %w", err)
+		}
+	}
+	return nil
 }
 
 func (a *agentState) listPersistedCheckpoints(limit int) (string, error) {
@@ -609,7 +647,7 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 		b.WriteString(notice)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Switched to forked session %s from %s %s.", next.ID, result.SourceKind, result.SourceID)
+	fmt.Fprintf(&b, "Switched to forked thread %s from %s %s.", next.ID, result.SourceKind, result.SourceID)
 	if result.CheckpointID != "" {
 		fmt.Fprintf(&b, " checkpoint=%s.", result.CheckpointID)
 	}
@@ -688,7 +726,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 		b.WriteString(notice)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Switched to replay session %s from checkpoint %s (%s).", next.ID, result.CheckpointID, result.Mode)
+	fmt.Fprintf(&b, "Switched to replay thread %s from checkpoint %s (%s).", next.ID, result.CheckpointID, result.Mode)
 	if result.RestoredWorktree {
 		b.WriteString(" worktree restored.")
 	}
@@ -706,7 +744,7 @@ func (a *agentState) newSession() (string, error) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
-		return "", errors.New("cannot create a new session while a run is active")
+		return "", errors.New("cannot create a new thread while a run is active")
 	}
 	current := a.sess
 	store := a.store
@@ -728,9 +766,9 @@ func (a *agentState) newSession() (string, error) {
 	a.publishProgressReplay()
 
 	if notice != "" {
-		return fmt.Sprintf("%s\nSwitched to new session %s.", notice, next.ID), nil
+		return fmt.Sprintf("%s\nSwitched to new thread %s.", notice, next.ID), nil
 	}
-	return fmt.Sprintf("Started new session %s.", next.ID), nil
+	return fmt.Sprintf("Started new thread %s.", next.ID), nil
 }
 
 func autosaveSessionBeforeSwitch(current *session.Session, store session.SessionStore, ctx context.Context) (string, error) {
@@ -745,7 +783,7 @@ func autosaveSessionBeforeSwitch(current *session.Session, store session.Session
 	if err := store.Save(saveCtx, current); err != nil {
 		return "", fmt.Errorf("save current session %q: %w", current.ID, err)
 	}
-	return fmt.Sprintf("Previous session %s auto-saved. Use /resume %s or /resume to continue it later.", current.ID, current.ID), nil
+	return fmt.Sprintf("Previous thread %s auto-saved. Use /resume %s or /resume to continue it later.", current.ID, current.ID), nil
 }
 
 func loadCheckpointSourceSession(ctx context.Context, store session.SessionStore, record *port.CheckpointRecord) (*session.Session, string, error) {
@@ -1695,6 +1733,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.scheduleCtrl = m.config.ScheduleController
 		m.chat.permissionSummaryFn = agent.permissionSummary
 		m.chat.setPermissionFn = agent.setPermission
+		m.chat.refreshSystemPromptFn = agent.refreshSystemPrompt
 		m.chat.debugConfigFn = func() string {
 			report := product.BuildDebugConfigReport(
 				configpkg.AppName(),

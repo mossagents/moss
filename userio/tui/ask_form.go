@@ -21,9 +21,10 @@ type askFieldState struct {
 }
 
 type askFormState struct {
-	prompt     string
-	fields     []askFieldState
-	focusIndex int // [0..len(fields)]，最后一个是确认按钮
+	prompt       string
+	fields       []askFieldState
+	focusIndex   int // [0..len(fields)]，最后一个是确认按钮
+	confirmLabel string
 }
 
 func newAskFormState(req port.InputRequest) *askFormState {
@@ -32,8 +33,15 @@ func newAskFormState(req port.InputRequest) *askFormState {
 		fields = synthesizeFieldsFromInputRequest(req)
 	}
 	out := &askFormState{
-		prompt: req.Prompt,
-		fields: make([]askFieldState, 0, len(fields)),
+		prompt:       req.Prompt,
+		fields:       make([]askFieldState, 0, len(fields)),
+		confirmLabel: strings.TrimSpace(req.ConfirmLabel),
+	}
+	if out.confirmLabel == "" {
+		out.confirmLabel = "Confirm"
+	}
+	if req.Type == port.InputConfirm && req.Approval != nil {
+		out.confirmLabel = "Apply decision"
 	}
 	for _, f := range fields {
 		st := askFieldState{def: f, multiSel: map[int]bool{}}
@@ -76,6 +84,17 @@ func newAskFormState(req port.InputRequest) *askFormState {
 func synthesizeFieldsFromInputRequest(req port.InputRequest) []port.InputField {
 	switch req.Type {
 	case port.InputConfirm:
+		if req.Approval != nil {
+			return []port.InputField{{
+				Name:        "decision",
+				Type:        port.InputFieldSingleSelect,
+				Title:       "Decision",
+				Description: "Choose whether to allow this action once, remember similar actions for this thread, or deny it.",
+				Required:    true,
+				Options:     []string{"Allow once", "Allow for this thread", "Deny"},
+				Default:     "Allow once",
+			}}
+		}
 		return []port.InputField{{Name: "approved", Type: port.InputFieldBoolean, Title: req.Prompt, Required: true}}
 	case port.InputSelect:
 		return []port.InputField{{Name: "selected", Type: port.InputFieldSingleSelect, Title: req.Prompt, Required: true, Options: req.Options}}
@@ -271,6 +290,40 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	} else {
 		switch ask.request.Type {
 		case port.InputConfirm:
+			if ask.request.Approval != nil {
+				selected, _ := formValues["decision"].(string)
+				approved := selected == "Allow once" || selected == "Allow for this thread"
+				resp := port.InputResponse{
+					Approved: approved,
+					Decision: &port.ApprovalDecision{
+						RequestID: ask.request.Approval.ID,
+						Approved:  approved,
+						Source:    "tui-approval",
+						DecidedAt: m.now().UTC(),
+					},
+				}
+				notice := "Approval denied."
+				if approved {
+					notice = "Approval granted for this action."
+				}
+				if selected == "Allow for this thread" {
+					rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, m.now())
+					if ok {
+						m.rememberApprovalRule(rule)
+						resp.Decision.Source = "tui-thread-rule"
+						resp.Decision.Reason = "remember similar actions for this thread"
+						notice = "Approval granted. Similar actions will be allowed automatically for this thread."
+					}
+				} else if selected == "Allow once" {
+					resp.Decision.Source = "tui-allow-once"
+				} else {
+					resp.Decision.Source = "tui-deny"
+				}
+				ask.replyCh <- resp
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
+				m.refreshViewport()
+				return m, nil
+			}
 			approved, _ := formValues["approved"].(bool)
 			ask.replyCh <- port.InputResponse{Approved: approved}
 		case port.InputSelect:
@@ -293,6 +346,22 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m *chatModel) rememberApprovalRule(rule approvalMemoryRule) {
+	if strings.TrimSpace(rule.SessionID) == "" || strings.TrimSpace(rule.Key) == "" {
+		return
+	}
+	if m.approvalRules == nil {
+		m.approvalRules = map[string][]approvalMemoryRule{}
+	}
+	rules := m.approvalRules[rule.SessionID]
+	for _, existing := range rules {
+		if existing.Key == rule.Key {
+			return
+		}
+	}
+	m.approvalRules[rule.SessionID] = append(rules, rule)
+}
+
 func (m chatModel) renderAskForm(width int) string {
 	if m.askForm == nil {
 		return ""
@@ -301,6 +370,9 @@ func (m chatModel) renderAskForm(width int) string {
 		width = 30
 	}
 	var sb strings.Builder
+	if m.pendAsk != nil && m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
+		return m.renderApprovalAskForm(width)
+	}
 	sb.WriteString(sidebarSectionTitleStyle.Render("Ask User"))
 	sb.WriteString("\n")
 	sb.WriteString(wrapText(m.askForm.prompt, width))
@@ -370,6 +442,68 @@ func (m chatModel) renderAskForm(width int) string {
 	if m.askForm.focusIndex == len(m.askForm.fields) {
 		confirmPrefix = "▸ "
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ Confirm ]"))
+	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
+	return inputBorderStyle.Width(width).Render(sb.String())
+}
+
+func (m chatModel) renderApprovalAskForm(width int) string {
+	if m.askForm == nil || m.pendAsk == nil || m.pendAsk.request.Approval == nil {
+		return ""
+	}
+	display := buildApprovalDisplay(m.pendAsk.request.Approval, m.currentSessionID)
+	var sb strings.Builder
+	sectionLabel := func(title, value string) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
+		sb.WriteString("\n")
+		sb.WriteString("  ")
+		sb.WriteString(wrapText(value, width-4))
+		sb.WriteString("\n\n")
+	}
+
+	sb.WriteString(sidebarSectionTitleStyle.Render(display.Title))
+	sb.WriteString("\n")
+	sb.WriteString(mutedStyle.Render("Review the action below before continuing."))
+	sb.WriteString("\n\n")
+	sectionLabel("Tool", valueOrDefaultString(display.ToolName, "(unknown)"))
+	sectionLabel("Risk", valueOrDefaultString(display.Risk, "(unspecified)"))
+	sectionLabel("Reason", display.Reason)
+	sectionLabel(display.ActionLabel, display.ActionValue)
+	sectionLabel(display.ScopeLabel, display.ScopeValue)
+	if strings.TrimSpace(display.DecisionNote) != "" {
+		sb.WriteString(mutedStyle.Render(wrapText(display.DecisionNote, width)))
+		sb.WriteString("\n\n")
+	}
+	for i, f := range m.askForm.fields {
+		prefix := "  "
+		if m.askForm.focusIndex == i {
+			prefix = "▸ "
+		}
+		sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == i).Render(prefix + f.def.Title))
+		sb.WriteString("\n")
+		if strings.TrimSpace(f.def.Description) != "" {
+			sb.WriteString(mutedStyle.Render("    " + f.def.Description))
+			sb.WriteString("\n")
+		}
+		for idx, opt := range f.def.Options {
+			cursor := " "
+			if idx == f.singleIndex && m.askForm.focusIndex == i {
+				cursor = "❯"
+			}
+			chosen := " "
+			if idx == f.singleSel {
+				chosen = "●"
+			}
+			sb.WriteString("    " + cursor + " [" + chosen + "] " + opt + "\n")
+		}
+		sb.WriteString("\n")
+	}
+	confirmPrefix := "  "
+	if m.askForm.focusIndex == len(m.askForm.fields) {
+		confirmPrefix = "▸ "
+	}
+	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
 	return inputBorderStyle.Width(width).Render(sb.String())
 }

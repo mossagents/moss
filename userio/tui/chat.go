@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +25,8 @@ import (
 const (
 	maxInputHistory = 500
 )
+
+var writeClipboard = clipboard.WriteAll
 
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
@@ -67,52 +71,58 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn              func(string)  // 发送用户消息给 agent
-	cancelRunFn         func() bool   // 取消当前运行中的任务
-	skillListFn         func() string // 查询已加载 skills
-	sessionInfoFn       func() string
-	offloadFn           func(keepRecent int, note string) (string, error)
-	taskListFn          func(status string, limit int) (string, error)
-	taskQueryFn         func(taskID string) (string, error)
-	taskCancelFn        func(taskID, reason string) (string, error)
-	scheduleCtrl        runtime.ScheduleController
-	sessionListFn       func(limit int) (string, error)
-	changeListFn        func(limit int) (string, error)
-	changeShowFn        func(changeID string) (string, error)
-	applyChangeFn       func(patchFile, summary string) (string, error)
-	rollbackChangeFn    func(changeID string) (string, error)
-	checkpointListFn    func(limit int) (string, error)
-	checkpointShowFn    func(checkpointID string) (string, error)
-	checkpointCreateFn  func(note string) (string, error)
-	checkpointForkFn    func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
-	checkpointReplayFn  func(checkpointID, mode string, restoreWorktree bool) (string, error)
-	sessionRestoreFn    func(sessionID string) (string, error)
-	newSessionFn        func() (string, error)
-	gitRunFn            func(cmd string, args []string) (string, error)
-	permissionSummaryFn func() string
-	setPermissionFn     func(toolName, mode string) (string, error)
-	debugConfigFn       func() string
-	pendAsk             *bridgeAsk // 当前阻塞的 Ask 请求
-	askForm             *askFormState
-	scheduleBrowser     *scheduleBrowserState
-	finished            bool   // session 已结束
-	result              string // 最终结果
-	lastTrace           *product.RunTraceSummary
-	currentSessionID    string
-	progress            executionProgressState
+	sendFn                func(string)  // 发送用户消息给 agent
+	cancelRunFn           func() bool   // 取消当前运行中的任务
+	skillListFn           func() string // 查询已加载 skills
+	sessionInfoFn         func() string
+	offloadFn             func(keepRecent int, note string) (string, error)
+	taskListFn            func(status string, limit int) (string, error)
+	taskQueryFn           func(taskID string) (string, error)
+	taskCancelFn          func(taskID, reason string) (string, error)
+	scheduleCtrl          runtime.ScheduleController
+	sessionListFn         func(limit int) (string, error)
+	changeListFn          func(limit int) (string, error)
+	changeShowFn          func(changeID string) (string, error)
+	applyChangeFn         func(patchFile, summary string) (string, error)
+	rollbackChangeFn      func(changeID string) (string, error)
+	checkpointListFn      func(limit int) (string, error)
+	checkpointShowFn      func(checkpointID string) (string, error)
+	checkpointCreateFn    func(note string) (string, error)
+	checkpointForkFn      func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
+	checkpointReplayFn    func(checkpointID, mode string, restoreWorktree bool) (string, error)
+	sessionRestoreFn      func(sessionID string) (string, error)
+	newSessionFn          func() (string, error)
+	gitRunFn              func(cmd string, args []string) (string, error)
+	permissionSummaryFn   func() string
+	setPermissionFn       func(toolName, mode string) (string, error)
+	debugConfigFn         func() string
+	refreshSystemPromptFn func() error
+	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
+	askForm               *askFormState
+	scheduleBrowser       *scheduleBrowserState
+	finished              bool   // session 已结束
+	result                string // 最终结果
+	lastTrace             *product.RunTraceSummary
+	currentSessionID      string
+	progress              executionProgressState
+	approvalRules         map[string][]approvalMemoryRule
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
 	// 配置显示
-	provider       string
-	model          string
-	workspace      string
-	trust          string
-	profile        string
-	approvalMode   string
-	theme          string
-	customCommands []product.CustomCommand
+	provider             string
+	model                string
+	workspace            string
+	trust                string
+	profile              string
+	approvalMode         string
+	theme                string
+	personality          string
+	fastMode             bool
+	statusLineItems      []string
+	experimentalFeatures []string
+	customCommands       []product.CustomCommand
 
 	queuedInputs []string
 
@@ -138,19 +148,45 @@ func newChatModel(provider, model, workspace string) chatModel {
 	// as a best-effort binding and add portable fallbacks for multiline input.
 	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "alt+enter", "ctrl+j")
 	theme := resolveThemeName(os.Getenv("MOSSCODE_THEME"))
+	personality := product.PersonalityFriendly
+	var fastMode bool
+	statusLineItems := append([]string(nil), defaultStatusLineItems...)
+	experimentalFeatures := product.DefaultExperimentalFeatures()
+	if prefs, err := product.LoadTUIConfig(); err == nil {
+		if envTheme := strings.TrimSpace(os.Getenv("MOSSCODE_THEME")); envTheme == "" {
+			theme = resolveThemeName(prefs.Theme)
+		}
+		if normalized := product.NormalizePersonality(prefs.Personality); normalized != "" {
+			personality = normalized
+		}
+		if prefs.FastMode != nil {
+			fastMode = *prefs.FastMode
+		}
+		if len(prefs.StatusLine) > 0 {
+			statusLineItems = append([]string(nil), prefs.StatusLine...)
+		}
+		if len(prefs.Experimental) > 0 {
+			experimentalFeatures = append([]string(nil), prefs.Experimental...)
+		}
+	}
 	applyTheme(theme)
 
 	return chatModel{
-		textarea:      ta,
-		provider:      provider,
-		model:         model,
-		workspace:     workspace,
-		trust:         "trusted",
-		theme:         theme,
-		toolCollapsed: true,
-		inputHistory:  loadInputHistory(defaultHistoryPath(), maxInputHistory),
-		historyPath:   defaultHistoryPath(),
-		now:           time.Now,
+		textarea:             ta,
+		provider:             provider,
+		model:                model,
+		workspace:            workspace,
+		trust:                "trusted",
+		theme:                theme,
+		personality:          personality,
+		fastMode:             fastMode,
+		statusLineItems:      statusLineItems,
+		experimentalFeatures: experimentalFeatures,
+		toolCollapsed:        true,
+		approvalRules:        map[string][]approvalMemoryRule{},
+		inputHistory:         loadInputHistory(defaultHistoryPath(), maxInputHistory),
+		historyPath:          defaultHistoryPath(),
+		now:                  time.Now,
 	}
 }
 
@@ -362,9 +398,21 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 	}
 
 	if msg.ask != nil {
+		if resp, notice, ok := m.autoApproveAsk(msg.ask); ok {
+			msg.ask.replyCh <- resp
+			if strings.TrimSpace(notice) != "" {
+				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
+			}
+			m.refreshViewport()
+			return m, nil
+		}
 		m.pendAsk = msg.ask
 		m.askForm = newAskFormState(msg.ask.request)
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Interactive input requested. Use Tab to navigate and Enter to confirm."})
+		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
+		if msg.ask.request.Type == port.InputConfirm && msg.ask.request.Approval != nil {
+			notice = "Approval required. Review the requested action and choose how to proceed."
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
 		m.activateAskField()
 		m.refreshViewport()
 	}
@@ -386,6 +434,35 @@ func (m *chatModel) refreshViewport() {
 	content := renderAllMessages(m.messages, m.mainWidth(), m.toolCollapsed)
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
+}
+
+func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, bool) {
+	if ask == nil || ask.request.Type != port.InputConfirm || ask.request.Approval == nil {
+		return port.InputResponse{}, "", false
+	}
+	sessionID := approvalSessionID(ask.request.Approval, m.currentSessionID)
+	for _, rule := range m.approvalRules[sessionID] {
+		if !rule.matches(ask.request.Approval, m.currentSessionID) {
+			continue
+		}
+		resp := port.InputResponse{
+			Approved: true,
+			Decision: &port.ApprovalDecision{
+				RequestID: ask.request.Approval.ID,
+				Approved:  true,
+				Reason:    "remembered approval for this thread",
+				Source:    "tui-thread-rule-auto",
+				DecidedAt: m.now().UTC(),
+			},
+		}
+		notice := "Approved automatically for this thread"
+		if strings.TrimSpace(rule.Label) != "" {
+			notice += ": " + rule.Label
+		}
+		notice += "."
+		return resp, notice, true
+	}
+	return port.InputResponse{}, "", false
 }
 
 func (m *chatModel) recalcLayout() {
@@ -536,7 +613,17 @@ func (m chatModel) View() string {
 	if strings.TrimSpace(m.model) != "" {
 		leftMeta = fmt.Sprintf("%s (%s)", leftMeta, m.model)
 	}
-	rightMeta := fmt.Sprintf("Profile: %s  Trust: %s  Approval: %s  Messages: %d", valueOrDefaultString(m.profile, "default"), m.trust, m.displayApprovalMode(), len(m.messages))
+	fastLabel := "off"
+	if m.fastMode {
+		fastLabel = "on"
+	}
+	rightMeta := fmt.Sprintf("Profile: %s  Trust: %s  Approval: %s  Personality: %s  Fast: %s",
+		valueOrDefaultString(m.profile, "default"),
+		m.trust,
+		m.displayApprovalMode(),
+		valueOrDefaultString(m.personality, product.PersonalityFriendly),
+		fastLabel,
+	)
 	b.WriteString(lipgloss.JoinHorizontal(
 		lipgloss.Top,
 		mutedStyle.Width(m.mainWidth()/2).Render(leftMeta),
@@ -584,19 +671,21 @@ func (m chatModel) View() string {
 	b.WriteString("\n")
 
 	// 底部状态
-	toolHint := "Ctrl+O collapse tools"
-	if m.toolCollapsed {
-		toolHint = "Ctrl+O expand tools"
+	if m.pendAsk == nil && m.askForm == nil && m.scheduleBrowser == nil {
+		toolHint := "Ctrl+O collapse tools"
+		if m.toolCollapsed {
+			toolHint = "Ctrl+O expand tools"
+		}
+		b.WriteString(mutedStyle.Render(fmt.Sprintf("/help commands │ %s │ ↑↓ history │ mouse wheel scrolls output │ double Esc cancel run │ Ctrl+C clear (double quit)", toolHint)))
+		b.WriteString("\n")
 	}
-	leftStatus := fmt.Sprintf("/help commands │ %s", toolHint)
-	rightStatus := "↑↓ history │ mouse wheel scrolls output │ double Esc cancel run │ Ctrl+C clear (double quit)"
-	status := lipgloss.JoinHorizontal(
-		lipgloss.Top,
-		mutedStyle.Width(m.mainWidth()/2).Render(leftStatus),
-		mutedStyle.Width(m.mainWidth()-m.mainWidth()/2).Align(lipgloss.Right).Render(rightStatus),
-	)
+	status := mutedStyle.Render(m.renderStatusLine())
 	if m.pendAsk != nil && m.askForm != nil {
-		status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+		if m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
+			status = mutedStyle.Render("Tab/Shift+Tab move focus │ ↑↓ choose decision │ Enter apply │ approval memory applies to this thread only")
+		} else {
+			status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+		}
 	} else if m.scheduleBrowser != nil {
 		status = mutedStyle.Render("↑↓ choose schedule │ e run now │ d delete │ r refresh │ Esc close")
 	} else if m.pendAsk != nil {
@@ -640,6 +729,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	parts := strings.Fields(input)
 	cmd := strings.ToLower(parts[0])
 	args := parts[1:]
+	draft := strings.TrimSpace(m.textarea.Value())
 
 	m.textarea.Reset()
 
@@ -671,12 +761,106 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, func() tea.Msg { return switchModelMsg{model: newModel} }
 
+	case "/fast":
+		if len(args) == 0 || strings.EqualFold(args[0], "status") {
+			state := "off"
+			if m.fastMode {
+				state = "on"
+			}
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgSystem,
+				content: fmt.Sprintf("Fast mode: %s\nUsage: /fast <on|off|status>", state),
+			})
+			m.refreshViewport()
+			return m, nil
+		}
+		var enabled bool
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "on":
+			enabled = true
+		case "off":
+			enabled = false
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /fast <on|off|status>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		if _, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+			cfg.FastMode = boolPtr(enabled)
+			return nil
+		}); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to update fast mode: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.fastMode = enabled
+		if m.refreshSystemPromptFn != nil {
+			if err := m.refreshSystemPromptFn(); err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("fast mode saved but failed to refresh the current thread prompt: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Fast mode %s. New turns in the current thread will use the updated interaction mode.", onOff(enabled))})
+		m.refreshViewport()
+		return m, nil
+
+	case "/personality":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgSystem,
+				content: fmt.Sprintf("Current personality: %s\nUsage: /personality <friendly|pragmatic|none>", valueOrDefaultString(m.personality, product.PersonalityFriendly)),
+			})
+			m.refreshViewport()
+			return m, nil
+		}
+		personality := product.NormalizePersonality(args[0])
+		if personality == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /personality <friendly|pragmatic|none>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		if _, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+			cfg.Personality = personality
+			return nil
+		}); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to update personality: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.personality = personality
+		if m.refreshSystemPromptFn != nil {
+			if err := m.refreshSystemPromptFn(); err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("personality saved but failed to refresh the current thread prompt: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Personality set to %s for this product surface and the current thread.", personality)})
+		m.refreshViewport()
+		return m, nil
+
 	case "/clear":
 		m.messages = nil
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgSystem,
 			content: "Conversation cleared.",
 		})
+		m.refreshViewport()
+		return m, nil
+
+	case "/copy":
+		content := m.latestCopiableContent()
+		if strings.TrimSpace(content) == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "No completed output is available to copy yet."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if err := writeClipboard(content); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to copy output: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Copied the latest completed output to the clipboard."})
+		}
 		m.refreshViewport()
 		return m, nil
 
@@ -700,7 +884,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		return m.invokeSkillLikeCommand(name, task, input)
 
 	case "/session":
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current session summary moved to /status. Use /resume to continue saved sessions."})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current thread summary moved to /status. Use /resume to continue saved threads."})
 		m.refreshViewport()
 		return m, nil
 
@@ -712,13 +896,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	case "/resume":
 		if len(args) == 0 {
 			if m.sessionListFn == nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Resume listing is unavailable."})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Saved-thread listing is unavailable."})
 				m.refreshViewport()
 				return m, nil
 			}
 			out, err := m.sessionListFn(20)
 			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list resumable sessions: %v", err)})
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list resumable threads: %v", err)})
 			} else {
 				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 			}
@@ -742,7 +926,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		out, err := m.sessionRestoreFn(id)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to resume session: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to resume thread: %v", err)})
 		} else {
 			m.lastTrace = nil
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
@@ -772,13 +956,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 
 	case "/new":
 		if m.newSessionFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "New session creation is unavailable."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "New thread creation is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
 		out, err := m.newSessionFn()
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create new session: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create new thread: %v", err)})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -958,7 +1142,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork session: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to fork thread: %v", err)})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -1253,6 +1437,50 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/ps":
+		if !m.experimentalEnabled(product.ExperimentalBackgroundPS) {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background activity view is disabled. Use /experimental enable background-ps to turn it back on."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if m.taskListFn == nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background activity view is unavailable."})
+			m.refreshViewport()
+			return m, nil
+		}
+		status := "running"
+		limit := 10
+		if len(args) >= 1 {
+			status = strings.ToLower(strings.TrimSpace(args[0]))
+			switch status {
+			case "running", "completed", "failed", "cancelled", "all":
+			default:
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /ps [running|completed|failed|cancelled|all] [limit:int]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			if status == "all" {
+				status = ""
+			}
+		}
+		if len(args) >= 2 {
+			v, err := strconv.Atoi(strings.TrimSpace(args[1]))
+			if err != nil || v <= 0 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /ps [running|completed|failed|cancelled|all] [limit:int]"})
+				m.refreshViewport()
+				return m, nil
+			}
+			limit = v
+		}
+		out, err := m.taskListFn(status, limit)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to inspect background activity: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/tasks":
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background agent controls moved to /agent. Use /agent [list], /agent current, /agent <id>, or /agent cancel <id>."})
 		m.refreshViewport()
@@ -1523,7 +1751,108 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		}
 		m.theme = raw
 		applyTheme(raw)
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switched theme to %s.", raw)})
+		if _, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+			cfg.Theme = raw
+			return nil
+		}); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("theme switched locally but failed to persist: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switched theme to %s and saved it to config.", raw)})
+		m.refreshViewport()
+		return m, nil
+
+	case "/statusline":
+		if !m.experimentalEnabled(product.ExperimentalStatuslineCustomization) {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Status-line customization is disabled. Use /experimental enable statusline-customization to turn it back on."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: renderStatusLineUsage(m.statusLineItems)})
+			m.refreshViewport()
+			return m, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "reset":
+			m.statusLineItems = append([]string(nil), defaultStatusLineItems...)
+			if _, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+				cfg.StatusLine = nil
+				return nil
+			}); err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to reset status line: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Status line reset to the default footer items."})
+			m.refreshViewport()
+			return m, nil
+		case "set":
+			if len(args) < 2 {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: renderStatusLineUsage(m.statusLineItems)})
+				m.refreshViewport()
+				return m, nil
+			}
+			items, err := parseStatusLineItems(strings.Join(args[1:], " "))
+			if err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.statusLineItems = items
+			if _, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+				cfg.StatusLine = append([]string(nil), items...)
+				return nil
+			}); err != nil {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to update status line: %v", err)})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Status line updated: %s", strings.Join(items, ", "))})
+			m.refreshViewport()
+			return m, nil
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: renderStatusLineUsage(m.statusLineItems)})
+			m.refreshViewport()
+			return m, nil
+		}
+
+	case "/experimental":
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderExperimentalFeatures(config.TUIConfig{Experimental: m.experimentalFeatures})})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) != 2 {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /experimental [enable|disable] <feature>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		action := strings.ToLower(strings.TrimSpace(args[0]))
+		name := product.NormalizeExperimentalFeature(args[1])
+		if name == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("unknown experimental feature %q", args[1])})
+			m.refreshViewport()
+			return m, nil
+		}
+		enabled := action == "enable"
+		if action != "enable" && action != "disable" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /experimental [enable|disable] <feature>"})
+			m.refreshViewport()
+			return m, nil
+		}
+		cfg, err := product.UpdateTUIConfig(func(cfg *config.TUIConfig) error {
+			cfg.Experimental = setExperimentalFeature(cfg.Experimental, name, enabled)
+			return nil
+		})
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to update experimental features: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.experimentalFeatures = effectiveExperimentalFeatures(cfg.Experimental)
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Experimental feature %s %s.", name, onOff(enabled))})
 		m.refreshViewport()
 		return m, nil
 
@@ -1549,6 +1878,32 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 		}
+		m.refreshViewport()
+		return m, nil
+
+	case "/mention":
+		if !m.experimentalEnabled(product.ExperimentalComposerMentions) {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Composer mentions are disabled. Use /experimental enable composer-mentions to turn them back on."})
+			m.refreshViewport()
+			return m, nil
+		}
+		if len(args) == 0 {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /mention <path>\nTip: the command inserts @path into the composer so the next send attaches that file."})
+			m.refreshViewport()
+			return m, nil
+		}
+		token, err := mentionTokenForComposer(m.workspace, strings.Join(args, " "))
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
+			m.refreshViewport()
+			return m, nil
+		}
+		nextDraft := strings.TrimSpace(strings.TrimPrefix(draft, input))
+		nextDraft = strings.TrimSpace(strings.Join([]string{nextDraft, token}, " "))
+		m.textarea.SetValue(nextDraft)
+		m.adjustInputHeight()
+		m.refreshSlashHints()
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Inserted %s into the composer. Send the next turn to attach it.", token)})
 		m.refreshViewport()
 		return m, nil
 
@@ -1804,21 +2159,28 @@ type slashCommandDef struct {
 }
 
 var slashCommandCatalog = []slashCommandDef{
-	{Name: "/help", Summary: "Show command help", Section: "Core"},
-	{Name: "/new", Summary: "Start a fresh conversation", Section: "Core"},
-	{Name: "/status", Summary: "Show the current runtime summary", Section: "Core"},
-	{Name: "/resume", Summary: "List or resume saved sessions", Section: "Core"},
-	{Name: "/fork", Summary: "Branch into a fresh session", Section: "Core"},
-	{Name: "/plan", Summary: "Switch to planning mode", Section: "Core"},
-	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Core"},
-	{Name: "/search", Summary: "Search the web via Jina", Section: "Core"},
-	{Name: "/open", Summary: "Open a file in the local editor", Section: "Core"},
-	{Name: "/debug-config", Summary: "Show config, paths, and logs", Section: "Core"},
-	{Name: "/theme", Summary: "Show or switch TUI theme", Section: "Core"},
-	{Name: "/clear", Summary: "Clear the visible conversation", Section: "Core"},
-	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Core"},
-	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Core"},
-	{Name: "/agent", Summary: "Inspect or cancel background agent threads", Section: "Core"},
+	{Name: "/help", Summary: "Show command help", Section: "Threads and core"},
+	{Name: "/new", Summary: "Start a fresh thread", Section: "Threads and core"},
+	{Name: "/status", Summary: "Show the current runtime and thread summary", Section: "Threads and core"},
+	{Name: "/resume", Summary: "List or resume saved threads", Section: "Threads and core"},
+	{Name: "/fork", Summary: "Branch into a fresh thread", Section: "Threads and core"},
+	{Name: "/agent", Summary: "Inspect or cancel background agent threads", Section: "Threads and core"},
+	{Name: "/ps", Summary: "Show background activity", Section: "Threads and core"},
+	{Name: "/trace", Summary: "Inspect the last run trace", Section: "Threads and core"},
+	{Name: "/clear", Summary: "Clear the visible transcript", Section: "Threads and core"},
+	{Name: "/copy", Summary: "Copy the latest completed output", Section: "Threads and core"},
+	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Threads and core"},
+	{Name: "/plan", Summary: "Switch to planning mode", Section: "Runtime posture"},
+	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime posture"},
+	{Name: "/fast", Summary: "Toggle fast interaction mode", Section: "Runtime posture"},
+	{Name: "/personality", Summary: "Set the response personality", Section: "Runtime posture"},
+	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime posture"},
+	{Name: "/trust", Summary: "Switch trust posture", Section: "Runtime posture"},
+	{Name: "/approval", Summary: "Switch approval posture", Section: "Runtime posture"},
+	{Name: "/profile", Summary: "Show or switch profile", Section: "Runtime posture"},
+	{Name: "/theme", Summary: "Show or switch the TUI theme", Section: "Runtime posture"},
+	{Name: "/statusline", Summary: "Configure footer status items", Section: "Runtime posture"},
+	{Name: "/experimental", Summary: "Toggle experimental product features", Section: "Runtime posture"},
 	{Name: "/diff", Summary: "Show the current git diff", Section: "Review and recovery"},
 	{Name: "/review", Summary: "Review working tree state", Section: "Review and recovery"},
 	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
@@ -1826,19 +2188,19 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/rollback", Summary: "Roll back a persisted change", Section: "Review and recovery"},
 	{Name: "/checkpoint", Summary: "List, inspect, create, or replay checkpoints", Section: "Review and recovery"},
 	{Name: "/git", Summary: "Run common git and gh helpers", Section: "Review and recovery"},
-	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Runtime"},
-	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Runtime"},
-	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime"},
-	{Name: "/config", Summary: "Show or update config values", Section: "Runtime"},
-	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime"},
-	{Name: "/trust", Summary: "Switch trust posture", Section: "Runtime"},
-	{Name: "/approval", Summary: "Switch approval posture", Section: "Runtime"},
-	{Name: "/profile", Summary: "Show or switch profile", Section: "Runtime"},
-	{Name: "/skills", Summary: "List discovered skills", Section: "Skills and tools"},
-	{Name: "/skill", Summary: "Invoke a named skill", Section: "Skills and tools"},
-	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Skills and tools"},
-	{Name: "/exit", Summary: "Exit mosscode", Section: "Core"},
-	{Name: "/quit", Summary: "Exit mosscode", Section: "Core", HiddenInNav: true},
+	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Tools and integrations"},
+	{Name: "/mention", Summary: "Insert an @file mention into the composer", Section: "Tools and integrations"},
+	{Name: "/search", Summary: "Search the web via Jina", Section: "Tools and integrations"},
+	{Name: "/open", Summary: "Open a file in the local editor", Section: "Tools and integrations"},
+	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Tools and integrations"},
+	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Tools and integrations"},
+	{Name: "/config", Summary: "Show or update config values", Section: "Tools and integrations"},
+	{Name: "/debug-config", Summary: "Show config, paths, and logs", Section: "Tools and integrations"},
+	{Name: "/skills", Summary: "List discovered skills", Section: "Tools and integrations"},
+	{Name: "/skill", Summary: "Invoke a named skill", Section: "Tools and integrations"},
+	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Tools and integrations"},
+	{Name: "/exit", Summary: "Exit mosscode", Section: "Threads and core"},
+	{Name: "/quit", Summary: "Exit mosscode", Section: "Threads and core", HiddenInNav: true},
 }
 
 func filterSlashHints(input string, customCommands []product.CustomCommand) []string {
@@ -1867,6 +2229,7 @@ func filterSlashHints(input string, customCommands []product.CustomCommand) []st
 	if len(hints) == 0 {
 		return nil
 	}
+	sort.Strings(hints)
 	if len(hints) > 8 {
 		hints = hints[:8]
 	}
@@ -1874,7 +2237,7 @@ func filterSlashHints(input string, customCommands []product.CustomCommand) []st
 }
 
 func (m chatModel) renderSlashHelp() string {
-	sections := []string{"Core", "Review and recovery", "Runtime", "Skills and tools"}
+	sections := []string{"Threads and core", "Runtime posture", "Review and recovery", "Tools and integrations"}
 	var b strings.Builder
 	b.WriteString("Available commands:\n")
 	for _, section := range sections {
@@ -1923,7 +2286,11 @@ func (m chatModel) renderStatusSummary() string {
 	fmt.Fprintf(&b, "Trust: %s\n", valueOrDefaultString(m.trust, "(unknown)"))
 	fmt.Fprintf(&b, "Profile: %s\n", valueOrDefaultString(m.profile, "default"))
 	fmt.Fprintf(&b, "Theme: %s\n", valueOrDefaultString(m.theme, themeDefault))
-	fmt.Fprintf(&b, "Approval: %s", valueOrDefaultString(m.approvalMode, "(default)"))
+	fmt.Fprintf(&b, "Approval: %s\n", valueOrDefaultString(m.approvalMode, "(default)"))
+	fmt.Fprintf(&b, "Personality: %s\n", valueOrDefaultString(m.personality, product.PersonalityFriendly))
+	fmt.Fprintf(&b, "Fast mode: %t\n", m.fastMode)
+	fmt.Fprintf(&b, "Status line: %s\n", strings.Join(normalizeStatusLineItems(m.statusLineItems), ", "))
+	fmt.Fprintf(&b, "Experimental: %s", strings.Join(effectiveExperimentalFeatures(m.experimentalFeatures), ", "))
 	if m.sessionInfoFn != nil {
 		info := strings.TrimSpace(m.sessionInfoFn())
 		if info != "" {
@@ -1932,6 +2299,22 @@ func (m chatModel) renderStatusSummary() string {
 		}
 	}
 	return b.String()
+}
+
+func (m chatModel) latestCopiableContent() string {
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		switch m.messages[i].kind {
+		case msgAssistant, msgSystem, msgToolResult, msgToolError:
+			if text := strings.TrimSpace(m.messages[i].content); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 func (m *chatModel) syncCustomCommands() string {

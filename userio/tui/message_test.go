@@ -38,7 +38,7 @@ func TestRenderAllMessages_CollapsedCountsToolCalls(t *testing.T) {
 func TestRenderMessage_SystemPreservesPlainTextLineBreaks(t *testing.T) {
 	out := renderMessage(chatMessage{
 		kind:    msgSystem,
-		content: "Available commands:\n/status  Show runtime status\n/resume  Resume saved conversation",
+		content: "Available commands:\n/status  Show runtime status\n/resume  Resume saved thread",
 	}, 80)
 	if !strings.Contains(out, "Available commands:") ||
 		!strings.Contains(out, "/status  Show runtime status") ||
@@ -50,12 +50,12 @@ func TestRenderMessage_SystemPreservesPlainTextLineBreaks(t *testing.T) {
 func TestRenderMessage_ToolResultPreservesPlainTextLineBreaks(t *testing.T) {
 	out := renderMessage(chatMessage{
 		kind:    msgToolResult,
-		content: "Saved conversations:\nsess-1\nsess-2",
+		content: "Saved threads:\nsess-1\nsess-2",
 		meta:    map[string]any{"tool": "list_threads"},
 	}, 80)
-	if !strings.Contains(out, "Saved conversations:") ||
+	if !strings.Contains(out, "Saved threads:") ||
 		!strings.Contains(out, "sess-1") ||
-		strings.Contains(out, "Saved conversations: sess-1") {
+		strings.Contains(out, "Saved threads: sess-1") {
 		t.Fatalf("tool result lost line breaks: %q", out)
 	}
 }

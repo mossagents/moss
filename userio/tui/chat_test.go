@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -433,7 +434,7 @@ func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 	m.queuedInputs = []string{"queued"}
 	m.textarea.SetValue("/new")
 	m.newSessionFn = func() (string, error) {
-		return "Previous session sess_1 auto-saved.\nSwitched to new session sess_2.", nil
+		return "Previous thread sess_1 auto-saved.\nSwitched to new thread sess_2.", nil
 	}
 
 	updated, _ := m.handleSlashCommand("/new")
@@ -444,7 +445,7 @@ func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 	if last.kind != msgSystem {
 		t.Fatalf("expected system message, got %v", last.kind)
 	}
-	if !strings.Contains(last.content, "Switched to new session sess_2") {
+	if !strings.Contains(last.content, "Switched to new thread sess_2") {
 		t.Fatalf("unexpected /new output: %q", last.content)
 	}
 	if updated.streaming || updated.finished {
@@ -465,7 +466,7 @@ func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	m.newSessionFn = func() (string, error) {
-		return "", errors.New("cannot create a new session while a run is active")
+		return "", errors.New("cannot create a new thread while a run is active")
 	}
 
 	updated, _ := m.handleSlashCommand("/new")
@@ -651,7 +652,7 @@ func TestSlashCommandForkLatestShorthand(t *testing.T) {
 		if sourceKind != string(port.ForkSourceCheckpoint) || sourceID != "" || !restore {
 			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restore)
 		}
-		return "Switched to forked session sess_latest from checkpoint cp-latest.", nil
+		return "Switched to forked thread sess_latest from checkpoint cp-latest.", nil
 	}
 	updated, _ := m.handleSlashCommand("/fork latest restore")
 	last := updated.messages[0]
@@ -710,6 +711,118 @@ func TestHelpIncludesNewCommand(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if !strings.Contains(last.content, "/new") {
 		t.Fatalf("help missing /new command: %q", last.content)
+	}
+}
+
+func TestSlashCommandCopyCopiesLatestCompletedOutput(t *testing.T) {
+	previous := writeClipboard
+	defer func() { writeClipboard = previous }()
+	copied := ""
+	writeClipboard = func(text string) error {
+		copied = text
+		return nil
+	}
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgUser, content: "user"},
+		{kind: msgAssistant, content: "assistant output"},
+	}
+	updated, _ := m.handleSlashCommand("/copy")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Copied") {
+		t.Fatalf("unexpected /copy output: %+v", last)
+	}
+	if copied != "assistant output" {
+		t.Fatalf("copied = %q, want assistant output", copied)
+	}
+}
+
+func TestSlashCommandMentionInsertsComposerToken(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.textarea.SetValue("/mention note.txt")
+	updated, _ := m.handleSlashCommand("/mention note.txt")
+	if got := updated.textarea.Value(); got != "@note.txt" {
+		t.Fatalf("composer = %q, want @note.txt", got)
+	}
+}
+
+func TestSlashCommandStatuslineSetPersistsSelection(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/statusline set model,thread,fast")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Status line updated") {
+		t.Fatalf("unexpected /statusline output: %+v", last)
+	}
+	if got := strings.Join(updated.statusLineItems, ","); got != "model,thread,fast" {
+		t.Fatalf("statusLineItems = %q", got)
+	}
+}
+
+func TestSlashCommandFastUpdatesPromptMode(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	refreshed := false
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.refreshSystemPromptFn = func() error {
+		refreshed = true
+		return nil
+	}
+	updated, _ := m.handleSlashCommand("/fast on")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Fast mode on") {
+		t.Fatalf("unexpected /fast output: %+v", last)
+	}
+	if !updated.fastMode || !refreshed {
+		t.Fatalf("expected fastMode enabled and prompt refreshed: fast=%v refreshed=%v", updated.fastMode, refreshed)
+	}
+}
+
+func TestSlashCommandPersonalityUpdatesPromptMode(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	refreshed := false
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.refreshSystemPromptFn = func() error {
+		refreshed = true
+		return nil
+	}
+	updated, _ := m.handleSlashCommand("/personality pragmatic")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "pragmatic") {
+		t.Fatalf("unexpected /personality output: %+v", last)
+	}
+	if updated.personality != product.PersonalityPragmatic || !refreshed {
+		t.Fatalf("expected pragmatic personality and prompt refresh, got personality=%q refreshed=%v", updated.personality, refreshed)
+	}
+}
+
+func TestSlashCommandExperimentalDisableAffectsFeatureGate(t *testing.T) {
+	configpkg.SetAppName("mosscode")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/experimental disable background-ps")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "background-ps") {
+		t.Fatalf("unexpected /experimental output: %+v", last)
+	}
+	if updated.experimentalEnabled(product.ExperimentalBackgroundPS) {
+		t.Fatal("expected background-ps feature to be disabled")
 	}
 }
 
@@ -850,6 +963,169 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 		}
 	default:
 		t.Fatal("expected form response")
+	}
+}
+
+func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.currentSessionID = "thread-1"
+	m.recalcLayout()
+
+	input, err := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"push", "origin", "main"},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	replyCh := make(chan port.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: port.InputRequest{
+			Type: port.InputConfirm,
+			Approval: &port.ApprovalRequest{
+				ID:        "req-1",
+				SessionID: "thread-1",
+				ToolName:  "run_command",
+				Risk:      "high",
+				Reason:    "tool requires approval by policy",
+				Input:     input,
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	rendered := updated.renderAskForm(100)
+	for _, want := range []string{
+		"Approval required",
+		"Command",
+		"git push origin main",
+		"Allow once",
+		"Allow for this thread",
+		"Deny",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered form missing %q:\n%s", want, rendered)
+		}
+	}
+}
+
+func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.currentSessionID = "thread-1"
+	m.recalcLayout()
+
+	makeAsk := func(id string, args []string) *bridgeAsk {
+		input, err := json.Marshal(map[string]any{
+			"command": "git",
+			"args":    args,
+		})
+		if err != nil {
+			t.Fatalf("marshal input: %v", err)
+		}
+		return &bridgeAsk{
+			request: port.InputRequest{
+				Type: port.InputConfirm,
+				Approval: &port.ApprovalRequest{
+					ID:        id,
+					SessionID: "thread-1",
+					ToolName:  "run_command",
+					Risk:      "high",
+					Reason:    "tool requires approval by policy",
+					Input:     input,
+				},
+			},
+			replyCh: make(chan port.InputResponse, 1),
+		}
+	}
+
+	first := makeAsk("req-1", []string{"push", "origin", "main"})
+	updated, _ := m.handleBridge(bridgeMsg{ask: first})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-first.replyCh:
+		if !resp.Approved {
+			t.Fatal("expected first approval to be granted")
+		}
+		if resp.Decision == nil || resp.Decision.Source != "tui-thread-rule" {
+			t.Fatalf("unexpected decision: %#v", resp.Decision)
+		}
+	default:
+		t.Fatal("expected first approval response")
+	}
+	if got := len(updated.approvalRules["thread-1"]); got != 1 {
+		t.Fatalf("remembered rules = %d, want 1", got)
+	}
+
+	second := makeAsk("req-2", []string{"push", "origin", "dev"})
+	updated, _ = updated.handleBridge(bridgeMsg{ask: second})
+	if updated.pendAsk != nil {
+		t.Fatal("expected remembered approval to skip interactive form")
+	}
+	select {
+	case resp := <-second.replyCh:
+		if !resp.Approved {
+			t.Fatal("expected second approval to be auto-approved")
+		}
+		if resp.Decision == nil || resp.Decision.Source != "tui-thread-rule-auto" {
+			t.Fatalf("unexpected auto decision: %#v", resp.Decision)
+		}
+	default:
+		t.Fatal("expected second approval response")
+	}
+}
+
+func TestApprovalThreadRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.currentSessionID = "thread-1"
+	m.recalcLayout()
+	m.rememberApprovalRule(approvalMemoryRule{
+		SessionID: "thread-1",
+		Key:       "run_command|git push",
+		Label:     "git push",
+	})
+
+	input, err := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"pull", "origin", "main"},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	replyCh := make(chan port.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: port.InputRequest{
+			Type: port.InputConfirm,
+			Approval: &port.ApprovalRequest{
+				ID:        "req-3",
+				SessionID: "thread-1",
+				ToolName:  "run_command",
+				Risk:      "high",
+				Reason:    "tool requires approval by policy",
+				Input:     input,
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	if updated.pendAsk == nil {
+		t.Fatal("expected approval to remain interactive for a different command pattern")
+	}
+	select {
+	case resp := <-replyCh:
+		t.Fatalf("unexpected auto approval: %#v", resp)
+	default:
 	}
 }
 

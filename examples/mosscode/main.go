@@ -521,7 +521,7 @@ func runResume(ctx context.Context, cfg *config) error {
 		return nil
 	}
 	cfg.resumeSessionID = selected.ID
-	fmt.Printf("Resuming session %s (status=%s steps=%d snapshots=%d)\n",
+	fmt.Printf("Resuming thread %s (status=%s steps=%d snapshots=%d)\n",
 		selected.ID, selected.Status, selected.Steps, snapshotCounts[selected.ID])
 	return launchTUI(cfg)
 }
@@ -985,7 +985,7 @@ func runCheckpointFork(ctx context.Context, cfg *config, args []string) error {
 	if jsonOut {
 		return printJSON(report)
 	}
-	fmt.Printf("Prepared forked session %s from %s %s.\n", sess.ID, result.SourceKind, result.SourceID)
+	fmt.Printf("Prepared forked thread %s from %s %s.\n", sess.ID, result.SourceKind, result.SourceID)
 	if result.RestoredWorktree {
 		fmt.Println("Worktree restored.")
 	}
@@ -1511,6 +1511,10 @@ func envConfigured(keys ...string) bool {
 
 func buildSystemPrompt(workspace, trust string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
+	if prefs, err := product.LoadTUIConfig(); err == nil {
+		ctx["Personality"] = product.NormalizePersonality(prefs.Personality)
+		ctx["FastMode"] = prefs.FastMode != nil && *prefs.FastMode
+	}
 	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 }
 
@@ -1524,16 +1528,16 @@ func effectiveFlags() *appkit.AppFlags {
 
 func printResumeCandidates(summaries []session.SessionSummary, snapshotCounts map[string]int) {
 	if len(summaries) == 0 {
-		fmt.Println("No recoverable sessions found.")
+		fmt.Println("No recoverable threads found.")
 		return
 	}
-	fmt.Println("Recoverable sessions:")
+	fmt.Println("Recoverable threads:")
 	for _, summary := range summaries {
 		fmt.Printf("- %s | status=%s | steps=%d | snapshots=%d | created=%s | goal=%s\n",
 			summary.ID, summary.Status, summary.Steps, snapshotCounts[summary.ID], summary.CreatedAt, summary.Goal)
 	}
 	fmt.Println()
-	fmt.Println("Use `mosscode resume --latest` or `mosscode resume --session <id>` to continue.")
+	fmt.Println("Use `mosscode resume --latest` or `mosscode resume --session <id>` to continue a thread.")
 }
 
 func collectExplicitFlagNames(fs *flag.FlagSet) []string {
