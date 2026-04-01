@@ -91,85 +91,103 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	if err != nil {
 		return err
 	}
-	logger := logging.GetLogger()
-	deps := Deps(k)
-	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(cfg.trust)
-
 	if cfg.builtin {
-		if err := SkillsManager(k).Register(ctx, &builtinToolsProvider{}, deps); err != nil {
+		if err := setupBuiltinTools(ctx, k, cfg); err != nil {
 			return err
 		}
 	}
-
 	if cfg.mcpServers {
-		globalCfg, _ := appconfig.LoadGlobalConfig()
-		merged := appconfig.MergeConfigs(globalCfg)
-		if projectAssetsAllowed {
-			projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
-			merged = appconfig.MergeConfigs(globalCfg, projectCfg)
-		}
-		for _, sc := range merged.Skills {
-			if !sc.IsEnabled() || !sc.IsMCP() {
-				continue
-			}
-			mcpServer := mcp.NewMCPServer(sc)
-			if err := SkillsManager(k).Register(ctx, mcpServer, deps); err != nil {
-				logger.WarnContext(ctx, "failed to load MCP server",
-					slog.String("server", sc.Name),
-					slog.Any("error", err),
-				)
-			}
-		}
+		setupMCPServers(ctx, k, workspaceDir, cfg)
 	}
-
 	if cfg.skills {
-		manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, cfg.trust)
-		if cfg.progressive {
-			SetSkillManifests(k, manifests)
-			EnableProgressiveSkills(k)
-			if err := RegisterProgressiveSkillTools(k); err != nil {
-				return err
-			}
-		} else {
-			for _, mf := range manifests {
-				ps, err := skill.ParseSkillMD(mf.Source)
-				if err != nil {
-					logger.WarnContext(ctx, "failed to parse skill",
-						slog.String("source", mf.Source),
-						slog.Any("error", err),
-					)
-					continue
-				}
-				if err := SkillsManager(k).Register(ctx, ps, deps); err != nil {
-					logger.WarnContext(ctx, "failed to load skill",
-						slog.String("skill", ps.Metadata().Name),
-						slog.Any("error", err),
-					)
-				}
-			}
+		if err := setupSkills(ctx, k, workspaceDir, cfg); err != nil {
+			return err
 		}
 	}
-
 	if cfg.agents {
-		agentDirs := []string{}
-		if projectAssetsAllowed {
-			agentDirs = append(agentDirs, filepath.Join(workspaceDir, ".agents", "agents"))
+		setupAgents(ctx, k, workspaceDir, cfg)
+	}
+	return nil
+}
+
+func setupBuiltinTools(ctx context.Context, k *kernel.Kernel, cfg config) error {
+	return SkillsManager(k).Register(ctx, &builtinToolsProvider{}, Deps(k))
+}
+
+func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) {
+	logger := logging.GetLogger()
+	globalCfg, _ := appconfig.LoadGlobalConfig()
+	merged := appconfig.MergeConfigs(globalCfg)
+	if appconfig.ProjectAssetsAllowed(cfg.trust) {
+		projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
+		merged = appconfig.MergeConfigs(globalCfg, projectCfg)
+	}
+	deps := Deps(k)
+	for _, sc := range merged.Skills {
+		if !sc.IsEnabled() || !sc.IsMCP() {
+			continue
 		}
-		if home, err := os.UserHomeDir(); err == nil {
-			agentDirs = append(agentDirs, filepath.Join(home, ".moss", "agents"))
-		}
-		registry := AgentRegistry(k)
-		for _, dir := range agentDirs {
-			if err := registry.LoadDir(dir); err != nil {
-				logger.WarnContext(ctx, "failed to load agents",
-					slog.String("dir", dir),
-					slog.Any("error", err),
-				)
-			}
+		if err := SkillsManager(k).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+			logger.WarnContext(ctx, "failed to load MCP server",
+				slog.String("server", sc.Name),
+				slog.Any("error", err),
+			)
 		}
 	}
+}
 
+func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
+	logger := logging.GetLogger()
+	manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, cfg.trust)
+	if cfg.progressive {
+		SetSkillManifests(k, manifests)
+		EnableProgressiveSkills(k)
+		return RegisterProgressiveSkillTools(k)
+	}
+	deps := Deps(k)
+	for _, mf := range manifests {
+		ps, err := skill.ParseSkillMD(mf.Source)
+		if err != nil {
+			logger.WarnContext(ctx, "failed to parse skill",
+				slog.String("source", mf.Source),
+				slog.Any("error", err),
+			)
+			continue
+		}
+		if err := SkillsManager(k).Register(ctx, ps, deps); err != nil {
+			logger.WarnContext(ctx, "failed to load skill",
+				slog.String("skill", ps.Metadata().Name),
+				slog.Any("error", err),
+			)
+		}
+	}
 	return nil
+}
+
+func setupAgents(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) {
+	logger := logging.GetLogger()
+	registry := AgentRegistry(k)
+	for _, dir := range collectAgentDirs(workspaceDir, cfg) {
+		if err := registry.LoadDir(dir); err != nil {
+			logger.WarnContext(ctx, "failed to load agents",
+				slog.String("dir", dir),
+				slog.Any("error", err),
+			)
+		}
+	}
+}
+
+// collectAgentDirs returns the ordered list of directories to scan for agent
+// definitions based on trust level and user home directory.
+func collectAgentDirs(workspaceDir string, cfg config) []string {
+	var dirs []string
+	if appconfig.ProjectAssetsAllowed(cfg.trust) {
+		dirs = append(dirs, filepath.Join(workspaceDir, ".agents", "agents"))
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		dirs = append(dirs, filepath.Join(home, ".moss", "agents"))
+	}
+	return dirs
 }
 
 type skillsState struct {

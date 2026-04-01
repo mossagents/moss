@@ -48,7 +48,85 @@ type DeepAgentConfig struct {
 	AdditionalAppExtensions       []Extension
 }
 
-// DefaultDeepAgentConfig 返回 deep-agent 装配默认配置。
+// ApplyOver returns a new DeepAgentConfig where every non-zero field in c
+// overrides the corresponding field in base. Zero values in c are left
+// untouched, preserving base's value. This implements "caller wins if set"
+// overlay semantics and is the single authoritative merge path.
+func (c DeepAgentConfig) ApplyOver(base DeepAgentConfig) DeepAgentConfig {
+	if c.AppName != "" {
+		base.AppName = c.AppName
+	}
+	if c.EnableSessionStore != nil {
+		base.EnableSessionStore = c.EnableSessionStore
+	}
+	if c.SessionStoreDir != "" {
+		base.SessionStoreDir = c.SessionStoreDir
+	}
+	if c.EnableCheckpointStore != nil {
+		base.EnableCheckpointStore = c.EnableCheckpointStore
+	}
+	if c.CheckpointStoreDir != "" {
+		base.CheckpointStoreDir = c.CheckpointStoreDir
+	}
+	if c.EnableTaskRuntime != nil {
+		base.EnableTaskRuntime = c.EnableTaskRuntime
+	}
+	if c.TaskRuntimeDir != "" {
+		base.TaskRuntimeDir = c.TaskRuntimeDir
+	}
+	if c.EnablePersistentMemories != nil {
+		base.EnablePersistentMemories = c.EnablePersistentMemories
+	}
+	if c.MemoryDir != "" {
+		base.MemoryDir = c.MemoryDir
+	}
+	if c.EnableContextOffload != nil {
+		base.EnableContextOffload = c.EnableContextOffload
+	}
+	if c.EnableBootstrapContext != nil {
+		base.EnableBootstrapContext = c.EnableBootstrapContext
+	}
+	if c.EnsureGeneralPurpose != nil {
+		base.EnsureGeneralPurpose = c.EnsureGeneralPurpose
+	}
+	if c.GeneralPurposeName != "" {
+		base.GeneralPurposeName = c.GeneralPurposeName
+	}
+	if c.GeneralPurposePrompt != "" {
+		base.GeneralPurposePrompt = c.GeneralPurposePrompt
+	}
+	if c.GeneralPurposeDesc != "" {
+		base.GeneralPurposeDesc = c.GeneralPurposeDesc
+	}
+	if c.GeneralPurposeMaxSteps > 0 {
+		base.GeneralPurposeMaxSteps = c.GeneralPurposeMaxSteps
+	}
+	if c.EnableWorkspaceIsolation != nil {
+		base.EnableWorkspaceIsolation = c.EnableWorkspaceIsolation
+	}
+	if c.IsolationRootDir != "" {
+		base.IsolationRootDir = c.IsolationRootDir
+	}
+	if c.EnableDefaultRestrictedPolicy != nil {
+		base.EnableDefaultRestrictedPolicy = c.EnableDefaultRestrictedPolicy
+	}
+	if c.EnableDefaultLLMRetry != nil {
+		base.EnableDefaultLLMRetry = c.EnableDefaultLLMRetry
+	}
+	if c.LLMRetryConfig != nil {
+		base.LLMRetryConfig = c.LLMRetryConfig
+	}
+	if c.LLMBreakerConfig != nil {
+		base.LLMBreakerConfig = c.LLMBreakerConfig
+	}
+	if len(c.DefaultSetupOptions) > 0 {
+		base.DefaultSetupOptions = c.DefaultSetupOptions
+	}
+	if len(c.AdditionalAppExtensions) > 0 {
+		base.AdditionalAppExtensions = c.AdditionalAppExtensions
+	}
+	return base
+}
 func DefaultDeepAgentConfig() DeepAgentConfig {
 	return DeepAgentConfig{
 		AppName:                       config.AppName(),
@@ -78,78 +156,7 @@ func DefaultDeepAgentConfig() DeepAgentConfig {
 func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, cfg *DeepAgentConfig) (*kernel.Kernel, error) {
 	effective := DefaultDeepAgentConfig()
 	if cfg != nil {
-		if cfg.AppName != "" {
-			effective.AppName = cfg.AppName
-		}
-		if cfg.EnableSessionStore != nil {
-			effective.EnableSessionStore = cfg.EnableSessionStore
-		}
-		if cfg.SessionStoreDir != "" {
-			effective.SessionStoreDir = cfg.SessionStoreDir
-		}
-		if cfg.EnableCheckpointStore != nil {
-			effective.EnableCheckpointStore = cfg.EnableCheckpointStore
-		}
-		if cfg.CheckpointStoreDir != "" {
-			effective.CheckpointStoreDir = cfg.CheckpointStoreDir
-		}
-		if cfg.EnableTaskRuntime != nil {
-			effective.EnableTaskRuntime = cfg.EnableTaskRuntime
-		}
-		if cfg.TaskRuntimeDir != "" {
-			effective.TaskRuntimeDir = cfg.TaskRuntimeDir
-		}
-		if cfg.EnablePersistentMemories != nil {
-			effective.EnablePersistentMemories = cfg.EnablePersistentMemories
-		}
-		if cfg.MemoryDir != "" {
-			effective.MemoryDir = cfg.MemoryDir
-		}
-		if cfg.EnableContextOffload != nil {
-			effective.EnableContextOffload = cfg.EnableContextOffload
-		}
-		if cfg.EnableBootstrapContext != nil {
-			effective.EnableBootstrapContext = cfg.EnableBootstrapContext
-		}
-		if cfg.EnsureGeneralPurpose != nil {
-			effective.EnsureGeneralPurpose = cfg.EnsureGeneralPurpose
-		}
-		if cfg.GeneralPurposeName != "" {
-			effective.GeneralPurposeName = cfg.GeneralPurposeName
-		}
-		if cfg.GeneralPurposePrompt != "" {
-			effective.GeneralPurposePrompt = cfg.GeneralPurposePrompt
-		}
-		if cfg.GeneralPurposeDesc != "" {
-			effective.GeneralPurposeDesc = cfg.GeneralPurposeDesc
-		}
-		if cfg.GeneralPurposeMaxSteps > 0 {
-			effective.GeneralPurposeMaxSteps = cfg.GeneralPurposeMaxSteps
-		}
-		if cfg.EnableWorkspaceIsolation != nil {
-			effective.EnableWorkspaceIsolation = cfg.EnableWorkspaceIsolation
-		}
-		if cfg.IsolationRootDir != "" {
-			effective.IsolationRootDir = cfg.IsolationRootDir
-		}
-		if cfg.EnableDefaultRestrictedPolicy != nil {
-			effective.EnableDefaultRestrictedPolicy = cfg.EnableDefaultRestrictedPolicy
-		}
-		if cfg.EnableDefaultLLMRetry != nil {
-			effective.EnableDefaultLLMRetry = cfg.EnableDefaultLLMRetry
-		}
-		if cfg.LLMRetryConfig != nil {
-			effective.LLMRetryConfig = cfg.LLMRetryConfig
-		}
-		if cfg.LLMBreakerConfig != nil {
-			effective.LLMBreakerConfig = cfg.LLMBreakerConfig
-		}
-		if len(cfg.DefaultSetupOptions) > 0 {
-			effective.DefaultSetupOptions = cfg.DefaultSetupOptions
-		}
-		if len(cfg.AdditionalAppExtensions) > 0 {
-			effective.AdditionalAppExtensions = cfg.AdditionalAppExtensions
-		}
+		effective = cfg.ApplyOver(effective)
 	}
 
 	var exts []Extension
