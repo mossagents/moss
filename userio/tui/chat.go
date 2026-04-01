@@ -103,6 +103,7 @@ type chatModel struct {
 	permissionSummaryFn   func() string
 	setPermissionFn       func(toolName, mode string) (string, error)
 	debugConfigFn         func() string
+	debugPromptFn         func() string
 	refreshSystemPromptFn func() error
 	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm               *askFormState
@@ -113,6 +114,7 @@ type chatModel struct {
 	currentSessionID      string
 	progress              executionProgressState
 	approvalRules         map[string][]approvalMemoryRule
+	debugPromptPreview    bool
 
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
@@ -1820,11 +1822,47 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case "/debug":
+		if len(args) == 0 || strings.EqualFold(args[0], "status") {
+			state := "off"
+			if m.debugPromptPreview {
+				state = "on"
+			}
+			m.messages = append(m.messages, chatMessage{
+				kind: msgSystem,
+				content: fmt.Sprintf("Debug prompt preview: %s\nUsage: /debug <on|off|status>", state),
+			})
+			m.refreshViewport()
+			return m, nil
+		}
+		switch strings.ToLower(strings.TrimSpace(args[0])) {
+		case "on":
+			m.debugPromptPreview = true
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Debug prompt preview enabled."})
+		case "off":
+			m.debugPromptPreview = false
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Debug prompt preview disabled."})
+		default:
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /debug <on|off|status>"})
+		}
+		m.refreshViewport()
+		return m, nil
+
 	case "/debug-config":
 		if m.debugConfigFn == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Debug config view is unavailable."})
 		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.debugConfigFn()})
+			content := m.debugConfigFn()
+			if m.debugPromptPreview {
+				if m.debugPromptFn == nil {
+					content += "\n\nPrompt preview: unavailable."
+				} else if preview := strings.TrimSpace(m.debugPromptFn()); preview == "" {
+					content += "\n\nPrompt preview: unavailable."
+				} else {
+					content += "\n\nPrompt preview:\n" + preview
+				}
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: content})
 		}
 		m.refreshViewport()
 		return m, nil
@@ -2311,6 +2349,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Tools and integrations"},
 	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Tools and integrations"},
 	{Name: "/config", Summary: "Show or update config values", Section: "Tools and integrations"},
+	{Name: "/debug", Summary: "Toggle local prompt preview in debug output", Section: "Tools and integrations"},
 	{Name: "/debug-config", Summary: "Show config, paths, and logs", Section: "Tools and integrations"},
 	{Name: "/skills", Summary: "List discovered skills", Section: "Tools and integrations"},
 	{Name: "/skill", Summary: "Invoke a named skill", Section: "Tools and integrations"},

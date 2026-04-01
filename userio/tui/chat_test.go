@@ -98,6 +98,27 @@ func TestSlashCommandDebugConfig(t *testing.T) {
 	}
 }
 
+func TestSlashCommandDebugToggleAndPreview(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.debugConfigFn = func() string { return "debug config" }
+	m.debugPromptFn = func() string { return "prompt preview body" }
+
+	updated, _ := m.handleSlashCommand("/debug on")
+	if !updated.debugPromptPreview {
+		t.Fatal("expected debug preview enabled")
+	}
+	updated, _ = updated.handleSlashCommand("/debug-config")
+	last := updated.messages[len(updated.messages)-1]
+	if !strings.Contains(last.content, "debug config") || !strings.Contains(last.content, "Prompt preview:\nprompt preview body") {
+		t.Fatalf("unexpected debug-config preview output: %q", last.content)
+	}
+
+	updated, _ = updated.handleSlashCommand("/debug off")
+	if updated.debugPromptPreview {
+		t.Fatal("expected debug preview disabled")
+	}
+}
+
 func TestSlashCommandResumeRestoresSession(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.sessionRestoreFn = func(sessionID string) (string, error) {

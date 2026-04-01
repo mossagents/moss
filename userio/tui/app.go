@@ -1782,6 +1782,14 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.chat.permissionSummaryFn = agent.permissionSummary
 		m.chat.setPermissionFn = agent.setPermission
 		m.chat.refreshSystemPromptFn = agent.refreshSystemPrompt
+		m.chat.debugPromptFn = func() string {
+			agent.mu.Lock()
+			defer agent.mu.Unlock()
+			if agent.sess == nil {
+				return ""
+			}
+			return strings.TrimSpace(agent.sess.Config.SystemPrompt)
+		}
 		m.chat.debugConfigFn = func() string {
 			baseSource, dynamicSections, sourceChain := agent.promptDebugInfo()
 			report := product.BuildDebugConfigReport(
