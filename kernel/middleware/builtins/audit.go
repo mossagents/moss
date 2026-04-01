@@ -60,8 +60,12 @@ func (a *AuditLogger) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 	if e.EstimatedCostUSD > 0 {
 		data["cost_usd"] = e.EstimatedCostUSD
 	}
+	ts := e.StartedAt.UTC()
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
 	a.write(auditEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: ts.Format(time.RFC3339),
 		Type:      "llm_call",
 		SessionID: e.SessionID,
 		Data:      data,
@@ -73,8 +77,12 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	if e.Error != nil {
 		errMsg = e.Error.Error()
 	}
+	ts := e.StartedAt.UTC()
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
 	a.write(auditEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: ts.Format(time.RFC3339),
 		Type:      "tool_call",
 		SessionID: e.SessionID,
 		Data: map[string]any{

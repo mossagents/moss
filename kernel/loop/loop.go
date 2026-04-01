@@ -146,7 +146,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 			metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
 			l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 			l.observer().OnLLMCall(ctx, port.LLMCallEvent{
-				SessionID: sess.ID, Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
+				SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
 			})
 			l.observer().OnError(ctx, port.ErrorEvent{
 				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
@@ -168,6 +168,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		l.observer().OnLLMCall(ctx, port.LLMCallEvent{
 			SessionID:  sess.ID,
 			Model:      metadata.ActualModel,
+			StartedAt:  llmStart.UTC(),
 			Duration:   llmDur,
 			Usage:      resp.Usage,
 			StopReason: resp.StopReason,
@@ -749,6 +750,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
+		StartedAt: toolStart.UTC(),
 		Duration:  toolDur,
 		Error:     err,
 	})

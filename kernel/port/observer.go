@@ -75,6 +75,7 @@ func JoinObservers(observers ...Observer) Observer {
 type LLMCallEvent struct {
 	SessionID        string        `json:"session_id"`
 	Model            string        `json:"model,omitempty"`
+	StartedAt        time.Time     `json:"started_at,omitempty"`
 	Duration         time.Duration `json:"duration_ms"`
 	Usage            TokenUsage    `json:"usage"`
 	EstimatedCostUSD float64       `json:"estimated_cost_usd,omitempty"`
@@ -88,6 +89,7 @@ type ToolCallEvent struct {
 	SessionID string        `json:"session_id"`
 	ToolName  string        `json:"tool_name"`
 	Risk      string        `json:"risk,omitempty"`
+	StartedAt time.Time     `json:"started_at,omitempty"`
 	Duration  time.Duration `json:"duration_ms"`
 	Error     error         `json:"-"`
 }
