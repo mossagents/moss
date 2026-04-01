@@ -30,13 +30,39 @@ type MCPServer struct {
 	cfg       config.SkillConfig
 	client    mcpclient.MCPClient
 	toolNames []string
+	guard     ToolGuard
 }
 
 var _ skill.Provider = (*MCPServer)(nil)
 
+// ToolGuard 负责 MCP 工具调用的输入/输出守卫。
+// Policy middleware 负责访问决策与审计，ToolGuard 仅负责 I/O 校验与约束。
+type ToolGuard interface {
+	ValidateInput(ctx context.Context, tool string, input []byte) error
+	ValidateOutput(ctx context.Context, tool string, output []byte) error
+}
+
+type defaultToolGuard struct{}
+
+func (defaultToolGuard) ValidateInput(_ context.Context, _ string, input []byte) error {
+	return validateMCPInput(input)
+}
+
+func (defaultToolGuard) ValidateOutput(_ context.Context, _ string, output []byte) error {
+	return validateMCPOutput(output)
+}
+
 // NewMCPServer 根据配置创建 MCPServer（但不连接，连接在 Init 时执行）。
 func NewMCPServer(cfg config.SkillConfig) *MCPServer {
-	return &MCPServer{cfg: cfg}
+	return NewMCPServerWithGuard(cfg, nil)
+}
+
+// NewMCPServerWithGuard 根据配置和 guard 创建 MCPServer。
+func NewMCPServerWithGuard(cfg config.SkillConfig, guard ToolGuard) *MCPServer {
+	if guard == nil {
+		guard = defaultToolGuard{}
+	}
+	return &MCPServer{cfg: cfg, guard: guard}
 }
 
 func (s *MCPServer) Metadata() skill.Metadata {
@@ -164,7 +190,11 @@ func (s *MCPServer) buildEnv() []string {
 // makeHandler 为指定 MCP tool 创建 ToolHandler。
 func (s *MCPServer) makeHandler(mcpToolName string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		if err := validateMCPInput(input); err != nil {
+		guard := s.guard
+		if guard == nil {
+			guard = defaultToolGuard{}
+		}
+		if err := guard.ValidateInput(ctx, mcpToolName, input); err != nil {
 			return nil, err
 		}
 
@@ -194,7 +224,7 @@ func (s *MCPServer) makeHandler(mcpToolName string) tool.ToolHandler {
 		if err != nil {
 			return nil, kerrors.Wrap(kerrors.ErrInternal, "marshal mcp result", err)
 		}
-		if err := validateMCPOutput(output); err != nil {
+		if err := guard.ValidateOutput(ctx, mcpToolName, output); err != nil {
 			return nil, err
 		}
 		return output, nil

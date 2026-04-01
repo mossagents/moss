@@ -59,6 +59,8 @@ func CommandRules(rules ...CommandPatternRule) PolicyRule {
 			case RequireApproval:
 				result = requireApprovalResult("command.rule_requires_approval", rule.message("requires approval"))
 				result.Meta = rule.meta("command")
+			default:
+				result.Meta = rule.meta("command")
 			}
 		}
 		return result
@@ -87,6 +89,8 @@ func HTTPRules(rules ...HTTPPatternRule) PolicyRule {
 				return out
 			case RequireApproval:
 				result = requireApprovalResult("http.rule_requires_approval", rule.message("requires approval"))
+				result.Meta = rule.meta(method)
+			default:
 				result.Meta = rule.meta(method)
 			}
 		}
@@ -127,7 +131,12 @@ func (r compiledCommandPatternRule) message(suffix string) string {
 }
 
 func (r compiledCommandPatternRule) meta(kind string) map[string]any {
+	policyRule := strings.TrimSpace(r.name)
+	if policyRule == "" {
+		policyRule = strings.TrimSpace(r.match)
+	}
 	return map[string]any{
+		"policy_rule": policyRule,
 		"rule_kind":   kind,
 		"rule_name":   strings.TrimSpace(r.name),
 		"rule_match":  strings.TrimSpace(r.match),
@@ -156,7 +165,12 @@ func (r compiledHTTPPatternRule) message(suffix string) string {
 }
 
 func (r compiledHTTPPatternRule) meta(method string) map[string]any {
+	policyRule := strings.TrimSpace(r.name)
+	if policyRule == "" {
+		policyRule = strings.TrimSpace(r.match)
+	}
 	meta := map[string]any{
+		"policy_rule": policyRule,
 		"rule_kind":   "http",
 		"rule_name":   strings.TrimSpace(r.name),
 		"rule_match":  strings.TrimSpace(r.match),

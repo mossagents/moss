@@ -361,8 +361,15 @@ func TestPolicyCheck_DenySendsHumanReadableMessage(t *testing.T) {
 		IO:      io,
 	}
 	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
-	if err != ErrDenied {
+	if !stderrors.Is(err, ErrDenied) {
 		t.Fatalf("expected ErrDenied, got %v", err)
+	}
+	var denied *PolicyDeniedError
+	if !stderrors.As(err, &denied) {
+		t.Fatalf("expected PolicyDeniedError, got %T", err)
+	}
+	if denied.ReasonCode != "tool.denied" {
+		t.Fatalf("expected reason code tool.denied, got %q", denied.ReasonCode)
 	}
 	if len(io.Sent) == 0 {
 		t.Fatal("expected human-readable denial message")
@@ -415,7 +422,7 @@ func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
 		Input:    input,
 	}
 	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
-	if err != ErrDenied {
+	if !stderrors.Is(err, ErrDenied) {
 		t.Fatalf("expected ErrDenied, got %v", err)
 	}
 	if len(observer.events) == 0 {
@@ -426,5 +433,156 @@ func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
 	}
 	if observer.events[0].Data["rule_name"] != "git-push" {
 		t.Fatalf("unexpected event data: %+v", observer.events[0].Data)
+	}
+	if observer.events[0].Data["policy_rule"] != "git-push" {
+		t.Fatalf("expected policy_rule in event data, got %+v", observer.events[0].Data)
+	}
+}
+
+func TestPolicyCheck_DenyErrorAndAuditReasonStayConsistent(t *testing.T) {
+	io := port.NewBufferIO()
+	sess := &session.Session{ID: "s6"}
+	observer := &executionEventRecorder{}
+	mw := PolicyCheck(CommandRules(CommandPatternRule{
+		Name:   "git-push",
+		Match:  "git push*",
+		Access: Deny,
+	}))
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"push", "origin", "main"},
+	})
+	mc := &middleware.Context{
+		Phase:    middleware.BeforeToolCall,
+		Session:  sess,
+		Tool:     &tool.ToolSpec{Name: "run_command", Risk: tool.RiskHigh},
+		IO:       io,
+		Observer: observer,
+		Input:    input,
+	}
+	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
+	if !stderrors.Is(err, ErrDenied) {
+		t.Fatalf("expected ErrDenied, got %v", err)
+	}
+	var denied *PolicyDeniedError
+	if !stderrors.As(err, &denied) {
+		t.Fatalf("expected PolicyDeniedError, got %T", err)
+	}
+	if len(observer.events) == 0 {
+		t.Fatal("expected policy match event")
+	}
+	event := observer.events[0]
+	if event.Type != port.ExecutionPolicyRuleMatched {
+		t.Fatalf("expected policy.rule_matched, got %s", event.Type)
+	}
+	if event.ReasonCode != denied.ReasonCode {
+		t.Fatalf("reason code mismatch: event=%q error=%q", event.ReasonCode, denied.ReasonCode)
+	}
+	if event.Data["reason_code"] != denied.ReasonCode {
+		t.Fatalf("event data reason_code mismatch: %+v", event.Data)
+	}
+	if event.Data["reason"] != denied.Reason {
+		t.Fatalf("event data reason mismatch: %+v", event.Data)
+	}
+}
+
+func TestPolicyCheck_ApprovalEventsStayConsistentForApprovedAndDenied(t *testing.T) {
+	runCase := func(t *testing.T, approved bool) {
+		t.Helper()
+		io := port.NewBufferIO()
+		io.AskFunc = func(req port.InputRequest) port.InputResponse {
+			return port.InputResponse{
+				Approved: approved,
+				Decision: &port.ApprovalDecision{
+					RequestID: req.Approval.ID,
+					Approved:  approved,
+					Source:    "test",
+				},
+			}
+		}
+		sess := &session.Session{ID: "s7"}
+		observer := &executionEventRecorder{}
+		mw := PolicyCheck(CommandRules(CommandPatternRule{
+			Name:   "git-push",
+			Match:  "git push*",
+			Access: RequireApproval,
+		}))
+		input, _ := json.Marshal(map[string]any{
+			"command": "git",
+			"args":    []string{"push", "origin", "main"},
+		})
+		mc := &middleware.Context{
+			Phase:    middleware.BeforeToolCall,
+			Session:  sess,
+			Tool:     &tool.ToolSpec{Name: "run_command", Risk: tool.RiskHigh},
+			IO:       io,
+			Observer: observer,
+			Input:    input,
+		}
+		err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
+		if approved && err != nil {
+			t.Fatalf("expected approved flow to pass, got %v", err)
+		}
+		if !approved && !stderrors.Is(err, ErrDenied) {
+			t.Fatalf("expected denied flow to return ErrDenied, got %v", err)
+		}
+		var request, resolved *port.ExecutionEvent
+		for i := range observer.events {
+			ev := &observer.events[i]
+			switch ev.Type {
+			case port.ExecutionApprovalRequest:
+				request = ev
+			case port.ExecutionApprovalResolved:
+				resolved = ev
+			}
+		}
+		if request == nil || resolved == nil {
+			t.Fatalf("expected approval request/resolved events, got %+v", observer.events)
+		}
+		if request.ReasonCode != resolved.ReasonCode {
+			t.Fatalf("reason code mismatch: request=%q resolved=%q", request.ReasonCode, resolved.ReasonCode)
+		}
+		if request.Data["reason_code"] != resolved.Data["reason_code"] {
+			t.Fatalf("data reason_code mismatch: request=%+v resolved=%+v", request.Data, resolved.Data)
+		}
+		if request.Data["policy_rule"] == nil || resolved.Data["policy_rule"] == nil {
+			t.Fatalf("expected policy_rule in request/resolved data: request=%+v resolved=%+v", request.Data, resolved.Data)
+		}
+	}
+	t.Run("approved", func(t *testing.T) { runCase(t, true) })
+	t.Run("denied", func(t *testing.T) { runCase(t, false) })
+}
+
+func TestPolicyCheck_AllowRuleEmitsPolicyRuleMetadata(t *testing.T) {
+	sess := &session.Session{ID: "s8"}
+	observer := &executionEventRecorder{}
+	mw := PolicyCheck(CommandRules(CommandPatternRule{
+		Name:   "git-read",
+		Match:  "git status*",
+		Access: Allow,
+	}))
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"status"},
+	})
+	mc := &middleware.Context{
+		Phase:    middleware.BeforeToolCall,
+		Session:  sess,
+		Tool:     &tool.ToolSpec{Name: "run_command", Risk: tool.RiskLow},
+		Observer: observer,
+		Input:    input,
+	}
+	if err := mw(context.Background(), mc, func(_ context.Context) error { return nil }); err != nil {
+		t.Fatalf("expected allow flow to pass, got %v", err)
+	}
+	if len(observer.events) == 0 {
+		t.Fatal("expected policy rule matched event for allow rule")
+	}
+	event := observer.events[0]
+	if event.Type != port.ExecutionPolicyRuleMatched {
+		t.Fatalf("expected policy.rule_matched, got %s", event.Type)
+	}
+	if event.Data["policy_rule"] != "git-read" {
+		t.Fatalf("expected policy_rule git-read, got %+v", event.Data)
 	}
 }

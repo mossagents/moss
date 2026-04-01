@@ -8,11 +8,32 @@ import (
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 )
 
 type fakeMCPClient struct {
 	callToolFn func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)
+}
+
+type guardRecorder struct {
+	inputCalls  int
+	outputCalls int
+	lastTool    string
+	inputErr    error
+	outputErr   error
+}
+
+func (g *guardRecorder) ValidateInput(_ context.Context, tool string, _ []byte) error {
+	g.inputCalls++
+	g.lastTool = tool
+	return g.inputErr
+}
+
+func (g *guardRecorder) ValidateOutput(_ context.Context, tool string, _ []byte) error {
+	g.outputCalls++
+	g.lastTool = tool
+	return g.outputErr
 }
 
 func (f *fakeMCPClient) Initialize(context.Context, mcp.InitializeRequest) (*mcp.InitializeResult, error) {
@@ -126,5 +147,56 @@ func TestMakeHandler_ValidatesInputObject(t *testing.T) {
 	}
 	if _, err := handler(context.Background(), json.RawMessage(`{"v":"ok"}`)); err != nil {
 		t.Fatalf("expected valid object input, got %v", err)
+	}
+}
+
+func TestNewMCPServer_DefaultGuardIsSet(t *testing.T) {
+	s := NewMCPServer(config.SkillConfig{Name: "demo", Transport: "stdio"})
+	if s.guard == nil {
+		t.Fatal("expected default guard to be set")
+	}
+}
+
+func TestMakeHandler_UsesCustomGuardForInputAndOutput(t *testing.T) {
+	guard := &guardRecorder{}
+	s := &MCPServer{
+		client: &fakeMCPClient{
+			callToolFn: func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return &mcp.CallToolResult{}, nil
+			},
+		},
+		guard: guard,
+	}
+
+	handler := s.makeHandler("echo")
+	if _, err := handler(context.Background(), json.RawMessage(`{"v":"ok"}`)); err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if guard.inputCalls != 1 || guard.outputCalls != 1 {
+		t.Fatalf("expected input/output guard called once, got input=%d output=%d", guard.inputCalls, guard.outputCalls)
+	}
+	if guard.lastTool != "echo" {
+		t.Fatalf("expected guard tool echo, got %q", guard.lastTool)
+	}
+}
+
+func TestMakeHandler_StopsWhenGuardRejectsInput(t *testing.T) {
+	guard := &guardRecorder{inputErr: kerrors.New(kerrors.ErrValidation, "blocked input")}
+	called := false
+	s := &MCPServer{
+		client: &fakeMCPClient{
+			callToolFn: func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				called = true
+				return &mcp.CallToolResult{}, nil
+			},
+		},
+		guard: guard,
+	}
+	handler := s.makeHandler("echo")
+	if _, err := handler(context.Background(), json.RawMessage(`{"v":"ok"}`)); err == nil {
+		t.Fatal("expected input guard error")
+	}
+	if called {
+		t.Fatal("expected mcp call not invoked when input guard fails")
 	}
 }

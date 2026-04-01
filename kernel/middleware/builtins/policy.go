@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
 )
@@ -32,6 +33,31 @@ const (
 // ErrDenied 表示工具调用被 Policy 拒绝。
 var ErrDenied = errors.New("tool call denied by policy")
 
+// PolicyDeniedError 是带结构化策略原因的拒绝错误。
+type PolicyDeniedError struct {
+	ToolName    string
+	ReasonCode  string
+	Reason      string
+	Enforcement EnforcementMode
+}
+
+func (e *PolicyDeniedError) Error() string {
+	return ErrDenied.Error()
+}
+
+func (e *PolicyDeniedError) Unwrap() error {
+	return ErrDenied
+}
+
+func (e *PolicyDeniedError) AsKernelError() *kerrors.Error {
+	err := kerrors.New(kerrors.ErrPolicyDenied, e.Error()).
+		WithMeta("tool", e.ToolName).
+		WithMeta("reason_code", e.ReasonCode).
+		WithMeta("reason", e.Reason).
+		WithMeta("enforcement", string(e.Enforcement))
+	return err
+}
+
 // PolicyRule 评估单个工具调用的权限。
 type PolicyRule func(ctx PolicyContext) PolicyResult
 
@@ -55,6 +81,8 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 			for k, v := range result.Meta {
 				data[k] = v
 			}
+			data["reason"] = result.Reason.Message
+			data["reason_code"] = result.Reason.Code
 			for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
 				data[k] = v
 			}
@@ -87,7 +115,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					),
 				})
 			}
-			return ErrDenied
+			return policyDeniedError(mc, result)
 		case RequireApproval:
 			if mc.IO != nil {
 				approval := buildApprovalRequest(mc, result)
@@ -148,6 +176,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					"approval_id": approval.ID,
 					"approved":    resolved.Approved,
 					"source":      resolved.Source,
+					"reason":      approval.Reason,
 					"reason_code": approval.ReasonCode,
 				}
 				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
@@ -167,7 +196,7 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 					Data:        resolvedData,
 				})
 				if !resolved.Approved {
-					return ErrDenied
+					return policyDeniedError(mc, result)
 				}
 			}
 		}
@@ -220,6 +249,9 @@ func normalizePolicyResult(result PolicyResult) PolicyResult {
 func preferPolicyResult(a, b PolicyResult) bool {
 	if a.Decision != b.Decision {
 		return false
+	}
+	if len(b.Meta) == 0 && len(a.Meta) > 0 {
+		return true
 	}
 	if b.Reason.Code == "" && a.Reason.Code != "" {
 		return true
@@ -302,6 +334,19 @@ func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalReques
 		Approved:  resp.Approved,
 		Source:    "user_io",
 		DecidedAt: time.Now().UTC(),
+	}
+}
+
+func policyDeniedError(mc *middleware.Context, result PolicyResult) error {
+	toolName := ""
+	if mc != nil && mc.Tool != nil {
+		toolName = mc.Tool.Name
+	}
+	return &PolicyDeniedError{
+		ToolName:    toolName,
+		ReasonCode:  result.Reason.Code,
+		Reason:      result.Reason.Message,
+		Enforcement: result.Enforcement,
 	}
 }
 
