@@ -44,6 +44,13 @@ type Config struct {
 
 	// DeliveryDir 配置可靠投递持久化目录。
 	DeliveryDir string
+
+	// TraceExtractor extracts distributed trace context from InboundMessage.Metadata
+	// and returns an enriched context that is passed to kernel.Run.
+	// When nil, the original context is used unchanged.
+	// Use mossotel.MetadataExtractor() from contrib/telemetry/otel to enable
+	// W3C TraceContext (traceparent / tracestate) propagation.
+	TraceExtractor func(ctx context.Context, metadata map[string]any) context.Context
 }
 
 // Option 是 Gateway 的函数式配置选项。
@@ -72,6 +79,14 @@ func WithDeliveryQueue(q *DeliveryQueue) Option {
 // WithDeliveryDir 配置自动创建 DeliveryQueue 的持久化目录。
 func WithDeliveryDir(dir string) Option {
 	return func(c *Config) { c.DeliveryDir = dir }
+}
+
+// WithTraceExtractor sets a function that extracts distributed trace context from
+// InboundMessage.Metadata into the context before kernel.Run is called.
+// Use mossotel.MetadataExtractor() from contrib/telemetry/otel to enable W3C
+// TraceContext propagation without adding OTEL as a direct gateway dependency.
+func WithTraceExtractor(fn func(ctx context.Context, metadata map[string]any) context.Context) Option {
+	return func(c *Config) { c.TraceExtractor = fn }
 }
 
 // Gateway 是嵌入式消息网关，组合 Channel → Router → Kernel。
@@ -199,6 +214,11 @@ func (gw *Gateway) fanIn(ctx context.Context) <-chan inboundWithChannel {
 // handleMessage 处理单条入站消息：路由 → Session → Run → 回复。
 func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	msg := m.msg
+
+	// Extract distributed trace context from message metadata, if configured.
+	if gw.config.TraceExtractor != nil {
+		ctx = gw.config.TraceExtractor(ctx, msg.Metadata)
+	}
 
 	// 1. 路由到 Session
 	sess, err := gw.router.Resolve(ctx, msg.ChannelName, msg.SenderID, msg.SessionHint)

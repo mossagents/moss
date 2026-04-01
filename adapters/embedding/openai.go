@@ -46,6 +46,15 @@ func WithDimension(dim int) Option {
 	return func(e *OpenAIEmbedder) { e.dim = dim }
 }
 
+// WithHTTPClient sets a custom HTTP client for embedding requests.
+// Use this to inject a tracing transport for distributed trace propagation:
+//
+//	transport := &mossotel.TraceTransport{Base: http.DefaultTransport}
+//	embedder := embedding.New(apiKey, embedding.WithHTTPClient(&http.Client{Transport: transport}))
+func WithHTTPClient(client *http.Client) Option {
+	return func(e *OpenAIEmbedder) { e.client = client }
+}
+
 // New 创建 OpenAI 兼容的嵌入适配器。
 // apiKey 为空时从 OPENAI_API_KEY 环境变量读取。
 func New(apiKey string, opts ...Option) *OpenAIEmbedder {

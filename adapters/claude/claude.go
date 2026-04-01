@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -40,6 +41,30 @@ func New(apiKey string, opts ...Option) *Client {
 	var reqOpts []option.RequestOption
 	if apiKey != "" {
 		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	c := &Client{
+		client:    anthropic.NewClient(reqOpts...),
+		model:     DefaultModel,
+		maxTokens: 8192,
+	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
+}
+
+// NewWithHTTPClient creates a Claude adapter using a custom http.Client.
+// Use this to inject a tracing transport for distributed trace propagation:
+//
+//	transport := &mossotel.TraceTransport{Base: http.DefaultTransport}
+//	adapter := claude.NewWithHTTPClient(apiKey, &http.Client{Transport: transport})
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, opts ...Option) *Client {
+	var reqOpts []option.RequestOption
+	if apiKey != "" {
+		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	if httpClient != nil {
+		reqOpts = append(reqOpts, option.WithHTTPClient(httpClient))
 	}
 	c := &Client{
 		client:    anthropic.NewClient(reqOpts...),

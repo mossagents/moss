@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -53,6 +54,22 @@ func New(apiKey string, opts ...Option) *Client {
 		opt(c)
 	}
 	return c
+}
+
+// NewWithHTTPClient creates an OpenAI adapter using a custom http.Client.
+// Use this to inject a tracing transport for distributed trace propagation:
+//
+//	transport := &mossotel.TraceTransport{Base: http.DefaultTransport}
+//	adapter := openai.NewWithHTTPClient(apiKey, &http.Client{Transport: transport})
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, opts ...Option) *Client {
+	var reqOpts []option.RequestOption
+	if apiKey != "" {
+		reqOpts = append(reqOpts, option.WithAPIKey(apiKey))
+	}
+	if httpClient != nil {
+		reqOpts = append(reqOpts, option.WithHTTPClient(httpClient))
+	}
+	return NewWithRequestOptions(reqOpts, opts...)
 }
 
 // NewWithBaseURL 创建 OpenAI 兼容适配器，允许指定 API Key 和 Base URL。
