@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/glamour"
 )
@@ -42,10 +43,10 @@ func renderMessage(m chatMessage, width int) string {
 
 	switch m.kind {
 	case msgUser:
-		return renderRoleMessage(m.content, maxContent, func(s string) string { return userLabelStyle.Render(s) })
+		return renderRoleMessage(m, maxContent, func(s string) string { return userLabelStyle.Render(s) })
 
 	case msgAssistant:
-		return renderRoleMessage(m.content, maxContent, func(s string) string { return assistantLabelStyle.Render(s) })
+		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) })
 
 	case msgSystem:
 		return systemStyle.Render(renderSystemMessage(m.content, maxContent))
@@ -74,8 +75,8 @@ func renderMessage(m chatMessage, width int) string {
 	}
 }
 
-func renderRoleMessage(content string, width int, dotRenderer func(string) string) string {
-	body := renderMarkdown(content, width)
+func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string) string {
+	body := renderMarkdown(m.content, width)
 	body = strings.TrimLeft(body, "\n")
 	if strings.TrimSpace(body) == "" {
 		return "  " + dotRenderer("●")
@@ -92,6 +93,10 @@ func renderRoleMessage(content string, width int, dotRenderer func(string) strin
 	b.WriteString(dotRenderer("●"))
 	b.WriteString(" ")
 	b.WriteString(lines[0])
+	if ts := formatMessageTimestamp(m.meta); ts != "" {
+		b.WriteString(" ")
+		b.WriteString(mutedStyle.Render(ts))
+	}
 	for _, line := range lines[1:] {
 		b.WriteString("\n    ")
 		b.WriteString(line)
@@ -233,7 +238,11 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 
 func renderToolStartMessage(m chatMessage, width int) string {
 	toolName := toolMetaString(m, "tool", m.content)
-	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  tool %s", toolName))}
+	header := fmt.Sprintf("  tool %s", toolName)
+	if elapsed := formatToolRunningElapsed(m.meta); elapsed != "" {
+		header += " " + mutedStyle.Render("(" + elapsed + ")")
+	}
+	lines := []string{toolLabelStyle.Render(header)}
 	var metaParts []string
 	if risk := toolMetaString(m, "risk", ""); risk != "" {
 		metaParts = append(metaParts, "risk="+risk)
@@ -273,6 +282,63 @@ func renderToolResultMessage(m chatMessage, width int) string {
 		lines = append(lines, indentBlock(body.content, "     "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func formatMessageTimestamp(meta map[string]any) string {
+	if meta == nil {
+		return ""
+	}
+	raw, ok := meta["timestamp"]
+	if !ok {
+		return ""
+	}
+	switch v := raw.(type) {
+	case time.Time:
+		if v.IsZero() {
+			return ""
+		}
+		return v.Local().Format("15:04:05")
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return ""
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return ts.Local().Format("15:04:05")
+		}
+		return v
+	default:
+		return ""
+	}
+}
+
+func formatToolRunningElapsed(meta map[string]any) string {
+	if meta == nil {
+		return ""
+	}
+	startRaw, ok := meta["started_at"]
+	if !ok {
+		return ""
+	}
+	if _, done := meta["completed_at"]; done {
+		return ""
+	}
+	var started time.Time
+	switch v := startRaw.(type) {
+	case time.Time:
+		started = v
+	case string:
+		ts, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			return ""
+		}
+		started = ts
+	default:
+		return ""
+	}
+	if started.IsZero() {
+		return ""
+	}
+	return formatElapsed(started, time.Now())
 }
 
 type renderedToolBody struct {

@@ -60,6 +60,8 @@ type switchProfileMsg struct {
 	displayText string
 }
 
+type uiTickMsg struct{}
+
 type threadSwitchResultMsg struct {
 	output string
 	err    error
@@ -141,6 +143,7 @@ type chatModel struct {
 	now       func() time.Time
 	lastEscAt time.Time
 	lastCtrlC time.Time
+	runStartedAt time.Time
 }
 
 func newChatModel(provider, model, workspace string) chatModel {
@@ -197,7 +200,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 }
 
 func (m chatModel) Init() tea.Cmd {
-	return textarea.Blink
+	return tea.Batch(textarea.Blink, uiTickCmd())
 }
 
 func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
@@ -272,6 +275,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case uiTickMsg:
+		if m.streaming || m.hasRunningToolCalls() {
+			m.refreshViewport()
+		}
+		return m, uiTickCmd()
+
 	case notificationProgressMsg:
 		if msg.SetCurrent && strings.TrimSpace(msg.Snapshot.SessionID) != "" {
 			m.currentSessionID = strings.TrimSpace(msg.Snapshot.SessionID)
@@ -289,6 +298,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	case sessionResultMsg:
 		m.streaming = false
 		m.finished = true
+		m.runStartedAt = time.Time{}
 		if msg.err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
 		}
@@ -307,6 +317,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.queuedInputs = m.queuedInputs[1:]
 			m.streaming = true
 			m.finished = false
+			m.runStartedAt = m.now().UTC()
 			m.sendFn(next)
 		}
 		m.refreshViewport()
@@ -371,7 +382,11 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		}
 		ask := m.pendAsk
 		m.pendAsk = nil
-		m.messages = append(m.messages, chatMessage{kind: msgUser, content: text})
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgUser,
+			content: text,
+			meta:    map[string]any{"timestamp": m.now().UTC()},
+		})
 		m.textarea.Reset()
 		m.adjustInputHeight()
 		m.refreshViewport()
@@ -401,6 +416,7 @@ func (m chatModel) startThreadSwitch(statusText string, run func() (string, erro
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: statusText})
 	}
 	m.streaming = true
+	m.runStartedAt = m.now().UTC()
 	m.refreshViewport()
 	return m, func() tea.Msg {
 		out, err := run()
@@ -416,21 +432,33 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		o := msg.output
 		switch o.Type {
 		case port.OutputText:
-			m.messages = append(m.messages, chatMessage{kind: msgAssistant, content: o.Content})
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgAssistant,
+				content: o.Content,
+				meta:    map[string]any{"timestamp": m.now().UTC()},
+			})
 		case port.OutputStream:
 			m.appendStream(o.Content)
 		case port.OutputStreamEnd:
 			m.streaming = false
+			m.runStartedAt = time.Time{}
 		case port.OutputProgress:
 			m.messages = append(m.messages, chatMessage{kind: msgProgress, content: o.Content})
 		case port.OutputToolStart:
-			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content, meta: o.Meta})
+			meta := cloneMessageMeta(o.Meta)
+			if _, ok := meta["started_at"]; !ok {
+				meta["started_at"] = m.now().UTC()
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content, meta: meta})
 		case port.OutputToolResult:
+			m.markToolStartCompleted(o.Meta)
+			meta := cloneMessageMeta(o.Meta)
+			meta["completed_at"] = m.now().UTC()
 			isErr, _ := o.Meta["is_error"].(bool)
 			if isErr {
-				m.messages = append(m.messages, chatMessage{kind: msgToolError, content: o.Content, meta: o.Meta})
+				m.messages = append(m.messages, chatMessage{kind: msgToolError, content: o.Content, meta: meta})
 			} else {
-				m.messages = append(m.messages, chatMessage{kind: msgToolResult, content: o.Content, meta: o.Meta})
+				m.messages = append(m.messages, chatMessage{kind: msgToolResult, content: o.Content, meta: meta})
 			}
 		}
 		m.refreshViewport()
@@ -463,8 +491,15 @@ func (m *chatModel) appendStream(delta string) {
 	if len(m.messages) > 0 && m.messages[len(m.messages)-1].kind == msgAssistant && m.streaming {
 		m.messages[len(m.messages)-1].content += delta
 	} else {
-		m.messages = append(m.messages, chatMessage{kind: msgAssistant, content: delta})
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgAssistant,
+			content: delta,
+			meta:    map[string]any{"timestamp": m.now().UTC()},
+		})
 		m.streaming = true
+		if m.runStartedAt.IsZero() {
+			m.runStartedAt = m.now().UTC()
+		}
 	}
 }
 
@@ -741,7 +776,11 @@ func (m chatModel) View() string {
 		b.WriteString(m.renderScheduleBrowser(m.mainWidth() - 2))
 	} else {
 		if m.streaming {
-			b.WriteString(runningStyle.Render("  ● Running... (double Esc to cancel current run)"))
+			b.WriteString(runningStyle.Render(fmt.Sprintf(
+				"  %s Running (%s, double Esc to cancel current run)",
+				spinnerFrame(m.now()),
+				formatElapsed(m.runStartedAt, m.now()),
+			)))
 			b.WriteString("\n")
 		}
 		b.WriteString(m.renderSlashHintLine())
@@ -2499,16 +2538,107 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string) (chatMode
 		m.refreshViewport()
 		return m, nil
 	}
-	m.messages = append(m.messages, chatMessage{kind: msgUser, content: strings.TrimSpace(displayText)})
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgUser,
+		content: strings.TrimSpace(displayText),
+		meta:    map[string]any{"timestamp": m.now().UTC()},
+	})
 	m.textarea.Reset()
 	m.adjustInputHeight()
 	m.adjustInputHeight()
 	m.streaming = true
+	m.runStartedAt = m.now().UTC()
 	m.refreshViewport()
 	if m.sendFn != nil {
 		m.sendFn(runText)
 	}
 	return m, nil
+}
+
+func uiTickCmd() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return uiTickMsg{} })
+}
+
+func spinnerFrame(now time.Time) string {
+	frames := []string{"-", "\\", "|", "/"}
+	if now.IsZero() {
+		return frames[0]
+	}
+	idx := (now.UnixNano() / int64(200*time.Millisecond)) % int64(len(frames))
+	return frames[idx]
+}
+
+func formatElapsed(start, now time.Time) string {
+	if start.IsZero() {
+		return "0.0s"
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	elapsed := now.Sub(start)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	seconds := elapsed.Seconds()
+	if seconds < 60 {
+		return fmt.Sprintf("%.1fs", seconds)
+	}
+	mins := int(seconds) / 60
+	secs := int(seconds) % 60
+	return fmt.Sprintf("%dm%02ds", mins, secs)
+}
+
+func cloneMessageMeta(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		out[k] = v
+	}
+	return out
+}
+
+func (m *chatModel) markToolStartCompleted(resultMeta map[string]any) {
+	callID, _ := resultMeta["call_id"].(string)
+	toolName, _ := resultMeta["tool"].(string)
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		msg := &m.messages[i]
+		if msg.kind != msgToolStart || msg.meta == nil {
+			continue
+		}
+		if _, done := msg.meta["completed_at"]; done {
+			continue
+		}
+		if callID != "" {
+			if startID, _ := msg.meta["call_id"].(string); startID == callID {
+				msg.meta["completed_at"] = m.now().UTC()
+				return
+			}
+			continue
+		}
+		if toolName != "" {
+			if startTool, _ := msg.meta["tool"].(string); startTool == toolName {
+				msg.meta["completed_at"] = m.now().UTC()
+				return
+			}
+		}
+	}
+}
+
+func (m chatModel) hasRunningToolCalls() bool {
+	for _, msg := range m.messages {
+		if msg.kind != msgToolStart {
+			continue
+		}
+		if msg.meta == nil {
+			return true
+		}
+		if _, done := msg.meta["completed_at"]; !done {
+			return true
+		}
+	}
+	return false
 }
 
 // valueOrDefault 返回 s 或 defaultVal。
