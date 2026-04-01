@@ -17,7 +17,7 @@ import (
 type FileCheckpointStore struct {
 	dir      string
 	mu       sync.Mutex
-	observer Observer
+	observer ExecutionObserver
 }
 
 func NewFileCheckpointStore(dir string) (*FileCheckpointStore, error) {
@@ -30,7 +30,7 @@ func NewFileCheckpointStore(dir string) (*FileCheckpointStore, error) {
 	}, nil
 }
 
-func (fs *FileCheckpointStore) SetObserver(observer Observer) {
+func (fs *FileCheckpointStore) SetObserver(observer ExecutionObserver) {
 	if observer == nil {
 		fs.observer = NoOpObserver{}
 		return

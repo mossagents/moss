@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mossagents/moss/kernel/port"
 )
 
@@ -25,9 +26,8 @@ type CancelHookAware interface {
 }
 
 type memoryManager struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	sessions map[string]*Session
-	nextID   int
 	onCancel func(id string)
 }
 
@@ -71,8 +71,7 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.nextID++
-	id := fmt.Sprintf("sess_%d", m.nextID)
+	id := "sess_" + uuid.New().String()
 
 	s := &Session{
 		ID:        id,
@@ -88,15 +87,15 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 }
 
 func (m *memoryManager) Get(id string) (*Session, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	s, ok := m.sessions[id]
 	return s, ok
 }
 
 func (m *memoryManager) List() []*Session {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	list := make([]*Session, 0, len(m.sessions))
 	for _, s := range m.sessions {
 		list = append(list, s)

@@ -35,7 +35,7 @@ func Retry(cfg RetryConfig) middleware.Middleware {
 				return nil
 			}
 
-			if !cfg.ShouldRetryOrDefault(lastErr) {
+			if !cfg.ShouldRetryOrDefault(ctx, lastErr) {
 				return lastErr
 			}
 

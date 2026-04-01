@@ -214,7 +214,7 @@ func TestSelectModel_NoMatch_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unmatched capability, got nil")
 	}
-	if !contains(err.Error(), "没有模型满足任务需求") {
+	if !contains(err.Error(), "no model satisfies task requirements") {
 		t.Errorf("error message should mention no matching model, got: %v", err)
 	}
 }

@@ -5,22 +5,50 @@ import (
 	"time"
 )
 
+// LLMObserver receives LLM call completion events.
+type LLMObserver interface {
+	OnLLMCall(ctx context.Context, e LLMCallEvent)
+}
+
+// ToolObserver receives tool call completion events.
+type ToolObserver interface {
+	OnToolCall(ctx context.Context, e ToolCallEvent)
+}
+
+// ExecutionObserver receives fine-grained execution lifecycle events.
+type ExecutionObserver interface {
+	OnExecutionEvent(ctx context.Context, e ExecutionEvent)
+}
+
+// ApprovalObserver receives approval request and resolution events.
+type ApprovalObserver interface {
+	OnApproval(ctx context.Context, e ApprovalEvent)
+}
+
+// SessionObserver receives session lifecycle events.
+type SessionObserver interface {
+	OnSessionEvent(ctx context.Context, e SessionEvent)
+}
+
+// ErrorObserver receives unexpected error events.
+type ErrorObserver interface {
+	OnError(ctx context.Context, e ErrorEvent)
+}
+
 // Observer 是 Kernel 运行事件的观察者接口。
 // 上层应用实现此接口对接 OpenTelemetry / Prometheus / slog 等。
 // 默认使用 NoOpObserver（零开销）。
+//
+// 若只需观察部分事件，可实现对应的细粒度子接口（LLMObserver、
+// ToolObserver、ExecutionObserver 等），然后嵌入 NoOpObserver
+// 补全其余方法，以减少无关 stub 代码。
 type Observer interface {
-	// OnLLMCall 在 LLM 调用完成后触发（无论成功或失败）。
-	OnLLMCall(ctx context.Context, e LLMCallEvent)
-	// OnToolCall 在工具调用完成后触发（无论成功或失败）。
-	OnToolCall(ctx context.Context, e ToolCallEvent)
-	// OnExecutionEvent 在统一执行事件产生时触发。
-	OnExecutionEvent(ctx context.Context, e ExecutionEvent)
-	// OnApproval 在审批请求发起和完成时触发。
-	OnApproval(ctx context.Context, e ApprovalEvent)
-	// OnSessionEvent 在 Session 生命周期事件时触发。
-	OnSessionEvent(ctx context.Context, e SessionEvent)
-	// OnError 在非预期错误发生时触发。
-	OnError(ctx context.Context, e ErrorEvent)
+	LLMObserver
+	ToolObserver
+	ExecutionObserver
+	ApprovalObserver
+	SessionObserver
+	ErrorObserver
 }
 
 // JoinObservers 组合多个 Observer，按传入顺序依次分发事件。

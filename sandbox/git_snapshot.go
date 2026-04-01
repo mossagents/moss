@@ -17,7 +17,7 @@ import (
 type GitWorktreeSnapshotStore struct {
 	root    string
 	timeout time.Duration
-	observer port.Observer
+	observer port.ExecutionObserver
 }
 
 func NewGitWorktreeSnapshotStore(root string) *GitWorktreeSnapshotStore {
@@ -28,7 +28,7 @@ func NewGitWorktreeSnapshotStore(root string) *GitWorktreeSnapshotStore {
 	}
 }
 
-func (s *GitWorktreeSnapshotStore) SetObserver(observer port.Observer) {
+func (s *GitWorktreeSnapshotStore) SetObserver(observer port.ExecutionObserver) {
 	if observer == nil {
 		s.observer = port.NoOpObserver{}
 		return

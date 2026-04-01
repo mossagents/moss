@@ -5,22 +5,28 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 )
 
-var defaultLogger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-	Level: slog.LevelInfo,
-}))
+var defaultLogger atomic.Pointer[slog.Logger]
+
+func init() {
+	l := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	defaultLogger.Store(l)
+}
 
 // GetLogger 返回全局 slog 实例。
 // 默认输出到 stderr，使用 text 格式，级别为 Info。
 func GetLogger() *slog.Logger {
-	return defaultLogger
+	return defaultLogger.Load()
 }
 
 // SetLogger 设置全局 slog 实例（用于测试或自定义配置）。
 func SetLogger(l *slog.Logger) {
 	if l != nil {
-		defaultLogger = l
+		defaultLogger.Store(l)
 	}
 }
 
@@ -43,8 +49,9 @@ func ConfigureLogging(level slog.Level, format string, w io.Writer) error {
 		handler = slog.NewTextHandler(w, opts)
 	}
 
-	defaultLogger = slog.New(handler)
-	slog.SetDefault(defaultLogger)
+	l := slog.New(handler)
+	defaultLogger.Store(l)
+	slog.SetDefault(l)
 	return nil
 }
 
@@ -69,7 +76,8 @@ func ConfigureDebugFileWhenEnabled(appDir string) (enabled bool, path string, cl
 		return false, "", nil, err
 	}
 	handler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
-	defaultLogger = slog.New(handler)
-	slog.SetDefault(defaultLogger)
+	l := slog.New(handler)
+	defaultLogger.Store(l)
+	slog.SetDefault(l)
 	return true, path, f, nil
 }

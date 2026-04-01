@@ -1,6 +1,7 @@
 package retry
 
 import (
+	"context"
 	"time"
 )
 
@@ -45,7 +46,11 @@ func (c Config) MultiplierOrDefault() float64 {
 	return c.Multiplier
 }
 
-func (c Config) ShouldRetryOrDefault(err error) bool {
+func (c Config) ShouldRetryOrDefault(ctx context.Context, err error) bool {
+	// If the caller's context is already done, retrying is pointless.
+	if ctx != nil && ctx.Err() != nil {
+		return false
+	}
 	if c.ShouldRetry != nil {
 		return c.ShouldRetry(err)
 	}

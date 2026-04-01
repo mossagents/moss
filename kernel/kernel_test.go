@@ -25,11 +25,11 @@ type recordingObserver struct {
 }
 
 type observerAwareSnapshotStore struct {
-	observer port.Observer
+	observer port.ExecutionObserver
 }
 
 type observerAwareCheckpointStore struct {
-	observer port.Observer
+	observer port.ExecutionObserver
 }
 
 func (o *recordingObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
@@ -52,11 +52,11 @@ func (o *recordingObserver) snapshot() []port.ExecutionEvent {
 	return out
 }
 
-func (s *observerAwareSnapshotStore) SetObserver(observer port.Observer) {
+func (s *observerAwareSnapshotStore) SetObserver(observer port.ExecutionObserver) {
 	s.observer = observer
 }
 
-func (s *observerAwareCheckpointStore) SetObserver(observer port.Observer) {
+func (s *observerAwareCheckpointStore) SetObserver(observer port.ExecutionObserver) {
 	s.observer = observer
 }
 

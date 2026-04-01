@@ -228,10 +228,10 @@ func (k *Kernel) propagateObserver(observer port.Observer) {
 	if observer == nil {
 		observer = port.NoOpObserver{}
 	}
-	if aware, ok := k.snapshots.(interface{ SetObserver(port.Observer) }); ok {
+	if aware, ok := k.snapshots.(interface{ SetObserver(port.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
-	if aware, ok := k.checkpoints.(interface{ SetObserver(port.Observer) }); ok {
+	if aware, ok := k.checkpoints.(interface{ SetObserver(port.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
 }

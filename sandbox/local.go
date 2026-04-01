@@ -72,12 +72,34 @@ func (s *LocalSandbox) ResolvePath(path string) (string, error) {
 		abs = filepath.Clean(filepath.Join(s.root, path))
 	}
 
-	for _, allowed := range s.limits.AllowedPaths {
-		if strings.HasPrefix(abs, allowed+string(filepath.Separator)) || abs == allowed {
+	// First check: fast path before symlink resolution.
+	if !s.isWithinAllowed(abs) {
+		return "", fmt.Errorf("path %q escapes sandbox (root=%s)", path, s.root)
+	}
+
+	// Second check: resolve symlinks and verify again to prevent symlink-based escapes.
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		// File may not exist yet (e.g. for WriteFile) — skip symlink check for non-existent paths.
+		if os.IsNotExist(err) {
 			return abs, nil
 		}
+		return "", fmt.Errorf("resolve symlinks in %q: %w", path, err)
 	}
-	return "", fmt.Errorf("path %q escapes sandbox (root=%s)", path, s.root)
+	if !s.isWithinAllowed(resolved) {
+		return "", fmt.Errorf("path %q (resolved: %s) escapes sandbox via symlink", path, resolved)
+	}
+	return resolved, nil
+}
+
+// isWithinAllowed reports whether p is within any of the sandbox's allowed paths.
+func (s *LocalSandbox) isWithinAllowed(p string) bool {
+	for _, allowed := range s.limits.AllowedPaths {
+		if p == allowed || strings.HasPrefix(p, allowed+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *LocalSandbox) ListFiles(pattern string) ([]string, error) {
@@ -170,6 +192,9 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	// 如果无参数且命令包含 shell 特殊字符，自动用 shell 包装。
 	// 这样 LLM 可以直接发送 "ls -la" 或 "go build ./..." 等完整 shell 命令。
 	if len(args) == 0 && needsShell(cmd) {
+		if err := rejectShellChaining(cmd); err != nil {
+			return port.ExecOutput{}, err
+		}
 		if runtime.GOOS == "windows" {
 			args = []string{"/C", cmd}
 			cmd = "cmd"
@@ -306,6 +331,36 @@ func isWithinAllowedRoots(path string, roots []string) bool {
 // needsShell 检查命令是否需要 shell 包装（包含空格、管道、重定向等）。
 func needsShell(cmd string) bool {
 	return strings.ContainsAny(cmd, " \t|><&;$`")
+}
+
+// rejectShellChaining rejects commands that contain shell chaining or injection
+// operators (;, &&, ||, |, backtick, $(...), ${...}, >, <). These operators allow
+// composing multiple commands and must not be auto-wrapped via sh -c.
+// Simple word-splitting (spaces/tabs) is safe and is handled by the caller.
+func rejectShellChaining(cmd string) error {
+	dangerous := []struct {
+		seq  string
+		name string
+	}{
+		{";", "command separator ';'"},
+		{"&&", "operator '&&'"},
+		{"||", "operator '||'"},
+		{"|", "pipe '|'"},
+		{"`", "backtick command substitution"},
+		{"$(", "subshell '$()'"},
+		{"${", "variable substitution '${}'"},
+		{">", "output redirection '>'"},
+		{"<", "input redirection '<'"},
+	}
+	for _, d := range dangerous {
+		if strings.Contains(cmd, d.seq) {
+			return fmt.Errorf(
+				"command contains %s; use the 'args' field to pass arguments separately",
+				d.name,
+			)
+		}
+	}
+	return nil
 }
 
 func (s *LocalSandbox) Limits() ResourceLimits {

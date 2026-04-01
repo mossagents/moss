@@ -296,12 +296,12 @@ func (r *ModelRouter) noModelError(req *port.TaskRequirement) error {
 	}
 
 	msg := fmt.Sprintf(
-		"model router: 没有模型满足任务需求\n"+
-			"  所需能力: [%s]\n",
+		"model router: no model satisfies task requirements\n"+
+			"  required capabilities: [%s]\n",
 		strings.Join(needed, ", "),
 	)
 	if req.MaxCostTier > 0 {
-		msg += fmt.Sprintf("  最高成本等级: %d\n", req.MaxCostTier)
+		msg += fmt.Sprintf("  max cost tier: %d\n", req.MaxCostTier)
 	}
 	msg += "  已注册模型:\n" + strings.Join(available, "\n")
 

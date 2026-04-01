@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/middleware"
@@ -131,20 +132,14 @@ func DefaultAutoTruncate() middleware.Middleware {
 func buildTruncationNotice(droppedCount, totalTokens, maxTokens int) string {
 	var b strings.Builder
 	b.WriteString("[Context truncated: ")
-	b.WriteString(strings.Join([]string{
-		intToStr(droppedCount) + " earlier messages removed",
+	parts := []string{
+		strconv.Itoa(droppedCount) + " earlier messages removed",
 		"keeping most recent conversation",
-	}, "; "))
+	}
+	if maxTokens > 0 {
+		parts = append(parts, "tokens: "+strconv.Itoa(totalTokens)+"/"+strconv.Itoa(maxTokens))
+	}
+	b.WriteString(strings.Join(parts, "; "))
 	b.WriteString("]")
 	return b.String()
-}
-
-func intToStr(n int) string {
-	if n < 0 {
-		return "-" + intToStr(-n)
-	}
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	return intToStr(n/10) + string(rune('0'+n%10))
 }

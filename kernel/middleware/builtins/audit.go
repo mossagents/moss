@@ -136,6 +136,8 @@ func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
 		"enforcement":  e.Request.Enforcement,
 		"requested_at": e.Request.RequestedAt.UTC().Format(time.RFC3339),
 	}
+	// Prefer the event's own timestamp over time.Now() for accurate audit trails.
+	ts := e.Request.RequestedAt.UTC()
 	if e.Decision != nil {
 		data["approved"] = e.Decision.Approved
 		data["decision_source"] = e.Decision.Source
@@ -143,9 +145,15 @@ func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
 		if e.Decision.Reason != "" {
 			data["decision_reason"] = e.Decision.Reason
 		}
+		if !e.Decision.DecidedAt.IsZero() {
+			ts = e.Decision.DecidedAt.UTC()
+		}
+	}
+	if ts.IsZero() {
+		ts = time.Now().UTC()
 	}
 	a.write(auditEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Timestamp: ts.Format(time.RFC3339),
 		Type:      "approval_" + e.Type,
 		SessionID: e.SessionID,
 		Data:      data,

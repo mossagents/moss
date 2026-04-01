@@ -135,6 +135,7 @@ func progressPhaseLabel(phase string) string {
 }
 
 type executionProgressObserver struct {
+	port.NoOpObserver
 	bridge    *BridgeIO
 	sessionID string
 	mu        sync.Mutex
@@ -165,12 +166,6 @@ func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event po
 	o.mu.Unlock()
 	o.bridge.SendProgress(snapshot, false)
 }
-
-func (o *executionProgressObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
-func (o *executionProgressObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
-func (o *executionProgressObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
-func (o *executionProgressObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
-func (o *executionProgressObserver) OnError(context.Context, port.ErrorEvent)          {}
 
 func foldExecutionProgressEvent(current executionProgressState, event port.ExecutionEvent) executionProgressState {
 	next := current

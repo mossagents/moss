@@ -15,7 +15,7 @@ import (
 // 每个 Session 保存为独立的 JSON 文件：{dir}/{session_id}.json
 type FileStore struct {
 	dir string
-	mu  sync.Mutex
+	mu  sync.RWMutex
 }
 
 // NewFileStore 创建文件存储，dir 为存储目录（不存在则自动创建）。
@@ -44,8 +44,8 @@ func (fs *FileStore) Save(_ context.Context, sess *Session) error {
 }
 
 func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
 
 	path := fs.path(id)
 	data, err := os.ReadFile(path)
@@ -64,8 +64,8 @@ func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
 }
 
 func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
 
 	entries, err := os.ReadDir(fs.dir)
 	if err != nil {

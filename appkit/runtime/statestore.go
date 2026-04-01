@@ -827,6 +827,7 @@ func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string,
 }
 
 type stateCatalogObserver struct {
+	port.NoOpObserver
 	catalog *StateCatalog
 }
 
@@ -837,11 +838,6 @@ func NewStateCatalogObserver(catalog *StateCatalog) port.Observer {
 	return &stateCatalogObserver{catalog: catalog}
 }
 
-func (o *stateCatalogObserver) OnLLMCall(_ context.Context, _ port.LLMCallEvent)      {}
-func (o *stateCatalogObserver) OnToolCall(_ context.Context, _ port.ToolCallEvent)    {}
-func (o *stateCatalogObserver) OnApproval(_ context.Context, _ port.ApprovalEvent)    {}
-func (o *stateCatalogObserver) OnSessionEvent(_ context.Context, _ port.SessionEvent) {}
-func (o *stateCatalogObserver) OnError(_ context.Context, _ port.ErrorEvent)          {}
 func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event port.ExecutionEvent) {
 	if err := o.catalog.AppendExecutionEvent(event); err != nil {
 		o.catalog.markError(err)

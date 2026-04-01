@@ -23,11 +23,12 @@ import (
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
-	MaxIterations    int                     // 最大循环次数（默认 50）
-	StopWhen         func(port.Message) bool // 自定义停止条件
-	ParallelToolCall bool                    // 启用并行工具调用（默认 false，串行执行）
-	LLMRetry         RetryConfig             // LLM 调用重试配置
-	LLMBreaker       *retry.Breaker          // LLM 调用熔断器（可选）
+	MaxIterations      int                     // 最大循环次数（默认 50）
+	StopWhen           func(port.Message) bool // 自定义停止条件
+	ParallelToolCall   bool                    // 启用并行工具调用（默认 false，串行执行）
+	MaxConcurrentTools int                     // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
+	LLMRetry           RetryConfig             // LLM 调用重试配置
+	LLMBreaker         *retry.Breaker          // LLM 调用熔断器（可选）
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
@@ -304,7 +305,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.C
 		}
 
 		lastErr = attempt.err
-		if !attempt.retryable || !cfg.ShouldRetryOrDefault(attempt.err) || attemptIndex == maxRetries {
+		if !attempt.retryable || !cfg.ShouldRetryOrDefault(ctx, attempt.err) || attemptIndex == maxRetries {
 			return nil, false, attempt.err
 		}
 
@@ -456,8 +457,17 @@ func isRecoverableStreamTailError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unexpected end of json input") || strings.Contains(msg, "unexpected eof")
+	// io.ErrUnexpectedEOF is the canonical sentinel for a truncated stream body.
+	if errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	// json.SyntaxError "unexpected end of JSON input" indicates the stream was
+	// cut off mid-object; use errors.As so wrapped errors are handled correctly.
+	var jsonErr *json.SyntaxError
+	if errors.As(err, &jsonErr) {
+		return strings.Contains(strings.ToLower(jsonErr.Error()), "unexpected end of json input")
+	}
+	return false
 }
 
 func streamMetadata(provider port.MetadataStreamIterator) port.LLMCallMetadata {
@@ -600,14 +610,26 @@ func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Se
 	return nil
 }
 
+func (l *AgentLoop) maxConcurrentTools() int {
+	if l.Config.MaxConcurrentTools > 0 {
+		return l.Config.MaxConcurrentTools
+	}
+	return 8
+}
+
 func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
 	results := make([]port.ToolResult, len(calls))
 
+	sem := make(chan struct{}, l.maxConcurrentTools())
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
 		go func(idx int, c port.ToolCall) {
-			defer wg.Done()
+			sem <- struct{}{}
+			defer func() {
+				<-sem
+				wg.Done()
+			}()
 			results[idx] = l.executeSingleToolCall(ctx, sess, c)
 		}(i, call)
 	}
@@ -651,21 +673,19 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		return result
 	}
 
-	// UserIO: 通知工具开始
-	l.withSideEffectsLock(func() {
-		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputToolStart,
-				Content: call.Name,
-				Meta: map[string]any{
-					"call_id":      call.ID,
-					"tool":         call.Name,
-					"risk":         string(spec.Risk),
-					"args_preview": previewToolArguments(repairedArgs),
-				},
-			})
-		}
-	})
+	// UserIO: 通知工具开始（IO.Send 实现自身是线程安全的）
+	if l.IO != nil {
+		l.IO.Send(ctx, port.OutputMessage{
+			Type:    port.OutputToolStart,
+			Content: call.Name,
+			Meta: map[string]any{
+				"call_id":      call.ID,
+				"tool":         call.Name,
+				"risk":         string(spec.Risk),
+				"args_preview": previewToolArguments(repairedArgs),
+			},
+		})
+	}
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionToolStarted,
 		SessionID: sess.ID,
@@ -767,21 +787,19 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		Timestamp: time.Now().UTC(),
 	})
 
-	// UserIO: 通知工具结果
-	l.withSideEffectsLock(func() {
-		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputToolResult,
-				Content: result.Content,
-				Meta: map[string]any{
-					"call_id":     call.ID,
-					"tool":        call.Name,
-					"is_error":    result.IsError,
-					"duration_ms": toolDur.Milliseconds(),
-				},
-			})
-		}
-	})
+	// UserIO: 通知工具结果（IO.Send 实现自身是线程安全的）
+	if l.IO != nil {
+		l.IO.Send(ctx, port.OutputMessage{
+			Type:    port.OutputToolResult,
+			Content: result.Content,
+			Meta: map[string]any{
+				"call_id":     call.ID,
+				"tool":        call.Name,
+				"is_error":    result.IsError,
+				"duration_ms": toolDur.Milliseconds(),
+			},
+		})
+	}
 
 	return result
 }
