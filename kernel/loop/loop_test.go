@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
@@ -251,6 +252,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 
 	// 验证 tool result 包含 denied 错误
 	found := false
+	var toolResultMsg *port.OutputMessage
 	for _, msg := range sess.Messages {
 		for _, tr := range msg.ToolResults {
 			if tr.IsError && tr.Content == builtins.ErrDenied.Error() {
@@ -260,6 +262,22 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected denied tool result in session messages")
+	}
+	for i := range io.Sent {
+		msg := &io.Sent[i]
+		if msg.Type == port.OutputToolResult {
+			toolResultMsg = msg
+			break
+		}
+	}
+	if toolResultMsg == nil {
+		t.Fatal("expected tool_result message")
+	}
+	if got := toolResultMsg.Meta["error_code"]; got != string(kerrors.ErrPolicyDenied) {
+		t.Fatalf("expected error_code %s, got %v", kerrors.ErrPolicyDenied, got)
+	}
+	if got := toolResultMsg.Meta["reason_code"]; got != "tool.denied" {
+		t.Fatalf("expected reason_code tool.denied, got %v", got)
 	}
 }
 
@@ -501,6 +519,48 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 	}
 	if out["a"] != float64(1) {
 		t.Fatalf("unexpected result: %+v", out)
+	}
+}
+
+func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *testing.T) {
+	reg := tool.NewRegistry()
+	reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		t.Fatal("tool should not execute")
+		return nil, nil
+	})
+	chain := middleware.NewChain()
+	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		Tools:    reg,
+		Chain:    chain,
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{ID: "sess-policy-meta", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
+	call := port.ToolCall{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}
+
+	result := l.executeSingleToolCall(context.Background(), sess, call)
+	if !result.IsError {
+		t.Fatalf("expected denied tool result, got %+v", result)
+	}
+
+	var toolCompleted *port.ExecutionEvent
+	for i := range observer.execution {
+		ev := &observer.execution[i]
+		if ev.Type == port.ExecutionToolCompleted {
+			toolCompleted = ev
+			break
+		}
+	}
+	if toolCompleted == nil {
+		t.Fatal("expected tool.completed event")
+	}
+	if got := toolCompleted.Data["error_code"]; got != string(kerrors.ErrPolicyDenied) {
+		t.Fatalf("expected error_code %s, got %v", kerrors.ErrPolicyDenied, got)
+	}
+	if got := toolCompleted.Data["reason_code"]; got != "tool.denied" {
+		t.Fatalf("expected reason_code tool.denied, got %v", got)
 	}
 }
 

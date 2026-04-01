@@ -704,10 +704,46 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		beforeErr = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil)
 	})
 	if beforeErr != nil {
+		normalizedErr := normalizeToolError(beforeErr)
 		result := port.ToolResult{
 			CallID:  call.ID,
 			Content: beforeErr.Error(),
 			IsError: true,
+		}
+		l.observer().OnToolCall(ctx, port.ToolCallEvent{
+			SessionID: sess.ID,
+			ToolName:  call.Name,
+			Risk:      string(spec.Risk),
+			StartedAt: time.Now().UTC(),
+			Duration:  0,
+			Error:     normalizedErr,
+		})
+		event := port.ExecutionEvent{
+			Type:      port.ExecutionToolCompleted,
+			SessionID: sess.ID,
+			Timestamp: time.Now().UTC(),
+			ToolName:  call.Name,
+			CallID:    call.ID,
+			Risk:      string(spec.Risk),
+			Data: map[string]any{
+				"is_error": true,
+			},
+			Error: normalizedErr.Error(),
+		}
+		appendToolErrorMetadata(&event, normalizedErr)
+		l.observer().OnExecutionEvent(ctx, event)
+		if l.IO != nil {
+			meta := map[string]any{
+				"call_id":  call.ID,
+				"tool":     call.Name,
+				"is_error": true,
+			}
+			appendToolErrorIOMetadata(meta, normalizedErr)
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputToolResult,
+				Content: result.Content,
+				Meta:    meta,
+			})
 		}
 		l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
 			Stage:     session.ToolLifecycleAfter,
@@ -717,7 +753,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 			Arguments: repairedArgs,
 			Result:    &result,
 			Risk:      string(spec.Risk),
-			Error:     beforeErr,
+			Error:     normalizedErr,
 			Timestamp: time.Now().UTC(),
 		})
 		return result
@@ -770,6 +806,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	}
 	if err != nil {
 		event.Error = err.Error()
+		appendToolErrorMetadata(&event, err)
 	}
 	appendToolExecutionMetadata(&event, output)
 	l.observer().OnExecutionEvent(ctx, event)
@@ -793,15 +830,17 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 
 	// UserIO: 通知工具结果（IO.Send 实现自身是线程安全的）
 	if l.IO != nil {
+		meta := map[string]any{
+			"call_id":     call.ID,
+			"tool":        call.Name,
+			"is_error":    result.IsError,
+			"duration_ms": toolDur.Milliseconds(),
+		}
+		appendToolErrorIOMetadata(meta, err)
 		l.IO.Send(ctx, port.OutputMessage{
 			Type:    port.OutputToolResult,
 			Content: result.Content,
-			Meta: map[string]any{
-				"call_id":     call.ID,
-				"tool":        call.Name,
-				"is_error":    result.IsError,
-				"duration_ms": toolDur.Milliseconds(),
-			},
+			Meta:    meta,
 		})
 	}
 
@@ -857,6 +896,60 @@ func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMess
 			event.Data[key] = value
 		}
 	}
+}
+
+func appendToolErrorMetadata(event *port.ExecutionEvent, err error) {
+	if event == nil || err == nil {
+		return
+	}
+	if event.Data == nil {
+		event.Data = map[string]any{}
+	}
+	code := string(kerrors.GetCode(err))
+	if code != "" {
+		event.Data["error_code"] = code
+	}
+	var kernelErr *kerrors.Error
+	if errors.As(err, &kernelErr) && len(kernelErr.Meta) > 0 {
+		for k, v := range kernelErr.Meta {
+			event.Data[k] = v
+		}
+	}
+}
+
+func appendToolErrorIOMetadata(meta map[string]any, err error) {
+	if meta == nil || err == nil {
+		return
+	}
+	code := string(kerrors.GetCode(err))
+	if code != "" {
+		meta["error_code"] = code
+	}
+	var kernelErr *kerrors.Error
+	if errors.As(err, &kernelErr) && len(kernelErr.Meta) > 0 {
+		for _, key := range []string{"reason_code", "reason", "enforcement", "tool"} {
+			if value, ok := kernelErr.Meta[key]; ok {
+				meta[key] = value
+			}
+		}
+	}
+}
+
+type kernelErrorProvider interface {
+	AsKernelError() *kerrors.Error
+}
+
+func normalizeToolError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var provider kernelErrorProvider
+	if errors.As(err, &provider) {
+		if wrapped := provider.AsKernelError(); wrapped != nil {
+			return wrapped
+		}
+	}
+	return err
 }
 
 func repairToolArguments(args json.RawMessage) json.RawMessage {
