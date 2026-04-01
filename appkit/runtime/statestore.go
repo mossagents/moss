@@ -747,7 +747,11 @@ func (s *indexedSessionStore) Delete(ctx context.Context, id string) error {
 }
 
 func (s *indexedSessionStore) Watch(ctx context.Context, id string) (<-chan *session.Session, error) {
-	return s.inner.Watch(ctx, id)
+	watchable, ok := s.inner.(session.WatchableSessionStore)
+	if !ok {
+		return nil, session.ErrNotSupported
+	}
+	return watchable.Watch(ctx, id)
 }
 
 type indexedCheckpointStore struct {

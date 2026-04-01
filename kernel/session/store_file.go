@@ -129,13 +129,7 @@ func (fs *FileStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-// Watch 不支持文件存储实现，返回 ErrNotSupported。
-// 后续 Redis/etcd Store 可提供真正的 Watch 语义。
-func (fs *FileStore) Watch(_ context.Context, _ string) (<-chan *Session, error) {
-	return nil, ErrNotSupported
-}
-
-// sanitizeID 清理 Session ID 防止路径遍历。
+// sanitizeID清理 Session ID 防止路径遍历。
 // 使用白名单策略：只保留字母、数字、连字符、下划线。
 func sanitizeID(id string) string {
 	safe := strings.Map(func(r rune) rune {

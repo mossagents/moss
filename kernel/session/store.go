@@ -22,9 +22,14 @@ type SessionStore interface {
 
 	// Delete 删除指定 ID 的 Session。
 	Delete(ctx context.Context, id string) error
+}
 
+// WatchableSessionStore 扩展 SessionStore，支持多实例部署下的
+// 跨节点 Session 变更订阅（如 Redis pub/sub、etcd Watch 等）。
+// 文件存储等不支持 Watch 的实现无需实现此接口。
+type WatchableSessionStore interface {
+	SessionStore
 	// Watch 监听指定 Session 的变更事件。
-	// 用于多实例部署时跨节点 Session 状态同步。
 	// 不支持时应返回 ErrNotSupported。
 	Watch(ctx context.Context, id string) (<-chan *Session, error)
 }
