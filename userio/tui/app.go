@@ -1522,22 +1522,6 @@ func (m appModel) Init() tea.Cmd {
 	return m.welcome.Init()
 }
 
-func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// 全局窗口大小
-	if ws, ok := msg.(tea.WindowSizeMsg); ok {
-		m.width = ws.Width
-		m.height = ws.Height
-	}
-
-	switch m.state {
-	case stateWelcome:
-		return m.updateWelcome(msg)
-	case stateChat:
-		return m.updateChat(msg)
-	}
-	return m, nil
-}
-
 func (m appModel) View() string {
 	switch m.state {
 	case stateWelcome:
