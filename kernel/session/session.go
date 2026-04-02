@@ -93,6 +93,18 @@ func (b *Budget) ResetUsage() {
 	b.UsedTokens = 0
 }
 
+// Clone returns a copy of budget counters with a fresh mutex.
+func (b *Budget) Clone() Budget {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return Budget{
+		MaxTokens:  b.MaxTokens,
+		MaxSteps:   b.MaxSteps,
+		UsedTokens: b.UsedTokens,
+		UsedSteps:  b.UsedSteps,
+	}
+}
+
 // Session 是 Agent 的执行上下文，包含对话历史、状态和预算。
 type Session struct {
 	ID        string         `json:"id"`

@@ -319,7 +319,7 @@ func (k *Kernel) instantiateClonedSession(ctx context.Context, source *session.S
 	live.Status = session.StatusCreated
 	live.Messages = cloneMessages(source.Messages)
 	live.State = cloneState(source.State)
-	live.Budget = source.Budget
+	live.Budget = source.Budget.Clone()
 	live.EndedAt = time.Time{}
 	if k.store != nil {
 		if err := k.store.Save(ctx, live); err != nil {
@@ -425,11 +425,16 @@ func cloneSession(source *session.Session) *session.Session {
 	if source == nil {
 		return nil
 	}
-	cloned := *source
-	cloned.Config = cloneSessionConfig(source.Config)
-	cloned.Messages = cloneMessages(source.Messages)
-	cloned.State = cloneState(source.State)
-	return &cloned
+	return &session.Session{
+		ID:        source.ID,
+		Status:    source.Status,
+		Config:    cloneSessionConfig(source.Config),
+		Messages:  cloneMessages(source.Messages),
+		State:     cloneState(source.State),
+		Budget:    source.Budget.Clone(),
+		CreatedAt: source.CreatedAt,
+		EndedAt:   source.EndedAt,
+	}
 }
 
 func cloneSessionConfig(cfg session.SessionConfig) session.SessionConfig {

@@ -147,7 +147,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 				"offload_of": sess.ID,
 				"note":       in.Note,
 			},
-			Budget:    sess.Budget,
+			Budget:    sess.Budget.Clone(),
 			CreatedAt: time.Now(),
 			EndedAt:   time.Now(),
 		}
@@ -367,7 +367,7 @@ func compactWithSummary(
 			"offload_of": sess.ID,
 			"note":       note,
 		},
-		Budget:    sess.Budget,
+		Budget:    sess.Budget.Clone(),
 		CreatedAt: time.Now(),
 		EndedAt:   time.Now(),
 	}

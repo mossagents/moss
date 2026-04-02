@@ -576,6 +576,21 @@ func (s *ChatService) invokeTool(ctx context.Context, name string, input any) (j
 	return handler(ctx, raw)
 }
 
+type desktopSlashCommandHandler func(*ChatService, context.Context, []string) (string, error)
+
+var desktopSlashCommandRegistry = map[string]desktopSlashCommandHandler{
+	"/session":         (*ChatService).handleSessionSlashCommand,
+	"/sessions":        (*ChatService).handleSessionsSlashCommand,
+	"/resume":          (*ChatService).handleResumeSlashCommand,
+	"/offload":         (*ChatService).handleOffloadSlashCommand,
+	"/tasks":           (*ChatService).handleTasksSlashCommand,
+	"/task":            (*ChatService).handleTaskSlashCommand,
+	"/schedules":       (*ChatService).handleSchedulesSlashCommand,
+	"/schedule":        (*ChatService).handleScheduleSlashCommand,
+	"/schedule-cancel": (*ChatService).handleScheduleCancelSlashCommand,
+	"/dashboard":       (*ChatService).handleDashboardSlashCommand,
+}
+
 func (s *ChatService) handleSlashCommand(content string) (string, error) {
 	parts := strings.Fields(content)
 	if len(parts) == 0 {
@@ -585,159 +600,180 @@ func (s *ChatService) handleSlashCommand(content string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	switch parts[0] {
-	case "/session":
-		return s.sessionSummary(), nil
-	case "/sessions":
-		if s.store == nil {
-			return "session store 不可用。", nil
-		}
-		summaries, err := s.store.List(ctx)
-		if err != nil {
-			return "", err
-		}
-		if len(summaries) == 0 {
-			return "暂无历史会话。", nil
-		}
-		sort.Slice(summaries, func(i, j int) bool { return summaries[i].CreatedAt > summaries[j].CreatedAt })
-		var b strings.Builder
-		b.WriteString("Sessions:\n")
-		for i, sum := range summaries {
-			if i >= 15 {
-				break
-			}
-			b.WriteString(fmt.Sprintf("- %s | %s | %s | steps=%d\n", sum.ID, sum.Status, sum.Goal, sum.Steps))
-		}
-		return strings.TrimRight(b.String(), "\n"), nil
-	case "/resume":
-		if len(parts) < 2 {
-			return "", fmt.Errorf("usage: /resume <session_id>")
-		}
-		if err := s.ResumeSession(parts[1]); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("已恢复会话 %s", parts[1]), nil
-	case "/offload":
-		keepRecent := 20
-		noteStart := 1
-		if len(parts) >= 2 {
-			if n, err := strconv.Atoi(parts[1]); err == nil {
-				keepRecent = n
-				noteStart = 2
-			}
-		}
-		note := ""
-		if len(parts) > noteStart {
-			note = strings.Join(parts[noteStart:], " ")
-		}
-		s.mu.Lock()
-		sess := s.sess
-		s.mu.Unlock()
-		if sess == nil {
-			return "", fmt.Errorf("no active session")
-		}
-		raw, err := s.invokeTool(ctx, "offload_context", map[string]any{
-			"session_id":  sess.ID,
-			"keep_recent": keepRecent,
-			"note":        note,
-		})
-		if err == nil {
-			return formatJSON(raw), nil
-		}
-		// Fallback: resumed sessions loaded from store may not be tracked by SessionManager.
-		return s.offloadContextLocally(ctx, sess, keepRecent, note)
-	case "/tasks":
-		status := ""
-		limit := 20
-		if len(parts) >= 2 {
-			status = parts[1]
-		}
-		if len(parts) >= 3 {
-			if n, err := strconv.Atoi(parts[2]); err == nil {
-				limit = n
-			}
-		}
-		raw, err := s.invokeTool(ctx, "list_tasks", map[string]any{"status": status, "limit": limit})
-		if err != nil {
-			return "", err
-		}
-		return formatJSON(raw), nil
-	case "/task":
-		if len(parts) < 2 {
-			return "", fmt.Errorf("usage: /task <id> 或 /task cancel <id> [reason]")
-		}
-		if parts[1] == "cancel" {
-			if len(parts) < 3 {
-				return "", fmt.Errorf("usage: /task cancel <id> [reason]")
-			}
-			reason := ""
-			if len(parts) > 3 {
-				reason = strings.Join(parts[3:], " ")
-			}
-			raw, err := s.invokeTool(ctx, "cancel_task", map[string]any{"task_id": parts[2], "reason": reason})
-			if err != nil {
-				return "", err
-			}
-			return formatJSON(raw), nil
-		}
-		raw, err := s.invokeTool(ctx, "query_agent", map[string]any{"task_id": parts[1]})
-		if err != nil {
-			return "", err
-		}
-		return formatJSON(raw), nil
-	case "/schedules":
-		if s.sched == nil {
-			return "scheduler 不可用。", nil
-		}
-		jobs := s.sched.ListJobs()
-		if len(jobs) == 0 {
-			return "当前没有定时任务。", nil
-		}
-		sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
-		var b strings.Builder
-		b.WriteString("Schedules:\n")
-		for _, j := range jobs {
-			b.WriteString(fmt.Sprintf("- %s | %s | %s\n", j.ID, j.Schedule, j.Goal))
-		}
-		return strings.TrimRight(b.String(), "\n"), nil
-	case "/schedule":
-		if len(parts) < 4 {
-			return "", fmt.Errorf("usage: /schedule <id> <@every|@after|@once> <goal>")
-		}
-		goal := strings.Join(parts[3:], " ")
-		if err := s.sched.AddJob(scheduler.Job{
-			ID:       parts[1],
-			Schedule: parts[2],
-			Goal:     goal,
-			Config: session.SessionConfig{
-				Goal:     goal,
-				Mode:     "scheduled",
-				MaxSteps: 30,
-			},
-		}); err != nil {
-			return "", err
-		}
-		s.emitDashboard()
-		return fmt.Sprintf("已添加定时任务 %s (%s)", parts[1], parts[2]), nil
-	case "/schedule-cancel":
-		if len(parts) < 2 {
-			return "", fmt.Errorf("usage: /schedule-cancel <id>")
-		}
-		if err := s.sched.RemoveJob(parts[1]); err != nil {
-			return "", err
-		}
-		s.emitDashboard()
-		return fmt.Sprintf("已取消定时任务 %s", parts[1]), nil
-	case "/dashboard":
-		snapshot, err := s.dashboardSnapshot(ctx)
-		if err != nil {
-			return "", err
-		}
-		raw, _ := json.Marshal(snapshot)
-		return formatJSON(raw), nil
-	default:
+	handler, ok := desktopSlashCommandRegistry[parts[0]]
+	if !ok {
 		return "", fmt.Errorf("unknown command: %s", parts[0])
 	}
+	return handler(s, ctx, parts)
+}
+
+func (s *ChatService) handleSessionSlashCommand(_ context.Context, _ []string) (string, error) {
+	return s.sessionSummary(), nil
+}
+
+func (s *ChatService) handleSessionsSlashCommand(ctx context.Context, _ []string) (string, error) {
+	if s.store == nil {
+		return "session store 不可用。", nil
+	}
+	summaries, err := s.store.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(summaries) == 0 {
+		return "暂无历史会话。", nil
+	}
+	sort.Slice(summaries, func(i, j int) bool { return summaries[i].CreatedAt > summaries[j].CreatedAt })
+	var b strings.Builder
+	b.WriteString("Sessions:\n")
+	for i, sum := range summaries {
+		if i >= 15 {
+			break
+		}
+		b.WriteString(fmt.Sprintf("- %s | %s | %s | steps=%d\n", sum.ID, sum.Status, sum.Goal, sum.Steps))
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func (s *ChatService) handleResumeSlashCommand(_ context.Context, parts []string) (string, error) {
+	if len(parts) < 2 {
+		return "", fmt.Errorf("usage: /resume <session_id>")
+	}
+	if err := s.ResumeSession(parts[1]); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("已恢复会话 %s", parts[1]), nil
+}
+
+func (s *ChatService) handleOffloadSlashCommand(ctx context.Context, parts []string) (string, error) {
+	keepRecent := 20
+	noteStart := 1
+	if len(parts) >= 2 {
+		if n, err := strconv.Atoi(parts[1]); err == nil {
+			keepRecent = n
+			noteStart = 2
+		}
+	}
+	note := ""
+	if len(parts) > noteStart {
+		note = strings.Join(parts[noteStart:], " ")
+	}
+	s.mu.Lock()
+	sess := s.sess
+	s.mu.Unlock()
+	if sess == nil {
+		return "", fmt.Errorf("no active session")
+	}
+	raw, err := s.invokeTool(ctx, "offload_context", map[string]any{
+		"session_id":  sess.ID,
+		"keep_recent": keepRecent,
+		"note":        note,
+	})
+	if err == nil {
+		return formatJSON(raw), nil
+	}
+	// Fallback: resumed sessions loaded from store may not be tracked by SessionManager.
+	return s.offloadContextLocally(ctx, sess, keepRecent, note)
+}
+
+func (s *ChatService) handleTasksSlashCommand(ctx context.Context, parts []string) (string, error) {
+	status := ""
+	limit := 20
+	if len(parts) >= 2 {
+		status = parts[1]
+	}
+	if len(parts) >= 3 {
+		if n, err := strconv.Atoi(parts[2]); err == nil {
+			limit = n
+		}
+	}
+	raw, err := s.invokeTool(ctx, "list_tasks", map[string]any{"status": status, "limit": limit})
+	if err != nil {
+		return "", err
+	}
+	return formatJSON(raw), nil
+}
+
+func (s *ChatService) handleTaskSlashCommand(ctx context.Context, parts []string) (string, error) {
+	if len(parts) < 2 {
+		return "", fmt.Errorf("usage: /task <id> 或 /task cancel <id> [reason]")
+	}
+	if parts[1] == "cancel" {
+		if len(parts) < 3 {
+			return "", fmt.Errorf("usage: /task cancel <id> [reason]")
+		}
+		reason := ""
+		if len(parts) > 3 {
+			reason = strings.Join(parts[3:], " ")
+		}
+		raw, err := s.invokeTool(ctx, "cancel_task", map[string]any{"task_id": parts[2], "reason": reason})
+		if err != nil {
+			return "", err
+		}
+		return formatJSON(raw), nil
+	}
+	raw, err := s.invokeTool(ctx, "query_agent", map[string]any{"task_id": parts[1]})
+	if err != nil {
+		return "", err
+	}
+	return formatJSON(raw), nil
+}
+
+func (s *ChatService) handleSchedulesSlashCommand(_ context.Context, _ []string) (string, error) {
+	if s.sched == nil {
+		return "scheduler 不可用。", nil
+	}
+	jobs := s.sched.ListJobs()
+	if len(jobs) == 0 {
+		return "当前没有定时任务。", nil
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	var b strings.Builder
+	b.WriteString("Schedules:\n")
+	for _, j := range jobs {
+		b.WriteString(fmt.Sprintf("- %s | %s | %s\n", j.ID, j.Schedule, j.Goal))
+	}
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func (s *ChatService) handleScheduleSlashCommand(_ context.Context, parts []string) (string, error) {
+	if len(parts) < 4 {
+		return "", fmt.Errorf("usage: /schedule <id> <@every|@after|@once> <goal>")
+	}
+	goal := strings.Join(parts[3:], " ")
+	if err := s.sched.AddJob(scheduler.Job{
+		ID:       parts[1],
+		Schedule: parts[2],
+		Goal:     goal,
+		Config: session.SessionConfig{
+			Goal:     goal,
+			Mode:     "scheduled",
+			MaxSteps: 30,
+		},
+	}); err != nil {
+		return "", err
+	}
+	s.emitDashboard()
+	return fmt.Sprintf("已添加定时任务 %s (%s)", parts[1], parts[2]), nil
+}
+
+func (s *ChatService) handleScheduleCancelSlashCommand(_ context.Context, parts []string) (string, error) {
+	if len(parts) < 2 {
+		return "", fmt.Errorf("usage: /schedule-cancel <id>")
+	}
+	if err := s.sched.RemoveJob(parts[1]); err != nil {
+		return "", err
+	}
+	s.emitDashboard()
+	return fmt.Sprintf("已取消定时任务 %s", parts[1]), nil
+}
+
+func (s *ChatService) handleDashboardSlashCommand(ctx context.Context, _ []string) (string, error) {
+	snapshot, err := s.dashboardSnapshot(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, _ := json.Marshal(snapshot)
+	return formatJSON(raw), nil
 }
 
 func (s *ChatService) sessionSummary() string {
@@ -817,7 +853,7 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 			"offload_of": sess.ID,
 			"note":       note,
 		},
-		Budget:    sess.Budget,
+		Budget:    sess.Budget.Clone(),
 		CreatedAt: time.Now(),
 		EndedAt:   time.Now(),
 	}

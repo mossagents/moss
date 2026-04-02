@@ -69,140 +69,180 @@ func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
 		}
 
 		policyCtx := buildPolicyContext(mc)
-		result := allowResult()
-		for _, rule := range rules {
-			nextResult := normalizePolicyResult(rule(policyCtx))
-			if stricterThan(nextResult.Decision, result.Decision) || preferPolicyResult(nextResult, result) {
-				result = nextResult
-			}
-		}
-		if mc.Observer != nil && len(result.Meta) > 0 {
-			data := map[string]any{}
-			for k, v := range result.Meta {
-				data[k] = v
-			}
-			data["reason"] = result.Reason.Message
-			data["reason_code"] = result.Reason.Code
-			for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
-				data[k] = v
-			}
-			sessionID := ""
-			if mc.Session != nil {
-				sessionID = mc.Session.ID
-			}
-			mc.Observer.OnExecutionEvent(ctx, port.ExecutionEvent{
-				Type:        port.ExecutionPolicyRuleMatched,
-				SessionID:   sessionID,
-				Timestamp:   time.Now().UTC(),
-				ToolName:    mc.Tool.Name,
-				Risk:        string(mc.Tool.Risk),
-				ReasonCode:  result.Reason.Code,
-				Enforcement: result.Enforcement,
-				Data:        data,
-			})
-		}
-
-		switch result.Decision {
-		case Deny:
-			if mc.IO != nil {
-				_ = mc.IO.Send(ctx, port.OutputMessage{
-					Type: port.OutputText,
-					Content: port.FormatDeniedMessage(
-						mc.Tool.Name,
-						result.Reason.Message,
-						result.Reason.Code,
-						result.Enforcement,
-					),
-				})
-			}
-			return policyDeniedError(mc, result)
-		case RequireApproval:
-			if mc.IO != nil {
-				approval := buildApprovalRequest(mc, result)
-				observer := mc.Observer
-				if observer == nil {
-					observer = port.NoOpObserver{}
-				}
-				observer.OnApproval(ctx, port.ApprovalEvent{
-					SessionID: approval.SessionID,
-					Type:      "requested",
-					Request:   *approval,
-				})
-				requestData := map[string]any{
-					"approval_id": approval.ID,
-					"reason":      approval.Reason,
-					"reason_code": approval.ReasonCode,
-				}
-				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
-					requestData[k] = v
-				}
-				for k, v := range result.Meta {
-					requestData[k] = v
-				}
-				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
-					Type:        port.ExecutionApprovalRequest,
-					SessionID:   approval.SessionID,
-					Timestamp:   time.Now().UTC(),
-					ToolName:    approval.ToolName,
-					Risk:        approval.Risk,
-					ReasonCode:  approval.ReasonCode,
-					Enforcement: approval.Enforcement,
-					Data:        requestData,
-				})
-				resp, err := mc.IO.Ask(ctx, port.InputRequest{
-					Type:     port.InputConfirm,
-					Prompt:   approval.Prompt,
-					Approval: approval,
-					Meta: map[string]any{
-						"tool":        mc.Tool.Name,
-						"input":       mc.Input,
-						"approval_id": approval.ID,
-						"reason":      approval.Reason,
-						"reason_code": approval.ReasonCode,
-						"risk":        approval.Risk,
-					},
-				})
-				if err != nil {
-					return err
-				}
-				resolved := normalizeApprovalDecision(resp, approval)
-				observer.OnApproval(ctx, port.ApprovalEvent{
-					SessionID: approval.SessionID,
-					Type:      "resolved",
-					Request:   *approval,
-					Decision:  resolved,
-				})
-				resolvedData := map[string]any{
-					"approval_id": approval.ID,
-					"approved":    resolved.Approved,
-					"source":      resolved.Source,
-					"reason":      approval.Reason,
-					"reason_code": approval.ReasonCode,
-				}
-				for k, v := range extractPolicyInputDetails(approval.ToolName, mc.Input) {
-					resolvedData[k] = v
-				}
-				for k, v := range result.Meta {
-					resolvedData[k] = v
-				}
-				observer.OnExecutionEvent(ctx, port.ExecutionEvent{
-					Type:        port.ExecutionApprovalResolved,
-					SessionID:   approval.SessionID,
-					Timestamp:   time.Now().UTC(),
-					ToolName:    approval.ToolName,
-					Risk:        approval.Risk,
-					ReasonCode:  approval.ReasonCode,
-					Enforcement: approval.Enforcement,
-					Data:        resolvedData,
-				})
-				if !resolved.Approved {
-					return policyDeniedError(mc, result)
-				}
-			}
+		result := evaluatePolicyRules(policyCtx, rules)
+		emitPolicyRuleMatchedEvent(ctx, mc, result)
+		if err := applyPolicyDecision(ctx, mc, result); err != nil {
+			return err
 		}
 
 		return next(ctx)
 	}
+}
+
+func evaluatePolicyRules(policyCtx PolicyContext, rules []PolicyRule) PolicyResult {
+	result := allowResult()
+	for _, rule := range rules {
+		nextResult := normalizePolicyResult(rule(policyCtx))
+		if stricterThan(nextResult.Decision, result.Decision) || preferPolicyResult(nextResult, result) {
+			result = nextResult
+		}
+	}
+	return result
+}
+
+func emitPolicyRuleMatchedEvent(ctx context.Context, mc *middleware.Context, result PolicyResult) {
+	if mc == nil || mc.Observer == nil || mc.Tool == nil || len(result.Meta) == 0 {
+		return
+	}
+	data := copyPolicyMeta(result.Meta)
+	data["reason"] = result.Reason.Message
+	data["reason_code"] = result.Reason.Code
+	for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
+		data[k] = v
+	}
+	sessionID := ""
+	if mc.Session != nil {
+		sessionID = mc.Session.ID
+	}
+	mc.Observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:        port.ExecutionPolicyRuleMatched,
+		SessionID:   sessionID,
+		Timestamp:   time.Now().UTC(),
+		ToolName:    mc.Tool.Name,
+		Risk:        string(mc.Tool.Risk),
+		ReasonCode:  result.Reason.Code,
+		Enforcement: result.Enforcement,
+		Data:        data,
+	})
+}
+
+func applyPolicyDecision(ctx context.Context, mc *middleware.Context, result PolicyResult) error {
+	switch result.Decision {
+	case Deny:
+		if mc.IO != nil {
+			_ = mc.IO.Send(ctx, port.OutputMessage{
+				Type: port.OutputText,
+				Content: port.FormatDeniedMessage(
+					mc.Tool.Name,
+					result.Reason.Message,
+					result.Reason.Code,
+					result.Enforcement,
+				),
+			})
+		}
+		return policyDeniedError(mc, result)
+	case RequireApproval:
+		if mc.IO == nil {
+			return nil
+		}
+		return handlePolicyApproval(ctx, mc, result)
+	default:
+		return nil
+	}
+}
+
+func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result PolicyResult) error {
+	approval := buildApprovalRequest(mc, result)
+	observer := approvalObserver(mc)
+	observer.OnApproval(ctx, port.ApprovalEvent{
+		SessionID: approval.SessionID,
+		Type:      "requested",
+		Request:   *approval,
+	})
+	observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:        port.ExecutionApprovalRequest,
+		SessionID:   approval.SessionID,
+		Timestamp:   time.Now().UTC(),
+		ToolName:    approval.ToolName,
+		Risk:        approval.Risk,
+		ReasonCode:  approval.ReasonCode,
+		Enforcement: approval.Enforcement,
+		Data:        approvalRequestData(approval, mc.Input, result.Meta),
+	})
+	resp, err := mc.IO.Ask(ctx, port.InputRequest{
+		Type:     port.InputConfirm,
+		Prompt:   approval.Prompt,
+		Approval: approval,
+		Meta: map[string]any{
+			"tool":        mc.Tool.Name,
+			"input":       mc.Input,
+			"approval_id": approval.ID,
+			"reason":      approval.Reason,
+			"reason_code": approval.ReasonCode,
+			"risk":        approval.Risk,
+		},
+	})
+	if err != nil {
+		return err
+	}
+	resolved := normalizeApprovalDecision(resp, approval)
+	observer.OnApproval(ctx, port.ApprovalEvent{
+		SessionID: approval.SessionID,
+		Type:      "resolved",
+		Request:   *approval,
+		Decision:  resolved,
+	})
+	observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:        port.ExecutionApprovalResolved,
+		SessionID:   approval.SessionID,
+		Timestamp:   time.Now().UTC(),
+		ToolName:    approval.ToolName,
+		Risk:        approval.Risk,
+		ReasonCode:  approval.ReasonCode,
+		Enforcement: approval.Enforcement,
+		Data:        approvalResolvedData(approval, resolved, mc.Input, result.Meta),
+	})
+	if !resolved.Approved {
+		return policyDeniedError(mc, result)
+	}
+	return nil
+}
+
+func approvalObserver(mc *middleware.Context) port.Observer {
+	if mc != nil && mc.Observer != nil {
+		return mc.Observer
+	}
+	return port.NoOpObserver{}
+}
+
+func copyPolicyMeta(meta map[string]any) map[string]any {
+	data := map[string]any{}
+	for k, v := range meta {
+		data[k] = v
+	}
+	return data
+}
+
+func approvalRequestData(approval *port.ApprovalRequest, input []byte, meta map[string]any) map[string]any {
+	data := map[string]any{
+		"approval_id": approval.ID,
+		"reason":      approval.Reason,
+		"reason_code": approval.ReasonCode,
+	}
+	for k, v := range extractPolicyInputDetails(approval.ToolName, input) {
+		data[k] = v
+	}
+	for k, v := range meta {
+		data[k] = v
+	}
+	return data
+}
+
+func approvalResolvedData(approval *port.ApprovalRequest, resolved *port.ApprovalDecision, input []byte, meta map[string]any) map[string]any {
+	data := map[string]any{
+		"approval_id": approval.ID,
+		"approved":    resolved.Approved,
+		"source":      resolved.Source,
+		"reason":      approval.Reason,
+		"reason_code": approval.ReasonCode,
+	}
+	for k, v := range extractPolicyInputDetails(approval.ToolName, input) {
+		data[k] = v
+	}
+	for k, v := range meta {
+		data[k] = v
+	}
+	return data
 }
 
 func allowResult() PolicyResult {

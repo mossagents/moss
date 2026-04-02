@@ -331,51 +331,79 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 		},
 	}
 
+	report.Health.State = buildDoctorStateHealth()
+	sessionStore, summaries := populateDoctorSessionsHealth(ctx, &report)
+	report.Health.Tasks = buildDoctorTaskHealth()
+	report.Health.Workspace = buildDoctorWorkspaceHealth()
+	report.Health.Extensions = buildDoctorExtensionHealth(workspace, trust, projectAssetsAllowed, projectConfigPath)
+	report.Health.Repo = buildDoctorRepoHealth(ctx, workspace)
+	report.Health.Snapshots = buildDoctorSnapshotHealth(ctx, workspace, sessionStore, summaries)
+
+	return report
+}
+
+func buildDoctorStateHealth() DoctorStateCatalogHealth {
 	stateCatalog, stateErr := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
 	if stateErr != nil {
-		report.Health.State = DoctorStateCatalogHealth{
+		return DoctorStateCatalogHealth{
 			Enabled:   StateCatalogEnabled(),
 			Ready:     false,
 			Degraded:  true,
 			LastError: stateErr.Error(),
 		}
-	} else if stateCatalog != nil {
-		health := stateCatalog.Health()
-		report.Health.State = DoctorStateCatalogHealth{
-			Enabled:   health.Enabled,
-			Ready:     health.Ready,
-			Entries:   health.Entries,
-			Degraded:  health.Degraded,
-			LastError: health.LastError,
-		}
 	}
+	if stateCatalog == nil {
+		return DoctorStateCatalogHealth{}
+	}
+	health := stateCatalog.Health()
+	return DoctorStateCatalogHealth{
+		Enabled:   health.Enabled,
+		Ready:     health.Ready,
+		Entries:   health.Entries,
+		Degraded:  health.Degraded,
+		LastError: health.LastError,
+	}
+}
 
+func populateDoctorSessionsHealth(ctx context.Context, report *DoctorReport) (session.SessionStore, []session.SessionSummary) {
+	if report == nil {
+		return nil, nil
+	}
 	sessionStore, err := session.NewFileStore(SessionStoreDir())
 	if err != nil {
 		report.Health.Sessions.Error = err.Error()
-	} else if summaries, err := sessionStore.List(ctx); err != nil {
+		return nil, nil
+	}
+	summaries, err := sessionStore.List(ctx)
+	if err != nil {
 		report.Health.Sessions.Error = err.Error()
-	} else {
-		report.Health.Sessions.Total = len(summaries)
-		for _, summary := range summaries {
-			if summary.Recoverable {
-				report.Health.Sessions.Recoverable++
-			}
+		return sessionStore, nil
+	}
+	report.Health.Sessions.Total = len(summaries)
+	for _, summary := range summaries {
+		if summary.Recoverable {
+			report.Health.Sessions.Recoverable++
 		}
 	}
+	return sessionStore, summaries
+}
 
+func buildDoctorTaskHealth() DoctorTaskHealth {
 	if _, err := port.NewFileTaskRuntime(TaskRuntimeDir()); err != nil {
-		report.Health.Tasks = DoctorTaskHealth{Type: "file", Ready: false, Error: err.Error()}
-	} else {
-		report.Health.Tasks = DoctorTaskHealth{Type: "file", Ready: true}
+		return DoctorTaskHealth{Type: "file", Ready: false, Error: err.Error()}
 	}
+	return DoctorTaskHealth{Type: "file", Ready: true}
+}
 
+func buildDoctorWorkspaceHealth() DoctorWorkspaceHealth {
 	if _, err := sandbox.NewLocalWorkspaceIsolation(WorkspaceIsolationDir()); err != nil {
-		report.Health.Workspace = DoctorWorkspaceHealth{Type: "local", Ready: false, Error: err.Error()}
-	} else {
-		report.Health.Workspace = DoctorWorkspaceHealth{Type: "local", Ready: true}
+		return DoctorWorkspaceHealth{Type: "local", Ready: false, Error: err.Error()}
 	}
+	return DoctorWorkspaceHealth{Type: "local", Ready: true}
+}
 
+func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bool, projectConfigPath string) DoctorExtensionHealth {
+	health := DoctorExtensionHealth{}
 	globalCfg, globalErr := appconfig.LoadGlobalConfig()
 	var (
 		projectCfg *appconfig.Config
@@ -385,79 +413,85 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 		projectCfg, projectErr = appconfig.LoadConfig(projectConfigPath)
 	}
 	if globalErr != nil {
-		report.Health.Extensions.Error = globalErr.Error()
-	} else if projectErr != nil {
-		report.Health.Extensions.Error = projectErr.Error()
-	} else {
-		merged := appconfig.MergeConfigs(globalCfg, projectCfg)
-		report.Health.Extensions.Configured = len(merged.Skills)
-		for _, sc := range merged.Skills {
-			if sc.IsEnabled() {
-				report.Health.Extensions.Enabled++
-			} else {
-				report.Health.Extensions.Disabled++
-			}
-			if sc.IsMCP() {
-				report.Health.Extensions.MCPServers++
-			} else {
-				report.Health.Extensions.PromptSkills++
-			}
-		}
-		if servers, err := ListMCPServers(workspace, trust); err != nil {
-			report.Health.Extensions.Error = err.Error()
-		} else {
-			report.Health.Extensions.MCPServerStatus = servers
-		}
-		report.Health.Extensions.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
+		health.Error = globalErr.Error()
+		return health
+	}
+	if projectErr != nil {
+		health.Error = projectErr.Error()
+		return health
 	}
 
+	merged := appconfig.MergeConfigs(globalCfg, projectCfg)
+	health.Configured = len(merged.Skills)
+	for _, sc := range merged.Skills {
+		if sc.IsEnabled() {
+			health.Enabled++
+		} else {
+			health.Disabled++
+		}
+		if sc.IsMCP() {
+			health.MCPServers++
+		} else {
+			health.PromptSkills++
+		}
+	}
+	if servers, err := ListMCPServers(workspace, trust); err != nil {
+		health.Error = err.Error()
+		return health
+	} else {
+		health.MCPServerStatus = servers
+	}
+	health.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
+	return health
+}
+
+func buildDoctorRepoHealth(ctx context.Context, workspace string) DoctorRepoHealth {
 	capture, err := sandbox.NewGitRepoStateCapture(workspace).Capture(ctx)
 	if err != nil {
-		report.Health.Repo = DoctorRepoHealth{Available: false, Error: err.Error()}
-	} else {
-		report.Health.Repo = DoctorRepoHealth{
-			Available: true,
-			Root:      capture.RepoRoot,
-			Head:      capture.HeadSHA,
-			Branch:    capture.Branch,
-			Dirty:     len(capture.Staged) > 0 || len(capture.Unstaged) > 0 || len(capture.Untracked) > 0,
-		}
+		return DoctorRepoHealth{Available: false, Error: err.Error()}
 	}
+	return DoctorRepoHealth{
+		Available: true,
+		Root:      capture.RepoRoot,
+		Head:      capture.HeadSHA,
+		Branch:    capture.Branch,
+		Dirty:     len(capture.Staged) > 0 || len(capture.Unstaged) > 0 || len(capture.Untracked) > 0,
+	}
+}
 
+func buildDoctorSnapshotHealth(ctx context.Context, workspace string, sessionStore session.SessionStore, summaries []session.SessionSummary) DoctorSnapshotHealth {
 	snapshots, err := listSnapshots(ctx, workspace)
 	if err != nil {
-		report.Health.Snapshots = DoctorSnapshotHealth{Available: false, Error: err.Error()}
-	} else {
-		indexedSessions := map[string]struct{}{}
-		recoverableSet := map[string]struct{}{}
-		recoverableMatches := 0
-		if sessionStore != nil {
-			if summaries, err := sessionStore.List(ctx); err == nil {
-				for _, summary := range summaries {
-					if summary.Recoverable {
-						recoverableSet[summary.ID] = struct{}{}
-					}
-				}
-			}
-		}
-		for _, snapshot := range snapshots {
-			if snapshot.SessionID == "" {
-				continue
-			}
-			indexedSessions[snapshot.SessionID] = struct{}{}
-			if _, ok := recoverableSet[snapshot.SessionID]; ok {
-				recoverableMatches++
-			}
-		}
-		report.Health.Snapshots = DoctorSnapshotHealth{
-			Available:          true,
-			Total:              len(snapshots),
-			SessionIndexed:     len(indexedSessions),
-			RecoverableMatches: recoverableMatches,
+		return DoctorSnapshotHealth{Available: false, Error: err.Error()}
+	}
+	indexedSessions := map[string]struct{}{}
+	recoverableSet := map[string]struct{}{}
+	recoverableMatches := 0
+	if len(summaries) == 0 && sessionStore != nil {
+		if listed, listErr := sessionStore.List(ctx); listErr == nil {
+			summaries = listed
 		}
 	}
-
-	return report
+	for _, summary := range summaries {
+		if summary.Recoverable {
+			recoverableSet[summary.ID] = struct{}{}
+		}
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.SessionID == "" {
+			continue
+		}
+		indexedSessions[snapshot.SessionID] = struct{}{}
+		if _, ok := recoverableSet[snapshot.SessionID]; ok {
+			recoverableMatches++
+		}
+	}
+	return DoctorSnapshotHealth{
+		Available:          true,
+		Total:              len(snapshots),
+		SessionIndexed:     len(indexedSessions),
+		RecoverableMatches: recoverableMatches,
+	}
 }
 
 func RenderDoctorReport(report DoctorReport) string {

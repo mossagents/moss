@@ -260,7 +260,7 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 		t.Fatalf("unexpected rerun messages %+v", cloned.Messages)
 	}
 	if cloned.Budget.UsedSteps != 0 || cloned.Budget.UsedTokens != 0 {
-		t.Fatalf("expected budget reset, got %+v", cloned.Budget)
+		t.Fatalf("expected budget reset, got steps=%d tokens=%d", cloned.Budget.UsedSteps, cloned.Budget.UsedTokens)
 	}
 	if len(cloned.State) != 0 {
 		t.Fatalf("expected empty state, got %+v", cloned.State)

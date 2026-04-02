@@ -82,8 +82,33 @@ func (l *AgentLoop) observer() port.Observer {
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
-	// OnSessionStart
 	runStartedAt := time.Now().UTC()
+	l.beginRun(ctx, sess, runStartedAt)
+
+	var lastOutput string
+	var totalUsage port.TokenUsage
+	maxIter := l.Config.maxIter()
+
+	for i := 0; i < maxIter; i++ {
+		if sess.Budget.Exhausted() {
+			break
+		}
+		if ctx.Err() != nil {
+			return l.fail(ctx, sess, totalUsage, ctx.Err()), ctx.Err()
+		}
+		shouldStop, err := l.runIteration(ctx, sess, i+1, maxIter, runStartedAt, &totalUsage, &lastOutput)
+		if err != nil {
+			return l.fail(ctx, sess, totalUsage, err), err
+		}
+		if shouldStop {
+			break
+		}
+	}
+
+	return l.completeRun(ctx, sess, totalUsage, lastOutput), nil
+}
+
+func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStartedAt time.Time) {
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionRunStarted,
@@ -101,155 +126,145 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		Session:   sess,
 		Timestamp: runStartedAt,
 	})
+}
 
-	var lastOutput string
-	var totalUsage port.TokenUsage
-	maxIter := l.Config.maxIter()
+func (l *AgentLoop) runIteration(
+	ctx context.Context,
+	sess *session.Session,
+	iteration int,
+	maxIter int,
+	runStartedAt time.Time,
+	totalUsage *port.TokenUsage,
+	lastOutput *string,
+) (bool, error) {
+	iterationStartedAt := time.Now().UTC()
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionIterationStarted,
+		SessionID: sess.ID,
+		Timestamp: iterationStartedAt,
+		Data: map[string]any{
+			"iteration":      iteration,
+			"max_iterations": maxIter,
+			"max_steps":      sess.Budget.MaxSteps,
+			"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
+		},
+	})
 
-	for i := 0; i < maxIter; i++ {
-		if sess.Budget.Exhausted() {
-			break
-		}
-		if ctx.Err() != nil {
-			return l.fail(ctx, sess, totalUsage, ctx.Err()), ctx.Err()
-		}
-		iteration := i + 1
-		iterationStartedAt := time.Now().UTC()
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-			Type:      port.ExecutionIterationStarted,
-			SessionID: sess.ID,
-			Timestamp: iterationStartedAt,
-			Data: map[string]any{
-				"iteration":      iteration,
-				"max_iterations": maxIter,
-				"max_steps":      sess.Budget.MaxSteps,
-				"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
-			},
-		})
+	if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
+		return false, err
+	}
 
-		// 1. BeforeLLM middleware
-		if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
-			return l.fail(ctx, sess, totalUsage, err), err
-		}
-
-		// 2. LLM 调用
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-			Type:      port.ExecutionLLMStarted,
-			SessionID: sess.ID,
-			Timestamp: time.Now().UTC(),
-			Model:     sess.Config.ModelConfig.Model,
-		})
-		llmStart := time.Now()
-		resp, streamed, err := l.callLLM(ctx, sess)
-		llmDur := time.Since(llmStart)
-		if err != nil {
-			metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
-			l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
-			l.observer().OnLLMCall(ctx, port.LLMCallEvent{
-				SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
-			})
-			l.observer().OnError(ctx, port.ErrorEvent{
-				SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
-			})
-			event := port.ExecutionEvent{
-				Type:      port.ExecutionLLMCompleted,
-				SessionID: sess.ID,
-				Timestamp: time.Now().UTC(),
-				Model:     metadata.ActualModel,
-				Duration:  llmDur,
-				Error:     err.Error(),
-			}
-			appendExecutionErrorMetadata(&event, err)
-			l.observer().OnExecutionEvent(ctx, event)
-			l.runErrorMiddleware(ctx, sess, err)
-			return l.fail(ctx, sess, totalUsage, err), err
-		}
-
-		metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
-		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionLLMStarted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		Model:     sess.Config.ModelConfig.Model,
+	})
+	llmStart := time.Now()
+	resp, streamed, err := l.callLLM(ctx, sess)
+	llmDur := time.Since(llmStart)
+	if err != nil {
+		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
+		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 		l.observer().OnLLMCall(ctx, port.LLMCallEvent{
-			SessionID:  sess.ID,
-			Model:      metadata.ActualModel,
-			StartedAt:  llmStart.UTC(),
-			Duration:   llmDur,
-			Usage:      resp.Usage,
-			StopReason: resp.StopReason,
-			Streamed:   streamed,
+			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
 		})
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		l.observer().OnError(ctx, port.ErrorEvent{
+			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
+		})
+		event := port.ExecutionEvent{
 			Type:      port.ExecutionLLMCompleted,
 			SessionID: sess.ID,
 			Timestamp: time.Now().UTC(),
 			Model:     metadata.ActualModel,
 			Duration:  llmDur,
-			Data: map[string]any{
-				"stop_reason": resp.StopReason,
-				"streamed":    streamed,
-				"tokens":      resp.Usage.TotalTokens,
-			},
-		})
-
-		totalUsage.PromptTokens += resp.Usage.PromptTokens
-		totalUsage.CompletionTokens += resp.Usage.CompletionTokens
-		totalUsage.TotalTokens += resp.Usage.TotalTokens
-		if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
-			break
+			Error:     err.Error(),
 		}
+		appendExecutionErrorMetadata(&event, err)
+		l.observer().OnExecutionEvent(ctx, event)
+		l.runErrorMiddleware(ctx, sess, err)
+		return false, err
+	}
 
-		// 3. AfterLLM middleware
-		if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
-			return l.fail(ctx, sess, totalUsage, err), err
+	metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
+	l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
+	l.observer().OnLLMCall(ctx, port.LLMCallEvent{
+		SessionID:  sess.ID,
+		Model:      metadata.ActualModel,
+		StartedAt:  llmStart.UTC(),
+		Duration:   llmDur,
+		Usage:      resp.Usage,
+		StopReason: resp.StopReason,
+		Streamed:   streamed,
+	})
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionLLMCompleted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		Model:     metadata.ActualModel,
+		Duration:  llmDur,
+		Data: map[string]any{
+			"stop_reason": resp.StopReason,
+			"streamed":    streamed,
+			"tokens":      resp.Usage.TotalTokens,
+		},
+	})
+
+	totalUsage.PromptTokens += resp.Usage.PromptTokens
+	totalUsage.CompletionTokens += resp.Usage.CompletionTokens
+	totalUsage.TotalTokens += resp.Usage.TotalTokens
+	if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
+		return true, nil
+	}
+
+	if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
+		return false, err
+	}
+
+	sess.AppendMessage(resp.Message)
+
+	if len(resp.ToolCalls) > 0 {
+		if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
+			l.runErrorMiddleware(ctx, sess, err)
+			return false, err
 		}
-
-		// 4. 追加 assistant 消息
-		sess.AppendMessage(resp.Message)
-
-		// 5. 处理 tool calls 或文本回复
-		if len(resp.ToolCalls) > 0 {
-			if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
-				l.runErrorMiddleware(ctx, sess, err)
-				return l.fail(ctx, sess, totalUsage, err), err
-			}
-		} else {
-			lastOutput = resp.Message.Content
-			// 流式模式下 IO 已经逐 chunk 输出过了，不再重复发送。
-			if l.IO != nil && !streamed {
-				l.IO.Send(ctx, port.OutputMessage{
-					Type:    port.OutputText,
-					Content: resp.Message.Content,
-				})
-			}
-
-		}
-		progressAt := time.Now().UTC()
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-			Type:      port.ExecutionIterationProgress,
-			SessionID: sess.ID,
-			Timestamp: progressAt,
-			Model:     metadata.ActualModel,
-			Data: map[string]any{
-				"iteration":      iteration,
-				"max_iterations": maxIter,
-				"max_steps":      sess.Budget.MaxSteps,
-				"elapsed_ms":     progressAt.Sub(runStartedAt).Milliseconds(),
-				"llm_calls":      1,
-				"tool_calls":     len(resp.ToolCalls),
-				"stop_reason":    resp.StopReason,
-				"streamed":       streamed,
-				"tokens":         resp.Usage.TotalTokens,
-			},
-		})
-		// 自定义停止条件
-		if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
-			break
-		}
-
-		// end_turn 停止
-		if resp.StopReason == "end_turn" {
-			break
+	} else {
+		*lastOutput = resp.Message.Content
+		if l.IO != nil && !streamed {
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputText,
+				Content: resp.Message.Content,
+			})
 		}
 	}
 
+	progressAt := time.Now().UTC()
+	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+		Type:      port.ExecutionIterationProgress,
+		SessionID: sess.ID,
+		Timestamp: progressAt,
+		Model:     metadata.ActualModel,
+		Data: map[string]any{
+			"iteration":      iteration,
+			"max_iterations": maxIter,
+			"max_steps":      sess.Budget.MaxSteps,
+			"elapsed_ms":     progressAt.Sub(runStartedAt).Milliseconds(),
+			"llm_calls":      1,
+			"tool_calls":     len(resp.ToolCalls),
+			"stop_reason":    resp.StopReason,
+			"streamed":       streamed,
+			"tokens":         resp.Usage.TotalTokens,
+		},
+	})
+
+	if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
+		return true, nil
+	}
+
+	return resp.StopReason == "end_turn", nil
+}
+
+func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage port.TokenUsage, lastOutput string) *SessionResult {
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
@@ -281,8 +296,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 		},
 		Timestamp: sess.EndedAt.UTC(),
 	})
-
-	return result, nil
+	return result
 }
 
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
@@ -659,26 +673,55 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 	spec, handler, ok := l.Tools.Get(call.Name)
 	if !ok {
-		err := fmt.Errorf("tool %q not found", call.Name)
-		result := port.ToolResult{
-			CallID:  call.ID,
+		return l.handleMissingTool(ctx, sess, call, repairedArgs)
+	}
+
+	l.emitToolStarted(ctx, sess, call, spec, repairedArgs)
+
+	beforeErr := l.runBeforeToolCallMiddleware(ctx, sess, spec, call.Arguments)
+	if beforeErr != nil {
+		return l.handleBeforeToolCallError(ctx, sess, call, spec, repairedArgs, beforeErr)
+	}
+
+	toolCtx := port.WithToolCallContext(ctx, port.ToolCallContext{
+		SessionID: sess.ID,
+		ToolName:  call.Name,
+		CallID:    call.ID,
+	})
+	// 执行工具
+	toolStart := time.Now()
+	output, err := handler(toolCtx, repairedArgs)
+	toolDur := time.Since(toolStart)
+	result := buildToolResult(call.ID, output, err)
+	l.observeToolCompletion(ctx, sess, call, spec, toolStart, toolDur, result, output, err)
+	l.runAfterToolCallMiddleware(ctx, sess, spec, output)
+	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, toolDur, err)
+	l.sendToolResultIO(ctx, call, result, toolDur, err)
+	return result
+}
+
+func buildToolResult(callID string, output []byte, err error) port.ToolResult {
+	if err != nil {
+		return port.ToolResult{
+			CallID:  callID,
 			Content: err.Error(),
 			IsError: true,
 		}
-		l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
-			Stage:     session.ToolLifecycleAfter,
-			Session:   sess,
-			ToolName:  call.Name,
-			CallID:    call.ID,
-			Arguments: repairedArgs,
-			Result:    &result,
-			Error:     err,
-			Timestamp: time.Now().UTC(),
-		})
-		return result
 	}
+	return port.ToolResult{
+		CallID:  callID,
+		Content: string(output),
+	}
+}
 
-	// UserIO: 通知工具开始（IO.Send 实现自身是线程安全的）
+func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call port.ToolCall, repairedArgs json.RawMessage) port.ToolResult {
+	err := fmt.Errorf("tool %q not found", call.Name)
+	result := buildToolResult(call.ID, nil, err)
+	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, tool.ToolSpec{}, result, 0, err)
+	return result
+}
+
+func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call port.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
 	if l.IO != nil {
 		l.IO.Send(ctx, port.OutputMessage{
 			Type:    port.OutputToolStart,
@@ -699,93 +742,70 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		CallID:    call.ID,
 		Risk:      string(spec.Risk),
 	})
+}
 
-	// BeforeToolCall middleware
-	var beforeErr error
+func (l *AgentLoop) runBeforeToolCallMiddleware(ctx context.Context, sess *session.Session, spec tool.ToolSpec, input []byte) error {
+	var err error
 	l.withSideEffectsLock(func() {
-		beforeErr = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, call.Arguments, nil)
+		err = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, input, nil)
 	})
-	if beforeErr != nil {
-		normalizedErr := normalizeToolError(beforeErr)
-		result := port.ToolResult{
-			CallID:  call.ID,
-			Content: beforeErr.Error(),
-			IsError: true,
-		}
-		l.observer().OnToolCall(ctx, port.ToolCallEvent{
-			SessionID: sess.ID,
-			ToolName:  call.Name,
-			Risk:      string(spec.Risk),
-			StartedAt: time.Now().UTC(),
-			Duration:  0,
-			Error:     normalizedErr,
-		})
-		event := port.ExecutionEvent{
-			Type:      port.ExecutionToolCompleted,
-			SessionID: sess.ID,
-			Timestamp: time.Now().UTC(),
-			ToolName:  call.Name,
-			CallID:    call.ID,
-			Risk:      string(spec.Risk),
-			Data: map[string]any{
-				"is_error": true,
-			},
-			Error: normalizedErr.Error(),
-		}
-		appendToolErrorMetadata(&event, normalizedErr)
-		l.observer().OnExecutionEvent(ctx, event)
-		if l.IO != nil {
-			meta := map[string]any{
-				"call_id":  call.ID,
-				"tool":     call.Name,
-				"is_error": true,
-			}
-			appendToolErrorIOMetadata(meta, normalizedErr)
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputToolResult,
-				Content: result.Content,
-				Meta:    meta,
-			})
-		}
-		l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
-			Stage:     session.ToolLifecycleAfter,
-			Session:   sess,
-			ToolName:  call.Name,
-			CallID:    call.ID,
-			Arguments: repairedArgs,
-			Result:    &result,
-			Risk:      string(spec.Risk),
-			Error:     normalizedErr,
-			Timestamp: time.Now().UTC(),
-		})
-		return result
-	}
+	return err
+}
 
-	toolCtx := port.WithToolCallContext(ctx, port.ToolCallContext{
+func (l *AgentLoop) runAfterToolCallMiddleware(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
+	l.withSideEffectsLock(func() {
+		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
+	})
+}
+
+func (l *AgentLoop) handleBeforeToolCallError(
+	ctx context.Context,
+	sess *session.Session,
+	call port.ToolCall,
+	spec tool.ToolSpec,
+	repairedArgs json.RawMessage,
+	beforeErr error,
+) port.ToolResult {
+	normalizedErr := normalizeToolError(beforeErr)
+	result := buildToolResult(call.ID, nil, beforeErr)
+	l.observer().OnToolCall(ctx, port.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
-		CallID:    call.ID,
+		Risk:      string(spec.Risk),
+		StartedAt: time.Now().UTC(),
+		Duration:  0,
+		Error:     normalizedErr,
 	})
-	// 执行工具
-	toolStart := time.Now()
-	output, err := handler(toolCtx, repairedArgs)
-	toolDur := time.Since(toolStart)
-
-	var result port.ToolResult
-	if err != nil {
-		result = port.ToolResult{
-			CallID:  call.ID,
-			Content: err.Error(),
-			IsError: true,
-		}
-	} else {
-		result = port.ToolResult{
-			CallID:  call.ID,
-			Content: string(output),
-		}
+	event := port.ExecutionEvent{
+		Type:      port.ExecutionToolCompleted,
+		SessionID: sess.ID,
+		Timestamp: time.Now().UTC(),
+		ToolName:  call.Name,
+		CallID:    call.ID,
+		Risk:      string(spec.Risk),
+		Data: map[string]any{
+			"is_error": true,
+		},
+		Error: normalizedErr.Error(),
 	}
+	appendToolErrorMetadata(&event, normalizedErr)
+	l.observer().OnExecutionEvent(ctx, event)
+	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
+	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, 0, normalizedErr)
+	return result
+}
 
-	// Observer: 工具调用指标
+func (l *AgentLoop) observeToolCompletion(
+	ctx context.Context,
+	sess *session.Session,
+	call port.ToolCall,
+	spec tool.ToolSpec,
+	toolStart time.Time,
+	toolDur time.Duration,
+	result port.ToolResult,
+	output []byte,
+	err error,
+) {
 	l.observer().OnToolCall(ctx, port.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
@@ -812,11 +832,18 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	}
 	appendToolExecutionMetadata(&event, output)
 	l.observer().OnExecutionEvent(ctx, event)
+}
 
-	// AfterToolCall middleware
-	l.withSideEffectsLock(func() {
-		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
-	})
+func (l *AgentLoop) emitToolLifecycleAfter(
+	ctx context.Context,
+	sess *session.Session,
+	call port.ToolCall,
+	repairedArgs json.RawMessage,
+	spec tool.ToolSpec,
+	result port.ToolResult,
+	toolDur time.Duration,
+	err error,
+) {
 	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
 		Stage:     session.ToolLifecycleAfter,
 		Session:   sess,
@@ -829,24 +856,24 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		Error:     err,
 		Timestamp: time.Now().UTC(),
 	})
+}
 
-	// UserIO: 通知工具结果（IO.Send 实现自身是线程安全的）
-	if l.IO != nil {
-		meta := map[string]any{
-			"call_id":     call.ID,
-			"tool":        call.Name,
-			"is_error":    result.IsError,
-			"duration_ms": toolDur.Milliseconds(),
-		}
-		appendToolErrorIOMetadata(meta, err)
-		l.IO.Send(ctx, port.OutputMessage{
-			Type:    port.OutputToolResult,
-			Content: result.Content,
-			Meta:    meta,
-		})
+func (l *AgentLoop) sendToolResultIO(ctx context.Context, call port.ToolCall, result port.ToolResult, toolDur time.Duration, err error) {
+	if l.IO == nil {
+		return
 	}
-
-	return result
+	meta := map[string]any{
+		"call_id":     call.ID,
+		"tool":        call.Name,
+		"is_error":    result.IsError,
+		"duration_ms": toolDur.Milliseconds(),
+	}
+	appendToolErrorIOMetadata(meta, err)
+	l.IO.Send(ctx, port.OutputMessage{
+		Type:    port.OutputToolResult,
+		Content: result.Content,
+		Meta:    meta,
+	})
 }
 
 func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLifecycleEvent) {

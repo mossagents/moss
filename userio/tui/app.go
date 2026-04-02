@@ -40,29 +40,29 @@ const (
 
 // Config 是启动 TUI 的配置。
 type Config struct {
-	APIType               string
-	ProviderName          string
-	Provider              string
-	Model                 string
-	Workspace             string
-	Trust                 string
-	Profile               string
-	ApprovalMode          string
-	SessionStoreDir       string
-	InitialSessionID      string
-	BaseURL               string
-	APIKey                string
-	BaseObserver          port.Observer
-	BuildKernel           func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	BuildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
-	AfterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
-	BuildSystemPrompt     func(workspace, trust string) string
-	BuildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	APIType                  string
+	ProviderName             string
+	Provider                 string
+	Model                    string
+	Workspace                string
+	Trust                    string
+	Profile                  string
+	ApprovalMode             string
+	SessionStoreDir          string
+	InitialSessionID         string
+	BaseURL                  string
+	APIKey                   string
+	BaseObserver             port.Observer
+	BuildKernel              func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
+	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
+	BuildSystemPrompt        func(workspace, trust string) string
+	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
 	PromptModelInstructions  string
-	ScheduleController    runtime.ScheduleController
-	SidebarTitle          string
-	RenderSidebar         func() string
+	ScheduleController       runtime.ScheduleController
+	SidebarTitle             string
+	RenderSidebar            func() string
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -74,32 +74,32 @@ type kernelReadyMsg struct {
 // agentState 管理 kernel 和 session 的长生命周期状态（跨 Bubble Tea 值传递）。
 // 使用指针共享，避免 Bubble Tea 值语义问题。
 type agentState struct {
-	k                     *kernel.Kernel
-	sess                  *session.Session
-	store                 session.SessionStore
-	ctx                   context.Context
-	cancel                context.CancelFunc
-	runCancel             context.CancelFunc
-	bridge                *BridgeIO
-	workspace             string
-	trust                 string
-	profile               string
-	approvalMode          string
-	baseObserver          port.Observer
-	buildRunTraceObserver func() (*product.RunTraceRecorder, port.Observer)
-	buildKernel           func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	afterBoot             func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
-	buildSystemPrompt     func(workspace, trust string) string
-	buildSessionConfig    func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	k                        *kernel.Kernel
+	sess                     *session.Session
+	store                    session.SessionStore
+	ctx                      context.Context
+	cancel                   context.CancelFunc
+	runCancel                context.CancelFunc
+	bridge                   *BridgeIO
+	workspace                string
+	trust                    string
+	profile                  string
+	approvalMode             string
+	baseObserver             port.Observer
+	buildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
+	buildKernel              func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	afterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
+	buildSystemPrompt        func(workspace, trust string) string
+	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
 	promptModelInstructions  string
-	apiType               string
-	model                 string
-	apiKey                string
-	baseURL               string
-	permissions           map[string]string
-	mu                    sync.Mutex
-	running               bool // 是否正在执行 loop
+	apiType                  string
+	model                    string
+	apiKey                   string
+	baseURL                  string
+	permissions              map[string]string
+	mu                       sync.Mutex
+	running                  bool // 是否正在执行 loop
 }
 
 type postureRebuildPlan struct {
@@ -1588,6 +1588,36 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+func (m appModel) stopAgentForKernelRebuild() appModel {
+	if m.agent != nil && m.agent.cancel != nil {
+		m.agent.cancel()
+	}
+	m.agent = nil
+	m.chat.sendFn = nil
+	return m
+}
+
+func (m appModel) welcomeConfigForCurrentProvider(model string) (WelcomeConfig, string) {
+	identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
+	return WelcomeConfig{
+		APIType:      identity.APIType,
+		ProviderName: identity.Name,
+		Provider:     identity.Provider,
+		Model:        model,
+		Workspace:    m.config.Workspace,
+	}, identity.Label()
+}
+
+func (m appModel) rebuildKernelWithModel(model string) (tea.Model, tea.Cmd) {
+	wCfg, providerLabel := m.welcomeConfigForCurrentProvider(model)
+	m.chat.provider = providerLabel
+	m.chat.model = model
+	m.chat.trust = m.config.Trust
+	m.chat.profile = m.config.Profile
+	m.chat.approvalMode = m.config.ApprovalMode
+	return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+}
+
 func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// 取消并退出
 	if _, ok := msg.(cancelMsg); ok {
@@ -1599,70 +1629,22 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// 切换模型：关闭旧 kernel，用新 model 重建
 	if sm, ok := msg.(switchModelMsg); ok {
-		if m.agent != nil && m.agent.cancel != nil {
-			m.agent.cancel()
-		}
-		m.agent = nil
-		m.chat.sendFn = nil
-
-		// 更新 config 中的 model
+		m = m.stopAgentForKernelRebuild()
 		m.config.Model = sm.model
-		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
-		wCfg := WelcomeConfig{
-			APIType:      identity.APIType,
-			ProviderName: identity.Name,
-			Provider:     identity.Provider,
-			Model:        sm.model,
-			Workspace:    m.config.Workspace,
-		}
-		m.chat.provider = identity.Label()
-		m.chat.model = sm.model
-		m.chat.trust = m.config.Trust
-		m.chat.profile = m.config.Profile
-		m.chat.approvalMode = m.config.ApprovalMode
-		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+		return m.rebuildKernelWithModel(sm.model)
 	}
 
 	// 切换 trust：关闭旧 kernel，用新 trust 重建
 	if st, ok := msg.(switchTrustMsg); ok {
-		if m.agent != nil && m.agent.cancel != nil {
-			m.agent.cancel()
-		}
-		m.agent = nil
-		m.chat.sendFn = nil
+		m = m.stopAgentForKernelRebuild()
 		m.config.Trust = st.trust
-		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
-		wCfg := WelcomeConfig{
-			APIType:      identity.APIType,
-			ProviderName: identity.Name,
-			Provider:     identity.Provider,
-			Model:        m.config.Model,
-			Workspace:    m.config.Workspace,
-		}
-		m.chat.trust = st.trust
-		m.chat.profile = m.config.Profile
-		m.chat.approvalMode = m.config.ApprovalMode
-		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+		return m.rebuildKernelWithModel(m.config.Model)
 	}
 
 	if st, ok := msg.(switchApprovalMsg); ok {
-		if m.agent != nil && m.agent.cancel != nil {
-			m.agent.cancel()
-		}
-		m.agent = nil
-		m.chat.sendFn = nil
+		m = m.stopAgentForKernelRebuild()
 		m.config.ApprovalMode = st.mode
-		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
-		wCfg := WelcomeConfig{
-			APIType:      identity.APIType,
-			ProviderName: identity.Name,
-			Provider:     identity.Provider,
-			Model:        m.config.Model,
-			Workspace:    m.config.Workspace,
-		}
-		m.chat.profile = m.config.Profile
-		m.chat.approvalMode = st.mode
-		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+		return m.rebuildKernelWithModel(m.config.Model)
 	}
 
 	if st, ok := msg.(switchProfileMsg); ok {
@@ -1677,11 +1659,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if m.agent != nil && m.agent.cancel != nil {
-			m.agent.cancel()
-		}
-		m.agent = nil
-		m.chat.sendFn = nil
+		m = m.stopAgentForKernelRebuild()
 		resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
 			Workspace:        m.config.Workspace,
 			RequestedProfile: st.profile,
@@ -1695,14 +1673,6 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Profile = resolved.Name
 		m.config.Trust = resolved.Trust
 		m.config.ApprovalMode = resolved.ApprovalMode
-		identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
-		wCfg := WelcomeConfig{
-			APIType:      identity.APIType,
-			ProviderName: identity.Name,
-			Provider:     identity.Provider,
-			Model:        m.config.Model,
-			Workspace:    m.config.Workspace,
-		}
 		m.chat.profile = resolved.Name
 		m.chat.trust = resolved.Trust
 		m.chat.approvalMode = resolved.ApprovalMode
@@ -1715,7 +1685,7 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 			m.chat.refreshViewport()
 		}
-		return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
+		return m.rebuildKernelWithModel(m.config.Model)
 	}
 
 	// kernel 就绪：设置 sendFn 为多轮复用 session 的方式
@@ -1874,155 +1844,216 @@ func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 // initKernelCmd 异步创建 kernel + session。
 func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 	return func() tea.Msg {
-		apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
-		k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
+		state, err := newKernelInitState(cfg, wCfg, bridge)
 		if err != nil {
 			return sessionResultMsg{err: err}
 		}
-		var store session.SessionStore
-		if strings.TrimSpace(cfg.SessionStoreDir) != "" {
-			store, _ = session.NewFileStore(cfg.SessionStoreDir)
+		if err := state.initSession(); err != nil {
+			return sessionResultMsg{err: err}
 		}
+		agent := state.buildAgent()
+		state.k.Middleware().Use(agent.permissionOverrideMiddleware())
+		return kernelReadyMsg{agent: agent, notices: state.notices}
+	}
+}
 
-		var (
-			sess    *session.Session
-			notices []string
-		)
-		if strings.TrimSpace(cfg.InitialSessionID) != "" {
-			if store == nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("failed to load session %q: session store is unavailable", cfg.InitialSessionID)}
-			}
-			sess, err = store.Load(ctx, cfg.InitialSessionID)
-			if err != nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("failed to load session %q: %w", cfg.InitialSessionID, err)}
-			}
-			if sess == nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("session %q not found", cfg.InitialSessionID)}
-			}
-			plan, err := planPostureRebuild(cfg.InitialSessionID, postureFromRuntime(cfg.Profile, cfg.Trust, cfg.ApprovalMode, runtime.ExecutionPolicyOf(k)), runtime.SessionPostureFromSession(sess))
-			if err != nil {
-				cancel()
-				return sessionResultMsg{err: err}
-			}
-			if plan.Rebuild {
-				cancel()
-				rebuildProfile := strings.TrimSpace(cfg.Profile)
-				if rebuildProfile == "" {
-					rebuildProfile = "default"
-				}
-				k, ctx, cancel, err = buildRuntimeKernel(Config{
-					Trust:        plan.Resolved.Trust,
-					Profile:      rebuildProfile,
-					ApprovalMode: plan.Resolved.ApprovalMode,
-					APIKey:       cfg.APIKey,
-					BaseURL:      cfg.BaseURL,
-					BuildKernel:  cfg.BuildKernel,
-					AfterBoot:    cfg.AfterBoot,
-				}, wCfg, bridge)
-				if err != nil {
-					return sessionResultMsg{err: err}
-				}
-				if err := product.ApplyResolvedProfile(k, plan.Resolved); err != nil {
-					cancel()
-					return sessionResultMsg{err: fmt.Errorf("apply rebuilt posture: %w", err)}
-				}
-				cfg.Trust = plan.Resolved.Trust
-				cfg.Profile = strings.TrimSpace(plan.Resolved.Name)
-				cfg.ApprovalMode = plan.Resolved.ApprovalMode
-			}
-			if strings.TrimSpace(plan.Notice) != "" {
-				notices = append(notices, plan.Notice)
-			}
-		} else {
-			// 创建持久 session，注入 system prompt（Kernel 自动合并 skill additions）
-			metadata := map[string]any{}
-			sysPrompt, err := composeSystemPrompt(wCfg.Workspace, cfg.Trust, k, cfg.PromptConfigInstructions, cfg.PromptModelInstructions, metadata)
-			if err != nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("failed to compose system prompt: %w", err)}
-			}
-			if cfg.BuildSystemPrompt != nil {
-				sysPrompt = cfg.BuildSystemPrompt(wCfg.Workspace, cfg.Trust)
-			}
-			sessCfg := session.SessionConfig{
-				Goal:         "interactive",
-				Mode:         "interactive",
-				TrustLevel:   cfg.Trust,
-				Profile:      cfg.Profile,
-				MaxSteps:     200,
-				SystemPrompt: sysPrompt,
-				Metadata:     metadata,
-			}
-			if strings.TrimSpace(cfg.Profile) != "" {
-				metadata["profile"] = strings.TrimSpace(cfg.Profile)
-			}
-			if _, ok := metadata[session.MetadataTaskMode]; !ok && strings.TrimSpace(cfg.Profile) != "" {
-				metadata[session.MetadataTaskMode] = strings.TrimSpace(cfg.Profile)
-			}
-			if cfg.BuildSessionConfig != nil {
-				sessCfg = cfg.BuildSessionConfig(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, sysPrompt)
-				if sessCfg.SystemPrompt == "" {
-					sessCfg.SystemPrompt = sysPrompt
-				}
-				if len(sessCfg.Metadata) == 0 {
-					sessCfg.Metadata = metadata
-				}
-				if strings.TrimSpace(sessCfg.Profile) == "" {
-					sessCfg.Profile = cfg.Profile
-				}
-				if sessCfg.TrustLevel == "" {
-					sessCfg.TrustLevel = cfg.Trust
-				}
-				if sessCfg.Goal == "" {
-					sessCfg.Goal = "interactive"
-				}
-				if sessCfg.Mode == "" {
-					sessCfg.Mode = "interactive"
-				}
-				if sessCfg.MaxSteps == 0 {
-					sessCfg.MaxSteps = 200
-				}
-			}
+type kernelInitState struct {
+	cfg     Config
+	wCfg    WelcomeConfig
+	bridge  *BridgeIO
+	apiType string
 
-			sess, err = k.NewSession(ctx, sessCfg)
-			if err != nil {
-				cancel()
-				return sessionResultMsg{err: fmt.Errorf("failed to create session: %w", err)}
-			}
+	k      *kernel.Kernel
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	store   session.SessionStore
+	sess    *session.Session
+	notices []string
+}
+
+func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernelInitState, error) {
+	apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
+	k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
+	if err != nil {
+		return nil, err
+	}
+	state := &kernelInitState{
+		cfg:     cfg,
+		wCfg:    wCfg,
+		bridge:  bridge,
+		apiType: apiType,
+		k:       k,
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+	if strings.TrimSpace(cfg.SessionStoreDir) != "" {
+		state.store, _ = session.NewFileStore(cfg.SessionStoreDir)
+	}
+	return state, nil
+}
+
+func (s *kernelInitState) initSession() error {
+	if strings.TrimSpace(s.cfg.InitialSessionID) != "" {
+		return s.loadInitialSession()
+	}
+	return s.createInteractiveSession()
+}
+
+func (s *kernelInitState) loadInitialSession() error {
+	if s.store == nil {
+		s.cancel()
+		return fmt.Errorf("failed to load session %q: session store is unavailable", s.cfg.InitialSessionID)
+	}
+	sess, err := s.store.Load(s.ctx, s.cfg.InitialSessionID)
+	if err != nil {
+		s.cancel()
+		return fmt.Errorf("failed to load session %q: %w", s.cfg.InitialSessionID, err)
+	}
+	if sess == nil {
+		s.cancel()
+		return fmt.Errorf("session %q not found", s.cfg.InitialSessionID)
+	}
+	s.sess = sess
+	plan, err := planPostureRebuild(
+		s.cfg.InitialSessionID,
+		postureFromRuntime(s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode, runtime.ExecutionPolicyOf(s.k)),
+		runtime.SessionPostureFromSession(s.sess),
+	)
+	if err != nil {
+		s.cancel()
+		return err
+	}
+	if err := s.applyPostureRebuild(plan); err != nil {
+		return err
+	}
+	if strings.TrimSpace(plan.Notice) != "" {
+		s.notices = append(s.notices, plan.Notice)
+	}
+	return nil
+}
+
+func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
+	if !plan.Rebuild {
+		return nil
+	}
+	s.cancel()
+	rebuildProfile := strings.TrimSpace(s.cfg.Profile)
+	if rebuildProfile == "" {
+		rebuildProfile = "default"
+	}
+	k, ctx, cancel, err := buildRuntimeKernel(Config{
+		Trust:        plan.Resolved.Trust,
+		Profile:      rebuildProfile,
+		ApprovalMode: plan.Resolved.ApprovalMode,
+		APIKey:       s.cfg.APIKey,
+		BaseURL:      s.cfg.BaseURL,
+		BuildKernel:  s.cfg.BuildKernel,
+		AfterBoot:    s.cfg.AfterBoot,
+	}, s.wCfg, s.bridge)
+	if err != nil {
+		return err
+	}
+	s.k, s.ctx, s.cancel = k, ctx, cancel
+	if err := product.ApplyResolvedProfile(s.k, plan.Resolved); err != nil {
+		s.cancel()
+		return fmt.Errorf("apply rebuilt posture: %w", err)
+	}
+	s.cfg.Trust = plan.Resolved.Trust
+	s.cfg.Profile = strings.TrimSpace(plan.Resolved.Name)
+	s.cfg.ApprovalMode = plan.Resolved.ApprovalMode
+	return nil
+}
+
+func (s *kernelInitState) createInteractiveSession() error {
+	metadata := map[string]any{}
+	sysPrompt, err := composeSystemPrompt(
+		s.wCfg.Workspace,
+		s.cfg.Trust,
+		s.k,
+		s.cfg.PromptConfigInstructions,
+		s.cfg.PromptModelInstructions,
+		metadata,
+	)
+	if err != nil {
+		s.cancel()
+		return fmt.Errorf("failed to compose system prompt: %w", err)
+	}
+	if s.cfg.BuildSystemPrompt != nil {
+		sysPrompt = s.cfg.BuildSystemPrompt(s.wCfg.Workspace, s.cfg.Trust)
+	}
+	sessCfg := session.SessionConfig{
+		Goal:         "interactive",
+		Mode:         "interactive",
+		TrustLevel:   s.cfg.Trust,
+		Profile:      s.cfg.Profile,
+		MaxSteps:     200,
+		SystemPrompt: sysPrompt,
+		Metadata:     metadata,
+	}
+	if strings.TrimSpace(s.cfg.Profile) != "" {
+		metadata["profile"] = strings.TrimSpace(s.cfg.Profile)
+	}
+	if _, ok := metadata[session.MetadataTaskMode]; !ok && strings.TrimSpace(s.cfg.Profile) != "" {
+		metadata[session.MetadataTaskMode] = strings.TrimSpace(s.cfg.Profile)
+	}
+	if s.cfg.BuildSessionConfig != nil {
+		sessCfg = s.cfg.BuildSessionConfig(s.wCfg.Workspace, s.cfg.Trust, s.cfg.ApprovalMode, s.cfg.Profile, sysPrompt)
+		if sessCfg.SystemPrompt == "" {
+			sessCfg.SystemPrompt = sysPrompt
 		}
-
-		agent := &agentState{
-			k:                     k,
-			sess:                  sess,
-			store:                 store,
-			ctx:                   ctx,
-			cancel:                cancel,
-			bridge:                bridge,
-			workspace:             wCfg.Workspace,
-			trust:                 cfg.Trust,
-			profile:               cfg.Profile,
-			approvalMode:          cfg.ApprovalMode,
-			baseObserver:          cfg.BaseObserver,
-			buildRunTraceObserver: cfg.BuildRunTraceObserver,
-			buildKernel:           cfg.BuildKernel,
-			afterBoot:             cfg.AfterBoot,
-			buildSystemPrompt:     cfg.BuildSystemPrompt,
-			buildSessionConfig:    cfg.BuildSessionConfig,
-			promptConfigInstructions: cfg.PromptConfigInstructions,
-			promptModelInstructions:  cfg.PromptModelInstructions,
-			apiType:               apiType,
-			model:                 wCfg.Model,
-			apiKey:                cfg.APIKey,
-			baseURL:               cfg.BaseURL,
-			permissions:           map[string]string{},
+		if len(sessCfg.Metadata) == 0 {
+			sessCfg.Metadata = metadata
 		}
+		if strings.TrimSpace(sessCfg.Profile) == "" {
+			sessCfg.Profile = s.cfg.Profile
+		}
+		if sessCfg.TrustLevel == "" {
+			sessCfg.TrustLevel = s.cfg.Trust
+		}
+		if sessCfg.Goal == "" {
+			sessCfg.Goal = "interactive"
+		}
+		if sessCfg.Mode == "" {
+			sessCfg.Mode = "interactive"
+		}
+		if sessCfg.MaxSteps == 0 {
+			sessCfg.MaxSteps = 200
+		}
+	}
+	s.sess, err = s.k.NewSession(s.ctx, sessCfg)
+	if err != nil {
+		s.cancel()
+		return fmt.Errorf("failed to create session: %w", err)
+	}
+	return nil
+}
 
-		k.Middleware().Use(agent.permissionOverrideMiddleware())
-
-		return kernelReadyMsg{agent: agent, notices: notices}
+func (s *kernelInitState) buildAgent() *agentState {
+	return &agentState{
+		k:                        s.k,
+		sess:                     s.sess,
+		store:                    s.store,
+		ctx:                      s.ctx,
+		cancel:                   s.cancel,
+		bridge:                   s.bridge,
+		workspace:                s.wCfg.Workspace,
+		trust:                    s.cfg.Trust,
+		profile:                  s.cfg.Profile,
+		approvalMode:             s.cfg.ApprovalMode,
+		baseObserver:             s.cfg.BaseObserver,
+		buildRunTraceObserver:    s.cfg.BuildRunTraceObserver,
+		buildKernel:              s.cfg.BuildKernel,
+		afterBoot:                s.cfg.AfterBoot,
+		buildSystemPrompt:        s.cfg.BuildSystemPrompt,
+		buildSessionConfig:       s.cfg.BuildSessionConfig,
+		promptConfigInstructions: s.cfg.PromptConfigInstructions,
+		promptModelInstructions:  s.cfg.PromptModelInstructions,
+		apiType:                  s.apiType,
+		model:                    s.wCfg.Model,
+		apiKey:                   s.cfg.APIKey,
+		baseURL:                  s.cfg.BaseURL,
+		permissions:              map[string]string{},
 	}
 }
 
