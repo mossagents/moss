@@ -44,6 +44,11 @@ func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, next appMode
 ```
 
 The same `(handled, next, cmd)` contract is used for `handleProfileSwitch` and `handleKernelReady`.
+`fallbackChatUpdate` is terminal and uses:
+
+```go
+func (m appModel) fallbackChatUpdate(msg tea.Msg) (next appModel, cmd tea.Cmd)
+```
 
 ## State and Data Flow
 
@@ -61,6 +66,10 @@ The same `(handled, next, cmd)` contract is used for `handleProfileSwitch` and `
    - `m.chat.model` sync from `m.config.Model` (when configured)
    - connection/notices messages
    - optional post-init dispatch or progress replay
+4. Kernel-ready post-init branching is explicit:
+   - when `postInitRunText != ""`: call `dispatchUserSubmission(...)`, refresh viewport, then `publishProgressReplay`
+   - otherwise: refresh viewport, then `publishProgressReplay` only
+5. `syncCustomCommands` notice append is part of the connection/notices step.
 
 ### Stage contract
 
@@ -92,6 +101,19 @@ This avoids partially-applied state before fallback routing.
   - `bindTaskCallbacks`
   - `bindDebugCallbacks`
   - `bindToolingCallbacks`
+- Non-callback state mutations remain in `handleKernelReady` orchestration:
+  - `m.agent` assignment
+  - `m.chat.trust/profile/approvalMode` sync
+  - `m.chat.currentSessionID` update
+  - `m.chat.scheduleCtrl` assignment
+  - `m.chat.streaming = false`
+- Callback mapping by helper:
+  - `bindSessionCallbacks`: `sessionInfoFn`, `sessionListFn`, `sessionRestoreFn`, `newSessionFn`, `offloadFn`
+  - `bindChangeCallbacks`: `changeListFn`, `changeShowFn`, `applyChangeFn`, `rollbackChangeFn`
+  - `bindCheckpointCallbacks`: `checkpointListFn`, `checkpointShowFn`, `checkpointCreateFn`, `checkpointForkFn`, `checkpointReplayFn`
+  - `bindTaskCallbacks`: `taskListFn`, `taskQueryFn`, `taskCancelFn`
+  - `bindDebugCallbacks`: `permissionSummaryFn`, `setPermissionFn`, `refreshSystemPromptFn`, `debugPromptFn`, `debugConfigFn`
+  - `bindToolingCallbacks`: `sendFn`, `cancelRunFn`, `gitRunFn`, `skillListFn`
 - Output: handled decision + model/cmd.
 
 ### `fallbackChatUpdate`
