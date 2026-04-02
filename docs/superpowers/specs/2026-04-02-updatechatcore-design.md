@@ -61,11 +61,16 @@ func (m appModel) fallbackChatUpdate(msg tea.Msg) (next appModel, cmd tea.Cmd)
    - mirrored `m.chat` fields (`profile`, `trust`, `approvalMode`)
    - post-init texts (`postInitDisplayText`, `postInitRunText`)
 3. Kernel-ready handling updates in this order:
-   - `m.agent` and shared references
-   - all `m.chat` callback bindings
-   - `m.chat.model` sync from `m.config.Model` (when configured)
-   - connection/notices messages
-   - optional post-init dispatch or progress replay
+    - `m.agent` and shared references
+    - `m.chat.trust/profile/approvalMode` sync
+    - `m.chat.scheduleCtrl` assignment
+    - all `m.chat` callback bindings
+    - `m.chat.setDiscoveredSkills(...)` refresh
+    - `m.chat.currentSessionID` update (when session exists)
+    - `m.chat.model` sync from `m.config.Model` (when configured)
+    - `m.chat.streaming = false`
+    - connection/notices messages
+    - optional post-init dispatch or progress replay
 4. Kernel-ready post-init branching is explicit:
    - when `postInitRunText != ""`: call `dispatchUserSubmission(...)`, refresh viewport, then `publishProgressReplay`
    - otherwise: refresh viewport, then `publishProgressReplay` only
@@ -83,7 +88,9 @@ This avoids partially-applied state before fallback routing.
 
 ### `handleControlMessages`
 - Purpose: capture simple control/rebuild triggers.
-- Depends on: `stopAgentForKernelRebuild`, `rebuildKernelWithModel`, `m.config`.
+- Depends on:
+  - `cancelMsg` path: `m.agent.cancel` (when available), `tea.Quit`
+  - rebuild paths: `stopAgentForKernelRebuild`, `rebuildKernelWithModel`, `m.config`
 - Output: handled decision + model/cmd.
 
 ### `handleProfileSwitch`
@@ -104,8 +111,10 @@ This avoids partially-applied state before fallback routing.
 - Non-callback state mutations remain in `handleKernelReady` orchestration:
   - `m.agent` assignment
   - `m.chat.trust/profile/approvalMode` sync
+  - `m.chat.model` sync (when configured)
   - `m.chat.currentSessionID` update
   - `m.chat.scheduleCtrl` assignment
+  - `m.chat.setDiscoveredSkills(...)` refresh
   - `m.chat.streaming = false`
 - Callback mapping by helper:
   - `bindSessionCallbacks`: `sessionInfoFn`, `sessionListFn`, `sessionRestoreFn`, `newSessionFn`, `offloadFn`
