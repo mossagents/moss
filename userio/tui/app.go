@@ -1605,23 +1605,3 @@ func (m appModel) rebuildKernelWithModel(model string) (tea.Model, tea.Cmd) {
 func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m.updateChatCore(msg)
 }
-
-func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernel.Kernel, context.Context, context.CancelFunc, error) {
-	apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
-	k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, apiType, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to initialize kernel: %w", err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := k.Boot(ctx); err != nil {
-		cancel()
-		return nil, nil, nil, fmt.Errorf("failed to boot kernel: %w", err)
-	}
-	if cfg.AfterBoot != nil {
-		if err := cfg.AfterBoot(ctx, k, bridge); err != nil {
-			cancel()
-			return nil, nil, nil, fmt.Errorf("failed to initialize runtime: %w", err)
-		}
-	}
-	return k, ctx, cancel, nil
-}
