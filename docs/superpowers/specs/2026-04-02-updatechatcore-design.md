@@ -37,11 +37,20 @@ Adopt a staged pipeline inside `updateChatCore`:
 
 The top-level `updateChatCore` becomes orchestration only: invoke stages in fixed order and return on first handled stage.
 
+Suggested stage signature pattern:
+
+```go
+func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, next appModel, cmd tea.Cmd)
+```
+
+The same `(handled, next, cmd)` contract is used for `handleProfileSwitch` and `handleKernelReady`.
+
 ## State and Data Flow
 
 ### Global ordering rules
 
 1. Rebuild-triggering messages always call `stopAgentForKernelRebuild()` before mutating rebuild-driving config fields.
+   - Explicit exception: `cancelMsg` does not rebuild; it cancels current agent run (if present) and returns `tea.Quit`.
 2. Profile switch success path updates fields in this order:
    - `m.config` (`Profile`, `Trust`, `ApprovalMode`)
    - mirrored `m.chat` fields (`profile`, `trust`, `approvalMode`)
@@ -49,6 +58,7 @@ The top-level `updateChatCore` becomes orchestration only: invoke stages in fixe
 3. Kernel-ready handling updates in this order:
    - `m.agent` and shared references
    - all `m.chat` callback bindings
+   - `m.chat.model` sync from `m.config.Model` (when configured)
    - connection/notices messages
    - optional post-init dispatch or progress replay
 
@@ -76,7 +86,12 @@ This avoids partially-applied state before fallback routing.
 - Purpose: bind runtime agent to chat runtime.
 - Depends on: agent APIs and chat callback slots.
 - Internal helpers split by capability group:
-  - session/change/checkpoint/task/debug/tooling bindings.
+  - `bindSessionCallbacks`
+  - `bindChangeCallbacks`
+  - `bindCheckpointCallbacks`
+  - `bindTaskCallbacks`
+  - `bindDebugCallbacks`
+  - `bindToolingCallbacks`
 - Output: handled decision + model/cmd.
 
 ### `fallbackChatUpdate`
