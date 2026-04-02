@@ -4,13 +4,13 @@ version: 1
 date_created: 2026-04-02
 last_updated: 2026-04-02
 owner: tui-runtime
-status: Planned
+status: Completed
 tags: [refactor, architecture, tui, go]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This plan defines deterministic steps to refactor `userio/tui/app_update_chat.go` so `updateChatCore` becomes an orchestration entrypoint with explicit stage ordering, reduced omission risk, and unchanged external behavior.
 
@@ -34,10 +34,10 @@ This plan defines deterministic steps to refactor `userio/tui/app_update_chat.go
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | Refactor `func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd)` to orchestration-only body that sequentially calls `handleControlMessages`, `handleProfileSwitch`, `handleKernelReady`, and `fallbackChatUpdate`. |  |  |
-| TASK-002 | Add `handleControlMessages` with explicit `cancelMsg` special path (`m.agent.cancel` + `tea.Quit`) and rebuild paths for model/trust/approval using `stopAgentForKernelRebuild` + `rebuildKernelWithModel`. |  |  |
-| TASK-003 | Add `handleProfileSwitch` and move the full existing profile-switch logic (checkpoint handoff, profile resolve, config/chat sync, post-init text handling, rebuild). |  |  |
-| TASK-004 | Add `fallbackChatUpdate` that performs `m.chat.Update(msg)` and mirrors `m.theme = m.chat.theme`. |  |  |
+| TASK-001 | Refactor `func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd)` to orchestration-only body that sequentially calls `handleControlMessages`, `handleProfileSwitch`, `handleKernelReady`, and `fallbackChatUpdate`. | ✅ | 2026-04-02 |
+| TASK-002 | Add `handleControlMessages` with explicit `cancelMsg` special path (`m.agent.cancel` + `tea.Quit`) and rebuild paths for model/trust/approval using `stopAgentForKernelRebuild` + `rebuildKernelWithModel`. | ✅ | 2026-04-02 |
+| TASK-003 | Add `handleProfileSwitch` and move the full existing profile-switch logic (checkpoint handoff, profile resolve, config/chat sync, post-init text handling, rebuild). | ✅ | 2026-04-02 |
+| TASK-004 | Add `fallbackChatUpdate` that performs `m.chat.Update(msg)` and mirrors `m.theme = m.chat.theme`. | ✅ | 2026-04-02 |
 
 ### Implementation Phase 2
 
@@ -45,10 +45,10 @@ This plan defines deterministic steps to refactor `userio/tui/app_update_chat.go
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-005 | Add `handleKernelReady` and move the full existing `kernelReadyMsg` logic into it, preserving ordering and return behavior. |  |  |
-| TASK-006 | Add helper `bindSessionCallbacks(agent *interactiveAgent)` and wire: `sessionInfoFn`, `sessionListFn`, `sessionRestoreFn`, `newSessionFn`, `offloadFn`. |  |  |
-| TASK-007 | Add helpers `bindChangeCallbacks`, `bindCheckpointCallbacks`, `bindTaskCallbacks`, `bindDebugCallbacks`, `bindToolingCallbacks` and wire exact callback sets from spec. |  |  |
-| TASK-008 | Keep non-callback orchestration state in `handleKernelReady`: `m.agent`, `m.chat.trust/profile/approvalMode`, `m.chat.scheduleCtrl`, `m.chat.setDiscoveredSkills(...)`, `m.chat.currentSessionID`, `m.chat.model`, `m.chat.streaming`. |  |  |
+| TASK-005 | Add `handleKernelReady` and move the full existing `kernelReadyMsg` logic into it, preserving ordering and return behavior. | ✅ | 2026-04-02 |
+| TASK-006 | Add helper `bindSessionCallbacks(agent *interactiveAgent)` and wire: `sessionInfoFn`, `sessionListFn`, `sessionRestoreFn`, `newSessionFn`, `offloadFn`. | ✅ | 2026-04-02 |
+| TASK-007 | Add helpers `bindChangeCallbacks`, `bindCheckpointCallbacks`, `bindTaskCallbacks`, `bindDebugCallbacks`, `bindToolingCallbacks` and wire exact callback sets from spec. | ✅ | 2026-04-02 |
+| TASK-008 | Keep non-callback orchestration state in `handleKernelReady`: `m.agent`, `m.chat.trust/profile/approvalMode`, `m.chat.scheduleCtrl`, `m.chat.setDiscoveredSkills(...)`, `m.chat.currentSessionID`, `m.chat.model`, `m.chat.streaming`. | ✅ | 2026-04-02 |
 
 ### Implementation Phase 3
 
@@ -56,10 +56,10 @@ This plan defines deterministic steps to refactor `userio/tui/app_update_chat.go
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-009 | Run `gofmt -w userio/tui/app_update_chat.go` after refactor and ensure imports stay minimal and deterministic. |  |  |
-| TASK-010 | Run `go test ./userio/tui/...` and fix only regressions caused by this refactor. |  |  |
-| TASK-011 | Run `go vet ./...` and resolve only refactor-related findings. |  |  |
-| TASK-012 | Review function lengths and ensure `updateChatCore` remains orchestration-only with no direct deep branching retained. |  |  |
+| TASK-009 | Run `gofmt -w userio/tui/app_update_chat.go` after refactor and ensure imports stay minimal and deterministic. | ✅ | 2026-04-02 |
+| TASK-010 | Run `go test ./userio/tui/...` and fix only regressions caused by this refactor. | ✅ | 2026-04-02 |
+| TASK-011 | Run `go vet ./...` and resolve only refactor-related findings. | ✅ | 2026-04-02 |
+| TASK-012 | Review function lengths and ensure `updateChatCore` remains orchestration-only with no direct deep branching retained. | ✅ | 2026-04-02 |
 
 ## 3. Alternatives
 
