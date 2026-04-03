@@ -307,6 +307,14 @@ func toAnthropicUserBlocks(parts []port.ContentPart, model string) ([]anthropic.
 				return nil, err
 			}
 			result = append(result, block)
+		case port.ContentPartInputAudio:
+			return nil, capabilityUnavailableError("claude", model, "user", part.Type, "audio input is not supported by current anthropic content blocks")
+		case port.ContentPartInputVideo:
+			block, err := toAnthropicVideoBlock(part)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, block)
 		default:
 			return nil, unsupportedPartError("claude", model, "user", part.Type)
 		}
@@ -330,6 +338,10 @@ func toAnthropicToolResultBlocks(parts []port.ContentPart, model string) ([]anth
 			result = append(result, anthropic.ToolResultBlockParamContentUnion{
 				OfImage: block.OfImage,
 			})
+		case port.ContentPartOutputAudio:
+			return nil, capabilityUnavailableError("claude", model, "tool_result", part.Type, "audio output blocks are not supported by current anthropic content blocks")
+		case port.ContentPartOutputVideo:
+			return nil, capabilityUnavailableError("claude", model, "tool_result", part.Type, "video output blocks are not supported by current anthropic content blocks")
 		default:
 			return nil, unsupportedPartError("claude", model, "tool_result", part.Type)
 		}
@@ -356,6 +368,15 @@ func toAnthropicImageBlock(part port.ContentPart) (anthropic.ContentBlockParamUn
 	}
 }
 
+func toAnthropicVideoBlock(part port.ContentPart) (anthropic.ContentBlockParamUnion, error) {
+	if strings.TrimSpace(part.URL) != "" {
+		return anthropic.NewDocumentBlock(anthropic.URLPDFSourceParam{URL: part.URL}), nil
+	}
+	return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{
+		Data: part.DataBase64,
+	}), nil
+}
+
 func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
@@ -369,6 +390,10 @@ func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, rol
 
 func unsupportedPartError(provider, model, role string, typ port.ContentPartType) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s unsupported content part type=%q", provider, model, role, typ)
+}
+
+func capabilityUnavailableError(provider, model, role string, typ port.ContentPartType, reason string) error {
+	return fmt.Errorf("%s adapter: model=%q role=%s content part type=%q capability unavailable: %s", provider, model, role, typ, reason)
 }
 
 // ─── 流式迭代器 ──────────────────────────────────────

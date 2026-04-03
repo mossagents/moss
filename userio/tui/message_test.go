@@ -52,6 +52,21 @@ func TestRenderMessage_AssistantUsesLeadingDotWithoutLegacyLabel(t *testing.T) {
 	}
 }
 
+func TestRenderMessage_AssistantMediaUsesMediaHint(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgAssistant,
+		content: "Generated audio",
+		meta: map[string]any{
+			"is_media":   true,
+			"media_kind": "audio",
+			"media_path": "out.wav",
+		},
+	}, 80)
+	if !strings.Contains(out, "Generated audio: out.wav") || !strings.Contains(out, "/media open") {
+		t.Fatalf("assistant media output missing expected hint: %q", out)
+	}
+}
+
 func TestRenderAllMessages_CollapsedCountsToolCalls(t *testing.T) {
 	out := renderAllMessages([]chatMessage{
 		{kind: msgToolStart, content: "glob"},

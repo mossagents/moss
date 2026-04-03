@@ -65,6 +65,7 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/search":       handleSearchSlashCommand,
 	"/open":         handleOpenSlashCommand,
 	"/image":        handleImageSlashCommand,
+	"/media":        handleMediaSlashCommand,
 	"/mention":      handleMentionSlashCommand,
 	"/init":         handleInitSlashCommand,
 }
@@ -810,25 +811,40 @@ func handleOpenSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 }
 
 func handleImageSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	return handleMediaOpenSave(m, args, "image", "Usage: /image <open|save> [path]")
+}
+
+func handleMediaSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "attach") {
+		return handleMediaAttachSlashCommand(m, args[1:])
+	}
+	return handleMediaOpenSave(m, args, "", "Usage: /media <open|save|attach> [path]")
+}
+
+func handleMediaOpenSave(m chatModel, args []string, mediaKind string, usage string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /image <open|save> [path]"})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: usage})
 		m.refreshViewport()
 		return m, nil
 	}
-	meta := latestImageMessageMeta(m.messages)
+	meta := latestMediaMessageMeta(m.messages, mediaKind)
 	if meta == nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "No generated image found in current transcript."})
+		targetKind := mediaKind
+		if strings.TrimSpace(targetKind) == "" {
+			targetKind = "media"
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("No generated %s found in current transcript.", targetKind)})
 		m.refreshViewport()
 		return m, nil
 	}
 	switch strings.ToLower(strings.TrimSpace(args[0])) {
 	case "open":
-		target := strings.TrimSpace(toString(meta["image_source_path"]))
+		target := strings.TrimSpace(toString(meta["media_source_path"]))
 		if target == "" {
-			target = strings.TrimSpace(toString(meta["image_path"]))
+			target = strings.TrimSpace(toString(meta["media_path"]))
 		}
 		if target == "" {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest image has no local file path to open."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest media has no local file path to open."})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -841,16 +857,16 @@ func handleImageSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 		m.refreshViewport()
 		return m, nil
 	case "save":
-		encoded := strings.TrimSpace(toString(meta["image_data_base64"]))
-		mimeType := strings.TrimSpace(toString(meta["image_mime_type"]))
+		encoded := strings.TrimSpace(toString(meta["media_data_base64"]))
+		mimeType := strings.TrimSpace(toString(meta["media_mime_type"]))
 		if encoded == "" || mimeType == "" {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest image has no inline data to save."})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest media has no inline data to save."})
 			m.refreshViewport()
 			return m, nil
 		}
 		raw, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("decode image failed: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("decode media failed: %v", err)})
 			m.refreshViewport()
 			return m, nil
 		}
@@ -859,35 +875,75 @@ func handleImageSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 			target = strings.TrimSpace(strings.Join(args[1:], " "))
 		}
 		if target == "" {
-			ext := extensionForImageMIME(mimeType)
-			target = filepath.Join(m.workspace, "generated-image"+ext)
+			kind := strings.TrimSpace(toString(meta["media_kind"]))
+			if kind == "" {
+				kind = "media"
+			}
+			ext := extensionForMediaMIME(mimeType)
+			target = filepath.Join(m.workspace, "generated-"+kind+ext)
 		}
 		if !filepath.IsAbs(target) {
 			target = filepath.Join(m.workspace, target)
 		}
 		if err := os.WriteFile(target, raw, 0600); err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("save image failed: %v", err)})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("save media failed: %v", err)})
 			m.refreshViewport()
 			return m, nil
 		}
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Saved image to %s", target)})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Saved media to %s", target)})
 		m.refreshViewport()
 		return m, nil
 	default:
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /image <open|save> [path]"})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: usage})
 		m.refreshViewport()
 		return m, nil
 	}
 }
 
-func latestImageMessageMeta(messages []chatMessage) map[string]any {
+func handleMediaAttachSlashCommand(m chatModel, args []string) (chatModel, tea.Cmd) {
+	if len(args) == 0 {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /media attach <path>\nTip: this inserts @path into the composer so the next send attaches the media file."})
+		m.refreshViewport()
+		return m, nil
+	}
+	token, err := mentionTokenForComposer(m.workspace, strings.Join(args, " "))
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
+		m.refreshViewport()
+		return m, nil
+	}
+	draft := strings.TrimSpace(m.textarea.Value())
+	draft = strings.TrimSpace(strings.Join([]string{draft, token}, " "))
+	m.textarea.SetValue(draft)
+	m.adjustInputHeight()
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Inserted %s into the composer. Send the next turn to attach it.", token)})
+	m.refreshViewport()
+	return m, nil
+}
+
+func latestMediaMessageMeta(messages []chatMessage, mediaKind string) map[string]any {
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if msg.kind != msgAssistant || msg.meta == nil {
 			continue
 		}
+		if isMedia, _ := msg.meta["is_media"].(bool); isMedia {
+			if strings.TrimSpace(mediaKind) == "" || strings.EqualFold(strings.TrimSpace(toString(msg.meta["media_kind"])), mediaKind) {
+				return msg.meta
+			}
+		}
 		if isImage, _ := msg.meta["is_image"].(bool); isImage {
-			return msg.meta
+			if strings.TrimSpace(mediaKind) == "" || strings.EqualFold(mediaKind, "image") {
+				return map[string]any{
+					"is_media":          true,
+					"media_kind":        "image",
+					"media_path":        toString(msg.meta["image_path"]),
+					"media_url":         toString(msg.meta["image_url"]),
+					"media_source_path": toString(msg.meta["image_source_path"]),
+					"media_mime_type":   toString(msg.meta["image_mime_type"]),
+					"media_data_base64": toString(msg.meta["image_data_base64"]),
+				}
+			}
 		}
 	}
 	return nil
@@ -899,6 +955,10 @@ func toString(v any) string {
 }
 
 func extensionForImageMIME(mimeType string) string {
+	return extensionForMediaMIME(mimeType)
+}
+
+func extensionForMediaMIME(mimeType string) string {
 	switch strings.ToLower(strings.TrimSpace(mimeType)) {
 	case "image/png":
 		return ".png"
@@ -908,6 +968,14 @@ func extensionForImageMIME(mimeType string) string {
 		return ".gif"
 	case "image/webp":
 		return ".webp"
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return ".wav"
+	case "audio/mp3", "audio/mpeg":
+		return ".mp3"
+	case "video/mp4":
+		return ".mp4"
+	case "video/webm":
+		return ".webm"
 	default:
 		return ".img"
 	}

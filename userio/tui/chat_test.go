@@ -1475,7 +1475,7 @@ func TestSessionResult_AppendsOutputImageMessage(t *testing.T) {
 	m.recalcLayout()
 
 	updated, _ := m.Update(sessionResultMsg{
-		outputImages: []port.ContentPart{
+		outputMedia: []port.ContentPart{
 			port.ImageURLPart(port.ContentPartOutputImage, "https://example.com/image.png", ""),
 		},
 	})
@@ -1565,8 +1565,9 @@ func TestSlashCommandImageOpenWithoutLocalPathShowsError(t *testing.T) {
 		kind:    msgAssistant,
 		content: "Generated image",
 		meta: map[string]any{
-			"is_image": true,
-			"image_url": "https://example.com/latest.png",
+			"is_media":   true,
+			"media_kind": "image",
+			"media_url":  "https://example.com/latest.png",
 		},
 	})
 	updated, _ := m.handleSlashCommand("/image open")
@@ -1583,18 +1584,43 @@ func TestSlashCommandImageSavePersistsInlineData(t *testing.T) {
 		kind:    msgAssistant,
 		content: "Generated image",
 		meta: map[string]any{
-			"is_image":          true,
-			"image_mime_type":   "image/png",
-			"image_data_base64": "iVBORw0K",
+			"is_media":          true,
+			"media_kind":        "image",
+			"media_mime_type":   "image/png",
+			"media_data_base64": "iVBORw0K",
 		},
 	})
 	target := filepath.Join(workspace, "saved.png")
 	updated, _ := m.handleSlashCommand("/image save " + target)
 	last := updated.messages[len(updated.messages)-1]
-	if last.kind != msgSystem || !strings.Contains(last.content, "Saved image") {
+	if last.kind != msgSystem || !strings.Contains(last.content, "Saved media") {
 		t.Fatalf("unexpected /image save output: %+v", last)
 	}
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("expected saved image file: %v", err)
+	}
+}
+
+func TestSlashCommandMediaSavePersistsAudioData(t *testing.T) {
+	workspace := t.TempDir()
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgAssistant,
+		content: "Generated audio",
+		meta: map[string]any{
+			"is_media":          true,
+			"media_kind":        "audio",
+			"media_mime_type":   "audio/wav",
+			"media_data_base64": "UklGRg==",
+		},
+	})
+	target := filepath.Join(workspace, "saved.wav")
+	updated, _ := m.handleSlashCommand("/media save " + target)
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Saved media") {
+		t.Fatalf("unexpected /media save output: %+v", last)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("expected saved audio file: %v", err)
 	}
 }

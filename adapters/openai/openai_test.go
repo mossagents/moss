@@ -36,7 +36,7 @@ func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
 	msgs := []port.Message{
 		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("What's the weather?")}},
 		{
-			Role:    port.RoleAssistant,
+			Role:         port.RoleAssistant,
 			ContentParts: []port.ContentPart{port.TextPart("Let me check.")},
 			ToolCalls: []port.ToolCall{
 				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
@@ -133,6 +133,60 @@ func TestToOpenAIMessages_UserWithInputImage(t *testing.T) {
 	}
 	if !strings.Contains(payload, `"url":"data:image/png;base64,abcd"`) {
 		t.Fatalf("expected data URL image source, got %s", payload)
+	}
+}
+
+func TestToOpenAIMessages_UserWithInputAudio(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.TextPart("transcribe this"),
+				port.MediaInlinePart(port.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
+			},
+		},
+	}
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
+	raw, err := json.Marshal(result[0].OfUser)
+	if err != nil {
+		t.Fatalf("marshal user message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"type":"input_audio"`) {
+		t.Fatalf("expected input_audio content part, got %s", payload)
+	}
+	if !strings.Contains(payload, `"format":"wav"`) {
+		t.Fatalf("expected wav format, got %s", payload)
+	}
+}
+
+func TestToOpenAIMessages_UserWithInputVideo(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.TextPart("summarize this video"),
+				port.MediaInlinePart(port.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
+			},
+		},
+	}
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
+	raw, err := json.Marshal(result[0].OfUser)
+	if err != nil {
+		t.Fatalf("marshal user message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"type":"file"`) {
+		t.Fatalf("expected file content part, got %s", payload)
+	}
+	if !strings.Contains(payload, `"filename":"clip.mp4"`) {
+		t.Fatalf("expected clip.mp4 filename, got %s", payload)
 	}
 }
 
@@ -286,6 +340,45 @@ func TestFromOpenAIResponse_WithToolCalls(t *testing.T) {
 	}
 	if resp.StopReason != "tool_calls" {
 		t.Errorf("stop_reason = %q, want tool_calls", resp.StopReason)
+	}
+}
+
+func TestFromOpenAIResponse_WithAudio(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-456a",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "gpt-4o",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"content": "Here is audio",
+				"audio": {
+					"id": "aud_1",
+					"data": "YWJjZA==",
+					"expires_at": 1700000100,
+					"transcript": "abc"
+				}
+			},
+			"finish_reason": "stop"
+		}],
+		"usage": {
+			"prompt_tokens": 20,
+			"completion_tokens": 15,
+			"total_tokens": 35
+		}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	resp := fromOpenAIResponse(&completion)
+	if len(resp.Message.ContentParts) != 2 {
+		t.Fatalf("expected text+audio content parts, got %d", len(resp.Message.ContentParts))
+	}
+	if resp.Message.ContentParts[1].Type != port.ContentPartOutputAudio {
+		t.Fatalf("expected output_audio part, got %s", resp.Message.ContentParts[1].Type)
 	}
 }
 
@@ -568,5 +661,3 @@ func TestStreamIterator_TextAndToolCallMixed(t *testing.T) {
 		t.Error("second chunk should be tool call")
 	}
 }
-
-

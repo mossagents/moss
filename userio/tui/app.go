@@ -672,7 +672,7 @@ func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
 		msg := sessionResultMsg{err: err}
 		if result != nil {
 			msg.output = result.Output
-			msg.outputImages = collectOutputImageParts(a.sess)
+			msg.outputMedia = collectOutputMediaParts(a.sess)
 		}
 		if traceRecorder != nil {
 			trace := traceRecorder.Snapshot()
@@ -694,7 +694,7 @@ func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
 	}
 }
 
-func collectOutputImageParts(sess *session.Session) []port.ContentPart {
+func collectOutputMediaParts(sess *session.Session) []port.ContentPart {
 	if sess == nil || len(sess.Messages) == 0 {
 		return nil
 	}
@@ -705,7 +705,7 @@ func collectOutputImageParts(sess *session.Session) []port.ContentPart {
 		}
 		var out []port.ContentPart
 		for _, p := range msg.ContentParts {
-			if p.Type == port.ContentPartOutputImage {
+			if p.Type == port.ContentPartOutputImage || p.Type == port.ContentPartOutputAudio || p.Type == port.ContentPartOutputVideo {
 				out = append(out, p)
 			}
 		}

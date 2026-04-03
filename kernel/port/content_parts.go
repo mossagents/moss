@@ -10,6 +10,10 @@ func TextPart(text string) ContentPart {
 }
 
 func ImageInlinePart(typ ContentPartType, mimeType, dataBase64, sourcePath string) ContentPart {
+	return MediaInlinePart(typ, mimeType, dataBase64, sourcePath)
+}
+
+func MediaInlinePart(typ ContentPartType, mimeType, dataBase64, sourcePath string) ContentPart {
 	return ContentPart{
 		Type:       typ,
 		MIMEType:   strings.TrimSpace(mimeType),
@@ -19,6 +23,10 @@ func ImageInlinePart(typ ContentPartType, mimeType, dataBase64, sourcePath strin
 }
 
 func ImageURLPart(typ ContentPartType, url, sourcePath string) ContentPart {
+	return MediaURLPart(typ, url, sourcePath)
+}
+
+func MediaURLPart(typ ContentPartType, url, sourcePath string) ContentPart {
 	return ContentPart{
 		Type:       typ,
 		URL:        strings.TrimSpace(url),
@@ -64,15 +72,15 @@ func validateContentPart(part ContentPart) error {
 		}
 		return nil
 	case ContentPartInputImage, ContentPartOutputImage:
-		return validateImageContentPart(part)
+		return validateMediaContentPart(part, "image/")
 	case ContentPartInputAudio, ContentPartOutputAudio, ContentPartInputVideo, ContentPartOutputVideo:
-		return fmt.Errorf("content part type %q is reserved and not implemented", part.Type)
+		return validateMediaContentPart(part, expectedMediaMIMEPrefix(part.Type))
 	default:
 		return fmt.Errorf("unsupported content part type %q", part.Type)
 	}
 }
 
-func validateImageContentPart(part ContentPart) error {
+func validateMediaContentPart(part ContentPart, expectedMIMEPrefix string) error {
 	if strings.TrimSpace(part.Text) != "" {
 		return fmt.Errorf("%s forbids text", part.Type)
 	}
@@ -92,8 +100,8 @@ func validateImageContentPart(part ContentPart) error {
 		if mimeType == "" || data == "" {
 			return fmt.Errorf("%s inline source requires both mime_type and data_base64", part.Type)
 		}
-		if !strings.HasPrefix(strings.ToLower(mimeType), "image/") {
-			return fmt.Errorf("%s mime_type must start with image/", part.Type)
+		if !strings.HasPrefix(strings.ToLower(mimeType), expectedMIMEPrefix) {
+			return fmt.Errorf("%s mime_type must start with %s", part.Type, expectedMIMEPrefix)
 		}
 	case hasURL:
 		if mimeType != "" || data != "" {
@@ -101,4 +109,17 @@ func validateImageContentPart(part ContentPart) error {
 		}
 	}
 	return nil
+}
+
+func expectedMediaMIMEPrefix(typ ContentPartType) string {
+	switch typ {
+	case ContentPartInputImage, ContentPartOutputImage:
+		return "image/"
+	case ContentPartInputAudio, ContentPartOutputAudio:
+		return "audio/"
+	case ContentPartInputVideo, ContentPartOutputVideo:
+		return "video/"
+	default:
+		return ""
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"mime"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ func expandInlineFileMentions(input, workspace string) (string, error) {
 			continue
 		}
 		seen[path] = struct{}{}
-		if isImagePath(path) {
+		if isMediaPath(path) {
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -72,7 +73,7 @@ func buildUserContentParts(input, workspace string) ([]port.ContentPart, error) 
 			continue
 		}
 		path, ok := resolveMentionPath(workspace, strings.TrimPrefix(token, "@"))
-		if !ok || !isImagePath(path) {
+		if !ok || !isMediaPath(path) {
 			continue
 		}
 		if _, exists := seen[path]; exists {
@@ -81,14 +82,14 @@ func buildUserContentParts(input, workspace string) ([]port.ContentPart, error) 
 		seen[path] = struct{}{}
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil, fmt.Errorf("read image mention %s: %w", path, err)
+			return nil, fmt.Errorf("read media mention %s: %w", path, err)
 		}
-		mimeType := strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(path))))
-		if !strings.HasPrefix(mimeType, "image/") {
-			return nil, fmt.Errorf("mentioned image %s has unsupported mime type %q", path, mimeType)
+		partType, mimeType, err := detectMediaPart(path, data)
+		if err != nil {
+			return nil, err
 		}
-		parts = append(parts, port.ImageInlinePart(
-			port.ContentPartInputImage,
+		parts = append(parts, port.MediaInlinePart(
+			partType,
 			mimeType,
 			base64.StdEncoding.EncodeToString(data),
 			path,
@@ -133,12 +134,75 @@ func mentionTokenForComposer(workspace, raw string) (string, error) {
 	return "@" + filepath.Clean(path), nil
 }
 
-func isImagePath(path string) bool {
+func isMediaPath(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp":
 		return true
+	case ".wav", ".mp3", ".mpeg", ".m4a", ".ogg", ".flac":
+		return true
+	case ".mp4", ".webm", ".mov", ".avi", ".mkv":
+		return true
 	default:
 		return false
+	}
+}
+
+func detectMediaPart(path string, data []byte) (port.ContentPartType, string, error) {
+	extMIME := strings.ToLower(strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))))
+	sniffMIME := strings.ToLower(strings.TrimSpace(http.DetectContentType(data)))
+	extFamily := mediaFamily(extMIME)
+	sniffFamily := mediaFamily(sniffMIME)
+
+	if extFamily != "" && sniffFamily != "" && extFamily != sniffFamily {
+		return "", "", fmt.Errorf("mentioned media %s has mime mismatch: extension=%q, content=%q", path, extMIME, sniffMIME)
+	}
+
+	family := extFamily
+	if family == "" {
+		family = sniffFamily
+	}
+	if family == "" {
+		return "", "", fmt.Errorf("mentioned media %s has unsupported or ambiguous media type (extension=%q, content=%q)", path, extMIME, sniffMIME)
+	}
+
+	resolvedMIME := extMIME
+	if mediaFamily(resolvedMIME) != family {
+		resolvedMIME = sniffMIME
+	}
+	if mediaFamily(resolvedMIME) != family {
+		switch family {
+		case "image":
+			resolvedMIME = "image/png"
+		case "audio":
+			resolvedMIME = "audio/wav"
+		case "video":
+			resolvedMIME = "video/mp4"
+		}
+	}
+
+	switch family {
+	case "image":
+		return port.ContentPartInputImage, resolvedMIME, nil
+	case "audio":
+		return port.ContentPartInputAudio, resolvedMIME, nil
+	case "video":
+		return port.ContentPartInputVideo, resolvedMIME, nil
+	default:
+		return "", "", fmt.Errorf("mentioned media %s has unsupported media family %q", path, family)
+	}
+}
+
+func mediaFamily(mimeType string) string {
+	mimeType = strings.ToLower(strings.TrimSpace(mimeType))
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		return "image"
+	case strings.HasPrefix(mimeType, "audio/"):
+		return "audio"
+	case strings.HasPrefix(mimeType, "video/"):
+		return "video"
+	default:
+		return ""
 	}
 }
 

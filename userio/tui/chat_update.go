@@ -120,28 +120,31 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if msg.output != "" {
 			m.result = msg.output
 		}
-		for _, part := range msg.outputImages {
-			if part.Type != port.ContentPartOutputImage {
-				continue
-			}
+		for _, part := range msg.outputMedia {
 			path := strings.TrimSpace(part.SourcePath)
 			if path == "" {
 				path = strings.TrimSpace(part.URL)
 			}
 			if path == "" {
-				path = "(inline image)"
+				path = "(inline media)"
+			}
+			mediaKind := outputMediaKind(part.Type)
+			if mediaKind == "" {
+				continue
 			}
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgAssistant,
-				content: fmt.Sprintf("Generated image: %s", path),
+				content: fmt.Sprintf("Generated %s: %s", mediaKind, path),
 				meta: map[string]any{
-					"timestamp":         m.now().UTC(),
-					"is_image":          true,
-					"image_path":        path,
-					"image_url":         strings.TrimSpace(part.URL),
-					"image_source_path": strings.TrimSpace(part.SourcePath),
-					"image_mime_type":   strings.TrimSpace(part.MIMEType),
-					"image_data_base64": strings.TrimSpace(part.DataBase64),
+					"timestamp":          m.now().UTC(),
+					"is_media":           true,
+					"media_kind":         mediaKind,
+					"media_path":         path,
+					"media_url":          strings.TrimSpace(part.URL),
+					"media_source_path":  strings.TrimSpace(part.SourcePath),
+					"media_mime_type":    strings.TrimSpace(part.MIMEType),
+					"media_data_base64":  strings.TrimSpace(part.DataBase64),
+					"media_content_type": string(part.Type),
 				},
 			})
 		}
@@ -198,4 +201,17 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func outputMediaKind(typ port.ContentPartType) string {
+	switch typ {
+	case port.ContentPartOutputImage:
+		return "image"
+	case port.ContentPartOutputAudio:
+		return "audio"
+	case port.ContentPartOutputVideo:
+		return "video"
+	default:
+		return ""
+	}
 }

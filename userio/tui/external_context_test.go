@@ -63,6 +63,44 @@ func TestBuildUserContentPartsAddsInputImagePart(t *testing.T) {
 	}
 }
 
+func TestBuildUserContentPartsAddsInputAudioPart(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "voice.wav")
+	raw := []byte("RIFF....WAVEfmt ")
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write audio: %v", err)
+	}
+	parts, err := buildUserContentParts("Please inspect @voice.wav", workspace)
+	if err != nil {
+		t.Fatalf("buildUserContentParts: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected text+audio parts, got %d", len(parts))
+	}
+	if parts[1].Type != "input_audio" {
+		t.Fatalf("expected input_audio part, got %q", parts[1].Type)
+	}
+}
+
+func TestBuildUserContentPartsAddsInputVideoPart(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "clip.mp4")
+	raw := []byte{0x00, 0x00, 0x00, 0x18, 'f', 't', 'y', 'p', 'm', 'p', '4', '2'}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write video: %v", err)
+	}
+	parts, err := buildUserContentParts("Please inspect @clip.mp4", workspace)
+	if err != nil {
+		t.Fatalf("buildUserContentParts: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected text+video parts, got %d", len(parts))
+	}
+	if parts[1].Type != "input_video" {
+		t.Fatalf("expected input_video part, got %q", parts[1].Type)
+	}
+}
+
 func TestParseLocationSpecExtractsLine(t *testing.T) {
 	path, line := parseLocationSpec("userio\\tui\\chat.go:42")
 	if path != "userio\\tui\\chat.go" || line != 42 {

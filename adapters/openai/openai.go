@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -266,11 +267,62 @@ func toOpenAIUserParts(parts []port.ContentPart, model string) ([]openai.ChatCom
 			result = append(result, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
 				URL: imageURL,
 			}))
+		case port.ContentPartInputAudio:
+			audioPart, err := toOpenAIInputAudioPart(part, model)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, audioPart)
+		case port.ContentPartInputVideo:
+			videoPart, err := toOpenAIInputVideoPart(part, model)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, videoPart)
 		default:
 			return nil, unsupportedPartError("openai", model, "user", part.Type)
 		}
 	}
 	return result, nil
+}
+
+func toOpenAIInputAudioPart(part port.ContentPart, model string) (openai.ChatCompletionContentPartUnionParam, error) {
+	if strings.TrimSpace(part.URL) != "" {
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, "url source is not supported for audio input")
+	}
+	format, err := audioFormatFromMIME(part.MIMEType)
+	if err != nil {
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, err.Error())
+	}
+	return openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
+		Data:   part.DataBase64,
+		Format: format,
+	}), nil
+}
+
+func toOpenAIInputVideoPart(part port.ContentPart, model string) (openai.ChatCompletionContentPartUnionParam, error) {
+	if strings.TrimSpace(part.URL) != "" {
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, "url source is not supported for video input")
+	}
+	filename := strings.TrimSpace(filepath.Base(part.SourcePath))
+	if filename == "" || filename == "." {
+		filename = "input-video.bin"
+	}
+	return openai.FileContentPart(openai.ChatCompletionContentPartFileFileParam{
+		FileData: openai.String(part.DataBase64),
+		Filename: openai.String(filename),
+	}), nil
+}
+
+func audioFormatFromMIME(mimeType string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "audio/wav", "audio/x-wav", "audio/wave":
+		return "wav", nil
+	case "audio/mp3", "audio/mpeg":
+		return "mp3", nil
+	default:
+		return "", fmt.Errorf("unsupported audio mime_type=%q for OpenAI input_audio", mimeType)
+	}
 }
 
 func toAssistantMessage(msg port.Message, model string) (*openai.ChatCompletionAssistantMessageParam, error) {
@@ -342,6 +394,14 @@ func fromOpenAIResponse(c *openai.ChatCompletion) *port.CompletionResponse {
 	if choice.Message.Content != "" {
 		contentParts = []port.ContentPart{port.TextPart(choice.Message.Content)}
 	}
+	if strings.TrimSpace(choice.Message.Audio.Data) != "" {
+		contentParts = append(contentParts, port.MediaInlinePart(
+			port.ContentPartOutputAudio,
+			"audio/wav",
+			choice.Message.Audio.Data,
+			"",
+		))
+	}
 
 	return &port.CompletionResponse{
 		Message: port.Message{
@@ -368,6 +428,10 @@ func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, rol
 
 func unsupportedPartError(provider, model, role string, typ port.ContentPartType) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s unsupported content part type=%q", provider, model, role, typ)
+}
+
+func capabilityUnavailableError(provider, model, role string, typ port.ContentPartType, reason string) error {
+	return fmt.Errorf("%s adapter: model=%q role=%s content part type=%q capability unavailable: %s", provider, model, role, typ, reason)
 }
 
 func fromToolCalls(tcs []openai.ChatCompletionMessageToolCall) []port.ToolCall {

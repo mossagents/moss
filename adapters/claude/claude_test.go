@@ -58,7 +58,7 @@ func TestToAnthropicMessages_AssistantWithToolCalls(t *testing.T) {
 	msgs := []port.Message{
 		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("What's the weather?")}},
 		{
-			Role:    port.RoleAssistant,
+			Role:         port.RoleAssistant,
 			ContentParts: []port.ContentPart{port.TextPart("Let me check.")},
 			ToolCalls: []port.ToolCall{
 				{ID: "tc_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
@@ -149,6 +149,48 @@ func TestToAnthropicMessages_UserWithInputImage(t *testing.T) {
 	}
 	if !strings.Contains(payload, `"type":"base64"`) {
 		t.Fatalf("expected base64 image source, got %s", payload)
+	}
+}
+
+func TestToAnthropicMessages_UserWithInputVideo(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.TextPart("summarize this"),
+				port.MediaInlinePart(port.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
+			},
+		},
+	}
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"type":"document"`) {
+		t.Fatalf("expected document block for video, got %s", payload)
+	}
+}
+
+func TestToAnthropicMessages_UserWithInputAudioFailsCapability(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.MediaInlinePart(port.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
+			},
+		},
+	}
+	_, _, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err == nil {
+		t.Fatal("expected capability unavailable error")
+	}
+	if !strings.Contains(err.Error(), "capability unavailable") {
+		t.Fatalf("expected capability unavailable message, got %v", err)
 	}
 }
 
@@ -620,6 +662,3 @@ func TestMessageConversion_RoundTrip(t *testing.T) {
 		}
 	}
 }
-
-
-

@@ -29,7 +29,7 @@ var writeClipboard = clipboard.WriteAll
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
 	output       string
-	outputImages []port.ContentPart
+	outputMedia  []port.ContentPart
 	trace        *product.RunTraceSummary
 	traceSummary string
 	err          error
@@ -78,8 +78,8 @@ type chatModel struct {
 
 	// agent 交互
 	sendFn                func(string, []port.ContentPart) // 发送用户消息给 agent
-	cancelRunFn           func() bool   // 取消当前运行中的任务
-	skillListFn           func() string // 查询已加载 skills
+	cancelRunFn           func() bool                      // 取消当前运行中的任务
+	skillListFn           func() string                    // 查询已加载 skills
 	sessionInfoFn         func() string
 	offloadFn             func(keepRecent int, note string) (string, error)
 	taskListFn            func(status string, limit int) (string, error)
@@ -254,7 +254,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 	parts, err := buildUserContentParts(runText, m.workspace)
 	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned images: %v", err)})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned media: %v", err)})
 		m.refreshViewport()
 		return m, nil
 	}
@@ -840,6 +840,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/search", Summary: "Search the web via Jina", Section: "Tools and integrations"},
 	{Name: "/open", Summary: "Open a file in the local editor", Section: "Tools and integrations"},
 	{Name: "/image", Summary: "Open or save the latest generated image", Section: "Tools and integrations"},
+	{Name: "/media", Summary: "Attach, open, or save media", Section: "Tools and integrations"},
 	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Tools and integrations"},
 	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Tools and integrations"},
 	{Name: "/config", Summary: "Show or update config values", Section: "Tools and integrations"},
