@@ -114,3 +114,75 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 		t.Fatalf("expected memory prompt hint, got %q", sess.Messages[0].Content)
 	}
 }
+
+func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	ctx := context.Background()
+	_, writeRecord, ok := reg.Get("write_memory_record")
+	if !ok {
+		t.Fatal("write_memory_record not registered")
+	}
+	_, readRecord, ok := reg.Get("read_memory_record")
+	if !ok {
+		t.Fatal("read_memory_record not registered")
+	}
+	_, searchMemories, ok := reg.Get("search_memories")
+	if !ok {
+		t.Fatal("search_memories not registered")
+	}
+
+	writeInput, _ := json.Marshal(map[string]any{
+		"path":    "team/decision.md",
+		"content": "We decided to use sqlite backend for state queries.",
+		"tags":    []string{"architecture", "state"},
+		"citation": map[string]any{
+			"entries": []map[string]any{
+				{
+					"path":       "docs/decision.md",
+					"line_start": 10,
+					"line_end":   12,
+					"note":       "decision source",
+				},
+			},
+		},
+	})
+	if _, err := writeRecord(ctx, writeInput); err != nil {
+		t.Fatalf("write_memory_record failed: %v", err)
+	}
+
+	readInput, _ := json.Marshal(map[string]string{"path": "team/decision.md"})
+	recordRaw, err := readRecord(ctx, readInput)
+	if err != nil {
+		t.Fatalf("read_memory_record failed: %v", err)
+	}
+	var record map[string]any
+	if err := json.Unmarshal(recordRaw, &record); err != nil {
+		t.Fatalf("decode read_memory_record: %v", err)
+	}
+	if record["summary"] == "" {
+		t.Fatalf("expected generated summary, got %+v", record)
+	}
+
+	searchInput, _ := json.Marshal(map[string]any{
+		"query": "sqlite backend",
+		"limit": 5,
+	})
+	searchRaw, err := searchMemories(ctx, searchInput)
+	if err != nil {
+		t.Fatalf("search_memories failed: %v", err)
+	}
+	var searchResp struct {
+		Count int               `json:"count"`
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
+		t.Fatalf("decode search_memories: %v", err)
+	}
+	if searchResp.Count != 1 || len(searchResp.Items) != 1 {
+		t.Fatalf("unexpected search result: %+v", searchResp)
+	}
+}

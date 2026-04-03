@@ -14,18 +14,29 @@ const memoryStateKey kernel.ExtensionStateKey = "memory.state"
 
 type state struct {
 	workspace port.Workspace
+	store     port.MemoryStore
 }
 
 // WithMemoryWorkspace 将持久化 memory 工作区接入 Kernel。
 func WithMemoryWorkspace(ws port.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
-		ensureMemoryState(k).workspace = ws
+		st := ensureMemoryState(k)
+		st.workspace = ws
+		if ws != nil {
+			st.store = NewWorkspaceMemoryStore(ws)
+		}
+	}
+}
+
+func WithMemoryStore(store port.MemoryStore) kernel.Option {
+	return func(k *kernel.Kernel) {
+		ensureMemoryState(k).store = store
 	}
 }
 
 // RegisterMemoryToolsCompat 为 memory 命名空间注册标准工具集。
 func RegisterMemoryToolsCompat(reg tool.Registry, ws port.Workspace) error {
-	return RegisterMemoryTools(reg, ws)
+	return RegisterMemoryTools(reg, ws, NewWorkspaceMemoryStore(ws))
 }
 
 func ensureMemoryState(k *kernel.Kernel) *state {
@@ -39,20 +50,26 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		if st.workspace == nil {
 			return nil
 		}
-		return RegisterMemoryTools(k.ToolRegistry(), st.workspace)
+		if st.store == nil {
+			st.store = NewWorkspaceMemoryStore(st.workspace)
+		}
+		return RegisterMemoryTools(k.ToolRegistry(), st.workspace, st.store)
 	})
 	bridge.OnSystemPrompt(220, func(_ *kernel.Kernel) string {
 		if st.workspace == nil {
 			return ""
 		}
-		return "You have persistent memory tools backed by /memories: list_memories, read_memory, write_memory, delete_memory."
+		return "You have persistent memory tools backed by /memories: list_memories, read_memory, write_memory, delete_memory, read_memory_record, write_memory_record, search_memories."
 	})
 	return st
 }
 
-func RegisterMemoryTools(reg tool.Registry, ws port.Workspace) error {
+func RegisterMemoryTools(reg tool.Registry, ws port.Workspace, store port.MemoryStore) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
+	}
+	if store == nil {
+		return fmt.Errorf("memory store is nil")
 	}
 	tools := []struct {
 		spec    tool.ToolSpec
@@ -62,6 +79,9 @@ func RegisterMemoryTools(reg tool.Registry, ws port.Workspace) error {
 		{writeMemorySpec, writeMemoryHandler(ws)},
 		{listMemoriesSpec, listMemoriesHandler(ws)},
 		{deleteMemorySpec, deleteMemoryHandler(ws)},
+		{readMemoryRecordSpec, readMemoryRecordHandler(store)},
+		{writeMemoryRecordSpec, writeMemoryRecordHandler(store)},
+		{searchMemoriesSpec, searchMemoriesHandler(store)},
 	}
 	for _, t := range tools {
 		if _, _, exists := reg.Get(t.spec.Name); exists {
@@ -121,6 +141,51 @@ var deleteMemorySpec = tool.ToolSpec{
 		"required":["path"]
 	}`),
 	Risk:         tool.RiskHigh,
+	Capabilities: []string{"memory"},
+}
+
+var readMemoryRecordSpec = tool.ToolSpec{
+	Name:        "read_memory_record",
+	Description: "Read a structured memory record with summary and citations.",
+	InputSchema: json.RawMessage(`{
+		"type":"object",
+		"properties":{"path":{"type":"string","description":"Memory record path"}},
+		"required":["path"]
+	}`),
+	Risk:         tool.RiskLow,
+	Capabilities: []string{"memory"},
+}
+
+var writeMemoryRecordSpec = tool.ToolSpec{
+	Name:        "write_memory_record",
+	Description: "Write a structured memory record with optional tags and citations.",
+	InputSchema: json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"path":{"type":"string"},
+			"content":{"type":"string"},
+			"summary":{"type":"string"},
+			"tags":{"type":"array","items":{"type":"string"}},
+			"citation":{"type":"object"}
+		},
+		"required":["path","content"]
+	}`),
+	Risk:         tool.RiskHigh,
+	Capabilities: []string{"memory"},
+}
+
+var searchMemoriesSpec = tool.ToolSpec{
+	Name:        "search_memories",
+	Description: "Search structured memories by text and tags.",
+	InputSchema: json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"query":{"type":"string"},
+			"tags":{"type":"array","items":{"type":"string"}},
+			"limit":{"type":"integer"}
+		}
+	}`),
+	Risk:         tool.RiskLow,
 	Capabilities: []string{"memory"},
 }
 
@@ -187,5 +252,72 @@ func deleteMemoryHandler(ws port.Workspace) tool.ToolHandler {
 			return nil, err
 		}
 		return json.Marshal(map[string]string{"status": "deleted", "path": in.Path})
+	}
+}
+
+func readMemoryRecordHandler(store port.MemoryStore) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		record, err := store.GetByPath(ctx, in.Path)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(record)
+	}
+}
+
+func writeMemoryRecordHandler(store port.MemoryStore) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in struct {
+			Path     string              `json:"path"`
+			Content  string              `json:"content"`
+			Summary  string              `json:"summary"`
+			Tags     []string            `json:"tags"`
+			Citation port.MemoryCitation `json:"citation"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		record, err := store.Upsert(ctx, port.MemoryRecord{
+			Path:     in.Path,
+			Content:  in.Content,
+			Summary:  in.Summary,
+			Tags:     in.Tags,
+			Citation: in.Citation,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(record)
+	}
+}
+
+func searchMemoriesHandler(store port.MemoryStore) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in struct {
+			Query string   `json:"query"`
+			Tags  []string `json:"tags"`
+			Limit int      `json:"limit"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		items, err := store.Search(ctx, port.MemoryQuery{
+			Query: in.Query,
+			Tags:  in.Tags,
+			Limit: in.Limit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"count": len(items),
+			"items": items,
+		})
 	}
 }
