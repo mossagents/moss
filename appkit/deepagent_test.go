@@ -38,7 +38,7 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	for _, name := range []string{
 		"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user",
 		"read_memory", "write_memory", "list_memories", "delete_memory",
-		"offload_context", "compact_conversation", "write_todos", "update_task",
+		"offload_context", "compact_conversation", "update_task",
 		"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace",
 	} {
 		if !toolNames[name] {
@@ -80,6 +80,25 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	}
 	if len(gp.Tools) == 0 {
 		t.Fatal("expected general-purpose tools to be populated")
+	}
+}
+
+func TestBuildDeepAgentKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: ".",
+		Trust:     "trusted",
+		Profile:   "planning",
+	}
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, nil)
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if _, _, ok := k.ToolRegistry().Get("write_todos"); !ok {
+		t.Fatal("expected write_todos tool in planning profile")
 	}
 }
 
@@ -397,4 +416,3 @@ func TestApplyOver_pureFunction_doesNotMutateBase(t *testing.T) {
 		t.Errorf("base.AppName was mutated: want %q got %q", origName, base.AppName)
 	}
 }
-

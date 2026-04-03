@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/mossagents/moss/agent"
@@ -258,7 +259,9 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	exts = append(exts, WithKernelOptions(kernel.WithPatchApply(sandbox.NewGitPatchApply(flags.Workspace))))
 	exts = append(exts, WithKernelOptions(kernel.WithPatchRevert(sandbox.NewGitPatchRevert(flags.Workspace))))
 	exts = append(exts, WithKernelOptions(kernel.WithWorktreeSnapshots(sandbox.NewGitWorktreeSnapshotStore(flags.Workspace))))
-	exts = append(exts, WithPlanning())
+	if strings.EqualFold(strings.TrimSpace(flags.Profile), "planning") {
+		exts = append(exts, WithPlanning())
+	}
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
 		exts = append(exts, WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
