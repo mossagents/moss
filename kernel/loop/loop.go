@@ -176,16 +176,8 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		return nil, ensureLLMCallError(err, true, true, port.LLMCallMetadata{})
 	}
 	defer iter.Close()
-	var metadataProvider port.MetadataStreamIterator
-	if provider, ok := iter.(port.MetadataStreamIterator); ok {
-		metadataProvider = provider
-	}
-
-	var fullContent string
-	var toolCalls []port.ToolCall
-	var usage port.TokenUsage
-	var stopReason string
-	emittedContent := false
+	metadataProvider := metadataStreamProvider(iter)
+	state := streamAccumulator{}
 
 	for {
 		chunk, err := iter.Next()
@@ -193,61 +185,95 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 			break
 		}
 		if err != nil {
-			if emittedContent && len(toolCalls) > 0 && isRecoverableStreamTailError(err) {
-				stopReason = "tool_use"
-				if l.IO != nil {
-					l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
-				}
+			shouldContinue, handledErr := l.handleStreamChunkError(ctx, err, metadataProvider, &state)
+			if shouldContinue {
 				break
 			}
-			safePreEmission := !emittedContent && len(toolCalls) == 0
-			return nil, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
+			return nil, handledErr
 		}
-
-		if chunk.Delta != "" {
-			emittedContent = true
-			fullContent += chunk.Delta
-			if l.IO != nil {
-				l.IO.Send(ctx, port.OutputMessage{
-					Type:    port.OutputStream,
-					Content: chunk.Delta,
-				})
-			}
-		}
-
-		if chunk.ToolCall != nil {
-			emittedContent = true
-			toolCalls = append(toolCalls, *chunk.ToolCall)
-		}
-
-		if chunk.Done {
-			if chunk.Usage != nil {
-				usage = *chunk.Usage
-			}
-			stopReason = "end_turn"
-			if len(toolCalls) > 0 {
-				stopReason = "tool_use"
-			}
-			if l.IO != nil {
-				l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
-			}
+		if done := l.applyStreamChunk(ctx, chunk, &state); done {
 			break
 		}
 	}
 
 	msg := port.Message{
 		Role:      port.RoleAssistant,
-		Content:   fullContent,
-		ToolCalls: toolCalls,
+		Content:   state.fullContent,
+		ToolCalls: state.toolCalls,
 	}
 
 	return &port.CompletionResponse{
 		Message:    msg,
-		ToolCalls:  toolCalls,
-		Usage:      usage,
-		StopReason: stopReason,
+		ToolCalls:  state.toolCalls,
+		Usage:      state.usage,
+		StopReason: state.stopReason,
 		Metadata:   metadataPtr(streamMetadata(metadataProvider)),
 	}, nil
+}
+
+type streamAccumulator struct {
+	fullContent    string
+	toolCalls      []port.ToolCall
+	usage          port.TokenUsage
+	stopReason     string
+	emittedContent bool
+}
+
+func metadataStreamProvider(iter port.StreamIterator) port.MetadataStreamIterator {
+	if provider, ok := iter.(port.MetadataStreamIterator); ok {
+		return provider
+	}
+	return nil
+}
+
+func (l *AgentLoop) handleStreamChunkError(
+	ctx context.Context,
+	err error,
+	metadataProvider port.MetadataStreamIterator,
+	state *streamAccumulator,
+) (bool, error) {
+	if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
+		state.stopReason = "tool_use"
+		if l.IO != nil {
+			l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
+		}
+		return true, nil
+	}
+	safePreEmission := !state.emittedContent && len(state.toolCalls) == 0
+	return false, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
+}
+
+func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk port.StreamChunk, state *streamAccumulator) bool {
+	if chunk.Delta != "" {
+		state.emittedContent = true
+		state.fullContent += chunk.Delta
+		if l.IO != nil {
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputStream,
+				Content: chunk.Delta,
+			})
+		}
+	}
+
+	if chunk.ToolCall != nil {
+		state.emittedContent = true
+		state.toolCalls = append(state.toolCalls, *chunk.ToolCall)
+	}
+
+	if !chunk.Done {
+		return false
+	}
+	if chunk.Usage != nil {
+		state.usage = *chunk.Usage
+	}
+	state.stopReason = "end_turn"
+	if len(state.toolCalls) > 0 {
+		state.stopReason = "tool_use"
+	}
+	if l.IO != nil {
+		l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
+	}
+	return true
 }
 
 func isRecoverableStreamTailError(err error) bool {
