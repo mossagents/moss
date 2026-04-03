@@ -190,7 +190,7 @@ func TestRegisterBuiltinTools(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -807,7 +807,7 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -1067,5 +1067,41 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	json.Unmarshal(result, &content)
 	if content != "from workspace" {
 		t.Errorf("expected workspace content, got %q", content)
+	}
+}
+
+func TestDatetimeTool(t *testing.T) {
+	reg := tool.NewRegistry()
+	sb := newMockSandbox("/ws", nil)
+	io := &mockUserIO{}
+	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
+		t.Fatalf("RegisterBuiltinTools: %v", err)
+	}
+	_, handler, ok := reg.Get("datetime")
+	if !ok {
+		t.Fatal("datetime not registered")
+	}
+	raw, err := handler(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("datetime: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode datetime: %v", err)
+	}
+	iso, ok := resp["iso8601"].(string)
+	if !ok || strings.TrimSpace(iso) == "" {
+		t.Fatalf("missing iso8601: %+v", resp)
+	}
+	timezone, ok := resp["timezone_name"].(string)
+	if !ok || strings.TrimSpace(timezone) == "" {
+		t.Fatalf("missing timezone_name: %+v", resp)
+	}
+	offset, ok := resp["utc_offset"].(string)
+	if !ok || strings.TrimSpace(offset) == "" {
+		t.Fatalf("missing utc_offset: %+v", resp)
+	}
+	if _, ok := resp["unix_timestamp"].(float64); !ok {
+		t.Fatalf("missing unix_timestamp: %+v", resp)
 	}
 }

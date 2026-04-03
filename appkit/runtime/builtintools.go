@@ -36,7 +36,7 @@ func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port
 	if exec != nil || sb != nil {
 		names = append(names, "run_command")
 	}
-	names = append(names, "http_request", "ask_user")
+	names = append(names, "http_request", "datetime", "ask_user")
 	return names
 }
 
@@ -84,6 +84,7 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 	}
 
 	tools = append(tools, entry{httpRequestSpec, httpRequestHandlerWithPolicy(k)})
+	tools = append(tools, entry{datetimeSpec, datetimeHandler()})
 	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
 
 	for _, t := range tools {
@@ -92,6 +93,39 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 		}
 	}
 	return nil
+}
+
+// ─── datetime ────────────────────────────────────────
+
+var datetimeSpec = tool.ToolSpec{
+	Name:        "datetime",
+	Description: "Get current local date and time with timezone information.",
+	InputSchema: json.RawMessage(`{
+		"type": "object",
+		"properties": {}
+	}`),
+	Risk:         tool.RiskLow,
+	Capabilities: []string{"time"},
+}
+
+func datetimeHandler() tool.ToolHandler {
+	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		now := time.Now()
+		tzName, tzOffsetSeconds := now.Zone()
+		offsetMinutes := tzOffsetSeconds / 60
+		sign := "+"
+		if offsetMinutes < 0 {
+			sign = "-"
+			offsetMinutes = -offsetMinutes
+		}
+		offset := fmt.Sprintf("%s%02d:%02d", sign, offsetMinutes/60, offsetMinutes%60)
+		return json.Marshal(map[string]any{
+			"iso8601":        now.Format(time.RFC3339Nano),
+			"timezone_name":  tzName,
+			"utc_offset":     offset,
+			"unix_timestamp": now.Unix(),
+		})
+	}
 }
 
 // ─── read_file ───────────────────────────────────────
