@@ -40,6 +40,7 @@ import (
 	"github.com/mossagents/moss/presets/deepagent"
 	"github.com/mossagents/moss/sandbox"
 	mosstui "github.com/mossagents/moss/userio/tui"
+	"github.com/spf13/cobra"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -164,71 +165,176 @@ func parseFlags() *config {
 		flags:      &appkit.AppFlags{},
 		governance: product.DefaultGovernanceConfig(),
 	}
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "exec":
-			cfg.command = "exec"
-			parseExecFlags(cfg, os.Args[2:])
-			return cfg
-		case "resume":
-			cfg.command = "resume"
-			parseResumeFlags(cfg, os.Args[2:])
-			return cfg
-		case "fork":
-			cfg.command = "fork"
-			cfg.forkArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "init":
-			cfg.command = "init"
-			parseLegacyFlags(cfg, os.Args[2:])
-			return cfg
-		case "doctor":
-			cfg.command = "doctor"
-			parseDoctorFlags(cfg, os.Args[2:])
-			return cfg
-		case "debug-config":
-			cfg.command = "debug-config"
-			parseDebugConfigFlags(cfg, os.Args[2:])
-			return cfg
-		case "completion":
-			cfg.command = "completion"
-			cfg.completionArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "config":
-			cfg.command = "config"
-			parseConfigFlags(cfg, os.Args[2:])
-			return cfg
-		case "review":
-			cfg.command = "review"
-			parseReviewFlags(cfg, os.Args[2:])
-			return cfg
-		case "checkpoint":
-			cfg.command = "checkpoint"
-			cfg.checkpointArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "apply":
-			cfg.command = "apply"
-			cfg.applyArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "rollback":
-			cfg.command = "rollback"
-			cfg.rollbackArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "changes":
-			cfg.command = "changes"
-			cfg.changesArgs = append([]string(nil), os.Args[2:]...)
-			return cfg
-		case "help", "--help", "-h":
-			printUsage()
-			os.Exit(0)
-		}
-	}
-	cfg.command = "tui"
-	parseLegacyFlags(cfg, os.Args[1:])
-	if strings.TrimSpace(cfg.prompt) != "" {
-		cfg.command = "exec"
+	root := buildRootCommand(cfg)
+	if err := root.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
 	}
 	return cfg
+}
+
+func buildRootCommand(cfg *config) *cobra.Command {
+	root := &cobra.Command{
+		Use:                appName,
+		Short:              "Lightweight production-ready coding assistant",
+		DisableFlagParsing: true,
+		SilenceUsage:       true,
+		SilenceErrors:      true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			cfg.command = "tui"
+			parseLegacyFlags(cfg, args)
+			if strings.TrimSpace(cfg.prompt) != "" {
+				cfg.command = "exec"
+			}
+			return nil
+		},
+	}
+	root.SetHelpFunc(func(_ *cobra.Command, _ []string) {
+		printUsage()
+	})
+	root.SetHelpCommand(&cobra.Command{
+		Use:                "help",
+		Short:              "Show usage",
+		DisableFlagParsing: true,
+		Run: func(_ *cobra.Command, _ []string) {
+			printUsage()
+		},
+	})
+
+	root.AddCommand(
+		&cobra.Command{
+			Use:                "exec",
+			Short:              "Run one-shot prompt mode",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "exec"
+				parseExecFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "resume",
+			Short:              "Resume a recoverable thread",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "resume"
+				parseResumeFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "fork",
+			Short:              "Fork from session or checkpoint",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "fork"
+				cfg.forkArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "init",
+			Short:              "Initialize workspace bootstrap files",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "init"
+				parseLegacyFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "doctor",
+			Short:              "Run diagnostics",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "doctor"
+				parseDoctorFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "debug-config",
+			Short:              "Show resolved runtime config",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "debug-config"
+				parseDebugConfigFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "completion",
+			Short:              "Emit shell completion script",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "completion"
+				cfg.completionArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "config",
+			Short:              "Manage persisted config",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "config"
+				parseConfigFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "review",
+			Short:              "Inspect review state",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "review"
+				parseReviewFlags(cfg, args)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "checkpoint",
+			Short:              "Manage persisted checkpoints",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "checkpoint"
+				cfg.checkpointArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "apply",
+			Short:              "Apply explicit patch",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "apply"
+				cfg.applyArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "rollback",
+			Short:              "Roll back persisted change",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "rollback"
+				cfg.rollbackArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+		&cobra.Command{
+			Use:                "changes",
+			Short:              "List or inspect persisted changes",
+			DisableFlagParsing: true,
+			RunE: func(_ *cobra.Command, args []string) error {
+				cfg.command = "changes"
+				cfg.changesArgs = append([]string(nil), args...)
+				return nil
+			},
+		},
+	)
+
+	return root
 }
 
 func parseExecFlags(cfg *config, args []string) {
