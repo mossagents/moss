@@ -594,13 +594,6 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		if timeout > 300 {
 			timeout = 300
 		}
-		poll := in.PollMillis
-		if poll <= 0 {
-			poll = 250
-		}
-		if poll < 50 {
-			poll = 50
-		}
 		startRevision := task.Revision
 		startStatus := task.Status
 		if isTerminalTaskStatus(task.Status) {
@@ -614,9 +607,33 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 				"completed": true,
 			})
 		}
-		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+		updates, unsubscribe, err := tracker.Subscribe(task.ID)
+		if err != nil {
+			return nil, err
+		}
+		defer unsubscribe()
+		if current, ok := tracker.Get(task.ID); ok {
+			changed := current.Revision != startRevision || current.Status != startStatus
+			if changed || isTerminalTaskStatus(current.Status) {
+				return json.Marshal(map[string]any{
+					"target":    current.ID,
+					"task_id":   current.ID,
+					"agent":     current.AgentName,
+					"status":    current.Status,
+					"revision":  current.Revision,
+					"changed":   changed,
+					"completed": isTerminalTaskStatus(current.Status),
+					"timed_out": false,
+				})
+			}
+		}
+		timer := time.NewTimer(time.Duration(timeout) * time.Second)
+		defer timer.Stop()
 		for {
-			if time.Now().After(deadline) {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-timer.C:
 				current, ok := tracker.Get(task.ID)
 				if !ok {
 					return nil, fmt.Errorf("task %q not found", task.ID)
@@ -631,27 +648,23 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 					"completed": isTerminalTaskStatus(current.Status),
 					"timed_out": true,
 				})
-			}
-			time.Sleep(time.Duration(poll) * time.Millisecond)
-			current, ok := tracker.Get(task.ID)
-			if !ok {
-				return nil, fmt.Errorf("task %q not found", task.ID)
-			}
-			changed := current.Revision != startRevision || current.Status != startStatus
-			if changed || isTerminalTaskStatus(current.Status) {
-				return json.Marshal(map[string]any{
-					"target":    current.ID,
-					"task_id":   current.ID,
-					"agent":     current.AgentName,
-					"status":    current.Status,
-					"revision":  current.Revision,
-					"changed":   changed,
-					"completed": isTerminalTaskStatus(current.Status),
-					"timed_out": false,
-				})
-			}
-			if err := ctx.Err(); err != nil {
-				return nil, err
+			case update, ok := <-updates:
+				if !ok {
+					return nil, fmt.Errorf("task %q watcher closed", task.ID)
+				}
+				changed := update.Revision != startRevision || update.Status != startStatus
+				if changed || isTerminalTaskStatus(update.Status) {
+					return json.Marshal(map[string]any{
+						"target":    update.ID,
+						"task_id":   update.ID,
+						"agent":     update.AgentName,
+						"status":    update.Status,
+						"revision":  update.Revision,
+						"changed":   changed,
+						"completed": isTerminalTaskStatus(update.Status),
+						"timed_out": false,
+					})
+				}
 			}
 		}
 	}

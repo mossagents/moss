@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -36,19 +37,22 @@ type Task struct {
 
 // TaskTracker 管理异步委派任务的状态。
 type TaskTracker struct {
-	mu      sync.RWMutex
-	tasks   map[string]*Task
-	cancels map[string]context.CancelFunc
-	rev     map[string]int64
-	runtime port.TaskRuntime
+	mu         sync.RWMutex
+	tasks      map[string]*Task
+	cancels    map[string]context.CancelFunc
+	rev        map[string]int64
+	runtime    port.TaskRuntime
+	watchers   map[string]map[int64]chan Task
+	watcherSeq int64
 }
 
 // NewTaskTracker 创建 TaskTracker。
 func NewTaskTracker() *TaskTracker {
 	return &TaskTracker{
-		tasks:   make(map[string]*Task),
-		cancels: make(map[string]context.CancelFunc),
-		rev:     make(map[string]int64),
+		tasks:    make(map[string]*Task),
+		cancels:  make(map[string]context.CancelFunc),
+		rev:      make(map[string]int64),
+		watchers: make(map[string]map[int64]chan Task),
 	}
 }
 
@@ -87,6 +91,7 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 		t.cancels[task.ID] = cancel
 	}
 	t.mirror(cp)
+	t.notifyLocked(cp)
 	return nextRev
 }
 
@@ -153,6 +158,7 @@ func (t *TaskTracker) completeIf(id string, revision int64, result string, token
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
 		t.mirror(*task)
+		t.notifyLocked(*task)
 	}
 }
 
@@ -181,6 +187,7 @@ func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
 		t.mirror(*task)
+		t.notifyLocked(*task)
 	}
 }
 
@@ -208,12 +215,60 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 			task.Error = errMsg
 			task.UpdatedAt = time.Now()
 			t.mirror(*task)
+			t.notifyLocked(*task)
 		}
 		delete(t.cancels, id)
 	}
 	t.mu.Unlock()
 	if cancelFn != nil {
 		cancelFn()
+	}
+}
+
+// Subscribe 返回任务状态变更通知通道及取消订阅函数。
+func (t *TaskTracker) Subscribe(taskID string) (<-chan Task, func(), error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if _, ok := t.tasks[taskID]; !ok {
+		return nil, nil, fmt.Errorf("task %q not found", taskID)
+	}
+	t.watcherSeq++
+	watchID := t.watcherSeq
+	if _, ok := t.watchers[taskID]; !ok {
+		t.watchers[taskID] = make(map[int64]chan Task)
+	}
+	ch := make(chan Task, 8)
+	t.watchers[taskID][watchID] = ch
+	cancel := func() {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		byTask, ok := t.watchers[taskID]
+		if !ok {
+			return
+		}
+		stream, ok := byTask[watchID]
+		if !ok {
+			return
+		}
+		delete(byTask, watchID)
+		close(stream)
+		if len(byTask) == 0 {
+			delete(t.watchers, taskID)
+		}
+	}
+	return ch, cancel, nil
+}
+
+func (t *TaskTracker) notifyLocked(task Task) {
+	byTask, ok := t.watchers[task.ID]
+	if !ok || len(byTask) == 0 {
+		return
+	}
+	for _, ch := range byTask {
+		select {
+		case ch <- task:
+		default:
+		}
 	}
 }
 
