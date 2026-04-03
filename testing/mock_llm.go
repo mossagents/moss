@@ -19,7 +19,7 @@ func (m *MockLLM) Complete(_ context.Context, req port.CompletionRequest) (*port
 	m.Calls = append(m.Calls, req)
 	if m.index >= len(m.Responses) {
 		return &port.CompletionResponse{
-			Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+			Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 			StopReason: "end_turn",
 		}, nil
 	}

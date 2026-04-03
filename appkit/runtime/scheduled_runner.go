@@ -69,7 +69,7 @@ func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job schedul
 		return nil, nil, err
 	}
 
-	jobSess.AppendMessage(port.Message{Role: port.RoleUser, Content: job.Goal})
+	jobSess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(job.Goal)}})
 
 	runIO := cfg.DefaultIO
 	if cfg.RunIO != nil {

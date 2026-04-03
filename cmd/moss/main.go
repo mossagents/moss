@@ -206,7 +206,7 @@ func runCmd(args []string) {
 		logging.GetLogger().Error("error creating session", slog.Any("error", err))
 		os.Exit(1)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: *goal})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(*goal)}})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {

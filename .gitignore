@@ -18,3 +18,4 @@ test_output.txt
 skills-lock.json
 wails_err.txt
 wails_out.txt
+.mosscode/

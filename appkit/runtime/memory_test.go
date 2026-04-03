@@ -111,8 +111,8 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message")
 	}
-	if !strings.Contains(sess.Messages[0].Content, "persistent memory tools") {
-		t.Fatalf("expected memory prompt hint, got %q", sess.Messages[0].Content)
+	if got := port.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "persistent memory tools") {
+		t.Fatalf("expected memory prompt hint, got %q", got)
 	}
 }
 

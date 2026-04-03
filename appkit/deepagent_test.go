@@ -211,8 +211,9 @@ func TestBuildDeepAgentKernel_PatchesOrphanToolCalls(t *testing.T) {
 	if last.ToolResults[0].CallID != "orphan-1" || !last.ToolResults[0].IsError {
 		t.Fatalf("unexpected patched result %+v", last.ToolResults[0])
 	}
-	if !strings.Contains(last.ToolResults[0].Content, "missing tool result patched") {
-		t.Fatalf("unexpected patch content %q", last.ToolResults[0].Content)
+	patchText := port.ContentPartsToPlainText(last.ToolResults[0].ContentParts)
+	if !strings.Contains(patchText, "missing tool result patched") {
+		t.Fatalf("unexpected patch content %q", patchText)
 	}
 }
 

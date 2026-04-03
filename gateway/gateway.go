@@ -228,7 +228,7 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	}
 
 	// 2. 追加用户消息
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: msg.Content})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(msg.Content)}})
 
 	// 3. 运行 Agent Loop
 	result, err := gw.kernel.Run(ctx, sess)

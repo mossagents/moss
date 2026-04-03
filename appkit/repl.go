@@ -67,7 +67,7 @@ func REPL(ctx context.Context, cfg REPLConfig, k *kernel.Kernel, sess *session.S
 			continue
 		}
 
-		sess.AppendMessage(port.Message{Role: port.RoleUser, Content: input})
+		sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(input)}})
 
 		result, err := k.Run(ctx, sess)
 		if err != nil {

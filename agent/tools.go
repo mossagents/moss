@@ -1043,8 +1043,8 @@ func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentN
 	}
 
 	sess.AppendMessage(port.Message{
-		Role:    port.RoleUser,
-		Content: task,
+		Role:         port.RoleUser,
+		ContentParts: []port.ContentPart{port.TextPart(task)},
 	})
 
 	result, err := delegator.RunWithTools(childCtx, sess, scopedTools)

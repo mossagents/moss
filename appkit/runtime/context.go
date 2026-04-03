@@ -320,8 +320,8 @@ func buildSummary(ctx context.Context, llm port.LLM, msgs []port.Message) string
 	}
 	reqMsgs := []port.Message{
 		{
-			Role:    port.RoleSystem,
-			Content: "Summarize the earlier conversation in <=120 words, focusing on decisions, open tasks, and constraints.",
+			Role:         port.RoleSystem,
+			ContentParts: []port.ContentPart{port.TextPart("Summarize the earlier conversation in <=120 words, focusing on decisions, open tasks, and constraints.")},
 		},
 	}
 	for _, m := range msgs {
@@ -337,7 +337,7 @@ func buildSummary(ctx context.Context, llm port.LLM, msgs []port.Message) string
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(resp.Message.Content)
+	return strings.TrimSpace(port.ContentPartsToPlainText(resp.Message.ContentParts))
 }
 
 func includeMessageInMemorySummary(msg port.Message) bool {
@@ -351,7 +351,7 @@ func includeMessageInMemorySummary(msg port.Message) bool {
 }
 
 func classifyContextFragment(msg port.Message) contextFragmentKind {
-	content := strings.TrimSpace(strings.ToLower(msg.Content))
+	content := strings.TrimSpace(strings.ToLower(port.ContentPartsToPlainText(msg.ContentParts)))
 	if msg.Role != port.RoleSystem {
 		return contextFragmentDialog
 	}
