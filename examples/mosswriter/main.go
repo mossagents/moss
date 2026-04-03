@@ -85,7 +85,7 @@ Usage:
 
 Flags:
   --prompt, -p  Run one-shot content creation for a single request
-  --provider    LLM provider: claude|openai
+  --provider    LLM provider: claude|openai|gemini
   --model       Model name
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted

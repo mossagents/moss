@@ -125,7 +125,7 @@ go run . --workspace D:\Codes\my-portfolio
 ## 参数
 
 ```text
---api-type          LLM API type: claude|openai
+--api-type          LLM API type: claude|openai|gemini
 --name              Provider display name, e.g. openai|deepseek
 --capital           Starting capital reference for simulated portfolio (default: 100000)
 --review-interval   Default advisory review interval, e.g. 10m / 30m / 1h

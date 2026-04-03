@@ -496,7 +496,7 @@ Usage:
 
 Flags:
   --prompt, -p           One-shot prompt for 'exec' or legacy root invocation
-  --provider    LLM provider: claude|openai
+  --provider    LLM provider: claude|openai|gemini
   --model       Model name
   --workspace   Workspace directory (default: ".")
   --profile     Profile: default|coding|research|planning|readonly

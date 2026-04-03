@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/adapters/claude"
+	"github.com/mossagents/moss/adapters/gemini"
 	"github.com/mossagents/moss/adapters/openai"
 	"github.com/mossagents/moss/kernel/port"
 )
@@ -14,6 +15,7 @@ import (
 // 支持的 apiType：
 //   - "openai"：OpenAI 兼容 API（也适用于本地 LLM via base URL）
 //   - "claude" / "anthropic"：Anthropic Claude API
+//   - "gemini" / "google"：Google Gemini API
 //
 // apiKey 和 baseURL 为空时使用环境变量默认值。
 func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
@@ -38,7 +40,17 @@ func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
 		}
 		return openai.New("", opts...), nil
 
+	case "gemini", "google":
+		var opts []gemini.Option
+		if model != "" {
+			opts = append(opts, gemini.WithModel(model))
+		}
+		if baseURL != "" || apiKey != "" {
+			return gemini.NewWithBaseURL(apiKey, baseURL, opts...), nil
+		}
+		return gemini.New("", opts...), nil
+
 	default:
-		return nil, fmt.Errorf("unknown api_type: %s (supported: claude, openai)", apiType)
+		return nil, fmt.Errorf("unknown api_type: %s (supported: claude, openai, gemini)", apiType)
 	}
 }

@@ -69,7 +69,7 @@ AppFlags:
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
-  --api-type    LLM API type: claude|openai (default from config or "openai")
+  --api-type    LLM API type: claude|openai|gemini (default from config or "openai")
   --name        LLM provider display name, e.g. openai|deepseek
   --provider    Deprecated alias for --api-type
   --model       Model name (default from config or API default)
@@ -84,6 +84,8 @@ Environment:
   ANTHROPIC_API_KEY  Fallback when api_type=claude and no api_key in config.
   OPENAI_API_KEY     Fallback when api_type=openai and no api_key in config.
   OPENAI_BASE_URL    Fallback when api_type=openai and no base_url in config.
+  GEMINI_API_KEY     Fallback when api_type=gemini and no api_key in config.
+  GOOGLE_API_KEY     Alternate fallback when api_type=gemini and no api_key in config.
 `)
 }
 

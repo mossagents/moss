@@ -35,9 +35,9 @@ func ParseAppFlags() *AppFlags {
 
 // BindAppFlags 将通用参数注册到指定 FlagSet。
 func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
-	fs.StringVar(&f.APIType, "api-type", "", "LLM API type: claude|openai")
+	fs.StringVar(&f.APIType, "api-type", "", "LLM API type: claude|openai|gemini")
 	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai|deepseek")
-	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai")
+	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai|gemini")
 	fs.StringVar(&f.Model, "model", "", "Model name")
 	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
 	fs.StringVar(&f.Trust, "trust", "", "Trust level: trusted|restricted")

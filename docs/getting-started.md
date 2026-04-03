@@ -29,7 +29,7 @@ go build -o moss ./cmd/moss/
 Moss 使用 `~/.moss/config.yaml` 作为全局配置文件：
 
 ```yaml
-provider: openai          # 或 claude
+provider: openai          # 或 claude / gemini
 model: gpt-4o
 base_url: ""              # 自定义 API 端点（可选）
 api_key: ""               # API 密钥（可选，也可用环境变量）
@@ -48,6 +48,7 @@ skills:
 |---|---|
 | `ANTHROPIC_API_KEY` | Claude API 密钥 |
 | `OPENAI_API_KEY` | OpenAI API 密钥 |
+| `GEMINI_API_KEY` / `GOOGLE_API_KEY` | Gemini API 密钥 |
 
 ### 动态模型路由配置（可选）
 
