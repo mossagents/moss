@@ -98,3 +98,21 @@ func TestShiftTabCyclesProfile(t *testing.T) {
 		t.Fatalf("expected next profile after default, got %q", switchMsg.profile)
 	}
 }
+
+func TestShiftTabDoesNothingWhileStreaming(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.profile = "default"
+	m.streaming = true
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd != nil {
+		t.Fatal("expected no switch command while streaming")
+	}
+	if len(updated.messages) != len(m.messages) {
+		t.Fatalf("expected no new messages while streaming, got %d -> %d", len(m.messages), len(updated.messages))
+	}
+}

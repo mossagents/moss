@@ -534,6 +534,9 @@ func (m chatModel) queueProfileSwitch(profileName, displayText string) (chatMode
 }
 
 func (m chatModel) cycleProfile() (chatModel, tea.Cmd) {
+	if m.streaming || m.hasRunningToolCalls() {
+		return m, nil
+	}
 	current := valueOrDefaultString(strings.TrimSpace(m.profile), "default")
 	names, err := runtime.ProfileNamesForWorkspace(m.workspace, m.trust)
 	if err != nil {

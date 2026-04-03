@@ -1379,11 +1379,14 @@ func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	if strings.Contains(line, "\n") {
 		t.Fatalf("expected single-line footer, got %q", line)
 	}
-	if !strings.Contains(line, "/help") || !strings.Contains(line, "thread=sess_1") || !strings.Contains(line, "fast=on") {
+	if !strings.Contains(line, "/help") {
 		t.Fatalf("unexpected footer line: %q", line)
 	}
 	if !strings.Contains(line, "Shift+Tab next profile") {
 		t.Fatalf("expected profile hotkey hint in footer, got %q", line)
+	}
+	if strings.Contains(line, "thread=sess_1") || strings.Contains(line, "fast=on") {
+		t.Fatalf("footer should no longer append status line, got %q", line)
 	}
 }
 
