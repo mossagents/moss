@@ -68,6 +68,48 @@ func (l *AgentLoop) runIteration(
 	totalUsage *port.TokenUsage,
 	lastOutput *string,
 ) (bool, error) {
+	l.emitIterationStart(ctx, sess, iteration, maxIter, runStartedAt)
+	llmResult, err := l.executeIterationLLM(ctx, sess)
+	if err != nil {
+		return false, err
+	}
+	resp := llmResult.resp
+	streamed := llmResult.streamed
+	metadata := llmResult.metadata
+
+	totalUsage.PromptTokens += resp.Usage.PromptTokens
+	totalUsage.CompletionTokens += resp.Usage.CompletionTokens
+	totalUsage.TotalTokens += resp.Usage.TotalTokens
+	if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
+		return true, nil
+	}
+
+	if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
+		return false, err
+	}
+
+	sess.AppendMessage(resp.Message)
+
+	if err := l.processIterationResponse(ctx, sess, resp, streamed, lastOutput); err != nil {
+		return false, err
+	}
+
+	l.emitIterationProgress(ctx, sess, iteration, maxIter, runStartedAt, metadata.ActualModel, streamed, resp)
+
+	if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
+		return true, nil
+	}
+
+	return resp.StopReason == "end_turn", nil
+}
+
+type iterationLLMResult struct {
+	resp     *port.CompletionResponse
+	streamed bool
+	metadata port.LLMCallMetadata
+}
+
+func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Session, iteration, maxIter int, runStartedAt time.Time) time.Time {
 	iterationStartedAt := time.Now().UTC()
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionIterationStarted,
@@ -80,9 +122,12 @@ func (l *AgentLoop) runIteration(
 			"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 		},
 	})
+	return iterationStartedAt
+}
 
+func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session) (*iterationLLMResult, error) {
 	if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
-		return false, err
+		return nil, err
 	}
 
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
@@ -114,7 +159,7 @@ func (l *AgentLoop) runIteration(
 		appendExecutionErrorMetadata(&event, err)
 		l.observer().OnExecutionEvent(ctx, event)
 		l.runErrorMiddleware(ctx, sess, err)
-		return false, err
+		return nil, err
 	}
 
 	metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
@@ -141,40 +186,44 @@ func (l *AgentLoop) runIteration(
 		},
 	})
 
-	totalUsage.PromptTokens += resp.Usage.PromptTokens
-	totalUsage.CompletionTokens += resp.Usage.CompletionTokens
-	totalUsage.TotalTokens += resp.Usage.TotalTokens
-	if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
-		return true, nil
-	}
+	return &iterationLLMResult{resp: resp, streamed: streamed, metadata: metadata}, nil
+}
 
-	if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
-		return false, err
-	}
-
-	sess.AppendMessage(resp.Message)
-
+func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *port.CompletionResponse, streamed bool, lastOutput *string) error {
 	if len(resp.ToolCalls) > 0 {
 		if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
 			l.runErrorMiddleware(ctx, sess, err)
-			return false, err
+			return err
 		}
-	} else {
-		*lastOutput = resp.Message.Content
-		if l.IO != nil && !streamed {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputText,
-				Content: resp.Message.Content,
-			})
-		}
+		return nil
 	}
 
+	*lastOutput = resp.Message.Content
+	if l.IO != nil && !streamed {
+		l.IO.Send(ctx, port.OutputMessage{
+			Type:    port.OutputText,
+			Content: resp.Message.Content,
+		})
+	}
+	return nil
+}
+
+func (l *AgentLoop) emitIterationProgress(
+	ctx context.Context,
+	sess *session.Session,
+	iteration int,
+	maxIter int,
+	runStartedAt time.Time,
+	model string,
+	streamed bool,
+	resp *port.CompletionResponse,
+) {
 	progressAt := time.Now().UTC()
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionIterationProgress,
 		SessionID: sess.ID,
 		Timestamp: progressAt,
-		Model:     metadata.ActualModel,
+		Model:     model,
 		Data: map[string]any{
 			"iteration":      iteration,
 			"max_iterations": maxIter,
@@ -187,12 +236,6 @@ func (l *AgentLoop) runIteration(
 			"tokens":         resp.Usage.TotalTokens,
 		},
 	})
-
-	if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
-		return true, nil
-	}
-
-	return resp.StopReason == "end_turn", nil
 }
 
 func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage port.TokenUsage, lastOutput string) *SessionResult {
