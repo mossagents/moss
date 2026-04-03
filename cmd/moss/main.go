@@ -96,35 +96,25 @@ func launchTUI(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
-	resolvedProfile, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
-		Workspace:        f.Workspace,
-		RequestedProfile: f.Profile,
-		Trust:            f.Trust,
-	})
+	builder := appkit.NewRuntimeBuilder()
+	resolution, err := builder.Resolve(f)
 	if err != nil {
 		logging.GetLogger().Error("error resolving profile", slog.Any("error", err))
 		os.Exit(1)
 	}
-	f.Profile = resolvedProfile.Name
-	f.Trust = resolvedProfile.Trust
-	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
-	if err != nil {
-		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
-		os.Exit(1)
-	}
 
 	if err := tui.Run(tui.Config{
-		APIType:      f.EffectiveAPIType(),
-		ProviderName: f.DisplayProviderName(),
-		Provider:     f.Provider,
-		Model:        f.Model,
-		Workspace:    f.Workspace,
-		Trust:        f.Trust,
-		BaseURL:      f.BaseURL,
-		APIKey:       f.APIKey,
-		BuildKernel:  buildKernelWithIO,
-		PromptConfigInstructions: configInstructions,
-		PromptModelInstructions:  modelInstructions,
+		APIType:                  f.EffectiveAPIType(),
+		ProviderName:             f.DisplayProviderName(),
+		Provider:                 f.Provider,
+		Model:                    f.Model,
+		Workspace:                f.Workspace,
+		Trust:                    f.Trust,
+		BaseURL:                  f.BaseURL,
+		APIKey:                   f.APIKey,
+		BuildKernel:              buildKernelWithIO,
+		PromptConfigInstructions: resolution.ConfigInstructions,
+		PromptModelInstructions:  resolution.ModelInstructions,
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -145,20 +135,10 @@ func runCmd(args []string) {
 	f.MergeGlobalConfig()
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
-	resolvedProfile, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
-		Workspace:        f.Workspace,
-		RequestedProfile: f.Profile,
-		Trust:            f.Trust,
-	})
+	builder := appkit.NewRuntimeBuilder()
+	resolution, err := builder.Resolve(f)
 	if err != nil {
 		logging.GetLogger().Error("error resolving profile", slog.Any("error", err))
-		os.Exit(1)
-	}
-	f.Profile = resolvedProfile.Name
-	f.Trust = resolvedProfile.Trust
-	configInstructions, modelInstructions, err := config.ResolvePromptInstructionLayers(f.Workspace, f.Trust)
-	if err != nil {
-		logging.GetLogger().Error("error loading prompt instruction layers", slog.Any("error", err))
 		os.Exit(1)
 	}
 
@@ -205,20 +185,20 @@ func runCmd(args []string) {
 	fmt.Println()
 
 	meta := map[string]any{}
-	meta["profile"] = resolvedProfile.Name
-	meta[session.MetadataTaskMode] = resolvedProfile.TaskMode
-	sysPrompt, err := buildRunSystemPrompt(f.Workspace, f.Trust, configInstructions, modelInstructions, meta, k)
+	meta["profile"] = resolution.Profile.Name
+	meta[session.MetadataTaskMode] = resolution.Profile.TaskMode
+	sysPrompt, err := buildRunSystemPrompt(f.Workspace, f.Trust, resolution.ConfigInstructions, resolution.ModelInstructions, meta, k)
 	if err != nil {
 		logging.GetLogger().Error("error composing system prompt", slog.Any("error", err))
 		os.Exit(1)
 	}
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:       *goal,
-		Mode:       *mode,
-		TrustLevel: f.Trust,
-		Profile:    resolvedProfile.Name,
-		MaxSteps:   50,
+		Goal:         *goal,
+		Mode:         *mode,
+		TrustLevel:   f.Trust,
+		Profile:      resolution.Profile.Name,
+		MaxSteps:     50,
 		SystemPrompt: strings.TrimSpace(sysPrompt),
 		Metadata:     meta,
 	})
@@ -252,14 +232,14 @@ func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstruction
 		return "", err
 	}
 	out, err := prompting.Compose(prompting.ComposeInput{
-		Workspace:          workspace,
-		Trust:              trust,
-		ConfigInstructions: strings.TrimSpace(configInstructions),
+		Workspace:           workspace,
+		Trust:               trust,
+		ConfigInstructions:  strings.TrimSpace(configInstructions),
 		SessionInstructions: sessionInstructions,
-		ModelInstructions:  strings.TrimSpace(modelInstructions),
-		ProfileName:        profileName,
-		TaskMode:           taskMode,
-		Kernel:             k,
+		ModelInstructions:   strings.TrimSpace(modelInstructions),
+		ProfileName:         profileName,
+		TaskMode:            taskMode,
+		Kernel:              k,
 	})
 	if err != nil {
 		return "", err

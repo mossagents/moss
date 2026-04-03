@@ -19,8 +19,10 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime/events"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
@@ -145,25 +147,12 @@ func (w *WebSocketIO) Send(_ context.Context, msg port.OutputMessage) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	var wsType string
-	switch msg.Type {
-	case port.OutputText:
+	ev := events.FromOutputMessage(msg, time.Now().UTC())
+	wsType := string(ev.Type)
+	if wsType == string(events.EventAssistantMessage) {
 		wsType = "assistant"
-	case port.OutputStream:
-		wsType = "stream"
-	case port.OutputStreamEnd:
-		wsType = "stream_end"
-	case port.OutputProgress:
-		wsType = "progress"
-	case port.OutputToolStart:
-		wsType = "tool_start"
-	case port.OutputToolResult:
-		wsType = "tool_result"
-	default:
-		wsType = "system"
 	}
-
-	return websocket.JSON.Send(w.conn, wsMsg{Type: wsType, Content: msg.Content})
+	return websocket.JSON.Send(w.conn, wsMsg{Type: wsType, Content: ev.Content, Meta: ev.Meta})
 }
 
 func (w *WebSocketIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {

@@ -56,6 +56,34 @@ func TestSetup_UsesDefaultsParity(t *testing.T) {
 	}
 }
 
+func TestSetup_ManagerReportsValidateReady(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithSandbox(kt.NewMemorySandbox()),
+	)
+	reporter := &captureReporter{}
+	if err := Setup(context.Background(), k, ".", WithCapabilityReporter(reporter)); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	foundValidate := false
+	foundActivate := false
+	for _, ev := range reporter.events {
+		if strings.HasPrefix(ev, "runtime-validate|true|ready") {
+			foundValidate = true
+		}
+		if strings.HasPrefix(ev, "runtime-activate|true|ready") {
+			foundActivate = true
+		}
+	}
+	if !foundValidate {
+		t.Fatalf("expected runtime-validate ready event, got %v", reporter.events)
+	}
+	if !foundActivate {
+		t.Fatalf("expected runtime-activate ready event, got %v", reporter.events)
+	}
+}
+
 func TestSetup_ReportsBuiltinCriticalFailure(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
@@ -115,7 +143,9 @@ func toolSpecNoop(name string) tool.ToolSpec {
 	return tool.ToolSpec{Name: name}
 }
 
-func toolHandlerNoop(context.Context, json.RawMessage) (json.RawMessage, error) { return json.RawMessage("{}"), nil }
+func toolHandlerNoop(context.Context, json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage("{}"), nil
+}
 
 // ---------------------------------------------------------------------------
 // collectAgentDirs
