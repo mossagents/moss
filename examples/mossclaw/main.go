@@ -106,12 +106,15 @@ func launchTUI(flags *appkit.AppFlags) error {
 		Trust:     flags.Trust,
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  provider,
+				APIType:   apiType,
+				Provider:  apiType,
+				Name:      apiType,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
+				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
@@ -129,11 +132,12 @@ func launchTUI(flags *appkit.AppFlags) error {
 			return nil
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
 				Goal:         "personal AI assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
+				Profile:      profile,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
 			}
