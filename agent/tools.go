@@ -68,6 +68,12 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 	if err := registerWaitAgentTool(reg, tracker); err != nil {
 		return err
 	}
+	if err := registerCloseAgentTool(reg, tracker); err != nil {
+		return err
+	}
+	if err := registerResumeAgentTool(reg, agents, tracker, delegator); err != nil {
+		return err
+	}
 	if err := registerTask(reg, agents, tracker, delegator); err != nil {
 		return err
 	}
@@ -667,6 +673,124 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 				}
 			}
 		}
+	}
+	return reg.Register(spec, handler)
+}
+
+type closeAgentInput struct {
+	Target string `json:"target"`
+	Reason string `json:"reason"`
+}
+
+func registerCloseAgentTool(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "close_agent",
+		Description: "关闭指定 agent 任务（运行中则取消，已结束则标记关闭）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"target":{"type":"string","description":"task_id 或 agent 名称"},
+				"reason":{"type":"string","description":"可选: 关闭原因"}
+			},
+			"required":["target"]
+		}`),
+		Risk:         tool.RiskMedium,
+		Capabilities: []string{"delegation"},
+	}
+	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in closeAgentInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		task, err := resolveTaskTarget(tracker, in.Target)
+		if err != nil {
+			return nil, err
+		}
+		reason := strings.TrimSpace(in.Reason)
+		if reason == "" {
+			reason = "closed by user"
+		}
+		closed := false
+		note := ""
+		if task.Status == TaskRunning {
+			tracker.Cancel(task.ID, reason)
+			closed = true
+		} else {
+			note = "task is not running"
+		}
+		updated, _ := tracker.Get(task.ID)
+		if updated == nil {
+			updated = task
+		}
+		return json.Marshal(map[string]any{
+			"target":    updated.ID,
+			"task_id":   updated.ID,
+			"agent":     updated.AgentName,
+			"status":    updated.Status,
+			"revision":  updated.Revision,
+			"closed":    closed,
+			"completed": isTerminalTaskStatus(updated.Status),
+			"note":      note,
+		})
+	}
+	return reg.Register(spec, handler)
+}
+
+type resumeAgentInput struct {
+	Target  string `json:"target"`
+	Message string `json:"message"`
+}
+
+func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
+	spec := tool.ToolSpec{
+		Name:        "resume_agent",
+		Description: "恢复指定 agent 任务（已结束任务可重启，新消息可作为 follow-up）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"target":{"type":"string","description":"task_id 或 agent 名称"},
+				"message":{"type":"string","description":"可选: 恢复时追加的 follow-up"}
+			},
+			"required":["target"]
+		}`),
+		Risk:         tool.RiskMedium,
+		Capabilities: []string{"delegation"},
+	}
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in resumeAgentInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		task, err := resolveTaskTarget(tracker, in.Target)
+		if err != nil {
+			return nil, err
+		}
+		if task.Status == TaskRunning {
+			return json.Marshal(map[string]any{
+				"target":    task.ID,
+				"task_id":   task.ID,
+				"agent":     task.AgentName,
+				"status":    task.Status,
+				"revision":  task.Revision,
+				"resumed":   false,
+				"completed": false,
+				"note":      "task is already running",
+			})
+		}
+		message := strings.TrimSpace(in.Message)
+		updated, err := triggerAgentTurn(ctx, agents, tracker, delegator, task, message)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"target":    updated.ID,
+			"task_id":   updated.ID,
+			"agent":     updated.AgentName,
+			"status":    updated.Status,
+			"revision":  updated.Revision,
+			"resumed":   true,
+			"completed": isTerminalTaskStatus(updated.Status),
+		})
 	}
 	return reg.Register(spec, handler)
 }

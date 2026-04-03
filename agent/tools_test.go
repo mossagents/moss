@@ -741,7 +741,7 @@ func TestRegisterToolsWithDeps_AddsP1ControlPlaneTools(t *testing.T) {
 	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"list_agents", "read_agent", "write_agent", "wait_agent"} {
+	for _, name := range []string{"list_agents", "read_agent", "write_agent", "wait_agent", "close_agent", "resume_agent"} {
 		if _, _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected tool %q", name)
 		}
@@ -951,5 +951,70 @@ func TestWaitAgent_TimesOut(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), `"timed_out":true`) {
 		t.Fatalf("expected timed_out=true, got %s", string(raw))
+	}
+}
+
+func TestCloseAgent_CancelsRunningTask(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-close",
+		AgentName: "worker",
+		Goal:      "running",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, closeHandler, _ := reg.Get("close_agent")
+	raw, err := closeHandler(context.Background(), json.RawMessage(`{"target":"t-close","reason":"stop now"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"closed":true`) {
+		t.Fatalf("expected closed=true, got %s", string(raw))
+	}
+	updated, ok := tracker.Get("t-close")
+	if !ok || updated.Status != TaskCancelled {
+		t.Fatalf("expected cancelled task, got %+v", updated)
+	}
+}
+
+func TestResumeAgent_RestartsCompletedTask(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-resume",
+		AgentName: "worker",
+		Goal:      "done",
+		Status:    TaskCompleted,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, resumeHandler, _ := reg.Get("resume_agent")
+	raw, err := resumeHandler(context.Background(), json.RawMessage(`{"target":"t-resume","message":"run again"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"resumed":true`) {
+		t.Fatalf("expected resumed=true, got %s", string(raw))
+	}
+	updated, ok := tracker.Get("t-resume")
+	if !ok {
+		t.Fatal("missing resumed task")
+	}
+	if updated.Status != TaskRunning {
+		t.Fatalf("expected running status, got %+v", updated)
 	}
 }
