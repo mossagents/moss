@@ -150,3 +150,68 @@ func TestFileTaskRuntime_PersistsJobsAndItemsAcrossRestart(t *testing.T) {
 		t.Fatalf("unexpected items after reload: %+v", items)
 	}
 }
+
+func TestMemoryTaskRuntime_AtomicJobItemExecutorBinding(t *testing.T) {
+	rt := NewMemoryTaskRuntime()
+	ctx := context.Background()
+	if err := rt.UpsertJob(ctx, AgentJob{ID: "job-atomic", AgentName: "worker", Goal: "atomic", Status: JobPending}); err != nil {
+		t.Fatal(err)
+	}
+	item, err := rt.MarkJobItemRunning(ctx, "job-atomic", "item-1", "exec-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.AttemptCount != 1 || item.Executor != "exec-a" || item.Status != JobRunning {
+		t.Fatalf("unexpected running item: %+v", item)
+	}
+	if _, err := rt.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-b", JobCompleted, "late", ""); !errors.Is(err, ErrJobItemExecutorMismatch) {
+		t.Fatalf("expected ErrJobItemExecutorMismatch, got %v", err)
+	}
+	reported, err := rt.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-a", JobFailed, "", "boom")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reported.Status != JobFailed || reported.Error != "boom" || reported.ReportedAt.IsZero() {
+		t.Fatalf("unexpected reported item: %+v", reported)
+	}
+	restarted, err := rt.MarkJobItemRunning(ctx, "job-atomic", "item-1", "exec-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted.AttemptCount != 2 {
+		t.Fatalf("expected attempt_count=2, got %+v", restarted)
+	}
+}
+
+func TestFileTaskRuntime_AtomicJobItemExecutorBindingPersists(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "jobs-atomic")
+	ctx := context.Background()
+	rt, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertJob(ctx, AgentJob{ID: "job-persist", AgentName: "worker", Goal: "persist", Status: JobPending}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.MarkJobItemRunning(ctx, "job-persist", "item-1", "exec-a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.ReportJobItemResult(ctx, "job-persist", "item-1", "exec-a", JobFailed, "", "boom"); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := reloaded.ListJobItems(ctx, JobItemQuery{JobID: "job-persist"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("unexpected item count: %+v", items)
+	}
+	if items[0].AttemptCount != 1 || items[0].Executor != "exec-a" || items[0].Status != JobFailed || items[0].ReportedAt.IsZero() {
+		t.Fatalf("unexpected persisted atomic item: %+v", items[0])
+	}
+}

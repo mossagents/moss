@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -58,14 +59,16 @@ type AgentJob struct {
 
 // AgentJobItem 表示 Job 下的子项执行状态。
 type AgentJobItem struct {
-	JobID     string         `json:"job_id"`
-	ItemID    string         `json:"item_id"`
-	Status    AgentJobStatus `json:"status"`
-	Executor  string         `json:"executor,omitempty"`
-	Result    string         `json:"result,omitempty"`
-	Error     string         `json:"error,omitempty"`
-	UpdatedAt time.Time      `json:"updated_at,omitempty"`
-	CreatedAt time.Time      `json:"created_at,omitempty"`
+	JobID        string         `json:"job_id"`
+	ItemID       string         `json:"item_id"`
+	Status       AgentJobStatus `json:"status"`
+	Executor     string         `json:"executor,omitempty"`
+	AttemptCount int            `json:"attempt_count,omitempty"`
+	ReportedAt   time.Time      `json:"reported_at,omitempty"`
+	Result       string         `json:"result,omitempty"`
+	Error        string         `json:"error,omitempty"`
+	UpdatedAt    time.Time      `json:"updated_at,omitempty"`
+	CreatedAt    time.Time      `json:"created_at,omitempty"`
 }
 
 // TaskQuery 用于筛选任务。
@@ -107,6 +110,12 @@ type JobRuntime interface {
 	ListJobItems(ctx context.Context, query JobItemQuery) ([]AgentJobItem, error)
 }
 
+// AtomicJobRuntime 提供带执行者绑定的原子 item 更新语义。
+type AtomicJobRuntime interface {
+	MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*AgentJobItem, error)
+	ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status AgentJobStatus, result string, errMsg string) (*AgentJobItem, error)
+}
+
 // ErrTaskNotFound 表示任务不存在。
 var ErrTaskNotFound = errors.New("task not found")
 
@@ -118,6 +127,12 @@ var ErrJobNotFound = errors.New("job not found")
 
 // ErrInvalidJobTransition 表示 job/item 状态迁移非法。
 var ErrInvalidJobTransition = errors.New("invalid job state transition")
+
+// ErrJobItemExecutorMismatch 表示 item 结果回报与当前执行者不匹配（迟到或串扰）。
+var ErrJobItemExecutorMismatch = errors.New("job item executor mismatch")
+
+// ErrJobItemNotFound 表示 job item 不存在。
+var ErrJobItemNotFound = errors.New("job item not found")
 
 // MemoryTaskRuntime 是内存版任务运行时（POC 默认实现）。
 type MemoryTaskRuntime struct {
@@ -334,6 +349,88 @@ func (r *MemoryTaskRuntime) UpsertJobItem(_ context.Context, item AgentJobItem) 
 	item.UpdatedAt = now
 	r.items[item.JobID][item.ItemID] = item
 	return nil
+}
+
+func (r *MemoryTaskRuntime) MarkJobItemRunning(_ context.Context, jobID, itemID, executor string) (*AgentJobItem, error) {
+	if jobID == "" || itemID == "" {
+		return nil, errors.New("job_id and item_id are required")
+	}
+	executor = strings.TrimSpace(executor)
+	if executor == "" {
+		return nil, errors.New("executor is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[jobID]; !ok {
+		return nil, ErrJobNotFound
+	}
+	if _, ok := r.items[jobID]; !ok {
+		r.items[jobID] = make(map[string]AgentJobItem)
+	}
+	now := time.Now()
+	item, ok := r.items[jobID][itemID]
+	if !ok {
+		item = AgentJobItem{
+			JobID:     jobID,
+			ItemID:    itemID,
+			Status:    JobPending,
+			CreatedAt: now,
+		}
+	}
+	if !canTransitionJobStatus(item.Status, JobRunning) {
+		return nil, ErrInvalidJobTransition
+	}
+	item.Status = JobRunning
+	item.Executor = executor
+	item.AttemptCount++
+	item.Error = ""
+	item.Result = ""
+	item.ReportedAt = time.Time{}
+	item.UpdatedAt = now
+	r.items[jobID][itemID] = item
+	cp := item
+	return &cp, nil
+}
+
+func (r *MemoryTaskRuntime) ReportJobItemResult(_ context.Context, jobID, itemID, executor string, status AgentJobStatus, result string, errMsg string) (*AgentJobItem, error) {
+	if jobID == "" || itemID == "" {
+		return nil, errors.New("job_id and item_id are required")
+	}
+	executor = strings.TrimSpace(executor)
+	if executor == "" {
+		return nil, errors.New("executor is required")
+	}
+	if status != JobCompleted && status != JobFailed && status != JobCancelled {
+		return nil, ErrInvalidJobTransition
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[jobID]; !ok {
+		return nil, ErrJobNotFound
+	}
+	byJob, ok := r.items[jobID]
+	if !ok {
+		return nil, ErrJobItemNotFound
+	}
+	item, ok := byJob[itemID]
+	if !ok {
+		return nil, ErrJobItemNotFound
+	}
+	if item.Executor != executor || item.Status != JobRunning {
+		return nil, ErrJobItemExecutorMismatch
+	}
+	if !canTransitionJobStatus(item.Status, status) {
+		return nil, ErrInvalidJobTransition
+	}
+	now := time.Now()
+	item.Status = status
+	item.Result = result
+	item.Error = errMsg
+	item.ReportedAt = now
+	item.UpdatedAt = now
+	byJob[itemID] = item
+	cp := item
+	return &cp, nil
 }
 
 func (r *MemoryTaskRuntime) ListJobItems(_ context.Context, query JobItemQuery) ([]AgentJobItem, error) {

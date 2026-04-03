@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -308,6 +309,94 @@ func (r *FileTaskRuntime) UpsertJobItem(_ context.Context, item AgentJobItem) er
 	item.UpdatedAt = now
 	r.items[item.JobID][item.ItemID] = item
 	return r.persist()
+}
+
+func (r *FileTaskRuntime) MarkJobItemRunning(_ context.Context, jobID, itemID, executor string) (*AgentJobItem, error) {
+	if jobID == "" || itemID == "" {
+		return nil, errors.New("job_id and item_id are required")
+	}
+	executor = strings.TrimSpace(executor)
+	if executor == "" {
+		return nil, errors.New("executor is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[jobID]; !ok {
+		return nil, ErrJobNotFound
+	}
+	if _, ok := r.items[jobID]; !ok {
+		r.items[jobID] = make(map[string]AgentJobItem)
+	}
+	now := time.Now()
+	item, ok := r.items[jobID][itemID]
+	if !ok {
+		item = AgentJobItem{
+			JobID:     jobID,
+			ItemID:    itemID,
+			Status:    JobPending,
+			CreatedAt: now,
+		}
+	}
+	if !canTransitionJobStatus(item.Status, JobRunning) {
+		return nil, ErrInvalidJobTransition
+	}
+	item.Status = JobRunning
+	item.Executor = executor
+	item.AttemptCount++
+	item.Error = ""
+	item.Result = ""
+	item.ReportedAt = time.Time{}
+	item.UpdatedAt = now
+	r.items[jobID][itemID] = item
+	if err := r.persist(); err != nil {
+		return nil, err
+	}
+	cp := item
+	return &cp, nil
+}
+
+func (r *FileTaskRuntime) ReportJobItemResult(_ context.Context, jobID, itemID, executor string, status AgentJobStatus, result string, errMsg string) (*AgentJobItem, error) {
+	if jobID == "" || itemID == "" {
+		return nil, errors.New("job_id and item_id are required")
+	}
+	executor = strings.TrimSpace(executor)
+	if executor == "" {
+		return nil, errors.New("executor is required")
+	}
+	if status != JobCompleted && status != JobFailed && status != JobCancelled {
+		return nil, ErrInvalidJobTransition
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[jobID]; !ok {
+		return nil, ErrJobNotFound
+	}
+	byJob, ok := r.items[jobID]
+	if !ok {
+		return nil, ErrJobItemNotFound
+	}
+	item, ok := byJob[itemID]
+	if !ok {
+		return nil, ErrJobItemNotFound
+	}
+	if item.Executor != executor || item.Status != JobRunning {
+		return nil, ErrJobItemExecutorMismatch
+	}
+	if !canTransitionJobStatus(item.Status, status) {
+		return nil, ErrInvalidJobTransition
+	}
+	now := time.Now()
+	item.Status = status
+	item.Result = result
+	item.Error = errMsg
+	item.ReportedAt = now
+	item.UpdatedAt = now
+	byJob[itemID] = item
+	if err := r.persist(); err != nil {
+		return nil, err
+	}
+	cp := item
+	return &cp, nil
 }
 
 func (r *FileTaskRuntime) ListJobItems(_ context.Context, query JobItemQuery) ([]AgentJobItem, error) {
