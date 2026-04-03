@@ -1346,6 +1346,20 @@ func TestRenderHeaderMetaLineIsCompact(t *testing.T) {
 	}
 }
 
+func TestRenderHeaderMetaLineIncludesDefaultProfile(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.streaming = false
+	m.currentSessionID = "sess_1"
+	m.profile = ""
+	m.trust = "trusted"
+	m.approvalMode = "confirm"
+
+	line := m.renderHeaderMetaLine()
+	if !strings.Contains(line, "default · trusted · confirm") {
+		t.Fatalf("expected default profile in header, got %q", line)
+	}
+}
+
 func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.textarea.SetValue("hello")
@@ -1367,6 +1381,9 @@ func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	}
 	if !strings.Contains(line, "/help") || !strings.Contains(line, "thread=sess_1") || !strings.Contains(line, "fast=on") {
 		t.Fatalf("unexpected footer line: %q", line)
+	}
+	if !strings.Contains(line, "Shift+Tab next profile") {
+		t.Fatalf("expected profile hotkey hint in footer, got %q", line)
 	}
 }
 

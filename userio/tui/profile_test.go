@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	appconfig "github.com/mossagents/moss/config"
 )
 
@@ -55,5 +56,45 @@ func TestSlashCommandProfileSetReturnsSwitchMsg(t *testing.T) {
 	}
 	if switchMsg.profile != "research" {
 		t.Fatalf("profile = %q, want research", switchMsg.profile)
+	}
+}
+
+func TestShiftTabCyclesProfile(t *testing.T) {
+	home := t.TempDir()
+	workspace := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	appconfig.SetAppName("mosscode")
+	t.Cleanup(func() { appconfig.SetAppName("moss") })
+
+	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  zzz:\n    label: ZZZ\n"), 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.trust = appconfig.TrustTrusted
+	m.profile = "default"
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd == nil {
+		t.Fatal("expected switch command from Shift+Tab")
+	}
+	if !updated.streaming {
+		t.Fatal("expected streaming state while switching profile")
+	}
+	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "Switching profile to ") {
+		t.Fatalf("unexpected switch message: %q", updated.messages[len(updated.messages)-1].content)
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(switchProfileMsg)
+	if !ok {
+		t.Fatalf("expected switchProfileMsg, got %T", msg)
+	}
+	if strings.TrimSpace(switchMsg.profile) == "" || strings.EqualFold(switchMsg.profile, "default") {
+		t.Fatalf("expected next profile after default, got %q", switchMsg.profile)
 	}
 }

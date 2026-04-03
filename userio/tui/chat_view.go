@@ -34,7 +34,7 @@ func (m chatModel) renderFooterHelpLine() string {
 	if !m.toolCollapsed {
 		toolHint = "Ctrl+O collapse tools"
 	}
-	base := fmt.Sprintf("/help  │  %s  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
+	base := fmt.Sprintf("/help  │  %s  │  Shift+Tab next profile  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
 	status := strings.TrimSpace(m.renderStatusLine())
 	if status == "" {
 		return truncateDisplayWidth(base, m.mainWidth())

@@ -58,6 +58,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				return m, nil
 			}
 			return m, nil
+		case "shift+tab":
+			return m.cycleProfile()
 		case "enter":
 			return m.handleSend()
 		}

@@ -414,15 +414,7 @@ func handleProfileSlashCommand(m chatModel, args []string, input string, _ strin
 		}
 		profileName = strings.TrimSpace(args[1])
 	}
-	if profileName == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "profile name cannot be empty"})
-		m.refreshViewport()
-		return m, nil
-	}
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching profile to %s...", profileName)})
-	m.streaming = true
-	m.refreshViewport()
-	return m, func() tea.Msg { return switchProfileMsg{profile: profileName, displayText: input} }
+	return m.queueProfileSwitch(profileName, input)
 }
 
 func handleStatuslineSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {

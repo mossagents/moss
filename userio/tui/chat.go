@@ -507,9 +507,7 @@ func (m chatModel) displayApprovalMode() string {
 
 func (m chatModel) compactPostureSummary() string {
 	tokens := make([]string, 0, 4)
-	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
-		tokens = append(tokens, profile)
-	}
+	tokens = append(tokens, valueOrDefaultString(strings.TrimSpace(m.profile), "default"))
 	if trust := strings.TrimSpace(m.trust); trust != "" {
 		tokens = append(tokens, trust)
 	}
@@ -520,6 +518,42 @@ func (m chatModel) compactPostureSummary() string {
 		tokens = append(tokens, "fast")
 	}
 	return strings.Join(tokens, " · ")
+}
+
+func (m chatModel) queueProfileSwitch(profileName, displayText string) (chatModel, tea.Cmd) {
+	profileName = strings.TrimSpace(profileName)
+	if profileName == "" {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "profile name cannot be empty"})
+		m.refreshViewport()
+		return m, nil
+	}
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching profile to %s...", profileName)})
+	m.streaming = true
+	m.refreshViewport()
+	return m, func() tea.Msg { return switchProfileMsg{profile: profileName, displayText: displayText} }
+}
+
+func (m chatModel) cycleProfile() (chatModel, tea.Cmd) {
+	current := valueOrDefaultString(strings.TrimSpace(m.profile), "default")
+	names, err := runtime.ProfileNamesForWorkspace(m.workspace, m.trust)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
+		m.refreshViewport()
+		return m, nil
+	}
+	if len(names) == 0 {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "no profiles available"})
+		m.refreshViewport()
+		return m, nil
+	}
+	next := names[0]
+	for i, name := range names {
+		if strings.EqualFold(strings.TrimSpace(name), current) {
+			next = names[(i+1)%len(names)]
+			break
+		}
+	}
+	return m.queueProfileSwitch(next, "")
 }
 
 func titleCaseWord(s string) string {
