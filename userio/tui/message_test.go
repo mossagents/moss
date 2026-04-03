@@ -141,3 +141,28 @@ func TestRenderMessage_ToolErrorUsesErrorHeader(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgToolStart,
+		content: "run_command",
+		meta: map[string]any{
+			"tool": "run_command",
+			"args_preview": `{
+				"description":"Commit and push C4 integration updates",
+				"command":"git --no-pager status --short && git add appkit/runtime/memory.go && git push origin main"
+			}`,
+		},
+	}, 100)
+	for _, want := range []string{
+		"Commit and push C4 integration updates (shell)",
+		"| git --no-pager status --short && git add appkit/runtime/memory.go",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("compact shell start missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "risk=") || strings.Contains(out, "args") {
+		t.Fatalf("compact shell start should hide verbose metadata, got %q", out)
+	}
+}

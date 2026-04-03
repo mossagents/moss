@@ -238,9 +238,12 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 
 func renderToolStartMessage(m chatMessage, width int) string {
 	toolName := toolMetaString(m, "tool", m.content)
+	if shell := renderShellToolStart(toolName, toolMetaString(m, "args_preview", ""), max(20, width-5)); shell != "" {
+		return shell
+	}
 	header := fmt.Sprintf("  tool %s", toolName)
 	if elapsed := formatToolRunningElapsed(m.meta); elapsed != "" {
-		header += " " + mutedStyle.Render("(" + elapsed + ")")
+		header += " " + mutedStyle.Render("("+elapsed+")")
 	}
 	lines := []string{toolLabelStyle.Render(header)}
 	var metaParts []string
@@ -257,6 +260,31 @@ func renderToolStartMessage(m chatMessage, width int) string {
 		lines = append(lines, mutedStyle.Render("     args"))
 		lines = append(lines, mutedStyle.Render(indentBlock(renderToolSnippet(args, max(20, width-5)), "       ")))
 	}
+	return strings.Join(lines, "\n")
+}
+
+func renderShellToolStart(toolName, argsPreview string, width int) string {
+	if toolName != "run_command" && toolName != "powershell" {
+		return ""
+	}
+	type shellArgs struct {
+		Description string `json:"description"`
+		Command     string `json:"command"`
+	}
+	var args shellArgs
+	if err := json.Unmarshal([]byte(argsPreview), &args); err != nil {
+		return ""
+	}
+	desc := strings.TrimSpace(args.Description)
+	if desc == "" {
+		return ""
+	}
+	cmd := strings.TrimSpace(args.Command)
+	if cmd == "" {
+		return ""
+	}
+	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  • %s (shell)", desc))}
+	lines = append(lines, mutedStyle.Render(indentBlock(wrapText(truncateToolBlock(cmd, 4, 280), width), "    | ")))
 	return strings.Join(lines, "\n")
 }
 
