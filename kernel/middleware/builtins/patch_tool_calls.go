@@ -44,9 +44,9 @@ func PatchToolCalls() middleware.Middleware {
 				Role: port.RoleTool,
 				ToolResults: []port.ToolResult{
 					{
-						CallID:  callID,
-						IsError: true,
-						Content: fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name),
+						CallID:       callID,
+						IsError:      true,
+						ContentParts: []port.ContentPart{port.TextPart(fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name))},
 					},
 				},
 			})

@@ -48,14 +48,14 @@ func (c TruncateConfig) countTokens(msg port.Message) int {
 
 // estimateTokens 简单估算一条消息的 token 数（适用于无 tokenizer 场景）。
 func estimateTokens(msg port.Message) int {
-	total := len(msg.Content) / 4
+	total := len(port.ContentPartsToPlainText(msg.ContentParts)) / 4
 	for _, tc := range msg.ToolCalls {
 		total += len(tc.Name)/4 + len(tc.Arguments)/4
 	}
 	for _, tr := range msg.ToolResults {
-		total += len(tr.Content) / 4
+		total += len(port.ContentPartsToPlainText(tr.ContentParts)) / 4
 	}
-	if total < 1 && (msg.Content != "" || len(msg.ToolCalls) > 0 || len(msg.ToolResults) > 0) {
+	if total < 1 && (len(msg.ContentParts) > 0 || len(msg.ToolCalls) > 0 || len(msg.ToolResults) > 0) {
 		total = 1
 	}
 	return total
@@ -113,8 +113,8 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 		droppedCount := len(dialogMsgs) - keepRecent
 		if droppedCount > 0 {
 			summary := port.Message{
-				Role:    port.RoleSystem,
-				Content: buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()),
+				Role:         port.RoleSystem,
+				ContentParts: []port.ContentPart{port.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
 			}
 			sess.Messages = append(systemMsgs, summary)
 			sess.Messages = append(sess.Messages, recentMsgs...)

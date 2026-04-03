@@ -20,7 +20,7 @@ type fakeLLM struct {
 
 func (f *fakeLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
 	return &port.CompletionResponse{
-		Message:    port.Message{Role: port.RoleAssistant, Content: "response from " + f.name},
+		Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("response from " + f.name)}},
 		StopReason: "end_turn",
 	}, nil
 }
@@ -274,8 +274,8 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Message.Content != "response from default" {
-		t.Errorf("expected default model response, got %q", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from default" {
+		t.Errorf("expected default model response, got %q", got)
 	}
 	if resp.Metadata == nil || resp.Metadata.ActualModel != "default" {
 		t.Fatalf("expected actual model metadata for default, got %+v", resp.Metadata)
@@ -292,8 +292,8 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if resp.Message.Content != "response from vision" {
-		t.Errorf("expected vision model response, got %q", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from vision" {
+		t.Errorf("expected vision model response, got %q", got)
 	}
 	if resp.Metadata == nil || resp.Metadata.ActualModel != "vision" {
 		t.Fatalf("expected actual model metadata for vision, got %+v", resp.Metadata)

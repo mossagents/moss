@@ -76,6 +76,11 @@ func renderMessage(m chatMessage, width int) string {
 }
 
 func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string) string {
+	if isImage, _ := m.meta["is_image"].(bool); isImage {
+		if p, ok := m.meta["image_path"].(string); ok && strings.TrimSpace(p) != "" {
+			return "  " + dotRenderer("●") + " " + wrapText("Generated image: "+p+" (use /open \""+p+"\" to view)", width)
+		}
+	}
 	body := renderMarkdown(m.content, width)
 	body = strings.TrimLeft(body, "\n")
 	if strings.TrimSpace(body) == "" {

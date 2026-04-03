@@ -1,12 +1,17 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/kernel/port"
 )
 
@@ -37,8 +42,8 @@ func TestFileStore(t *testing.T) {
 			Mode: "test",
 		},
 		Messages: []port.Message{
-			{Role: port.RoleUser, Content: "hello"},
-			{Role: port.RoleAssistant, Content: "world"},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("world")}},
 		},
 		Budget:    Budget{MaxSteps: 10, UsedSteps: 3},
 		CreatedAt: time.Now(),
@@ -266,5 +271,152 @@ func TestFileStoreListSkipsHistoryHiddenSessions(t *testing.T) {
 	}
 	if summaries[0].ID != "visible" {
 		t.Fatalf("expected visible summary, got %q", summaries[0].ID)
+	}
+}
+
+func TestFileStoreLoadMigratesLegacyContentFields(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{
+  "id":"legacy-1",
+  "status":"completed",
+  "config":{"goal":"legacy"},
+  "messages":[
+    {"role":"user","content":"hello from legacy"},
+    {"role":"tool","tool_results":[{"call_id":"tc1","content":"legacy tool result"}]}
+  ],
+  "budget":{"max_tokens":0,"max_steps":0,"used_tokens":0,"used_steps":0},
+  "created_at":"2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(store.path("legacy-1"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := store.Load(context.Background(), "legacy-1")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "hello from legacy" {
+		t.Fatalf("message content migration failed: %q", got)
+	}
+	if got := port.ContentPartsToPlainText(loaded.Messages[1].ToolResults[0].ContentParts); got != "legacy tool result" {
+		t.Fatalf("tool result content migration failed: %q", got)
+	}
+}
+
+func TestFileStoreLoadPrefersContentPartsWhenBothFieldsPresent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	prev := logging.GetLogger()
+	logging.SetLogger(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { logging.SetLogger(prev) })
+
+	raw := `{
+  "id":"legacy-2",
+  "status":"completed",
+  "config":{"goal":"legacy"},
+  "messages":[
+    {"role":"user","content_parts":[{"type":"text","text":"new"}],"content":"old"}
+  ],
+  "budget":{"max_tokens":0,"max_steps":0,"used_tokens":0,"used_steps":0},
+  "created_at":"2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(store.path("legacy-2"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(context.Background(), "legacy-2")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "new" {
+		t.Fatalf("expected content_parts to win, got %q", got)
+	}
+	if !strings.Contains(buf.String(), "migrated legacy message content field") {
+		t.Fatalf("expected migration warning log, got: %s", buf.String())
+	}
+}
+
+func TestFileStoreLoadFailsOnInvalidLegacyMessageContent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{
+  "id":"legacy-bad-msg",
+  "status":"completed",
+  "config":{"goal":"legacy"},
+  "messages":[{"role":"user","content":{"bad":"shape"}}],
+  "budget":{"max_tokens":0,"max_steps":0,"used_tokens":0,"used_steps":0},
+  "created_at":"2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(store.path("legacy-bad-msg"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Load(context.Background(), "legacy-bad-msg")
+	if err == nil || !strings.Contains(err.Error(), "legacy content must be string") {
+		t.Fatalf("expected legacy content shape error, got %v", err)
+	}
+}
+
+func TestFileStoreLoadFailsOnInvalidLegacyToolResultContent(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{
+  "id":"legacy-bad-tool",
+  "status":"completed",
+  "config":{"goal":"legacy"},
+  "messages":[{"role":"tool","tool_results":[{"call_id":"tc1","content":[1,2,3]}]}],
+  "budget":{"max_tokens":0,"max_steps":0,"used_tokens":0,"used_steps":0},
+  "created_at":"2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(store.path("legacy-bad-tool"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Load(context.Background(), "legacy-bad-tool")
+	if err == nil || !strings.Contains(err.Error(), "legacy content must be string") {
+		t.Fatalf("expected legacy tool content shape error, got %v", err)
+	}
+}
+
+func TestFileStoreSaveWritesNewSchemaOnly(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &Session{
+		ID:     "new-schema",
+		Status: StatusCompleted,
+		Config: SessionConfig{Goal: "schema"},
+		Messages: []port.Message{
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}},
+			{Role: port.RoleTool, ToolResults: []port.ToolResult{{CallID: "tc1", ContentParts: []port.ContentPart{port.TextPart("ok")}}}},
+		},
+		CreatedAt: time.Now(),
+	}
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	data, err := os.ReadFile(store.path("new-schema"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), `"content":`) {
+		t.Fatalf("legacy content field must not be persisted: %s", string(data))
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatalf("unmarshal saved json: %v", err)
 	}
 }

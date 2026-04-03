@@ -128,7 +128,7 @@ func TestKernelIntegration(t *testing.T) {
 			{
 				Message: port.Message{
 					Role:      port.RoleAssistant,
-					Content:   "Let me read the file.",
+					ContentParts: []port.ContentPart{port.TextPart("Let me read the file.")},
 					ToolCalls: []port.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
 				},
 				ToolCalls:  []port.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
@@ -138,7 +138,7 @@ func TestKernelIntegration(t *testing.T) {
 			{
 				Message: port.Message{
 					Role:      port.RoleAssistant,
-					Content:   "Now let me write a fix.",
+					ContentParts: []port.ContentPart{port.TextPart("Now let me write a fix.")},
 					ToolCalls: []port.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
 				},
 				ToolCalls:  []port.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
@@ -146,7 +146,7 @@ func TestKernelIntegration(t *testing.T) {
 				Usage:      port.TokenUsage{TotalTokens: 25},
 			},
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "I've fixed the null pointer bug in main.go."},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("I've fixed the null pointer bug in main.go.")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 15},
 			},
@@ -205,7 +205,7 @@ func TestKernelIntegration(t *testing.T) {
 	}
 
 	// 注入初始用户消息
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "Fix the null pointer in main.go"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Fix the null pointer in main.go")}})
 
 	// 运行
 	result, err := k.Run(context.Background(), sess)
@@ -347,7 +347,7 @@ func TestKernelBootWiresObserverIntoCheckpointStore(t *testing.T) {
 func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{{
-			Message:    port.Message{Role: port.RoleAssistant, Content: "hello from override"},
+			Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("hello from override")}},
 			StopReason: "end_turn",
 		}},
 	}
@@ -367,7 +367,7 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "hi"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}})
 
 	result, err := k.RunWithUserIO(context.Background(), sess, overrideIO)
 	if err != nil {
@@ -432,7 +432,7 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -481,7 +481,7 @@ func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -532,7 +532,7 @@ func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) 
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -611,7 +611,7 @@ func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSession: %v", err)
 			}
-			sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+			sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}})
 
 			start := time.Now()
 			_, err = tt.run(k, sess)
@@ -643,7 +643,7 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "wait"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}})
 
 	firstRunErrCh := make(chan error, 1)
 	go func() {
@@ -724,7 +724,7 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message to be injected")
 	}
-	if got, want := sess.Messages[0].Content, "base\n\nprompt-10\n\nprompt-20"; got != want {
+	if got, want := port.ContentPartsToPlainText(sess.Messages[0].ContentParts), "base\n\nprompt-10\n\nprompt-20"; got != want {
 		t.Fatalf("system prompt = %q, want %q", got, want)
 	}
 
@@ -747,7 +747,7 @@ func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
 			Responses: []port.CompletionResponse{{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 3},
 			}},
@@ -801,7 +801,7 @@ func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 				{
 					Message: port.Message{
 						Role:      port.RoleAssistant,
-						Content:   "",
+						ContentParts: []port.ContentPart{port.TextPart("")},
 						ToolCalls: []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 					},
 					ToolCalls:  []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
@@ -809,7 +809,7 @@ func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 					Usage:      port.TokenUsage{TotalTokens: 5},
 				},
 				{
-					Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+					Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 					StopReason: "end_turn",
 					Usage:      port.TokenUsage{TotalTokens: 3},
 				},
@@ -901,3 +901,4 @@ func TestKernelPortAccessors(t *testing.T) {
 		t.Fatal("expected task runtime and mailbox accessors to return configured ports")
 	}
 }
+

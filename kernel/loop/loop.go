@@ -198,8 +198,10 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 
 	msg := port.Message{
 		Role:      port.RoleAssistant,
-		Content:   state.fullContent,
 		ToolCalls: state.toolCalls,
+	}
+	if state.fullContent != "" {
+		msg.ContentParts = []port.ContentPart{port.TextPart(state.fullContent)}
 	}
 
 	return &port.CompletionResponse{
@@ -507,14 +509,14 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 func buildToolResult(callID string, output []byte, err error) port.ToolResult {
 	if err != nil {
 		return port.ToolResult{
-			CallID:  callID,
-			Content: err.Error(),
-			IsError: true,
+			CallID:       callID,
+			ContentParts: []port.ContentPart{port.TextPart(err.Error())},
+			IsError:      true,
 		}
 	}
 	return port.ToolResult{
-		CallID:  callID,
-		Content: string(output),
+		CallID:       callID,
+		ContentParts: []port.ContentPart{port.TextPart(string(output))},
 	}
 }
 
@@ -675,7 +677,7 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call port.ToolCall, re
 	appendToolErrorIOMetadata(meta, err)
 	l.IO.Send(ctx, port.OutputMessage{
 		Type:    port.OutputToolResult,
-		Content: result.Content,
+		Content: port.ContentPartsToPlainText(result.ContentParts),
 		Meta:    meta,
 	})
 }

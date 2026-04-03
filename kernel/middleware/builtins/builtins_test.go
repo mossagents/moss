@@ -176,9 +176,9 @@ func TestAutoTruncate_NoTruncationNeeded(t *testing.T) {
 	sess := &session.Session{
 		ID: "test",
 		Messages: []port.Message{
-			{Role: port.RoleSystem, Content: "You are a helpful assistant."},
-			{Role: port.RoleUser, Content: "Hello"},
-			{Role: port.RoleAssistant, Content: "Hi there!"},
+			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are a helpful assistant.")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Hi there!")}},
 		},
 	}
 	mc := &middleware.Context{
@@ -202,20 +202,20 @@ func TestAutoTruncate_TriggersWhenOverThreshold(t *testing.T) {
 		MaxContextTokens: 10, // 很低的阈值
 		KeepRecent:       2,
 		TokenCounter: func(msg port.Message) int {
-			return len(msg.Content)
+			return len(port.ContentPartsToPlainText(msg.ContentParts))
 		},
 	})
 
 	sess := &session.Session{
 		ID: "test",
 		Messages: []port.Message{
-			{Role: port.RoleSystem, Content: "system prompt here"},
-			{Role: port.RoleUser, Content: "first message"},
-			{Role: port.RoleAssistant, Content: "first reply"},
-			{Role: port.RoleUser, Content: "second message"},
-			{Role: port.RoleAssistant, Content: "second reply"},
-			{Role: port.RoleUser, Content: "third message"},
-			{Role: port.RoleAssistant, Content: "third reply"},
+			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("system prompt here")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("first message")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("first reply")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("second message")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("second reply")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("third message")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("third reply")}},
 		},
 	}
 	mc := &middleware.Context{
@@ -235,7 +235,7 @@ func TestAutoTruncate_TriggersWhenOverThreshold(t *testing.T) {
 	}
 
 	// 第一条应是 system
-	if sess.Messages[0].Role != port.RoleSystem || sess.Messages[0].Content != "system prompt here" {
+	if sess.Messages[0].Role != port.RoleSystem || port.ContentPartsToPlainText(sess.Messages[0].ContentParts) != "system prompt here" {
 		t.Fatalf("first message should be original system message")
 	}
 
@@ -245,7 +245,7 @@ func TestAutoTruncate_TriggersWhenOverThreshold(t *testing.T) {
 	}
 
 	// 最后两条应是最近的对话
-	if sess.Messages[2].Content != "third message" || sess.Messages[3].Content != "third reply" {
+	if port.ContentPartsToPlainText(sess.Messages[2].ContentParts) != "third message" || port.ContentPartsToPlainText(sess.Messages[3].ContentParts) != "third reply" {
 		t.Fatalf("last two messages should be most recent dialog")
 	}
 }

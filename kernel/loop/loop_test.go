@@ -22,7 +22,7 @@ func TestLoopTextOnly(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "Hello!"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Hello!")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 10},
 			},
@@ -39,7 +39,7 @@ func TestLoopTextOnly(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-1",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "Hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -64,7 +64,7 @@ func TestLoopToolCall(t *testing.T) {
 			{
 				Message: port.Message{
 					Role:      port.RoleAssistant,
-					Content:   "",
+					ContentParts: []port.ContentPart{port.TextPart("")},
 					ToolCalls: []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 				},
 				ToolCalls:  []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
@@ -72,7 +72,7 @@ func TestLoopToolCall(t *testing.T) {
 				Usage:      port.TokenUsage{TotalTokens: 15},
 			},
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "Done!"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Done!")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 10},
 			},
@@ -94,7 +94,7 @@ func TestLoopToolCall(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-2",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "Greet the world"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Greet the world")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -129,7 +129,7 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 9},
 			},
@@ -145,7 +145,7 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-progress-events",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	if _, err := l.Run(context.Background(), sess); err != nil {
@@ -210,7 +210,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 				Usage:      port.TokenUsage{TotalTokens: 10},
 			},
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "Ok"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Ok")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 5},
 			},
@@ -237,7 +237,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-3",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "Do something dangerous"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Do something dangerous")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -255,7 +255,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	var toolResultMsg *port.OutputMessage
 	for _, msg := range sess.Messages {
 		for _, tr := range msg.ToolResults {
-			if tr.IsError && tr.Content == builtins.ErrDenied.Error() {
+			if tr.IsError && port.ContentPartsToPlainText(tr.ContentParts) == builtins.ErrDenied.Error() {
 				found = true
 			}
 		}
@@ -285,7 +285,7 @@ func TestLoopBudgetExhausted(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "step 1"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("step 1")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 100},
 			},
@@ -301,7 +301,7 @@ func TestLoopBudgetExhausted(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-4",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "test"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("test")}}},
 		Budget:   session.Budget{MaxSteps: 1},
 	}
 
@@ -318,7 +318,7 @@ func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "large token response"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("large token response")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 11},
 			},
@@ -334,7 +334,7 @@ func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 	sess := &session.Session{
 		ID:       "budget-tokens",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "test"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("test")}}},
 		Budget:   session.Budget{MaxTokens: 10, MaxSteps: 10},
 	}
 
@@ -372,7 +372,7 @@ func TestLoopParallelToolCalls(t *testing.T) {
 				Usage:      port.TokenUsage{TotalTokens: 10},
 			},
 			{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 5},
 			},
@@ -411,7 +411,7 @@ func TestLoopParallelToolCalls(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-parallel",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "run both tools"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("run both tools")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -448,7 +448,7 @@ func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
 	sess := &session.Session{
 		ID:       "cancelled-loop",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "wait"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("wait")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -511,10 +511,10 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 	}
 	result := l.executeSingleToolCall(context.Background(), sess, call)
 	if result.IsError {
-		t.Fatalf("expected repaired args to succeed, got error: %s", result.Content)
+		t.Fatalf("expected repaired args to succeed, got error: %s", port.ContentPartsToPlainText(result.ContentParts))
 	}
 	var out map[string]any
-	if err := json.Unmarshal([]byte(result.Content), &out); err != nil {
+	if err := json.Unmarshal([]byte(port.ContentPartsToPlainText(result.ContentParts)), &out); err != nil {
 		t.Fatalf("decode result: %v", err)
 	}
 	if out["a"] != float64(1) {
@@ -576,7 +576,7 @@ func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-llm-error-code",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	if _, err := l.Run(context.Background(), sess); err == nil {
@@ -610,7 +610,7 @@ func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-run-failed-error-code",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	if _, err := l.Run(context.Background(), sess); err == nil {
@@ -757,7 +757,7 @@ type postEmissionErrorLLM struct {
 func (p *postEmissionErrorLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
 	atomic.AddInt32(&p.completeCalls, 1)
 	return &port.CompletionResponse{
-		Message:    port.Message{Role: port.RoleAssistant, Content: "fallback"},
+		Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("fallback")}},
 		StopReason: "end_turn",
 	}, nil
 }
@@ -847,7 +847,7 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 		LLM: &flakyLLM{
 			failures: 2,
 			resp: port.CompletionResponse{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "retried"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("retried")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 7},
 			},
@@ -866,7 +866,7 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-retry-sync",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -888,7 +888,7 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
 			Responses: []port.CompletionResponse{{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "ok"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("ok")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 3},
 			}},
@@ -907,7 +907,7 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-lifecycle-panic",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)
@@ -957,7 +957,7 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 					Usage:      port.TokenUsage{TotalTokens: 5},
 				},
 				{
-					Message:    port.Message{Role: port.RoleAssistant, Content: "done"},
+					Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
 					StopReason: "end_turn",
 					Usage:      port.TokenUsage{TotalTokens: 3},
 				},
@@ -975,7 +975,7 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-tool-lifecycle-denied",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "do the dangerous thing"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("do the dangerous thing")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)
@@ -1010,7 +1010,7 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 			{Done: true, Usage: &port.TokenUsage{TotalTokens: 3}},
 		},
 		resp: &port.CompletionResponse{
-			Message:    port.Message{Role: port.RoleAssistant, Content: "fallback"},
+			Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("fallback")}},
 			StopReason: "end_turn",
 			Usage:      port.TokenUsage{TotalTokens: 2},
 		},
@@ -1031,7 +1031,7 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-retry-stream",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1052,7 +1052,7 @@ func TestLoopLLMCallUsesActualModelMetadata(t *testing.T) {
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
 			Responses: []port.CompletionResponse{{
-				Message:    port.Message{Role: port.RoleAssistant, Content: "ok"},
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("ok")}},
 				StopReason: "end_turn",
 				Usage:      port.TokenUsage{TotalTokens: 3},
 				Metadata:   &port.LLMCallMetadata{ActualModel: "router-picked"},
@@ -1066,7 +1066,7 @@ func TestLoopLLMCallUsesActualModelMetadata(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-actual-model",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1102,7 +1102,7 @@ func TestLoopStreamingUsesIteratorMetadataActualModel(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-stream-model",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1135,7 +1135,7 @@ func TestLoopStreamingAfterVisibleOutputDoesNotSyncFallback(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-post-emission-no-fallback",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1169,7 +1169,7 @@ func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-tail-json-error",
 		Status:   session.StatusCreated,
-		Messages: []port.Message{{Role: port.RoleUser, Content: "run"}},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("run")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)
@@ -1190,3 +1190,5 @@ func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
 		t.Fatal("expected tool result appended despite stream tail json error")
 	}
 }
+
+

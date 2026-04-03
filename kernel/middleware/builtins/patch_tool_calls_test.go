@@ -23,7 +23,7 @@ func TestPatchToolCalls_BackfillsMissingResults(t *testing.T) {
 			{
 				Role: port.RoleTool,
 				ToolResults: []port.ToolResult{
-					{CallID: "call_1", Content: "ok"},
+					{CallID: "call_1", ContentParts: []port.ContentPart{port.TextPart("ok")}},
 				},
 			},
 		},
@@ -59,7 +59,7 @@ func TestPatchToolCalls_NoPatchWhenComplete(t *testing.T) {
 			{
 				Role: port.RoleTool,
 				ToolResults: []port.ToolResult{
-					{CallID: "call_1", Content: "ok"},
+					{CallID: "call_1", ContentParts: []port.ContentPart{port.TextPart("ok")}},
 				},
 			},
 		},
@@ -76,3 +76,4 @@ func TestPatchToolCalls_NoPatchWhenComplete(t *testing.T) {
 		t.Fatalf("expected unchanged message count, got %d", len(sess.Messages))
 	}
 }
+

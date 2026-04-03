@@ -2,13 +2,17 @@ package tui
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	config "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 type slashCommandHandler func(chatModel, []string, string, string) (chatModel, tea.Cmd)
@@ -60,6 +64,7 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/experimental": handleExperimentalSlashCommand,
 	"/search":       handleSearchSlashCommand,
 	"/open":         handleOpenSlashCommand,
+	"/image":        handleImageSlashCommand,
 	"/mention":      handleMentionSlashCommand,
 	"/init":         handleInitSlashCommand,
 }
@@ -85,7 +90,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		return m.dispatchUserSubmission(input, runText)
+		return m.dispatchUserSubmission(input, runText, []port.ContentPart{port.TextPart(runText)})
 	}
 	if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
 		name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))
@@ -802,6 +807,110 @@ func handleOpenSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 	}
 	m.refreshViewport()
 	return m, nil
+}
+
+func handleImageSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	if len(args) == 0 {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /image <open|save> [path]"})
+		m.refreshViewport()
+		return m, nil
+	}
+	meta := latestImageMessageMeta(m.messages)
+	if meta == nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "No generated image found in current transcript."})
+		m.refreshViewport()
+		return m, nil
+	}
+	switch strings.ToLower(strings.TrimSpace(args[0])) {
+	case "open":
+		target := strings.TrimSpace(toString(meta["image_source_path"]))
+		if target == "" {
+			target = strings.TrimSpace(toString(meta["image_path"]))
+		}
+		if target == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest image has no local file path to open."})
+			m.refreshViewport()
+			return m, nil
+		}
+		out, err := openWorkspacePath(m.workspace, target)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("open failed: %v", err)})
+		} else {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
+		}
+		m.refreshViewport()
+		return m, nil
+	case "save":
+		encoded := strings.TrimSpace(toString(meta["image_data_base64"]))
+		mimeType := strings.TrimSpace(toString(meta["image_mime_type"]))
+		if encoded == "" || mimeType == "" {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Latest image has no inline data to save."})
+			m.refreshViewport()
+			return m, nil
+		}
+		raw, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("decode image failed: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		target := ""
+		if len(args) >= 2 {
+			target = strings.TrimSpace(strings.Join(args[1:], " "))
+		}
+		if target == "" {
+			ext := extensionForImageMIME(mimeType)
+			target = filepath.Join(m.workspace, "generated-image"+ext)
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(m.workspace, target)
+		}
+		if err := os.WriteFile(target, raw, 0600); err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("save image failed: %v", err)})
+			m.refreshViewport()
+			return m, nil
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Saved image to %s", target)})
+		m.refreshViewport()
+		return m, nil
+	default:
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /image <open|save> [path]"})
+		m.refreshViewport()
+		return m, nil
+	}
+}
+
+func latestImageMessageMeta(messages []chatMessage) map[string]any {
+	for i := len(messages) - 1; i >= 0; i-- {
+		msg := messages[i]
+		if msg.kind != msgAssistant || msg.meta == nil {
+			continue
+		}
+		if isImage, _ := msg.meta["is_image"].(bool); isImage {
+			return msg.meta
+		}
+	}
+	return nil
+}
+
+func toString(v any) string {
+	s, _ := v.(string)
+	return s
+}
+
+func extensionForImageMIME(mimeType string) string {
+	switch strings.ToLower(strings.TrimSpace(mimeType)) {
+	case "image/png":
+		return ".png"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/gif":
+		return ".gif"
+	case "image/webp":
+		return ".webp"
+	default:
+		return ".img"
+	}
 }
 
 func handleMentionSlashCommand(m chatModel, args []string, input string, draft string) (chatModel, tea.Cmd) {

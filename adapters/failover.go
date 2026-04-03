@@ -565,8 +565,9 @@ func (it *completionIterator) Next() (port.StreamChunk, error) {
 	}
 	if !it.sentDone {
 		it.sentDone = true
-		if len(it.resp.ToolCalls) == 0 && it.resp.Message.Content != "" {
-			return port.StreamChunk{Delta: it.resp.Message.Content, Done: true, Usage: &it.resp.Usage}, nil
+		content := port.ContentPartsToPlainText(it.resp.Message.ContentParts)
+		if len(it.resp.ToolCalls) == 0 && content != "" {
+			return port.StreamChunk{Delta: content, Done: true, Usage: &it.resp.Usage}, nil
 		}
 		return port.StreamChunk{Done: true, Usage: &it.resp.Usage}, nil
 	}

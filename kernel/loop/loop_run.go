@@ -198,11 +198,11 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 		return nil
 	}
 
-	*lastOutput = resp.Message.Content
+	*lastOutput = port.ContentPartsToPlainText(resp.Message.ContentParts)
 	if l.IO != nil && !streamed {
 		l.IO.Send(ctx, port.OutputMessage{
 			Type:    port.OutputText,
-			Content: resp.Message.Content,
+			Content: *lastOutput,
 		})
 	}
 	return nil

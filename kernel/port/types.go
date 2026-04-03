@@ -14,10 +14,10 @@ const (
 
 // Message 是 Kernel 中的统一消息结构。
 type Message struct {
-	Role        Role         `json:"role"`
-	Content     string       `json:"content,omitempty"`
-	ToolCalls   []ToolCall   `json:"tool_calls,omitempty"`
-	ToolResults []ToolResult `json:"tool_results,omitempty"`
+	Role         Role          `json:"role"`
+	ContentParts []ContentPart `json:"content_parts,omitempty"`
+	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
+	ToolResults  []ToolResult  `json:"tool_results,omitempty"`
 }
 
 // ToolCall 表示 LLM 请求的一次工具调用。
@@ -29,9 +29,32 @@ type ToolCall struct {
 
 // ToolResult 表示一次工具调用的执行结果。
 type ToolResult struct {
-	CallID  string `json:"call_id"`
-	Content string `json:"content"`
-	IsError bool   `json:"is_error,omitempty"`
+	CallID       string        `json:"call_id"`
+	ContentParts []ContentPart `json:"content_parts,omitempty"`
+	IsError      bool          `json:"is_error,omitempty"`
+}
+
+// ContentPartType 表示消息内容分片类型。
+type ContentPartType string
+
+const (
+	ContentPartText        ContentPartType = "text"
+	ContentPartInputImage  ContentPartType = "input_image"
+	ContentPartOutputImage ContentPartType = "output_image"
+	ContentPartInputAudio  ContentPartType = "input_audio"
+	ContentPartOutputAudio ContentPartType = "output_audio"
+	ContentPartInputVideo  ContentPartType = "input_video"
+	ContentPartOutputVideo ContentPartType = "output_video"
+)
+
+// ContentPart 是多模态消息内容的统一结构。
+type ContentPart struct {
+	Type       ContentPartType `json:"type"`
+	Text       string          `json:"text,omitempty"`
+	MIMEType   string          `json:"mime_type,omitempty"`
+	DataBase64 string          `json:"data_base64,omitempty"`
+	URL        string          `json:"url,omitempty"`
+	SourcePath string          `json:"source_path,omitempty"`
 }
 
 // TokenUsage 记录 token 用量。

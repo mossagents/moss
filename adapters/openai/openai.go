@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -99,7 +100,11 @@ func NewWithRequestOptions(reqOpts []option.RequestOption, opts ...Option) *Clie
 
 // Complete 实现 port.LLM（同步模式）。
 func (c *Client) Complete(ctx context.Context, req port.CompletionRequest) (*port.CompletionResponse, error) {
-	completion, err := c.client.Chat.Completions.New(ctx, c.buildParams(req))
+	params, err := c.buildParams(req)
+	if err != nil {
+		return nil, err
+	}
+	completion, err := c.client.Chat.Completions.New(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +113,11 @@ func (c *Client) Complete(ctx context.Context, req port.CompletionRequest) (*por
 
 // Stream 实现 port.StreamingLLM（流式模式）。
 func (c *Client) Stream(ctx context.Context, req port.CompletionRequest) (port.StreamIterator, error) {
-	stream := c.client.Chat.Completions.NewStreaming(ctx, c.buildParams(req))
+	params, err := c.buildParams(req)
+	if err != nil {
+		return nil, err
+	}
+	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
 	return &streamIterator{
 		stream:       stream,
 		toolBuilders: make(map[int]*toolCallBuilder),
@@ -117,15 +126,20 @@ func (c *Client) Stream(ctx context.Context, req port.CompletionRequest) (port.S
 
 // ─── 请求构建 ────────────────────────────────────────
 
-func (c *Client) buildParams(req port.CompletionRequest) openai.ChatCompletionNewParams {
+func (c *Client) buildParams(req port.CompletionRequest) (openai.ChatCompletionNewParams, error) {
 	model := c.model
 	if req.Config.Model != "" {
 		model = req.Config.Model
 	}
 
+	messages, err := toOpenAIMessages(req.Messages, model)
+	if err != nil {
+		return openai.ChatCompletionNewParams{}, err
+	}
+
 	params := openai.ChatCompletionNewParams{
 		Model:    shared.ChatModel(model),
-		Messages: toOpenAIMessages(req.Messages),
+		Messages: messages,
 	}
 
 	maxTokens := c.maxTokens
@@ -170,44 +184,106 @@ func (c *Client) buildParams(req port.CompletionRequest) openai.ChatCompletionNe
 		}
 	}
 
-	return params
+	return params, nil
 }
 
 // ─── 消息映射 ────────────────────────────────────────
 
-func toOpenAIMessages(msgs []port.Message) []openai.ChatCompletionMessageParamUnion {
+func toOpenAIMessages(msgs []port.Message, model string) ([]openai.ChatCompletionMessageParamUnion, error) {
 	var result []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range msgs {
 		switch msg.Role {
 		case port.RoleSystem:
-			result = append(result, openai.SystemMessage(msg.Content))
+			parts, err := toOpenAISystemTextParts(msg.ContentParts, model)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, openai.SystemMessage(parts))
 
 		case port.RoleUser:
-			result = append(result, openai.UserMessage(msg.Content))
+			parts, err := toOpenAIUserParts(msg.ContentParts, model)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, openai.UserMessage(parts))
 
 		case port.RoleAssistant:
-			param := toAssistantMessage(msg)
+			param, err := toAssistantMessage(msg, model)
+			if err != nil {
+				return nil, err
+			}
 			if param != nil {
 				result = append(result, openai.ChatCompletionMessageParamUnion{OfAssistant: param})
 			}
 
 		case port.RoleTool:
 			for _, tr := range msg.ToolResults {
-				result = append(result, openai.ToolMessage(tr.Content, tr.CallID))
+				parts, err := toOpenAIToolTextParts(tr.ContentParts, model)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, openai.ToolMessage(parts, tr.CallID))
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
-func toAssistantMessage(msg port.Message) *openai.ChatCompletionAssistantMessageParam {
-	if msg.Content == "" && len(msg.ToolCalls) == 0 {
-		return nil
+func toOpenAISystemTextParts(parts []port.ContentPart, model string) ([]openai.ChatCompletionContentPartTextParam, error) {
+	result := make([]openai.ChatCompletionContentPartTextParam, 0, len(parts))
+	for _, part := range parts {
+		if part.Type != port.ContentPartText {
+			return nil, unsupportedPartError("openai", model, "system", part.Type)
+		}
+		result = append(result, openai.ChatCompletionContentPartTextParam{Text: part.Text})
+	}
+	return result, nil
+}
+
+func toOpenAIToolTextParts(parts []port.ContentPart, model string) ([]openai.ChatCompletionContentPartTextParam, error) {
+	result := make([]openai.ChatCompletionContentPartTextParam, 0, len(parts))
+	for _, part := range parts {
+		if part.Type != port.ContentPartText {
+			return nil, unsupportedPartError("openai", model, "tool_result", part.Type)
+		}
+		result = append(result, openai.ChatCompletionContentPartTextParam{Text: part.Text})
+	}
+	return result, nil
+}
+
+func toOpenAIUserParts(parts []port.ContentPart, model string) ([]openai.ChatCompletionContentPartUnionParam, error) {
+	result := make([]openai.ChatCompletionContentPartUnionParam, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case port.ContentPartText:
+			result = append(result, openai.TextContentPart(part.Text))
+		case port.ContentPartInputImage:
+			imageURL := part.URL
+			if strings.TrimSpace(imageURL) == "" {
+				imageURL = "data:" + part.MIMEType + ";base64," + part.DataBase64
+			}
+			result = append(result, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+				URL: imageURL,
+			}))
+		default:
+			return nil, unsupportedPartError("openai", model, "user", part.Type)
+		}
+	}
+	return result, nil
+}
+
+func toAssistantMessage(msg port.Message, model string) (*openai.ChatCompletionAssistantMessageParam, error) {
+	content, err := contentPartsToTextOnlyString(msg.ContentParts, "openai", model, "assistant")
+	if err != nil {
+		return nil, err
+	}
+	if content == "" && len(msg.ToolCalls) == 0 {
+		return nil, nil
 	}
 	p := &openai.ChatCompletionAssistantMessageParam{}
-	if msg.Content != "" {
-		p.Content.OfString = openai.String(msg.Content)
+	if content != "" {
+		p.Content.OfString = openai.String(content)
 	}
 	if len(msg.ToolCalls) > 0 {
 		p.ToolCalls = make([]openai.ChatCompletionMessageToolCallParam, len(msg.ToolCalls))
@@ -221,7 +297,7 @@ func toAssistantMessage(msg port.Message) *openai.ChatCompletionAssistantMessage
 			}
 		}
 	}
-	return p
+	return p, nil
 }
 
 // ─── 工具映射 ────────────────────────────────────────
@@ -262,17 +338,36 @@ func fromOpenAIResponse(c *openai.ChatCompletion) *port.CompletionResponse {
 
 	choice := c.Choices[0]
 	toolCalls := fromToolCalls(choice.Message.ToolCalls)
+	var contentParts []port.ContentPart
+	if choice.Message.Content != "" {
+		contentParts = []port.ContentPart{port.TextPart(choice.Message.Content)}
+	}
 
 	return &port.CompletionResponse{
 		Message: port.Message{
-			Role:      port.RoleAssistant,
-			Content:   choice.Message.Content,
-			ToolCalls: toolCalls,
+			Role:         port.RoleAssistant,
+			ContentParts: contentParts,
+			ToolCalls:    toolCalls,
 		},
 		ToolCalls:  toolCalls,
 		Usage:      fromUsage(c.Usage),
 		StopReason: choice.FinishReason,
 	}
+}
+
+func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, role string) (string, error) {
+	textParts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type != port.ContentPartText {
+			return "", unsupportedPartError(provider, model, role, part.Type)
+		}
+		textParts = append(textParts, part.Text)
+	}
+	return strings.Join(textParts, "\n"), nil
+}
+
+func unsupportedPartError(provider, model, role string, typ port.ContentPartType) error {
+	return fmt.Errorf("%s adapter: model=%q role=%s unsupported content part type=%q", provider, model, role, typ)
 }
 
 func fromToolCalls(tcs []openai.ChatCompletionMessageToolCall) []port.ToolCall {

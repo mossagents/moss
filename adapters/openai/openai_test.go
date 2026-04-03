@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -12,10 +13,13 @@ import (
 
 func TestToOpenAIMessages_SystemMessage(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleSystem, Content: "You are a helpful assistant."},
-		{Role: port.RoleUser, Content: "Hello"},
+		{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are a helpful assistant.")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
 	}
-	result := toOpenAIMessages(msgs)
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(result))
@@ -30,16 +34,19 @@ func TestToOpenAIMessages_SystemMessage(t *testing.T) {
 
 func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleUser, Content: "What's the weather?"},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("What's the weather?")}},
 		{
 			Role:    port.RoleAssistant,
-			Content: "Let me check.",
+			ContentParts: []port.ContentPart{port.TextPart("Let me check.")},
 			ToolCalls: []port.ToolCall{
 				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
 			},
 		},
 	}
-	result := toOpenAIMessages(msgs)
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
 
 	if len(result) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(result))
@@ -64,12 +71,15 @@ func TestToOpenAIMessages_ToolResults(t *testing.T) {
 		{
 			Role: port.RoleTool,
 			ToolResults: []port.ToolResult{
-				{CallID: "call_1", Content: "Sunny, 25°C"},
-				{CallID: "call_2", Content: "error: timeout", IsError: true},
+				{CallID: "call_1", ContentParts: []port.ContentPart{port.TextPart("Sunny, 25°C")}},
+				{CallID: "call_2", ContentParts: []port.ContentPart{port.TextPart("error: timeout")}, IsError: true},
 			},
 		},
 	}
-	result := toOpenAIMessages(msgs)
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
 
 	// OpenAI 要求每个 tool result 是独立的 tool message
 	if len(result) != 2 {
@@ -87,12 +97,55 @@ func TestToOpenAIMessages_ToolResults(t *testing.T) {
 
 func TestToOpenAIMessages_EmptyAssistantSkipped(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleAssistant, Content: "", ToolCalls: nil},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("")}, ToolCalls: nil},
 	}
-	result := toOpenAIMessages(msgs)
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
 
 	if len(result) != 0 {
 		t.Fatalf("expected 0 messages for empty assistant, got %d", len(result))
+	}
+}
+
+func TestToOpenAIMessages_UserWithInputImage(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.TextPart("describe this"),
+				port.ImageInlinePart(port.ContentPartInputImage, "image/png", "abcd", "a.png"),
+			},
+		},
+	}
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
+	raw, err := json.Marshal(result[0].OfUser)
+	if err != nil {
+		t.Fatalf("marshal user message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"type":"image_url"`) {
+		t.Fatalf("expected image_url content part, got %s", payload)
+	}
+	if !strings.Contains(payload, `"url":"data:image/png;base64,abcd"`) {
+		t.Fatalf("expected data URL image source, got %s", payload)
+	}
+}
+
+func TestToOpenAIMessages_UnsupportedPartFails(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role:         port.RoleUser,
+			ContentParts: []port.ContentPart{{Type: port.ContentPartOutputImage, URL: "https://example.com/out.png"}},
+		},
+	}
+	_, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err == nil {
+		t.Fatal("expected unsupported part error")
 	}
 }
 
@@ -160,8 +213,8 @@ func TestFromOpenAIResponse_TextOnly(t *testing.T) {
 	if resp.Message.Role != port.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if resp.Message.Content != "Hello World" {
-		t.Errorf("content = %q, want Hello World", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
+		t.Errorf("content = %q, want Hello World", got)
 	}
 	if len(resp.ToolCalls) != 0 {
 		t.Errorf("expected 0 tool calls, got %d", len(resp.ToolCalls))
@@ -215,8 +268,8 @@ func TestFromOpenAIResponse_WithToolCalls(t *testing.T) {
 
 	resp := fromOpenAIResponse(&completion)
 
-	if resp.Message.Content != "Let me check." {
-		t.Errorf("content = %q", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
+		t.Errorf("content = %q", got)
 	}
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
@@ -254,8 +307,8 @@ func TestFromOpenAIResponse_EmptyChoices(t *testing.T) {
 	if resp.Message.Role != port.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if resp.Message.Content != "" {
-		t.Errorf("expected empty content, got %q", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
+		t.Errorf("expected empty content, got %q", got)
 	}
 }
 
@@ -515,3 +568,5 @@ func TestStreamIterator_TextAndToolCallMixed(t *testing.T) {
 		t.Error("second chunk should be tool call")
 	}
 }
+
+

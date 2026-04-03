@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,8 +33,33 @@ func TestExpandInlineFileMentionsAddsImageReference(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expandInlineFileMentions: %v", err)
 	}
-	if !strings.Contains(got, "Image reference attached by path") {
+	if strings.Contains(got, "Image reference attached by path") {
 		t.Fatalf("unexpected image expansion: %q", got)
+	}
+}
+
+func TestBuildUserContentPartsAddsInputImagePart(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "diagram.png")
+	raw := []byte{0x89, 0x50, 0x4E, 0x47}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	parts, err := buildUserContentParts("Please inspect @diagram.png", workspace)
+	if err != nil {
+		t.Fatalf("buildUserContentParts: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected text+image parts, got %d", len(parts))
+	}
+	if parts[1].Type != "input_image" {
+		t.Fatalf("expected input_image part, got %q", parts[1].Type)
+	}
+	if parts[1].MIMEType != "image/png" {
+		t.Fatalf("mime_type=%q", parts[1].MIMEType)
+	}
+	if parts[1].DataBase64 != base64.StdEncoding.EncodeToString(raw) {
+		t.Fatalf("unexpected base64 payload: %q", parts[1].DataBase64)
 	}
 }
 

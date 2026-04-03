@@ -33,8 +33,8 @@ func BuildCompactedMessages(messages []port.Message, keepRecent int, notice stri
 	}
 	if notice != "" {
 		out = append(out, port.Message{
-			Role:    port.RoleSystem,
-			Content: notice,
+			Role:         port.RoleSystem,
+			ContentParts: []port.ContentPart{port.TextPart(notice)},
 		})
 	}
 	out = append(out, LastNDialogMessages(messages, keepRecent)...)

@@ -13,10 +13,13 @@ import (
 
 func TestToAnthropicMessages_SystemExtracted(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleSystem, Content: "You are a helpful assistant."},
-		{Role: port.RoleUser, Content: "Hello"},
+		{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are a helpful assistant.")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
 	}
-	system, messages := toAnthropicMessages(msgs)
+	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(system) != 1 {
 		t.Fatalf("expected 1 system block, got %d", len(system))
@@ -34,11 +37,14 @@ func TestToAnthropicMessages_SystemExtracted(t *testing.T) {
 
 func TestToAnthropicMessages_MultipleSystemMerged(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleSystem, Content: "System A"},
-		{Role: port.RoleSystem, Content: "System B"},
-		{Role: port.RoleUser, Content: "Hi"},
+		{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("System A")}},
+		{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("System B")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hi")}},
 	}
-	system, messages := toAnthropicMessages(msgs)
+	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(system) != 2 {
 		t.Fatalf("expected 2 system blocks, got %d", len(system))
@@ -50,16 +56,19 @@ func TestToAnthropicMessages_MultipleSystemMerged(t *testing.T) {
 
 func TestToAnthropicMessages_AssistantWithToolCalls(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleUser, Content: "What's the weather?"},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("What's the weather?")}},
 		{
 			Role:    port.RoleAssistant,
-			Content: "Let me check.",
+			ContentParts: []port.ContentPart{port.TextPart("Let me check.")},
 			ToolCalls: []port.ToolCall{
 				{ID: "tc_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
 			},
 		},
 	}
-	_, messages := toAnthropicMessages(msgs)
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
@@ -80,12 +89,15 @@ func TestToAnthropicMessages_ToolResults(t *testing.T) {
 		{
 			Role: port.RoleTool,
 			ToolResults: []port.ToolResult{
-				{CallID: "tc_1", Content: "Sunny, 25°C"},
-				{CallID: "tc_2", Content: "error: timeout", IsError: true},
+				{CallID: "tc_1", ContentParts: []port.ContentPart{port.TextPart("Sunny, 25°C")}},
+				{CallID: "tc_2", ContentParts: []port.ContentPart{port.TextPart("error: timeout")}, IsError: true},
 			},
 		},
 	}
-	_, messages := toAnthropicMessages(msgs)
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
@@ -101,12 +113,84 @@ func TestToAnthropicMessages_ToolResults(t *testing.T) {
 
 func TestToAnthropicMessages_EmptyAssistantSkipped(t *testing.T) {
 	msgs := []port.Message{
-		{Role: port.RoleAssistant, Content: "", ToolCalls: nil},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("")}, ToolCalls: nil},
 	}
-	_, messages := toAnthropicMessages(msgs)
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(messages) != 0 {
 		t.Fatalf("expected 0 messages for empty assistant, got %d", len(messages))
+	}
+}
+
+func TestToAnthropicMessages_UserWithInputImage(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleUser,
+			ContentParts: []port.ContentPart{
+				port.TextPart("describe this"),
+				port.ImageInlinePart(port.ContentPartInputImage, "image/png", "abcd", "a.png"),
+			},
+		},
+	}
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"type":"image"`) {
+		t.Fatalf("expected image block, got %s", payload)
+	}
+	if !strings.Contains(payload, `"type":"base64"`) {
+		t.Fatalf("expected base64 image source, got %s", payload)
+	}
+}
+
+func TestToAnthropicMessages_ToolResultWithOutputImage(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role: port.RoleTool,
+			ToolResults: []port.ToolResult{
+				{
+					CallID: "tc_1",
+					ContentParts: []port.ContentPart{
+						port.TextPart("done"),
+						port.ImageURLPart(port.ContentPartOutputImage, "https://example.com/out.png", ""),
+					},
+				},
+			},
+		},
+	}
+	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
+	raw, err := json.Marshal(messages[0])
+	if err != nil {
+		t.Fatalf("marshal message: %v", err)
+	}
+	payload := string(raw)
+	if !strings.Contains(payload, `"tool_result"`) || !strings.Contains(payload, `"image"`) {
+		t.Fatalf("expected tool_result image content, got %s", payload)
+	}
+}
+
+func TestToAnthropicMessages_UnsupportedPartFails(t *testing.T) {
+	msgs := []port.Message{
+		{
+			Role:         port.RoleUser,
+			ContentParts: []port.ContentPart{{Type: port.ContentPartOutputImage, URL: "https://example.com/out.png"}},
+		},
+	}
+	_, _, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err == nil {
+		t.Fatal("expected unsupported part error")
 	}
 }
 
@@ -140,10 +224,13 @@ func TestToAnthropicTools(t *testing.T) {
 
 func TestBuildParams_ResponseFormatJSONObject(t *testing.T) {
 	c := New("")
-	params := c.buildParams(port.CompletionRequest{
-		Messages:       []port.Message{{Role: port.RoleUser, Content: "hi"}},
+	params, err := c.buildParams(port.CompletionRequest{
+		Messages:       []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		ResponseFormat: &port.ResponseFormat{Type: "json_object"},
 	})
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
 
 	data, err := json.Marshal(params)
 	if err != nil {
@@ -160,8 +247,8 @@ func TestBuildParams_ResponseFormatJSONObject(t *testing.T) {
 
 func TestBuildParams_ResponseFormatJSONSchema(t *testing.T) {
 	c := New("")
-	params := c.buildParams(port.CompletionRequest{
-		Messages: []port.Message{{Role: port.RoleUser, Content: "hi"}},
+	params, err := c.buildParams(port.CompletionRequest{
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hi")}}},
 		ResponseFormat: &port.ResponseFormat{
 			Type: "json_schema",
 			JSONSchema: &port.JSONSchemaSpec{
@@ -170,6 +257,9 @@ func TestBuildParams_ResponseFormatJSONSchema(t *testing.T) {
 			},
 		},
 	})
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
 
 	data, err := json.Marshal(params)
 	if err != nil {
@@ -205,8 +295,8 @@ func TestFromAnthropicResponse_TextOnly(t *testing.T) {
 	if resp.Message.Role != port.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if resp.Message.Content != "Hello World" {
-		t.Errorf("content = %q, want Hello World", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
+		t.Errorf("content = %q, want Hello World", got)
 	}
 	if len(resp.ToolCalls) != 0 {
 		t.Errorf("expected 0 tool calls, got %d", len(resp.ToolCalls))
@@ -246,8 +336,8 @@ func TestFromAnthropicResponse_WithToolUse(t *testing.T) {
 
 	resp := fromAnthropicResponse(&msg)
 
-	if resp.Message.Content != "Let me check." {
-		t.Errorf("content = %q", resp.Message.Content)
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
+		t.Errorf("content = %q", got)
 	}
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("expected 1 tool call, got %d", len(resp.ToolCalls))
@@ -312,10 +402,13 @@ func TestBuildParams_Defaults(t *testing.T) {
 
 	req := port.CompletionRequest{
 		Messages: []port.Message{
-			{Role: port.RoleUser, Content: "Hello"},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
 		},
 	}
-	params := c.buildParams(req)
+	params, err := c.buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
 
 	if params.Model != "test-model" {
 		t.Errorf("model = %q, want test-model", params.Model)
@@ -330,14 +423,17 @@ func TestBuildParams_ConfigOverrides(t *testing.T) {
 
 	req := port.CompletionRequest{
 		Messages: []port.Message{
-			{Role: port.RoleUser, Content: "Hello"},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
 		},
 		Config: port.ModelConfig{
 			Model:     "override-model",
 			MaxTokens: 2048,
 		},
 	}
-	params := c.buildParams(req)
+	params, err := c.buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
 
 	if params.Model != "override-model" {
 		t.Errorf("model = %q, want override-model", params.Model)
@@ -352,11 +448,14 @@ func TestBuildParams_SystemSeparated(t *testing.T) {
 
 	req := port.CompletionRequest{
 		Messages: []port.Message{
-			{Role: port.RoleSystem, Content: "Be concise."},
-			{Role: port.RoleUser, Content: "Hi"},
+			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("Be concise.")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hi")}},
 		},
 	}
-	params := c.buildParams(req)
+	params, err := c.buildParams(req)
+	if err != nil {
+		t.Fatalf("buildParams: %v", err)
+	}
 
 	if len(params.System) != 1 {
 		t.Fatalf("expected 1 system block, got %d", len(params.System))
@@ -484,18 +583,21 @@ func TestProcessEvent_MessageStopEmitsDone(t *testing.T) {
 func TestMessageConversion_RoundTrip(t *testing.T) {
 	// 构建一个完整的对话序列，验证映射完整性
 	msgs := []port.Message{
-		{Role: port.RoleSystem, Content: "You are helpful."},
-		{Role: port.RoleUser, Content: "Read /etc/hosts"},
-		{Role: port.RoleAssistant, Content: "I'll read the file.", ToolCalls: []port.ToolCall{
+		{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are helpful.")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Read /etc/hosts")}},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("I'll read the file.")}, ToolCalls: []port.ToolCall{
 			{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"/etc/hosts"}`)},
 		}},
 		{Role: port.RoleTool, ToolResults: []port.ToolResult{
-			{CallID: "tc_1", Content: "127.0.0.1 localhost"},
+			{CallID: "tc_1", ContentParts: []port.ContentPart{port.TextPart("127.0.0.1 localhost")}},
 		}},
-		{Role: port.RoleAssistant, Content: "The file contains: 127.0.0.1 localhost"},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("The file contains: 127.0.0.1 localhost")}},
 	}
 
-	system, messages := toAnthropicMessages(msgs)
+	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
+	if err != nil {
+		t.Fatalf("toAnthropicMessages: %v", err)
+	}
 
 	if len(system) != 1 {
 		t.Fatalf("expected 1 system block, got %d", len(system))
@@ -518,4 +620,6 @@ func TestMessageConversion_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+
 

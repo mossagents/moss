@@ -95,8 +95,8 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 	sysPrompt := k.extendSystemPrompt(cfg.SystemPrompt)
 	if sysPrompt != "" {
 		sess.Messages = append([]port.Message{{
-			Role:    port.RoleSystem,
-			Content: sysPrompt,
+			Role:         port.RoleSystem,
+			ContentParts: []port.ContentPart{port.TextPart(sysPrompt)},
 		}}, sess.Messages...)
 	}
 

@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
@@ -118,13 +120,43 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if msg.output != "" {
 			m.result = msg.output
 		}
+		for _, part := range msg.outputImages {
+			if part.Type != port.ContentPartOutputImage {
+				continue
+			}
+			path := strings.TrimSpace(part.SourcePath)
+			if path == "" {
+				path = strings.TrimSpace(part.URL)
+			}
+			if path == "" {
+				path = "(inline image)"
+			}
+			m.messages = append(m.messages, chatMessage{
+				kind:    msgAssistant,
+				content: fmt.Sprintf("Generated image: %s", path),
+				meta: map[string]any{
+					"timestamp":         m.now().UTC(),
+					"is_image":          true,
+					"image_path":        path,
+					"image_url":         strings.TrimSpace(part.URL),
+					"image_source_path": strings.TrimSpace(part.SourcePath),
+					"image_mime_type":   strings.TrimSpace(part.MIMEType),
+					"image_data_base64": strings.TrimSpace(part.DataBase64),
+				},
+			})
+		}
 		if len(m.queuedInputs) > 0 && m.sendFn != nil {
 			next := m.queuedInputs[0]
 			m.queuedInputs = m.queuedInputs[1:]
+			nextParts := []port.ContentPart{port.TextPart(next)}
+			if len(m.queuedParts) > 0 {
+				nextParts = m.queuedParts[0]
+				m.queuedParts = m.queuedParts[1:]
+			}
 			m.streaming = true
 			m.finished = false
 			m.runStartedAt = m.now().UTC()
-			m.sendFn(next)
+			m.sendFn(next, nextParts)
 		}
 		m.refreshViewport()
 		m.textarea.Focus()
@@ -142,6 +174,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.result = ""
 		m.lastTrace = nil
 		m.queuedInputs = nil
+		m.queuedParts = nil
 		m.textarea.Reset()
 		m.adjustInputHeight()
 		m.refreshViewport()

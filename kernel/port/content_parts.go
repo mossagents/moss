@@ -1,0 +1,104 @@
+package port
+
+import (
+	"fmt"
+	"strings"
+)
+
+func TextPart(text string) ContentPart {
+	return ContentPart{Type: ContentPartText, Text: text}
+}
+
+func ImageInlinePart(typ ContentPartType, mimeType, dataBase64, sourcePath string) ContentPart {
+	return ContentPart{
+		Type:       typ,
+		MIMEType:   strings.TrimSpace(mimeType),
+		DataBase64: strings.TrimSpace(dataBase64),
+		SourcePath: strings.TrimSpace(sourcePath),
+	}
+}
+
+func ImageURLPart(typ ContentPartType, url, sourcePath string) ContentPart {
+	return ContentPart{
+		Type:       typ,
+		URL:        strings.TrimSpace(url),
+		SourcePath: strings.TrimSpace(sourcePath),
+	}
+}
+
+func ContentPartsToPlainText(parts []ContentPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != ContentPartText {
+			continue
+		}
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func ValidateContentParts(parts []ContentPart) error {
+	for i, part := range parts {
+		if err := validateContentPart(part); err != nil {
+			return fmt.Errorf("content part %d: %w", i, err)
+		}
+	}
+	return nil
+}
+
+func validateContentPart(part ContentPart) error {
+	switch part.Type {
+	case ContentPartText:
+		if strings.TrimSpace(part.Text) == "" {
+			return fmt.Errorf("text part requires non-empty text")
+		}
+		if strings.TrimSpace(part.MIMEType) != "" || strings.TrimSpace(part.DataBase64) != "" || strings.TrimSpace(part.URL) != "" {
+			return fmt.Errorf("text part forbids mime_type, data_base64, and url")
+		}
+		return nil
+	case ContentPartInputImage, ContentPartOutputImage:
+		return validateImageContentPart(part)
+	case ContentPartInputAudio, ContentPartOutputAudio, ContentPartInputVideo, ContentPartOutputVideo:
+		return fmt.Errorf("content part type %q is reserved and not implemented", part.Type)
+	default:
+		return fmt.Errorf("unsupported content part type %q", part.Type)
+	}
+}
+
+func validateImageContentPart(part ContentPart) error {
+	if strings.TrimSpace(part.Text) != "" {
+		return fmt.Errorf("%s forbids text", part.Type)
+	}
+	mimeType := strings.TrimSpace(part.MIMEType)
+	data := strings.TrimSpace(part.DataBase64)
+	url := strings.TrimSpace(part.URL)
+
+	hasInline := mimeType != "" || data != ""
+	hasURL := url != ""
+
+	switch {
+	case hasInline && hasURL:
+		return fmt.Errorf("%s requires exactly one source: inline or url", part.Type)
+	case !hasInline && !hasURL:
+		return fmt.Errorf("%s requires one source: inline or url", part.Type)
+	case hasInline:
+		if mimeType == "" || data == "" {
+			return fmt.Errorf("%s inline source requires both mime_type and data_base64", part.Type)
+		}
+		if !strings.HasPrefix(strings.ToLower(mimeType), "image/") {
+			return fmt.Errorf("%s mime_type must start with image/", part.Type)
+		}
+	case hasURL:
+		if mimeType != "" || data != "" {
+			return fmt.Errorf("%s url source forbids mime_type and data_base64", part.Type)
+		}
+	}
+	return nil
+}

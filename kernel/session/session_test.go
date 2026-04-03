@@ -59,7 +59,7 @@ func TestSessionAppendAndTruncate(t *testing.T) {
 	}
 
 	for i := 0; i < 10; i++ {
-		s.AppendMessage(port.Message{Role: port.RoleUser, Content: "msg"})
+		s.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("msg")}})
 	}
 	if len(s.Messages) != 10 {
 		t.Fatalf("len = %d, want 10", len(s.Messages))
@@ -130,12 +130,12 @@ func TestManagerList(t *testing.T) {
 func TestManagerNotify(t *testing.T) {
 	m := NewManager()
 	s, _ := m.Create(context.Background(), SessionConfig{Goal: "test"})
-	msg := port.Message{Role: port.RoleUser, Content: "hello"}
+	msg := port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}}
 	if err := m.Notify(s.ID, msg); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	got, _ := m.Get(s.ID)
-	if len(got.Messages) != 1 || got.Messages[0].Content != "hello" {
+	if len(got.Messages) != 1 || port.ContentPartsToPlainText(got.Messages[0].ContentParts) != "hello" {
 		t.Fatalf("Messages = %v, want 1 message with 'hello'", got.Messages)
 	}
 }

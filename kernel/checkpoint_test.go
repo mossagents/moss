@@ -105,7 +105,7 @@ func TestKernelCreateCheckpointPersistsFrozenSessionAndSnapshot(t *testing.T) {
 		Status: session.StatusRunning,
 		Config: session.SessionConfig{Goal: "ship it"},
 		Messages: []port.Message{
-			{Role: port.RoleUser, Content: "hello"},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}},
 		},
 	}
 
@@ -150,9 +150,9 @@ func TestKernelForkSessionPrefersCheckpointAndMarksDegradedRestore(t *testing.T)
 		Status: session.StatusPaused,
 		Config: session.SessionConfig{Goal: "ship it"},
 		Messages: []port.Message{
-			{Role: port.RoleSystem, Content: "sys"},
-			{Role: port.RoleUser, Content: "user"},
-			{Role: port.RoleAssistant, Content: "assistant"},
+			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("sys")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("user")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("assistant")}},
 		},
 	}); err != nil {
 		t.Fatalf("save checkpoint session: %v", err)
@@ -224,10 +224,10 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 		Status: session.StatusPaused,
 		Config: session.SessionConfig{Goal: "ship it", MaxSteps: 10},
 		Messages: []port.Message{
-			{Role: port.RoleSystem, Content: "sys"},
-			{Role: port.RoleUser, Content: "user"},
-			{Role: port.RoleAssistant, Content: "assistant"},
-			{Role: port.RoleTool, Content: "tool"},
+			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("sys")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("user")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("assistant")}},
+			{Role: port.RoleTool, ContentParts: []port.ContentPart{port.TextPart("tool")}},
 		},
 		State:  map[string]any{"phase": "mid"},
 		Budget: session.Budget{MaxSteps: 10, UsedSteps: 4, UsedTokens: 100},
@@ -331,3 +331,5 @@ func mustFileStore(t *testing.T) *session.FileStore {
 	}
 	return store
 }
+
+

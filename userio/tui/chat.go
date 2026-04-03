@@ -29,6 +29,7 @@ var writeClipboard = clipboard.WriteAll
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
 	output       string
+	outputImages []port.ContentPart
 	trace        *product.RunTraceSummary
 	traceSummary string
 	err          error
@@ -76,7 +77,7 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn                func(string)  // 发送用户消息给 agent
+	sendFn                func(string, []port.ContentPart) // 发送用户消息给 agent
 	cancelRunFn           func() bool   // 取消当前运行中的任务
 	skillListFn           func() string // 查询已加载 skills
 	sessionInfoFn         func() string
@@ -133,6 +134,7 @@ type chatModel struct {
 	discoveredSkills     []string
 
 	queuedInputs []string
+	queuedParts  [][]port.ContentPart
 
 	inputHistory  []string
 	historyCursor int
@@ -250,7 +252,13 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
-	return m.dispatchUserSubmission(text, runText)
+	parts, err := buildUserContentParts(runText, m.workspace)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned images: %v", err)})
+		m.refreshViewport()
+		return m, nil
+	}
+	return m.dispatchUserSubmission(text, runText, parts)
 }
 
 func (m chatModel) startThreadSwitch(statusText string, run func() (string, error)) (chatModel, tea.Cmd) {
@@ -831,6 +839,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/mention", Summary: "Insert an @file mention into the composer", Section: "Tools and integrations"},
 	{Name: "/search", Summary: "Search the web via Jina", Section: "Tools and integrations"},
 	{Name: "/open", Summary: "Open a file in the local editor", Section: "Tools and integrations"},
+	{Name: "/image", Summary: "Open or save the latest generated image", Section: "Tools and integrations"},
 	{Name: "/mcp", Summary: "Inspect configured MCP servers", Section: "Tools and integrations"},
 	{Name: "/schedules", Summary: "Browse scheduled jobs", Section: "Tools and integrations"},
 	{Name: "/config", Summary: "Show or update config values", Section: "Tools and integrations"},
@@ -1051,12 +1060,16 @@ func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatM
 		return m, nil
 	}
 	prompt := fmt.Sprintf("Use skill or tool '%s' to complete this request:\n%s", name, task)
-	return m.dispatchUserSubmission(displayText, prompt)
+	return m.dispatchUserSubmission(displayText, prompt, []port.ContentPart{port.TextPart(prompt)})
 }
 
-func (m chatModel) dispatchUserSubmission(displayText, runText string) (chatModel, tea.Cmd) {
+func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []port.ContentPart) (chatModel, tea.Cmd) {
+	if len(parts) == 0 {
+		parts = []port.ContentPart{port.TextPart(strings.TrimSpace(runText))}
+	}
 	if m.streaming {
 		m.queuedInputs = append(m.queuedInputs, runText)
+		m.queuedParts = append(m.queuedParts, parts)
 		m.textarea.Reset()
 		m.adjustInputHeight()
 		m.refreshViewport()
@@ -1074,7 +1087,7 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string) (chatMode
 	m.runStartedAt = m.now().UTC()
 	m.refreshViewport()
 	if m.sendFn != nil {
-		m.sendFn(runText)
+		m.sendFn(runText, parts)
 	}
 	return m, nil
 }

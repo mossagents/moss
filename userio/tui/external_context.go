@@ -1,13 +1,17 @@
 package tui
 
 import (
+	"encoding/base64"
 	"fmt"
+	"mime"
 	"os"
 	"os/exec"
 	"path/filepath"
 	runtimepkg "runtime"
 	"strconv"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/port"
 )
 
 const maxAttachedFileBytes = 16 * 1024
@@ -32,7 +36,6 @@ func expandInlineFileMentions(input, workspace string) (string, error) {
 		}
 		seen[path] = struct{}{}
 		if isImagePath(path) {
-			attachments = append(attachments, fmt.Sprintf("--- %s ---\nImage reference attached by path. Direct image decoding is not available in this TUI yet.\nPath: %s", filepath.Base(path), path))
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -55,6 +58,43 @@ func expandInlineFileMentions(input, workspace string) (string, error) {
 		return input, nil
 	}
 	return strings.TrimSpace(input) + "\n\nAttached context:\n" + strings.Join(attachments, "\n\n"), nil
+}
+
+func buildUserContentParts(input, workspace string) ([]port.ContentPart, error) {
+	parts := []port.ContentPart{port.TextPart(strings.TrimSpace(input))}
+	if !strings.Contains(input, "@") {
+		return parts, nil
+	}
+	tokens := strings.Fields(input)
+	seen := make(map[string]struct{})
+	for _, token := range tokens {
+		if !strings.HasPrefix(token, "@") || len(token) == 1 {
+			continue
+		}
+		path, ok := resolveMentionPath(workspace, strings.TrimPrefix(token, "@"))
+		if !ok || !isImagePath(path) {
+			continue
+		}
+		if _, exists := seen[path]; exists {
+			continue
+		}
+		seen[path] = struct{}{}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read image mention %s: %w", path, err)
+		}
+		mimeType := strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(path))))
+		if !strings.HasPrefix(mimeType, "image/") {
+			return nil, fmt.Errorf("mentioned image %s has unsupported mime type %q", path, mimeType)
+		}
+		parts = append(parts, port.ImageInlinePart(
+			port.ContentPartInputImage,
+			mimeType,
+			base64.StdEncoding.EncodeToString(data),
+			path,
+		))
+	}
+	return parts, nil
 }
 
 func resolveMentionPath(workspace, raw string) (string, bool) {

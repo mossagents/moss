@@ -408,7 +408,7 @@ func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
 		t.Fatalf("syncCustomCommands notice: %s", notice)
 	}
 	dispatched := ""
-	m.sendFn = func(text string) { dispatched = text }
+	m.sendFn = func(text string, _ []port.ContentPart) { dispatched = text }
 	updated, _ := m.handleSlashCommand("/review-pr focus tests")
 	if !updated.streaming {
 		t.Fatal("expected custom command to start a run")
@@ -421,7 +421,7 @@ func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
 func TestSlashCommandSearchDispatchesPrompt(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	dispatched := ""
-	m.sendFn = func(text string) { dispatched = text }
+	m.sendFn = func(text string, _ []port.ContentPart) { dispatched = text }
 	updated, _ := m.handleSlashCommand("/search recent golang releases")
 	if !updated.streaming {
 		t.Fatal("expected /search to start a run")
@@ -1206,7 +1206,7 @@ func TestSlashSkillCommandDispatchesPrompt(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	sent := ""
-	m.sendFn = func(text string) { sent = text }
+	m.sendFn = func(text string, _ []port.ContentPart) { sent = text }
 
 	updated, _ := m.handleSlashCommand("/skill http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
 	if !updated.streaming {
@@ -1224,7 +1224,7 @@ func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	sent := ""
-	m.sendFn = func(text string) { sent = text }
+	m.sendFn = func(text string, _ []port.ContentPart) { sent = text }
 
 	updated, _ := m.handleSlashCommand("/http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
 	if !updated.streaming {
@@ -1440,7 +1440,12 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	m.streaming = true
 	m.queuedInputs = []string{"next one"}
 	sent := ""
-	m.sendFn = func(text string) { sent = text }
+	var sentParts []port.ContentPart
+	m.sendFn = func(text string, parts []port.ContentPart) {
+		sent = text
+		sentParts = parts
+	}
+	m.queuedParts = [][]port.ContentPart{{port.TextPart("next one")}}
 
 	updated, _ := m.Update(sessionResultMsg{})
 	if sent != "next one" {
@@ -1452,10 +1457,34 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	if !updated.streaming {
 		t.Fatal("expected streaming to continue with dequeued message")
 	}
+	if len(sentParts) != 1 || sentParts[0].Type != port.ContentPartText {
+		t.Fatalf("queued parts not forwarded: %+v", sentParts)
+	}
 	for _, msg := range updated.messages {
 		if msg.kind == msgUser && msg.content == "next one" {
 			t.Fatal("queued message should not be appended to chat message list before execution output")
 		}
+	}
+}
+
+func TestSessionResult_AppendsOutputImageMessage(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	updated, _ := m.Update(sessionResultMsg{
+		outputImages: []port.ContentPart{
+			port.ImageURLPart(port.ContentPartOutputImage, "https://example.com/image.png", ""),
+		},
+	})
+	if len(updated.messages) == 0 {
+		t.Fatal("expected image message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgAssistant || !strings.Contains(last.content, "Generated image:") {
+		t.Fatalf("unexpected image output message: %+v", last)
 	}
 }
 
@@ -1527,5 +1556,45 @@ func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) 
 
 	if idleHeight != runningHeight+1 {
 		t.Fatalf("viewport height after running=%d idle=%d, want idle to recover one line", runningHeight, idleHeight)
+	}
+}
+
+func TestSlashCommandImageOpenWithoutLocalPathShowsError(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", t.TempDir())
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgAssistant,
+		content: "Generated image",
+		meta: map[string]any{
+			"is_image": true,
+			"image_url": "https://example.com/latest.png",
+		},
+	})
+	updated, _ := m.handleSlashCommand("/image open")
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError || !strings.Contains(last.content, "no local file path") {
+		t.Fatalf("unexpected /image open output: %+v", last)
+	}
+}
+
+func TestSlashCommandImageSavePersistsInlineData(t *testing.T) {
+	workspace := t.TempDir()
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgAssistant,
+		content: "Generated image",
+		meta: map[string]any{
+			"is_image":          true,
+			"image_mime_type":   "image/png",
+			"image_data_base64": "iVBORw0K",
+		},
+	})
+	target := filepath.Join(workspace, "saved.png")
+	updated, _ := m.handleSlashCommand("/image save " + target)
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Saved image") {
+		t.Fatalf("unexpected /image save output: %+v", last)
+	}
+	if _, err := os.Stat(target); err != nil {
+		t.Fatalf("expected saved image file: %v", err)
 	}
 }

@@ -281,7 +281,7 @@ type streamScriptLLM struct {
 
 func (s *streamScriptLLM) Complete(_ context.Context, _ port.CompletionRequest) (*port.CompletionResponse, error) {
 	return &port.CompletionResponse{
-		Message:    port.Message{Role: port.RoleAssistant, Content: "sync"},
+		Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("sync")}},
 		StopReason: "end_turn",
 	}, nil
 }

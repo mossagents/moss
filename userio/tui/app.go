@@ -238,9 +238,9 @@ func (a *agentState) refreshSystemPrompt() error {
 	a.mu.Lock()
 	sess.Config.SystemPrompt = nextPrompt
 	if len(sess.Messages) > 0 && sess.Messages[0].Role == port.RoleSystem {
-		sess.Messages[0].Content = nextPrompt
+		sess.Messages[0].ContentParts = []port.ContentPart{port.TextPart(nextPrompt)}
 	} else {
-		sess.Messages = append([]port.Message{{Role: port.RoleSystem, Content: nextPrompt}}, sess.Messages...)
+		sess.Messages = append([]port.Message{{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart(nextPrompt)}}}, sess.Messages...)
 	}
 	a.mu.Unlock()
 	if store != nil {
@@ -633,7 +633,7 @@ func (a *agentState) cancelTask(taskID, reason string) (string, error) {
 }
 
 // appendAndRun 追加用户消息到 session 并重新执行 agent loop。
-func (a *agentState) appendAndRun(text string) {
+func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
@@ -646,7 +646,10 @@ func (a *agentState) appendAndRun(text string) {
 	traceFactory := a.buildRunTraceObserver
 	a.mu.Unlock()
 
-	a.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: text})
+	if len(parts) == 0 {
+		parts = []port.ContentPart{port.TextPart(text)}
+	}
+	a.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: parts})
 	var traceRecorder *product.RunTraceRecorder
 	progressObserver := newExecutionProgressObserver(a.bridge, a.sess)
 	if traceFactory != nil {
@@ -669,6 +672,7 @@ func (a *agentState) appendAndRun(text string) {
 		msg := sessionResultMsg{err: err}
 		if result != nil {
 			msg.output = result.Output
+			msg.outputImages = collectOutputImageParts(a.sess)
 		}
 		if traceRecorder != nil {
 			trace := traceRecorder.Snapshot()
@@ -688,6 +692,26 @@ func (a *agentState) appendAndRun(text string) {
 		}
 		a.bridge.program.Send(msg)
 	}
+}
+
+func collectOutputImageParts(sess *session.Session) []port.ContentPart {
+	if sess == nil || len(sess.Messages) == 0 {
+		return nil
+	}
+	for i := len(sess.Messages) - 1; i >= 0; i-- {
+		msg := sess.Messages[i]
+		if msg.Role != port.RoleAssistant {
+			continue
+		}
+		var out []port.ContentPart
+		for _, p := range msg.ContentParts {
+			if p.Type == port.ContentPartOutputImage {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func (a *agentState) publishProgressReplay() {
