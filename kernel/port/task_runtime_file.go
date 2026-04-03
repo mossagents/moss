@@ -13,7 +13,9 @@ import (
 )
 
 type fileTaskRuntimeState struct {
-	Tasks map[string]TaskRecord `json:"tasks"`
+	Tasks map[string]TaskRecord              `json:"tasks"`
+	Jobs  map[string]AgentJob                `json:"jobs,omitempty"`
+	Items map[string]map[string]AgentJobItem `json:"items,omitempty"`
 }
 
 // FileTaskRuntime 是基于文件系统的 TaskRuntime 实现。
@@ -22,6 +24,8 @@ type FileTaskRuntime struct {
 	mu    sync.Mutex
 	path  string
 	tasks map[string]TaskRecord
+	jobs  map[string]AgentJob
+	items map[string]map[string]AgentJobItem
 }
 
 func NewFileTaskRuntime(dir string) (*FileTaskRuntime, error) {
@@ -31,6 +35,8 @@ func NewFileTaskRuntime(dir string) (*FileTaskRuntime, error) {
 	rt := &FileTaskRuntime{
 		path:  filepath.Join(dir, "tasks.json"),
 		tasks: make(map[string]TaskRecord),
+		jobs:  make(map[string]AgentJob),
+		items: make(map[string]map[string]AgentJobItem),
 	}
 	if err := rt.load(); err != nil {
 		return nil, err
@@ -159,18 +165,38 @@ func (r *FileTaskRuntime) load() error {
 	if state.Tasks == nil {
 		state.Tasks = make(map[string]TaskRecord)
 	}
+	if state.Jobs == nil {
+		state.Jobs = make(map[string]AgentJob)
+	}
+	if state.Items == nil {
+		state.Items = make(map[string]map[string]AgentJobItem)
+	}
 	r.tasks = state.Tasks
+	r.jobs = state.Jobs
+	r.items = state.Items
 	return nil
 }
 
 func (r *FileTaskRuntime) persist() error {
 	state := fileTaskRuntimeState{
 		Tasks: make(map[string]TaskRecord, len(r.tasks)),
+		Jobs:  make(map[string]AgentJob, len(r.jobs)),
+		Items: make(map[string]map[string]AgentJobItem, len(r.items)),
 	}
 	for id, task := range r.tasks {
 		cp := task
 		cp.DependsOn = append([]string(nil), task.DependsOn...)
 		state.Tasks[id] = cp
+	}
+	for id, job := range r.jobs {
+		state.Jobs[id] = job
+	}
+	for jobID, byItem := range r.items {
+		cpMap := make(map[string]AgentJobItem, len(byItem))
+		for itemID, item := range byItem {
+			cpMap[itemID] = item
+		}
+		state.Items[jobID] = cpMap
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -184,4 +210,131 @@ func (r *FileTaskRuntime) persist() error {
 		return fmt.Errorf("replace task runtime state: %w", err)
 	}
 	return nil
+}
+
+func (r *FileTaskRuntime) UpsertJob(_ context.Context, job AgentJob) error {
+	if job.ID == "" {
+		return errors.New("job id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	existing, ok := r.jobs[job.ID]
+	if ok {
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = existing.CreatedAt
+		}
+		if !canTransitionJobStatus(existing.Status, job.Status) {
+			return ErrInvalidJobTransition
+		}
+		job.Revision = existing.Revision + 1
+	} else {
+		if job.CreatedAt.IsZero() {
+			job.CreatedAt = now
+		}
+		if job.Status == "" {
+			job.Status = JobPending
+		}
+		job.Revision = 1
+	}
+	job.UpdatedAt = now
+	r.jobs[job.ID] = job
+	return r.persist()
+}
+
+func (r *FileTaskRuntime) GetJob(_ context.Context, id string) (*AgentJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	job, ok := r.jobs[id]
+	if !ok {
+		return nil, ErrJobNotFound
+	}
+	cp := job
+	return &cp, nil
+}
+
+func (r *FileTaskRuntime) ListJobs(_ context.Context, query JobQuery) ([]AgentJob, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]AgentJob, 0, len(r.jobs))
+	for _, j := range r.jobs {
+		if query.AgentName != "" && j.AgentName != query.AgentName {
+			continue
+		}
+		if query.Status != "" && j.Status != query.Status {
+			continue
+		}
+		out = append(out, j)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if query.Limit > 0 && len(out) > query.Limit {
+		out = out[:query.Limit]
+	}
+	return out, nil
+}
+
+func (r *FileTaskRuntime) UpsertJobItem(_ context.Context, item AgentJobItem) error {
+	if item.JobID == "" || item.ItemID == "" {
+		return errors.New("job_id and item_id are required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.jobs[item.JobID]; !ok {
+		return ErrJobNotFound
+	}
+	if _, ok := r.items[item.JobID]; !ok {
+		r.items[item.JobID] = make(map[string]AgentJobItem)
+	}
+	now := time.Now()
+	existing, ok := r.items[item.JobID][item.ItemID]
+	if ok {
+		if !canTransitionJobStatus(existing.Status, item.Status) {
+			return ErrInvalidJobTransition
+		}
+		if item.CreatedAt.IsZero() {
+			item.CreatedAt = existing.CreatedAt
+		}
+	} else if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	if item.Status == "" {
+		item.Status = JobPending
+	}
+	item.UpdatedAt = now
+	r.items[item.JobID][item.ItemID] = item
+	return r.persist()
+}
+
+func (r *FileTaskRuntime) ListJobItems(_ context.Context, query JobItemQuery) ([]AgentJobItem, error) {
+	if query.JobID == "" {
+		return nil, errors.New("job_id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	byJob, ok := r.items[query.JobID]
+	if !ok {
+		return []AgentJobItem{}, nil
+	}
+	out := make([]AgentJobItem, 0, len(byJob))
+	for _, item := range byJob {
+		if query.Status != "" && item.Status != query.Status {
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].ItemID < out[j].ItemID
+		}
+		return out[i].CreatedAt.Before(out[j].CreatedAt)
+	})
+	if query.Limit > 0 && len(out) > query.Limit {
+		out = out[:query.Limit]
+	}
+	return out, nil
 }
