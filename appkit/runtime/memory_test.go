@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -184,5 +185,104 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	}
 	if searchResp.Count != 1 || len(searchResp.Items) != 1 {
 		t.Fatalf("unexpected search result: %+v", searchResp)
+	}
+}
+
+func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	ctx := context.Background()
+	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	if !ok {
+		t.Fatal("ingest_memory_trace not registered")
+	}
+	_, readRecord, ok := reg.Get("read_memory_record")
+	if !ok {
+		t.Fatal("read_memory_record not registered")
+	}
+
+	trace := `{"type":"message","role":"user","content":"Need sqlite backend"}
+{"type":"message","role":"assistant","content":"Will implement sqlite store"}`
+	input, _ := json.Marshal(map[string]any{
+		"source_path": "trace/session.jsonl",
+		"trace":       trace,
+		"target_path": "team/memory/trace-summary.md",
+		"tags":        []string{"trace", "decision"},
+	})
+	raw, err := ingestTrace(ctx, input)
+	if err != nil {
+		t.Fatalf("ingest_memory_trace failed: %v", err)
+	}
+	var resp struct {
+		Status string `json:"status"`
+		Items  int    `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode ingest response: %v", err)
+	}
+	if resp.Status != "ingested" || resp.Items != 2 {
+		t.Fatalf("unexpected ingest response: %+v", resp)
+	}
+
+	recordRaw, err := readRecord(ctx, json.RawMessage(`{"path":"team/memory/trace-summary.md"}`))
+	if err != nil {
+		t.Fatalf("read_memory_record failed: %v", err)
+	}
+	var record port.MemoryRecord
+	if err := json.Unmarshal(recordRaw, &record); err != nil {
+		t.Fatalf("decode read_memory_record: %v", err)
+	}
+	if !strings.Contains(record.Content, "Need sqlite backend") {
+		t.Fatalf("expected normalized trace content, got: %q", record.Content)
+	}
+	if len(record.Citation.Entries) != 1 || record.Citation.Entries[0].Path != "trace/session.jsonl" {
+		t.Fatalf("unexpected citation: %+v", record.Citation)
+	}
+}
+
+func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "memory.db")
+	store, err := NewSQLiteMemoryStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteMemoryStore: %v", err)
+	}
+	if closer, ok := store.(interface{ Close() error }); ok {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+	ctx := context.Background()
+
+	_, err = store.Upsert(ctx, port.MemoryRecord{
+		Path:    "team/decision.md",
+		Content: "Use sqlite memory backend",
+		Tags:    []string{"state", "sqlite"},
+	})
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	got, err := store.GetByPath(ctx, "team/decision.md")
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if got.Summary == "" {
+		t.Fatal("expected summary to be generated")
+	}
+
+	items, err := store.Search(ctx, port.MemoryQuery{Query: "sqlite", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(items) != 1 || !strings.HasSuffix(strings.ReplaceAll(items[0].Path, "\\", "/"), "team/decision.md") {
+		t.Fatalf("unexpected search result: %+v", items)
+	}
+
+	if err := store.DeleteByPath(ctx, "team/decision.md"); err != nil {
+		t.Fatalf("DeleteByPath: %v", err)
+	}
+	if _, err := store.GetByPath(ctx, "team/decision.md"); err == nil {
+		t.Fatal("expected GetByPath to fail after delete")
 	}
 }

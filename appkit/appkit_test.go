@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
@@ -17,7 +18,6 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
-	rt "github.com/mossagents/moss/appkit/runtime"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
@@ -261,6 +261,9 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
+	t.Cleanup(func() {
+		_ = k.Shutdown(context.Background())
+	})
 
 	tools := k.ToolRegistry().List()
 	toolNames := make(map[string]bool, len(tools))

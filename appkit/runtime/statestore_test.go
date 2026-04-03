@@ -121,3 +121,86 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 		t.Fatalf("expected execution_event kind, got %q", page.Items[0].Kind)
 	}
 }
+
+func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
+	now := time.Now().UTC()
+	mem, ok := StateEntryFromMemory(port.MemoryRecord{
+		ID:        "m-1",
+		Path:      "team/decision.md",
+		Content:   "sqlite backend selected",
+		Summary:   "decision",
+		CreatedAt: now.Add(-time.Minute),
+		UpdatedAt: now,
+	})
+	if !ok {
+		t.Fatal("expected memory entry")
+	}
+	if mem.Kind != StateKindMemory {
+		t.Fatalf("expected memory kind, got %q", mem.Kind)
+	}
+
+	job, ok := StateEntryFromJob(port.AgentJob{
+		ID:        "job-1",
+		AgentName: "worker",
+		Goal:      "process data",
+		Status:    port.JobRunning,
+		CreatedAt: now.Add(-time.Minute),
+		UpdatedAt: now,
+	})
+	if !ok {
+		t.Fatal("expected job entry")
+	}
+	if job.Kind != StateKindJob {
+		t.Fatalf("expected job kind, got %q", job.Kind)
+	}
+
+	item, ok := StateEntryFromJobItem(port.AgentJobItem{
+		JobID:     "job-1",
+		ItemID:    "item-1",
+		Status:    port.JobCompleted,
+		Executor:  "agent-a",
+		CreatedAt: now.Add(-time.Minute),
+		UpdatedAt: now,
+	})
+	if !ok {
+		t.Fatal("expected job item entry")
+	}
+	if item.Kind != StateKindJobItem {
+		t.Fatalf("expected job item kind, got %q", item.Kind)
+	}
+}
+
+func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
+	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewStateCatalog: %v", err)
+	}
+	wrapped := WrapTaskRuntime(port.NewMemoryTaskRuntime(), catalog)
+	jobRuntime, ok := wrapped.(port.JobRuntime)
+	if !ok {
+		t.Fatal("expected wrapped runtime to implement JobRuntime")
+	}
+	ctx := context.Background()
+	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+		ID:        "job-x",
+		AgentName: "worker",
+		Goal:      "do work",
+		Status:    port.JobPending,
+	}); err != nil {
+		t.Fatalf("UpsertJob: %v", err)
+	}
+	if err := jobRuntime.UpsertJobItem(ctx, port.AgentJobItem{
+		JobID:  "job-x",
+		ItemID: "item-x",
+		Status: port.JobPending,
+	}); err != nil {
+		t.Fatalf("UpsertJobItem: %v", err)
+	}
+	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindJob, StateKindJobItem}})
+	if err != nil {
+		t.Fatalf("catalog query: %v", err)
+	}
+	if len(page.Items) < 2 {
+		t.Fatalf("expected indexed job/job_item entries, got %+v", page.Items)
+	}
+}

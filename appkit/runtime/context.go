@@ -17,6 +17,19 @@ import (
 const contextStateKey kernel.ExtensionStateKey = "context.state"
 const offloadStateKey kernel.ExtensionStateKey = "compact.state"
 
+type contextFragmentKind string
+
+const (
+	contextFragmentDialog      contextFragmentKind = "dialog"
+	contextFragmentAgentsMD    contextFragmentKind = "agents_md"
+	contextFragmentSkill       contextFragmentKind = "skill"
+	contextFragmentEnvironment contextFragmentKind = "environment"
+	contextFragmentSubagent    contextFragmentKind = "subagent_notification"
+	contextFragmentShell       contextFragmentKind = "user_shell_command"
+	contextFragmentAborted     contextFragmentKind = "turn_aborted"
+	contextFragmentOther       contextFragmentKind = "other"
+)
+
 type contextState struct {
 	store                    session.SessionStore
 	manager                  session.Manager
@@ -312,7 +325,7 @@ func buildSummary(ctx context.Context, llm port.LLM, msgs []port.Message) string
 		},
 	}
 	for _, m := range msgs {
-		if m.Role == port.RoleSystem {
+		if !includeMessageInMemorySummary(m) {
 			continue
 		}
 		reqMsgs = append(reqMsgs, m)
@@ -325,6 +338,39 @@ func buildSummary(ctx context.Context, llm port.LLM, msgs []port.Message) string
 		return ""
 	}
 	return strings.TrimSpace(resp.Message.Content)
+}
+
+func includeMessageInMemorySummary(msg port.Message) bool {
+	kind := classifyContextFragment(msg)
+	switch kind {
+	case contextFragmentAgentsMD, contextFragmentSkill:
+		return false
+	default:
+		return true
+	}
+}
+
+func classifyContextFragment(msg port.Message) contextFragmentKind {
+	content := strings.TrimSpace(strings.ToLower(msg.Content))
+	if msg.Role != port.RoleSystem {
+		return contextFragmentDialog
+	}
+	switch {
+	case strings.Contains(content, "<agents_md>"):
+		return contextFragmentAgentsMD
+	case strings.Contains(content, "<skill>"):
+		return contextFragmentSkill
+	case strings.Contains(content, "<environment_context>"):
+		return contextFragmentEnvironment
+	case strings.Contains(content, "<subagent_notification>"):
+		return contextFragmentSubagent
+	case strings.Contains(content, "<user_shell_command>"):
+		return contextFragmentShell
+	case strings.Contains(content, "<turn_aborted>"):
+		return contextFragmentAborted
+	default:
+		return contextFragmentOther
+	}
 }
 
 func compactWithSummary(

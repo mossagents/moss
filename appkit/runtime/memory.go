@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
@@ -55,6 +57,13 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		}
 		return RegisterMemoryTools(k.ToolRegistry(), st.workspace, st.store)
 	})
+	bridge.OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
+		closer, ok := st.store.(io.Closer)
+		if !ok || closer == nil {
+			return nil
+		}
+		return closer.Close()
+	})
 	bridge.OnSystemPrompt(220, func(_ *kernel.Kernel) string {
 		if st.workspace == nil {
 			return ""
@@ -82,6 +91,7 @@ func RegisterMemoryTools(reg tool.Registry, ws port.Workspace, store port.Memory
 		{readMemoryRecordSpec, readMemoryRecordHandler(store)},
 		{writeMemoryRecordSpec, writeMemoryRecordHandler(store)},
 		{searchMemoriesSpec, searchMemoriesHandler(store)},
+		{ingestMemoryTraceSpec, ingestMemoryTraceHandler(store)},
 	}
 	for _, t := range tools {
 		if _, _, exists := reg.Get(t.spec.Name); exists {
@@ -186,6 +196,23 @@ var searchMemoriesSpec = tool.ToolSpec{
 		}
 	}`),
 	Risk:         tool.RiskLow,
+	Capabilities: []string{"memory"},
+}
+
+var ingestMemoryTraceSpec = tool.ToolSpec{
+	Name:        "ingest_memory_trace",
+	Description: "Normalize conversation/tool trace content and persist as a structured memory record.",
+	InputSchema: json.RawMessage(`{
+		"type":"object",
+		"properties":{
+			"source_path":{"type":"string","description":"Trace source path"},
+			"trace":{"type":"string","description":"Raw trace text (json array or jsonl)"},
+			"target_path":{"type":"string","description":"Memory target path"},
+			"tags":{"type":"array","items":{"type":"string"}}
+		},
+		"required":["source_path","trace","target_path"]
+	}`),
+	Risk:         tool.RiskMedium,
 	Capabilities: []string{"memory"},
 }
 
@@ -318,6 +345,49 @@ func searchMemoriesHandler(store port.MemoryStore) tool.ToolHandler {
 		return json.Marshal(map[string]any{
 			"count": len(items),
 			"items": items,
+		})
+	}
+}
+
+func ingestMemoryTraceHandler(store port.MemoryStore) tool.ToolHandler {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in struct {
+			SourcePath string   `json:"source_path"`
+			Trace      string   `json:"trace"`
+			TargetPath string   `json:"target_path"`
+			Tags       []string `json:"tags"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("invalid input: %w", err)
+		}
+		items, err := normalizeTraceItems(in.Trace)
+		if err != nil {
+			return nil, err
+		}
+		content := strings.Join(items, "\n")
+		record, err := store.Upsert(ctx, port.MemoryRecord{
+			Path:    in.TargetPath,
+			Content: content,
+			Summary: summarizeMemoryContent(content),
+			Tags:    in.Tags,
+			Citation: port.MemoryCitation{
+				Entries: []port.MemoryCitationEntry{
+					{
+						Path:      strings.TrimSpace(in.SourcePath),
+						LineStart: 1,
+						LineEnd:   len(strings.Split(strings.TrimSpace(in.Trace), "\n")),
+						Note:      "normalized from trace input",
+					},
+				},
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"status": "ingested",
+			"record": record,
+			"items":  len(items),
 		})
 	}
 }

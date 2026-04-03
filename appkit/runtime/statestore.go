@@ -30,6 +30,9 @@ const (
 	StateKindCheckpoint     StateKind = "checkpoint"
 	StateKindChange         StateKind = "change"
 	StateKindTask           StateKind = "task"
+	StateKindJob            StateKind = "job"
+	StateKindJobItem        StateKind = "job_item"
+	StateKindMemory         StateKind = "memory"
 	StateKindExecutionEvent StateKind = "execution_event"
 )
 
@@ -656,6 +659,91 @@ func StateEntryFromTask(task port.TaskRecord) (StateEntry, bool) {
 	}, true
 }
 
+func StateEntryFromJob(job port.AgentJob) (StateEntry, bool) {
+	if strings.TrimSpace(job.ID) == "" {
+		return StateEntry{}, false
+	}
+	title := strings.TrimSpace(job.Goal)
+	if title == "" {
+		title = job.ID
+	}
+	sortTime := job.UpdatedAt
+	if sortTime.IsZero() {
+		sortTime = job.CreatedAt
+	}
+	return StateEntry{
+		Kind:       StateKindJob,
+		RecordID:   job.ID,
+		Status:     string(job.Status),
+		Title:      title,
+		Summary:    strings.TrimSpace(job.AgentName),
+		SearchText: normalizeStateText(job.ID, job.AgentName, job.Goal, string(job.Status)),
+		SortTime:   sortTime.UTC(),
+		CreatedAt:  job.CreatedAt.UTC(),
+		UpdatedAt:  job.UpdatedAt.UTC(),
+		Metadata: marshalStateMetadata(map[string]any{
+			"agent_name": job.AgentName,
+			"revision":   job.Revision,
+		}),
+	}, true
+}
+
+func StateEntryFromJobItem(item port.AgentJobItem) (StateEntry, bool) {
+	if strings.TrimSpace(item.JobID) == "" || strings.TrimSpace(item.ItemID) == "" {
+		return StateEntry{}, false
+	}
+	sortTime := item.UpdatedAt
+	if sortTime.IsZero() {
+		sortTime = item.CreatedAt
+	}
+	recordID := strings.TrimSpace(item.JobID) + ":" + strings.TrimSpace(item.ItemID)
+	return StateEntry{
+		Kind:       StateKindJobItem,
+		RecordID:   recordID,
+		Status:     string(item.Status),
+		Title:      firstNonEmpty(item.ItemID, recordID),
+		Summary:    strings.TrimSpace(item.Executor),
+		SearchText: normalizeStateText(item.JobID, item.ItemID, item.Executor, item.Result, item.Error, string(item.Status)),
+		SortTime:   sortTime.UTC(),
+		CreatedAt:  item.CreatedAt.UTC(),
+		UpdatedAt:  item.UpdatedAt.UTC(),
+		Metadata: marshalStateMetadata(map[string]any{
+			"job_id":   item.JobID,
+			"item_id":  item.ItemID,
+			"executor": item.Executor,
+			"result":   item.Result,
+			"error":    item.Error,
+		}),
+	}, true
+}
+
+func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
+	if strings.TrimSpace(record.Path) == "" {
+		return StateEntry{}, false
+	}
+	sortTime := record.UpdatedAt
+	if sortTime.IsZero() {
+		sortTime = record.CreatedAt
+	}
+	return StateEntry{
+		Kind:       StateKindMemory,
+		RecordID:   strings.TrimSpace(record.Path),
+		Status:     "active",
+		Title:      firstNonEmpty(record.Path, record.ID),
+		Summary:    strings.TrimSpace(record.Summary),
+		SearchText: normalizeStateText(record.Path, record.Summary, record.Content),
+		SortTime:   sortTime.UTC(),
+		CreatedAt:  record.CreatedAt.UTC(),
+		UpdatedAt:  record.UpdatedAt.UTC(),
+		Metadata: marshalStateMetadata(map[string]any{
+			"id":       record.ID,
+			"path":     record.Path,
+			"tags":     append([]string(nil), record.Tags...),
+			"citation": record.Citation,
+		}),
+	}, true
+}
+
 func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
 	recordID := strings.TrimSpace(event.CallID)
 	if recordID == "" {
@@ -828,6 +916,58 @@ func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string,
 		r.catalog.BestEffortUpsert(entry)
 	}
 	return task, nil
+}
+
+func (r *indexedTaskRuntime) UpsertJob(ctx context.Context, job port.AgentJob) error {
+	jobRuntime, ok := r.inner.(port.JobRuntime)
+	if !ok {
+		return fmt.Errorf("job runtime is not supported by wrapped task runtime")
+	}
+	if err := jobRuntime.UpsertJob(ctx, job); err != nil {
+		return err
+	}
+	if entry, ok := StateEntryFromJob(job); ok {
+		r.catalog.BestEffortUpsert(entry)
+	}
+	return nil
+}
+
+func (r *indexedTaskRuntime) GetJob(ctx context.Context, id string) (*port.AgentJob, error) {
+	jobRuntime, ok := r.inner.(port.JobRuntime)
+	if !ok {
+		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
+	}
+	return jobRuntime.GetJob(ctx, id)
+}
+
+func (r *indexedTaskRuntime) ListJobs(ctx context.Context, query port.JobQuery) ([]port.AgentJob, error) {
+	jobRuntime, ok := r.inner.(port.JobRuntime)
+	if !ok {
+		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
+	}
+	return jobRuntime.ListJobs(ctx, query)
+}
+
+func (r *indexedTaskRuntime) UpsertJobItem(ctx context.Context, item port.AgentJobItem) error {
+	jobRuntime, ok := r.inner.(port.JobRuntime)
+	if !ok {
+		return fmt.Errorf("job runtime is not supported by wrapped task runtime")
+	}
+	if err := jobRuntime.UpsertJobItem(ctx, item); err != nil {
+		return err
+	}
+	if entry, ok := StateEntryFromJobItem(item); ok {
+		r.catalog.BestEffortUpsert(entry)
+	}
+	return nil
+}
+
+func (r *indexedTaskRuntime) ListJobItems(ctx context.Context, query port.JobItemQuery) ([]port.AgentJobItem, error) {
+	jobRuntime, ok := r.inner.(port.JobRuntime)
+	if !ok {
+		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
+	}
+	return jobRuntime.ListJobItems(ctx, query)
 }
 
 type stateCatalogObserver struct {

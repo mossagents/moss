@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
@@ -176,6 +177,43 @@ func WithPersistentMemories(memoriesDir string) Extension {
 		}
 		ws := sandbox.NewLocalWorkspace(sb)
 		runtime.WithMemoryWorkspace(ws)(k)
-		return runtime.RegisterMemoryToolsCompat(k.ToolRegistry(), ws)
+		sqlitePath := filepath.Join(absDir, ".moss", "memory.db")
+		store, err := runtime.NewSQLiteMemoryStore(sqlitePath)
+		if err != nil {
+			return fmt.Errorf("memory sqlite store: %w", err)
+		}
+		runtime.WithMemoryStore(store)(k)
+		return runtime.RegisterMemoryTools(k.ToolRegistry(), ws, store)
+	})
+}
+
+// WithPersistentMemoriesSQLite allows explicit sqlite-backed structured memory store path.
+func WithPersistentMemoriesSQLite(memoriesDir string, sqlitePath string) Extension {
+	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		if strings.TrimSpace(memoriesDir) == "" {
+			return fmt.Errorf("memories dir is empty")
+		}
+		absDir, err := filepath.Abs(memoriesDir)
+		if err != nil {
+			return fmt.Errorf("resolve memories dir: %w", err)
+		}
+		if err := os.MkdirAll(absDir, 0755); err != nil {
+			return fmt.Errorf("create memories dir: %w", err)
+		}
+		sb, err := sandbox.NewLocal(absDir)
+		if err != nil {
+			return fmt.Errorf("memory sandbox: %w", err)
+		}
+		ws := sandbox.NewLocalWorkspace(sb)
+		runtime.WithMemoryWorkspace(ws)(k)
+		if strings.TrimSpace(sqlitePath) == "" {
+			sqlitePath = filepath.Join(absDir, ".moss", "memory.db")
+		}
+		store, err := runtime.NewSQLiteMemoryStore(sqlitePath)
+		if err != nil {
+			return fmt.Errorf("memory sqlite store: %w", err)
+		}
+		runtime.WithMemoryStore(store)(k)
+		return runtime.RegisterMemoryTools(k.ToolRegistry(), ws, store)
 	})
 }
