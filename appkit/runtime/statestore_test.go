@@ -204,3 +204,41 @@ func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
 		t.Fatalf("expected indexed job/job_item entries, got %+v", page.Items)
 	}
 }
+
+func TestIndexedTaskRuntime_AtomicJobRuntimeMethods(t *testing.T) {
+	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewStateCatalog: %v", err)
+	}
+	wrapped := WrapTaskRuntime(port.NewMemoryTaskRuntime(), catalog)
+	jobRuntime, ok := wrapped.(port.JobRuntime)
+	if !ok {
+		t.Fatal("expected wrapped runtime to implement JobRuntime")
+	}
+	atomicRuntime, ok := wrapped.(port.AtomicJobRuntime)
+	if !ok {
+		t.Fatal("expected wrapped runtime to implement AtomicJobRuntime")
+	}
+	ctx := context.Background()
+	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+		ID:        "job-atomic",
+		AgentName: "worker",
+		Goal:      "atomic",
+		Status:    port.JobPending,
+	}); err != nil {
+		t.Fatalf("UpsertJob: %v", err)
+	}
+	if _, err := atomicRuntime.MarkJobItemRunning(ctx, "job-atomic", "item-1", "exec-a"); err != nil {
+		t.Fatalf("MarkJobItemRunning: %v", err)
+	}
+	if _, err := atomicRuntime.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-a", port.JobFailed, "", "boom"); err != nil {
+		t.Fatalf("ReportJobItemResult: %v", err)
+	}
+	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindJobItem}, Text: "item-1"})
+	if err != nil {
+		t.Fatalf("catalog query: %v", err)
+	}
+	if len(page.Items) == 0 {
+		t.Fatal("expected indexed atomic job item entry")
+	}
+}

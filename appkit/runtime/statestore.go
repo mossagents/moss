@@ -970,6 +970,36 @@ func (r *indexedTaskRuntime) ListJobItems(ctx context.Context, query port.JobIte
 	return jobRuntime.ListJobItems(ctx, query)
 }
 
+func (r *indexedTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*port.AgentJobItem, error) {
+	atomicRuntime, ok := r.inner.(port.AtomicJobRuntime)
+	if !ok {
+		return nil, fmt.Errorf("atomic job runtime is not supported by wrapped task runtime")
+	}
+	item, err := atomicRuntime.MarkJobItemRunning(ctx, jobID, itemID, executor)
+	if err != nil {
+		return nil, err
+	}
+	if entry, ok := StateEntryFromJobItem(*item); ok {
+		r.catalog.BestEffortUpsert(entry)
+	}
+	return item, nil
+}
+
+func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status port.AgentJobStatus, result string, errMsg string) (*port.AgentJobItem, error) {
+	atomicRuntime, ok := r.inner.(port.AtomicJobRuntime)
+	if !ok {
+		return nil, fmt.Errorf("atomic job runtime is not supported by wrapped task runtime")
+	}
+	item, err := atomicRuntime.ReportJobItemResult(ctx, jobID, itemID, executor, status, result, errMsg)
+	if err != nil {
+		return nil, err
+	}
+	if entry, ok := StateEntryFromJobItem(*item); ok {
+		r.catalog.BestEffortUpsert(entry)
+	}
+	return item, nil
+}
+
 type stateCatalogObserver struct {
 	port.NoOpObserver
 	catalog *StateCatalog

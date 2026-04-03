@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -55,7 +56,7 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		if st.store == nil {
 			st.store = NewWorkspaceMemoryStore(st.workspace)
 		}
-		return RegisterMemoryTools(k.ToolRegistry(), st.workspace, st.store)
+		return RegisterMemoryToolsWithRuntime(k.ToolRegistry(), st.workspace, st.store, k.TaskRuntime())
 	})
 	bridge.OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
 		closer, ok := st.store.(io.Closer)
@@ -74,6 +75,10 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 }
 
 func RegisterMemoryTools(reg tool.Registry, ws port.Workspace, store port.MemoryStore) error {
+	return RegisterMemoryToolsWithRuntime(reg, ws, store, nil)
+}
+
+func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws port.Workspace, store port.MemoryStore, runtime port.TaskRuntime) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -91,7 +96,7 @@ func RegisterMemoryTools(reg tool.Registry, ws port.Workspace, store port.Memory
 		{readMemoryRecordSpec, readMemoryRecordHandler(store)},
 		{writeMemoryRecordSpec, writeMemoryRecordHandler(store)},
 		{searchMemoriesSpec, searchMemoriesHandler(store)},
-		{ingestMemoryTraceSpec, ingestMemoryTraceHandler(store)},
+		{ingestMemoryTraceSpec, ingestMemoryTraceHandler(store, runtime)},
 	}
 	for _, t := range tools {
 		if _, _, exists := reg.Get(t.spec.Name); exists {
@@ -208,7 +213,10 @@ var ingestMemoryTraceSpec = tool.ToolSpec{
 			"source_path":{"type":"string","description":"Trace source path"},
 			"trace":{"type":"string","description":"Raw trace text (json array or jsonl)"},
 			"target_path":{"type":"string","description":"Memory target path"},
-			"tags":{"type":"array","items":{"type":"string"}}
+			"tags":{"type":"array","items":{"type":"string"}},
+			"job_id":{"type":"string","description":"Optional job id for atomic item reporting"},
+			"item_id":{"type":"string","description":"Optional item id for atomic item reporting"},
+			"executor":{"type":"string","description":"Optional executor id for atomic item reporting"}
 		},
 		"required":["source_path","trace","target_path"]
 	}`),
@@ -349,13 +357,16 @@ func searchMemoriesHandler(store port.MemoryStore) tool.ToolHandler {
 	}
 }
 
-func ingestMemoryTraceHandler(store port.MemoryStore) tool.ToolHandler {
+func ingestMemoryTraceHandler(store port.MemoryStore, runtime port.TaskRuntime) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			SourcePath string   `json:"source_path"`
 			Trace      string   `json:"trace"`
 			TargetPath string   `json:"target_path"`
 			Tags       []string `json:"tags"`
+			JobID      string   `json:"job_id"`
+			ItemID     string   `json:"item_id"`
+			Executor   string   `json:"executor"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
@@ -384,10 +395,36 @@ func ingestMemoryTraceHandler(store port.MemoryStore) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
+		atomicUpdated := false
+		if strings.TrimSpace(in.JobID) != "" || strings.TrimSpace(in.ItemID) != "" || strings.TrimSpace(in.Executor) != "" {
+			atomicRuntime, ok := runtime.(port.AtomicJobRuntime)
+			if !ok {
+				return nil, fmt.Errorf("atomic job runtime is not available")
+			}
+			if strings.TrimSpace(in.JobID) == "" || strings.TrimSpace(in.ItemID) == "" || strings.TrimSpace(in.Executor) == "" {
+				return nil, fmt.Errorf("job_id, item_id and executor are required together")
+			}
+			if _, err := atomicRuntime.ReportJobItemResult(
+				ctx,
+				strings.TrimSpace(in.JobID),
+				strings.TrimSpace(in.ItemID),
+				strings.TrimSpace(in.Executor),
+				port.JobCompleted,
+				fmt.Sprintf("ingested %d normalized trace items", len(items)),
+				"",
+			); err != nil {
+				if errors.Is(err, port.ErrJobItemExecutorMismatch) || errors.Is(err, port.ErrInvalidJobTransition) {
+					return nil, err
+				}
+				return nil, fmt.Errorf("atomic job item report failed: %w", err)
+			}
+			atomicUpdated = true
+		}
 		return json.Marshal(map[string]any{
-			"status": "ingested",
-			"record": record,
-			"items":  len(items),
+			"status":         "ingested",
+			"record":         record,
+			"items":          len(items),
+			"atomic_updated": atomicUpdated,
 		})
 	}
 }

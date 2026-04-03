@@ -183,7 +183,7 @@ func WithPersistentMemories(memoriesDir string) Extension {
 			return fmt.Errorf("memory sqlite store: %w", err)
 		}
 		runtime.WithMemoryStore(store)(k)
-		return runtime.RegisterMemoryTools(k.ToolRegistry(), ws, store)
+		return runtime.RegisterMemoryToolsWithRuntime(k.ToolRegistry(), ws, store, k.TaskRuntime())
 	})
 }
 
@@ -214,6 +214,6 @@ func WithPersistentMemoriesSQLite(memoriesDir string, sqlitePath string) Extensi
 			return fmt.Errorf("memory sqlite store: %w", err)
 		}
 		runtime.WithMemoryStore(store)(k)
-		return runtime.RegisterMemoryTools(k.ToolRegistry(), ws, store)
+		return runtime.RegisterMemoryToolsWithRuntime(k.ToolRegistry(), ws, store, k.TaskRuntime())
 	})
 }

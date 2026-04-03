@@ -286,3 +286,51 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 		t.Fatal("expected GetByPath to fail after delete")
 	}
 }
+
+func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	taskRuntime := port.NewMemoryTaskRuntime()
+	if err := taskRuntime.UpsertJob(context.Background(), port.AgentJob{
+		ID:        "job-mem",
+		AgentName: "worker",
+		Goal:      "summarize",
+		Status:    port.JobPending,
+	}); err != nil {
+		t.Fatalf("UpsertJob: %v", err)
+	}
+	if _, err := taskRuntime.MarkJobItemRunning(context.Background(), "job-mem", "item-1", "exec-a"); err != nil {
+		t.Fatalf("MarkJobItemRunning: %v", err)
+	}
+	if err := RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), taskRuntime); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	ctx := context.Background()
+	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	if !ok {
+		t.Fatal("ingest_memory_trace not registered")
+	}
+	trace := `[{"type":"message","role":"user","content":"save this"}]`
+	input, _ := json.Marshal(map[string]any{
+		"source_path": "trace/atomic.json",
+		"trace":       trace,
+		"target_path": "team/atomic.md",
+		"job_id":      "job-mem",
+		"item_id":     "item-1",
+		"executor":    "exec-a",
+	})
+	raw, err := ingestTrace(ctx, input)
+	if err != nil {
+		t.Fatalf("ingest_memory_trace failed: %v", err)
+	}
+	if !strings.Contains(string(raw), `"atomic_updated":true`) {
+		t.Fatalf("expected atomic update response, got %s", string(raw))
+	}
+	items, err := taskRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: "job-mem"})
+	if err != nil {
+		t.Fatalf("ListJobItems: %v", err)
+	}
+	if len(items) != 1 || items[0].Status != port.JobCompleted {
+		t.Fatalf("expected completed job item, got %+v", items)
+	}
+}
