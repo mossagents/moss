@@ -47,6 +47,12 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 	if err := registerQuery(reg, tracker); err != nil {
 		return err
 	}
+	if err := registerReadAgentTool(reg, tracker); err != nil {
+		return err
+	}
+	if err := registerListAgentsTool(reg, tracker); err != nil {
+		return err
+	}
 	if err := registerListTasks(reg, tracker); err != nil {
 		return err
 	}
@@ -54,6 +60,12 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 		return err
 	}
 	if err := registerUpdateTask(reg, agents, tracker, delegator); err != nil {
+		return err
+	}
+	if err := registerWriteAgentTool(reg, agents, tracker, delegator); err != nil {
+		return err
+	}
+	if err := registerWaitAgentTool(reg, tracker); err != nil {
 		return err
 	}
 	if err := registerTask(reg, agents, tracker, delegator); err != nil {
@@ -206,6 +218,108 @@ func registerQuery(reg tool.Registry, tracker *TaskTracker) error {
 		return json.Marshal(buildTaskResponse(task))
 	}
 
+	return reg.Register(spec, handler)
+}
+
+type readAgentInput struct {
+	Target string `json:"target"`
+}
+
+func registerReadAgentTool(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "read_agent",
+		Description: "读取指定 agent 后台任务状态。target 支持 task_id 或 agent 名称。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"target":{"type":"string","description":"task_id 或 agent 名称"}
+			},
+			"required":["target"]
+		}`),
+		Risk: tool.RiskLow,
+	}
+	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in readAgentInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		task, err := resolveTaskTarget(tracker, in.Target)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"target": task.ID,
+			"task":   task,
+		})
+	}
+	return reg.Register(spec, handler)
+}
+
+type listAgentsInput struct {
+	Status string `json:"status"`
+	Agent  string `json:"agent"`
+	Limit  int    `json:"limit"`
+}
+
+func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "list_agents",
+		Description: "列出后台 agent 任务（兼容控制平面最小能力）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"status":{"type":"string","description":"可选: running|completed|failed|cancelled"},
+				"agent":{"type":"string","description":"可选: 按 agent 名称过滤"},
+				"limit":{"type":"integer","description":"可选: 最大返回条数（默认20，最大100）"}
+			}
+		}`),
+		Risk: tool.RiskLow,
+	}
+	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in listAgentsInput
+		if len(strings.TrimSpace(string(input))) > 0 {
+			if err := json.Unmarshal(input, &in); err != nil {
+				return nil, fmt.Errorf("parse input: %w", err)
+			}
+		}
+		filter := TaskFilter{AgentName: strings.TrimSpace(in.Agent)}
+		if in.Status != "" {
+			status := TaskStatus(strings.TrimSpace(in.Status))
+			switch status {
+			case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+				filter.Status = status
+			default:
+				return nil, fmt.Errorf("invalid status %q", in.Status)
+			}
+		}
+		limit := in.Limit
+		if limit <= 0 {
+			limit = 20
+		}
+		if limit > 100 {
+			limit = 100
+		}
+		tasks := tracker.List(filter)
+		if len(tasks) > limit {
+			tasks = tasks[:limit]
+		}
+		agents := make([]map[string]any, 0, len(tasks))
+		for _, task := range tasks {
+			agents = append(agents, map[string]any{
+				"target":     task.ID,
+				"task_id":    task.ID,
+				"agent":      task.AgentName,
+				"status":     task.Status,
+				"revision":   task.Revision,
+				"goal":       task.Goal,
+				"updated_at": task.UpdatedAt,
+			})
+		}
+		return json.Marshal(map[string]any{
+			"agents": agents,
+			"count":  len(agents),
+		})
+	}
 	return reg.Register(spec, handler)
 }
 
@@ -364,6 +478,182 @@ func registerUpdateTask(reg tool.Registry, agents *Registry, tracker *TaskTracke
 			"revision": updated.Revision,
 			"goal":     updated.Goal,
 		})
+	}
+	return reg.Register(spec, handler)
+}
+
+type writeAgentInput struct {
+	Target      string `json:"target"`
+	Message     string `json:"message"`
+	Interrupt   *bool  `json:"interrupt"`
+	TriggerTurn *bool  `json:"trigger_turn"`
+}
+
+func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
+	spec := tool.ToolSpec{
+		Name:        "write_agent",
+		Description: "向后台 agent 写入后续消息（当前最小实现：通过更新任务触发执行）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"target":{"type":"string","description":"task_id 或 agent 名称"},
+				"message":{"type":"string","description":"后续消息"},
+				"interrupt":{"type":"boolean","description":"是否中断当前执行并立即处理（默认 true）"},
+				"trigger_turn":{"type":"boolean","description":"是否触发执行（默认 true）"}
+			},
+			"required":["target","message"]
+		}`),
+		Risk:         tool.RiskMedium,
+		Capabilities: []string{"delegation"},
+	}
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in writeAgentInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		msg := strings.TrimSpace(in.Message)
+		if msg == "" {
+			return nil, fmt.Errorf("message is required")
+		}
+		triggerTurn := true
+		if in.TriggerTurn != nil {
+			triggerTurn = *in.TriggerTurn
+		}
+		task, err := resolveTaskTarget(tracker, in.Target)
+		if err != nil {
+			return nil, err
+		}
+		if !triggerTurn {
+			return json.Marshal(map[string]any{
+				"target": task.ID,
+				"status": "queued",
+				"note":   "queue-only mode is not yet enabled in runtime; message accepted without immediate execution",
+			})
+		}
+		interrupt := true
+		if in.Interrupt != nil {
+			interrupt = *in.Interrupt
+		}
+		if task.Status == TaskRunning && !interrupt {
+			return json.Marshal(map[string]any{
+				"target": task.ID,
+				"status": "queued",
+				"note":   "task is running and interrupt=false; message queued",
+			})
+		}
+		updated, err := triggerAgentTurn(ctx, agents, tracker, delegator, task, msg)
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]any{
+			"target":    updated.ID,
+			"task_id":   updated.ID,
+			"agent":     updated.AgentName,
+			"status":    updated.Status,
+			"revision":  updated.Revision,
+			"triggered": true,
+		})
+	}
+	return reg.Register(spec, handler)
+}
+
+type waitAgentInput struct {
+	Target         string `json:"target"`
+	TimeoutSeconds int    `json:"timeout_seconds"`
+	PollMillis     int    `json:"poll_millis"`
+}
+
+func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
+	spec := tool.ToolSpec{
+		Name:        "wait_agent",
+		Description: "等待 agent 状态变化或结束（避免高频手动轮询）。",
+		InputSchema: json.RawMessage(`{
+			"type":"object",
+			"properties":{
+				"target":{"type":"string","description":"task_id 或 agent 名称"},
+				"timeout_seconds":{"type":"integer","description":"等待超时秒数，默认30，最大300"},
+				"poll_millis":{"type":"integer","description":"轮询间隔毫秒，默认250，最小50"}
+			},
+			"required":["target"]
+		}`),
+		Risk: tool.RiskLow,
+	}
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in waitAgentInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
+		}
+		task, err := resolveTaskTarget(tracker, in.Target)
+		if err != nil {
+			return nil, err
+		}
+		timeout := in.TimeoutSeconds
+		if timeout <= 0 {
+			timeout = 30
+		}
+		if timeout > 300 {
+			timeout = 300
+		}
+		poll := in.PollMillis
+		if poll <= 0 {
+			poll = 250
+		}
+		if poll < 50 {
+			poll = 50
+		}
+		startRevision := task.Revision
+		startStatus := task.Status
+		if isTerminalTaskStatus(task.Status) {
+			return json.Marshal(map[string]any{
+				"target":    task.ID,
+				"task_id":   task.ID,
+				"agent":     task.AgentName,
+				"status":    task.Status,
+				"revision":  task.Revision,
+				"changed":   false,
+				"completed": true,
+			})
+		}
+		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
+		for {
+			if time.Now().After(deadline) {
+				current, ok := tracker.Get(task.ID)
+				if !ok {
+					return nil, fmt.Errorf("task %q not found", task.ID)
+				}
+				return json.Marshal(map[string]any{
+					"target":    current.ID,
+					"task_id":   current.ID,
+					"agent":     current.AgentName,
+					"status":    current.Status,
+					"revision":  current.Revision,
+					"changed":   current.Revision != startRevision || current.Status != startStatus,
+					"completed": isTerminalTaskStatus(current.Status),
+					"timed_out": true,
+				})
+			}
+			time.Sleep(time.Duration(poll) * time.Millisecond)
+			current, ok := tracker.Get(task.ID)
+			if !ok {
+				return nil, fmt.Errorf("task %q not found", task.ID)
+			}
+			changed := current.Revision != startRevision || current.Status != startStatus
+			if changed || isTerminalTaskStatus(current.Status) {
+				return json.Marshal(map[string]any{
+					"target":    current.ID,
+					"task_id":   current.ID,
+					"agent":     current.AgentName,
+					"status":    current.Status,
+					"revision":  current.Revision,
+					"changed":   changed,
+					"completed": isTerminalTaskStatus(current.Status),
+					"timed_out": false,
+				})
+			}
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return reg.Register(spec, handler)
 }
@@ -568,6 +858,23 @@ func buildTaskResponse(task *Task) map[string]string {
 	return resp
 }
 
+func resolveTaskTarget(tracker *TaskTracker, target string) (*Task, error) {
+	name := strings.TrimSpace(target)
+	if name == "" {
+		return nil, fmt.Errorf("target is required")
+	}
+	if task, ok := tracker.Get(name); ok {
+		return task, nil
+	}
+	normalized := strings.TrimPrefix(name, "agent:")
+	filter := TaskFilter{AgentName: normalized}
+	candidates := tracker.List(filter)
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("target %q not found", target)
+	}
+	return candidates[0], nil
+}
+
 func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
 	cfg, ok := agents.Get(agentName)
 	if !ok {
@@ -668,6 +975,33 @@ func updateBackgroundTask(
 	}
 	tracker.CancelIf(taskID, task.Revision, "restarted with updated instructions")
 	return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
+}
+
+func triggerAgentTurn(
+	ctx context.Context,
+	agents *Registry,
+	tracker *TaskTracker,
+	delegator Delegator,
+	task *Task,
+	message string,
+) (*Task, error) {
+	switch task.Status {
+	case TaskRunning:
+		return updateBackgroundTask(ctx, agents, tracker, delegator, task.ID, message)
+	case TaskCompleted, TaskFailed, TaskCancelled:
+		newGoal := strings.TrimSpace(task.Goal + "\n\nFollow-up update: " + strings.TrimSpace(message))
+		createdAt := task.CreatedAt
+		if createdAt.IsZero() {
+			createdAt = time.Now()
+		}
+		return launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, newGoal, createdAt)
+	default:
+		return nil, fmt.Errorf("task %q is not in a triggerable state", task.ID)
+	}
+}
+
+func isTerminalTaskStatus(status TaskStatus) bool {
+	return status == TaskCompleted || status == TaskFailed || status == TaskCancelled
 }
 
 type planTaskInput struct {

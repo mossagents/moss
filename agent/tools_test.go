@@ -730,3 +730,226 @@ func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRegisterToolsWithDeps_AddsP1ControlPlaneTools(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	reg := tool.NewRegistry()
+	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"list_agents", "read_agent", "write_agent", "wait_agent"} {
+		if _, _, ok := reg.Get(name); !ok {
+			t.Fatalf("expected tool %q", name)
+		}
+	}
+}
+
+func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+
+	firstStarted := make(chan struct{}, 1)
+	var calls int32
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			n := atomic.AddInt32(&calls, 1)
+			if n == 1 {
+				firstStarted <- struct{}{}
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}
+			return &loop.SessionResult{
+				SessionID:  sess.ID,
+				Success:    true,
+				Output:     "updated: " + sess.Config.Goal,
+				TokensUsed: port.TokenUsage{TotalTokens: 3},
+			}, nil
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, spawnHandler, _ := reg.Get("spawn_agent")
+	_, readHandler, _ := reg.Get("read_agent")
+	_, writeHandler, _ := reg.Get("write_agent")
+
+	spawnInputRaw, _ := json.Marshal(spawnInput{Agent: "worker", Task: "initial"})
+	spawnRaw, err := spawnHandler(context.Background(), spawnInputRaw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spawnResp map[string]string
+	if err := json.Unmarshal(spawnRaw, &spawnResp); err != nil {
+		t.Fatal(err)
+	}
+	taskID := spawnResp["task_id"]
+	if taskID == "" {
+		t.Fatal("missing task_id")
+	}
+	<-firstStarted
+
+	readRaw, err := readHandler(context.Background(), json.RawMessage(`{"target":"`+taskID+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readRaw), `"task_id":"`+taskID+`"`) && !strings.Contains(string(readRaw), `"id":"`+taskID+`"`) {
+		t.Fatalf("unexpected read response: %s", string(readRaw))
+	}
+
+	writeRaw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"`+taskID+`","message":"follow up"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(writeRaw), `"task_id":"`+taskID+`"`) {
+		t.Fatalf("unexpected write response: %s", string(writeRaw))
+	}
+}
+
+func TestWriteAgent_QueueOnlyReturnsQueued(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-queue",
+		AgentName: "worker",
+		Goal:      "running",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue","message":"queued note","trigger_turn":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"status":"queued"`) {
+		t.Fatalf("expected queued response, got %s", string(raw))
+	}
+}
+
+func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-running",
+		AgentName: "worker",
+		Goal:      "running",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-running","message":"do later","interrupt":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"status":"queued"`) {
+		t.Fatalf("expected queued response, got %s", string(raw))
+	}
+}
+
+func TestWriteAgent_TriggerTurnOnCompletedRestartsTask(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-completed",
+		AgentName: "worker",
+		Goal:      "done",
+		Status:    TaskCompleted,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-completed","message":"run again"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"task_id":"t-completed"`) {
+		t.Fatalf("expected same task id in response, got %s", string(raw))
+	}
+}
+
+func TestWaitAgent_ReturnsOnStateChange(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	revision := tracker.Start(&Task{
+		ID:        "t-wait",
+		AgentName: "worker",
+		Goal:      "wait me",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, waitHandler, _ := reg.Get("wait_agent")
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		tracker.CompleteIf("t-wait", revision, "ok", port.TokenUsage{})
+	}()
+	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"t-wait","timeout_seconds":2,"poll_millis":50}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"completed":true`) {
+		t.Fatalf("expected completed=true, got %s", string(raw))
+	}
+}
+
+func TestWaitAgent_TimesOut(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{
+		ID:        "t-timeout",
+		AgentName: "worker",
+		Goal:      "still running",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, waitHandler, _ := reg.Get("wait_agent")
+	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"t-timeout","timeout_seconds":1,"poll_millis":50}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"timed_out":true`) {
+		t.Fatalf("expected timed_out=true, got %s", string(raw))
+	}
+}
