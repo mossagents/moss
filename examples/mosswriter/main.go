@@ -11,9 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 
-	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
@@ -23,7 +21,6 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/presets/deepagent"
 	mosstui "github.com/mossagents/moss/userio/tui"
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -36,18 +33,11 @@ type config struct {
 	prompt string
 }
 
-type subagentFileConfig struct {
-	Description  string   `yaml:"description"`
-	SystemPrompt string   `yaml:"system_prompt"`
-	Tools        []string `yaml:"tools"`
-	MaxSteps     int      `yaml:"max_steps"`
-	TrustLevel   string   `yaml:"trust_level"`
-}
-
 func main() {
-	appconfig.SetAppName(appName)
-	_ = appconfig.EnsureAppDir()
-
+	if err := appkit.InitializeApp(appName, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	cfg := parseFlags()
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
@@ -207,7 +197,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*
 			if err := registerWriterTools(k.ToolRegistry()); err != nil {
 				return err
 			}
-			return loadSubagents(k, filepath.Join(flags.Workspace, "subagents.yaml"))
+			return runtime.LoadSubagentsFromYAML(k, filepath.Join(flags.Workspace, "subagents.yaml"))
 		}),
 	}
 	return deepagent.BuildKernel(ctx, flags, io, &deepCfg)
@@ -218,46 +208,18 @@ func buildSystemPrompt(workspace, trust string) string {
 	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
 }
 
-func loadSubagents(k *kernel.Kernel, path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read subagents file: %w", err)
-	}
-
-	var defs map[string]subagentFileConfig
-	if err := yaml.Unmarshal(data, &defs); err != nil {
-		return fmt.Errorf("parse subagents file: %w", err)
-	}
-
-	reg := runtime.AgentRegistry(k)
-	for name, def := range defs {
-		cfg := agent.AgentConfig{
-			Name:         name,
-			Description:  def.Description,
-			SystemPrompt: strings.TrimSpace(def.SystemPrompt),
-			Tools:        def.Tools,
-			MaxSteps:     def.MaxSteps,
-			TrustLevel:   def.TrustLevel,
-		}
-		if _, exists := reg.Get(cfg.Name); exists {
-			continue
-		}
-		if err := reg.Register(cfg); err != nil {
-			return fmt.Errorf("register subagent %s: %w", name, err)
-		}
-	}
-	return nil
-}
-
 func registerWriterTools(reg tool.Registry) error {
 	for _, entry := range []struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
 	}{
-		{thinkToolSpec, thinkToolHandler()},
+		{
+			runtime.NewThinkToolSpec(
+				runtime.WithThinkToolDescription("Record a short reflection about writing, research gaps, or next steps."),
+				runtime.WithThinkToolCapabilities("thinking", "writing"),
+			),
+			runtime.NewThinkToolHandler("think_tool"),
+		},
 		{makeSlugSpec, makeSlugHandler()},
 		{generateImageBriefSpec, generateImageBriefHandler()},
 	} {
@@ -266,30 +228,6 @@ func registerWriterTools(reg tool.Registry) error {
 		}
 	}
 	return nil
-}
-
-var thinkToolSpec = tool.ToolSpec{
-	Name:         "think_tool",
-	Description:  "Record a short reflection about writing, research gaps, or next steps.",
-	InputSchema:  json.RawMessage(`{"type":"object","properties":{"thought":{"type":"string"}},"required":["thought"]}`),
-	Risk:         tool.RiskLow,
-	Capabilities: []string{"thinking", "writing"},
-}
-
-func thinkToolHandler() tool.ToolHandler {
-	return func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			Thought string `json:"thought"`
-		}
-		if err := json.Unmarshal(input, &params); err != nil {
-			return nil, fmt.Errorf("parse think_tool input: %w", err)
-		}
-		return json.Marshal(map[string]any{
-			"recorded":    true,
-			"thought":     strings.TrimSpace(params.Thought),
-			"recorded_at": time.Now().Format(time.RFC3339),
-		})
-	}
 }
 
 var makeSlugSpec = tool.ToolSpec{

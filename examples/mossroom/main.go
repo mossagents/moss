@@ -18,7 +18,6 @@ import (
 	"net/http"
 
 	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/logging"
 	"golang.org/x/net/websocket"
 )
@@ -27,8 +26,10 @@ import (
 var staticFS embed.FS
 
 func main() {
-	appconfig.SetAppName("mossroom")
-	_ = appconfig.EnsureAppDir()
+	if err := appkit.InitializeApp("mossroom", nil); err != nil {
+		logging.GetLogger().Error("init app", slog.Any("error", err))
+		return
+	}
 
 	flags := appkit.ParseAppFlags()
 

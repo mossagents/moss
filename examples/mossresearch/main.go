@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -36,9 +35,10 @@ type config struct {
 }
 
 func main() {
-	appconfig.SetAppName(appName)
-	_ = appconfig.EnsureAppDir()
-
+	if err := appkit.InitializeApp(appName, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	cfg := parseFlags()
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
@@ -261,36 +261,10 @@ func ensureFinalReport(workspace, output string) error {
 }
 
 func registerResearchTools(reg tool.Registry) error {
-	thinkSpec := tool.ToolSpec{
-		Name:        "think_tool",
-		Description: "Record a short research reflection about what was found, what is missing, and what to do next.",
-		InputSchema: json.RawMessage(`{
-			"type": "object",
-			"properties": {
-				"thought": {"type": "string", "description": "Research reflection or next-step note"}
-			},
-			"required": ["thought"]
-		}`),
-		Risk:         tool.RiskLow,
-		Capabilities: []string{"thinking", "research"},
-	}
-	thinkHandler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var params struct {
-			Thought string `json:"thought"`
-		}
-		if err := json.Unmarshal(input, &params); err != nil {
-			return nil, fmt.Errorf("parse think_tool input: %w", err)
-		}
-		return json.Marshal(map[string]any{
-			"recorded":    true,
-			"thought":     strings.TrimSpace(params.Thought),
-			"recorded_at": time.Now().Format(time.RFC3339),
-		})
-	}
-	if err := reg.Register(thinkSpec, thinkHandler); err != nil {
-		return fmt.Errorf("register think_tool: %w", err)
-	}
-	return nil
+	return runtime.RegisterThinkTool(reg,
+		runtime.WithThinkToolDescription("Record a short research reflection about what was found, what is missing, and what to do next."),
+		runtime.WithThinkToolCapabilities("thinking", "research"),
+	)
 }
 
 func registerResearchAgents(k *kernel.Kernel, flags *appkit.AppFlags) error {
@@ -315,8 +289,7 @@ Suggested budgets:
 - Avoid redundant searches that repeat the same evidence.
 `, time.Now().Format("2006-01-02")))
 
-	reg := runtime.AgentRegistry(k)
-	return reg.Register(agent.AgentConfig{
+	return runtime.RegisterSubagent(k, agent.AgentConfig{
 		Name:         "researcher",
 		Description:  "Focused research agent for gathering cited findings from available tools and project context.",
 		SystemPrompt: researcherPrompt,

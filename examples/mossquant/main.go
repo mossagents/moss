@@ -45,8 +45,10 @@ type mossquantRuntime struct {
 }
 
 func main() {
-	appconfig.SetAppName("mossquant")
-	_ = appconfig.EnsureAppDir()
+	if err := appkit.InitializeApp("mossquant", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	cfg := parseFlags()
 	if err := launchTUI(cfg); err != nil {

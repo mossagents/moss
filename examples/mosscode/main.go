@@ -83,8 +83,10 @@ func (e *commandExitError) Error() string {
 }
 
 func main() {
-	appconfig.SetAppName(appName)
-	_ = appconfig.EnsureAppDir()
+	if err := appkit.InitializeApp(appName, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	_, _, debugCloser, err := logging.ConfigureDebugFileWhenEnabled(appconfig.AppDir())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: configure debug logging: %v\n", err)
@@ -438,9 +440,10 @@ func parseCommonFlags(fs *flag.FlagSet, cfg *config, args []string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	cfg.flags.MergeGlobalConfig()
-	cfg.flags.MergeEnv("MOSSCODE", "MOSS")
-	cfg.flags.ApplyDefaults()
+	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	cfg.approvalMode = appkit.FirstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
@@ -457,9 +460,9 @@ func parseCommonFlags(fs *flag.FlagSet, cfg *config, args []string) {
 }
 
 func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
-	cfg.flags.MergeGlobalConfig()
-	cfg.flags.MergeEnv("MOSSCODE", "MOSS")
-	cfg.flags.ApplyDefaults()
+	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
+		return err
+	}
 	cfg.approvalMode = appkit.FirstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
@@ -1651,9 +1654,7 @@ func buildSystemPrompt(workspace, trust string) string {
 
 func effectiveFlags() *appkit.AppFlags {
 	f := &appkit.AppFlags{}
-	f.MergeGlobalConfig()
-	f.MergeEnv("MOSSCODE", "MOSS")
-	f.ApplyDefaults()
+	_ = appkit.InitializeApp(appName, f, "MOSSCODE", "MOSS")
 	return f
 }
 

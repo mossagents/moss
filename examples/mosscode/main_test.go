@@ -13,14 +13,23 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 
+func initTestApp(t *testing.T) {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+	if err := appkit.InitializeApp(appName, nil); err != nil {
+		t.Fatalf("InitializeApp: %v", err)
+	}
+}
+
 func TestRunCheckpointListJSON(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 
 	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
@@ -104,9 +113,7 @@ func TestRunInitCreatesAgentsTemplate(t *testing.T) {
 }
 
 func TestRunDebugConfigOutputsSummary(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 	cfg := &config{
 		flags:      &appkit.AppFlags{Workspace: t.TempDir(), Provider: "openai", Model: "gpt-5", Trust: "trusted", Profile: "coding"},
 		governance: product.DefaultGovernanceConfig(),
@@ -132,9 +139,7 @@ func TestRunCompletionPowerShellOutputsCompleter(t *testing.T) {
 }
 
 func TestRunCheckpointShowJSON(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 
 	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
@@ -167,9 +172,7 @@ func TestRunCheckpointShowJSON(t *testing.T) {
 }
 
 func TestRunCheckpointShowLatestJSON(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 
 	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
@@ -214,9 +217,7 @@ func TestRunApplyRequiresPatchFile(t *testing.T) {
 }
 
 func TestRunChangesListJSON(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 	repo := initRepoForCLIChangeTests(t)
 
 	store, err := product.OpenChangeStore()
@@ -255,9 +256,7 @@ func TestRunChangesListJSON(t *testing.T) {
 }
 
 func TestRunChangesShowJSON(t *testing.T) {
-	appconfig.SetAppName(appName)
-	t.Setenv("APPDATA", t.TempDir())
-	t.Setenv("LOCALAPPDATA", t.TempDir())
+	initTestApp(t)
 	repo := initRepoForCLIChangeTests(t)
 
 	store, err := product.OpenChangeStore()

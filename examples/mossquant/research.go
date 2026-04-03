@@ -34,8 +34,7 @@ Rules:
 8. If evidence is mixed or weak, say so clearly.
 `, time.Now().Format("2006-01-02")))
 
-	reg := runtime.AgentRegistry(k)
-	if err := reg.Register(agent.AgentConfig{
+	if err := runtime.RegisterSubagent(k, agent.AgentConfig{
 		Name:         "market-researcher",
 		Description:  "Focused web researcher for asset news, policy updates, and macro/geopolitical drivers.",
 		SystemPrompt: researchPrompt,
@@ -76,7 +75,7 @@ Return:
 - a corrected concise recommendation if needed
 `, time.Now().Format("2006-01-02")))
 
-	return reg.Register(agent.AgentConfig{
+	return runtime.RegisterSubagent(k, agent.AgentConfig{
 		Name:         "investment-reviewer",
 		Description:  "Risk and evidence reviewer for draft investment recommendations.",
 		SystemPrompt: reviewerPrompt,

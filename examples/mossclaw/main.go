@@ -25,7 +25,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/mossagents/moss/adapters/embedding"
@@ -47,9 +46,10 @@ import (
 var defaultSystemPromptTemplate string
 
 func main() {
-	appconfig.SetAppName("mossclaw")
-	_ = appconfig.EnsureAppDir()
-
+	if err := appkit.InitializeApp("mossclaw", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 	var mode string
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
 	flags := appkit.ParseAppFlags()
@@ -237,7 +237,8 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 			})
 		},
 		RunIO: func(_ context.Context, job scheduler.Job) port.UserIO {
-			return newScheduledTaskIO(job)
+			_ = job
+			return runtime.NewScheduledCaptureIO()
 		},
 		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
 			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
@@ -248,7 +249,7 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO port.UserIO) {
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
-				if capture, ok := runIO.(*scheduledTaskIO); ok {
+				if capture, ok := runIO.(*runtime.ScheduledCaptureIO); ok {
 					summary = strings.TrimSpace(capture.FinalText())
 				}
 			}
@@ -264,51 +265,6 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 			})
 		},
 	})
-}
-
-type scheduledTaskIO struct {
-	mu      sync.Mutex
-	stream  strings.Builder
-	results []string
-}
-
-func newScheduledTaskIO(job scheduler.Job) *scheduledTaskIO {
-	_ = job
-	return &scheduledTaskIO{}
-}
-
-func (s *scheduledTaskIO) Send(_ context.Context, msg port.OutputMessage) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	switch msg.Type {
-	case port.OutputStream, port.OutputText:
-		s.stream.WriteString(msg.Content)
-		if msg.Type == port.OutputText {
-			s.stream.WriteString("\n")
-		}
-	case port.OutputToolResult:
-		isErr, _ := msg.Meta["is_error"].(bool)
-		if isErr {
-			s.results = append(s.results, "error: "+strings.TrimSpace(msg.Content))
-		}
-	}
-	return nil
-}
-
-func (s *scheduledTaskIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
-	return (&port.NoOpIO{}).Ask(context.Background(), req)
-}
-
-func (s *scheduledTaskIO) FinalText() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	text := strings.TrimSpace(s.stream.String())
-	if text != "" {
-		return text
-	}
-	return strings.Join(s.results, "\n")
 }
 
 // ─── Web Tools ──────────────────────────────────────

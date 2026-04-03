@@ -34,8 +34,10 @@ var defaultManagerPromptTemplate string
 var defaultWorkerPromptTemplate string
 
 func main() {
-	appconfig.SetAppName("mosswork-desktop")
-	_ = appconfig.EnsureAppDir()
+	if err := appkit.InitializeApp("mosswork-desktop", nil); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	cfg := parseFlags()
 
@@ -115,9 +117,10 @@ func parseFlags() config {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	common.MergeGlobalConfig()
-	common.MergeEnv("MOSSWORK_DESKTOP", "MOSS")
-	common.ApplyDefaults()
+	if err := appkit.InitializeApp("mosswork-desktop", common, "MOSSWORK_DESKTOP", "MOSS"); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
 	c.provider = common.Provider
 	c.model = common.Model
