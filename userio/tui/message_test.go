@@ -16,10 +16,13 @@ func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
 			"args_preview": `{"command":"go test ./..."}`,
 		},
 	}, 80)
-	for _, want := range []string{"run_command", "risk=high", "id=call-1", "args", `"command": "go test ./..."`} {
+	for _, want := range []string{"Run shell command (shell)", "| go test ./..."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("renderMessage(tool start) missing %q in %q", want, out)
 		}
+	}
+	if strings.Contains(out, "risk=high") || strings.Contains(out, "id=call-1") {
+		t.Fatalf("compact shell start should hide verbose metadata, got %q", out)
 	}
 }
 
@@ -150,7 +153,8 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 			"tool": "run_command",
 			"args_preview": `{
 				"description":"Commit and push C4 integration updates",
-				"command":"git --no-pager status --short && git add appkit/runtime/memory.go && git push origin main"
+				"command":"git --no-pager status --short",
+				"args":["&&","git","add","appkit/runtime/memory.go","&&","git","push","origin","main"]
 			}`,
 		},
 	}, 100)
@@ -164,5 +168,28 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 	}
 	if strings.Contains(out, "risk=") || strings.Contains(out, "args") {
 		t.Fatalf("compact shell start should hide verbose metadata, got %q", out)
+	}
+}
+
+func TestRenderMessage_ShellToolResultUsesCompactLayout(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind: msgToolResult,
+		content: `{
+			"exit_code": 0,
+			"stdout": "2026-04-03 Friday\\r\\n",
+			"stderr": ""
+		}`,
+		meta: map[string]any{
+			"tool":        "run_command",
+			"duration_ms": int64(180),
+		},
+	}, 100)
+	for _, want := range []string{"OK run_command · 180ms", "exit=0", "stdout: 2026-04-03 Friday"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("compact shell result missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "JSON object") || strings.Contains(out, "\"exit_code\"") {
+		t.Fatalf("compact shell result should hide verbose json block, got %q", out)
 	}
 }

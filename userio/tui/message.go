@@ -268,8 +268,9 @@ func renderShellToolStart(toolName, argsPreview string, width int) string {
 		return ""
 	}
 	type shellArgs struct {
-		Description string `json:"description"`
-		Command     string `json:"command"`
+		Description string   `json:"description"`
+		Command     string   `json:"command"`
+		Args        []string `json:"args"`
 	}
 	var args shellArgs
 	if err := json.Unmarshal([]byte(argsPreview), &args); err != nil {
@@ -277,14 +278,19 @@ func renderShellToolStart(toolName, argsPreview string, width int) string {
 	}
 	desc := strings.TrimSpace(args.Description)
 	if desc == "" {
-		return ""
+		desc = "Run shell command"
 	}
 	cmd := strings.TrimSpace(args.Command)
+	if cmd == "" && len(args.Args) > 0 {
+		cmd = strings.Join(args.Args, " ")
+	} else if len(args.Args) > 0 {
+		cmd = cmd + " " + strings.Join(args.Args, " ")
+	}
 	if cmd == "" {
 		return ""
 	}
 	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  • %s (shell)", desc))}
-	lines = append(lines, mutedStyle.Render(indentBlock(wrapText(truncateToolBlock(cmd, 4, 280), width), "    | ")))
+	lines = append(lines, mutedStyle.Render(indentBlock(wrapText(truncateToolBlock(strings.TrimSpace(cmd), 3, 200), width), "    | ")))
 	return strings.Join(lines, "\n")
 }
 
@@ -302,6 +308,10 @@ func renderToolResultMessage(m chatMessage, width int) string {
 		header += fmt.Sprintf(" · %dms", dur)
 	}
 	lines := []string{style.Render(header)}
+	if shell := renderShellToolResult(toolName, m.content, max(20, width-5)); shell != nil {
+		lines = append(lines, shell...)
+		return strings.Join(lines, "\n")
+	}
 	body := renderToolBody(toolName, m.content, max(20, width-5))
 	if body.summary != "" {
 		lines = append(lines, mutedStyle.Render("     "+body.summary))
@@ -310,6 +320,41 @@ func renderToolResultMessage(m chatMessage, width int) string {
 		lines = append(lines, indentBlock(body.content, "     "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+func renderShellToolResult(toolName, content string, width int) []string {
+	if toolName != "run_command" && toolName != "powershell" {
+		return nil
+	}
+	type shellResult struct {
+		ExitCode int    `json:"exit_code"`
+		Stdout   string `json:"stdout"`
+		Stderr   string `json:"stderr"`
+	}
+	var result shellResult
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &result); err != nil {
+		return nil
+	}
+	lines := []string{mutedStyle.Render(fmt.Sprintf("     exit=%d", result.ExitCode))}
+	out := firstNonEmptyLine(result.Stdout)
+	errLine := firstNonEmptyLine(result.Stderr)
+	if out != "" {
+		lines = append(lines, indentBlock(wrapText("stdout: "+truncateToolBlock(out, 1, 160), width), "     "))
+	}
+	if errLine != "" {
+		lines = append(lines, indentBlock(wrapText("stderr: "+truncateToolBlock(errLine, 1, 160), width), "     "))
+	}
+	return lines
+}
+
+func firstNonEmptyLine(s string) string {
+	for _, line := range strings.Split(strings.ReplaceAll(strings.TrimSpace(s), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			return line
+		}
+	}
+	return ""
 }
 
 func formatMessageTimestamp(meta map[string]any) string {
