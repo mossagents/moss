@@ -41,6 +41,7 @@ import (
 	"github.com/mossagents/moss/sandbox"
 	mosstui "github.com/mossagents/moss/userio/tui"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -114,6 +115,8 @@ func main() {
 	defer cancel()
 
 	switch cfg.command {
+	case "help":
+		return
 	case "exec":
 		os.Exit(runExec(ctx, cfg))
 	case "resume":
@@ -163,6 +166,7 @@ func main() {
 func parseFlags() *config {
 	cfg := &config{
 		flags:      &appkit.AppFlags{},
+		command:    "help",
 		governance: product.DefaultGovernanceConfig(),
 	}
 	root := buildRootCommand(cfg)
@@ -175,238 +179,239 @@ func parseFlags() *config {
 
 func buildRootCommand(cfg *config) *cobra.Command {
 	root := &cobra.Command{
-		Use:                appName,
-		Short:              "Lightweight production-ready coding assistant",
-		DisableFlagParsing: true,
-		SilenceUsage:       true,
-		SilenceErrors:      true,
-		RunE: func(_ *cobra.Command, args []string) error {
+		Use:           appName,
+		Short:         "Lightweight production-ready coding assistant",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if helpFlag := cmd.Flags().Lookup("help"); helpFlag != nil && helpFlag.Changed {
+				cfg.command = "help"
+				return nil
+			}
 			cfg.command = "tui"
-			parseLegacyFlags(cfg, args)
+			if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+				return err
+			}
 			if strings.TrimSpace(cfg.prompt) != "" {
 				cfg.command = "exec"
 			}
 			return nil
 		},
 	}
+	bindAppAndProductCobraFlags(root, cfg)
+	root.Flags().StringVarP(&cfg.prompt, "prompt", "p", "", "Run one-shot mode with a single prompt (omit to launch TUI)")
+	root.Flags().BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
 	root.SetHelpFunc(func(_ *cobra.Command, _ []string) {
 		printUsage()
 	})
 	root.SetHelpCommand(&cobra.Command{
-		Use:                "help",
-		Short:              "Show usage",
-		DisableFlagParsing: true,
+		Use:   "help",
+		Short: "Show usage",
 		Run: func(_ *cobra.Command, _ []string) {
 			printUsage()
 		},
 	})
 
+	execCmd := &cobra.Command{
+		Use:   "exec",
+		Short: "Run one-shot prompt mode",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg.command = "exec"
+			return finalizeCommonCobraFlags(cmd, cfg)
+		},
+	}
+	bindAppAndProductCobraFlags(execCmd, cfg)
+	execCmd.Flags().StringVarP(&cfg.prompt, "prompt", "p", "", "Run one-shot mode with a single prompt (omit to launch TUI)")
+	execCmd.Flags().BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
+
+	resumeCmd := &cobra.Command{
+		Use:   "resume",
+		Short: "Resume a recoverable thread",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg.command = "resume"
+			return finalizeCommonCobraFlags(cmd, cfg)
+		},
+	}
+	bindAppAndProductCobraFlags(resumeCmd, cfg)
+	resumeCmd.Flags().StringVar(&cfg.resumeSessionID, "session", "", "Resume a specific session by ID")
+	resumeCmd.Flags().BoolVar(&cfg.resumeLatest, "latest", false, "Resume the latest recoverable session")
+
+	initCmd := &cobra.Command{
+		Use:   "init",
+		Short: "Initialize workspace bootstrap files",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg.command = "init"
+			return finalizeCommonCobraFlags(cmd, cfg)
+		},
+	}
+	bindAppAndProductCobraFlags(initCmd, cfg)
+	initCmd.Flags().StringVarP(&cfg.prompt, "prompt", "p", "", "Run one-shot mode with a single prompt (omit to launch TUI)")
+	initCmd.Flags().BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
+
+	doctorCmd := &cobra.Command{
+		Use:   "doctor",
+		Short: "Run diagnostics",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg.command = "doctor"
+			return finalizeCommonCobraFlags(cmd, cfg)
+		},
+	}
+	bindAppAndProductCobraFlags(doctorCmd, cfg)
+	doctorCmd.Flags().BoolVar(&cfg.doctorJSON, "json", false, "Emit doctor output as JSON")
+
+	debugConfigCmd := &cobra.Command{
+		Use:   "debug-config",
+		Short: "Show resolved runtime config",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg.command = "debug-config"
+			return finalizeCommonCobraFlags(cmd, cfg)
+		},
+	}
+	bindAppAndProductCobraFlags(debugConfigCmd, cfg)
+	debugConfigCmd.Flags().BoolVar(&cfg.debugConfigJSON, "json", false, "Emit debug-config output as JSON")
+
+	configCmd := &cobra.Command{
+		Use:   "config",
+		Short: "Manage persisted config",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg.command = "config"
+			if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+				return err
+			}
+			cfg.configArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+	bindAppAndProductCobraFlags(configCmd, cfg)
+
+	reviewCmd := &cobra.Command{
+		Use:   "review",
+		Short: "Inspect review state",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg.command = "review"
+			if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+				return err
+			}
+			cfg.reviewArgs = append([]string(nil), args...)
+			return nil
+		},
+	}
+	bindAppAndProductCobraFlags(reviewCmd, cfg)
+	reviewCmd.Flags().BoolVar(&cfg.reviewJSON, "json", false, "Emit review output as JSON")
+
 	root.AddCommand(
+		execCmd,
+		resumeCmd,
+		func() *cobra.Command {
+			cmd := &cobra.Command{
+				Use:   "fork",
+				Short: "Fork from session or checkpoint",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					cfg.command = "fork"
+					if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+						return err
+					}
+					cfg.forkArgs = append([]string(nil), args...)
+					return nil
+				},
+			}
+			cmd.FParseErrWhitelist.UnknownFlags = true
+			bindAppAndProductCobraFlags(cmd, cfg)
+			return cmd
+		}(),
+		initCmd,
+		doctorCmd,
+		debugConfigCmd,
 		&cobra.Command{
-			Use:                "exec",
-			Short:              "Run one-shot prompt mode",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "exec"
-				parseExecFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "resume",
-			Short:              "Resume a recoverable thread",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "resume"
-				parseResumeFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "fork",
-			Short:              "Fork from session or checkpoint",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "fork"
-				cfg.forkArgs = append([]string(nil), args...)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "init",
-			Short:              "Initialize workspace bootstrap files",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "init"
-				parseLegacyFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "doctor",
-			Short:              "Run diagnostics",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "doctor"
-				parseDoctorFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "debug-config",
-			Short:              "Show resolved runtime config",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "debug-config"
-				parseDebugConfigFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "completion",
-			Short:              "Emit shell completion script",
-			DisableFlagParsing: true,
+			Use:   "completion",
+			Short: "Emit shell completion script",
 			RunE: func(_ *cobra.Command, args []string) error {
 				cfg.command = "completion"
 				cfg.completionArgs = append([]string(nil), args...)
 				return nil
 			},
 		},
-		&cobra.Command{
-			Use:                "config",
-			Short:              "Manage persisted config",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "config"
-				parseConfigFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "review",
-			Short:              "Inspect review state",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "review"
-				parseReviewFlags(cfg, args)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "checkpoint",
-			Short:              "Manage persisted checkpoints",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "checkpoint"
-				cfg.checkpointArgs = append([]string(nil), args...)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "apply",
-			Short:              "Apply explicit patch",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "apply"
-				cfg.applyArgs = append([]string(nil), args...)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "rollback",
-			Short:              "Roll back persisted change",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "rollback"
-				cfg.rollbackArgs = append([]string(nil), args...)
-				return nil
-			},
-		},
-		&cobra.Command{
-			Use:                "changes",
-			Short:              "List or inspect persisted changes",
-			DisableFlagParsing: true,
-			RunE: func(_ *cobra.Command, args []string) error {
-				cfg.command = "changes"
-				cfg.changesArgs = append([]string(nil), args...)
-				return nil
-			},
-		},
+		configCmd,
+		reviewCmd,
+		func() *cobra.Command {
+			cmd := &cobra.Command{
+				Use:   "checkpoint",
+				Short: "Manage persisted checkpoints",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					cfg.command = "checkpoint"
+					if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+						return err
+					}
+					cfg.checkpointArgs = append([]string(nil), args...)
+					return nil
+				},
+			}
+			cmd.FParseErrWhitelist.UnknownFlags = true
+			bindAppAndProductCobraFlags(cmd, cfg)
+			return cmd
+		}(),
+		func() *cobra.Command {
+			cmd := &cobra.Command{
+				Use:   "apply",
+				Short: "Apply explicit patch",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					cfg.command = "apply"
+					if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+						return err
+					}
+					cfg.applyArgs = append([]string(nil), args...)
+					return nil
+				},
+			}
+			cmd.FParseErrWhitelist.UnknownFlags = true
+			bindAppAndProductCobraFlags(cmd, cfg)
+			return cmd
+		}(),
+		func() *cobra.Command {
+			cmd := &cobra.Command{
+				Use:   "rollback",
+				Short: "Roll back persisted change",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					cfg.command = "rollback"
+					if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+						return err
+					}
+					cfg.rollbackArgs = append([]string(nil), args...)
+					return nil
+				},
+			}
+			cmd.FParseErrWhitelist.UnknownFlags = true
+			bindAppAndProductCobraFlags(cmd, cfg)
+			return cmd
+		}(),
+		func() *cobra.Command {
+			cmd := &cobra.Command{
+				Use:   "changes",
+				Short: "List or inspect persisted changes",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					cfg.command = "changes"
+					if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
+						return err
+					}
+					cfg.changesArgs = append([]string(nil), args...)
+					return nil
+				},
+			}
+			cmd.FParseErrWhitelist.UnknownFlags = true
+			bindAppAndProductCobraFlags(cmd, cfg)
+			return cmd
+		}(),
 	)
 
 	return root
 }
 
-func parseExecFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet(appName, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	bindPromptFlags(fs, cfg)
-	fs.BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-}
-
-func parseResumeFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet("resume", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	fs.StringVar(&cfg.resumeSessionID, "session", "", "Resume a specific session by ID")
-	fs.BoolVar(&cfg.resumeLatest, "latest", false, "Resume the latest recoverable session")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-}
-
-func parseDoctorFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	fs.BoolVar(&cfg.doctorJSON, "json", false, "Emit doctor output as JSON")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-}
-
-func parseDebugConfigFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet("debug-config", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	fs.BoolVar(&cfg.debugConfigJSON, "json", false, "Emit debug-config output as JSON")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-}
-
-func parseConfigFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet("config", flag.ContinueOnError)
+func bindAppAndProductCobraFlags(cmd *cobra.Command, cfg *config) {
+	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	appkit.BindAppFlags(fs, cfg.flags)
 	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-	cfg.configArgs = fs.Args()
-}
-
-func parseReviewFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet("review", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	fs.BoolVar(&cfg.reviewJSON, "json", false, "Emit review output as JSON")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-	cfg.reviewArgs = fs.Args()
-}
-
-func parseLegacyFlags(cfg *config, args []string) {
-	fs := flag.NewFlagSet(appName, flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	appkit.BindAppFlags(fs, cfg.flags)
-	bindPromptFlags(fs, cfg)
-	fs.BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
-	bindProductFlags(fs, cfg)
-	parseCommonFlags(fs, cfg, args)
-}
-
-func bindPromptFlags(fs *flag.FlagSet, cfg *config) {
-	fs.StringVar(&cfg.prompt, "prompt", "", "Run one-shot mode with a single prompt (omit to launch TUI)")
-	fs.StringVar(&cfg.prompt, "p", cfg.prompt, "Shorthand for --prompt")
+	cmd.Flags().AddGoFlagSet(fs)
 }
 
 func bindProductFlags(fs *flag.FlagSet, cfg *config) {
@@ -449,6 +454,25 @@ func parseCommonFlags(fs *flag.FlagSet, cfg *config, args []string) {
 	}
 	cfg.explicitFlags = collectExplicitFlagNames(fs)
 	applyGovernanceEnv(&cfg.governance, cfg.explicitFlags)
+}
+
+func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
+	cfg.flags.MergeGlobalConfig()
+	cfg.flags.MergeEnv("MOSSCODE", "MOSS")
+	cfg.flags.ApplyDefaults()
+	cfg.approvalMode = appkit.FirstNonEmpty(
+		cfg.approvalMode,
+		os.Getenv("MOSSCODE_APPROVAL_MODE"),
+		os.Getenv("MOSS_APPROVAL_MODE"),
+		product.ApprovalModeConfirm,
+	)
+	cfg.approvalMode = product.NormalizeApprovalMode(cfg.approvalMode)
+	if err := product.ValidateApprovalMode(cfg.approvalMode); err != nil {
+		return err
+	}
+	cfg.explicitFlags = collectExplicitCobraFlagNames(cmd)
+	applyGovernanceEnv(&cfg.governance, cfg.explicitFlags)
+	return nil
 }
 
 func printUsage() {
@@ -1652,6 +1676,27 @@ func collectExplicitFlagNames(fs *flag.FlagSet) []string {
 	fs.Visit(func(f *flag.Flag) {
 		names = append(names, f.Name)
 	})
+	sort.Strings(names)
+	return names
+}
+
+func collectExplicitCobraFlagNames(cmd *cobra.Command) []string {
+	seen := map[string]struct{}{}
+	names := []string{}
+	collect := func(fs *pflag.FlagSet) {
+		if fs == nil {
+			return
+		}
+		fs.Visit(func(f *pflag.Flag) {
+			if _, ok := seen[f.Name]; ok {
+				return
+			}
+			seen[f.Name] = struct{}{}
+			names = append(names, f.Name)
+		})
+	}
+	collect(cmd.Flags())
+	collect(cmd.InheritedFlags())
 	sort.Strings(names)
 	return names
 }
