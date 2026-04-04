@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/runtime"
 )
 
@@ -141,7 +140,8 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 	}
 	var sb strings.Builder
 	if len(m.scheduleBrowser.items) == 0 {
-		sb.WriteString("No scheduled jobs.\n")
+		sb.WriteString(mutedStyle.Render("No scheduled jobs."))
+		sb.WriteString("\n")
 	} else {
 		for i, item := range m.scheduleBrowser.items {
 			prefix := "  "
@@ -152,12 +152,16 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 			if item.NextRun != "" {
 				line += " | next: " + item.NextRun
 			}
-			sb.WriteString(lipgloss.NewStyle().Bold(i == m.scheduleBrowser.cursor).Render(line))
+			if i == m.scheduleBrowser.cursor {
+				sb.WriteString(dialogSelectedItemStyle.Render(line))
+			} else {
+				sb.WriteString(dialogItemStyle.Render(line))
+			}
 			sb.WriteString("\n")
 		}
 		selected := m.scheduleBrowser.items[m.scheduleBrowser.cursor]
 		sb.WriteString("\n")
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Render("Selected"))
+		sb.WriteString(dialogAccentStyle.Render("Selected"))
 		sb.WriteString("\n")
 		sb.WriteString("  ID: " + selected.ID + "\n")
 		sb.WriteString("  Schedule: " + selected.Schedule + "\n")
@@ -180,5 +184,5 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 		sb.WriteString("\n")
 		sb.WriteString(mutedStyle.Render(m.scheduleBrowser.message))
 	}
-	return renderShellPanel(width, "Schedules", strings.TrimSpace(sb.String()))
+	return renderDialogFrame(width, "Schedules", []string{strings.TrimSpace(sb.String())}, "↑↓ choose • e run now • d delete • r refresh • Esc close")
 }

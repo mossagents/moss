@@ -16,13 +16,13 @@ func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
 			"args_preview": `{"command":"go test ./..."}`,
 		},
 	}, 80)
-	for _, want := range []string{"Run shell command (shell)", "| go test ./..."} {
+	for _, want := range []string{"● Bash go test ./...", "command", "│ go test ./..."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("renderMessage(tool start) missing %q in %q", want, out)
 		}
 	}
-	if strings.Contains(out, "risk=high") || strings.Contains(out, "id=call-1") {
-		t.Fatalf("compact shell start should hide verbose metadata, got %q", out)
+	if strings.Contains(out, "risk=high") || strings.Contains(out, "id=call-1") || strings.Contains(out, "(shell)") {
+		t.Fatalf("crush-style shell start should hide verbose metadata, got %q", out)
 	}
 }
 
@@ -67,15 +67,22 @@ func TestRenderMessage_AssistantMediaUsesMediaHint(t *testing.T) {
 	}
 }
 
-func TestRenderAllMessages_CollapsedCountsToolCalls(t *testing.T) {
+func TestRenderAllMessages_CollapsedShowsPerToolSummary(t *testing.T) {
 	out := renderAllMessages([]chatMessage{
-		{kind: msgToolStart, content: "glob"},
-		{kind: msgToolResult, content: "ok"},
-		{kind: msgToolStart, content: "view"},
-		{kind: msgToolResult, content: "ok"},
+		{kind: msgToolStart, content: "glob", meta: map[string]any{"tool": "glob", "call_id": "a", "args_preview": `{"pattern":"**/*"}`}},
+		{kind: msgToolResult, content: `[{"path":"README.md"}]`, meta: map[string]any{"tool": "glob", "call_id": "a"}},
+		{kind: msgToolStart, content: "view", meta: map[string]any{"tool": "view", "call_id": "b", "args_preview": `{"path":"README.md"}`}},
+		{kind: msgToolResult, content: `"hello"`, meta: map[string]any{"tool": "view", "call_id": "b"}},
 	}, 80, true)
-	if !strings.Contains(out, "2 tool calls") {
-		t.Fatalf("collapsed summary = %q, want call count", out)
+	for _, want := range []string{"✓ Glob **/*", "✓ View README.md"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("collapsed per-tool summary missing %q in %q", want, out)
+		}
+	}
+	for _, unwanted := range []string{"result", "hello", "· summary"} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("collapsed per-tool summary should hide detail %q in %q", unwanted, out)
+		}
 	}
 }
 
@@ -101,6 +108,22 @@ func TestRenderMessage_ToolResultPreservesPlainTextLineBreaks(t *testing.T) {
 		!strings.Contains(out, "sess-1") ||
 		strings.Contains(out, "Saved threads: sess-1") {
 		t.Fatalf("tool result lost line breaks: %q", out)
+	}
+}
+
+func TestRenderMessage_ToolResultDecodesJSONStringPayload(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgToolResult,
+		content: "\"line1\\r\\nline2\\r\\nline3\"",
+		meta:    map[string]any{"tool": "read_file"},
+	}, 80)
+	for _, want := range []string{"line1", "line2", "line3"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("decoded tool result missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "\\r\\n") {
+		t.Fatalf("expected escaped newlines to be decoded, got %q", out)
 	}
 }
 
@@ -147,13 +170,87 @@ func TestRenderMessage_ToolResultSummarizesJSONArray(t *testing.T) {
 	}
 }
 
+func TestRenderAllMessages_CombinesToolStartAndResult(t *testing.T) {
+	out := renderAllMessages([]chatMessage{
+		{
+			kind:    msgToolStart,
+			content: "read_file",
+			meta: map[string]any{
+				"tool":         "read_file",
+				"call_id":      "call-1",
+				"args_preview": `{"path":"README.md"}`,
+			},
+		},
+		{
+			kind:    msgToolResult,
+			content: "\"line1\\nline2\"",
+			meta: map[string]any{
+				"tool":        "read_file",
+				"call_id":     "call-1",
+				"duration_ms": int64(9),
+			},
+		},
+	}, 100, false)
+	if strings.Count(out, "Read File") != 1 {
+		t.Fatalf("expected combined tool item with one header, got %q", out)
+	}
+	for _, want := range []string{"README.md", "result", "line1", "line2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("combined tool item missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestRenderAllMessages_ExpandsToolDetailsAcrossInterveningMessages(t *testing.T) {
+	msgs := []chatMessage{
+		{
+			kind:    msgToolStart,
+			content: "http_request",
+			meta: map[string]any{
+				"tool":         "http_request",
+				"call_id":      "call-http",
+				"args_preview": `{"url":"https://wttr.in/hangzhou?format=j1","timeout_seconds":10}`,
+				"completed_at": "2026-04-04T09:00:00Z",
+			},
+		},
+		{kind: msgSystem, content: "Approval granted."},
+		{
+			kind:    msgToolResult,
+			content: `{"body":"{\"current_condition\":[]}","status":200}`,
+			meta: map[string]any{
+				"tool":        "http_request",
+				"call_id":     "call-http",
+				"duration_ms": int64(174),
+			},
+		},
+	}
+
+	collapsed := renderAllMessages(msgs, 100, true)
+	if strings.Contains(collapsed, "result") || strings.Contains(collapsed, `"status": 200`) {
+		t.Fatalf("collapsed tool view should hide detail body, got %q", collapsed)
+	}
+	if !strings.Contains(collapsed, "✓ Http Request https://wttr.in/hangzhou?format=j1") {
+		t.Fatalf("collapsed tool view missing compact summary: %q", collapsed)
+	}
+
+	expanded := renderAllMessages(msgs, 100, false)
+	for _, want := range []string{"result", `"status": 200`, `"body":`, "Approval granted."} {
+		if !strings.Contains(expanded, want) {
+			t.Fatalf("expanded tool view missing %q in %q", want, expanded)
+		}
+	}
+	if strings.Count(expanded, "Http Request") != 1 {
+		t.Fatalf("expected completed tool to render once at result position, got %q", expanded)
+	}
+}
+
 func TestRenderMessage_ToolErrorUsesErrorHeader(t *testing.T) {
 	out := renderMessage(chatMessage{
 		kind:    msgToolError,
 		content: "permission denied",
 		meta:    map[string]any{"tool": "run_command", "duration_ms": int64(12)},
 	}, 80)
-	for _, want := range []string{"ERR run_command · 12ms", "permission denied"} {
+	for _, want := range []string{"✕ Bash", "12ms", "permission denied"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("tool error missing %q in %q", want, out)
 		}
@@ -174,8 +271,11 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 		},
 	}, 100)
 	for _, want := range []string{
-		"Commit and push C4 integration updates (shell)",
-		"| git --no-pager status --short && git add appkit/runtime/memory.go",
+		"● Bash git --no-pager status --short && git add appkit/runtime/memory.go",
+		"task",
+		"│ Commit and push C4 integration updates",
+		"command",
+		"│ git --no-pager status --short && git add appkit/runtime/memory.go",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("compact shell start missing %q in %q", want, out)
@@ -199,7 +299,7 @@ func TestRenderMessage_ShellToolResultUsesCompactLayout(t *testing.T) {
 			"duration_ms": int64(180),
 		},
 	}, 100)
-	for _, want := range []string{"OK run_command · 180ms", "exit=0", "stdout: 2026-04-03 Friday"} {
+	for _, want := range []string{"✓ Bash", "180ms", "exit=0", "stdout: 2026-04-03 Friday"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("compact shell result missing %q in %q", want, out)
 		}

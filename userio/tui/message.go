@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/charmbracelet/glamour"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // msgKind 区分消息类型。
@@ -211,7 +213,7 @@ func isToolMsg(kind msgKind) bool {
 }
 
 // renderAllMessages 渲染所有消息为单个可滚动字符串。
-// 当 toolCollapsed 为 true 时，连续的工具消息会折叠为一行摘要。
+// 当 toolCollapsed 为 true 时，每个 tool call 默认只显示摘要；展开后显示详细 body。
 func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) string {
 	if len(messages) == 0 {
 		return mutedStyle.Render("\n  Type a message to start...\n")
@@ -220,23 +222,24 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 	i := 0
 	for i < len(messages) {
 		m := messages[i]
-		if toolCollapsed && isToolMsg(m.kind) {
-			// 计算连续工具消息数量
-			msgCount := 0
-			callCount := 0
-			for j := i; j < len(messages) && isToolMsg(messages[j].kind); j++ {
-				msgCount++
-				if messages[j].kind == msgToolStart {
-					callCount++
-				}
+		if m.kind == msgToolStart {
+			if startShouldRenderAtResult(messages, i) {
+				i++
+				continue
 			}
-			if callCount == 0 {
-				callCount = max(1, msgCount/2)
-			}
-			b.WriteString(collapsedToolStyle.Render(
-				fmt.Sprintf("  ▶ %d tool calls (Ctrl+O to expand)", callCount)))
+			rendered, consumed := renderToolCallMessages(messages, i, width, toolCollapsed)
+			b.WriteString(rendered)
 			b.WriteString("\n")
-			i += msgCount
+			i += consumed
+		} else if m.kind == msgToolResult || m.kind == msgToolError {
+			startIdx := findMatchingToolStartBefore(messages, i)
+			if startIdx >= 0 {
+				b.WriteString(renderToolCall(&messages[startIdx], &m, width, toolCollapsed))
+			} else {
+				b.WriteString(renderToolCall(nil, &m, width, toolCollapsed))
+			}
+			b.WriteString("\n")
+			i++
 		} else {
 			b.WriteString(renderMessage(m, width))
 			b.WriteString("\n")
@@ -246,90 +249,84 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 	return b.String()
 }
 
-func renderToolStartMessage(m chatMessage, width int) string {
-	toolName := toolMetaString(m, "tool", m.content)
-	if shell := renderShellToolStart(toolName, toolMetaString(m, "args_preview", ""), max(20, width-5)); shell != "" {
-		return shell
+func startShouldRenderAtResult(messages []chatMessage, startIdx int) bool {
+	if startIdx < 0 || startIdx >= len(messages) {
+		return false
 	}
-	header := fmt.Sprintf("  tool %s", toolName)
-	if elapsed := formatToolRunningElapsed(m.meta); elapsed != "" {
-		header += " " + mutedStyle.Render("("+elapsed+")")
+	start := messages[startIdx]
+	if start.kind != msgToolStart {
+		return false
 	}
-	lines := []string{toolLabelStyle.Render(header)}
-	var metaParts []string
-	if risk := toolMetaString(m, "risk", ""); risk != "" {
-		metaParts = append(metaParts, "risk="+risk)
+	if start.meta == nil {
+		return false
 	}
-	if callID := toolMetaString(m, "call_id", ""); callID != "" {
-		metaParts = append(metaParts, "id="+callID)
+	if _, done := start.meta["completed_at"]; !done {
+		return false
 	}
-	if len(metaParts) > 0 {
-		lines = append(lines, mutedStyle.Render("     "+strings.Join(metaParts, " · ")))
-	}
-	if args := toolMetaString(m, "args_preview", ""); args != "" {
-		lines = append(lines, mutedStyle.Render("     args"))
-		lines = append(lines, mutedStyle.Render(indentBlock(renderToolSnippet(args, max(20, width-5)), "       ")))
-	}
-	return strings.Join(lines, "\n")
+	return findMatchingToolResultAfter(messages, startIdx) >= 0
 }
 
-func renderShellToolStart(toolName, argsPreview string, width int) string {
-	if toolName != "run_command" && toolName != "powershell" {
-		return ""
+func renderToolCallMessages(messages []chatMessage, start int, width int, compact bool) (string, int) {
+	msg := messages[start]
+	if msg.kind != msgToolStart {
+		return renderMessage(msg, width), 1
 	}
-	type shellArgs struct {
-		Description string   `json:"description"`
-		Command     string   `json:"command"`
-		Args        []string `json:"args"`
+	if start+1 < len(messages) && isToolCompletionForStart(msg, messages[start+1]) {
+		return renderToolCall(&msg, &messages[start+1], width, compact), 2
 	}
-	var args shellArgs
-	if err := json.Unmarshal([]byte(argsPreview), &args); err != nil {
-		return ""
+	return renderToolCall(&msg, nil, width, compact), 1
+}
+
+func isToolCompletionForStart(start, next chatMessage) bool {
+	if next.kind != msgToolResult && next.kind != msgToolError {
+		return false
 	}
-	desc := strings.TrimSpace(args.Description)
-	if desc == "" {
-		desc = "Run shell command"
+	startCall := toolMetaString(start, "call_id", "")
+	nextCall := toolMetaString(next, "call_id", "")
+	if startCall != "" && nextCall != "" {
+		return startCall == nextCall
 	}
-	cmd := strings.TrimSpace(args.Command)
-	if cmd == "" && len(args.Args) > 0 {
-		cmd = strings.Join(args.Args, " ")
-	} else if len(args.Args) > 0 {
-		cmd = cmd + " " + strings.Join(args.Args, " ")
+	return toolMetaString(start, "tool", start.content) == toolMetaString(next, "tool", next.content)
+}
+
+func findMatchingToolResultAfter(messages []chatMessage, startIdx int) int {
+	if startIdx < 0 || startIdx >= len(messages) {
+		return -1
 	}
-	if cmd == "" {
-		return ""
+	start := messages[startIdx]
+	for i := startIdx + 1; i < len(messages); i++ {
+		if isToolCompletionForStart(start, messages[i]) {
+			return i
+		}
 	}
-	lines := []string{toolLabelStyle.Render(fmt.Sprintf("  • %s (shell)", desc))}
-	lines = append(lines, mutedStyle.Render(indentBlock(wrapText(truncateToolBlock(strings.TrimSpace(cmd), 3, 200), width), "    | ")))
-	return strings.Join(lines, "\n")
+	return -1
+}
+
+func findMatchingToolStartBefore(messages []chatMessage, resultIdx int) int {
+	if resultIdx < 0 || resultIdx >= len(messages) {
+		return -1
+	}
+	result := messages[resultIdx]
+	if result.kind != msgToolResult && result.kind != msgToolError {
+		return -1
+	}
+	for i := resultIdx - 1; i >= 0; i-- {
+		if messages[i].kind != msgToolStart {
+			continue
+		}
+		if isToolCompletionForStart(messages[i], result) {
+			return i
+		}
+	}
+	return -1
+}
+
+func renderToolStartMessage(m chatMessage, width int) string {
+	return renderToolCall(&m, nil, width, false)
 }
 
 func renderToolResultMessage(m chatMessage, width int) string {
-	isErr, _ := m.meta["is_error"].(bool)
-	style := toolResultStyle
-	icon := "OK"
-	if isErr {
-		style = toolErrorStyle
-		icon = "ERR"
-	}
-	toolName := toolMetaString(m, "tool", "tool")
-	header := fmt.Sprintf("  %s %s", icon, toolName)
-	if dur := toolMetaDuration(m.meta["duration_ms"]); dur > 0 {
-		header += fmt.Sprintf(" · %dms", dur)
-	}
-	lines := []string{style.Render(header)}
-	if shell := renderShellToolResult(toolName, m.content, max(20, width-5)); shell != nil {
-		lines = append(lines, shell...)
-		return strings.Join(lines, "\n")
-	}
-	body := renderToolBody(toolName, m.content, max(20, width-5))
-	if body.summary != "" {
-		lines = append(lines, mutedStyle.Render("     "+body.summary))
-	}
-	if body.content != "" {
-		lines = append(lines, indentBlock(body.content, "     "))
-	}
-	return strings.Join(lines, "\n")
+	return renderToolCall(nil, &m, width, false)
 }
 
 func renderShellToolResult(toolName, content string, width int) []string {
@@ -345,16 +342,280 @@ func renderShellToolResult(toolName, content string, width int) []string {
 	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &result); err != nil {
 		return nil
 	}
-	lines := []string{mutedStyle.Render(fmt.Sprintf("     exit=%d", result.ExitCode))}
+	lines := []string{halfMutedStyle.Render(fmt.Sprintf("    exit=%d", result.ExitCode))}
 	out := firstNonEmptyLine(result.Stdout)
 	errLine := firstNonEmptyLine(result.Stderr)
 	if out != "" {
-		lines = append(lines, indentBlock(wrapText("stdout: "+truncateToolBlock(out, 1, 160), width), "     "))
+		lines = append(lines, "", renderToolBodyBlock(baseStyle, wrapText("stdout: "+truncateToolBlock(out, 1, 160), width)))
 	}
 	if errLine != "" {
-		lines = append(lines, indentBlock(wrapText("stderr: "+truncateToolBlock(errLine, 1, 160), width), "     "))
+		lines = append(lines, "", renderToolBodyBlock(baseStyle, wrapText("stderr: "+truncateToolBlock(errLine, 1, 160), width)))
 	}
 	return lines
+}
+
+func renderToolCall(start *chatMessage, result *chatMessage, width int, compact bool) string {
+	toolName := "tool"
+	if start != nil {
+		toolName = toolMetaString(*start, "tool", start.content)
+	} else if result != nil {
+		toolName = toolMetaString(*result, "tool", result.content)
+	}
+	if toolName == "run_command" || toolName == "powershell" {
+		return renderShellToolCall(start, result, width, compact)
+	}
+
+	style := toolLabelStyle
+	icon := toolPendingIcon()
+	suffix := ""
+	summary := ""
+	if start != nil {
+		summary = summarizeToolParams(toolName, toolMetaString(*start, "args_preview", ""), width)
+		suffix = formatToolRunningElapsed(start.meta)
+	}
+	if result != nil {
+		style = toolResultStyle
+		icon = toolSuccessIcon()
+		if result.kind == msgToolError {
+			style = toolErrorStyle
+			icon = toolErrorIcon()
+		}
+		suffix = formatToolDuration(result.meta["duration_ms"])
+	}
+	header := renderToolHeaderLine(style, icon, toolPrettyName(toolName), summary, suffix, width)
+	if compact {
+		return header
+	}
+	parts := []string{header}
+	if start != nil {
+		if body := renderToolSnippet(toolMetaString(*start, "args_preview", ""), max(20, width-5)); body != "" && strings.TrimSpace(body) != strings.TrimSpace(summary) {
+			parts = append(parts, "", halfMutedStyle.Render("    input"), renderToolBodyBlock(mutedStyle, body))
+		}
+	}
+	if result != nil {
+		body := renderToolBody(toolName, result.content, max(20, width-5))
+		if body.summary != "" {
+			parts = append(parts, "", halfMutedStyle.Render("    result · "+body.summary))
+		} else {
+			parts = append(parts, "", halfMutedStyle.Render("    result"))
+		}
+		if body.content != "" {
+			parts = append(parts, renderToolBodyBlock(baseStyle, body.content))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func renderShellToolCall(start *chatMessage, result *chatMessage, width int, compact bool) string {
+	toolName := "run_command"
+	if start != nil {
+		toolName = toolMetaString(*start, "tool", start.content)
+	} else if result != nil {
+		toolName = toolMetaString(*result, "tool", result.content)
+	}
+	type shellArgs struct {
+		Description string   `json:"description"`
+		Command     string   `json:"command"`
+		Args        []string `json:"args"`
+	}
+	var args shellArgs
+	if start != nil {
+		_ = json.Unmarshal([]byte(toolMetaString(*start, "args_preview", "")), &args)
+	}
+	cmd := strings.TrimSpace(args.Command)
+	if cmd == "" && len(args.Args) > 0 {
+		cmd = strings.Join(args.Args, " ")
+	} else if len(args.Args) > 0 {
+		cmd = cmd + " " + strings.Join(args.Args, " ")
+	}
+	title := "Bash"
+	if toolName == "powershell" {
+		title = "PowerShell"
+	}
+	style := toolLabelStyle
+	icon := toolPendingIcon()
+	suffix := ""
+	if start != nil {
+		suffix = formatToolRunningElapsed(start.meta)
+	}
+	if result != nil {
+		style = toolResultStyle
+		icon = toolSuccessIcon()
+		if result.kind == msgToolError {
+			style = toolErrorStyle
+			icon = toolErrorIcon()
+		}
+		suffix = formatToolDuration(result.meta["duration_ms"])
+	}
+	header := renderToolHeaderLine(style, icon, title, truncateDisplayWidth(strings.TrimSpace(cmd), max(20, width-12)), suffix, width)
+	if compact {
+		return header
+	}
+	parts := []string{header}
+	if desc := strings.TrimSpace(args.Description); desc != "" {
+		parts = append(parts, "", halfMutedStyle.Render("    task"), renderToolBodyBlock(mutedStyle, desc))
+	}
+	if strings.TrimSpace(cmd) != "" {
+		parts = append(parts, "", halfMutedStyle.Render("    command"), renderToolBodyBlock(mutedStyle, truncateToolBlock(strings.TrimSpace(cmd), 3, 200)))
+	}
+	if result != nil {
+		lines := renderShellToolResult(toolName, result.content, max(20, width-5))
+		if len(lines) > 0 {
+			parts = append(parts, "", halfMutedStyle.Render("    result"))
+			parts = append(parts, lines...)
+		} else if strings.TrimSpace(result.content) != "" {
+			parts = append(parts, "", halfMutedStyle.Render("    result"), renderToolBodyBlock(baseStyle, renderToolBody(toolName, result.content, max(20, width-5)).content))
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+func renderToolHeaderLine(style lipgloss.Style, icon, name, summary, suffix string, width int) string {
+	parts := []string{icon, name}
+	if strings.TrimSpace(summary) != "" {
+		parts = append(parts, truncateDisplayWidth(summary, max(16, width-12)))
+	}
+	header := "  " + strings.Join(parts, " ")
+	if strings.TrimSpace(suffix) != "" {
+		header += halfMutedStyle.Render(" · " + suffix)
+	}
+	return style.Render(header)
+}
+
+func renderToolBodyBlock(style lipgloss.Style, content string) string {
+	return style.Render(indentBlock(content, "    │ "))
+}
+
+func toolPendingIcon() string { return "●" }
+func toolSuccessIcon() string { return "✓" }
+func toolErrorIcon() string   { return "✕" }
+
+func toolPrettyName(name string) string {
+	switch strings.TrimSpace(name) {
+	case "run_command":
+		return "Bash"
+	case "powershell":
+		return "PowerShell"
+	}
+	name = strings.ReplaceAll(name, "_", " ")
+	name = strings.ReplaceAll(name, "-", " ")
+	fields := strings.Fields(name)
+	for i, field := range fields {
+		fields[i] = titleCaseWord(field)
+	}
+	if len(fields) == 0 {
+		return "Tool"
+	}
+	return strings.Join(fields, " ")
+}
+
+func summarizeToolParams(toolName, argsPreview string, width int) string {
+	argsPreview = strings.TrimSpace(argsPreview)
+	if argsPreview == "" {
+		return ""
+	}
+	if toolName == "run_command" || toolName == "powershell" {
+		type shellArgs struct {
+			Description string   `json:"description"`
+			Command     string   `json:"command"`
+			Args        []string `json:"args"`
+		}
+		var args shellArgs
+		if err := json.Unmarshal([]byte(argsPreview), &args); err == nil {
+			cmd := strings.TrimSpace(args.Command)
+			if cmd == "" && len(args.Args) > 0 {
+				cmd = strings.Join(args.Args, " ")
+			} else if len(args.Args) > 0 {
+				cmd += " " + strings.Join(args.Args, " ")
+			}
+			if strings.TrimSpace(cmd) != "" {
+				return truncateDisplayWidth(strings.TrimSpace(cmd), max(16, width-12))
+			}
+			return truncateDisplayWidth(strings.TrimSpace(args.Description), max(16, width-12))
+		}
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(argsPreview), &obj); err != nil || len(obj) == 0 {
+		return truncateDisplayWidth(strings.ReplaceAll(argsPreview, "\n", " "), max(16, width-12))
+	}
+	return truncateDisplayWidth(primaryToolSummary(obj), max(16, width-12))
+}
+
+func primaryToolSummary(obj map[string]any) string {
+	preferredKeys := []string{
+		"description",
+		"prompt",
+		"question",
+		"query",
+		"url",
+		"path",
+		"command",
+		"pattern",
+		"name",
+		"goal",
+		"resource_id",
+		"session_id",
+		"model",
+		"skill",
+		"intent",
+	}
+	for _, key := range preferredKeys {
+		if value, ok := obj[key]; ok {
+			if summary := naturalToolValue(value); summary != "" {
+				return summary
+			}
+		}
+	}
+	if len(obj) == 1 {
+		for _, value := range obj {
+			return naturalToolValue(value)
+		}
+	}
+	keys := make([]string, 0, len(obj))
+	for key := range obj {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if summary := naturalToolValue(obj[key]); summary != "" {
+			return summary
+		}
+	}
+	return ""
+}
+
+func naturalToolValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		if len(v) == 0 {
+			return ""
+		}
+		return naturalToolValue(v[0])
+	default:
+		return summarizeToolValue(value)
+	}
+}
+
+func summarizeToolValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return truncateDisplayWidth(strings.TrimSpace(v), 32)
+	case float64, bool, int, int64:
+		return fmt.Sprintf("%v", v)
+	case []any, map[string]any:
+		return compactJSON(v)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func formatToolDuration(v any) string {
+	if dur := toolMetaDuration(v); dur > 0 {
+		return fmt.Sprintf("%dms", dur)
+	}
+	return ""
 }
 
 func firstNonEmptyLine(s string) string {
@@ -433,6 +694,9 @@ func renderToolBody(toolName, content string, width int) renderedToolBody {
 	text := strings.TrimSpace(content)
 	if text == "" {
 		return renderedToolBody{}
+	}
+	if decoded, ok := parseJSONString(text); ok {
+		text = decoded
 	}
 
 	if toolName == "read_file" || toolName == "view" {
@@ -514,6 +778,15 @@ func parseJSONArray(content string) ([]any, bool) {
 	return value, true
 }
 
+func parseJSONString(content string) (string, bool) {
+	var value string
+	if err := json.Unmarshal([]byte(content), &value); err != nil {
+		return "", false
+	}
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	return value, true
+}
+
 func renderToolJSONArray(values []any, width int) renderedToolBody {
 	summary := fmt.Sprintf("JSON array · %d items", len(values))
 	if len(values) == 0 {
@@ -522,6 +795,10 @@ func renderToolJSONArray(values []any, width int) renderedToolBody {
 	limit := min(3, len(values))
 	lines := make([]string, 0, limit+1)
 	for i := 0; i < limit; i++ {
+		if s, ok := values[i].(string); ok {
+			lines = append(lines, wrapText(fmt.Sprintf("%d. %s", i+1, s), width))
+			continue
+		}
 		lines = append(lines, wrapText(fmt.Sprintf("%d. %s", i+1, compactJSON(values[i])), width))
 	}
 	if len(values) > limit {

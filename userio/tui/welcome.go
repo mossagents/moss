@@ -48,6 +48,7 @@ type WelcomeConfig struct {
 
 func newWelcomeModel(defaultProvider, defaultProviderName, defaultModel, defaultWorkspace, banner string) welcomeModel {
 	ta := textarea.New()
+	ta.Prompt = ""
 	ta.Placeholder = ""
 	ta.SetHeight(1)
 	ta.SetWidth(40)
@@ -168,7 +169,7 @@ func (m welcomeModel) View() string {
 	hero.WriteString("\n")
 	hero.WriteString(mutedStyle.Render(headerBody))
 	hero.WriteString("\n")
-	hero.WriteString(mutedStyle.Render("v" + appVersion))
+	hero.WriteString(halfMutedStyle.Render("v" + appVersion))
 
 	var fieldsBody strings.Builder
 	modelDisplay := m.model
@@ -189,27 +190,22 @@ func (m welcomeModel) View() string {
 	for _, f := range fields {
 		label := f.label
 		if m.focus == f.field {
-			label = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render("▸ " + label)
+			label = dialogAccentStyle.Render("▸ " + label)
 			fieldsBody.WriteString(fmt.Sprintf("%s\n", label))
-			fieldsBody.WriteString(fmt.Sprintf("%s\n\n", m.input.View()))
+			fieldsBody.WriteString(fmt.Sprintf("%s\n\n", inputBorderStyle.Render(m.input.View())))
 		} else {
 			label = mutedStyle.Render(label)
-			fieldsBody.WriteString(fmt.Sprintf("%s\n%s\n\n", label, f.value))
+			fieldsBody.WriteString(fmt.Sprintf("%s\n%s\n\n", label, baseStyle.Render(f.value)))
 		}
 	}
 
-	startText := mutedStyle.Render("[ Start ]")
+	startText := dialogItemStyle.Render("[ Start ]")
 	if m.focus == fieldStart {
-		startText = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(colorPrimary).
-			Padding(0, 2).
-			Render("[ Start ]")
+		startText = dialogSelectedItemStyle.Render("[ Start ]")
 	}
 	fieldsBody.WriteString(startText)
 
-	help := mutedStyle.Render("Tab/↑↓ switch  Enter confirm  Esc quit  Ctrl+C quit")
+	help := dialogHelpStyle.Render("Tab/↑↓ switch • Enter confirm • Esc quit • Ctrl+C quit")
 	leftWidth := m.width / 2
 	if leftWidth < 42 {
 		leftWidth = 42
@@ -221,11 +217,11 @@ func (m welcomeModel) View() string {
 	if rightWidth < 32 {
 		rightWidth = 32
 	}
-	left := renderShellPanel(leftWidth, "Welcome", hero.String())
-	right := renderShellPanel(rightWidth, "Session setup", strings.TrimSpace(fieldsBody.String()))
+	left := renderDialogFrame(leftWidth, "Welcome", []string{hero.String()}, "")
+	right := renderDialogFrame(rightWidth, "Session setup", []string{strings.TrimSpace(fieldsBody.String())}, "")
 	layout := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 	return strings.Join([]string{
-		topBarStyle.Render(mutedStyle.Render("moss setup")),
+		topBarStyle.Render(shellHeaderDetailStyle.Render("moss setup")),
 		shellRuleStyle.Width(max(1, m.width)).Render(strings.Repeat("─", max(1, m.width-1))),
 		layout,
 		help,

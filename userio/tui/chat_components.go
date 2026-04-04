@@ -10,10 +10,10 @@ import (
 
 func (m chatModel) renderMainPane(layout chatUILayout) string {
 	sections := []string{
-		mutedStyle.Render(m.renderHeaderMetaLine()),
+		m.renderHeaderMetaLine(),
 	}
 	if progressLine := m.progress.renderLine(m.now(), layout.MainWidth); progressLine != "" {
-		sections = append(sections, progressLine)
+		sections = append(sections, halfMutedStyle.Render(progressLine))
 	}
 	sections = append(sections, lipgloss.NewStyle().Height(layout.ViewportHeight).Render(m.viewport.View()))
 	return lipgloss.NewStyle().
@@ -38,7 +38,7 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 			}
 			queueLines = append(queueLines, fmt.Sprintf("%d) %s", i+1, truncateForQueue(q, layout.MainWidth-12)))
 		}
-		sections = append(sections, mutedStyle.Render("  "+strings.Join(queueLines, "  │  ")))
+		sections = append(sections, composerHintStyle.Render("  "+strings.Join(queueLines, "  •  ")))
 	}
 	if m.streaming {
 		sections = append(sections, runningStyle.Render(fmt.Sprintf(
@@ -60,7 +60,7 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 	if dialog == nil {
 		return ""
 	}
-	width := min(96, max(52, layout.MainWidth-8))
+	width := min(88, max(52, layout.MainWidth-10))
 	overlay := dialog.View(m, width, layout.BodyHeight)
 	if strings.TrimSpace(overlay) == "" {
 		return ""
@@ -69,19 +69,19 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 }
 
 func (m chatModel) renderStatusPane(width int) string {
-	status := mutedStyle.Render(m.renderStatusLine())
+	status := statusHintStyle.Render(m.renderStatusLine())
 	if m.pendAsk != nil && m.askForm != nil {
 		if m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
-			status = mutedStyle.Render("Tab/Shift+Tab move focus │ ↑↓ choose decision │ Enter apply │ approval memory applies to this thread only")
+			status = statusHintStyle.Render("Tab/Shift+Tab move focus • ↑↓ choose decision • Enter apply • memory applies to this thread only")
 		} else {
-			status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+			status = statusHintStyle.Render("Tab/Shift+Tab move fields • ↑↓ choose options • Space toggle multi-select • Enter confirm")
 		}
 	} else if m.scheduleBrowser != nil {
-		status = mutedStyle.Render("↑↓ choose schedule │ e run now │ d delete │ r refresh │ Esc close")
+		status = statusHintStyle.Render("↑↓ choose schedule • e run now • d delete • r refresh • Esc close")
 	} else if m.pendAsk != nil {
-		status = mutedStyle.Render("Type your reply and press Enter │ double Esc cancel run │ Ctrl+C clear input")
+		status = statusHintStyle.Render("Type your reply and press Enter • double Esc cancel run • Ctrl+C clear input")
 	} else {
-		status = mutedStyle.Render(truncateDisplayWidth(m.renderFooterHelpLine(), width))
+		status = statusHintStyle.Render(truncateDisplayWidth(m.renderFooterHelpLine(), width))
 	}
 	return lipgloss.NewStyle().Width(width).Render(status)
 }

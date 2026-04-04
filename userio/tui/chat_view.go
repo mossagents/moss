@@ -9,22 +9,22 @@ import (
 )
 
 func (m chatModel) renderHeaderMetaLine() string {
-	parts := []string{titleCaseWord(valueOrDefaultRunState(m.streaming))}
+	parts := []string{halfMutedStyle.Render(titleCaseWord(valueOrDefaultRunState(m.streaming)))}
 	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-		parts = append(parts, "thread "+threadID)
+		parts = append(parts, shellHeaderDetailStyle.Render("thread "+threadID))
 	}
 	if posture := m.compactPostureSummary(); posture != "" {
-		parts = append(parts, posture)
+		parts = append(parts, shellHeaderDetailStyle.Render(posture))
 	}
-	return strings.Join(parts, "  │  ")
+	return strings.Join(parts, shellHeaderSeparatorStyle.Render(" • "))
 }
 
 func (m chatModel) renderSlashHintLine() string {
 	hints := m.currentSlashHints()
 	if len(hints) == 0 {
-		return mutedStyle.Render("  /help for commands  │  Tab completes slash commands")
+		return composerHintStyle.Render("  /help commands  •  @ files  •  Tab completes slash commands")
 	}
-	return mutedStyle.Render("  Suggestions: " + strings.Join(hints, "  │  ") + "  (Tab to complete)")
+	return composerHintStyle.Render("  Suggestions: " + strings.Join(hints, "  •  ") + "  (Tab to complete)")
 }
 
 func (m chatModel) renderFooterHelpLine() string {
@@ -32,7 +32,7 @@ func (m chatModel) renderFooterHelpLine() string {
 	if !m.toolCollapsed {
 		toolHint = "Ctrl+O collapse tools"
 	}
-	base := fmt.Sprintf("/help  │  %s  │  Shift+Tab next profile  │  ↑↓ history  │  Esc Esc cancel  │  Ctrl+C clear/quit", toolHint)
+	base := fmt.Sprintf("/help  •  %s  •  Shift+Tab next profile  •  ↑↓ history  •  Esc Esc cancel  •  Ctrl+C clear/quit", toolHint)
 	return truncateDisplayWidth(base, m.mainWidth())
 }
 

@@ -390,7 +390,12 @@ func (m chatModel) renderAskForm(width int) string {
 		if f.def.Required {
 			required = " *"
 		}
-		sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == i).Render(prefix + label + required))
+		line := prefix + label + required
+		if m.askForm.focusIndex == i {
+			sb.WriteString(dialogAccentStyle.Render(line))
+		} else {
+			sb.WriteString(dialogItemStyle.Render(line))
+		}
 		sb.WriteString("\n")
 		if strings.TrimSpace(f.def.Description) != "" {
 			sb.WriteString(mutedStyle.Render("    " + f.def.Description))
@@ -413,7 +418,12 @@ func (m chatModel) renderAskForm(width int) string {
 				if idx == f.singleSel {
 					chosen = "●"
 				}
-				sb.WriteString(fmt.Sprintf("    %s [%s] %s\n", cursor, chosen, opt))
+				line := fmt.Sprintf("    %s [%s] %s", cursor, chosen, opt)
+				if idx == f.singleIndex && m.askForm.focusIndex == i {
+					sb.WriteString(dialogSelectedItemStyle.Render(line) + "\n")
+				} else {
+					sb.WriteString(dialogItemStyle.Render(line) + "\n")
+				}
 			}
 		case port.InputFieldMultiSelect:
 			for idx, opt := range f.def.Options {
@@ -425,14 +435,20 @@ func (m chatModel) renderAskForm(width int) string {
 				if f.multiSel[idx] {
 					chosen = "x"
 				}
-				sb.WriteString(fmt.Sprintf("    %s [%s] %s\n", cursor, chosen, opt))
+				line := fmt.Sprintf("    %s [%s] %s", cursor, chosen, opt)
+				if idx == f.multiCursor && m.askForm.focusIndex == i {
+					sb.WriteString(dialogSelectedItemStyle.Render(line) + "\n")
+				} else {
+					sb.WriteString(dialogItemStyle.Render(line) + "\n")
+				}
 			}
 		default:
 			val := strings.TrimSpace(f.text)
 			if val == "" {
 				val = "(empty)"
 			}
-			sb.WriteString("    " + val + "\n")
+			sb.WriteString(dialogItemStyle.Render("    " + val))
+			sb.WriteString("\n")
 		}
 		sb.WriteString("\n")
 	}
@@ -441,8 +457,13 @@ func (m chatModel) renderAskForm(width int) string {
 	if m.askForm.focusIndex == len(m.askForm.fields) {
 		confirmPrefix = "▸ "
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
-	return renderShellPanel(width, "Ask user", strings.TrimSpace(sb.String()))
+	confirm := confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"
+	if m.askForm.focusIndex == len(m.askForm.fields) {
+		sb.WriteString(dialogSelectedItemStyle.Render(confirm))
+	} else {
+		sb.WriteString(dialogItemStyle.Render(confirm))
+	}
+	return renderDialogFrame(width, "Ask user", []string{strings.TrimSpace(sb.String())}, "Tab/Shift+Tab move • Enter confirm • Esc cancel")
 }
 
 func (m chatModel) renderApprovalAskForm(width int) string {
@@ -462,7 +483,7 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		sb.WriteString("\n\n")
 	}
 
-	sb.WriteString(sidebarSectionTitleStyle.Render(display.Title))
+	sb.WriteString(dialogAccentStyle.Render(display.Title))
 	sb.WriteString("\n")
 	sb.WriteString(mutedStyle.Render("Review the action below before continuing."))
 	sb.WriteString("\n\n")
@@ -480,7 +501,11 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		if m.askForm.focusIndex == i {
 			prefix = "▸ "
 		}
-		sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == i).Render(prefix + f.def.Title))
+		if m.askForm.focusIndex == i {
+			sb.WriteString(dialogAccentStyle.Render(prefix + f.def.Title))
+		} else {
+			sb.WriteString(dialogItemStyle.Render(prefix + f.def.Title))
+		}
 		sb.WriteString("\n")
 		if strings.TrimSpace(f.def.Description) != "" {
 			sb.WriteString(mutedStyle.Render("    " + f.def.Description))
@@ -495,7 +520,12 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 			if idx == f.singleSel {
 				chosen = "●"
 			}
-			sb.WriteString("    " + cursor + " [" + chosen + "] " + opt + "\n")
+			line := "    " + cursor + " [" + chosen + "] " + opt
+			if idx == f.singleIndex && m.askForm.focusIndex == i {
+				sb.WriteString(dialogSelectedItemStyle.Render(line) + "\n")
+			} else {
+				sb.WriteString(dialogItemStyle.Render(line) + "\n")
+			}
 		}
 		sb.WriteString("\n")
 	}
@@ -503,6 +533,11 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 	if m.askForm.focusIndex == len(m.askForm.fields) {
 		confirmPrefix = "▸ "
 	}
-	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
-	return renderShellPanel(width, "Approval", strings.TrimSpace(sb.String()))
+	confirm := confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"
+	if m.askForm.focusIndex == len(m.askForm.fields) {
+		sb.WriteString(dialogSelectedItemStyle.Render(confirm))
+	} else {
+		sb.WriteString(dialogItemStyle.Render(confirm))
+	}
+	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, "↑↓ choose • Enter apply • Esc cancel")
 }
