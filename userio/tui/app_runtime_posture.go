@@ -183,7 +183,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	afterBoot := a.afterBoot
 	workspace := a.workspace
 	bridge := a.bridge
-	apiType := a.apiType
+	provider := a.provider
 	model := a.model
 	apiKey := a.apiKey
 	baseURL := a.baseURL
@@ -207,7 +207,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 		BuildKernel:  buildKernel,
 		AfterBoot:    afterBoot,
 	}, WelcomeConfig{
-		APIType:   apiType,
+		Provider:  provider,
 		Model:     model,
 		Workspace: workspace,
 	}, bridge)

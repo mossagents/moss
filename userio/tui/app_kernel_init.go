@@ -30,10 +30,10 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 }
 
 type kernelInitState struct {
-	cfg     Config
-	wCfg    WelcomeConfig
-	bridge  *BridgeIO
-	apiType string
+	cfg      Config
+	wCfg     WelcomeConfig
+	bridge   *BridgeIO
+	provider string
 
 	k      *kernel.Kernel
 	ctx    context.Context
@@ -45,19 +45,19 @@ type kernelInitState struct {
 }
 
 func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernelInitState, error) {
-	apiType := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
+	provider := strings.ToLower(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 	k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
 	if err != nil {
 		return nil, err
 	}
 	state := &kernelInitState{
-		cfg:     cfg,
-		wCfg:    wCfg,
-		bridge:  bridge,
-		apiType: apiType,
-		k:       k,
-		ctx:     ctx,
-		cancel:  cancel,
+		cfg:      cfg,
+		wCfg:     wCfg,
+		bridge:   bridge,
+		provider: provider,
+		k:        k,
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 	if strings.TrimSpace(cfg.SessionStoreDir) != "" {
 		state.store, _ = session.NewFileStore(cfg.SessionStoreDir)
@@ -221,7 +221,7 @@ func (s *kernelInitState) buildAgent() *agentState {
 		buildSessionConfig:       s.cfg.BuildSessionConfig,
 		promptConfigInstructions: s.cfg.PromptConfigInstructions,
 		promptModelInstructions:  s.cfg.PromptModelInstructions,
-		apiType:                  s.apiType,
+		provider:                 s.provider,
 		model:                    s.wCfg.Model,
 		apiKey:                   s.cfg.APIKey,
 		baseURL:                  s.cfg.BaseURL,

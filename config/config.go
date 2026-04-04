@@ -77,18 +77,29 @@ func EnsureAppDir() error {
 }
 
 type Config struct {
-	APIType        string                   `yaml:"api_type,omitempty"`
-	Name           string                   `yaml:"name,omitempty"`
-	Provider       string                   `yaml:"provider,omitempty"`
-	Model          string                   `yaml:"model,omitempty"`
-	BaseInstructions  string                `yaml:"base_instructions,omitempty"`
-	ModelInstructions string                `yaml:"model_instructions,omitempty"`
-	BaseURL        string                   `yaml:"base_url,omitempty"`
-	APIKey         string                   `yaml:"api_key,omitempty"`
-	DefaultProfile string                   `yaml:"default_profile,omitempty"`
-	Profiles       map[string]ProfileConfig `yaml:"profiles,omitempty"`
-	Skills         []SkillConfig            `yaml:"skills,omitempty"`
-	TUI            TUIConfig                `yaml:"tui,omitempty"`
+	LegacyAPIType     string                   `yaml:"api_type,omitempty" json:"-"`
+	Name              string                   `yaml:"name,omitempty"`
+	Provider          string                   `yaml:"provider,omitempty"`
+	Model             string                   `yaml:"model,omitempty"`
+	BaseURL           string                   `yaml:"base_url,omitempty"`
+	APIKey            string                   `yaml:"api_key,omitempty"`
+	Models            []ModelConfig            `yaml:"models,omitempty"`
+	BaseInstructions  string                   `yaml:"base_instructions,omitempty"`
+	ModelInstructions string                   `yaml:"model_instructions,omitempty"`
+	DefaultProfile    string                   `yaml:"default_profile,omitempty"`
+	Profiles          map[string]ProfileConfig `yaml:"profiles,omitempty"`
+	Skills            []SkillConfig            `yaml:"skills,omitempty"`
+	TUI               TUIConfig                `yaml:"tui,omitempty"`
+}
+
+type ModelConfig struct {
+	LegacyAPIType string `yaml:"api_type,omitempty" json:"-"`
+	Name          string `yaml:"name,omitempty"`
+	Provider      string `yaml:"provider,omitempty"`
+	Model         string `yaml:"model,omitempty"`
+	BaseURL       string `yaml:"base_url,omitempty"`
+	APIKey        string `yaml:"api_key,omitempty"`
+	Default       bool   `yaml:"default,omitempty"`
 }
 
 type TUIConfig struct {
@@ -152,6 +163,13 @@ type ProviderIdentity struct {
 	Name     string
 }
 
+const (
+	APITypeClaude            = "claude"
+	APITypeGemini            = "gemini"
+	APITypeOpenAICompletions = "openai-completions"
+	APITypeOpenAIResponses   = "openai-responses"
+)
+
 func (sc SkillConfig) IsEnabled() bool {
 	if sc.Enabled == nil {
 		return true
@@ -171,8 +189,8 @@ func (sc SkillConfig) IsRequired() bool {
 }
 
 func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity {
-	apiType = strings.TrimSpace(apiType)
-	provider = strings.TrimSpace(provider)
+	apiType = normalizeLLMAPIType(apiType)
+	provider = normalizeLLMAPIType(provider)
 	name = strings.TrimSpace(name)
 
 	apiType = firstNonEmpty(provider, apiType)
@@ -187,7 +205,7 @@ func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity 
 }
 
 func (p ProviderIdentity) EffectiveAPIType() string {
-	return firstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider))
+	return normalizeLLMAPIType(firstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider)))
 }
 
 func (p ProviderIdentity) DisplayName() string {
@@ -206,6 +224,25 @@ func (p ProviderIdentity) Label() string {
 		return name
 	default:
 		return fmt.Sprintf("%s (%s)", name, apiType)
+	}
+}
+
+func normalizeLLMAPIType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "":
+		return ""
+	case "openai":
+		return APITypeOpenAICompletions
+	case "openai-completion", "openai-completions", "chat-completions", "openai-chat-completions":
+		return APITypeOpenAICompletions
+	case "openai-response", "openai-responses", "responses", "openai-response-api":
+		return APITypeOpenAIResponses
+	case "anthropic":
+		return APITypeClaude
+	case "google":
+		return APITypeGemini
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
 	}
 }
 
@@ -231,8 +268,20 @@ func SaveConfig(path string, cfg *Config) error {
 		return fmt.Errorf("create config dir %s: %w", dir, err)
 	}
 	copyCfg := *cfg
+	if len(cfg.Models) > 0 {
+		copyCfg.Models = append([]ModelConfig(nil), cfg.Models...)
+	}
+	copyCfg.projectLegacyFieldsToModels()
 	copyCfg.normalizeProviderFields()
 	copyCfg.Provider = ""
+	copyCfg.LegacyAPIType = ""
+	copyCfg.Name = ""
+	copyCfg.Model = ""
+	copyCfg.BaseURL = ""
+	copyCfg.APIKey = ""
+	for i := range copyCfg.Models {
+		copyCfg.Models[i].LegacyAPIType = ""
+	}
 	data, err := yaml.Marshal(&copyCfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -270,17 +319,37 @@ func (c *Config) normalizeProviderFields() {
 	if c == nil {
 		return
 	}
-	identity := c.ProviderIdentity()
-	c.APIType = identity.APIType
+	c.normalizeModels()
+	if selected := c.selectedModel(); selected != nil {
+		identity := NormalizeProviderIdentity(selected.LegacyAPIType, selected.Provider, selected.Name)
+		selected.LegacyAPIType = ""
+		selected.Provider = identity.Provider
+		selected.Name = identity.Name
+		c.LegacyAPIType = ""
+		c.Provider = selected.Provider
+		c.Name = selected.Name
+		c.Model = strings.TrimSpace(selected.Model)
+		c.BaseURL = strings.TrimSpace(selected.BaseURL)
+		c.APIKey = strings.TrimSpace(selected.APIKey)
+		return
+	}
+	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+	c.LegacyAPIType = ""
 	c.Provider = identity.Provider
 	c.Name = identity.Name
+	c.Model = strings.TrimSpace(c.Model)
+	c.BaseURL = strings.TrimSpace(c.BaseURL)
+	c.APIKey = strings.TrimSpace(c.APIKey)
 }
 
 func (c *Config) ProviderIdentity() ProviderIdentity {
 	if c == nil {
 		return ProviderIdentity{}
 	}
-	return NormalizeProviderIdentity(c.APIType, c.Provider, c.Name)
+	if selected := c.selectedModel(); selected != nil {
+		return NormalizeProviderIdentity(selected.LegacyAPIType, selected.Provider, selected.Name)
+	}
+	return NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
 }
 
 func (c *Config) EffectiveAPIType() string {
@@ -289,6 +358,127 @@ func (c *Config) EffectiveAPIType() string {
 
 func (c *Config) DisplayProviderName() string {
 	return c.ProviderIdentity().DisplayName()
+}
+
+func (c *Config) normalizeModels() {
+	if c == nil {
+		return
+	}
+	for i := range c.Models {
+		identity := NormalizeProviderIdentity(c.Models[i].LegacyAPIType, c.Models[i].Provider, c.Models[i].Name)
+		c.Models[i].LegacyAPIType = ""
+		c.Models[i].Provider = identity.Provider
+		c.Models[i].Name = identity.Name
+		c.Models[i].Model = strings.TrimSpace(c.Models[i].Model)
+		c.Models[i].BaseURL = strings.TrimSpace(c.Models[i].BaseURL)
+		c.Models[i].APIKey = strings.TrimSpace(c.Models[i].APIKey)
+	}
+	hasDefault := false
+	for i := range c.Models {
+		if c.Models[i].Default {
+			hasDefault = true
+			break
+		}
+	}
+	if len(c.Models) == 0 {
+		if !c.hasLegacyModelFields() {
+			return
+		}
+		identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+		c.Models = []ModelConfig{{
+			Provider: identity.Provider,
+			Name:     identity.Name,
+			Model:    strings.TrimSpace(c.Model),
+			BaseURL:  strings.TrimSpace(c.BaseURL),
+			APIKey:   strings.TrimSpace(c.APIKey),
+			Default:  true,
+		}}
+		return
+	}
+	if !hasDefault {
+		c.Models[0].Default = true
+	}
+}
+
+func (c *Config) selectedModel() *ModelConfig {
+	if c == nil {
+		return nil
+	}
+	idx := c.selectedModelIndex()
+	if idx < 0 {
+		return nil
+	}
+	return &c.Models[idx]
+}
+
+func (c *Config) selectedModelIndex() int {
+	if c == nil || len(c.Models) == 0 {
+		return -1
+	}
+	for i := range c.Models {
+		if c.Models[i].Default {
+			return i
+		}
+	}
+	return 0
+}
+
+func (c *Config) hasLegacyModelFields() bool {
+	if c == nil {
+		return false
+	}
+	return strings.TrimSpace(c.LegacyAPIType) != "" ||
+		strings.TrimSpace(c.Provider) != "" ||
+		strings.TrimSpace(c.Name) != "" ||
+		strings.TrimSpace(c.Model) != "" ||
+		strings.TrimSpace(c.BaseURL) != "" ||
+		strings.TrimSpace(c.APIKey) != ""
+}
+
+func (c *Config) legacyFieldsDifferFrom(model ModelConfig) bool {
+	if c == nil || !c.hasLegacyModelFields() {
+		return false
+	}
+	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+	modelIdentity := NormalizeProviderIdentity(model.LegacyAPIType, model.Provider, model.Name)
+	return identity.Provider != modelIdentity.Provider ||
+		identity.Name != modelIdentity.Name ||
+		strings.TrimSpace(c.Model) != strings.TrimSpace(model.Model) ||
+		strings.TrimSpace(c.BaseURL) != strings.TrimSpace(model.BaseURL) ||
+		strings.TrimSpace(c.APIKey) != strings.TrimSpace(model.APIKey)
+}
+
+func (c *Config) projectLegacyFieldsToModels() {
+	if c == nil || !c.hasLegacyModelFields() {
+		return
+	}
+	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+	if len(c.Models) == 0 {
+		c.Models = []ModelConfig{{
+			Provider: identity.Provider,
+			Name:     identity.Name,
+			Model:    strings.TrimSpace(c.Model),
+			BaseURL:  strings.TrimSpace(c.BaseURL),
+			APIKey:   strings.TrimSpace(c.APIKey),
+			Default:  true,
+		}}
+		return
+	}
+	idx := c.selectedModelIndex()
+	if idx < 0 {
+		idx = 0
+	}
+	selected := c.Models[idx]
+	if !c.legacyFieldsDifferFrom(selected) {
+		return
+	}
+	c.Models[idx].LegacyAPIType = ""
+	c.Models[idx].Provider = identity.Provider
+	c.Models[idx].Name = identity.Name
+	c.Models[idx].Model = strings.TrimSpace(c.Model)
+	c.Models[idx].BaseURL = strings.TrimSpace(c.BaseURL)
+	c.Models[idx].APIKey = strings.TrimSpace(c.APIKey)
+	c.Models[idx].Default = true
 }
 
 func DefaultGlobalConfigPath() string {
@@ -438,11 +628,13 @@ func renderPromptTemplate(src string, data map[string]any) (string, error) {
 const defaultConfigTemplate = `# Global config for moss
 # Priority: CLI flags > config file > environment variables
 
-# api_type: openai
-# name: openai
-# model: gpt-4o
-# base_url: ""
-# api_key: ""
+# models:
+#   - default: true
+#     provider: openai-completions
+#     name: openai-completions
+#     model: gpt-4o
+#     base_url: ""
+#     api_key: ""
 
 # tui:
 #   # theme: default

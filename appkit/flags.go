@@ -11,7 +11,6 @@ import (
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。
 // 解析优先级：CLI flag > 全局配置文件 > 环境变量 > 默认值。
 type AppFlags struct {
-	APIType   string
 	Name      string
 	Provider  string
 	Model     string
@@ -36,9 +35,8 @@ func ParseAppFlags() *AppFlags {
 
 // BindAppFlags 将通用参数注册到指定 FlagSet。
 func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
-	fs.StringVar(&f.APIType, "api-type", "", "LLM API type: claude|openai|gemini")
-	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai|deepseek")
-	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai|gemini")
+	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai-completions|openai-responses|deepseek")
+	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai-completions|openai-responses|gemini")
 	fs.StringVar(&f.Model, "model", "", "Model name")
 	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
 	fs.StringVar(&f.Trust, "trust", "", "Trust level: trusted|restricted")
@@ -49,9 +47,8 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 
 // BindAppPFlags 将通用参数注册到指定 pflag FlagSet，供 Cobra CLI 直接使用。
 func BindAppPFlags(fs *pflag.FlagSet, f *AppFlags) {
-	fs.StringVar(&f.APIType, "api-type", "", "LLM API type: claude|openai|gemini")
-	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai|deepseek")
-	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai|gemini")
+	fs.StringVar(&f.Name, "name", "", "LLM provider display name, e.g. openai-completions|openai-responses|deepseek")
+	fs.StringVar(&f.Provider, "provider", "", "LLM provider: claude|openai-completions|openai-responses|gemini")
 	fs.StringVar(&f.Model, "model", "", "Model name")
 	fs.StringVar(&f.Workspace, "workspace", "", "Workspace directory")
 	fs.StringVar(&f.Trust, "trust", "", "Trust level: trusted|restricted")
@@ -73,9 +70,8 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		if prefix == "" {
 			continue
 		}
-		f.APIType = FirstNonEmpty(f.APIType, os.Getenv(prefix+"_API_TYPE"), os.Getenv(prefix+"_PROVIDER"))
 		f.Name = FirstNonEmpty(f.Name, os.Getenv(prefix+"_NAME"))
-		f.Provider = FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"))
+		f.Provider = FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"), os.Getenv(prefix+"_API_TYPE"))
 		f.Model = FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
 		f.Workspace = FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
 		f.Trust = FirstNonEmpty(f.Trust, os.Getenv(prefix+"_TRUST"))
@@ -88,9 +84,8 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 // ApplyDefaults 在 CLI、配置文件、环境变量合并完成后补齐默认值。
 func (f *AppFlags) ApplyDefaults() {
 	f.normalizeProviderFields()
-	f.APIType = FirstNonEmpty(f.APIType, "openai")
-	f.Name = FirstNonEmpty(f.Name, f.APIType)
-	f.Provider = FirstNonEmpty(f.Provider, f.APIType)
+	f.Provider = FirstNonEmpty(f.Provider, config.APITypeOpenAICompletions)
+	f.Name = FirstNonEmpty(f.Name, f.Provider)
 	f.Workspace = FirstNonEmpty(f.Workspace, ".")
 	f.Trust = FirstNonEmpty(f.Trust, "trusted")
 }
@@ -102,9 +97,8 @@ func (f *AppFlags) mergeGlobalConfig() {
 	}
 
 	identity := globalCfg.ProviderIdentity()
-	f.APIType = FirstNonEmpty(f.APIType, identity.APIType)
 	f.Name = FirstNonEmpty(f.Name, identity.Name)
-	f.Provider = FirstNonEmpty(f.Provider, identity.Provider, "openai")
+	f.Provider = FirstNonEmpty(f.Provider, identity.Provider, config.APITypeOpenAICompletions)
 	f.Model = FirstNonEmpty(f.Model, globalCfg.Model)
 	f.APIKey = FirstNonEmpty(f.APIKey, globalCfg.APIKey)
 	f.BaseURL = FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
@@ -116,7 +110,6 @@ func (f *AppFlags) normalizeProviderFields() {
 		return
 	}
 	identity := f.ProviderIdentity()
-	f.APIType = identity.APIType
 	f.Provider = identity.Provider
 	f.Name = identity.Name
 }
@@ -125,7 +118,7 @@ func (f *AppFlags) ProviderIdentity() config.ProviderIdentity {
 	if f == nil {
 		return config.ProviderIdentity{}
 	}
-	return config.NormalizeProviderIdentity(f.APIType, f.Provider, f.Name)
+	return config.NormalizeProviderIdentity("", f.Provider, f.Name)
 }
 
 func (f *AppFlags) EffectiveAPIType() string {

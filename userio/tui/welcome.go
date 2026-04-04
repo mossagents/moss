@@ -14,7 +14,7 @@ import (
 type welcomeField int
 
 const (
-	fieldAPIType welcomeField = iota
+	fieldProvider welcomeField = iota
 	fieldProviderName
 	fieldModel
 	fieldWorkspace
@@ -24,8 +24,9 @@ const (
 
 // welcomeModel 是欢迎/配置界面。
 type welcomeModel struct {
-	apiType      string
+	provider     string
 	providerName string
+	banner       string
 	model        string
 	workspace    string
 	focus        welcomeField
@@ -39,14 +40,13 @@ type welcomeModel struct {
 
 // WelcomeConfig 是欢迎界面收集的配置。
 type WelcomeConfig struct {
-	APIType      string
 	ProviderName string
 	Provider     string
 	Model        string
 	Workspace    string
 }
 
-func newWelcomeModel(defaultAPIType, defaultProviderName, defaultModel, defaultWorkspace string) welcomeModel {
+func newWelcomeModel(defaultProvider, defaultProviderName, defaultModel, defaultWorkspace, banner string) welcomeModel {
 	ta := textarea.New()
 	ta.Placeholder = ""
 	ta.SetHeight(1)
@@ -56,11 +56,12 @@ func newWelcomeModel(defaultAPIType, defaultProviderName, defaultModel, defaultW
 	ta.Focus()
 
 	return welcomeModel{
-		apiType:      defaultAPIType,
+		provider:     defaultProvider,
 		providerName: defaultProviderName,
+		banner:       strings.TrimRight(banner, "\r\n"),
 		model:        defaultModel,
 		workspace:    defaultWorkspace,
-		focus:        fieldAPIType,
+		focus:        fieldProvider,
 		input:        ta,
 	}
 }
@@ -119,9 +120,9 @@ func (m welcomeModel) Update(msg tea.Msg) (welcomeModel, tea.Cmd) {
 func (m *welcomeModel) applyCurrentField() {
 	val := strings.TrimSpace(m.input.Value())
 	switch m.focus {
-	case fieldAPIType:
+	case fieldProvider:
 		if val != "" {
-			m.apiType = val
+			m.provider = val
 		}
 	case fieldProviderName:
 		if val != "" {
@@ -138,8 +139,8 @@ func (m *welcomeModel) applyCurrentField() {
 
 func (m *welcomeModel) syncInput() {
 	switch m.focus {
-	case fieldAPIType:
-		m.input.SetValue(m.apiType)
+	case fieldProvider:
+		m.input.SetValue(m.provider)
 		m.input.Focus()
 	case fieldProviderName:
 		m.input.SetValue(m.providerName)
@@ -159,9 +160,14 @@ func (m welcomeModel) View() string {
 	var b strings.Builder
 
 	// Logo
-	logo := titleStyle.Render("mosscode")
-	version := mutedStyle.Render(" v" + appVersion)
-	b.WriteString("\n" + logo + version + "\n\n")
+	if m.banner != "" {
+		b.WriteString("\n" + titleStyle.Render(m.banner) + "\n")
+		b.WriteString(mutedStyle.Render(" v"+appVersion) + "\n\n")
+	} else {
+		logo := titleStyle.Render("mosscode")
+		version := mutedStyle.Render(" v" + appVersion)
+		b.WriteString("\n" + logo + version + "\n\n")
+	}
 
 	// Fields
 	modelDisplay := m.model
@@ -173,7 +179,7 @@ func (m welcomeModel) View() string {
 		value string
 		field welcomeField
 	}{
-		{"API Type", m.apiType, fieldAPIType},
+		{"Provider", m.provider, fieldProvider},
 		{"Provider Name", m.providerName, fieldProviderName},
 		{"Model", modelDisplay, fieldModel},
 		{"Workspace", m.workspace, fieldWorkspace},
@@ -212,9 +218,8 @@ func (m welcomeModel) View() string {
 }
 
 func (m welcomeModel) config() WelcomeConfig {
-	identity := config.NormalizeProviderIdentity(m.apiType, m.apiType, m.providerName)
+	identity := config.NormalizeProviderIdentity("", m.provider, m.providerName)
 	return WelcomeConfig{
-		APIType:      identity.APIType,
 		ProviderName: identity.Name,
 		Provider:     identity.Provider,
 		Model:        m.model,
@@ -222,7 +227,7 @@ func (m welcomeModel) config() WelcomeConfig {
 	}
 }
 
-// saveWelcomeConfig 将用户选择的配置（api_type, name, model）持久化到 ~/.moss/config.yaml。
+// saveWelcomeConfig 将用户选择的配置（provider, name, model）持久化到 ~/.moss/config.yaml。
 // 仅更新模型连接相关字段，保留已有的 api_key, base_url, skills 等配置。
 func saveWelcomeConfig(wCfg WelcomeConfig) {
 	cfgPath := config.DefaultGlobalConfigPath()
@@ -230,10 +235,9 @@ func saveWelcomeConfig(wCfg WelcomeConfig) {
 		return
 	}
 	existing, _ := config.LoadConfig(cfgPath)
-	identity := config.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName)
-	existing.APIType = identity.APIType
+	identity := config.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName)
 	existing.Name = identity.Name
-	existing.Provider = ""
+	existing.Provider = identity.Provider
 	existing.Model = wCfg.Model
 	_ = config.SaveConfig(cfgPath, existing)
 }

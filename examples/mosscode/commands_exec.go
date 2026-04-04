@@ -27,6 +27,7 @@ func launchTUI(cfg *config) error {
 	cfg.approvalMode = resolved.ApprovalMode
 	return mosstui.Run(mosstui.Config{
 		Provider:         flags.Provider,
+		WelcomeBanner:    welcomeBanner,
 		Model:            flags.Model,
 		Workspace:        flags.Workspace,
 		Trust:            resolved.Trust,
@@ -41,9 +42,9 @@ func launchTUI(cfg *config) error {
 			recorder := product.NewRunTraceRecorder()
 			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  apiType,
+				Provider:  provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,

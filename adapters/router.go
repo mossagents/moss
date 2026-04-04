@@ -19,10 +19,10 @@ type ModelProfile struct {
 	// Name 模型配置的唯一标识名，用于日志和调试。
 	Name string `yaml:"name"`
 
-	// APIType API 协议类型: "openai" / "claude" / "anthropic"
-	APIType string `yaml:"api_type,omitempty"`
+	// LegacyAPIType 兼容旧配置中的 api_type 字段。
+	LegacyAPIType string `yaml:"api_type,omitempty" json:"-"`
 
-	// Provider 兼容旧配置，等价于 APIType。
+	// Provider LLM 协议类型: "openai-completions" / "openai-responses" / "claude" / "gemini"。
 	Provider string `yaml:"provider"`
 
 	// Model 具体的模型名称，如 "gpt-4o", "claude-sonnet-4-20250514"
@@ -95,8 +95,11 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 
 	r := &ModelRouter{}
 	for _, p := range profiles {
-		apiType := config.NormalizeProviderIdentity(p.APIType, p.Provider, "").EffectiveAPIType()
-		llm, err := BuildLLM(apiType, p.Model, p.APIKey, p.BaseURL)
+		identity := config.NormalizeProviderIdentity(p.LegacyAPIType, p.Provider, p.Name)
+		p.LegacyAPIType = ""
+		p.Provider = identity.Provider
+		p.Name = identity.Name
+		llm, err := BuildLLM(identity.EffectiveAPIType(), p.Model, p.APIKey, p.BaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("model router: build %q: %w", p.Name, err)
 		}
@@ -123,13 +126,13 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 //
 //	models:
 //	  - name: gpt-4o
-//	    api_type: openai
+//	    provider: openai-completions
 //	    model: gpt-4o
 //	    cost_tier: 3
 //	    capabilities: [text_generation, code_generation, image_understanding, function_calling, reasoning]
 //	    is_default: true
 //	  - name: gpt-4o-mini
-//	    api_type: openai
+//	    provider: openai-completions
 //	    model: gpt-4o-mini
 //	    cost_tier: 1
 //	    capabilities: [text_generation, code_generation, function_calling]

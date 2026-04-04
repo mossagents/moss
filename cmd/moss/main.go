@@ -69,23 +69,22 @@ AppFlags:
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
-  --api-type    LLM API type: claude|openai|gemini (default from config or "openai")
-  --name        LLM provider display name, e.g. openai|deepseek
-  --provider    Deprecated alias for --api-type
+  --provider    LLM provider: claude|openai-completions|openai-responses|gemini (default from config or "openai-completions")
+  --name        LLM provider display name, e.g. openai-completions|openai-responses|deepseek
   --model       Model name (default from config or API default)
   --base-url    LLM API base URL (override config)
   --api-key     LLM API key (override config)
 
 Config:
-  ~/.moss/config.yaml    Global configuration (api_type, name, model, base_url, api_key, skills)
+  ~/.moss/config.yaml    Global configuration (provider, name, model, base_url, api_key, skills)
   ./moss.yaml            Project-level skill configuration
 
 Environment:
-  ANTHROPIC_API_KEY  Fallback when api_type=claude and no api_key in config.
-  OPENAI_API_KEY     Fallback when api_type=openai and no api_key in config.
-  OPENAI_BASE_URL    Fallback when api_type=openai and no base_url in config.
-  GEMINI_API_KEY     Fallback when api_type=gemini and no api_key in config.
-  GOOGLE_API_KEY     Alternate fallback when api_type=gemini and no api_key in config.
+  ANTHROPIC_API_KEY  Fallback when provider=claude and no api_key in config.
+  OPENAI_API_KEY     Fallback when provider=openai-completions/openai-responses and no api_key in config.
+  OPENAI_BASE_URL    Fallback when provider=openai-completions/openai-responses and no base_url in config.
+  GEMINI_API_KEY     Fallback when provider=gemini and no api_key in config.
+  GOOGLE_API_KEY     Alternate fallback when provider=gemini and no api_key in config.
 `)
 }
 
@@ -106,7 +105,6 @@ func launchTUI(args []string) {
 	}
 
 	if err := tui.Run(tui.Config{
-		APIType:                  f.EffectiveAPIType(),
 		ProviderName:             f.DisplayProviderName(),
 		Provider:                 f.Provider,
 		Model:                    f.Model,
@@ -251,11 +249,10 @@ func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstruction
 }
 
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
-func buildKernelWithIO(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+func buildKernelWithIO(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
-	identity := config.NormalizeProviderIdentity(apiType, apiType, apiType)
+	identity := config.NormalizeProviderIdentity("", provider, provider)
 	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
-		APIType:   identity.APIType,
 		Provider:  identity.Provider,
 		Name:      identity.Name,
 		Model:     model,

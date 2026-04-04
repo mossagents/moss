@@ -48,6 +48,15 @@ func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 	}
 }
 
+func TestWelcomeViewIncludesConfiguredBanner(t *testing.T) {
+	m := newWelcomeModel("openai-completions", "deepseek", "gpt-4o", ".", "MOSSCODE BANNER")
+
+	out := m.View()
+	if !strings.Contains(out, "MOSSCODE BANNER") {
+		t.Fatalf("expected configured banner in welcome view, got %q", out)
+	}
+}
+
 func TestSwitchProfileRejectsActiveRun(t *testing.T) {
 	m := appModel{
 		state: stateChat,

@@ -142,7 +142,6 @@ type DoctorConfigReport struct {
 	ProjectExists        bool     `json:"project_exists"`
 	ProjectAssetsAllowed bool     `json:"project_assets_allowed"`
 	ProjectConfigActive  bool     `json:"project_config_active"`
-	APIType              string   `json:"api_type"`
 	Provider             string   `json:"provider"`
 	Name                 string   `json:"name"`
 	Model                string   `json:"model,omitempty"`
@@ -289,8 +288,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			ProjectExists:        pathExists(projectConfigPath),
 			ProjectAssetsAllowed: projectAssetsAllowed,
 			ProjectConfigActive:  projectAssetsAllowed && pathExists(projectConfigPath),
-			APIType:              flags.EffectiveAPIType(),
-			Provider:             flags.Provider,
+			Provider:             flags.EffectiveAPIType(),
 			Name:                 flags.DisplayProviderName(),
 			Model:                flags.Model,
 			BaseURLSet:           strings.TrimSpace(flags.BaseURL) != "",

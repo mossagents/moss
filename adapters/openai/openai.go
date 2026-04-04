@@ -220,11 +220,11 @@ func toOpenAIMessages(msgs []port.Message, model string) ([]openai.ChatCompletio
 
 		case port.RoleTool:
 			for _, tr := range msg.ToolResults {
-				parts, err := toOpenAIToolTextParts(tr.ContentParts, model)
+				content, err := contentPartsToTextOnlyString(tr.ContentParts, "openai", model, "tool_result")
 				if err != nil {
 					return nil, err
 				}
-				result = append(result, openai.ToolMessage(parts, tr.CallID))
+				result = append(result, openai.ToolMessage(content, tr.CallID))
 			}
 		}
 	}
@@ -236,17 +236,6 @@ func toOpenAISystemTextParts(parts []port.ContentPart, model string) ([]openai.C
 	for _, part := range parts {
 		if part.Type != port.ContentPartText {
 			return nil, unsupportedPartError("openai", model, "system", part.Type)
-		}
-		result = append(result, openai.ChatCompletionContentPartTextParam{Text: part.Text})
-	}
-	return result, nil
-}
-
-func toOpenAIToolTextParts(parts []port.ContentPart, model string) ([]openai.ChatCompletionContentPartTextParam, error) {
-	result := make([]openai.ChatCompletionContentPartTextParam, 0, len(parts))
-	for _, part := range parts {
-		if part.Type != port.ContentPartText {
-			return nil, unsupportedPartError("openai", model, "tool_result", part.Type)
 		}
 		result = append(result, openai.ChatCompletionContentPartTextParam{Text: part.Text})
 	}

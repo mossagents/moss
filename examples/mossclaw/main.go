@@ -106,11 +106,10 @@ func launchTUI(flags *appkit.AppFlags) error {
 		Trust:     flags.Trust,
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				APIType:   apiType,
-				Provider:  apiType,
-				Name:      apiType,
+				Provider:  provider,
+				Name:      provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,

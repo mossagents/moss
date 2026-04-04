@@ -37,9 +37,9 @@ const (
 
 // Config 是启动 TUI 的配置。
 type Config struct {
-	APIType                  string
 	ProviderName             string
 	Provider                 string
+	WelcomeBanner            string
 	Model                    string
 	Workspace                string
 	Trust                    string
@@ -50,7 +50,7 @@ type Config struct {
 	BaseURL                  string
 	APIKey                   string
 	BaseObserver             port.Observer
-	BuildKernel              func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 	BuildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
 	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	BuildSystemPrompt        func(workspace, trust string) string
@@ -84,13 +84,13 @@ type agentState struct {
 	approvalMode             string
 	baseObserver             port.Observer
 	buildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
-	buildKernel              func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
+	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
 	afterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
 	buildSystemPrompt        func(workspace, trust string) string
 	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
 	promptModelInstructions  string
-	apiType                  string
+	provider                 string
 	model                    string
 	apiKey                   string
 	baseURL                  string
@@ -795,19 +795,20 @@ func Run(cfg Config) error {
 	}
 
 	// 如果 CLI 已提供足够配置，跳过 Welcome 直接进入 Chat
-	defaultProvider := configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName)
-	defaultAPIType := defaultProvider.EffectiveAPIType()
+	defaultProvider := configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName)
+	defaultProviderID := defaultProvider.EffectiveAPIType()
 	defaultProviderName := defaultProvider.DisplayName()
-	if defaultAPIType != "" && cfg.Workspace != "" {
+	if defaultProviderID != "" && cfg.Workspace != "" {
 		wCfg := WelcomeConfig{
-			APIType:      defaultAPIType,
+			Provider:     defaultProviderID,
 			ProviderName: defaultProviderName,
 			Model:        cfg.Model,
 			Workspace:    cfg.Workspace,
 		}
 		m.state = stateChat
 		theme := m.theme
-		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(wCfg.APIType, wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		m.chat.startupBanner = cfg.WelcomeBanner
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
 			applyTheme(theme)
@@ -816,7 +817,7 @@ func Run(cfg Config) error {
 		m.initCmd = initKernelCmd(cfg, wCfg, bridge)
 	} else {
 		m.state = stateWelcome
-		m.welcome = newWelcomeModel(defaultAPIType, defaultProviderName, cfg.Model, cfg.Workspace)
+		m.welcome = newWelcomeModel(defaultProviderID, defaultProviderName, cfg.Model, cfg.Workspace, cfg.WelcomeBanner)
 	}
 
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
@@ -862,13 +863,12 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cfg := m.welcome.config()
 		// 持久化用户选择的 provider/model 到 ~/.moss/config.yaml
 		saveWelcomeConfig(cfg)
-		m.config.APIType = cfg.APIType
 		m.config.Provider = cfg.Provider
 		m.config.ProviderName = cfg.ProviderName
 		m.config.Model = cfg.Model
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
-		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.APIType, cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
 			applyTheme(theme)
@@ -900,9 +900,8 @@ func (m appModel) stopAgentForKernelRebuild() appModel {
 }
 
 func (m appModel) welcomeConfigForCurrentProvider(model string) (WelcomeConfig, string) {
-	identity := configpkg.NormalizeProviderIdentity(m.config.APIType, m.config.Provider, m.config.ProviderName)
+	identity := configpkg.NormalizeProviderIdentity("", m.config.Provider, m.config.ProviderName)
 	return WelcomeConfig{
-		APIType:      identity.APIType,
 		ProviderName: identity.Name,
 		Provider:     identity.Provider,
 		Model:        model,

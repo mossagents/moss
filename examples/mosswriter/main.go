@@ -85,7 +85,7 @@ Usage:
 
 Flags:
   --prompt, -p  Run one-shot content creation for a single request
-  --provider    LLM provider: claude|openai|gemini
+  --provider    LLM provider: claude|openai-completions|openai-responses|gemini
   --model       Model name
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted
@@ -104,11 +104,10 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				APIType:   apiType,
-				Provider:  apiType,
-				Name:      apiType,
+				Provider:  provider,
+				Name:      provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,

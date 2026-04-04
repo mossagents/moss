@@ -117,7 +117,7 @@ go run .
 
 ```bash
 go run . --capital 100000 --review-interval 10m
-go run . --api-type openai --name deepseek --model deepseek-chat --review-interval 30m
+go run . --provider openai --name deepseek --model deepseek-chat --review-interval 30m
 go run . --auto-review=false
 go run . --workspace D:\Codes\my-portfolio
 ```
@@ -125,12 +125,11 @@ go run . --workspace D:\Codes\my-portfolio
 ## 参数
 
 ```text
---api-type          LLM API type: claude|openai|gemini
---name              Provider display name, e.g. openai|deepseek
+--provider          LLM provider: claude|openai-completions|openai-responses|gemini
+--name              Provider display name, e.g. openai-completions|openai-responses|deepseek
 --capital           Starting capital reference for simulated portfolio (default: 100000)
 --review-interval   Default advisory review interval, e.g. 10m / 30m / 1h
 --auto-review       Whether to auto-create the default periodic review job (default: true)
---provider          Deprecated alias for --api-type
 --model             Model name
 --workspace         Workspace directory (default: ~/.mossquant)
 --trust             Trust level: trusted|restricted
@@ -142,7 +141,7 @@ go run . --workspace D:\Codes\my-portfolio
 
 - `AGENTS.md` / `USER.md` 会被同时注入 system prompt，并且 `mossquant` 会额外做结构化解析。
 - 若未显式传入 `--workspace`，默认工作区就是 `~/.mossquant`，因此 `AGENTS.md` 也默认从该目录读取。
-- `api_type` 决定走哪类 API 适配器（如 `openai` / `claude`），`name` 用于在 TUI 入口和状态栏中显示具体提供方（如 `openai` / `deepseek`）。
+- `provider` 决定走哪类 API 适配器（如 `openai-completions` / `claude`），`name` 用于在 TUI 入口和状态栏中显示具体提供方（如 `openai` / `deepseek`）。
 - 若未提供结构化信息，Agent 仍可运行，但个性化程度会降低。
 - 当前依然保留模拟交易能力，但新的默认定位是 **投资顾问 / 研究助手**，不是自动下单机器人。
 - 外部研究依赖 `JINA_API_KEY` 才能稳定使用 `jina_search` / `jina_reader`。

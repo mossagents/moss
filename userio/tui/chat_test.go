@@ -1559,6 +1559,27 @@ func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) 
 	}
 }
 
+func TestRefreshViewportShowsStartupBannerBeforeConversationBegins(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 24
+	m.startupBanner = "MOSSCODE BANNER"
+	m.messages = []chatMessage{{kind: msgSystem, content: "Connected to openai"}}
+	m.recalcLayout()
+
+	m.refreshViewport()
+	if !strings.Contains(m.viewport.View(), "MOSSCODE BANNER") {
+		t.Fatalf("expected startup banner in initial chat viewport, got %q", m.viewport.View())
+	}
+
+	m.messages = append(m.messages, chatMessage{kind: msgUser, content: "hello"})
+	m.refreshViewport()
+	if strings.Contains(m.viewport.View(), "MOSSCODE BANNER") {
+		t.Fatalf("expected startup banner to disappear after conversation starts, got %q", m.viewport.View())
+	}
+}
+
 func TestSlashCommandImageOpenWithoutLocalPathShowsError(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", t.TempDir())
 	m.messages = append(m.messages, chatMessage{

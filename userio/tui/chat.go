@@ -120,6 +120,7 @@ type chatModel struct {
 
 	// 配置显示
 	provider             string
+	startupBanner        string
 	model                string
 	workspace            string
 	trust                string
@@ -356,8 +357,23 @@ func (m *chatModel) appendStream(delta string) {
 func (m *chatModel) refreshViewport() {
 	m.syncViewportLayout()
 	content := renderAllMessages(m.messages, m.mainWidth(), m.toolCollapsed)
+	if banner := m.renderStartupBanner(); banner != "" {
+		content = banner + "\n\n" + content
+	}
 	m.viewport.SetContent(content)
 	m.viewport.GotoBottom()
+}
+
+func (m chatModel) renderStartupBanner() string {
+	if strings.TrimSpace(m.startupBanner) == "" {
+		return ""
+	}
+	for _, msg := range m.messages {
+		if msg.kind != msgSystem {
+			return ""
+		}
+	}
+	return titleStyle.Render(strings.TrimRight(m.startupBanner, "\r\n"))
 }
 
 func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, bool) {

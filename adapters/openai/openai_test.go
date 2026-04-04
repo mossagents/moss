@@ -93,6 +93,13 @@ func TestToOpenAIMessages_ToolResults(t *testing.T) {
 	if result[0].OfTool.ToolCallID != "call_1" {
 		t.Errorf("tool_call_id = %q, want call_1", result[0].OfTool.ToolCallID)
 	}
+	raw, err := json.Marshal(result[0].OfTool)
+	if err != nil {
+		t.Fatalf("marshal tool message: %v", err)
+	}
+	if !strings.Contains(string(raw), `"content":"Sunny, 25°C"`) {
+		t.Fatalf("expected tool message content to marshal as string, got %s", string(raw))
+	}
 }
 
 func TestToOpenAIMessages_EmptyAssistantSkipped(t *testing.T) {

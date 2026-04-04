@@ -10,10 +10,11 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 )
 
-// BuildLLM 根据 apiType 构建 LLM 实例。
+// BuildLLM 根据 provider 构建 LLM 实例。
 //
-// 支持的 apiType：
-//   - "openai"：OpenAI 兼容 API（也适用于本地 LLM via base URL）
+// 支持的 provider：
+//   - "openai-completions"（兼容别名："openai"）：OpenAI Chat Completions API
+//   - "openai-responses"：OpenAI Responses API
 //   - "claude" / "anthropic"：Anthropic Claude API
 //   - "gemini" / "google"：Google Gemini API
 //
@@ -30,7 +31,7 @@ func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
 		}
 		return claude.New("", opts...), nil
 
-	case "openai":
+	case "openai", "openai-completions":
 		var opts []openai.Option
 		if model != "" {
 			opts = append(opts, openai.WithModel(model))
@@ -39,6 +40,9 @@ func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
 			return openai.NewWithBaseURL(apiKey, baseURL, opts...), nil
 		}
 		return openai.New("", opts...), nil
+
+	case "openai-responses":
+		return nil, fmt.Errorf("provider %q is reserved for the OpenAI Responses API and is not implemented yet", apiType)
 
 	case "gemini", "google":
 		var opts []gemini.Option
@@ -51,6 +55,6 @@ func BuildLLM(apiType, model, apiKey, baseURL string) (port.LLM, error) {
 		return gemini.New("", opts...), nil
 
 	default:
-		return nil, fmt.Errorf("unknown api_type: %s (supported: claude, openai, gemini)", apiType)
+		return nil, fmt.Errorf("unknown provider: %s (supported: claude, openai-completions, openai-responses, gemini)", apiType)
 	}
 }

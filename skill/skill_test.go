@@ -281,8 +281,8 @@ func TestSaveConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Provider != "openai" {
-		t.Errorf("expected provider=openai, got %q", loaded.Provider)
+	if loaded.Provider != APITypeOpenAICompletions {
+		t.Errorf("expected provider=%s, got %q", APITypeOpenAICompletions, loaded.Provider)
 	}
 	if loaded.Model != "gpt-4o" {
 		t.Errorf("expected model=gpt-4o, got %q", loaded.Model)
@@ -295,6 +295,17 @@ func TestSaveConfig(t *testing.T) {
 	}
 	if len(loaded.Skills) != 1 || loaded.Skills[0].Name != "test" {
 		t.Errorf("expected 1 skill, got %+v", loaded.Skills)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	if !strings.Contains(text, "models:") {
+		t.Fatalf("expected saved config to use models section, got %q", text)
+	}
+	if strings.Contains(text, "\nprovider:") || strings.Contains(text, "\nmodel: gpt-4o\n") {
+		t.Fatalf("expected top-level model fields to be omitted, got %q", text)
 	}
 }
 
@@ -324,8 +335,8 @@ func TestSaveConfig_PreservesExisting(t *testing.T) {
 
 	// 验证所有字段都被保留
 	final, _ := LoadConfig(path)
-	if final.Provider != "openai" {
-		t.Errorf("provider should be updated to openai, got %q", final.Provider)
+	if final.Provider != APITypeOpenAICompletions {
+		t.Errorf("provider should be updated to %s, got %q", APITypeOpenAICompletions, final.Provider)
 	}
 	if final.APIKey != "sk-initial" {
 		t.Errorf("api_key should be preserved, got %q", final.APIKey)
@@ -356,7 +367,7 @@ skills:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Provider != "openai" || cfg.Model != "gpt-4o" {
+	if cfg.Provider != APITypeOpenAICompletions || cfg.Model != "gpt-4o" {
 		t.Errorf("unexpected provider/model: %q/%q", cfg.Provider, cfg.Model)
 	}
 	if cfg.BaseURL != "https://api.example.com/v1" {
@@ -367,6 +378,36 @@ skills:
 	}
 	if len(cfg.Skills) != 1 {
 		t.Errorf("expected 1 skill, got %d", len(cfg.Skills))
+	}
+}
+
+func TestLoadConfig_WithModelsSection(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	data := `models:
+  - default: true
+    provider: openai-completions
+    name: deepseek
+    model: deepseek-chat
+    base_url: https://api.example.com/v1
+    api_key: sk-test
+`
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EffectiveAPIType() != APITypeOpenAICompletions || cfg.DisplayProviderName() != "deepseek" {
+		t.Fatalf("unexpected identity: provider=%q name=%q", cfg.EffectiveAPIType(), cfg.DisplayProviderName())
+	}
+	if cfg.Model != "deepseek-chat" || cfg.BaseURL != "https://api.example.com/v1" || cfg.APIKey != "sk-test" {
+		t.Fatalf("unexpected selected model fields: %+v", cfg)
+	}
+	if len(cfg.Models) != 1 || !cfg.Models[0].Default {
+		t.Fatalf("unexpected models: %+v", cfg.Models)
 	}
 }
 
@@ -455,7 +496,7 @@ func TestLoadGlobalConfig_YAMLOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadGlobalConfig failed: %v", err)
 	}
-	if cfg.Provider != "openai" || cfg.Model != "gpt-4o" {
+	if cfg.Provider != APITypeOpenAICompletions || cfg.Model != "gpt-4o" {
 		t.Fatalf("unexpected cfg: %+v", cfg)
 	}
 }

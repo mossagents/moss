@@ -14,11 +14,11 @@ func TestApplyConfigSetAndUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("set provider: %v", err)
 	}
-	if display != "openai" {
-		t.Fatalf("expected provider display openai, got %q", display)
+	if display != appconfig.APITypeOpenAICompletions {
+		t.Fatalf("expected provider display %s, got %q", appconfig.APITypeOpenAICompletions, display)
 	}
-	if cfg.EffectiveAPIType() != "openai" {
-		t.Fatalf("expected api_type=openai, got %q", cfg.EffectiveAPIType())
+	if cfg.EffectiveAPIType() != appconfig.APITypeOpenAICompletions {
+		t.Fatalf("expected provider=%s, got %q", appconfig.APITypeOpenAICompletions, cfg.EffectiveAPIType())
 	}
 	if _, err := applyConfigSet(cfg, "model", "gpt-5", false); err != nil {
 		t.Fatalf("set model: %v", err)

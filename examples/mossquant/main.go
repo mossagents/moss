@@ -74,7 +74,6 @@ func launchTUI(cfg *config) error {
 	var rt *mossquantRuntime
 
 	return mosstui.Run(mosstui.Config{
-		APIType:         flags.EffectiveAPIType(),
 		ProviderName:    flags.DisplayProviderName(),
 		Provider:        flags.Provider,
 		Model:           flags.Model,
@@ -90,10 +89,9 @@ func launchTUI(cfg *config) error {
 			}
 			return "```text\n" + strings.TrimSpace(rt.profile.SummaryMarkdown()) + "\n```"
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, profile, apiType, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
-			identity := appconfig.NormalizeProviderIdentity(apiType, apiType, flags.DisplayProviderName())
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+			identity := appconfig.NormalizeProviderIdentity("", provider, flags.DisplayProviderName())
 			runtimeFlags := &appkit.AppFlags{
-				APIType:   identity.APIType,
 				Provider:  identity.Provider,
 				Name:      identity.Name,
 				Model:     model,

@@ -54,7 +54,7 @@ func ShowConfig(flags *appkit.AppFlags, showSensitive bool) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config file: %s\n", cfgPath)
 	fmt.Fprintf(&b, "Persisted defaults:\n")
-	fmt.Fprintf(&b, "  api_type: %s\n", firstNonEmpty(cfg.EffectiveAPIType(), "(not set)"))
+	fmt.Fprintf(&b, "  provider: %s\n", firstNonEmpty(cfg.EffectiveAPIType(), "(not set)"))
 	fmt.Fprintf(&b, "  name:     %s\n", firstNonEmpty(cfg.DisplayProviderName(), "(not set)"))
 	fmt.Fprintf(&b, "  model:    %s\n", firstNonEmpty(cfg.Model, "(not set)"))
 	fmt.Fprintf(&b, "  base_url: %s\n", firstNonEmpty(cfg.BaseURL, "(not set)"))
@@ -77,7 +77,7 @@ func ShowConfig(flags *appkit.AppFlags, showSensitive bool) (string, error) {
 	}
 	if flags != nil {
 		fmt.Fprintf(&b, "\nEffective runtime:\n")
-		fmt.Fprintf(&b, "  api_type: %s\n", firstNonEmpty(flags.EffectiveAPIType(), "(not set)"))
+		fmt.Fprintf(&b, "  provider: %s\n", firstNonEmpty(flags.EffectiveAPIType(), "(not set)"))
 		fmt.Fprintf(&b, "  name:     %s\n", firstNonEmpty(flags.DisplayProviderName(), "(not set)"))
 		fmt.Fprintf(&b, "  model:    %s\n", firstNonEmpty(flags.Model, "(default)"))
 		fmt.Fprintf(&b, "  base_url: %s\n", firstNonEmpty(flags.BaseURL, "(not set)"))
@@ -268,11 +268,11 @@ func applyConfigSet(cfg *appconfig.Config, key, value string, allowSensitive boo
 	switch key {
 	case "api_type", "apitype", "provider":
 		identity := appconfig.NormalizeProviderIdentity(value, value, cfg.Name)
-		cfg.APIType = identity.APIType
 		cfg.Provider = identity.Provider
 		if strings.TrimSpace(cfg.Name) == "" {
 			cfg.Name = identity.Name
 		}
+		value = identity.Provider
 	case "name":
 		cfg.Name = value
 	case "model":
@@ -303,6 +303,8 @@ func applyConfigUnset(cfg *appconfig.Config, key string, allowSensitive bool) er
 	}
 	key = strings.ToLower(strings.TrimSpace(key))
 	switch key {
+	case "api_type", "apitype", "provider":
+		cfg.Provider = ""
 	case "name":
 		cfg.Name = ""
 	case "model":
@@ -316,9 +318,9 @@ func applyConfigUnset(cfg *appconfig.Config, key string, allowSensitive bool) er
 		cfg.APIKey = ""
 	default:
 		if allowSensitive {
-			return fmt.Errorf("unknown config key %q (supported: name, model, base_url, api_key)", key)
+			return fmt.Errorf("unknown config key %q (supported: provider, name, model, base_url, api_key)", key)
 		}
-		return fmt.Errorf("unknown config key %q (supported: name, model, base_url)", key)
+		return fmt.Errorf("unknown config key %q (supported: provider, name, model, base_url)", key)
 	}
 	return nil
 }

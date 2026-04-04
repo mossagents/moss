@@ -73,7 +73,7 @@ func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
 	}
 }
 
-func TestCommonFlags_MergeGlobalConfig_APITypeAndName(t *testing.T) {
+func TestCommonFlags_MergeGlobalConfig_LegacyAPITypeAndName(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -90,14 +90,11 @@ func TestCommonFlags_MergeGlobalConfig_APITypeAndName(t *testing.T) {
 	f.MergeGlobalConfig()
 	f.ApplyDefaults()
 
-	if f.APIType != "openai" {
-		t.Fatalf("APIType = %q, want openai", f.APIType)
-	}
 	if f.Name != "deepseek" {
 		t.Fatalf("Name = %q, want deepseek", f.Name)
 	}
-	if f.Provider != "openai" {
-		t.Fatalf("Provider alias = %q, want openai", f.Provider)
+	if f.Provider != config.APITypeOpenAICompletions {
+		t.Fatalf("Provider alias = %q, want %s", f.Provider, config.APITypeOpenAICompletions)
 	}
 }
 
@@ -120,7 +117,7 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 	}
 }
 
-func TestCommonFlags_MergeEnv_APITypeAndName(t *testing.T) {
+func TestCommonFlags_MergeEnv_LegacyAPITypeAndName(t *testing.T) {
 	t.Setenv("MOSS_API_TYPE", "openai")
 	t.Setenv("MOSS_NAME", "deepseek")
 	t.Setenv("MOSS_MODEL", "deepseek-chat")
@@ -129,22 +126,19 @@ func TestCommonFlags_MergeEnv_APITypeAndName(t *testing.T) {
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
 
-	if f.APIType != "openai" {
-		t.Fatalf("APIType = %q, want openai", f.APIType)
-	}
 	if f.Name != "deepseek" {
 		t.Fatalf("Name = %q, want deepseek", f.Name)
 	}
-	if f.Provider != "openai" {
-		t.Fatalf("Provider alias = %q, want openai", f.Provider)
+	if f.Provider != config.APITypeOpenAICompletions {
+		t.Fatalf("Provider alias = %q, want %s", f.Provider, config.APITypeOpenAICompletions)
 	}
 }
 
 func TestCommonFlags_ApplyDefaults(t *testing.T) {
 	f := &AppFlags{}
 	f.ApplyDefaults()
-	if f.Provider != "openai" {
-		t.Fatalf("Provider = %q, want openai", f.Provider)
+	if f.Provider != config.APITypeOpenAICompletions {
+		t.Fatalf("Provider = %q, want %s", f.Provider, config.APITypeOpenAICompletions)
 	}
 	if f.Workspace != "." {
 		t.Fatalf("Workspace = %q, want .", f.Workspace)
