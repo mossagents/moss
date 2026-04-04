@@ -58,14 +58,58 @@ func TestLoopTextOnly(t *testing.T) {
 	}
 }
 
+func TestLoopStreamingReasoning(t *testing.T) {
+	mock := &kt.MockStreamingLLM{
+		Chunks: [][]port.StreamChunk{{
+			{ReasoningDelta: "First inspect the redirect. "},
+			{ReasoningDelta: "Then query the weather endpoint."},
+			{Delta: "Hangzhou is cloudy.", Done: true, Usage: &port.TokenUsage{TotalTokens: 10}},
+		}},
+	}
+	io := kt.NewRecorderIO()
+
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+		IO:    io,
+	}
+	sess := &session.Session{
+		ID:       "test-reasoning-stream",
+		Status:   session.StatusCreated,
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("weather?")}}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got error: %s", result.Error)
+	}
+	if got := port.ContentPartsToReasoningText(sess.Messages[len(sess.Messages)-1].ContentParts); got != "First inspect the redirect. Then query the weather endpoint." {
+		t.Fatalf("session reasoning = %q", got)
+	}
+	foundReasoning := false
+	for _, msg := range io.Sent {
+		if msg.Type == port.OutputReasoning {
+			foundReasoning = true
+			break
+		}
+	}
+	if !foundReasoning {
+		t.Fatal("expected reasoning output to be sent to IO")
+	}
+}
+
 func TestLoopToolCall(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
 			{
 				Message: port.Message{
-					Role:      port.RoleAssistant,
+					Role:         port.RoleAssistant,
 					ContentParts: []port.ContentPart{port.TextPart("")},
-					ToolCalls: []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+					ToolCalls:    []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 				},
 				ToolCalls:  []port.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 				StopReason: "tool_use",
@@ -1190,5 +1234,3 @@ func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
 		t.Fatal("expected tool result appended despite stream tail json error")
 	}
 }
-
-

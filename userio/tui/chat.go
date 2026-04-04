@@ -39,7 +39,10 @@ type cancelMsg struct{}
 
 // switchModelMsg 通知 app 切换模型。
 type switchModelMsg struct {
-	model string
+	provider     string
+	providerName string
+	model        string
+	auto         bool
 }
 
 // switchTrustMsg 通知 app 切换 trust level。
@@ -106,12 +109,15 @@ type chatModel struct {
 	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm               *askFormState
 	scheduleBrowser       *scheduleBrowserState
+	modelPicker           *modelPickerState
 	overlays              *overlayStack
 	finished              bool   // session 已结束
 	result                string // 最终结果
 	lastTrace             *product.RunTraceSummary
 	currentSessionID      string
 	progress              executionProgressState
+	progressTrail         []executionProgressState
+	lastThinkingSignature string
 	approvalRules         map[string][]approvalMemoryRule
 	debugPromptPreview    bool
 
@@ -120,10 +126,13 @@ type chatModel struct {
 
 	// 配置显示
 	provider             string
+	providerID           string
+	providerName         string
 	startupBanner        string
 	sidebarTitle         string
 	renderSidebarFn      func() string
 	model                string
+	modelAuto            bool
 	workspace            string
 	trust                string
 	profile              string
@@ -190,6 +199,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		textarea:             ta,
 		provider:             provider,
 		model:                model,
+		modelAuto:            strings.TrimSpace(model) == "",
 		workspace:            workspace,
 		trust:                "trusted",
 		theme:                theme,
@@ -204,6 +214,13 @@ func newChatModel(provider, model, workspace string) chatModel {
 		historyPath:          defaultHistoryPath(),
 		now:                  time.Now,
 	}
+}
+
+func (m *chatModel) setProviderIdentity(provider, providerName string) {
+	identity := config.NormalizeProviderIdentity("", provider, providerName)
+	m.providerID = identity.Provider
+	m.providerName = identity.Name
+	m.provider = identity.Label()
 }
 
 func (m chatModel) Init() tea.Cmd {
@@ -297,6 +314,8 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		case port.OutputStreamEnd:
 			m.streaming = false
 			m.runStartedAt = time.Time{}
+		case port.OutputReasoning:
+			m.appendReasoning(o.Content)
 		case port.OutputProgress:
 			m.messages = append(m.messages, chatMessage{kind: msgProgress, content: o.Content})
 		case port.OutputToolStart:
@@ -305,15 +324,28 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 				meta["started_at"] = m.now().UTC()
 			}
 			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content, meta: meta})
+			m.recordProgressDetail("running", "tools", "starting "+summarizeTimelineToolStart(strings.TrimSpace(o.Content), toolMetaString(chatMessage{meta: meta}, "args_preview", "")), m.now().UTC())
 		case port.OutputToolResult:
 			m.markToolStartCompleted(o.Meta)
 			meta := cloneMessageMeta(o.Meta)
 			meta["completed_at"] = m.now().UTC()
+			toolName := strings.TrimSpace(toolMetaString(chatMessage{meta: meta}, "tool", o.Content))
 			isErr, _ := o.Meta["is_error"].(bool)
 			if isErr {
 				m.messages = append(m.messages, chatMessage{kind: msgToolError, content: o.Content, meta: meta})
+				message := "error " + toolPrettyName(toolName)
+				if detail := summarizeTimelineToolResult(toolName, o.Content); strings.TrimSpace(detail) != "" {
+					message += " · " + detail
+				}
+				m.recordProgressDetail("running", "tools", message, m.now().UTC())
 			} else {
 				m.messages = append(m.messages, chatMessage{kind: msgToolResult, content: o.Content, meta: meta})
+				detail := summarizeTimelineToolResult(toolName, o.Content)
+				message := "completed " + toolPrettyName(toolName)
+				if strings.TrimSpace(detail) != "" {
+					message += " · " + detail
+				}
+				m.recordProgressDetail("running", "tools", message, m.now().UTC())
 			}
 		}
 		m.refreshViewport()
@@ -334,6 +366,7 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
 		if msg.ask.request.Type == port.InputConfirm && msg.ask.request.Approval != nil {
 			notice = "Approval required. Review the requested action and choose how to proceed."
+			m.recordProgressDetail("waiting", "approval", summarizeTimelineApproval(msg.ask.request.Approval), m.now().UTC())
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
 		m.activateAskField()
@@ -357,6 +390,20 @@ func (m *chatModel) appendStream(delta string) {
 			m.runStartedAt = m.now().UTC()
 		}
 	}
+}
+
+func (m *chatModel) appendReasoning(delta string) {
+	if strings.TrimSpace(delta) == "" {
+		return
+	}
+	if len(m.messages) > 0 && m.messages[len(m.messages)-1].kind == msgReasoning {
+		m.messages[len(m.messages)-1].content += delta
+		return
+	}
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgReasoning,
+		content: delta,
+	})
 }
 
 func (m *chatModel) refreshViewport() {
@@ -460,10 +507,7 @@ func (m chatModel) visibleInputHeight() int {
 }
 
 func (m chatModel) visibleProgressHeight() int {
-	if m.progress.renderLine(m.now(), m.mainWidth()) == "" {
-		return 0
-	}
-	return 1
+	return 0
 }
 
 func (m *chatModel) inputWrapWidth() int {
@@ -818,6 +862,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Threads and core"},
 	{Name: "/plan", Summary: "Switch to planning mode", Section: "Runtime posture"},
 	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime posture"},
+	{Name: "/models", Summary: "Open the configured model picker", Section: "Runtime posture"},
 	{Name: "/fast", Summary: "Toggle fast interaction mode", Section: "Runtime posture"},
 	{Name: "/personality", Summary: "Set the response personality", Section: "Runtime posture"},
 	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime posture"},

@@ -389,6 +389,79 @@ func TestFromOpenAIResponse_WithAudio(t *testing.T) {
 	}
 }
 
+func TestFromOpenAIResponse_WithReasoningContent(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-r1",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "deepseek-reasoner",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"reasoning_content": "Need to verify the redirect first.",
+				"content": "The site redirects with HTTP 301."
+			},
+			"finish_reason": "stop"
+		}],
+		"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := fromOpenAIResponse(&completion)
+	if len(resp.Message.ContentParts) != 2 {
+		t.Fatalf("expected reasoning+text parts, got %d", len(resp.Message.ContentParts))
+	}
+	if resp.Message.ContentParts[0].Type != port.ContentPartReasoning {
+		t.Fatalf("expected first part reasoning, got %s", resp.Message.ContentParts[0].Type)
+	}
+	if got := port.ContentPartsToReasoningText(resp.Message.ContentParts); got != "Need to verify the redirect first." {
+		t.Fatalf("reasoning = %q", got)
+	}
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "The site redirects with HTTP 301." {
+		t.Fatalf("plain text = %q", got)
+	}
+}
+
+func TestFromOpenAIResponse_ReasoningOnly(t *testing.T) {
+	raw := `{
+		"id": "chatcmpl-r2",
+		"object": "chat.completion",
+		"created": 1700000000,
+		"model": "deepseek-reasoner",
+		"choices": [{
+			"index": 0,
+			"message": {
+				"role": "assistant",
+				"reasoning_content": "This requires more analysis."
+			},
+			"finish_reason": "stop"
+		}],
+		"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+	}`
+	var completion openai.ChatCompletion
+	if err := json.Unmarshal([]byte(raw), &completion); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	resp := fromOpenAIResponse(&completion)
+	if len(resp.Message.ContentParts) != 1 {
+		t.Fatalf("expected reasoning-only part, got %d", len(resp.Message.ContentParts))
+	}
+	if resp.Message.ContentParts[0].Type != port.ContentPartReasoning {
+		t.Fatalf("expected reasoning part, got %s", resp.Message.ContentParts[0].Type)
+	}
+	if got := port.ContentPartsToReasoningText(resp.Message.ContentParts); got != "This requires more analysis." {
+		t.Fatalf("reasoning = %q", got)
+	}
+	if got := port.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
+		t.Fatalf("plain text = %q, want empty", got)
+	}
+}
+
 func TestFromOpenAIResponse_EmptyChoices(t *testing.T) {
 	raw := `{
 		"id": "chatcmpl-789",
@@ -449,6 +522,29 @@ func TestStreamIterator_TextDeltas(t *testing.T) {
 	}
 	if it.pending[1].Delta != " World" {
 		t.Errorf("chunk[1].Delta = %q, want ' World'", it.pending[1].Delta)
+	}
+}
+
+func TestStreamIterator_ReasoningDeltas(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-r1","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner",
+		"choices":[{"index":0,"delta":{"reasoning_content":"First inspect the redirect chain. "},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-r1","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner",
+		"choices":[{"index":0,"delta":{"reasoning_content":"Then call the weather API."},"finish_reason":""}]
+	}`))
+
+	if len(it.pending) != 2 {
+		t.Fatalf("expected 2 pending chunks, got %d", len(it.pending))
+	}
+	if it.pending[0].ReasoningDelta != "First inspect the redirect chain." {
+		t.Fatalf("reasoning delta[0] = %q", it.pending[0].ReasoningDelta)
+	}
+	if it.pending[1].ReasoningDelta != "Then call the weather API." {
+		t.Fatalf("reasoning delta[1] = %q", it.pending[1].ReasoningDelta)
 	}
 }
 

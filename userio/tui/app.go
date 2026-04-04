@@ -789,11 +789,17 @@ func (m *appModel) configureChatShell() {
 	m.chat.startupBanner = m.config.WelcomeBanner
 	m.chat.sidebarTitle = valueOrDefaultString(strings.TrimSpace(m.config.SidebarTitle), configpkg.AppName())
 	m.chat.renderSidebarFn = m.config.RenderSidebar
+	m.chat.setProviderIdentity(m.config.Provider, m.config.ProviderName)
 }
 
 // Run 启动 TUI 应用。
 func Run(cfg Config) error {
 	bridge := NewBridgeIO()
+	if provider, providerName, model, ok := persistedModelOverride(); ok {
+		cfg.Provider = provider
+		cfg.ProviderName = providerName
+		cfg.Model = model
+	}
 
 	m := appModel{
 		config:   cfg,
@@ -814,6 +820,7 @@ func Run(cfg Config) error {
 		m.state = stateChat
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		m.chat.modelAuto = !hasPersistedModelOverride()
 		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
@@ -875,6 +882,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		m.chat.modelAuto = !hasPersistedModelOverride()
 		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
@@ -906,8 +914,8 @@ func (m appModel) stopAgentForKernelRebuild() appModel {
 	return m
 }
 
-func (m appModel) welcomeConfigForCurrentProvider(model string) (WelcomeConfig, string) {
-	identity := configpkg.NormalizeProviderIdentity("", m.config.Provider, m.config.ProviderName)
+func (m appModel) welcomeConfigForModelSelection(provider, providerName, model string) (WelcomeConfig, string) {
+	identity := configpkg.NormalizeProviderIdentity("", provider, providerName)
 	return WelcomeConfig{
 		ProviderName: identity.Name,
 		Provider:     identity.Provider,
@@ -916,9 +924,11 @@ func (m appModel) welcomeConfigForCurrentProvider(model string) (WelcomeConfig, 
 	}, identity.Label()
 }
 
-func (m appModel) rebuildKernelWithModel(model string) (tea.Model, tea.Cmd) {
-	wCfg, providerLabel := m.welcomeConfigForCurrentProvider(model)
+func (m appModel) rebuildKernelWithSelection(provider, providerName, model string) (tea.Model, tea.Cmd) {
+	wCfg, providerLabel := m.welcomeConfigForModelSelection(provider, providerName, model)
 	m.chat.provider = providerLabel
+	m.chat.providerID = strings.TrimSpace(wCfg.Provider)
+	m.chat.providerName = strings.TrimSpace(wCfg.ProviderName)
 	m.chat.model = model
 	m.chat.trust = m.config.Trust
 	m.chat.profile = m.config.Profile

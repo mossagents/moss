@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/mossagents/moss/kernel/middleware"
@@ -200,6 +201,15 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 
 	*lastOutput = port.ContentPartsToPlainText(resp.Message.ContentParts)
 	if l.IO != nil && !streamed {
+		for _, part := range resp.Message.ContentParts {
+			if part.Type != port.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputReasoning,
+				Content: part.Text,
+			})
+		}
 		l.IO.Send(ctx, port.OutputMessage{
 			Type:    port.OutputText,
 			Content: *lastOutput,

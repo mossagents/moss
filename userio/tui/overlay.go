@@ -10,6 +10,7 @@ type overlayID string
 const (
 	overlayAsk      overlayID = "ask"
 	overlaySchedule overlayID = "schedule"
+	overlayModel    overlayID = "model"
 )
 
 type overlayDialog interface {
@@ -98,6 +99,23 @@ func (scheduleOverlayDialog) HandleKey(m chatModel, msg tea.KeyMsg) (chatModel, 
 	}
 }
 
+type modelOverlayDialog struct{}
+
+func (modelOverlayDialog) ID() overlayID { return overlayModel }
+
+func (modelOverlayDialog) View(m chatModel, width, _ int) string {
+	return m.renderModelPicker(width)
+}
+
+func (modelOverlayDialog) HandleKey(m chatModel, msg tea.KeyMsg) (chatModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m.closeModelOverlay(), nil
+	default:
+		return m.handleModelPickerKey(msg)
+	}
+}
+
 func (m *chatModel) ensureOverlayStack() {
 	if m.overlays == nil {
 		m.overlays = newOverlayStack()
@@ -130,6 +148,20 @@ func (m chatModel) closeScheduleOverlay() chatModel {
 	return m
 }
 
+func (m *chatModel) openModelOverlay() {
+	m.ensureOverlayStack()
+	m.overlays.Open(overlayModel)
+}
+
+func (m chatModel) closeModelOverlay() chatModel {
+	m.modelPicker = nil
+	if m.overlays != nil {
+		m.overlays.Close(overlayModel)
+	}
+	m.refreshViewport()
+	return m
+}
+
 func (m chatModel) activeOverlay() overlayDialog {
 	if m.overlays != nil {
 		switch m.overlays.Top() {
@@ -141,6 +173,10 @@ func (m chatModel) activeOverlay() overlayDialog {
 			if m.scheduleBrowser != nil {
 				return scheduleOverlayDialog{}
 			}
+		case overlayModel:
+			if m.modelPicker != nil {
+				return modelOverlayDialog{}
+			}
 		}
 	}
 	if m.askForm != nil && m.pendAsk != nil {
@@ -148,6 +184,9 @@ func (m chatModel) activeOverlay() overlayDialog {
 	}
 	if m.scheduleBrowser != nil {
 		return scheduleOverlayDialog{}
+	}
+	if m.modelPicker != nil {
+		return modelOverlayDialog{}
 	}
 	return nil
 }

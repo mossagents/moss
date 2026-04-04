@@ -380,6 +380,9 @@ func toAnthropicVideoBlock(part port.ContentPart) (anthropic.ContentBlockParamUn
 func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
+		if role == "assistant" && part.Type == port.ContentPartReasoning {
+			continue
+		}
 		if part.Type != port.ContentPartText {
 			return "", unsupportedPartError(provider, model, role, part.Type)
 		}

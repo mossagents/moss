@@ -287,6 +287,9 @@ func toGeminiUserParts(parts []port.ContentPart, model string) ([]*genai.Part, e
 func toGeminiAssistantParts(msg port.Message, model string) ([]*genai.Part, error) {
 	parts := make([]*genai.Part, 0, len(msg.ContentParts)+len(msg.ToolCalls))
 	for _, cp := range msg.ContentParts {
+		if cp.Type == port.ContentPartReasoning {
+			continue
+		}
 		if cp.Type != port.ContentPartText {
 			return nil, unsupportedPartError("gemini", model, "assistant", cp.Type)
 		}
@@ -614,6 +617,9 @@ func (it *streamIterator) closeStop() {
 func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
+		if role == "assistant" && part.Type == port.ContentPartReasoning {
+			continue
+		}
 		if part.Type != port.ContentPartText {
 			return "", unsupportedPartError(provider, model, role, part.Type)
 		}

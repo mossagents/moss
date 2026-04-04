@@ -64,6 +64,7 @@ func TestPrintfIO_Send(t *testing.T) {
 	}{
 		{OutputMessage{Type: OutputText, Content: "hello"}, "hello"},
 		{OutputMessage{Type: OutputStream, Content: "chunk"}, "chunk"},
+		{OutputMessage{Type: OutputReasoning, Content: "plan next step"}, "plan next step"},
 		{OutputMessage{Type: OutputProgress, Content: "working"}, "working"},
 		{OutputMessage{Type: OutputToolStart, Content: "run_command"}, "run_command"},
 		{OutputMessage{Type: OutputToolResult, Content: "done"}, "done"},

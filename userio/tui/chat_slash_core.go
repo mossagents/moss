@@ -21,6 +21,7 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/exit":         handleExitSlashCommand,
 	"/quit":         handleExitSlashCommand,
 	"/model":        handleModelSlashCommand,
+	"/models":       handleModelSlashCommand,
 	"/fast":         handleFastSlashCommand,
 	"/personality":  handlePersonalitySlashCommand,
 	"/clear":        handleClearSlashCommand,
@@ -119,25 +120,9 @@ func handleExitSlashCommand(m chatModel, _ []string, _ string, _ string) (chatMo
 
 func handleModelSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		currentModel := m.model
-		if strings.TrimSpace(currentModel) == "" {
-			currentModel = "(default)"
-		}
-		m.messages = append(m.messages, chatMessage{
-			kind:    msgSystem,
-			content: fmt.Sprintf("Current model: %s\nProvider: %s\nUsage: /model <model>", currentModel, m.provider),
-		})
-		m.refreshViewport()
-		return m, nil
+		return m.openModelPicker()
 	}
-	newModel := strings.Join(args, " ")
-	m.messages = append(m.messages, chatMessage{
-		kind:    msgSystem,
-		content: fmt.Sprintf("Switching model to %s...", newModel),
-	})
-	m.streaming = true
-	m.refreshViewport()
-	return m, func() tea.Msg { return switchModelMsg{model: newModel} }
+	return m.switchModelByQuery(strings.Join(args, " "))
 }
 
 func handleFastSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {

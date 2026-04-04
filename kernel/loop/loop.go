@@ -200,8 +200,11 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		Role:      port.RoleAssistant,
 		ToolCalls: state.toolCalls,
 	}
+	if state.fullReasoning != "" {
+		msg.ContentParts = append(msg.ContentParts, port.ReasoningPart(state.fullReasoning))
+	}
 	if state.fullContent != "" {
-		msg.ContentParts = []port.ContentPart{port.TextPart(state.fullContent)}
+		msg.ContentParts = append(msg.ContentParts, port.TextPart(state.fullContent))
 	}
 
 	return &port.CompletionResponse{
@@ -215,6 +218,7 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 
 type streamAccumulator struct {
 	fullContent    string
+	fullReasoning  string
 	toolCalls      []port.ToolCall
 	usage          port.TokenUsage
 	stopReason     string
@@ -246,6 +250,17 @@ func (l *AgentLoop) handleStreamChunkError(
 }
 
 func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk port.StreamChunk, state *streamAccumulator) bool {
+	if chunk.ReasoningDelta != "" {
+		state.emittedContent = true
+		state.fullReasoning += chunk.ReasoningDelta
+		if l.IO != nil {
+			l.IO.Send(ctx, port.OutputMessage{
+				Type:    port.OutputReasoning,
+				Content: chunk.ReasoningDelta,
+			})
+		}
+	}
+
 	if chunk.Delta != "" {
 		state.emittedContent = true
 		state.fullContent += chunk.Delta

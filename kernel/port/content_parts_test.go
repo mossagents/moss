@@ -110,10 +110,29 @@ func TestValidateContentParts_MixedMediaRoundtripValid(t *testing.T) {
 func TestContentPartsToPlainText(t *testing.T) {
 	out := ContentPartsToPlainText([]ContentPart{
 		{Type: ContentPartText, Text: "a"},
+		{Type: ContentPartReasoning, Text: "hidden"},
 		{Type: ContentPartInputImage, URL: "https://example.com/a.png"},
 		{Type: ContentPartText, Text: "b"},
 	})
 	if out != "a\nb" {
 		t.Fatalf("plain text = %q, want %q", out, "a\nb")
+	}
+}
+
+func TestValidateContentParts_ReasoningValid(t *testing.T) {
+	err := ValidateContentParts([]ContentPart{{Type: ContentPartReasoning, Text: "first inspect the page"}})
+	if err != nil {
+		t.Fatalf("expected valid reasoning part, got error: %v", err)
+	}
+}
+
+func TestContentPartsToReasoningText(t *testing.T) {
+	out := ContentPartsToReasoningText([]ContentPart{
+		{Type: ContentPartReasoning, Text: "a"},
+		{Type: ContentPartText, Text: "visible"},
+		{Type: ContentPartReasoning, Text: "b"},
+	})
+	if out != "a\nb" {
+		t.Fatalf("reasoning text = %q, want %q", out, "a\nb")
 	}
 }

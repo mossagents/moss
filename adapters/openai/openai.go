@@ -380,8 +380,11 @@ func fromOpenAIResponse(c *openai.ChatCompletion) *port.CompletionResponse {
 	choice := c.Choices[0]
 	toolCalls := fromToolCalls(choice.Message.ToolCalls)
 	var contentParts []port.ContentPart
+	if reasoning := extractReasoningText(choice.Message.RawJSON()); strings.TrimSpace(reasoning) != "" {
+		contentParts = append(contentParts, port.ReasoningPart(reasoning))
+	}
 	if choice.Message.Content != "" {
-		contentParts = []port.ContentPart{port.TextPart(choice.Message.Content)}
+		contentParts = append(contentParts, port.TextPart(choice.Message.Content))
 	}
 	if strings.TrimSpace(choice.Message.Audio.Data) != "" {
 		contentParts = append(contentParts, port.MediaInlinePart(
@@ -407,6 +410,9 @@ func fromOpenAIResponse(c *openai.ChatCompletion) *port.CompletionResponse {
 func contentPartsToTextOnlyString(parts []port.ContentPart, provider, model, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
+		if role == "assistant" && part.Type == port.ContentPartReasoning {
+			continue
+		}
 		if part.Type != port.ContentPartText {
 			return "", unsupportedPartError(provider, model, role, part.Type)
 		}
@@ -515,6 +521,9 @@ func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 	// 文本增量
 	if delta.Content != "" {
 		it.pending = append(it.pending, port.StreamChunk{Delta: delta.Content})
+	}
+	if reasoning := extractReasoningText(delta.RawJSON()); reasoning != "" {
+		it.pending = append(it.pending, port.StreamChunk{ReasoningDelta: reasoning})
 	}
 
 	// 工具调用增量
@@ -629,4 +638,42 @@ func repairTruncatedJSON(s string) string {
 		}
 	}
 	return s
+}
+
+func extractReasoningText(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"reasoning_content", "reasoning"} {
+		if text := extractReasoningValue(payload[key]); strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+	return ""
+}
+
+func extractReasoningValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if text := extractReasoningValue(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		for _, key := range []string{"text", "content"} {
+			if text := extractReasoningValue(v[key]); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
 }

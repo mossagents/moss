@@ -87,6 +87,8 @@ func (p *PrintfIO) Send(_ context.Context, msg OutputMessage) error {
 		fmt.Fprint(p.w, msg.Content)
 	case OutputStreamEnd:
 		fmt.Fprintln(p.w)
+	case OutputReasoning:
+		fmt.Fprintf(p.w, "💭 %s\n", msg.Content)
 	case OutputProgress:
 		fmt.Fprintf(p.w, "⏳ %s\n", msg.Content)
 	case OutputToolStart:

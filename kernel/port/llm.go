@@ -122,10 +122,11 @@ type MetadataStreamIterator interface {
 
 // StreamChunk 是流式响应的一个片段。
 type StreamChunk struct {
-	Delta    string      `json:"delta,omitempty"`
-	ToolCall *ToolCall   `json:"tool_call,omitempty"`
-	Done     bool        `json:"done,omitempty"`
-	Usage    *TokenUsage `json:"usage,omitempty"`
+	Delta          string      `json:"delta,omitempty"`
+	ReasoningDelta string      `json:"reasoning_delta,omitempty"`
+	ToolCall       *ToolCall   `json:"tool_call,omitempty"`
+	Done           bool        `json:"done,omitempty"`
+	Usage          *TokenUsage `json:"usage,omitempty"`
 }
 
 // 确保 io.EOF 可用于 StreamIterator.Next 的终止判断。

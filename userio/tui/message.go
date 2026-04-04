@@ -8,9 +8,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 )
 
 // msgKind 区分消息类型。
@@ -24,6 +26,7 @@ const (
 	msgToolResult
 	msgToolError
 	msgProgress
+	msgReasoning
 	msgError
 )
 
@@ -45,10 +48,10 @@ func renderMessage(m chatMessage, width int) string {
 
 	switch m.kind {
 	case msgUser:
-		return renderRoleMessage(m, maxContent, func(s string) string { return userLabelStyle.Render(s) })
+		return renderRoleMessage(m, maxContent, func(s string) string { return userLabelStyle.Render(s) }, false)
 
 	case msgAssistant:
-		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) })
+		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) }, true)
 
 	case msgSystem:
 		return systemStyle.Render(renderSystemMessage(m.content, maxContent))
@@ -67,7 +70,10 @@ func renderMessage(m chatMessage, width int) string {
 		return renderToolResultMessage(m, maxContent)
 
 	case msgProgress:
-		return progressStyle.Render(fmt.Sprintf("  ... %s", m.content))
+		return renderProgressMessage(m, maxContent)
+
+	case msgReasoning:
+		return renderReasoningMessage(m, maxContent)
 
 	case msgError:
 		return errorStyle.Render(fmt.Sprintf("Error: %s", m.content))
@@ -77,7 +83,56 @@ func renderMessage(m chatMessage, width int) string {
 	}
 }
 
-func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string) string {
+func renderProgressMessage(m chatMessage, width int) string {
+	phase := ""
+	status := ""
+	if m.meta != nil {
+		phase, _ = m.meta["phase"].(string)
+		status, _ = m.meta["status"].(string)
+	}
+	label := strings.TrimSpace(progressPhaseLabel(phase))
+	if label == "" {
+		label = strings.ToLower(strings.TrimSpace(progressStatusLabel(status)))
+	}
+	if label == "" {
+		label = "progress"
+	}
+	text := strings.TrimSpace(m.content)
+	line := label
+	if text != "" {
+		line += "  " + text
+	}
+	wrapped := wrapText(line, width)
+	lines := strings.Split(wrapped, "\n")
+	var b strings.Builder
+	b.WriteString("  ◦ ")
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n    ")
+		b.WriteString(line)
+	}
+	return halfMutedStyle.Render(b.String())
+}
+
+func renderReasoningMessage(m chatMessage, width int) string {
+	body := strings.Join(strings.Fields(strings.TrimSpace(m.content)), " ")
+	if body == "" {
+		return halfMutedStyle.Render("  ◦ thinking")
+	}
+	line := "thinking  " + body
+	wrapped := wrapText(line, width)
+	lines := strings.Split(wrapped, "\n")
+	var b strings.Builder
+	b.WriteString("  ◦ ")
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n    ")
+		b.WriteString(line)
+	}
+	return halfMutedStyle.Render(b.String())
+}
+
+func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string, showTimestamp bool) string {
 	if isMedia, _ := m.meta["is_media"].(bool); isMedia {
 		kind, _ := m.meta["media_kind"].(string)
 		if p, ok := m.meta["media_path"].(string); ok && strings.TrimSpace(p) != "" {
@@ -105,9 +160,11 @@ func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string
 	b.WriteString(dotRenderer("●"))
 	b.WriteString(" ")
 	b.WriteString(lines[0])
-	if ts := formatMessageTimestamp(m.meta); ts != "" {
-		b.WriteString(" ")
-		b.WriteString(mutedStyle.Render(ts))
+	if showTimestamp {
+		if ts := formatMessageTimestamp(m.meta); ts != "" {
+			b.WriteString(" ")
+			b.WriteString(mutedStyle.Render(ts))
+		}
 	}
 	for _, line := range lines[1:] {
 		b.WriteString("\n    ")
@@ -890,27 +947,71 @@ func wrapText(s string, width int) string {
 	if width <= 0 {
 		return s
 	}
-	var result strings.Builder
+	var wrapped []string
 	for _, line := range strings.Split(s, "\n") {
-		if len(line) <= width {
-			result.WriteString(line)
-			result.WriteString("\n")
-			continue
-		}
-		for len(line) > width {
-			// 找到最后一个空格以在单词边界处换行
-			idx := strings.LastIndex(line[:width], " ")
-			if idx <= 0 {
-				idx = width
-			}
-			result.WriteString(line[:idx])
-			result.WriteString("\n")
-			line = strings.TrimLeft(line[idx:], " ")
-		}
-		if len(line) > 0 {
-			result.WriteString(line)
-			result.WriteString("\n")
-		}
+		wrapped = append(wrapped, wrapTextLine(line, width)...)
 	}
-	return strings.TrimRight(result.String(), "\n")
+	return strings.Join(wrapped, "\n")
+}
+
+func wrapTextLine(line string, width int) []string {
+	if line == "" {
+		return []string{""}
+	}
+	runes := []rune(line)
+	lines := make([]string, 0, 4)
+	start := 0
+
+	for start < len(runes) {
+		end := start
+		currentWidth := 0
+		lastSpace := -1
+
+		for end < len(runes) {
+			rw := runewidth.RuneWidth(runes[end])
+			if rw < 0 {
+				rw = 0
+			}
+			if currentWidth > 0 && currentWidth+rw > width {
+				break
+			}
+			if currentWidth == 0 && rw > width {
+				end++
+				break
+			}
+			currentWidth += rw
+			if unicode.IsSpace(runes[end]) {
+				lastSpace = end
+			}
+			end++
+		}
+
+		if end >= len(runes) {
+			lines = append(lines, string(runes[start:]))
+			break
+		}
+
+		if lastSpace >= start {
+			segment := strings.TrimRightFunc(string(runes[start:lastSpace]), unicode.IsSpace)
+			if segment != "" {
+				lines = append(lines, segment)
+				start = lastSpace + 1
+				for start < len(runes) && unicode.IsSpace(runes[start]) {
+					start++
+				}
+				continue
+			}
+		}
+
+		if end == start {
+			end++
+		}
+		lines = append(lines, string(runes[start:end]))
+		start = end
+	}
+
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
 }

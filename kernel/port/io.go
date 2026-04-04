@@ -18,6 +18,7 @@ const (
 	OutputText       OutputType = "text"        // 完整文本消息
 	OutputStream     OutputType = "stream"      // 流式 chunk（追加到当前消息）
 	OutputStreamEnd  OutputType = "stream_end"  // 流式结束
+	OutputReasoning  OutputType = "reasoning"   // 模型推理内容
 	OutputProgress   OutputType = "progress"    // 进度更新
 	OutputToolStart  OutputType = "tool_start"  // 工具开始执行
 	OutputToolResult OutputType = "tool_result" // 工具执行结果

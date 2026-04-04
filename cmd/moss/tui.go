@@ -25,6 +25,8 @@ func (c *cliUserIO) Send(_ context.Context, msg port.OutputMessage) error {
 		fmt.Fprint(c.writer, msg.Content)
 	case port.OutputStreamEnd:
 		fmt.Fprintln(c.writer)
+	case port.OutputReasoning:
+		fmt.Fprintf(c.writer, "💭 %s\n", msg.Content)
 	case port.OutputProgress:
 		fmt.Fprintf(c.writer, "⏳ %s\n", msg.Content)
 	case port.OutputToolStart:

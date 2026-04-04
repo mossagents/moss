@@ -32,6 +32,17 @@ type executionProgressState struct {
 	UpdatedAt time.Time
 }
 
+func (s executionProgressState) signature() string {
+	return strings.Join([]string{
+		strings.TrimSpace(s.Status),
+		strings.TrimSpace(s.Phase),
+		strings.TrimSpace(s.Message),
+		strings.TrimSpace(s.ToolName),
+		fmt.Sprintf("%d", s.Iteration),
+		fmt.Sprintf("%d", s.MaxSteps),
+	}, "\x00")
+}
+
 func (s executionProgressState) visible() bool {
 	return strings.TrimSpace(s.SessionID) != "" && (!s.StartedAt.IsZero() || !s.UpdatedAt.IsZero() || strings.TrimSpace(s.Status) != "" || strings.TrimSpace(s.Message) != "")
 }
@@ -94,6 +105,240 @@ func (s executionProgressState) renderLine(now time.Time, width int) string {
 	default:
 		return mutedStyle.Render(line)
 	}
+}
+
+func (s executionProgressState) renderTimelineEntry(now time.Time, width int, latest bool) string {
+	phase := progressPhaseLabel(s.Phase)
+	if strings.TrimSpace(phase) == "" {
+		phase = strings.ToLower(progressStatusLabel(s.Status))
+	}
+	label := "○"
+	if latest {
+		label = "●"
+	}
+	parts := []string{label, phase}
+	if msg := strings.TrimSpace(s.Message); msg != "" {
+		parts = append(parts, msg)
+	}
+	if elapsed := s.elapsed(now); elapsed > 0 {
+		parts = append(parts, elapsed.String())
+	}
+	line := strings.Join(parts, "  ")
+	if width > 0 {
+		line = truncateDisplayWidth(line, width)
+	}
+	if latest {
+		switch s.Status {
+		case "failed", "cancelled":
+			return errorStyle.Render(line)
+		case "running", "waiting":
+			return runningStyle.Render(line)
+		default:
+			return mutedStyle.Render(line)
+		}
+	}
+	return halfMutedStyle.Render(line)
+}
+
+func (m *chatModel) recordProgressSnapshot(next executionProgressState, reset bool) (bool, bool) {
+	didReset := reset || strings.TrimSpace(next.SessionID) != strings.TrimSpace(m.progress.SessionID) || progressRunChanged(m.progress, next)
+	if didReset {
+		m.progressTrail = nil
+	}
+	if !next.visible() {
+		return didReset, false
+	}
+	if len(m.progressTrail) > 0 && m.progressTrail[len(m.progressTrail)-1].signature() == next.signature() {
+		m.progressTrail[len(m.progressTrail)-1] = next
+		return didReset, false
+	}
+	m.progressTrail = append(m.progressTrail, next)
+	if len(m.progressTrail) > 6 {
+		m.progressTrail = append([]executionProgressState(nil), m.progressTrail[len(m.progressTrail)-6:]...)
+	}
+	return didReset, true
+}
+
+func shouldAppendThinkingTranscript(snapshot executionProgressState) bool {
+	if !snapshot.visible() || strings.TrimSpace(snapshot.Message) == "" {
+		return false
+	}
+	switch strings.TrimSpace(snapshot.Phase) {
+	case "starting", "thinking", "tools", "approval", "completed", "failed", "cancelled":
+		return true
+	default:
+		return strings.TrimSpace(snapshot.Status) != ""
+	}
+}
+
+func (m *chatModel) appendThinkingTranscript(snapshot executionProgressState, reset bool) {
+	if reset {
+		m.lastThinkingSignature = ""
+	}
+	if !shouldAppendThinkingTranscript(snapshot) {
+		return
+	}
+	sig := snapshot.signature()
+	if sig == "" || sig == m.lastThinkingSignature {
+		return
+	}
+	timestamp := snapshot.UpdatedAt
+	if timestamp.IsZero() {
+		timestamp = m.now().UTC()
+	}
+	m.messages = append(m.messages, chatMessage{
+		kind:    msgProgress,
+		content: strings.TrimSpace(snapshot.Message),
+		meta: map[string]any{
+			"timestamp": timestamp,
+			"phase":     strings.TrimSpace(snapshot.Phase),
+			"status":    strings.TrimSpace(snapshot.Status),
+		},
+	})
+	m.lastThinkingSignature = sig
+}
+
+func (m *chatModel) applyProgressSnapshot(next executionProgressState, reset bool) {
+	didReset, appended := m.recordProgressSnapshot(next, reset)
+	if appended {
+		m.appendThinkingTranscript(next, didReset)
+	}
+}
+
+func (m *chatModel) recordProgressDetail(status, phase, message string, updatedAt time.Time) {
+	sessionID := strings.TrimSpace(m.currentSessionID)
+	if sessionID == "" {
+		sessionID = strings.TrimSpace(m.progress.SessionID)
+	}
+	if sessionID == "" || strings.TrimSpace(message) == "" {
+		return
+	}
+	snapshot := m.progress
+	if strings.TrimSpace(status) != "" {
+		snapshot.Status = status
+	}
+	if strings.TrimSpace(snapshot.Status) == "" {
+		snapshot.Status = "running"
+	}
+	if strings.TrimSpace(phase) != "" {
+		snapshot.Phase = phase
+	}
+	snapshot.SessionID = sessionID
+	snapshot.Message = strings.TrimSpace(message)
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	}
+	if snapshot.StartedAt.IsZero() {
+		snapshot.StartedAt = updatedAt
+	}
+	snapshot.UpdatedAt = updatedAt
+	m.applyProgressSnapshot(snapshot, false)
+}
+
+func progressRunChanged(prev, next executionProgressState) bool {
+	if prev.StartedAt.IsZero() || next.StartedAt.IsZero() {
+		return false
+	}
+	return !prev.StartedAt.Equal(next.StartedAt)
+}
+
+func (m chatModel) renderProgressBlock(width int) string {
+	if !m.progress.visible() {
+		return ""
+	}
+	if len(m.progressTrail) <= 1 {
+		return m.progress.renderLine(m.now(), width)
+	}
+	innerWidth := max(20, width-4)
+	lines := make([]string, 0, len(m.progressTrail)+1)
+	lines = append(lines, panelTitleStyle.Render("Thinking"))
+	for i, snapshot := range m.progressTrail {
+		lines = append(lines, snapshot.renderTimelineEntry(m.now(), innerWidth, i == len(m.progressTrail)-1))
+	}
+	return panelMutedStyle.
+		Width(max(24, width)).
+		Padding(0, 1).
+		Render(strings.Join(lines, "\n"))
+}
+
+func summarizeTimelineToolStart(toolName, argsPreview string) string {
+	name := toolPrettyName(toolName)
+	summary := strings.TrimSpace(summarizeToolParams(toolName, argsPreview, 120))
+	if summary == "" {
+		return name
+	}
+	return name + " " + summary
+}
+
+func summarizeTimelineToolResult(toolName, content string) string {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return ""
+	}
+	if decoded, ok := parseJSONString(trimmed); ok {
+		trimmed = decoded
+	}
+	if toolName == "run_command" || toolName == "powershell" {
+		type shellResult struct {
+			ExitCode int    `json:"exit_code"`
+			Stdout   string `json:"stdout"`
+			Stderr   string `json:"stderr"`
+		}
+		var result shellResult
+		if err := json.Unmarshal([]byte(trimmed), &result); err == nil {
+			parts := []string{fmt.Sprintf("exit=%d", result.ExitCode)}
+			if out := firstNonEmptyLine(result.Stdout); out != "" {
+				parts = append(parts, "stdout: "+truncateDisplayWidth(out, 72))
+			} else if errLine := firstNonEmptyLine(result.Stderr); errLine != "" {
+				parts = append(parts, "stderr: "+truncateDisplayWidth(errLine, 72))
+			}
+			return strings.Join(parts, " · ")
+		}
+	}
+	if obj, ok := parseJSONObject(trimmed); ok {
+		for _, key := range []string{"status", "exit_code", "message", "error", "result", "body"} {
+			if value, ok := obj[key]; ok {
+				switch v := value.(type) {
+				case string:
+					line := firstNonEmptyLine(v)
+					if line == "" {
+						continue
+					}
+					return key + ": " + truncateDisplayWidth(line, 72)
+				default:
+					return key + ": " + truncateDisplayWidth(fmt.Sprintf("%v", v), 72)
+				}
+			}
+		}
+	}
+	if values, ok := parseJSONArray(trimmed); ok {
+		return fmt.Sprintf("%d items", len(values))
+	}
+	return truncateDisplayWidth(firstNonEmptyLine(trimmed), 72)
+}
+
+func summarizeTimelineApproval(req *port.ApprovalRequest) string {
+	if req == nil {
+		return "approval required"
+	}
+	label := "approval required"
+	if tool := strings.TrimSpace(req.ToolName); tool != "" {
+		label += " for " + toolPrettyName(tool)
+		if summary := strings.TrimSpace(summarizeToolParams(tool, strings.TrimSpace(string(req.Input)), 120)); summary != "" {
+			label += " " + summary
+		}
+	}
+	details := make([]string, 0, 2)
+	if risk := strings.TrimSpace(req.Risk); risk != "" {
+		details = append(details, "risk="+risk)
+	}
+	if reason := strings.TrimSpace(req.Reason); reason != "" {
+		details = append(details, reason)
+	}
+	if len(details) > 0 {
+		label += " · " + strings.Join(details, " · ")
+	}
+	return truncateDisplayWidth(label, 120)
 }
 
 func progressStatusLabel(status string) string {

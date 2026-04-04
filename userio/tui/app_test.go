@@ -2,10 +2,13 @@ package tui
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
@@ -134,5 +137,67 @@ func TestPlanPostureRebuildLegacyWarns(t *testing.T) {
 	}
 	if !strings.Contains(plan.Notice, "predates profile persistence") {
 		t.Fatalf("expected legacy warning, got %q", plan.Notice)
+	}
+}
+
+func TestSwitchModelMsgPersistsAndClearsOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	appDir := filepath.Join(home, ".moss")
+	if err := os.MkdirAll(appDir, 0o700); err != nil {
+		t.Fatalf("mkdir app dir: %v", err)
+	}
+
+	m := appModel{
+		state: stateChat,
+		config: Config{
+			Provider:     appconfig.APITypeOpenAICompletions,
+			ProviderName: "OpenAI",
+			Model:        "gpt-4o",
+			Workspace:    ".",
+			Trust:        appconfig.TrustTrusted,
+			ApprovalMode: "confirm",
+		},
+		chat: newChatModel("OpenAI (openai-completions)", "gpt-4o", "."),
+	}
+	m.chat.setProviderIdentity(appconfig.APITypeOpenAICompletions, "OpenAI")
+
+	handled, model, _ := m.handleControlMessages(switchModelMsg{
+		provider:     appconfig.APITypeClaude,
+		providerName: "Anthropic",
+		model:        "claude-sonnet-4.5",
+	})
+	if !handled {
+		t.Fatal("expected switchModelMsg to be handled")
+	}
+	updated := model.(appModel)
+	cfg, err := appconfig.LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.TUI.SelectedProvider != appconfig.APITypeClaude || cfg.TUI.SelectedProviderName != "Anthropic" || cfg.TUI.SelectedModel != "claude-sonnet-4.5" {
+		t.Fatalf("unexpected persisted model override: %+v", cfg.TUI)
+	}
+	if updated.config.Provider != appconfig.APITypeClaude || updated.config.Model != "claude-sonnet-4.5" {
+		t.Fatalf("unexpected updated runtime config: %+v", updated.config)
+	}
+
+	handled, _, _ = updated.handleControlMessages(switchModelMsg{
+		provider:     appconfig.APITypeOpenAICompletions,
+		providerName: "OpenAI",
+		model:        "gpt-4o",
+		auto:         true,
+	})
+	if !handled {
+		t.Fatal("expected auto switchModelMsg to be handled")
+	}
+	cfg, err = appconfig.LoadGlobalConfig()
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if cfg.TUI.SelectedProvider != "" || cfg.TUI.SelectedProviderName != "" || cfg.TUI.SelectedModel != "" {
+		t.Fatalf("expected auto selection to clear override, got %+v", cfg.TUI)
 	}
 }

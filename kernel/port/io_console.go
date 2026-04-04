@@ -43,6 +43,8 @@ func (c *ConsoleIO) Send(_ context.Context, msg OutputMessage) error {
 		fmt.Fprint(c.W, msg.Content)
 	case OutputStreamEnd:
 		fmt.Fprintln(c.W)
+	case OutputReasoning:
+		fmt.Fprintf(c.W, "💭 %s\n", msg.Content)
 	case OutputProgress:
 		fmt.Fprintf(c.W, "⏳ %s\n", msg.Content)
 	case OutputToolStart:

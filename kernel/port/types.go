@@ -39,6 +39,7 @@ type ContentPartType string
 
 const (
 	ContentPartText        ContentPartType = "text"
+	ContentPartReasoning   ContentPartType = "reasoning"
 	ContentPartInputImage  ContentPartType = "input_image"
 	ContentPartOutputImage ContentPartType = "output_image"
 	ContentPartInputAudio  ContentPartType = "input_audio"

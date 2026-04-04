@@ -78,7 +78,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 
 	case notificationProgressMsg:
 		if msg.SetCurrent && strings.TrimSpace(msg.Snapshot.SessionID) != "" {
+			reset := strings.TrimSpace(m.currentSessionID) != strings.TrimSpace(msg.Snapshot.SessionID)
 			m.currentSessionID = strings.TrimSpace(msg.Snapshot.SessionID)
+			m.applyProgressSnapshot(msg.Snapshot, reset)
 			m.progress = msg.Snapshot
 			m.refreshViewport()
 			return m, nil
@@ -86,6 +88,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if strings.TrimSpace(msg.Snapshot.SessionID) == "" || (m.currentSessionID != "" && strings.TrimSpace(msg.Snapshot.SessionID) != m.currentSessionID) {
 			return m, nil
 		}
+		m.applyProgressSnapshot(msg.Snapshot, false)
 		m.progress = msg.Snapshot
 		m.refreshViewport()
 		return m, nil

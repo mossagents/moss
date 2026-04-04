@@ -99,6 +99,191 @@ func TestSlashCommandDebugConfig(t *testing.T) {
 	}
 }
 
+func TestSlashCommandModelOpensModelPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	cfg := &configpkg.Config{
+		Models: []configpkg.ModelConfig{
+			{Provider: configpkg.APITypeOpenAICompletions, Name: "OpenAI", Model: "gpt-4o", Default: true},
+			{Provider: configpkg.APITypeClaude, Name: "Anthropic", Model: "claude-sonnet-4.5"},
+		},
+	}
+	if err := configpkg.SaveConfig(configpkg.DefaultGlobalConfigPath(), cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	m := newChatModel("OpenAI (openai-completions)", "gpt-4o", ".")
+	m.setProviderIdentity(configpkg.APITypeOpenAICompletions, "OpenAI")
+	m.trust = configpkg.TrustTrusted
+	m.modelAuto = true
+
+	updated, _ := m.handleSlashCommand("/model")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayModel {
+		t.Fatal("expected model picker overlay")
+	}
+	if updated.modelPicker == nil || len(updated.modelPicker.options) != 3 {
+		t.Fatalf("expected auto plus configured models, got %#v", updated.modelPicker)
+	}
+	if updated.modelPicker.options[0].title != "Auto" || updated.modelPicker.options[1].title != "gpt-4o" {
+		t.Fatalf("unexpected picker options: %#v", updated.modelPicker.options)
+	}
+}
+
+func TestModelPickerSelectionReturnsSwitchModelMsg(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	cfg := &configpkg.Config{
+		Models: []configpkg.ModelConfig{
+			{Provider: configpkg.APITypeOpenAICompletions, Name: "OpenAI", Model: "gpt-4o", Default: true},
+			{Provider: configpkg.APITypeClaude, Name: "Anthropic", Model: "claude-sonnet-4.5"},
+		},
+	}
+	if err := configpkg.SaveConfig(configpkg.DefaultGlobalConfigPath(), cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	m := newChatModel("OpenAI (openai-completions)", "gpt-4o", ".")
+	m.setProviderIdentity(configpkg.APITypeOpenAICompletions, "OpenAI")
+	m.trust = configpkg.TrustTrusted
+	m.modelAuto = true
+
+	updated, _ := m.handleSlashCommand("/models")
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected switch model command")
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(switchModelMsg)
+	if !ok {
+		t.Fatalf("expected switchModelMsg, got %T", msg)
+	}
+	if switchMsg.provider != configpkg.APITypeOpenAICompletions || switchMsg.model != "gpt-4o" || switchMsg.auto {
+		t.Fatalf("unexpected switch model message: %+v", switchMsg)
+	}
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected model overlay to close after selection")
+	}
+	if !updated.streaming {
+		t.Fatal("expected model switch to mark chat as streaming")
+	}
+}
+
+func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.currentSessionID = "sess_1"
+	now := time.Now().UTC()
+	m.progress = executionProgressState{
+		SessionID: "sess_1",
+		Status:    "running",
+		Phase:     "thinking",
+		Message:   "calling gpt-4o",
+		StartedAt: now,
+		UpdatedAt: now,
+	}
+	m.applyProgressSnapshot(m.progress, true)
+
+	updated, _ := m.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputToolStart,
+		Content: "http_request",
+		Meta: map[string]any{
+			"tool":         "http_request",
+			"call_id":      "call-http",
+			"args_preview": `{"url":"https://wttr.in/hangzhou?format=j1"}`,
+		},
+	}})
+	transcript := renderAllMessages(updated.messages, 120, false)
+	if !strings.Contains(transcript, "starting Http Request https://wttr.in/hangzhou?format=j1") {
+		t.Fatalf("expected detailed tool start in transcript, got %q", transcript)
+	}
+
+	updated, _ = updated.handleBridge(bridgeMsg{ask: &bridgeAsk{
+		request: port.InputRequest{
+			Type: port.InputConfirm,
+			Approval: &port.ApprovalRequest{
+				ID:          "approval-1",
+				SessionID:   "sess_1",
+				ToolName:    "http_request",
+				Risk:        "medium",
+				Reason:      "network access",
+				Input:       json.RawMessage(`{"url":"https://wttr.in/hangzhou?format=j1"}`),
+				RequestedAt: now.Add(time.Second),
+			},
+		},
+		replyCh: make(chan port.InputResponse, 1),
+	}})
+	transcript = renderAllMessages(updated.messages, 120, false)
+	for _, want := range []string{"approval required for Http Request https://wttr.in/hangzhou?format=j1", "risk=medium"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("expected approval detail %q in transcript, got %q", want, transcript)
+		}
+	}
+
+	updated, _ = updated.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputToolResult,
+		Content: `{"status":200,"body":"ok"}`,
+		Meta: map[string]any{
+			"tool":        "http_request",
+			"call_id":     "call-http",
+			"duration_ms": int64(174),
+		},
+	}})
+	transcript = renderAllMessages(updated.messages, 120, false)
+	if !strings.Contains(transcript, "completed Http Request") || !strings.Contains(transcript, "status: 200") {
+		t.Fatalf("expected detailed tool result in transcript, got %q", transcript)
+	}
+}
+
+func TestHandleBridge_AppendsReasoningTranscript(t *testing.T) {
+	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
+	m.streaming = true
+
+	updated, _ := m.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputReasoning,
+		Content: "First inspect the redirect chain.",
+	}})
+	updated, _ = updated.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputReasoning,
+		Content: " Then query the API.",
+	}})
+
+	if len(updated.messages) == 0 {
+		t.Fatal("expected reasoning message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgReasoning {
+		t.Fatalf("last kind = %v, want reasoning", last.kind)
+	}
+	if !strings.Contains(last.content, "First inspect the redirect chain. Then query the API.") {
+		t.Fatalf("unexpected reasoning content: %q", last.content)
+	}
+}
+
+func TestHandleBridge_AppendsAdjacentReasoningWhenNotStreaming(t *testing.T) {
+	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
+
+	updated, _ := m.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputReasoning,
+		Content: "这个",
+	}})
+	updated, _ = updated.handleBridge(bridgeMsg{output: &port.OutputMessage{
+		Type:    port.OutputReasoning,
+		Content: "项目的其他文件",
+	}})
+
+	if len(updated.messages) != 1 {
+		t.Fatalf("expected 1 reasoning message, got %d", len(updated.messages))
+	}
+	if updated.messages[0].kind != msgReasoning {
+		t.Fatalf("kind = %v, want reasoning", updated.messages[0].kind)
+	}
+	if updated.messages[0].content != "这个项目的其他文件" {
+		t.Fatalf("content = %q", updated.messages[0].content)
+	}
+}
+
 func TestSlashCommandDebugToggleAndPreview(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.debugConfigFn = func() string { return "debug config" }

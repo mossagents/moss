@@ -103,11 +103,14 @@ type ModelConfig struct {
 }
 
 type TUIConfig struct {
-	Theme        string   `yaml:"theme,omitempty"`
-	StatusLine   []string `yaml:"status_line,omitempty"`
-	Personality  string   `yaml:"personality,omitempty"`
-	FastMode     *bool    `yaml:"fast_mode,omitempty"`
-	Experimental []string `yaml:"experimental,omitempty"`
+	Theme                string   `yaml:"theme,omitempty"`
+	StatusLine           []string `yaml:"status_line,omitempty"`
+	Personality          string   `yaml:"personality,omitempty"`
+	FastMode             *bool    `yaml:"fast_mode,omitempty"`
+	Experimental         []string `yaml:"experimental,omitempty"`
+	SelectedProvider     string   `yaml:"selected_provider,omitempty"`
+	SelectedProviderName string   `yaml:"selected_provider_name,omitempty"`
+	SelectedModel        string   `yaml:"selected_model,omitempty"`
 }
 
 type SkillConfig struct {

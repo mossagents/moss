@@ -540,10 +540,11 @@ func llmErrorFallbackSafe(err error) bool {
 }
 
 type completionIterator struct {
-	resp     *port.CompletionResponse
-	metadata port.LLMCallMetadata
-	index    int
-	sentDone bool
+	resp          *port.CompletionResponse
+	metadata      port.LLMCallMetadata
+	index         int
+	sentReasoning bool
+	sentDone      bool
 }
 
 func newCompletionIterator(resp *port.CompletionResponse) port.StreamIterator {
@@ -557,6 +558,12 @@ func newCompletionIterator(resp *port.CompletionResponse) port.StreamIterator {
 func (it *completionIterator) Next() (port.StreamChunk, error) {
 	if it.resp == nil {
 		return port.StreamChunk{}, io.EOF
+	}
+	if !it.sentReasoning {
+		it.sentReasoning = true
+		if reasoning := port.ContentPartsToReasoningText(it.resp.Message.ContentParts); reasoning != "" {
+			return port.StreamChunk{ReasoningDelta: reasoning}, nil
+		}
 	}
 	if it.index < len(it.resp.ToolCalls) {
 		call := it.resp.ToolCalls[it.index]

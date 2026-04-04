@@ -12,9 +12,6 @@ func (m chatModel) renderMainPane(layout chatUILayout) string {
 	sections := []string{
 		m.renderHeaderMetaLine(),
 	}
-	if progressLine := m.progress.renderLine(m.now(), layout.MainWidth); progressLine != "" {
-		sections = append(sections, halfMutedStyle.Render(progressLine))
-	}
 	sections = append(sections, lipgloss.NewStyle().Height(layout.ViewportHeight).Render(m.viewport.View()))
 	return lipgloss.NewStyle().
 		Width(layout.MainWidth).

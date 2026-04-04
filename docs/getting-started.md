@@ -145,7 +145,7 @@ moss version
 | `/exit` | 退出 |
 | `/clear` | 清空对话 |
 | `/status` | 查看当前运行时摘要（模型/工作区/姿态/当前 thread） |
-| `/model <name>` | 切换模型 |
+| `/model` / `/models` | 打开模型列表对话框，选择 Auto 或已配置模型 |
 | `/fast <on\|off\|status>` | 切换或查看 fast interaction mode |
 | `/personality <friendly\|pragmatic\|none>` | 切换响应风格 |
 | `/config` | 查看配置 |

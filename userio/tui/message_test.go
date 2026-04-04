@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
@@ -64,6 +65,99 @@ func TestRenderMessage_AssistantMediaUsesMediaHint(t *testing.T) {
 	}, 80)
 	if !strings.Contains(out, "Generated audio: out.wav") || !strings.Contains(out, "/media open") {
 		t.Fatalf("assistant media output missing expected hint: %q", out)
+	}
+}
+
+func TestRenderMessage_ProgressShowsThinkingDetail(t *testing.T) {
+	ts := time.Date(2026, 4, 4, 12, 34, 56, 0, time.UTC)
+	out := renderMessage(chatMessage{
+		kind:    msgProgress,
+		content: "calling gpt-4o",
+		meta: map[string]any{
+			"phase":     "thinking",
+			"timestamp": ts,
+		},
+	}, 80)
+	for _, want := range []string{"◦", "thinking", "calling gpt-4o"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("progress message missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "...") {
+		t.Fatalf("progress message should no longer use legacy ellipsis style: %q", out)
+	}
+	if stamp := formatMessageTimestamp(map[string]any{"timestamp": ts}); stamp != "" && strings.Contains(out, stamp) {
+		t.Fatalf("progress message should not show timestamp: %q", out)
+	}
+}
+
+func TestRenderMessage_TimestampOnlyShownForAssistant(t *testing.T) {
+	ts := time.Date(2026, 4, 4, 12, 34, 56, 0, time.UTC)
+	stamp := formatMessageTimestamp(map[string]any{"timestamp": ts})
+	assistant := renderMessage(chatMessage{
+		kind:    msgAssistant,
+		content: "done",
+		meta:    map[string]any{"timestamp": ts},
+	}, 80)
+	if !strings.Contains(assistant, stamp) {
+		t.Fatalf("assistant message should show timestamp: %q", assistant)
+	}
+
+	user := renderMessage(chatMessage{
+		kind:    msgUser,
+		content: "run it",
+		meta:    map[string]any{"timestamp": ts},
+	}, 80)
+	if strings.Contains(user, stamp) {
+		t.Fatalf("user message should not show timestamp: %q", user)
+	}
+}
+
+func TestRenderMessage_ReasoningShowsTranscriptBlock(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgReasoning,
+		content: "First inspect the redirect chain.\nThen query the API.",
+	}, 80)
+	for _, want := range []string{"◦ thinking", "First inspect the redirect chain. Then query the API."} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("reasoning message missing %q in %q", want, out)
+		}
+	}
+	if strings.Contains(out, "\n") {
+		t.Fatalf("reasoning message should stay on one line: %q", out)
+	}
+}
+
+func TestRenderMessage_ReasoningWrapsWhenTooLong(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgReasoning,
+		content: "First inspect the redirect chain and then query the weather API with the normalized Hangzhou location before summarizing the result.",
+	}, 44)
+	if !strings.Contains(out, "\n") {
+		t.Fatalf("reasoning message should wrap when too long: %q", out)
+	}
+	for _, want := range []string{"◦ thinking", "First inspect the redirect", "chain and then query"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("reasoning message missing %q in %q", want, out)
+		}
+	}
+}
+
+func TestRenderMessage_ReasoningWrapsChineseSafely(t *testing.T) {
+	out := renderMessage(chatMessage{
+		kind:    msgReasoning,
+		content: "我获取到了杭州的天气数据，这是一个JSON格式的详细天气信息。让我分析一下数据并提供总结。",
+	}, 28)
+	if !strings.Contains(out, "\n") {
+		t.Fatalf("expected wrapped reasoning output, got %q", out)
+	}
+	if strings.Contains(out, "�") {
+		t.Fatalf("reasoning output should not contain broken unicode: %q", out)
+	}
+	for _, want := range []string{"◦ thinking", "我获取到了杭州的天气数据"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("reasoning output missing %q in %q", want, out)
+		}
 	}
 }
 

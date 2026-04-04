@@ -9,6 +9,10 @@ func TextPart(text string) ContentPart {
 	return ContentPart{Type: ContentPartText, Text: text}
 }
 
+func ReasoningPart(text string) ContentPart {
+	return ContentPart{Type: ContentPartReasoning, Text: text}
+}
+
 func ImageInlinePart(typ ContentPartType, mimeType, dataBase64, sourcePath string) ContentPart {
 	return MediaInlinePart(typ, mimeType, dataBase64, sourcePath)
 }
@@ -52,6 +56,24 @@ func ContentPartsToPlainText(parts []ContentPart) string {
 	return strings.Join(lines, "\n")
 }
 
+func ContentPartsToReasoningText(parts []ContentPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != ContentPartReasoning {
+			continue
+		}
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
+}
+
 func ValidateContentParts(parts []ContentPart) error {
 	for i, part := range parts {
 		if err := validateContentPart(part); err != nil {
@@ -63,12 +85,12 @@ func ValidateContentParts(parts []ContentPart) error {
 
 func validateContentPart(part ContentPart) error {
 	switch part.Type {
-	case ContentPartText:
+	case ContentPartText, ContentPartReasoning:
 		if strings.TrimSpace(part.Text) == "" {
-			return fmt.Errorf("text part requires non-empty text")
+			return fmt.Errorf("%s part requires non-empty text", part.Type)
 		}
 		if strings.TrimSpace(part.MIMEType) != "" || strings.TrimSpace(part.DataBase64) != "" || strings.TrimSpace(part.URL) != "" {
-			return fmt.Errorf("text part forbids mime_type, data_base64, and url")
+			return fmt.Errorf("%s part forbids mime_type, data_base64, and url", part.Type)
 		}
 		return nil
 	case ContentPartInputImage, ContentPartOutputImage:

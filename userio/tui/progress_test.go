@@ -2,6 +2,7 @@ package tui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,6 +30,12 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 	if updated.progress.SessionID != "s1" {
 		t.Fatalf("progress session = %q, want s1", updated.progress.SessionID)
 	}
+	if len(updated.messages) == 0 || updated.messages[len(updated.messages)-1].kind != msgProgress {
+		t.Fatalf("expected thinking progress appended to transcript, got %+v", updated.messages)
+	}
+	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "iteration updated") {
+		t.Fatalf("unexpected progress transcript content: %+v", updated.messages[len(updated.messages)-1])
+	}
 	next, _ := updated.Update(notificationProgressMsg{
 		Snapshot: executionProgressState{
 			SessionID: "s2",
@@ -40,8 +47,8 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 	if next.progress.SessionID != "s1" {
 		t.Fatalf("unexpected progress replacement from other session: %+v", next.progress)
 	}
-	if next.visibleProgressHeight() != 1 {
-		t.Fatalf("visible progress height = %d, want 1", next.visibleProgressHeight())
+	if next.visibleProgressHeight() != 0 {
+		t.Fatalf("visible progress height = %d, want 0", next.visibleProgressHeight())
 	}
 }
 
@@ -111,5 +118,87 @@ func TestRebuildExecutionProgressUsesLatestRun(t *testing.T) {
 	}
 	if state.Iteration != 2 {
 		t.Fatalf("iteration = %d, want 2", state.Iteration)
+	}
+}
+
+func TestChatProgressBuildsThinkingTimeline(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.currentSessionID = "s1"
+	base := time.Now().UTC()
+
+	updated, _ := m.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "running",
+			Phase:     "thinking",
+			Iteration: 1,
+			MaxSteps:  8,
+			StartedAt: base,
+			UpdatedAt: base,
+			Message:   "iteration 1 started",
+		},
+		SetCurrent: true,
+	})
+	updated, _ = updated.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "running",
+			Phase:     "thinking",
+			Iteration: 1,
+			MaxSteps:  8,
+			StartedAt: base,
+			UpdatedAt: base.Add(2 * time.Second),
+			Message:   "calling gpt-4o",
+		},
+	})
+	updated, _ = updated.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "running",
+			Phase:     "tools",
+			Iteration: 1,
+			MaxSteps:  8,
+			StartedAt: base,
+			UpdatedAt: base.Add(4 * time.Second),
+			Message:   "running run_command",
+			ToolName:  "run_command",
+		},
+	})
+
+	if len(updated.progressTrail) != 3 {
+		t.Fatalf("progress trail length = %d, want 3", len(updated.progressTrail))
+	}
+	progressCount := 0
+	for _, msg := range updated.messages {
+		if msg.kind == msgProgress {
+			progressCount++
+		}
+	}
+	if progressCount != 3 {
+		t.Fatalf("progress transcript count = %d, want 3", progressCount)
+	}
+	if updated.visibleProgressHeight() != 0 {
+		t.Fatalf("visible progress height = %d, want 0", updated.visibleProgressHeight())
+	}
+	transcript := renderAllMessages(updated.messages, 100, false)
+	for _, want := range []string{"iteration 1 started", "calling gpt-4o", "running run_command"} {
+		if !strings.Contains(transcript, want) {
+			t.Fatalf("progress transcript missing %q in %q", want, transcript)
+		}
+	}
+
+	reset, _ := updated.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s2",
+			Status:    "running",
+			Phase:     "thinking",
+			StartedAt: base.Add(10 * time.Second),
+			UpdatedAt: base.Add(10 * time.Second),
+			Message:   "iteration 1 started",
+		},
+		SetCurrent: true,
+	})
+	if len(reset.progressTrail) != 1 {
+		t.Fatalf("expected progress trail reset on session switch, got %d", len(reset.progressTrail))
 	}
 }

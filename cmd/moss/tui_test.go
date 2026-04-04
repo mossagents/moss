@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -12,15 +13,16 @@ func TestCliUserIOSend(t *testing.T) {
 	var buf bytes.Buffer
 	io := &cliUserIO{writer: &buf}
 
-	err := io.Send(context.Background(), port.OutputMessage{
-		Type:    port.OutputText,
-		Content: "hello",
-	})
-	if err != nil {
-		t.Fatal(err)
+	for _, msg := range []port.OutputMessage{
+		{Type: port.OutputReasoning, Content: "plan next step"},
+		{Type: port.OutputText, Content: "hello"},
+	} {
+		if err := io.Send(context.Background(), msg); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if got := buf.String(); got != "hello\n" {
-		t.Fatalf("expected %q, got %q", "hello\n", got)
+	if got := buf.String(); !strings.Contains(got, "plan next step") || !strings.Contains(got, "hello\n") {
+		t.Fatalf("unexpected cli output: %q", got)
 	}
 }
 

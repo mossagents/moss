@@ -33,23 +33,32 @@ func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, model tea.Mo
 	}
 
 	if sm, ok := msg.(switchModelMsg); ok {
+		if err := persistModelOverride(sm); err != nil {
+			m.chat.messages = append(m.chat.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to save model selection: %v", err)})
+			m.chat.streaming = false
+			m.chat.refreshViewport()
+			return true, m, nil
+		}
 		m = m.stopAgentForKernelRebuild()
+		m.config.Provider = sm.provider
+		m.config.ProviderName = sm.providerName
 		m.config.Model = sm.model
-		nextModel, nextCmd := m.rebuildKernelWithModel(sm.model)
+		m.chat.modelAuto = sm.auto
+		nextModel, nextCmd := m.rebuildKernelWithSelection(sm.provider, sm.providerName, sm.model)
 		return true, nextModel, nextCmd
 	}
 
 	if st, ok := msg.(switchTrustMsg); ok {
 		m = m.stopAgentForKernelRebuild()
 		m.config.Trust = st.trust
-		nextModel, nextCmd := m.rebuildKernelWithModel(m.config.Model)
+		nextModel, nextCmd := m.rebuildKernelWithSelection(m.config.Provider, m.config.ProviderName, m.config.Model)
 		return true, nextModel, nextCmd
 	}
 
 	if st, ok := msg.(switchApprovalMsg); ok {
 		m = m.stopAgentForKernelRebuild()
 		m.config.ApprovalMode = st.mode
-		nextModel, nextCmd := m.rebuildKernelWithModel(m.config.Model)
+		nextModel, nextCmd := m.rebuildKernelWithSelection(m.config.Provider, m.config.ProviderName, m.config.Model)
 		return true, nextModel, nextCmd
 	}
 
@@ -99,7 +108,7 @@ func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Mode
 		})
 		m.chat.refreshViewport()
 	}
-	nextModel, nextCmd := m.rebuildKernelWithModel(m.config.Model)
+	nextModel, nextCmd := m.rebuildKernelWithSelection(m.config.Provider, m.config.ProviderName, m.config.Model)
 	return true, nextModel, nextCmd
 }
 
