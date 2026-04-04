@@ -723,23 +723,37 @@ func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
 	}
 	sortTime := record.UpdatedAt
 	if sortTime.IsZero() {
-		sortTime = record.CreatedAt
+		sortTime = memoryFreshness(record)
 	}
 	return StateEntry{
 		Kind:       StateKindMemory,
 		RecordID:   strings.TrimSpace(record.Path),
-		Status:     "active",
-		Title:      firstNonEmpty(record.Path, record.ID),
+		Workspace:  strings.TrimSpace(record.Workspace),
+		RepoRoot:   strings.TrimSpace(record.CWD),
+		Status:     firstNonEmpty(string(record.Status), string(port.MemoryStatusActive)),
+		Title:      firstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
-		SearchText: normalizeStateText(record.Path, record.Summary, record.Content),
+		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
 		SortTime:   sortTime.UTC(),
 		CreatedAt:  record.CreatedAt.UTC(),
 		UpdatedAt:  record.UpdatedAt.UTC(),
 		Metadata: marshalStateMetadata(map[string]any{
-			"id":       record.ID,
-			"path":     record.Path,
-			"tags":     append([]string(nil), record.Tags...),
-			"citation": record.Citation,
+			"id":                record.ID,
+			"path":              record.Path,
+			"group":             record.Group,
+			"stage":             record.Stage,
+			"status":            record.Status,
+			"tags":              append([]string(nil), record.Tags...),
+			"workspace":         record.Workspace,
+			"cwd":               record.CWD,
+			"git_branch":        record.GitBranch,
+			"source_kind":       record.SourceKind,
+			"source_id":         record.SourceID,
+			"source_path":       record.SourcePath,
+			"source_updated_at": record.SourceUpdatedAt,
+			"usage_count":       record.UsageCount,
+			"last_used_at":      record.LastUsedAt,
+			"citation":          record.Citation,
 		}),
 	}, true
 }

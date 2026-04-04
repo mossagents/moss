@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
@@ -111,7 +112,7 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message")
 	}
-	if got := port.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "persistent memory tools") {
+	if got := port.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "staged persistent memory tools") {
 		t.Fatalf("expected memory prompt hint, got %q", got)
 	}
 }
@@ -150,22 +151,22 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 				},
 			},
 		},
-	})
+	},
+	)
 	if _, err := writeRecord(ctx, writeInput); err != nil {
 		t.Fatalf("write_memory_record failed: %v", err)
 	}
 
-	readInput, _ := json.Marshal(map[string]string{"path": "team/decision.md"})
-	recordRaw, err := readRecord(ctx, readInput)
-	if err != nil {
-		t.Fatalf("read_memory_record failed: %v", err)
-	}
-	var record map[string]any
+	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/decision.md")
+	var record port.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
-	if record["summary"] == "" {
+	if record.Summary == "" {
 		t.Fatalf("expected generated summary, got %+v", record)
+	}
+	if record.UsageCount < 1 {
+		t.Fatalf("expected read to bump usage, got %+v", record)
 	}
 
 	searchInput, _ := json.Marshal(map[string]any{
@@ -177,14 +178,17 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 		t.Fatalf("search_memories failed: %v", err)
 	}
 	var searchResp struct {
-		Count int               `json:"count"`
-		Items []json.RawMessage `json:"items"`
+		Count int                 `json:"count"`
+		Items []port.MemoryRecord `json:"items"`
 	}
 	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
 		t.Fatalf("decode search_memories: %v", err)
 	}
 	if searchResp.Count != 1 || len(searchResp.Items) != 1 {
 		t.Fatalf("unexpected search result: %+v", searchResp)
+	}
+	if searchResp.Items[0].UsageCount < 2 {
+		t.Fatalf("expected search to bump usage, got %+v", searchResp.Items[0])
 	}
 }
 
@@ -218,29 +222,31 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 	}
 	var resp struct {
 		Status string `json:"status"`
-		Items  int    `json:"items"`
+		JobID  string `json:"job_id"`
 	}
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		t.Fatalf("decode ingest response: %v", err)
 	}
-	if resp.Status != "ingested" || resp.Items != 2 {
+	if resp.Status != "queued" || resp.JobID == "" {
 		t.Fatalf("unexpected ingest response: %+v", resp)
 	}
 
-	recordRaw, err := readRecord(ctx, json.RawMessage(`{"path":"team/memory/trace-summary.md"}`))
-	if err != nil {
-		t.Fatalf("read_memory_record failed: %v", err)
-	}
+	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/memory/trace-summary.md")
 	var record port.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
-	if !strings.Contains(record.Content, "Need sqlite backend") {
-		t.Fatalf("expected normalized trace content, got: %q", record.Content)
+	if record.Stage != port.MemoryStageConsolidated {
+		t.Fatalf("expected consolidated stage, got %+v", record)
 	}
-	if len(record.Citation.Entries) != 1 || record.Citation.Entries[0].Path != "trace/session.jsonl" {
-		t.Fatalf("unexpected citation: %+v", record.Citation)
+	if len(record.Citation.MemoryPaths) == 0 {
+		t.Fatalf("expected snapshot citations, got %+v", record.Citation)
 	}
+	memorySummary, err := ws.ReadFile(ctx, "memory_summary.md")
+	waitForCondition(t, 2*time.Second, func() bool {
+		memorySummary, err = ws.ReadFile(ctx, "memory_summary.md")
+		return err == nil && strings.Contains(string(memorySummary), "team/memory/trace-summary.md")
+	})
 }
 
 func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
@@ -270,6 +276,19 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	if got.Summary == "" {
 		t.Fatal("expected summary to be generated")
 	}
+	if got.Stage != port.MemoryStageManual || got.Status != port.MemoryStatusActive {
+		t.Fatalf("expected default stage/status, got %+v", got)
+	}
+	if err := store.RecordUsage(ctx, []string{"team/decision.md"}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordUsage: %v", err)
+	}
+	got, err = store.GetByPath(ctx, "team/decision.md")
+	if err != nil {
+		t.Fatalf("GetByPath after usage: %v", err)
+	}
+	if got.UsageCount != 1 || got.LastUsedAt.IsZero() {
+		t.Fatalf("expected usage tracking, got %+v", got)
+	}
 
 	items, err := store.Search(ctx, port.MemoryQuery{Query: "sqlite", Limit: 10})
 	if err != nil {
@@ -284,6 +303,39 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	}
 	if _, err := store.GetByPath(ctx, "team/decision.md"); err == nil {
 		t.Fatal("expected GetByPath to fail after delete")
+	}
+}
+
+func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "memory-rank.db")
+	store, err := NewSQLiteMemoryStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteMemoryStore: %v", err)
+	}
+	if closer, ok := store.(interface{ Close() error }); ok {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+	ctx := context.Background()
+	for _, record := range []port.MemoryRecord{
+		{Path: "team/alpha.md", Content: "sqlite backend decision alpha"},
+		{Path: "team/beta.md", Content: "sqlite backend decision beta"},
+	} {
+		if _, err := store.Upsert(ctx, record); err != nil {
+			t.Fatalf("Upsert %s: %v", record.Path, err)
+		}
+	}
+	if err := store.RecordUsage(ctx, []string{"team/beta.md"}, time.Now().UTC()); err != nil {
+		t.Fatalf("RecordUsage: %v", err)
+	}
+	if err := store.RecordUsage(ctx, []string{"team/beta.md"}, time.Now().UTC().Add(time.Millisecond)); err != nil {
+		t.Fatalf("RecordUsage: %v", err)
+	}
+	items, err := store.Search(ctx, port.MemoryQuery{Query: "sqlite backend", Limit: 2})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(items) != 2 || normalizeMemoryPath(items[0].Path) != "team/beta.md" {
+		t.Fatalf("expected usage-ranked result first, got %+v", items)
 	}
 }
 
@@ -323,14 +375,63 @@ func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ingest_memory_trace failed: %v", err)
 	}
-	if !strings.Contains(string(raw), `"atomic_updated":true`) {
-		t.Fatalf("expected atomic update response, got %s", string(raw))
+	var resp struct {
+		Status string `json:"status"`
+		JobID  string `json:"job_id"`
 	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode ingest response: %v", err)
+	}
+	if resp.Status != "queued" || resp.JobID == "" {
+		t.Fatalf("expected queued response, got %s", string(raw))
+	}
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		items, err := taskRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: "job-mem"})
+		if err != nil || len(items) != 1 {
+			return false
+		}
+		return items[0].Status == port.JobCompleted
+	})
 	items, err := taskRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: "job-mem"})
 	if err != nil {
 		t.Fatalf("ListJobItems: %v", err)
 	}
-	if len(items) != 1 || items[0].Status != port.JobCompleted {
-		t.Fatalf("expected completed job item, got %+v", items)
+	if items[0].Status != port.JobCompleted {
+		t.Fatalf("expected completed external job item, got %+v", items)
 	}
+}
+
+func waitForMemoryRecord(t *testing.T, ctx context.Context, handler tool.ToolHandler, path string) json.RawMessage {
+	t.Helper()
+	var (
+		lastErr error
+		raw     json.RawMessage
+	)
+	waitForCondition(t, 2*time.Second, func() bool {
+		input, _ := json.Marshal(map[string]string{"path": path})
+		value, err := handler(ctx, input)
+		if err != nil {
+			lastErr = err
+			return false
+		}
+		raw = value
+		return true
+	})
+	if raw == nil {
+		t.Fatalf("memory record %s not ready: %v", path, lastErr)
+	}
+	return raw
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, check func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if check() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("condition not satisfied before timeout")
 }
