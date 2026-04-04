@@ -109,6 +109,14 @@ func LoadTUIConfig() (appconfig.TUIConfig, error) {
 	return cfg.TUI, nil
 }
 
+func LoadProjectTUIConfig(workspace string) (appconfig.TUIConfig, error) {
+	cfg, err := appconfig.LoadProjectConfig(workspace)
+	if err != nil {
+		return appconfig.TUIConfig{}, fmt.Errorf("load project config: %w", err)
+	}
+	return cfg.TUI, nil
+}
+
 func UpdateTUIConfig(mutator func(*appconfig.TUIConfig) error) (appconfig.TUIConfig, error) {
 	cfgPath, err := ConfigPath()
 	if err != nil {
@@ -123,6 +131,25 @@ func UpdateTUIConfig(mutator func(*appconfig.TUIConfig) error) (appconfig.TUICon
 	}
 	if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
 		return appconfig.TUIConfig{}, fmt.Errorf("save config: %w", err)
+	}
+	return cfg.TUI, nil
+}
+
+func UpdateProjectTUIConfig(workspace string, mutator func(*appconfig.TUIConfig) error) (appconfig.TUIConfig, error) {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return appconfig.TUIConfig{}, fmt.Errorf("workspace is required")
+	}
+	cfgPath := appconfig.DefaultProjectConfigPath(workspace)
+	cfg, err := appconfig.LoadConfig(cfgPath)
+	if err != nil {
+		return appconfig.TUIConfig{}, fmt.Errorf("load project config: %w", err)
+	}
+	if err := mutator(&cfg.TUI); err != nil {
+		return appconfig.TUIConfig{}, err
+	}
+	if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
+		return appconfig.TUIConfig{}, fmt.Errorf("save project config: %w", err)
 	}
 	return cfg.TUI, nil
 }

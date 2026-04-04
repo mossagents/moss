@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagents/moss/appkit/product"
+	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 
@@ -25,12 +28,13 @@ type askFormState struct {
 	fields       []askFieldState
 	focusIndex   int // [0..len(fields)]，最后一个是确认按钮
 	confirmLabel string
+	errorText    string
 }
 
-func newAskFormState(req port.InputRequest) *askFormState {
+func newAskFormState(req port.InputRequest, workspace string) *askFormState {
 	fields := req.Fields
 	if len(fields) == 0 {
-		fields = synthesizeFieldsFromInputRequest(req)
+		fields = synthesizeFieldsFromInputRequest(req, workspace)
 	}
 	out := &askFormState{
 		prompt:       req.Prompt,
@@ -81,18 +85,26 @@ func newAskFormState(req port.InputRequest) *askFormState {
 	return out
 }
 
-func synthesizeFieldsFromInputRequest(req port.InputRequest) []port.InputField {
+func synthesizeFieldsFromInputRequest(req port.InputRequest, workspace string) []port.InputField {
 	switch req.Type {
 	case port.InputConfirm:
 		if req.Approval != nil {
+			options := []string{approvalChoiceAllowOnce}
+			if display := buildApprovalDisplay(req.Approval, ""); strings.TrimSpace(display.RuleKey) != "" {
+				options = append(options, approvalChoiceAllowSession)
+				if strings.TrimSpace(workspace) != "" {
+					options = append(options, approvalChoiceAllowProject)
+				}
+			}
+			options = append(options, approvalChoiceDeny)
 			return []port.InputField{{
 				Name:        "decision",
 				Type:        port.InputFieldSingleSelect,
 				Title:       "Decision",
-				Description: "Choose whether to allow this action once, remember similar actions for this thread, or deny it.",
+				Description: "Choose whether to allow this action once, remember matching actions, or deny it.",
 				Required:    true,
-				Options:     []string{"Allow once", "Allow for this thread", "Deny"},
-				Default:     "Allow once",
+				Options:     options,
+				Default:     approvalChoiceAllowOnce,
 			}}
 		}
 		return []port.InputField{{Name: "approved", Type: port.InputFieldBoolean, Title: req.Prompt, Required: true}}
@@ -124,6 +136,10 @@ func (m *chatModel) activateAskField() {
 func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	if m.askForm == nil || m.pendAsk == nil {
 		return m, nil
+	}
+	m.askForm.errorText = ""
+	if m.isApprovalAskActive() {
+		return m.handleApprovalAskKey(msg)
 	}
 	form := m.askForm
 	if msg.String() == "tab" {
@@ -205,6 +221,58 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m chatModel) isApprovalAskActive() bool {
+	return m.askForm != nil && m.pendAsk != nil && m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil
+}
+
+func (m chatModel) handleApprovalAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
+	if !m.isApprovalAskActive() || len(m.askForm.fields) == 0 {
+		return m, nil
+	}
+	m.askForm.errorText = ""
+	field := &m.askForm.fields[0]
+	if len(field.def.Options) == 0 {
+		return m, nil
+	}
+	selectIndex := func(idx int) {
+		if idx < 0 {
+			idx = len(field.def.Options) - 1
+		}
+		if idx >= len(field.def.Options) {
+			idx = 0
+		}
+		field.singleIndex = idx
+		field.singleSel = idx
+		m.refreshViewport()
+	}
+	switch msg.String() {
+	case "left", "up", "shift+tab":
+		selectIndex(field.singleIndex - 1)
+	case "right", "down", "tab":
+		selectIndex(field.singleIndex + 1)
+	case "a":
+		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowOnce))
+	case "s":
+		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowSession))
+	case "p":
+		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowProject))
+	case "d":
+		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceDeny))
+	case "enter":
+		return m.submitAskForm()
+	}
+	return m, nil
+}
+
+func indexOfApprovalOption(options []string, target string) int {
+	for i, opt := range options {
+		if opt == target {
+			return i
+		}
+	}
+	return -1
+}
+
 func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	if m.askForm == nil || m.pendAsk == nil {
 		return m, nil
@@ -240,7 +308,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 			}
 			n, err := strconv.ParseFloat(s, 64)
 			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Field %s must be a number", f.def.Title)})
+				m.askForm.errorText = fmt.Sprintf("Field %s must be a number", f.def.Title)
 				m.refreshViewport()
 				return m, nil
 			}
@@ -253,7 +321,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 			}
 			n, err := strconv.Atoi(s)
 			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Field %s must be an integer", f.def.Title)})
+				m.askForm.errorText = fmt.Sprintf("Field %s must be an integer", f.def.Title)
 				m.refreshViewport()
 				return m, nil
 			}
@@ -265,13 +333,13 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 			switch v := formValues[f.def.Name].(type) {
 			case string:
 				if strings.TrimSpace(v) == "" {
-					m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Field %s is required", f.def.Title)})
+					m.askForm.errorText = fmt.Sprintf("Field %s is required", f.def.Title)
 					m.refreshViewport()
 					return m, nil
 				}
 			case []string:
 				if len(v) == 0 {
-					m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Field %s is required", f.def.Title)})
+					m.askForm.errorText = fmt.Sprintf("Field %s is required", f.def.Title)
 					m.refreshViewport()
 					return m, nil
 				}
@@ -280,51 +348,17 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	}
 
 	ask := m.pendAsk
-	m.pendAsk = nil
-	m.askForm = nil
-	m.closeAskOverlay()
-	m.textarea.Reset()
-	m.textarea.Focus()
+	if ask.request.Type == port.InputConfirm && ask.request.Approval != nil {
+		return m.submitApprovalAskForm(ask, formValues)
+	}
+
+	m.resetAskFormState()
 
 	if ask.request.Type == port.InputForm {
 		ask.replyCh <- port.InputResponse{Form: formValues}
 	} else {
 		switch ask.request.Type {
 		case port.InputConfirm:
-			if ask.request.Approval != nil {
-				selected, _ := formValues["decision"].(string)
-				approved := selected == "Allow once" || selected == "Allow for this thread"
-				resp := port.InputResponse{
-					Approved: approved,
-					Decision: &port.ApprovalDecision{
-						RequestID: ask.request.Approval.ID,
-						Approved:  approved,
-						Source:    "tui-approval",
-						DecidedAt: m.now().UTC(),
-					},
-				}
-				notice := "Approval denied."
-				if approved {
-					notice = "Approval granted for this action."
-				}
-				if selected == "Allow for this thread" {
-					rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, m.now())
-					if ok {
-						m.rememberApprovalRule(rule)
-						resp.Decision.Source = "tui-thread-rule"
-						resp.Decision.Reason = "remember similar actions for this thread"
-						notice = "Approval granted. Similar actions will be allowed automatically for this thread."
-					}
-				} else if selected == "Allow once" {
-					resp.Decision.Source = "tui-allow-once"
-				} else {
-					resp.Decision.Source = "tui-deny"
-				}
-				ask.replyCh <- resp
-				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
-				m.refreshViewport()
-				return m, nil
-			}
 			approved, _ := formValues["approved"].(bool)
 			ask.replyCh <- port.InputResponse{Approved: approved}
 		case port.InputSelect:
@@ -347,8 +381,68 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	return m, nil
 }
 
+func (m *chatModel) resetAskFormState() {
+	m.pendAsk = nil
+	m.askForm = nil
+	m.closeAskOverlay()
+	m.textarea.Reset()
+	m.textarea.Focus()
+}
+
+func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]any) (chatModel, tea.Cmd) {
+	selected, _ := formValues["decision"].(string)
+	approved := selected != approvalChoiceDeny
+	resp := port.InputResponse{
+		Approved: approved,
+		Decision: &port.ApprovalDecision{
+			RequestID: ask.request.Approval.ID,
+			Approved:  approved,
+			Source:    "tui-approval",
+			DecidedAt: m.now().UTC(),
+		},
+	}
+	notice := "Approval denied."
+	if approved {
+		notice = "Approval granted for this action."
+	}
+	switch selected {
+	case approvalChoiceAllowSession:
+		rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeSession, m.now())
+		if ok {
+			m.rememberApprovalRule(rule)
+			resp.Decision.Source = "tui-session-rule"
+			resp.Decision.Reason = "remember similar actions for this session"
+			notice = "Approval granted. Similar actions will be allowed automatically for this session."
+		}
+	case approvalChoiceAllowProject:
+		rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeProject, m.now())
+		if !ok {
+			m.askForm.errorText = "This approval cannot be remembered for the current project."
+			m.refreshViewport()
+			return m, nil
+		}
+		if err := m.rememberProjectApprovalRule(rule); err != nil {
+			m.askForm.errorText = err.Error()
+			m.refreshViewport()
+			return m, nil
+		}
+		resp.Decision.Source = "tui-project-rule"
+		resp.Decision.Reason = "remember similar actions for this project"
+		notice = "Approval granted. Similar actions will be allowed automatically for this project."
+	case approvalChoiceAllowOnce:
+		resp.Decision.Source = "tui-allow-once"
+	default:
+		resp.Decision.Source = "tui-deny"
+	}
+	m.resetAskFormState()
+	ask.replyCh <- resp
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
+	m.refreshViewport()
+	return m, nil
+}
+
 func (m *chatModel) rememberApprovalRule(rule approvalMemoryRule) {
-	if strings.TrimSpace(rule.SessionID) == "" || strings.TrimSpace(rule.Key) == "" {
+	if rule.scope() != approvalRuleScopeSession || strings.TrimSpace(rule.SessionID) == "" || strings.TrimSpace(rule.Key) == "" {
 		return
 	}
 	if m.approvalRules == nil {
@@ -363,6 +457,29 @@ func (m *chatModel) rememberApprovalRule(rule approvalMemoryRule) {
 	m.approvalRules[rule.SessionID] = append(rules, rule)
 }
 
+func (m *chatModel) rememberProjectApprovalRule(rule approvalMemoryRule) error {
+	if rule.scope() != approvalRuleScopeProject || strings.TrimSpace(rule.Key) == "" {
+		return errors.New("project approval rule is invalid")
+	}
+	if strings.TrimSpace(m.workspace) == "" {
+		return errors.New("current workspace is unavailable")
+	}
+	for _, existing := range m.projectApprovalRules {
+		if existing.Key == rule.Key {
+			return nil
+		}
+	}
+	nextRules := append(append([]approvalMemoryRule(nil), m.projectApprovalRules...), rule)
+	if _, err := product.UpdateProjectTUIConfig(m.workspace, func(cfg *configpkg.TUIConfig) error {
+		cfg.ProjectApprovalRules = approvalProjectRuleConfigs(nextRules)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("save project approval rule: %w", err)
+	}
+	m.projectApprovalRules = nextRules
+	return nil
+}
+
 func (m chatModel) renderAskForm(width int) string {
 	if m.askForm == nil {
 		return ""
@@ -375,6 +492,10 @@ func (m chatModel) renderAskForm(width int) string {
 		return m.renderApprovalAskForm(width)
 	}
 	sb.WriteString(wrapText(m.askForm.prompt, width-4))
+	if strings.TrimSpace(m.askForm.errorText) != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(errorStyle.Render(wrapText(m.askForm.errorText, width-4)))
+	}
 	sb.WriteString("\n\n")
 
 	for i, f := range m.askForm.fields {
@@ -471,73 +592,118 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		return ""
 	}
 	display := buildApprovalDisplay(m.pendAsk.request.Approval, m.currentSessionID)
+	decisionField := m.askForm.fields[0]
+	selected := approvalChoiceAllowOnce
+	if len(decisionField.def.Options) > 0 {
+		idx := decisionField.singleSel
+		if idx >= 0 && idx < len(decisionField.def.Options) {
+			selected = decisionField.def.Options[idx]
+		}
+	}
 	var sb strings.Builder
 	sectionLabel := func(title, value string) {
 		if strings.TrimSpace(value) == "" {
 			return
 		}
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
+		sb.WriteString(dialogAccentStyle.Render(title))
 		sb.WriteString("\n")
-		sb.WriteString("  ")
-		sb.WriteString(wrapText(value, width-6))
+		sb.WriteString(dialogItemStyle.Render(wrapText(value, width-10)))
 		sb.WriteString("\n\n")
 	}
 
 	sb.WriteString(dialogAccentStyle.Render(display.Title))
 	sb.WriteString("\n")
-	sb.WriteString(mutedStyle.Render("Review the action below before continuing."))
+	sb.WriteString(mutedStyle.Render("Review the action below before continuing. Matching approvals can be remembered."))
+	if strings.TrimSpace(m.askForm.errorText) != "" {
+		sb.WriteString("\n\n")
+		sb.WriteString(errorStyle.Render(wrapText(m.askForm.errorText, width-8)))
+	}
 	sb.WriteString("\n\n")
-	sectionLabel("Tool", valueOrDefaultString(display.ToolName, "(unknown)"))
-	sectionLabel("Risk", valueOrDefaultString(display.Risk, "(unspecified)"))
+	metaItems := []string{
+		dialogItemStyle.Render("tool  " + valueOrDefaultString(display.ToolName, "(unknown)")),
+		dialogItemStyle.Render("risk  " + valueOrDefaultString(display.Risk, "(unspecified)")),
+	}
+	sb.WriteString(renderApprovalButtonRows(metaItems, width-8))
+	sb.WriteString("\n\n")
 	sectionLabel("Reason", display.Reason)
 	sectionLabel(display.ActionLabel, display.ActionValue)
 	sectionLabel(display.ScopeLabel, display.ScopeValue)
-	if strings.TrimSpace(display.DecisionNote) != "" {
-		sb.WriteString(mutedStyle.Render(wrapText(display.DecisionNote, width)))
+	sb.WriteString(dialogAccentStyle.Render("Decision"))
+	sb.WriteString("\n")
+	sb.WriteString(renderApprovalButtonRows(renderApprovalDecisionButtons(decisionField), width-8))
+	sb.WriteString("\n")
+	if note := approvalDecisionNote(selected, display); strings.TrimSpace(note) != "" {
+		sb.WriteString("\n")
+		sb.WriteString(mutedStyle.Render(wrapText(note, width-8)))
 		sb.WriteString("\n\n")
 	}
-	for i, f := range m.askForm.fields {
-		prefix := "  "
-		if m.askForm.focusIndex == i {
-			prefix = "▸ "
+	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, "←/→ choose • Enter apply • A allow once • S session • P project • D deny • Esc cancel")
+}
+
+func renderApprovalDecisionButtons(field askFieldState) []string {
+	buttons := make([]string, 0, len(field.def.Options))
+	for idx, opt := range field.def.Options {
+		label := "[ " + approvalDecisionButtonLabel(opt) + " ]"
+		if idx == field.singleSel {
+			buttons = append(buttons, dialogSelectedItemStyle.Render(label))
+			continue
 		}
-		if m.askForm.focusIndex == i {
-			sb.WriteString(dialogAccentStyle.Render(prefix + f.def.Title))
-		} else {
-			sb.WriteString(dialogItemStyle.Render(prefix + f.def.Title))
-		}
-		sb.WriteString("\n")
-		if strings.TrimSpace(f.def.Description) != "" {
-			sb.WriteString(mutedStyle.Render("    " + f.def.Description))
-			sb.WriteString("\n")
-		}
-		for idx, opt := range f.def.Options {
-			cursor := " "
-			if idx == f.singleIndex && m.askForm.focusIndex == i {
-				cursor = "❯"
-			}
-			chosen := " "
-			if idx == f.singleSel {
-				chosen = "●"
-			}
-			line := "    " + cursor + " [" + chosen + "] " + opt
-			if idx == f.singleIndex && m.askForm.focusIndex == i {
-				sb.WriteString(dialogSelectedItemStyle.Render(line) + "\n")
-			} else {
-				sb.WriteString(dialogItemStyle.Render(line) + "\n")
-			}
-		}
-		sb.WriteString("\n")
+		buttons = append(buttons, dialogItemStyle.Render(label))
 	}
-	confirmPrefix := "  "
-	if m.askForm.focusIndex == len(m.askForm.fields) {
-		confirmPrefix = "▸ "
+	return buttons
+}
+
+func approvalDecisionButtonLabel(option string) string {
+	switch option {
+	case approvalChoiceAllowOnce:
+		return "Allow once"
+	case approvalChoiceAllowSession:
+		return "Session"
+	case approvalChoiceAllowProject:
+		return "Project"
+	case approvalChoiceDeny:
+		return "Deny"
+	default:
+		return option
 	}
-	confirm := confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"
-	if m.askForm.focusIndex == len(m.askForm.fields) {
-		sb.WriteString(dialogSelectedItemStyle.Render(confirm))
-	} else {
-		sb.WriteString(dialogItemStyle.Render(confirm))
+}
+
+func renderApprovalButtonRows(items []string, maxWidth int) string {
+	if maxWidth < 20 {
+		maxWidth = 20
 	}
-	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, "↑↓ choose • Enter apply • Esc cancel")
+	rows := make([]string, 0, len(items))
+	current := make([]string, 0, len(items))
+	currentWidth := 0
+	for _, item := range items {
+		itemWidth := lipgloss.Width(item)
+		if len(current) > 0 && currentWidth+2+itemWidth > maxWidth {
+			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Left, current...))
+			current = current[:0]
+			currentWidth = 0
+		}
+		if len(current) > 0 {
+			current = append(current, "  ")
+			currentWidth += 2
+		}
+		current = append(current, item)
+		currentWidth += itemWidth
+	}
+	if len(current) > 0 {
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Left, current...))
+	}
+	return strings.Join(rows, "\n")
+}
+
+func approvalDecisionNote(selected string, display approvalDisplay) string {
+	switch selected {
+	case approvalChoiceAllowSession:
+		return display.SessionDecisionNote
+	case approvalChoiceAllowProject:
+		return display.ProjectDecisionNote
+	case approvalChoiceDeny:
+		return "Deny this action."
+	default:
+		return "Approve only this action."
+	}
 }

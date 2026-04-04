@@ -61,6 +61,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		case "wheel down":
 			m.viewport.LineDown(3)
 			return m, nil
+		default:
+			// Consume click/move events so terminal mouse escape sequences don't fall
+			// through into the composer as literal text.
+			return m, nil
 		}
 
 	case bridgeMsg:

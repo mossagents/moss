@@ -7,25 +7,42 @@ import (
 	"strings"
 	"time"
 
+	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 )
 
+const (
+	approvalChoiceAllowOnce    = "Allow once"
+	approvalChoiceAllowSession = "Allow for this session"
+	approvalChoiceAllowProject = "Always allow for this project"
+	approvalChoiceDeny         = "Deny"
+)
+
+type approvalRuleScope string
+
+const (
+	approvalRuleScopeSession approvalRuleScope = "session"
+	approvalRuleScopeProject approvalRuleScope = "project"
+)
+
 type approvalDisplay struct {
-	Title        string
-	ToolName     string
-	Risk         string
-	Reason       string
-	ActionLabel  string
-	ActionValue  string
-	ScopeLabel   string
-	ScopeValue   string
-	SessionID    string
-	RuleKey      string
-	RuleLabel    string
-	DecisionNote string
+	Title               string
+	ToolName            string
+	Risk                string
+	Reason              string
+	ActionLabel         string
+	ActionValue         string
+	ScopeLabel          string
+	ScopeValue          string
+	SessionID           string
+	RuleKey             string
+	RuleLabel           string
+	SessionDecisionNote string
+	ProjectDecisionNote string
 }
 
 type approvalMemoryRule struct {
+	Scope     approvalRuleScope
 	SessionID string
 	ToolName  string
 	Key       string
@@ -60,11 +77,12 @@ func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) ap
 			display.ActionValue = command
 		}
 		if pattern != "" {
-			display.ScopeLabel = "Remember for this thread"
+			display.ScopeLabel = "Matching rule"
 			display.ScopeValue = pattern
 			display.RuleLabel = pattern
 			display.RuleKey = "run_command|" + pattern
-			display.DecisionNote = "Future matching commands in this thread will be approved automatically."
+			display.SessionDecisionNote = "Future matching commands in this session will be approved automatically."
+			display.ProjectDecisionNote = "Future matching commands in this project will be approved automatically."
 		}
 	case "http_request":
 		requestLine, pattern := parseApprovalRequestTarget(req)
@@ -73,11 +91,12 @@ func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) ap
 			display.ActionValue = requestLine
 		}
 		if pattern != "" {
-			display.ScopeLabel = "Remember for this thread"
+			display.ScopeLabel = "Matching rule"
 			display.ScopeValue = pattern
 			display.RuleLabel = pattern
 			display.RuleKey = "http_request|" + pattern
-			display.DecisionNote = "Future matching requests in this thread will be approved automatically."
+			display.SessionDecisionNote = "Future matching requests in this session will be approved automatically."
+			display.ProjectDecisionNote = "Future matching requests in this project will be approved automatically."
 		}
 	default:
 		if preview := parseApprovalGenericPreview(req); preview != "" {
@@ -85,23 +104,25 @@ func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) ap
 			display.ActionValue = preview
 		}
 		if display.ToolName != "" {
-			display.ScopeLabel = "Remember for this thread"
+			display.ScopeLabel = "Matching rule"
 			display.ScopeValue = display.ToolName
 			display.RuleLabel = display.ToolName
 			display.RuleKey = "tool|" + display.ToolName
-			display.DecisionNote = "Future matching actions in this thread will be approved automatically."
+			display.SessionDecisionNote = "Future matching actions in this session will be approved automatically."
+			display.ProjectDecisionNote = "Future matching actions in this project will be approved automatically."
 		}
 	}
 	if display.ActionLabel == "" {
 		display.ActionLabel = "Action"
 		display.ActionValue = strings.TrimSpace(req.Prompt)
 	}
-	if display.ScopeLabel == "" {
-		display.ScopeLabel = "Remember for this thread"
+	if display.ScopeLabel == "" && display.RuleKey != "" {
+		display.ScopeLabel = "Matching rule"
 		display.ScopeValue = "This tool"
 		display.RuleLabel = "this tool"
 		display.RuleKey = "tool|" + display.ToolName
-		display.DecisionNote = "Future matching actions in this thread will be approved automatically."
+		display.SessionDecisionNote = "Future matching actions in this session will be approved automatically."
+		display.ProjectDecisionNote = "Future matching actions in this project will be approved automatically."
 	}
 	return display
 }
@@ -207,27 +228,109 @@ func quoteApprovalToken(token string) string {
 	return token
 }
 
-func approvalMemoryRuleFor(req *port.ApprovalRequest, currentSessionID string, now time.Time) (approvalMemoryRule, bool) {
+func approvalMemoryRuleFor(req *port.ApprovalRequest, currentSessionID string, scope approvalRuleScope, now time.Time) (approvalMemoryRule, bool) {
 	display := buildApprovalDisplay(req, currentSessionID)
-	if display.SessionID == "" || display.RuleKey == "" {
+	if display.RuleKey == "" {
 		return approvalMemoryRule{}, false
 	}
-	return approvalMemoryRule{
+	rule := approvalMemoryRule{
+		Scope:     scope,
 		SessionID: display.SessionID,
 		ToolName:  display.ToolName,
 		Key:       display.RuleKey,
 		Label:     display.RuleLabel,
 		CreatedAt: now.UTC(),
-	}, true
+	}
+	if scope == approvalRuleScopeSession && strings.TrimSpace(rule.SessionID) == "" {
+		return approvalMemoryRule{}, false
+	}
+	if scope == approvalRuleScopeProject {
+		rule.SessionID = ""
+	}
+	return rule, true
 }
 
 func (r approvalMemoryRule) matches(req *port.ApprovalRequest, currentSessionID string) bool {
 	if req == nil {
 		return false
 	}
-	if strings.TrimSpace(r.SessionID) == "" || strings.TrimSpace(r.Key) == "" {
+	if strings.TrimSpace(r.Key) == "" {
 		return false
 	}
 	display := buildApprovalDisplay(req, currentSessionID)
-	return display.SessionID == r.SessionID && display.RuleKey == r.Key
+	if display.RuleKey != r.Key {
+		return false
+	}
+	switch r.scope() {
+	case approvalRuleScopeProject:
+		return true
+	default:
+		return strings.TrimSpace(r.SessionID) != "" && display.SessionID == r.SessionID
+	}
+}
+
+func (r approvalMemoryRule) scope() approvalRuleScope {
+	switch r.Scope {
+	case approvalRuleScopeProject:
+		return approvalRuleScopeProject
+	case approvalRuleScopeSession:
+		return approvalRuleScopeSession
+	default:
+		if strings.TrimSpace(r.SessionID) != "" {
+			return approvalRuleScopeSession
+		}
+		return approvalRuleScopeProject
+	}
+}
+
+func approvalProjectRulesFromConfig(cfg configpkg.TUIConfig) []approvalMemoryRule {
+	if len(cfg.ProjectApprovalRules) == 0 {
+		return nil
+	}
+	out := make([]approvalMemoryRule, 0, len(cfg.ProjectApprovalRules))
+	seen := map[string]struct{}{}
+	for _, item := range cfg.ProjectApprovalRules {
+		key := strings.TrimSpace(item.Key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, approvalMemoryRule{
+			Scope:    approvalRuleScopeProject,
+			ToolName: strings.TrimSpace(item.ToolName),
+			Key:      key,
+			Label:    strings.TrimSpace(item.Label),
+		})
+	}
+	return out
+}
+
+func approvalProjectRuleConfigs(rules []approvalMemoryRule) []configpkg.ApprovalRuleConfig {
+	if len(rules) == 0 {
+		return nil
+	}
+	out := make([]configpkg.ApprovalRuleConfig, 0, len(rules))
+	seen := map[string]struct{}{}
+	for _, rule := range rules {
+		if rule.scope() != approvalRuleScopeProject {
+			continue
+		}
+		key := strings.TrimSpace(rule.Key)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, configpkg.ApprovalRuleConfig{
+			ToolName: strings.TrimSpace(rule.ToolName),
+			Key:      key,
+			Label:    strings.TrimSpace(rule.Label),
+		})
+	}
+	return out
 }

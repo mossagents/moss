@@ -119,6 +119,7 @@ type chatModel struct {
 	progressTrail         []executionProgressState
 	lastThinkingSignature string
 	approvalRules         map[string][]approvalMemoryRule
+	projectApprovalRules  []approvalMemoryRule
 	debugPromptPreview    bool
 
 	// 工具输出折叠
@@ -193,6 +194,10 @@ func newChatModel(provider, model, workspace string) chatModel {
 			experimentalFeatures = append([]string(nil), prefs.Experimental...)
 		}
 	}
+	projectApprovalRules := []approvalMemoryRule(nil)
+	if projectPrefs, err := product.LoadProjectTUIConfig(workspace); err == nil {
+		projectApprovalRules = approvalProjectRulesFromConfig(projectPrefs)
+	}
 	applyTheme(theme)
 
 	return chatModel{
@@ -209,6 +214,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		experimentalFeatures: experimentalFeatures,
 		toolCollapsed:        true,
 		approvalRules:        map[string][]approvalMemoryRule{},
+		projectApprovalRules: projectApprovalRules,
 		overlays:             newOverlayStack(),
 		inputHistory:         loadInputHistory(defaultHistoryPath(), maxInputHistory),
 		historyPath:          defaultHistoryPath(),
@@ -361,7 +367,7 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 		m.pendAsk = msg.ask
-		m.askForm = newAskFormState(msg.ask.request)
+		m.askForm = newAskFormState(msg.ask.request, m.workspace)
 		m.openAskOverlay()
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
 		if msg.ask.request.Type == port.InputConfirm && msg.ask.request.Approval != nil {
@@ -442,12 +448,33 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, 
 			Decision: &port.ApprovalDecision{
 				RequestID: ask.request.Approval.ID,
 				Approved:  true,
-				Reason:    "remembered approval for this thread",
-				Source:    "tui-thread-rule-auto",
+				Reason:    "remembered approval for this session",
+				Source:    "tui-session-rule-auto",
 				DecidedAt: m.now().UTC(),
 			},
 		}
-		notice := "Approved automatically for this thread"
+		notice := "Approved automatically for this session"
+		if strings.TrimSpace(rule.Label) != "" {
+			notice += ": " + rule.Label
+		}
+		notice += "."
+		return resp, notice, true
+	}
+	for _, rule := range m.projectApprovalRules {
+		if !rule.matches(ask.request.Approval, m.currentSessionID) {
+			continue
+		}
+		resp := port.InputResponse{
+			Approved: true,
+			Decision: &port.ApprovalDecision{
+				RequestID: ask.request.Approval.ID,
+				Approved:  true,
+				Reason:    "remembered approval for this project",
+				Source:    "tui-project-rule-auto",
+				DecidedAt: m.now().UTC(),
+			},
+		}
+		notice := "Approved automatically for this project"
 		if strings.TrimSpace(rule.Label) != "" {
 			notice += ": " + rule.Label
 		}

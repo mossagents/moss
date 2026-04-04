@@ -103,14 +103,21 @@ type ModelConfig struct {
 }
 
 type TUIConfig struct {
-	Theme                string   `yaml:"theme,omitempty"`
-	StatusLine           []string `yaml:"status_line,omitempty"`
-	Personality          string   `yaml:"personality,omitempty"`
-	FastMode             *bool    `yaml:"fast_mode,omitempty"`
-	Experimental         []string `yaml:"experimental,omitempty"`
-	SelectedProvider     string   `yaml:"selected_provider,omitempty"`
-	SelectedProviderName string   `yaml:"selected_provider_name,omitempty"`
-	SelectedModel        string   `yaml:"selected_model,omitempty"`
+	Theme                string               `yaml:"theme,omitempty"`
+	StatusLine           []string             `yaml:"status_line,omitempty"`
+	Personality          string               `yaml:"personality,omitempty"`
+	FastMode             *bool                `yaml:"fast_mode,omitempty"`
+	Experimental         []string             `yaml:"experimental,omitempty"`
+	SelectedProvider     string               `yaml:"selected_provider,omitempty"`
+	SelectedProviderName string               `yaml:"selected_provider_name,omitempty"`
+	SelectedModel        string               `yaml:"selected_model,omitempty"`
+	ProjectApprovalRules []ApprovalRuleConfig `yaml:"project_approval_rules,omitempty"`
+}
+
+type ApprovalRuleConfig struct {
+	ToolName string `yaml:"tool_name,omitempty"`
+	Key      string `yaml:"key,omitempty"`
+	Label    string `yaml:"label,omitempty"`
 }
 
 type SkillConfig struct {

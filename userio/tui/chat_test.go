@@ -1167,6 +1167,49 @@ func TestCtrlCDoubleQuits(t *testing.T) {
 	_ = updated2
 }
 
+func TestMouseClickDoesNotInsertComposerGarbage(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	updated, _ := m.Update(tea.MouseMsg{
+		X:      8,
+		Y:      8,
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonLeft,
+	})
+	if updated.textarea.Value() != "" {
+		t.Fatalf("expected mouse click to be ignored, got %q", updated.textarea.Value())
+	}
+
+	updated.textarea.SetValue("hello")
+	updated, _ = updated.Update(tea.MouseMsg{
+		X:      12,
+		Y:      8,
+		Action: tea.MouseActionMotion,
+		Button: tea.MouseButtonLeft,
+	})
+	if updated.textarea.Value() != "hello" {
+		t.Fatalf("expected mouse motion to preserve composer text, got %q", updated.textarea.Value())
+	}
+}
+
+func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
+	cases := map[string]string{
+		approvalChoiceAllowOnce:    "Allow once",
+		approvalChoiceAllowSession: "Session",
+		approvalChoiceAllowProject: "Project",
+		approvalChoiceDeny:         "Deny",
+	}
+	for input, want := range cases {
+		if got := approvalDecisionButtonLabel(input); got != want {
+			t.Fatalf("approvalDecisionButtonLabel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestEscDoubleCancelsRun(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
@@ -1303,8 +1346,10 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 		"Approval required",
 		"Command",
 		"git push origin main",
+		"Matching rule",
 		"Allow once",
-		"Allow for this thread",
+		"Session",
+		"Project",
 		"Deny",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -1313,7 +1358,7 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	}
 }
 
-func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
+func TestApprovalAllowForSessionRemembersSimilarCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
 	m.width = 120
@@ -1347,8 +1392,7 @@ func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
 
 	first := makeAsk("req-1", []string{"push", "origin", "main"})
 	updated, _ := m.handleBridge(bridgeMsg{ask: first})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	select {
@@ -1356,7 +1400,7 @@ func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
 		if !resp.Approved {
 			t.Fatal("expected first approval to be granted")
 		}
-		if resp.Decision == nil || resp.Decision.Source != "tui-thread-rule" {
+		if resp.Decision == nil || resp.Decision.Source != "tui-session-rule" {
 			t.Fatalf("unexpected decision: %#v", resp.Decision)
 		}
 	default:
@@ -1376,7 +1420,7 @@ func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
 		if !resp.Approved {
 			t.Fatal("expected second approval to be auto-approved")
 		}
-		if resp.Decision == nil || resp.Decision.Source != "tui-thread-rule-auto" {
+		if resp.Decision == nil || resp.Decision.Source != "tui-session-rule-auto" {
 			t.Fatalf("unexpected auto decision: %#v", resp.Decision)
 		}
 	default:
@@ -1384,7 +1428,7 @@ func TestApprovalAllowForThreadRemembersSimilarCommands(t *testing.T) {
 	}
 }
 
-func TestApprovalThreadRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
+func TestApprovalSessionRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
 	m.width = 120
@@ -1426,6 +1470,143 @@ func TestApprovalThreadRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
 	select {
 	case resp := <-replyCh:
 		t.Fatalf("unexpected auto approval: %#v", resp)
+	default:
+	}
+}
+
+func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
+	configpkg.SetAppName("moss")
+	workspace := t.TempDir()
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.currentSessionID = "thread-1"
+	m.recalcLayout()
+
+	makeAsk := func(id, sessionID string, args []string) *bridgeAsk {
+		input, err := json.Marshal(map[string]any{
+			"command": "git",
+			"args":    args,
+		})
+		if err != nil {
+			t.Fatalf("marshal input: %v", err)
+		}
+		return &bridgeAsk{
+			request: port.InputRequest{
+				Type: port.InputConfirm,
+				Approval: &port.ApprovalRequest{
+					ID:        id,
+					SessionID: sessionID,
+					ToolName:  "run_command",
+					Risk:      "high",
+					Reason:    "tool requires approval by policy",
+					Input:     input,
+				},
+			},
+			replyCh: make(chan port.InputResponse, 1),
+		}
+	}
+
+	first := makeAsk("req-1", "thread-1", []string{"push", "origin", "main"})
+	updated, _ := m.handleBridge(bridgeMsg{ask: first})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRight})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-first.replyCh:
+		if !resp.Approved {
+			t.Fatal("expected project approval to be granted")
+		}
+		if resp.Decision == nil || resp.Decision.Source != "tui-project-rule" {
+			t.Fatalf("unexpected decision: %#v", resp.Decision)
+		}
+	default:
+		t.Fatal("expected first approval response")
+	}
+	if got := len(updated.projectApprovalRules); got != 1 {
+		t.Fatalf("remembered project rules = %d, want 1", got)
+	}
+
+	projectCfg, err := configpkg.LoadProjectConfig(workspace)
+	if err != nil {
+		t.Fatalf("load project config: %v", err)
+	}
+	if got := len(projectCfg.TUI.ProjectApprovalRules); got != 1 {
+		t.Fatalf("persisted project rules = %d, want 1", got)
+	}
+
+	reloaded := newChatModel("openai", "gpt-4o", workspace)
+	reloaded.ready = true
+	reloaded.width = 120
+	reloaded.height = 40
+	reloaded.currentSessionID = "thread-2"
+	reloaded.recalcLayout()
+
+	second := makeAsk("req-2", "thread-2", []string{"push", "origin", "dev"})
+	reloaded, _ = reloaded.handleBridge(bridgeMsg{ask: second})
+	if reloaded.pendAsk != nil {
+		t.Fatal("expected project rule to skip interactive approval")
+	}
+	select {
+	case resp := <-second.replyCh:
+		if !resp.Approved {
+			t.Fatal("expected project approval to auto-approve")
+		}
+		if resp.Decision == nil || resp.Decision.Source != "tui-project-rule-auto" {
+			t.Fatalf("unexpected auto decision: %#v", resp.Decision)
+		}
+	default:
+		t.Fatal("expected second approval response")
+	}
+}
+
+func TestApprovalProjectPersistenceErrorStaysInlineInDialog(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", "")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.currentSessionID = "thread-1"
+	m.recalcLayout()
+
+	input, err := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"push", "origin", "main"},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	replyCh := make(chan port.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: port.InputRequest{
+			Type: port.InputConfirm,
+			Approval: &port.ApprovalRequest{
+				ID:        "req-1",
+				SessionID: "thread-1",
+				ToolName:  "run_command",
+				Risk:      "high",
+				Reason:    "tool requires approval by policy",
+				Input:     input,
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated.askForm.fields[0].def.Options = []string{approvalChoiceAllowOnce, approvalChoiceAllowProject, approvalChoiceDeny}
+	updated.askForm.fields[0].singleIndex = 1
+	updated.askForm.fields[0].singleSel = 1
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.askForm == nil {
+		t.Fatal("expected approval dialog to remain open")
+	}
+	if !strings.Contains(updated.askForm.errorText, "workspace is unavailable") {
+		t.Fatalf("unexpected inline error: %q", updated.askForm.errorText)
+	}
+	select {
+	case resp := <-replyCh:
+		t.Fatalf("expected no approval response while dialog remains open, got %#v", resp)
 	default:
 	}
 }
