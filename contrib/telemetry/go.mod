@@ -1,6 +1,6 @@
 module github.com/mossagents/moss/contrib/telemetry
 
-go 1.25
+go 1.25.0
 
 require (
 	github.com/mossagents/moss v0.0.0
@@ -21,7 +21,7 @@ require (
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.42.0 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 )
 
