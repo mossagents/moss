@@ -785,6 +785,12 @@ type appModel struct {
 	theme               string
 }
 
+func (m *appModel) configureChatShell() {
+	m.chat.startupBanner = m.config.WelcomeBanner
+	m.chat.sidebarTitle = valueOrDefaultString(strings.TrimSpace(m.config.SidebarTitle), configpkg.AppName())
+	m.chat.renderSidebarFn = m.config.RenderSidebar
+}
+
 // Run 启动 TUI 应用。
 func Run(cfg Config) error {
 	bridge := NewBridgeIO()
@@ -808,7 +814,7 @@ func Run(cfg Config) error {
 		m.state = stateChat
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
-		m.chat.startupBanner = cfg.WelcomeBanner
+		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
 			applyTheme(theme)
@@ -869,6 +875,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {
 			m.chat.theme = theme
 			applyTheme(theme)

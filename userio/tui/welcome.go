@@ -157,19 +157,20 @@ func (m *welcomeModel) syncInput() {
 }
 
 func (m welcomeModel) View() string {
-	var b strings.Builder
-
-	// Logo
+	headerTitle := "Ready when you are"
+	headerBody := "Connect a model, pick your workspace, and start from the shared moss shell."
+	var hero strings.Builder
 	if m.banner != "" {
-		b.WriteString("\n" + titleStyle.Render(m.banner) + "\n")
-		b.WriteString(mutedStyle.Render(" v"+appVersion) + "\n\n")
-	} else {
-		logo := titleStyle.Render("mosscode")
-		version := mutedStyle.Render(" v" + appVersion)
-		b.WriteString("\n" + logo + version + "\n\n")
+		hero.WriteString(titleStyle.Render(m.banner))
+		hero.WriteString("\n")
 	}
+	hero.WriteString(shellTitleStyle.Render(headerTitle))
+	hero.WriteString("\n")
+	hero.WriteString(mutedStyle.Render(headerBody))
+	hero.WriteString("\n")
+	hero.WriteString(mutedStyle.Render("v" + appVersion))
 
-	// Fields
+	var fieldsBody strings.Builder
 	modelDisplay := m.model
 	if modelDisplay == "" {
 		modelDisplay = "(default)"
@@ -189,32 +190,46 @@ func (m welcomeModel) View() string {
 		label := f.label
 		if m.focus == f.field {
 			label = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render("▸ " + label)
-			b.WriteString(fmt.Sprintf("  %s\n", label))
-			b.WriteString(fmt.Sprintf("  %s\n\n", m.input.View()))
+			fieldsBody.WriteString(fmt.Sprintf("%s\n", label))
+			fieldsBody.WriteString(fmt.Sprintf("%s\n\n", m.input.View()))
 		} else {
-			label = mutedStyle.Render("  " + label)
-			b.WriteString(fmt.Sprintf("  %s: %s\n\n", label, f.value))
+			label = mutedStyle.Render(label)
+			fieldsBody.WriteString(fmt.Sprintf("%s\n%s\n\n", label, f.value))
 		}
 	}
 
-	// Start button
+	startText := mutedStyle.Render("[ Start ]")
 	if m.focus == fieldStart {
-		startBtn := lipgloss.NewStyle().
+		startText = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("#FFFFFF")).
 			Background(colorPrimary).
 			Padding(0, 2).
 			Render("[ Start ]")
-		b.WriteString(fmt.Sprintf("  %s\n", startBtn))
-	} else {
-		b.WriteString(fmt.Sprintf("  %s\n", mutedStyle.Render("[ Start ]")))
 	}
+	fieldsBody.WriteString(startText)
 
-	b.WriteString("\n")
-	b.WriteString(mutedStyle.Render("  Tab/↑↓ switch  Enter confirm  Esc quit  Ctrl+C quit"))
-	b.WriteString("\n")
-
-	return b.String()
+	help := mutedStyle.Render("Tab/↑↓ switch  Enter confirm  Esc quit  Ctrl+C quit")
+	leftWidth := m.width / 2
+	if leftWidth < 42 {
+		leftWidth = 42
+	}
+	if leftWidth > 64 {
+		leftWidth = 64
+	}
+	rightWidth := m.width - leftWidth - 2
+	if rightWidth < 32 {
+		rightWidth = 32
+	}
+	left := renderShellPanel(leftWidth, "Welcome", hero.String())
+	right := renderShellPanel(rightWidth, "Session setup", strings.TrimSpace(fieldsBody.String()))
+	layout := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	return strings.Join([]string{
+		topBarStyle.Render(mutedStyle.Render("moss setup")),
+		shellRuleStyle.Width(max(1, m.width)).Render(strings.Repeat("─", max(1, m.width-1))),
+		layout,
+		help,
+	}, "\n")
 }
 
 func (m welcomeModel) config() WelcomeConfig {

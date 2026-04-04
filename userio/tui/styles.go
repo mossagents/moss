@@ -4,13 +4,15 @@ import "github.com/charmbracelet/lipgloss"
 
 // 颜色常量
 var (
-	colorPrimary   = lipgloss.Color("#7C3AED") // 紫色
-	colorMuted     = lipgloss.Color("#6B7280") // 灰色
-	colorSuccess   = lipgloss.Color("#10B981") // 绿色
-	colorError     = lipgloss.Color("#EF4444") // 红色
-	colorUser      = lipgloss.Color("#22C55E") // 绿色
-	colorAssistant = lipgloss.Color("#E11D48") // 玫红色
-	colorTool      = lipgloss.Color("#F59E0B") // 黄色
+	colorPrimary   = lipgloss.Color("#D946EF")
+	colorMuted     = lipgloss.Color("#6B7280")
+	colorSuccess   = lipgloss.Color("#22C55E")
+	colorError     = lipgloss.Color("#F87171")
+	colorUser      = lipgloss.Color("#22C55E")
+	colorAssistant = lipgloss.Color("#38BDF8")
+	colorTool      = lipgloss.Color("#F59E0B")
+	colorBorder    = lipgloss.Color("#30363D")
+	colorSubtle    = lipgloss.Color("#94A3B8")
 )
 
 // 样式定义
@@ -19,11 +21,18 @@ var (
 			Bold(true).
 			Foreground(colorPrimary)
 
+	shellTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary)
+
 	statusBarStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
 	topBarStyle = lipgloss.NewStyle().
 			Padding(0, 1)
+
+	shellRuleStyle = lipgloss.NewStyle().
+			Foreground(colorBorder)
 
 	userLabelStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -62,22 +71,22 @@ var (
 			Foreground(colorMuted)
 
 	inputBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
+				Border(lipgloss.NormalBorder()).
 				BorderForeground(colorPrimary).
 				Padding(0, 1)
 
 	sidebarBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorMuted).
+			Border(lipgloss.NormalBorder()).
+			BorderForeground(colorBorder).
 			Padding(0, 1)
 
 	sidebarTitleStyle = lipgloss.NewStyle().
 				Bold(true).
-				Foreground(colorPrimary)
+				Foreground(colorSubtle)
 
 	sidebarSectionTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorAssistant)
+					Bold(true).
+					Foreground(colorAssistant)
 
 	collapsedToolStyle = lipgloss.NewStyle().
 				Foreground(colorTool).

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
@@ -256,6 +257,9 @@ func TestSlashCommandSchedules(t *testing.T) {
 	if updated.scheduleBrowser.items[0].ID != "review" {
 		t.Fatalf("unexpected schedule id: %q", updated.scheduleBrowser.items[0].ID)
 	}
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlaySchedule {
+		t.Fatal("expected schedule browser to open via overlay stack")
+	}
 }
 
 func TestScheduleBrowserDelete(t *testing.T) {
@@ -339,12 +343,72 @@ func TestNewChatModelInputHeightDefaultAndClamp(t *testing.T) {
 
 func TestAdjustInputHeightCountsSoftWrappedLines(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.width = 14
+	m.width = 44
 	m.textarea.SetWidth(m.inputWrapWidth())
-	m.textarea.SetValue("123456789012345")
+	m.textarea.SetValue(strings.Repeat("x", m.inputWrapWidth()+1))
 	m.adjustInputHeight()
 	if got := m.textarea.Height(); got != 2 {
 		t.Fatalf("wrapped textarea height=%d, want 2", got)
+	}
+}
+
+func TestNewChatModelRemovesTextareaPrompt(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.textarea.SetWidth(80)
+	if strings.Contains(m.textarea.View(), "┃ ") {
+		t.Fatalf("expected composer textarea to omit internal prompt, got %q", m.textarea.View())
+	}
+}
+
+func TestInputWrapWidthUsesMainColumnWidth(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 160
+	want := m.mainWidth() - inputBorderStyle.GetHorizontalFrameSize()
+	if got := m.inputWrapWidth(); got != want {
+		t.Fatalf("inputWrapWidth=%d, want %d", got, want)
+	}
+}
+
+func TestComposerRenderMatchesMainColumnWidth(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 160
+	m.height = 30
+	m.recalcLayout()
+	rendered := inputBorderStyle.Render(m.textarea.View())
+	if got, want := lipgloss.Width(rendered), m.mainWidth(); got != want {
+		t.Fatalf("composer width=%d, want %d; rendered=%q", got, want, rendered)
+	}
+}
+
+func TestGenerateLayoutSeparatesMainAndEditorRegions(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 160
+	m.height = 40
+	m.textarea.SetValue("hello")
+	m.adjustInputHeight()
+
+	layout := m.generateLayout()
+	if layout.MainWidth != m.mainWidth() {
+		t.Fatalf("main width=%d, want %d", layout.MainWidth, m.mainWidth())
+	}
+	if layout.EditorHeight <= 0 {
+		t.Fatalf("expected positive editor height, got %d", layout.EditorHeight)
+	}
+	if layout.ViewportHeight < 3 {
+		t.Fatalf("expected viewport height >= 3, got %d", layout.ViewportHeight)
+	}
+}
+
+func TestGenerateLayoutHidesEditorWhenOverlayActive(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 160
+	m.height = 40
+	m.scheduleBrowser = newScheduleBrowserState(nil)
+
+	layout := m.generateLayout()
+	if layout.EditorHeight != 0 {
+		t.Fatalf("expected overlay to hide editor region, got %d", layout.EditorHeight)
 	}
 }
 
@@ -963,6 +1027,9 @@ func TestAskFormSingleSelectAndConfirm(t *testing.T) {
 		replyCh: replyCh,
 	}
 	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayAsk {
+		t.Fatal("expected ask form to open via overlay stack")
+	}
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -1577,6 +1644,25 @@ func TestRefreshViewportShowsStartupBannerBeforeConversationBegins(t *testing.T)
 	m.refreshViewport()
 	if strings.Contains(m.viewport.View(), "MOSSCODE BANNER") {
 		t.Fatalf("expected startup banner to disappear after conversation starts, got %q", m.viewport.View())
+	}
+}
+
+func TestChatViewRendersConfiguredSidebar(t *testing.T) {
+	m := newChatModel("openai-completions", "gpt-4o", ".")
+	m.ready = true
+	m.width = 160
+	m.height = 30
+	m.sidebarTitle = "mossquant"
+	m.renderSidebarFn = func() string { return "watchlist\nAAPL\nMSFT" }
+	m.messages = []chatMessage{{kind: msgAssistant, content: "Ready."}}
+	m.recalcLayout()
+	m.refreshViewport()
+
+	out := m.View()
+	for _, want := range []string{"mossquant", "watchlist", "Session", "Shortcuts"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected chat shell to contain %q, got %q", want, out)
+		}
 	}
 }
 

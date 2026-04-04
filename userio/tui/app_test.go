@@ -50,10 +50,14 @@ func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 
 func TestWelcomeViewIncludesConfiguredBanner(t *testing.T) {
 	m := newWelcomeModel("openai-completions", "deepseek", "gpt-4o", ".", "MOSSCODE BANNER")
+	m.width = 120
 
 	out := m.View()
 	if !strings.Contains(out, "MOSSCODE BANNER") {
 		t.Fatalf("expected configured banner in welcome view, got %q", out)
+	}
+	if !strings.Contains(out, "Session setup") || !strings.Contains(out, "Ready when you are") {
+		t.Fatalf("expected redesigned welcome shell, got %q", out)
 	}
 }
 

@@ -633,7 +633,7 @@ func handleSchedulesSlashCommand(m chatModel, _ []string, _ string, _ string) (c
 		return m, nil
 	}
 	if len(items) > 0 {
-		m.scheduleBrowser = newScheduleBrowserState(items)
+		m.openScheduleOverlay(items)
 		m.refreshViewport()
 		return m, nil
 	}

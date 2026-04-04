@@ -20,25 +20,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		if m.scheduleBrowser != nil {
+		if overlay := m.activeOverlay(); overlay != nil {
 			switch msg.String() {
 			case "ctrl+c":
 				return m.handleCtrlC()
-			case "esc":
-				m.scheduleBrowser = nil
-				m.refreshViewport()
-				return m, nil
 			}
-			return m.handleScheduleBrowserKey(msg)
-		}
-		if m.pendAsk != nil && m.askForm != nil {
-			switch msg.String() {
-			case "ctrl+c":
-				return m.handleCtrlC()
-			case "esc":
-				return m.handleEsc()
-			}
-			return m.handleAskKey(msg)
+			return overlay.HandleKey(m, msg)
 		}
 		switch msg.String() {
 		case "ctrl+c":

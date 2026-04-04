@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
@@ -107,6 +106,7 @@ type chatModel struct {
 	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm               *askFormState
 	scheduleBrowser       *scheduleBrowserState
+	overlays              *overlayStack
 	finished              bool   // session 已结束
 	result                string // 最终结果
 	lastTrace             *product.RunTraceSummary
@@ -121,6 +121,8 @@ type chatModel struct {
 	// 配置显示
 	provider             string
 	startupBanner        string
+	sidebarTitle         string
+	renderSidebarFn      func() string
 	model                string
 	workspace            string
 	trust                string
@@ -152,6 +154,7 @@ type chatModel struct {
 func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type a message... (Enter to send, Shift+Enter/Alt+Enter/Ctrl+J for newline)"
+	ta.Prompt = ""
 	ta.Focus()
 	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
@@ -196,6 +199,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		experimentalFeatures: experimentalFeatures,
 		toolCollapsed:        true,
 		approvalRules:        map[string][]approvalMemoryRule{},
+		overlays:             newOverlayStack(),
 		inputHistory:         loadInputHistory(defaultHistoryPath(), maxInputHistory),
 		historyPath:          defaultHistoryPath(),
 		now:                  time.Now,
@@ -326,6 +330,7 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		}
 		m.pendAsk = msg.ask
 		m.askForm = newAskFormState(msg.ask.request)
+		m.openAskOverlay()
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
 		if msg.ask.request.Type == port.InputConfirm && msg.ask.request.Approval != nil {
 			notice = "Approval required. Review the requested action and choose how to proceed."
@@ -433,51 +438,25 @@ func (m *chatModel) adjustInputHeight() {
 }
 
 func (m *chatModel) syncViewportLayout() {
-	inputWidth := m.width - 4
+	inputWidth := m.inputWrapWidth()
 	if inputWidth < 1 {
 		inputWidth = 1
 	}
 	m.textarea.SetWidth(inputWidth)
 	m.adjustInputHeight()
-
-	headerH := 2 // 顶栏
-	metaH := 1 + m.visibleProgressHeight()
-	gapH := 1 // 消息区/输入区、输入区/状态栏之间的空行
-	inputH := m.visibleInputHeight()
-	statusH := 1
-
-	vpHeight := m.height - headerH - metaH - gapH - inputH - statusH
-	if vpHeight < 3 {
-		vpHeight = 3
-	}
+	layout := m.generateLayout()
 
 	if !m.ready {
-		m.viewport = viewport.New(m.mainWidth(), vpHeight)
+		m.viewport = viewport.New(layout.MainWidth, layout.ViewportHeight)
 		m.ready = true
 		return
 	}
-	m.viewport.Width = m.mainWidth()
-	m.viewport.Height = vpHeight
+	m.viewport.Width = layout.MainWidth
+	m.viewport.Height = layout.ViewportHeight
 }
 
 func (m chatModel) visibleInputHeight() int {
-	extra := 0
-	if len(m.queuedInputs) > 0 {
-		extra++
-	}
-	switch {
-	case m.pendAsk != nil && m.askForm != nil:
-		return extra + lipgloss.Height(m.renderAskForm(m.mainWidth()-2))
-	case m.scheduleBrowser != nil:
-		return extra + lipgloss.Height(m.renderScheduleBrowser(m.mainWidth()-2))
-	default:
-		height := extra + m.inputBoxHeight()
-		if m.streaming {
-			height++
-		}
-		height++
-		return height
-	}
+	return m.editorPaneHeight(m.mainWidth())
 }
 
 func (m chatModel) visibleProgressHeight() int {
@@ -488,7 +467,7 @@ func (m chatModel) visibleProgressHeight() int {
 }
 
 func (m *chatModel) inputWrapWidth() int {
-	width := m.width - 4
+	width := m.mainWidth() - inputBorderStyle.GetHorizontalFrameSize()
 	if width < 1 {
 		width = 1
 	}
@@ -516,10 +495,14 @@ func wrappedLineCount(text string, width int) int {
 }
 
 func (m chatModel) mainWidth() int {
-	if m.width < 40 {
+	width := m.width
+	if side := m.shellSidebarWidth(); side > 0 {
+		width -= side + m.shellMainGapWidth()
+	}
+	if width < 40 {
 		return 40
 	}
-	return m.width
+	return width
 }
 
 func (m chatModel) displayApprovalMode() string {

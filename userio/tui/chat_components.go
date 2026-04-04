@@ -1,0 +1,107 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagents/moss/kernel/port"
+)
+
+func (m chatModel) renderMainPane(layout chatUILayout) string {
+	sections := []string{
+		mutedStyle.Render(m.renderHeaderMetaLine()),
+	}
+	if progressLine := m.progress.renderLine(m.now(), layout.MainWidth); progressLine != "" {
+		sections = append(sections, progressLine)
+	}
+	sections = append(sections, lipgloss.NewStyle().Height(layout.ViewportHeight).Render(m.viewport.View()))
+	return lipgloss.NewStyle().
+		Width(layout.MainWidth).
+		Height(layout.MainHeight).
+		Render(strings.Join(sections, "\n"))
+}
+
+func (m chatModel) renderEditorPane(layout chatUILayout) string {
+	if layout.EditorHeight <= 0 {
+		return ""
+	}
+
+	var sections []string
+	if len(m.queuedInputs) > 0 {
+		queueLines := make([]string, 0, len(m.queuedInputs)+1)
+		queueLines = append(queueLines, fmt.Sprintf("Queued messages (%d)", len(m.queuedInputs)))
+		for i, q := range m.queuedInputs {
+			if i >= 5 {
+				queueLines = append(queueLines, fmt.Sprintf("...and %d more", len(m.queuedInputs)-i))
+				break
+			}
+			queueLines = append(queueLines, fmt.Sprintf("%d) %s", i+1, truncateForQueue(q, layout.MainWidth-12)))
+		}
+		sections = append(sections, mutedStyle.Render("  "+strings.Join(queueLines, "  │  ")))
+	}
+	if m.streaming {
+		sections = append(sections, runningStyle.Render(fmt.Sprintf(
+			"  %s Running (%s, double Esc to cancel current run)",
+			spinnerFrame(m.now()),
+			formatElapsed(m.runStartedAt, m.now()),
+		)))
+	}
+	sections = append(sections, m.renderSlashHintLine())
+	sections = append(sections, inputBorderStyle.Render(m.textarea.View()))
+	return lipgloss.NewStyle().
+		Width(layout.MainWidth).
+		Height(layout.EditorHeight).
+		Render(strings.Join(sections, "\n"))
+}
+
+func (m chatModel) renderOverlayPane(layout chatUILayout) string {
+	dialog := m.activeOverlay()
+	if dialog == nil {
+		return ""
+	}
+	width := min(96, max(52, layout.MainWidth-8))
+	overlay := dialog.View(m, width, layout.BodyHeight)
+	if strings.TrimSpace(overlay) == "" {
+		return ""
+	}
+	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, lipgloss.Center, overlay)
+}
+
+func (m chatModel) renderStatusPane(width int) string {
+	status := mutedStyle.Render(m.renderStatusLine())
+	if m.pendAsk != nil && m.askForm != nil {
+		if m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
+			status = mutedStyle.Render("Tab/Shift+Tab move focus │ ↑↓ choose decision │ Enter apply │ approval memory applies to this thread only")
+		} else {
+			status = mutedStyle.Render("Tab/Shift+Tab move fields │ ↑↓ choose options │ Space toggle multi-select │ Enter confirm")
+		}
+	} else if m.scheduleBrowser != nil {
+		status = mutedStyle.Render("↑↓ choose schedule │ e run now │ d delete │ r refresh │ Esc close")
+	} else if m.pendAsk != nil {
+		status = mutedStyle.Render("Type your reply and press Enter │ double Esc cancel run │ Ctrl+C clear input")
+	} else {
+		status = mutedStyle.Render(truncateDisplayWidth(m.renderFooterHelpLine(), width))
+	}
+	return lipgloss.NewStyle().Width(width).Render(status)
+}
+
+func (m chatModel) renderBody(layout chatUILayout) string {
+	mainBody := m.renderMainPane(layout)
+	if overlay := m.renderOverlayPane(layout); strings.TrimSpace(overlay) != "" {
+		mainBody = overlay
+	} else if editor := m.renderEditorPane(layout); strings.TrimSpace(editor) != "" {
+		mainBody = lipgloss.JoinVertical(lipgloss.Left, mainBody, editor)
+	}
+
+	body := mainBody
+	if layout.SidebarWidth > 0 {
+		body = lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			mainBody,
+			lipgloss.NewStyle().Width(layout.GapWidth).Render(""),
+			m.renderShellSidebar(layout.SidebarWidth),
+		)
+	}
+	return body
+}

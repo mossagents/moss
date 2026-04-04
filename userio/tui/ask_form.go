@@ -282,6 +282,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	ask := m.pendAsk
 	m.pendAsk = nil
 	m.askForm = nil
+	m.closeAskOverlay()
 	m.textarea.Reset()
 	m.textarea.Focus()
 
@@ -373,9 +374,7 @@ func (m chatModel) renderAskForm(width int) string {
 	if m.pendAsk != nil && m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
 		return m.renderApprovalAskForm(width)
 	}
-	sb.WriteString(sidebarSectionTitleStyle.Render("Ask User"))
-	sb.WriteString("\n")
-	sb.WriteString(wrapText(m.askForm.prompt, width))
+	sb.WriteString(wrapText(m.askForm.prompt, width-4))
 	sb.WriteString("\n\n")
 
 	for i, f := range m.askForm.fields {
@@ -443,7 +442,7 @@ func (m chatModel) renderAskForm(width int) string {
 		confirmPrefix = "▸ "
 	}
 	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
-	return inputBorderStyle.Width(width).Render(sb.String())
+	return renderShellPanel(width, "Ask user", strings.TrimSpace(sb.String()))
 }
 
 func (m chatModel) renderApprovalAskForm(width int) string {
@@ -459,7 +458,7 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		sb.WriteString(lipgloss.NewStyle().Bold(true).Render(title))
 		sb.WriteString("\n")
 		sb.WriteString("  ")
-		sb.WriteString(wrapText(value, width-4))
+		sb.WriteString(wrapText(value, width-6))
 		sb.WriteString("\n\n")
 	}
 
@@ -505,5 +504,5 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		confirmPrefix = "▸ "
 	}
 	sb.WriteString(lipgloss.NewStyle().Bold(m.askForm.focusIndex == len(m.askForm.fields)).Render(confirmPrefix + "[ " + m.askForm.confirmLabel + " ]"))
-	return inputBorderStyle.Width(width).Render(sb.String())
+	return renderShellPanel(width, "Approval", strings.TrimSpace(sb.String()))
 }

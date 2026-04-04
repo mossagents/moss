@@ -60,7 +60,7 @@ func (m chatModel) refreshScheduleBrowser() (chatModel, tea.Cmd) {
 		return m, nil
 	}
 	if m.scheduleBrowser == nil {
-		m.scheduleBrowser = newScheduleBrowserState(items)
+		m.openScheduleOverlay(items)
 	} else {
 		m.scheduleBrowser.items = items
 		if m.scheduleBrowser.cursor >= len(items) && len(items) > 0 {
@@ -140,8 +140,6 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 		width = 40
 	}
 	var sb strings.Builder
-	sb.WriteString(sidebarSectionTitleStyle.Render("Schedules"))
-	sb.WriteString("\n")
 	if len(m.scheduleBrowser.items) == 0 {
 		sb.WriteString("No scheduled jobs.\n")
 	} else {
@@ -182,5 +180,5 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 		sb.WriteString("\n")
 		sb.WriteString(mutedStyle.Render(m.scheduleBrowser.message))
 	}
-	return inputBorderStyle.Width(width).Render(sb.String())
+	return renderShellPanel(width, "Schedules", strings.TrimSpace(sb.String()))
 }
