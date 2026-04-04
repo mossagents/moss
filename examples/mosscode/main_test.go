@@ -43,15 +43,14 @@ func TestRunCheckpointListJSON(t *testing.T) {
 	}
 
 	cfg := &config{
-		flags:          &appkit.AppFlags{},
-		governance:     product.DefaultGovernanceConfig(),
-		checkpointArgs: []string{"list", "--json"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error {
-		return runCheckpoint(context.Background(), cfg)
+		return executeCLIForTest(cfg, "checkpoint", "list", "--json")
 	})
 	if err != nil {
-		t.Fatalf("runCheckpoint list: %v", err)
+		t.Fatalf("execute checkpoint list: %v", err)
 	}
 	if !strings.Contains(out, "\"mode\": \"list\"") || !strings.Contains(out, "\"checkpoints\"") {
 		t.Fatalf("unexpected checkpoint list json: %s", out)
@@ -59,36 +58,36 @@ func TestRunCheckpointListJSON(t *testing.T) {
 }
 
 func TestRunCheckpointCreateRequiresSession(t *testing.T) {
+	initTestApp(t)
 	cfg := &config{
-		flags:          &appkit.AppFlags{},
-		governance:     product.DefaultGovernanceConfig(),
-		checkpointArgs: []string{"create"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
-	err := runCheckpoint(context.Background(), cfg)
+	err := executeCLIForTest(cfg, "checkpoint", "create")
 	if err == nil || !strings.Contains(err.Error(), "usage: mosscode checkpoint create") {
 		t.Fatalf("expected usage error, got %v", err)
 	}
 }
 
 func TestRunCheckpointForkRedirectsToTopLevelCommand(t *testing.T) {
+	initTestApp(t)
 	cfg := &config{
-		flags:          &appkit.AppFlags{},
-		governance:     product.DefaultGovernanceConfig(),
-		checkpointArgs: []string{"fork"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
-	err := runCheckpoint(context.Background(), cfg)
+	err := executeCLIForTest(cfg, "checkpoint", "fork")
 	if err == nil || !strings.Contains(err.Error(), "mosscode fork") {
 		t.Fatalf("expected fork redirect error, got %v", err)
 	}
 }
 
 func TestRunForkRequiresSource(t *testing.T) {
+	initTestApp(t)
 	cfg := &config{
 		flags:      &appkit.AppFlags{},
 		governance: product.DefaultGovernanceConfig(),
-		forkArgs:   []string{},
 	}
-	err := runFork(context.Background(), cfg)
+	err := executeCLIForTest(cfg, "fork")
 	if err == nil || !strings.Contains(err.Error(), "usage: mosscode fork") {
 		t.Fatalf("expected fork usage error, got %v", err)
 	}
@@ -156,15 +155,14 @@ func TestRunCheckpointShowJSON(t *testing.T) {
 	}
 
 	cfg := &config{
-		flags:          &appkit.AppFlags{},
-		governance:     product.DefaultGovernanceConfig(),
-		checkpointArgs: []string{"show", record.ID, "--json"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error {
-		return runCheckpoint(context.Background(), cfg)
+		return executeCLIForTest(cfg, "checkpoint", "show", record.ID, "--json")
 	})
 	if err != nil {
-		t.Fatalf("runCheckpoint show: %v", err)
+		t.Fatalf("execute checkpoint show: %v", err)
 	}
 	if !strings.Contains(out, "\"mode\": \"show\"") || !strings.Contains(out, "\"checkpoint_detail\"") || !strings.Contains(out, "\"metadata_keys\": [") {
 		t.Fatalf("unexpected checkpoint show json: %s", out)
@@ -189,15 +187,14 @@ func TestRunCheckpointShowLatestJSON(t *testing.T) {
 	}
 
 	cfg := &config{
-		flags:          &appkit.AppFlags{},
-		governance:     product.DefaultGovernanceConfig(),
-		checkpointArgs: []string{"show", "latest", "--json"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error {
-		return runCheckpoint(context.Background(), cfg)
+		return executeCLIForTest(cfg, "checkpoint", "show", "latest", "--json")
 	})
 	if err != nil {
-		t.Fatalf("runCheckpoint show latest: %v", err)
+		t.Fatalf("execute checkpoint show latest: %v", err)
 	}
 	if !strings.Contains(out, second.ID) || strings.Contains(out, first.ID) {
 		t.Fatalf("expected latest checkpoint %s in output, got %s", second.ID, out)
@@ -205,12 +202,12 @@ func TestRunCheckpointShowLatestJSON(t *testing.T) {
 }
 
 func TestRunApplyRequiresPatchFile(t *testing.T) {
+	initTestApp(t)
 	cfg := &config{
 		flags:      &appkit.AppFlags{},
 		governance: product.DefaultGovernanceConfig(),
-		applyArgs:  []string{},
 	}
-	err := runApply(context.Background(), cfg)
+	err := executeCLIForTest(cfg, "apply")
 	if err == nil || !strings.Contains(err.Error(), "usage: mosscode apply") {
 		t.Fatalf("expected usage error, got %v", err)
 	}
@@ -240,15 +237,14 @@ func TestRunChangesListJSON(t *testing.T) {
 	}
 
 	cfg := &config{
-		flags:       &appkit.AppFlags{},
-		governance:  product.DefaultGovernanceConfig(),
-		changesArgs: []string{"list", "--json", "--workspace", repo},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error {
-		return runChanges(context.Background(), cfg)
+		return executeCLIForTest(cfg, "changes", "list", "--json", "--workspace", repo)
 	})
 	if err != nil {
-		t.Fatalf("runChanges list: %v", err)
+		t.Fatalf("execute changes list: %v", err)
 	}
 	if !strings.Contains(out, "\"mode\": \"list\"") || !strings.Contains(out, "\"change-1\"") {
 		t.Fatalf("unexpected changes list json: %s", out)
@@ -279,15 +275,14 @@ func TestRunChangesShowJSON(t *testing.T) {
 	}
 
 	cfg := &config{
-		flags:       &appkit.AppFlags{},
-		governance:  product.DefaultGovernanceConfig(),
-		changesArgs: []string{"show", "--json", "--workspace", repo, "change-1"},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error {
-		return runChanges(context.Background(), cfg)
+		return executeCLIForTest(cfg, "changes", "show", "--json", "--workspace", repo, "change-1")
 	})
 	if err != nil {
-		t.Fatalf("runChanges show: %v", err)
+		t.Fatalf("execute changes show: %v", err)
 	}
 	if !strings.Contains(out, "\"mode\": \"show\"") || !strings.Contains(out, "\"patch_id\": \"patch-1\"") {
 		t.Fatalf("unexpected changes show json: %s", out)
@@ -295,14 +290,52 @@ func TestRunChangesShowJSON(t *testing.T) {
 }
 
 func TestRunRollbackRequiresChange(t *testing.T) {
+	initTestApp(t)
 	cfg := &config{
-		flags:        &appkit.AppFlags{},
-		governance:   product.DefaultGovernanceConfig(),
-		rollbackArgs: []string{},
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
 	}
-	err := runRollback(context.Background(), cfg)
+	err := executeCLIForTest(cfg, "rollback")
 	if err == nil || !strings.Contains(err.Error(), "usage: mosscode rollback") {
 		t.Fatalf("expected usage error, got %v", err)
+	}
+}
+
+func TestExecuteCLIForCheckpointShowSupportsInterspersedFlags(t *testing.T) {
+	initTestApp(t)
+	store, err := port.NewFileCheckpointStore(product.CheckpointStoreDir())
+	if err != nil {
+		t.Fatalf("NewFileCheckpointStore: %v", err)
+	}
+	if _, err := store.Create(context.Background(), port.CheckpointCreateRequest{SessionID: "sess-1", Note: "latest"}); err != nil {
+		t.Fatalf("Create checkpoint: %v", err)
+	}
+	cfg := &config{
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	out, err := captureStdout(func() error {
+		return executeCLIForTest(cfg, "checkpoint", "show", "--json", "latest")
+	})
+	if err != nil {
+		t.Fatalf("execute checkpoint show with interspersed flags: %v", err)
+	}
+	if !strings.Contains(out, `"mode": "show"`) {
+		t.Fatalf("unexpected checkpoint show output: %s", out)
+	}
+	if cfg.checkpointAction != "show" || !cfg.checkpointJSON || cfg.checkpointID != "latest" {
+		t.Fatalf("unexpected parsed checkpoint show config: %+v", cfg)
+	}
+}
+
+func TestExecuteCLIRejectsUnknownNestedFlag(t *testing.T) {
+	cfg := &config{
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	err := executeCLIForTest(cfg, "changes", "list", "--bogus")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --bogus") {
+		t.Fatalf("expected unknown flag error, got %v", err)
 	}
 }
 
@@ -390,4 +423,10 @@ func captureStdout(run func() error) (string, error) {
 	_ = w.Close()
 	os.Stdout = original
 	return <-done, runErr
+}
+
+func executeCLIForTest(cfg *config, args ...string) error {
+	root := buildRootCommand(cfg)
+	root.SetArgs(args)
+	return root.Execute()
 }
