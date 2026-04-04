@@ -17,8 +17,29 @@ import (
 
 func buildRootCommand(cfg *config) *cobra.Command {
 	root := &cobra.Command{
-		Use:           appName,
-		Short:         "Lightweight production-ready coding assistant",
+		Use:   appName,
+		Short: "Lightweight production-ready coding assistant",
+		Long: `mosscode — lightweight production-ready coding assistant
+
+Launch the interactive TUI (no flags), run a one-shot prompt, or use one of
+the sub-commands to manage sessions, checkpoints, config, and more.
+
+Approval modes:
+  read-only   No file writes — inspection only
+  confirm     Prompt before every write (default)
+  full-auto   Apply all changes without prompting
+
+LLM governance flags (--llm-*) control retries, circuit-breaking, and
+model-failover. Supply a --router-config YAML to define candidate models.`,
+		Example: `  # Launch interactive TUI
+  mosscode
+
+  # One-shot prompt
+  mosscode --prompt "Add unit tests for auth.go"
+
+  # One-shot with a specific model, no confirmation
+  mosscode --provider openai --model gpt-4o --approval full-auto \
+           --prompt "Refactor the payment module"`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -38,20 +59,16 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	bindAppAndProductCobraFlags(root, cfg)
 	root.Flags().StringVarP(&cfg.prompt, "prompt", "p", "", "Run one-shot mode with a single prompt (omit to launch TUI)")
 	root.Flags().BoolVar(&cfg.execJSON, "json", false, "Emit one-shot execution output as JSON")
-	root.SetHelpFunc(func(_ *cobra.Command, _ []string) {
-		printUsage()
-	})
-	root.SetHelpCommand(&cobra.Command{
-		Use:   "help",
-		Short: "Show usage",
-		Run: func(_ *cobra.Command, _ []string) {
-			printUsage()
-		},
-	})
 
 	execCmd := &cobra.Command{
 		Use:   "exec",
 		Short: "Run one-shot prompt mode",
+		Long: `Run a single prompt non-interactively and exit.
+
+Equivalent to passing --prompt from the root command, but as an explicit
+sub-command that is easier to script and pipe.`,
+		Example: `  mosscode exec --prompt "Write a changelog entry for the last 5 commits"
+  mosscode exec --prompt "Fix lint errors" --approval full-auto --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runExecCommand(ctx, cfg)
@@ -65,6 +82,13 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	resumeCmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resume a recoverable thread",
+		Long: `Resume an interrupted or paused session in the interactive TUI.
+
+Use --latest to resume the most recent recoverable session, or --session to
+target a specific session by its ID. Omitting both flags lists available
+recoverable sessions.`,
+		Example: `  mosscode resume --latest
+  mosscode resume --session sess_abc123`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runResume(ctx, cfg)
@@ -78,6 +102,13 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize workspace bootstrap files",
+		Long: `Write bootstrap files into the current workspace directory.
+
+Creates any missing configuration stubs (e.g. AGENTS.md, .mosscode/) so the
+agent has a well-defined starting environment. Safe to run multiple times —
+existing files are not overwritten.`,
+		Example: `  mosscode init
+  mosscode init --workspace /path/to/project`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{}, func(_ context.Context, cfg *config) error {
 				return runInit(cfg)
@@ -91,6 +122,12 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	doctorCmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run diagnostics",
+		Long: `Check the environment and report any configuration problems.
+
+Validates the API key, model availability, workspace permissions, and other
+prerequisites. Use --json for machine-readable output.`,
+		Example: `  mosscode doctor
+  mosscode doctor --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true}, func(ctx context.Context, cfg *config) error {
 				return runDoctor(ctx, cfg)
@@ -103,6 +140,13 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	debugConfigCmd := &cobra.Command{
 		Use:   "debug-config",
 		Short: "Show resolved runtime config",
+		Long: `Print every effective runtime setting after merging flag overrides, environment
+variables, and the persisted config file.
+
+Useful for debugging unexpected behaviour — shows exactly what values the agent
+will use for the current invocation.`,
+		Example: `  mosscode debug-config
+  mosscode debug-config --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{}, func(_ context.Context, cfg *config) error {
 				return runDebugConfig(cfg)
@@ -115,6 +159,24 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	configCmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage persisted config",
+		Long: `Read and write the global mosscode config file.
+
+Sub-commands:
+  show                              Print persisted config and effective values
+  path                              Print the config file path
+  set provider|name|model|base_url  Set a top-level config field
+  unset name|model|base_url         Clear a config field
+  mcp list                          List configured MCP servers
+  mcp show <name>                   Show an MCP server entry
+  mcp enable  <name> [global|project]
+  mcp disable <name> [global|project]`,
+		Example: `  mosscode config show
+  mosscode config path
+  mosscode config set provider openai
+  mosscode config set model gpt-4o
+  mosscode config unset model
+  mosscode config mcp list
+  mosscode config mcp enable my-server global`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg.configArgs = append([]string(nil), args...)
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{}, func(_ context.Context, cfg *config) error {
@@ -127,6 +189,20 @@ func buildRootCommand(cfg *config) *cobra.Command {
 	reviewCmd := &cobra.Command{
 		Use:   "review",
 		Short: "Inspect review state",
+		Long: `Show the current code-review state for the workspace.
+
+Sub-commands (passed as positional args):
+  status              Repository change summary (default)
+  snapshots           List saved worktree snapshots
+  snapshot <id>       Show a specific snapshot
+  changes             List persisted change operations
+  change   <id>       Show a specific change operation`,
+		Example: `  mosscode review
+  mosscode review status
+  mosscode review snapshots
+  mosscode review snapshot snap_abc123
+  mosscode review changes
+  mosscode review change chg_xyz789 --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg.reviewArgs = append([]string(nil), args...)
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true}, func(ctx context.Context, cfg *config) error {
@@ -245,7 +321,20 @@ func buildForkCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fork",
 		Short: "Fork from session or checkpoint",
-		Args:  cobra.NoArgs,
+		Long: `Create a new session branched from an existing session or checkpoint.
+
+Exactly one of --session, --checkpoint, or --latest must be supplied.
+The forked session opens in the interactive TUI unless --json is given, in
+which case the new session ID is emitted to stdout and the command exits.`,
+		Example: `  # Fork from the latest checkpoint
+  mosscode fork --latest
+
+  # Fork from a specific checkpoint and restore worktree files
+  mosscode fork --checkpoint ckpt_abc123 --restore-worktree
+
+  # Fork from the latest checkpoint of a specific session (machine-readable)
+  mosscode fork --session sess_xyz789 --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runFork(ctx, cfg)
@@ -265,6 +354,21 @@ func buildCheckpointCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "checkpoint",
 		Short: "Manage persisted checkpoints",
+		Long: `Create, inspect, and replay persisted checkpoints.
+
+A checkpoint captures the full state of a session (conversation history,
+worktree snapshot, metadata) so it can be forked or replayed later.
+
+Sub-commands:
+  list    List all persisted checkpoints
+  show    Inspect a specific checkpoint
+  create  Snapshot an existing session into a checkpoint
+  replay  Prepare a fresh session from a checkpoint`,
+		Example: `  mosscode checkpoint list
+  mosscode checkpoint show latest
+  mosscode checkpoint show ckpt_abc123 --json
+  mosscode checkpoint create --session sess_xyz789 --note "before refactor"
+  mosscode checkpoint replay --latest --mode resume`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("usage: mosscode checkpoint <list|show|create|replay> [flags]")
 		},
@@ -365,7 +469,15 @@ func buildApplyCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Apply explicit patch",
-		Args:  cobra.NoArgs,
+		Long: `Apply a unified diff patch file to the workspace.
+
+Records the operation as a persisted change so it can be rolled back later
+with `+"`mosscode rollback`"+`. Optionally associate the change with an existing
+session by passing --session.`,
+		Example: `  mosscode apply --patch-file ./changes.patch
+  mosscode apply --patch-file ./changes.patch --summary "Fix null pointer in auth"
+  mosscode apply --patch-file ./changes.patch --session sess_abc123 --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runApply(ctx, cfg)
@@ -384,7 +496,14 @@ func buildRollbackCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rollback",
 		Short: "Roll back persisted change",
-		Args:  cobra.NoArgs,
+		Long: `Revert a previously applied persisted change operation.
+
+Applies the inverse patch for the change identified by --change and marks the
+operation as rolled back in the change log. Use ` + "`mosscode changes list`" + `
+to find the change ID.`,
+		Example: `  mosscode rollback --change chg_abc123
+  mosscode rollback --change chg_abc123 --json`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runRollback(ctx, cfg)
@@ -401,6 +520,18 @@ func buildChangesCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "changes",
 		Short: "List or inspect persisted changes",
+		Long: `Browse persisted change operations recorded by ` + "`mosscode apply`" + `.
+
+Each apply operation is stored with its patch, summary, and session reference
+so it can be inspected or rolled back at any time.
+
+Sub-commands:
+  list   List recent change operations (default: last 20)
+  show   Show full detail for a specific change`,
+		Example: `  mosscode changes list
+  mosscode changes list --limit 50 --json
+  mosscode changes show chg_abc123
+  mosscode changes show chg_abc123 --json`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return fmt.Errorf("usage: mosscode changes <list|show> [flags]")
 		},
@@ -444,101 +575,7 @@ func buildChangesCommand(cfg *config) *cobra.Command {
 	return cmd
 }
 
-func printUsage() {
-	fmt.Print(`mosscode — lightweight production-ready coding assistant
 
-Usage:
-  mosscode [flags]
-  mosscode exec --prompt "Fix flaky tests" [flags]
-  mosscode resume [--latest | --session <id>] [flags]
-  mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [flags]
-  mosscode init [flags]
-  mosscode doctor [--json] [flags]
-  mosscode debug-config [--json] [flags]
-  mosscode completion <powershell|bash|zsh>
-  mosscode config [show|path|set|unset|mcp] [args] [flags]
-  mosscode review [status|snapshots|snapshot <id>] [--json] [flags]
-  mosscode checkpoint <list|show|create|replay> [flags]
-
-Flags:
-  --prompt, -p           One-shot prompt for 'exec' or legacy root invocation
-  --provider    LLM provider: claude|openai|gemini
-  --model       Model name
-  --workspace   Workspace directory (default: ".")
-  --profile     Profile: default|coding|research|planning|readonly
-  --trust       Trust level: trusted|restricted
-  --approval    Approval mode: read-only|confirm|full-auto (default: confirm)
-  --router-config          Optional model router YAML path
-  --pricing-catalog       Optional pricing catalog YAML path
-  --llm-retries            LLM retry attempts; 0 disables retries
-  --llm-retry-initial      Initial LLM retry backoff (default: 300ms)
-  --llm-retry-max-delay    Maximum LLM retry backoff (default: 2s)
-  --llm-breaker-failures   Consecutive LLM failures before breaker opens
-  --llm-breaker-reset      Breaker reset window (default when enabled: 30s)
-  --llm-failover           Enable router-based runtime failover
-  --llm-failover-max-candidates  Max router candidates considered for failover (default: 2)
-  --llm-failover-retries   Retry attempts per candidate before switching (default: 1)
-  --llm-failover-on-breaker-open  Switch to next candidate when breaker is open (default: true)
-  --api-key     API key
-  --base-url    API base URL
-
-Resume:
-  --latest      Resume the latest recoverable session
-  --session     Resume a specific recoverable session by ID
-
-Fork:
-  --session             Fork from a specific persisted session
-  --checkpoint          Fork from a specific persisted checkpoint
-  --latest              Fork from the latest persisted checkpoint
-  --restore-worktree    Restore checkpoint worktree when possible
-  --json                Emit machine-readable fork output
-
-Doctor:
-  --json        Emit machine-readable diagnostic output
-
-Config:
-  show          Show persisted config and effective runtime values
-  path          Print config file path
-  set           Set provider/name/model/base_url in global config
-  unset         Clear name/model/base_url in global config
-  mcp list                          List configured MCP servers across global/project config
-  mcp show <name>                  Show MCP server details
-  mcp enable <name> [global|project]   Enable an existing MCP entry
-  mcp disable <name> [global|project]  Disable an existing MCP entry
-
-Review:
-  status        Show repo change summary (default)
-  snapshots     List saved worktree snapshots
-  snapshot      Show a specific snapshot by ID
-  changes       List persisted change operations for the current repo
-  change        Show a specific persisted change operation by ID
-  --json        Emit machine-readable review output
-
-Checkpoint:
-  list [--json]                                             List persisted checkpoints
-  show <id|latest> [--json]                                 Inspect a persisted checkpoint
-  create --session <id> [--note <note>] [--json]            Create checkpoint from a persisted session
-  replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]
-                                                                Prepare a fresh replay session from a checkpoint
-
-Apply:
-  --patch-file <path>   Apply an explicit patch file
-  --summary <text>      Optional human-readable summary for the change
-  --session <id>        Optional persisted session ID for best-effort checkpoint creation
-  --json                Emit machine-readable apply output
-
-Rollback:
-  --change <id>         Roll back a specific persisted change by ID
-  --json                Emit machine-readable rollback output
-
-Changes:
-  list [--limit N] [--json]   List persisted change operations for the current repo
-  show <id> [--json]          Show a specific persisted change operation by ID
-
-Exec:
-  --json        Emit machine-readable execution output
-`)
-}
 
 func printJSON(v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
