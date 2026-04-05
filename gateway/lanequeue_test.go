@@ -99,3 +99,24 @@ func TestLaneQueue_PropagatesCancellationContext(t *testing.T) {
 		t.Fatal("task did not observe cancellation in time")
 	}
 }
+
+func TestLaneQueue_RecoversFromTaskPanic(t *testing.T) {
+	q := NewLaneQueue()
+	q.SetLaneConcurrency("panic", 1)
+
+	first := q.Enqueue(context.Background(), "panic", func(_ context.Context) error {
+		panic("boom")
+	})
+	second := q.Enqueue(context.Background(), "panic", func(_ context.Context) error {
+		return nil
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := first.Wait(ctx); err == nil {
+		t.Fatal("expected panic to be surfaced as error")
+	}
+	if err := second.Wait(ctx); err != nil {
+		t.Fatalf("second task should still run after panic recovery: %v", err)
+	}
+}

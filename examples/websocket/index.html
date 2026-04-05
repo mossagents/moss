@@ -36,10 +36,11 @@ const messages = document.getElementById('messages');
 const input = document.getElementById('input');
 const sendBtn = document.getElementById('send');
 let ws, streaming = null;
+const wsToken = '__MOSS_WS_TOKEN__';
 
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws = new WebSocket(`${proto}//${location.host}/ws?token=${encodeURIComponent(wsToken)}`);
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     switch (msg.type) {

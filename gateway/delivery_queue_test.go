@@ -137,3 +137,30 @@ func TestDeliveryQueue_DeadLetterOnExhaustedRetry(t *testing.T) {
 		t.Fatal("deadletter should not be empty")
 	}
 }
+
+func TestDeliveryQueue_StopsOnJournalFailure(t *testing.T) {
+	dir := t.TempDir()
+	dq, err := NewDeliveryQueue(dir, func(_ context.Context, _ OutboundMessage) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := dq.Publish(OutboundMessage{MessageID: "msg-journal", Channel: "cli", To: "u1", Content: "ok"}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	dq.queuePath = dir
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := dq.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	stopErr := dq.Stop(context.Background())
+	if stopErr == nil {
+		t.Fatal("expected stop to surface journal failure")
+	}
+	if dq.Err() == nil {
+		t.Fatal("expected queue error state after journal failure")
+	}
+}

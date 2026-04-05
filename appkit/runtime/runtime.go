@@ -48,7 +48,7 @@ func defaultConfig() config {
 		skills:           true,
 		progressive:      false,
 		agents:           true,
-		trust:            appconfig.TrustTrusted,
+		trust:            appconfig.TrustRestricted,
 		planning:         true,
 		capabilityReport: noopCapabilityReporter{},
 	}
@@ -112,6 +112,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 		return err
 	}
 	cfg.capabilityReport = NewCapabilityReporter(CapabilityStatusPath(), cfg.capabilityReport)
+	SetExecutionPolicy(k, ResolveExecutionPolicyForKernel(k, cfg.trust, "confirm"))
 	return newRuntimeLifecycleManager().Run(ctx, k, workspaceDir, cfg)
 }
 
@@ -121,14 +122,56 @@ func setupBuiltinTools(ctx context.Context, k *kernel.Kernel, _ config) error {
 
 func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	logger := logging.GetLogger()
-	globalCfg, _ := appconfig.LoadGlobalConfig()
-	merged := appconfig.MergeConfigs(globalCfg)
-	if appconfig.ProjectAssetsAllowed(cfg.trust) {
-		projectCfg, _ := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspaceDir))
-		merged = appconfig.MergeConfigs(globalCfg, projectCfg)
+	globalCfg, err := appconfig.LoadGlobalConfig()
+	if err != nil {
+		cfg.capabilityReport.Report(ctx, "mcp:global-config", true, "failed", err)
+		return fmt.Errorf("load global config: %w", err)
 	}
 	deps := Deps(k)
-	ordered, err := orderSkillConfigs(merged.Skills)
+	allSkills := append([]appconfig.SkillConfig(nil), globalCfg.Skills...)
+	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspaceDir, cfg.trust)
+	if err != nil {
+		cfg.capabilityReport.Report(ctx, "mcp:project-config", true, "failed", err)
+		return fmt.Errorf("load project config: %w", err)
+	}
+	if !appconfig.ProjectAssetsAllowed(cfg.trust) {
+		return registerMCPServers(ctx, cfg, deps, allSkills)
+	}
+	approved := make([]appconfig.SkillConfig, 0, len(projectCfg.Skills))
+	for _, sc := range projectCfg.Skills {
+		if !sc.IsEnabled() || !sc.IsMCP() {
+			continue
+		}
+		allow, err := approveProjectMCPServer(ctx, deps.UserIO, workspaceDir, sc)
+		if err != nil {
+			cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
+			if sc.IsRequired() {
+				return fmt.Errorf("required MCP server %q approval failed: %w", sc.Name, err)
+			}
+			logger.WarnContext(ctx, "failed to approve project MCP server",
+				slog.String("server", sc.Name),
+				slog.Any("error", err),
+			)
+			continue
+		}
+		if !allow {
+			err := fmt.Errorf("project MCP server %q was not approved", sc.Name)
+			cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "skipped", err)
+			if sc.IsRequired() {
+				return err
+			}
+			logger.WarnContext(ctx, "skipping unapproved project MCP server", slog.String("server", sc.Name))
+			continue
+		}
+		approved = append(approved, sc)
+	}
+	merged := appconfig.MergeConfigs(&appconfig.Config{Skills: allSkills}, &appconfig.Config{Skills: approved})
+	return registerMCPServers(ctx, cfg, deps, merged.Skills)
+}
+
+func registerMCPServers(ctx context.Context, cfg config, deps skill.Deps, skills []appconfig.SkillConfig) error {
+	logger := logging.GetLogger()
+	ordered, err := orderSkillConfigs(skills)
 	if err != nil {
 		return err
 	}
@@ -136,7 +179,7 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
-		if err := SkillsManager(k).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+		if err := SkillsManager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
 			cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
 			if sc.IsRequired() {
 				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)
@@ -150,6 +193,31 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 		cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "ready", nil)
 	}
 	return nil
+}
+
+func approveProjectMCPServer(ctx context.Context, io port.UserIO, workspaceDir string, sc appconfig.SkillConfig) (bool, error) {
+	if io == nil {
+		io = &port.NoOpIO{}
+	}
+	target := strings.TrimSpace(sc.URL)
+	if target == "" {
+		target = strings.TrimSpace(sc.Command)
+	}
+	resp, err := io.Ask(ctx, port.InputRequest{
+		Type:         port.InputConfirm,
+		Prompt:       fmt.Sprintf("Start project MCP server %q from %s?", sc.Name, appconfig.DefaultProjectConfigPath(workspaceDir)),
+		ConfirmLabel: "Start MCP server",
+		Meta: map[string]any{
+			"workspace": workspaceDir,
+			"target":    target,
+			"transport": sc.Transport,
+			"source":    appconfig.DefaultProjectConfigPath(workspaceDir),
+		},
+	})
+	if err != nil {
+		return false, err
+	}
+	return resp.Approved, nil
 }
 
 func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {

@@ -2,6 +2,7 @@ package builtins
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
@@ -60,17 +61,24 @@ func GetIdentity(state map[string]any) *port.Identity {
 
 // RBAC 构造基于角色的工具访问控制 middleware。
 // 规则按顺序匹配，第一条匹配的规则决定访问权限。
-// 无匹配规则时默认允许（开放策略）。
+// 配置规则后默认拒绝：缺失身份或无匹配规则都会被拦截。
 func RBAC(rules []RBACRule) middleware.Middleware {
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		if mc.Phase != middleware.BeforeToolCall || mc.Tool == nil {
 			return next(ctx)
 		}
+		if len(rules) == 0 {
+			return next(ctx)
+		}
 
 		identity := GetIdentity(mc.Session.State)
 		if identity == nil {
-			// 无身份信息时放行（由上层决定是否必须认证）
-			return next(ctx)
+			return &PolicyDeniedError{
+				ToolName:    mc.Tool.Name,
+				ReasonCode:  "rbac.identity_required",
+				Reason:      "authenticated identity is required by RBAC policy",
+				Enforcement: EnforcementHardBlock,
+			}
 		}
 
 		for _, rule := range rules {
@@ -92,8 +100,12 @@ func RBAC(rules []RBACRule) middleware.Middleware {
 			return next(ctx)
 		}
 
-		// 无匹配规则：默认允许
-		return next(ctx)
+		return &PolicyDeniedError{
+			ToolName:    mc.Tool.Name,
+			ReasonCode:  "rbac.no_matching_rule",
+			Reason:      "tool access denied because no RBAC rule matched",
+			Enforcement: EnforcementHardBlock,
+		}
 	}
 }
 
@@ -108,7 +120,7 @@ func AuthMiddleware(auth port.Authenticator) middleware.Middleware {
 
 		token, _ := mc.Session.Config.Metadata["auth_token"].(string)
 		if token == "" {
-			return next(ctx)
+			return fmt.Errorf("auth token is required")
 		}
 
 		identity, err := auth.Authenticate(ctx, token)

@@ -15,7 +15,6 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
@@ -103,11 +102,11 @@ Usage:
   moss inspect [args]     Inspect state catalog events and the latest run
   moss version            Show version
 
-AppFlags:
+	AppFlags:
   --debug       Enable trace logging to ~/.moss/debug.log
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
-  --trust       Trust level: trusted|restricted (default: trusted)
+  --trust       Trust level: trusted|restricted (default: restricted)
   --provider    LLM provider: claude|openai-completions|openai-responses|gemini (default from config or "openai-completions")
   --name        LLM provider display name, e.g. openai-completions|openai-responses|deepseek
   --model       Model name (default from config or API default)
@@ -199,7 +198,10 @@ func runCmd(args []string) {
 		logging.GetLogger().Error("error initializing kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
-	applyPolicy(k, f.Trust)
+	if err := product.ApplyResolvedProfile(k, resolution.Profile); err != nil {
+		logging.GetLogger().Error("error applying runtime profile", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	if err := k.Boot(ctx); err != nil {
 		logging.GetLogger().Error("error booting kernel", slog.Any("error", err))
@@ -234,7 +236,7 @@ func runCmd(args []string) {
 		os.Exit(1)
 	}
 
-	sess, err := k.NewSession(ctx, session.SessionConfig{
+	sessCfg := runtime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 		Goal:         *goal,
 		Mode:         *mode,
 		TrustLevel:   f.Trust,
@@ -242,7 +244,8 @@ func runCmd(args []string) {
 		MaxSteps:     50,
 		SystemPrompt: strings.TrimSpace(sysPrompt),
 		Metadata:     meta,
-	})
+	}, resolution.Profile)
+	sess, err := k.NewSession(ctx, sessCfg)
 	if err != nil {
 		logging.GetLogger().Error("error creating session", slog.Any("error", err))
 		os.Exit(1)
@@ -325,7 +328,7 @@ func inspectCmd(args []string) {
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
-	report, err := product.BuildInspectReport(ctx, f.Workspace, fs.Args())
+	report, err := product.BuildInspectReportForTrust(ctx, f.Workspace, f.Trust, fs.Args())
 	if err != nil {
 		logging.GetLogger().Error("inspect failed", slog.Any("error", err))
 		os.Exit(1)
@@ -379,29 +382,30 @@ func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstruction
 func buildKernelWithIO(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
 	identity := config.NormalizeProviderIdentity("", provider, provider)
+	resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+		Workspace:        wsDir,
+		RequestedProfile: profile,
+		Trust:            trust,
+		ApprovalMode:     approvalMode,
+	})
+	if err != nil {
+		return nil, err
+	}
 	k, err := appkit.BuildKernel(ctx, &appkit.AppFlags{
 		Provider:  identity.Provider,
 		Name:      identity.Name,
 		Model:     model,
 		Workspace: wsDir,
-		Trust:     trust,
-		Profile:   profile,
+		Trust:     resolved.Trust,
+		Profile:   resolved.Name,
 		APIKey:    apiKey,
 		BaseURL:   baseURL,
 	}, io)
 	if err != nil {
 		return nil, err
 	}
-	applyPolicy(k, trust)
-	return k, nil
-}
-
-// applyPolicy 根据 trust level 设置策略。
-func applyPolicy(k *kernel.Kernel, trust string) {
-	if trust == "restricted" {
-		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "run_command"),
-			builtins.DefaultAllow(),
-		)
+	if err := product.ApplyResolvedProfile(k, resolved); err != nil {
+		return nil, err
 	}
+	return k, nil
 }

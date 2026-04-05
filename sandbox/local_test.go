@@ -142,6 +142,14 @@ func TestLocalSandboxListFilesRecursive(t *testing.T) {
 	}
 }
 
+func TestLocalSandboxListFilesRejectsTraversalPattern(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+	if _, err := s.ListFiles("..\\*.txt"); err == nil {
+		t.Fatal("expected traversal pattern rejection")
+	}
+}
+
 func TestLocalSandboxExecuteShellCommand(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
@@ -183,6 +191,22 @@ func TestLocalSandboxExecuteWorkingDirMustBeAllowed(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected allowed path enforcement error")
+	}
+}
+
+func TestLocalSandboxWriteFileRejectsSymlinkParentEscape(t *testing.T) {
+	if isWindows() {
+		t.Skip("symlink creation requires elevated privileges on some Windows setups")
+	}
+	dir := t.TempDir()
+	outside := t.TempDir()
+	s, _ := NewLocal(dir)
+	linkPath := filepath.Join(dir, "linked")
+	if err := os.Symlink(outside, linkPath); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	if err := s.WriteFile(filepath.Join("linked", "escape.txt"), []byte("nope")); err == nil {
+		t.Fatal("expected symlink parent escape rejection")
 	}
 }
 
@@ -257,6 +281,39 @@ func TestLocalSandboxExecuteDisabledNetworkHardBlockOnlyFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected hard-block unavailable error")
+	}
+}
+
+func TestLocalSandboxExecuteRejectsPathArgsOutsideAllowedRoots(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+	if err := os.MkdirAll(filepath.Join(dir, "allowed"), 0o755); err != nil {
+		t.Fatalf("mkdir allowed: %v", err)
+	}
+	_, err := s.Execute(context.Background(), port.ExecRequest{
+		Command:      commandForNoop(),
+		Args:         append(argsForNoop(), filepath.Join("..", "blocked.txt")),
+		WorkingDir:   "allowed",
+		AllowedPaths: []string{"allowed"},
+	})
+	if err == nil {
+		t.Fatal("expected outside-allowed-path argument rejection")
+	}
+}
+
+func TestLocalSandboxExecuteRejectsAllowHosts(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocal(dir)
+	_, err := s.Execute(context.Background(), port.ExecRequest{
+		Command: commandForNoop(),
+		Args:    argsForNoop(),
+		Network: port.ExecNetworkPolicy{
+			Mode:       port.ExecNetworkEnabled,
+			AllowHosts: []string{"example.com"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected allow-hosts unsupported error")
 	}
 }
 

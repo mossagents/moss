@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 )
 
@@ -133,18 +134,23 @@ func (q *LaneQueue) pumpLaneLocked(lane string, st *laneState) {
 
 func (q *LaneQueue) runTask(lane string, item laneItem) {
 	var err error
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("lane task panic: %v\n%s", recovered, debug.Stack())
+		}
+		item.future.resolve(err)
+
+		q.mu.Lock()
+		defer q.mu.Unlock()
+		st := q.getOrCreateLaneLocked(lane)
+		if st.active > 0 {
+			st.active--
+		}
+		q.pumpLaneLocked(lane, st)
+	}()
 	if item.task == nil {
 		err = fmt.Errorf("nil task")
-	} else {
-		err = item.task(item.ctx)
+		return
 	}
-	item.future.resolve(err)
-
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	st := q.getOrCreateLaneLocked(lane)
-	if st.active > 0 {
-		st.active--
-	}
-	q.pumpLaneLocked(lane, st)
+	err = item.task(item.ctx)
 }

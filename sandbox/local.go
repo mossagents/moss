@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -78,12 +79,8 @@ func (s *LocalSandbox) ResolvePath(path string) (string, error) {
 	}
 
 	// Second check: resolve symlinks and verify again to prevent symlink-based escapes.
-	resolved, err := filepath.EvalSymlinks(abs)
+	resolved, err := resolveExistingPath(abs)
 	if err != nil {
-		// File may not exist yet (e.g. for WriteFile) — skip symlink check for non-existent paths.
-		if os.IsNotExist(err) {
-			return abs, nil
-		}
 		return "", fmt.Errorf("resolve symlinks in %q: %w", path, err)
 	}
 	if !s.isWithinAllowed(resolved) {
@@ -103,12 +100,19 @@ func (s *LocalSandbox) isWithinAllowed(p string) bool {
 }
 
 func (s *LocalSandbox) ListFiles(pattern string) ([]string, error) {
+	if err := validateSandboxPattern(pattern); err != nil {
+		return nil, err
+	}
 	// 支持 ** 递归匹配
 	if strings.Contains(pattern, "**") {
 		return s.listFilesRecursive(pattern)
 	}
 	fullPattern := filepath.Join(s.root, pattern)
-	return filepath.Glob(fullPattern)
+	matches, err := filepath.Glob(fullPattern)
+	if err != nil {
+		return nil, err
+	}
+	return s.filterListedPaths(matches)
 }
 
 // listFilesRecursive 用 WalkDir 实现 ** 递归 glob 匹配。
@@ -126,6 +130,9 @@ func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
 	searchRoot := s.root
 	if prefix != "" {
 		searchRoot = filepath.Join(s.root, prefix)
+	}
+	if _, err := s.ResolvePath(searchRoot); err != nil {
+		return nil, err
 	}
 
 	var matches []string
@@ -147,7 +154,10 @@ func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
 		}
 		return nil
 	})
-	return matches, err
+	if err != nil {
+		return nil, err
+	}
+	return s.filterListedPaths(matches)
 }
 
 func (s *LocalSandbox) ReadFile(path string) ([]byte, error) {
@@ -188,10 +198,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	if strings.TrimSpace(cmd) == "" {
 		return port.ExecOutput{}, fmt.Errorf("command is required")
 	}
+	shellWrapped := len(args) == 0 && needsShell(cmd)
 
 	// 如果无参数且命令包含 shell 特殊字符，自动用 shell 包装。
 	// 这样 LLM 可以直接发送 "ls -la" 或 "go build ./..." 等完整 shell 命令。
-	if len(args) == 0 && needsShell(cmd) {
+	if shellWrapped {
 		if err := rejectShellChaining(cmd); err != nil {
 			return port.ExecOutput{}, err
 		}
@@ -221,17 +232,26 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 		if !isWithinAllowedRoots(workDir, allowedRoots) {
 			return port.ExecOutput{}, fmt.Errorf("working directory %q is outside allowed execution paths", workDir)
 		}
+		if shellWrapped {
+			return port.ExecOutput{}, fmt.Errorf("shell-form commands are not allowed when execution paths are restricted; provide structured command and args")
+		}
+		if err := validateExecPathAccess(cmd, args, workDir, allowedRoots); err != nil {
+			return port.ExecOutput{}, err
+		}
 	}
 	c.Dir = workDir
 
 	env, customized := buildCommandEnv(req)
 	outputMeta := port.ExecOutput{}
+	if len(req.Network.AllowHosts) > 0 {
+		return port.ExecOutput{}, fmt.Errorf("network host allowlists are not supported by the local sandbox executor")
+	}
 	if req.Network.Mode == port.ExecNetworkDisabled {
 		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
 			return port.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
 		}
 		if !customized {
-			env = os.Environ()
+			env = envMapToSlice(SafeInheritedEnvironment())
 			customized = true
 		}
 		env = applySoftNetworkLimit(env)
@@ -319,6 +339,22 @@ func (s *LocalSandbox) resolveAllowedRoots(paths []string) ([]string, error) {
 	return roots, nil
 }
 
+func (s *LocalSandbox) filterListedPaths(paths []string) ([]string, error) {
+	filtered := make([]string, 0, len(paths))
+	for _, match := range paths {
+		rel, err := filepath.Rel(s.root, match)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := s.ResolvePath(rel); err != nil {
+			continue
+		}
+		filtered = append(filtered, match)
+	}
+	slices.Sort(filtered)
+	return filtered, nil
+}
+
 func isWithinAllowedRoots(path string, roots []string) bool {
 	for _, root := range roots {
 		if path == root || strings.HasPrefix(path, root+string(filepath.Separator)) {
@@ -326,6 +362,138 @@ func isWithinAllowedRoots(path string, roots []string) bool {
 		}
 	}
 	return false
+}
+
+func resolveExistingPath(path string) (string, error) {
+	path = filepath.Clean(path)
+	missing := make([]string, 0, 4)
+	current := path
+	for {
+		resolved, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for _, part := range missing {
+				resolved = filepath.Join(resolved, part)
+			}
+			return filepath.Clean(resolved), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", err
+		}
+		missing = append([]string{filepath.Base(current)}, missing...)
+		current = parent
+	}
+}
+
+func validateSandboxPattern(pattern string) error {
+	pattern = strings.TrimSpace(pattern)
+	if pattern == "" {
+		return nil
+	}
+	if filepath.IsAbs(pattern) {
+		return fmt.Errorf("absolute patterns are not allowed: %q", pattern)
+	}
+	for _, part := range strings.FieldsFunc(filepath.Clean(pattern), func(r rune) bool {
+		return r == '/' || r == '\\'
+	}) {
+		if part == ".." {
+			return fmt.Errorf("pattern %q escapes sandbox", pattern)
+		}
+	}
+	return nil
+}
+
+func validateExecPathAccess(cmd string, args []string, workDir string, allowedRoots []string) error {
+	if looksLikePathToken(cmd) {
+		resolved, err := resolveExecPathCandidate(cmd, workDir)
+		if err != nil {
+			return err
+		}
+		if !isWithinAllowedRoots(resolved, allowedRoots) {
+			return fmt.Errorf("command path %q is outside allowed execution paths", cmd)
+		}
+	}
+	for _, arg := range args {
+		candidate := pathCandidateFromArg(arg)
+		if candidate == "" {
+			continue
+		}
+		resolved, err := resolveExecPathCandidate(candidate, workDir)
+		if err != nil {
+			return err
+		}
+		if !isWithinAllowedRoots(resolved, allowedRoots) {
+			return fmt.Errorf("command argument path %q is outside allowed execution paths", arg)
+		}
+	}
+	return nil
+}
+
+func pathCandidateFromArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return ""
+	}
+	if idx := strings.Index(arg, "="); idx > 0 && strings.HasPrefix(arg, "-") {
+		if candidate := strings.TrimSpace(arg[idx+1:]); looksLikePathToken(candidate) {
+			return candidate
+		}
+		return ""
+	}
+	if looksLikePathToken(arg) {
+		return arg
+	}
+	return ""
+}
+
+func looksLikePathToken(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.HasPrefix(value, "-") {
+		return false
+	}
+	if strings.Contains(value, "://") {
+		return false
+	}
+	if filepath.IsAbs(value) || filepath.VolumeName(value) != "" {
+		return true
+	}
+	if value == "." || value == ".." {
+		return true
+	}
+	if strings.HasPrefix(value, "."+string(filepath.Separator)) || strings.HasPrefix(value, ".."+string(filepath.Separator)) {
+		return true
+	}
+	return strings.ContainsAny(value, `/\`)
+}
+
+func resolveExecPathCandidate(candidate, workDir string) (string, error) {
+	candidate = strings.TrimSpace(candidate)
+	if candidate == "" {
+		return "", fmt.Errorf("empty path candidate")
+	}
+	if filepath.IsAbs(candidate) || filepath.VolumeName(candidate) != "" {
+		return filepath.Clean(candidate), nil
+	}
+	return filepath.Clean(filepath.Join(workDir, candidate)), nil
+}
+
+func envMapToSlice(env map[string]string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	out := make([]string, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, key+"="+env[key])
+	}
+	return out
 }
 
 // needsShell 检查命令是否需要 shell 包装（包含空格、管道、重定向等）。

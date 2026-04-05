@@ -128,7 +128,7 @@ func ListMCPServers(workspace, trust string) ([]MCPServerConfigView, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load global config: %w", err)
 	}
-	projectCfg, err := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspace))
+	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspace, trust)
 	if err != nil {
 		return nil, fmt.Errorf("load project config: %w", err)
 	}

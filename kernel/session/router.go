@@ -107,6 +107,12 @@ func (r *Router) Resolve(ctx context.Context, channel, senderID, sessionHint str
 
 	// 2. 从持久化存储按 key 恢复
 	if r.store != nil {
+		if routed, ok := r.store.(RouteAwareSessionStore); ok {
+			if sess, err := routed.LoadByRouteKey(ctx, key); err == nil && sess != nil {
+				r.keys[key] = sess.ID
+				return sess, nil
+			}
+		}
 		if sess, err := r.store.Load(ctx, key); err == nil && sess != nil {
 			r.keys[key] = sess.ID
 			return sess, nil
@@ -129,6 +135,11 @@ func (r *Router) Resolve(ctx context.Context, channel, senderID, sessionHint str
 		return nil, fmt.Errorf("create session for key %q: %w", key, err)
 	}
 	r.keys[key] = sess.ID
+	if routed, ok := r.store.(RouteAwareSessionStore); ok {
+		if err := routed.SaveRouteKey(ctx, key, sess.ID); err != nil {
+			return nil, fmt.Errorf("persist session route %q: %w", key, err)
+		}
+	}
 	return sess, nil
 }
 

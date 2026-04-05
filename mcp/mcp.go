@@ -15,6 +15,7 @@ import (
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/skill"
 )
 
@@ -188,12 +189,16 @@ func (s *MCPServer) buildCommand() []string {
 
 // buildEnv 构建环境变量列表（KEY=VALUE 格式）。
 func (s *MCPServer) buildEnv(ctx context.Context, io port.UserIO) ([]string, error) {
-	env := os.Environ()
+	base := sandbox.SafeInheritedEnvironment()
 	resolved, err := resolveMCPRequiredEnv(ctx, io, s.cfg.Name, s.cfg.Env, s.cfg.RequiredEnv)
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range resolved {
+		base[k] = v
+	}
+	env := make([]string, 0, len(base))
+	for k, v := range base {
 		env = append(env, k+"="+v)
 	}
 	return env, nil

@@ -68,11 +68,11 @@ func TestListMCPServersIncludesSourceAndTrustStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMCPServers restricted: %v", err)
 	}
-	if len(restricted) != 4 {
-		t.Fatalf("restricted mcp count = %d, want 4", len(restricted))
+	if len(restricted) != 2 {
+		t.Fatalf("restricted mcp count = %d, want 2", len(restricted))
 	}
-	assertMCPStatus(t, restricted, "project-mcp", MCPConfigSourceProject, "suppressed_by_trust", false)
 	assertMCPStatus(t, restricted, "global-mcp", MCPConfigSourceGlobal, "enabled", true)
+	assertMCPNotPresent(t, restricted, "project-mcp")
 
 	trusted, err := ListMCPServers(workspace, appconfig.TrustTrusted)
 	if err != nil {
@@ -131,4 +131,13 @@ func assertMCPStatus(t *testing.T, servers []MCPServerConfigView, name string, s
 		}
 	}
 	t.Fatalf("mcp server %s [%s] not found in %+v", name, source, servers)
+}
+
+func assertMCPNotPresent(t *testing.T, servers []MCPServerConfigView, name string) {
+	t.Helper()
+	for _, server := range servers {
+		if server.Name == name {
+			t.Fatalf("unexpected mcp server %s in %+v", name, servers)
+		}
+	}
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,6 +42,10 @@ func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
+	return fs.loadLocked(id)
+}
+
+func (fs *FileStore) loadLocked(id string) (*Session, error) {
 	path := fs.path(id)
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -163,6 +168,53 @@ func (fs *FileStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+func (fs *FileStore) LoadByRouteKey(_ context.Context, key string) (*Session, error) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	sessionID, err := fs.loadRouteIDLocked(key)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read route key %q: %w", key, err)
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, nil
+	}
+	sess, err := fs.loadLocked(sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if sess != nil {
+		return sess, nil
+	}
+	if err := fs.deleteRouteLocked(key); err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return nil, nil
+}
+
+func (fs *FileStore) SaveRouteKey(_ context.Context, key, sessionID string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	if err := os.MkdirAll(fs.routesDir(), 0o700); err != nil {
+		return fmt.Errorf("create route dir: %w", err)
+	}
+	return os.WriteFile(fs.routePath(key), []byte(strings.TrimSpace(sessionID)), 0o600)
+}
+
+func (fs *FileStore) DeleteRouteKey(_ context.Context, key string) error {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+
+	if err := fs.deleteRouteLocked(key); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete route key %q: %w", key, err)
+	}
+	return nil
+}
+
 // sanitizeID清理 Session ID 防止路径遍历。
 // 使用白名单策略：只保留字母、数字、连字符、下划线。
 func sanitizeID(id string) string {
@@ -181,6 +233,30 @@ func sanitizeID(id string) string {
 
 func (fs *FileStore) path(id string) string {
 	return filepath.Join(fs.dir, sanitizeID(id)+".json")
+}
+
+func (fs *FileStore) routesDir() string {
+	return filepath.Join(fs.dir, "routes")
+}
+
+func (fs *FileStore) routePath(key string) string {
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(strings.TrimSpace(key)))
+	if encoded == "" {
+		encoded = "_"
+	}
+	return filepath.Join(fs.routesDir(), encoded+".route")
+}
+
+func (fs *FileStore) loadRouteIDLocked(key string) (string, error) {
+	data, err := os.ReadFile(fs.routePath(key))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+func (fs *FileStore) deleteRouteLocked(key string) error {
+	return os.Remove(fs.routePath(key))
 }
 
 func (fs *FileStore) saveLocked(sess *Session) error {

@@ -158,21 +158,17 @@ func TestBuildDoctorReportIncludesMCPServerStatus(t *testing.T) {
 		Workspace: workspace,
 		Trust:     appconfig.TrustRestricted,
 	}, nil, "confirm", DefaultGovernanceConfig())
-	if got, want := len(report.Health.Extensions.MCPServerStatus), 2; got != want {
+	if got, want := len(report.Health.Extensions.MCPServerStatus), 1; got != want {
 		t.Fatalf("mcp server status count = %d, want %d", got, want)
 	}
-	foundSuppressed := false
 	for _, server := range report.Health.Extensions.MCPServerStatus {
-		if server.Name == "project-mcp" && server.Status == "suppressed_by_trust" {
-			foundSuppressed = true
+		if server.Name == "project-mcp" {
+			t.Fatalf("restricted doctor report should not read project MCP config: %+v", report.Health.Extensions.MCPServerStatus)
 		}
 	}
-	if !foundSuppressed {
-		t.Fatalf("expected suppressed project MCP in doctor report: %+v", report.Health.Extensions.MCPServerStatus)
-	}
 	rendered := RenderDoctorReport(report)
-	if !strings.Contains(rendered, "MCP project-mcp [project]") {
-		t.Fatalf("doctor output missing MCP detail: %q", rendered)
+	if strings.Contains(rendered, "MCP project-mcp [project]") {
+		t.Fatalf("doctor output should not include project MCP under restricted trust: %q", rendered)
 	}
 	for _, want := range []string{"Adaptive governance:", "Capability workspace [execution]: state=ready"} {
 		if !strings.Contains(rendered, want) {

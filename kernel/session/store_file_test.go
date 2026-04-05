@@ -233,6 +233,43 @@ func TestFileStoreListMarksRecoverableSessions(t *testing.T) {
 	}
 }
 
+func TestFileStoreRouteKeyLookup(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	sess := &Session{
+		ID:     "route-1",
+		Status: StatusPaused,
+		Config: SessionConfig{Goal: "route"},
+	}
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.SaveRouteKey(ctx, "main", sess.ID); err != nil {
+		t.Fatalf("SaveRouteKey: %v", err)
+	}
+	loaded, err := store.LoadByRouteKey(ctx, "main")
+	if err != nil {
+		t.Fatalf("LoadByRouteKey: %v", err)
+	}
+	if loaded == nil || loaded.ID != sess.ID {
+		t.Fatalf("loaded route session = %+v", loaded)
+	}
+	if err := store.DeleteRouteKey(ctx, "main"); err != nil {
+		t.Fatalf("DeleteRouteKey: %v", err)
+	}
+	loaded, err = store.LoadByRouteKey(ctx, "main")
+	if err != nil {
+		t.Fatalf("LoadByRouteKey after delete: %v", err)
+	}
+	if loaded != nil {
+		t.Fatalf("expected nil route lookup after delete, got %+v", loaded)
+	}
+}
+
 func TestFileStoreListSkipsHistoryHiddenSessions(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sessions")
 	store, err := NewFileStore(dir)

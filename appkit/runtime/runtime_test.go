@@ -56,6 +56,27 @@ func TestSetup_UsesDefaultsParity(t *testing.T) {
 	}
 }
 
+func TestSetup_DefaultExecutionPolicyIsRestrictedConfirm(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithSandbox(kt.NewMemorySandbox()),
+	)
+	if err := Setup(context.Background(), k, "."); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	policy := ExecutionPolicyOf(k)
+	if policy.Trust != appconfig.TrustRestricted {
+		t.Fatalf("policy trust = %q, want %q", policy.Trust, appconfig.TrustRestricted)
+	}
+	if policy.ApprovalMode != "confirm" {
+		t.Fatalf("policy approval = %q, want confirm", policy.ApprovalMode)
+	}
+	if !policy.Command.ClearEnv {
+		t.Fatal("expected command env to be cleared by default")
+	}
+}
+
 func TestSetup_ManagerReportsValidateReady(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
@@ -155,7 +176,7 @@ func TestSetup_ReportsDegradedOnOptionalSkillParseFailure(t *testing.T) {
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	reporter := &captureReporter{}
-	if err := Setup(context.Background(), k, ws, WithCapabilityReporter(reporter)); err != nil {
+	if err := Setup(context.Background(), k, ws, WithCapabilityReporter(reporter), WithWorkspaceTrust(appconfig.TrustTrusted)); err != nil {
 		t.Fatalf("setup should not fail on optional skill parse failure: %v", err)
 	}
 	found := false

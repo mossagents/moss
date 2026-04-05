@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -118,6 +119,10 @@ type inspectExecutionMetadata struct {
 }
 
 func BuildInspectReport(ctx context.Context, workspace string, args []string) (InspectReport, error) {
+	return BuildInspectReportForTrust(ctx, workspace, appconfig.TrustTrusted, args)
+}
+
+func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, args []string) (InspectReport, error) {
 	mode := "status"
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		mode = strings.ToLower(strings.TrimSpace(args[0]))
@@ -213,7 +218,7 @@ func BuildInspectReport(ctx context.Context, workspace string, args []string) (I
 		report.Prompt = prompt
 		return report, nil
 	case "capabilities":
-		capabilities, err := buildInspectCapabilities(workspace)
+		capabilities, err := buildInspectCapabilities(workspace, trust)
 		if err != nil {
 			return InspectReport{}, err
 		}

@@ -209,7 +209,7 @@ func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptRepor
 	return report, nil
 }
 
-func buildInspectCapabilities(workspace string) (*InspectCapabilityReport, error) {
+func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport, error) {
 	report := &InspectCapabilityReport{}
 	indexed := map[string]InspectCapabilityItem{}
 	if snapshot, err := appruntime.LoadCapabilitySnapshot(appruntime.CapabilityStatusPath()); err == nil {
@@ -265,7 +265,7 @@ func buildInspectCapabilities(workspace string) (*InspectCapabilityReport, error
 	if _, ok := indexed["builtin-tools"]; !ok {
 		indexed["builtin-tools"] = InspectCapabilityItem{Capability: "builtin-tools", Kind: "builtin", Name: "builtin-tools", State: "unknown", Critical: true}
 	}
-	if servers, err := ListMCPServers(workspace, appconfig.TrustTrusted); err == nil {
+	if servers, err := ListMCPServers(workspace, trust); err == nil {
 		for _, server := range servers {
 			key := "mcp:" + server.Name
 			item := indexed[key]
@@ -280,7 +280,7 @@ func buildInspectCapabilities(workspace string) (*InspectCapabilityReport, error
 			indexed[key] = item
 		}
 	}
-	for _, mf := range skill.DiscoverSkillManifestsForTrust(workspace, appconfig.TrustTrusted) {
+	for _, mf := range skill.DiscoverSkillManifestsForTrust(workspace, trust) {
 		key := "skill:" + mf.Name
 		item := indexed[key]
 		item.Capability = key
@@ -292,7 +292,7 @@ func buildInspectCapabilities(workspace string) (*InspectCapabilityReport, error
 		}
 		indexed[key] = item
 	}
-	for _, dir := range collectInspectableAgentDirs(workspace) {
+	for _, dir := range collectInspectableAgentDirs(workspace, trust) {
 		if _, err := os.Stat(dir); err != nil {
 			continue
 		}
@@ -484,9 +484,9 @@ func countStateEntries(catalog *appruntime.StateCatalog, kind appruntime.StateKi
 	return len(page.Items)
 }
 
-func collectInspectableAgentDirs(workspace string) []string {
+func collectInspectableAgentDirs(workspace, trust string) []string {
 	var dirs []string
-	if appconfig.ProjectAssetsAllowed(appconfig.TrustTrusted) {
+	if appconfig.ProjectAssetsAllowed(trust) {
 		dirs = append(dirs, filepath.Join(workspace, ".agents", "agents"))
 	}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {

@@ -83,8 +83,8 @@ func TestRBAC_NoIdentity(t *testing.T) {
 		Tool:    &tool.ToolSpec{Name: "read_file"},
 	}
 	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
-	if err != nil {
-		t.Fatalf("should pass when no identity: %v", err)
+	if !stderrors.Is(err, ErrDenied) {
+		t.Fatalf("expected RBAC denial when identity is missing, got: %v", err)
 	}
 }
 
@@ -130,6 +130,24 @@ func TestAuthMiddleware(t *testing.T) {
 	id := GetIdentity(sess.State)
 	if id == nil || id.UserID != "u1" {
 		t.Fatal("identity should be set in session state")
+	}
+}
+
+func TestAuthMiddlewareRequiresToken(t *testing.T) {
+	auth := &mockAuthenticator{
+		identity: &port.Identity{UserID: "u1", Roles: []string{"admin"}},
+	}
+	mw := AuthMiddleware(auth)
+	sess := &session.Session{
+		ID:     "s1",
+		Config: session.SessionConfig{Metadata: map[string]any{}},
+	}
+	mc := &middleware.Context{
+		Phase:   middleware.OnSessionStart,
+		Session: sess,
+	}
+	if err := mw(context.Background(), mc, func(_ context.Context) error { return nil }); err == nil {
+		t.Fatal("expected missing auth token error")
 	}
 }
 

@@ -142,8 +142,8 @@ func TestCommonFlags_ApplyDefaults(t *testing.T) {
 	if f.Workspace != "." {
 		t.Fatalf("Workspace = %q, want .", f.Workspace)
 	}
-	if f.Trust != "trusted" {
-		t.Fatalf("Trust = %q, want trusted", f.Trust)
+	if f.Trust != config.TrustRestricted {
+		t.Fatalf("Trust = %q, want %s", f.Trust, config.TrustRestricted)
 	}
 }
 

@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 )
 
@@ -105,5 +106,30 @@ func TestParseSessionKey(t *testing.T) {
 				t.Errorf("ParseSessionKey(%q) = (%q, %q), want (%q, %q)", tt.key, ch, sid, tt.wantChannel, tt.wantSenderID)
 			}
 		})
+	}
+}
+
+func TestResolveRestoresSessionFromRouteMapping(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	ctx := context.Background()
+	sess := &Session{ID: "persisted", Config: SessionConfig{Goal: "saved"}}
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := store.SaveRouteKey(ctx, "telegram:direct:alice", sess.ID); err != nil {
+		t.Fatalf("SaveRouteKey: %v", err)
+	}
+
+	r := NewRouter(RouterConfig{DMScope: DMScopePerChannelPeer}, NewManager(), store)
+	restored, err := r.Resolve(ctx, "telegram", "alice", "")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if restored == nil || restored.ID != sess.ID {
+		t.Fatalf("restored session = %+v, want %q", restored, sess.ID)
 	}
 }

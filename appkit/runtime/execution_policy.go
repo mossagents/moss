@@ -84,7 +84,7 @@ func SetExecutionPolicy(k *kernel.Kernel, policy ExecutionPolicy) {
 
 func ExecutionPolicyOf(k *kernel.Kernel) ExecutionPolicy {
 	if k == nil {
-		return ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
+		return ResolveExecutionPolicyForWorkspace("", appconfig.TrustRestricted, "confirm")
 	}
 	return cloneExecutionPolicy(ensureExecutionPolicyState(k).policy)
 }
@@ -159,7 +159,7 @@ func ensureExecutionPolicyState(k *kernel.Kernel) *executionPolicyState {
 	if loaded {
 		return st
 	}
-	st.policy = ResolveExecutionPolicyForKernel(k, appconfig.TrustTrusted, "full-auto")
+	st.policy = ResolveExecutionPolicyForKernel(k, appconfig.TrustRestricted, "confirm")
 	return st
 }
 
@@ -228,6 +228,8 @@ func commandPolicyDefaults(sb sandbox.Sandbox, workspace string, _ port.Workspac
 		DefaultTimeout: timeout,
 		MaxTimeout:     timeout,
 		AllowedPaths:   normalizeStringSlice(allowedPaths),
+		ClearEnv:       true,
+		Env:            sandbox.SafeInheritedEnvironment(),
 	}
 }
 

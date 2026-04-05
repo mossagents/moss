@@ -24,6 +24,15 @@ type SessionStore interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// RouteAwareSessionStore 扩展 SessionStore，支持按路由键恢复与维护映射。
+// 文件存储等实现可通过该接口持久化 "route key -> session id" 索引。
+type RouteAwareSessionStore interface {
+	SessionStore
+	LoadByRouteKey(ctx context.Context, key string) (*Session, error)
+	SaveRouteKey(ctx context.Context, key, sessionID string) error
+	DeleteRouteKey(ctx context.Context, key string) error
+}
+
 // WatchableSessionStore 扩展 SessionStore，支持多实例部署下的
 // 跨节点 Session 变更订阅（如 Redis pub/sub、etcd Watch 等）。
 // 文件存储等不支持 Watch 的实现无需实现此接口。

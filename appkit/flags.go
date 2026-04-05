@@ -87,7 +87,7 @@ func (f *AppFlags) ApplyDefaults() {
 	f.Provider = FirstNonEmpty(f.Provider, config.APITypeOpenAICompletions)
 	f.Name = FirstNonEmpty(f.Name, f.Provider)
 	f.Workspace = FirstNonEmpty(f.Workspace, ".")
-	f.Trust = FirstNonEmpty(f.Trust, "trusted")
+	f.Trust = FirstNonEmpty(f.Trust, config.TrustRestricted)
 }
 
 func (f *AppFlags) mergeGlobalConfig() {

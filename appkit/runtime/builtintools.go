@@ -285,7 +285,8 @@ func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(files)
+		root, _ := sb.ResolvePath(".")
+		return json.Marshal(normalizeAndFilterPaths(files, root, true))
 	}
 }
 

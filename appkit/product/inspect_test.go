@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/userio/prompting"
@@ -523,5 +524,52 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered governance missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestBuildInspectReportForTrustSuppressesProjectCapabilities(t *testing.T) {
+	ctx := context.Background()
+	configureProductTestApp(t)
+	workspace := t.TempDir()
+	skillDir := filepath.Join(workspace, ".agents", "skills", "project-skill")
+	if err := os.MkdirAll(skillDir, 0o700); err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: project-skill\ndescription: demo\n---\nhello"), 0o600); err != nil {
+		t.Fatalf("write skill: %v", err)
+	}
+	projectCfg := &appconfig.Config{
+		Skills: []appconfig.SkillConfig{{Name: "project-mcp", Transport: "stdio", Command: "node server.js"}},
+	}
+	if err := appconfig.SaveConfig(appconfig.DefaultProjectConfigPath(workspace), projectCfg); err != nil {
+		t.Fatalf("save project config: %v", err)
+	}
+
+	restricted, err := BuildInspectReportForTrust(ctx, workspace, appconfig.TrustRestricted, []string{"capabilities"})
+	if err != nil {
+		t.Fatalf("BuildInspectReportForTrust restricted: %v", err)
+	}
+	for _, item := range restricted.Capabilities.Items {
+		if item.Name == "project-skill" || item.Name == "project-mcp" {
+			t.Fatalf("restricted inspect should suppress project capability, got %+v", item)
+		}
+	}
+
+	trusted, err := BuildInspectReportForTrust(ctx, workspace, appconfig.TrustTrusted, []string{"capabilities"})
+	if err != nil {
+		t.Fatalf("BuildInspectReportForTrust trusted: %v", err)
+	}
+	foundSkill := false
+	foundMCP := false
+	for _, item := range trusted.Capabilities.Items {
+		if item.Name == "project-skill" {
+			foundSkill = true
+		}
+		if item.Name == "project-mcp" {
+			foundMCP = true
+		}
+	}
+	if !foundSkill || !foundMCP {
+		t.Fatalf("trusted inspect missing project capability: skill=%t mcp=%t items=%+v", foundSkill, foundMCP, trusted.Capabilities.Items)
 	}
 }

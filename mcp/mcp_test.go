@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/sandbox"
 )
 
 type fakeMCPClient struct {
@@ -226,5 +228,42 @@ func TestResolveMCPRequiredEnvPromptsForMissingValues(t *testing.T) {
 	}
 	if io.last.Type != port.InputForm || !strings.Contains(io.last.Prompt, "demo") {
 		t.Fatalf("expected prompt for missing env, got %+v", io.last)
+	}
+}
+
+func TestBuildEnvUsesAllowlistedInheritedEnvironment(t *testing.T) {
+	t.Setenv("PATH", os.Getenv("PATH"))
+	t.Setenv("TMP", t.TempDir())
+	t.Setenv("UNSAFE_SECRET", "do-not-inherit")
+	s := &MCPServer{
+		cfg: config.SkillConfig{
+			Name:        "demo",
+			Transport:   "stdio",
+			Env:         map[string]string{"STATIC": "1"},
+			RequiredEnv: []string{"API_TOKEN"},
+		},
+	}
+	t.Setenv("API_TOKEN", "secret")
+	env, err := s.buildEnv(context.Background(), &port.NoOpIO{})
+	if err != nil {
+		t.Fatalf("buildEnv: %v", err)
+	}
+	got := map[string]string{}
+	for _, item := range env {
+		parts := strings.SplitN(item, "=", 2)
+		if len(parts) == 2 {
+			got[parts[0]] = parts[1]
+		}
+	}
+	if got["STATIC"] != "1" || got["API_TOKEN"] != "secret" {
+		t.Fatalf("unexpected resolved env: %+v", got)
+	}
+	if _, ok := got["UNSAFE_SECRET"]; ok {
+		t.Fatalf("unexpected inherited secret in env: %+v", got)
+	}
+	for key, value := range sandbox.SafeInheritedEnvironment() {
+		if got[key] != value {
+			t.Fatalf("missing inherited env %q", key)
+		}
 	}
 }

@@ -478,7 +478,7 @@ func handleReviewSlashCommand(m chatModel, args []string, _ string, _ string) (c
 }
 
 func handleInspectSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	report, err := product.BuildInspectReport(context.Background(), m.workspace, args)
+	report, err := product.BuildInspectReportForTrust(context.Background(), m.workspace, m.trust, args)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("inspect failed: %v", err)})
 	} else {

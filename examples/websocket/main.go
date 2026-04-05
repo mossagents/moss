@@ -14,10 +14,16 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,24 +43,43 @@ func main() {
 
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
+	token, err := websocketAccessToken()
+	if err != nil {
+		logging.GetLogger().Error("token generation failed", slog.Any("error", err))
+		return
+	}
+	listenAddr := "127.0.0.1:8090"
+	listenURL := "http://" + listenAddr + "/?token=" + token
 
 	appkit.PrintBannerWithHint("websocket", map[string]string{
 		"Provider": flags.Provider,
 		"Model":    flags.Model,
-		"Listen":   "http://localhost:8090",
-	}, "在浏览器中打开 http://localhost:8090 开始对话")
+		"Listen":   listenURL,
+	}, "只在本机浏览器打开上面的地址开始对话")
 
 	// 每个 WebSocket 连接创建独立的 Kernel + Session
-	http.Handle("/ws", websocket.Handler(func(conn *websocket.Conn) {
-		handleConnection(ctx, flags, conn)
-	}))
+	http.Handle("/ws", websocket.Server{
+		Handshake: func(cfg *websocket.Config, req *http.Request) error {
+			if err := validateWebSocketOrigin(req); err != nil {
+				return err
+			}
+			if !validWebSocketToken(req, token) {
+				return fmt.Errorf("invalid websocket token")
+			}
+			return nil
+		},
+		Handler: func(conn *websocket.Conn) {
+			handleConnection(ctx, flags, conn)
+		},
+	})
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		data, _ := staticFS.ReadFile("index.html")
+		page := strings.ReplaceAll(string(data), "__MOSS_WS_TOKEN__", token)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
+		_, _ = w.Write([]byte(page))
 	})
 
-	srv := &http.Server{Addr: ":8090"}
+	srv := &http.Server{Addr: listenAddr}
 	go func() {
 		<-ctx.Done()
 		srv.Close()
@@ -119,6 +144,49 @@ func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websock
 			}
 			_ = result
 		}
+	}
+}
+
+func websocketAccessToken() (string, error) {
+	if token := strings.TrimSpace(os.Getenv("MOSS_WS_TOKEN")); token != "" {
+		return token, nil
+	}
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func validWebSocketToken(req *http.Request, expected string) bool {
+	if req == nil {
+		return false
+	}
+	token := strings.TrimSpace(req.URL.Query().Get("token"))
+	if token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func validateWebSocketOrigin(req *http.Request) error {
+	if req == nil {
+		return fmt.Errorf("missing request")
+	}
+	origin := strings.TrimSpace(req.Header.Get("Origin"))
+	if origin == "" {
+		return fmt.Errorf("origin header is required")
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return fmt.Errorf("invalid origin: %w", err)
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	switch host {
+	case "127.0.0.1", "localhost":
+		return nil
+	default:
+		return fmt.Errorf("origin %q is not allowed", origin)
 	}
 }
 

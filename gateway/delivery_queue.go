@@ -87,6 +87,8 @@ type DeliveryQueue struct {
 	wg        sync.WaitGroup
 	wakeCh    chan struct{}
 	recovered bool
+	failedErr error
+	stopOnce  sync.Once
 }
 
 func NewDeliveryQueue(baseDir string, sender func(context.Context, OutboundMessage) error) (*DeliveryQueue, error) {
@@ -189,10 +191,11 @@ func (dq *DeliveryQueue) Start(ctx context.Context) error {
 func (dq *DeliveryQueue) Stop(ctx context.Context) error {
 	dq.mu.Lock()
 	if !dq.started {
+		err := dq.failedErr
 		dq.mu.Unlock()
-		return nil
+		return err
 	}
-	close(dq.stopCh)
+	dq.stopOnce.Do(func() { close(dq.stopCh) })
 	dq.mu.Unlock()
 
 	done := make(chan struct{})
@@ -202,13 +205,16 @@ func (dq *DeliveryQueue) Stop(ctx context.Context) error {
 	}()
 	select {
 	case <-done:
-		return nil
+		return dq.Err()
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
 func (dq *DeliveryQueue) Publish(msg OutboundMessage) error {
+	if err := dq.Err(); err != nil {
+		return err
+	}
 	if msg.MessageID == "" {
 		msg.MessageID = uuid.NewString()
 	}
@@ -259,6 +265,9 @@ func (dq *DeliveryQueue) worker(ctx context.Context) {
 }
 
 func (dq *DeliveryQueue) processOne(ctx context.Context) time.Duration {
+	if err := dq.Err(); err != nil {
+		return 200 * time.Millisecond
+	}
 	dq.mu.Lock()
 	if len(dq.queue) == 0 {
 		dq.mu.Unlock()
@@ -288,20 +297,22 @@ func (dq *DeliveryQueue) processOne(ctx context.Context) time.Duration {
 
 	err := dq.sender(ctx, item.msg)
 	if err == nil {
-		_ = appendJSONL(dq.queuePath, persistentEvent{
+		if appendErr := appendJSONL(dq.queuePath, persistentEvent{
 			Type:      "delivered",
 			MessageID: item.msg.MessageID,
 			Channel:   item.msg.Channel,
 			To:        item.msg.To,
 			Content:   item.msg.Content,
 			CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		})
+		}); appendErr != nil {
+			dq.fail(fmt.Errorf("persist delivered event: %w", appendErr))
+		}
 		return 10 * time.Millisecond
 	}
 
 	item.attempt++
 	if !dq.policy.ShouldRetry(err) || item.attempt >= dq.policy.MaxAttempts {
-		_ = appendJSONL(dq.queuePath, persistentEvent{
+		appendErr := appendJSONL(dq.queuePath, persistentEvent{
 			Type:      "deadlettered",
 			MessageID: item.msg.MessageID,
 			Channel:   item.msg.Channel,
@@ -311,22 +322,27 @@ func (dq *DeliveryQueue) processOne(ctx context.Context) time.Duration {
 			LastError: err.Error(),
 			CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		})
-		_ = appendJSONL(dq.dlqPath, persistentEvent{
-			Type:      "deadlettered",
-			MessageID: item.msg.MessageID,
-			Channel:   item.msg.Channel,
-			To:        item.msg.To,
-			Content:   item.msg.Content,
-			Attempt:   item.attempt,
-			LastError: err.Error(),
-			CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		})
+		if appendErr == nil {
+			appendErr = appendJSONL(dq.dlqPath, persistentEvent{
+				Type:      "deadlettered",
+				MessageID: item.msg.MessageID,
+				Channel:   item.msg.Channel,
+				To:        item.msg.To,
+				Content:   item.msg.Content,
+				Attempt:   item.attempt,
+				LastError: err.Error(),
+				CreatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			})
+		}
+		if appendErr != nil {
+			dq.fail(fmt.Errorf("persist deadletter event: %w", appendErr))
+		}
 		return 10 * time.Millisecond
 	}
 
 	delay := dq.policy.NextDelay(item.attempt)
 	item.nextRetryAt = time.Now().Add(delay)
-	_ = appendJSONL(dq.queuePath, persistentEvent{
+	if appendErr := appendJSONL(dq.queuePath, persistentEvent{
 		Type:        "attempted",
 		MessageID:   item.msg.MessageID,
 		Channel:     item.msg.Channel,
@@ -336,11 +352,35 @@ func (dq *DeliveryQueue) processOne(ctx context.Context) time.Duration {
 		NextRetryAt: item.nextRetryAt.UTC().Format(time.RFC3339Nano),
 		LastError:   err.Error(),
 		CreatedAt:   time.Now().UTC().Format(time.RFC3339Nano),
-	})
+	}); appendErr != nil {
+		dq.mu.Lock()
+		dq.queue = append(dq.queue, item)
+		dq.mu.Unlock()
+		dq.fail(fmt.Errorf("persist retry event: %w", appendErr))
+		return delay
+	}
 	dq.mu.Lock()
 	dq.queue = append(dq.queue, item)
 	dq.mu.Unlock()
 	return delay
+}
+
+func (dq *DeliveryQueue) Err() error {
+	dq.mu.Lock()
+	defer dq.mu.Unlock()
+	return dq.failedErr
+}
+
+func (dq *DeliveryQueue) fail(err error) {
+	if err == nil {
+		return
+	}
+	dq.mu.Lock()
+	if dq.failedErr == nil {
+		dq.failedErr = err
+	}
+	dq.mu.Unlock()
+	dq.stopOnce.Do(func() { close(dq.stopCh) })
 }
 
 func (dq *DeliveryQueue) wake() {
