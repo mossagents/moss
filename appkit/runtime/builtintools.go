@@ -60,34 +60,34 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 	// 文件系统工具：统一通过 execution surface 判断可用性，但保留原始实现的优先级和路径语义。
 	if ws != nil {
 		tools = append(tools,
-			entry{readFileSpec, readFileHandlerWS(ws)},
-			entry{writeFileSpec, writeFileHandlerWS(ws)},
-			entry{editFileSpec, editFileHandlerWS(ws)},
-			entry{globSpec, globHandlerWS(ws)},
-			entry{listFilesSpec, listFilesHandlerWS(ws)},
-			entry{grepSpec, grepHandlerWS(ws)},
+			entry{builtinToolSpec(readFileSpec, "runtime", true, false, false), readFileHandlerWS(ws)},
+			entry{builtinToolSpec(writeFileSpec, "runtime", true, false, false), writeFileHandlerWS(ws)},
+			entry{builtinToolSpec(editFileSpec, "runtime", true, false, false), editFileHandlerWS(ws)},
+			entry{builtinToolSpec(globSpec, "runtime", true, false, false), globHandlerWS(ws)},
+			entry{builtinToolSpec(listFilesSpec, "runtime", true, false, false), listFilesHandlerWS(ws)},
+			entry{builtinToolSpec(grepSpec, "runtime", true, false, false), grepHandlerWS(ws)},
 		)
 	} else if surface.Sandbox() != nil {
 		tools = append(tools,
-			entry{readFileSpec, readFileHandler(surface.Sandbox())},
-			entry{writeFileSpec, writeFileHandler(surface.Sandbox())},
-			entry{editFileSpec, editFileHandler(surface.Sandbox())},
-			entry{globSpec, globHandler(surface.Sandbox())},
-			entry{listFilesSpec, listFilesHandler(surface.Sandbox())},
-			entry{grepSpec, grepHandler(surface.Sandbox())},
+			entry{builtinToolSpec(readFileSpec, "runtime", false, false, true), readFileHandler(surface.Sandbox())},
+			entry{builtinToolSpec(writeFileSpec, "runtime", false, false, true), writeFileHandler(surface.Sandbox())},
+			entry{builtinToolSpec(editFileSpec, "runtime", false, false, true), editFileHandler(surface.Sandbox())},
+			entry{builtinToolSpec(globSpec, "runtime", false, false, true), globHandler(surface.Sandbox())},
+			entry{builtinToolSpec(listFilesSpec, "runtime", false, false, true), listFilesHandler(surface.Sandbox())},
+			entry{builtinToolSpec(grepSpec, "runtime", false, false, true), grepHandler(surface.Sandbox())},
 		)
 	}
 
 	// 命令执行：统一通过 execution surface 判断可用性，但保留原始执行后端。
 	if exec != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerExecWithPolicy(k, exec, surface.Workspace())})
+		tools = append(tools, entry{builtinToolSpec(runCommandSpec, "runtime", surface.Workspace() != nil, true, false), runCommandHandlerExecWithPolicy(k, exec, surface.Workspace())})
 	} else if surface.Sandbox() != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerWithPolicy(k, surface.Sandbox())})
+		tools = append(tools, entry{builtinToolSpec(runCommandSpec, "runtime", false, false, true), runCommandHandlerWithPolicy(k, surface.Sandbox())})
 	}
 
-	tools = append(tools, entry{httpRequestSpec, httpRequestHandlerWithPolicy(k)})
-	tools = append(tools, entry{datetimeSpec, datetimeHandler()})
-	tools = append(tools, entry{askUserSpec, askUserHandler(io)})
+	tools = append(tools, entry{builtinToolSpec(httpRequestSpec, "runtime", false, false, false), httpRequestHandlerWithPolicy(k)})
+	tools = append(tools, entry{builtinToolSpec(datetimeSpec, "runtime", false, false, false), datetimeHandler()})
+	tools = append(tools, entry{builtinToolSpec(askUserSpec, "runtime", false, false, false), askUserHandler(io)})
 
 	for _, t := range tools {
 		if err := reg.Register(t.spec, t.handler); err != nil {
@@ -95,6 +95,15 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 		}
 	}
 	return nil
+}
+
+func builtinToolSpec(spec tool.ToolSpec, owner string, requiresWorkspace, requiresExecutor, requiresSandbox bool) tool.ToolSpec {
+	spec.Source = "builtin"
+	spec.Owner = strings.TrimSpace(owner)
+	spec.RequiresWorkspace = requiresWorkspace
+	spec.RequiresExecutor = requiresExecutor
+	spec.RequiresSandbox = requiresSandbox
+	return spec
 }
 
 // ─── datetime ────────────────────────────────────────

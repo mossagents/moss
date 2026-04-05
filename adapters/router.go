@@ -226,13 +226,13 @@ func (r *ModelRouter) selectModel(req *port.TaskRequirement) (*routedModel, erro
 }
 
 func (r *ModelRouter) orderedCandidates(req *port.TaskRequirement) ([]routedModel, error) {
-	if req == nil || len(req.Capabilities) == 0 {
+	if req == nil {
 		return r.defaultOrderedCandidates(), nil
 	}
 
 	var candidates []routedModel
 	for _, rm := range r.models {
-		if !rm.profile.HasAllCapabilities(req.Capabilities) {
+		if len(req.Capabilities) > 0 && !rm.profile.HasAllCapabilities(req.Capabilities) {
 			continue
 		}
 		if req.MaxCostTier > 0 && rm.profile.CostTier > req.MaxCostTier {
@@ -245,16 +245,52 @@ func (r *ModelRouter) orderedCandidates(req *port.TaskRequirement) ([]routedMode
 		return nil, r.noModelError(req)
 	}
 
-	if req.PreferCheap {
-		sort.Slice(candidates, func(i, j int) bool {
-			return candidates[i].profile.CostTier < candidates[j].profile.CostTier
-		})
-	} else {
-		sort.Slice(candidates, func(i, j int) bool {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := routeScore(candidates[i].profile, req)
+		right := routeScore(candidates[j].profile, req)
+		if left != right {
+			return left > right
+		}
+		if req.PreferCheap || strings.TrimSpace(req.Lane) == "cheap" || strings.TrimSpace(req.Lane) == "background-task" {
+			if candidates[i].profile.CostTier != candidates[j].profile.CostTier {
+				return candidates[i].profile.CostTier < candidates[j].profile.CostTier
+			}
+		}
+		if len(candidates[i].profile.Capabilities) != len(candidates[j].profile.Capabilities) {
 			return len(candidates[i].profile.Capabilities) > len(candidates[j].profile.Capabilities)
-		})
-	}
+		}
+		return candidates[i].profile.Name < candidates[j].profile.Name
+	})
 	return candidates, nil
+}
+
+func routeScore(profile ModelProfile, req *port.TaskRequirement) int {
+	score := 0
+	if req == nil {
+		return score
+	}
+	switch strings.TrimSpace(req.Lane) {
+	case "cheap":
+		score += 100 - profile.CostTier*10
+	case "background-task":
+		score += 80 - profile.CostTier*10
+	case "reasoning":
+		if profile.HasCapability(port.CapReasoning) {
+			score += 120
+		}
+	case "tool-heavy":
+		if profile.HasCapability(port.CapFunctionCalling) {
+			score += 100
+		}
+		if profile.HasCapability(port.CapLongContext) {
+			score += 20
+		}
+	}
+	if req.PreferCheap {
+		score += 40 - profile.CostTier*10
+	}
+	score += len(profile.Capabilities)
+	return score
 }
 
 func (r *ModelRouter) defaultOrderedCandidates() []routedModel {

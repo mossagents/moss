@@ -195,6 +195,94 @@ func TestSelectModel_MaxCostTier(t *testing.T) {
 	}
 }
 
+func TestSelectModel_ReasoningLanePrefersReasoningModel(t *testing.T) {
+	models := []routedModel{
+		{
+			profile: ModelProfile{
+				Name:         "cheap",
+				CostTier:     1,
+				Capabilities: []port.ModelCapability{port.CapTextGeneration},
+				IsDefault:    true,
+			},
+			llm: &fakeLLM{name: "cheap"},
+		},
+		{
+			profile: ModelProfile{
+				Name:         "reasoner",
+				CostTier:     3,
+				Capabilities: []port.ModelCapability{port.CapTextGeneration, port.CapReasoning},
+			},
+			llm: &fakeLLM{name: "reasoner"},
+		},
+	}
+	r := newTestRouter(models, 0)
+
+	rm, err := r.selectModel(&port.TaskRequirement{
+		Capabilities: []port.ModelCapability{port.CapTextGeneration},
+		Lane:         "reasoning",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rm.profile.Name != "reasoner" {
+		t.Fatalf("expected reasoner, got %q", rm.profile.Name)
+	}
+}
+
+func TestSelectModel_ToolHeavyLanePrefersFunctionCallingModel(t *testing.T) {
+	models := []routedModel{
+		{
+			profile: ModelProfile{
+				Name:         "default",
+				CostTier:     1,
+				Capabilities: []port.ModelCapability{port.CapTextGeneration},
+				IsDefault:    true,
+			},
+			llm: &fakeLLM{name: "default"},
+		},
+		{
+			profile: ModelProfile{
+				Name:         "tooler",
+				CostTier:     2,
+				Capabilities: []port.ModelCapability{port.CapTextGeneration, port.CapFunctionCalling, port.CapLongContext},
+			},
+			llm: &fakeLLM{name: "tooler"},
+		},
+	}
+	r := newTestRouter(models, 0)
+
+	rm, err := r.selectModel(&port.TaskRequirement{
+		Capabilities: []port.ModelCapability{port.CapTextGeneration},
+		Lane:         "tool-heavy",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rm.profile.Name != "tooler" {
+		t.Fatalf("expected tooler, got %q", rm.profile.Name)
+	}
+}
+
+func TestSelectModel_CheapLaneWithoutCapabilitiesStillPrefersCheapModel(t *testing.T) {
+	models := []routedModel{
+		{profile: ModelProfile{Name: "expensive", CostTier: 3, IsDefault: true}, llm: &fakeLLM{name: "expensive"}},
+		{profile: ModelProfile{Name: "cheap", CostTier: 1}, llm: &fakeLLM{name: "cheap"}},
+	}
+	r := newTestRouter(models, 0)
+
+	rm, err := r.selectModel(&port.TaskRequirement{
+		Lane:        "cheap",
+		PreferCheap: true,
+		MaxCostTier: 1,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rm.profile.Name != "cheap" {
+		t.Fatalf("expected cheap, got %q", rm.profile.Name)
+	}
+}
+
 func TestSelectModel_NoMatch_ReturnsError(t *testing.T) {
 	models := []routedModel{
 		{

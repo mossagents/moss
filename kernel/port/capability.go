@@ -28,4 +28,7 @@ type TaskRequirement struct {
 
 	// PreferCheap 在能力满足的前提下，优先选择成本更低的模型。
 	PreferCheap bool `json:"prefer_cheap,omitempty" yaml:"prefer_cheap,omitempty"`
+
+	// Lane 表示请求希望命中的模型路由通道，例如 default/cheap/reasoning/tool-heavy。
+	Lane string `json:"lane,omitempty" yaml:"lane,omitempty"`
 }

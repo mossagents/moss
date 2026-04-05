@@ -31,12 +31,50 @@ type ComposeInput struct {
 
 type ComposeOutput struct {
 	Prompt    string
+	Envelope  PromptEnvelope
+	Graph     InstructionGraph
 	DebugMeta ComposeDebugMeta
 }
 
+type PromptEnvelope struct {
+	Prompt          string
+	EnabledLayerIDs []string
+}
+
+type InstructionProfile struct {
+	ID          string `json:"id,omitempty"`
+	ProfileName string `json:"profile_name,omitempty"`
+	TaskMode    string `json:"task_mode,omitempty"`
+}
+
+type InstructionLayer struct {
+	ID                string `json:"id"`
+	Source            string `json:"source"`
+	Scope             string `json:"scope,omitempty"`
+	Priority          int    `json:"priority,omitempty"`
+	Activation        string `json:"activation,omitempty"`
+	Content           string `json:"content,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	SuppressionReason string `json:"suppression_reason,omitempty"`
+	TokenEstimate     int    `json:"token_estimate,omitempty"`
+}
+
+type InstructionGraph struct {
+	BaseSource  string             `json:"base_source,omitempty"`
+	Profile     InstructionProfile `json:"profile"`
+	Layers      []InstructionLayer `json:"layers,omitempty"`
+	SourceChain []string           `json:"source_chain,omitempty"`
+}
+
 type ComposeDebugMeta struct {
-	BaseSource       string
-	DynamicSectionID []string
+	BaseSource          string
+	DynamicSectionID    []string
+	EnabledLayers       []string
+	SuppressedLayers    []string
+	SuppressionReasons  map[string]string
+	LayerTokenEstimates map[string]int
+	SourceChain         []string
+	InstructionProfile  string
 }
 
 const (
@@ -45,58 +83,41 @@ const (
 	MetadataDynamicSectionsKey     = "prompt.debug.dynamic_sections"
 	MetadataSourceChainKey         = "prompt.debug.source_chain"
 	MetadataProfileNameKey         = "profile"
+	MetadataEnabledLayersKey       = "prompt.debug.enabled_layers"
+	MetadataSuppressedLayersKey    = "prompt.debug.suppressed_layers"
+	MetadataSuppressionReasonsKey  = "prompt.debug.suppression_reasons"
+	MetadataLayerTokensKey         = "prompt.debug.layer_tokens"
+	MetadataInstructionProfileKey  = "prompt.debug.instruction_profile"
 )
 
 func Compose(in ComposeInput) (ComposeOutput, error) {
-	base, baseSource, err := resolveBaseInstructions(in)
+	graph, err := buildInstructionGraph(in)
 	if err != nil {
 		return ComposeOutput{}, err
 	}
-	base = strings.TrimSpace(base)
-
-	sections := make([]section, 0, 8)
-	if !containsHeading(base, "environment") {
-		ctx := config.DefaultTemplateContext(in.Workspace)
-		sections = append(sections, section{
-			ID:      "environment",
-			Content: renderEnvironmentSection(ctx),
-		})
-	}
-
-	if bctx := bootstrap.LoadWithAppNameAndTrust(in.Workspace, config.AppName(), in.Trust); bctx != nil {
-		content := strings.TrimSpace(bctx.SystemPromptSection())
-		if content != "" {
-			content = "## Bootstrap Context\n" + content
-		}
-		sections = append(sections, section{
-			ID:      "bootstrap",
-			Content: content,
-		})
-	}
-
-	caps := renderCapabilitiesSection(in.Kernel)
-	sections = append(sections, section{ID: "capabilities", Content: caps})
-	sections = append(sections, section{ID: "profile_mode", Content: renderProfileModeSection(in.ProfileName, in.TaskMode)})
-	sections = append(sections, section{ID: "skills", Content: renderSkillsSection(in.Kernel, in.SkillPrompts)})
-	sections = append(sections, section{ID: "runtime_notices", Content: renderRuntimeNoticesSection(in.RuntimeNotices)})
-
-	var parts []string
-	if strings.TrimSpace(base) != "" {
-		parts = append(parts, base)
-	}
-	debug := ComposeDebugMeta{BaseSource: baseSource}
-	for _, s := range dedupeSections(sections) {
-		if strings.TrimSpace(s.Content) == "" {
-			continue
-		}
-		parts = append(parts, s.Content)
-		debug.DynamicSectionID = append(debug.DynamicSectionID, s.ID)
-	}
-
+	envelope := renderPromptEnvelope(graph)
+	debug := buildComposeDebugMeta(graph, envelope)
 	return ComposeOutput{
-		Prompt:    strings.Join(parts, "\n\n"),
+		Prompt:    envelope.Prompt,
+		Envelope:  envelope,
+		Graph:     graph,
 		DebugMeta: debug,
 	}, nil
+}
+
+func buildInstructionGraph(in ComposeInput) (InstructionGraph, error) {
+	graph := InstructionGraph{
+		Profile: resolveInstructionProfile(in.ProfileName, in.TaskMode),
+	}
+	baseLayers, baseText, baseSource, err := buildBaseLayers(in)
+	if err != nil {
+		return InstructionGraph{}, err
+	}
+	graph.BaseSource = baseSource
+	graph.Layers = append(graph.Layers, baseLayers...)
+	graph.Layers = append(graph.Layers, buildDynamicLayers(in, baseText)...)
+	graph.SourceChain = buildSourceChain(graph.Layers)
+	return graph, nil
 }
 
 func containsHeading(base, heading string) bool {
@@ -141,25 +162,202 @@ func resolveBaseInstructions(in ComposeInput) (text, source string, err error) {
 	return text, "template", nil
 }
 
-type section struct {
-	ID      string
-	Content string
+func buildBaseLayers(in ComposeInput) ([]InstructionLayer, string, string, error) {
+	type candidate struct {
+		id       string
+		source   string
+		scope    string
+		priority int
+		content  string
+	}
+	candidates := []candidate{
+		{id: "base_config", source: "config", scope: "base", priority: 400, content: strings.TrimSpace(in.ConfigInstructions)},
+		{id: "base_session", source: "session", scope: "base", priority: 300, content: strings.TrimSpace(in.SessionInstructions)},
+		{id: "base_model", source: "model", scope: "base", priority: 200, content: strings.TrimSpace(in.ModelInstructions)},
+		{id: "base_template", source: "template", scope: "base", priority: 100, content: strings.TrimSpace(ResolveBaseTemplate(in.Workspace, in.Trust))},
+	}
+	resolvedText, resolvedSource, err := resolveBaseInstructions(in)
+	if err != nil {
+		return nil, "", "", err
+	}
+	layers := make([]InstructionLayer, 0, len(candidates))
+	for _, item := range candidates {
+		layer := InstructionLayer{
+			ID:            item.id,
+			Source:        item.source,
+			Scope:         item.scope,
+			Priority:      item.priority,
+			Activation:    "priority-first-non-empty",
+			Content:       item.content,
+			TokenEstimate: session.EstimateTextTokens(item.content),
+		}
+		switch {
+		case item.source == resolvedSource:
+			layer.Enabled = true
+		case item.content == "":
+			layer.SuppressionReason = "empty_content"
+		default:
+			layer.SuppressionReason = "lower_priority_source"
+		}
+		layers = append(layers, layer)
+	}
+	return layers, resolvedText, resolvedSource, nil
 }
 
-func dedupeSections(in []section) []section {
-	seen := map[string]struct{}{}
-	out := make([]section, 0, len(in))
-	for _, s := range in {
-		if strings.TrimSpace(s.ID) == "" {
-			continue
-		}
-		if _, ok := seen[s.ID]; ok {
-			continue
-		}
-		seen[s.ID] = struct{}{}
-		out = append(out, s)
+func buildDynamicLayers(in ComposeInput, baseText string) []InstructionLayer {
+	ctx := config.DefaultTemplateContext(in.Workspace)
+	layers := []InstructionLayer{
+		{
+			ID:         "environment",
+			Source:     "runtime",
+			Scope:      "dynamic",
+			Priority:   210,
+			Activation: "if_missing_heading:environment",
+			Content:    renderEnvironmentSection(ctx),
+		},
+		{
+			ID:         "bootstrap",
+			Source:     "bootstrap",
+			Scope:      "dynamic",
+			Priority:   200,
+			Activation: "if_bootstrap_context_present",
+			Content:    renderBootstrapSection(in.Workspace, in.Trust),
+		},
+		{
+			ID:         "capabilities",
+			Source:     "runtime",
+			Scope:      "dynamic",
+			Priority:   190,
+			Activation: "if_runtime_capabilities_present",
+			Content:    renderCapabilitiesSection(in.Kernel),
+		},
+		{
+			ID:         "profile_mode",
+			Source:     "profile",
+			Scope:      "dynamic",
+			Priority:   180,
+			Activation: "if_profile_or_task_mode_present",
+			Content:    renderProfileModeSection(in.ProfileName, in.TaskMode),
+		},
+		{
+			ID:         "skills",
+			Source:     "skills",
+			Scope:      "dynamic",
+			Priority:   170,
+			Activation: "if_skill_prompts_present",
+			Content:    renderSkillsSection(in.Kernel, in.SkillPrompts),
+		},
+		{
+			ID:         "runtime_notices",
+			Source:     "runtime",
+			Scope:      "dynamic",
+			Priority:   160,
+			Activation: "if_runtime_notices_present",
+			Content:    renderRuntimeNoticesSection(in.RuntimeNotices),
+		},
 	}
-	return out
+	for i := range layers {
+		layers[i].Content = strings.TrimSpace(layers[i].Content)
+		layers[i].TokenEstimate = session.EstimateTextTokens(layers[i].Content)
+		switch {
+		case layers[i].ID == "environment" && containsHeading(baseText, "environment"):
+			layers[i].SuppressionReason = "duplicate_heading"
+		case layers[i].Content == "":
+			layers[i].SuppressionReason = "empty_content"
+		default:
+			layers[i].Enabled = true
+		}
+	}
+	return layers
+}
+
+func renderBootstrapSection(workspace, trust string) string {
+	if bctx := bootstrap.LoadWithAppNameAndTrust(workspace, config.AppName(), trust); bctx != nil {
+		content := strings.TrimSpace(bctx.SystemPromptSection())
+		if content != "" {
+			return "## Bootstrap Context\n" + content
+		}
+	}
+	return ""
+}
+
+func renderPromptEnvelope(graph InstructionGraph) PromptEnvelope {
+	parts := make([]string, 0, len(graph.Layers))
+	enabled := make([]string, 0, len(graph.Layers))
+	for _, layer := range graph.Layers {
+		if !layer.Enabled || strings.TrimSpace(layer.Content) == "" {
+			continue
+		}
+		parts = append(parts, layer.Content)
+		enabled = append(enabled, layer.ID)
+	}
+	return PromptEnvelope{
+		Prompt:          strings.Join(parts, "\n\n"),
+		EnabledLayerIDs: enabled,
+	}
+}
+
+func buildSourceChain(layers []InstructionLayer) []string {
+	chain := []string{}
+	for _, layer := range layers {
+		if !layer.Enabled {
+			continue
+		}
+		if layer.Scope == "base" {
+			chain = append(chain, "base:"+layer.Source)
+			continue
+		}
+		chain = append(chain, "dynamic:"+layer.ID)
+	}
+	return chain
+}
+
+func buildComposeDebugMeta(graph InstructionGraph, envelope PromptEnvelope) ComposeDebugMeta {
+	debug := ComposeDebugMeta{
+		BaseSource:          strings.TrimSpace(graph.BaseSource),
+		EnabledLayers:       append([]string(nil), envelope.EnabledLayerIDs...),
+		SuppressionReasons:  map[string]string{},
+		LayerTokenEstimates: map[string]int{},
+		SourceChain:         append([]string(nil), graph.SourceChain...),
+		InstructionProfile:  strings.TrimSpace(graph.Profile.ID),
+	}
+	for _, layer := range graph.Layers {
+		debug.LayerTokenEstimates[layer.ID] = layer.TokenEstimate
+		if !layer.Enabled {
+			debug.SuppressedLayers = append(debug.SuppressedLayers, layer.ID)
+			if reason := strings.TrimSpace(layer.SuppressionReason); reason != "" {
+				debug.SuppressionReasons[layer.ID] = reason
+			}
+			continue
+		}
+		if layer.Scope == "dynamic" {
+			debug.DynamicSectionID = append(debug.DynamicSectionID, layer.ID)
+		}
+	}
+	if len(debug.SuppressionReasons) == 0 {
+		debug.SuppressionReasons = nil
+	}
+	if len(debug.LayerTokenEstimates) == 0 {
+		debug.LayerTokenEstimates = nil
+	}
+	return debug
+}
+
+func resolveInstructionProfile(profileName, taskMode string) InstructionProfile {
+	profileName = strings.TrimSpace(profileName)
+	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
+	profileID := "default"
+	switch {
+	case taskMode != "":
+		profileID = taskMode
+	case profileName != "":
+		profileID = "profile:" + profileName
+	}
+	return InstructionProfile{
+		ID:          profileID,
+		ProfileName: profileName,
+		TaskMode:    taskMode,
+	}
 }
 
 func renderEnvironmentSection(ctx map[string]any) string {
@@ -287,6 +485,14 @@ func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
+	delete(metadata, MetadataBaseSourceKey)
+	delete(metadata, MetadataDynamicSectionsKey)
+	delete(metadata, MetadataEnabledLayersKey)
+	delete(metadata, MetadataSuppressedLayersKey)
+	delete(metadata, MetadataSuppressionReasonsKey)
+	delete(metadata, MetadataLayerTokensKey)
+	delete(metadata, MetadataSourceChainKey)
+	delete(metadata, MetadataInstructionProfileKey)
 	base := strings.TrimSpace(debug.BaseSource)
 	if base != "" {
 		metadata[MetadataBaseSourceKey] = base
@@ -300,15 +506,70 @@ func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map
 	if len(sections) > 0 {
 		metadata[MetadataDynamicSectionsKey] = strings.Join(sections, ",")
 	}
-	chain := []string{}
-	if base != "" {
-		chain = append(chain, "base:"+base)
+	enabled := make([]string, 0, len(debug.EnabledLayers))
+	for _, id := range debug.EnabledLayers {
+		if t := strings.TrimSpace(id); t != "" {
+			enabled = append(enabled, t)
+		}
 	}
-	for _, section := range sections {
-		chain = append(chain, "dynamic:"+section)
+	if len(enabled) > 0 {
+		metadata[MetadataEnabledLayersKey] = enabled
+	}
+	suppressed := make([]string, 0, len(debug.SuppressedLayers))
+	for _, id := range debug.SuppressedLayers {
+		if t := strings.TrimSpace(id); t != "" {
+			suppressed = append(suppressed, t)
+		}
+	}
+	if len(suppressed) > 0 {
+		metadata[MetadataSuppressedLayersKey] = suppressed
+	}
+	if len(debug.SuppressionReasons) > 0 {
+		reasons := make(map[string]string, len(debug.SuppressionReasons))
+		for id, reason := range debug.SuppressionReasons {
+			id = strings.TrimSpace(id)
+			reason = strings.TrimSpace(reason)
+			if id == "" || reason == "" {
+				continue
+			}
+			reasons[id] = reason
+		}
+		if len(reasons) > 0 {
+			metadata[MetadataSuppressionReasonsKey] = reasons
+		}
+	}
+	if len(debug.LayerTokenEstimates) > 0 {
+		tokens := make(map[string]int, len(debug.LayerTokenEstimates))
+		for id, count := range debug.LayerTokenEstimates {
+			id = strings.TrimSpace(id)
+			if id == "" || count <= 0 {
+				continue
+			}
+			tokens[id] = count
+		}
+		if len(tokens) > 0 {
+			metadata[MetadataLayerTokensKey] = tokens
+		}
+	}
+	chain := make([]string, 0, len(debug.SourceChain))
+	for _, item := range debug.SourceChain {
+		if t := strings.TrimSpace(item); t != "" {
+			chain = append(chain, t)
+		}
+	}
+	if len(chain) == 0 {
+		if base != "" {
+			chain = append(chain, "base:"+base)
+		}
+		for _, section := range sections {
+			chain = append(chain, "dynamic:"+section)
+		}
 	}
 	if len(chain) > 0 {
 		metadata[MetadataSourceChainKey] = strings.Join(chain, " -> ")
+	}
+	if profile := strings.TrimSpace(debug.InstructionProfile); profile != "" {
+		metadata[MetadataInstructionProfileKey] = profile
 	}
 	return metadata
 }

@@ -34,22 +34,12 @@ func (fs *FileStore) Save(_ context.Context, sess *Session) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
 
-	data, err := json.MarshalIndent(sess, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal session: %w", err)
-	}
-
-	path := fs.path(sess.ID)
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return fmt.Errorf("write session tmp: %w", err)
-	}
-	return os.Rename(tmpPath, path)
+	return fs.saveLocked(sess)
 }
 
 func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
 
 	path := fs.path(id)
 	data, err := os.ReadFile(path)
@@ -67,6 +57,12 @@ func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
 	sess, err := raw.toSession(id)
 	if err != nil {
 		return nil, err
+	}
+	if reasoningChanged(sess.Messages) {
+		sess.Messages = sanitizePersistedMessages(sess.Messages)
+		if err := fs.saveLocked(&sess); err != nil {
+			return nil, err
+		}
 	}
 	return &sess, nil
 }
@@ -185,6 +181,19 @@ func (fs *FileStore) path(id string) string {
 	return filepath.Join(fs.dir, sanitizeID(id)+".json")
 }
 
+func (fs *FileStore) saveLocked(sess *Session) error {
+	data, err := json.MarshalIndent(persistedSessionFromSession(sess), "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal session: %w", err)
+	}
+	path := fs.path(sess.ID)
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
+		return fmt.Errorf("write session tmp: %w", err)
+	}
+	return os.Rename(tmpPath, path)
+}
+
 type persistedSession struct {
 	ID        string             `json:"id"`
 	Status    SessionStatus      `json:"status"`
@@ -209,6 +218,44 @@ type persistedToolResult struct {
 	ContentParts []port.ContentPart `json:"content_parts,omitempty"`
 	Content      json.RawMessage    `json:"content,omitempty"`
 	IsError      bool               `json:"is_error,omitempty"`
+}
+
+func persistedSessionFromSession(sess *Session) persistedSession {
+	if sess == nil {
+		return persistedSession{}
+	}
+	out := persistedSession{
+		ID:        sess.ID,
+		Status:    sess.Status,
+		Config:    sess.Config,
+		State:     sess.State,
+		Budget:    sess.Budget,
+		CreatedAt: sess.CreatedAt,
+		EndedAt:   sess.EndedAt,
+	}
+	if len(sess.Messages) == 0 {
+		return out
+	}
+	out.Messages = make([]persistedMessage, 0, len(sess.Messages))
+	for _, msg := range sanitizePersistedMessages(sess.Messages) {
+		pm := persistedMessage{
+			Role:         msg.Role,
+			ContentParts: msg.ContentParts,
+			ToolCalls:    msg.ToolCalls,
+		}
+		if len(msg.ToolResults) > 0 {
+			pm.ToolResults = make([]persistedToolResult, 0, len(msg.ToolResults))
+			for _, tr := range msg.ToolResults {
+				pm.ToolResults = append(pm.ToolResults, persistedToolResult{
+					CallID:       tr.CallID,
+					ContentParts: tr.ContentParts,
+					IsError:      tr.IsError,
+				})
+			}
+		}
+		out.Messages = append(out.Messages, pm)
+	}
+	return out
 }
 
 func (ps persistedSession) toSession(id string) (Session, error) {
@@ -269,6 +316,40 @@ func migrateMessage(m persistedMessage) (port.Message, bool, error) {
 		})
 	}
 	return out, migrated, nil
+}
+
+func sanitizePersistedMessages(messages []port.Message) []port.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	out := make([]port.Message, 0, len(messages))
+	for _, msg := range messages {
+		msg.ContentParts = port.StripReasoningParts(msg.ContentParts)
+		if len(msg.ToolResults) > 0 {
+			results := make([]port.ToolResult, 0, len(msg.ToolResults))
+			for _, tr := range msg.ToolResults {
+				tr.ContentParts = port.StripReasoningParts(tr.ContentParts)
+				results = append(results, tr)
+			}
+			msg.ToolResults = results
+		}
+		out = append(out, msg)
+	}
+	return out
+}
+
+func reasoningChanged(messages []port.Message) bool {
+	for _, msg := range messages {
+		if len(port.StripReasoningParts(msg.ContentParts)) != len(msg.ContentParts) {
+			return true
+		}
+		for _, tr := range msg.ToolResults {
+			if len(port.StripReasoningParts(tr.ContentParts)) != len(tr.ContentParts) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func migrateContentParts(parts []port.ContentPart, legacy json.RawMessage) ([]port.ContentPart, bool, error) {

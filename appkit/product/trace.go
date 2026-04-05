@@ -13,9 +13,17 @@ import (
 )
 
 type TraceEvent struct {
+	EventID          string         `json:"event_id,omitempty"`
+	EventVersion     int            `json:"event_version,omitempty"`
+	RunID            string         `json:"run_id,omitempty"`
+	TurnID           string         `json:"turn_id,omitempty"`
+	ParentID         string         `json:"parent_id,omitempty"`
 	Kind             string         `json:"kind"`
 	Timestamp        time.Time      `json:"timestamp"`
 	SessionID        string         `json:"session_id,omitempty"`
+	Phase            string         `json:"phase,omitempty"`
+	Actor            string         `json:"actor,omitempty"`
+	PayloadKind      string         `json:"payload_kind,omitempty"`
 	Type             string         `json:"type,omitempty"`
 	Model            string         `json:"model,omitempty"`
 	ToolName         string         `json:"tool_name,omitempty"`
@@ -106,15 +114,23 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionE
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
-		Kind:       "execution_event",
-		Timestamp:  e.Timestamp.UTC(),
-		SessionID:  e.SessionID,
-		Type:       string(e.Type),
-		Model:      e.Model,
-		ToolName:   e.ToolName,
-		DurationMS: e.Duration.Milliseconds(),
-		Error:      e.Error,
-		Data:       cloneTraceData(e.Data),
+		EventID:      e.EventID,
+		EventVersion: e.EventVersion,
+		RunID:        e.RunID,
+		TurnID:       e.TurnID,
+		ParentID:     e.ParentID,
+		Kind:         "execution_event",
+		Timestamp:    e.Timestamp.UTC(),
+		SessionID:    e.SessionID,
+		Phase:        e.Phase,
+		Actor:        e.Actor,
+		PayloadKind:  e.PayloadKind,
+		Type:         string(e.Type),
+		Model:        e.Model,
+		ToolName:     e.ToolName,
+		DurationMS:   e.Duration.Milliseconds(),
+		Error:        e.Error,
+		Data:         cloneTraceData(e.Data),
 	})
 }
 

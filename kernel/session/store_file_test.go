@@ -479,3 +479,85 @@ func TestFileStoreSaveWritesNewSchemaOnly(t *testing.T) {
 		t.Fatalf("unmarshal saved json: %v", err)
 	}
 }
+
+func TestFileStoreStripsReasoningPartsOnSaveAndLoad(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &Session{
+		ID:     "reasoning-stripped",
+		Status: StatusCompleted,
+		Config: SessionConfig{Goal: "strip reasoning"},
+		Messages: []port.Message{
+			{
+				Role: port.RoleAssistant,
+				ContentParts: []port.ContentPart{
+					port.ReasoningPart("internal scratchpad"),
+					port.TextPart("visible reply"),
+				},
+			},
+		},
+		CreatedAt: time.Now(),
+	}
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(store.path(sess.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "internal scratchpad") {
+		t.Fatalf("reasoning leaked into persisted session: %s", string(raw))
+	}
+	loaded, err := store.Load(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil || len(loaded.Messages) != 1 {
+		t.Fatalf("unexpected loaded session: %+v", loaded)
+	}
+	if got := port.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
+		t.Fatalf("expected reasoning to be stripped, got %q", got)
+	}
+	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "visible reply" {
+		t.Fatalf("plain text=%q", got)
+	}
+}
+
+func TestFileStoreLoadRewritesExistingReasoningLeak(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{
+  "id":"dirty-reasoning",
+  "status":"completed",
+  "config":{"goal":"legacy"},
+  "messages":[{"role":"assistant","content_parts":[{"type":"reasoning","text":"fake user request"},{"type":"text","text":"visible"}]}],
+  "budget":{"max_tokens":0,"max_steps":0,"used_tokens":0,"used_steps":0},
+  "created_at":"2026-01-01T00:00:00Z"
+}`
+	if err := os.WriteFile(store.path("dirty-reasoning"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(context.Background(), "dirty-reasoning")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil {
+		t.Fatal("expected loaded session")
+	}
+	if got := port.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
+		t.Fatalf("expected in-memory reasoning to be stripped, got %q", got)
+	}
+	saved, err := os.ReadFile(store.path("dirty-reasoning"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(saved), "fake user request") {
+		t.Fatalf("expected dirty file to be rewritten without reasoning: %s", string(saved))
+	}
+}

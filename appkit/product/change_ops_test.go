@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -137,6 +138,122 @@ func TestRollbackChangeManualRecoveryWhenExactUnavailable(t *testing.T) {
 	}
 	if item == nil || item.Status != ChangeStatusApplied {
 		t.Fatalf("expected original applied operation, got %+v", item)
+	}
+}
+
+func TestApplyChangeCapturesTurnMetadata(t *testing.T) {
+	ctx := context.Background()
+	configureProductTestApp(t)
+	repo := initTestRepo(t)
+	patch := makeTrackedPatch(t, repo, "tracked.txt", "one\n", "two\n")
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	sess := &session.Session{
+		ID: "sess-change-turn",
+		Config: session.SessionConfig{
+			Metadata: map[string]any{
+				session.MetadataRunID:              "run-123",
+				session.MetadataTurnID:             "run-123-turn-001",
+				session.MetadataInstructionProfile: "planning",
+				session.MetadataModelLane:          "reasoning",
+				session.MetadataVisibleTools:       []string{"read_file"},
+				session.MetadataHiddenTools:        []string{"write_file"},
+			},
+		},
+	}
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	rt := ChangeRuntime{
+		Workspace:        repo,
+		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
+		PatchApply:       sandbox.NewGitPatchApply(repo),
+		PatchRevert:      sandbox.NewGitPatchRevert(repo),
+		SessionStore:     store,
+	}
+
+	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+		Patch:     patch,
+		Summary:   "update tracked.txt",
+		SessionID: sess.ID,
+	})
+	if err != nil {
+		t.Fatalf("ApplyChange: %v", err)
+	}
+	if applied.RunID != "run-123" || applied.TurnID != "run-123-turn-001" {
+		t.Fatalf("unexpected run/turn metadata: %+v", applied)
+	}
+	if applied.InstructionProfile != "planning" || applied.ModelLane != "reasoning" {
+		t.Fatalf("unexpected plan provenance: %+v", applied)
+	}
+	if len(applied.VisibleTools) != 1 || applied.VisibleTools[0] != "read_file" {
+		t.Fatalf("unexpected visible tools: %+v", applied.VisibleTools)
+	}
+}
+
+func TestApplyChangePrefersLiveSessionMetadata(t *testing.T) {
+	ctx := context.Background()
+	configureProductTestApp(t)
+	repo := initTestRepo(t)
+	patch := makeTrackedPatch(t, repo, "tracked.txt", "one\n", "two\n")
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	stale := &session.Session{
+		ID: "sess-live-turn",
+		Config: session.SessionConfig{
+			Metadata: map[string]any{
+				session.MetadataRunID:        "run-stale",
+				session.MetadataTurnID:       "run-stale-turn-001",
+				session.MetadataModelLane:    "default",
+				session.MetadataVisibleTools: []string{"old_tool"},
+			},
+		},
+	}
+	if err := store.Save(ctx, stale); err != nil {
+		t.Fatalf("save stale session: %v", err)
+	}
+	live := &session.Session{
+		ID: "sess-live-turn",
+		Config: session.SessionConfig{
+			Metadata: map[string]any{
+				session.MetadataRunID:        "run-live",
+				session.MetadataTurnID:       "run-live-turn-002",
+				session.MetadataModelLane:    "reasoning",
+				session.MetadataVisibleTools: []string{"read_file"},
+			},
+		},
+	}
+	rt := ChangeRuntime{
+		Workspace:        repo,
+		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
+		PatchApply:       sandbox.NewGitPatchApply(repo),
+		PatchRevert:      sandbox.NewGitPatchRevert(repo),
+		SessionStore:     store,
+		SessionLookup: func(id string) (*session.Session, bool) {
+			if id == live.ID {
+				return live, true
+			}
+			return nil, false
+		},
+	}
+	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+		Patch:     patch,
+		Summary:   "update tracked.txt",
+		SessionID: live.ID,
+	})
+	if err != nil {
+		t.Fatalf("ApplyChange: %v", err)
+	}
+	if applied.RunID != "run-live" || applied.TurnID != "run-live-turn-002" {
+		t.Fatalf("expected live metadata, got %+v", applied)
+	}
+	if len(applied.VisibleTools) != 1 || applied.VisibleTools[0] != "read_file" {
+		t.Fatalf("expected live visible tools, got %+v", applied.VisibleTools)
 	}
 }
 

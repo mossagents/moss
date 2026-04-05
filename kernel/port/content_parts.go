@@ -74,6 +74,20 @@ func ContentPartsToReasoningText(parts []ContentPart) string {
 	return strings.Join(lines, "\n")
 }
 
+func StripReasoningParts(parts []ContentPart) []ContentPart {
+	if len(parts) == 0 {
+		return nil
+	}
+	out := make([]ContentPart, 0, len(parts))
+	for _, p := range parts {
+		if p.Type == ContentPartReasoning {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
 func ValidateContentParts(parts []ContentPart) error {
 	for i, part := range parts {
 		if err := validateContentPart(part); err != nil {

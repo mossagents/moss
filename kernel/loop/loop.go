@@ -8,8 +8,10 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
@@ -58,7 +60,10 @@ type AgentLoop struct {
 	Observer          port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
 	LifecycleHook     session.LifecycleHook
 	ToolLifecycleHook session.ToolLifecycleHook
+	RunID             string
 	sidefxMu          sync.Mutex
+	eventSeq          uint64
+	currentTurn       TurnPlan
 }
 
 // SessionResult 是一次 Session 执行的结果。
@@ -78,22 +83,23 @@ func (l *AgentLoop) observer() port.Observer {
 	return port.NoOpObserver{}
 }
 
-func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
-	specs := l.toolSpecs()
+func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*port.CompletionResponse, bool, error) {
+	specs := l.toolSpecs(plan)
 	promptMessages := session.PromptMessages(sess)
-	if session.LatestUserTurnIsLightweightChat(promptMessages) {
-		specs = nil
-	}
 	logging.GetLogger().DebugContext(ctx, "llm request prepared",
 		slog.String("session_id", sess.ID),
+		slog.String("turn_id", plan.TurnID),
+		slog.String("model_lane", plan.ModelRoute.Lane),
 		slog.Int("messages", len(promptMessages)),
 		slog.Int("tools", len(specs)),
 		slog.Int("estimated_tokens", session.EstimateMessagesTokens(promptMessages)),
 	)
+	modelConfig := sess.Config.ModelConfig
+	modelConfig.Requirements = cloneTaskRequirement(plan.ModelRoute.Requirements)
 	req := port.CompletionRequest{
 		Messages: promptMessages,
 		Tools:    specs,
-		Config:   sess.Config.ModelConfig,
+		Config:   modelConfig,
 	}
 
 	cfg := l.Config.LLMRetry
@@ -408,41 +414,34 @@ func llmMetadataFromError(defaultModel string, err error) port.LLMCallMetadata {
 
 func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata port.LLMCallMetadata, exhausted bool) {
 	for _, attempt := range metadata.Attempts {
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-			Type:      port.ExecutionEventType("llm_failover_attempt"),
-			SessionID: sessionID,
-			Timestamp: time.Now().UTC(),
-			Model:     attempt.CandidateModel,
-			Data: map[string]any{
-				"candidate_model": attempt.CandidateModel,
-				"attempt_index":   attempt.AttemptIndex,
-				"candidate_retry": attempt.CandidateRetry,
-				"failure_reason":  attempt.FailureReason,
-				"breaker_state":   attempt.BreakerState,
-				"failover_to":     attempt.FailoverTo,
-				"outcome":         attempt.Outcome,
-			},
-		})
+		event := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
+		event.Model = attempt.CandidateModel
+		event.Data = map[string]any{
+			"candidate_model": attempt.CandidateModel,
+			"attempt_index":   attempt.AttemptIndex,
+			"candidate_retry": attempt.CandidateRetry,
+			"failure_reason":  attempt.FailureReason,
+			"breaker_state":   attempt.BreakerState,
+			"failover_to":     attempt.FailoverTo,
+			"outcome":         attempt.Outcome,
+			"model_lane":      l.currentTurn.ModelRoute.Lane,
+		}
+		l.observer().OnExecutionEvent(ctx, event)
 		if strings.TrimSpace(attempt.FailoverTo) != "" {
-			l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-				Type:      port.ExecutionEventType("llm_failover_switch"),
-				SessionID: sessionID,
-				Timestamp: time.Now().UTC(),
-				Model:     attempt.CandidateModel,
-				Data: map[string]any{
-					"candidate_model": attempt.CandidateModel,
-					"failover_to":     attempt.FailoverTo,
-				},
-			})
+			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
+			switchEvent.Model = attempt.CandidateModel
+			switchEvent.Data = map[string]any{
+				"candidate_model": attempt.CandidateModel,
+				"failover_to":     attempt.FailoverTo,
+				"model_lane":      l.currentTurn.ModelRoute.Lane,
+			}
+			l.observer().OnExecutionEvent(ctx, switchEvent)
 		}
 	}
 	if exhausted && len(metadata.Attempts) > 0 {
-		l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-			Type:      port.ExecutionEventType("llm_failover_exhausted"),
-			SessionID: sessionID,
-			Timestamp: time.Now().UTC(),
-			Model:     metadata.ActualModel,
-		})
+		event := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
+		event.Model = metadata.ActualModel
+		l.observer().OnExecutionEvent(ctx, event)
 	}
 }
 
@@ -503,6 +502,9 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		Arguments: repairedArgs,
 		Timestamp: time.Now().UTC(),
 	})
+	if !l.toolAllowed(call.Name) {
+		return l.handleMissingTool(ctx, sess, call, repairedArgs)
+	}
 	spec, handler, ok := l.Tools.Get(call.Name)
 	if !ok {
 		return l.handleMissingTool(ctx, sess, call, repairedArgs)
@@ -547,7 +549,7 @@ func buildToolResult(callID string, output []byte, err error) port.ToolResult {
 }
 
 func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call port.ToolCall, repairedArgs json.RawMessage) port.ToolResult {
-	err := fmt.Errorf("tool %q not found", call.Name)
+	err := fmt.Errorf("tool %q not found or not allowed in current turn", call.Name)
 	result := buildToolResult(call.ID, nil, err)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, tool.ToolSpec{}, result, 0, err)
 	return result
@@ -567,12 +569,19 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 		})
 	}
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionToolStarted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		ToolName:  call.Name,
-		CallID:    call.ID,
-		Risk:      string(spec.Risk),
+		Type:         port.ExecutionToolStarted,
+		EventID:      l.nextEventID(string(port.ExecutionToolStarted)),
+		EventVersion: 1,
+		RunID:        strings.TrimSpace(l.RunID),
+		TurnID:       strings.TrimSpace(l.currentTurn.TurnID),
+		SessionID:    sess.ID,
+		Timestamp:    time.Now().UTC(),
+		Phase:        "tool",
+		Actor:        "runtime",
+		PayloadKind:  "tool",
+		ToolName:     call.Name,
+		CallID:       call.ID,
+		Risk:         string(spec.Risk),
 	})
 }
 
@@ -608,18 +617,14 @@ func (l *AgentLoop) handleBeforeToolCallError(
 		Duration:  0,
 		Error:     normalizedErr,
 	})
-	event := port.ExecutionEvent{
-		Type:      port.ExecutionToolCompleted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		ToolName:  call.Name,
-		CallID:    call.ID,
-		Risk:      string(spec.Risk),
-		Data: map[string]any{
-			"is_error": true,
-		},
-		Error: normalizedErr.Error(),
+	event := l.executionEventBase(sess, port.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event.ToolName = call.Name
+	event.CallID = call.ID
+	event.Risk = string(spec.Risk)
+	event.Data = map[string]any{
+		"is_error": true,
 	}
+	event.Error = normalizedErr.Error()
 	appendToolErrorMetadata(&event, normalizedErr)
 	l.observer().OnExecutionEvent(ctx, event)
 	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
@@ -646,17 +651,13 @@ func (l *AgentLoop) observeToolCompletion(
 		Duration:  toolDur,
 		Error:     err,
 	})
-	event := port.ExecutionEvent{
-		Type:      port.ExecutionToolCompleted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		ToolName:  call.Name,
-		CallID:    call.ID,
-		Risk:      string(spec.Risk),
-		Duration:  toolDur,
-		Data: map[string]any{
-			"is_error": result.IsError,
-		},
+	event := l.executionEventBase(sess, port.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event.ToolName = call.Name
+	event.CallID = call.ID
+	event.Risk = string(spec.Risk)
+	event.Duration = toolDur
+	event.Data = map[string]any{
+		"is_error": result.IsError,
 	}
 	if err != nil {
 		event.Error = err.Error()
@@ -823,8 +824,12 @@ func (l *AgentLoop) withSideEffectsLock(fn func()) {
 	fn()
 }
 
-func (l *AgentLoop) toolSpecs() []port.ToolSpec {
-	tools := l.Tools.List()
+func (l *AgentLoop) toolSpecs(plan TurnPlan) []port.ToolSpec {
+	allowed := allowedToolNames(plan.ToolRoute)
+	if len(allowed) == 0 {
+		return nil
+	}
+	tools := tool.Scoped(l.Tools, allowed).List()
 	specs := make([]port.ToolSpec, len(tools))
 	for i, t := range tools {
 		specs[i] = port.ToolSpec{
@@ -834,6 +839,58 @@ func (l *AgentLoop) toolSpecs() []port.ToolSpec {
 		}
 	}
 	return specs
+}
+
+func (l *AgentLoop) toolAllowed(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	if len(l.currentTurn.ToolRoute) == 0 {
+		return true
+	}
+	for _, decision := range l.currentTurn.ToolRoute {
+		if decision.Name != name {
+			continue
+		}
+		return decision.Status != ToolRouteHidden
+	}
+	return false
+}
+
+func (l *AgentLoop) nextEventID(prefix string) string {
+	seq := atomic.AddUint64(&l.eventSeq, 1)
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		prefix = "evt"
+	}
+	runID := strings.TrimSpace(l.RunID)
+	if runID == "" {
+		runID = "run"
+	}
+	return runID + "-" + prefix + "-" + strconv.FormatUint(seq, 10)
+}
+
+func (l *AgentLoop) executionEventBase(sess *session.Session, eventType port.ExecutionEventType, phase, actor, payloadKind string) port.ExecutionEvent {
+	return port.ExecutionEvent{
+		Type:         eventType,
+		EventID:      l.nextEventID(string(eventType)),
+		EventVersion: 1,
+		RunID:        strings.TrimSpace(l.RunID),
+		TurnID:       strings.TrimSpace(l.currentTurn.TurnID),
+		SessionID:    sessionIDOf(sess),
+		Timestamp:    time.Now().UTC(),
+		Phase:        strings.TrimSpace(phase),
+		Actor:        strings.TrimSpace(actor),
+		PayloadKind:  strings.TrimSpace(payloadKind),
+	}
+}
+
+func sessionIDOf(sess *session.Session) string {
+	if sess == nil {
+		return ""
+	}
+	return strings.TrimSpace(sess.ID)
 }
 
 func (l *AgentLoop) recordBreakerSuccess() {
@@ -914,15 +971,11 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		sess.Status = session.StatusFailed
 	}
 	sess.EndedAt = time.Now()
-	runEvent := port.ExecutionEvent{
-		Type:      eventType,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		Error:     err.Error(),
-		Data: map[string]any{
-			"steps":  sess.Budget.UsedStepsValue(),
-			"tokens": usage.TotalTokens,
-		},
+	runEvent := l.executionEventBase(sess, eventType, "run", "runtime", "run")
+	runEvent.Error = err.Error()
+	runEvent.Data = map[string]any{
+		"steps":  sess.Budget.UsedStepsValue(),
+		"tokens": usage.TotalTokens,
 	}
 	appendExecutionErrorMetadata(&runEvent, err)
 	l.observer().OnExecutionEvent(context.Background(), runEvent)

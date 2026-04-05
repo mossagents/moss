@@ -27,40 +27,51 @@ const (
 )
 
 type ChangeOperation struct {
-	ID              string          `json:"id"`
-	RepoRoot        string          `json:"repo_root"`
-	BaseHeadSHA     string          `json:"base_head_sha,omitempty"`
-	SessionID       string          `json:"session_id,omitempty"`
-	PatchID         string          `json:"patch_id,omitempty"`
-	CheckpointID    string          `json:"checkpoint_id,omitempty"`
-	Summary         string          `json:"summary,omitempty"`
-	TargetFiles     []string        `json:"target_files,omitempty"`
-	Status          ChangeStatus    `json:"status"`
-	RecoveryMode    string          `json:"recovery_mode,omitempty"`
-	RecoveryDetails string          `json:"recovery_details,omitempty"`
-	RollbackMode    RollbackMode    `json:"rollback_mode,omitempty"`
-	RollbackDetails string          `json:"rollback_details,omitempty"`
-	Capture         *port.RepoState `json:"capture,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	RolledBackAt    time.Time       `json:"rolled_back_at,omitempty"`
+	ID                 string          `json:"id"`
+	RepoRoot           string          `json:"repo_root"`
+	BaseHeadSHA        string          `json:"base_head_sha,omitempty"`
+	SessionID          string          `json:"session_id,omitempty"`
+	RunID              string          `json:"run_id,omitempty"`
+	TurnID             string          `json:"turn_id,omitempty"`
+	InstructionProfile string          `json:"instruction_profile,omitempty"`
+	ModelLane          string          `json:"model_lane,omitempty"`
+	VisibleTools       []string        `json:"visible_tools,omitempty"`
+	HiddenTools        []string        `json:"hidden_tools,omitempty"`
+	PatchID            string          `json:"patch_id,omitempty"`
+	CheckpointID       string          `json:"checkpoint_id,omitempty"`
+	Summary            string          `json:"summary,omitempty"`
+	TargetFiles        []string        `json:"target_files,omitempty"`
+	Status             ChangeStatus    `json:"status"`
+	RecoveryMode       string          `json:"recovery_mode,omitempty"`
+	RecoveryDetails    string          `json:"recovery_details,omitempty"`
+	RollbackMode       RollbackMode    `json:"rollback_mode,omitempty"`
+	RollbackDetails    string          `json:"rollback_details,omitempty"`
+	Capture            *port.RepoState `json:"capture,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	RolledBackAt       time.Time       `json:"rolled_back_at,omitempty"`
 }
 
 type ChangeSummary struct {
-	ID              string       `json:"id"`
-	RepoRoot        string       `json:"repo_root"`
-	BaseHeadSHA     string       `json:"base_head_sha,omitempty"`
-	SessionID       string       `json:"session_id,omitempty"`
-	PatchID         string       `json:"patch_id,omitempty"`
-	CheckpointID    string       `json:"checkpoint_id,omitempty"`
-	Summary         string       `json:"summary,omitempty"`
-	TargetFiles     []string     `json:"target_files,omitempty"`
-	Status          ChangeStatus `json:"status"`
-	RecoveryMode    string       `json:"recovery_mode,omitempty"`
-	RecoveryDetails string       `json:"recovery_details,omitempty"`
-	RollbackMode    RollbackMode `json:"rollback_mode,omitempty"`
-	RollbackDetails string       `json:"rollback_details,omitempty"`
-	CreatedAt       time.Time    `json:"created_at"`
-	RolledBackAt    time.Time    `json:"rolled_back_at,omitempty"`
+	ID                 string       `json:"id"`
+	RepoRoot           string       `json:"repo_root"`
+	BaseHeadSHA        string       `json:"base_head_sha,omitempty"`
+	SessionID          string       `json:"session_id,omitempty"`
+	RunID              string       `json:"run_id,omitempty"`
+	TurnID             string       `json:"turn_id,omitempty"`
+	InstructionProfile string       `json:"instruction_profile,omitempty"`
+	ModelLane          string       `json:"model_lane,omitempty"`
+	VisibleTools       []string     `json:"visible_tools,omitempty"`
+	PatchID            string       `json:"patch_id,omitempty"`
+	CheckpointID       string       `json:"checkpoint_id,omitempty"`
+	Summary            string       `json:"summary,omitempty"`
+	TargetFiles        []string     `json:"target_files,omitempty"`
+	Status             ChangeStatus `json:"status"`
+	RecoveryMode       string       `json:"recovery_mode,omitempty"`
+	RecoveryDetails    string       `json:"recovery_details,omitempty"`
+	RollbackMode       RollbackMode `json:"rollback_mode,omitempty"`
+	RollbackDetails    string       `json:"rollback_details,omitempty"`
+	CreatedAt          time.Time    `json:"created_at"`
+	RolledBackAt       time.Time    `json:"rolled_back_at,omitempty"`
 }
 
 type ApplyChangeRequest struct {
@@ -88,21 +99,26 @@ func (e *ChangeOperationError) Error() string {
 
 func SummarizeChange(item ChangeOperation) ChangeSummary {
 	return ChangeSummary{
-		ID:              item.ID,
-		RepoRoot:        item.RepoRoot,
-		BaseHeadSHA:     item.BaseHeadSHA,
-		SessionID:       item.SessionID,
-		PatchID:         item.PatchID,
-		CheckpointID:    item.CheckpointID,
-		Summary:         item.Summary,
-		TargetFiles:     append([]string(nil), item.TargetFiles...),
-		Status:          item.Status,
-		RecoveryMode:    item.RecoveryMode,
-		RecoveryDetails: item.RecoveryDetails,
-		RollbackMode:    item.RollbackMode,
-		RollbackDetails: item.RollbackDetails,
-		CreatedAt:       item.CreatedAt,
-		RolledBackAt:    item.RolledBackAt,
+		ID:                 item.ID,
+		RepoRoot:           item.RepoRoot,
+		BaseHeadSHA:        item.BaseHeadSHA,
+		SessionID:          item.SessionID,
+		RunID:              item.RunID,
+		TurnID:             item.TurnID,
+		InstructionProfile: item.InstructionProfile,
+		ModelLane:          item.ModelLane,
+		VisibleTools:       append([]string(nil), item.VisibleTools...),
+		PatchID:            item.PatchID,
+		CheckpointID:       item.CheckpointID,
+		Summary:            item.Summary,
+		TargetFiles:        append([]string(nil), item.TargetFiles...),
+		Status:             item.Status,
+		RecoveryMode:       item.RecoveryMode,
+		RecoveryDetails:    item.RecoveryDetails,
+		RollbackMode:       item.RollbackMode,
+		RollbackDetails:    item.RollbackDetails,
+		CreatedAt:          item.CreatedAt,
+		RolledBackAt:       item.RolledBackAt,
 	}
 }
 
@@ -148,6 +164,10 @@ func RenderChangeDetail(item *ChangeOperation) string {
 	fmt.Fprintf(&b, "  repo:      %s\n", firstNonEmpty(item.RepoRoot, "(none)"))
 	fmt.Fprintf(&b, "  head:      %s\n", firstNonEmpty(item.BaseHeadSHA, "(none)"))
 	fmt.Fprintf(&b, "  session:   %s\n", firstNonEmpty(item.SessionID, "(none)"))
+	fmt.Fprintf(&b, "  run:       %s\n", firstNonEmpty(item.RunID, "(none)"))
+	fmt.Fprintf(&b, "  turn:      %s\n", firstNonEmpty(item.TurnID, "(none)"))
+	fmt.Fprintf(&b, "  profile:   %s\n", firstNonEmpty(item.InstructionProfile, "(none)"))
+	fmt.Fprintf(&b, "  model lane:%s\n", padField(firstNonEmpty(item.ModelLane, "(none)")))
 	fmt.Fprintf(&b, "  patch:     %s\n", firstNonEmpty(item.PatchID, "(none)"))
 	fmt.Fprintf(&b, "  checkpoint:%s\n", padField(firstNonEmpty(item.CheckpointID, "(none)")))
 	fmt.Fprintf(&b, "  status:    %s\n", item.Status)
@@ -169,6 +189,9 @@ func RenderChangeDetail(item *ChangeOperation) string {
 			fmt.Fprintf(&b, "    - %s\n", path)
 		}
 	}
+	if len(item.VisibleTools) > 0 {
+		fmt.Fprintf(&b, "  tools:     %s\n", strings.Join(item.VisibleTools, ", "))
+	}
 	if item.Capture != nil {
 		fmt.Fprintf(&b, "  capture:   head=%s branch=%s dirty=%t\n",
 			firstNonEmpty(item.Capture.HeadSHA, "(none)"),
@@ -189,6 +212,8 @@ func cloneChangeOperation(item *ChangeOperation) *ChangeOperation {
 	}
 	cp := *item
 	cp.TargetFiles = append([]string(nil), item.TargetFiles...)
+	cp.VisibleTools = append([]string(nil), item.VisibleTools...)
+	cp.HiddenTools = append([]string(nil), item.HiddenTools...)
 	cp.Capture = cloneRepoState(item.Capture)
 	return &cp
 }

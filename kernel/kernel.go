@@ -143,6 +143,7 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 		IO:       io,
 		Config:   k.loopCfg,
 		Observer: k.observer,
+		RunID:    runID,
 		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
 			k.emitSessionLifecycle(ctx, event)
 		},

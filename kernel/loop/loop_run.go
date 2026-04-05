@@ -49,16 +49,14 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"max_steps", sess.Budget.MaxSteps,
 	)
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionRunStarted,
-		SessionID: sess.ID,
-		Timestamp: runStartedAt,
-		Data: map[string]any{
-			"mode":      sess.Config.Mode,
-			"goal":      sess.Config.Goal,
-			"max_steps": sess.Budget.MaxSteps,
-		},
-	})
+	event := l.executionEventBase(sess, port.ExecutionRunStarted, "run", "runtime", "run")
+	event.Timestamp = runStartedAt
+	event.Data = map[string]any{
+		"mode":      sess.Config.Mode,
+		"goal":      sess.Config.Goal,
+		"max_steps": sess.Budget.MaxSteps,
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
@@ -76,8 +74,11 @@ func (l *AgentLoop) runIteration(
 	totalUsage *port.TokenUsage,
 	lastOutput *string,
 ) (bool, error) {
+	l.currentTurn = buildTurnPlan(sess, l.RunID, iteration, l.Tools)
+	l.persistTurnMetadata(sess, l.currentTurn)
 	l.emitIterationStart(ctx, sess, iteration, maxIter, runStartedAt)
-	llmResult, err := l.executeIterationLLM(ctx, sess)
+	l.emitTurnPlanEvents(ctx, sess, l.currentTurn)
+	llmResult, err := l.executeIterationLLM(ctx, sess, l.currentTurn)
 	if err != nil {
 		return false, err
 	}
@@ -121,37 +122,37 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 	iterationStartedAt := time.Now().UTC()
 	logging.GetLogger().DebugContext(ctx, "iteration started",
 		"session_id", sess.ID,
+		"turn_id", l.currentTurn.TurnID,
 		"iteration", iteration,
 		"max_iterations", maxIter,
 		"elapsed_ms", iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 	)
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionIterationStarted,
-		SessionID: sess.ID,
-		Timestamp: iterationStartedAt,
-		Data: map[string]any{
-			"iteration":      iteration,
-			"max_iterations": maxIter,
-			"max_steps":      sess.Budget.MaxSteps,
-			"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
-		},
-	})
+	event := l.executionEventBase(sess, port.ExecutionIterationStarted, "iteration", "runtime", "iteration")
+	event.Timestamp = iterationStartedAt
+	event.Data = map[string]any{
+		"iteration":      iteration,
+		"max_iterations": maxIter,
+		"max_steps":      sess.Budget.MaxSteps,
+		"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 	return iterationStartedAt
 }
 
-func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session) (*iterationLLMResult, error) {
+func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*iterationLLMResult, error) {
 	if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
 		return nil, err
 	}
 
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionLLMStarted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		Model:     sess.Config.ModelConfig.Model,
-	})
+	event := l.executionEventBase(sess, port.ExecutionLLMStarted, "llm", "runtime", "llm")
+	event.Model = sess.Config.ModelConfig.Model
+	event.Data = map[string]any{
+		"model_lane":          plan.ModelRoute.Lane,
+		"instruction_profile": plan.InstructionProfile,
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 	llmStart := time.Now()
-	resp, streamed, err := l.callLLM(ctx, sess)
+	resp, streamed, err := l.callLLM(ctx, sess, plan)
 	llmDur := time.Since(llmStart)
 	if err != nil {
 		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
@@ -169,14 +170,10 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		l.observer().OnError(ctx, port.ErrorEvent{
 			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
 		})
-		event := port.ExecutionEvent{
-			Type:      port.ExecutionLLMCompleted,
-			SessionID: sess.ID,
-			Timestamp: time.Now().UTC(),
-			Model:     metadata.ActualModel,
-			Duration:  llmDur,
-			Error:     err.Error(),
-		}
+		event := l.executionEventBase(sess, port.ExecutionLLMCompleted, "llm", "runtime", "llm")
+		event.Model = metadata.ActualModel
+		event.Duration = llmDur
+		event.Error = err.Error()
 		appendExecutionErrorMetadata(&event, err)
 		l.observer().OnExecutionEvent(ctx, event)
 		l.runErrorMiddleware(ctx, sess, err)
@@ -203,20 +200,69 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		StopReason: resp.StopReason,
 		Streamed:   streamed,
 	})
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionLLMCompleted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		Model:     metadata.ActualModel,
-		Duration:  llmDur,
-		Data: map[string]any{
-			"stop_reason": resp.StopReason,
-			"streamed":    streamed,
-			"tokens":      resp.Usage.TotalTokens,
-		},
-	})
+	event = l.executionEventBase(sess, port.ExecutionLLMCompleted, "llm", "runtime", "llm")
+	event.Model = metadata.ActualModel
+	event.Duration = llmDur
+	event.Data = map[string]any{
+		"stop_reason":         resp.StopReason,
+		"streamed":            streamed,
+		"tokens":              resp.Usage.TotalTokens,
+		"model_lane":          plan.ModelRoute.Lane,
+		"instruction_profile": plan.InstructionProfile,
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 
 	return &iterationLLMResult{resp: resp, streamed: streamed, metadata: metadata}, nil
+}
+
+func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
+	if sess == nil {
+		return
+	}
+	if sess.Config.Metadata == nil {
+		sess.Config.Metadata = map[string]any{}
+	}
+	sess.Config.Metadata[session.MetadataRunID] = plan.RunID
+	sess.Config.Metadata[session.MetadataTurnID] = plan.TurnID
+	sess.Config.Metadata[session.MetadataInstructionProfile] = plan.InstructionProfile
+	sess.Config.Metadata[session.MetadataModelLane] = plan.ModelRoute.Lane
+	sess.Config.Metadata[session.MetadataVisibleTools] = visibleToolNames(plan.ToolRoute)
+	sess.Config.Metadata[session.MetadataHiddenTools] = hiddenToolNames(plan.ToolRoute)
+	sess.Config.Metadata[session.MetadataToolRouteDigest] = toolRouteDigest(plan.ToolRoute)
+}
+
+func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Session, plan TurnPlan) {
+	routeEvent := l.executionEventBase(sess, port.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
+	routeEvent.Data = map[string]any{
+		"visible_tools":  visibleToolNames(plan.ToolRoute),
+		"hidden_tools":   hiddenToolNames(plan.ToolRoute),
+		"approval_tools": approvalRequiredToolNames(plan.ToolRoute),
+		"route_digest":   toolRouteDigest(plan.ToolRoute),
+	}
+	l.observer().OnExecutionEvent(ctx, routeEvent)
+
+	modelEvent := l.executionEventBase(sess, port.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
+	modelEvent.Model = sess.Config.ModelConfig.Model
+	modelEvent.Data = map[string]any{
+		"lane":          plan.ModelRoute.Lane,
+		"reason_codes":  append([]string(nil), plan.ModelRoute.ReasonCodes...),
+		"capabilities":  append([]port.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
+		"max_cost_tier": plan.ModelRoute.Requirements.MaxCostTier,
+		"prefer_cheap":  plan.ModelRoute.Requirements.PreferCheap,
+	}
+	l.observer().OnExecutionEvent(ctx, modelEvent)
+
+	turnEvent := l.executionEventBase(sess, port.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
+	turnEvent.Data = map[string]any{
+		"iteration":            plan.Iteration,
+		"instruction_profile":  plan.InstructionProfile,
+		"lightweight_chat":     plan.LightweightChat,
+		"visible_tools_count":  len(visibleToolNames(plan.ToolRoute)),
+		"hidden_tools_count":   len(hiddenToolNames(plan.ToolRoute)),
+		"approval_tools_count": len(approvalRequiredToolNames(plan.ToolRoute)),
+		"model_lane":           plan.ModelRoute.Lane,
+	}
+	l.observer().OnExecutionEvent(ctx, turnEvent)
 }
 
 func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *port.CompletionResponse, streamed bool, lastOutput *string) error {
@@ -271,23 +317,21 @@ func (l *AgentLoop) emitIterationProgress(
 	resp *port.CompletionResponse,
 ) {
 	progressAt := time.Now().UTC()
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionIterationProgress,
-		SessionID: sess.ID,
-		Timestamp: progressAt,
-		Model:     model,
-		Data: map[string]any{
-			"iteration":      iteration,
-			"max_iterations": maxIter,
-			"max_steps":      sess.Budget.MaxSteps,
-			"elapsed_ms":     progressAt.Sub(runStartedAt).Milliseconds(),
-			"llm_calls":      1,
-			"tool_calls":     len(resp.ToolCalls),
-			"stop_reason":    resp.StopReason,
-			"streamed":       streamed,
-			"tokens":         resp.Usage.TotalTokens,
-		},
-	})
+	event := l.executionEventBase(sess, port.ExecutionIterationProgress, "iteration", "runtime", "iteration")
+	event.Timestamp = progressAt
+	event.Model = model
+	event.Data = map[string]any{
+		"iteration":      iteration,
+		"max_iterations": maxIter,
+		"max_steps":      sess.Budget.MaxSteps,
+		"elapsed_ms":     progressAt.Sub(runStartedAt).Milliseconds(),
+		"llm_calls":      1,
+		"tool_calls":     len(resp.ToolCalls),
+		"stop_reason":    resp.StopReason,
+		"streamed":       streamed,
+		"tokens":         resp.Usage.TotalTokens,
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 }
 
 func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage port.TokenUsage, lastOutput string) *SessionResult {
@@ -299,15 +343,12 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"tokens", totalUsage.TotalTokens,
 	)
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
-		Type:      port.ExecutionRunCompleted,
-		SessionID: sess.ID,
-		Timestamp: time.Now().UTC(),
-		Data: map[string]any{
-			"steps":  sess.Budget.UsedStepsValue(),
-			"tokens": totalUsage.TotalTokens,
-		},
-	})
+	event := l.executionEventBase(sess, port.ExecutionRunCompleted, "run", "runtime", "run")
+	event.Data = map[string]any{
+		"steps":  sess.Budget.UsedStepsValue(),
+		"tokens": totalUsage.TotalTokens,
+	}
+	l.observer().OnExecutionEvent(ctx, event)
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
 	result := &SessionResult{
 		SessionID:  sess.ID,

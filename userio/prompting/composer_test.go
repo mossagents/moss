@@ -31,6 +31,12 @@ func TestCompose_PriorityConfigOverSessionOverModel(t *testing.T) {
 	if out.DebugMeta.BaseSource != "config" {
 		t.Fatalf("base source = %q, want config", out.DebugMeta.BaseSource)
 	}
+	if out.Graph.BaseSource != "config" {
+		t.Fatalf("graph base source = %q, want config", out.Graph.BaseSource)
+	}
+	if layer := findLayer(t, out.Graph, "base_session"); layer.Enabled || layer.SuppressionReason != "lower_priority_source" {
+		t.Fatalf("expected base_session suppressed by precedence, got %+v", layer)
+	}
 }
 
 func TestCompose_DynamicSectionOrder(t *testing.T) {
@@ -43,14 +49,14 @@ func TestCompose_DynamicSectionOrder(t *testing.T) {
 		t.Fatalf("register tool: %v", err)
 	}
 	out, err := Compose(ComposeInput{
-		Workspace:          t.TempDir(),
-		Trust:              "trusted",
-		ModelInstructions:  "model-base",
-		Kernel:             k,
-		ProfileName:        "coding",
-		TaskMode:           "coding",
-		SkillPrompts:       []string{"skill-1"},
-		RuntimeNotices:     []string{"notice-1"},
+		Workspace:         t.TempDir(),
+		Trust:             "trusted",
+		ModelInstructions: "model-base",
+		Kernel:            k,
+		ProfileName:       "coding",
+		TaskMode:          "coding",
+		SkillPrompts:      []string{"skill-1"},
+		RuntimeNotices:    []string{"notice-1"},
 	})
 	if err != nil {
 		t.Fatalf("compose: %v", err)
@@ -99,6 +105,10 @@ func TestCompose_NoDuplicateEnvironmentHeading(t *testing.T) {
 	if strings.Count(strings.ToLower(out.Prompt), "## environment") != 1 {
 		t.Fatalf("expected single environment heading, got: %s", out.Prompt)
 	}
+	layer := findLayer(t, out.Graph, "environment")
+	if layer.Enabled || layer.SuppressionReason != "duplicate_heading" {
+		t.Fatalf("expected environment layer suppressed by duplicate heading, got %+v", layer)
+	}
 }
 
 func TestSessionInstructionsFromMetadata_TypeValidation(t *testing.T) {
@@ -112,8 +122,21 @@ func TestSessionInstructionsFromMetadata_TypeValidation(t *testing.T) {
 
 func TestAttachComposeDebugMeta(t *testing.T) {
 	meta := AttachComposeDebugMeta(nil, ComposeDebugMeta{
-		BaseSource:       "config",
-		DynamicSectionID: []string{"environment", "skills"},
+		BaseSource:         "config",
+		DynamicSectionID:   []string{"environment", "skills"},
+		EnabledLayers:      []string{"base_config", "environment", "skills"},
+		SuppressedLayers:   []string{"runtime_notices"},
+		SourceChain:        []string{"base:config", "dynamic:environment", "dynamic:skills"},
+		InstructionProfile: "planning",
+		SuppressionReasons: map[string]string{
+			"runtime_notices": "empty_content",
+		},
+		LayerTokenEstimates: map[string]int{
+			"base_config":     10,
+			"environment":     6,
+			"skills":          4,
+			"runtime_notices": 0,
+		},
 	})
 	if got, _ := meta[MetadataBaseSourceKey].(string); got != "config" {
 		t.Fatalf("base source = %q", got)
@@ -123,6 +146,45 @@ func TestAttachComposeDebugMeta(t *testing.T) {
 	}
 	if got, _ := meta[MetadataSourceChainKey].(string); got == "" {
 		t.Fatal("expected source chain")
+	}
+	if got, ok := meta[MetadataEnabledLayersKey].([]string); !ok || len(got) != 3 {
+		t.Fatalf("enabled layers = %#v", meta[MetadataEnabledLayersKey])
+	}
+	if got, ok := meta[MetadataSuppressionReasonsKey].(map[string]string); !ok || got["runtime_notices"] != "empty_content" {
+		t.Fatalf("suppression reasons = %#v", meta[MetadataSuppressionReasonsKey])
+	}
+	if got, _ := meta[MetadataInstructionProfileKey].(string); got != "planning" {
+		t.Fatalf("instruction profile = %q", got)
+	}
+}
+
+func TestAttachComposeDebugMeta_ClearsStaleKeysAndRebuildsSourceChain(t *testing.T) {
+	meta := map[string]any{
+		MetadataBaseSourceKey:         "session",
+		MetadataDynamicSectionsKey:    "skills",
+		MetadataEnabledLayersKey:      []string{"base_session", "skills"},
+		MetadataSuppressedLayersKey:   []string{"environment"},
+		MetadataSuppressionReasonsKey: map[string]string{"environment": "duplicate_heading"},
+		MetadataLayerTokensKey:        map[string]int{"skills": 4},
+		MetadataSourceChainKey:        "base:session -> dynamic:skills",
+		MetadataInstructionProfileKey: "research",
+	}
+	meta = AttachComposeDebugMeta(meta, ComposeDebugMeta{
+		BaseSource:       "config",
+		DynamicSectionID: []string{"environment"},
+		EnabledLayers:    []string{"base_config", "environment"},
+	})
+	if got, _ := meta[MetadataBaseSourceKey].(string); got != "config" {
+		t.Fatalf("base source = %q", got)
+	}
+	if got, _ := meta[MetadataDynamicSectionsKey].(string); got != "environment" {
+		t.Fatalf("dynamic sections = %q", got)
+	}
+	if _, ok := meta[MetadataSuppressedLayersKey]; ok {
+		t.Fatalf("expected stale suppressed layers removed, got %#v", meta[MetadataSuppressedLayersKey])
+	}
+	if got, _ := meta[MetadataSourceChainKey].(string); got != "base:config -> dynamic:environment" {
+		t.Fatalf("source chain = %q", got)
 	}
 }
 
@@ -144,4 +206,45 @@ func TestCompose_ProfileTaskModeSection(t *testing.T) {
 		!strings.Contains(out.Prompt, "Task mode: research") {
 		t.Fatalf("missing operating mode section:\n%s", out.Prompt)
 	}
+	if out.Graph.Profile.ID != "research" {
+		t.Fatalf("profile id = %q, want research", out.Graph.Profile.ID)
+	}
+}
+
+func TestCompose_DebugMetaTracksEnabledAndSuppressedLayers(t *testing.T) {
+	k := kernel.New(kernel.WithToolRegistry(tool.NewRegistry()))
+	out, err := Compose(ComposeInput{
+		Workspace:          t.TempDir(),
+		Trust:              "trusted",
+		ConfigInstructions: "## Environment\n- custom: yes",
+		ProfileName:        "planner",
+		TaskMode:           "planning",
+		Kernel:             k,
+	})
+	if err != nil {
+		t.Fatalf("compose: %v", err)
+	}
+	if out.DebugMeta.InstructionProfile != "planning" {
+		t.Fatalf("instruction profile = %q", out.DebugMeta.InstructionProfile)
+	}
+	if got := out.DebugMeta.SuppressionReasons["environment"]; got != "duplicate_heading" {
+		t.Fatalf("environment suppression reason = %q", got)
+	}
+	if _, ok := out.DebugMeta.LayerTokenEstimates["base_config"]; !ok {
+		t.Fatalf("expected base_config token estimate, got %+v", out.DebugMeta.LayerTokenEstimates)
+	}
+	if !strings.Contains(strings.Join(out.DebugMeta.SourceChain, " -> "), "base:config") {
+		t.Fatalf("source chain = %v", out.DebugMeta.SourceChain)
+	}
+}
+
+func findLayer(t *testing.T, graph InstructionGraph, id string) InstructionLayer {
+	t.Helper()
+	for _, layer := range graph.Layers {
+		if layer.ID == id {
+			return layer
+		}
+	}
+	t.Fatalf("instruction layer %q not found", id)
+	return InstructionLayer{}
 }

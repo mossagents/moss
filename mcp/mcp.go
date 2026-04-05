@@ -121,6 +121,8 @@ func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
 			InputSchema:  schema,
 			Risk:         tool.RiskMedium, // MCP tools default to medium risk
 			Capabilities: []string{"mcp", s.cfg.Name},
+			Source:       "mcp",
+			Owner:        s.cfg.Name,
 		}
 
 		handler := s.makeHandler(mcpTool.Name)

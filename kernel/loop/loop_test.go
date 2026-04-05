@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"io"
+	"reflect"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -215,6 +218,136 @@ func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 	}
 }
 
+func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{
+			{
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Plan first.")}},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 12},
+			},
+		},
+	}
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "read_file", Risk: tool.RiskLow, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	}); err != nil {
+		t.Fatalf("register read_file: %v", err)
+	}
+	if err := reg.Register(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	}); err != nil {
+		t.Fatalf("register write_file: %v", err)
+	}
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM:      mock,
+		Tools:    reg,
+		Observer: observer,
+		RunID:    "run-phase2",
+	}
+	sess := &session.Session{
+		ID: "planning-turn",
+		Config: session.SessionConfig{
+			Profile: "planner",
+			Metadata: map[string]any{
+				session.MetadataTaskMode:          "planning",
+				session.MetadataEffectiveTrust:    "trusted",
+				session.MetadataEffectiveApproval: "confirm",
+			},
+		},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Please plan the refactor")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(mock.Calls) != 1 {
+		t.Fatalf("expected one llm call, got %d", len(mock.Calls))
+	}
+	if len(mock.Calls[0].Tools) != 1 || mock.Calls[0].Tools[0].Name != "read_file" {
+		t.Fatalf("unexpected tool exposure: %+v", mock.Calls[0].Tools)
+	}
+	if mock.Calls[0].Config.Requirements == nil || mock.Calls[0].Config.Requirements.Lane != "reasoning" {
+		t.Fatalf("unexpected model lane: %+v", mock.Calls[0].Config.Requirements)
+	}
+	if !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, port.CapReasoning) || !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, port.CapFunctionCalling) {
+		t.Fatalf("unexpected capabilities: %+v", mock.Calls[0].Config.Requirements.Capabilities)
+	}
+	if got := sess.Config.Metadata[session.MetadataModelLane]; got != "reasoning" {
+		t.Fatalf("model lane metadata = %#v", got)
+	}
+	if got := sess.Config.Metadata[session.MetadataVisibleTools]; !reflect.DeepEqual(got, []string{"read_file"}) {
+		t.Fatalf("visible tools metadata = %#v", got)
+	}
+	foundToolRouteEvent := false
+	for _, event := range observer.execution {
+		if event.Type == port.ExecutionEventType("tool.route_planned") {
+			foundToolRouteEvent = true
+			if event.EventID == "" || event.RunID != "run-phase2" || event.TurnID == "" {
+				t.Fatalf("unexpected route event envelope: %+v", event)
+			}
+		}
+	}
+	if !foundToolRouteEvent {
+		t.Fatal("expected tool.route_planned event")
+	}
+}
+
+func TestLoopHiddenToolCallReturnsNotAllowedError(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{
+			{
+				Message: port.Message{
+					Role:      port.RoleAssistant,
+					ToolCalls: []port.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
+				},
+				ToolCalls:  []port.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
+				StopReason: "tool_use",
+				Usage:      port.TokenUsage{TotalTokens: 10},
+			},
+			{
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("done")}},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 8},
+			},
+		},
+	}
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"should-not-run"`), nil
+	}); err != nil {
+		t.Fatalf("register write_file: %v", err)
+	}
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: reg,
+	}
+	sess := &session.Session{
+		ID: "planning-hidden-tool",
+		Config: session.SessionConfig{
+			Metadata: map[string]any{
+				session.MetadataTaskMode: "planning",
+			},
+		},
+		Messages: []port.Message{{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Plan the change")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(sess.Messages) < 3 {
+		t.Fatalf("expected tool result message, got %+v", sess.Messages)
+	}
+	toolMsg := sess.Messages[2]
+	if toolMsg.Role != port.RoleTool || len(toolMsg.ToolResults) != 1 {
+		t.Fatalf("unexpected tool message: %+v", toolMsg)
+	}
+	if got := port.ContentPartsToPlainText(toolMsg.ToolResults[0].ContentParts); !strings.Contains(got, "not allowed in current turn") {
+		t.Fatalf("unexpected tool error: %q", got)
+	}
+}
+
 func TestLoopExecutionProgressEvents(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{
@@ -284,6 +417,24 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	}
 	if got := progress.Data["stop_reason"]; got != "end_turn" {
 		t.Fatalf("progress stop_reason = %v, want end_turn", got)
+	}
+	if progress.EventID == "" || progress.EventVersion != 1 || progress.Phase != "iteration" || progress.PayloadKind != "iteration" {
+		t.Fatalf("unexpected progress envelope: %+v", progress)
+	}
+	var completed port.ExecutionEvent
+	found = false
+	for _, event := range observer.execution {
+		if event.Type == port.ExecutionRunCompleted {
+			completed = event
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected run.completed event")
+	}
+	if completed.EventID == "" || completed.EventVersion != 1 || completed.Phase != "run" || completed.PayloadKind != "run" {
+		t.Fatalf("unexpected completed envelope: %+v", completed)
 	}
 }
 

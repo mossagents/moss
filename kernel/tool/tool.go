@@ -16,11 +16,16 @@ const (
 
 // ToolSpec 描述一个工具的元信息。
 type ToolSpec struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	InputSchema  json.RawMessage `json:"input_schema"`
-	Risk         RiskLevel       `json:"risk"`
-	Capabilities []string        `json:"capabilities,omitempty"`
+	Name              string          `json:"name"`
+	Description       string          `json:"description"`
+	InputSchema       json.RawMessage `json:"input_schema"`
+	Risk              RiskLevel       `json:"risk"`
+	Capabilities      []string        `json:"capabilities,omitempty"`
+	Source            string          `json:"source,omitempty"`
+	Owner             string          `json:"owner,omitempty"`
+	RequiresWorkspace bool            `json:"requires_workspace,omitempty"`
+	RequiresExecutor  bool            `json:"requires_executor,omitempty"`
+	RequiresSandbox   bool            `json:"requires_sandbox,omitempty"`
 }
 
 // ToolHandler 是工具的执行函数。

@@ -19,6 +19,7 @@ type ChangeRuntime struct {
 	PatchApply       port.PatchApply
 	PatchRevert      port.PatchRevert
 	SessionStore     session.SessionStore
+	SessionLookup    func(string) (*session.Session, bool)
 	CreateCheckpoint func(context.Context, *session.Session, port.CheckpointCreateRequest) (*port.CheckpointRecord, error)
 }
 
@@ -26,12 +27,17 @@ func ChangeRuntimeFromKernel(workspace string, k *kernel.Kernel) ChangeRuntime {
 	if k == nil {
 		return ChangeRuntime{Workspace: workspace}
 	}
+	var sessionLookup func(string) (*session.Session, bool)
+	if mgr := k.SessionManager(); mgr != nil {
+		sessionLookup = mgr.Get
+	}
 	return ChangeRuntime{
 		Workspace:        workspace,
 		RepoStateCapture: k.RepoStateCapture(),
 		PatchApply:       k.PatchApply(),
 		PatchRevert:      k.PatchRevert(),
 		SessionStore:     k.SessionStore(),
+		SessionLookup:    sessionLookup,
 		CreateCheckpoint: k.CreateCheckpoint,
 	}
 }
@@ -83,6 +89,9 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 	}
 	if req.Source == "" {
 		req.Source = port.PatchSourceUser
+	}
+	if err := attachTurnMetadata(ctx, rt, op); err != nil {
+		return nil, err
 	}
 	if err := attachCheckpointMetadata(ctx, rt, op); err != nil {
 		return nil, err
@@ -248,7 +257,7 @@ func attachCheckpointMetadata(ctx context.Context, rt ChangeRuntime, op *ChangeO
 		op.RecoveryDetails = appendDetails(op.RecoveryDetails, "checkpoint creation unavailable in current runtime")
 		return nil
 	}
-	sess, err := rt.SessionStore.Load(ctx, op.SessionID)
+	sess, err := loadRuntimeSession(ctx, rt, op.SessionID)
 	if err != nil {
 		return err
 	}
@@ -267,6 +276,42 @@ func attachCheckpointMetadata(ctx context.Context, rt ChangeRuntime, op *ChangeO
 		op.RecoveryMode = "patch+capture+checkpoint"
 	}
 	return nil
+}
+
+func attachTurnMetadata(ctx context.Context, rt ChangeRuntime, op *ChangeOperation) error {
+	if op == nil || strings.TrimSpace(op.SessionID) == "" || rt.SessionStore == nil {
+		return nil
+	}
+	sess, err := loadRuntimeSession(ctx, rt, op.SessionID)
+	if err != nil {
+		return err
+	}
+	if sess == nil || len(sess.Config.Metadata) == 0 {
+		return nil
+	}
+	op.RunID = session.MetadataValueString(sess.Config.Metadata, session.MetadataRunID)
+	op.TurnID = session.MetadataValueString(sess.Config.Metadata, session.MetadataTurnID)
+	op.InstructionProfile = session.MetadataValueString(sess.Config.Metadata, session.MetadataInstructionProfile)
+	op.ModelLane = session.MetadataValueString(sess.Config.Metadata, session.MetadataModelLane)
+	op.VisibleTools = append([]string(nil), session.MetadataValuesStrings(sess.Config.Metadata, session.MetadataVisibleTools)...)
+	op.HiddenTools = append([]string(nil), session.MetadataValuesStrings(sess.Config.Metadata, session.MetadataHiddenTools)...)
+	return nil
+}
+
+func loadRuntimeSession(ctx context.Context, rt ChangeRuntime, id string) (*session.Session, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, nil
+	}
+	if rt.SessionLookup != nil {
+		if sess, ok := rt.SessionLookup(id); ok && sess != nil {
+			return sess, nil
+		}
+	}
+	if rt.SessionStore == nil {
+		return nil, nil
+	}
+	return rt.SessionStore.Load(ctx, id)
 }
 
 func resolveRepoRoot(ctx context.Context, workspace string) (string, error) {

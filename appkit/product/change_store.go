@@ -167,18 +167,31 @@ func stateEntryFromChange(item *ChangeOperation) appruntime.StateEntry {
 		sortTime = item.RolledBackAt
 	}
 	return appruntime.StateEntry{
-		Kind:       appruntime.StateKindChange,
-		RecordID:   item.ID,
-		SessionID:  strings.TrimSpace(item.SessionID),
-		RepoRoot:   canonicalRepoRoot(item.RepoRoot),
-		Status:     string(item.Status),
-		Title:      firstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
-		Summary:    strings.Join(compactStrings(item.TargetFiles), ", "),
-		SearchText: strings.ToLower(strings.TrimSpace(strings.Join(compactStrings([]string{item.ID, item.SessionID, item.RepoRoot, item.Summary, item.RecoveryDetails, item.RollbackDetails, strings.Join(item.TargetFiles, " ")}), " "))),
-		SortTime:   sortTime.UTC(),
-		CreatedAt:  item.CreatedAt.UTC(),
-		UpdatedAt:  sortTime.UTC(),
-		Metadata: marshalChangeStateMetadata(item),
+		Kind:      appruntime.StateKindChange,
+		RecordID:  item.ID,
+		SessionID: strings.TrimSpace(item.SessionID),
+		RepoRoot:  canonicalRepoRoot(item.RepoRoot),
+		Status:    string(item.Status),
+		Title:     firstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
+		Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
+		SearchText: strings.ToLower(strings.TrimSpace(strings.Join(compactStrings([]string{
+			item.ID,
+			item.SessionID,
+			item.RunID,
+			item.TurnID,
+			item.InstructionProfile,
+			item.ModelLane,
+			item.RepoRoot,
+			item.Summary,
+			item.RecoveryDetails,
+			item.RollbackDetails,
+			strings.Join(item.TargetFiles, " "),
+			strings.Join(item.VisibleTools, " "),
+		}), " "))),
+		SortTime:  sortTime.UTC(),
+		CreatedAt: item.CreatedAt.UTC(),
+		UpdatedAt: sortTime.UTC(),
+		Metadata:  marshalChangeStateMetadata(item),
 	}
 }
 
@@ -187,13 +200,19 @@ func marshalChangeStateMetadata(item *ChangeOperation) json.RawMessage {
 		return nil
 	}
 	data, err := json.Marshal(map[string]any{
-		"patch_id":         item.PatchID,
-		"checkpoint_id":    item.CheckpointID,
-		"target_files":     append([]string(nil), item.TargetFiles...),
-		"recovery_mode":    item.RecoveryMode,
-		"recovery_details": item.RecoveryDetails,
-		"rollback_mode":    item.RollbackMode,
-		"rollback_details": item.RollbackDetails,
+		"run_id":              item.RunID,
+		"turn_id":             item.TurnID,
+		"instruction_profile": item.InstructionProfile,
+		"model_lane":          item.ModelLane,
+		"visible_tools":       append([]string(nil), item.VisibleTools...),
+		"hidden_tools":        append([]string(nil), item.HiddenTools...),
+		"patch_id":            item.PatchID,
+		"checkpoint_id":       item.CheckpointID,
+		"target_files":        append([]string(nil), item.TargetFiles...),
+		"recovery_mode":       item.RecoveryMode,
+		"recovery_details":    item.RecoveryDetails,
+		"rollback_mode":       item.RollbackMode,
+		"rollback_details":    item.RollbackDetails,
 	})
 	if err != nil {
 		return nil

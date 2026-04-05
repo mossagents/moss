@@ -774,7 +774,10 @@ func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
 }
 
 func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
-	recordID := strings.TrimSpace(event.CallID)
+	recordID := strings.TrimSpace(event.EventID)
+	if recordID == "" {
+		recordID = strings.TrimSpace(event.CallID)
+	}
 	if recordID == "" {
 		recordID = fmt.Sprintf("%d-%s-%s", event.Timestamp.UTC().UnixNano(), event.Type, firstNonEmpty(strings.TrimSpace(event.ToolName), strings.TrimSpace(event.Model)))
 	}
@@ -794,32 +797,48 @@ func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
 		CreatedAt:  event.Timestamp.UTC(),
 		UpdatedAt:  event.Timestamp.UTC(),
 		Metadata: marshalStateMetadata(map[string]any{
-			"event_type":  event.Type,
-			"tool_name":   event.ToolName,
-			"model":       event.Model,
-			"risk":        event.Risk,
-			"reason_code": event.ReasonCode,
-			"enforcement": event.Enforcement,
-			"duration_ms": event.Duration.Milliseconds(),
-			"data":        event.Data,
+			"event_id":      event.EventID,
+			"event_version": event.EventVersion,
+			"run_id":        event.RunID,
+			"turn_id":       event.TurnID,
+			"parent_id":     event.ParentID,
+			"event_type":    event.Type,
+			"phase":         event.Phase,
+			"actor":         event.Actor,
+			"payload_kind":  event.PayloadKind,
+			"tool_name":     event.ToolName,
+			"model":         event.Model,
+			"risk":          event.Risk,
+			"reason_code":   event.ReasonCode,
+			"enforcement":   event.Enforcement,
+			"duration_ms":   event.Duration.Milliseconds(),
+			"data":          event.Data,
 		}),
 	}
 }
 
 func executionEventJournalRecord(event port.ExecutionEvent) map[string]any {
 	return map[string]any{
-		"type":        event.Type,
-		"session_id":  event.SessionID,
-		"timestamp":   event.Timestamp.UTC(),
-		"tool_name":   event.ToolName,
-		"call_id":     event.CallID,
-		"risk":        event.Risk,
-		"reason_code": event.ReasonCode,
-		"enforcement": event.Enforcement,
-		"model":       event.Model,
-		"duration_ms": event.Duration.Milliseconds(),
-		"error":       event.Error,
-		"data":        event.Data,
+		"event_id":      event.EventID,
+		"event_version": event.EventVersion,
+		"run_id":        event.RunID,
+		"turn_id":       event.TurnID,
+		"parent_id":     event.ParentID,
+		"type":          event.Type,
+		"session_id":    event.SessionID,
+		"timestamp":     event.Timestamp.UTC(),
+		"phase":         event.Phase,
+		"actor":         event.Actor,
+		"payload_kind":  event.PayloadKind,
+		"tool_name":     event.ToolName,
+		"call_id":       event.CallID,
+		"risk":          event.Risk,
+		"reason_code":   event.ReasonCode,
+		"enforcement":   event.Enforcement,
+		"model":         event.Model,
+		"duration_ms":   event.Duration.Milliseconds(),
+		"error":         event.Error,
+		"data":          event.Data,
 	}
 }
 
