@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware"
@@ -35,6 +34,9 @@ type contextState struct {
 	manager                  session.Manager
 	triggerDialog            int
 	keepRecent               int
+	triggerTokens            int
+	maxPromptTokens          int
+	startupTokens            int
 	compactToolRegistered    bool
 	autoMiddlewareRegistered bool
 }
@@ -58,6 +60,30 @@ func WithKeepRecent(n int) ContextOption {
 	return func(st *contextState) {
 		if n > 0 {
 			st.keepRecent = n
+		}
+	}
+}
+
+func WithContextTriggerTokens(n int) ContextOption {
+	return func(st *contextState) {
+		if n > 0 {
+			st.triggerTokens = n
+		}
+	}
+}
+
+func WithContextPromptBudget(n int) ContextOption {
+	return func(st *contextState) {
+		if n > 0 {
+			st.maxPromptTokens = n
+		}
+	}
+}
+
+func WithContextStartupBudget(n int) ContextOption {
+	return func(st *contextState) {
+		if n >= 0 {
+			st.startupTokens = n
 		}
 	}
 }
@@ -139,53 +165,11 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 		if !ok || sess == nil {
 			return nil, fmt.Errorf("session %q not found", in.SessionID)
 		}
-		original := append([]port.Message(nil), sess.Messages...)
-		dialogCount := countDialogMessages(sess.Messages)
-		if dialogCount <= in.KeepRecent {
-			return json.Marshal(map[string]any{
-				"status":       "noop",
-				"session_id":   sess.ID,
-				"dialog_count": dialogCount,
-				"keep_recent":  in.KeepRecent,
-			})
+		out, err := compactSessionContext(ctx, store, sess, in.KeepRecent, in.Note, nil, false)
+		if err != nil {
+			return nil, err
 		}
-
-		offloadID := fmt.Sprintf("%s_offload_%d", sess.ID, time.Now().UnixNano())
-		snapshot := &session.Session{
-			ID:       offloadID,
-			Status:   session.StatusCompleted,
-			Config:   sess.Config,
-			Messages: append([]port.Message(nil), original...),
-			State: map[string]any{
-				"offload_of": sess.ID,
-				"note":       in.Note,
-			},
-			Budget:    sess.Budget.Clone(),
-			CreatedAt: time.Now(),
-			EndedAt:   time.Now(),
-		}
-		session.MarkHistoryHidden(snapshot)
-		if err := store.Save(ctx, snapshot); err != nil {
-			return nil, fmt.Errorf("save offload snapshot: %w", err)
-		}
-
-		notice := fmt.Sprintf("[Context offloaded to snapshot %s; kept recent %d dialog messages]", offloadID, in.KeepRecent)
-		sess.Messages = session.BuildCompactedMessages(sess.Messages, in.KeepRecent, notice)
-		sess.SetState("last_offload_snapshot", offloadID)
-		sess.SetState("last_offload_at", time.Now().Format(time.RFC3339))
-
-		if err := store.Save(ctx, sess); err != nil {
-			return nil, fmt.Errorf("save compacted session: %w", err)
-		}
-
-		return json.Marshal(map[string]any{
-			"status":            "offloaded",
-			"session_id":        sess.ID,
-			"snapshot_session":  offloadID,
-			"dialog_before":     dialogCount,
-			"kept_recent":       in.KeepRecent,
-			"message_count_now": len(sess.Messages),
-		})
+		return json.Marshal(out)
 	}
 
 	return reg.Register(spec, handler)
@@ -210,8 +194,10 @@ func ensureOffloadState(k *kernel.Kernel) *offloadState {
 func ensureContextState(k *kernel.Kernel) *contextState {
 	bridge := kernel.Extensions(k)
 	actual, loaded := bridge.LoadOrStoreState(contextStateKey, &contextState{
-		triggerDialog: 100,
-		keepRecent:    20,
+		keepRecent:      20,
+		triggerTokens:   3000,
+		maxPromptTokens: 4000,
+		startupTokens:   900,
 	})
 	st := actual.(*contextState)
 	if loaded {
@@ -237,7 +223,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		if st.store == nil {
 			return ""
 		}
-		return "Use compact_conversation to summarize and offload older context when conversation gets long."
+		return "Use compact_conversation to keep prompt-visible context within budget with structured summaries, startup context, and snapshot-backed compaction."
 	})
 	return st
 }
@@ -386,75 +372,17 @@ func compactWithSummary(
 	if !ok || sess == nil {
 		return nil, fmt.Errorf("session %q not found", sessionID)
 	}
-	dialogCount := countDialogMessages(sess.Messages)
-	if dialogCount <= keepRecent {
-		return map[string]any{
-			"status":       "noop",
-			"session_id":   sess.ID,
-			"dialog_count": dialogCount,
-			"keep_recent":  keepRecent,
-		}, nil
-	}
-	original := append([]port.Message(nil), sess.Messages...)
-	snapshotID := fmt.Sprintf("%s_summary_%d", sess.ID, time.Now().UnixNano())
-	summaryText := buildSummary(ctx, llm, original)
-	if summaryText == "" {
-		summaryText = "Earlier context compacted and offloaded."
-	}
-	if strings.TrimSpace(note) != "" {
-		summaryText += " Note: " + strings.TrimSpace(note)
-	}
-	snapshot := &session.Session{
-		ID:       snapshotID,
-		Status:   session.StatusCompleted,
-		Config:   sess.Config,
-		Messages: original,
-		State: map[string]any{
-			"offload_of": sess.ID,
-			"note":       note,
-		},
-		Budget:    sess.Budget.Clone(),
-		CreatedAt: time.Now(),
-		EndedAt:   time.Now(),
-	}
-	session.MarkHistoryHidden(snapshot)
-	if err := store.Save(ctx, snapshot); err != nil {
-		return nil, fmt.Errorf("save summary snapshot: %w", err)
-	}
-	notice := fmt.Sprintf("[Context summarized/offloaded to %s]\n%s", snapshotID, summaryText)
-	sess.Messages = session.BuildCompactedMessages(sess.Messages, keepRecent, notice)
-	sess.SetState("last_context_snapshot", snapshotID)
-	sess.SetState("last_context_summary", summaryText)
-	sess.SetState("last_context_offload_at", time.Now().Format(time.RFC3339))
-	if err := store.Save(ctx, sess); err != nil {
-		return nil, fmt.Errorf("save compacted session: %w", err)
-	}
-	return map[string]any{
-		"status":            "offloaded",
-		"session_id":        sess.ID,
-		"snapshot_session":  snapshotID,
-		"dialog_before":     dialogCount,
-		"kept_recent":       keepRecent,
-		"message_count_now": len(sess.Messages),
-		"summary":           summaryText,
-	}, nil
+	return compactSessionContext(ctx, store, sess, keepRecent, note, llm, true)
 }
 
-// AutoCompactMiddleware 在 BeforeLLM 阶段按阈值自动触发压缩。
+// AutoCompactMiddleware 在 BeforeLLM 阶段按 token 预算刷新 prompt 上下文。
 func AutoCompactMiddleware(k *kernel.Kernel) middleware.Middleware {
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		if mc.Phase != middleware.BeforeLLM || mc.Session == nil {
 			return next(ctx)
 		}
 		st := ensureContextState(k)
-		if st.store == nil || st.manager == nil {
-			return next(ctx)
-		}
-		dialog := countDialogMessages(mc.Session.Messages)
-		if dialog < st.triggerDialog {
-			return next(ctx)
-		}
-		if _, err := compactWithSummary(ctx, st.store, st.manager, mc.Session.ID, st.keepRecent, "auto compact", k.LLM()); err != nil {
+		if _, _, _, err := preparePromptContext(ctx, k, st, mc.Session); err != nil {
 			return err
 		}
 		return next(ctx)

@@ -80,7 +80,7 @@ func (l *AgentLoop) observer() port.Observer {
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
 	specs := l.toolSpecs()
 	req := port.CompletionRequest{
-		Messages: sess.Messages,
+		Messages: session.PromptMessages(sess),
 		Tools:    specs,
 		Config:   sess.Config.ModelConfig,
 	}
