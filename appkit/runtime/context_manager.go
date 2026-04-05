@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextState, sess *session.Session) (session.PromptContextState, []port.Message, int, error) {
 	state := session.ReadPromptContextState(sess)
 	state.Version = contextStateVersion
+	lightweightChat := session.LatestUserTurnIsLightweightChat(sess.Messages)
 	if st.maxPromptTokens > 0 {
 		state.PromptBudget = st.maxPromptTokens
 	}
@@ -43,11 +45,16 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 		state.KeepRecent = st.keepRecent
 	}
 	state.BaselineFragments = buildBaselineFragments(sess.Messages)
-	state.StartupFragments = buildStartupFragments(ctx, k, sess, state.StartupBudget)
-	state.DynamicFragments = append(filterFragmentsByKind(state.DynamicFragments, contextSummaryFragmentKind), buildRealtimeFragments(ctx, k, sess)...)
+	if lightweightChat {
+		state.StartupFragments = nil
+		state.DynamicFragments = nil
+	} else {
+		state.StartupFragments = buildStartupFragments(ctx, k, sess, state.StartupBudget)
+		state.DynamicFragments = append(filterFragmentsByKind(state.DynamicFragments, contextSummaryFragmentKind), buildRealtimeFragments(ctx, k, sess)...)
+	}
 	currentPrompt := session.BuildPromptMessages(sess.Messages, state)
 	currentTokens := session.EstimateMessagesTokens(currentPrompt)
-	if shouldCompactPrompt(sess, state, st, currentTokens) {
+	if !lightweightChat && shouldCompactPrompt(sess, state, st, currentTokens) {
 		session.WritePromptContextState(sess, state)
 		if _, err := compactSessionContext(ctx, st.store, sess, state.KeepRecent, "auto compact", k.LLM(), true); err != nil {
 			return state, nil, 0, err
@@ -65,6 +72,14 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 	state.LastPromptTokens = currentTokens
 	state.LastPromptBuiltAt = time.Now().UTC()
 	session.WritePromptContextState(sess, state)
+	logging.GetLogger().DebugContext(ctx, "prompt context prepared",
+		"session_id", sess.ID,
+		"prompt_tokens", currentTokens,
+		"baseline_fragments", len(state.BaselineFragments),
+		"startup_fragments", len(state.StartupFragments),
+		"dynamic_fragments", len(state.DynamicFragments),
+		"fragment_diff", strings.Join(state.LastFragmentDiff, ","),
+	)
 	return state, currentPrompt, currentTokens, nil
 }
 
@@ -157,6 +172,13 @@ func compactSessionContext(
 			return nil, fmt.Errorf("save compacted session: %w", err)
 		}
 	}
+	logging.GetLogger().DebugContext(ctx, "prompt context compacted",
+		"session_id", sess.ID,
+		"snapshot_session", snapshotID,
+		"dialog_before", dialogCount,
+		"keep_recent", keepRecent,
+		"with_summary", withSummary,
+	)
 	return map[string]any{
 		"status":                   "offloaded",
 		"session_id":               sess.ID,

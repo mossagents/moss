@@ -169,6 +169,52 @@ func TestLoopToolCall(t *testing.T) {
 	}
 }
 
+func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []port.CompletionResponse{
+			{
+				Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("你好！有什么我可以帮你的？")}},
+				StopReason: "end_turn",
+				Usage:      port.TokenUsage{TotalTokens: 8},
+			},
+		},
+	}
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "list_files", Description: "List files"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`[]`), nil
+	}); err != nil {
+		t.Fatalf("register tool: %v", err)
+	}
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: reg,
+	}
+	sess := &session.Session{
+		ID: "test-greeting-no-tools",
+		Messages: []port.Message{
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("继续分析项目结构")}},
+			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("我先读取 README")}},
+			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("你好")}},
+		},
+		Budget: session.Budget{MaxSteps: 4},
+	}
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(mock.Calls) != 1 {
+		t.Fatalf("calls=%d, want 1", len(mock.Calls))
+	}
+	if got := len(mock.Calls[0].Tools); got != 0 {
+		t.Fatalf("tools exposed for lightweight chat: %d", got)
+	}
+	if len(mock.Calls[0].Messages) != 1 {
+		t.Fatalf("messages=%d, want 1", len(mock.Calls[0].Messages))
+	}
+	if got := port.ContentPartsToPlainText(mock.Calls[0].Messages[0].ContentParts); got != "你好" {
+		t.Fatalf("prompt message=%q, want 你好", got)
+	}
+}
+
 func TestLoopExecutionProgressEvents(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []port.CompletionResponse{

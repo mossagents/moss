@@ -16,6 +16,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/presets/deepagent"
 	"github.com/mossagents/moss/sandbox"
 )
@@ -72,6 +73,12 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (pro
 }
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, approvalMode string, governance product.GovernanceConfig, observer port.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
+	logging.GetLogger().DebugContext(ctx, "build kernel requested",
+		"workspace", flags.Workspace,
+		"profile", flags.Profile,
+		"trust", flags.Trust,
+		"approval_mode", approvalMode,
+	)
 	resolved, err := resolveProfileForFlags(flags, approvalMode)
 	if err != nil {
 		return nil, appruntime.ResolvedProfile{}, err
@@ -104,6 +111,13 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, ap
 	if err != nil {
 		return nil, appruntime.ResolvedProfile{}, err
 	}
+	logging.GetLogger().DebugContext(ctx, "kernel built",
+		"profile", resolved.Name,
+		"trust", resolved.Trust,
+		"workspace", flags.Workspace,
+		"router_enabled", router != nil,
+		"failover_enabled", useFailover,
+	)
 	if router != nil {
 		var llm port.LLM = router
 		if useFailover {

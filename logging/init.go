@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync/atomic"
 )
 
@@ -28,6 +30,24 @@ func SetLogger(l *slog.Logger) {
 	if l != nil {
 		defaultLogger.Store(l)
 	}
+}
+
+// DebugEnabled reports whether debug logging is enabled for the current process.
+func DebugEnabled() bool {
+	return os.Getenv("MOSS_DEBUG") == "1"
+}
+
+// EnableDebugFromArgs promotes --debug from CLI args into MOSS_DEBUG=1 before
+// the main flag parser runs so debug.log can be configured during startup.
+func EnableDebugFromArgs(args []string) bool {
+	if DebugEnabled() {
+		return true
+	}
+	if !debugFlagEnabled(args) {
+		return false
+	}
+	_ = os.Setenv("MOSS_DEBUG", "1")
+	return true
 }
 
 // ConfigureLogging 配置全局日志处理器。
@@ -61,7 +81,7 @@ func ConfigureLogging(level slog.Level, format string, w io.Writer) error {
 //   - path: 日志文件路径（仅 enabled=true 时非空）
 //   - closer: 调用方可在退出时关闭
 func ConfigureDebugFileWhenEnabled(appDir string) (enabled bool, path string, closer io.Closer, err error) {
-	if os.Getenv("MOSS_DEBUG") != "1" {
+	if !DebugEnabled() {
 		return false, "", nil, nil
 	}
 	if appDir == "" {
@@ -80,4 +100,28 @@ func ConfigureDebugFileWhenEnabled(appDir string) (enabled bool, path string, cl
 	defaultLogger.Store(l)
 	slog.SetDefault(l)
 	return true, path, f, nil
+}
+
+func debugFlagEnabled(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "--debug" {
+			return true
+		}
+		if !strings.HasPrefix(arg, "--debug=") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(arg, "--debug="))
+		if value == "" {
+			return true
+		}
+		enabled, err := strconv.ParseBool(value)
+		if err != nil {
+			return false
+		}
+		return enabled
+	}
+	return false
 }

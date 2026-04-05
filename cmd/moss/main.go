@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/mossagents/moss/appkit"
@@ -23,6 +24,8 @@ import (
 const version = "0.3.0"
 
 func main() {
+	logging.EnableDebugFromArgs(os.Args[1:])
+	args := stripLeadingDebugArgs(os.Args[1:])
 	// 确保 ~/.moss 配置目录存在
 	if err := config.EnsureAppDir(); err != nil {
 		logging.GetLogger().Warn("cannot create config dir", slog.Any("error", err))
@@ -39,14 +42,14 @@ func main() {
 	}
 
 	// 无参数默认进入 TUI
-	if len(os.Args) < 2 {
+	if len(args) == 0 {
 		launchTUI(os.Args[1:]) // empty slice
 		return
 	}
 
-	switch os.Args[1] {
+	switch args[0] {
 	case "run":
-		runCmd(os.Args[2:])
+		runCmd(args[1:])
 	case "version":
 		fmt.Printf("moss %s\n", version)
 	case "help", "--help", "-h":
@@ -55,6 +58,26 @@ func main() {
 		// 不识别的命令也进入 TUI
 		launchTUI(os.Args[1:])
 	}
+}
+
+func stripLeadingDebugArgs(args []string) []string {
+	out := append([]string(nil), args...)
+	for len(out) > 0 {
+		arg := out[0]
+		if arg == "--debug" {
+			out = out[1:]
+			continue
+		}
+		if strings.HasPrefix(arg, "--debug=") {
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--debug="))
+			if _, err := strconv.ParseBool(value); err == nil {
+				out = out[1:]
+				continue
+			}
+		}
+		break
+	}
+	return out
 }
 
 func printUsage() {
@@ -66,6 +89,7 @@ Usage:
   moss version        Show version
 
 AppFlags:
+  --debug       Enable trace logging to ~/.moss/debug.log
   --goal        Goal for the agent to accomplish
   --workspace   Workspace directory (default: ".")
   --trust       Trust level: trusted|restricted (default: trusted)
@@ -91,6 +115,7 @@ Environment:
 // launchTUI 启动 Bubble Tea TUI 界面。
 func launchTUI(args []string) {
 	fs := flag.NewFlagSet("moss", flag.ExitOnError)
+	_ = fs.Bool("debug", logging.DebugEnabled(), "Enable trace logging to ~/.moss/debug.log")
 	f := &appkit.AppFlags{}
 	appkit.BindAppFlags(fs, f)
 	_ = fs.Parse(args)
@@ -125,6 +150,7 @@ func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	goal := fs.String("goal", "", "Goal for the agent to accomplish")
 	mode := fs.String("mode", "interactive", "Run mode: interactive|autopilot")
+	_ = fs.Bool("debug", logging.DebugEnabled(), "Enable trace logging to ~/.moss/debug.log")
 	f := &appkit.AppFlags{}
 	appkit.BindAppFlags(fs, f)
 

@@ -49,3 +49,23 @@ func TestConfigureDebugFileWhenEnabled_EnabledWritesFile(t *testing.T) {
 		t.Fatal("expected debug log content")
 	}
 }
+
+func TestEnableDebugFromArgs_EnablesMOSSDEBUG(t *testing.T) {
+	t.Setenv("MOSS_DEBUG", "0")
+	if !EnableDebugFromArgs([]string{"exec", "--debug", "--prompt", "hi"}) {
+		t.Fatal("expected debug to be enabled from args")
+	}
+	if !DebugEnabled() {
+		t.Fatal("expected MOSS_DEBUG to be enabled")
+	}
+}
+
+func TestEnableDebugFromArgs_RespectsExplicitFalse(t *testing.T) {
+	t.Setenv("MOSS_DEBUG", "0")
+	if EnableDebugFromArgs([]string{"exec", "--debug=false"}) {
+		t.Fatal("expected debug to remain disabled")
+	}
+	if DebugEnabled() {
+		t.Fatal("expected MOSS_DEBUG to remain disabled")
+	}
+}

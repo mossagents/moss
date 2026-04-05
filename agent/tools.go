@@ -12,6 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/logging"
 
 	"github.com/google/uuid"
 )
@@ -1002,6 +1003,11 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 	}
 
 	taskID := uuid.New().String()
+	logging.GetLogger().DebugContext(ctx, "background task requested",
+		"task_id", taskID,
+		"agent", agentName,
+		"parent_session_id", SessionID(ctx),
+	)
 	if _, err := launchBackgroundTask(ctx, agents, tracker, delegator, taskID, agentName, goal, time.Time{}); err != nil {
 		return "", err
 	}
@@ -1066,6 +1072,12 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 
 	parentSessionID := SessionID(ctx)
 	childCtx := WithDepth(ctx, depth+1)
+	logging.GetLogger().DebugContext(ctx, "delegated agent starting",
+		"agent", agentName,
+		"task_id", taskID,
+		"parent_session_id", parentSessionID,
+		"depth", depth+1,
+	)
 
 	scopedTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
 
@@ -1086,6 +1098,12 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 	if tracker != nil {
 		tracker.BindSession(taskID, revision, sess.ID)
 	}
+	logging.GetLogger().DebugContext(ctx, "delegated session created",
+		"agent", agentName,
+		"task_id", taskID,
+		"session_id", sess.ID,
+		"parent_session_id", parentSessionID,
+	)
 
 	sess.AppendMessage(port.Message{
 		Role:         port.RoleUser,
@@ -1094,8 +1112,21 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 
 	result, err := delegator.RunWithTools(WithSessionID(childCtx, sess.ID), sess, scopedTools)
 	if err != nil {
+		logging.GetLogger().DebugContext(ctx, "delegated agent failed",
+			"agent", agentName,
+			"task_id", taskID,
+			"session_id", sess.ID,
+			"error", err.Error(),
+		)
 		return nil, fmt.Errorf("agent %q execution failed: %w", agentName, err)
 	}
+	logging.GetLogger().DebugContext(ctx, "delegated agent completed",
+		"agent", agentName,
+		"task_id", taskID,
+		"session_id", sess.ID,
+		"steps", result.Steps,
+		"tokens", result.TokensUsed.TotalTokens,
+	)
 
 	return result, nil
 }
@@ -1122,6 +1153,11 @@ func launchBackgroundTask(
 	go func(rev int64) {
 		result, err := runAgent(WithSessionID(taskCtx, task.ParentSessionID), agents, tracker, taskID, rev, delegator, agentName, goal)
 		if err != nil {
+			logging.GetLogger().DebugContext(taskCtx, "background task failed",
+				"task_id", taskID,
+				"agent", agentName,
+				"error", err.Error(),
+			)
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				tracker.CancelIf(taskID, rev, err.Error())
 				return
@@ -1129,6 +1165,11 @@ func launchBackgroundTask(
 			tracker.FailIf(taskID, rev, err.Error())
 			return
 		}
+		logging.GetLogger().DebugContext(taskCtx, "background task completed",
+			"task_id", taskID,
+			"agent", agentName,
+			"tokens", result.TokensUsed.TotalTokens,
+		)
 		tracker.CompleteIf(taskID, rev, result.Output, result.TokensUsed)
 	}(revision)
 

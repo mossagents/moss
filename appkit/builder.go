@@ -7,8 +7,10 @@ import (
 	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -89,6 +91,16 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 		if err := installer(ctx, k); err != nil {
 			return nil, err
 		}
+	}
+	if logging.DebugEnabled() {
+		k.Middleware().Use(builtins.Logger())
+		logging.GetLogger().DebugContext(ctx, "kernel built",
+			"workspace", flags.Workspace,
+			"trust", flags.Trust,
+			"profile", flags.Profile,
+			"provider", flags.Provider,
+			"model", flags.Model,
+		)
 	}
 
 	return k, nil

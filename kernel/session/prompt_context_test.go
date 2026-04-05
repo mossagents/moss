@@ -1,6 +1,7 @@
 package session
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -61,5 +62,44 @@ func TestComputePromptFragmentDiff(t *testing.T) {
 	changed, _ = ComputePromptFragmentDiff(hashes, fragments[:1])
 	if len(changed) != 1 || changed[0] != "context:summary" {
 		t.Fatalf("unexpected diff: %v", changed)
+	}
+}
+
+func TestBuildPromptMessagesPinsLatestUserTurnWithinBudget(t *testing.T) {
+	msgs := []port.Message{
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("old request")}},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("old response")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("你好")}},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("tool planning " + strings.Repeat("x", 80))}},
+	}
+	out := BuildPromptMessages(msgs, PromptContextState{
+		Version:      1,
+		PromptBudget: 35,
+	})
+	var joined []string
+	for _, msg := range out {
+		joined = append(joined, port.ContentPartsToPlainText(msg.ContentParts))
+	}
+	text := strings.Join(joined, "\n")
+	if !strings.Contains(text, "你好") {
+		t.Fatalf("latest user turn was dropped from prompt: %q", text)
+	}
+}
+
+func TestBuildPromptMessagesForGreetingDropsEarlierDialog(t *testing.T) {
+	msgs := []port.Message{
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("帮我分析 README")}},
+		{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("我先看下项目结构")}},
+		{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("你好")}},
+	}
+	out := BuildPromptMessages(msgs, PromptContextState{
+		Version:      1,
+		PromptBudget: 200,
+	})
+	if len(out) != 1 {
+		t.Fatalf("len=%d, want 1", len(out))
+	}
+	if got := port.ContentPartsToPlainText(out[0].ContentParts); got != "你好" {
+		t.Fatalf("last visible dialog=%q, want 你好", got)
 	}
 }

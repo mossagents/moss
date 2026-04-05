@@ -18,6 +18,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/logging"
 )
 
 // LoopConfig 配置 Agent Loop 的行为。
@@ -79,8 +80,18 @@ func (l *AgentLoop) observer() port.Observer {
 
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session) (*port.CompletionResponse, bool, error) {
 	specs := l.toolSpecs()
+	promptMessages := session.PromptMessages(sess)
+	if session.LatestUserTurnIsLightweightChat(promptMessages) {
+		specs = nil
+	}
+	logging.GetLogger().DebugContext(ctx, "llm request prepared",
+		slog.String("session_id", sess.ID),
+		slog.Int("messages", len(promptMessages)),
+		slog.Int("tools", len(specs)),
+		slog.Int("estimated_tokens", session.EstimateMessagesTokens(promptMessages)),
+	)
 	req := port.CompletionRequest{
-		Messages: session.PromptMessages(sess),
+		Messages: promptMessages,
 		Tools:    specs,
 		Config:   sess.Config.ModelConfig,
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
 )
 
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
@@ -41,6 +42,12 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 }
 
 func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStartedAt time.Time) {
+	logging.GetLogger().DebugContext(ctx, "session run started",
+		"session_id", sess.ID,
+		"mode", sess.Config.Mode,
+		"goal_chars", len(sess.Config.Goal),
+		"max_steps", sess.Budget.MaxSteps,
+	)
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "running"})
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionRunStarted,
@@ -112,6 +119,12 @@ type iterationLLMResult struct {
 
 func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Session, iteration, maxIter int, runStartedAt time.Time) time.Time {
 	iterationStartedAt := time.Now().UTC()
+	logging.GetLogger().DebugContext(ctx, "iteration started",
+		"session_id", sess.ID,
+		"iteration", iteration,
+		"max_iterations", maxIter,
+		"elapsed_ms", iterationStartedAt.Sub(runStartedAt).Milliseconds(),
+	)
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionIterationStarted,
 		SessionID: sess.ID,
@@ -142,6 +155,13 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	llmDur := time.Since(llmStart)
 	if err != nil {
 		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
+		logging.GetLogger().DebugContext(ctx, "llm response failed",
+			"session_id", sess.ID,
+			"model", metadata.ActualModel,
+			"streamed", streamed,
+			"duration_ms", llmDur.Milliseconds(),
+			"error", err.Error(),
+		)
 		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 		l.observer().OnLLMCall(ctx, port.LLMCallEvent{
 			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
@@ -164,6 +184,15 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	}
 
 	metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
+	logging.GetLogger().DebugContext(ctx, "llm response received",
+		"session_id", sess.ID,
+		"model", metadata.ActualModel,
+		"streamed", streamed,
+		"duration_ms", llmDur.Milliseconds(),
+		"stop_reason", resp.StopReason,
+		"tool_calls", len(resp.ToolCalls),
+		"tokens", resp.Usage.TotalTokens,
+	)
 	l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
 	l.observer().OnLLMCall(ctx, port.LLMCallEvent{
 		SessionID:  sess.ID,
@@ -192,6 +221,14 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 
 func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *port.CompletionResponse, streamed bool, lastOutput *string) error {
 	if len(resp.ToolCalls) > 0 {
+		names := make([]string, 0, len(resp.ToolCalls))
+		for _, call := range resp.ToolCalls {
+			names = append(names, call.Name)
+		}
+		logging.GetLogger().DebugContext(ctx, "assistant requested tool calls",
+			"session_id", sess.ID,
+			"tool_calls", strings.Join(names, ","),
+		)
 		if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
 			l.runErrorMiddleware(ctx, sess, err)
 			return err
@@ -200,6 +237,11 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 	}
 
 	*lastOutput = port.ContentPartsToPlainText(resp.Message.ContentParts)
+	logging.GetLogger().DebugContext(ctx, "assistant produced final content",
+		"session_id", sess.ID,
+		"streamed", streamed,
+		"chars", len(*lastOutput),
+	)
 	if l.IO != nil && !streamed {
 		for _, part := range resp.Message.ContentParts {
 			if part.Type != port.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
@@ -251,6 +293,11 @@ func (l *AgentLoop) emitIterationProgress(
 func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage port.TokenUsage, lastOutput string) *SessionResult {
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
+	logging.GetLogger().DebugContext(ctx, "session run completed",
+		"session_id", sess.ID,
+		"steps", sess.Budget.UsedStepsValue(),
+		"tokens", totalUsage.TotalTokens,
+	)
 	l.observer().OnSessionEvent(ctx, port.SessionEvent{SessionID: sess.ID, Type: "completed"})
 	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
 		Type:      port.ExecutionRunCompleted,

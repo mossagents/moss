@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -75,7 +76,7 @@ func PromptMessages(sess *Session) []port.Message {
 	}
 	st := ReadPromptContextState(sess)
 	if st.Version == 0 {
-		return append([]port.Message(nil), sess.Messages...)
+		return lightweightChatPromptMessages(sess.Messages)
 	}
 	return BuildPromptMessages(sess.Messages, st)
 }
@@ -83,7 +84,7 @@ func PromptMessages(sess *Session) []port.Message {
 func BuildPromptMessages(messages []port.Message, st PromptContextState) []port.Message {
 	st = normalizePromptContextState(st)
 	if st.Version == 0 {
-		return append([]port.Message(nil), messages...)
+		return lightweightChatPromptMessages(messages)
 	}
 	fragments := append(append(append([]PromptContextFragment(nil), st.BaselineFragments...), st.StartupFragments...), st.DynamicFragments...)
 	out := make([]port.Message, 0, len(messages)+len(fragments))
@@ -99,24 +100,29 @@ func BuildPromptMessages(messages []port.Message, st PromptContextState) []port.
 		}
 	}
 	dialog := dialogMessagesAfter(messages, st.CompactedDialogCount)
+	if LatestUserTurnIsLightweightChat(dialog) {
+		return append(out, latestUserTurnMessages(dialog)...)
+	}
 	if st.PromptBudget <= 0 {
 		return append(out, dialog...)
 	}
-	if remaining <= 0 {
-		return out
+	pinnedStart := latestUserMessageIndex(dialog)
+	pinned := []port.Message(nil)
+	if pinnedStart >= 0 {
+		pinned = append([]port.Message(nil), dialog[pinnedStart:]...)
+		dialog = dialog[:pinnedStart]
 	}
-	selected := make([]port.Message, 0, len(dialog))
-	used := 0
-	for i := len(dialog) - 1; i >= 0; i-- {
-		cost := EstimateMessageTokens(dialog[i])
-		if len(selected) > 0 && used+cost > remaining {
-			break
-		}
-		used += cost
-		selected = append(selected, dialog[i])
+	selected := make([]port.Message, 0, len(dialog)+len(pinned))
+	if remaining > 0 {
+		earlier := selectDialogTailWithinBudget(dialog, maxInt(0, remaining-EstimateMessagesTokens(pinned)))
+		selected = append(selected, earlier...)
 	}
-	for i := len(selected) - 1; i >= 0; i-- {
-		out = append(out, selected[i])
+	selected = append(selected, pinned...)
+	if len(selected) == 0 && len(pinned) == 0 && remaining > 0 {
+		selected = selectDialogTailWithinBudget(dialog, remaining)
+	}
+	for _, msg := range selected {
+		out = append(out, msg)
 	}
 	return out
 }
@@ -289,6 +295,111 @@ func filterDialogMessages(messages []port.Message) []port.Message {
 		out = append(out, msg)
 	}
 	return out
+}
+
+func latestUserMessageIndex(messages []port.Message) int {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == port.RoleUser {
+			return i
+		}
+	}
+	return -1
+}
+
+func latestUserTurnMessages(messages []port.Message) []port.Message {
+	idx := latestUserMessageIndex(messages)
+	if idx < 0 {
+		return append([]port.Message(nil), messages...)
+	}
+	return append([]port.Message(nil), messages[idx:]...)
+}
+
+func LatestUserTurnIsLightweightChat(messages []port.Message) bool {
+	idx := latestUserMessageIndex(messages)
+	if idx < 0 {
+		return false
+	}
+	text := normalizeLightweightChatText(port.ContentPartsToPlainText(messages[idx].ContentParts))
+	if text == "" {
+		return false
+	}
+	_, ok := lightweightChatInputs[text]
+	return ok
+}
+
+var lightweightChatInputs = map[string]struct{}{
+	"hi":       {},
+	"hello":    {},
+	"hey":      {},
+	"你好":       {},
+	"您好":       {},
+	"嗨":        {},
+	"哈喽":       {},
+	"早上好":      {},
+	"下午好":      {},
+	"晚上好":      {},
+	"早安":       {},
+	"晚安":       {},
+	"thanks":   {},
+	"thankyou": {},
+	"谢谢":       {},
+	"多谢":       {},
+}
+
+func normalizeLightweightChatText(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	if text == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(text))
+	for _, r := range text {
+		switch {
+		case unicode.IsSpace(r), unicode.IsPunct(r), unicode.IsSymbol(r):
+			continue
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func lightweightChatPromptMessages(messages []port.Message) []port.Message {
+	dialog := filterDialogMessages(messages)
+	if LatestUserTurnIsLightweightChat(dialog) {
+		out := make([]port.Message, 0, len(messages))
+		for _, msg := range messages {
+			if msg.Role == port.RoleSystem {
+				out = append(out, msg)
+			}
+		}
+		out = append(out, latestUserTurnMessages(dialog)...)
+		return out
+	}
+	return append([]port.Message(nil), messages...)
+}
+
+func selectDialogTailWithinBudget(messages []port.Message, budget int) []port.Message {
+	if len(messages) == 0 {
+		return nil
+	}
+	if budget <= 0 {
+		return nil
+	}
+	selected := make([]port.Message, 0, len(messages))
+	used := 0
+	for i := len(messages) - 1; i >= 0; i-- {
+		cost := EstimateMessageTokens(messages[i])
+		if len(selected) > 0 && used+cost > budget {
+			break
+		}
+		used += cost
+		selected = append(selected, messages[i])
+	}
+	for i, j := 0, len(selected)-1; i < j; i, j = i+1, j-1 {
+		selected[i], selected[j] = selected[j], selected[i]
+	}
+	return selected
 }
 
 func fragmentHash(text string) string {

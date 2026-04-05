@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -245,6 +246,7 @@ func bindAppAndProductCobraFlags(cmd *cobra.Command, cfg *config) {
 }
 
 func bindProductFlags(fs *pflag.FlagSet, cfg *config) {
+	fs.BoolVar(&cfg.debug, "debug", logging.DebugEnabled(), "Enable trace logging to ~/.mosscode/debug.log")
 	fs.StringVar(&cfg.approvalMode, "approval", "", "Approval mode: read-only|confirm|full-auto")
 	fs.StringVar(&cfg.governance.RouterConfigPath, "router-config", cfg.governance.RouterConfigPath, "Model router config path")
 	fs.StringVar(&cfg.governance.PricingCatalogPath, "pricing-catalog", cfg.governance.PricingCatalogPath, "Pricing catalog YAML path")
@@ -260,6 +262,9 @@ func bindProductFlags(fs *pflag.FlagSet, cfg *config) {
 }
 
 func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
+	if cfg.debug {
+		_ = os.Setenv("MOSS_DEBUG", "1")
+	}
 	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
 		return err
 	}
@@ -287,6 +292,11 @@ func executeCobraCommand(cmd *cobra.Command, cfg *config, opts commandExecutionO
 	if err := finalizeCommonCobraFlags(cmd, cfg); err != nil {
 		return err
 	}
+	logging.GetLogger().Debug("executing command",
+		"command", cmd.CommandPath(),
+		"workspace", cfg.flags.Workspace,
+		"prompt_mode", strings.TrimSpace(cfg.prompt) != "",
+	)
 	return executePreparedCommand(cfg, opts, run)
 }
 
@@ -472,7 +482,7 @@ func buildApplyCommand(cfg *config) *cobra.Command {
 		Long: `Apply a unified diff patch file to the workspace.
 
 Records the operation as a persisted change so it can be rolled back later
-with `+"`mosscode rollback`"+`. Optionally associate the change with an existing
+with ` + "`mosscode rollback`" + `. Optionally associate the change with an existing
 session by passing --session.`,
 		Example: `  mosscode apply --patch-file ./changes.patch
   mosscode apply --patch-file ./changes.patch --summary "Fix null pointer in auth"
@@ -574,8 +584,6 @@ Sub-commands:
 	)
 	return cmd
 }
-
-
 
 func printJSON(v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")

@@ -258,6 +258,59 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	}
 }
 
+func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
+	ctx := context.Background()
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	llm := &kt.MockLLM{Responses: []port.CompletionResponse{
+		{Message: port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("你好！")}}, StopReason: "end_turn"},
+	}}
+	k := kernel.New(
+		kernel.WithLLM(llm),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		WithContextSessionStore(store),
+		ConfigureContext(
+			WithContextPromptBudget(400),
+			WithContextStartupBudget(160),
+		),
+	)
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	sess, err := k.NewSession(ctx, session.SessionConfig{
+		Goal:         "chat",
+		SystemPrompt: "SYSTEM",
+	})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("帮我分析 README")}})
+	sess.AppendMessage(port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("我先看看项目结构")}})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("你好")}})
+	if _, err := k.Run(ctx, sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	call := llm.Calls[len(llm.Calls)-1]
+	joined := flattenMessageText(call.Messages)
+	if !strings.Contains(joined, "SYSTEM") {
+		t.Fatalf("expected system prompt to remain: %s", joined)
+	}
+	if !strings.Contains(joined, "你好") {
+		t.Fatalf("expected lightweight chat turn in prompt: %s", joined)
+	}
+	if strings.Contains(joined, "帮我分析 README") || strings.Contains(joined, "我先看看项目结构") {
+		t.Fatalf("expected prior raw dialog to be stripped: %s", joined)
+	}
+	if strings.Contains(joined, "<startup_") || strings.Contains(joined, "<realtime_") || strings.Contains(joined, "<context_summary>") {
+		t.Fatalf("expected no startup or dynamic context for lightweight chat: %s", joined)
+	}
+	if len(call.Tools) != 0 {
+		t.Fatalf("expected no tools for lightweight chat, got %d", len(call.Tools))
+	}
+}
+
 func appendDialog(sess *session.Session, texts ...string) {
 	roles := []port.Role{port.RoleUser, port.RoleAssistant}
 	for i, text := range texts {

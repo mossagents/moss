@@ -10,6 +10,7 @@ const appName = "mosscode"
 
 type config struct {
 	flags                     *appkit.AppFlags
+	debug                     bool
 	prompt                    string
 	approvalMode              string
 	governance                product.GovernanceConfig
