@@ -185,7 +185,7 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var qResp map[string]string
+	var qResp map[string]any
 	json.Unmarshal(qResult, &qResp)
 	if qResp["status"] != "completed" {
 		t.Errorf("query status = %q, want completed", qResp["status"])
@@ -265,7 +265,7 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("task query: %v", err)
 	}
-	var queryResp map[string]string
+	var queryResp map[string]any
 	if err := json.Unmarshal(queryResult, &queryResp); err != nil {
 		t.Fatal(err)
 	}
@@ -609,7 +609,7 @@ func TestSpawnAgent_CancelledContext(t *testing.T) {
 				t.Fatalf("query_agent failed: %v", qErr)
 			}
 
-			var qResp map[string]string
+			var qResp map[string]any
 			if err := json.Unmarshal(qResult, &qResp); err != nil {
 				t.Fatalf("failed to decode query response: %v", err)
 			}
@@ -768,6 +768,95 @@ func TestTaskTrackerHydratesPersistedTaskRuntime(t *testing.T) {
 	if task.Revision == 0 {
 		t.Fatalf("expected hydrated revision, got %+v", task)
 	}
+	if task.Active {
+		t.Fatalf("expected hydrated task to be recoverable, got %+v", task)
+	}
+}
+
+func TestWaitAgent_ReturnsRecoverableForHydratedRunningTask(t *testing.T) {
+	rt := port.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+		ID:        "persisted-task",
+		AgentName: "worker",
+		Goal:      "resume later",
+		Status:    port.TaskRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTrackerWithRuntime(rt)
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, waitHandler, _ := reg.Get("wait_agent")
+	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"persisted-task","timeout_seconds":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"recoverable":true`) {
+		t.Fatalf("expected recoverable wait response, got %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"active":false`) {
+		t.Fatalf("expected inactive wait response, got %s", string(raw))
+	}
+}
+
+func TestResumeAgent_RestartsHydratedRunningTask(t *testing.T) {
+	rt := port.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+		ID:        "persisted-task",
+		AgentName: "worker",
+		Goal:      "resume later",
+		Status:    port.TaskRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 1)
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			started <- struct{}{}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	tracker := NewTaskTrackerWithRuntime(rt)
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, resumeHandler, _ := reg.Get("resume_agent")
+	raw, err := resumeHandler(context.Background(), json.RawMessage(`{"target":"persisted-task","message":"continue"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"resumed":true`) {
+		t.Fatalf("expected resumed=true, got %s", string(raw))
+	}
+	if !strings.Contains(string(raw), `"active":true`) {
+		t.Fatalf("expected active=true, got %s", string(raw))
+	}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("expected restarted worker to begin running")
+	}
+	task, ok := tracker.Get("persisted-task")
+	if !ok {
+		t.Fatal("expected restarted task")
+	}
+	if !task.Active || task.Status != TaskRunning {
+		t.Fatalf("expected active running task, got %+v", task)
+	}
+	tracker.Cancel("persisted-task", "cleanup")
 }
 
 func TestRegisterToolsWithDeps_AddsP1ControlPlaneTools(t *testing.T) {
@@ -892,7 +981,7 @@ func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
 		AgentName: "worker",
 		Goal:      "running",
 		Status:    TaskRunning,
-	}, nil)
+	}, func() {})
 
 	reg := tool.NewRegistry()
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
@@ -946,7 +1035,7 @@ func TestWaitAgent_ReturnsOnStateChange(t *testing.T) {
 		AgentName: "worker",
 		Goal:      "wait me",
 		Status:    TaskRunning,
-	}, nil)
+	}, func() {})
 
 	reg := tool.NewRegistry()
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
@@ -977,7 +1066,7 @@ func TestWaitAgent_TimesOut(t *testing.T) {
 		AgentName: "worker",
 		Goal:      "still running",
 		Status:    TaskRunning,
-	}, nil)
+	}, func() {})
 
 	reg := tool.NewRegistry()
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
@@ -1004,7 +1093,7 @@ func TestCloseAgent_CancelsRunningTask(t *testing.T) {
 		AgentName: "worker",
 		Goal:      "running",
 		Status:    TaskRunning,
-	}, nil)
+	}, func() {})
 
 	reg := tool.NewRegistry()
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {

@@ -83,6 +83,48 @@ func TestBuildDeepAgentKernel_DefaultPreset(t *testing.T) {
 	}
 }
 
+func TestBuildDeepAgentKernel_PersistsExecutionCapabilities(t *testing.T) {
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "trusted",
+	}
+
+	k, err := BuildDeepAgentKernel(context.Background(), flags, &port.NoOpIO{}, nil)
+	if err != nil {
+		t.Fatalf("BuildDeepAgentKernel: %v", err)
+	}
+	if k.WorkspaceIsolation() == nil {
+		t.Fatal("expected workspace isolation to be configured")
+	}
+
+	snapshot, err := runtime.LoadCapabilitySnapshot(runtime.CapabilityStatusPath())
+	if err != nil {
+		t.Fatalf("LoadCapabilitySnapshot: %v", err)
+	}
+	want := map[string]bool{
+		runtime.CapabilityExecutionWorkspace:      false,
+		runtime.CapabilityExecutionExecutor:       false,
+		runtime.CapabilityExecutionIsolation:      false,
+		runtime.CapabilityExecutionRepoState:      false,
+		runtime.CapabilityExecutionPatchApply:     false,
+		runtime.CapabilityExecutionPatchRevert:    false,
+		runtime.CapabilityExecutionWorktreeStates: false,
+	}
+	for _, item := range snapshot.Items {
+		if _, ok := want[item.Capability]; ok && item.State == "ready" {
+			want[item.Capability] = true
+		}
+	}
+	for capability, found := range want {
+		if !found {
+			t.Fatalf("missing ready execution capability %s in %+v", capability, snapshot.Items)
+		}
+	}
+}
+
 func TestBuildDeepAgentKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
 	flags := &AppFlags{
 		Provider:  "openai",

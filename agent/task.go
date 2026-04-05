@@ -29,6 +29,7 @@ type Task struct {
 	AgentName       string          `json:"agent_name"`
 	Goal            string          `json:"goal"`
 	Status          TaskStatus      `json:"status"`
+	Active          bool            `json:"active,omitempty"`
 	SessionID       string          `json:"session_id,omitempty"`
 	ParentSessionID string          `json:"parent_session_id,omitempty"`
 	WorkspaceID     string          `json:"workspace_id,omitempty"`
@@ -92,6 +93,7 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	t.rev[task.ID] = nextRev
 	cp.Revision = nextRev
 	assignTaskJobIDs(&cp, existing, nextRev)
+	cp.Active = cp.Status == TaskRunning && cancel != nil
 	if cp.CreatedAt.IsZero() {
 		if existing != nil && !existing.CreatedAt.IsZero() {
 			cp.CreatedAt = existing.CreatedAt
@@ -103,6 +105,8 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	t.tasks[task.ID] = &cp
 	if cancel != nil {
 		t.cancels[task.ID] = cancel
+	} else {
+		delete(t.cancels, task.ID)
 	}
 	t.mirror(cp)
 	t.notifyLocked(cp)
@@ -187,6 +191,7 @@ func (t *TaskTracker) completeIf(id string, revision int64, result string, token
 			return
 		}
 		task.Status = TaskCompleted
+		task.Active = false
 		task.Result = result
 		task.Tokens = tokens
 		task.UpdatedAt = time.Now()
@@ -217,6 +222,7 @@ func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 			return
 		}
 		task.Status = TaskFailed
+		task.Active = false
 		task.Error = errMsg
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
@@ -246,6 +252,7 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 		}
 		if task.Status == TaskRunning {
 			task.Status = TaskCancelled
+			task.Active = false
 			task.Error = errMsg
 			task.UpdatedAt = time.Now()
 			t.mirror(*task)
@@ -383,6 +390,7 @@ func (t *TaskTracker) hydrate(ctx context.Context) {
 			AgentName:       record.AgentName,
 			Goal:            record.Goal,
 			Status:          TaskStatus(record.Status),
+			Active:          false,
 			SessionID:       record.SessionID,
 			ParentSessionID: record.ParentSessionID,
 			WorkspaceID:     record.WorkspaceID,
@@ -436,4 +444,12 @@ func jobStatusFromTask(status TaskStatus) port.AgentJobStatus {
 	default:
 		return port.JobPending
 	}
+}
+
+func isActiveTask(task *Task) bool {
+	return task != nil && task.Status == TaskRunning && task.Active
+}
+
+func isRecoverableTask(task *Task) bool {
+	return task != nil && task.Status == TaskRunning && !task.Active
 }

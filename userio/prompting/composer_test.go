@@ -188,6 +188,34 @@ func TestAttachComposeDebugMeta_ClearsStaleKeysAndRebuildsSourceChain(t *testing
 	}
 }
 
+func TestComposeDebugMetaFromMetadata(t *testing.T) {
+	debug, err := ComposeDebugMetaFromMetadata(map[string]any{
+		MetadataBaseSourceKey:         "config",
+		MetadataDynamicSectionsKey:    "environment,skills",
+		MetadataEnabledLayersKey:      []string{"base_config", "environment"},
+		MetadataSuppressedLayersKey:   []any{"skills"},
+		MetadataSuppressionReasonsKey: map[string]any{"skills": "empty_content"},
+		MetadataLayerTokensKey:        map[string]any{"base_config": 12.0, "environment": 6},
+		MetadataSourceChainKey:        "base:config -> dynamic:environment",
+		MetadataInstructionProfileKey: "planning",
+	})
+	if err != nil {
+		t.Fatalf("ComposeDebugMetaFromMetadata: %v", err)
+	}
+	if got, want := debug.BaseSource, "config"; got != want {
+		t.Fatalf("base source = %q, want %q", got, want)
+	}
+	if got := strings.Join(debug.DynamicSectionID, ","); got != "environment,skills" {
+		t.Fatalf("dynamic sections = %q", got)
+	}
+	if got := debug.SuppressionReasons["skills"]; got != "empty_content" {
+		t.Fatalf("suppression reason = %q", got)
+	}
+	if got := debug.LayerTokenEstimates["base_config"]; got != 12 {
+		t.Fatalf("base token estimate = %d", got)
+	}
+}
+
 func TestCompose_ProfileTaskModeSection(t *testing.T) {
 	k := kernel.New(kernel.WithToolRegistry(tool.NewRegistry()))
 	out, err := Compose(ComposeInput{

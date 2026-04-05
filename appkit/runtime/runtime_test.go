@@ -84,6 +84,37 @@ func TestSetup_ManagerReportsValidateReady(t *testing.T) {
 	}
 }
 
+func TestSetup_PersistsCapabilitySnapshot(t *testing.T) {
+	appconfig.SetAppName("moss-runtime-test")
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithSandbox(kt.NewMemorySandbox()),
+	)
+	if err := Setup(context.Background(), k, "."); err != nil {
+		t.Fatalf("Setup: %v", err)
+	}
+	snapshot, err := LoadCapabilitySnapshot(CapabilityStatusPath())
+	if err != nil {
+		t.Fatalf("LoadCapabilitySnapshot: %v", err)
+	}
+	if len(snapshot.Items) == 0 {
+		t.Fatal("expected persisted capability items")
+	}
+	foundBuiltin := false
+	for _, item := range snapshot.Items {
+		if item.Capability == "builtin-tools" && item.State == "ready" {
+			foundBuiltin = true
+			break
+		}
+	}
+	if !foundBuiltin {
+		t.Fatalf("expected builtin-tools ready in snapshot, got %+v", snapshot.Items)
+	}
+}
+
 func TestSetup_ReportsBuiltinCriticalFailure(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),

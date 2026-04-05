@@ -111,6 +111,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 	if err != nil {
 		return err
 	}
+	cfg.capabilityReport = NewCapabilityReporter(CapabilityStatusPath(), cfg.capabilityReport)
 	return newRuntimeLifecycleManager().Run(ctx, k, workspaceDir, cfg)
 }
 
@@ -161,6 +162,9 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 	if cfg.progressive {
 		SetSkillManifests(k, ordered)
 		EnableProgressiveSkills(k)
+		for _, mf := range ordered {
+			cfg.capabilityReport.Report(ctx, "skill-manifest:"+mf.Name, false, "discoverable", nil)
+		}
 		return RegisterProgressiveSkillTools(k)
 	}
 	deps := Deps(k)
@@ -180,7 +184,9 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 				slog.String("skill", ps.Metadata().Name),
 				slog.Any("error", err),
 			)
+			continue
 		}
+		cfg.capabilityReport.Report(ctx, "skill:"+ps.Metadata().Name, false, "ready", nil)
 	}
 	return nil
 }
@@ -189,12 +195,25 @@ func setupAgents(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 	logger := logging.GetLogger()
 	registry := AgentRegistry(k)
 	for _, dir := range collectAgentDirs(workspaceDir, cfg) {
+		before := registry.List()
 		if err := registry.LoadDir(dir); err != nil {
 			cfg.capabilityReport.Report(ctx, "agents:"+dir, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load agents",
 				slog.String("dir", dir),
 				slog.Any("error", err),
 			)
+			continue
+		}
+		cfg.capabilityReport.Report(ctx, "agents:"+dir, false, "ready", nil)
+		known := make(map[string]struct{}, len(before))
+		for _, item := range before {
+			known[item.Name] = struct{}{}
+		}
+		for _, item := range registry.List() {
+			if _, ok := known[item.Name]; ok {
+				continue
+			}
+			cfg.capabilityReport.Report(ctx, "subagent:"+item.Name, false, "ready", nil)
 		}
 	}
 }

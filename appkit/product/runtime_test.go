@@ -174,6 +174,11 @@ func TestBuildDoctorReportIncludesMCPServerStatus(t *testing.T) {
 	if !strings.Contains(rendered, "MCP project-mcp [project]") {
 		t.Fatalf("doctor output missing MCP detail: %q", rendered)
 	}
+	for _, want := range []string{"Adaptive governance:", "Capability workspace [execution]: state=ready"} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("doctor output missing %q: %q", want, rendered)
+		}
+	}
 }
 
 func TestRenderCheckpointDetail(t *testing.T) {

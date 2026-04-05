@@ -40,6 +40,7 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/rollback":     handleRollbackSlashCommand,
 	"/diff":         handleDiffSlashCommand,
 	"/review":       handleReviewSlashCommand,
+	"/inspect":      handleInspectSlashCommand,
 	"/sessions":     handleSessionsLegacySlashCommand,
 	"/mcp":          handleMCPSlashCommand,
 	"/compact":      handleCompactSlashCommand,
@@ -471,6 +472,17 @@ func handleReviewSlashCommand(m chatModel, args []string, _ string, _ string) (c
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("review failed: %v", err)})
 	} else {
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderReviewReport(report)})
+	}
+	m.refreshViewport()
+	return m, nil
+}
+
+func handleInspectSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	report, err := product.BuildInspectReport(context.Background(), m.workspace, args)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("inspect failed: %v", err)})
+	} else {
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderInspectReport(report)})
 	}
 	m.refreshViewport()
 	return m, nil

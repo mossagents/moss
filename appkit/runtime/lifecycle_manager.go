@@ -34,6 +34,7 @@ func newRuntimeLifecycleManager() runtimeLifecycleManager {
 func (m runtimeLifecycleManager) Run(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	for _, cap := range m.capabilities {
 		if !cap.Enabled(cfg) {
+			cfg.capabilityReport.Report(ctx, cap.Name(), cap.Critical(), "disabled", nil)
 			continue
 		}
 		if err := cap.Register(ctx, k, workspaceDir, cfg); err != nil {

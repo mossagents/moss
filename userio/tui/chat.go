@@ -901,6 +901,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/experimental", Summary: "Toggle experimental product features", Section: "Runtime posture"},
 	{Name: "/diff", Summary: "Show the current git diff", Section: "Review and recovery"},
 	{Name: "/review", Summary: "Review working tree state", Section: "Review and recovery"},
+	{Name: "/inspect", Summary: "Inspect runs, threads, replay, and governance", Section: "Review and recovery"},
 	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
 	{Name: "/apply", Summary: "Apply an explicit patch file", Section: "Review and recovery"},
 	{Name: "/rollback", Summary: "Roll back a persisted change", Section: "Review and recovery"},

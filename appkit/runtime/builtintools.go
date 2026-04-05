@@ -80,7 +80,7 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 
 	// 命令执行：统一通过 execution surface 判断可用性，但保留原始执行后端。
 	if exec != nil {
-		tools = append(tools, entry{builtinToolSpec(runCommandSpec, "runtime", surface.Workspace() != nil, true, false), runCommandHandlerExecWithPolicy(k, exec, surface.Workspace())})
+		tools = append(tools, entry{builtinToolSpec(runCommandSpec, "runtime", surface.WorkspacePort() != nil, true, false), runCommandHandlerExecWithPolicy(k, exec, surface.WorkspacePort())})
 	} else if surface.Sandbox() != nil {
 		tools = append(tools, entry{builtinToolSpec(runCommandSpec, "runtime", false, false, true), runCommandHandlerWithPolicy(k, surface.Sandbox())})
 	}

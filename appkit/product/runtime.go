@@ -182,7 +182,8 @@ type DoctorPathsReport struct {
 }
 
 type DoctorGovernanceReport struct {
-	Model GovernanceReport `json:"model"`
+	Model    GovernanceReport         `json:"model"`
+	Adaptive *InspectGovernanceReport `json:"adaptive,omitempty"`
 }
 
 type DoctorHealthReport struct {
@@ -246,14 +247,15 @@ type DoctorSnapshotHealth struct {
 }
 
 type DoctorExtensionHealth struct {
-	Configured       int                   `json:"configured"`
-	Enabled          int                   `json:"enabled"`
-	Disabled         int                   `json:"disabled"`
-	MCPServers       int                   `json:"mcp_servers"`
-	MCPServerStatus  []MCPServerConfigView `json:"mcp_server_status,omitempty"`
-	PromptSkills     int                   `json:"prompt_skills"`
-	DiscoveredSkills int                   `json:"discovered_skills"`
-	Error            string                `json:"error,omitempty"`
+	Configured       int                           `json:"configured"`
+	Enabled          int                           `json:"enabled"`
+	Disabled         int                           `json:"disabled"`
+	MCPServers       int                           `json:"mcp_servers"`
+	MCPServerStatus  []MCPServerConfigView         `json:"mcp_server_status,omitempty"`
+	PromptSkills     int                           `json:"prompt_skills"`
+	DiscoveredSkills int                           `json:"discovered_skills"`
+	CapabilityStatus []appruntime.CapabilityStatus `json:"capability_status,omitempty"`
+	Error            string                        `json:"error,omitempty"`
 }
 
 func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
@@ -330,6 +332,11 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 	}
 
 	report.Health.State = buildDoctorStateHealth()
+	if catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled()); err == nil {
+		if adaptive, err := buildInspectGovernance(ctx, workspace, catalog, 200); err == nil {
+			report.Governance.Adaptive = adaptive
+		}
+	}
 	sessionStore, summaries := populateDoctorSessionsHealth(ctx, &report)
 	report.Health.Tasks = buildDoctorTaskHealth()
 	report.Health.Workspace = buildDoctorWorkspaceHealth()
@@ -440,6 +447,13 @@ func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bo
 		health.MCPServerStatus = servers
 	}
 	health.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
+	snapshot, err := appruntime.LoadCapabilitySnapshot(appruntime.CapabilityStatusPath())
+	if err == nil {
+		health.CapabilityStatus = snapshot.Items
+	}
+	if surface := appruntime.ProbeExecutionSurface(workspace, WorkspaceIsolationDir(), true); surface != nil {
+		health.CapabilityStatus = mergeCapabilityStatuses(health.CapabilityStatus, surface.CapabilityStatuses())
+	}
 	return health
 }
 
@@ -490,6 +504,33 @@ func buildDoctorSnapshotHealth(ctx context.Context, workspace string, sessionSto
 		SessionIndexed:     len(indexedSessions),
 		RecoverableMatches: recoverableMatches,
 	}
+}
+
+func mergeCapabilityStatuses(base []appruntime.CapabilityStatus, extra []appruntime.CapabilityStatus) []appruntime.CapabilityStatus {
+	if len(extra) == 0 {
+		return base
+	}
+	indexed := make(map[string]appruntime.CapabilityStatus, len(base)+len(extra))
+	for _, item := range base {
+		indexed[item.Capability] = item
+	}
+	for _, item := range extra {
+		current := indexed[item.Capability]
+		if current.Capability == "" || strings.HasPrefix(item.Capability, "execution:") {
+			indexed[item.Capability] = item
+		}
+	}
+	out := make([]appruntime.CapabilityStatus, 0, len(indexed))
+	for _, item := range indexed {
+		out = append(out, item)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind == out[j].Kind {
+			return out[i].Capability < out[j].Capability
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out
 }
 
 func resolveDoctorExecutionPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) appruntime.ExecutionPolicy {

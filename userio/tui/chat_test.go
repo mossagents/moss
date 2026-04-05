@@ -993,7 +993,7 @@ func TestHelpIncludesChangeCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	last := updated.messages[len(updated.messages)-1]
-	for _, want := range []string{"/diff", "/review", "/changes", "/apply", "/rollback"} {
+	for _, want := range []string{"/diff", "/review", "/inspect", "/changes", "/apply", "/rollback"} {
 		if !strings.Contains(last.content, want) {
 			t.Fatalf("help missing %q in %q", want, last.content)
 		}

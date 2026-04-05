@@ -573,3 +573,160 @@ func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map
 	}
 	return metadata
 }
+
+func ComposeDebugMetaFromMetadata(metadata map[string]any) (ComposeDebugMeta, error) {
+	if len(metadata) == 0 {
+		return ComposeDebugMeta{}, nil
+	}
+	debug := ComposeDebugMeta{
+		BaseSource:         strings.TrimSpace(metadataString(metadata, MetadataBaseSourceKey)),
+		DynamicSectionID:   metadataStringSlice(metadata, MetadataDynamicSectionsKey),
+		EnabledLayers:      metadataStringSlice(metadata, MetadataEnabledLayersKey),
+		SuppressedLayers:   metadataStringSlice(metadata, MetadataSuppressedLayersKey),
+		SourceChain:        metadataStringSlice(metadata, MetadataSourceChainKey),
+		InstructionProfile: strings.TrimSpace(metadataString(metadata, MetadataInstructionProfileKey)),
+	}
+	reasons, err := metadataStringMap(metadata, MetadataSuppressionReasonsKey)
+	if err != nil {
+		return ComposeDebugMeta{}, err
+	}
+	debug.SuppressionReasons = reasons
+	tokens, err := metadataIntMap(metadata, MetadataLayerTokensKey)
+	if err != nil {
+		return ComposeDebugMeta{}, err
+	}
+	debug.LayerTokenEstimates = tokens
+	return debug, nil
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	raw, ok := metadata[key]
+	if !ok || raw == nil {
+		return ""
+	}
+	switch value := raw.(type) {
+	case string:
+		return value
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func metadataStringSlice(metadata map[string]any, key string) []string {
+	if len(metadata) == 0 {
+		return nil
+	}
+	raw, ok := metadata[key]
+	if !ok || raw == nil {
+		return nil
+	}
+	var items []string
+	switch value := raw.(type) {
+	case string:
+		for _, part := range strings.Split(value, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+	case []string:
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+	case []any:
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(fmt.Sprint(item)); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return items
+}
+
+func metadataStringMap(metadata map[string]any, key string) (map[string]string, error) {
+	if len(metadata) == 0 {
+		return nil, nil
+	}
+	raw, ok := metadata[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	out := map[string]string{}
+	switch value := raw.(type) {
+	case map[string]string:
+		for id, reason := range value {
+			if id = strings.TrimSpace(id); id != "" {
+				out[id] = strings.TrimSpace(reason)
+			}
+		}
+	case map[string]any:
+		for id, reason := range value {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			out[id] = strings.TrimSpace(fmt.Sprint(reason))
+		}
+	default:
+		return nil, fmt.Errorf("metadata %q must be map[string]string", key)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func metadataIntMap(metadata map[string]any, key string) (map[string]int, error) {
+	if len(metadata) == 0 {
+		return nil, nil
+	}
+	raw, ok := metadata[key]
+	if !ok || raw == nil {
+		return nil, nil
+	}
+	out := map[string]int{}
+	switch value := raw.(type) {
+	case map[string]int:
+		for id, count := range value {
+			if id = strings.TrimSpace(id); id != "" && count > 0 {
+				out[id] = count
+			}
+		}
+	case map[string]any:
+		for id, count := range value {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			switch v := count.(type) {
+			case int:
+				if v > 0 {
+					out[id] = v
+				}
+			case int64:
+				if v > 0 {
+					out[id] = int(v)
+				}
+			case float64:
+				if v > 0 {
+					out[id] = int(v)
+				}
+			default:
+				return nil, fmt.Errorf("metadata %q contains non-numeric token estimate for %q", key, id)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("metadata %q must be map[string]int", key)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}

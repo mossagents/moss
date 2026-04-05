@@ -45,7 +45,9 @@ type SessionSummary struct {
 	TaskMode          string        `json:"task_mode,omitempty"`
 	Source            string        `json:"source,omitempty"`
 	ParentID          string        `json:"parent_id,omitempty"`
+	TaskID            string        `json:"task_id,omitempty"`
 	Preview           string        `json:"preview,omitempty"`
+	ActivityKind      string        `json:"activity_kind,omitempty"`
 	Status            SessionStatus `json:"status"`
 	Recoverable       bool          `json:"recoverable,omitempty"`
 	Archived          bool          `json:"archived,omitempty"`

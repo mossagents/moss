@@ -17,7 +17,6 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // DeepAgentConfig 描述 deep-agent 风格装配的配置项。
@@ -237,28 +236,25 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 		}
 		exts = append(exts, WithPersistentMemories(memDir))
 	}
-	if valueOrDefault(effective.EnableWorkspaceIsolation, true) {
-		isolationRoot := effective.IsolationRootDir
-		if isolationRoot == "" {
-			if appDir := config.AppDir(); appDir != "" {
-				isolationRoot = filepath.Join(appDir, "workspaces")
-			} else {
-				isolationRoot = filepath.Join(flags.Workspace, "."+effective.AppName, "workspaces")
-			}
+	isolationEnabled := valueOrDefault(effective.EnableWorkspaceIsolation, true)
+	isolationRoot := effective.IsolationRootDir
+	if isolationRoot == "" {
+		if appDir := config.AppDir(); appDir != "" {
+			isolationRoot = filepath.Join(appDir, "workspaces")
+		} else {
+			isolationRoot = filepath.Join(flags.Workspace, "."+effective.AppName, "workspaces")
 		}
-		if err := os.MkdirAll(isolationRoot, 0755); err != nil {
+	}
+	if isolationEnabled {
+		if err := os.MkdirAll(isolationRoot, 0o755); err != nil {
 			return nil, fmt.Errorf("workspace isolation root: %w", err)
 		}
-		isolation, err := sandbox.NewLocalWorkspaceIsolation(isolationRoot)
-		if err != nil {
-			return nil, fmt.Errorf("workspace isolation: %w", err)
-		}
-		exts = append(exts, WithKernelOptions(kernel.WithWorkspaceIsolation(isolation)))
 	}
-	exts = append(exts, WithKernelOptions(kernel.WithRepoStateCapture(sandbox.NewGitRepoStateCapture(flags.Workspace))))
-	exts = append(exts, WithKernelOptions(kernel.WithPatchApply(sandbox.NewGitPatchApply(flags.Workspace))))
-	exts = append(exts, WithKernelOptions(kernel.WithPatchRevert(sandbox.NewGitPatchRevert(flags.Workspace))))
-	exts = append(exts, WithKernelOptions(kernel.WithWorktreeSnapshots(sandbox.NewGitWorktreeSnapshotStore(flags.Workspace))))
+	executionSurface := runtime.NewExecutionSurface(flags.Workspace, isolationRoot, isolationEnabled)
+	if err := executionSurface.Error(runtime.CapabilityExecutionIsolation); err != nil {
+		return nil, fmt.Errorf("workspace isolation: %w", err)
+	}
+	exts = append(exts, WithKernelOptions(executionSurface.KernelOptions()...))
 	if strings.EqualFold(strings.TrimSpace(flags.Profile), "planning") {
 		exts = append(exts, WithPlanning())
 	}
@@ -291,6 +287,7 @@ func BuildDeepAgentKernel(ctx context.Context, flags *AppFlags, io port.UserIO, 
 	if err != nil {
 		return nil, err
 	}
+	runtime.ReportExecutionSurface(ctx, runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil), runtime.ExecutionSurfaceFromKernel(k, flags.Workspace, isolationRoot, isolationEnabled))
 
 	if valueOrDefault(effective.EnsureGeneralPurpose, true) {
 		if err := ensureGeneralPurposeAgent(k, flags, effective); err != nil {

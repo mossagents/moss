@@ -555,7 +555,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 	if title == "" {
 		title = sess.ID
 	}
-	source, parentID, preview, activityKind, archived, activityAt := session.ThreadMetadataValues(sess)
+	source, parentID, taskID, preview, activityKind, archived, activityAt := session.ThreadMetadataValues(sess)
 	sortTime := sessionSortTime(sess)
 	if !activityAt.IsZero() {
 		sortTime = activityAt.UTC()
@@ -567,7 +567,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 		Status:     string(sess.Status),
 		Title:      title,
 		Summary:    firstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
-		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, preview, activityKind),
+		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, taskID, preview, activityKind),
 		SortTime:   sortTime,
 		CreatedAt:  sess.CreatedAt,
 		UpdatedAt:  sortTime,
@@ -577,6 +577,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 			"steps":       sess.Budget.UsedSteps,
 			"source":      source,
 			"parent_id":   parentID,
+			"task_id":     taskID,
 			"preview":     preview,
 			"archived":    archived,
 			"activity":    activityKind,

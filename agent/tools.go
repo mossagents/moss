@@ -554,7 +554,7 @@ func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTr
 		if in.Interrupt != nil {
 			interrupt = *in.Interrupt
 		}
-		if task.Status == TaskRunning && !interrupt {
+		if isActiveTask(task) && !interrupt {
 			return json.Marshal(map[string]any{
 				"target": task.ID,
 				"status": "queued",
@@ -620,18 +620,20 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		startRevision := task.Revision
 		startStatus := task.Status
 		if isTerminalTaskStatus(task.Status) {
-			return json.Marshal(map[string]any{
-				"target":      task.ID,
-				"task_id":     task.ID,
-				"agent":       task.AgentName,
-				"status":      task.Status,
-				"revision":    task.Revision,
-				"session_id":  task.SessionID,
-				"job_id":      task.JobID,
-				"job_item_id": task.JobItemID,
-				"changed":     false,
-				"completed":   true,
-			})
+			resp := buildTaskResponse(task)
+			resp["target"] = task.ID
+			resp["changed"] = false
+			resp["completed"] = true
+			return json.Marshal(resp)
+		}
+		if isRecoverableTask(task) {
+			resp := buildTaskResponse(task)
+			resp["target"] = task.ID
+			resp["changed"] = false
+			resp["completed"] = false
+			resp["timed_out"] = false
+			resp["note"] = "task was hydrated from runtime and is not attached to a live worker; use resume_agent to restart it"
+			return json.Marshal(resp)
 		}
 		updates, unsubscribe, err := tracker.Subscribe(task.ID)
 		if err != nil {
@@ -641,19 +643,12 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		if current, ok := tracker.Get(task.ID); ok {
 			changed := current.Revision != startRevision || current.Status != startStatus
 			if changed || isTerminalTaskStatus(current.Status) {
-				return json.Marshal(map[string]any{
-					"target":      current.ID,
-					"task_id":     current.ID,
-					"agent":       current.AgentName,
-					"status":      current.Status,
-					"revision":    current.Revision,
-					"session_id":  current.SessionID,
-					"job_id":      current.JobID,
-					"job_item_id": current.JobItemID,
-					"changed":     changed,
-					"completed":   isTerminalTaskStatus(current.Status),
-					"timed_out":   false,
-				})
+				resp := buildTaskResponse(current)
+				resp["target"] = current.ID
+				resp["changed"] = changed
+				resp["completed"] = isTerminalTaskStatus(current.Status)
+				resp["timed_out"] = false
+				return json.Marshal(resp)
 			}
 		}
 		timer := time.NewTimer(time.Duration(timeout) * time.Second)
@@ -667,38 +662,24 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 				if !ok {
 					return nil, fmt.Errorf("task %q not found", task.ID)
 				}
-				return json.Marshal(map[string]any{
-					"target":      current.ID,
-					"task_id":     current.ID,
-					"agent":       current.AgentName,
-					"status":      current.Status,
-					"revision":    current.Revision,
-					"session_id":  current.SessionID,
-					"job_id":      current.JobID,
-					"job_item_id": current.JobItemID,
-					"changed":     current.Revision != startRevision || current.Status != startStatus,
-					"completed":   isTerminalTaskStatus(current.Status),
-					"timed_out":   true,
-				})
+				resp := buildTaskResponse(current)
+				resp["target"] = current.ID
+				resp["changed"] = current.Revision != startRevision || current.Status != startStatus
+				resp["completed"] = isTerminalTaskStatus(current.Status)
+				resp["timed_out"] = true
+				return json.Marshal(resp)
 			case update, ok := <-updates:
 				if !ok {
 					return nil, fmt.Errorf("task %q watcher closed", task.ID)
 				}
 				changed := update.Revision != startRevision || update.Status != startStatus
 				if changed || isTerminalTaskStatus(update.Status) {
-					return json.Marshal(map[string]any{
-						"target":      update.ID,
-						"task_id":     update.ID,
-						"agent":       update.AgentName,
-						"status":      update.Status,
-						"revision":    update.Revision,
-						"session_id":  update.SessionID,
-						"job_id":      update.JobID,
-						"job_item_id": update.JobItemID,
-						"changed":     changed,
-						"completed":   isTerminalTaskStatus(update.Status),
-						"timed_out":   false,
-					})
+					resp := buildTaskResponse(&update)
+					resp["target"] = update.ID
+					resp["changed"] = changed
+					resp["completed"] = isTerminalTaskStatus(update.Status)
+					resp["timed_out"] = false
+					return json.Marshal(resp)
 				}
 			}
 		}
@@ -741,9 +722,13 @@ func registerCloseAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		}
 		closed := false
 		note := ""
-		if task.Status == TaskRunning {
+		if isActiveTask(task) {
 			tracker.Cancel(task.ID, reason)
 			closed = true
+		} else if isRecoverableTask(task) {
+			tracker.Cancel(task.ID, reason)
+			closed = true
+			note = "task was recoverable only and has been marked cancelled"
 		} else {
 			note = "task is not running"
 		}
@@ -794,16 +779,18 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 		if err != nil {
 			return nil, err
 		}
-		if task.Status == TaskRunning {
+		if isActiveTask(task) {
 			return json.Marshal(map[string]any{
-				"target":    task.ID,
-				"task_id":   task.ID,
-				"agent":     task.AgentName,
-				"status":    task.Status,
-				"revision":  task.Revision,
-				"resumed":   false,
-				"completed": false,
-				"note":      "task is already running",
+				"target":      task.ID,
+				"task_id":     task.ID,
+				"agent":       task.AgentName,
+				"status":      task.Status,
+				"revision":    task.Revision,
+				"active":      true,
+				"recoverable": false,
+				"resumed":     false,
+				"completed":   false,
+				"note":        "task is already running",
 			})
 		}
 		message := strings.TrimSpace(in.Message)
@@ -811,15 +798,14 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(map[string]any{
-			"target":    updated.ID,
-			"task_id":   updated.ID,
-			"agent":     updated.AgentName,
-			"status":    updated.Status,
-			"revision":  updated.Revision,
-			"resumed":   true,
-			"completed": isTerminalTaskStatus(updated.Status),
-		})
+		resp := buildTaskResponse(updated)
+		resp["target"] = updated.ID
+		resp["resumed"] = true
+		resp["completed"] = isTerminalTaskStatus(updated.Status)
+		if isRecoverableTask(task) {
+			resp["note"] = "task was recovered from persisted runtime state and restarted"
+		}
+		return json.Marshal(resp)
 	}
 	return reg.Register(spec, handler)
 }
@@ -1014,11 +1000,14 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 	return taskID, nil
 }
 
-func buildTaskResponse(task *Task) map[string]string {
-	resp := map[string]string{
-		"task_id": task.ID,
-		"agent":   task.AgentName,
-		"status":  string(task.Status),
+func buildTaskResponse(task *Task) map[string]any {
+	resp := map[string]any{
+		"task_id":     task.ID,
+		"agent":       task.AgentName,
+		"status":      task.Status,
+		"revision":    task.Revision,
+		"active":      task.Active,
+		"recoverable": isRecoverableTask(task),
 	}
 	if task.SessionID != "" {
 		resp["session_id"] = task.SessionID
@@ -1192,10 +1181,13 @@ func updateBackgroundTask(
 	if task.Status != TaskRunning {
 		return nil, fmt.Errorf("task %q is not running", taskID)
 	}
-	newGoal := strings.TrimSpace(task.Goal + "\n\nFollow-up update: " + strings.TrimSpace(update))
+	newGoal := mergeTaskGoal(task.Goal, update)
 	createdAt := task.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now()
+	}
+	if !isActiveTask(task) {
+		return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
 	}
 	tracker.CancelIf(taskID, task.Revision, "restarted with updated instructions")
 	return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
@@ -1211,9 +1203,16 @@ func triggerAgentTurn(
 ) (*Task, error) {
 	switch task.Status {
 	case TaskRunning:
+		if !isActiveTask(task) {
+			createdAt := task.CreatedAt
+			if createdAt.IsZero() {
+				createdAt = time.Now()
+			}
+			return launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, mergeTaskGoal(task.Goal, message), createdAt)
+		}
 		return updateBackgroundTask(ctx, agents, tracker, delegator, task.ID, message)
 	case TaskCompleted, TaskFailed, TaskCancelled:
-		newGoal := strings.TrimSpace(task.Goal + "\n\nFollow-up update: " + strings.TrimSpace(message))
+		newGoal := mergeTaskGoal(task.Goal, message)
 		createdAt := task.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()
@@ -1226,6 +1225,18 @@ func triggerAgentTurn(
 
 func isTerminalTaskStatus(status TaskStatus) bool {
 	return status == TaskCompleted || status == TaskFailed || status == TaskCancelled
+}
+
+func mergeTaskGoal(goal string, update string) string {
+	goal = strings.TrimSpace(goal)
+	update = strings.TrimSpace(update)
+	if update == "" {
+		return goal
+	}
+	if goal == "" {
+		return "Follow-up update: " + update
+	}
+	return goal + "\n\nFollow-up update: " + update
 }
 
 type planTaskInput struct {

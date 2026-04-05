@@ -259,7 +259,8 @@ func TestApplyChangePrefersLiveSessionMetadata(t *testing.T) {
 
 func configureProductTestApp(t *testing.T) {
 	t.Helper()
-	appconfig.SetAppName("moss-product-test")
+	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", " ", "-", "(", "-", ")", "-", "[", "-", "]", "-")
+	appconfig.SetAppName("moss-product-test-" + replacer.Replace(strings.ToLower(t.Name())))
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 }

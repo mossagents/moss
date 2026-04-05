@@ -95,7 +95,7 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			continue
 		}
 
-		source, parentID, preview, _, archived, activityAt := ThreadMetadataValues(&sess)
+		source, parentID, taskID, preview, activityKind, archived, activityAt := ThreadMetadataValues(&sess)
 		endedAt := formatSessionTime(sess.EndedAt)
 		updatedAt := formatSessionTime(activityAt)
 		if updatedAt == "" {
@@ -112,7 +112,9 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			TaskMode:          taskMode,
 			Source:            source,
 			ParentID:          parentID,
+			TaskID:            taskID,
 			Preview:           preview,
+			ActivityKind:      activityKind,
 			Status:            sess.Status,
 			Recoverable:       IsRecoverableStatus(sess.Status),
 			Archived:          archived,

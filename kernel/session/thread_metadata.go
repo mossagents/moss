@@ -155,12 +155,13 @@ func ThreadActivityTime(sess *Session) time.Time {
 	return time.Time{}
 }
 
-func ThreadMetadataValues(sess *Session) (source, parentID, preview, activityKind string, archived bool, activityAt time.Time) {
+func ThreadMetadataValues(sess *Session) (source, parentID, taskID, preview, activityKind string, archived bool, activityAt time.Time) {
 	if sess == nil {
-		return "", "", "", "", false, time.Time{}
+		return "", "", "", "", "", false, time.Time{}
 	}
 	return metadataString(sess.Config.Metadata, MetadataThreadSource),
 		metadataString(sess.Config.Metadata, MetadataThreadParentID),
+		metadataString(sess.Config.Metadata, MetadataThreadTaskID),
 		ThreadPreview(sess),
 		metadataString(sess.Config.Metadata, MetadataThreadLastActivityKind),
 		metadataBool(sess.Config.Metadata, MetadataThreadArchived),

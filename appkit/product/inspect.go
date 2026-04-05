@@ -14,12 +14,19 @@ import (
 )
 
 type InspectReport struct {
-	Mode      string                        `json:"mode"`
-	Workspace string                        `json:"workspace"`
-	Catalog   appruntime.StateCatalogHealth `json:"catalog"`
-	SessionID string                        `json:"session_id,omitempty"`
-	Items     []InspectStateItem            `json:"items,omitempty"`
-	Run       *InspectRunReport             `json:"run,omitempty"`
+	Mode         string                        `json:"mode"`
+	Workspace    string                        `json:"workspace"`
+	Catalog      appruntime.StateCatalogHealth `json:"catalog"`
+	SessionID    string                        `json:"session_id,omitempty"`
+	Items        []InspectStateItem            `json:"items,omitempty"`
+	Run          *InspectRunReport             `json:"run,omitempty"`
+	Threads      []InspectThreadSummary        `json:"threads,omitempty"`
+	Thread       *InspectThreadReport          `json:"thread,omitempty"`
+	Prompt       *InspectPromptReport          `json:"prompt,omitempty"`
+	Capabilities *InspectCapabilityReport      `json:"capabilities,omitempty"`
+	Replay       *InspectReplayReport          `json:"replay,omitempty"`
+	Compare      *InspectCompareReport         `json:"compare,omitempty"`
+	Governance   *InspectGovernanceReport      `json:"governance,omitempty"`
 }
 
 type InspectStateItem struct {
@@ -174,8 +181,76 @@ func BuildInspectReport(ctx context.Context, workspace string, args []string) (I
 		}
 		report.Run = &run
 		return report, nil
+	case "threads":
+		threads, err := buildInspectThreads(ctx, workspace, inspectLimit(args, 1, 20))
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.Threads = threads
+		return report, nil
+	case "thread":
+		target := "latest"
+		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
+			target = strings.TrimSpace(args[1])
+		}
+		thread, err := buildInspectThread(ctx, workspace, catalog, target)
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.SessionID = thread.Summary.ID
+		report.Thread = thread
+		return report, nil
+	case "prompt":
+		target := "latest"
+		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
+			target = strings.TrimSpace(args[1])
+		}
+		prompt, err := buildInspectPrompt(ctx, target)
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.SessionID = prompt.SessionID
+		report.Prompt = prompt
+		return report, nil
+	case "capabilities":
+		capabilities, err := buildInspectCapabilities(workspace)
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.Capabilities = capabilities
+		return report, nil
+	case "replay":
+		target := "latest"
+		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
+			target = strings.TrimSpace(args[1])
+		}
+		replay, err := buildInspectReplay(ctx, workspace, catalog, target)
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.SessionID = replay.SessionID
+		report.Replay = replay
+		return report, nil
+	case "compare":
+		if len(args) < 3 {
+			return InspectReport{}, fmt.Errorf("inspect compare requires two selectors")
+		}
+		compare, err := buildInspectCompare(ctx, catalog, strings.TrimSpace(args[1]), strings.TrimSpace(args[2]))
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.SessionID = firstNonEmpty(compare.Left.SessionID, compare.Right.SessionID)
+		report.Compare = compare
+		return report, nil
+	case "governance":
+		governance, err := buildInspectGovernance(ctx, workspace, catalog, inspectLimit(args, 1, 200))
+		if err != nil {
+			return InspectReport{}, err
+		}
+		report.Governance = governance
+		return report, nil
 	default:
-		return InspectReport{}, fmt.Errorf("unknown inspect mode %q (supported: status, events, run)", mode)
+		return InspectReport{}, fmt.Errorf("unknown inspect mode %q (supported: status, events, run, threads, thread, prompt, capabilities, replay, compare, governance)", mode)
 	}
 }
 
@@ -315,6 +390,64 @@ func RenderInspectReport(report InspectReport) string {
 				fmt.Fprintf(&b, "%02d. %s\n", idx+1, formatTraceEventDetail(event))
 			}
 		}
+	case "threads":
+		if len(report.Threads) == 0 {
+			b.WriteString("Threads: none\n")
+			return b.String()
+		}
+		b.WriteString("Threads:\n")
+		for _, item := range report.Threads {
+			fmt.Fprintf(&b, "- %s | status=%s | recoverable=%t | source=%s | parent=%s | task=%s | checkpoints=%d | changes=%d | tasks=%d | archived=%t | updated=%s | preview=%s\n",
+				item.ID,
+				item.Status,
+				item.Recoverable,
+				firstNonEmpty(item.Source, "(none)"),
+				firstNonEmpty(item.ParentID, "(none)"),
+				firstNonEmpty(item.TaskID, "(none)"),
+				item.CheckpointCount,
+				item.ChangeCount,
+				item.TaskCount,
+				item.Archived,
+				firstNonEmpty(item.UpdatedAt, "(none)"),
+				firstNonEmpty(item.Preview, "(none)"),
+			)
+		}
+	case "thread":
+		if report.Thread == nil {
+			b.WriteString("Thread: unavailable\n")
+			return b.String()
+		}
+		renderInspectThreadReport(&b, *report.Thread)
+	case "prompt":
+		if report.Prompt == nil {
+			b.WriteString("Prompt: unavailable\n")
+			return b.String()
+		}
+		renderInspectPromptReport(&b, *report.Prompt)
+	case "capabilities":
+		if report.Capabilities == nil {
+			b.WriteString("Capabilities: unavailable\n")
+			return b.String()
+		}
+		renderInspectCapabilityReport(&b, *report.Capabilities)
+	case "replay":
+		if report.Replay == nil {
+			b.WriteString("Replay: unavailable\n")
+			return b.String()
+		}
+		renderInspectReplayReport(&b, *report.Replay)
+	case "compare":
+		if report.Compare == nil {
+			b.WriteString("Compare: unavailable\n")
+			return b.String()
+		}
+		renderInspectCompareReport(&b, *report.Compare)
+	case "governance":
+		if report.Governance == nil {
+			b.WriteString("Governance: unavailable\n")
+			return b.String()
+		}
+		renderInspectGovernanceReport(&b, *report.Governance)
 	}
 	return b.String()
 }

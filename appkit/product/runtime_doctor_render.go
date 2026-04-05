@@ -59,6 +59,20 @@ func RenderDoctorReport(report DoctorReport) string {
 		fmt.Fprintf(&b, " pricing_err=%s", report.Governance.Model.PricingError)
 	}
 	b.WriteString("\n")
+	if report.Governance.Adaptive != nil {
+		fmt.Fprintf(&b, "Adaptive governance: events=%d sessions=%d runs=%d failover_attempts=%d recovery=%.0f%% approvals=%d/%d changes=%d rollback=%.0f%% inconsistent=%.0f%%\n",
+			report.Governance.Adaptive.EventWindow,
+			report.Governance.Adaptive.Sessions,
+			report.Governance.Adaptive.Runs,
+			report.Governance.Adaptive.Failover.Attempts,
+			report.Governance.Adaptive.Failover.RecoveryRate*100,
+			report.Governance.Adaptive.Approvals.Approved,
+			report.Governance.Adaptive.Approvals.Resolved,
+			report.Governance.Adaptive.ChangeWindow,
+			report.Governance.Adaptive.Changes.RollbackRate*100,
+			report.Governance.Adaptive.Changes.InconsistencyRate*100,
+		)
+	}
 	fmt.Fprintf(&b, "State catalog: enabled=%t ready=%t entries=%d degraded=%t",
 		report.Health.State.Enabled, report.Health.State.Ready, report.Health.State.Entries, report.Health.State.Degraded)
 	if report.Health.State.LastError != "" {
@@ -102,6 +116,14 @@ func RenderDoctorReport(report DoctorReport) string {
 		}
 		if server.HasEnv {
 			fmt.Fprintf(&b, " env=%d", len(server.EnvKeys))
+		}
+		b.WriteString("\n")
+	}
+	for _, item := range report.Health.Extensions.CapabilityStatus {
+		fmt.Fprintf(&b, "  Capability %s [%s]: state=%s critical=%t",
+			firstNonEmpty(item.Name, item.Capability), firstNonEmpty(item.Kind, "runtime"), item.State, item.Critical)
+		if item.Error != "" {
+			fmt.Fprintf(&b, " err=%s", item.Error)
 		}
 		b.WriteString("\n")
 	}
