@@ -731,6 +731,45 @@ func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
 	}
 }
 
+func TestTaskTrackerHydratesPersistedTaskRuntime(t *testing.T) {
+	rt := port.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+		ID:              "persisted-task",
+		AgentName:       "worker",
+		Goal:            "resume later",
+		Status:          port.TaskRunning,
+		SessionID:       "sess-child",
+		ParentSessionID: "sess-parent",
+		JobID:           "persisted-task",
+		JobItemID:       "turn-1",
+		CreatedAt:       time.Now().Add(-time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertJob(context.Background(), port.AgentJob{
+		ID:        "persisted-task",
+		AgentName: "worker",
+		Goal:      "resume later",
+		Status:    port.JobRunning,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTrackerWithRuntime(rt)
+	task, ok := tracker.Get("persisted-task")
+	if !ok {
+		t.Fatal("expected persisted task to be hydrated")
+	}
+	if task.SessionID != "sess-child" || task.ParentSessionID != "sess-parent" {
+		t.Fatalf("unexpected hydrated task lineage: %+v", task)
+	}
+	if task.JobID != "persisted-task" || task.JobItemID != "turn-1" {
+		t.Fatalf("unexpected hydrated job metadata: %+v", task)
+	}
+	if task.Revision == 0 {
+		t.Fatalf("expected hydrated revision, got %+v", task)
+	}
+}
+
 func TestRegisterToolsWithDeps_AddsP1ControlPlaneTools(t *testing.T) {
 	agents := NewRegistry()
 	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {

@@ -22,17 +22,21 @@ const (
 
 // TaskRecord 是跨 agent/runtime 共享的任务记录。
 type TaskRecord struct {
-	ID          string     `json:"id"`
-	AgentName   string     `json:"agent_name"`
-	Goal        string     `json:"goal"`
-	Status      TaskStatus `json:"status"`
-	DependsOn   []string   `json:"depends_on,omitempty"`
-	ClaimedBy   string     `json:"claimed_by,omitempty"`
-	WorkspaceID string     `json:"workspace_id,omitempty"`
-	Result      string     `json:"result,omitempty"`
-	Error       string     `json:"error,omitempty"`
-	CreatedAt   time.Time  `json:"created_at,omitempty"`
-	UpdatedAt   time.Time  `json:"updated_at,omitempty"`
+	ID              string     `json:"id"`
+	AgentName       string     `json:"agent_name"`
+	Goal            string     `json:"goal"`
+	Status          TaskStatus `json:"status"`
+	DependsOn       []string   `json:"depends_on,omitempty"`
+	ClaimedBy       string     `json:"claimed_by,omitempty"`
+	WorkspaceID     string     `json:"workspace_id,omitempty"`
+	SessionID       string     `json:"session_id,omitempty"`
+	ParentSessionID string     `json:"parent_session_id,omitempty"`
+	JobID           string     `json:"job_id,omitempty"`
+	JobItemID       string     `json:"job_item_id,omitempty"`
+	Result          string     `json:"result,omitempty"`
+	Error           string     `json:"error,omitempty"`
+	CreatedAt       time.Time  `json:"created_at,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at,omitempty"`
 }
 
 // AgentJobStatus 表示 Job/Item 状态机状态。

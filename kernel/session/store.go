@@ -36,18 +36,23 @@ type WatchableSessionStore interface {
 
 // SessionSummary 是 Session 的摘要信息，用于列表展示。
 type SessionSummary struct {
-	ID          string        `json:"id"`
-	Goal        string        `json:"goal"`
-	Mode        string        `json:"mode,omitempty"`
-	Profile     string        `json:"profile,omitempty"`
-	EffectiveTrust string     `json:"effective_trust,omitempty"`
-	EffectiveApproval string  `json:"effective_approval,omitempty"`
-	TaskMode    string        `json:"task_mode,omitempty"`
-	Status      SessionStatus `json:"status"`
-	Recoverable bool          `json:"recoverable,omitempty"`
-	Steps       int           `json:"steps"`
-	CreatedAt   string        `json:"created_at"`
-	EndedAt     string        `json:"ended_at,omitempty"`
+	ID                string        `json:"id"`
+	Goal              string        `json:"goal"`
+	Mode              string        `json:"mode,omitempty"`
+	Profile           string        `json:"profile,omitempty"`
+	EffectiveTrust    string        `json:"effective_trust,omitempty"`
+	EffectiveApproval string        `json:"effective_approval,omitempty"`
+	TaskMode          string        `json:"task_mode,omitempty"`
+	Source            string        `json:"source,omitempty"`
+	ParentID          string        `json:"parent_id,omitempty"`
+	Preview           string        `json:"preview,omitempty"`
+	Status            SessionStatus `json:"status"`
+	Recoverable       bool          `json:"recoverable,omitempty"`
+	Archived          bool          `json:"archived,omitempty"`
+	Steps             int           `json:"steps"`
+	CreatedAt         string        `json:"created_at"`
+	UpdatedAt         string        `json:"updated_at,omitempty"`
+	EndedAt           string        `json:"ended_at,omitempty"`
 }
 
 // IsRecoverableStatus 判断给定状态的 Session 是否适合作为 resume 候选。

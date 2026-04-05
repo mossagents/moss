@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/port"
 )
 
 type fakeMCPClient struct {
@@ -48,10 +50,10 @@ func (f *fakeMCPClient) CallTool(ctx context.Context, req mcp.CallToolRequest) (
 	}
 	return &mcp.CallToolResult{}, nil
 }
-func (f *fakeMCPClient) Ping(context.Context) error                                  { return nil }
-func (f *fakeMCPClient) Close() error                                                 { return nil }
-func (f *fakeMCPClient) AddRoots(context.Context, []mcp.Root) error                  { return nil }
-func (f *fakeMCPClient) RemoveRoots(context.Context, []mcp.Root) error               { return nil }
+func (f *fakeMCPClient) Ping(context.Context) error                    { return nil }
+func (f *fakeMCPClient) Close() error                                  { return nil }
+func (f *fakeMCPClient) AddRoots(context.Context, []mcp.Root) error    { return nil }
+func (f *fakeMCPClient) RemoveRoots(context.Context, []mcp.Root) error { return nil }
 func (f *fakeMCPClient) ListPrompts(context.Context, mcp.ListPromptsRequest) (*mcp.ListPromptsResult, error) {
 	return &mcp.ListPromptsResult{}, nil
 }
@@ -198,5 +200,31 @@ func TestMakeHandler_StopsWhenGuardRejectsInput(t *testing.T) {
 	}
 	if called {
 		t.Fatal("expected mcp call not invoked when input guard fails")
+	}
+}
+
+type promptIO struct {
+	last port.InputRequest
+	form map[string]any
+}
+
+func (p *promptIO) Send(context.Context, port.OutputMessage) error { return nil }
+
+func (p *promptIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+	p.last = req
+	return port.InputResponse{Form: p.form}, nil
+}
+
+func TestResolveMCPRequiredEnvPromptsForMissingValues(t *testing.T) {
+	io := &promptIO{form: map[string]any{"API_TOKEN": "secret"}}
+	env, err := resolveMCPRequiredEnv(context.Background(), io, "demo", map[string]string{"STATIC": "1"}, []string{"API_TOKEN"})
+	if err != nil {
+		t.Fatalf("resolveMCPRequiredEnv: %v", err)
+	}
+	if env["API_TOKEN"] != "secret" || env["STATIC"] != "1" {
+		t.Fatalf("unexpected resolved env: %+v", env)
+	}
+	if io.last.Type != port.InputForm || !strings.Contains(io.last.Prompt, "demo") {
+		t.Fatalf("expected prompt for missing env, got %+v", io.last)
 	}
 }

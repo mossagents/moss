@@ -199,6 +199,65 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	}
 }
 
+func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
+	ctx := context.Background()
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	ws := sandbox.NewMemoryWorkspace()
+	if err := ws.WriteFile(ctx, "README.md", []byte("initial")); err != nil {
+		t.Fatalf("WriteFile README.md: %v", err)
+	}
+	repo := &port.RepoState{
+		RepoRoot: "D:/Codes/qiulin/moss",
+		Branch:   "main",
+		IsDirty:  false,
+	}
+	llm := &kt.MockLLM{Responses: []port.CompletionResponse{
+		{Message: port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("first")}}, StopReason: "end_turn"},
+		{Message: port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("second")}}, StopReason: "end_turn"},
+	}}
+	k := kernel.New(
+		kernel.WithLLM(llm),
+		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithWorkspace(ws),
+		kernel.WithRepoStateCapture(stubRepoStateCapture{state: repo}),
+		WithContextSessionStore(store),
+		ConfigureContext(
+			WithContextPromptBudget(400),
+			WithContextStartupBudget(160),
+		),
+	)
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	sess, err := k.NewSession(ctx, session.SessionConfig{Goal: "watch env"})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("first turn")}})
+	if _, err := k.Run(ctx, sess); err != nil {
+		t.Fatalf("Run first: %v", err)
+	}
+	repo.IsDirty = true
+	repo.Untracked = []string{"notes.txt"}
+	if err := ws.WriteFile(ctx, "NEW.txt", []byte("changed")); err != nil {
+		t.Fatalf("WriteFile NEW.txt: %v", err)
+	}
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("second turn")}})
+	if _, err := k.Run(ctx, sess); err != nil {
+		t.Fatalf("Run second: %v", err)
+	}
+	joined := flattenMessageText(llm.Calls[len(llm.Calls)-1].Messages)
+	if !strings.Contains(joined, "<realtime_repo_changes>") {
+		t.Fatalf("expected realtime repo fragment in prompt: %s", joined)
+	}
+	if !strings.Contains(joined, "<realtime_workspace_changes>") {
+		t.Fatalf("expected realtime workspace fragment in prompt: %s", joined)
+	}
+}
+
 func appendDialog(sess *session.Session, texts ...string) {
 	roles := []port.Role{port.RoleUser, port.RoleAssistant}
 	for i, text := range texts {

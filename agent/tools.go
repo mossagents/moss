@@ -133,7 +133,7 @@ func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) 
 			return nil, fmt.Errorf("parse input: %w", err)
 		}
 
-		result, err := runAgent(ctx, agents, delegator, in.Agent, in.Task)
+		result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task)
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +311,7 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 		}
 		agents := make([]map[string]any, 0, len(tasks))
 		for _, task := range tasks {
-			agents = append(agents, map[string]any{
+			item := map[string]any{
 				"target":     task.ID,
 				"task_id":    task.ID,
 				"agent":      task.AgentName,
@@ -319,7 +319,17 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 				"revision":   task.Revision,
 				"goal":       task.Goal,
 				"updated_at": task.UpdatedAt,
-			})
+			}
+			if task.SessionID != "" {
+				item["session_id"] = task.SessionID
+			}
+			if task.JobID != "" {
+				item["job_id"] = task.JobID
+			}
+			if task.JobItemID != "" {
+				item["job_item_id"] = task.JobItemID
+			}
+			agents = append(agents, item)
 		}
 		return json.Marshal(map[string]any{
 			"agents": agents,
@@ -478,11 +488,14 @@ func registerUpdateTask(reg tool.Registry, agents *Registry, tracker *TaskTracke
 			return nil, err
 		}
 		return json.Marshal(map[string]any{
-			"task_id":  updated.ID,
-			"agent":    updated.AgentName,
-			"status":   updated.Status,
-			"revision": updated.Revision,
-			"goal":     updated.Goal,
+			"task_id":     updated.ID,
+			"agent":       updated.AgentName,
+			"status":      updated.Status,
+			"revision":    updated.Revision,
+			"goal":        updated.Goal,
+			"session_id":  updated.SessionID,
+			"job_id":      updated.JobID,
+			"job_item_id": updated.JobItemID,
 		})
 	}
 	return reg.Register(spec, handler)
@@ -552,12 +565,15 @@ func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTr
 			return nil, err
 		}
 		return json.Marshal(map[string]any{
-			"target":    updated.ID,
-			"task_id":   updated.ID,
-			"agent":     updated.AgentName,
-			"status":    updated.Status,
-			"revision":  updated.Revision,
-			"triggered": true,
+			"target":      updated.ID,
+			"task_id":     updated.ID,
+			"agent":       updated.AgentName,
+			"status":      updated.Status,
+			"revision":    updated.Revision,
+			"session_id":  updated.SessionID,
+			"job_id":      updated.JobID,
+			"job_item_id": updated.JobItemID,
+			"triggered":   true,
 		})
 	}
 	return reg.Register(spec, handler)
@@ -604,13 +620,16 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		startStatus := task.Status
 		if isTerminalTaskStatus(task.Status) {
 			return json.Marshal(map[string]any{
-				"target":    task.ID,
-				"task_id":   task.ID,
-				"agent":     task.AgentName,
-				"status":    task.Status,
-				"revision":  task.Revision,
-				"changed":   false,
-				"completed": true,
+				"target":      task.ID,
+				"task_id":     task.ID,
+				"agent":       task.AgentName,
+				"status":      task.Status,
+				"revision":    task.Revision,
+				"session_id":  task.SessionID,
+				"job_id":      task.JobID,
+				"job_item_id": task.JobItemID,
+				"changed":     false,
+				"completed":   true,
 			})
 		}
 		updates, unsubscribe, err := tracker.Subscribe(task.ID)
@@ -622,14 +641,17 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 			changed := current.Revision != startRevision || current.Status != startStatus
 			if changed || isTerminalTaskStatus(current.Status) {
 				return json.Marshal(map[string]any{
-					"target":    current.ID,
-					"task_id":   current.ID,
-					"agent":     current.AgentName,
-					"status":    current.Status,
-					"revision":  current.Revision,
-					"changed":   changed,
-					"completed": isTerminalTaskStatus(current.Status),
-					"timed_out": false,
+					"target":      current.ID,
+					"task_id":     current.ID,
+					"agent":       current.AgentName,
+					"status":      current.Status,
+					"revision":    current.Revision,
+					"session_id":  current.SessionID,
+					"job_id":      current.JobID,
+					"job_item_id": current.JobItemID,
+					"changed":     changed,
+					"completed":   isTerminalTaskStatus(current.Status),
+					"timed_out":   false,
 				})
 			}
 		}
@@ -645,14 +667,17 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 					return nil, fmt.Errorf("task %q not found", task.ID)
 				}
 				return json.Marshal(map[string]any{
-					"target":    current.ID,
-					"task_id":   current.ID,
-					"agent":     current.AgentName,
-					"status":    current.Status,
-					"revision":  current.Revision,
-					"changed":   current.Revision != startRevision || current.Status != startStatus,
-					"completed": isTerminalTaskStatus(current.Status),
-					"timed_out": true,
+					"target":      current.ID,
+					"task_id":     current.ID,
+					"agent":       current.AgentName,
+					"status":      current.Status,
+					"revision":    current.Revision,
+					"session_id":  current.SessionID,
+					"job_id":      current.JobID,
+					"job_item_id": current.JobItemID,
+					"changed":     current.Revision != startRevision || current.Status != startStatus,
+					"completed":   isTerminalTaskStatus(current.Status),
+					"timed_out":   true,
 				})
 			case update, ok := <-updates:
 				if !ok {
@@ -661,14 +686,17 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 				changed := update.Revision != startRevision || update.Status != startStatus
 				if changed || isTerminalTaskStatus(update.Status) {
 					return json.Marshal(map[string]any{
-						"target":    update.ID,
-						"task_id":   update.ID,
-						"agent":     update.AgentName,
-						"status":    update.Status,
-						"revision":  update.Revision,
-						"changed":   changed,
-						"completed": isTerminalTaskStatus(update.Status),
-						"timed_out": false,
+						"target":      update.ID,
+						"task_id":     update.ID,
+						"agent":       update.AgentName,
+						"status":      update.Status,
+						"revision":    update.Revision,
+						"session_id":  update.SessionID,
+						"job_id":      update.JobID,
+						"job_item_id": update.JobItemID,
+						"changed":     changed,
+						"completed":   isTerminalTaskStatus(update.Status),
+						"timed_out":   false,
 					})
 				}
 			}
@@ -845,7 +873,7 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 			if strings.TrimSpace(in.Task) == "" {
 				return nil, fmt.Errorf("task is required for mode=sync")
 			}
-			result, err := runAgent(ctx, agents, delegator, in.Agent, in.Task)
+			result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task)
 			if err != nil {
 				return nil, err
 			}
@@ -986,6 +1014,15 @@ func buildTaskResponse(task *Task) map[string]string {
 		"agent":   task.AgentName,
 		"status":  string(task.Status),
 	}
+	if task.SessionID != "" {
+		resp["session_id"] = task.SessionID
+	}
+	if task.JobID != "" {
+		resp["job_id"] = task.JobID
+	}
+	if task.JobItemID != "" {
+		resp["job_item_id"] = task.JobItemID
+	}
 	switch task.Status {
 	case TaskCompleted:
 		resp["result"] = task.Result
@@ -1012,7 +1049,7 @@ func resolveTaskTarget(tracker *TaskTracker, target string) (*Task, error) {
 	return candidates[0], nil
 }
 
-func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
+func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
 	cfg, ok := agents.Get(agentName)
 	if !ok {
 		availableNames := make([]string, 0)
@@ -1027,6 +1064,7 @@ func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentN
 		return nil, fmt.Errorf("delegation depth limit (%d) exceeded", MaxDelegationDepth)
 	}
 
+	parentSessionID := SessionID(ctx)
 	childCtx := WithDepth(ctx, depth+1)
 
 	scopedTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
@@ -1041,13 +1079,20 @@ func runAgent(ctx context.Context, agents *Registry, delegator Delegator, agentN
 	if err != nil {
 		return nil, fmt.Errorf("create session for agent %q: %w", agentName, err)
 	}
+	session.SetThreadSource(sess, "delegated")
+	session.SetThreadParent(sess, parentSessionID)
+	session.SetThreadTaskID(sess, taskID)
+	session.RefreshThreadMetadata(sess, time.Now().UTC(), "delegated")
+	if tracker != nil {
+		tracker.BindSession(taskID, revision, sess.ID)
+	}
 
 	sess.AppendMessage(port.Message{
 		Role:         port.RoleUser,
 		ContentParts: []port.ContentPart{port.TextPart(task)},
 	})
 
-	result, err := delegator.RunWithTools(childCtx, sess, scopedTools)
+	result, err := delegator.RunWithTools(WithSessionID(childCtx, sess.ID), sess, scopedTools)
 	if err != nil {
 		return nil, fmt.Errorf("agent %q execution failed: %w", agentName, err)
 	}
@@ -1064,17 +1109,18 @@ func launchBackgroundTask(
 	createdAt time.Time,
 ) (*Task, error) {
 	task := &Task{
-		ID:        taskID,
-		AgentName: agentName,
-		Goal:      goal,
-		Status:    TaskRunning,
-		CreatedAt: createdAt,
+		ID:              taskID,
+		AgentName:       agentName,
+		Goal:            goal,
+		Status:          TaskRunning,
+		ParentSessionID: SessionID(ctx),
+		CreatedAt:       createdAt,
 	}
 	taskCtx, cancel := context.WithCancel(ctx)
 	revision := tracker.Start(task, cancel)
 
 	go func(rev int64) {
-		result, err := runAgent(taskCtx, agents, delegator, agentName, goal)
+		result, err := runAgent(WithSessionID(taskCtx, task.ParentSessionID), agents, tracker, taskID, rev, delegator, agentName, goal)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				tracker.CancelIf(taskID, rev, err.Error())

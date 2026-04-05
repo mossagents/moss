@@ -555,21 +555,31 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 	if title == "" {
 		title = sess.ID
 	}
+	source, parentID, preview, activityKind, archived, activityAt := session.ThreadMetadataValues(sess)
+	sortTime := sessionSortTime(sess)
+	if !activityAt.IsZero() {
+		sortTime = activityAt.UTC()
+	}
 	return StateEntry{
 		Kind:       StateKindSession,
 		RecordID:   sess.ID,
 		SessionID:  sess.ID,
 		Status:     string(sess.Status),
 		Title:      title,
-		Summary:    strings.TrimSpace(sess.Config.Mode),
-		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status)),
-		SortTime:   sessionSortTime(sess),
+		Summary:    firstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
+		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, preview, activityKind),
+		SortTime:   sortTime,
 		CreatedAt:  sess.CreatedAt,
-		UpdatedAt:  sessionSortTime(sess),
+		UpdatedAt:  sortTime,
 		Metadata: marshalStateMetadata(map[string]any{
 			"mode":        sess.Config.Mode,
 			"recoverable": session.IsRecoverableStatus(sess.Status),
 			"steps":       sess.Budget.UsedSteps,
+			"source":      source,
+			"parent_id":   parentID,
+			"preview":     preview,
+			"archived":    archived,
+			"activity":    activityKind,
 		}),
 	}, true
 }
@@ -641,20 +651,25 @@ func StateEntryFromTask(task port.TaskRecord) (StateEntry, bool) {
 		Kind:       StateKindTask,
 		RecordID:   task.ID,
 		Workspace:  strings.TrimSpace(task.WorkspaceID),
+		SessionID:  strings.TrimSpace(task.SessionID),
 		Status:     string(task.Status),
 		Title:      title,
 		Summary:    strings.TrimSpace(task.AgentName),
-		SearchText: normalizeStateText(task.ID, task.AgentName, task.Goal, task.Result, task.Error, string(task.Status)),
+		SearchText: normalizeStateText(task.ID, task.AgentName, task.Goal, task.Result, task.Error, string(task.Status), task.SessionID, task.ParentSessionID, task.JobID, task.JobItemID),
 		SortTime:   sortTime.UTC(),
 		CreatedAt:  task.CreatedAt.UTC(),
 		UpdatedAt:  task.UpdatedAt.UTC(),
 		Metadata: marshalStateMetadata(map[string]any{
-			"agent_name":   task.AgentName,
-			"claimed_by":   task.ClaimedBy,
-			"depends_on":   append([]string(nil), task.DependsOn...),
-			"result":       task.Result,
-			"error":        task.Error,
-			"workspace_id": task.WorkspaceID,
+			"agent_name":        task.AgentName,
+			"claimed_by":        task.ClaimedBy,
+			"depends_on":        append([]string(nil), task.DependsOn...),
+			"result":            task.Result,
+			"error":             task.Error,
+			"workspace_id":      task.WorkspaceID,
+			"session_id":        task.SessionID,
+			"parent_session_id": task.ParentSessionID,
+			"job_id":            task.JobID,
+			"job_item_id":       task.JobItemID,
 		}),
 	}, true
 }

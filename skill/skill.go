@@ -6,6 +6,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
 )
@@ -33,8 +34,10 @@ type Metadata struct {
 	Name        string   `json:"name" yaml:"name"`
 	Version     string   `json:"version" yaml:"version"`
 	Description string   `json:"description" yaml:"description"`
-	Tools       []string `json:"tools,omitempty" yaml:"tools,omitempty"`     // 提供的工具名列表
-	Prompts     []string `json:"prompts,omitempty" yaml:"prompts,omitempty"` // 注入到 system prompt 的片段
+	Tools       []string `json:"tools,omitempty" yaml:"tools,omitempty"`               // 提供的工具名列表
+	Prompts     []string `json:"prompts,omitempty" yaml:"prompts,omitempty"`           // 注入到 system prompt 的片段
+	DependsOn   []string `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`     // 依赖的 provider 名称
+	RequiredEnv []string `json:"required_env,omitempty" yaml:"required_env,omitempty"` // 初始化前必须解析的环境变量
 }
 
 // Deps 是 provider 初始化时可用的依赖。
@@ -46,4 +49,7 @@ type Deps struct {
 	UserIO       port.UserIO
 	Workspace    port.Workspace
 	Executor     port.Executor
+	TaskRuntime  port.TaskRuntime
+	Mailbox      port.Mailbox
+	SessionStore session.SessionStore
 }

@@ -27,15 +27,15 @@ const (
 )
 
 type config struct {
-	builtin         bool
-	mcpServers      bool
-	skills          bool
-	progressive     bool
-	agents          bool
-	trust           string
-	sessionStore    session.SessionStore
-	sessionStoreSet bool
-	planning        bool
+	builtin          bool
+	mcpServers       bool
+	skills           bool
+	progressive      bool
+	agents           bool
+	trust            string
+	sessionStore     session.SessionStore
+	sessionStoreSet  bool
+	planning         bool
 	capabilityReport CapabilityReporter
 }
 
@@ -43,13 +43,13 @@ type Option func(*config)
 
 func defaultConfig() config {
 	return config{
-		builtin:     true,
-		mcpServers:  true,
-		skills:      true,
-		progressive: false,
-		agents:      true,
-		trust:       appconfig.TrustTrusted,
-		planning:    true,
+		builtin:          true,
+		mcpServers:       true,
+		skills:           true,
+		progressive:      false,
+		agents:           true,
+		trust:            appconfig.TrustTrusted,
+		planning:         true,
 		capabilityReport: noopCapabilityReporter{},
 	}
 }
@@ -127,7 +127,11 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 		merged = appconfig.MergeConfigs(globalCfg, projectCfg)
 	}
 	deps := Deps(k)
-	for _, sc := range merged.Skills {
+	ordered, err := orderSkillConfigs(merged.Skills)
+	if err != nil {
+		return err
+	}
+	for _, sc := range ordered {
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
@@ -150,13 +154,17 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	logger := logging.GetLogger()
 	manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, cfg.trust)
+	ordered, err := orderSkillManifests(manifests)
+	if err != nil {
+		return err
+	}
 	if cfg.progressive {
-		SetSkillManifests(k, manifests)
+		SetSkillManifests(k, ordered)
 		EnableProgressiveSkills(k)
 		return RegisterProgressiveSkillTools(k)
 	}
 	deps := Deps(k)
-	for _, mf := range manifests {
+	for _, mf := range ordered {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
 			cfg.capabilityReport.Report(ctx, "skill-manifest:"+mf.Name, false, "degraded", err)
@@ -293,10 +301,12 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 		for _, mf := range manifests {
 			_, loaded := st.manager.Get(mf.Name)
 			resp = append(resp, map[string]any{
-				"name":        mf.Name,
-				"description": mf.Description,
-				"source":      mf.Source,
-				"loaded":      loaded,
+				"name":         mf.Name,
+				"description":  mf.Description,
+				"depends_on":   append([]string(nil), mf.DependsOn...),
+				"required_env": append([]string(nil), mf.RequiredEnv...),
+				"source":       mf.Source,
+				"loaded":       loaded,
 			})
 		}
 		return json.Marshal(resp)
@@ -332,11 +342,7 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 		if found == nil {
 			return nil, fmt.Errorf("skill %q not found in discovered manifests", name)
 		}
-		ps, err := skill.ParseSkillMD(found.Source)
-		if err != nil {
-			return nil, fmt.Errorf("load skill %q: %w", name, err)
-		}
-		if err := st.manager.Register(ctx, ps, Deps(k)); err != nil {
+		if err := activateManifestRecursive(ctx, st.manager, st.manifests, name, Deps(k), nil); err != nil {
 			return nil, fmt.Errorf("activate skill %q: %w", name, err)
 		}
 		return json.Marshal(map[string]string{"status": "loaded", "name": name})
@@ -356,7 +362,135 @@ func Deps(k *kernel.Kernel) skill.Deps {
 		UserIO:       k.UserIO(),
 		Workspace:    k.Workspace(),
 		Executor:     k.Executor(),
+		TaskRuntime:  k.TaskRuntime(),
+		Mailbox:      k.Mailbox(),
+		SessionStore: k.SessionStore(),
 	}
+}
+
+func orderSkillConfigs(items []appconfig.SkillConfig) ([]appconfig.SkillConfig, error) {
+	indexed := make(map[string]appconfig.SkillConfig, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		indexed[item.Name] = item
+	}
+	orderedNames, err := topoOrderNames(indexed, func(item appconfig.SkillConfig) []string { return item.DependsOn })
+	if err != nil {
+		return nil, err
+	}
+	out := make([]appconfig.SkillConfig, 0, len(orderedNames))
+	for _, name := range orderedNames {
+		out = append(out, indexed[name])
+	}
+	return out, nil
+}
+
+func orderSkillManifests(items []skill.Manifest) ([]skill.Manifest, error) {
+	indexed := make(map[string]skill.Manifest, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) == "" {
+			continue
+		}
+		indexed[item.Name] = item
+	}
+	orderedNames, err := topoOrderNames(indexed, func(item skill.Manifest) []string { return item.DependsOn })
+	if err != nil {
+		return nil, err
+	}
+	out := make([]skill.Manifest, 0, len(orderedNames))
+	for _, name := range orderedNames {
+		out = append(out, indexed[name])
+	}
+	return out, nil
+}
+
+func topoOrderNames[T any](items map[string]T, deps func(T) []string) ([]string, error) {
+	ordered := make([]string, 0, len(items))
+	visiting := make(map[string]bool, len(items))
+	visited := make(map[string]bool, len(items))
+	var visit func(string) error
+	visit = func(name string) error {
+		if visited[name] {
+			return nil
+		}
+		if visiting[name] {
+			return fmt.Errorf("dependency cycle detected at %q", name)
+		}
+		item, ok := items[name]
+		if !ok {
+			return nil
+		}
+		visiting[name] = true
+		for _, dep := range deps(item) {
+			dep = strings.TrimSpace(dep)
+			if dep == "" {
+				continue
+			}
+			if _, ok := items[dep]; !ok {
+				continue
+			}
+			if err := visit(dep); err != nil {
+				return err
+			}
+		}
+		visiting[name] = false
+		visited[name] = true
+		ordered = append(ordered, name)
+		return nil
+	}
+	for name := range items {
+		if err := visit(name); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
+}
+
+func activateManifestRecursive(ctx context.Context, manager *skill.Manager, manifests []skill.Manifest, target string, deps skill.Deps, stack map[string]bool) error {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return fmt.Errorf("skill name is required")
+	}
+	if _, ok := manager.Get(target); ok {
+		return nil
+	}
+	if stack == nil {
+		stack = make(map[string]bool)
+	}
+	if stack[target] {
+		return fmt.Errorf("dependency cycle detected at %q", target)
+	}
+	var found *skill.Manifest
+	for i := range manifests {
+		if manifests[i].Name == target {
+			found = &manifests[i]
+			break
+		}
+	}
+	if found == nil {
+		return fmt.Errorf("skill %q not found in discovered manifests", target)
+	}
+	stack[target] = true
+	for _, dep := range found.DependsOn {
+		dep = strings.TrimSpace(dep)
+		if dep == "" {
+			continue
+		}
+		if _, ok := manager.Get(dep); ok {
+			continue
+		}
+		if err := activateManifestRecursive(ctx, manager, manifests, dep, deps, stack); err != nil {
+			return err
+		}
+	}
+	delete(stack, target)
+	ps, err := skill.ParseSkillMD(found.Source)
+	if err != nil {
+		return fmt.Errorf("load skill %q: %w", target, err)
+	}
+	return manager.Register(ctx, ps, deps)
 }
 
 type agentsState struct {

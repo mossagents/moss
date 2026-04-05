@@ -3,9 +3,12 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
 )
 
 const sessionStoreStateKey kernel.ExtensionStateKey = "sessionstore.state"
@@ -43,5 +46,24 @@ func ensureSessionStoreState(k *kernel.Kernel) *sessionStoreState {
 		}
 		return nil
 	})
+	bridge.OnSessionLifecycle(100, func(ctx context.Context, event session.LifecycleEvent) {
+		persistSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
+	})
+	bridge.OnToolLifecycle(100, func(ctx context.Context, event session.ToolLifecycleEvent) {
+		if event.Stage != session.ToolLifecycleAfter {
+			return
+		}
+		persistSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
+	})
 	return st
+}
+
+func persistSessionEvent(ctx context.Context, store session.SessionStore, sess *session.Session, when time.Time, kind string) {
+	if store == nil || sess == nil {
+		return
+	}
+	session.RefreshThreadMetadata(sess, when, kind)
+	if err := store.Save(ctx, sess); err != nil {
+		logging.GetLogger().WarnContext(ctx, "persist session event failed", "session_id", sess.ID, "kind", kind, "error", err)
+	}
 }

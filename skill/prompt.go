@@ -19,6 +19,8 @@ import (
 type Skill struct {
 	name        string
 	description string
+	dependsOn   []string
+	requiredEnv []string
 	body        string // markdown 正文（去除 frontmatter 后的内容）
 	source      string // 文件来源路径
 }
@@ -26,17 +28,21 @@ type Skill struct {
 // Manifest 描述一个可发现的 SKILL.md（不包含正文内容）。
 // 用于按需激活场景，避免在发现阶段注入全部提示词。
 type Manifest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Source      string `json:"source"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	DependsOn   []string `json:"depends_on,omitempty"`
+	RequiredEnv []string `json:"required_env,omitempty"`
+	Source      string   `json:"source"`
 }
 
 var _ Provider = (*Skill)(nil)
 
 // skillFrontmatter 是 SKILL.md 的 YAML frontmatter 结构。
 type skillFrontmatter struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	DependsOn   []string `yaml:"depends_on"`
+	RequiredEnv []string `yaml:"required_env"`
 }
 
 // ParseSkillMD 从指定路径解析 SKILL.md 文件。
@@ -67,6 +73,8 @@ func ParseSkillMDContent(content, source string) (*Skill, error) {
 	return &Skill{
 		name:        meta.Name,
 		description: meta.Description,
+		dependsOn:   append([]string(nil), meta.DependsOn...),
+		requiredEnv: append([]string(nil), meta.RequiredEnv...),
 		body:        strings.TrimSpace(body),
 		source:      source,
 	}, nil
@@ -78,6 +86,8 @@ func (s *Skill) Metadata() Metadata {
 		Version:     "0.0.0",
 		Description: s.description,
 		Prompts:     []string{s.body},
+		DependsOn:   append([]string(nil), s.dependsOn...),
+		RequiredEnv: append([]string(nil), s.requiredEnv...),
 	}
 }
 
@@ -331,6 +341,8 @@ func parseSkillManifestFile(path string) (Manifest, error) {
 	return Manifest{
 		Name:        strings.TrimSpace(meta.Name),
 		Description: strings.TrimSpace(meta.Description),
+		DependsOn:   append([]string(nil), meta.DependsOn...),
+		RequiredEnv: append([]string(nil), meta.RequiredEnv...),
 		Source:      path,
 	}, nil
 }

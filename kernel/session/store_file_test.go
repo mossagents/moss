@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/logging"
 )
 
 func TestFileStore(t *testing.T) {
@@ -271,6 +271,65 @@ func TestFileStoreListSkipsHistoryHiddenSessions(t *testing.T) {
 	}
 	if summaries[0].ID != "visible" {
 		t.Fatalf("expected visible summary, got %q", summaries[0].ID)
+	}
+}
+
+func TestFileStoreListIncludesThreadMetadataAndActivitySort(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	parent := &Session{
+		ID:        "parent",
+		Status:    StatusPaused,
+		Config:    SessionConfig{Goal: "parent"},
+		CreatedAt: time.Now().Add(-2 * time.Hour),
+	}
+	RefreshThreadMetadata(parent, time.Now().Add(-30*time.Minute), "manual")
+	SetThreadPreview(parent, "root summary")
+	if err := store.Save(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+
+	child := &Session{
+		ID:        "child",
+		Status:    StatusRunning,
+		Config:    SessionConfig{Goal: "child"},
+		CreatedAt: time.Now().Add(-time.Hour),
+	}
+	SetThreadSource(child, "delegated")
+	SetThreadParent(child, "parent")
+	SetThreadArchived(child, true)
+	RefreshThreadMetadata(child, time.Now(), "tool:task")
+	SetThreadPreview(child, "latest delegated progress")
+	if err := store.Save(ctx, child); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := store.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+	if summaries[0].ID != "child" {
+		t.Fatalf("expected newest activity first, got %q", summaries[0].ID)
+	}
+	if summaries[0].Source != "delegated" || summaries[0].ParentID != "parent" {
+		t.Fatalf("unexpected thread lineage: %+v", summaries[0])
+	}
+	if !summaries[0].Archived {
+		t.Fatalf("expected archived delegated summary: %+v", summaries[0])
+	}
+	if summaries[0].Preview != "latest delegated progress" {
+		t.Fatalf("unexpected preview %q", summaries[0].Preview)
+	}
+	if summaries[0].UpdatedAt == "" {
+		t.Fatalf("expected updated_at in summary: %+v", summaries[0])
 	}
 }
 

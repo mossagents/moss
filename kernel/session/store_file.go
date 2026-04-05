@@ -99,11 +99,12 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			continue
 		}
 
-		endedAt := ""
-		if !sess.EndedAt.IsZero() {
-			endedAt = sess.EndedAt.Format("2006-01-02 15:04:05")
+		source, parentID, preview, _, archived, activityAt := ThreadMetadataValues(&sess)
+		endedAt := formatSessionTime(sess.EndedAt)
+		updatedAt := formatSessionTime(activityAt)
+		if updatedAt == "" {
+			updatedAt = formatSessionTime(sess.CreatedAt)
 		}
-
 		profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(&sess)
 		summaries = append(summaries, SessionSummary{
 			ID:                sess.ID,
@@ -113,17 +114,44 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 			EffectiveTrust:    effectiveTrust,
 			EffectiveApproval: effectiveApproval,
 			TaskMode:          taskMode,
+			Source:            source,
+			ParentID:          parentID,
+			Preview:           preview,
 			Status:            sess.Status,
 			Recoverable:       IsRecoverableStatus(sess.Status),
+			Archived:          archived,
 			Steps:             sess.Budget.UsedStepsValue(),
-			CreatedAt:         sess.CreatedAt.Format("2006-01-02 15:04:05"),
+			CreatedAt:         formatSessionTime(sess.CreatedAt),
+			UpdatedAt:         updatedAt,
 			EndedAt:           endedAt,
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
-		return summaries[i].CreatedAt > summaries[j].CreatedAt
+		left := firstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
+		right := firstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
+		if left == right {
+			return summaries[i].ID < summaries[j].ID
+		}
+		return left > right
 	})
 	return summaries, nil
+}
+
+func formatSessionTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.UTC().Format("2006-01-02 15:04:05")
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func (fs *FileStore) Delete(_ context.Context, id string) error {

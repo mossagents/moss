@@ -29,11 +29,12 @@ const maxHTTPResponseBodyBytes = 256 * 1024
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
 func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) []string {
+	surface := newExecutionSurface(sb, ws, exec)
 	names := []string{}
-	if ws != nil || sb != nil {
+	if surface.HasWorkspace() {
 		names = append(names, "read_file", "write_file", "edit_file", "glob", "ls", "grep")
 	}
-	if exec != nil || sb != nil {
+	if surface.HasExecutor() {
 		names = append(names, "run_command")
 	}
 	names = append(names, "http_request", "datetime", "ask_user")
@@ -54,8 +55,9 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 	}
 
 	var tools []entry
+	surface := newExecutionSurface(sb, ws, exec)
 
-	// 文件系统工具：优先 Workspace，回退 Sandbox
+	// 文件系统工具：统一通过 execution surface 判断可用性，但保留原始实现的优先级和路径语义。
 	if ws != nil {
 		tools = append(tools,
 			entry{readFileSpec, readFileHandlerWS(ws)},
@@ -65,22 +67,22 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 			entry{listFilesSpec, listFilesHandlerWS(ws)},
 			entry{grepSpec, grepHandlerWS(ws)},
 		)
-	} else if sb != nil {
+	} else if surface.Sandbox() != nil {
 		tools = append(tools,
-			entry{readFileSpec, readFileHandler(sb)},
-			entry{writeFileSpec, writeFileHandler(sb)},
-			entry{editFileSpec, editFileHandler(sb)},
-			entry{globSpec, globHandler(sb)},
-			entry{listFilesSpec, listFilesHandler(sb)},
-			entry{grepSpec, grepHandler(sb)},
+			entry{readFileSpec, readFileHandler(surface.Sandbox())},
+			entry{writeFileSpec, writeFileHandler(surface.Sandbox())},
+			entry{editFileSpec, editFileHandler(surface.Sandbox())},
+			entry{globSpec, globHandler(surface.Sandbox())},
+			entry{listFilesSpec, listFilesHandler(surface.Sandbox())},
+			entry{grepSpec, grepHandler(surface.Sandbox())},
 		)
 	}
 
-	// 命令执行：优先 Executor，回退 Sandbox
+	// 命令执行：统一通过 execution surface 判断可用性，但保留原始执行后端。
 	if exec != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerExecWithPolicy(k, exec, ws)})
-	} else if sb != nil {
-		tools = append(tools, entry{runCommandSpec, runCommandHandlerWithPolicy(k, sb)})
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerExecWithPolicy(k, exec, surface.Workspace())})
+	} else if surface.Sandbox() != nil {
+		tools = append(tools, entry{runCommandSpec, runCommandHandlerWithPolicy(k, surface.Sandbox())})
 	}
 
 	tools = append(tools, entry{httpRequestSpec, httpRequestHandlerWithPolicy(k)})

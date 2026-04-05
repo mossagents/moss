@@ -121,14 +121,16 @@ type ApprovalRuleConfig struct {
 }
 
 type SkillConfig struct {
-	Name      string            `yaml:"name"`
-	Transport string            `yaml:"transport,omitempty"`
-	Command   string            `yaml:"command,omitempty"`
-	Args      []string          `yaml:"args,omitempty"`
-	URL       string            `yaml:"url,omitempty"`
-	Env       map[string]string `yaml:"env,omitempty"`
-	Enabled   *bool             `yaml:"enabled,omitempty"`
-	Required  *bool             `yaml:"required,omitempty"`
+	Name        string            `yaml:"name"`
+	Transport   string            `yaml:"transport,omitempty"`
+	Command     string            `yaml:"command,omitempty"`
+	Args        []string          `yaml:"args,omitempty"`
+	URL         string            `yaml:"url,omitempty"`
+	Env         map[string]string `yaml:"env,omitempty"`
+	DependsOn   []string          `yaml:"depends_on,omitempty"`
+	RequiredEnv []string          `yaml:"required_env,omitempty"`
+	Enabled     *bool             `yaml:"enabled,omitempty"`
+	Required    *bool             `yaml:"required,omitempty"`
 }
 
 type ProfileConfig struct {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,16 +25,21 @@ const (
 
 // Task 表示一个异步委派任务。
 type Task struct {
-	ID        string          `json:"id"`
-	AgentName string          `json:"agent_name"`
-	Goal      string          `json:"goal"`
-	Status    TaskStatus      `json:"status"`
-	Result    string          `json:"result,omitempty"`
-	Error     string          `json:"error,omitempty"`
-	Tokens    port.TokenUsage `json:"tokens,omitempty"`
-	Revision  int64           `json:"revision,omitempty"`
-	CreatedAt time.Time       `json:"created_at,omitempty"`
-	UpdatedAt time.Time       `json:"updated_at,omitempty"`
+	ID              string          `json:"id"`
+	AgentName       string          `json:"agent_name"`
+	Goal            string          `json:"goal"`
+	Status          TaskStatus      `json:"status"`
+	SessionID       string          `json:"session_id,omitempty"`
+	ParentSessionID string          `json:"parent_session_id,omitempty"`
+	WorkspaceID     string          `json:"workspace_id,omitempty"`
+	JobID           string          `json:"job_id,omitempty"`
+	JobItemID       string          `json:"job_item_id,omitempty"`
+	Result          string          `json:"result,omitempty"`
+	Error           string          `json:"error,omitempty"`
+	Tokens          port.TokenUsage `json:"tokens,omitempty"`
+	Revision        int64           `json:"revision,omitempty"`
+	CreatedAt       time.Time       `json:"created_at,omitempty"`
+	UpdatedAt       time.Time       `json:"updated_at,omitempty"`
 }
 
 // TaskTracker 管理异步委派任务的状态。
@@ -60,6 +67,7 @@ func NewTaskTracker() *TaskTracker {
 func NewTaskTrackerWithRuntime(runtime port.TaskRuntime) *TaskTracker {
 	tt := NewTaskTracker()
 	tt.runtime = runtime
+	tt.hydrate(context.Background())
 	return tt
 }
 
@@ -79,11 +87,17 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	defer t.mu.Unlock()
 	cp := *task
 	now := time.Now()
+	existing := t.tasks[task.ID]
 	nextRev := t.rev[task.ID] + 1
 	t.rev[task.ID] = nextRev
 	cp.Revision = nextRev
+	assignTaskJobIDs(&cp, existing, nextRev)
 	if cp.CreatedAt.IsZero() {
-		cp.CreatedAt = now
+		if existing != nil && !existing.CreatedAt.IsZero() {
+			cp.CreatedAt = existing.CreatedAt
+		} else {
+			cp.CreatedAt = now
+		}
 	}
 	cp.UpdatedAt = now
 	t.tasks[task.ID] = &cp
@@ -93,6 +107,26 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	t.mirror(cp)
 	t.notifyLocked(cp)
 	return nextRev
+}
+
+func (t *TaskTracker) BindSession(id string, revision int64, sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	task, ok := t.tasks[id]
+	if !ok {
+		return
+	}
+	if revision > 0 && task.Revision != revision {
+		return
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || task.SessionID == sessionID {
+		return
+	}
+	task.SessionID = sessionID
+	task.UpdatedAt = time.Now()
+	t.mirror(*task)
+	t.notifyLocked(*task)
 }
 
 // Get 按 ID 查找任务。
@@ -277,15 +311,129 @@ func (t *TaskTracker) mirror(task Task) {
 		return
 	}
 	_ = t.runtime.UpsertTask(context.Background(), port.TaskRecord{
-		ID:          task.ID,
-		AgentName:   task.AgentName,
-		Goal:        task.Goal,
-		Status:      port.TaskStatus(task.Status),
-		ClaimedBy:   task.AgentName,
-		Result:      task.Result,
-		Error:       task.Error,
-		CreatedAt:   task.CreatedAt,
-		UpdatedAt:   task.UpdatedAt,
-		WorkspaceID: "",
+		ID:              task.ID,
+		AgentName:       task.AgentName,
+		Goal:            task.Goal,
+		Status:          port.TaskStatus(task.Status),
+		ClaimedBy:       task.AgentName,
+		WorkspaceID:     task.WorkspaceID,
+		SessionID:       task.SessionID,
+		ParentSessionID: task.ParentSessionID,
+		JobID:           task.JobID,
+		JobItemID:       task.JobItemID,
+		Result:          task.Result,
+		Error:           task.Error,
+		CreatedAt:       task.CreatedAt,
+		UpdatedAt:       task.UpdatedAt,
 	})
+	jobRuntime, ok := t.runtime.(port.JobRuntime)
+	if !ok {
+		return
+	}
+	jobID := strings.TrimSpace(task.JobID)
+	itemID := strings.TrimSpace(task.JobItemID)
+	if jobID == "" {
+		return
+	}
+	_ = jobRuntime.UpsertJob(context.Background(), port.AgentJob{
+		ID:        jobID,
+		AgentName: task.AgentName,
+		Goal:      task.Goal,
+		Status:    jobStatusFromTask(task.Status),
+		CreatedAt: task.CreatedAt,
+		UpdatedAt: task.UpdatedAt,
+	})
+	if itemID == "" {
+		return
+	}
+	_ = jobRuntime.UpsertJobItem(context.Background(), port.AgentJobItem{
+		JobID:     jobID,
+		ItemID:    itemID,
+		Status:    jobStatusFromTask(task.Status),
+		Executor:  task.AgentName,
+		Result:    task.Result,
+		Error:     task.Error,
+		CreatedAt: task.CreatedAt,
+		UpdatedAt: task.UpdatedAt,
+	})
+}
+
+func (t *TaskTracker) hydrate(ctx context.Context) {
+	if t.runtime == nil {
+		return
+	}
+	records, err := t.runtime.ListTasks(ctx, port.TaskQuery{})
+	if err != nil {
+		return
+	}
+	var jobs map[string]port.AgentJob
+	if jobRuntime, ok := t.runtime.(port.JobRuntime); ok {
+		if listed, err := jobRuntime.ListJobs(ctx, port.JobQuery{}); err == nil {
+			jobs = make(map[string]port.AgentJob, len(listed))
+			for _, job := range listed {
+				jobs[job.ID] = job
+			}
+		}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, record := range records {
+		task := &Task{
+			ID:              record.ID,
+			AgentName:       record.AgentName,
+			Goal:            record.Goal,
+			Status:          TaskStatus(record.Status),
+			SessionID:       record.SessionID,
+			ParentSessionID: record.ParentSessionID,
+			WorkspaceID:     record.WorkspaceID,
+			JobID:           record.JobID,
+			JobItemID:       record.JobItemID,
+			Result:          record.Result,
+			Error:           record.Error,
+			CreatedAt:       record.CreatedAt,
+			UpdatedAt:       record.UpdatedAt,
+			Revision:        1,
+		}
+		if job, ok := jobs[task.JobID]; ok && job.Revision > 0 {
+			task.Revision = job.Revision
+		}
+		t.tasks[task.ID] = task
+		if task.Revision > t.rev[task.ID] {
+			t.rev[task.ID] = task.Revision
+		}
+	}
+}
+
+func assignTaskJobIDs(task *Task, existing *Task, nextRev int64) {
+	if task == nil {
+		return
+	}
+	if strings.TrimSpace(task.JobID) == "" {
+		switch {
+		case existing != nil && existing.JobID != "" && existing.Status != TaskCompleted:
+			task.JobID = existing.JobID
+		case nextRev <= 1:
+			task.JobID = task.ID
+		default:
+			task.JobID = task.ID + ":rev:" + strconv.FormatInt(nextRev, 10)
+		}
+	}
+	if strings.TrimSpace(task.JobItemID) == "" {
+		task.JobItemID = "turn-" + strconv.FormatInt(nextRev, 10)
+	}
+}
+
+func jobStatusFromTask(status TaskStatus) port.AgentJobStatus {
+	switch status {
+	case TaskRunning:
+		return port.JobRunning
+	case TaskCompleted:
+		return port.JobCompleted
+	case TaskFailed:
+		return port.JobFailed
+	case TaskCancelled:
+		return port.JobCancelled
+	default:
+		return port.JobPending
+	}
 }

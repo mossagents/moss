@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -15,13 +16,17 @@ import (
 const (
 	contextStateVersion           = 1
 	contextSummaryFragmentID      = "context:summary"
+	contextRealtimeSnapshotKey    = "context_realtime_snapshot"
 	contextStartupSessionID       = "startup:session"
 	contextStartupStateCatalogID  = "startup:state_catalog"
 	contextStartupMemoryID        = "startup:memory"
 	contextStartupWorkspaceID     = "startup:workspace"
 	contextStartupRepoID          = "startup:repo"
+	contextRealtimeRepoID         = "realtime:repo"
+	contextRealtimeWorkspaceID    = "realtime:workspace"
 	contextSummaryFragmentKind    = "summary"
 	contextStartupFragmentKind    = "startup"
+	contextRealtimeFragmentKind   = "realtime"
 	contextBaselineFragmentPrefix = "baseline:"
 )
 
@@ -39,6 +44,7 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 	}
 	state.BaselineFragments = buildBaselineFragments(sess.Messages)
 	state.StartupFragments = buildStartupFragments(ctx, k, sess, state.StartupBudget)
+	state.DynamicFragments = append(filterFragmentsByKind(state.DynamicFragments, contextSummaryFragmentKind), buildRealtimeFragments(ctx, k, sess)...)
 	currentPrompt := session.BuildPromptMessages(sess.Messages, state)
 	currentTokens := session.EstimateMessagesTokens(currentPrompt)
 	if shouldCompactPrompt(sess, state, st, currentTokens) {
@@ -49,6 +55,7 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 		state = session.ReadPromptContextState(sess)
 		state.BaselineFragments = buildBaselineFragments(sess.Messages)
 		state.StartupFragments = buildStartupFragments(ctx, k, sess, state.StartupBudget)
+		state.DynamicFragments = append(filterFragmentsByKind(state.DynamicFragments, contextSummaryFragmentKind), buildRealtimeFragments(ctx, k, sess)...)
 		currentPrompt = session.BuildPromptMessages(sess.Messages, state)
 		currentTokens = session.EstimateMessagesTokens(currentPrompt)
 	}
@@ -392,6 +399,209 @@ func buildWorkspaceStartupFragment(ctx context.Context, k *kernel.Kernel) sessio
 		"Top-level workspace files",
 		session.FormatPromptContextFragment("startup_workspace_map", strings.Join(limitStrings(files, 12), "\n")),
 	)
+}
+
+type realtimeContextSnapshot struct {
+	Repo      repoRealtimeState                `json:"repo,omitempty"`
+	Workspace map[string]workspaceRealtimeFile `json:"workspace,omitempty"`
+}
+
+type repoRealtimeState struct {
+	Root      string   `json:"root,omitempty"`
+	Branch    string   `json:"branch,omitempty"`
+	Dirty     bool     `json:"dirty,omitempty"`
+	Untracked []string `json:"untracked,omitempty"`
+}
+
+type workspaceRealtimeFile struct {
+	Size    int64 `json:"size,omitempty"`
+	ModUnix int64 `json:"mod_unix,omitempty"`
+}
+
+func buildRealtimeFragments(ctx context.Context, k *kernel.Kernel, sess *session.Session) []session.PromptContextFragment {
+	if k == nil || sess == nil {
+		return nil
+	}
+	previous := readRealtimeSnapshot(sess)
+	current := realtimeContextSnapshot{
+		Repo:      captureRepoRealtimeState(ctx, k),
+		Workspace: captureWorkspaceRealtimeState(ctx, k),
+	}
+	writeRealtimeSnapshot(sess, current)
+	fragments := make([]session.PromptContextFragment, 0, 2)
+	if fragment := buildRepoRealtimeFragment(previous.Repo, current.Repo); strings.TrimSpace(fragment.Text) != "" {
+		fragments = append(fragments, fragment)
+	}
+	if fragment := buildWorkspaceRealtimeFragment(previous.Workspace, current.Workspace); strings.TrimSpace(fragment.Text) != "" {
+		fragments = append(fragments, fragment)
+	}
+	return fragments
+}
+
+func readRealtimeSnapshot(sess *session.Session) realtimeContextSnapshot {
+	raw, ok := sess.GetState(contextRealtimeSnapshotKey)
+	if !ok || raw == nil {
+		return realtimeContextSnapshot{}
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return realtimeContextSnapshot{}
+	}
+	var snapshot realtimeContextSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return realtimeContextSnapshot{}
+	}
+	if snapshot.Workspace == nil {
+		snapshot.Workspace = make(map[string]workspaceRealtimeFile)
+	}
+	return snapshot
+}
+
+func writeRealtimeSnapshot(sess *session.Session, snapshot realtimeContextSnapshot) {
+	if sess == nil {
+		return
+	}
+	if snapshot.Workspace == nil {
+		snapshot.Workspace = make(map[string]workspaceRealtimeFile)
+	}
+	sess.SetState(contextRealtimeSnapshotKey, snapshot)
+}
+
+func captureRepoRealtimeState(ctx context.Context, k *kernel.Kernel) repoRealtimeState {
+	capture := k.RepoStateCapture()
+	if capture == nil {
+		return repoRealtimeState{}
+	}
+	state, err := capture.Capture(ctx)
+	if err != nil || state == nil {
+		return repoRealtimeState{}
+	}
+	return repoRealtimeState{
+		Root:      strings.TrimSpace(state.RepoRoot),
+		Branch:    strings.TrimSpace(state.Branch),
+		Dirty:     state.IsDirty,
+		Untracked: append([]string(nil), limitStrings(state.Untracked, 8)...),
+	}
+}
+
+func buildRepoRealtimeFragment(previous, current repoRealtimeState) session.PromptContextFragment {
+	if isZeroRepoRealtimeState(current) || isZeroRepoRealtimeState(previous) {
+		return session.PromptContextFragment{}
+	}
+	lines := make([]string, 0, 4)
+	if previous.Branch != current.Branch {
+		lines = append(lines, fmt.Sprintf("Branch changed: %s -> %s", firstNonEmpty(previous.Branch, "(detached)"), firstNonEmpty(current.Branch, "(detached)")))
+	}
+	if previous.Dirty != current.Dirty {
+		lines = append(lines, fmt.Sprintf("Dirty changed: %t -> %t", previous.Dirty, current.Dirty))
+	}
+	if strings.Join(previous.Untracked, ",") != strings.Join(current.Untracked, ",") {
+		lines = append(lines, fmt.Sprintf("Untracked: %s", strings.Join(limitStrings(current.Untracked, 6), ", ")))
+	}
+	if len(lines) == 0 {
+		return session.PromptContextFragment{}
+	}
+	return session.NewPromptContextFragment(
+		contextRealtimeRepoID,
+		contextRealtimeFragmentKind,
+		port.RoleSystem,
+		"Repository changes since last turn",
+		session.FormatPromptContextFragment("realtime_repo_changes", strings.Join(lines, "\n")),
+	)
+}
+
+func isZeroRepoRealtimeState(state repoRealtimeState) bool {
+	return strings.TrimSpace(state.Root) == "" &&
+		strings.TrimSpace(state.Branch) == "" &&
+		!state.Dirty &&
+		len(state.Untracked) == 0
+}
+
+func captureWorkspaceRealtimeState(ctx context.Context, k *kernel.Kernel) map[string]workspaceRealtimeFile {
+	ws := k.Workspace()
+	if ws == nil {
+		return nil
+	}
+	files, err := ws.ListFiles(ctx, "*")
+	if err != nil || len(files) == 0 {
+		return nil
+	}
+	sort.Strings(files)
+	if len(files) > 64 {
+		files = files[:64]
+	}
+	state := make(map[string]workspaceRealtimeFile, len(files))
+	for _, file := range files {
+		info, err := ws.Stat(ctx, file)
+		if err != nil {
+			continue
+		}
+		stamp := workspaceRealtimeFile{Size: info.Size}
+		if !info.ModTime.IsZero() {
+			stamp.ModUnix = info.ModTime.UTC().UnixNano()
+		}
+		state[file] = stamp
+	}
+	return state
+}
+
+func buildWorkspaceRealtimeFragment(previous, current map[string]workspaceRealtimeFile) session.PromptContextFragment {
+	if len(previous) == 0 || len(current) == 0 {
+		return session.PromptContextFragment{}
+	}
+	added := make([]string, 0)
+	changed := make([]string, 0)
+	removed := make([]string, 0)
+	for path, stamp := range current {
+		prev, ok := previous[path]
+		switch {
+		case !ok:
+			added = append(added, path)
+		case prev != stamp:
+			changed = append(changed, path)
+		}
+	}
+	for path := range previous {
+		if _, ok := current[path]; !ok {
+			removed = append(removed, path)
+		}
+	}
+	if len(added) == 0 && len(changed) == 0 && len(removed) == 0 {
+		return session.PromptContextFragment{}
+	}
+	sort.Strings(added)
+	sort.Strings(changed)
+	sort.Strings(removed)
+	lines := make([]string, 0, 3)
+	if len(added) > 0 {
+		lines = append(lines, "Added: "+strings.Join(limitStrings(added, 6), ", "))
+	}
+	if len(changed) > 0 {
+		lines = append(lines, "Changed: "+strings.Join(limitStrings(changed, 6), ", "))
+	}
+	if len(removed) > 0 {
+		lines = append(lines, "Removed: "+strings.Join(limitStrings(removed, 6), ", "))
+	}
+	return session.NewPromptContextFragment(
+		contextRealtimeWorkspaceID,
+		contextRealtimeFragmentKind,
+		port.RoleSystem,
+		"Workspace changes since last turn",
+		session.FormatPromptContextFragment("realtime_workspace_changes", strings.Join(lines, "\n")),
+	)
+}
+
+func filterFragmentsByKind(fragments []session.PromptContextFragment, kind string) []session.PromptContextFragment {
+	if len(fragments) == 0 {
+		return nil
+	}
+	out := make([]session.PromptContextFragment, 0, len(fragments))
+	for _, fragment := range fragments {
+		if strings.TrimSpace(fragment.Kind) == kind {
+			out = append(out, fragment)
+		}
+	}
+	return out
 }
 
 func takeFragmentsWithinBudget(fragments []session.PromptContextFragment, budget int) []session.PromptContextFragment {

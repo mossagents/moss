@@ -13,6 +13,7 @@ import (
 
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/skill"
 )
@@ -71,12 +72,14 @@ func (s *MCPServer) Metadata() skill.Metadata {
 		Version:     "0.0.0",
 		Description: fmt.Sprintf("MCP server: %s (transport: %s)", s.cfg.Name, s.cfg.Transport),
 		Tools:       s.toolNames,
+		DependsOn:   append([]string(nil), s.cfg.DependsOn...),
+		RequiredEnv: append([]string(nil), s.cfg.RequiredEnv...),
 	}
 }
 
 func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
 	// 1. 建立连接
-	client, err := s.connect(ctx)
+	client, err := s.connect(ctx, deps)
 	if err != nil {
 		return fmt.Errorf("mcp connect %s: %w", s.cfg.Name, err)
 	}
@@ -139,8 +142,11 @@ func (s *MCPServer) Shutdown(ctx context.Context) error {
 }
 
 // connect 根据 transport 类型创建 MCP client 连接。
-func (s *MCPServer) connect(ctx context.Context) (mcpclient.MCPClient, error) {
-	env := s.buildEnv()
+func (s *MCPServer) connect(ctx context.Context, deps skill.Deps) (mcpclient.MCPClient, error) {
+	env, err := s.buildEnv(ctx, deps.UserIO)
+	if err != nil {
+		return nil, err
+	}
 
 	switch s.cfg.Transport {
 	case "stdio":
@@ -179,12 +185,70 @@ func (s *MCPServer) buildCommand() []string {
 }
 
 // buildEnv 构建环境变量列表（KEY=VALUE 格式）。
-func (s *MCPServer) buildEnv() []string {
+func (s *MCPServer) buildEnv(ctx context.Context, io port.UserIO) ([]string, error) {
 	env := os.Environ()
-	for k, v := range s.cfg.Env {
+	resolved, err := resolveMCPRequiredEnv(ctx, io, s.cfg.Name, s.cfg.Env, s.cfg.RequiredEnv)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range resolved {
 		env = append(env, k+"="+v)
 	}
-	return env
+	return env, nil
+}
+
+func resolveMCPRequiredEnv(ctx context.Context, io port.UserIO, providerName string, configured map[string]string, required []string) (map[string]string, error) {
+	resolved := make(map[string]string, len(configured))
+	for key, value := range configured {
+		resolved[key] = value
+	}
+	missing := make([]string, 0, len(required))
+	for _, key := range required {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		if value := strings.TrimSpace(resolved[key]); value != "" {
+			continue
+		}
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			resolved[key] = value
+			continue
+		}
+		missing = append(missing, key)
+	}
+	if len(missing) == 0 {
+		return resolved, nil
+	}
+	if io == nil {
+		return nil, fmt.Errorf("mcp server %q requires env %s", providerName, strings.Join(missing, ", "))
+	}
+	fields := make([]port.InputField, 0, len(missing))
+	for _, key := range missing {
+		fields = append(fields, port.InputField{
+			Name:        key,
+			Type:        port.InputFieldString,
+			Title:       key,
+			Description: fmt.Sprintf("Required by MCP server %s", providerName),
+			Required:    true,
+		})
+	}
+	resp, err := io.Ask(ctx, port.InputRequest{
+		Type:   port.InputForm,
+		Prompt: fmt.Sprintf("Provide the missing environment values for MCP server %s.", providerName),
+		Fields: fields,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, key := range missing {
+		value := strings.TrimSpace(fmt.Sprint(resp.Form[key]))
+		if value == "" {
+			return nil, fmt.Errorf("mcp server %q requires env %s", providerName, key)
+		}
+		resolved[key] = value
+	}
+	return resolved, nil
 }
 
 // makeHandler 为指定 MCP tool 创建 ToolHandler。
