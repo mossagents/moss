@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -158,4 +160,92 @@ func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.
 		}
 	}
 	return decision
+}
+
+func PersistProjectApprovalAmendment(workspace, profile string, amendment *port.ExecPolicyAmendment) error {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return fmt.Errorf("workspace is required")
+	}
+	if amendment == nil {
+		return fmt.Errorf("policy amendment is required")
+	}
+	cfgPath := appconfig.DefaultProjectConfigPath(workspace)
+	cfg, err := appconfig.LoadConfig(cfgPath)
+	if err != nil {
+		return fmt.Errorf("load project config: %w", err)
+	}
+	if cfg.Profiles == nil {
+		cfg.Profiles = map[string]appconfig.ProfileConfig{}
+	}
+	profile = strings.TrimSpace(profile)
+	if profile == "" {
+		profile = strings.TrimSpace(cfg.DefaultProfile)
+	}
+	if profile == "" {
+		profile = "default"
+	}
+	profileCfg := cfg.Profiles[profile]
+	if cmd := amendment.CommandRule; cmd != nil && strings.TrimSpace(cmd.Match) != "" {
+		next := appconfig.CommandRuleConfig{
+			Name:   strings.TrimSpace(cmd.Name),
+			Match:  strings.TrimSpace(cmd.Match),
+			Access: "allow",
+		}
+		if !hasProjectCommandRule(profileCfg.Execution.CommandRules, next) {
+			profileCfg.Execution.CommandRules = append(profileCfg.Execution.CommandRules, next)
+		}
+	}
+	if http := amendment.HTTPRule; http != nil && strings.TrimSpace(http.Match) != "" {
+		next := appconfig.HTTPRuleConfig{
+			Name:    strings.TrimSpace(http.Name),
+			Match:   strings.TrimSpace(http.Match),
+			Methods: append([]string(nil), http.Methods...),
+			Access:  "allow",
+		}
+		if !hasProjectHTTPRule(profileCfg.Execution.HTTPRules, next) {
+			profileCfg.Execution.HTTPRules = append(profileCfg.Execution.HTTPRules, next)
+		}
+	}
+	cfg.Profiles[profile] = profileCfg
+	if strings.TrimSpace(cfg.DefaultProfile) == "" {
+		cfg.DefaultProfile = profile
+	}
+	if err := appconfig.SaveConfig(cfgPath, cfg); err != nil {
+		return fmt.Errorf("save project config: %w", err)
+	}
+	return nil
+}
+
+func hasProjectCommandRule(rules []appconfig.CommandRuleConfig, target appconfig.CommandRuleConfig) bool {
+	for _, rule := range rules {
+		if strings.EqualFold(strings.TrimSpace(rule.Match), strings.TrimSpace(target.Match)) &&
+			strings.EqualFold(strings.TrimSpace(rule.Access), strings.TrimSpace(target.Access)) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasProjectHTTPRule(rules []appconfig.HTTPRuleConfig, target appconfig.HTTPRuleConfig) bool {
+	for _, rule := range rules {
+		if !strings.EqualFold(strings.TrimSpace(rule.Match), strings.TrimSpace(target.Match)) ||
+			!strings.EqualFold(strings.TrimSpace(rule.Access), strings.TrimSpace(target.Access)) {
+			continue
+		}
+		if len(rule.Methods) != len(target.Methods) {
+			continue
+		}
+		matched := true
+		for i := range rule.Methods {
+			if !strings.EqualFold(strings.TrimSpace(rule.Methods[i]), strings.TrimSpace(target.Methods[i])) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }

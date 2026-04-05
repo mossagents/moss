@@ -465,7 +465,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if rawURL == "" {
 			return nil, fmt.Errorf("url is required")
 		}
-		policy := effectiveExecutionPolicy(k, nil, nil)
+		policy := effectiveExecutionPolicy(ctx, k, nil, nil)
 		if policy.HTTP.Access == ExecutionAccessDeny {
 			return nil, fmt.Errorf("http_request is disabled by execution policy")
 		}
@@ -566,7 +566,7 @@ func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.Tool
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		policy := effectiveExecutionPolicy(k, sb, nil)
+		policy := effectiveExecutionPolicy(ctx, k, sb, nil)
 		if policy.Command.Access == ExecutionAccessDeny {
 			return nil, fmt.Errorf("run_command is disabled by execution policy")
 		}
@@ -593,7 +593,7 @@ func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec port.Executor, ws po
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		policy := effectiveExecutionPolicy(k, nil, ws)
+		policy := effectiveExecutionPolicy(ctx, k, nil, ws)
 		if policy.Command.Access == ExecutionAccessDeny {
 			return nil, fmt.Errorf("run_command is disabled by execution policy")
 		}
@@ -1067,9 +1067,13 @@ func scopedPattern(pattern, scopePath string) string {
 	return filepath.Join(scopePath, pattern)
 }
 
-func effectiveExecutionPolicy(k *kernel.Kernel, sb sandbox.Sandbox, ws port.Workspace) ExecutionPolicy {
+func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.Sandbox, ws port.Workspace) ExecutionPolicy {
 	if k != nil {
-		return ExecutionPolicyOf(k)
+		policy := ExecutionPolicyOf(k)
+		if meta, ok := port.ToolCallContextFromContext(ctx); ok {
+			return ExecutionPolicyForToolContext(meta, k, policy)
+		}
+		return policy
 	}
 	workspace := ""
 	if sb != nil {

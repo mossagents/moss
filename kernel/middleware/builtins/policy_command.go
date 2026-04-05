@@ -37,20 +37,30 @@ type compiledHTTPPatternRule struct {
 }
 
 func CommandRules(rules ...CommandPatternRule) PolicyRule {
+	return commandRulesWithDefault("", rules...)
+}
+
+func CommandRulesWithDefault(defaultAccess PolicyDecision, rules ...CommandPatternRule) PolicyRule {
+	return commandRulesWithDefault(defaultAccess, rules...)
+}
+
+func commandRulesWithDefault(defaultAccess PolicyDecision, rules ...CommandPatternRule) PolicyRule {
 	compiled := compileCommandPatternRules(rules)
 	return func(ctx PolicyContext) PolicyResult {
-		if ctx.Tool.Name != "run_command" || len(compiled) == 0 {
+		if ctx.Tool.Name != "run_command" {
 			return allowResult()
 		}
 		command, line := extractCommandTargets(ctx.Input)
 		if command == "" && line == "" {
-			return allowResult()
+			return defaultPolicyResult(defaultAccess, "command.default_requires_approval", "command execution requires approval by policy")
 		}
 		result := allowResult()
+		matched := false
 		for _, rule := range compiled {
 			if !rule.matches(command, line) {
 				continue
 			}
+			matched = true
 			switch rule.access {
 			case Deny:
 				result := denyResult("command.rule_denied", rule.message("denied command execution"))
@@ -63,25 +73,38 @@ func CommandRules(rules ...CommandPatternRule) PolicyRule {
 				result.Meta = rule.meta("command")
 			}
 		}
+		if !matched {
+			return defaultPolicyResult(defaultAccess, "command.default_requires_approval", "command execution requires approval by policy")
+		}
 		return result
 	}
 }
 
 func HTTPRules(rules ...HTTPPatternRule) PolicyRule {
+	return httpRulesWithDefault("", rules...)
+}
+
+func HTTPRulesWithDefault(defaultAccess PolicyDecision, rules ...HTTPPatternRule) PolicyRule {
+	return httpRulesWithDefault(defaultAccess, rules...)
+}
+
+func httpRulesWithDefault(defaultAccess PolicyDecision, rules ...HTTPPatternRule) PolicyRule {
 	compiled := compileHTTPPatternRules(rules)
 	return func(ctx PolicyContext) PolicyResult {
-		if ctx.Tool.Name != "http_request" || len(compiled) == 0 {
+		if ctx.Tool.Name != "http_request" {
 			return allowResult()
 		}
 		rawURL, host, method := extractHTTPRuleTargets(ctx.Input)
 		if rawURL == "" && host == "" {
-			return allowResult()
+			return defaultPolicyResult(defaultAccess, "http.default_requires_approval", "http request requires approval by policy")
 		}
 		result := allowResult()
+		matched := false
 		for _, rule := range compiled {
 			if !rule.matches(rawURL, host, method) {
 				continue
 			}
+			matched = true
 			switch rule.access {
 			case Deny:
 				out := denyResult("http.rule_denied", rule.message("denied http request"))
@@ -94,7 +117,21 @@ func HTTPRules(rules ...HTTPPatternRule) PolicyRule {
 				result.Meta = rule.meta(method)
 			}
 		}
+		if !matched {
+			return defaultPolicyResult(defaultAccess, "http.default_requires_approval", "http request requires approval by policy")
+		}
 		return result
+	}
+}
+
+func defaultPolicyResult(access PolicyDecision, code, message string) PolicyResult {
+	switch access {
+	case Deny:
+		return denyResult(strings.Replace(code, "requires_approval", "denied", 1), strings.Replace(message, "requires approval", "is denied", 1))
+	case RequireApproval:
+		return requireApprovalResult(code, message)
+	default:
+		return allowResult()
 	}
 }
 

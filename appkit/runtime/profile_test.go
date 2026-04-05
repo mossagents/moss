@@ -199,3 +199,35 @@ func TestExecutionPolicyRulesApplyCommandRules(t *testing.T) {
 		t.Fatalf("decision = %s, want %s", result, builtins.RequireApproval)
 	}
 }
+
+func TestExecutionPolicyRulesAllowRuleOverridesDefaultConfirm(t *testing.T) {
+	policy := ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "confirm")
+	policy.Command.Rules = []CommandRule{{
+		Name:   "git-status",
+		Match:  "git status*",
+		Access: ExecutionAccessAllow,
+	}}
+
+	rules := ExecutionPolicyRules(policy)
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"status"},
+	})
+	result := builtins.Allow
+	for _, rule := range rules {
+		next := rule(builtins.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "run_command"},
+			Input: input,
+		})
+		if next.Decision == builtins.Deny {
+			result = builtins.Deny
+			break
+		}
+		if next.Decision == builtins.RequireApproval {
+			result = builtins.RequireApproval
+		}
+	}
+	if result != builtins.Allow {
+		t.Fatalf("decision = %s, want %s", result, builtins.Allow)
+	}
+}

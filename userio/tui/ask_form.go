@@ -90,11 +90,12 @@ func synthesizeFieldsFromInputRequest(req port.InputRequest, workspace string) [
 	case port.InputConfirm:
 		if req.Approval != nil {
 			options := []string{approvalChoiceAllowOnce}
-			if display := buildApprovalDisplay(req.Approval, ""); strings.TrimSpace(display.RuleKey) != "" {
+			display := buildApprovalDisplay(req.Approval, "")
+			if strings.TrimSpace(display.RuleKey) != "" {
 				options = append(options, approvalChoiceAllowSession)
-				if strings.TrimSpace(workspace) != "" {
-					options = append(options, approvalChoiceAllowProject)
-				}
+			}
+			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(req.Approval) != nil {
+				options = append(options, approvalChoiceAllowProject)
 			}
 			options = append(options, approvalChoiceDeny)
 			return []port.InputField{{
@@ -396,6 +397,7 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 		Approved: approved,
 		Decision: &port.ApprovalDecision{
 			RequestID: ask.request.Approval.ID,
+			Type:      port.ApprovalDecisionDeny,
 			Approved:  approved,
 			Source:    "tui-approval",
 			DecidedAt: m.now().UTC(),
@@ -407,14 +409,28 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 	}
 	switch selected {
 	case approvalChoiceAllowSession:
-		rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeSession, m.now())
-		if ok {
+		if rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeSession, m.now()); ok {
 			m.rememberApprovalRule(rule)
+		}
+		if perms := approvalSessionPermissions(ask.request.Approval); perms != nil {
+			resp.Decision.Type = port.ApprovalDecisionGrantPermission
+			resp.Decision.GrantedPermissions = perms
+			resp.Decision.Source = "tui-session-rule"
+			resp.Decision.Reason = "grant requested permissions for this session"
+			notice = "Approval granted. The requested permissions are now available for this session."
+		} else {
+			resp.Decision.Type = port.ApprovalDecisionApproveSession
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "remember similar actions for this session"
 			notice = "Approval granted. Similar actions will be allowed automatically for this session."
 		}
 	case approvalChoiceAllowProject:
+		amendment := approvalProjectAmendment(ask.request.Approval)
+		if amendment == nil {
+			m.askForm.errorText = "This approval cannot be remembered for the current project."
+			m.refreshViewport()
+			return m, nil
+		}
 		rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeProject, m.now())
 		if !ok {
 			m.askForm.errorText = "This approval cannot be remembered for the current project."
@@ -426,14 +442,24 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			m.refreshViewport()
 			return m, nil
 		}
+		if err := product.PersistProjectApprovalAmendment(m.workspace, m.profile, amendment); err != nil {
+			m.askForm.errorText = err.Error()
+			m.refreshViewport()
+			return m, nil
+		}
+		resp.Decision.Type = port.ApprovalDecisionPolicyAmendment
+		resp.Decision.PolicyAmendment = amendment
 		resp.Decision.Source = "tui-project-rule"
-		resp.Decision.Reason = "remember similar actions for this project"
-		notice = "Approval granted. Similar actions will be allowed automatically for this project."
+		resp.Decision.Reason = "persist matching policy amendment for this project"
+		notice = "Approval granted. The project execution policy has been updated."
 	case approvalChoiceAllowOnce:
+		resp.Decision.Type = port.ApprovalDecisionApprove
 		resp.Decision.Source = "tui-allow-once"
 	default:
+		resp.Decision.Type = port.ApprovalDecisionDeny
 		resp.Decision.Source = "tui-deny"
 	}
+	resp.Decision = port.NormalizeApprovalDecision(resp.Decision)
 	m.resetAskFormState()
 	ask.replyCh <- resp
 	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
@@ -613,7 +639,7 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 
 	sb.WriteString(dialogAccentStyle.Render(display.Title))
 	sb.WriteString("\n")
-	sb.WriteString(mutedStyle.Render("Review the action below before continuing. Matching approvals can be remembered."))
+	sb.WriteString(mutedStyle.Render("Review the action below before continuing. You can approve once, cache for this session, or amend project policy when available."))
 	if strings.TrimSpace(m.askForm.errorText) != "" {
 		sb.WriteString("\n\n")
 		sb.WriteString(errorStyle.Render(wrapText(m.askForm.errorText, width-8)))
@@ -637,7 +663,7 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 		sb.WriteString(mutedStyle.Render(wrapText(note, width-8)))
 		sb.WriteString("\n\n")
 	}
-	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, "←/→ choose • Enter apply • A allow once • S session • P project • D deny • Esc cancel")
+	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, approvalDecisionHelp(decisionField.def.Options))
 }
 
 func renderApprovalDecisionButtons(field askFieldState) []string {
@@ -706,4 +732,85 @@ func approvalDecisionNote(selected string, display approvalDisplay) string {
 	default:
 		return "Approve only this action."
 	}
+}
+
+func approvalDecisionHelp(options []string) string {
+	parts := []string{"←/→ choose", "Enter apply", "A allow once"}
+	if indexOfApprovalOption(options, approvalChoiceAllowSession) >= 0 {
+		parts = append(parts, "S session")
+	}
+	if indexOfApprovalOption(options, approvalChoiceAllowProject) >= 0 {
+		parts = append(parts, "P project")
+	}
+	parts = append(parts, "D deny", "Esc cancel")
+	return strings.Join(parts, " • ")
+}
+
+func approvalSessionPermissions(req *port.ApprovalRequest) *port.PermissionProfile {
+	if req == nil {
+		return nil
+	}
+	if req.ProposedPermissions != nil {
+		return req.ProposedPermissions
+	}
+	if strings.TrimSpace(req.ToolName) != "http_request" {
+		return nil
+	}
+	_, pattern := parseApprovalRequestTarget(req)
+	fields := strings.Fields(pattern)
+	if len(fields) < 2 {
+		return nil
+	}
+	return &port.PermissionProfile{HTTPHosts: []string{fields[1]}}
+}
+
+func approvalProjectAmendment(req *port.ApprovalRequest) *port.ExecPolicyAmendment {
+	if req == nil {
+		return nil
+	}
+	if req.ProposedAmendment != nil {
+		return req.ProposedAmendment
+	}
+	switch strings.TrimSpace(req.ToolName) {
+	case "run_command":
+		_, pattern := parseApprovalCommand(req)
+		if strings.TrimSpace(pattern) == "" {
+			return nil
+		}
+		return &port.ExecPolicyAmendment{
+			CommandRule: &port.ExecPolicyCommandRule{
+				Name:  "allow-" + approvalRuleSlug(pattern),
+				Match: pattern + "*",
+			},
+		}
+	case "http_request":
+		_, pattern := parseApprovalRequestTarget(req)
+		fields := strings.Fields(pattern)
+		if len(fields) < 2 {
+			return nil
+		}
+		return &port.ExecPolicyAmendment{
+			HTTPRule: &port.ExecPolicyHTTPRule{
+				Name:    "allow-" + approvalRuleSlug(fields[1]),
+				Match:   fields[1],
+				Methods: []string{strings.ToUpper(fields[0])},
+			},
+		}
+	default:
+		return nil
+	}
+}
+
+func approvalRuleSlug(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer(" ", "-", "*", "", "/", "-", "\\", "-", ".", "-", ":", "-", "_", "-")
+	value = replacer.Replace(value)
+	for strings.Contains(value, "--") {
+		value = strings.ReplaceAll(value, "--", "-")
+	}
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "rule"
+	}
+	return value
 }

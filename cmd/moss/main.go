@@ -152,7 +152,7 @@ func runCmd(args []string) {
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin}
+	cliIO := &cliUserIO{writer: os.Stdout, reader: os.Stdin, workspace: f.Workspace, profile: resolution.Profile.Name}
 	k, err := appkit.BuildKernel(ctx, f, cliIO)
 	if err != nil {
 		logging.GetLogger().Error("error initializing kernel", slog.Any("error", err))

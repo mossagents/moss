@@ -60,15 +60,32 @@ func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) ap
 		}
 	}
 	display := approvalDisplay{
-		Title:    "Approval required",
-		ToolName: strings.TrimSpace(req.ToolName),
-		Risk:     strings.TrimSpace(req.Risk),
-		Reason:   strings.TrimSpace(req.Reason),
+		Title:               "Approval required",
+		ToolName:            strings.TrimSpace(req.ToolName),
+		Risk:                strings.TrimSpace(req.Risk),
+		Reason:              strings.TrimSpace(req.Reason),
+		ActionLabel:         strings.TrimSpace(req.ActionLabel),
+		ActionValue:         strings.TrimSpace(req.ActionValue),
+		ScopeLabel:          strings.TrimSpace(req.ScopeLabel),
+		ScopeValue:          strings.TrimSpace(req.ScopeValue),
+		RuleKey:             strings.TrimSpace(req.CacheKey),
+		RuleLabel:           strings.TrimSpace(req.CacheLabel),
+		SessionDecisionNote: strings.TrimSpace(req.SessionDecisionNote),
+		ProjectDecisionNote: strings.TrimSpace(req.ProjectDecisionNote),
 	}
 	if display.Reason == "" {
 		display.Reason = "This action requires approval by policy."
 	}
 	display.SessionID = approvalSessionID(req, currentSessionID)
+	if display.ActionLabel != "" && display.ActionValue != "" {
+		if display.ScopeLabel == "" && display.RuleKey != "" {
+			display.ScopeLabel = "Matching rule"
+		}
+		if display.RuleLabel == "" && display.ScopeValue != "" {
+			display.RuleLabel = display.ScopeValue
+		}
+		return display
+	}
 	switch display.ToolName {
 	case "run_command":
 		command, pattern := parseApprovalCommand(req)

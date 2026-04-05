@@ -2,13 +2,18 @@ package builtins
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // PolicyDecision 表示权限决策。
@@ -159,6 +164,27 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		Enforcement: approval.Enforcement,
 		Data:        approvalRequestData(approval, mc.Input, result.Meta),
 	})
+	if auto := autoApprovalDecision(mc, approval); auto != nil {
+		resolved := port.NormalizeApprovalDecision(auto)
+		observer.OnApproval(ctx, port.ApprovalEvent{
+			SessionID: approval.SessionID,
+			Type:      "resolved",
+			Request:   *approval,
+			Decision:  resolved,
+		})
+		observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+			Type:        port.ExecutionApprovalResolved,
+			SessionID:   approval.SessionID,
+			Timestamp:   time.Now().UTC(),
+			ToolName:    approval.ToolName,
+			Risk:        approval.Risk,
+			ReasonCode:  approval.ReasonCode,
+			Enforcement: approval.Enforcement,
+			Data:        approvalResolvedData(approval, resolved, mc.Input, result.Meta),
+		})
+		applyApprovalDecision(mc, approval, resolved)
+		return nil
+	}
 	resp, err := mc.IO.Ask(ctx, port.InputRequest{
 		Type:     port.InputConfirm,
 		Prompt:   approval.Prompt,
@@ -195,6 +221,7 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 	if !resolved.Approved {
 		return policyDeniedError(mc, result)
 	}
+	applyApprovalDecision(mc, approval, resolved)
 	return nil
 }
 
@@ -218,6 +245,8 @@ func approvalRequestData(approval *port.ApprovalRequest, input []byte, meta map[
 		"approval_id": approval.ID,
 		"reason":      approval.Reason,
 		"reason_code": approval.ReasonCode,
+		"category":    approval.Category,
+		"cache_key":   approval.CacheKey,
 	}
 	for k, v := range extractPolicyInputDetails(approval.ToolName, input) {
 		data[k] = v
@@ -232,9 +261,12 @@ func approvalResolvedData(approval *port.ApprovalRequest, resolved *port.Approva
 	data := map[string]any{
 		"approval_id": approval.ID,
 		"approved":    resolved.Approved,
+		"decision":    resolved.Type,
 		"source":      resolved.Source,
 		"reason":      approval.Reason,
 		"reason_code": approval.ReasonCode,
+		"category":    approval.Category,
+		"cache_key":   approval.CacheKey,
 	}
 	for k, v := range extractPolicyInputDetails(approval.ToolName, input) {
 		data[k] = v
@@ -343,18 +375,30 @@ func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.App
 		risk = string(mc.Tool.Risk)
 		prompt = "Allow tool " + mc.Tool.Name + "?"
 	}
+	category, actionLabel, actionValue, scopeLabel, scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment := describeApproval(toolName, mc.Input)
 	return &port.ApprovalRequest{
-		ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
-		Kind:        port.ApprovalKindTool,
-		SessionID:   sessionID,
-		ToolName:    toolName,
-		Risk:        risk,
-		Prompt:      port.FormatApprovalPrompt(&port.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
-		Reason:      result.Reason.Message,
-		ReasonCode:  result.Reason.Code,
-		Enforcement: result.Enforcement,
-		Input:       append([]byte(nil), mc.Input...),
-		RequestedAt: time.Now().UTC(),
+		ID:                  fmt.Sprintf("approval-%d", time.Now().UnixNano()),
+		Kind:                port.ApprovalKindTool,
+		Category:            category,
+		SessionID:           sessionID,
+		ToolName:            toolName,
+		Risk:                risk,
+		Prompt:              port.FormatApprovalPrompt(&port.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
+		Reason:              result.Reason.Message,
+		ReasonCode:          result.Reason.Code,
+		Enforcement:         result.Enforcement,
+		Input:               append([]byte(nil), mc.Input...),
+		ActionLabel:         actionLabel,
+		ActionValue:         actionValue,
+		ScopeLabel:          scopeLabel,
+		ScopeValue:          scopeValue,
+		CacheKey:            cacheKey,
+		CacheLabel:          cacheLabel,
+		SessionDecisionNote: sessionNote,
+		ProjectDecisionNote: projectNote,
+		ProposedPermissions: perms,
+		ProposedAmendment:   amendment,
+		RequestedAt:         time.Now().UTC(),
 	}
 }
 
@@ -367,14 +411,250 @@ func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalReques
 		if decision.DecidedAt.IsZero() {
 			decision.DecidedAt = time.Now().UTC()
 		}
-		return &decision
+		return port.NormalizeApprovalDecision(&decision)
 	}
-	return &port.ApprovalDecision{
+	decisionType := port.ApprovalDecisionDeny
+	if resp.Approved {
+		decisionType = port.ApprovalDecisionApprove
+	}
+	return port.NormalizeApprovalDecision(&port.ApprovalDecision{
 		RequestID: req.ID,
+		Type:      decisionType,
 		Approved:  resp.Approved,
 		Source:    "user_io",
 		DecidedAt: time.Now().UTC(),
+	})
+}
+
+func autoApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest) *port.ApprovalDecision {
+	if mc == nil || mc.Session == nil || req == nil {
+		return nil
 	}
+	if rule, ok := session.MatchingApprovalRule(mc.Session, req); ok {
+		return port.NormalizeApprovalDecision(&port.ApprovalDecision{
+			RequestID: req.ID,
+			Type:      rule.Type,
+			Approved:  true,
+			Reason:    "remembered approval in session state",
+			Source:    "session-policy-cache",
+			DecidedAt: time.Now().UTC(),
+		})
+	}
+	if session.PermissionProfileCovers(session.GrantedPermissionsOf(mc.Session), req.ProposedPermissions) {
+		return port.NormalizeApprovalDecision(&port.ApprovalDecision{
+			RequestID: req.ID,
+			Type:      port.ApprovalDecisionGrantPermission,
+			Approved:  true,
+			Reason:    "required permissions already granted for this session",
+			Source:    "session-permissions",
+			DecidedAt: time.Now().UTC(),
+		})
+	}
+	return nil
+}
+
+func applyApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest, decision *port.ApprovalDecision) {
+	if mc == nil || mc.Session == nil || req == nil || decision == nil || !decision.Approved {
+		return
+	}
+	switch decision.Type {
+	case port.ApprovalDecisionApproveSession:
+		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+	case port.ApprovalDecisionGrantPermission:
+		perms := decision.GrantedPermissions
+		if perms == nil {
+			perms = req.ProposedPermissions
+		}
+		session.MergeGrantedPermissions(mc.Session, perms)
+		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+	case port.ApprovalDecisionPolicyAmendment:
+		if req.ProposedPermissions != nil {
+			session.MergeGrantedPermissions(mc.Session, req.ProposedPermissions)
+		}
+		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+	}
+}
+
+func describeApproval(toolName string, input []byte) (port.ApprovalCategory, string, string, string, string, string, string, string, string, *port.PermissionProfile, *port.ExecPolicyAmendment) {
+	switch strings.TrimSpace(toolName) {
+	case "run_command":
+		commandLine, pattern := parseApprovalCommand(input)
+		actionValue := commandLine
+		if actionValue == "" {
+			actionValue = "Allow requested command?"
+		}
+		cacheKey := ""
+		sessionNote := ""
+		projectNote := ""
+		scopeValue := ""
+		cacheLabel := ""
+		if pattern != "" {
+			cacheKey = "run_command|" + pattern
+			cacheLabel = pattern
+			scopeValue = pattern
+			sessionNote = "Future matching commands in this session will be approved automatically."
+			projectNote = "Future matching commands in this project will follow the saved execution rule."
+		}
+		var amendment *port.ExecPolicyAmendment
+		if pattern != "" {
+			amendment = &port.ExecPolicyAmendment{
+				CommandRule: &port.ExecPolicyCommandRule{
+					Name:  "allow-" + sanitizeApprovalName(pattern),
+					Match: pattern + "*",
+				},
+			}
+		}
+		return port.ApprovalCategoryCommand, "Command", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, amendment
+	case "http_request":
+		requestLine, host, method := parseApprovalRequestTarget(input)
+		actionValue := requestLine
+		if actionValue == "" {
+			actionValue = "Allow requested request?"
+		}
+		cacheKey := ""
+		cacheLabel := ""
+		sessionNote := ""
+		projectNote := ""
+		scopeValue := ""
+		var perms *port.PermissionProfile
+		var amendment *port.ExecPolicyAmendment
+		if host != "" {
+			cacheKey = "http_request|" + strings.ToUpper(method) + " " + host
+			cacheLabel = strings.ToUpper(method) + " " + host
+			scopeValue = cacheLabel
+			sessionNote = "This host will be allowed for the rest of the session."
+			projectNote = "This host will be added to the project's execution policy."
+			perms = &port.PermissionProfile{HTTPHosts: []string{host}}
+			amendment = &port.ExecPolicyAmendment{
+				HTTPRule: &port.ExecPolicyHTTPRule{
+					Name:    "allow-" + sanitizeApprovalName(host),
+					Match:   host,
+					Methods: []string{strings.ToUpper(method)},
+				},
+			}
+		}
+		return port.ApprovalCategoryHTTP, "Request", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment
+	default:
+		preview := parseApprovalGenericPreview(input)
+		if preview == "" {
+			preview = "Allow requested action?"
+		}
+		cacheKey := ""
+		cacheLabel := ""
+		sessionNote := ""
+		projectNote := ""
+		scopeValue := ""
+		if strings.TrimSpace(toolName) != "" {
+			cacheKey = "tool|" + toolName
+			cacheLabel = toolName
+			scopeValue = toolName
+			sessionNote = "Future matching actions in this session will be approved automatically."
+			projectNote = "Future matching actions in this project will follow the saved execution rule."
+		}
+		return port.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
+	}
+}
+
+func parseApprovalCommand(input []byte) (string, string) {
+	if len(input) == 0 {
+		return "", ""
+	}
+	var payload struct {
+		Command string   `json:"command"`
+		Args    []string `json:"args"`
+	}
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return "", ""
+	}
+	parts := make([]string, 0, len(payload.Args)+1)
+	command := strings.TrimSpace(payload.Command)
+	if command != "" {
+		parts = append(parts, quoteApprovalToken(command))
+	}
+	for _, arg := range payload.Args {
+		if strings.TrimSpace(arg) == "" {
+			continue
+		}
+		parts = append(parts, quoteApprovalToken(arg))
+	}
+	patternParts := []string{}
+	if command != "" {
+		patternParts = append(patternParts, command)
+	}
+	if len(payload.Args) > 0 && strings.TrimSpace(payload.Args[0]) != "" {
+		patternParts = append(patternParts, strings.TrimSpace(payload.Args[0]))
+	}
+	return strings.Join(parts, " "), strings.Join(patternParts, " ")
+}
+
+func parseApprovalRequestTarget(input []byte) (string, string, string) {
+	if len(input) == 0 {
+		return "", "", ""
+	}
+	var payload struct {
+		URL    string `json:"url"`
+		Method string `json:"method"`
+	}
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return "", "", ""
+	}
+	rawURL := strings.TrimSpace(payload.URL)
+	if rawURL == "" {
+		return "", "", ""
+	}
+	method := strings.ToUpper(strings.TrimSpace(payload.Method))
+	if method == "" {
+		method = "GET"
+	}
+	requestLine := method + " " + rawURL
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return requestLine, "", method
+	}
+	return requestLine, strings.TrimSpace(parsed.Hostname()), method
+}
+
+func parseApprovalGenericPreview(input []byte) string {
+	if len(input) == 0 {
+		return ""
+	}
+	var payload any
+	if err := json.Unmarshal(input, &payload); err != nil {
+		return ""
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	if len(raw) > 220 {
+		raw = append(raw[:217], '.', '.', '.')
+	}
+	return string(raw)
+}
+
+func quoteApprovalToken(token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+	if strings.ContainsAny(token, " \t\r\n\"'") {
+		return strconv.Quote(token)
+	}
+	return token
+}
+
+func sanitizeApprovalName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	replacer := strings.NewReplacer(" ", "-", "*", "", "/", "-", "\\", "-", ".", "-", ":", "-", "_", "-")
+	value = replacer.Replace(value)
+	for strings.Contains(value, "--") {
+		value = strings.ReplaceAll(value, "--", "-")
+	}
+	value = strings.Trim(value, "-")
+	if value == "" {
+		return "rule"
+	}
+	return value
 }
 
 func policyDeniedError(mc *middleware.Context, result PolicyResult) error {

@@ -83,3 +83,26 @@ func TestHTTPRulesRequireApprovalForMatchedHostAndMethod(t *testing.T) {
 		t.Fatalf("reason code = %q", result.Reason.Code)
 	}
 }
+
+func TestCommandRulesWithDefaultAllowOverridesRequireApproval(t *testing.T) {
+	rule := CommandRulesWithDefault(RequireApproval, CommandPatternRule{
+		Name:   "git-status",
+		Match:  "git status*",
+		Access: Allow,
+	})
+
+	input, _ := json.Marshal(map[string]any{
+		"command": "git",
+		"args":    []string{"status"},
+	})
+	result := rule(PolicyContext{
+		Tool:  tool.ToolSpec{Name: "run_command"},
+		Input: input,
+	})
+	if result.Decision != Allow {
+		t.Fatalf("decision = %s, want %s", result.Decision, Allow)
+	}
+	if result.Meta["policy_rule"] != "git-status" {
+		t.Fatalf("policy_rule = %v", result.Meta["policy_rule"])
+	}
+}

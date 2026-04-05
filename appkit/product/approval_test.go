@@ -1,92 +1,41 @@
 package product
 
 import (
+	"path/filepath"
 	"testing"
 
-	"github.com/mossagents/moss/appkit/runtime"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/tool"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/port"
 )
 
-func TestNormalizeApprovalMode(t *testing.T) {
-	tests := map[string]string{
-		"":          ApprovalModeConfirm,
-		"confirm":   ApprovalModeConfirm,
-		"readonly":  ApprovalModeReadOnly,
-		"read-only": ApprovalModeReadOnly,
-		"auto":      ApprovalModeFullAuto,
-	}
-	for input, want := range tests {
-		if got := NormalizeApprovalMode(input); got != want {
-			t.Fatalf("NormalizeApprovalMode(%q)=%q, want %q", input, got, want)
-		}
-	}
-}
+func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
+	workspace := t.TempDir()
+	profile := "guarded"
 
-func TestApprovalModePolicyRules(t *testing.T) {
-	writeSpec := tool.ToolSpec{Name: "write_file"}
-	readSpec := tool.ToolSpec{Name: "read_file"}
-	httpSpec := tool.ToolSpec{Name: "http_request"}
-
-	readOnlyRules, err := ApprovalModePolicyRules(ApprovalModeReadOnly)
+	err := PersistProjectApprovalAmendment(workspace, profile, &port.ExecPolicyAmendment{
+		HTTPRule: &port.ExecPolicyHTTPRule{
+			Name:    "allow-api",
+			Match:   "api.example.com",
+			Methods: []string{"GET"},
+		},
+	})
 	if err != nil {
-		t.Fatalf("read-only rules: %v", err)
-	}
-	if got := EvaluatePolicy(readOnlyRules, writeSpec, nil); got != builtins.Deny {
-		t.Fatalf("read-only write_file=%s, want %s", got, builtins.Deny)
-	}
-	if got := EvaluatePolicy(readOnlyRules, httpSpec, nil); got != builtins.Deny {
-		t.Fatalf("read-only http_request=%s, want %s", got, builtins.Deny)
-	}
-	if got := EvaluatePolicy(readOnlyRules, readSpec, nil); got != builtins.Allow {
-		t.Fatalf("read-only read_file=%s, want %s", got, builtins.Allow)
+		t.Fatalf("PersistProjectApprovalAmendment: %v", err)
 	}
 
-	confirmRules, err := ApprovalModePolicyRules(ApprovalModeConfirm)
+	cfg, err := appconfig.LoadConfig(filepath.Join(workspace, "moss.yaml"))
 	if err != nil {
-		t.Fatalf("confirm rules: %v", err)
+		t.Fatalf("LoadConfig: %v", err)
 	}
-	if got := EvaluatePolicy(confirmRules, writeSpec, nil); got != builtins.RequireApproval {
-		t.Fatalf("confirm write_file=%s, want %s", got, builtins.RequireApproval)
+	profileCfg, ok := cfg.Profiles[profile]
+	if !ok {
+		t.Fatalf("expected profile %q to be written", profile)
 	}
-	foundStructuredReason := false
-	for _, rule := range confirmRules {
-		if got := rule(builtins.PolicyContext{Tool: writeSpec}); got.Decision == builtins.RequireApproval && got.Reason.Code != "" {
-			foundStructuredReason = true
-			break
-		}
+	if len(profileCfg.Execution.HTTPRules) != 1 {
+		t.Fatalf("http rules = %d, want 1", len(profileCfg.Execution.HTTPRules))
 	}
-	if !foundStructuredReason {
-		t.Fatal("expected structured policy reason code for confirm mode")
-	}
-
-	fullAutoRules, err := ApprovalModePolicyRules(ApprovalModeFullAuto)
-	if err != nil {
-		t.Fatalf("full-auto rules: %v", err)
-	}
-	if got := EvaluatePolicy(fullAutoRules, writeSpec, nil); got != builtins.Allow {
-		t.Fatalf("full-auto write_file=%s, want %s", got, builtins.Allow)
-	}
-}
-
-func TestApplyApprovalModeWithTrustStoresExecutionPolicy(t *testing.T) {
-	k := kernel.New()
-	mode, err := ApplyApprovalModeWithTrust(k, "restricted", ApprovalModeConfirm)
-	if err != nil {
-		t.Fatalf("ApplyApprovalModeWithTrust: %v", err)
-	}
-	if mode != ApprovalModeConfirm {
-		t.Fatalf("mode = %q, want %q", mode, ApprovalModeConfirm)
-	}
-	policy := runtime.ExecutionPolicyOf(k)
-	if policy.Command.Access != runtime.ExecutionAccessRequireApproval {
-		t.Fatalf("command access = %q, want %q", policy.Command.Access, runtime.ExecutionAccessRequireApproval)
-	}
-	if policy.Command.Network.Mode != "disabled" {
-		t.Fatalf("command network mode = %q, want disabled", policy.Command.Network.Mode)
-	}
-	if policy.HTTP.Access != runtime.ExecutionAccessRequireApproval {
-		t.Fatalf("http access = %q, want %q", policy.HTTP.Access, runtime.ExecutionAccessRequireApproval)
+	rule := profileCfg.Execution.HTTPRules[0]
+	if rule.Match != "api.example.com" || rule.Access != "allow" {
+		t.Fatalf("unexpected rule: %+v", rule)
 	}
 }

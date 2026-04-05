@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -101,28 +102,16 @@ func ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode string) E
 }
 
 func ExecutionPolicyRules(policy ExecutionPolicy) []builtins.PolicyRule {
-	rules := commandPolicyRules(policy.Command.Rules)
-	rules = append(rules, httpPolicyRules(policy.HTTP.Rules)...)
+	rules := commandPolicyRules(policy.Command.Access, policy.Command.Rules)
+	rules = append(rules, httpPolicyRules(policy.HTTP.Access, policy.HTTP.Rules)...)
 	rules = append(rules,
 		builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
 	)
-	switch policy.Command.Access {
-	case ExecutionAccessDeny:
-		rules = append(rules, builtins.DenyTool("run_command"))
-	case ExecutionAccessRequireApproval:
-		rules = append(rules, builtins.RequireApprovalFor("run_command"))
-	}
-	switch policy.HTTP.Access {
-	case ExecutionAccessDeny:
-		rules = append(rules, builtins.DenyTool("http_request"))
-	case ExecutionAccessRequireApproval:
-		rules = append(rules, builtins.RequireApprovalFor("http_request"))
-	}
 	return rules
 }
 
-func commandPolicyRules(rules []CommandRule) []builtins.PolicyRule {
-	if len(rules) == 0 {
+func commandPolicyRules(defaultAccess ExecutionAccess, rules []CommandRule) []builtins.PolicyRule {
+	if len(rules) == 0 && defaultAccess == ExecutionAccessAllow {
 		return nil
 	}
 	converted := make([]builtins.CommandPatternRule, 0, len(rules))
@@ -133,11 +122,11 @@ func commandPolicyRules(rules []CommandRule) []builtins.PolicyRule {
 			Access: commandRuleDecision(rule.Access),
 		})
 	}
-	return []builtins.PolicyRule{builtins.CommandRules(converted...)}
+	return []builtins.PolicyRule{builtins.CommandRulesWithDefault(commandRuleDecision(defaultAccess), converted...)}
 }
 
-func httpPolicyRules(rules []HTTPRule) []builtins.PolicyRule {
-	if len(rules) == 0 {
+func httpPolicyRules(defaultAccess ExecutionAccess, rules []HTTPRule) []builtins.PolicyRule {
+	if len(rules) == 0 && defaultAccess == ExecutionAccessAllow {
 		return nil
 	}
 	converted := make([]builtins.HTTPPatternRule, 0, len(rules))
@@ -149,7 +138,7 @@ func httpPolicyRules(rules []HTTPRule) []builtins.PolicyRule {
 			Access:  commandRuleDecision(rule.Access),
 		})
 	}
-	return []builtins.PolicyRule{builtins.HTTPRules(converted...)}
+	return []builtins.PolicyRule{builtins.HTTPRulesWithDefault(commandRuleDecision(defaultAccess), converted...)}
 }
 
 func commandRuleDecision(access ExecutionAccess) builtins.PolicyDecision {
@@ -276,6 +265,30 @@ func cloneExecutionPolicy(policy ExecutionPolicy) ExecutionPolicy {
 	policy.HTTP.AllowedHosts = append([]string(nil), policy.HTTP.AllowedHosts...)
 	policy.HTTP.Rules = append([]HTTPRule(nil), policy.HTTP.Rules...)
 	return policy
+}
+
+func MergeExecutionPolicyPermissions(policy ExecutionPolicy, perms port.PermissionProfile) ExecutionPolicy {
+	policy = cloneExecutionPolicy(policy)
+	policy.Command.AllowedPaths = normalizeStringSlice(append(policy.Command.AllowedPaths, perms.CommandPaths...))
+	policy.HTTP.AllowedHosts = normalizeStringSlice(append(policy.HTTP.AllowedHosts, perms.HTTPHosts...))
+	if perms.CommandNetwork != nil {
+		if perms.CommandNetwork.Enabled {
+			policy.Command.Network.Mode = port.ExecNetworkEnabled
+		}
+		policy.Command.Network.AllowHosts = normalizeStringSlice(append(policy.Command.Network.AllowHosts, perms.CommandNetwork.AllowHosts...))
+	}
+	return policy
+}
+
+func ExecutionPolicyForToolContext(ctx port.ToolCallContext, k *kernel.Kernel, base ExecutionPolicy) ExecutionPolicy {
+	if k == nil || strings.TrimSpace(ctx.SessionID) == "" {
+		return base
+	}
+	sess, ok := k.SessionManager().Get(ctx.SessionID)
+	if !ok {
+		return base
+	}
+	return MergeExecutionPolicyPermissions(base, session.GrantedPermissionsOf(sess))
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
