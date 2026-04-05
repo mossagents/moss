@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
@@ -50,6 +52,12 @@ func main() {
 	switch args[0] {
 	case "run":
 		runCmd(args[1:])
+	case "doctor":
+		doctorCmd(args[1:])
+	case "review":
+		reviewCmd(args[1:])
+	case "inspect":
+		inspectCmd(args[1:])
 	case "version":
 		fmt.Printf("moss %s\n", version)
 	case "help", "--help", "-h":
@@ -81,12 +89,19 @@ func stripLeadingDebugArgs(args []string) []string {
 }
 
 func printUsage() {
-	fmt.Print(`moss - Agent Runtime Kernel
+	fmt.Print(usageText())
+}
+
+func usageText() string {
+	return `moss - Agent Runtime Kernel
 
 Usage:
-  moss                Launch interactive TUI (default)
-  moss run [flags]    Run with a specific goal
-  moss version        Show version
+  moss                    Launch interactive TUI (default)
+  moss run [flags]        Run with a specific goal
+  moss doctor [flags]     Inspect runtime, paths, repo, and extension health
+  moss review [args]      Inspect repository review, snapshot, and change state
+  moss inspect [args]     Inspect state catalog events and the latest run
+  moss version            Show version
 
 AppFlags:
   --debug       Enable trace logging to ~/.moss/debug.log
@@ -109,7 +124,7 @@ Environment:
   OPENAI_BASE_URL    Fallback when provider=openai-completions/openai-responses and no base_url in config.
   GEMINI_API_KEY     Fallback when provider=gemini and no api_key in config.
   GOOGLE_API_KEY     Alternate fallback when provider=gemini and no api_key in config.
-`)
+`
 }
 
 // launchTUI 启动 Bubble Tea TUI 界面。
@@ -246,6 +261,92 @@ func runCmd(args []string) {
 	if result.Output != "" {
 		fmt.Printf("\nResult:\n%s\n", result.Output)
 	}
+}
+
+func doctorCmd(args []string) {
+	fs := flag.NewFlagSet("doctor", flag.ExitOnError)
+	jsonOut := fs.Bool("json", false, "Emit doctor output as JSON")
+	f := &appkit.AppFlags{}
+	appkit.BindAppFlags(fs, f)
+	_ = fs.Parse(args)
+	f.MergeGlobalConfig()
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	defer cancel()
+	report := product.BuildDoctorReport(ctx, "moss", f.Workspace, f, nil, "", product.GovernanceConfig{})
+	if *jsonOut {
+		if err := printJSON(report); err != nil {
+			logging.GetLogger().Error("error rendering doctor json", slog.Any("error", err))
+			os.Exit(1)
+		}
+		return
+	}
+	fmt.Print(product.RenderDoctorReport(report))
+}
+
+func reviewCmd(args []string) {
+	fs := flag.NewFlagSet("review", flag.ExitOnError)
+	jsonOut := fs.Bool("json", false, "Emit review output as JSON")
+	f := &appkit.AppFlags{}
+	appkit.BindAppFlags(fs, f)
+	_ = fs.Parse(args)
+	f.MergeGlobalConfig()
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	defer cancel()
+	report, err := product.BuildReviewReport(ctx, f.Workspace, fs.Args())
+	if err != nil {
+		logging.GetLogger().Error("review failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if *jsonOut {
+		if err := printJSON(report); err != nil {
+			logging.GetLogger().Error("error rendering review json", slog.Any("error", err))
+			os.Exit(1)
+		}
+		return
+	}
+	fmt.Print(product.RenderReviewReport(report))
+}
+
+func inspectCmd(args []string) {
+	fs := flag.NewFlagSet("inspect", flag.ExitOnError)
+	jsonOut := fs.Bool("json", false, "Emit inspect output as JSON")
+	f := &appkit.AppFlags{}
+	appkit.BindAppFlags(fs, f)
+	_ = fs.Parse(args)
+	f.MergeGlobalConfig()
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	defer cancel()
+	report, err := product.BuildInspectReport(ctx, f.Workspace, fs.Args())
+	if err != nil {
+		logging.GetLogger().Error("inspect failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+	if *jsonOut {
+		if err := printJSON(report); err != nil {
+			logging.GetLogger().Error("error rendering inspect json", slog.Any("error", err))
+			os.Exit(1)
+		}
+		return
+	}
+	fmt.Print(product.RenderInspectReport(report))
+}
+
+func printJSON(v any) error {
+	data, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
 func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstructions string, metadata map[string]any, k *kernel.Kernel) (string, error) {

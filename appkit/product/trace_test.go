@@ -128,3 +128,55 @@ func TestRenderRunTraceDetailIncludesTimelineAndLimit(t *testing.T) {
 		t.Fatalf("expected detail limit to show only recent events:\n%s", detail)
 	}
 }
+
+func TestRenderRunTraceDetailIncludesPlanningEvents(t *testing.T) {
+	detail := RenderRunTraceDetail(RunTraceSummary{
+		Status: "completed",
+		Steps:  1,
+		Trace: RunTrace{
+			Timeline: []TraceEvent{
+				{
+					Kind: "execution_event",
+					Type: "turn.plan_prepared",
+					Data: map[string]any{
+						"iteration":            1,
+						"instruction_profile":  "planning",
+						"model_lane":           "reasoning",
+						"visible_tools_count":  2,
+						"hidden_tools_count":   1,
+						"approval_tools_count": 1,
+					},
+				},
+				{
+					Kind: "execution_event",
+					Type: "tool.route_planned",
+					Data: map[string]any{
+						"visible_tools":  []string{"read_file", "view"},
+						"hidden_tools":   []string{"write_file"},
+						"approval_tools": []string{"run_command"},
+					},
+				},
+				{
+					Kind:  "execution_event",
+					Type:  "model.route_planned",
+					Model: "gpt-5",
+					Data: map[string]any{
+						"lane":         "reasoning",
+						"reason_codes": []string{"planning_mode"},
+						"capabilities": []string{"reasoning"},
+					},
+				},
+			},
+		},
+	}, 10)
+
+	for _, want := range []string{
+		"[execution] turn.plan_prepared iteration=1 instruction_profile=planning model_lane=reasoning visible_tools_count=2 hidden_tools_count=1 approval_tools_count=1",
+		"[execution] tool.route_planned visible_tools=read_file,view hidden_tools=write_file approval_tools=run_command",
+		"[execution] model.route_planned model=gpt-5 lane=reasoning reason_codes=planning_mode capabilities=reasoning",
+	} {
+		if !strings.Contains(detail, want) {
+			t.Fatalf("detail missing %q:\n%s", want, detail)
+		}
+	}
+}

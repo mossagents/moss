@@ -378,6 +378,32 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 		return traceEventSummary{priority: priority, index: index, message: msg}, true
 	case "execution_event":
 		switch event.Type {
+		case "turn.plan_prepared":
+			lane := valueOrUnknown(stringData(event.Data, "model_lane"), "default")
+			profile := valueOrUnknown(stringData(event.Data, "instruction_profile"), "default")
+			return traceEventSummary{
+				priority: 15,
+				index:    index,
+				message:  fmt.Sprintf("Turn plan prepared: profile=%s lane=%s", profile, lane),
+			}, true
+		case "model.route_planned":
+			lane := valueOrUnknown(stringData(event.Data, "lane"), "default")
+			return traceEventSummary{
+				priority: 16,
+				index:    index,
+				message:  fmt.Sprintf("Model route planned: lane=%s", lane),
+			}, true
+		case "tool.route_planned":
+			return traceEventSummary{
+				priority: 17,
+				index:    index,
+				message: fmt.Sprintf(
+					"Tool route planned: visible=%d hidden=%d approval=%d",
+					intValue(event.Data, "visible_tools_count"),
+					intValue(event.Data, "hidden_tools_count"),
+					intValue(event.Data, "approval_tools_count"),
+				),
+			}, true
 		case "llm_failover_exhausted":
 			return traceEventSummary{priority: 1, index: index, message: "LLM failover exhausted all available candidates"}, true
 		case "llm_failover_switch":
@@ -545,6 +571,18 @@ func formatTraceDataPairs(data map[string]any) []string {
 		return nil
 	}
 	keys := []string{
+		"iteration",
+		"instruction_profile",
+		"model_lane",
+		"lane",
+		"visible_tools_count",
+		"hidden_tools_count",
+		"approval_tools_count",
+		"visible_tools",
+		"hidden_tools",
+		"approval_tools",
+		"reason_codes",
+		"capabilities",
 		"candidate_model",
 		"failover_to",
 		"attempt_index",
@@ -595,6 +633,10 @@ func formatTraceDataValue(v any) string {
 		return strconv.FormatInt(value, 10)
 	case float64:
 		return strconv.FormatFloat(value, 'f', -1, 64)
+	case []string:
+		return strings.Join(compactStringSlice(value), ",")
+	case []any:
+		return strings.Join(stringifySlice(value), ",")
 	default:
 		return ""
 	}
@@ -663,4 +705,54 @@ func valueOrUnknown(value, fallback string) string {
 		return strings.TrimSpace(value)
 	}
 	return fallback
+}
+
+func intValue(data map[string]any, key string) int {
+	if len(data) == 0 {
+		return 0
+	}
+	v, ok := data[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func compactStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
+}
+
+func stringifySlice(values []any) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		switch item := value.(type) {
+		case string:
+			item = strings.TrimSpace(item)
+			if item != "" {
+				out = append(out, item)
+			}
+		case fmt.Stringer:
+			text := strings.TrimSpace(item.String())
+			if text != "" {
+				out = append(out, text)
+			}
+		}
+	}
+	return out
 }

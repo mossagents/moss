@@ -233,11 +233,18 @@ func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
 
 func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Session, plan TurnPlan) {
 	routeEvent := l.executionEventBase(sess, port.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
+	visible := visibleToolNames(plan.ToolRoute)
+	hidden := hiddenToolNames(plan.ToolRoute)
+	approval := approvalRequiredToolNames(plan.ToolRoute)
 	routeEvent.Data = map[string]any{
-		"visible_tools":  visibleToolNames(plan.ToolRoute),
-		"hidden_tools":   hiddenToolNames(plan.ToolRoute),
-		"approval_tools": approvalRequiredToolNames(plan.ToolRoute),
-		"route_digest":   toolRouteDigest(plan.ToolRoute),
+		"visible_tools":        visible,
+		"hidden_tools":         hidden,
+		"approval_tools":       approval,
+		"visible_tools_count":  len(visible),
+		"hidden_tools_count":   len(hidden),
+		"approval_tools_count": len(approval),
+		"route_digest":         toolRouteDigest(plan.ToolRoute),
+		"decisions":            toolRoutePayload(plan.ToolRoute),
 	}
 	l.observer().OnExecutionEvent(ctx, routeEvent)
 
@@ -257,9 +264,9 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 		"iteration":            plan.Iteration,
 		"instruction_profile":  plan.InstructionProfile,
 		"lightweight_chat":     plan.LightweightChat,
-		"visible_tools_count":  len(visibleToolNames(plan.ToolRoute)),
-		"hidden_tools_count":   len(hiddenToolNames(plan.ToolRoute)),
-		"approval_tools_count": len(approvalRequiredToolNames(plan.ToolRoute)),
+		"visible_tools_count":  len(visible),
+		"hidden_tools_count":   len(hidden),
+		"approval_tools_count": len(approval),
 		"model_lane":           plan.ModelRoute.Lane,
 	}
 	l.observer().OnExecutionEvent(ctx, turnEvent)

@@ -287,6 +287,14 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 			if event.EventID == "" || event.RunID != "run-phase2" || event.TurnID == "" {
 				t.Fatalf("unexpected route event envelope: %+v", event)
 			}
+			decisions, ok := event.Data["decisions"].([]map[string]any)
+			if ok {
+				if len(decisions) == 0 {
+					t.Fatalf("expected route decisions in event data: %+v", event.Data)
+				}
+			} else if decisionsAny, ok := event.Data["decisions"].([]any); !ok || len(decisionsAny) == 0 {
+				t.Fatalf("expected route decisions in event data: %+v", event.Data)
+			}
 		}
 	}
 	if !foundToolRouteEvent {

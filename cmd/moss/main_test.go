@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestStripLeadingDebugArgs(t *testing.T) {
 	tests := []struct {
@@ -27,5 +30,14 @@ func TestStripLeadingDebugArgs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestUsageTextIncludesProductCommands(t *testing.T) {
+	usage := usageText()
+	for _, want := range []string{"moss doctor [flags]", "moss review [args]", "moss inspect [args]"} {
+		if !strings.Contains(usage, want) {
+			t.Fatalf("usage missing %q:\n%s", want, usage)
+		}
 	}
 }

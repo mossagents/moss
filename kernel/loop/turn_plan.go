@@ -261,6 +261,25 @@ func toolRouteDigest(route []ToolRouteDecision) string {
 	return strings.Join(parts, ",")
 }
 
+func toolRoutePayload(route []ToolRouteDecision) []map[string]any {
+	payload := make([]map[string]any, 0, len(route))
+	for _, decision := range route {
+		item := map[string]any{
+			"name":         decision.Name,
+			"status":       string(decision.Status),
+			"source":       decision.Source,
+			"owner":        decision.Owner,
+			"risk":         string(decision.Risk),
+			"reason_codes": append([]string(nil), decision.ReasonCodes...),
+		}
+		if len(decision.Capabilities) > 0 {
+			item["capabilities"] = append([]string(nil), decision.Capabilities...)
+		}
+		payload = append(payload, item)
+	}
+	return payload
+}
+
 func classifyToolSource(spec tool.ToolSpec) string {
 	if source := strings.TrimSpace(spec.Source); source != "" {
 		return source
