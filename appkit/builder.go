@@ -9,23 +9,9 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/sandbox"
 )
-
-// BuildConfig 描述 appkit.BuildKernel 的可选默认装配行为。
-type BuildConfig struct {
-	// DefaultLLMRetry 会在未显式禁用时注入 kernel.WithLLMRetry。
-	DefaultLLMRetry *retry.Config
-
-	// DefaultSetupOptions controls runtime setup behavior.
-	DefaultSetupOptions []runtime.Option
-
-	// Extensions 描述 appkit 层统一的推荐扩展装配单元。
-	// 它们可同时携带 kernel.Option 与 build 后安装动作。
-	Extensions []Extension
-}
 
 // BuildKernel 根据 AppFlags 构建标准 Kernel，并装配官方默认扩展。
 //
@@ -34,23 +20,21 @@ type BuildConfig struct {
 //   - 创建本地 Sandbox
 //   - 装配内置工具 + MCP servers + Skills
 //
-// 调用者仍可通过 extraOpts 追加底层 kernel.Option。
-// 若要使用统一的官方扩展装配路径，请优先使用 BuildKernelWithExtensions。
+// 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 appkit
+// 层扩展，请使用 BuildKernelWithExtensions。
 func BuildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
-	return BuildKernelWithConfig(ctx, flags, io, BuildConfig{}, extraOpts...)
+	return buildKernel(ctx, flags, io, nil, extraOpts...)
 }
 
 // BuildKernelWithExtensions 根据 AppFlags 构建 Kernel，并按顺序装配 appkit 扩展。
+//
+// 这是官方推荐的扩展优先装配入口：优先通过 Extension 追加能力，而不是
+// 暴露额外的构建分支给应用层。
 func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io port.UserIO, exts ...Extension) (*kernel.Kernel, error) {
-	return BuildKernelWithConfig(ctx, flags, io, BuildConfig{
-		Extensions: exts,
-	})
+	return buildKernel(ctx, flags, io, exts)
 }
 
-// BuildKernelWithConfig 在标准装配基础上，允许附加 appkit 级默认行为。
-//
-// 这用于把常见运行时默认值收敛在 appkit，而不是散落在各个示例应用中。
-func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO, cfg BuildConfig, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+func buildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, exts []Extension, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	llm, err := adapters.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err
@@ -66,12 +50,9 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 		kernel.WithSandbox(sb),
 		kernel.WithUserIO(io),
 	}
-	if cfg.DefaultLLMRetry != nil {
-		opts = append(opts, kernel.WithLLMRetry(*cfg.DefaultLLMRetry))
-	}
 	opts = append(opts, extraOpts...)
 	plan := extensionPlan{}
-	for _, ext := range cfg.Extensions {
+	for _, ext := range exts {
 		if ext != nil {
 			ext.apply(&plan)
 		}
@@ -80,7 +61,7 @@ func BuildKernelWithConfig(ctx context.Context, flags *AppFlags, io port.UserIO,
 
 	k := kernel.New(opts...)
 
-	setupOpts := append([]runtime.Option{runtime.WithWorkspaceTrust(flags.Trust)}, cfg.DefaultSetupOptions...)
+	setupOpts := append([]runtime.Option{runtime.WithWorkspaceTrust(flags.Trust)}, plan.runtimeOptions...)
 	if err := runtime.Setup(ctx, k, flags.Workspace, setupOpts...); err != nil {
 		return nil, err
 	}

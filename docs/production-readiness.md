@@ -12,7 +12,7 @@
 |---|---|---|---|
 | **mossroom** | 多人 WebSocket 游戏 | 多租户 SaaS、多房间实时协作 | Sandbox 与 Kernel 绑定本地路径，无法多实例部署 |
 | **mossquant** | 量化交易模拟 | 高频交易信号/策略引擎 | Scheduler 单实例重复执行、状态丢失 |
-| **mosswork** | Manager → Worker 编排 | CI/CD 流水线、数据处理 Pipeline | 任务丢失、无跨实例可见性 |
+| **mossresearch** | Research → Worker 委派 | 深度研究、证据收集 Pipeline | 任务丢失、无跨实例可见性 |
 | **mossclaw** | 个人助手 + 知识库 | 企业知识管理 + 定时任务 | Knowledge 内存驻留、重启丢失 |
 | **mosscode** | 单人代码助手 | 团队共享代码 Agent | 无认证授权、审计缺失 |
 | **websocket** | WebSocket 聊天 | 高并发 API Gateway | 无心跳/重连、无限流量 |

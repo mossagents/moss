@@ -156,7 +156,7 @@ func (s *ChatService) SendMessage(content string) error {
 	s.running = true
 	s.mu.Unlock()
 
-	s.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: content})
+	s.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
 
 	go func() {
 		defer func() {

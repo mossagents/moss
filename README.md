@@ -100,7 +100,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: "Fix the bug in main.go"})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Fix the bug in main.go")}})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
@@ -199,7 +199,7 @@ Reference applications live in `examples/`:
 - `examples/mosscode/` - coding assistant
 - `examples/mossresearch/` - deep research orchestrator with delegated web research
 - `examples/mosswriter/` - content builder agent with filesystem-driven writing workflows
-- `examples/mosswork/` - multi-agent orchestration
+- `examples/mosswork-desktop/` - desktop cowork assistant with delegated agents and persistent runtime state
 - `examples/mossclaw/` - web automation/scraping workflows
 - `examples/mossquant/` - stateful autonomous loop patterns
 - `examples/mossroom/` - realtime multi-user agent game
@@ -258,7 +258,9 @@ Enforce constraints at sandbox, policy, and tool levels instead of relying on pr
 ## Development checks / 开发校验
 
 ```bash
+go vet ./...
 go test ./...
+pwsh ./testing/validate_examples.ps1
 go build ./...
 ```
 

@@ -7,14 +7,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"sort"
 	"testing"
-	"time"
 
 	rt "github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
@@ -160,37 +159,11 @@ func TestRenderSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithConfig_DefaultLLMRetry(t *testing.T) {
-	k, err := BuildKernelWithConfig(context.Background(), &AppFlags{
-		Provider:  "openai",
-		Workspace: ".",
-	}, nil, BuildConfig{
-		DefaultLLMRetry: &retry.Config{
-			MaxRetries:   4,
-			InitialDelay: 5 * time.Millisecond,
-		},
-	})
-	if err != nil {
-		t.Fatalf("BuildKernelWithConfig: %v", err)
-	}
-
-	kv := reflect.ValueOf(k).Elem()
-	loopCfg := kv.FieldByName("loopCfg")
-	llmRetry := loopCfg.FieldByName("LLMRetry")
-
-	if llmRetry.FieldByName("MaxRetries").Int() != 4 {
-		t.Fatalf("MaxRetries = %d, want 4", llmRetry.FieldByName("MaxRetries").Int())
-	}
-	if time.Duration(llmRetry.FieldByName("InitialDelay").Int()) != 5*time.Millisecond {
-		t.Fatalf("InitialDelay = %v, want %v", time.Duration(llmRetry.FieldByName("InitialDelay").Int()), 5*time.Millisecond)
-	}
-}
-
 func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, nil,
+	}, &port.NoOpIO{},
 		WithKernelOptions(kernel.WithParallelToolCalls()),
 		AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			return k.ToolRegistry().Register(tool.ToolSpec{
@@ -225,11 +198,64 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	}
 }
 
+func TestBuildKernelWithExtensions_NoExtensionsMatchesBuildKernel(t *testing.T) {
+	flags := isolatedBuildFlags(t)
+
+	base, err := BuildKernel(context.Background(), flags, &port.NoOpIO{})
+	if err != nil {
+		t.Fatalf("BuildKernel: %v", err)
+	}
+	withExts, err := BuildKernelWithExtensions(context.Background(), flags, &port.NoOpIO{})
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+
+	if !reflect.DeepEqual(toolNames(base), toolNames(withExts)) {
+		t.Fatalf("tool sets diverged:\nbase=%v\nwithExtensions=%v", toolNames(base), toolNames(withExts))
+	}
+}
+
+func TestBuildKernelWithExtensions_RuntimeOptionsAffectSetup(t *testing.T) {
+	flags := isolatedBuildFlags(t)
+
+	k, err := BuildKernelWithExtensions(context.Background(), flags, &port.NoOpIO{},
+		WithRuntimeOptions(rt.WithBuiltinTools(false)),
+	)
+	if err != nil {
+		t.Fatalf("BuildKernelWithExtensions: %v", err)
+	}
+	if _, _, ok := k.ToolRegistry().Get("read_file"); ok {
+		t.Fatal("expected builtin tools to be disabled by runtime option extension")
+	}
+}
+
+func isolatedBuildFlags(t *testing.T) *AppFlags {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+	return &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+	}
+}
+
+func toolNames(k *kernel.Kernel) []string {
+	names := make([]string, 0, len(k.ToolRegistry().List()))
+	for _, spec := range k.ToolRegistry().List() {
+		names = append(names, spec.Name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, nil, WithScheduling(scheduler.New()))
+	}, &port.NoOpIO{}, WithScheduling(scheduler.New()))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -251,7 +277,7 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, nil, WithPersistentMemories(memDir))
+	}, &port.NoOpIO{}, WithPersistentMemories(memDir))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -279,7 +305,7 @@ func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, nil, WithContextOffload(store))
+	}, &port.NoOpIO{}, WithContextOffload(store))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}

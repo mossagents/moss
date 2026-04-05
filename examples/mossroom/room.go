@@ -295,7 +295,7 @@ func (r *Room) triggerChatStart(p *Player) {
 
 	initMsg := fmt.Sprintf("[系统]: 玩家 %s 进入了聊天室，选择的主题是【%s】。\n\n用户指定的角色（请严格使用这些角色）：\n%s\n\n请立刻为每个角色调用 add_virtual_player 注册，然后让它们做自我介绍。",
 		p.Name, r.Topic, strings.Join(charDetails, "\n"))
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: initMsg})
+	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(initMsg)}})
 
 	// 记录用户活动时间（初始化也算活动）
 	r.mu.Lock()
@@ -338,7 +338,7 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 
 	// 3. 拼接为 "[玩家名]: 内容" 作为用户消息交给 Agent
 	userMsg := fmt.Sprintf("[%s]: %s", pm.player.Name, pm.content)
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: userMsg})
+	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(userMsg)}})
 
 	// 4. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
 	result, err := r.k.Run(r.ctx, r.sess)
@@ -426,7 +426,7 @@ func (r *Room) fireAutoTurn() {
 	prompt := fmt.Sprintf(`[系统-自主对话]: 距离上次用户发言已过 %d 秒，虚拟角色可以自主闲聊或互动。请自然地让1-2个角色说点什么（闲聊、接之前的话题、互相调侃等），但控制篇幅简短。如果觉得没什么好说的，回复"skip"即可。`,
 		int(elapsed.Seconds()))
 
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, Content: prompt})
+	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(prompt)}})
 
 	result, err := r.k.Run(r.ctx, r.sess)
 	if err != nil {

@@ -203,10 +203,11 @@ moss version
 仓库内置示例：
 
 - `examples/mosscode`：代码助手（默认 TUI）
-- `examples/mosswork`：多 Agent 编排
+- `examples/mossresearch`：深度研究编排（含委派子代理）
 - `examples/mossclaw`：Web 抓取 Agent
 - `examples/mossquant`：有状态自主循环 Agent（内置 trading 领域适配器）
 - `examples/mossroom`：多人实时 Agent 游戏（WebSocket + Per-Room Kernel）
+- `examples/mosswork-desktop`：桌面协作助理（Wails + 持久会话 + 调度器）
 
 快速体验（以 mosscode 为例）：
 
@@ -256,8 +257,8 @@ func main() {
         MaxSteps: 20,
     })
     sess.AppendMessage(port.Message{
-        Role:    port.RoleUser,
-        Content: "Read and summarize README.md",
+        Role:         port.RoleUser,
+        ContentParts: []port.ContentPart{port.TextPart("Read and summarize README.md")},
     })
 
     result, _ := k.Run(ctx, sess)
@@ -267,7 +268,7 @@ func main() {
 
 ### 自定义 Setup
 
-推荐做法是继续使用 `appkit.BuildKernelWithConfig` / `appkit.BuildKernelWithExtensions`，只在需要更底层控制时直接调用 `runtime.Setup`。
+推荐做法是默认使用 `appkit.BuildKernel`，需要挂载官方扩展时使用 `appkit.BuildKernelWithExtensions`；只在需要更底层控制时直接调用 `runtime.Setup`。
 
 ### Deep Agent 预设（推荐）
 
@@ -348,7 +349,7 @@ type MyLLM struct{}
 func (m *MyLLM) Complete(ctx context.Context, req port.CompletionRequest) (*port.CompletionResponse, error) {
     // 调用你的 LLM API
     return &port.CompletionResponse{
-        Message:    port.Message{Role: port.RoleAssistant, Content: "..."},
+        Message:    port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("...")}},
         StopReason: "end_turn",
     }, nil
 }
@@ -431,7 +432,7 @@ import kt "github.com/mossagents/moss/testing"
 
 mock := &kt.MockLLM{
     Responses: []port.CompletionResponse{
-        {Message: port.Message{Role: port.RoleAssistant, Content: "Hello!"}},
+        {Message: port.Message{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Hello!")}}},
     },
 }
 

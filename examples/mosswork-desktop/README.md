@@ -4,7 +4,7 @@
 
 ## What it includes
 
-- Deep harness runtime (`appkit.BuildDeepAgentKernel`)
+- Deep harness runtime (`presets/deepagent.BuildKernel`)
 - Persistent sessions (`~/.mosswork-desktop/sessions`)
 - Persistent memories (`~/.mosswork-desktop/memories`)
 - Context offload (`offload_context`)

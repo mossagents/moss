@@ -173,7 +173,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, Content: cfg.prompt})
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(cfg.prompt)}})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {

@@ -60,11 +60,11 @@ func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
 	}
 	if reasoningChanged(sess.Messages) {
 		sess.Messages = sanitizePersistedMessages(sess.Messages)
-		if err := fs.saveLocked(&sess); err != nil {
+		if err := fs.saveLocked(sess); err != nil {
 			return nil, err
 		}
 	}
-	return &sess, nil
+	return sess, nil
 }
 
 func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
@@ -202,9 +202,16 @@ type persistedSession struct {
 	Config    SessionConfig      `json:"config"`
 	Messages  []persistedMessage `json:"messages"`
 	State     map[string]any     `json:"state,omitempty"`
-	Budget    Budget             `json:"budget"`
+	Budget    persistedBudget    `json:"budget"`
 	CreatedAt time.Time          `json:"created_at"`
 	EndedAt   time.Time          `json:"ended_at,omitempty"`
+}
+
+type persistedBudget struct {
+	MaxTokens  int `json:"max_tokens"`
+	MaxSteps   int `json:"max_steps"`
+	UsedTokens int `json:"used_tokens"`
+	UsedSteps  int `json:"used_steps"`
 }
 
 type persistedMessage struct {
@@ -226,12 +233,18 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 	if sess == nil {
 		return persistedSession{}
 	}
+	snap := sess.Budget.Clone()
 	out := persistedSession{
-		ID:        sess.ID,
-		Status:    sess.Status,
-		Config:    sess.Config,
-		State:     sess.State,
-		Budget:    sess.Budget,
+		ID:     sess.ID,
+		Status: sess.Status,
+		Config: sess.Config,
+		State:  sess.State,
+		Budget: persistedBudget{
+			MaxTokens:  snap.MaxTokens,
+			MaxSteps:   snap.MaxSteps,
+			UsedTokens: snap.UsedTokens,
+			UsedSteps:  snap.UsedSteps,
+		},
 		CreatedAt: sess.CreatedAt,
 		EndedAt:   sess.EndedAt,
 	}
@@ -260,13 +273,18 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 	return out
 }
 
-func (ps persistedSession) toSession(id string) (Session, error) {
-	sess := Session{
-		ID:        ps.ID,
-		Status:    ps.Status,
-		Config:    ps.Config,
-		State:     ps.State,
-		Budget:    ps.Budget,
+func (ps *persistedSession) toSession(id string) (*Session, error) {
+	sess := &Session{
+		ID:     ps.ID,
+		Status: ps.Status,
+		Config: ps.Config,
+		State:  ps.State,
+		Budget: Budget{
+			MaxTokens:  ps.Budget.MaxTokens,
+			MaxSteps:   ps.Budget.MaxSteps,
+			UsedTokens: ps.Budget.UsedTokens,
+			UsedSteps:  ps.Budget.UsedSteps,
+		},
 		CreatedAt: ps.CreatedAt,
 		EndedAt:   ps.EndedAt,
 	}
@@ -277,7 +295,7 @@ func (ps persistedSession) toSession(id string) (Session, error) {
 	for i, m := range ps.Messages {
 		converted, migrated, err := migrateMessage(m)
 		if err != nil {
-			return Session{}, fmt.Errorf("unmarshal session %s: message %d: %w", id, i, err)
+			return nil, fmt.Errorf("unmarshal session %s: message %d: %w", id, i, err)
 		}
 		if migrated {
 			logging.GetLogger().Warn("session store migrated legacy message content field",

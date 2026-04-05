@@ -20,3 +20,37 @@ jobs:
       - name: Run architecture guard
         shell: pwsh
         run: pwsh ./testing/arch_guard.ps1
+
+  root-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run go vet
+        shell: pwsh
+        run: go vet ./...
+
+      - name: Run root tests
+        shell: pwsh
+        run: go test ./...
+
+  example-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Validate example modules
+        shell: pwsh
+        run: pwsh ./testing/validate_examples.ps1

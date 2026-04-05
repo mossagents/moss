@@ -703,7 +703,7 @@ kernel/
 ├── kernel.go              # Kernel struct, New(), Boot(), Run(), Shutdown()
 ├── kernel_test.go         # 集成测试
 ├── option.go              # functional options: WithLLM, WithSandbox, Use, ...
-├── setup.go               # SetupWithDefaults, SetupOption
+├── appkit/runtime/setup.go # runtime.Setup, runtime.Option
 ├── kernel_boot_test.go
 │
 ├── port/                  # Port 接口（零依赖，纯类型定义）
@@ -810,7 +810,7 @@ kernel/
 // Gateway 收到消息 → 找到 Session → 运行 Loop
 func (g *Gateway) HandleMessage(ctx context.Context, channelMsg ChannelMessage) {
     sess, _ := g.kernel.SessionManager().GetOrCreate(channelMsg.SessionID, ...)
-    sess.AppendMessage(port.Message{Role: port.RoleUser, Content: channelMsg.Text})
+    sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(channelMsg.Text)}})
     result, _ := g.kernel.Run(ctx, sess)
     // result 通过 EventEmitter → 路由回渠道
 }

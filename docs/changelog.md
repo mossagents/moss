@@ -192,7 +192,7 @@
 
 ### 兼容性
 
-- 兼容：`appkit.BuildDeepAgentKernel` 保留，`presets/deepagent` 为新增推荐入口。
+- 当时兼容：`appkit.BuildDeepAgentKernel` 仍保留；当前仓库已仅保留 `presets/deepagent` 入口。
 
 ---
 
@@ -216,7 +216,7 @@
 
 - 新增 4 个示例应用：
   - `examples/mosscode`（代码助手）
-  - `examples/mosswork`（多 Agent 编排）
+  - `examples/mosswork`（多 Agent 编排，后续演进为 `mossresearch` / `mosswork-desktop` 场景）
   - `examples/mossclaw`（Web 抓取）
   - `examples/mossquant`（有状态自主循环 Agent，内置 trading 领域）
 - 新增应用名配置能力：`skill.SetAppName(name)` / `skill.AppName()`
@@ -245,7 +245,7 @@
 
 ### 新增
 
-- **`Kernel.SetupWithDefaults()`** — 一行代码替代 30+ 行手动注册
+- **旧 `Kernel.SetupWithDefaults()`（现已收敛为 `appkit.BuildKernel(...)` / `runtime.Setup(...)`）** — 一行代码替代 30+ 行手动注册
   - 自动注册 runtime builtin tools provider（现为 8 个内置工具）
   - 自动加载 MCP Skills（从 `~/.moss/config.yaml` 和 `./moss.yaml`）
   - 自动发现 Skills（从标准目录的 `SKILL.md`）
@@ -259,7 +259,7 @@
 
 ### 变更
 
-- `cmd/moss/main.go` 重构为使用 `SetupWithDefaults`
+- `cmd/moss/main.go` 当时重构为使用 `SetupWithDefaults`（当前已收敛到 `appkit.BuildKernel(...)` 路径）
 - 移除 `cmd/moss` 对 `kernel/tool/builtins` 的直接依赖
 
 ---

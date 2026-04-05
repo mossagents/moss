@@ -27,8 +27,9 @@ type Extension interface {
 }
 
 type extensionPlan struct {
-	options    []kernel.Option
-	installers []Installer
+	options        []kernel.Option
+	runtimeOptions []runtime.Option
+	installers     []Installer
 }
 
 type extensionFunc func(*extensionPlan)
@@ -41,6 +42,13 @@ func (f extensionFunc) apply(plan *extensionPlan) {
 func WithKernelOptions(opts ...kernel.Option) Extension {
 	return extensionFunc(func(plan *extensionPlan) {
 		plan.options = append(plan.options, opts...)
+	})
+}
+
+// WithRuntimeOptions 将 runtime.Setup 选项纳入 appkit 统一装配路径。
+func WithRuntimeOptions(opts ...runtime.Option) Extension {
+	return extensionFunc(func(plan *extensionPlan) {
+		plan.runtimeOptions = append(plan.runtimeOptions, opts...)
 	})
 }
 

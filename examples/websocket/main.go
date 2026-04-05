@@ -108,7 +108,7 @@ func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websock
 		}
 
 		if msg.Type == "user" && msg.Content != "" {
-			sess.AppendMessage(port.Message{Role: port.RoleUser, Content: msg.Content})
+			sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(msg.Content)}})
 			result, err := k.Run(connCtx, sess)
 			if err != nil {
 				if connCtx.Err() != nil {
