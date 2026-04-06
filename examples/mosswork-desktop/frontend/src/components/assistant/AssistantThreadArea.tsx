@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn";
 
 interface AssistantThreadAreaProps {
   showTypingIndicator: boolean;
+  statusText?: string;
   onArtifact?: (html: string) => void;
 }
 
@@ -27,7 +28,7 @@ function extractArtifact(content: string): { cleaned: string; artifact: string |
   };
 }
 
-export default function AssistantThreadArea({ showTypingIndicator, onArtifact }: AssistantThreadAreaProps) {
+export default function AssistantThreadArea({ showTypingIndicator, statusText, onArtifact }: AssistantThreadAreaProps) {
   return (
     <ThreadPrimitive.Root className="h-full">
       <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-8 pb-4">
@@ -59,10 +60,13 @@ export default function AssistantThreadArea({ showTypingIndicator, onArtifact }:
               <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
                 <span className="material-symbols-outlined text-on-primary text-sm">auto_awesome</span>
               </div>
-              <div className="flex items-center gap-1.5 py-3">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d0" />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d150" />
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d300" />
+              <div className="flex items-center gap-2 py-3">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d0 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d150 shrink-0" />
+                <span className="w-1.5 h-1.5 rounded-full bg-primary/60 animate-bounce bounce-d300 shrink-0" />
+                {statusText && (
+                  <span className="text-sm text-on-surface-variant ml-1">{statusText}</span>
+                )}
               </div>
             </div>
           )}

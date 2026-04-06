@@ -104,6 +104,7 @@ export default function App() {
   // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [statusText, setStatusText] = useState<string>("");
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [askData, setAskData] = useState<AskData | null>(null);
   const [workerState, setWorkerState] = useState<WorkerState | null>(null);
@@ -178,6 +179,7 @@ export default function App() {
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
+    setStatusText("正在生成回复...");
     appendAssistantChunk(data?.content ?? "");
   });
 
@@ -207,6 +209,7 @@ export default function App() {
   useWailsEvent<StreamData>("chat:thinking", (data) => {
     const chunk = data?.content ?? "";
     if (!chunk) return;
+    setStatusText("正在思考...");
     if (streamingIdRef.current) {
       const id = streamingIdRef.current;
       setMessages((prev) =>
@@ -232,6 +235,7 @@ export default function App() {
     const toolName = data?.meta?.tool || data?.meta?.name || data?.content || "tool";
     const callId = data?.meta?.call_id;
     const summary = data?.meta?.args_preview || undefined;
+    setStatusText(`调用 ${toolName}...`);
     // Store raw input only when content differs from the tool name
     const toolInput = data?.content && data.content !== toolName ? data.content : undefined;
     const newTool: ToolExecution = { callId, name: toolName, status: "running", input: toolInput, summary };
@@ -333,11 +337,13 @@ export default function App() {
     }
     streamingIdRef.current = null;
     setIsRunning(false);
+    setStatusText("");
   });
 
   useWailsEvent<ErrorData>("chat:error", (data) => {
     streamingIdRef.current = null;
     setIsRunning(false);
+    setStatusText("");
     const msg = data?.message || (typeof data === "string" ? data : "Unknown error");
     const id = nextId();
     setMessages((prev) => [
@@ -349,6 +355,7 @@ export default function App() {
   useWailsEvent("chat:cancelled", () => {
     streamingIdRef.current = null;
     setIsRunning(false);
+    setStatusText("");
     const id = nextId();
     setMessages((prev) => [
       ...prev,
@@ -401,6 +408,7 @@ export default function App() {
         { id, role: "user", content, timestamp: Date.now() },
       ]);
       setIsRunning(true);
+      setStatusText("正在处理...");
       try {
         if (files?.length) {
           await ChatService.sendMessageWithAttachments(content, files);
@@ -409,6 +417,7 @@ export default function App() {
         }
       } catch (err: any) {
         setIsRunning(false);
+        setStatusText("");
         const eid = nextId();
         setMessages((prev) => [
           ...prev,
@@ -607,6 +616,7 @@ export default function App() {
               <div className="flex-1 overflow-hidden relative mt-8">
                 <AssistantThreadArea
                   showTypingIndicator={showTypingIndicator}
+                  statusText={statusText}
                   onArtifact={setArtifact}
                 />
 
@@ -618,6 +628,12 @@ export default function App() {
               </div>
 
               <div className="relative h-36 shrink-0">
+                {isRunning && statusText && (
+                  <div className="absolute top-0 left-0 right-0 px-6 py-1.5 flex items-center gap-2 border-t border-outline-variant/20">
+                    <span className="material-symbols-outlined text-sm animate-spin-1s text-primary shrink-0">autorenew</span>
+                    <span className="text-xs text-on-surface-variant truncate">{statusText}</span>
+                  </div>
+                )}
                 <AssistantComposerBar
                   isRunning={isRunning}
                   onStop={handleStop}
