@@ -3,29 +3,52 @@ import { ChatService } from "@/lib/api";
 import type { ModelPreset, AppSettings } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-const PROVIDERS = ["openai", "anthropic", "deepseek", "ollama", "custom"] as const;
+// Canonical API types supported by the moss kernel.
+const MODEL_TYPES = [
+  { value: "openai-completions", label: "OpenAI Completions" },
+  { value: "openai-responses", label: "OpenAI Responses", badge: "预览" },
+  { value: "claude", label: "Claude" },
+  { value: "gemini", label: "Gemini" },
+] as const;
 
-const PROVIDER_LABELS: Record<string, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  deepseek: "DeepSeek",
-  ollama: "Ollama (本地)",
-  custom: "自定义",
-};
+type ModelTypeValue = (typeof MODEL_TYPES)[number]["value"];
+
+// Sub-groups for the openai-completions type (different OpenAI-compatible endpoints).
+const OPENAI_COMPAT_GROUPS = [
+  { value: "openai", label: "OpenAI", baseURL: "https://api.openai.com/v1" },
+  { value: "deepseek", label: "DeepSeek", baseURL: "https://api.deepseek.com/v1" },
+  { value: "ollama", label: "Ollama (本地)", baseURL: "http://localhost:11434/v1" },
+  { value: "custom", label: "自定义", baseURL: "" },
+] as const;
 
 const DEFAULT_BASE_URLS: Record<string, string> = {
-  openai: "https://api.openai.com/v1",
-  anthropic: "https://api.anthropic.com",
-  deepseek: "https://api.deepseek.com/v1",
-  ollama: "http://localhost:11434/v1",
-  custom: "",
+  "openai-completions": "https://api.openai.com/v1",
+  "openai-responses": "https://api.openai.com/v1",
+  claude: "https://api.anthropic.com",
+  gemini: "",
 };
+
+const MODEL_TYPE_LABELS: Record<string, string> = {
+  "openai-completions": "OpenAI Completions",
+  "openai-responses": "OpenAI Responses",
+  claude: "Claude",
+  gemini: "Gemini",
+};
+
+/** Derives the openai-completions sub-group from the saved base URL. */
+function detectSubGroup(baseURL: string): string {
+  if (baseURL.includes("deepseek.com")) return "deepseek";
+  if (baseURL.includes("localhost:11434") || baseURL.includes("127.0.0.1:11434")) return "ollama";
+  if (baseURL.includes("openai.com") || baseURL === "") return "openai";
+  return "custom";
+}
 
 export default function SettingsView() {
   const [presets, setPresets] = useState<ModelPreset[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
-  const [provider, setProvider] = useState<string>("openai");
+  const [modelType, setModelType] = useState<ModelTypeValue>("openai-completions");
+  const [subGroup, setSubGroup] = useState<string>("openai");
   const [model, setModel] = useState<string>("");
   const [baseURL, setBaseURL] = useState<string>("");
   const [apiKey, setApiKey] = useState<string>("");
@@ -35,37 +58,76 @@ export default function SettingsView() {
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Load settings and presets on mount
+  // Load settings and presets on mount.
   useEffect(() => {
-    Promise.all([
-      ChatService.getSettings(),
-      ChatService.getPresetModels(),
-    ]).then(([s, p]) => {
-      const cfg = s as AppSettings;
-      setSettings(cfg);
-      setPresets(p as ModelPreset[]);
-      const prov = cfg.provider || "openai";
-      setProvider(prov);
-      setModel(cfg.model || "");
-      setBaseURL(cfg.baseURL || "");
-      setApiKey(cfg.apiKey || "");
-      // If saved model isn't in presets for that provider, use custom
-      const inPreset = (p as ModelPreset[]).some(
-        (m) => m.provider === prov && m.model === cfg.model,
-      );
-      setCustomModel(!inPreset && !!cfg.model);
-    }).catch(() => {});
+    Promise.all([ChatService.getSettings(), ChatService.getPresetModels()])
+      .then(([s, p]) => {
+        const cfg = s as AppSettings;
+        setSettings(cfg);
+        setPresets(p as ModelPreset[]);
+
+        const type = (cfg.provider as ModelTypeValue) || "openai-completions";
+        setModelType(type);
+        setBaseURL(cfg.baseURL || "");
+        setApiKey(cfg.apiKey || "");
+
+        if (type === "openai-completions") {
+          const sg = detectSubGroup(cfg.baseURL || "");
+          setSubGroup(sg);
+          const presetsForGroup = (p as ModelPreset[]).filter(
+            (m) => m.provider === type && m.group === sg,
+          );
+          const inPreset = presetsForGroup.some((m) => m.model === cfg.model);
+          setCustomModel(!inPreset && !!cfg.model && sg !== "custom");
+        } else {
+          const inPreset = (p as ModelPreset[]).some(
+            (m) => m.provider === type && m.model === cfg.model,
+          );
+          setCustomModel(!inPreset && !!cfg.model);
+        }
+        setModel(cfg.model || "");
+      })
+      .catch(() => {});
   }, []);
 
-  const modelsForProvider = presets.filter((p) => p.provider === provider);
+  const modelsForSelection = presets.filter(
+    (p) =>
+      p.provider === modelType &&
+      (modelType !== "openai-completions" || subGroup === "custom" || p.group === subGroup),
+  );
 
-  function handleProviderChange(p: string) {
-    setProvider(p);
+  function handleModelTypeChange(type: ModelTypeValue) {
+    setModelType(type);
     setCustomModel(false);
-    const first = presets.find((m) => m.provider === p);
-    setModel(first?.model ?? "");
-    setBaseURL(p !== "custom" ? (DEFAULT_BASE_URLS[p] ?? "") : "");
     setStatus(null);
+
+    if (type === "openai-completions") {
+      const sg = "openai";
+      setSubGroup(sg);
+      const first = presets.find((m) => m.provider === type && m.group === sg);
+      setModel(first?.model ?? "");
+      setBaseURL(OPENAI_COMPAT_GROUPS.find((g) => g.value === sg)?.baseURL ?? "");
+    } else {
+      setSubGroup("");
+      const first = presets.find((m) => m.provider === type);
+      setModel(first?.model ?? "");
+      setBaseURL(DEFAULT_BASE_URLS[type] ?? "");
+    }
+  }
+
+  function handleSubGroupChange(sg: string) {
+    setSubGroup(sg);
+    setCustomModel(false);
+    setStatus(null);
+    const group = OPENAI_COMPAT_GROUPS.find((g) => g.value === sg);
+    if (sg !== "custom") {
+      setBaseURL(group?.baseURL ?? "");
+      const first = presets.find((m) => m.provider === modelType && m.group === sg);
+      setModel(first?.model ?? "");
+    } else {
+      setBaseURL("");
+      setModel("");
+    }
   }
 
   function handlePresetModelChange(m: string) {
@@ -87,10 +149,12 @@ export default function SettingsView() {
     setSaving(true);
     setStatus(null);
     try {
-      await ChatService.updateModel(provider, model.trim(), baseURL.trim(), apiKey);
-      setStatus({ ok: true, msg: `已切换到 ${provider} / ${model} ✓` });
-      // Refresh settings
-      const s = await ChatService.getSettings() as AppSettings;
+      await ChatService.updateModel(modelType, model.trim(), baseURL.trim(), apiKey);
+      setStatus({
+        ok: true,
+        msg: `已切换到 ${MODEL_TYPE_LABELS[modelType] ?? modelType} / ${model} ✓`,
+      });
+      const s = (await ChatService.getSettings()) as AppSettings;
       setSettings(s);
       setApiKey(s.apiKey || "");
     } catch (err: any) {
@@ -100,7 +164,7 @@ export default function SettingsView() {
     }
   }
 
-  const needsAPIKey = provider !== "ollama";
+  const needsAPIKey = !(modelType === "openai-completions" && subGroup === "ollama");
 
   return (
     <div className="absolute inset-0 left-14 overflow-y-auto bg-surface">
@@ -117,46 +181,91 @@ export default function SettingsView() {
           <p className="text-xs text-on-surface-variant mb-5">
             当前：
             <span className="font-bold text-primary">
-              {settings ? `${settings.provider} / ${settings.model || "未设置"}` : "加载中…"}
+              {settings
+                ? `${MODEL_TYPE_LABELS[settings.provider] ?? settings.provider} / ${settings.model || "未设置"}`
+                : "加载中…"}
             </span>
           </p>
 
-          {/* Provider */}
+          {/* Model Type */}
           <div className="mb-4">
             <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
-              服务商
+              模型类型
             </label>
             <div className="flex flex-wrap gap-2">
-              {PROVIDERS.map((p) => (
+              {MODEL_TYPES.map((t) => (
                 <button
-                  key={p}
+                  key={t.value}
                   type="button"
-                  onClick={() => handleProviderChange(p)}
+                  onClick={() => handleModelTypeChange(t.value)}
                   className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-bold border transition-colors",
-                    provider === p
+                    "px-3 py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5",
+                    modelType === t.value
                       ? "bg-primary text-on-primary border-primary"
                       : "border-border text-on-surface-variant hover:bg-surface-container-high",
                   )}
                 >
-                  {PROVIDER_LABELS[p]}
+                  {t.label}
+                  {"badge" in t && (
+                    <span
+                      className={cn(
+                        "text-[9px] font-bold px-1 py-0.5 rounded",
+                        modelType === t.value
+                          ? "bg-on-primary/20 text-on-primary"
+                          : "bg-primary/10 text-primary",
+                      )}
+                    >
+                      {t.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
+            {modelType === "openai-responses" && (
+              <p className="text-[10px] text-on-surface-variant mt-1.5">
+                OpenAI Responses API 尚在预览阶段，功能可能受限。
+              </p>
+            )}
           </div>
+
+          {/* Sub-group selector (only for openai-completions) */}
+          {modelType === "openai-completions" && (
+            <div className="mb-4">
+              <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
+                服务商
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {OPENAI_COMPAT_GROUPS.map((g) => (
+                  <button
+                    key={g.value}
+                    type="button"
+                    onClick={() => handleSubGroupChange(g.value)}
+                    className={cn(
+                      "px-3 py-1.5 rounded-full text-xs font-bold border transition-colors",
+                      subGroup === g.value
+                        ? "bg-secondary text-on-secondary border-secondary"
+                        : "border-border text-on-surface-variant hover:bg-surface-container-high",
+                    )}
+                  >
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Model selector */}
           <div className="mb-4">
             <label className="block text-xs font-semibold text-on-surface-variant mb-1.5 uppercase tracking-wider">
               模型
             </label>
-            {modelsForProvider.length > 0 && (
+            {modelsForSelection.length > 0 && (
               <select
                 value={customModel ? "__custom__" : model}
                 onChange={(e) => handlePresetModelChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-on-surface text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-primary/30"
               >
-                {modelsForProvider.map((m) => (
+                {modelsForSelection.map((m) => (
                   <option key={m.model} value={m.model}>
                     {m.label} ({m.model})
                   </option>
@@ -164,12 +273,15 @@ export default function SettingsView() {
                 <option value="__custom__">自定义…</option>
               </select>
             )}
-            {(customModel || modelsForProvider.length === 0) && (
+            {(customModel || modelsForSelection.length === 0) && (
               <input
                 type="text"
                 placeholder="输入模型 ID，例如 gpt-4o"
                 value={model}
-                onChange={(e) => { setModel(e.target.value); setStatus(null); }}
+                onChange={(e) => {
+                  setModel(e.target.value);
+                  setStatus(null);
+                }}
                 className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-on-surface text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             )}
@@ -182,9 +294,12 @@ export default function SettingsView() {
             </label>
             <input
               type="text"
-              placeholder={DEFAULT_BASE_URLS[provider] || "https://api.example.com/v1"}
+              placeholder={DEFAULT_BASE_URLS[modelType] || "https://api.example.com/v1"}
               value={baseURL}
-              onChange={(e) => { setBaseURL(e.target.value); setStatus(null); }}
+              onChange={(e) => {
+                setBaseURL(e.target.value);
+                setStatus(null);
+              }}
               className="w-full px-3 py-2 rounded-xl border border-border bg-surface text-on-surface text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
             <p className="text-[10px] text-on-surface-variant mt-1">
@@ -203,7 +318,10 @@ export default function SettingsView() {
                   type={showKey ? "text" : "password"}
                   placeholder="sk-…"
                   value={apiKey}
-                  onChange={(e) => { setApiKey(e.target.value); setStatus(null); }}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    setStatus(null);
+                  }}
                   className="w-full px-3 py-2 pr-10 rounded-xl border border-border bg-surface text-on-surface text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
                 />
                 <button

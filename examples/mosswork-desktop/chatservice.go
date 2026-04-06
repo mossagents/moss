@@ -1169,9 +1169,12 @@ func (s *ChatService) RunAutomationNow(id string) error {
 
 // ─── Settings & Model Configuration ─────────────────────────────────────────
 
-// ModelPreset describes a known LLM provider + model combination.
+// ModelPreset describes a known LLM model combination.
+// Provider is the canonical API type (openai-completions, openai-responses, claude, gemini).
+// Group is a display sub-group for grouping models within the same API type (e.g. "openai", "deepseek", "ollama").
 type ModelPreset struct {
 	Provider string `json:"provider"`
+	Group    string `json:"group,omitempty"`
 	Label    string `json:"label"`
 	Model    string `json:"model"`
 	BaseURL  string `json:"base_url,omitempty"`
@@ -1187,26 +1190,32 @@ type appSettings struct {
 }
 
 var presetModels = []ModelPreset{
-	// OpenAI
-	{Provider: "openai", Label: "GPT-4o", Model: "gpt-4o"},
-	{Provider: "openai", Label: "GPT-4o mini", Model: "gpt-4o-mini"},
-	{Provider: "openai", Label: "GPT-4.1", Model: "gpt-4.1"},
-	{Provider: "openai", Label: "o1", Model: "o1"},
-	{Provider: "openai", Label: "o3-mini", Model: "o3-mini"},
-	// Anthropic
-	{Provider: "anthropic", Label: "Claude 3.7 Sonnet", Model: "claude-3-7-sonnet-20250219"},
-	{Provider: "anthropic", Label: "Claude 3.5 Sonnet", Model: "claude-3-5-sonnet-20241022"},
-	{Provider: "anthropic", Label: "Claude 3.5 Haiku", Model: "claude-3-5-haiku-20241022"},
-	{Provider: "anthropic", Label: "Claude 3 Opus", Model: "claude-3-opus-20240229"},
-	// DeepSeek
-	{Provider: "deepseek", Label: "DeepSeek V3 (Chat)", Model: "deepseek-chat"},
-	{Provider: "deepseek", Label: "DeepSeek R1 (Reasoner)", Model: "deepseek-reasoner"},
-	// Ollama (local)
-	{Provider: "ollama", Label: "Llama 3.2", Model: "llama3.2"},
-	{Provider: "ollama", Label: "Qwen 2.5", Model: "qwen2.5"},
-	{Provider: "ollama", Label: "Mistral", Model: "mistral"},
-	{Provider: "ollama", Label: "Gemma 3", Model: "gemma3"},
-	{Provider: "ollama", Label: "DeepSeek R1 (local)", Model: "deepseek-r1"},
+	// OpenAI Completions — OpenAI
+	{Provider: "openai-completions", Group: "openai", Label: "GPT-4o", Model: "gpt-4o"},
+	{Provider: "openai-completions", Group: "openai", Label: "GPT-4o mini", Model: "gpt-4o-mini"},
+	{Provider: "openai-completions", Group: "openai", Label: "GPT-4.1", Model: "gpt-4.1"},
+	{Provider: "openai-completions", Group: "openai", Label: "o1", Model: "o1"},
+	{Provider: "openai-completions", Group: "openai", Label: "o3-mini", Model: "o3-mini"},
+	// OpenAI Completions — DeepSeek (OpenAI-compatible endpoint)
+	{Provider: "openai-completions", Group: "deepseek", Label: "DeepSeek V3 (Chat)", Model: "deepseek-chat", BaseURL: "https://api.deepseek.com/v1"},
+	{Provider: "openai-completions", Group: "deepseek", Label: "DeepSeek R1 (Reasoner)", Model: "deepseek-reasoner", BaseURL: "https://api.deepseek.com/v1"},
+	// OpenAI Completions — Ollama (local OpenAI-compatible endpoint)
+	{Provider: "openai-completions", Group: "ollama", Label: "Llama 3.2", Model: "llama3.2", BaseURL: "http://localhost:11434/v1"},
+	{Provider: "openai-completions", Group: "ollama", Label: "Qwen 2.5", Model: "qwen2.5", BaseURL: "http://localhost:11434/v1"},
+	{Provider: "openai-completions", Group: "ollama", Label: "Mistral", Model: "mistral", BaseURL: "http://localhost:11434/v1"},
+	{Provider: "openai-completions", Group: "ollama", Label: "Gemma 3", Model: "gemma3", BaseURL: "http://localhost:11434/v1"},
+	{Provider: "openai-completions", Group: "ollama", Label: "DeepSeek R1 (local)", Model: "deepseek-r1", BaseURL: "http://localhost:11434/v1"},
+	// Claude — Anthropic
+	{Provider: "claude", Group: "anthropic", Label: "Claude 3.7 Sonnet", Model: "claude-3-7-sonnet-20250219"},
+	{Provider: "claude", Group: "anthropic", Label: "Claude 3.5 Sonnet", Model: "claude-3-5-sonnet-20241022"},
+	{Provider: "claude", Group: "anthropic", Label: "Claude 3.5 Haiku", Model: "claude-3-5-haiku-20241022"},
+	{Provider: "claude", Group: "anthropic", Label: "Claude 3 Opus", Model: "claude-3-opus-20240229"},
+	// Gemini — Google
+	{Provider: "gemini", Group: "google", Label: "Gemini 2.5 Pro", Model: "gemini-2.5-pro-preview-05-06"},
+	{Provider: "gemini", Group: "google", Label: "Gemini 2.0 Flash", Model: "gemini-2.0-flash"},
+	{Provider: "gemini", Group: "google", Label: "Gemini 2.0 Flash Thinking", Model: "gemini-2.0-flash-thinking-exp"},
+	{Provider: "gemini", Group: "google", Label: "Gemini 1.5 Pro", Model: "gemini-1.5-pro"},
+	{Provider: "gemini", Group: "google", Label: "Gemini 1.5 Flash", Model: "gemini-1.5-flash"},
 }
 
 func (s *ChatService) settingsPath() string {
@@ -1230,7 +1239,36 @@ func (s *ChatService) loadUserSettings() appSettings {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return appSettings{}
 	}
+	// Migrate legacy provider values to canonical API types.
+	st.Provider, st.BaseURL = migrateProviderSettings(st.Provider, st.BaseURL)
 	return st
+}
+
+// migrateProviderSettings converts legacy provider names to canonical API types.
+// Returns the normalized provider and (possibly updated) base URL.
+func migrateProviderSettings(provider, baseURL string) (string, string) {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "openai":
+		return "openai-completions", baseURL
+	case "anthropic":
+		return "claude", baseURL
+	case "deepseek":
+		if baseURL == "" {
+			baseURL = "https://api.deepseek.com/v1"
+		}
+		return "openai-completions", baseURL
+	case "ollama":
+		if baseURL == "" {
+			baseURL = "http://localhost:11434/v1"
+		}
+		return "openai-completions", baseURL
+	case "google":
+		return "gemini", baseURL
+	case "custom":
+		return "openai-completions", baseURL
+	default:
+		return provider, baseURL
+	}
 }
 
 func (s *ChatService) saveUserSettings() error {

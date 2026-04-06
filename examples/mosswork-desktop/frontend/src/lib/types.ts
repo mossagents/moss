@@ -113,6 +113,7 @@ export interface AutomationTask {
 
 export interface ModelPreset {
   provider: string;
+  group?: string;
   label: string;
   model: string;
   base_url?: string;
