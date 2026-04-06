@@ -7,3 +7,7 @@ export {
     ChatService,
     FileService
 };
+
+export {
+    ModelPreset
+} from "./models.js";

@@ -21,6 +21,10 @@ export const ChatService = {
   removeAutomation: (id: string) => _Chat.RemoveAutomation(id),
   getAutomations: () => _Chat.GetAutomations(),
   runAutomationNow: (id: string) => _Chat.RunAutomationNow(id),
+  getSettings: () => _Chat.GetSettings(),
+  getPresetModels: () => _Chat.GetPresetModels(),
+  updateModel: (provider: string, model: string, baseURL: string, apiKey: string) =>
+    _Chat.UpdateModel(provider, model, baseURL, apiKey),
 };
 
 export const FileService = {

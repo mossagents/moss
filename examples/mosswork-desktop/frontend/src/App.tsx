@@ -32,6 +32,7 @@ import WorkerPanel from "@/components/WorkerPanel";
 import ArtifactPanel from "@/components/ArtifactPanel";
 import AutomationView from "@/components/automation/AutomationView";
 import AutomationFormModal from "@/components/automation/AutomationFormModal";
+import SettingsView from "@/components/settings/SettingsView";
 
 let msgCounter = 0;
 function nextId() {
@@ -96,7 +97,7 @@ function normalizeWorkerState(input: any): WorkerState | null {
 }
 
 export default function App() {
-  const [module, setModule] = useState<"chat" | "automation">("chat");
+  const [module, setModule] = useState<"chat" | "automation" | "settings">("chat");
   const [artifact, setArtifact] = useState<string | null>(null);
 
   // Chat state
@@ -557,6 +558,8 @@ export default function App() {
           />
         </main>
       )}
+
+      {module === "settings" && <SettingsView />}
 
       {askData && (
         <AskDialog

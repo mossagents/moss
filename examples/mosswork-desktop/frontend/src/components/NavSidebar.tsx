@@ -1,8 +1,8 @@
 import { cn } from "@/lib/cn";
 
 interface NavSidebarProps {
-  activeModule: 'chat' | 'automation';
-  onModuleChange: (m: 'chat' | 'automation') => void;
+  activeModule: 'chat' | 'automation' | 'settings';
+  onModuleChange: (m: 'chat' | 'automation' | 'settings') => void;
 }
 
 export default function NavSidebar({ activeModule, onModuleChange }: NavSidebarProps) {
@@ -29,13 +29,13 @@ export default function NavSidebar({ activeModule, onModuleChange }: NavSidebarP
         />
       </div>
 
-      {/* Bottom: Settings (cosmetic) */}
+      {/* Bottom: Settings */}
       <div className="mt-auto">
         <NavItem
           icon="settings"
           label="设置"
-          active={false}
-          onClick={() => {}}
+          active={activeModule === 'settings'}
+          onClick={() => onModuleChange('settings')}
         />
       </div>
     </aside>

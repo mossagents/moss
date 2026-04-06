@@ -5,6 +5,39 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+/**
+ * ModelPreset describes a known LLM provider + model combination.
+ */
+export class ModelPreset {
+    "provider": string;
+    "label": string;
+    "model": string;
+    "base_url"?: string;
+
+    /** Creates a new ModelPreset instance. */
+    constructor($$source: Partial<ModelPreset> = {}) {
+        if (!("provider" in $$source)) {
+            this["provider"] = "";
+        }
+        if (!("label" in $$source)) {
+            this["label"] = "";
+        }
+        if (!("model" in $$source)) {
+            this["model"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ModelPreset instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ModelPreset {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ModelPreset($$parsedSource as Partial<ModelPreset>);
+    }
+}
+
 export class scheduleView {
     "id": string;
     "schedule": string;

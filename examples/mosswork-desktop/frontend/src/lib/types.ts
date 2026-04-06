@@ -110,6 +110,21 @@ export interface AutomationTask {
   next_run?: string;
 }
 
+export interface ModelPreset {
+  provider: string;
+  label: string;
+  model: string;
+  base_url?: string;
+}
+
+export interface AppSettings {
+  provider: string;
+  model: string;
+  baseURL: string;
+  apiKey: string;
+  workers: number;
+}
+
 export interface DashboardState {
   current_session_id?: string;
   sessions?: SessionSummary[];

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -33,7 +34,8 @@ type ChatService struct {
 	store session.SessionStore
 	sess  *session.Session
 
-	wailsIO *WailsUserIO
+	wailsIO    *WailsUserIO
+	serviceCtx context.Context
 
 	mu            sync.Mutex
 	running       bool
@@ -47,7 +49,26 @@ func NewChatService(cfg config) *ChatService {
 
 func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
 	slog.Info("ChatService starting up...")
+	s.serviceCtx = ctx
 	s.wailsIO = NewWailsUserIO()
+
+	// Apply user settings saved via the UI (fills any unset flags/env fields)
+	saved := s.loadUserSettings()
+	if s.cfg.provider == "" && saved.Provider != "" {
+		s.cfg.provider = saved.Provider
+	}
+	if s.cfg.model == "" && saved.Model != "" {
+		s.cfg.model = saved.Model
+	}
+	if s.cfg.baseURL == "" && saved.BaseURL != "" {
+		s.cfg.baseURL = saved.BaseURL
+	}
+	if s.cfg.apiKey == "" && saved.APIKey != "" {
+		s.cfg.apiKey = saved.APIKey
+	}
+	if s.cfg.workers == 0 && saved.Workers > 0 {
+		s.cfg.workers = saved.Workers
+	}
 
 	k, err := s.buildKernel()
 	if err != nil {
@@ -1085,3 +1106,197 @@ func (s *ChatService) RunAutomationNow(id string) error {
 	}
 	return fmt.Errorf("automation %q not found", id)
 }
+
+// ─── Settings & Model Configuration ─────────────────────────────────────────
+
+// ModelPreset describes a known LLM provider + model combination.
+type ModelPreset struct {
+	Provider string `json:"provider"`
+	Label    string `json:"label"`
+	Model    string `json:"model"`
+	BaseURL  string `json:"base_url,omitempty"`
+}
+
+// appSettings mirrors the fields that can be persisted to settings.json.
+type appSettings struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	BaseURL  string `json:"base_url,omitempty"`
+	APIKey   string `json:"api_key,omitempty"`
+	Workers  int    `json:"workers,omitempty"`
+}
+
+var presetModels = []ModelPreset{
+	// OpenAI
+	{Provider: "openai", Label: "GPT-4o", Model: "gpt-4o"},
+	{Provider: "openai", Label: "GPT-4o mini", Model: "gpt-4o-mini"},
+	{Provider: "openai", Label: "GPT-4.1", Model: "gpt-4.1"},
+	{Provider: "openai", Label: "o1", Model: "o1"},
+	{Provider: "openai", Label: "o3-mini", Model: "o3-mini"},
+	// Anthropic
+	{Provider: "anthropic", Label: "Claude 3.7 Sonnet", Model: "claude-3-7-sonnet-20250219"},
+	{Provider: "anthropic", Label: "Claude 3.5 Sonnet", Model: "claude-3-5-sonnet-20241022"},
+	{Provider: "anthropic", Label: "Claude 3.5 Haiku", Model: "claude-3-5-haiku-20241022"},
+	{Provider: "anthropic", Label: "Claude 3 Opus", Model: "claude-3-opus-20240229"},
+	// DeepSeek
+	{Provider: "deepseek", Label: "DeepSeek V3 (Chat)", Model: "deepseek-chat"},
+	{Provider: "deepseek", Label: "DeepSeek R1 (Reasoner)", Model: "deepseek-reasoner"},
+	// Ollama (local)
+	{Provider: "ollama", Label: "Llama 3.2", Model: "llama3.2"},
+	{Provider: "ollama", Label: "Qwen 2.5", Model: "qwen2.5"},
+	{Provider: "ollama", Label: "Mistral", Model: "mistral"},
+	{Provider: "ollama", Label: "Gemma 3", Model: "gemma3"},
+	{Provider: "ollama", Label: "DeepSeek R1 (local)", Model: "deepseek-r1"},
+}
+
+func (s *ChatService) settingsPath() string {
+	appDir := appconfig.AppDir()
+	if appDir == "" {
+		return ""
+	}
+	return filepath.Join(appDir, "settings.json")
+}
+
+func (s *ChatService) loadUserSettings() appSettings {
+	p := s.settingsPath()
+	if p == "" {
+		return appSettings{}
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return appSettings{}
+	}
+	var st appSettings
+	if err := json.Unmarshal(data, &st); err != nil {
+		return appSettings{}
+	}
+	return st
+}
+
+func (s *ChatService) saveUserSettings() error {
+	p := s.settingsPath()
+	if p == "" {
+		return fmt.Errorf("cannot determine settings path")
+	}
+	st := appSettings{
+		Provider: s.cfg.provider,
+		Model:    s.cfg.model,
+		BaseURL:  s.cfg.baseURL,
+		APIKey:   s.cfg.apiKey,
+		Workers:  s.cfg.workers,
+	}
+	data, err := json.MarshalIndent(st, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0600)
+}
+
+func maskAPIKey(key string) string {
+	if len(key) == 0 {
+		return ""
+	}
+	if len(key) <= 8 {
+		return strings.Repeat("*", len(key))
+	}
+	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
+}
+
+// GetSettings returns the current active model/provider settings (API key masked).
+func (s *ChatService) GetSettings() map[string]any {
+	return map[string]any{
+		"provider": s.cfg.provider,
+		"model":    s.cfg.model,
+		"baseURL":  s.cfg.baseURL,
+		"apiKey":   maskAPIKey(s.cfg.apiKey),
+		"workers":  s.cfg.workers,
+	}
+}
+
+// GetPresetModels returns the built-in list of known LLM providers and models.
+func (s *ChatService) GetPresetModels() []ModelPreset {
+	return presetModels
+}
+
+// UpdateModel hot-reloads the kernel with a new provider/model/key configuration.
+// Returns an error if an agent is currently running.
+func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return fmt.Errorf("agent is running; please wait for it to finish")
+	}
+	cancel := s.cancel
+	s.cancel = nil
+	monitorCancel := s.monitorCancel
+	s.monitorCancel = nil
+	s.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if monitorCancel != nil {
+		monitorCancel()
+	}
+
+	// Update in-memory config (skip API key if it's the masked placeholder)
+	s.cfg.provider = provider
+	s.cfg.model = model
+	s.cfg.baseURL = baseURL
+	if apiKey != "" && !strings.Contains(apiKey, "***") {
+		s.cfg.apiKey = apiKey
+	}
+
+	if err := s.saveUserSettings(); err != nil {
+		slog.Warn("save settings failed", slog.Any("error", err))
+	}
+
+	// Shutdown old kernel
+	if s.k != nil {
+		shutdownCtx, stop := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := s.k.Shutdown(shutdownCtx); err != nil &&
+			!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			slog.Warn("kernel shutdown during model update", slog.Any("error", err))
+		}
+		stop()
+		s.k = nil
+	}
+
+	// Rebuild kernel with new settings
+	ctx := s.serviceCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	k, err := s.buildKernel()
+	if err != nil {
+		return fmt.Errorf("rebuild kernel: %w", err)
+	}
+	if err := k.Boot(ctx); err != nil {
+		return fmt.Errorf("boot kernel: %w", err)
+	}
+	s.k = k
+
+	// Create a fresh session
+	sess, err := k.NewSession(ctx, s.newSessionConfig())
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	sess.SetTitle("新会话")
+	s.mu.Lock()
+	s.sess = sess
+	s.mu.Unlock()
+	if err := s.persistSession(sess); err != nil {
+		slog.Warn("persist session after model update failed", slog.Any("error", err))
+	}
+
+	s.startDashboardMonitor(ctx)
+	s.emitDashboard()
+
+	emitEvent("config:updated", map[string]any{
+		"provider": provider,
+		"model":    model,
+	})
+	slog.Info("Model updated", slog.String("provider", provider), slog.String("model", model))
+	return nil
+}
+

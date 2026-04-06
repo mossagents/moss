@@ -42,6 +42,24 @@ export function GetDashboard(): $CancellablePromise<{ [_ in string]?: any }> {
     });
 }
 
+/**
+ * GetPresetModels returns the built-in list of known LLM providers and models.
+ */
+export function GetPresetModels(): $CancellablePromise<$models.ModelPreset[]> {
+    return $Call.ByID(3853313952).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
+/**
+ * GetSettings returns the current active model/provider settings (API key masked).
+ */
+export function GetSettings(): $CancellablePromise<{ [_ in string]?: any }> {
+    return $Call.ByID(1831475952).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 export function IsRunning(): $CancellablePromise<boolean> {
     return $Call.ByID(2401099782);
 }
@@ -84,7 +102,17 @@ export function StopAgent(): $CancellablePromise<void> {
     return $Call.ByID(429619256);
 }
 
+/**
+ * UpdateModel hot-reloads the kernel with a new provider/model/key configuration.
+ * Returns an error if an agent is currently running.
+ */
+export function UpdateModel(provider: string, model: string, baseURL: string, apiKey: string): $CancellablePromise<void> {
+    return $Call.ByID(4129383295, provider, model, baseURL, apiKey);
+}
+
 // Private type creation functions
 const $$createType0 = $models.scheduleView.createFrom;
 const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = $Create.Map($Create.Any, $Create.Any);
+const $$createType3 = $models.ModelPreset.createFrom;
+const $$createType4 = $Create.Array($$createType3);
