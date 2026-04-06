@@ -29,6 +29,7 @@ type executionProgressState struct {
 	Iteration int
 	MaxSteps  int
 	StartedAt time.Time
+	EndedAt   time.Time
 	UpdatedAt time.Time
 }
 
@@ -61,6 +62,9 @@ func (s executionProgressState) elapsed(now time.Time) time.Duration {
 		return 0
 	}
 	end := now
+	if !s.EndedAt.IsZero() {
+		end = s.EndedAt
+	}
 	if s.terminal() && !s.UpdatedAt.IsZero() {
 		end = s.UpdatedAt
 	}
@@ -148,9 +152,29 @@ func (m *chatModel) recordProgressSnapshot(next executionProgressState, reset bo
 	if !next.visible() {
 		return didReset, false
 	}
+	if next.terminal() && next.EndedAt.IsZero() && !next.UpdatedAt.IsZero() {
+		next.EndedAt = next.UpdatedAt
+	}
 	if len(m.progressTrail) > 0 && m.progressTrail[len(m.progressTrail)-1].signature() == next.signature() {
+		next.EndedAt = m.progressTrail[len(m.progressTrail)-1].EndedAt
 		m.progressTrail[len(m.progressTrail)-1] = next
 		return didReset, false
+	}
+	if len(m.progressTrail) > 0 {
+		prev := m.progressTrail[len(m.progressTrail)-1]
+		if prev.EndedAt.IsZero() {
+			endAt := next.UpdatedAt
+			if endAt.IsZero() {
+				endAt = next.StartedAt
+			}
+			if endAt.IsZero() {
+				endAt = m.now().UTC()
+			}
+			if !endAt.Before(prev.StartedAt) {
+				prev.EndedAt = endAt
+			}
+		}
+		m.progressTrail[len(m.progressTrail)-1] = prev
 	}
 	m.progressTrail = append(m.progressTrail, next)
 	if len(m.progressTrail) > 6 {

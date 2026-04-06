@@ -202,3 +202,58 @@ func TestChatProgressBuildsThinkingTimeline(t *testing.T) {
 		t.Fatalf("expected progress trail reset on session switch, got %d", len(reset.progressTrail))
 	}
 }
+
+func TestProgressTimelineFreezesElapsedWhenRunCompletes(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.currentSessionID = "s1"
+	base := time.Now().UTC()
+	current := base
+	m.now = func() time.Time { return current }
+
+	updated, _ := m.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "running",
+			Phase:     "starting",
+			StartedAt: base,
+			UpdatedAt: base,
+			Message:   "run started",
+		},
+		SetCurrent: true,
+	})
+	updated, _ = updated.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "running",
+			Phase:     "thinking",
+			StartedAt: base,
+			UpdatedAt: base.Add(5 * time.Second),
+			Message:   "calling gpt-4o",
+		},
+	})
+	updated, _ = updated.Update(notificationProgressMsg{
+		Snapshot: executionProgressState{
+			SessionID: "s1",
+			Status:    "completed",
+			Phase:     "completed",
+			StartedAt: base,
+			UpdatedAt: base.Add(10 * time.Second),
+			Message:   "completed in 1 steps",
+		},
+	})
+
+	current = base.Add(25 * time.Second)
+	rendered := updated.renderProgressBlock(120)
+	for _, want := range []string{
+		"run started  5s",
+		"calling gpt-4o  10s",
+		"completed in 1 steps  10s",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("expected frozen duration %q in %q", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "25s") {
+		t.Fatalf("expected completed progress timeline to stop updating, got %q", rendered)
+	}
+}
