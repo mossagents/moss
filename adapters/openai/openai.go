@@ -190,7 +190,31 @@ func (c *Client) buildParams(req port.CompletionRequest) (openai.ChatCompletionN
 
 // ─── 消息映射 ────────────────────────────────────────
 
+// normalizeMessages merges consecutive messages with the same role, excluding
+// system and tool messages, to prevent API-level validation errors from strict
+// providers such as DeepSeek that forbid consecutive same-role turns.
+func normalizeMessages(msgs []port.Message) []port.Message {
+	if len(msgs) == 0 {
+		return nil
+	}
+	out := make([]port.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		if len(out) > 0 &&
+			msg.Role != port.RoleSystem &&
+			msg.Role != port.RoleTool &&
+			out[len(out)-1].Role == msg.Role {
+			last := &out[len(out)-1]
+			last.ContentParts = append(last.ContentParts, msg.ContentParts...)
+			last.ToolCalls = append(last.ToolCalls, msg.ToolCalls...)
+		} else {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
 func toOpenAIMessages(msgs []port.Message, model string) ([]openai.ChatCompletionMessageParamUnion, error) {
+	msgs = normalizeMessages(msgs)
 	var result []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range msgs {
