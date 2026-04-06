@@ -227,7 +227,7 @@ export default function App() {
     ]);
   });
 
-
+  useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
     const toolName = data?.meta?.name || data?.content || "tool";
     const newTool: ToolExecution = { name: toolName, status: "running" };
     const currentId = streamingIdRef.current;

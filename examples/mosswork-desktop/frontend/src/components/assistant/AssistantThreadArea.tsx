@@ -123,7 +123,6 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
   const rawMessages = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const isStreaming = useMessage((s) => s.status?.type === "running");
 
-  const allParts = rawMessages.flatMap((m) => m.parts ?? []);
   const fullContent = rawMessages.map((m) => m.content || "").join("");
   const fullThinking = rawMessages.map((m) => m.thinking || "").join("");
   const { artifact } = extractArtifact(fullContent);
@@ -134,14 +133,6 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
     }
   }, [artifact, isStreaming, onArtifact]);
 
-  // Index of last text part — receives the streaming cursor
-  let lastTextIdx = -1;
-  if (isStreaming) {
-    for (let i = allParts.length - 1; i >= 0; i--) {
-      if (allParts[i].type === "text") { lastTextIdx = i; break; }
-    }
-  }
-
   return (
     <MessagePrimitive.Root data-role="assistant" className="flex gap-6 animate-fade-in">
       <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 mt-1 shadow-sm">
@@ -151,40 +142,23 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
         {fullThinking && (
           <ThinkingBlock text={fullThinking} streaming={isStreaming && !fullContent} />
         )}
-        {allParts.length > 0 ? (
-          <>
-            {allParts.map((part, i) => {
-              if (part.type === "tool" && part.tool) {
-                return <ToolChip key={i} tool={part.tool} />;
-              }
-              if (part.type === "text" && part.text) {
-                const { cleaned } = extractArtifact(part.text);
-                if (!cleaned) return null;
-                const isLast = i === lastTextIdx;
-                return (
-                  <div key={i} className={cn("prose-chat text-sm leading-relaxed", isLast && isStreaming && "typing-cursor")}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
-                    {isLast && isStreaming && <span className="inline-block ml-1">▋</span>}
-                  </div>
-                );
-              }
-              return null;
-            })}
-          </>
-        ) : (
-          // Fallback for messages without parts (e.g., loaded from session history)
-          <>
-            {fullContent && (
-              <div className={cn("prose-chat text-sm leading-relaxed", isStreaming && "typing-cursor")}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{extractArtifact(fullContent).cleaned}</ReactMarkdown>
-                {isStreaming && <span className="inline-block ml-1">▋</span>}
-              </div>
-            )}
-            {rawMessages.flatMap((m) => m.tools ?? []).map((tool, i) => (
-              <ToolChip key={i} tool={tool} />
-            ))}
-          </>
-        )}
+
+        {/* Tool chips — shown before text when tools precede any content */}
+        {rawMessages.flatMap((m) => m.tools ?? []).map((tool, i) => (
+          <ToolChip key={i} tool={tool} />
+        ))}
+
+        {/* Main text — always rendered as a single ReactMarkdown for correct markdown context */}
+        {(() => {
+          const { cleaned } = extractArtifact(fullContent);
+          if (!cleaned) return null;
+          return (
+            <div className={cn("prose-chat text-sm leading-relaxed", isStreaming && "typing-cursor")}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
+              {isStreaming && <span className="inline-block ml-1">▋</span>}
+            </div>
+          );
+        })()}
 
         {artifact && !isStreaming && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-container/30 text-on-primary-container text-xs font-bold">

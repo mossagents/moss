@@ -11,6 +11,7 @@ import (
 	"context"
 	"embed"
 	_ "embed"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -57,7 +58,7 @@ func main() {
 		},
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Moss Desktop — AI Agent Workspace",
 		Width:     1280,
 		Height:    860,
@@ -71,6 +72,7 @@ func main() {
 		BackgroundColour: application.NewRGB(27, 38, 54),
 		URL:              "/",
 	})
+	globalEmitter = newSerialEmitter(mainWindow)
 
 	// 监听系统信号，实现优雅关闭
 	sigChan := make(chan os.Signal, 1)
@@ -154,10 +156,60 @@ func resolveWorkspace(dir string) string {
 	return dir
 }
 
-// emitEvent 通过 Wails alpha.74 API 发射事件。
+// serialEmitter dispatches Wails custom events to the webview in strict FIFO order.
+//
+// Wails' app.Event.Emit spawns goroutines internally for each call, causing events
+// emitted in rapid succession (e.g. LLM stream tokens) to race and arrive in the
+// JS frontend out of order. By routing all emissions through a single buffered channel
+// and calling window.ExecJS directly, we guarantee delivery order matches emission order.
+type serialEmitter struct {
+	ch chan serialEmitMsg
+}
+
+type serialEmitMsg struct {
+	name string
+	data any
+}
+
+func newSerialEmitter(window application.Window) *serialEmitter {
+	e := &serialEmitter{ch: make(chan serialEmitMsg, 2048)}
+	go e.run(window)
+	return e
+}
+
+func (e *serialEmitter) run(window application.Window) {
+	for msg := range e.ch {
+		payload := map[string]any{
+			"name":   msg.name,
+			"data":   msg.data,
+			"sender": "",
+		}
+		b, err := json.Marshal(payload)
+		if err != nil {
+			continue
+		}
+		window.ExecJS(fmt.Sprintf(
+			`if(window._wails&&window._wails.dispatchWailsEvent){window._wails.dispatchWailsEvent(%s);}`,
+			string(b),
+		))
+	}
+}
+
+func (e *serialEmitter) emit(name string, data any) {
+	e.ch <- serialEmitMsg{name: name, data: data}
+}
+
+// globalEmitter is initialised in main() once the window is created.
+var globalEmitter *serialEmitter
+
+// emitEvent dispatches a custom event to the webview via the serial emitter.
 func emitEvent(name string, data any) {
-	app := application.Get()
-	if app != nil {
+	if globalEmitter != nil {
+		globalEmitter.emit(name, data)
+		return
+	}
+	// Fallback before window is ready (should not happen in normal flow).
+	if app := application.Get(); app != nil {
 		app.Event.Emit(name, data)
 	}
 }
