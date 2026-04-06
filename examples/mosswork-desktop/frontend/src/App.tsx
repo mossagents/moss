@@ -144,32 +144,36 @@ export default function App() {
       }
       return [...parts, { type: "text", text: chunk }];
     };
-    const updateMsg = (msg: ChatMessage): ChatMessage => ({
-      ...msg,
-      content: msg.content + textChunk,
-      parts: addText(msg.parts ?? [], textChunk),
-      streaming: true,
-    });
 
-    setMessages((prev) => {
-      if (streamingIdRef.current) {
-        return prev.map((m) => m.id === streamingIdRef.current ? updateMsg(m) : m);
-      }
-      // Continue the last assistant message (e.g., after a tool completes)
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
-        streamingIdRef.current = last.id;
-        return prev.map((m) => m.id === last.id ? updateMsg(m) : m);
-      }
-      // Create a new message
-      const id = nextId();
-      streamingIdRef.current = id;
-      return [...prev, {
+    if (streamingIdRef.current) {
+      // Fast path: append to current turn's message
+      const id = streamingIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== id) return m;
+          return {
+            ...m,
+            content: m.content + textChunk,
+            parts: addText(m.parts ?? [], textChunk),
+            streaming: true,
+          };
+        }),
+      );
+      return;
+    }
+
+    // First token of a new turn: create message and set ref BEFORE setMessages
+    // so subsequent events in the same microtask see it immediately.
+    const id = nextId();
+    streamingIdRef.current = id;
+    setMessages((prev) => [
+      ...prev,
+      {
         id, role: "assistant", content: textChunk,
         parts: [{ type: "text", text: textChunk }],
         timestamp: Date.now(), streaming: true, tools: [],
-      }];
-    });
+      },
+    ]);
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
@@ -177,13 +181,14 @@ export default function App() {
   });
 
   useWailsEvent("chat:stream_end", () => {
+    // Only mark the message as visually not-streaming.
+    // Do NOT clear streamingIdRef — it stays set until chat:done/error/cancelled
+    // so that subsequent stream tokens (after tool calls) append to the same bubble.
     if (streamingIdRef.current) {
+      const id = streamingIdRef.current;
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === streamingIdRef.current ? { ...m, streaming: false } : m,
-        ),
+        prev.map((m) => m.id === id ? { ...m, streaming: false } : m),
       );
-      streamingIdRef.current = null;
     }
   });
 
@@ -199,11 +204,14 @@ export default function App() {
   useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
     const toolName = data?.meta?.name || data?.content || "tool";
     const newTool: ToolExecution = { name: toolName, status: "running" };
+    const currentId = streamingIdRef.current;
     setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
+      const target = currentId
+        ? prev.find((m) => m.id === currentId)
+        : prev[prev.length - 1];
+      if (target?.role === "assistant") {
         return prev.map((m) =>
-          m.id === last.id
+          m.id === target.id
             ? {
                 ...m,
                 tools: [...(m.tools ?? []), newTool],
@@ -213,6 +221,7 @@ export default function App() {
         );
       }
       const id = nextId();
+      if (!streamingIdRef.current) streamingIdRef.current = id;
       return [...prev, {
         id, role: "assistant", content: "", timestamp: Date.now(),
         tools: [newTool], parts: [{ type: "tool" as const, tool: newTool }],
@@ -222,18 +231,21 @@ export default function App() {
 
   useWailsEvent<ToolResultData>("chat:tool_result", (data) => {
     const toolName = data?.meta?.name || "";
+    const currentId = streamingIdRef.current;
     setMessages((prev) => {
-      const last = prev[prev.length - 1];
-      if (last?.role === "assistant") {
+      const target = currentId
+        ? prev.find((m) => m.id === currentId)
+        : prev[prev.length - 1];
+      if (target?.role === "assistant") {
         const updateTool = (t: ToolExecution) =>
           t.name === toolName && t.status === "running"
             ? { ...t, status: "done" as const, result: data?.content }
             : t;
-        const tools = (last.tools ?? []).map(updateTool);
-        const parts = (last.parts ?? []).map((p) =>
+        const tools = (target.tools ?? []).map(updateTool);
+        const parts = (target.parts ?? []).map((p) =>
           p.type === "tool" && p.tool ? { ...p, tool: updateTool(p.tool) } : p,
         );
-        return prev.map((m) => m.id === last.id ? { ...m, tools, parts } : m);
+        return prev.map((m) => m.id === target.id ? { ...m, tools, parts } : m);
       }
       return prev;
     });

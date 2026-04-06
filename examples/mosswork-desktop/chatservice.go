@@ -83,7 +83,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.SetTitle("新会话")
+	sess.SetTitle("New Chat")
 	s.sess = sess
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist startup session failed", slog.Any("error", err))
@@ -260,7 +260,7 @@ func (s *ChatService) NewSession() error {
 	if err != nil {
 		return err
 	}
-	sess.SetTitle("新会话")
+	sess.SetTitle("New Chat")
 	s.sess = sess
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist new session failed", slog.Any("error", err))
@@ -910,10 +910,10 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 func boolRef(v bool) *bool { return &v }
 
 // maybeGenerateTitle generates an LLM-based display title for the session if
-// the title is still the default "新会话". Called as a background goroutine
+// the title is still the default "New Chat". Called as a background goroutine
 // after the first successful agent run.
 func (s *ChatService) maybeGenerateTitle(sess *session.Session) {
-	if sess == nil || sess.GetTitle() != "新会话" {
+	if sess == nil || sess.GetTitle() != "New Chat" {
 		return
 	}
 	title := s.generateTitleFromLLM(sess)
@@ -1281,7 +1281,7 @@ func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.SetTitle("新会话")
+	sess.SetTitle("New Chat")
 	s.mu.Lock()
 	s.sess = sess
 	s.mu.Unlock()
