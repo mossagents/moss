@@ -118,10 +118,17 @@ export default function App() {
 
   const streamingIdRef = useRef<string | null>(null);
   const pendingFilesRef = useRef<string[]>([]);
+  // currentSessionIdRef mirrors currentSessionId for use in event handler closures
+  const currentSessionIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     pendingFilesRef.current = pendingFiles;
   }, [pendingFiles]);
+
+  // Keep ref in sync with state (for use inside event handler closures)
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
 
   useEffect(() => {
     ChatService.getConfig()
@@ -179,6 +186,7 @@ export default function App() {
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     setIsRunning(true);
     setStatusText("正在生成回复...");
     appendAssistantChunk(data?.content ?? "");
@@ -208,6 +216,7 @@ export default function App() {
   // Reasoning/thinking content from models like DeepSeek-R1.
   // Aggregated into the SAME assistant message bubble as a collapsible section.
   useWailsEvent<StreamData>("chat:thinking", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     const chunk = data?.content ?? "";
     if (!chunk) return;
     setIsRunning(true);
@@ -234,6 +243,7 @@ export default function App() {
   });
 
   useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     const toolName = data?.meta?.tool || data?.meta?.name || data?.content || "tool";
     const callId = data?.meta?.call_id;
     const summary = data?.meta?.args_preview || undefined;
@@ -268,6 +278,7 @@ export default function App() {
   });
 
   useWailsEvent<ToolResultData>("chat:tool_result", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     const toolName = data?.meta?.tool || data?.meta?.name || "";
     const callId = data?.meta?.call_id;
     const isError = data?.meta?.is_error ?? false;
@@ -295,10 +306,12 @@ export default function App() {
   });
 
   useWailsEvent<AskData>("chat:ask", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     setAskData(data);
   });
 
   useWailsEvent<DoneData>("chat:done", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     const finalOutput = data?.output?.trim();
     const streamingId = streamingIdRef.current;
 
@@ -344,6 +357,7 @@ export default function App() {
   });
 
   useWailsEvent<ErrorData>("chat:error", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
@@ -446,6 +460,8 @@ export default function App() {
   }, []);
 
   const handleNewSession = useCallback(async () => {
+    setIsRunning(false);
+    setStatusText("");
     try {
       await ChatService.newSession();
       setMessages([]);
@@ -457,6 +473,8 @@ export default function App() {
   }, []);
 
   const handleResumeSession = useCallback(async (id: string) => {
+    setIsRunning(false);
+    setStatusText("");
     try {
       // Clear current UI state before switching
       setMessages([]);

@@ -9,8 +9,9 @@ import (
 
 // WailsUserIO 实现 port.UserIO，通过 Wails 事件系统与桌面前端通信。
 type WailsUserIO struct {
-	mu    sync.Mutex
-	askCh chan port.InputResponse
+	mu        sync.Mutex
+	askCh     chan port.InputResponse
+	sessionID string
 }
 
 var _ port.UserIO = (*WailsUserIO)(nil)
@@ -21,11 +22,23 @@ func NewWailsUserIO() *WailsUserIO {
 	}
 }
 
+// SetSessionID updates the session ID included in all emitted events.
+func (w *WailsUserIO) SetSessionID(id string) {
+	w.mu.Lock()
+	w.sessionID = id
+	w.mu.Unlock()
+}
+
 func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
+	w.mu.Lock()
+	sid := w.sessionID
+	w.mu.Unlock()
+
 	var eventName string
 	data := map[string]any{
-		"content": msg.Content,
-		"meta":    msg.Meta,
+		"content":    msg.Content,
+		"meta":       msg.Meta,
+		"session_id": sid,
 	}
 
 	switch msg.Type {
@@ -55,12 +68,17 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 }
 
 func (w *WailsUserIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
+	w.mu.Lock()
+	sid := w.sessionID
+	w.mu.Unlock()
+
 	emitEvent("chat:ask", map[string]any{
-		"type":     string(req.Type),
-		"prompt":   req.Prompt,
-		"options":  req.Options,
-		"approval": req.Approval,
-		"meta":     req.Meta,
+		"type":       string(req.Type),
+		"prompt":     req.Prompt,
+		"options":    req.Options,
+		"approval":   req.Approval,
+		"meta":       req.Meta,
+		"session_id": sid,
 	})
 
 	select {

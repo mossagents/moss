@@ -28,11 +28,13 @@ export interface ToolExecution {
 
 export interface StreamData {
   content: string;
+  session_id?: string;
   meta?: Record<string, any>;
 }
 
 export interface ToolStartData {
   content: string;
+  session_id?: string;
   meta?: {
     tool?: string;       // tool name (from backend)
     call_id?: string;    // unique call id for pairing with result
@@ -44,6 +46,7 @@ export interface ToolStartData {
 
 export interface ToolResultData {
   content: string;
+  session_id?: string;
   meta?: {
     tool?: string;       // tool name (from backend)
     call_id?: string;    // unique call id matching the start event
@@ -56,6 +59,7 @@ export interface ToolResultData {
 export interface AskData {
   type: string;
   prompt: string;
+  session_id?: string;
   options?: string[];
   approval?: {
     id: string;
@@ -84,6 +88,7 @@ export interface DoneData {
 
 export interface ErrorData {
   message: string;
+  session_id?: string;
 }
 
 export interface WorkerTask {

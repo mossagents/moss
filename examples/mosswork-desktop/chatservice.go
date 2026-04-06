@@ -180,10 +180,14 @@ func (s *ChatService) SendMessage(content string) error {
 
 	s.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
 
+	// Tag all events emitted during this run with the session ID
+	s.wailsIO.SetSessionID(s.sess.ID)
+	sessID := s.sess.ID
+
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r)})
+				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r), "session_id": sessID})
 			}
 			if err := s.persistSession(s.sess); err != nil {
 				slog.Debug("persist session after run failed", slog.Any("error", err))
@@ -204,10 +208,10 @@ func (s *ChatService) SendMessage(content string) error {
 		result, err := s.k.RunWithUserIO(ctx, s.sess, s.wailsIO)
 		if err != nil {
 			if ctx.Err() != nil {
-				emitEvent("chat:cancelled", map[string]any{"message": "已取消"})
+				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": sessID})
 				return
 			}
-			emitEvent("chat:error", map[string]any{"message": err.Error()})
+			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
 			return
 		}
 
@@ -243,17 +247,37 @@ func (s *ChatService) StopAgent() {
 	}
 }
 
+// stopAndWait cancels any running agent and waits up to timeout for it to stop.
+func (s *ChatService) stopAndWait(timeout time.Duration) {
+	s.mu.Lock()
+	running := s.running
+	cancel := s.cancel
+	s.mu.Unlock()
+	if !running {
+		return
+	}
+	if cancel != nil {
+		cancel()
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(30 * time.Millisecond)
+		s.mu.Lock()
+		running = s.running
+		s.mu.Unlock()
+		if !running {
+			return
+		}
+	}
+}
+
 func (s *ChatService) RespondToAsk(value string, approved bool) {
 	s.wailsIO.RespondToAsk(port.InputResponse{Value: value, Approved: approved})
 }
 
 func (s *ChatService) NewSession() error {
-	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return fmt.Errorf("cannot create session while agent is running")
-	}
-	s.mu.Unlock()
+	// Stop any running agent before switching sessions
+	s.stopAndWait(3 * time.Second)
 
 	ctx := application.Get().Context()
 	sess, err := s.k.NewSession(ctx, s.newSessionConfig())
@@ -270,12 +294,8 @@ func (s *ChatService) NewSession() error {
 }
 
 func (s *ChatService) ResumeSession(id string) error {
-	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return fmt.Errorf("cannot resume session while agent is running")
-	}
-	s.mu.Unlock()
+	// Stop any running agent before switching sessions
+	s.stopAndWait(3 * time.Second)
 
 	if s.store == nil {
 		return fmt.Errorf("session store is not configured")
