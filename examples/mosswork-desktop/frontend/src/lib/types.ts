@@ -10,6 +10,7 @@ export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  thinking?: string;
   parts?: ChatMessagePart[];
   timestamp: number;
   streaming?: boolean;

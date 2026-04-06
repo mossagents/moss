@@ -35,6 +35,8 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 		eventName = "chat:stream"
 	case port.OutputStreamEnd:
 		eventName = "chat:stream_end"
+	case port.OutputReasoning:
+		eventName = "chat:thinking"
 	case port.OutputProgress:
 		eventName = "chat:progress"
 	case port.OutputToolStart:

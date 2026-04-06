@@ -42,7 +42,12 @@ export default function ChatSidebar({
         {recent.length === 0 && (
           <div className="text-xs text-on-surface-variant px-2 py-2">暂无历史会话</div>
         )}
-        {recent.map((s) => (
+        {recent.map((s) => {
+          const displayTitle =
+            (s.title && s.title !== "New Chat") ? s.title
+            : (s.goal && s.goal !== "interactive desktop assistant") ? s.goal
+            : "New Chat";
+          return (
           <button
             key={s.id}
             onClick={() => onResumeSession(s.id)}
@@ -52,12 +57,13 @@ export default function ChatSidebar({
                 ? "bg-primary-container/40 text-on-primary-container font-semibold"
                 : "text-on-surface-variant hover:bg-surface-container-low",
             )}
-            title={s.title || s.goal}
+            title={displayTitle}
           >
-            <div className="font-medium truncate">{s.title || s.goal || s.id}</div>
+            <div className="font-medium truncate">{displayTitle}</div>
             <div className="text-[10px] opacity-60 truncate mt-0.5">{s.id.slice(0, 16)}...</div>
           </button>
-        ))}
+          );
+        })}
       </div>
     </aside>
   );

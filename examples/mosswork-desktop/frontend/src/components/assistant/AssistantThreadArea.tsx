@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -88,6 +88,36 @@ function UserMessage() {
   );
 }
 
+function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
+  const [open, setOpen] = useState(streaming); // auto-open while streaming, collapse when done
+
+  useEffect(() => {
+    if (!streaming) setOpen(false);
+  }, [streaming]);
+
+  return (
+    <div className="rounded-xl border border-outline-variant/40 overflow-hidden text-xs">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-on-surface-variant hover:bg-surface-container/60 transition-colors text-left"
+      >
+        <span className={cn("material-symbols-outlined text-sm", streaming && "animate-spin-1s")}>
+          {streaming ? "autorenew" : "psychology"}
+        </span>
+        <span className="font-medium">{streaming ? "思考中..." : "思考过程"}</span>
+        <span className="material-symbols-outlined text-sm ml-auto">
+          {open ? "expand_less" : "expand_more"}
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-1 text-on-surface-variant/70 leading-relaxed whitespace-pre-wrap font-mono text-[11px] max-h-48 overflow-y-auto border-t border-outline-variant/30">
+          {text}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void }) {
   const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
   const rawMessages = Array.isArray(raw) ? raw : raw ? [raw] : [];
@@ -95,6 +125,7 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
 
   const allParts = rawMessages.flatMap((m) => m.parts ?? []);
   const fullContent = rawMessages.map((m) => m.content || "").join("");
+  const fullThinking = rawMessages.map((m) => m.thinking || "").join("");
   const { artifact } = extractArtifact(fullContent);
 
   useEffect(() => {
@@ -117,6 +148,9 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
         <img src="/logo.png" alt="Moss" className="w-full h-full object-cover" />
       </div>
       <div className="flex-1 space-y-3 min-w-0">
+        {fullThinking && (
+          <ThinkingBlock text={fullThinking} streaming={isStreaming && !fullContent} />
+        )}
         {allParts.length > 0 ? (
           <>
             {allParts.map((part, i) => {

@@ -201,7 +201,33 @@ export default function App() {
     ]);
   });
 
-  useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
+  // Reasoning/thinking content from models like DeepSeek-R1.
+  // Aggregated into the SAME assistant message bubble as a collapsible section.
+  useWailsEvent<StreamData>("chat:thinking", (data) => {
+    const chunk = data?.content ?? "";
+    if (!chunk) return;
+    if (streamingIdRef.current) {
+      const id = streamingIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id ? { ...m, thinking: (m.thinking ?? "") + chunk } : m,
+        ),
+      );
+      return;
+    }
+    // First thinking token of a new turn — create the assistant message now
+    const id = nextId();
+    streamingIdRef.current = id;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id, role: "assistant", content: "", thinking: chunk,
+        parts: [], timestamp: Date.now(), streaming: true, tools: [],
+      },
+    ]);
+  });
+
+
     const toolName = data?.meta?.name || data?.content || "tool";
     const newTool: ToolExecution = { name: toolName, status: "running" };
     const currentId = streamingIdRef.current;
