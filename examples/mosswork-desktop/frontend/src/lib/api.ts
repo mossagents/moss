@@ -27,6 +27,8 @@ export const ChatService = {
     _Chat.UpdateModel(provider, model, baseURL, apiKey),
   deleteSession: (id: string) => _Chat.DeleteSession(id),
   deleteSessions: (ids: string[]) => _Chat.DeleteSessions(ids),
+  resumeSession: (id: string) => _Chat.ResumeSession(id),
+  getSessionHistory: (id: string) => _Chat.GetSessionHistory(id),
 };
 
 export const FileService = {

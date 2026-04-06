@@ -22,6 +22,7 @@ import type {
   DashboardState,
   SessionSummary,
   AutomationTask,
+  MessageRole,
 } from "@/lib/types";
 import NavSidebar from "@/components/NavSidebar";
 import ChatSidebar from "@/components/ChatSidebar";
@@ -385,20 +386,6 @@ export default function App() {
     if (ws) setWorkerState(ws);
   });
 
-  const handleRunCommand = useCallback(async (cmd: string) => {
-    setIsRunning(true);
-    try {
-      await ChatService.sendCommand(cmd);
-    } catch (err: any) {
-      setIsRunning(false);
-      const id = nextId();
-      setMessages((prev) => [
-        ...prev,
-        { id, role: "system", content: `Failed: ${err?.message ?? err}`, timestamp: Date.now() },
-      ]);
-    }
-  }, []);
-
   const handleSend = useCallback(
     async (content: string, files?: string[]) => {
       const id = nextId();
@@ -442,12 +429,40 @@ export default function App() {
     } catch {}
   }, []);
 
-  const handleResumeSession = useCallback(
-    async (id: string) => {
-      await handleRunCommand(`/resume ${id}`);
-    },
-    [handleRunCommand],
-  );
+  const handleResumeSession = useCallback(async (id: string) => {
+    try {
+      // Clear current UI state before switching
+      setMessages([]);
+      setArtifact(null);
+      streamingIdRef.current = null;
+      setWorkerState(null);
+      // Switch the backend session
+      await ChatService.resumeSession(id);
+      setCurrentSessionId(id);
+      // Load and display the session's message history
+      const history = await ChatService.getSessionHistory(id);
+      if (Array.isArray(history) && history.length > 0) {
+        const msgs: ChatMessage[] = (history as any[]).map((h: any) => ({
+          id: nextId(),
+          role: (h.role ?? "assistant") as MessageRole,
+          content: h.content ?? "",
+          thinking: h.thinking || undefined,
+          tools: Array.isArray(h.tools) && h.tools.length > 0
+            ? h.tools.map((t: any) => ({
+                name: t.name ?? "",
+                status: (t.is_error ? "error" : "done") as "done" | "error" | "running",
+                input: t.input || undefined,
+                result: t.result || undefined,
+              }))
+            : undefined,
+          timestamp: Date.now(),
+        }));
+        setMessages(msgs);
+      }
+    } catch {
+      // silently ignore session switch errors
+    }
+  }, []);
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {

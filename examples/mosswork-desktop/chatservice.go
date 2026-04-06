@@ -295,6 +295,105 @@ func (s *ChatService) ResumeSession(id string) error {
 	return nil
 }
 
+// HistoryTool represents a single tool call and its result from session history.
+type HistoryTool struct {
+	Name    string `json:"name"`
+	Input   string `json:"input,omitempty"`
+	Result  string `json:"result,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
+}
+
+// HistoryMessage is a frontend-friendly representation of a session message.
+type HistoryMessage struct {
+	Role     string        `json:"role"`
+	Content  string        `json:"content"`
+	Thinking string        `json:"thinking,omitempty"`
+	Tools    []HistoryTool `json:"tools,omitempty"`
+}
+
+// GetSessionHistory returns the message history of a session in a format suitable for the chat UI.
+// It skips system/tool-role messages and inlines tool call results into the assistant turn.
+func (s *ChatService) GetSessionHistory(id string) ([]HistoryMessage, error) {
+	s.mu.Lock()
+	var sess *session.Session
+	if s.sess != nil && s.sess.ID == id {
+		sess = s.sess
+	}
+	s.mu.Unlock()
+
+	if sess == nil {
+		if s.store == nil {
+			return nil, fmt.Errorf("session store not configured")
+		}
+		loaded, err := s.store.Load(context.Background(), id)
+		if err != nil {
+			return nil, fmt.Errorf("load session: %w", err)
+		}
+		if loaded == nil {
+			return nil, fmt.Errorf("session %q not found", id)
+		}
+		sess = loaded
+	}
+	return convertToHistoryMessages(sess.CopyMessages()), nil
+}
+
+func convertToHistoryMessages(msgs []port.Message) []HistoryMessage {
+	// Build call ID → tool result mapping from tool-role messages.
+	toolResults := make(map[string]port.ToolResult)
+	for _, msg := range msgs {
+		for _, tr := range msg.ToolResults {
+			toolResults[tr.CallID] = tr
+		}
+	}
+
+	var out []HistoryMessage
+	for _, msg := range msgs {
+		switch msg.Role {
+		case port.RoleSystem, port.RoleTool:
+			continue
+		case port.RoleUser:
+			text := extractTextFromParts(msg.ContentParts)
+			if text == "" {
+				continue
+			}
+			out = append(out, HistoryMessage{Role: "user", Content: text})
+		case port.RoleAssistant:
+			hm := HistoryMessage{Role: "assistant"}
+			for _, cp := range msg.ContentParts {
+				switch cp.Type {
+				case port.ContentPartText:
+					hm.Content += cp.Text
+				case port.ContentPartReasoning:
+					hm.Thinking += cp.Text
+				}
+			}
+			for _, tc := range msg.ToolCalls {
+				ht := HistoryTool{Name: tc.Name, Input: string(tc.Arguments)}
+				if tr, ok := toolResults[tc.ID]; ok {
+					ht.Result = extractTextFromParts(tr.ContentParts)
+					ht.IsError = tr.IsError
+				}
+				hm.Tools = append(hm.Tools, ht)
+			}
+			if hm.Content == "" && hm.Thinking == "" && len(hm.Tools) == 0 {
+				continue
+			}
+			out = append(out, hm)
+		}
+	}
+	return out
+}
+
+func extractTextFromParts(parts []port.ContentPart) string {
+	var sb strings.Builder
+	for _, cp := range parts {
+		if cp.Type == port.ContentPartText {
+			sb.WriteString(cp.Text)
+		}
+	}
+	return sb.String()
+}
+
 // DeleteSession removes a single session by ID.
 // If the deleted session is the current active session, the active session is cleared.
 func (s *ChatService) DeleteSession(id string) error {
@@ -727,7 +826,7 @@ func (s *ChatService) handleResumeSlashCommand(_ context.Context, parts []string
 	if err := s.ResumeSession(parts[1]); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("已恢复会话 %s", parts[1]), nil
+	return "", nil
 }
 
 func (s *ChatService) handleOffloadSlashCommand(ctx context.Context, parts []string) (string, error) {
