@@ -25,6 +25,8 @@ export const ChatService = {
   getPresetModels: () => _Chat.GetPresetModels(),
   updateModel: (provider: string, model: string, baseURL: string, apiKey: string) =>
     _Chat.UpdateModel(provider, model, baseURL, apiKey),
+  deleteSession: (id: string) => _Chat.DeleteSession(id),
+  deleteSessions: (ids: string[]) => _Chat.DeleteSessions(ids),
 };
 
 export const FileService = {

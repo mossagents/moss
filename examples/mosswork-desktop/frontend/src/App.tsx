@@ -447,6 +447,29 @@ export default function App() {
     [handleRunCommand],
   );
 
+  const handleDeleteSession = useCallback(async (id: string) => {
+    try {
+      await ChatService.deleteSession(id);
+      // If we deleted the current session, clear the chat view
+      if (id === currentSessionId) {
+        setMessages([]);
+        setArtifact(null);
+        streamingIdRef.current = null;
+      }
+    } catch {}
+  }, [currentSessionId]);
+
+  const handleDeleteSessions = useCallback(async (ids: string[]) => {
+    try {
+      await ChatService.deleteSessions(ids);
+      if (ids.includes(currentSessionId ?? "")) {
+        setMessages([]);
+        setArtifact(null);
+        streamingIdRef.current = null;
+      }
+    } catch {}
+  }, [currentSessionId]);
+
   const handleAskResponse = useCallback(async (response: string) => {
     setAskData(null);
     try {
@@ -544,6 +567,8 @@ export default function App() {
             currentSessionId={currentSessionId}
             onNewSession={handleNewSession}
             onResumeSession={handleResumeSession}
+            onDeleteSession={handleDeleteSession}
+            onDeleteSessions={handleDeleteSessions}
             isRunning={isRunning}
           />
 

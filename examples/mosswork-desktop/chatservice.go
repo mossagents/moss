@@ -295,6 +295,66 @@ func (s *ChatService) ResumeSession(id string) error {
 	return nil
 }
 
+// DeleteSession removes a single session by ID.
+// If the deleted session is the current active session, the active session is cleared.
+func (s *ChatService) DeleteSession(id string) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return fmt.Errorf("cannot delete session while agent is running")
+	}
+	s.mu.Unlock()
+
+	if s.store == nil {
+		return fmt.Errorf("session store is not configured")
+	}
+	if err := s.store.Delete(context.Background(), id); err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	s.mu.Lock()
+	if s.sess != nil && s.sess.ID == id {
+		s.sess = nil
+	}
+	s.mu.Unlock()
+	s.emitDashboard()
+	return nil
+}
+
+// DeleteSessions removes multiple sessions by ID in one call.
+// Errors from individual deletions are collected and returned as a combined error.
+func (s *ChatService) DeleteSessions(ids []string) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return fmt.Errorf("cannot delete sessions while agent is running")
+	}
+	s.mu.Unlock()
+
+	if s.store == nil {
+		return fmt.Errorf("session store is not configured")
+	}
+	var errs []string
+	clearedCurrent := false
+	for _, id := range ids {
+		if err := s.store.Delete(context.Background(), id); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", id, err))
+			continue
+		}
+		s.mu.Lock()
+		if s.sess != nil && s.sess.ID == id {
+			s.sess = nil
+			clearedCurrent = true
+		}
+		s.mu.Unlock()
+	}
+	_ = clearedCurrent
+	s.emitDashboard()
+	if len(errs) > 0 {
+		return fmt.Errorf("delete sessions: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 func (s *ChatService) GetDashboard() (map[string]any, error) {
 	return s.dashboardSnapshot(context.Background())
 }
