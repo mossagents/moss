@@ -278,6 +278,10 @@ func (m chatModel) renderProgressBlock(width int) string {
 	if !m.progress.visible() {
 		return ""
 	}
+	// 运行结束后不显示 timeline，结果已在 transcript 中，不需要重复展示。
+	if m.progress.terminal() && !m.streaming {
+		return ""
+	}
 	if len(m.progressTrail) <= 1 {
 		return m.progress.renderLine(m.now(), width)
 	}

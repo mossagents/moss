@@ -231,7 +231,16 @@ func TestProgressTimelineFreezesElapsedWhenRunCompletes(t *testing.T) {
 			Message:   "calling gpt-4o",
 		},
 	})
-	updated, _ = updated.Update(notificationProgressMsg{
+
+	// 运行中时 timeline 可见
+	current = base.Add(8 * time.Second)
+	runningRendered := updated.renderProgressBlock(120)
+	if strings.TrimSpace(runningRendered) == "" {
+		t.Fatal("expected progress block to be visible while running")
+	}
+
+	// 完成后 timeline 不再显示（结果已在 transcript 中）
+	completed, _ := updated.Update(notificationProgressMsg{
 		Snapshot: executionProgressState{
 			SessionID: "s1",
 			Status:    "completed",
@@ -241,19 +250,9 @@ func TestProgressTimelineFreezesElapsedWhenRunCompletes(t *testing.T) {
 			Message:   "completed in 1 steps",
 		},
 	})
-
 	current = base.Add(25 * time.Second)
-	rendered := updated.renderProgressBlock(120)
-	for _, want := range []string{
-		"run started  5s",
-		"calling gpt-4o  10s",
-		"completed in 1 steps  10s",
-	} {
-		if !strings.Contains(rendered, want) {
-			t.Fatalf("expected frozen duration %q in %q", want, rendered)
-		}
-	}
-	if strings.Contains(rendered, "25s") {
-		t.Fatalf("expected completed progress timeline to stop updating, got %q", rendered)
+	rendered := completed.renderProgressBlock(120)
+	if strings.TrimSpace(rendered) != "" {
+		t.Fatalf("expected progress block hidden after run completes, got %q", rendered)
 	}
 }
