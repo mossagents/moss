@@ -91,6 +91,10 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 
 	s.startScheduler(ctx)
 	s.startDashboardMonitor(ctx)
+
+	// Repair any sessions left in "running" state from a previous crash.
+	s.repairStaleRunningSessions(ctx)
+
 	s.emitDashboard()
 
 	slog.Info("ChatService started",
@@ -116,6 +120,36 @@ func (s *ChatService) ServiceShutdown() error {
 	}
 	if monitorCancel != nil {
 		monitorCancel()
+	}
+
+	// Wait up to 2s for the running goroutine to finish and persist its session.
+	// The kernel sets sess.Status = StatusCancelled on context cancellation, so if
+	// the goroutine finishes in time the session will be correctly persisted.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(30 * time.Millisecond)
+		s.mu.Lock()
+		running := s.running
+		s.mu.Unlock()
+		if !running {
+			break
+		}
+	}
+
+	// If the goroutine didn't finish in time, force-persist the current session
+	// as cancelled so it isn't left with status="running" on disk.
+	s.mu.Lock()
+	running := s.running
+	sess := s.sess
+	s.mu.Unlock()
+	if running && sess != nil && s.store != nil {
+		if sess.Status == session.StatusRunning || sess.Status == session.StatusCreated {
+			sess.Status = session.StatusCancelled
+			sess.EndedAt = time.Now()
+		}
+		if err := s.persistSession(sess); err != nil {
+			slog.Warn("force-persist cancelled session failed", slog.Any("error", err))
+		}
 	}
 
 	if s.sched != nil {
@@ -1021,6 +1055,41 @@ func (s *ChatService) persistSession(sess *session.Session) error {
 		return nil
 	}
 	return s.store.Save(context.Background(), sess)
+}
+
+// repairStaleRunningSessions scans the session store for sessions that are
+// still in "running" state — left over from a previous crash — and marks them
+// as cancelled. Called once on startup before the service becomes active.
+func (s *ChatService) repairStaleRunningSessions(ctx context.Context) {
+	if s.store == nil {
+		return
+	}
+	summaries, err := s.store.List(ctx)
+	if err != nil {
+		slog.Warn("repairStaleRunningSessions: list failed", slog.Any("error", err))
+		return
+	}
+	for _, sum := range summaries {
+		if sum.Status != session.StatusRunning {
+			continue
+		}
+		sess, err := s.store.Load(ctx, sum.ID)
+		if err != nil || sess == nil {
+			continue
+		}
+		sess.Status = session.StatusCancelled
+		sess.EndedAt = time.Now()
+		if err := s.store.Save(ctx, sess); err != nil {
+			slog.Warn("repairStaleRunningSessions: save failed",
+				slog.String("session_id", sum.ID),
+				slog.Any("error", err),
+			)
+		} else {
+			slog.Info("repairStaleRunningSessions: marked cancelled",
+				slog.String("session_id", sum.ID),
+			)
+		}
+	}
 }
 
 func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.Session, keepRecent int, note string) (string, error) {
