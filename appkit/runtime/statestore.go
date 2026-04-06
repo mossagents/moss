@@ -979,6 +979,32 @@ func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string,
 	return task, nil
 }
 
+func (r *indexedTaskRuntime) ListTaskSummaries(ctx context.Context, query port.TaskQuery) ([]port.TaskSummary, error) {
+	if graph, ok := r.inner.(port.TaskGraphRuntime); ok {
+		return graph.ListTaskSummaries(ctx, query)
+	}
+	tasks, err := r.inner.ListTasks(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]port.TaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, port.TaskSummaryFromRecord(task))
+	}
+	return out, nil
+}
+
+func (r *indexedTaskRuntime) ListTaskRelations(ctx context.Context, taskID string) ([]port.TaskRelation, error) {
+	if graph, ok := r.inner.(port.TaskGraphRuntime); ok {
+		return graph.ListTaskRelations(ctx, taskID)
+	}
+	task, err := r.inner.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return port.TaskRelationsFromRecord(*task), nil
+}
+
 func (r *indexedTaskRuntime) UpsertJob(ctx context.Context, job port.AgentJob) error {
 	jobRuntime, ok := r.inner.(port.JobRuntime)
 	if !ok {

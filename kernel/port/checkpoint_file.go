@@ -65,7 +65,7 @@ func (fs *FileCheckpointStore) Create(ctx context.Context, req CheckpointCreateR
 	if err := fs.persist(record); err != nil {
 		return nil, err
 	}
-	fs.observer.OnExecutionEvent(ctx, ExecutionEvent{
+	ObserveExecutionEvent(ctx, fs.observer, ExecutionEvent{
 		Type:      ExecutionCheckpointCreated,
 		SessionID: record.SessionID,
 		Timestamp: record.CreatedAt,

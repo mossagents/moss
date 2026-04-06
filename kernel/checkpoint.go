@@ -496,7 +496,7 @@ func (k *Kernel) emitExecutionEvent(ctx context.Context, typ port.ExecutionEvent
 	if observer == nil {
 		observer = port.NoOpObserver{}
 	}
-	observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+	port.ObserveExecutionEvent(ctx, observer, port.ExecutionEvent{
 		Type:      typ,
 		SessionID: sessionID,
 		Timestamp: time.Now().UTC(),

@@ -23,7 +23,7 @@ func buildRootCommand(cfg *config) *cobra.Command {
 		Long: `mosscode — lightweight production-ready coding assistant
 
 Launch the interactive TUI (no flags), run a one-shot prompt, or use one of
-the sub-commands to manage sessions, checkpoints, config, and more.
+the sub-commands to manage threads, checkpoints, config, and more.
 
 Approval modes:
   read-only   No file writes — inspection only
@@ -83,11 +83,11 @@ sub-command that is easier to script and pipe.`,
 	resumeCmd := &cobra.Command{
 		Use:   "resume",
 		Short: "Resume a recoverable thread",
-		Long: `Resume an interrupted or paused session in the interactive TUI.
+		Long: `Resume an interrupted or paused thread in the interactive TUI.
 
-Use --latest to resume the most recent recoverable session, or --session to
-target a specific session by its ID. Omitting both flags lists available
-recoverable sessions.`,
+Use --latest to resume the most recent recoverable thread, or --session to
+target a specific persisted thread ID. Omitting both flags lists available
+recoverable threads.`,
 		Example: `  mosscode resume --latest
   mosscode resume --session sess_abc123`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -97,8 +97,8 @@ recoverable sessions.`,
 		},
 	}
 	bindAppAndProductCobraFlags(resumeCmd, cfg)
-	resumeCmd.Flags().StringVar(&cfg.resumeSessionID, "session", "", "Resume a specific session by ID")
-	resumeCmd.Flags().BoolVar(&cfg.resumeLatest, "latest", false, "Resume the latest recoverable session")
+	resumeCmd.Flags().StringVar(&cfg.resumeSessionID, "session", "", "Resume a specific persisted thread ID")
+	resumeCmd.Flags().BoolVar(&cfg.resumeLatest, "latest", false, "Resume the latest recoverable thread")
 
 	initCmd := &cobra.Command{
 		Use:   "init",
@@ -330,19 +330,19 @@ func runExecCommand(ctx context.Context, cfg *config) error {
 func buildForkCommand(cfg *config) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "fork",
-		Short: "Fork from session or checkpoint",
-		Long: `Create a new session branched from an existing session or checkpoint.
+		Short: "Fork from thread or checkpoint",
+		Long: `Create a new thread branched from an existing thread or checkpoint.
 
 Exactly one of --session, --checkpoint, or --latest must be supplied.
-The forked session opens in the interactive TUI unless --json is given, in
-which case the new session ID is emitted to stdout and the command exits.`,
+The forked thread opens in the interactive TUI unless --json is given, in
+which case the new thread ID is emitted to stdout and the command exits.`,
 		Example: `  # Fork from the latest checkpoint
   mosscode fork --latest
 
   # Fork from a specific checkpoint and restore worktree files
   mosscode fork --checkpoint ckpt_abc123 --restore-worktree
 
-  # Fork from the latest checkpoint of a specific session (machine-readable)
+  # Fork from the latest checkpoint of a specific thread (machine-readable)
   mosscode fork --session sess_xyz789 --json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -352,7 +352,7 @@ which case the new session ID is emitted to stdout and the command exits.`,
 		},
 	}
 	bindAppAndProductCobraFlags(cmd, cfg)
-	cmd.Flags().StringVar(&cfg.forkSessionID, "session", "", "Fork from this session ID (prefers latest checkpoint for that session)")
+	cmd.Flags().StringVar(&cfg.forkSessionID, "session", "", "Fork from this persisted thread ID (prefers the latest checkpoint for that thread)")
 	cmd.Flags().StringVar(&cfg.forkCheckpointID, "checkpoint", "", "Fork directly from this checkpoint ID")
 	cmd.Flags().BoolVar(&cfg.forkLatest, "latest", false, "Fork from the latest persisted checkpoint")
 	cmd.Flags().BoolVar(&cfg.forkRestoreWorktree, "restore-worktree", false, "Attempt worktree restore when forking from checkpoint state")
@@ -366,14 +366,14 @@ func buildCheckpointCommand(cfg *config) *cobra.Command {
 		Short: "Manage persisted checkpoints",
 		Long: `Create, inspect, and replay persisted checkpoints.
 
-A checkpoint captures the full state of a session (conversation history,
+A checkpoint captures the full state of a thread (conversation history,
 worktree snapshot, metadata) so it can be forked or replayed later.
 
 Sub-commands:
   list    List all persisted checkpoints
   show    Inspect a specific checkpoint
-  create  Snapshot an existing session into a checkpoint
-  replay  Prepare a fresh session from a checkpoint`,
+  create  Snapshot an existing thread into a checkpoint
+  replay  Prepare a fresh thread from a checkpoint`,
 		Example: `  mosscode checkpoint list
   mosscode checkpoint show latest
   mosscode checkpoint show ckpt_abc123 --json
@@ -431,7 +431,7 @@ Sub-commands:
 				},
 			}
 			bindAppAndProductCobraFlags(createCmd, cfg)
-			createCmd.Flags().StringVar(&cfg.checkpointCreateSessionID, "session", "", "Persisted session ID to checkpoint")
+			createCmd.Flags().StringVar(&cfg.checkpointCreateSessionID, "session", "", "Persisted thread ID to checkpoint")
 			createCmd.Flags().StringVar(&cfg.checkpointCreateNote, "note", "", "Optional checkpoint note")
 			createCmd.Flags().BoolVar(&cfg.checkpointJSON, "json", false, "Emit checkpoint create output as JSON")
 			return createCmd
@@ -439,7 +439,7 @@ Sub-commands:
 		func() *cobra.Command {
 			replayCmd := &cobra.Command{
 				Use:   "replay",
-				Short: "Prepare a fresh replay session from a checkpoint",
+				Short: "Prepare a fresh replay thread from a checkpoint",
 				Args:  cobra.NoArgs,
 				RunE: func(cmd *cobra.Command, _ []string) error {
 					cfg.checkpointAction = "replay"
@@ -483,7 +483,7 @@ func buildApplyCommand(cfg *config) *cobra.Command {
 
 Records the operation as a persisted change so it can be rolled back later
 with ` + "`mosscode rollback`" + `. Optionally associate the change with an existing
-session by passing --session.`,
+thread by passing --session.`,
 		Example: `  mosscode apply --patch-file ./changes.patch
   mosscode apply --patch-file ./changes.patch --summary "Fix null pointer in auth"
   mosscode apply --patch-file ./changes.patch --session sess_abc123 --json`,
@@ -497,7 +497,7 @@ session by passing --session.`,
 	bindAppAndProductCobraFlags(cmd, cfg)
 	cmd.Flags().StringVar(&cfg.applyPatchFile, "patch-file", "", "Apply an explicit patch file")
 	cmd.Flags().StringVar(&cfg.applySummary, "summary", "", "Optional human-readable summary for the change")
-	cmd.Flags().StringVar(&cfg.applySessionID, "session", "", "Optional persisted session ID for checkpoint creation")
+	cmd.Flags().StringVar(&cfg.applySessionID, "session", "", "Optional persisted thread ID for checkpoint creation")
 	cmd.Flags().BoolVar(&cfg.applyJSON, "json", false, "Emit apply output as JSON")
 	return cmd
 }
@@ -532,7 +532,7 @@ func buildChangesCommand(cfg *config) *cobra.Command {
 		Short: "List or inspect persisted changes",
 		Long: `Browse persisted change operations recorded by ` + "`mosscode apply`" + `.
 
-Each apply operation is stored with its patch, summary, and session reference
+Each apply operation is stored with its patch, summary, and thread reference
 so it can be inspected or rolled back at any time.
 
 Sub-commands:

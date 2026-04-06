@@ -241,12 +241,21 @@ func (dq *DeliveryQueue) worker(ctx context.Context) {
 	defer dq.wg.Done()
 	timer := time.NewTimer(50 * time.Millisecond)
 	defer timer.Stop()
+	stopping := false
 	for {
+		if stopping {
+			if dq.Err() != nil || !dq.hasReady(time.Now()) {
+				return
+			}
+			_ = dq.processOne(ctx)
+			continue
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-dq.stopCh:
-			return
+			stopping = true
+			continue
 		case <-dq.wakeCh:
 		case <-timer.C:
 		}
@@ -262,6 +271,17 @@ func (dq *DeliveryQueue) worker(ctx context.Context) {
 		}
 		timer.Reset(wait)
 	}
+}
+
+func (dq *DeliveryQueue) hasReady(now time.Time) bool {
+	dq.mu.Lock()
+	defer dq.mu.Unlock()
+	for _, item := range dq.queue {
+		if item.nextRetryAt.IsZero() || !item.nextRetryAt.After(now) {
+			return true
+		}
+	}
+	return false
 }
 
 func (dq *DeliveryQueue) processOne(ctx context.Context) time.Duration {

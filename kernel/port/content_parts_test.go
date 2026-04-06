@@ -126,6 +126,39 @@ func TestValidateContentParts_ReasoningValid(t *testing.T) {
 	}
 }
 
+func TestValidateContentParts_FileReferenceValid(t *testing.T) {
+	err := ValidateContentParts([]ContentPart{
+		FileRefPart(
+			AttachmentRef{Path: "README.md", Name: "README.md", MIMEType: "text/markdown"},
+			&MentionBinding{Trigger: "@", Value: "@README.md", Target: "README.md", Start: 0, End: 10},
+		),
+	})
+	if err != nil {
+		t.Fatalf("expected valid file ref part, got error: %v", err)
+	}
+}
+
+func TestValidateContentParts_FileReferenceRequiresAttachmentLocator(t *testing.T) {
+	err := ValidateContentParts([]ContentPart{{
+		Type:       ContentPartFileRef,
+		Attachment: &AttachmentRef{Name: "README.md"},
+	}})
+	if err == nil {
+		t.Fatal("expected error for attachment without id/path/uri")
+	}
+}
+
+func TestValidateContentParts_FileReferenceRejectsInvalidMentionRange(t *testing.T) {
+	err := ValidateContentParts([]ContentPart{{
+		Type:       ContentPartFileRef,
+		Attachment: &AttachmentRef{Path: "README.md"},
+		Mention:    &MentionBinding{Value: "@README.md", Target: "README.md", Start: 8, End: 4},
+	}})
+	if err == nil {
+		t.Fatal("expected mention range validation error")
+	}
+}
+
 func TestContentPartsToReasoningText(t *testing.T) {
 	out := ContentPartsToReasoningText([]ContentPart{
 		{Type: ContentPartReasoning, Text: "a"},

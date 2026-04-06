@@ -49,7 +49,7 @@ func runCheckpoint(ctx context.Context, cfg *config) error {
 	case "create":
 		return runCheckpointCreate(ctx, cfg)
 	case "fork":
-		return fmt.Errorf("checkpoint branching moved to `mosscode fork`; use `mosscode fork [--session <id> | --checkpoint <id|latest> | --latest]`")
+		return fmt.Errorf("checkpoint branching moved to `mosscode fork`; use `mosscode fork [--session <thread-id> | --checkpoint <id|latest> | --latest]`")
 	case "replay":
 		return runCheckpointReplay(ctx, cfg)
 	default:
@@ -101,7 +101,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 	sessionID := strings.TrimSpace(cfg.checkpointCreateSessionID)
 	note := strings.TrimSpace(cfg.checkpointCreateNote)
 	if sessionID == "" {
-		return fmt.Errorf("usage: mosscode checkpoint create --session <id> [--note <note>] [--json]")
+		return fmt.Errorf("usage: mosscode checkpoint create --session <thread-id> [--note <note>] [--json]")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
 	if err != nil {
@@ -112,14 +112,14 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 		return err
 	}
 	if k.SessionStore() == nil {
-		return fmt.Errorf("session store is unavailable")
+		return fmt.Errorf("thread store is unavailable")
 	}
 	sess, err := k.SessionStore().Load(ctx, sessionID)
 	if err != nil {
 		return err
 	}
 	if sess == nil {
-		return fmt.Errorf("session %q not found", sessionID)
+		return fmt.Errorf("thread %q not found", sessionID)
 	}
 	record, err := k.CreateCheckpoint(ctx, sess, port.CheckpointCreateRequest{Note: note})
 	if err != nil {
@@ -134,7 +134,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 	if cfg.checkpointJSON {
 		return printJSON(report)
 	}
-	fmt.Printf("Created checkpoint %s for session %s.\n", summary.ID, summary.SessionID)
+	fmt.Printf("Created checkpoint %s for thread %s.\n", summary.ID, summary.SessionID)
 	if summary.SnapshotID != "" {
 		fmt.Printf("Snapshot: %s\n", summary.SnapshotID)
 	}
@@ -167,7 +167,7 @@ func runCheckpointFork(ctx context.Context, cfg *config) error {
 		sourceID = checkpointID
 	}
 	if sourceKind == port.ForkSourceSession && sourceID == "" {
-		return fmt.Errorf("usage: mosscode fork [--session <id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
+		return fmt.Errorf("usage: mosscode fork [--session <thread-id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
 	if err != nil {
@@ -211,7 +211,7 @@ func runCheckpointFork(ctx context.Context, cfg *config) error {
 	if result.Degraded && strings.TrimSpace(result.Details) != "" {
 		fmt.Printf("Degraded: %s\n", result.Details)
 	}
-	fmt.Printf("Use `mosscode resume --session %s` to continue.\n", sess.ID)
+	fmt.Printf("Use `mosscode resume --session %s` to continue the thread.\n", sess.ID)
 	return nil
 }
 
@@ -264,14 +264,14 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 	if cfg.checkpointJSON {
 		return printJSON(report)
 	}
-	fmt.Printf("Prepared replay session %s from checkpoint %s (%s).\n", sess.ID, result.CheckpointID, result.Mode)
+	fmt.Printf("Prepared replay thread %s from checkpoint %s (%s).\n", sess.ID, result.CheckpointID, result.Mode)
 	if result.RestoredWorktree {
 		fmt.Println("Worktree restored.")
 	}
 	if result.Degraded && strings.TrimSpace(result.Details) != "" {
 		fmt.Printf("Degraded: %s\n", result.Details)
 	}
-	fmt.Printf("Use `mosscode resume --session %s` to continue.\n", sess.ID)
+	fmt.Printf("Use `mosscode resume --session %s` to continue the thread.\n", sess.ID)
 	return nil
 }
 
@@ -280,7 +280,7 @@ func runApply(ctx context.Context, cfg *config) error {
 	summary := strings.TrimSpace(cfg.applySummary)
 	sessionID := strings.TrimSpace(cfg.applySessionID)
 	if patchFile == "" {
-		return fmt.Errorf("usage: mosscode apply --patch-file <path> [--summary <text>] [--session <id>] [--json]")
+		return fmt.Errorf("usage: mosscode apply --patch-file <path> [--summary <text>] [--session <thread-id>] [--json]")
 	}
 	data, err := os.ReadFile(patchFile)
 	if err != nil {

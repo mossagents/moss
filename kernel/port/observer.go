@@ -35,6 +35,11 @@ type ErrorObserver interface {
 	OnError(ctx context.Context, e ErrorEvent)
 }
 
+// EventObserver 接收统一事件封装。
+type EventObserver interface {
+	OnEvent(ctx context.Context, e EventEnvelope)
+}
+
 // Observer 是 Kernel 运行事件的观察者接口。
 // 上层应用实现此接口对接 OpenTelemetry / Prometheus / slog 等。
 // 默认使用 NoOpObserver（零开销）。
@@ -117,6 +122,7 @@ func (NoOpObserver) OnExecutionEvent(_ context.Context, _ ExecutionEvent) {}
 func (NoOpObserver) OnApproval(_ context.Context, _ ApprovalEvent)        {}
 func (NoOpObserver) OnSessionEvent(_ context.Context, _ SessionEvent)     {}
 func (NoOpObserver) OnError(_ context.Context, _ ErrorEvent)              {}
+func (NoOpObserver) OnEvent(_ context.Context, _ EventEnvelope)           {}
 
 type joinedObserver []Observer
 
@@ -153,5 +159,71 @@ func (o joinedObserver) OnSessionEvent(ctx context.Context, e SessionEvent) {
 func (o joinedObserver) OnError(ctx context.Context, e ErrorEvent) {
 	for _, observer := range o {
 		observer.OnError(ctx, e)
+	}
+}
+
+func (o joinedObserver) OnEvent(ctx context.Context, e EventEnvelope) {
+	for _, observer := range o {
+		if aware, ok := observer.(EventObserver); ok {
+			aware.OnEvent(ctx, e)
+		}
+	}
+}
+
+func ObserveLLMCall(ctx context.Context, observer LLMObserver, e LLMCallEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnLLMCall(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromLLMCall(e))
+}
+
+func ObserveToolCall(ctx context.Context, observer ToolObserver, e ToolCallEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnToolCall(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromToolCall(e))
+}
+
+func ObserveExecutionEvent(ctx context.Context, observer ExecutionObserver, e ExecutionEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnExecutionEvent(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromExecutionEvent(e))
+}
+
+func ObserveApproval(ctx context.Context, observer ApprovalObserver, e ApprovalEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnApproval(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromApprovalEvent(e))
+}
+
+func ObserveSessionEvent(ctx context.Context, observer SessionObserver, e SessionEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnSessionEvent(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromSessionEvent(e))
+}
+
+func ObserveError(ctx context.Context, observer ErrorObserver, e ErrorEvent) {
+	if observer == nil {
+		return
+	}
+	observer.OnError(ctx, e)
+	observeEvent(ctx, observer, EnvelopeFromErrorEvent(e))
+}
+
+func ObserveTaskEvent(ctx context.Context, observer any, e TaskEvent) {
+	observeEvent(ctx, observer, EnvelopeFromTaskEvent(e))
+}
+
+func observeEvent(ctx context.Context, observer any, e EventEnvelope) {
+	if aware, ok := observer.(EventObserver); ok {
+		aware.OnEvent(ctx, e)
 	}
 }

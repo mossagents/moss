@@ -113,8 +113,8 @@ func renderZshCompletion() string {
 local -a commands
 commands=(
   'exec:run one-shot prompt'
-  'resume:resume saved conversation'
-  'fork:fork from session or checkpoint'
+  'resume:resume saved thread'
+  'fork:fork from thread or checkpoint'
   'init:scaffold AGENTS.md and commands'
   'doctor:run diagnostics'
   'debug-config:show config and path diagnostics'

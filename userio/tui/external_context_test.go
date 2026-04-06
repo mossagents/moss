@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestExpandInlineFileMentionsAddsAttachedContext(t *testing.T) {
+func TestExpandInlineFileMentionsLeavesTextUntouched(t *testing.T) {
 	workspace := t.TempDir()
 	path := filepath.Join(workspace, "note.txt")
 	if err := os.WriteFile(path, []byte("hello world"), 0o600); err != nil {
@@ -18,7 +18,7 @@ func TestExpandInlineFileMentionsAddsAttachedContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expandInlineFileMentions: %v", err)
 	}
-	if !strings.Contains(got, "Attached context:") || !strings.Contains(got, "hello world") {
+	if got != "Please inspect @note.txt" {
 		t.Fatalf("unexpected expanded text: %q", got)
 	}
 }
@@ -60,6 +60,27 @@ func TestBuildUserContentPartsAddsInputImagePart(t *testing.T) {
 	}
 	if parts[1].DataBase64 != base64.StdEncoding.EncodeToString(raw) {
 		t.Fatalf("unexpected base64 payload: %q", parts[1].DataBase64)
+	}
+}
+
+func TestBuildUserContentPartsAddsFileReferencePart(t *testing.T) {
+	workspace := t.TempDir()
+	path := filepath.Join(workspace, "note.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	parts, err := buildUserContentParts("Please inspect @note.txt", workspace)
+	if err != nil {
+		t.Fatalf("buildUserContentParts: %v", err)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("expected text+file parts, got %d", len(parts))
+	}
+	if parts[1].Type != "file_ref" {
+		t.Fatalf("expected file_ref part, got %q", parts[1].Type)
+	}
+	if parts[1].Attachment == nil || !strings.HasSuffix(parts[1].Attachment.Path, "note.txt") {
+		t.Fatalf("unexpected attachment payload: %#v", parts[1].Attachment)
 	}
 }
 

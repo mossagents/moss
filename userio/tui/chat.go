@@ -110,6 +110,15 @@ type chatModel struct {
 	askForm               *askFormState
 	scheduleBrowser       *scheduleBrowserState
 	modelPicker           *modelPickerState
+	themePicker           *themePickerState
+	statuslinePicker      *statuslinePickerState
+	mcpPicker             *mcpPickerState
+	helpPicker            *helpPickerState
+	reviewPicker          *reviewPickerState
+	resumePicker          *resumePickerState
+	forkPicker            *forkPickerState
+	agentPicker           *agentPickerState
+	mentionPicker         *mentionPickerState
 	overlays              *overlayStack
 	finished              bool   // session 已结束
 	result                string // 最终结果
@@ -146,8 +155,9 @@ type chatModel struct {
 	customCommands       []product.CustomCommand
 	discoveredSkills     []string
 
-	queuedInputs []string
-	queuedParts  [][]port.ContentPart
+	queuedInputs       []string
+	queuedParts        [][]port.ContentPart
+	pendingAttachments []composerAttachment
 
 	inputHistory  []string
 	historyCursor int
@@ -274,19 +284,13 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
-	runText, err := expandInlineFileMentions(text, m.workspace)
+	displayText, runText, parts, err := buildComposerSubmission(text, m.workspace, m.pendingAttachments)
 	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned files: %v", err)})
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to build attachments: %v", err)})
 		m.refreshViewport()
 		return m, nil
 	}
-	parts, err := buildUserContentParts(runText, m.workspace)
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to attach mentioned media: %v", err)})
-		m.refreshViewport()
-		return m, nil
-	}
-	return m.dispatchUserSubmission(text, runText, parts)
+	return m.dispatchUserSubmission(displayText, runText, parts)
 }
 
 func (m chatModel) startThreadSwitch(statusText string, run func() (string, error)) (chatModel, tea.Cmd) {
@@ -1037,6 +1041,12 @@ func (m chatModel) renderStatusSummary() string {
 	fmt.Fprintf(&b, "Personality: %s\n", valueOrDefaultString(m.personality, product.PersonalityFriendly))
 	fmt.Fprintf(&b, "Fast mode: %t\n", m.fastMode)
 	fmt.Fprintf(&b, "Status line: %s\n", strings.Join(normalizeStatusLineItems(m.statusLineItems), ", "))
+	if m.progress.visible() {
+		fmt.Fprintf(&b, "Progress: %s / %s\n", valueOrDefaultString(m.progress.Status, "(idle)"), valueOrDefaultString(m.progress.Phase, "(none)"))
+	}
+	if len(m.pendingAttachments) > 0 {
+		fmt.Fprintf(&b, "Pending attachments: %d\n", len(m.pendingAttachments))
+	}
 	fmt.Fprintf(&b, "Experimental: %s", strings.Join(effectiveExperimentalFeatures(m.experimentalFeatures), ", "))
 	if m.sessionInfoFn != nil {
 		info := strings.TrimSpace(m.sessionInfoFn())
@@ -1143,6 +1153,7 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []p
 	if m.streaming {
 		m.queuedInputs = append(m.queuedInputs, runText)
 		m.queuedParts = append(m.queuedParts, parts)
+		m.pendingAttachments = nil
 		m.textarea.Reset()
 		m.adjustInputHeight()
 		m.refreshViewport()
@@ -1153,6 +1164,7 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []p
 		content: strings.TrimSpace(displayText),
 		meta:    map[string]any{"timestamp": m.now().UTC()},
 	})
+	m.pendingAttachments = nil
 	m.textarea.Reset()
 	m.adjustInputHeight()
 	m.adjustInputHeight()

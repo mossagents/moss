@@ -77,10 +77,59 @@ type AgentJobItem struct {
 
 // TaskQuery 用于筛选任务。
 type TaskQuery struct {
-	AgentName string     `json:"agent_name,omitempty"`
-	Status    TaskStatus `json:"status,omitempty"`
-	ClaimedBy string     `json:"claimed_by,omitempty"`
-	Limit     int        `json:"limit,omitempty"`
+	AgentName       string     `json:"agent_name,omitempty"`
+	Status          TaskStatus `json:"status,omitempty"`
+	ClaimedBy       string     `json:"claimed_by,omitempty"`
+	SessionID       string     `json:"session_id,omitempty"`
+	ParentSessionID string     `json:"parent_session_id,omitempty"`
+	JobID           string     `json:"job_id,omitempty"`
+	Limit           int        `json:"limit,omitempty"`
+}
+
+// TaskRelationKind 表示任务与线程/作业的关系类型。
+type TaskRelationKind string
+
+const (
+	TaskRelationDependency    TaskRelationKind = "depends_on"
+	TaskRelationSession       TaskRelationKind = "session"
+	TaskRelationParentSession TaskRelationKind = "parent_session"
+	TaskRelationJob           TaskRelationKind = "job"
+	TaskRelationJobItem       TaskRelationKind = "job_item"
+)
+
+// TaskHandle 是任务定位标识。
+type TaskHandle struct {
+	ID              string `json:"id"`
+	SessionID       string `json:"session_id,omitempty"`
+	ParentSessionID string `json:"parent_session_id,omitempty"`
+	JobID           string `json:"job_id,omitempty"`
+	JobItemID       string `json:"job_item_id,omitempty"`
+	WorkspaceID     string `json:"workspace_id,omitempty"`
+}
+
+// TaskRelation 描述任务与其他对象的边。
+type TaskRelation struct {
+	TaskID           string           `json:"task_id"`
+	Kind             TaskRelationKind `json:"kind"`
+	RelatedTaskID    string           `json:"related_task_id,omitempty"`
+	RelatedSessionID string           `json:"related_session_id,omitempty"`
+	RelatedJobID     string           `json:"related_job_id,omitempty"`
+	RelatedJobItemID string           `json:"related_job_item_id,omitempty"`
+}
+
+// TaskSummary 是面向线程/子代理浏览的任务摘要。
+type TaskSummary struct {
+	Handle    TaskHandle     `json:"handle"`
+	AgentName string         `json:"agent_name,omitempty"`
+	Goal      string         `json:"goal,omitempty"`
+	Status    TaskStatus     `json:"status"`
+	ClaimedBy string         `json:"claimed_by,omitempty"`
+	Result    string         `json:"result,omitempty"`
+	Error     string         `json:"error,omitempty"`
+	DependsOn []string       `json:"depends_on,omitempty"`
+	CreatedAt time.Time      `json:"created_at,omitempty"`
+	UpdatedAt time.Time      `json:"updated_at,omitempty"`
+	Relations []TaskRelation `json:"relations,omitempty"`
 }
 
 // JobQuery 用于筛选 Job。
@@ -103,6 +152,12 @@ type TaskRuntime interface {
 	GetTask(ctx context.Context, id string) (*TaskRecord, error)
 	ListTasks(ctx context.Context, query TaskQuery) ([]TaskRecord, error)
 	ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*TaskRecord, error)
+}
+
+// TaskGraphRuntime 暴露线程/任务浏览所需的派生查询。
+type TaskGraphRuntime interface {
+	ListTaskSummaries(ctx context.Context, query TaskQuery) ([]TaskSummary, error)
+	ListTaskRelations(ctx context.Context, taskID string) ([]TaskRelation, error)
 }
 
 // JobRuntime 提供 Job/Item 双层状态机能力。
@@ -201,6 +256,15 @@ func (r *MemoryTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]Tas
 		if query.ClaimedBy != "" && t.ClaimedBy != query.ClaimedBy {
 			continue
 		}
+		if query.SessionID != "" && t.SessionID != query.SessionID {
+			continue
+		}
+		if query.ParentSessionID != "" && t.ParentSessionID != query.ParentSessionID {
+			continue
+		}
+		if query.JobID != "" && t.JobID != query.JobID {
+			continue
+		}
 		cp := t
 		cp.DependsOn = append([]string(nil), t.DependsOn...)
 		out = append(out, cp)
@@ -257,6 +321,26 @@ func (r *MemoryTaskRuntime) ClaimNextReady(_ context.Context, claimer string, pr
 	return &cp, nil
 }
 
+func (r *MemoryTaskRuntime) ListTaskSummaries(ctx context.Context, query TaskQuery) ([]TaskSummary, error) {
+	tasks, err := r.ListTasks(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, TaskSummaryFromRecord(task))
+	}
+	return out, nil
+}
+
+func (r *MemoryTaskRuntime) ListTaskRelations(ctx context.Context, taskID string) ([]TaskRelation, error) {
+	task, err := r.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return TaskRelationsFromRecord(*task), nil
+}
+
 func (r *MemoryTaskRuntime) UpsertJob(_ context.Context, job AgentJob) error {
 	if job.ID == "" {
 		return errors.New("job id is required")
@@ -285,6 +369,87 @@ func (r *MemoryTaskRuntime) UpsertJob(_ context.Context, job AgentJob) error {
 	job.UpdatedAt = now
 	r.jobs[job.ID] = job
 	return nil
+}
+
+func TaskHandleFromRecord(task TaskRecord) TaskHandle {
+	return TaskHandle{
+		ID:              task.ID,
+		SessionID:       task.SessionID,
+		ParentSessionID: task.ParentSessionID,
+		JobID:           task.JobID,
+		JobItemID:       task.JobItemID,
+		WorkspaceID:     task.WorkspaceID,
+	}
+}
+
+func TaskRelationsFromRecord(task TaskRecord) []TaskRelation {
+	out := make([]TaskRelation, 0, len(task.DependsOn)+4)
+	for _, depID := range task.DependsOn {
+		depID = strings.TrimSpace(depID)
+		if depID == "" {
+			continue
+		}
+		out = append(out, TaskRelation{
+			TaskID:        task.ID,
+			Kind:          TaskRelationDependency,
+			RelatedTaskID: depID,
+		})
+	}
+	if sessionID := strings.TrimSpace(task.SessionID); sessionID != "" {
+		out = append(out, TaskRelation{
+			TaskID:           task.ID,
+			Kind:             TaskRelationSession,
+			RelatedSessionID: sessionID,
+		})
+	}
+	if parentID := strings.TrimSpace(task.ParentSessionID); parentID != "" {
+		out = append(out, TaskRelation{
+			TaskID:           task.ID,
+			Kind:             TaskRelationParentSession,
+			RelatedSessionID: parentID,
+		})
+	}
+	if jobID := strings.TrimSpace(task.JobID); jobID != "" {
+		out = append(out, TaskRelation{
+			TaskID:       task.ID,
+			Kind:         TaskRelationJob,
+			RelatedJobID: jobID,
+		})
+	}
+	if itemID := strings.TrimSpace(task.JobItemID); itemID != "" {
+		out = append(out, TaskRelation{
+			TaskID:           task.ID,
+			Kind:             TaskRelationJobItem,
+			RelatedJobID:     strings.TrimSpace(task.JobID),
+			RelatedJobItemID: itemID,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Kind == out[j].Kind {
+			left := strings.Join([]string{out[i].RelatedTaskID, out[i].RelatedSessionID, out[i].RelatedJobID, out[i].RelatedJobItemID}, ":")
+			right := strings.Join([]string{out[j].RelatedTaskID, out[j].RelatedSessionID, out[j].RelatedJobID, out[j].RelatedJobItemID}, ":")
+			return left < right
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out
+}
+
+func TaskSummaryFromRecord(task TaskRecord) TaskSummary {
+	deps := append([]string(nil), task.DependsOn...)
+	return TaskSummary{
+		Handle:    TaskHandleFromRecord(task),
+		AgentName: task.AgentName,
+		Goal:      task.Goal,
+		Status:    task.Status,
+		ClaimedBy: task.ClaimedBy,
+		Result:    task.Result,
+		Error:     task.Error,
+		DependsOn: deps,
+		CreatedAt: task.CreatedAt,
+		UpdatedAt: task.UpdatedAt,
+		Relations: TaskRelationsFromRecord(task),
+	}
 }
 
 func (r *MemoryTaskRuntime) GetJob(_ context.Context, id string) (*AgentJob, error) {

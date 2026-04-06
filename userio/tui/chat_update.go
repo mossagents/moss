@@ -36,6 +36,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.toolCollapsed = !m.toolCollapsed
 			m.refreshViewport()
 			return m, nil
+		case "ctrl+x":
+			if len(m.pendingAttachments) > 0 {
+				m.pendingAttachments = append([]composerAttachment(nil), m.pendingAttachments[:len(m.pendingAttachments)-1]...)
+				m.refreshViewport()
+				return m, nil
+			}
 		case "up", "down":
 			if hints := m.currentSlashHints(); len(hints) > 0 {
 				return m, nil
@@ -45,6 +51,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			if m.applySlashCompletion() {
 				m.adjustInputHeight()
 				return m, nil
+			}
+			if updated, opened := m.openMentionPickerFromComposer(); opened {
+				return updated, nil
 			}
 			return m, nil
 		case "shift+tab":

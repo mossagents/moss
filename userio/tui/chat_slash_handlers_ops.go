@@ -137,6 +137,9 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 		m.refreshViewport()
 		return m, nil
 	}
+	if len(args) == 0 {
+		return m.openForkPicker()
+	}
 	sourceKind := string(port.ForkSourceSession)
 	sourceID := ""
 	restore := false
@@ -185,12 +188,18 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 }
 
 func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	if len(args) == 0 {
+		return m.openAgentPicker()
+	}
 	if m.taskListFn == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread controls are unavailable."})
 		m.refreshViewport()
 		return m, nil
 	}
-	if len(args) == 0 || args[0] == "list" {
+	if args[0] == "list" {
+		if len(args) == 1 {
+			return m.openAgentPicker()
+		}
 		listArgs := args
 		if len(listArgs) > 0 && listArgs[0] == "list" {
 			listArgs = listArgs[1:]
@@ -424,9 +433,7 @@ func handleStatuslineSlashCommand(m chatModel, args []string, _ string, _ string
 		return m, nil
 	}
 	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: renderStatusLineUsage(m.statusLineItems)})
-		m.refreshViewport()
-		return m, nil
+		return m.openStatuslinePicker()
 	}
 	switch strings.ToLower(strings.TrimSpace(args[0])) {
 	case "reset":

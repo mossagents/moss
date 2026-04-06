@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/port"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 type fakeScheduleController struct {
@@ -86,6 +88,139 @@ func TestSlashCommandThemeSwitch(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "plain") || updated.theme != "plain" {
 		t.Fatalf("unexpected theme switch output: %+v", last)
+	}
+}
+
+func TestSlashCommandThemeOpensThemePicker(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.theme = themePlain
+	updated, _ := m.handleSlashCommand("/theme")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayTheme {
+		t.Fatal("expected theme picker overlay")
+	}
+	if updated.themePicker == nil || len(updated.themePicker.options) != 2 {
+		t.Fatalf("unexpected theme picker: %#v", updated.themePicker)
+	}
+}
+
+func TestThemePickerSelectionAppliesTheme(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.theme = themePlain
+	updated, _ := m.handleSlashCommand("/theme")
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.theme != themeDefault {
+		t.Fatalf("expected theme %q, got %q", themeDefault, updated.theme)
+	}
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected theme overlay to close after selection")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, themeDefault) {
+		t.Fatalf("unexpected theme selection message: %+v", last)
+	}
+}
+
+func TestSlashCommandStatuslineOpensPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.experimentalFeatures = []string{product.ExperimentalStatuslineCustomization}
+	m.statusLineItems = []string{"model", "thread"}
+
+	updated, _ := m.handleSlashCommand("/statusline")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayStatus {
+		t.Fatal("expected statusline picker overlay")
+	}
+	if updated.statuslinePicker == nil || updated.statuslinePicker.list == nil {
+		t.Fatal("expected statusline picker state")
+	}
+	if !updated.statuslinePicker.list.IsSelected(1) || !updated.statuslinePicker.list.IsSelected(6) {
+		t.Fatalf("expected model and thread to be selected, got %#v", updated.statuslinePicker.list.Marked)
+	}
+}
+
+func TestStatuslinePickerSelectionAppliesItems(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.experimentalFeatures = []string{product.ExperimentalStatuslineCustomization}
+	m.statusLineItems = []string{"model"}
+
+	updated, _ := m.handleSlashCommand("/statusline")
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected statusline overlay to close after selection")
+	}
+	if want := []string{"model", "workspace"}; !slices.Equal(updated.statusLineItems, want) {
+		t.Fatalf("unexpected status line items: got %v want %v", updated.statusLineItems, want)
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "Status line updated") {
+		t.Fatalf("unexpected statusline selection message: %+v", last)
+	}
+}
+
+func TestSlashCommandMCPOpensPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	cfg := &configpkg.Config{
+		Skills: []configpkg.SkillConfig{{
+			Name:      "repo",
+			Transport: "stdio",
+			Command:   "node",
+			Args:      []string{"server.js"},
+			Enabled:   boolPtr(true),
+		}},
+	}
+	if err := configpkg.SaveConfig(configpkg.DefaultGlobalConfigPath(), cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.trust = configpkg.TrustTrusted
+
+	updated, _ := m.handleSlashCommand("/mcp")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayMCP {
+		t.Fatal("expected MCP picker overlay")
+	}
+	if updated.mcpPicker == nil || len(updated.mcpPicker.servers) != 1 {
+		t.Fatalf("unexpected MCP picker state: %#v", updated.mcpPicker)
+	}
+}
+
+func TestSlashCommandReviewOpensPicker(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", t.TempDir())
+	updated, _ := m.handleSlashCommand("/review")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayReview {
+		t.Fatal("expected review picker overlay")
+	}
+	if updated.reviewPicker == nil || len(updated.reviewPicker.options) != 3 {
+		t.Fatalf("unexpected review picker state: %#v", updated.reviewPicker)
+	}
+}
+
+func TestSlashCommandHelpOpensPickerAndInsertsCommand(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.handleSlashCommand("/help")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayHelp {
+		t.Fatal("expected help picker overlay")
+	}
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected help overlay to close after insertion")
+	}
+	if got := updated.textarea.Value(); got != "/new " {
+		t.Fatalf("expected inserted command, got %q", got)
 	}
 }
 
@@ -324,6 +459,49 @@ func TestSlashCommandResumeRestoresSession(t *testing.T) {
 	}
 }
 
+func TestSlashCommandResumeOpensPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	store, err := session.NewFileStore(product.SessionStoreDir())
+	if err != nil {
+		t.Fatalf("new session store: %v", err)
+	}
+	sess := &session.Session{
+		ID:        "sess-picker",
+		Status:    session.StatusRunning,
+		Config:    session.SessionConfig{Goal: "resume picker", Mode: "interactive", Profile: "default"},
+		CreatedAt: time.Now().Add(-time.Minute),
+	}
+	session.SetThreadPreview(sess, "resume picker")
+	session.TouchThreadActivity(sess, time.Now().UTC(), "assistant")
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.sessionRestoreFn = func(sessionID string) (string, error) {
+		if sessionID != "sess-picker" {
+			t.Fatalf("unexpected session id: %s", sessionID)
+		}
+		return "Restored session sess-picker.", nil
+	}
+	updated, _ := m.handleSlashCommand("/resume")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayResume {
+		t.Fatal("expected resume picker overlay")
+	}
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !updated.streaming {
+		t.Fatal("expected resume picker selection to enter busy state")
+	}
+	updated = applyAsyncChatCmd(t, updated, cmd)
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "sess-picker") {
+		t.Fatalf("unexpected resume picker output: %+v", last)
+	}
+}
+
 func TestLegacySessionRestoreCommandShowsGuidance(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/session restore sess-123")
@@ -392,6 +570,36 @@ func TestSlashCommandAgentValidation(t *testing.T) {
 	}
 }
 
+func TestSlashCommandAgentOpensPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	rt, err := port.NewFileTaskRuntime(product.TaskRuntimeDir())
+	if err != nil {
+		t.Fatalf("new task runtime: %v", err)
+	}
+	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+		ID:        "task-1",
+		AgentName: "code-review",
+		Goal:      "Review changes",
+		Status:    port.TaskRunning,
+		SessionID: "sess-picker",
+	}); err != nil {
+		t.Fatalf("upsert task: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.taskListFn = func(status string, limit int) (string, error) { return "legacy list", nil }
+	updated, _ := m.handleSlashCommand("/agent")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayAgent {
+		t.Fatal("expected agent picker overlay")
+	}
+	if updated.agentPicker == nil || len(updated.agentPicker.tasks) != 1 {
+		t.Fatalf("unexpected agent picker state: %#v", updated.agentPicker)
+	}
+}
+
 func TestSlashCommandAgentCancel(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.taskCancelFn = func(taskID, reason string) (string, error) {
@@ -444,6 +652,50 @@ func TestSlashCommandSchedules(t *testing.T) {
 	}
 	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlaySchedule {
 		t.Fatal("expected schedule browser to open via overlay stack")
+	}
+}
+
+func TestSlashCommandForkOpensPicker(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	store, err := session.NewFileStore(product.SessionStoreDir())
+	if err != nil {
+		t.Fatalf("new session store: %v", err)
+	}
+	sess := &session.Session{
+		ID:        "sess-fork",
+		Status:    session.StatusRunning,
+		Config:    session.SessionConfig{Goal: "fork picker", Mode: "interactive", Profile: "default"},
+		CreatedAt: time.Now().Add(-time.Minute),
+	}
+	session.SetThreadPreview(sess, "fork picker")
+	session.TouchThreadActivity(sess, time.Now().UTC(), "assistant")
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("save session: %v", err)
+	}
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.checkpointForkFn = func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
+		if sourceKind != string(port.ForkSourceSession) || sourceID != "sess-fork" || !restoreWorktree {
+			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restoreWorktree)
+		}
+		return "Forked thread sess-fork.", nil
+	}
+	updated, _ := m.handleSlashCommand("/fork")
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayFork {
+		t.Fatal("expected fork picker overlay")
+	}
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("r")})
+	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !updated.streaming {
+		t.Fatal("expected fork picker selection to enter busy state")
+	}
+	updated = applyAsyncChatCmd(t, updated, cmd)
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgSystem || !strings.Contains(last.content, "sess-fork") {
+		t.Fatalf("unexpected fork picker output: %+v", last)
 	}
 }
 
@@ -594,6 +846,28 @@ func TestGenerateLayoutHidesEditorWhenOverlayActive(t *testing.T) {
 	layout := m.generateLayout()
 	if layout.EditorHeight != 0 {
 		t.Fatalf("expected overlay to hide editor region, got %d", layout.EditorHeight)
+	}
+}
+
+func TestRenderEditorPaneIncludesProgressBlock(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 30
+	m.progress = executionProgressState{
+		SessionID: "sess-1",
+		Status:    "running",
+		Phase:     "thinking",
+		Message:   "planning changes",
+		StartedAt: time.Now().Add(-time.Second),
+		UpdatedAt: time.Now(),
+	}
+	m.textarea.SetValue("hello")
+	m.adjustInputHeight()
+	m.recalcLayout()
+
+	rendered := m.renderEditorPane(m.generateLayout())
+	if !strings.Contains(rendered, "Progress:") && !strings.Contains(rendered, "Thinking") {
+		t.Fatalf("expected progress block in editor pane, got %q", rendered)
 	}
 }
 
@@ -959,12 +1233,12 @@ func TestSlashCommandForkLatestShorthand(t *testing.T) {
 func TestHelpIncludesCheckpointAndCoreRecoveryCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
-	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/status") || !strings.Contains(last.content, "/resume") || !strings.Contains(last.content, "/fork") || !strings.Contains(last.content, "/compact") || !strings.Contains(last.content, "/plan") || !strings.Contains(last.content, "/init") || !strings.Contains(last.content, "/debug-config") || !strings.Contains(last.content, "/theme") || !strings.Contains(last.content, "/agent") || !strings.Contains(last.content, "/checkpoint replay [<id|latest>]") || !strings.Contains(last.content, "/trace") {
-		t.Fatalf("help missing checkpoint commands: %q", last.content)
+	help := updated.renderHelpPicker(120)
+	if !strings.Contains(help, "/status") || !strings.Contains(help, "/resume") || !strings.Contains(help, "/fork") || !strings.Contains(help, "/compact") || !strings.Contains(help, "/plan") || !strings.Contains(help, "/init") || !strings.Contains(help, "/debug-config") || !strings.Contains(help, "/theme") || !strings.Contains(help, "/agent") || !strings.Contains(help, "/trace") {
+		t.Fatalf("help missing checkpoint commands: %q", help)
 	}
-	if !strings.Contains(last.content, "/skill <name> <task...>") || !strings.Contains(last.content, "/<skill_or_tool_name> <task...>") {
-		t.Fatalf("help missing direct skill usage guidance: %q", last.content)
+	if !strings.Contains(help, "Press Enter to insert the command into the composer.") {
+		t.Fatalf("help missing picker guidance: %q", help)
 	}
 }
 
@@ -983,19 +1257,28 @@ func TestHelpIncludesCustomCommands(t *testing.T) {
 		t.Fatalf("syncCustomCommands notice: %s", notice)
 	}
 	updated, _ := m.handleSlashCommand("/help")
-	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "Custom commands:") || !strings.Contains(last.content, "/review-pr") {
-		t.Fatalf("help missing custom commands: %q", last.content)
+	if updated.helpPicker == nil {
+		t.Fatal("expected help picker state")
+	}
+	found := false
+	for _, entry := range updated.helpPicker.entries {
+		if entry.command == "/review-pr" && strings.Contains(entry.detail, "Custom commands") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("help missing custom commands: %#v", updated.helpPicker.entries)
 	}
 }
 
 func TestHelpIncludesChangeCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
-	last := updated.messages[len(updated.messages)-1]
+	help := updated.renderHelpPicker(120)
 	for _, want := range []string{"/diff", "/review", "/inspect", "/changes", "/apply", "/rollback"} {
-		if !strings.Contains(last.content, want) {
-			t.Fatalf("help missing %q in %q", want, last.content)
+		if !strings.Contains(help, want) {
+			t.Fatalf("help missing %q in %q", want, help)
 		}
 	}
 }
@@ -1003,12 +1286,9 @@ func TestHelpIncludesChangeCommands(t *testing.T) {
 func TestHelpIncludesNewCommand(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
-	if len(updated.messages) == 0 {
-		t.Fatal("expected help message")
-	}
-	last := updated.messages[len(updated.messages)-1]
-	if !strings.Contains(last.content, "/new") {
-		t.Fatalf("help missing /new command: %q", last.content)
+	help := updated.renderHelpPicker(120)
+	if !strings.Contains(help, "/new") {
+		t.Fatalf("help missing /new command: %q", help)
 	}
 }
 
@@ -1036,17 +1316,36 @@ func TestSlashCommandCopyCopiesLatestCompletedOutput(t *testing.T) {
 	}
 }
 
-func TestSlashCommandMentionInsertsComposerToken(t *testing.T) {
+func TestSlashCommandMentionAddsComposerAttachment(t *testing.T) {
 	configpkg.SetAppName("mosscode")
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write note: %v", err)
 	}
 	m := newChatModel("openai", "gpt-4o", workspace)
-	m.textarea.SetValue("/mention note.txt")
 	updated, _ := m.handleSlashCommand("/mention note.txt")
-	if got := updated.textarea.Value(); got != "@note.txt" {
-		t.Fatalf("composer = %q, want @note.txt", got)
+	if len(updated.pendingAttachments) != 1 || updated.pendingAttachments[0].Label != "note.txt" {
+		t.Fatalf("unexpected attachments: %#v", updated.pendingAttachments)
+	}
+}
+
+func TestMentionPickerOpensFromComposerTab(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.textarea.SetValue("@not")
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayMention {
+		t.Fatal("expected mention picker overlay")
+	}
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(updated.pendingAttachments) != 1 || updated.pendingAttachments[0].Label != "note.txt" {
+		t.Fatalf("unexpected attachments after picker: %#v", updated.pendingAttachments)
+	}
+	if updated.textarea.Value() != "" {
+		t.Fatalf("expected mention token to be removed from composer, got %q", updated.textarea.Value())
 	}
 }
 
@@ -1207,6 +1506,28 @@ func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
 		if got := approvalDecisionButtonLabel(input); got != want {
 			t.Fatalf("approvalDecisionButtonLabel(%q) = %q, want %q", input, got, want)
 		}
+	}
+}
+
+func TestApprovalAskRespectsAllowedScopes(t *testing.T) {
+	fields := synthesizeFieldsFromInputRequest(port.InputRequest{
+		Type: port.InputConfirm,
+		Approval: &port.ApprovalRequest{
+			ToolName:      "run_command",
+			AllowedScopes: []port.DecisionScope{port.DecisionScopeOnce, port.DecisionScopeSession},
+			DefaultScope:  port.DecisionScopeSession,
+			CacheKey:      "run_command|git push",
+			Input:         json.RawMessage(`{"command":"git","args":["push"]}`),
+		},
+	}, "D:\\Codes\\qiulin\\moss")
+	if len(fields) != 1 {
+		t.Fatalf("unexpected fields: %#v", fields)
+	}
+	if slices.Contains(fields[0].Options, approvalChoiceAllowProject) {
+		t.Fatalf("project scope should be hidden when not allowed: %#v", fields[0].Options)
+	}
+	if fields[0].Default != approvalChoiceAllowSession {
+		t.Fatalf("unexpected default approval choice: %q", fields[0].Default)
 	}
 }
 

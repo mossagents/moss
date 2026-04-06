@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	stdruntime "runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -35,12 +36,31 @@ type fileCapabilityReporter struct {
 	mu   sync.Mutex
 }
 
+var capabilitySnapshotMu sync.Mutex
+
 func CapabilityStatusPath() string {
+	if base := capabilityStatusBaseDir(); base != "" {
+		return filepath.Join(base, "state", "capabilities.json")
+	}
 	appDir := strings.TrimSpace(appconfig.AppDir())
 	if appDir == "" {
 		return ""
 	}
 	return filepath.Join(appDir, "state", "capabilities.json")
+}
+
+func capabilityStatusBaseDir() string {
+	if dir := strings.TrimSpace(os.Getenv("MOSS_APP_DIR")); dir != "" {
+		return dir
+	}
+	if stdruntime.GOOS == "windows" {
+		for _, key := range []string{"LOCALAPPDATA", "APPDATA"} {
+			if base := strings.TrimSpace(os.Getenv(key)); base != "" {
+				return filepath.Join(base, appconfig.AppName())
+			}
+		}
+	}
+	return ""
 }
 
 func NewCapabilityReporter(path string, next CapabilityReporter) CapabilityReporter {
@@ -62,6 +82,8 @@ func (r *fileCapabilityReporter) Report(ctx context.Context, capability string, 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	capabilitySnapshotMu.Lock()
+	defer capabilitySnapshotMu.Unlock()
 
 	snapshot, loadErr := LoadCapabilitySnapshot(r.path)
 	if loadErr != nil && !os.IsNotExist(loadErr) {

@@ -184,7 +184,7 @@ func (k *Kernel) runSessionLifecycleHook(ctx context.Context, hook session.Lifec
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			k.observerOrNoOp().OnError(contextOrBackground(ctx), port.ErrorEvent{
+			port.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), port.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -210,7 +210,7 @@ func (k *Kernel) runToolLifecycleHook(ctx context.Context, hook session.ToolLife
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			k.observerOrNoOp().OnError(contextOrBackground(ctx), port.ErrorEvent{
+			port.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), port.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,

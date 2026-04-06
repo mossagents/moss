@@ -20,8 +20,7 @@ type modelPickerOption struct {
 
 type modelPickerState struct {
 	options []modelPickerOption
-	cursor  int
-	message string
+	list    *selectionListState
 }
 
 func persistedModelOverride() (string, string, string, bool) {
@@ -80,7 +79,22 @@ func newModelPickerState(workspace, trust, currentProvider, currentProviderName,
 		return nil, err
 	}
 	options := buildModelPickerOptions(cfg)
-	state := &modelPickerState{options: options}
+	items := make([]selectionListItem, 0, len(options))
+	for _, option := range options {
+		items = append(items, selectionListItem{
+			Title:  option.title,
+			Detail: option.detail,
+		})
+	}
+	state := &modelPickerState{
+		options: options,
+		list: &selectionListState{
+			Title:        "Models",
+			Footer:       "↑↓ choose • Enter apply • Esc close",
+			EmptyMessage: "No configured models.",
+			Items:        items,
+		},
+	}
 	if currentAuto {
 		return state, nil
 	}
@@ -89,7 +103,7 @@ func newModelPickerState(workspace, trust, currentProvider, currentProviderName,
 			continue
 		}
 		if option.matches(currentProvider, currentProviderName, currentModel) {
-			state.cursor = i
+			state.list.Cursor = i
 			return state, nil
 		}
 	}
@@ -204,15 +218,14 @@ func (m chatModel) handleModelPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	}
 	switch msg.String() {
 	case "up":
-		if m.modelPicker.cursor > 0 {
-			m.modelPicker.cursor--
-		}
+		m.modelPicker.list.Move(-1)
 	case "down":
-		if m.modelPicker.cursor < len(m.modelPicker.options)-1 {
-			m.modelPicker.cursor++
-		}
+		m.modelPicker.list.Move(1)
 	case "enter":
-		return m.applyModelPickerSelection(m.modelPicker.options[m.modelPicker.cursor])
+		idx := m.modelPicker.list.SelectedIndex()
+		if idx >= 0 {
+			return m.applyModelPickerSelection(m.modelPicker.options[idx])
+		}
 	}
 	m.refreshViewport()
 	return m, nil
@@ -241,32 +254,8 @@ func (m chatModel) applyModelPickerSelection(option modelPickerOption) (chatMode
 }
 
 func (m chatModel) renderModelPicker(width int) string {
-	if m.modelPicker == nil {
+	if m.modelPicker == nil || m.modelPicker.list == nil {
 		return ""
 	}
-	if width < 40 {
-		width = 40
-	}
-	var sb strings.Builder
-	for i, option := range m.modelPicker.options {
-		prefix := "  "
-		if i == m.modelPicker.cursor {
-			prefix = "▸ "
-		}
-		line := prefix + option.title
-		if strings.TrimSpace(option.detail) != "" {
-			line += "  " + mutedStyle.Render(option.detail)
-		}
-		if i == m.modelPicker.cursor {
-			sb.WriteString(dialogSelectedItemStyle.Render(line))
-		} else {
-			sb.WriteString(dialogItemStyle.Render(line))
-		}
-		sb.WriteString("\n")
-	}
-	if strings.TrimSpace(m.modelPicker.message) != "" {
-		sb.WriteString("\n")
-		sb.WriteString(mutedStyle.Render(m.modelPicker.message))
-	}
-	return renderDialogFrame(width, "Models", []string{strings.TrimSpace(sb.String())}, "↑↓ choose • Enter apply • Esc close")
+	return renderSelectionListDialog(width, m.modelPicker.list)
 }

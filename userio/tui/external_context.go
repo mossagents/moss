@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"encoding/base64"
 	"fmt"
 	"mime"
 	"net/http"
@@ -18,84 +17,13 @@ import (
 const maxAttachedFileBytes = 16 * 1024
 
 func expandInlineFileMentions(input, workspace string) (string, error) {
-	if !strings.Contains(input, "@") {
-		return input, nil
-	}
-	tokens := strings.Fields(input)
-	attachments := make([]string, 0, 4)
-	seen := make(map[string]struct{})
-	for _, token := range tokens {
-		if !strings.HasPrefix(token, "@") || len(token) == 1 {
-			continue
-		}
-		path, ok := resolveMentionPath(workspace, strings.TrimPrefix(token, "@"))
-		if !ok {
-			return "", fmt.Errorf("mentioned file %s not found", token)
-		}
-		if _, exists := seen[path]; exists {
-			continue
-		}
-		seen[path] = struct{}{}
-		if isMediaPath(path) {
-			continue
-		}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return "", fmt.Errorf("read mentioned file %s: %w", path, err)
-		}
-		content := string(data)
-		truncated := false
-		if len(content) > maxAttachedFileBytes {
-			content = content[:maxAttachedFileBytes]
-			truncated = true
-		}
-		content = strings.TrimSpace(content)
-		if truncated {
-			content += "\n...[truncated]"
-		}
-		attachments = append(attachments, fmt.Sprintf("--- %s ---\n%s", path, content))
-	}
-	if len(attachments) == 0 {
-		return input, nil
-	}
-	return strings.TrimSpace(input) + "\n\nAttached context:\n" + strings.Join(attachments, "\n\n"), nil
+	_ = workspace
+	return input, nil
 }
 
 func buildUserContentParts(input, workspace string) ([]port.ContentPart, error) {
-	parts := []port.ContentPart{port.TextPart(strings.TrimSpace(input))}
-	if !strings.Contains(input, "@") {
-		return parts, nil
-	}
-	tokens := strings.Fields(input)
-	seen := make(map[string]struct{})
-	for _, token := range tokens {
-		if !strings.HasPrefix(token, "@") || len(token) == 1 {
-			continue
-		}
-		path, ok := resolveMentionPath(workspace, strings.TrimPrefix(token, "@"))
-		if !ok || !isMediaPath(path) {
-			continue
-		}
-		if _, exists := seen[path]; exists {
-			continue
-		}
-		seen[path] = struct{}{}
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("read media mention %s: %w", path, err)
-		}
-		partType, mimeType, err := detectMediaPart(path, data)
-		if err != nil {
-			return nil, err
-		}
-		parts = append(parts, port.MediaInlinePart(
-			partType,
-			mimeType,
-			base64.StdEncoding.EncodeToString(data),
-			path,
-		))
-	}
-	return parts, nil
+	_, _, parts, err := buildComposerSubmission(input, workspace, nil)
+	return parts, err
 }
 
 func resolveMentionPath(workspace, raw string) (string, bool) {

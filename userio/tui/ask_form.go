@@ -89,15 +89,27 @@ func synthesizeFieldsFromInputRequest(req port.InputRequest, workspace string) [
 	switch req.Type {
 	case port.InputConfirm:
 		if req.Approval != nil {
-			options := []string{approvalChoiceAllowOnce}
-			display := buildApprovalDisplay(req.Approval, "")
-			if strings.TrimSpace(display.RuleKey) != "" {
+			explicitScopes := len(req.Approval.AllowedScopes) > 0
+			normalized := port.NormalizeApprovalRequest(req.Approval)
+			display := buildApprovalDisplay(normalized, "")
+			options := []string{}
+			if !explicitScopes || approvalScopeAllowed(normalized, port.DecisionScopeOnce) {
+				options = append(options, approvalChoiceAllowOnce)
+			}
+			if strings.TrimSpace(display.RuleKey) != "" && (!explicitScopes || approvalScopeAllowed(normalized, port.DecisionScopeSession)) {
 				options = append(options, approvalChoiceAllowSession)
 			}
-			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(req.Approval) != nil {
+			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(normalized) != nil && (!explicitScopes || approvalScopeAllowed(normalized, port.DecisionScopeProject)) {
 				options = append(options, approvalChoiceAllowProject)
 			}
+			if len(options) == 0 {
+				options = append(options, approvalChoiceAllowOnce)
+			}
 			options = append(options, approvalChoiceDeny)
+			defaultChoice := approvalChoiceForScope(normalized.DefaultScope)
+			if indexOfApprovalOption(options, defaultChoice) < 0 {
+				defaultChoice = approvalChoiceAllowOnce
+			}
 			return []port.InputField{{
 				Name:        "decision",
 				Type:        port.InputFieldSingleSelect,
@@ -105,7 +117,7 @@ func synthesizeFieldsFromInputRequest(req port.InputRequest, workspace string) [
 				Description: "Choose whether to allow this action once, remember matching actions, or deny it.",
 				Required:    true,
 				Options:     options,
-				Default:     approvalChoiceAllowOnce,
+				Default:     defaultChoice,
 			}}
 		}
 		return []port.InputField{{Name: "approved", Type: port.InputFieldBoolean, Title: req.Prompt, Required: true}}
@@ -113,6 +125,29 @@ func synthesizeFieldsFromInputRequest(req port.InputRequest, workspace string) [
 		return []port.InputField{{Name: "selected", Type: port.InputFieldSingleSelect, Title: req.Prompt, Required: true, Options: req.Options}}
 	default:
 		return []port.InputField{{Name: "value", Type: port.InputFieldString, Title: req.Prompt, Required: true}}
+	}
+}
+
+func approvalScopeAllowed(req *port.ApprovalRequest, scope port.DecisionScope) bool {
+	if req == nil {
+		return scope == port.DecisionScopeOnce
+	}
+	for _, allowed := range req.AllowedScopes {
+		if allowed == scope {
+			return true
+		}
+	}
+	return false
+}
+
+func approvalChoiceForScope(scope port.DecisionScope) string {
+	switch scope {
+	case port.DecisionScopeSession:
+		return approvalChoiceAllowSession
+	case port.DecisionScopeProject:
+		return approvalChoiceAllowProject
+	default:
+		return approvalChoiceAllowOnce
 	}
 }
 
@@ -403,6 +438,11 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			DecidedAt: m.now().UTC(),
 		},
 	}
+	if ask.request.Approval != nil {
+		normalized := port.NormalizeApprovalRequest(ask.request.Approval)
+		resp.Decision.RuleBinding = normalized.RuleBinding
+		resp.Decision.CacheKey = normalized.CacheKey
+	}
 	notice := "Approval denied."
 	if approved {
 		notice = "Approval granted for this action."
@@ -417,11 +457,15 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			resp.Decision.GrantedPermissions = perms
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "grant requested permissions for this session"
+			resp.Decision.Scope = port.DecisionScopeSession
+			resp.Decision.Persistence = port.DecisionPersistenceSession
 			notice = "Approval granted. The requested permissions are now available for this session."
 		} else {
 			resp.Decision.Type = port.ApprovalDecisionApproveSession
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "remember similar actions for this session"
+			resp.Decision.Scope = port.DecisionScopeSession
+			resp.Decision.Persistence = port.DecisionPersistenceSession
 			notice = "Approval granted. Similar actions will be allowed automatically for this session."
 		}
 	case approvalChoiceAllowProject:
@@ -451,15 +495,21 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 		resp.Decision.PolicyAmendment = amendment
 		resp.Decision.Source = "tui-project-rule"
 		resp.Decision.Reason = "persist matching policy amendment for this project"
+		resp.Decision.Scope = port.DecisionScopeProject
+		resp.Decision.Persistence = port.DecisionPersistenceProject
 		notice = "Approval granted. The project execution policy has been updated."
 	case approvalChoiceAllowOnce:
 		resp.Decision.Type = port.ApprovalDecisionApprove
 		resp.Decision.Source = "tui-allow-once"
+		resp.Decision.Scope = port.DecisionScopeOnce
+		resp.Decision.Persistence = port.DecisionPersistenceRequest
 	default:
 		resp.Decision.Type = port.ApprovalDecisionDeny
 		resp.Decision.Source = "tui-deny"
+		resp.Decision.Scope = port.DecisionScopeOnce
+		resp.Decision.Persistence = port.DecisionPersistenceRequest
 	}
-	resp.Decision = port.NormalizeApprovalDecision(resp.Decision)
+	resp.Decision = port.NormalizeApprovalDecisionForRequest(ask.request.Approval, resp.Decision)
 	m.resetAskFormState()
 	ask.replyCh <- resp
 	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})

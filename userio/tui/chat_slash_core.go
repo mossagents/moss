@@ -268,19 +268,7 @@ func handleStatusSlashCommand(m chatModel, _ []string, _ string, _ string) (chat
 
 func handleResumeSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		if m.sessionListFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Saved-thread listing is unavailable."})
-			m.refreshViewport()
-			return m, nil
-		}
-		out, err := m.sessionListFn(20)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list resumable threads: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-		m.refreshViewport()
-		return m, nil
+		return m.openResumePicker()
 	}
 	if len(args) > 1 || m.sessionRestoreFn == nil {
 		if m.sessionRestoreFn == nil {
@@ -467,6 +455,9 @@ func handleDiffSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 }
 
 func handleReviewSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
+	if len(args) == 0 {
+		return m.openReviewPicker()
+	}
 	report, err := product.BuildReviewReport(context.Background(), m.workspace, args)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("review failed: %v", err)})
@@ -496,14 +487,7 @@ func handleSessionsLegacySlashCommand(m chatModel, _ []string, _ string, _ strin
 
 func handleMCPSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 || strings.EqualFold(args[0], "list") {
-		servers, err := product.ListMCPServers(m.workspace, m.trust)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list MCP servers: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderMCPServerList(servers)})
-		}
-		m.refreshViewport()
-		return m, nil
+		return m.openMCPPicker()
 	}
 	if strings.EqualFold(args[0], "show") && len(args) == 2 {
 		servers, err := product.GetMCPServer(m.workspace, m.trust, args[1])
@@ -701,9 +685,7 @@ func handlePlanSlashCommand(m chatModel, args []string, input string, _ string) 
 }
 
 func handleHelpSlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: m.renderSlashHelp()})
-	m.refreshViewport()
-	return m, nil
+	return m.openHelpPicker()
 }
 
 func handleDebugSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
@@ -755,9 +737,7 @@ func handleDebugConfigSlashCommand(m chatModel, _ []string, _ string, _ string) 
 
 func handleThemeSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current theme: %s", m.theme)})
-		m.refreshViewport()
-		return m, nil
+		return m.openThemePicker()
 	}
 	raw := strings.ToLower(strings.TrimSpace(args[0]))
 	if raw != themeDefault && raw != themePlain {
@@ -808,12 +788,21 @@ func handleOpenSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 }
 
 func handleImageSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	return handleMediaOpenSave(m, args, "image", "Usage: /image <open|save> [path]")
+	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "attach") {
+		return handleMediaAttachSlashCommand(m, args[1:], "image")
+	}
+	return handleMediaOpenSave(m, args, "image", "Usage: /image <open|save|attach> [path]")
 }
 
 func handleMediaSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "attach") {
-		return handleMediaAttachSlashCommand(m, args[1:])
+		return handleMediaAttachSlashCommand(m, args[1:], "")
+	}
+	if len(args) > 0 && strings.EqualFold(strings.TrimSpace(args[0]), "clear") {
+		m.pendingAttachments = nil
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Cleared pending composer attachments."})
+		m.refreshViewport()
+		return m, nil
 	}
 	return handleMediaOpenSave(m, args, "", "Usage: /media <open|save|attach> [path]")
 }
@@ -897,23 +886,29 @@ func handleMediaOpenSave(m chatModel, args []string, mediaKind string, usage str
 	}
 }
 
-func handleMediaAttachSlashCommand(m chatModel, args []string) (chatModel, tea.Cmd) {
+func handleMediaAttachSlashCommand(m chatModel, args []string, expectedKind string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /media attach <path>\nTip: this inserts @path into the composer so the next send attaches the media file."})
+		usage := "Usage: /media attach <path>"
+		if expectedKind == "image" {
+			usage = "Usage: /image attach <path>"
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: usage})
 		m.refreshViewport()
 		return m, nil
 	}
-	token, err := mentionTokenForComposer(m.workspace, strings.Join(args, " "))
+	draft, err := buildAttachmentDraft(m.workspace, strings.Join(args, " "))
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 		m.refreshViewport()
 		return m, nil
 	}
-	draft := strings.TrimSpace(m.textarea.Value())
-	draft = strings.TrimSpace(strings.Join([]string{draft, token}, " "))
-	m.textarea.SetValue(draft)
-	m.adjustInputHeight()
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Inserted %s into the composer. Send the next turn to attach it.", token)})
+	if expectedKind != "" && draft.Kind != expectedKind {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Expected a %s attachment, got %s.", expectedKind, draft.Kind)})
+		m.refreshViewport()
+		return m, nil
+	}
+	m.appendPendingAttachment(draft)
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Attached %s to the composer.", draft.Label)})
 	m.refreshViewport()
 	return m, nil
 }
@@ -985,24 +980,19 @@ func handleMentionSlashCommand(m chatModel, args []string, input string, draft s
 		return m, nil
 	}
 	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /mention <path>\nTip: the command inserts @path into the composer so the next send attaches that file."})
+		return m.openMentionPicker("", "")
+	}
+	query := strings.Join(args, " ")
+	attachment, err := buildAttachmentDraft(m.workspace, query)
+	if err == nil {
+		m.appendPendingAttachment(attachment)
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Attached %s to the composer.", attachment.Label)})
 		m.refreshViewport()
 		return m, nil
 	}
-	token, err := mentionTokenForComposer(m.workspace, strings.Join(args, " "))
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
-		m.refreshViewport()
-		return m, nil
-	}
-	nextDraft := strings.TrimSpace(strings.TrimPrefix(draft, input))
-	nextDraft = strings.TrimSpace(strings.Join([]string{nextDraft, token}, " "))
-	m.textarea.SetValue(nextDraft)
-	m.adjustInputHeight()
-	m.refreshSlashHints()
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Inserted %s into the composer. Send the next turn to attach it.", token)})
-	m.refreshViewport()
-	return m, nil
+	_ = input
+	_ = draft
+	return m.openMentionPicker(query, "")
 }
 
 func handleInitSlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {

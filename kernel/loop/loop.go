@@ -426,7 +426,7 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 			"outcome":         attempt.Outcome,
 			"model_lane":      l.currentTurn.ModelRoute.Lane,
 		}
-		l.observer().OnExecutionEvent(ctx, event)
+		port.ObserveExecutionEvent(ctx, l.observer(), event)
 		if strings.TrimSpace(attempt.FailoverTo) != "" {
 			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
 			switchEvent.Model = attempt.CandidateModel
@@ -435,13 +435,13 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 				"failover_to":     attempt.FailoverTo,
 				"model_lane":      l.currentTurn.ModelRoute.Lane,
 			}
-			l.observer().OnExecutionEvent(ctx, switchEvent)
+			port.ObserveExecutionEvent(ctx, l.observer(), switchEvent)
 		}
 	}
 	if exhausted && len(metadata.Attempts) > 0 {
 		event := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
 		event.Model = metadata.ActualModel
-		l.observer().OnExecutionEvent(ctx, event)
+		port.ObserveExecutionEvent(ctx, l.observer(), event)
 	}
 }
 
@@ -568,7 +568,7 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 			},
 		})
 	}
-	l.observer().OnExecutionEvent(ctx, port.ExecutionEvent{
+	port.ObserveExecutionEvent(ctx, l.observer(), port.ExecutionEvent{
 		Type:         port.ExecutionToolStarted,
 		EventID:      l.nextEventID(string(port.ExecutionToolStarted)),
 		EventVersion: 1,
@@ -609,7 +609,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 ) port.ToolResult {
 	normalizedErr := normalizeToolError(beforeErr)
 	result := buildToolResult(call.ID, nil, beforeErr)
-	l.observer().OnToolCall(ctx, port.ToolCallEvent{
+	port.ObserveToolCall(ctx, l.observer(), port.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -626,7 +626,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 	}
 	event.Error = normalizedErr.Error()
 	appendToolErrorMetadata(&event, normalizedErr)
-	l.observer().OnExecutionEvent(ctx, event)
+	port.ObserveExecutionEvent(ctx, l.observer(), event)
 	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, 0, normalizedErr)
 	return result
@@ -643,7 +643,7 @@ func (l *AgentLoop) observeToolCompletion(
 	output []byte,
 	err error,
 ) {
-	l.observer().OnToolCall(ctx, port.ToolCallEvent{
+	port.ObserveToolCall(ctx, l.observer(), port.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -664,7 +664,7 @@ func (l *AgentLoop) observeToolCompletion(
 		appendToolErrorMetadata(&event, err)
 	}
 	appendToolExecutionMetadata(&event, output)
-	l.observer().OnExecutionEvent(ctx, event)
+	port.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
 func (l *AgentLoop) emitToolLifecycleAfter(
@@ -731,7 +731,7 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			l.observer().OnError(context.Background(), port.ErrorEvent{
+			port.ObserveError(context.Background(), l.observer(), port.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,
@@ -949,7 +949,7 @@ func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEv
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			l.observer().OnError(context.Background(), port.ErrorEvent{
+			port.ObserveError(context.Background(), l.observer(), port.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -978,7 +978,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		"tokens": usage.TotalTokens,
 	}
 	appendExecutionErrorMetadata(&runEvent, err)
-	l.observer().OnExecutionEvent(context.Background(), runEvent)
+	port.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,

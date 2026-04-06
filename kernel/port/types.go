@@ -40,6 +40,7 @@ type ContentPartType string
 const (
 	ContentPartText        ContentPartType = "text"
 	ContentPartReasoning   ContentPartType = "reasoning"
+	ContentPartFileRef     ContentPartType = "file_ref"
 	ContentPartInputImage  ContentPartType = "input_image"
 	ContentPartOutputImage ContentPartType = "output_image"
 	ContentPartInputAudio  ContentPartType = "input_audio"
@@ -56,6 +57,30 @@ type ContentPart struct {
 	DataBase64 string          `json:"data_base64,omitempty"`
 	URL        string          `json:"url,omitempty"`
 	SourcePath string          `json:"source_path,omitempty"`
+	Attachment *AttachmentRef  `json:"attachment,omitempty"`
+	Mention    *MentionBinding `json:"mention,omitempty"`
+}
+
+// AttachmentRef 描述一个可重复消费的结构化附件引用。
+type AttachmentRef struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Path      string `json:"path,omitempty"`
+	URI       string `json:"uri,omitempty"`
+	MIMEType  string `json:"mime_type,omitempty"`
+	SizeBytes int64  `json:"size_bytes,omitempty"`
+	Digest    string `json:"digest,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+// MentionBinding 描述文本 mention 与其解析目标的绑定关系。
+type MentionBinding struct {
+	Trigger string `json:"trigger,omitempty"`
+	Value   string `json:"value,omitempty"`
+	Target  string `json:"target,omitempty"`
+	Label   string `json:"label,omitempty"`
+	Start   int    `json:"start,omitempty"`
+	End     int    `json:"end,omitempty"`
 }
 
 // TokenUsage 记录 token 用量。

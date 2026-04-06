@@ -215,3 +215,82 @@ func TestFileTaskRuntime_AtomicJobItemExecutorBindingPersists(t *testing.T) {
 		t.Fatalf("unexpected persisted atomic item: %+v", items[0])
 	}
 }
+
+func TestMemoryTaskRuntime_TaskSummariesAndRelations(t *testing.T) {
+	rt := NewMemoryTaskRuntime()
+	ctx := context.Background()
+	if err := rt.UpsertTask(ctx, TaskRecord{
+		ID:              "task-1",
+		AgentName:       "worker",
+		Goal:            "inspect repo",
+		Status:          TaskPending,
+		DependsOn:       []string{"task-0"},
+		SessionID:       "sess-1",
+		ParentSessionID: "sess-root",
+		JobID:           "job-1",
+		JobItemID:       "item-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	graph, ok := any(rt).(TaskGraphRuntime)
+	if !ok {
+		t.Fatal("memory task runtime should implement TaskGraphRuntime")
+	}
+	summaries, err := graph.ListTaskSummaries(ctx, TaskQuery{SessionID: "sess-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	summary := summaries[0]
+	if summary.Handle.SessionID != "sess-1" || summary.Handle.ParentSessionID != "sess-root" || summary.Handle.JobID != "job-1" {
+		t.Fatalf("unexpected handle: %+v", summary.Handle)
+	}
+	if len(summary.Relations) != 5 {
+		t.Fatalf("expected dependency/session/parent/job/job_item relations, got %+v", summary.Relations)
+	}
+	relations, err := graph.ListTaskRelations(ctx, "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(relations) != len(summary.Relations) {
+		t.Fatalf("relation count mismatch: %+v vs %+v", relations, summary.Relations)
+	}
+}
+
+func TestFileTaskRuntime_TaskSummaryQueriesPersist(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "task-summary")
+	ctx := context.Background()
+	rt, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertTask(ctx, TaskRecord{
+		ID:        "task-a",
+		AgentName: "worker",
+		Goal:      "resume thread",
+		Status:    TaskPending,
+		SessionID: "sess-a",
+		JobID:     "job-a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, ok := any(reloaded).(TaskGraphRuntime)
+	if !ok {
+		t.Fatal("file task runtime should implement TaskGraphRuntime")
+	}
+	summaries, err := graph.ListTaskSummaries(ctx, TaskQuery{SessionID: "sess-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Handle.JobID != "job-a" {
+		t.Fatalf("unexpected summaries: %+v", summaries)
+	}
+}

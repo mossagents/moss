@@ -92,6 +92,15 @@ func (r *FileTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]TaskR
 		if query.ClaimedBy != "" && t.ClaimedBy != query.ClaimedBy {
 			continue
 		}
+		if query.SessionID != "" && t.SessionID != query.SessionID {
+			continue
+		}
+		if query.ParentSessionID != "" && t.ParentSessionID != query.ParentSessionID {
+			continue
+		}
+		if query.JobID != "" && t.JobID != query.JobID {
+			continue
+		}
 		cp := t
 		cp.DependsOn = append([]string(nil), t.DependsOn...)
 		out = append(out, cp)
@@ -149,6 +158,26 @@ func (r *FileTaskRuntime) ClaimNextReady(_ context.Context, claimer string, pref
 	cp := *best
 	cp.DependsOn = append([]string(nil), best.DependsOn...)
 	return &cp, nil
+}
+
+func (r *FileTaskRuntime) ListTaskSummaries(ctx context.Context, query TaskQuery) ([]TaskSummary, error) {
+	tasks, err := r.ListTasks(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]TaskSummary, 0, len(tasks))
+	for _, task := range tasks {
+		out = append(out, TaskSummaryFromRecord(task))
+	}
+	return out, nil
+}
+
+func (r *FileTaskRuntime) ListTaskRelations(ctx context.Context, taskID string) ([]TaskRelation, error) {
+	task, err := r.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	return TaskRelationsFromRecord(*task), nil
 }
 
 func (r *FileTaskRuntime) load() error {

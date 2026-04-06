@@ -37,6 +37,22 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		}
 		sections = append(sections, composerHintStyle.Render("  "+strings.Join(queueLines, "  •  ")))
 	}
+	if len(m.pendingAttachments) > 0 {
+		rows := make([]string, 0, len(m.pendingAttachments)+1)
+		rows = append(rows, fmt.Sprintf("Attachments (%d)", len(m.pendingAttachments)))
+		for i, item := range m.pendingAttachments {
+			if i >= 5 {
+				rows = append(rows, fmt.Sprintf("...and %d more", len(m.pendingAttachments)-i))
+				break
+			}
+			rows = append(rows, fmt.Sprintf("[%s] %s", item.Kind, truncateForQueue(item.Label, layout.MainWidth-24)))
+		}
+		rows = append(rows, "Ctrl+X removes the latest attachment")
+		sections = append(sections, composerHintStyle.Render("  "+strings.Join(rows, "  •  ")))
+	}
+	if progress := m.renderProgressBlock(layout.MainWidth); strings.TrimSpace(progress) != "" {
+		sections = append(sections, progress)
+	}
 	if m.streaming {
 		sections = append(sections, runningStyle.Render(fmt.Sprintf(
 			"  %s Running (%s, double Esc to cancel current run)",
@@ -77,6 +93,8 @@ func (m chatModel) renderStatusPane(width int) string {
 		status = statusHintStyle.Render("↑↓ choose schedule • e run now • d delete • r refresh • Esc close")
 	} else if m.pendAsk != nil {
 		status = statusHintStyle.Render("Type your reply and press Enter • double Esc cancel run • Ctrl+C clear input")
+	} else if len(m.pendingAttachments) > 0 {
+		status = statusHintStyle.Render("Enter send • Ctrl+X remove latest attachment • Shift+Enter newline")
 	} else {
 		status = statusHintStyle.Render(truncateDisplayWidth(m.renderFooterHelpLine(), width))
 	}

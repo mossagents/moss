@@ -180,7 +180,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 				"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
 				"Prompt":    cfg.prompt,
 			},
-			"Using deep harness defaults: persistent sessions/memories + context offload + async task lifecycle.",
+			"Using deep harness defaults: persistent threads/memories + context offload + async task lifecycle.",
 		)
 	}
 
@@ -223,7 +223,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 
 	if !cfg.execJSON {
 		fmt.Println()
-		fmt.Printf("✅ Done (session: %s, steps: %d, tokens: %d", result.SessionID, result.Steps, report.Tokens)
+		fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", result.SessionID, result.Steps, report.Tokens)
 		if report.EstimatedCostUSD > 0 {
 			fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
 		}
@@ -246,5 +246,5 @@ func printResumeCandidates(summaries []session.SessionSummary, snapshotCounts ma
 			summary.ID, summary.Status, summary.Steps, snapshotCounts[summary.ID], summary.CreatedAt, summary.Goal)
 	}
 	fmt.Println()
-	fmt.Println("Use `mosscode resume --latest` or `mosscode resume --session <id>` to continue a thread.")
+	fmt.Println("Use `mosscode resume --latest` or `mosscode resume --session <id>` to continue the thread.")
 }

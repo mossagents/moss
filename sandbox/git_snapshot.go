@@ -15,15 +15,15 @@ import (
 
 // GitWorktreeSnapshotStore 使用 git metadata 目录持久化 ghost-state 快照。
 type GitWorktreeSnapshotStore struct {
-	root    string
-	timeout time.Duration
+	root     string
+	timeout  time.Duration
 	observer port.ExecutionObserver
 }
 
 func NewGitWorktreeSnapshotStore(root string) *GitWorktreeSnapshotStore {
 	return &GitWorktreeSnapshotStore{
-		root:    root,
-		timeout: 10 * time.Second,
+		root:     root,
+		timeout:  10 * time.Second,
 		observer: port.NoOpObserver{},
 	}
 }
@@ -68,7 +68,7 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	if err := persistSnapshot(filepath.Join(gitDir, "moss-snapshots"), snapshot); err != nil {
 		return nil, err
 	}
-	s.observer.OnExecutionEvent(ctx, port.ExecutionEvent{
+	port.ObserveExecutionEvent(ctx, s.observer, port.ExecutionEvent{
 		Type:      port.ExecutionSnapshotCreated,
 		SessionID: snapshot.SessionID,
 		Timestamp: snapshot.CreatedAt,
