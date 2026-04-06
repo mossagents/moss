@@ -110,7 +110,7 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-3 pt-1 text-on-surface-variant/70 leading-relaxed whitespace-pre-wrap font-mono text-[11px] max-h-48 overflow-y-auto border-t border-outline-variant/30">
+        <div className="px-4 pb-4 pt-2 text-on-surface-variant/80 leading-[1.8] whitespace-pre-wrap text-[13px] max-h-64 overflow-y-auto border-t border-outline-variant/30">
           {text}
         </div>
       )}
