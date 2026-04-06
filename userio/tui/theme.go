@@ -140,7 +140,7 @@ func applyTheme(name string) {
 		dialogSelectedItemStyle = lipgloss.NewStyle().Padding(0, 1).Background(lipgloss.Color(hexPrimary)).Foreground(lipgloss.Color("#FFFFFF"))
 		composerHintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted))
 		statusHintStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted))
-		userMessageStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgUserMsg))
+		userMessageStyle = lipgloss.NewStyle()
 
 	default: // themeDefault — ANSI 语义色，亮色/暗色终端均可用
 		colorPrimary = lipgloss.Color("5")   // ANSI magenta
@@ -192,6 +192,6 @@ func applyTheme(name string) {
 		dialogSelectedItemStyle = lipgloss.NewStyle().Padding(0, 1).Reverse(true)
 		composerHintStyle = lipgloss.NewStyle().Foreground(colorMuted)
 		statusHintStyle = lipgloss.NewStyle().Foreground(colorMuted)
-		userMessageStyle = lipgloss.NewStyle().Background(colorUserMsgBg)
+		userMessageStyle = lipgloss.NewStyle()
 	}
 }

@@ -157,12 +157,18 @@ func (m chatModel) renderSlashPopup(width int) string {
 		if summaryWidth > 0 && len(summary) > summaryWidth {
 			summary = summary[:summaryWidth-1] + "…"
 		}
-		numStr := halfMutedStyle.Render(num)
-		nameStr := lipgloss.NewStyle().Width(nameWidth).Render(name)
-		summaryStr := mutedStyle.Render(summary)
-		row := fmt.Sprintf(" %s %s  %s", numStr, nameStr, summaryStr)
+		var row string
 		if i == p.cursor {
-			row = dialogSelectedItemStyle.Width(popupWidth).Render(row)
+			// 选中项：用 › 替代数字，命令名高亮，不使用背景色（避免 ANSI reset 导致颜色混乱）
+			cursor := runningStyle.Render("›")
+			nameStr := lipgloss.NewStyle().Width(nameWidth).Bold(true).Foreground(colorPrimary).Render(name)
+			summaryStr := halfMutedStyle.Render(summary)
+			row = fmt.Sprintf(" %s %s  %s", cursor, nameStr, summaryStr)
+		} else {
+			numStr := halfMutedStyle.Render(num)
+			nameStr := lipgloss.NewStyle().Width(nameWidth).Render(name)
+			summaryStr := mutedStyle.Render(summary)
+			row = fmt.Sprintf(" %s %s  %s", numStr, nameStr, summaryStr)
 		}
 		rows = append(rows, row)
 	}

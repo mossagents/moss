@@ -157,7 +157,6 @@ var (
 	statusHintStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
 
-	// 用户消息背景高亮（P9）
-	userMessageStyle = lipgloss.NewStyle().
-				Background(colorUserMsgBg)
+	// 用户消息样式（P9）：不加背景色，避免 dot ANSI reset 导致背景只出现在圆点后
+	userMessageStyle = lipgloss.NewStyle()
 )

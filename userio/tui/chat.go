@@ -854,10 +854,16 @@ func (m *chatModel) refreshSlashHints() {
 	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills)
 	// raw（保留末尾空格）传入 buildSlashPopup，避免 applySlashCompletion 写入 "/cmd " 后
 	// TrimSpace 导致弹窗立即重建（看起来选择无效）。
-	m.slashPopup = buildSlashPopup(raw, m.customCommands, m.discoveredSkills)
-	if m.slashPopup != nil {
-		m.slashPopup.cursor = 0
+	newPopup := buildSlashPopup(raw, m.customCommands, m.discoveredSkills)
+	if newPopup == nil {
+		m.slashPopup = nil
+		return
 	}
+	// 候选项列表未变化时保留当前光标位置，避免 textarea 内部 tick 消息触发重建后光标归零。
+	if m.slashPopup != nil && len(m.slashPopup.items) == len(newPopup.items) {
+		newPopup.cursor = m.slashPopup.cursor
+	}
+	m.slashPopup = newPopup
 }
 
 func (m chatModel) currentSlashHints() []string {
