@@ -237,12 +237,8 @@ func (a *agentState) refreshSystemPrompt() error {
 	}
 	a.mu.Lock()
 	sess.Config.SystemPrompt = nextPrompt
-	if len(sess.Messages) > 0 && sess.Messages[0].Role == port.RoleSystem {
-		sess.Messages[0].ContentParts = []port.ContentPart{port.TextPart(nextPrompt)}
-	} else {
-		sess.Messages = append([]port.Message{{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart(nextPrompt)}}}, sess.Messages...)
-	}
 	a.mu.Unlock()
+	sess.UpdateSystemPrompt(nextPrompt)
 	if store != nil {
 		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()

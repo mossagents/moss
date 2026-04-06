@@ -75,10 +75,11 @@ func PromptMessages(sess *Session) []port.Message {
 		return nil
 	}
 	st := ReadPromptContextState(sess)
+	msgs := sess.CopyMessages()
 	if st.Version == 0 {
-		return lightweightChatPromptMessages(sess.Messages)
+		return lightweightChatPromptMessages(msgs)
 	}
-	return BuildPromptMessages(sess.Messages, st)
+	return BuildPromptMessages(msgs, st)
 }
 
 func BuildPromptMessages(messages []port.Message, st PromptContextState) []port.Message {

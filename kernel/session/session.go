@@ -115,18 +115,69 @@ type Session struct {
 	Budget    Budget         `json:"budget"`
 	CreatedAt time.Time      `json:"created_at"`
 	EndedAt   time.Time      `json:"ended_at,omitempty"`
+	mu        sync.RWMutex   `json:"-"` // protects Messages for concurrent access
 }
 
 // AppendMessage 追加一条消息到对话历史。
 func (s *Session) AppendMessage(msg port.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Messages = append(s.Messages, msg)
+}
+
+// ReplaceMessages 原子地替换完整的消息历史。
+func (s *Session) ReplaceMessages(msgs []port.Message) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Messages = msgs
+}
+
+// CopyMessages 在读锁保护下返回消息历史的浅拷贝。
+// 供需要并发安全读取的调用方使用（如 PromptMessages）。
+func (s *Session) CopyMessages() []port.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.Messages) == 0 {
+		return nil
+	}
+	out := make([]port.Message, len(s.Messages))
+	copy(out, s.Messages)
+	return out
+}
+
+// UpdateSystemPrompt 原子地更新或插入系统提示消息。
+// 若消息历史的第一条是 system 消息则原地更新，否则前插。
+func (s *Session) UpdateSystemPrompt(prompt string) {
+	newMsg := port.Message{
+		Role:         port.RoleSystem,
+		ContentParts: []port.ContentPart{port.TextPart(prompt)},
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.Messages) > 0 && s.Messages[0].Role == port.RoleSystem {
+		s.Messages[0].ContentParts = newMsg.ContentParts
+	} else {
+		s.Messages = append([]port.Message{newMsg}, s.Messages...)
+	}
 }
 
 // TruncateMessages 按 token 预算截断对话历史，保留最近的消息。
 // counter 函数返回单条消息的 token 数。
+// 系统提示消息（role=system）不会被截断。
 func (s *Session) TruncateMessages(maxTokens int, counter func(port.Message) int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if maxTokens <= 0 || len(s.Messages) == 0 {
 		return
+	}
+
+	// 定位 system 消息的边界，确保截断不会移除系统提示。
+	systemBoundary := 0
+	for i, msg := range s.Messages {
+		if msg.Role == port.RoleSystem {
+			systemBoundary = i + 1
+		}
 	}
 
 	total := 0
@@ -138,6 +189,11 @@ func (s *Session) TruncateMessages(maxTokens int, counter func(port.Message) int
 			break
 		}
 		total += cost
+	}
+
+	// 截断点不得越过系统消息边界。
+	if cutoff < systemBoundary {
+		cutoff = systemBoundary
 	}
 
 	if cutoff > 0 && cutoff < len(s.Messages) {

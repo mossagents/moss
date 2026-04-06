@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/mossagents/moss/kernel/port"
@@ -26,13 +27,24 @@ func NewScopedWorkspace(prefix string, inner port.Workspace) *ScopedWorkspace {
 }
 
 func (s *ScopedWorkspace) scopedPath(p string) (string, error) {
+	// Normalize path separators and strip leading slash.
 	p = strings.ReplaceAll(p, "\\", "/")
-	// 防止路径逃逸
-	if strings.Contains(p, "..") {
-		return "", fmt.Errorf("path %q contains '..' which is not allowed in scoped workspace", p)
-	}
 	p = strings.TrimPrefix(p, "/")
-	return s.prefix + p, nil
+
+	// Clean the path to resolve any "." or ".." segments before checking.
+	// path.Clean operates on slash-separated paths (not OS-specific).
+	cleaned := path.Clean("/" + p) // prepend "/" so Clean doesn't strip the root
+
+	// Reject any path that escapes the scoped root after normalization.
+	for _, seg := range strings.Split(cleaned, "/") {
+		if seg == ".." {
+			return "", fmt.Errorf("path %q escapes scoped workspace", p)
+		}
+	}
+
+	// Strip the leading "/" re-added for cleaning, then apply the prefix.
+	rel := strings.TrimPrefix(cleaned, "/")
+	return s.prefix + rel, nil
 }
 
 func (s *ScopedWorkspace) ReadFile(ctx context.Context, path string) ([]byte, error) {

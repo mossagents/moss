@@ -94,10 +94,11 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 
 	sysPrompt := k.extendSystemPrompt(cfg.SystemPrompt)
 	if sysPrompt != "" {
-		sess.Messages = append([]port.Message{{
+		existing := sess.CopyMessages()
+		sess.ReplaceMessages(append([]port.Message{{
 			Role:         port.RoleSystem,
 			ContentParts: []port.ContentPart{port.TextPart(sysPrompt)},
-		}}, sess.Messages...)
+		}}, existing...))
 	}
 
 	k.emitSessionLifecycle(ctx, session.LifecycleEvent{

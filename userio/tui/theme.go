@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -12,6 +13,10 @@ const (
 	themeDark    = "dark"
 	themePlain   = "plain"
 )
+
+// themeMu guards applyTheme to prevent concurrent style mutation
+// (e.g. when multiple embedded TUI instances or tests call applyTheme).
+var themeMu sync.Mutex
 
 func init() {
 	applyTheme(resolveThemeName(os.Getenv("MOSSCODE_THEME")))
@@ -31,6 +36,8 @@ func resolveThemeName(name string) string {
 }
 
 func applyTheme(name string) {
+	themeMu.Lock()
+	defer themeMu.Unlock()
 	switch resolveThemeName(name) {
 
 	case themePlain:

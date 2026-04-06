@@ -83,7 +83,7 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 
 		// 计算当前总 token
 		totalTokens := 0
-		for _, msg := range sess.Messages {
+		for _, msg := range sess.CopyMessages() {
 			totalTokens += cfg.countTokens(msg)
 		}
 
@@ -93,7 +93,7 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 
 		// 分离 system 消息和对话消息
 		var systemMsgs, dialogMsgs []port.Message
-		for _, msg := range sess.Messages {
+		for _, msg := range sess.CopyMessages() {
 			if msg.Role == port.RoleSystem {
 				systemMsgs = append(systemMsgs, msg)
 			} else {
@@ -116,8 +116,11 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 				Role:         port.RoleSystem,
 				ContentParts: []port.ContentPart{port.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
 			}
-			sess.Messages = append(systemMsgs, summary)
-			sess.Messages = append(sess.Messages, recentMsgs...)
+			newMsgs := make([]port.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+			newMsgs = append(newMsgs, systemMsgs...)
+			newMsgs = append(newMsgs, summary)
+			newMsgs = append(newMsgs, recentMsgs...)
+			sess.ReplaceMessages(newMsgs)
 		}
 
 		return next(ctx)

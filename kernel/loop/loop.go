@@ -510,6 +510,13 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		return l.handleMissingTool(ctx, sess, call, repairedArgs)
 	}
 
+	// Validate required fields declared in the tool's input schema.
+	// This is a best-effort guard against malformed or prompt-injected args.
+	if err := validateRequiredToolArgs(spec, repairedArgs); err != nil {
+		schemaErr := fmt.Errorf("tool %q argument validation failed: %w", call.Name, err)
+		return buildToolResult(call.ID, nil, schemaErr)
+	}
+
 	l.emitToolStarted(ctx, sess, call, spec, repairedArgs)
 
 	beforeErr := l.runBeforeToolCallMiddleware(ctx, sess, spec, call.Arguments)
@@ -547,6 +554,33 @@ func buildToolResult(callID string, output []byte, err error) port.ToolResult {
 		ContentParts: []port.ContentPart{port.TextPart(string(output))},
 	}
 }
+
+// validateRequiredToolArgs checks that all fields listed as "required" in the
+// tool's input schema are present in the provided (repaired) arguments.
+// It is a best-effort guard: if the schema cannot be parsed the call proceeds.
+func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
+	if len(spec.InputSchema) == 0 || len(args) == 0 {
+		return nil
+	}
+	var schema struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(spec.InputSchema, &schema); err != nil || len(schema.Required) == 0 {
+		return nil // best-effort: unparseable schema or no required fields
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(args, &obj); err != nil {
+		return fmt.Errorf("arguments must be a JSON object: %w", err)
+	}
+	for _, field := range schema.Required {
+		if _, ok := obj[field]; !ok {
+			return fmt.Errorf("missing required argument %q", field)
+		}
+	}
+	return nil
+}
+
+
 
 func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call port.ToolCall, repairedArgs json.RawMessage) port.ToolResult {
 	err := fmt.Errorf("tool %q not found or not allowed in current turn", call.Name)

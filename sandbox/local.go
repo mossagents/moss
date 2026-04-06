@@ -215,6 +215,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 		}
 	}
 
+	// 防止通过显式传入 sh/bash 等 binary + -c 参数绕过 shell chaining 检查。
+	if err := rejectShellBinaryArgs(cmd, args); err != nil {
+		return port.ExecOutput{}, err
+	}
+
 	c := exec.CommandContext(ctx, cmd, args...)
 	workDir := s.root
 	if wd := strings.TrimSpace(req.WorkingDir); wd != "" {
@@ -526,6 +531,30 @@ func rejectShellChaining(cmd string) error {
 				"command contains %s; use the 'args' field to pass arguments separately",
 				d.name,
 			)
+		}
+	}
+	return nil
+}
+
+// shellBinaries is the set of binary names that spawn an interactive shell.
+// Commands with these names must have their arguments validated for chaining
+// operators even when the shell-wrap path is not taken.
+var shellBinaries = map[string]bool{
+	"sh": true, "bash": true, "zsh": true, "fish": true, "ksh": true,
+	"cmd": true, "cmd.exe": true, "powershell": true, "powershell.exe": true, "pwsh": true, "pwsh.exe": true,
+}
+
+// rejectShellBinaryArgs guards against bypassing rejectShellChaining by
+// explicitly passing a shell binary (e.g. cmd="sh", args=["-c", "ls; rm -rf /"]).
+// For each argument passed to a known shell binary it checks for chaining operators.
+func rejectShellBinaryArgs(cmd string, args []string) error {
+	base := strings.ToLower(filepath.Base(cmd))
+	if !shellBinaries[base] {
+		return nil
+	}
+	for _, arg := range args {
+		if err := rejectShellChaining(arg); err != nil {
+			return fmt.Errorf("shell binary %q arg %q: %w", filepath.Base(cmd), arg, err)
 		}
 	}
 	return nil

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -51,15 +52,20 @@ func newMentionPickerState(workspace, query, replaceToken string) *mentionPicker
 
 // fileIndexEntry 是某个工作区下的文件列表缓存。
 type fileIndexEntry struct {
-	once  sync.Once
-	paths []string // 相对于 workspace 的路径
+	mu      sync.Mutex
+	paths   []string  // 相对于 workspace 的路径
+	builtAt time.Time // 构建时间，用于 TTL 失效
 }
 
 // fileIndexStore 以 workspace 绝对路径为键缓存文件列表。
 var fileIndexStore sync.Map // map[string]*fileIndexEntry
 
 // ensureFileIndex 懒初始化指定工作区的文件列表（最多 fileIndexMaxSize 条）。
-const fileIndexMaxSize = 5000
+// 缓存有效期为 fileIndexTTL，过期后自动重建。
+const (
+	fileIndexMaxSize = 5000
+	fileIndexTTL     = 30 * time.Second
+)
 
 // skippedDirs 在文件索引构建时跳过的目录名。
 var skippedDirs = map[string]bool{
@@ -72,31 +78,37 @@ var skippedDirs = map[string]bool{
 func ensureFileIndex(workspace string) []string {
 	v, _ := fileIndexStore.LoadOrStore(workspace, &fileIndexEntry{})
 	entry := v.(*fileIndexEntry)
-	entry.once.Do(func() {
-		paths := make([]string, 0, 512)
-		_ = filepath.WalkDir(workspace, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return nil
-			}
-			if d.IsDir() {
-				if skippedDirs[strings.ToLower(d.Name())] {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			rel, relErr := filepath.Rel(workspace, path)
-			if relErr != nil {
-				rel = path
-			}
-			paths = append(paths, filepath.Clean(rel))
-			if len(paths) >= fileIndexMaxSize {
-				return fs.SkipAll
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	// Return cached result if still within TTL.
+	if len(entry.paths) > 0 && time.Since(entry.builtAt) < fileIndexTTL {
+		return entry.paths
+	}
+	// Build (or rebuild) the index.
+	paths := make([]string, 0, 512)
+	_ = filepath.WalkDir(workspace, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skippedDirs[strings.ToLower(d.Name())] {
+				return filepath.SkipDir
 			}
 			return nil
-		})
-		sort.Strings(paths)
-		entry.paths = paths
+		}
+		rel, relErr := filepath.Rel(workspace, path)
+		if relErr != nil {
+			rel = path
+		}
+		paths = append(paths, filepath.Clean(rel))
+		if len(paths) >= fileIndexMaxSize {
+			return fs.SkipAll
+		}
+		return nil
 	})
+	sort.Strings(paths)
+	entry.paths = paths
+	entry.builtAt = time.Now()
 	return entry.paths
 }
 
