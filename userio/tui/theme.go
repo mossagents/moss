@@ -147,7 +147,7 @@ func applyTheme(name string) {
 		colorSecondary = lipgloss.Color("6") // ANSI cyan
 		colorSuccess = lipgloss.Color("2")   // ANSI green
 		colorError = lipgloss.Color("1")     // ANSI red
-		colorUser = lipgloss.Color("5")
+		colorUser = lipgloss.Color("4")
 		colorAssistant = lipgloss.Color("6")
 		colorMuted = lipgloss.AdaptiveColor{Light: "240", Dark: "245"}
 		colorHalfMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "247"}
@@ -178,7 +178,7 @@ func applyTheme(name string) {
 		halfMutedStyle = lipgloss.NewStyle().Foreground(colorHalfMuted)
 		panelBaseStyle = lipgloss.NewStyle()
 		panelMutedStyle = lipgloss.NewStyle()
-		inputBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorPrimary).Padding(0, 1)
+		inputBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Padding(0, 1)
 		sidebarBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Padding(1, 2)
 		sidebarTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 		sidebarSectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorSubtle)

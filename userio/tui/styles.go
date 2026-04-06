@@ -10,7 +10,7 @@ var (
 	colorSecondary = lipgloss.Color("6") // ANSI cyan
 	colorSuccess   = lipgloss.Color("2") // ANSI green
 	colorError     = lipgloss.Color("1") // ANSI red
-	colorUser      = lipgloss.Color("5") // ANSI magenta
+	colorUser      = lipgloss.Color("4") // ANSI blue（与 assistant cyan 同色族但不同色调）
 	colorAssistant = lipgloss.Color("6") // ANSI cyan
 
 	// 自适应灰度色：在亮色终端偏暗，在暗色终端偏亮
@@ -103,7 +103,7 @@ var (
 
 	inputBorderStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(colorPrimary).
+				BorderForeground(colorBorder).
 				Padding(0, 1)
 
 	sidebarBoxStyle = lipgloss.NewStyle().

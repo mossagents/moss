@@ -275,7 +275,7 @@ func (m chatModel) renderProgressBlock(width int) string {
 	}
 	innerWidth := max(20, width-4)
 	lines := make([]string, 0, len(m.progressTrail)+1)
-	lines = append(lines, panelTitleStyle.Render("Thinking"))
+	lines = append(lines, mutedStyle.Render("thinking"))
 	for i, snapshot := range m.progressTrail {
 		lines = append(lines, snapshot.renderTimelineEntry(m.now(), innerWidth, i == len(m.progressTrail)-1))
 	}
