@@ -79,6 +79,10 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 	if dialog == nil {
 		return ""
 	}
+	// transcript overlay は全画面表示（センタリング不要）
+	if dialog.ID() == overlayTranscript {
+		return dialog.View(m, layout.MainWidth, layout.BodyHeight)
+	}
 	width := min(88, max(52, layout.MainWidth-10))
 	overlay := dialog.View(m, width, layout.BodyHeight)
 	if strings.TrimSpace(overlay) == "" {

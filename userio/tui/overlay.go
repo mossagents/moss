@@ -8,7 +8,8 @@ import (
 type overlayID string
 
 const (
-	overlayAsk      overlayID = "ask"
+	overlayTranscript overlayID = "transcript"
+	overlayAsk        overlayID = "ask"
 	overlaySchedule overlayID = "schedule"
 	overlayModel    overlayID = "model"
 	overlayTheme    overlayID = "theme"
@@ -437,6 +438,10 @@ func (m chatModel) closeMentionOverlay() chatModel {
 func (m chatModel) activeOverlay() overlayDialog {
 	if m.overlays != nil {
 		switch m.overlays.Top() {
+		case overlayTranscript:
+			if m.transcriptOverlay != nil {
+				return transcriptOverlayDialog{}
+			}
 		case overlayAsk:
 			if m.askForm != nil && m.pendAsk != nil {
 				return askOverlayDialog{}
@@ -486,6 +491,9 @@ func (m chatModel) activeOverlay() overlayDialog {
 				return mentionOverlayDialog{}
 			}
 		}
+	}
+	if m.transcriptOverlay != nil {
+		return transcriptOverlayDialog{}
 	}
 	if m.askForm != nil && m.pendAsk != nil {
 		return askOverlayDialog{}

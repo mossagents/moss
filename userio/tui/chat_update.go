@@ -38,6 +38,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				return m, nil
 			}
 			return m.handleEsc()
+		case "ctrl+t":
+			if m.transcriptOverlay != nil {
+				return m.closeTranscriptOverlay(), nil
+			}
+			m.openTranscriptOverlay()
+			m = m.initTranscriptOverlay()
+			return m, nil
 		case "ctrl+o":
 			m.toolCollapsed = !m.toolCollapsed
 			m.refreshViewport()
@@ -107,10 +114,11 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case uiTickMsg:
-		if m.streaming || m.hasRunningToolCalls() {
+		if m.isRunning() {
 			m.refreshViewport()
+			return m, uiTickCmd() // 流式状态下保持 150ms 刷新（动画）
 		}
-		return m, uiTickCmd()
+		return m, uiTickIdleCmd() // 空闲时降至 5s 心跳（节省 CPU）
 
 	case notificationProgressMsg:
 		if msg.SetCurrent && strings.TrimSpace(msg.Snapshot.SessionID) != "" {

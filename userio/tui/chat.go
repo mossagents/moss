@@ -119,6 +119,7 @@ type chatModel struct {
 	forkPicker            *forkPickerState
 	agentPicker           *agentPickerState
 	mentionPicker         *mentionPickerState
+	transcriptOverlay     *transcriptOverlayState
 	overlays              *overlayStack
 	finished              bool   // session 已结束
 	result                string // 最终结果
@@ -1192,7 +1193,17 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []p
 }
 
 func uiTickCmd() tea.Cmd {
-	return tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg { return uiTickMsg{} })
+	return tea.Tick(150*time.Millisecond, func(time.Time) tea.Msg { return uiTickMsg{} })
+}
+
+// uiTickIdleCmd 在非流式状态下使用低频心跳（节省 CPU）。
+func uiTickIdleCmd() tea.Cmd {
+	return tea.Tick(5*time.Second, func(time.Time) tea.Msg { return uiTickMsg{} })
+}
+
+// isRunning 返回 true 当前有正在执行的 agent turn（streaming 或 tools 正在运行）。
+func (m chatModel) isRunning() bool {
+	return m.streaming || m.hasRunningToolCalls()
 }
 
 func cloneMessageMeta(meta map[string]any) map[string]any {
