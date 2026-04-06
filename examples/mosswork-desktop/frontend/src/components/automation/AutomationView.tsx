@@ -1,5 +1,4 @@
 import type { AutomationTask } from "@/lib/types";
-import { cn } from "@/lib/cn";
 
 function scheduleLabel(expr: string): string {
   const map: Record<string, string> = {
