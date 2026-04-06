@@ -149,21 +149,18 @@ func (s *ChatService) SendMessage(content string) error {
 		s.mu.Unlock()
 		return fmt.Errorf("service not initialized")
 	}
+	// Capture sess locally so mid-run session switches don't affect this goroutine.
+	sess := s.sess
+	sessID := sess.ID
 	s.mu.Unlock()
 
 	if strings.HasPrefix(trimmed, "/") {
 		output, err := s.handleSlashCommand(trimmed)
 		if err != nil {
-			emitEvent("chat:error", map[string]any{"message": err.Error()})
+			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
 		} else if strings.TrimSpace(output) != "" {
-			emitEvent("chat:text", map[string]any{"content": output})
+			emitEvent("chat:text", map[string]any{"content": output, "session_id": sessID})
 		}
-		s.mu.Lock()
-		sessID := ""
-		if s.sess != nil {
-			sessID = s.sess.ID
-		}
-		s.mu.Unlock()
 		emitEvent("chat:done", map[string]any{
 			"session_id":  sessID,
 			"steps":       0,
@@ -178,18 +175,14 @@ func (s *ChatService) SendMessage(content string) error {
 	s.running = true
 	s.mu.Unlock()
 
-	s.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
-
-	// Tag all events emitted during this run with the session ID
-	s.wailsIO.SetSessionID(s.sess.ID)
-	sessID := s.sess.ID
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
 
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r), "session_id": sessID})
 			}
-			if err := s.persistSession(s.sess); err != nil {
+			if err := s.persistSession(sess); err != nil {
 				slog.Debug("persist session after run failed", slog.Any("error", err))
 			}
 			s.mu.Lock()
@@ -200,12 +193,14 @@ func (s *ChatService) SendMessage(content string) error {
 		}()
 
 		ctx, cancel := context.WithCancel(context.Background())
+		// Inject session_id into context — wailsIO reads it per-event, no shared state.
+		ctx = context.WithValue(ctx, sessionIDKey{}, sessID)
 		s.mu.Lock()
 		s.cancel = cancel
 		s.mu.Unlock()
 		defer cancel()
 
-		result, err := s.k.RunWithUserIO(ctx, s.sess, s.wailsIO)
+		result, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO)
 		if err != nil {
 			if ctx.Err() != nil {
 				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": sessID})
@@ -215,8 +210,7 @@ func (s *ChatService) SendMessage(content string) error {
 			return
 		}
 
-		// Fire-and-forget: generate a display title after the first exchange.
-		go s.maybeGenerateTitle(s.sess)
+		go s.maybeGenerateTitle(sess)
 
 		emitEvent("chat:done", map[string]any{
 			"session_id":  result.SessionID,
@@ -247,45 +241,22 @@ func (s *ChatService) StopAgent() {
 	}
 }
 
-// stopAndWait cancels any running agent and waits up to timeout for it to stop.
-func (s *ChatService) stopAndWait(timeout time.Duration) {
-	s.mu.Lock()
-	running := s.running
-	cancel := s.cancel
-	s.mu.Unlock()
-	if !running {
-		return
-	}
-	if cancel != nil {
-		cancel()
-	}
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		time.Sleep(30 * time.Millisecond)
-		s.mu.Lock()
-		running = s.running
-		s.mu.Unlock()
-		if !running {
-			return
-		}
-	}
-}
-
 func (s *ChatService) RespondToAsk(value string, approved bool) {
 	s.wailsIO.RespondToAsk(port.InputResponse{Value: value, Approved: approved})
 }
 
 func (s *ChatService) NewSession() error {
-	// Stop any running agent before switching sessions
-	s.stopAndWait(3 * time.Second)
-
+	// Intentionally does NOT stop any running agent.
+	// The running session continues in the background; UI switches to the new session.
 	ctx := application.Get().Context()
 	sess, err := s.k.NewSession(ctx, s.newSessionConfig())
 	if err != nil {
 		return err
 	}
 	sess.SetTitle("New Chat")
+	s.mu.Lock()
 	s.sess = sess
+	s.mu.Unlock()
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist new session failed", slog.Any("error", err))
 	}
@@ -294,9 +265,8 @@ func (s *ChatService) NewSession() error {
 }
 
 func (s *ChatService) ResumeSession(id string) error {
-	// Stop any running agent before switching sessions
-	s.stopAndWait(3 * time.Second)
-
+	// Intentionally does NOT stop any running agent.
+	// The running session continues in the background; UI switches to the resumed session.
 	if s.store == nil {
 		return fmt.Errorf("session store is not configured")
 	}
@@ -307,7 +277,9 @@ func (s *ChatService) ResumeSession(id string) error {
 	if sess == nil {
 		return fmt.Errorf("session %q not found", id)
 	}
+	s.mu.Lock()
 	s.sess = sess
+	s.mu.Unlock()
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist resumed session failed", slog.Any("error", err))
 	}

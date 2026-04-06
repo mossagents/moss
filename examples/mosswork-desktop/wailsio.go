@@ -7,11 +7,13 @@ import (
 	"github.com/mossagents/moss/kernel/port"
 )
 
+// sessionIDKey is the context key used to pass session ID to WailsUserIO.
+type sessionIDKey struct{}
+
 // WailsUserIO 实现 port.UserIO，通过 Wails 事件系统与桌面前端通信。
 type WailsUserIO struct {
-	mu        sync.Mutex
-	askCh     chan port.InputResponse
-	sessionID string
+	mu    sync.Mutex
+	askCh chan port.InputResponse
 }
 
 var _ port.UserIO = (*WailsUserIO)(nil)
@@ -22,17 +24,9 @@ func NewWailsUserIO() *WailsUserIO {
 	}
 }
 
-// SetSessionID updates the session ID included in all emitted events.
-func (w *WailsUserIO) SetSessionID(id string) {
-	w.mu.Lock()
-	w.sessionID = id
-	w.mu.Unlock()
-}
-
 func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
-	w.mu.Lock()
-	sid := w.sessionID
-	w.mu.Unlock()
+	// Session ID is carried per-run via context — no shared mutable state.
+	sid, _ := ctx.Value(sessionIDKey{}).(string)
 
 	var eventName string
 	data := map[string]any{
@@ -68,9 +62,7 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 }
 
 func (w *WailsUserIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
-	w.mu.Lock()
-	sid := w.sessionID
-	w.mu.Unlock()
+	sid, _ := ctx.Value(sessionIDKey{}).(string)
 
 	emitEvent("chat:ask", map[string]any{
 		"type":       string(req.Type),
