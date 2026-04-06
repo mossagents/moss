@@ -292,6 +292,13 @@ export default function App() {
     if (Array.isArray(data)) setSessions(data);
   });
 
+  useWailsEvent<{ session_id: string; title: string }>("session:title", (data) => {
+    if (!data?.session_id || !data?.title) return;
+    setSessions((prev) =>
+      prev.map((s) => (s.id === data.session_id ? { ...s, title: data.title } : s)),
+    );
+  });
+
   useWailsEvent<ScheduleEntry[]>("desktop:schedules", (data) => {
     if (Array.isArray(data)) setSchedules(data);
   });
@@ -449,6 +456,7 @@ export default function App() {
           onOffload={() => handleRunCommand("/offload 20 topbar")}
           onShowDashboard={() => handleRunCommand("/dashboard")}
           currentSessionId={currentSessionId}
+          currentSessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
         />
 
         <AssistantRuntimeProvider runtime={runtime}>

@@ -62,6 +62,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
+	sess.SetTitle("新会话")
 	s.sess = sess
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist startup session failed", slog.Any("error", err))
@@ -189,6 +190,9 @@ func (s *ChatService) SendMessage(content string) error {
 			return
 		}
 
+		// Fire-and-forget: generate a display title after the first exchange.
+		go s.maybeGenerateTitle(s.sess)
+
 		emitEvent("chat:done", map[string]any{
 			"session_id":  result.SessionID,
 			"steps":       result.Steps,
@@ -235,6 +239,7 @@ func (s *ChatService) NewSession() error {
 	if err != nil {
 		return err
 	}
+	sess.SetTitle("新会话")
 	s.sess = sess
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist new session failed", slog.Any("error", err))
@@ -882,3 +887,103 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 }
 
 func boolRef(v bool) *bool { return &v }
+
+// maybeGenerateTitle generates an LLM-based display title for the session if
+// the title is still the default "新会话". Called as a background goroutine
+// after the first successful agent run.
+func (s *ChatService) maybeGenerateTitle(sess *session.Session) {
+	if sess == nil || sess.GetTitle() != "新会话" {
+		return
+	}
+	title := s.generateTitleFromLLM(sess)
+	if title == "" {
+		return
+	}
+	sess.SetTitle(title)
+	if err := s.persistSession(sess); err != nil {
+		slog.Debug("persist session title failed", slog.Any("error", err))
+	}
+	emitEvent("session:title", map[string]any{
+		"session_id": sess.ID,
+		"title":      title,
+	})
+	s.emitDashboard()
+}
+
+// generateTitleFromLLM makes a lightweight LLM call to generate a short
+// display title based on the first user+assistant exchange in the session.
+func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
+	if s.k == nil {
+		return ""
+	}
+	llm := s.k.LLM()
+	if llm == nil {
+		return ""
+	}
+
+	msgs := sess.CopyMessages()
+	var firstUser, firstAssistant string
+	for _, m := range msgs {
+		if m.Role == port.RoleUser && firstUser == "" {
+			firstUser = port.ContentPartsToPlainText(m.ContentParts)
+		}
+		if m.Role == port.RoleAssistant && firstAssistant == "" {
+			firstAssistant = port.ContentPartsToPlainText(m.ContentParts)
+		}
+		if firstUser != "" && firstAssistant != "" {
+			break
+		}
+	}
+	if firstUser == "" {
+		return ""
+	}
+
+	const maxInputRunes = 200
+	truncate := func(s string) string {
+		r := []rune(s)
+		if len(r) > maxInputRunes {
+			return string(r[:maxInputRunes]) + "..."
+		}
+		return s
+	}
+	prompt := "用户：" + truncate(firstUser)
+	if firstAssistant != "" {
+		prompt += "\n助手：" + truncate(firstAssistant)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	resp, err := llm.Complete(ctx, port.CompletionRequest{
+		Messages: []port.Message{
+			{
+				Role: port.RoleSystem,
+				ContentParts: []port.ContentPart{port.TextPart(
+					"你是一个会话标题生成器。根据以下对话内容，生成一个简洁的中文标题（不超过15字，只输出标题本身，不含引号、标点符号、序号、解释说明）。",
+				)},
+			},
+			{
+				Role:         port.RoleUser,
+				ContentParts: []port.ContentPart{port.TextPart(prompt)},
+			},
+		},
+		Config: port.ModelConfig{
+			MaxTokens:   64,
+			Temperature: 0.3,
+		},
+	})
+	if err != nil {
+		slog.Debug("title generation failed", slog.Any("error", err))
+		return ""
+	}
+
+	title := strings.TrimSpace(port.ContentPartsToPlainText(resp.Message.ContentParts))
+	title = strings.Trim(title, `"'"""''`)
+	title = strings.TrimSpace(title)
+
+	const maxTitleRunes = 20
+	if r := []rune(title); len(r) > maxTitleRunes {
+		title = string(r[:maxTitleRunes])
+	}
+	return title
+}

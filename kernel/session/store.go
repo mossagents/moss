@@ -46,6 +46,7 @@ type WatchableSessionStore interface {
 // SessionSummary 是 Session 的摘要信息，用于列表展示。
 type SessionSummary struct {
 	ID                string        `json:"id"`
+	Title             string        `json:"title,omitempty"`
 	Goal              string        `json:"goal"`
 	Mode              string        `json:"mode,omitempty"`
 	Profile           string        `json:"profile,omitempty"`

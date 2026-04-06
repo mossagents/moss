@@ -109,6 +109,7 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(&sess)
 		summaries = append(summaries, SessionSummary{
 			ID:                sess.ID,
+			Title:             sess.Title,
 			Goal:              sess.Config.Goal,
 			Mode:              sess.Config.Mode,
 			Profile:           profile,

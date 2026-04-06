@@ -3,16 +3,21 @@ interface TopBarProps {
   onOffload: () => void;
   onShowDashboard: () => void;
   currentSessionId?: string;
+  currentSessionTitle?: string;
 }
 
-export default function TopBar({ onNewSession, onOffload, onShowDashboard, currentSessionId }: TopBarProps) {
-  const shortSession = currentSessionId ? currentSessionId.slice(0, 10) : "—";
+export default function TopBar({ onNewSession, onOffload, onShowDashboard, currentSessionId, currentSessionTitle }: TopBarProps) {
+  const sessionLabel = currentSessionTitle && currentSessionTitle !== "新会话"
+    ? currentSessionTitle
+    : currentSessionId
+      ? currentSessionId.slice(0, 10)
+      : "—";
 
   return (
     <header className="fixed top-0 right-80 left-64 h-16 z-40 flex justify-between items-center px-8 bg-white/80 backdrop-blur-md border-botanical-bottom">
       <div className="flex items-center gap-4">
         <div className="text-xs text-on-surface-variant">
-          当前会话：<span className="font-semibold text-on-surface">{shortSession}</span>
+          当前会话：<span className="font-semibold text-on-surface">{sessionLabel}</span>
         </div>
         <button
           onClick={onShowDashboard}

@@ -58,9 +58,9 @@ export default function Sidebar({
                 ? "bg-surface-container-lowest text-on-surface"
                 : "text-on-surface-variant hover:bg-surface-container-low",
             )}
-            title={s.goal}
+            title={s.title || s.goal}
           >
-            <div className="font-semibold truncate">{s.goal || s.id}</div>
+            <div className="font-semibold truncate">{s.title || s.goal || s.id}</div>
             <div className="text-[10px] opacity-70 truncate">{s.id}</div>
           </button>
         ))}

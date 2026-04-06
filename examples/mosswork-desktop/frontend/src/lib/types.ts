@@ -75,6 +75,7 @@ export interface WorkerState {
 
 export interface SessionSummary {
   id: string;
+  title?: string;
   goal: string;
   mode?: string;
   status: string;

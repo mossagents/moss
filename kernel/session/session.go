@@ -110,12 +110,13 @@ type Session struct {
 	ID        string         `json:"id"`
 	Status    SessionStatus  `json:"status"`
 	Config    SessionConfig  `json:"config"`
+	Title     string         `json:"title,omitempty"` // user-facing display title
 	Messages  []port.Message `json:"messages"`
 	State     map[string]any `json:"state,omitempty"`
 	Budget    Budget         `json:"budget"`
 	CreatedAt time.Time      `json:"created_at"`
 	EndedAt   time.Time      `json:"ended_at,omitempty"`
-	mu        sync.RWMutex   `json:"-"` // protects Messages for concurrent access
+	mu        sync.RWMutex   `json:"-"` // protects Messages and Title for concurrent access
 }
 
 // AppendMessage 追加一条消息到对话历史。
@@ -159,6 +160,20 @@ func (s *Session) UpdateSystemPrompt(prompt string) {
 	} else {
 		s.Messages = append([]port.Message{newMsg}, s.Messages...)
 	}
+}
+
+// SetTitle 线程安全地设置会话显示标题。
+func (s *Session) SetTitle(title string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Title = title
+}
+
+// GetTitle 线程安全地读取会话显示标题。
+func (s *Session) GetTitle() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.Title
 }
 
 // TruncateMessages 按 token 预算截断对话历史，保留最近的消息。
