@@ -179,6 +179,7 @@ export default function App() {
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
+    setIsRunning(true);
     setStatusText("正在生成回复...");
     appendAssistantChunk(data?.content ?? "");
   });
@@ -209,6 +210,7 @@ export default function App() {
   useWailsEvent<StreamData>("chat:thinking", (data) => {
     const chunk = data?.content ?? "";
     if (!chunk) return;
+    setIsRunning(true);
     setStatusText("正在思考...");
     if (streamingIdRef.current) {
       const id = streamingIdRef.current;
@@ -235,6 +237,7 @@ export default function App() {
     const toolName = data?.meta?.tool || data?.meta?.name || data?.content || "tool";
     const callId = data?.meta?.call_id;
     const summary = data?.meta?.args_preview || undefined;
+    setIsRunning(true);
     setStatusText(`调用 ${toolName}...`);
     // Store raw input only when content differs from the tool name
     const toolInput = data?.content && data.content !== toolName ? data.content : undefined;
@@ -370,6 +373,14 @@ export default function App() {
     if (typeof data.current_session_id === "string") setCurrentSessionId(data.current_session_id);
     const ws = normalizeWorkerState((data as DashboardState).worker);
     if (ws) setWorkerState(ws);
+    // If the current session is running (e.g. started by automation), reflect that in UI state
+    if (typeof data.current_session_id === "string" && Array.isArray(data.sessions)) {
+      const cur = data.sessions.find((s) => s.id === data.current_session_id);
+      if (cur?.status === "running") {
+        setIsRunning(true);
+        setStatusText((prev) => prev || "正在执行...");
+      }
+    }
   });
 
   useWailsEvent<SessionSummary[]>("desktop:sessions", (data) => {
