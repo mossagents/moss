@@ -64,6 +64,9 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
 	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
 		sections = append(sections, m.renderSlashPopup(layout.MainWidth))
+	} else if m.mentionPopup != nil && len(m.mentionPopup.items) > 0 {
+		// @ 文件补全弹窗：inline 替代 overlay
+		sections = append(sections, m.renderMentionPopup(layout.MainWidth))
 	} else {
 		sections = append(sections, m.renderSlashHintLine())
 	}

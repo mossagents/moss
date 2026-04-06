@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
 )
 
@@ -125,6 +126,152 @@ func listMentionCandidates(workspace, query string, limit int) []mentionCandidat
 	}
 	return out
 }
+
+// ──────────────────────────────────────────────────────────────
+// Inline mention popup (replaces overlay-based mention picker)
+// ──────────────────────────────────────────────────────────────
+
+// mentionPopupState 管理 @ 文件补全弹窗的显示状态。
+type mentionPopupState struct {
+	items        []mentionCandidate
+	cursor       int
+	query        string // 不含 @ 前缀的查询词
+	replaceToken string // textarea 中待替换的 @token
+}
+
+func (s *mentionPopupState) selected() mentionCandidate {
+	if s == nil || len(s.items) == 0 {
+		return mentionCandidate{}
+	}
+	if s.cursor < 0 || s.cursor >= len(s.items) {
+		return s.items[0]
+	}
+	return s.items[s.cursor]
+}
+
+func (s *mentionPopupState) move(delta int) {
+	if s == nil || len(s.items) == 0 {
+		return
+	}
+	s.cursor += delta
+	if s.cursor < 0 {
+		s.cursor = 0
+	}
+	if s.cursor >= len(s.items) {
+		s.cursor = len(s.items) - 1
+	}
+}
+
+// lastAtToken 返回输入框内容末尾以 @ 开头的 token（含 @ 本身）。
+// 与 lastMentionToken 不同：允许仅 "@" 也触发弹窗。
+func lastAtToken(value string) string {
+	fields := strings.Fields(value)
+	if len(fields) == 0 {
+		trimmed := strings.TrimSpace(value)
+		if strings.HasPrefix(trimmed, "@") {
+			return trimmed
+		}
+		return ""
+	}
+	last := fields[len(fields)-1]
+	if strings.HasPrefix(last, "@") {
+		return last
+	}
+	return ""
+}
+
+// refreshMentionPopup 根据输入框当前内容更新 @ 文件补全弹窗。
+func (m *chatModel) refreshMentionPopup() {
+	token := lastAtToken(m.textarea.Value())
+	if token == "" {
+		m.mentionPopup = nil
+		return
+	}
+	query := strings.TrimPrefix(token, "@")
+	candidates := listMentionCandidates(m.workspace, query, 10)
+	if len(candidates) == 0 {
+		m.mentionPopup = nil
+		return
+	}
+	// 保留光标位置（同 token、同候选数量时）
+	if m.mentionPopup != nil && m.mentionPopup.replaceToken == token && len(m.mentionPopup.items) == len(candidates) {
+		m.mentionPopup.items = candidates
+		return
+	}
+	m.mentionPopup = &mentionPopupState{
+		items:        candidates,
+		cursor:       0,
+		query:        query,
+		replaceToken: token,
+	}
+}
+
+// applyMentionCompletion 应用当前选中的 @ 文件补全，返回 true 表示已处理。
+func (m *chatModel) applyMentionCompletion() bool {
+	if m.mentionPopup == nil || len(m.mentionPopup.items) == 0 {
+		return false
+	}
+	candidate := m.mentionPopup.selected()
+	draft, err := buildAttachmentDraft(m.workspace, candidate.Path)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
+		m.mentionPopup = nil
+		m.refreshViewport()
+		return true
+	}
+	m.appendPendingAttachment(draft)
+	// 从 textarea 中移除 @token
+	if token := strings.TrimSpace(m.mentionPopup.replaceToken); token != "" {
+		value := m.textarea.Value()
+		if pos := strings.LastIndex(value, token); pos >= 0 {
+			value = strings.TrimRight(value[:pos]+value[pos+len(token):], " ")
+			m.textarea.SetValue(value)
+			m.adjustInputHeight()
+		}
+	}
+	m.mentionPopup = nil
+	m.refreshViewport()
+	return true
+}
+
+// renderMentionPopup 渲染 @ 文件补全弹窗（显示在输入框上方）。
+func (m chatModel) renderMentionPopup(width int) string {
+	p := m.mentionPopup
+	if p == nil || len(p.items) == 0 {
+		return ""
+	}
+	popupWidth := min(72, max(40, width-4))
+	nameWidth := popupWidth - 8
+
+	var rows []string
+	for i, item := range p.items {
+		name := item.Label
+		// 路径较长时从左侧截断，保留文件名部分
+		if len(name) > nameWidth {
+			name = "…" + name[len(name)-nameWidth+1:]
+		}
+		var row string
+		if i == p.cursor {
+			cursor := runningStyle.Render("›")
+			nameStr := lipgloss.NewStyle().Width(nameWidth).Bold(true).Foreground(colorSecondary).Render(name)
+			row = fmt.Sprintf(" %s %s", cursor, nameStr)
+		} else {
+			num := fmt.Sprintf("%d", i+1)
+			if i >= 9 {
+				num = "+"
+			}
+			numStr := halfMutedStyle.Render(num)
+			nameStr := lipgloss.NewStyle().Width(nameWidth).Render(name)
+			row = fmt.Sprintf(" %s %s", numStr, nameStr)
+		}
+		rows = append(rows, row)
+	}
+	footer := composerHintStyle.Render("  ↑↓ navigate  •  Tab/Enter attach  •  Esc dismiss")
+	rows = append(rows, footer)
+	inner := strings.Join(rows, "\n")
+	return dialogBoxStyle.Width(popupWidth).Render(inner)
+}
+
 
 func detectAttachmentKind(path string) string {
 	if !isMediaPath(path) {

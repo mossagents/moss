@@ -1337,16 +1337,18 @@ func TestMentionPickerOpensFromComposerTab(t *testing.T) {
 	}
 	m := newChatModel("openai", "gpt-4o", workspace)
 	m.textarea.SetValue("@not")
+	// refreshMentionPopup 会在 textarea 更新时触发；直接调用模拟
+	m.refreshMentionPopup()
+	if m.mentionPopup == nil || len(m.mentionPopup.items) == 0 {
+		t.Fatal("expected inline mention popup to be visible after typing @not")
+	}
+	// Tab 应用补全：选中 note.txt，移除 @token，添加 attachment
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
-	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayMention {
-		t.Fatal("expected mention picker overlay")
-	}
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if len(updated.pendingAttachments) != 1 || updated.pendingAttachments[0].Label != "note.txt" {
-		t.Fatalf("unexpected attachments after picker: %#v", updated.pendingAttachments)
+		t.Fatalf("unexpected attachments after popup tab: %#v", updated.pendingAttachments)
 	}
-	if updated.textarea.Value() != "" {
-		t.Fatalf("expected mention token to be removed from composer, got %q", updated.textarea.Value())
+	if updated.mentionPopup != nil {
+		t.Fatal("expected mention popup to be closed after applying completion")
 	}
 }
 

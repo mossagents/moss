@@ -37,6 +37,11 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				m.refreshViewport()
 				return m, nil
 			}
+			if m.mentionPopup != nil {
+				m.mentionPopup = nil
+				m.refreshViewport()
+				return m, nil
+			}
 			return m.handleEsc()
 		case "ctrl+t":
 			if m.transcriptOverlay != nil {
@@ -56,13 +61,18 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				return m, nil
 			}
 		case "up", "down":
+			delta := -1
+			if msg.String() == "down" {
+				delta = 1
+			}
 			// 弹窗可见时，上下键导航弹窗
 			if m.slashPopup != nil {
-				delta := -1
-				if msg.String() == "down" {
-					delta = 1
-				}
 				m.slashPopup.move(delta)
+				m.refreshViewport()
+				return m, nil
+			}
+			if m.mentionPopup != nil {
+				m.mentionPopup.move(delta)
 				m.refreshViewport()
 				return m, nil
 			}
@@ -75,8 +85,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				m.adjustInputHeight()
 				return m, nil
 			}
-			if updated, opened := m.openMentionPickerFromComposer(); opened {
-				return updated, nil
+			if m.applyMentionCompletion() {
+				m.adjustInputHeight()
+				return m, nil
 			}
 			return m, nil
 		case "shift+tab":
@@ -85,6 +96,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			// 弹窗可见时，Enter 确认选中项
 			if m.slashPopup != nil {
 				if m.applySlashCompletion() {
+					m.adjustInputHeight()
+					return m, nil
+				}
+			}
+			if m.mentionPopup != nil {
+				if m.applyMentionCompletion() {
 					m.adjustInputHeight()
 					return m, nil
 				}
@@ -227,6 +244,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.historyCursor = len(m.inputHistory)
 		m.historyDraft = m.textarea.Value()
 		m.refreshSlashHints()
+		m.refreshMentionPopup()
 		cmds = append(cmds, cmd)
 	}
 

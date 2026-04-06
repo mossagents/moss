@@ -119,6 +119,7 @@ type chatModel struct {
 	forkPicker            *forkPickerState
 	agentPicker           *agentPickerState
 	mentionPicker         *mentionPickerState
+	mentionPopup          *mentionPopupState // inline @ 文件补全弹窗（替代 overlay）
 	transcriptOverlay     *transcriptOverlayState
 	overlays              *overlayStack
 	finished              bool   // session 已结束
