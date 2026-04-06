@@ -20,6 +20,7 @@ export interface ChatMessage {
 export interface ToolExecution {
   name: string;
   status: "running" | "done" | "error";
+  input?: string;
   result?: string;
 }
 

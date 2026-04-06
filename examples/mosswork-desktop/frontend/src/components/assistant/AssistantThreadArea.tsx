@@ -207,22 +207,79 @@ function MessageMetaTime() {
   );
 }
 
+function tryPrettyJson(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
 function ToolChip({ tool }: { tool: ToolExecution }) {
+  const hasContent = !!(tool.input || tool.result);
+  const [open, setOpen] = useState(tool.status === "running" && hasContent);
+
+  // Auto-expand when input arrives while running; collapse when done
+  useEffect(() => {
+    if (tool.status === "running" && (tool.input || tool.result)) setOpen(true);
+    else if (tool.status !== "running") setOpen(false);
+  }, [tool.status, tool.input, tool.result]);
+
+  const statusColor =
+    tool.status === "running"
+      ? "bg-tertiary-container text-on-tertiary-container border-tertiary-container"
+      : tool.status === "done"
+        ? "bg-primary-container/40 text-on-primary-container border-primary-container/40"
+        : "bg-error-container/20 text-error border-error-container/30";
+
   return (
-    <div
-      className={cn(
-        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold",
-        tool.status === "running"
-          ? "bg-tertiary-container text-on-tertiary-container"
-          : tool.status === "done"
-            ? "bg-primary-container/50 text-on-primary-container"
-            : "bg-error-container/20 text-error",
+    <div className={cn("rounded-xl border text-xs overflow-hidden", statusColor)}>
+      {/* Header row — always visible */}
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3 py-1.5",
+          hasContent && "cursor-pointer select-none hover:brightness-95 transition-all",
+        )}
+        onClick={() => hasContent && setOpen((o) => !o)}
+      >
+        {tool.status === "running" && (
+          <span className="material-symbols-outlined text-sm animate-spin-1s shrink-0">refresh</span>
+        )}
+        {tool.status === "done" && (
+          <span className="material-symbols-outlined text-sm shrink-0">check_circle</span>
+        )}
+        {tool.status === "error" && (
+          <span className="material-symbols-outlined text-sm shrink-0">error</span>
+        )}
+        <span className="font-bold font-mono">{tool.name}</span>
+        {hasContent && (
+          <span className="material-symbols-outlined text-sm ml-auto opacity-60">
+            {open ? "expand_less" : "expand_more"}
+          </span>
+        )}
+      </div>
+
+      {/* Expanded body */}
+      {open && (
+        <div className="border-t border-current/10 divide-y divide-current/10">
+          {tool.input && (
+            <div className="px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 mb-1">参数</p>
+              <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all opacity-80 max-h-32 overflow-y-auto">
+                {tryPrettyJson(tool.input)}
+              </pre>
+            </div>
+          )}
+          {tool.result && (
+            <div className="px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-60 mb-1">结果</p>
+              <pre className="font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all opacity-80 max-h-40 overflow-y-auto">
+                {tool.result}
+              </pre>
+            </div>
+          )}
+        </div>
       )}
-    >
-      {tool.status === "running" && <span className="material-symbols-outlined text-sm animate-spin-1s">refresh</span>}
-      {tool.status === "done" && <span className="material-symbols-outlined text-sm">check_circle</span>}
-      {tool.status === "error" && <span className="material-symbols-outlined text-sm">error</span>}
-      <span>{tool.name}</span>
     </div>
   );
 }

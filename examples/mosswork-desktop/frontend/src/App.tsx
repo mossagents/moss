@@ -229,7 +229,9 @@ export default function App() {
 
   useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
     const toolName = data?.meta?.name || data?.content || "tool";
-    const newTool: ToolExecution = { name: toolName, status: "running" };
+    // Store input separately only when content differs from tool name (i.e. it's args, not just the name)
+    const toolInput = data?.content && data.content !== toolName ? data.content : undefined;
+    const newTool: ToolExecution = { name: toolName, status: "running", input: toolInput };
     const currentId = streamingIdRef.current;
     setMessages((prev) => {
       const target = currentId
@@ -479,7 +481,7 @@ export default function App() {
 
   const handleAskDismiss = useCallback(() => {
     setAskData(null);
-    ChatService.respondToAsk("").catch(() => {});
+    ChatService.respondToAsk("", false).catch(() => {});
   }, []);
 
   const handlePickAttachments = useCallback(async () => {
