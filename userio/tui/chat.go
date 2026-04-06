@@ -849,10 +849,12 @@ func saveInputHistory(path string, history []string) error {
 }
 
 func (m *chatModel) refreshSlashHints() {
-	text := strings.TrimSpace(m.textarea.Value())
+	raw := m.textarea.Value()
+	text := strings.TrimSpace(raw)
 	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills)
-	m.slashPopup = buildSlashPopup(text, m.customCommands, m.discoveredSkills)
-	// 保留 popup 中已选中的光标位置（输入变化时归零）
+	// raw（保留末尾空格）传入 buildSlashPopup，避免 applySlashCompletion 写入 "/cmd " 后
+	// TrimSpace 导致弹窗立即重建（看起来选择无效）。
+	m.slashPopup = buildSlashPopup(raw, m.customCommands, m.discoveredSkills)
 	if m.slashPopup != nil {
 		m.slashPopup.cursor = 0
 	}
