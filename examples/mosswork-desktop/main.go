@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/mossagents/moss/appkit"
@@ -146,14 +147,20 @@ func buildWorkerPrompt(workspace string) string {
 }
 
 func resolveWorkspace(dir string) string {
-	if dir == "" || dir == "." {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "."
-		}
-		return wd
+	if dir != "" && dir != "." {
+		return dir
 	}
-	return dir
+	// Default to a dedicated workspace directory under the app data folder.
+	// This prevents the agent from operating on whatever directory the process
+	// happened to be launched from (e.g. the user's home directory).
+	appDir := appconfig.AppDir()
+	if appDir != "" {
+		ws := filepath.Join(appDir, "workspace")
+		_ = os.MkdirAll(ws, 0700)
+		return ws
+	}
+	// Last-resort fallback (should not happen in practice).
+	return "."
 }
 
 // serialEmitter dispatches Wails custom events to the webview in strict FIFO order.
