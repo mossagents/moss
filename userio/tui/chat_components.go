@@ -60,7 +60,12 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 			formatElapsed(m.runStartedAt, m.now()),
 		)))
 	}
-	sections = append(sections, m.renderSlashHintLine())
+	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
+	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
+		sections = append(sections, m.renderSlashPopup(layout.MainWidth))
+	} else {
+		sections = append(sections, m.renderSlashHintLine())
+	}
 	sections = append(sections, inputBorderStyle.Render(m.textarea.View()))
 	return lipgloss.NewStyle().
 		Width(layout.MainWidth).

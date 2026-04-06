@@ -21,8 +21,9 @@ type themePickerState struct {
 
 func newThemePickerState(current string) *themePickerState {
 	options := []themePickerOption{
-		{name: themeDefault, detail: "Balanced contrast with accent colors."},
-		{name: themePlain, detail: "Minimal styling with plain terminal colors."},
+		{name: themeDefault, detail: "ANSI semantic colors, works in any terminal."},
+		{name: themeDark, detail: "Vibrant hex colors optimized for dark terminals."},
+		{name: themePlain, detail: "No colors, plain terminal defaults."},
 	}
 	items := make([]selectionListItem, 0, len(options))
 	state := &themePickerState{

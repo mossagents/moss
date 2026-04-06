@@ -164,6 +164,7 @@ type chatModel struct {
 	historyDraft  string
 	historyPath   string
 	slashHints    []string
+	slashPopup    *slashPopupState
 
 	now          func() time.Time
 	lastEscAt    time.Time
@@ -849,6 +850,11 @@ func saveInputHistory(path string, history []string) error {
 func (m *chatModel) refreshSlashHints() {
 	text := strings.TrimSpace(m.textarea.Value())
 	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills)
+	m.slashPopup = buildSlashPopup(text, m.customCommands, m.discoveredSkills)
+	// 保留 popup 中已选中的光标位置（输入变化时归零）
+	if m.slashPopup != nil {
+		m.slashPopup.cursor = 0
+	}
 }
 
 func (m chatModel) currentSlashHints() []string {
@@ -859,6 +865,14 @@ func (m chatModel) currentSlashHints() []string {
 }
 
 func (m *chatModel) applySlashCompletion() bool {
+	// 如果弹窗可见，使用弹窗中选中的命令
+	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
+		selected := m.slashPopup.selected()
+		m.textarea.SetValue(selected.name + " ")
+		m.slashPopup = nil
+		m.refreshSlashHints()
+		return true
+	}
 	hints := m.currentSlashHints()
 	if len(hints) == 0 {
 		return false

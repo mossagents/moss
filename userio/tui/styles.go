@@ -2,29 +2,30 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
-// 颜色常量
+// ANSI 语义色常量（default 主题使用）。
+// 使用 ANSI 16 色，在亮色/暗色终端下均可正常显示。
+// dark 主题使用 hex 精确色（在 theme.go 中切换）。
 var (
-	colorPrimary   = lipgloss.Color("#D946EF")
-	colorSecondary = lipgloss.Color("#38BDF8")
-	colorMuted     = lipgloss.Color("#6B7280")
-	colorHalfMuted = lipgloss.Color("#4B5563")
-	colorSuccess   = lipgloss.Color("#22C55E")
-	colorError     = lipgloss.Color("#F87171")
-	colorUser      = lipgloss.Color("#D946EF")
-	colorAssistant = lipgloss.Color("#38BDF8")
-	colorTool      = lipgloss.Color("#F59E0B")
-	colorBorder    = lipgloss.Color("#30363D")
-	colorSubtle    = lipgloss.Color("#94A3B8")
-	colorBgBase    = lipgloss.Color("#0D1117")
-	colorBgPanel   = lipgloss.Color("#111827")
-	colorBgSubtle  = lipgloss.Color("#161B22")
-	colorBgOverlay = lipgloss.Color("#0F172A")
+	colorPrimary   = lipgloss.Color("5") // ANSI magenta
+	colorSecondary = lipgloss.Color("6") // ANSI cyan
+	colorSuccess   = lipgloss.Color("2") // ANSI green
+	colorError     = lipgloss.Color("1") // ANSI red
+	colorUser      = lipgloss.Color("5") // ANSI magenta
+	colorAssistant = lipgloss.Color("6") // ANSI cyan
+
+	// 自适应灰度色：在亮色终端偏暗，在暗色终端偏亮
+	colorMuted     = lipgloss.AdaptiveColor{Light: "240", Dark: "245"}
+	colorHalfMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "247"}
+	colorSubtle    = lipgloss.AdaptiveColor{Light: "245", Dark: "249"}
+	colorBorder    = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
+
+	// user message 背景：极浅灰（亮色终端）/ 极深灰（暗色终端）
+	colorUserMsgBg = lipgloss.AdaptiveColor{Light: "254", Dark: "237"}
 )
 
-// 样式定义
+// 样式定义（随主题切换，见 theme.go）
 var (
-	baseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E5E7EB"))
+	baseStyle = lipgloss.NewStyle()
 
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -64,8 +65,9 @@ var (
 				Bold(true).
 				Foreground(colorAssistant)
 
+	// tool 使用 cyan（与 assistant 同色族）+ 非粗体，视觉上低于 assistant
 	toolLabelStyle = lipgloss.NewStyle().
-			Foreground(colorTool)
+			Foreground(colorSecondary)
 
 	toolResultStyle = lipgloss.NewStyle().
 			Foreground(colorSuccess)
@@ -78,8 +80,8 @@ var (
 			Italic(true)
 
 	runningStyle = lipgloss.NewStyle().
-			Foreground(colorPrimary).
-			Bold(true)
+			Bold(true).
+			Foreground(colorPrimary)
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(colorError).
@@ -95,20 +97,16 @@ var (
 	halfMutedStyle = lipgloss.NewStyle().
 			Foreground(colorHalfMuted)
 
-	panelBaseStyle = lipgloss.NewStyle().
-			Background(colorBgPanel)
-
-	panelMutedStyle = lipgloss.NewStyle().
-			Background(colorBgSubtle)
+	// 不设置背景色：由终端主题控制
+	panelBaseStyle  = lipgloss.NewStyle()
+	panelMutedStyle = lipgloss.NewStyle()
 
 	inputBorderStyle = lipgloss.NewStyle().
-				Background(colorBgPanel).
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorPrimary).
 				Padding(0, 1)
 
 	sidebarBoxStyle = lipgloss.NewStyle().
-			Background(colorBgPanel).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorBorder).
 			Padding(1, 2)
@@ -122,7 +120,7 @@ var (
 					Foreground(colorSubtle)
 
 	collapsedToolStyle = lipgloss.NewStyle().
-				Foreground(colorTool).
+				Foreground(colorSecondary).
 				Italic(true)
 
 	panelTitleStyle = lipgloss.NewStyle().
@@ -130,7 +128,6 @@ var (
 			Foreground(colorSubtle)
 
 	dialogBoxStyle = lipgloss.NewStyle().
-			Background(colorBgOverlay).
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorPrimary).
 			Padding(1, 2)
@@ -149,14 +146,18 @@ var (
 	dialogItemStyle = lipgloss.NewStyle().
 			Padding(0, 1)
 
+	// 选中项：使用 Reverse 在亮色/暗色终端下均有良好对比
 	dialogSelectedItemStyle = lipgloss.NewStyle().
 				Padding(0, 1).
-				Background(colorPrimary).
-				Foreground(lipgloss.Color("#FFFFFF"))
+				Reverse(true)
 
 	composerHintStyle = lipgloss.NewStyle().
 				Foreground(colorMuted)
 
 	statusHintStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
+
+	// 用户消息背景高亮（P9）
+	userMessageStyle = lipgloss.NewStyle().
+				Background(colorUserMsgBg)
 )

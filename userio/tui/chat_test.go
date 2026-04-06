@@ -98,7 +98,7 @@ func TestSlashCommandThemeOpensThemePicker(t *testing.T) {
 	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayTheme {
 		t.Fatal("expected theme picker overlay")
 	}
-	if updated.themePicker == nil || len(updated.themePicker.options) != 2 {
+	if updated.themePicker == nil || len(updated.themePicker.options) != 3 {
 		t.Fatalf("unexpected theme picker: %#v", updated.themePicker)
 	}
 }
@@ -107,6 +107,7 @@ func TestThemePickerSelectionAppliesTheme(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.theme = themePlain
 	updated, _ := m.handleSlashCommand("/theme")
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if updated.theme != themeDefault {

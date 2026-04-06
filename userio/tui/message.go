@@ -48,7 +48,10 @@ func renderMessage(m chatMessage, width int) string {
 
 	switch m.kind {
 	case msgUser:
-		return renderRoleMessage(m, maxContent, func(s string) string { return userLabelStyle.Render(s) }, false)
+		inner := renderRoleMessage(m, maxContent, func(s string) string { return userLabelStyle.Render(s) }, false)
+		// 用背景色将用户消息高亮，与 assistant 消息产生清晰的视觉分区。
+		// 追加一个空行作为视觉间距（对齐 Codex CLI 风格）。
+		return userMessageStyle.Width(width).Render(inner)
 
 	case msgAssistant:
 		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) }, true)

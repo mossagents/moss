@@ -31,6 +31,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		case "ctrl+c":
 			return m.handleCtrlC()
 		case "esc":
+			// 弹窗可见时，Esc 关闭弹窗，不传递给上层
+			if m.slashPopup != nil {
+				m.slashPopup = nil
+				m.refreshViewport()
+				return m, nil
+			}
 			return m.handleEsc()
 		case "ctrl+o":
 			m.toolCollapsed = !m.toolCollapsed
@@ -43,6 +49,16 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				return m, nil
 			}
 		case "up", "down":
+			// 弹窗可见时，上下键导航弹窗
+			if m.slashPopup != nil {
+				delta := -1
+				if msg.String() == "down" {
+					delta = 1
+				}
+				m.slashPopup.move(delta)
+				m.refreshViewport()
+				return m, nil
+			}
 			if hints := m.currentSlashHints(); len(hints) > 0 {
 				return m, nil
 			}
@@ -59,6 +75,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		case "shift+tab":
 			return m.cycleProfile()
 		case "enter":
+			// 弹窗可见时，Enter 确认选中项
+			if m.slashPopup != nil {
+				if m.applySlashCompletion() {
+					m.adjustInputHeight()
+					return m, nil
+				}
+			}
 			return m.handleSend()
 		}
 
