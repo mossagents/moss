@@ -45,52 +45,44 @@ func (s *slashPopupState) move(delta int) {
 
 // buildSlashPopup constructs a new slashPopupState from the given input text,
 // custom commands, and discovered skills. Returns nil when no popup is needed.
+// Results are sorted: prefix matches first, then fuzzy (subsequence) matches.
 func buildSlashPopup(input string, customCommands []product.CustomCommand, discoveredSkills []string) *slashPopupState {
 	if !strings.HasPrefix(input, "/") || strings.Contains(input, " ") {
 		return nil
 	}
 	lower := strings.ToLower(input)
-	items := make([]slashPopupItem, 0, 16)
+	var prefixItems, fuzzyItems []slashPopupItem
 	seen := make(map[string]struct{}, 32)
 
-	for _, cmd := range slashCommandCatalog {
-		if cmd.HiddenInNav {
-			continue
-		}
-		if !fuzzyMatchSlash(cmd.Name, lower) {
-			continue
-		}
-		if _, ok := seen[cmd.Name]; ok {
-			continue
-		}
-		seen[cmd.Name] = struct{}{}
-		items = append(items, slashPopupItem{name: cmd.Name, summary: cmd.Summary})
-	}
-	for _, cmd := range customCommands {
-		name := "/" + cmd.Name
-		if !fuzzyMatchSlash(name, lower) {
-			continue
-		}
+	addItem := func(name, summary string) {
 		if _, ok := seen[name]; ok {
-			continue
+			return
 		}
 		seen[name] = struct{}{}
-		items = append(items, slashPopupItem{name: name, summary: "Custom command"})
+		item := slashPopupItem{name: name, summary: summary}
+		if strings.HasPrefix(name, lower) {
+			prefixItems = append(prefixItems, item)
+		} else if fuzzyMatchSlash(name, lower) {
+			fuzzyItems = append(fuzzyItems, item)
+		}
+	}
+
+	for _, cmd := range slashCommandCatalog {
+		if !cmd.HiddenInNav {
+			addItem(cmd.Name, cmd.Summary)
+		}
+	}
+	for _, cmd := range customCommands {
+		addItem("/"+cmd.Name, "Custom command")
 	}
 	for _, skillName := range discoveredSkills {
 		name := "/" + strings.TrimPrefix(strings.TrimSpace(skillName), "/")
-		if name == "/" {
-			continue
+		if name != "/" {
+			addItem(name, "Skill")
 		}
-		if !fuzzyMatchSlash(name, lower) {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		items = append(items, slashPopupItem{name: name, summary: "Skill"})
 	}
+
+	items := append(prefixItems, fuzzyItems...)
 	if len(items) == 0 {
 		return nil
 	}
@@ -101,16 +93,11 @@ func buildSlashPopup(input string, customCommands []product.CustomCommand, disco
 	return &slashPopupState{items: items, cursor: 0}
 }
 
-// fuzzyMatchSlash 对斜杠命令名执行 prefix + fuzzy 匹配。
-// query 包含前导 "/"（如 "/mo"）。
+// fuzzyMatchSlash 对斜杠命令名执行 fuzzy 子序列匹配（不含前缀匹配，前缀匹配由调用方处理）。
 func fuzzyMatchSlash(cmdName, query string) bool {
 	if query == "/" {
-		return true // 刚输入 "/" 时显示所有命令
+		return true
 	}
-	if strings.HasPrefix(cmdName, query) {
-		return true // 精确前缀优先
-	}
-	// fuzzy：query 的每个字符在 cmdName 中按序出现
 	q := strings.TrimPrefix(query, "/")
 	c := strings.TrimPrefix(cmdName, "/")
 	return fuzzyContainsStr(c, q)
