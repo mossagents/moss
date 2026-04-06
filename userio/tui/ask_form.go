@@ -703,6 +703,22 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 	sb.WriteString("\n\n")
 	sectionLabel("Reason", display.Reason)
 	sectionLabel(display.ActionLabel, display.ActionValue)
+	// diff 预览：仅对 write_file / edit_file 等文件写入工具显示
+	if strings.TrimSpace(display.DiffPreview) != "" {
+		sb.WriteString(dialogAccentStyle.Render("Changes"))
+		sb.WriteString("\n")
+		for _, line := range strings.Split(strings.TrimRight(display.DiffPreview, "\n"), "\n") {
+			if strings.HasPrefix(line, "+") {
+				sb.WriteString(toolResultStyle.Render(line))
+			} else if strings.HasPrefix(line, "-") {
+				sb.WriteString(toolErrorStyle.Render(line))
+			} else {
+				sb.WriteString(mutedStyle.Render(line))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString("\n")
+	}
 	sectionLabel(display.ScopeLabel, display.ScopeValue)
 	sb.WriteString(dialogAccentStyle.Render("Decision"))
 	sb.WriteString("\n")

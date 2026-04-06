@@ -39,6 +39,7 @@ type approvalDisplay struct {
 	RuleLabel           string
 	SessionDecisionNote string
 	ProjectDecisionNote string
+	DiffPreview         string // 文件写入类工具的 diff 预览（可为空）
 }
 
 type approvalMemoryRule struct {
@@ -141,7 +142,79 @@ func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) ap
 		display.SessionDecisionNote = "Future matching actions in this session will be approved automatically."
 		display.ProjectDecisionNote = "Future matching actions in this project will be approved automatically."
 	}
+	// 文件写入类工具：生成 diff 预览
+	if req != nil && len(req.Input) > 0 {
+		if diff := buildApprovalDiffPreview(req.ToolName, req.Input); diff != "" {
+			display.DiffPreview = diff
+		}
+	}
 	return display
+}
+
+// buildApprovalDiffPreview 对文件写入类工具生成可视化的 diff 预览（最多 30 行）。
+// 支持 write_file（显示新内容前几行）和 edit_file（显示 old_string → new_string）。
+func buildApprovalDiffPreview(toolName string, input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+	const maxLines = 30
+	switch toolName {
+	case "write_file":
+		var params struct {
+			Path    string `json:"path"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil || params.Content == "" {
+			return ""
+		}
+		lines := strings.Split(strings.TrimRight(params.Content, "\n"), "\n")
+		var b strings.Builder
+		shown := min(len(lines), maxLines)
+		for _, line := range lines[:shown] {
+			b.WriteString("+ ")
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		if len(lines) > maxLines {
+			b.WriteString("… ")
+			b.WriteString(strconv.Itoa(len(lines)-maxLines))
+			b.WriteString(" more lines\n")
+		}
+		return b.String()
+	case "edit_file":
+		var params struct {
+			Path      string `json:"path"`
+			OldString string `json:"old_string"`
+			NewString string `json:"new_string"`
+		}
+		if err := json.Unmarshal(input, &params); err != nil {
+			return ""
+		}
+		var b strings.Builder
+		lineCount := 0
+		for _, line := range strings.Split(strings.TrimRight(params.OldString, "\n"), "\n") {
+			if lineCount >= maxLines {
+				b.WriteString("… truncated\n")
+				break
+			}
+			b.WriteString("- ")
+			b.WriteString(line)
+			b.WriteString("\n")
+			lineCount++
+		}
+		for _, line := range strings.Split(strings.TrimRight(params.NewString, "\n"), "\n") {
+			if lineCount >= maxLines*2 {
+				b.WriteString("… truncated\n")
+				break
+			}
+			b.WriteString("+ ")
+			b.WriteString(line)
+			b.WriteString("\n")
+			lineCount++
+		}
+		return b.String()
+	}
+	return ""
 }
 
 func approvalSessionID(req *port.ApprovalRequest, currentSessionID string) string {

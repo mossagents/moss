@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
@@ -47,38 +48,81 @@ func newMentionPickerState(workspace, query, replaceToken string) *mentionPicker
 	}
 }
 
+// fileIndexEntry 是某个工作区下的文件列表缓存。
+type fileIndexEntry struct {
+	once  sync.Once
+	paths []string // 相对于 workspace 的路径
+}
+
+// fileIndexStore 以 workspace 绝对路径为键缓存文件列表。
+var fileIndexStore sync.Map // map[string]*fileIndexEntry
+
+// ensureFileIndex 懒初始化指定工作区的文件列表（最多 fileIndexMaxSize 条）。
+const fileIndexMaxSize = 5000
+
+// skippedDirs 在文件索引构建时跳过的目录名。
+var skippedDirs = map[string]bool{
+	".git": true, ".moss": true, ".mosscode": true,
+	"node_modules": true, "vendor": true, ".terraform": true,
+	"__pycache__": true, ".venv": true, "venv": true, "dist": true,
+	"build": true, "target": true, ".cache": true,
+}
+
+func ensureFileIndex(workspace string) []string {
+	v, _ := fileIndexStore.LoadOrStore(workspace, &fileIndexEntry{})
+	entry := v.(*fileIndexEntry)
+	entry.once.Do(func() {
+		paths := make([]string, 0, 512)
+		_ = filepath.WalkDir(workspace, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if d.IsDir() {
+				if skippedDirs[strings.ToLower(d.Name())] {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			rel, relErr := filepath.Rel(workspace, path)
+			if relErr != nil {
+				rel = path
+			}
+			paths = append(paths, filepath.Clean(rel))
+			if len(paths) >= fileIndexMaxSize {
+				return fs.SkipAll
+			}
+			return nil
+		})
+		sort.Strings(paths)
+		entry.paths = paths
+	})
+	return entry.paths
+}
+
+// invalidateFileIndex 清除指定工作区的文件索引缓存（如文件变化后调用）。
+func invalidateFileIndex(workspace string) {
+	fileIndexStore.Delete(workspace)
+}
+
+// listMentionCandidates 使用缓存的文件索引和 fuzzy 过滤返回候选文件列表。
 func listMentionCandidates(workspace, query string, limit int) []mentionCandidate {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return nil
 	}
+	index := ensureFileIndex(workspace)
 	query = strings.ToLower(strings.TrimSpace(query))
 	out := make([]mentionCandidate, 0, min(32, limit))
-	_ = filepath.WalkDir(workspace, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
+	for _, rel := range index {
+		if query != "" && !fuzzyContainsStr(strings.ToLower(rel), query) {
+			continue
 		}
-		if d.IsDir() {
-			name := strings.ToLower(strings.TrimSpace(d.Name()))
-			if name == ".git" || name == ".moss" || name == ".mosscode" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel := path
-		if next, relErr := filepath.Rel(workspace, path); relErr == nil {
-			rel = filepath.Clean(next)
-		}
-		if query != "" && !strings.Contains(strings.ToLower(rel), query) {
-			return nil
-		}
-		out = append(out, mentionCandidate{Label: rel, Path: path})
+		absPath := filepath.Join(workspace, rel)
+		out = append(out, mentionCandidate{Label: rel, Path: absPath})
 		if limit > 0 && len(out) >= limit {
-			return fs.SkipAll
+			break
 		}
-		return nil
-	})
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	}
 	return out
 }
 

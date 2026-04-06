@@ -54,11 +54,12 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		sections = append(sections, progress)
 	}
 	if m.streaming {
-		sections = append(sections, runningStyle.Render(fmt.Sprintf(
-			"  %s Running (%s, double Esc to cancel current run)",
+		runLabel := shimmerText("Running", m.now())
+		sections = append(sections, fmt.Sprintf("  %s %s (%s, double Esc to cancel current run)",
 			spinnerFrame(m.now()),
+			runLabel,
 			formatElapsed(m.runStartedAt, m.now()),
-		)))
+		))
 	}
 	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
 	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
