@@ -217,9 +217,9 @@ function tryPrettyJson(s: string): string {
 
 function ToolChip({ tool }: { tool: ToolExecution }) {
   const hasContent = !!(tool.input || tool.result);
-  const [open, setOpen] = useState(tool.status === "running" && hasContent);
+  const [open, setOpen] = useState(false);
 
-  // Auto-expand when input arrives while running; collapse when done
+  // Auto-expand when content arrives while running; collapse when done
   useEffect(() => {
     if (tool.status === "running" && (tool.input || tool.result)) setOpen(true);
     else if (tool.status !== "running") setOpen(false);
@@ -237,23 +237,28 @@ function ToolChip({ tool }: { tool: ToolExecution }) {
       {/* Header row — always visible */}
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-1.5",
+          "flex items-start gap-2 px-3 py-1.5",
           hasContent && "cursor-pointer select-none hover:brightness-95 transition-all",
         )}
         onClick={() => hasContent && setOpen((o) => !o)}
       >
         {tool.status === "running" && (
-          <span className="material-symbols-outlined text-sm animate-spin-1s shrink-0">refresh</span>
+          <span className="material-symbols-outlined text-sm animate-spin-1s shrink-0 mt-0.5">refresh</span>
         )}
         {tool.status === "done" && (
-          <span className="material-symbols-outlined text-sm shrink-0">check_circle</span>
+          <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">check_circle</span>
         )}
         {tool.status === "error" && (
-          <span className="material-symbols-outlined text-sm shrink-0">error</span>
+          <span className="material-symbols-outlined text-sm shrink-0 mt-0.5">error</span>
         )}
-        <span className="font-bold font-mono">{tool.name}</span>
+        <div className="flex-1 min-w-0">
+          <span className="font-bold font-mono">{tool.name}</span>
+          {tool.summary && (
+            <p className="opacity-60 font-mono truncate mt-0.5">{tool.summary}</p>
+          )}
+        </div>
         {hasContent && (
-          <span className="material-symbols-outlined text-sm ml-auto opacity-60">
+          <span className="material-symbols-outlined text-sm shrink-0 opacity-60 mt-0.5">
             {open ? "expand_less" : "expand_more"}
           </span>
         )}

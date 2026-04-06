@@ -18,9 +18,11 @@ export interface ChatMessage {
 }
 
 export interface ToolExecution {
+  callId?: string;   // matches call_id from backend meta for reliable start/result pairing
   name: string;
   status: "running" | "done" | "error";
   input?: string;
+  summary?: string;  // args_preview from backend — concise summary of call arguments
   result?: string;
 }
 
@@ -31,12 +33,24 @@ export interface StreamData {
 
 export interface ToolStartData {
   content: string;
-  meta?: { name?: string };
+  meta?: {
+    tool?: string;       // tool name (from backend)
+    call_id?: string;    // unique call id for pairing with result
+    risk?: string;
+    args_preview?: string;
+    name?: string;       // legacy fallback
+  };
 }
 
 export interface ToolResultData {
   content: string;
-  meta?: { name?: string; success?: boolean };
+  meta?: {
+    tool?: string;       // tool name (from backend)
+    call_id?: string;    // unique call id matching the start event
+    is_error?: boolean;
+    duration_ms?: number;
+    name?: string;       // legacy fallback
+  };
 }
 
 export interface AskData {

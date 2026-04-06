@@ -229,10 +229,12 @@ export default function App() {
   });
 
   useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
-    const toolName = data?.meta?.name || data?.content || "tool";
-    // Store input separately only when content differs from tool name (i.e. it's args, not just the name)
+    const toolName = data?.meta?.tool || data?.meta?.name || data?.content || "tool";
+    const callId = data?.meta?.call_id;
+    const summary = data?.meta?.args_preview || undefined;
+    // Store raw input only when content differs from the tool name
     const toolInput = data?.content && data.content !== toolName ? data.content : undefined;
-    const newTool: ToolExecution = { name: toolName, status: "running", input: toolInput };
+    const newTool: ToolExecution = { callId, name: toolName, status: "running", input: toolInput, summary };
     const currentId = streamingIdRef.current;
     setMessages((prev) => {
       const target = currentId
@@ -259,16 +261,21 @@ export default function App() {
   });
 
   useWailsEvent<ToolResultData>("chat:tool_result", (data) => {
-    const toolName = data?.meta?.name || "";
+    const toolName = data?.meta?.tool || data?.meta?.name || "";
+    const callId = data?.meta?.call_id;
+    const isError = data?.meta?.is_error ?? false;
     const currentId = streamingIdRef.current;
     setMessages((prev) => {
       const target = currentId
         ? prev.find((m) => m.id === currentId)
         : prev[prev.length - 1];
       if (target?.role === "assistant") {
+        // Match by callId when available (reliable), fall back to name-based matching
+        const matchesTool = (t: ToolExecution) =>
+          t.status === "running" && (callId ? t.callId === callId : t.name === toolName);
         const updateTool = (t: ToolExecution) =>
-          t.name === toolName && t.status === "running"
-            ? { ...t, status: "done" as const, result: data?.content }
+          matchesTool(t)
+            ? { ...t, status: (isError ? "error" as const : "done" as const), result: data?.content }
             : t;
         const tools = (target.tools ?? []).map(updateTool);
         const parts = (target.parts ?? []).map((p) =>
