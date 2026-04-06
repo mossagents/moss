@@ -6,10 +6,13 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
- * ModelPreset describes a known LLM provider + model combination.
+ * ModelPreset describes a known LLM model combination.
+ * Provider is the canonical API type (openai-completions, openai-responses, claude, gemini).
+ * Group is a display sub-group for grouping models within the same API type (e.g. "openai", "deepseek", "ollama").
  */
 export class ModelPreset {
     "provider": string;
+    "group"?: string;
     "label": string;
     "model": string;
     "base_url"?: string;

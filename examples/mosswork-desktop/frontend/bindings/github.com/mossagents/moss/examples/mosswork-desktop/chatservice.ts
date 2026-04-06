@@ -22,6 +22,22 @@ export function AddAutomation(id: string, schedule: string, goal: string): $Canc
 }
 
 /**
+ * DeleteSession removes a single session by ID.
+ * If the deleted session is the current active session, the active session is cleared.
+ */
+export function DeleteSession(id: string): $CancellablePromise<void> {
+    return $Call.ByID(3245855500, id);
+}
+
+/**
+ * DeleteSessions removes multiple sessions by ID in one call.
+ * Errors from individual deletions are collected and returned as a combined error.
+ */
+export function DeleteSessions(ids: string[]): $CancellablePromise<void> {
+    return $Call.ByID(245493997, ids);
+}
+
+/**
  * GetAutomations returns all scheduled tasks.
  */
 export function GetAutomations(): $CancellablePromise<$models.scheduleView[]> {
