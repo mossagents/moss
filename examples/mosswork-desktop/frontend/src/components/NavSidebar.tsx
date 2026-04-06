@@ -9,8 +9,8 @@ export default function NavSidebar({ activeModule, onModuleChange }: NavSidebarP
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-14 bg-surface-container-high flex flex-col items-center py-3 z-50 select-none border-r border-border">
       {/* Logo */}
-      <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center mb-6 mt-1 shadow-sm">
-        <span className="material-symbols-outlined text-on-primary text-lg">eco</span>
+      <div className="w-9 h-9 rounded-xl overflow-hidden mb-6 mt-1 shadow-sm shrink-0">
+        <img src="/logo.png" alt="Moss" className="w-full h-full object-cover" />
       </div>
 
       {/* Navigation icons */}

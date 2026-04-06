@@ -33,8 +33,8 @@ export default function AssistantThreadArea({ showTypingIndicator, onArtifact }:
       <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-8 pb-4">
         <AuiIf condition={(s) => s.thread.isEmpty}>
           <div className="flex flex-col items-center justify-center h-full select-none">
-            <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mb-5 shadow-botanical-empty">
-              <span className="material-symbols-outlined text-on-primary text-3xl">auto_awesome</span>
+            <div className="w-16 h-16 rounded-2xl overflow-hidden mb-5 shadow-botanical-empty shrink-0">
+              <img src="/logo.png" alt="Moss" className="w-full h-full object-cover" />
             </div>
             <h2 className="text-xl font-bold text-on-surface mb-1.5 font-headline">你好，有什么可以帮你？</h2>
             <p className="text-sm text-on-surface-variant max-w-sm text-center leading-relaxed">
@@ -113,8 +113,8 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
 
   return (
     <MessagePrimitive.Root data-role="assistant" className="flex gap-6 animate-fade-in">
-      <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
-        <span className="material-symbols-outlined text-on-primary text-sm">auto_awesome</span>
+      <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 mt-1 shadow-sm">
+        <img src="/logo.png" alt="Moss" className="w-full h-full object-cover" />
       </div>
       <div className="flex-1 space-y-3 min-w-0">
         {allParts.length > 0 ? (
