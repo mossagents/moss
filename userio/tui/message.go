@@ -198,6 +198,8 @@ func renderMarkdown(content string, width int) string {
 }
 
 func renderSystemMessage(content string, width int) string {
+	// "Run summary: | key=val | ..." → compact "✓ completed · N step · N tokens"
+	content = compactRunSummary(content)
 	wrapped := wrapText(content, width)
 	if wrapped == "" {
 		return "\n  ● "
@@ -211,6 +213,54 @@ func renderSystemMessage(content string, width int) string {
 		b.WriteString(line)
 	}
 	return b.String()
+}
+
+// compactRunSummary 将冗长的 "Run summary: | status=completed | steps=1 | ..."
+// 转换为紧凑单行格式，如 "✓ completed · 1 step · 51645 tokens"。
+// 非 Run summary 内容原样返回。
+func compactRunSummary(s string) string {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "Run summary:") {
+		return s
+	}
+	rest := strings.TrimPrefix(s, "Run summary:")
+	kvs := make(map[string]string, 8)
+	for _, part := range strings.Split(rest, "|") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		idx := strings.IndexByte(part, '=')
+		if idx <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(part[:idx])
+		v := strings.TrimSpace(part[idx+1:])
+		kvs[k] = v
+	}
+	var parts []string
+	if status := kvs["status"]; status == "completed" {
+		parts = append(parts, "✓ "+status)
+	} else if status != "" {
+		parts = append(parts, status)
+	}
+	if steps := kvs["steps"]; steps != "" && steps != "0" && steps != "n/a" {
+		word := "steps"
+		if steps == "1" {
+			word = "step"
+		}
+		parts = append(parts, steps+" "+word)
+	}
+	if tokens := kvs["tokens"]; tokens != "" && tokens != "0" && tokens != "n/a" {
+		parts = append(parts, tokens+" tokens")
+	}
+	if cost := kvs["cost"]; cost != "" && cost != "n/a" {
+		parts = append(parts, "cost "+cost)
+	}
+	if len(parts) == 0 {
+		return s
+	}
+	return strings.Join(parts, "  ·  ")
 }
 
 func shouldWrapAsPlainText(content string) bool {

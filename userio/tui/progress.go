@@ -113,14 +113,19 @@ func (s executionProgressState) renderLine(now time.Time, width int) string {
 
 func (s executionProgressState) renderTimelineEntry(now time.Time, width int, latest bool) string {
 	phase := progressPhaseLabel(s.Phase)
-	if strings.TrimSpace(phase) == "" {
+	// 仅在 phase 本身为空时才回退到 status 标签；
+	// thinking 等显式返回 "" 的 phase 不使用回退（避免显示 "running"）。
+	if strings.TrimSpace(phase) == "" && strings.TrimSpace(s.Phase) == "" {
 		phase = strings.ToLower(progressStatusLabel(s.Status))
 	}
 	label := "○"
 	if latest {
 		label = "●"
 	}
-	parts := []string{label, phase}
+	parts := []string{label}
+	if strings.TrimSpace(phase) != "" {
+		parts = append(parts, phase)
+	}
 	if msg := strings.TrimSpace(s.Message); msg != "" {
 		parts = append(parts, msg)
 	}
@@ -187,11 +192,14 @@ func shouldAppendThinkingTranscript(snapshot executionProgressState) bool {
 	if !snapshot.visible() || strings.TrimSpace(snapshot.Message) == "" {
 		return false
 	}
+	// 只记录有意义的阶段：工具调用、审批、终态。
+	// 跳过 starting/thinking — 这些是 LLM 内部处理阶段，对用户无意义，且在没有
+	// thinking 模型时尤其产生噪音。
 	switch strings.TrimSpace(snapshot.Phase) {
-	case "starting", "thinking", "tools", "approval", "completed", "failed", "cancelled":
+	case "tools", "approval", "completed", "failed", "cancelled":
 		return true
 	default:
-		return strings.TrimSpace(snapshot.Status) != ""
+		return false
 	}
 }
 
@@ -274,8 +282,7 @@ func (m chatModel) renderProgressBlock(width int) string {
 		return m.progress.renderLine(m.now(), width)
 	}
 	innerWidth := max(20, width-4)
-	lines := make([]string, 0, len(m.progressTrail)+1)
-	lines = append(lines, mutedStyle.Render("thinking"))
+	lines := make([]string, 0, len(m.progressTrail))
 	for i, snapshot := range m.progressTrail {
 		lines = append(lines, snapshot.renderTimelineEntry(m.now(), innerWidth, i == len(m.progressTrail)-1))
 	}
@@ -387,7 +394,7 @@ func progressPhaseLabel(phase string) string {
 	case "starting":
 		return "starting"
 	case "thinking":
-		return "thinking"
+		return "" // 模型内部处理阶段，不显示标签（避免非 thinking 模型产生噪音）
 	case "tools":
 		return "using tools"
 	case "approval":

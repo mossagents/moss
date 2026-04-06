@@ -19,7 +19,7 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 		Snapshot: executionProgressState{
 			SessionID: "s1",
 			Status:    "running",
-			Phase:     "thinking",
+			Phase:     "tools", // use tools phase — recorded in transcript; thinking is now skipped
 			Iteration: 2,
 			MaxSteps:  10,
 			StartedAt: now.Add(-5 * time.Second),
@@ -31,7 +31,7 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 		t.Fatalf("progress session = %q, want s1", updated.progress.SessionID)
 	}
 	if len(updated.messages) == 0 || updated.messages[len(updated.messages)-1].kind != msgProgress {
-		t.Fatalf("expected thinking progress appended to transcript, got %+v", updated.messages)
+		t.Fatalf("expected tools progress appended to transcript, got %+v", updated.messages)
 	}
 	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "iteration updated") {
 		t.Fatalf("unexpected progress transcript content: %+v", updated.messages[len(updated.messages)-1])
@@ -174,14 +174,14 @@ func TestChatProgressBuildsThinkingTimeline(t *testing.T) {
 			progressCount++
 		}
 	}
-	if progressCount != 3 {
-		t.Fatalf("progress transcript count = %d, want 3", progressCount)
+	if progressCount != 1 {
+		t.Fatalf("progress transcript count = %d, want 1 (thinking phases no longer added)", progressCount)
 	}
 	if updated.visibleProgressHeight() != 0 {
 		t.Fatalf("visible progress height = %d, want 0", updated.visibleProgressHeight())
 	}
 	transcript := renderAllMessages(updated.messages, 100, false)
-	for _, want := range []string{"iteration 1 started", "calling gpt-4o", "running run_command"} {
+	for _, want := range []string{"running run_command"} {
 		if !strings.Contains(transcript, want) {
 			t.Fatalf("progress transcript missing %q in %q", want, transcript)
 		}

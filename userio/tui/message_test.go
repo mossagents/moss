@@ -70,15 +70,16 @@ func TestRenderMessage_AssistantMediaUsesMediaHint(t *testing.T) {
 
 func TestRenderMessage_ProgressShowsThinkingDetail(t *testing.T) {
 	ts := time.Date(2026, 4, 4, 12, 34, 56, 0, time.UTC)
+	// thinking 阶段不再添加到 transcript，改用 tools 阶段测试 progress 渲染
 	out := renderMessage(chatMessage{
 		kind:    msgProgress,
-		content: "calling gpt-4o",
+		content: "running run_command",
 		meta: map[string]any{
-			"phase":     "thinking",
+			"phase":     "tools",
 			"timestamp": ts,
 		},
 	}, 80)
-	for _, want := range []string{"◦", "thinking", "calling gpt-4o"} {
+	for _, want := range []string{"◦", "using tools", "running run_command"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("progress message missing %q in %q", want, out)
 		}
