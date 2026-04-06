@@ -124,10 +124,10 @@ func (m chatModel) renderSlashPopup(width int) string {
 	if p == nil || len(p.items) == 0 {
 		return ""
 	}
-	// 弹窗宽度：不超过 60，不小于 36
-	popupWidth := min(60, max(36, width-4))
+	// 弹窗宽度：不超过 88，不小于 48
+	popupWidth := min(88, max(48, width-4))
 
-	nameWidth := 20
+	nameWidth := 22
 	summaryWidth := popupWidth - nameWidth - 4
 
 	var rows []string
