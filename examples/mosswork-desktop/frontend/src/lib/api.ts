@@ -17,6 +17,10 @@ export const ChatService = {
   getConfig: () => _Chat.GetConfig(),
   isRunning: () => _Chat.IsRunning(),
   sendCommand: (command: string) => _Chat.SendMessage(command),
+  addAutomation: (id: string, schedule: string, goal: string) => _Chat.AddAutomation(id, schedule, goal),
+  removeAutomation: (id: string) => _Chat.RemoveAutomation(id),
+  getAutomations: () => _Chat.GetAutomations(),
+  runAutomationNow: (id: string) => _Chat.RunAutomationNow(id),
 };
 
 export const FileService = {

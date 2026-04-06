@@ -20,15 +20,17 @@ import type {
   ErrorData,
   DashboardState,
   SessionSummary,
-  ScheduleEntry,
+  AutomationTask,
 } from "@/lib/types";
-import Sidebar from "@/components/Sidebar";
+import NavSidebar from "@/components/NavSidebar";
+import ChatSidebar from "@/components/ChatSidebar";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar";
 import AskDialog from "@/components/AskDialog";
 import WorkerPanel from "@/components/WorkerPanel";
-import TopBar from "@/components/TopBar";
-import RightPanel from "@/components/RightPanel";
+import ArtifactPanel from "@/components/ArtifactPanel";
+import AutomationView from "@/components/automation/AutomationView";
+import AutomationFormModal from "@/components/automation/AutomationFormModal";
 
 let msgCounter = 0;
 function nextId() {
@@ -93,6 +95,10 @@ function normalizeWorkerState(input: any): WorkerState | null {
 }
 
 export default function App() {
+  const [module, setModule] = useState<"chat" | "automation">("chat");
+  const [artifact, setArtifact] = useState<string | null>(null);
+
+  // Chat state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -100,8 +106,11 @@ export default function App() {
   const [workerState, setWorkerState] = useState<WorkerState | null>(null);
   const [pendingFiles, setPendingFiles] = useState<string[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
+
+  // Automation state
+  const [automationTasks, setAutomationTasks] = useState<AutomationTask[]>([]);
+  const [showAutomationForm, setShowAutomationForm] = useState(false);
 
   const streamingIdRef = useRef<string | null>(null);
   const pendingFilesRef = useRef<string[]>([]);
@@ -113,7 +122,16 @@ export default function App() {
   useEffect(() => {
     ChatService.getConfig()
       .then((c: any) => setConfig(c as AppConfig))
-      .catch(() => { });
+      .catch(() => {});
+  }, []);
+
+  // Load automations on mount
+  useEffect(() => {
+    ChatService.getAutomations()
+      .then((tasks: any) => {
+        if (Array.isArray(tasks)) setAutomationTasks(tasks as AutomationTask[]);
+      })
+      .catch(() => {});
   }, []);
 
   const appendAssistantChunk = useCallback((content: string) => {
@@ -282,7 +300,7 @@ export default function App() {
   useWailsEvent<DashboardState>("desktop:dashboard", (data) => {
     if (!data || typeof data !== "object") return;
     if (Array.isArray(data.sessions)) setSessions(data.sessions);
-    if (Array.isArray(data.schedules)) setSchedules(data.schedules);
+    if (Array.isArray(data.schedules)) setAutomationTasks(data.schedules as AutomationTask[]);
     if (typeof data.current_session_id === "string") setCurrentSessionId(data.current_session_id);
     const ws = normalizeWorkerState((data as DashboardState).worker);
     if (ws) setWorkerState(ws);
@@ -299,8 +317,8 @@ export default function App() {
     );
   });
 
-  useWailsEvent<ScheduleEntry[]>("desktop:schedules", (data) => {
-    if (Array.isArray(data)) setSchedules(data);
+  useWailsEvent<AutomationTask[]>("desktop:schedules", (data) => {
+    if (Array.isArray(data)) setAutomationTasks(data);
   });
 
   useWailsEvent<any>("worker:update", (data) => {
@@ -359,7 +377,7 @@ export default function App() {
   const handleStop = useCallback(async () => {
     try {
       await ChatService.stopAgent();
-    } catch { }
+    } catch {}
   }, []);
 
   const handleNewSession = useCallback(async () => {
@@ -367,25 +385,29 @@ export default function App() {
       await ChatService.newSession();
       setMessages([]);
       setPendingFiles([]);
+      setArtifact(null);
       streamingIdRef.current = null;
       setWorkerState(null);
-    } catch { }
+    } catch {}
   }, []);
 
-  const handleResumeSession = useCallback(async (id: string) => {
-    await handleRunCommand(`/resume ${id}`);
-  }, [handleRunCommand]);
+  const handleResumeSession = useCallback(
+    async (id: string) => {
+      await handleRunCommand(`/resume ${id}`);
+    },
+    [handleRunCommand],
+  );
 
   const handleAskResponse = useCallback(async (response: string) => {
     setAskData(null);
     try {
       await ChatService.respondToAsk(response);
-    } catch { }
+    } catch {}
   }, []);
 
   const handleAskDismiss = useCallback(() => {
     setAskData(null);
-    ChatService.respondToAsk("").catch(() => { });
+    ChatService.respondToAsk("").catch(() => {});
   }, []);
 
   const handlePickAttachments = useCallback(async () => {
@@ -394,7 +416,7 @@ export default function App() {
       if (picked?.length) {
         setPendingFiles((prev) => [...prev, ...picked]);
       }
-    } catch { }
+    } catch {}
   }, []);
 
   const handleRemoveAttachment = useCallback((index: number) => {
@@ -417,6 +439,34 @@ export default function App() {
     [handleSend],
   );
 
+  // Automation handlers
+  const handleAddAutomation = useCallback(async (id: string, schedule: string, goal: string) => {
+    try {
+      await ChatService.addAutomation(id, schedule, goal);
+      const tasks = await ChatService.getAutomations();
+      if (Array.isArray(tasks)) setAutomationTasks(tasks as AutomationTask[]);
+    } catch (err: any) {
+      console.error("addAutomation failed:", err);
+    }
+  }, []);
+
+  const handleRemoveAutomation = useCallback(async (id: string) => {
+    try {
+      await ChatService.removeAutomation(id);
+      setAutomationTasks((prev) => prev.filter((t) => t.id !== id));
+    } catch (err: any) {
+      console.error("removeAutomation failed:", err);
+    }
+  }, []);
+
+  const handleRunAutomationNow = useCallback(async (id: string) => {
+    try {
+      await ChatService.runAutomationNow(id);
+    } catch (err: any) {
+      console.error("runAutomationNow failed:", err);
+    }
+  }, []);
+
   const runtime = useExternalStoreRuntime<ChatMessage>({
     messages,
     convertMessage: convertChatMessage,
@@ -429,58 +479,74 @@ export default function App() {
   const lastRole = messages[messages.length - 1]?.role;
   const showTypingIndicator = isRunning && !hasStreamingAssistant && lastRole !== "assistant";
 
+  // suppress unused warning for config
+  void config;
+
   return (
     <div className="flex h-full w-full bg-background text-on-surface">
-      <div className="wails-drag fixed top-0 left-0 right-0 h-8 z-60" />
+      <div className="wails-drag fixed top-0 left-0 right-0 h-8 z-60 pointer-events-none" />
 
-      <Sidebar
-        config={config}
-        isRunning={isRunning}
-        onNewSession={handleNewSession}
-        sessions={sessions}
-        currentSessionId={currentSessionId}
-        onResumeSession={handleResumeSession}
-      />
+      <NavSidebar activeModule={module} onModuleChange={setModule} />
 
-      <RightPanel
-        config={config}
-        isRunning={isRunning}
-        sessions={sessions}
-        schedules={schedules}
-        onRunCommand={handleRunCommand}
-      />
+      {module === "chat" && (
+        <>
+          <ChatSidebar
+            sessions={sessions}
+            currentSessionId={currentSessionId}
+            onNewSession={handleNewSession}
+            onResumeSession={handleResumeSession}
+            isRunning={isRunning}
+          />
 
-      <main className="absolute left-64 right-80 top-0 bottom-0 flex flex-col bg-background">
-        <TopBar
-          onNewSession={handleNewSession}
-          onOffload={() => handleRunCommand("/offload 20 topbar")}
-          onShowDashboard={() => handleRunCommand("/dashboard")}
-          currentSessionId={currentSessionId}
-          currentSessionTitle={sessions.find((s) => s.id === currentSessionId)?.title}
-        />
+          <main
+            className="absolute top-0 bottom-0 flex flex-col"
+            style={{
+              left: "296px",
+              right: artifact ? "400px" : "0",
+            }}
+          >
+            <AssistantRuntimeProvider runtime={runtime}>
+              <div className="flex-1 overflow-hidden relative mt-8">
+                <AssistantThreadArea
+                  showTypingIndicator={showTypingIndicator}
+                  onArtifact={setArtifact}
+                />
 
-        <AssistantRuntimeProvider runtime={runtime}>
-          <div className="flex-1 overflow-hidden relative mt-16">
-            <AssistantThreadArea showTypingIndicator={showTypingIndicator} />
-
-            {workerState && workerState.tasks.length > 0 && (
-              <div className="absolute bottom-0 left-0 right-0 pb-2">
-                <WorkerPanel state={workerState} />
+                {workerState && workerState.tasks.length > 0 && (
+                  <div className="absolute bottom-0 left-0 right-0 pb-2">
+                    <WorkerPanel state={workerState} />
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <div className="relative h-36 shrink-0">
-            <AssistantComposerBar
-              isRunning={isRunning}
-              onStop={handleStop}
-              attachmentFiles={pendingFiles}
-              onAttachFiles={handlePickAttachments}
-              onRemoveAttachment={handleRemoveAttachment}
-            />
-          </div>
-        </AssistantRuntimeProvider>
-      </main>
+              <div className="relative h-36 shrink-0">
+                <AssistantComposerBar
+                  isRunning={isRunning}
+                  onStop={handleStop}
+                  attachmentFiles={pendingFiles}
+                  onAttachFiles={handlePickAttachments}
+                  onRemoveAttachment={handleRemoveAttachment}
+                />
+              </div>
+            </AssistantRuntimeProvider>
+          </main>
+
+          {artifact && (
+            <ArtifactPanel html={artifact} onClose={() => setArtifact(null)} />
+          )}
+        </>
+      )}
+
+      {module === "automation" && (
+        <main className="absolute top-0 bottom-0" style={{ left: "56px", right: "0" }}>
+          <AutomationView
+            tasks={automationTasks}
+            onAdd={() => setShowAutomationForm(true)}
+            onRemove={handleRemoveAutomation}
+            onRunNow={handleRunAutomationNow}
+          />
+        </main>
+      )}
 
       {askData && (
         <AskDialog
@@ -489,6 +555,13 @@ export default function App() {
           onDismiss={handleAskDismiss}
         />
       )}
+
+      <AutomationFormModal
+        open={showAutomationForm}
+        onClose={() => setShowAutomationForm(false)}
+        onSave={handleAddAutomation}
+      />
     </div>
   );
 }
+

@@ -94,6 +94,15 @@ export interface ScheduleEntry {
   next_run?: string;
 }
 
+export interface AutomationTask {
+  id: string;
+  schedule: string;
+  goal: string;
+  run_count: number;
+  last_run?: string;
+  next_run?: string;
+}
+
 export interface DashboardState {
   current_session_id?: string;
   sessions?: SessionSummary[];

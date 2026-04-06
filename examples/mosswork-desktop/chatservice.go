@@ -987,3 +987,101 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 	}
 	return title
 }
+
+// AddAutomation creates or replaces a scheduled automation task.
+func (s *ChatService) AddAutomation(id, schedule, goal string) error {
+	if s.sched == nil {
+		return fmt.Errorf("scheduler not initialized")
+	}
+	_ = s.sched.RemoveJob(id)
+	if err := s.sched.AddJob(scheduler.Job{
+		ID:       id,
+		Schedule: schedule,
+		Goal:     goal,
+		Config: session.SessionConfig{
+			Goal:       goal,
+			Mode:       "scheduled",
+			MaxSteps:   30,
+			TrustLevel: s.cfg.trust,
+		},
+	}); err != nil {
+		return err
+	}
+	s.emitDashboard()
+	return nil
+}
+
+// RemoveAutomation removes a scheduled task by ID.
+func (s *ChatService) RemoveAutomation(id string) error {
+	if s.sched == nil {
+		return fmt.Errorf("scheduler not initialized")
+	}
+	if err := s.sched.RemoveJob(id); err != nil {
+		return err
+	}
+	s.emitDashboard()
+	return nil
+}
+
+// GetAutomations returns all scheduled tasks.
+func (s *ChatService) GetAutomations() ([]scheduleView, error) {
+	if s.sched == nil {
+		return []scheduleView{}, nil
+	}
+	jobs := s.sched.ListJobs()
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].ID < jobs[j].ID })
+	views := make([]scheduleView, 0, len(jobs))
+	for _, j := range jobs {
+		v := scheduleView{
+			ID:       j.ID,
+			Schedule: j.Schedule,
+			Goal:     j.Goal,
+			RunCount: j.RunCount,
+		}
+		if !j.LastRun.IsZero() {
+			v.LastRun = j.LastRun.Format("2006-01-02 15:04:05")
+		}
+		if !j.NextRun.IsZero() {
+			v.NextRun = j.NextRun.Format("2006-01-02 15:04:05")
+		}
+		views = append(views, v)
+	}
+	return views, nil
+}
+
+// RunAutomationNow triggers an automation task immediately (fire-and-forget).
+func (s *ChatService) RunAutomationNow(id string) error {
+	if s.sched == nil {
+		return fmt.Errorf("scheduler not initialized")
+	}
+	jobs := s.sched.ListJobs()
+	for _, j := range jobs {
+		if j.ID == id {
+			go func(job scheduler.Job) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+				defer cancel()
+				cfg := job.Config
+				if cfg.Goal == "" {
+					cfg.Goal = job.Goal
+				}
+				sess, err := s.k.NewSession(ctx, cfg)
+				if err != nil {
+					slog.Warn("RunAutomationNow: create session failed", slog.Any("error", err))
+					return
+				}
+				sess.AppendMessage(port.Message{
+					Role:         port.RoleUser,
+					ContentParts: []port.ContentPart{port.TextPart(job.Goal)},
+				})
+				if _, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO); err != nil {
+					slog.Warn("RunAutomationNow: run failed", slog.Any("error", err))
+				}
+				if err := s.persistSession(sess); err != nil {
+					slog.Debug("RunAutomationNow: persist failed", slog.Any("error", err))
+				}
+			}(j)
+			return nil
+		}
+	}
+	return fmt.Errorf("automation %q not found", id)
+}

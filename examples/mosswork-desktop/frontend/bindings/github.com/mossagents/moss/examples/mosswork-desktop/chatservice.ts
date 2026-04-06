@@ -10,15 +10,35 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+/**
+ * AddAutomation creates or replaces a scheduled automation task.
+ */
+export function AddAutomation(id: string, schedule: string, goal: string): $CancellablePromise<void> {
+    return $Call.ByID(1862023689, id, schedule, goal);
+}
+
+/**
+ * GetAutomations returns all scheduled tasks.
+ */
+export function GetAutomations(): $CancellablePromise<$models.scheduleView[]> {
+    return $Call.ByID(3094061219).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 export function GetConfig(): $CancellablePromise<{ [_ in string]?: any }> {
     return $Call.ByID(889101375).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
 export function GetDashboard(): $CancellablePromise<{ [_ in string]?: any }> {
     return $Call.ByID(1605919923).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType2($result);
     });
 }
 
@@ -30,12 +50,26 @@ export function NewSession(): $CancellablePromise<void> {
     return $Call.ByID(787229693);
 }
 
+/**
+ * RemoveAutomation removes a scheduled task by ID.
+ */
+export function RemoveAutomation(id: string): $CancellablePromise<void> {
+    return $Call.ByID(2305826584, id);
+}
+
 export function RespondToAsk(value: string, approved: boolean): $CancellablePromise<void> {
     return $Call.ByID(1013399822, value, approved);
 }
 
 export function ResumeSession(id: string): $CancellablePromise<void> {
     return $Call.ByID(3201944292, id);
+}
+
+/**
+ * RunAutomationNow triggers an automation task immediately (fire-and-forget).
+ */
+export function RunAutomationNow(id: string): $CancellablePromise<void> {
+    return $Call.ByID(1778526165, id);
 }
 
 export function SendMessage(content: string): $CancellablePromise<void> {
@@ -51,4 +85,6 @@ export function StopAgent(): $CancellablePromise<void> {
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Map($Create.Any, $Create.Any);
+const $$createType0 = $models.scheduleView.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Map($Create.Any, $Create.Any);

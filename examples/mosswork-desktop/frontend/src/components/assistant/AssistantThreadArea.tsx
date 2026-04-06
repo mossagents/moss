@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -14,9 +15,19 @@ import { cn } from "@/lib/cn";
 
 interface AssistantThreadAreaProps {
   showTypingIndicator: boolean;
+  onArtifact?: (html: string) => void;
 }
 
-export default function AssistantThreadArea({ showTypingIndicator }: AssistantThreadAreaProps) {
+function extractArtifact(content: string): { cleaned: string; artifact: string | null } {
+  const match = content.match(/<artifact>([\s\S]*?)<\/artifact>/i);
+  if (!match) return { cleaned: content, artifact: null };
+  return {
+    cleaned: content.replace(/<artifact>[\s\S]*?<\/artifact>/gi, "").trim(),
+    artifact: match[1],
+  };
+}
+
+export default function AssistantThreadArea({ showTypingIndicator, onArtifact }: AssistantThreadAreaProps) {
   return (
     <ThreadPrimitive.Root className="h-full">
       <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-8 pb-4">
@@ -38,7 +49,7 @@ export default function AssistantThreadArea({ showTypingIndicator }: AssistantTh
           <ThreadPrimitive.Messages>
             {({ message }) => {
               if (message.role === "user") return <UserMessage />;
-              if (message.role === "assistant") return <AssistantMessage />;
+              if (message.role === "assistant") return <AssistantMessage onArtifact={onArtifact} />;
               return <SystemMessage />;
             }}
           </ThreadPrimitive.Messages>
@@ -77,12 +88,20 @@ function UserMessage() {
   );
 }
 
-function AssistantMessage() {
+function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void }) {
   const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
   const rawMessages = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  const content = rawMessages.map((m) => m.content || "").join("");
+  const fullContent = rawMessages.map((m) => m.content || "").join("");
   const tools = rawMessages.flatMap((m) => m.tools || []);
   const isStreaming = useMessage((s) => s.status?.type === "running");
+
+  const { cleaned: content, artifact } = extractArtifact(fullContent);
+
+  useEffect(() => {
+    if (artifact && !isStreaming && onArtifact) {
+      onArtifact(artifact);
+    }
+  }, [artifact, isStreaming, onArtifact]);
 
   return (
     <MessagePrimitive.Root data-role="assistant" className="flex gap-6 animate-fade-in">
@@ -95,6 +114,13 @@ function AssistantMessage() {
             {tools.map((tool, i) => (
               <ToolChip key={`${tool.name}-${i}`} tool={tool} />
             ))}
+          </div>
+        )}
+
+        {artifact && !isStreaming && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-container/30 text-on-primary-container text-xs font-bold">
+            <span className="material-symbols-outlined text-sm">web</span>
+            已生成界面 · 查看右侧面板
           </div>
         )}
 
@@ -164,4 +190,3 @@ function ToolChip({ tool }: { tool: ToolExecution }) {
     </div>
   );
 }
-
