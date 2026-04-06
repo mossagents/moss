@@ -29,6 +29,7 @@ export const ChatService = {
   deleteSessions: (ids: string[]) => _Chat.DeleteSessions(ids),
   resumeSession: (id: string) => _Chat.ResumeSession(id),
   getSessionHistory: (id: string) => _Chat.GetSessionHistory(id),
+  getTools: () => _Chat.GetTools(),
 };
 
 export const FileService = {

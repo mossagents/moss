@@ -107,6 +107,16 @@ export function GetSettings() {
 }
 
 /**
+ * GetTools returns the list of tools registered with the kernel.
+ * @returns {$CancellablePromise<$models.ToolInfo[]>}
+ */
+export function GetTools() {
+    return $Call.ByID(2116279044).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType8($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<boolean>}
  */
 export function IsRunning() {
@@ -200,3 +210,5 @@ const $$createType3 = $models.ModelPreset.createFrom;
 const $$createType4 = $Create.Array($$createType3);
 const $$createType5 = $models.HistoryMessage.createFrom;
 const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = $models.ToolInfo.createFrom;
+const $$createType8 = $Create.Array($$createType7);

@@ -145,6 +145,13 @@ export interface ModelPreset {
   base_url?: string;
 }
 
+export interface ToolInfo {
+  name: string;
+  description: string;
+  risk: "low" | "medium" | "high";
+  source?: string;
+}
+
 export interface AppSettings {
   provider: string;
   model: string;

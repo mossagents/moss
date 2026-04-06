@@ -23,6 +23,7 @@ import type {
   SessionSummary,
   AutomationTask,
   MessageRole,
+  ToolInfo,
 } from "@/lib/types";
 import NavSidebar from "@/components/NavSidebar";
 import ChatSidebar from "@/components/ChatSidebar";
@@ -34,6 +35,7 @@ import ArtifactPanel from "@/components/ArtifactPanel";
 import AutomationView from "@/components/automation/AutomationView";
 import AutomationFormModal from "@/components/automation/AutomationFormModal";
 import SettingsView from "@/components/settings/SettingsView";
+import ChatInfoPanel from "@/components/ChatInfoPanel";
 
 let msgCounter = 0;
 function nextId() {
@@ -116,6 +118,11 @@ export default function App() {
   const [automationTasks, setAutomationTasks] = useState<AutomationTask[]>([]);
   const [showAutomationForm, setShowAutomationForm] = useState(false);
 
+  // Right info panel
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
+  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [sessionTokens, setSessionTokens] = useState(0);
+
   const streamingIdRef = useRef<string | null>(null);
   const pendingFilesRef = useRef<string[]>([]);
   // currentSessionIdRef mirrors currentSessionId for use in event handler closures
@@ -133,6 +140,9 @@ export default function App() {
   useEffect(() => {
     ChatService.getConfig()
       .then((c: any) => setConfig(c as AppConfig))
+      .catch(() => {});
+    ChatService.getTools()
+      .then((t: any) => { if (Array.isArray(t)) setTools(t as ToolInfo[]); })
       .catch(() => {});
   }, []);
 
@@ -351,6 +361,9 @@ export default function App() {
     if (data?.session_id) {
       setCurrentSessionId(data.session_id);
     }
+    if (typeof data?.tokens_used === "number" && data.tokens_used > 0) {
+      setSessionTokens((prev) => prev + data.tokens_used);
+    }
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
@@ -462,6 +475,7 @@ export default function App() {
   const handleNewSession = useCallback(async () => {
     setIsRunning(false);
     setStatusText("");
+    setSessionTokens(0);
     try {
       await ChatService.newSession();
       setMessages([]);
@@ -475,6 +489,7 @@ export default function App() {
   const handleResumeSession = useCallback(async (id: string) => {
     setIsRunning(false);
     setStatusText("");
+    setSessionTokens(0);
     try {
       // Clear current UI state before switching
       setMessages([]);
@@ -638,11 +653,23 @@ export default function App() {
             className="absolute top-0 bottom-0 flex flex-col"
             style={{
               left: "296px",
-              right: artifact ? "400px" : "0",
+              right: artifact ? "400px" : showInfoPanel ? "256px" : "0",
             }}
           >
             <AssistantRuntimeProvider runtime={runtime}>
               <div className="flex-1 overflow-hidden relative mt-8">
+                {/* Info panel toggle button */}
+                <button
+                  onClick={() => setShowInfoPanel((v) => !v)}
+                  className={`absolute top-2 right-3 z-10 w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
+                    showInfoPanel
+                      ? "bg-primary/15 text-primary"
+                      : "hover:bg-surface-container text-on-surface-variant hover:text-on-surface"
+                  }`}
+                  title="会话信息"
+                >
+                  <span className="material-symbols-outlined text-[17px]">info</span>
+                </button>
                 <AssistantThreadArea
                   showTypingIndicator={showTypingIndicator}
                   statusText={statusText}
@@ -676,6 +703,18 @@ export default function App() {
 
           {artifact && (
             <ArtifactPanel html={artifact} onClose={() => setArtifact(null)} />
+          )}
+
+          {showInfoPanel && (
+            <ChatInfoPanel
+              messages={messages}
+              totalTokens={sessionTokens}
+              currentSessionId={currentSessionId}
+              sessions={sessions}
+              tools={tools}
+              config={config}
+              onClose={() => setShowInfoPanel(false)}
+            />
           )}
         </>
       )}

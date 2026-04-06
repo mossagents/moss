@@ -461,6 +461,32 @@ func (s *ChatService) GetConfig() map[string]any {
 	}
 }
 
+// ToolInfo is a frontend-friendly summary of a registered tool.
+type ToolInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Risk        string `json:"risk"`
+	Source      string `json:"source,omitempty"`
+}
+
+// GetTools returns the list of tools registered with the kernel.
+func (s *ChatService) GetTools() []ToolInfo {
+	if s.k == nil {
+		return nil
+	}
+	specs := s.k.ToolRegistry().List()
+	infos := make([]ToolInfo, 0, len(specs))
+	for _, sp := range specs {
+		infos = append(infos, ToolInfo{
+			Name:        sp.Name,
+			Description: sp.Description,
+			Risk:        string(sp.Risk),
+			Source:      sp.Source,
+		})
+	}
+	return infos
+}
+
 func (s *ChatService) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

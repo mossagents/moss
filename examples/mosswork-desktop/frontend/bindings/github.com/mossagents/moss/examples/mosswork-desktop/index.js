@@ -12,5 +12,6 @@ export {
 export {
     HistoryMessage,
     HistoryTool,
-    ModelPreset
+    ModelPreset,
+    ToolInfo
 } from "./models.js";

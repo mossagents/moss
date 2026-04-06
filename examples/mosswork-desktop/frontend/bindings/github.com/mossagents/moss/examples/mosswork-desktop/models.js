@@ -175,6 +175,58 @@ export class ModelPreset {
     }
 }
 
+/**
+ * ToolInfo is a frontend-friendly summary of a registered tool.
+ */
+export class ToolInfo {
+    /**
+     * Creates a new ToolInfo instance.
+     * @param {Partial<ToolInfo>} [$$source = {}] - The source object to create the ToolInfo.
+     */
+    constructor($$source = {}) {
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+        if (!("risk" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["risk"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["source"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ToolInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ToolInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ToolInfo(/** @type {Partial<ToolInfo>} */($$parsedSource));
+    }
+}
+
 export class scheduleView {
     /**
      * Creates a new scheduleView instance.
