@@ -91,11 +91,11 @@ function UserMessage() {
 function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void }) {
   const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
   const rawMessages = Array.isArray(raw) ? raw : raw ? [raw] : [];
-  const fullContent = rawMessages.map((m) => m.content || "").join("");
-  const tools = rawMessages.flatMap((m) => m.tools || []);
   const isStreaming = useMessage((s) => s.status?.type === "running");
 
-  const { cleaned: content, artifact } = extractArtifact(fullContent);
+  const allParts = rawMessages.flatMap((m) => m.parts ?? []);
+  const fullContent = rawMessages.map((m) => m.content || "").join("");
+  const { artifact } = extractArtifact(fullContent);
 
   useEffect(() => {
     if (artifact && !isStreaming && onArtifact) {
@@ -103,31 +103,59 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
     }
   }, [artifact, isStreaming, onArtifact]);
 
+  // Index of last text part — receives the streaming cursor
+  let lastTextIdx = -1;
+  if (isStreaming) {
+    for (let i = allParts.length - 1; i >= 0; i--) {
+      if (allParts[i].type === "text") { lastTextIdx = i; break; }
+    }
+  }
+
   return (
     <MessagePrimitive.Root data-role="assistant" className="flex gap-6 animate-fade-in">
       <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0 mt-1 shadow-sm">
         <span className="material-symbols-outlined text-on-primary text-sm">auto_awesome</span>
       </div>
-      <div className="flex-1 space-y-4 min-w-0">
-        {tools.length > 0 && (
-          <div className="space-y-1.5">
-            {tools.map((tool, i) => (
-              <ToolChip key={`${tool.name}-${i}`} tool={tool} />
+      <div className="flex-1 space-y-3 min-w-0">
+        {allParts.length > 0 ? (
+          <>
+            {allParts.map((part, i) => {
+              if (part.type === "tool" && part.tool) {
+                return <ToolChip key={i} tool={part.tool} />;
+              }
+              if (part.type === "text" && part.text) {
+                const { cleaned } = extractArtifact(part.text);
+                if (!cleaned) return null;
+                const isLast = i === lastTextIdx;
+                return (
+                  <div key={i} className={cn("prose-chat text-sm leading-relaxed", isLast && isStreaming && "typing-cursor")}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{cleaned}</ReactMarkdown>
+                    {isLast && isStreaming && <span className="inline-block ml-1">▋</span>}
+                  </div>
+                );
+              }
+              return null;
+            })}
+          </>
+        ) : (
+          // Fallback for messages without parts (e.g., loaded from session history)
+          <>
+            {fullContent && (
+              <div className={cn("prose-chat text-sm leading-relaxed", isStreaming && "typing-cursor")}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{extractArtifact(fullContent).cleaned}</ReactMarkdown>
+                {isStreaming && <span className="inline-block ml-1">▋</span>}
+              </div>
+            )}
+            {rawMessages.flatMap((m) => m.tools ?? []).map((tool, i) => (
+              <ToolChip key={i} tool={tool} />
             ))}
-          </div>
+          </>
         )}
 
         {artifact && !isStreaming && (
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-container/30 text-on-primary-container text-xs font-bold">
             <span className="material-symbols-outlined text-sm">web</span>
             已生成界面 · 查看右侧面板
-          </div>
-        )}
-
-        {content && (
-          <div className={cn("prose-chat text-sm leading-relaxed", isStreaming && "typing-cursor")}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            {isStreaming && <span className="inline-block ml-1">▋</span>}
           </div>
         )}
 

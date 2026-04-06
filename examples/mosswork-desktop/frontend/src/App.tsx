@@ -9,6 +9,7 @@ import { useWailsEvent } from "@/lib/events";
 import { ChatService, FileService } from "@/lib/api";
 import type {
   ChatMessage,
+  ChatMessagePart,
   ToolExecution,
   AppConfig,
   WorkerState,
@@ -134,33 +135,40 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  const appendAssistantChunk = useCallback((content: string) => {
-    const currentStreamingId = streamingIdRef.current;
+  const appendAssistantChunk = useCallback((textChunk: string) => {
+    const addText = (parts: ChatMessagePart[], chunk: string): ChatMessagePart[] => {
+      const last = parts[parts.length - 1];
+      if (last?.type === "text") {
+        return [...parts.slice(0, -1), { type: "text", text: (last.text ?? "") + chunk }];
+      }
+      return [...parts, { type: "text", text: chunk }];
+    };
+    const updateMsg = (msg: ChatMessage): ChatMessage => ({
+      ...msg,
+      content: msg.content + textChunk,
+      parts: addText(msg.parts ?? [], textChunk),
+      streaming: true,
+    });
 
-    if (currentStreamingId) {
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === currentStreamingId
-            ? { ...m, content: m.content + content }
-            : m,
-        ),
-      );
-      return;
-    }
-
-    const id = nextId();
-    streamingIdRef.current = id;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id,
-        role: "assistant",
-        content,
-        timestamp: Date.now(),
-        streaming: true,
-        tools: [],
-      },
-    ]);
+    setMessages((prev) => {
+      if (streamingIdRef.current) {
+        return prev.map((m) => m.id === streamingIdRef.current ? updateMsg(m) : m);
+      }
+      // Continue the last assistant message (e.g., after a tool completes)
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant") {
+        streamingIdRef.current = last.id;
+        return prev.map((m) => m.id === last.id ? updateMsg(m) : m);
+      }
+      // Create a new message
+      const id = nextId();
+      streamingIdRef.current = id;
+      return [...prev, {
+        id, role: "assistant", content: textChunk,
+        parts: [{ type: "text", text: textChunk }],
+        timestamp: Date.now(), streaming: true, tools: [],
+      }];
+    });
   }, []);
 
   useWailsEvent<StreamData>("chat:stream", (data) => {
@@ -189,26 +197,25 @@ export default function App() {
 
   useWailsEvent<ToolStartData>("chat:tool_start", (data) => {
     const toolName = data?.meta?.name || data?.content || "tool";
+    const newTool: ToolExecution = { name: toolName, status: "running" };
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (last && last.role === "assistant") {
-        const tools: ToolExecution[] = [
-          ...(last.tools || []),
-          { name: toolName, status: "running" },
-        ];
-        return [...prev.slice(0, -1), { ...last, tools }];
+      if (last?.role === "assistant") {
+        return prev.map((m) =>
+          m.id === last.id
+            ? {
+                ...m,
+                tools: [...(m.tools ?? []), newTool],
+                parts: [...(m.parts ?? []), { type: "tool" as const, tool: newTool }],
+              }
+            : m,
+        );
       }
       const id = nextId();
-      return [
-        ...prev,
-        {
-          id,
-          role: "assistant",
-          content: "",
-          timestamp: Date.now(),
-          tools: [{ name: toolName, status: "running" }],
-        },
-      ];
+      return [...prev, {
+        id, role: "assistant", content: "", timestamp: Date.now(),
+        tools: [newTool], parts: [{ type: "tool" as const, tool: newTool }],
+      }];
     });
   });
 
@@ -216,13 +223,16 @@ export default function App() {
     const toolName = data?.meta?.name || "";
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (last && last.role === "assistant" && last.tools?.length) {
-        const tools = last.tools.map((t) =>
+      if (last?.role === "assistant") {
+        const updateTool = (t: ToolExecution) =>
           t.name === toolName && t.status === "running"
             ? { ...t, status: "done" as const, result: data?.content }
-            : t,
+            : t;
+        const tools = (last.tools ?? []).map(updateTool);
+        const parts = (last.parts ?? []).map((p) =>
+          p.type === "tool" && p.tool ? { ...p, tool: updateTool(p.tool) } : p,
         );
-        return [...prev.slice(0, -1), { ...last, tools }];
+        return prev.map((m) => m.id === last.id ? { ...m, tools, parts } : m);
       }
       return prev;
     });

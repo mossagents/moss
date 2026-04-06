@@ -1,9 +1,16 @@
 export type MessageRole = "user" | "assistant" | "system";
 
+export interface ChatMessagePart {
+  type: "text" | "tool";
+  text?: string;
+  tool?: ToolExecution;
+}
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
   content: string;
+  parts?: ChatMessagePart[];
   timestamp: number;
   streaming?: boolean;
   tools?: ToolExecution[];
