@@ -65,6 +65,12 @@ export interface AskData {
     risk?: string;
     prompt: string;
     reason?: string;
+    reason_code?: string;
+    input?: Record<string, any>;
+    action_label?: string;
+    action_value?: string;
+    scope_label?: string;
+    scope_value?: string;
   };
   meta?: Record<string, any>;
 }

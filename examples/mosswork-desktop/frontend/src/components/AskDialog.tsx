@@ -72,6 +72,12 @@ function ApprovalContent({
   const { approval } = data;
   const risk = getRiskConfig(approval?.risk);
 
+  // For run_command, surface the command; otherwise show key args
+  const inputEntries = approval?.input ? Object.entries(approval.input) : [];
+  const commandValue = approval?.input?.command as string | undefined;
+  // Show all args except 'command' (already shown separately) as supplementary info
+  const extraArgs = inputEntries.filter(([k]) => k !== "command");
+
   return (
     <>
       {/* Header */}
@@ -103,6 +109,45 @@ function ApprovalContent({
               </span>
             )}
           </div>
+
+          {/* Command — shown prominently for run_command */}
+          {commandValue && (
+            <div className="px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">命令</p>
+              <div className="bg-surface-container-high rounded-lg px-3 py-2 border border-outline-variant/30">
+                <pre className="font-mono text-[12px] text-on-surface leading-relaxed whitespace-pre-wrap break-all">
+                  {commandValue}
+                </pre>
+              </div>
+            </div>
+          )}
+
+          {/* Extra args (non-command keys) */}
+          {extraArgs.length > 0 && (
+            <div className="px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-1.5">参数</p>
+              <div className="space-y-1">
+                {extraArgs.map(([k, v]) => (
+                  <div key={k} className="flex gap-2 items-start text-xs">
+                    <span className="font-mono text-on-surface-variant shrink-0">{k}:</span>
+                    <span className="font-mono text-on-surface break-all">
+                      {typeof v === "string" ? v : JSON.stringify(v)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* For tools with no structured input but has action_value */}
+          {!commandValue && extraArgs.length === 0 && approval?.action_value && (
+            <div className="px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mb-1">
+                {approval.action_label || "操作"}
+              </p>
+              <p className="text-sm font-mono text-on-surface break-all">{approval.action_value}</p>
+            </div>
+          )}
 
           {/* Reason */}
           {(approval?.reason || data.prompt) && (
