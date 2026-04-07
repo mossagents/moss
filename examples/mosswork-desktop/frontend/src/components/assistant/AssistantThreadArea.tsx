@@ -10,13 +10,15 @@ import {
   useAuiState,
   getExternalStoreMessage,
 } from "@assistant-ui/react";
-import type { ChatMessage, ToolExecution } from "@/lib/types";
+import type { ChatMessage, SkillInfo, ToolExecution } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 interface AssistantThreadAreaProps {
   showTypingIndicator: boolean;
   statusText?: string;
   onArtifact?: (html: string) => void;
+  skills: SkillInfo[];
+  onRetryMessage: (message: ChatMessage) => void;
 }
 
 function parseSkillLikeInvocation(content: string): { name: string; task: string } | null {
@@ -37,7 +39,7 @@ function extractArtifact(content: string): { cleaned: string; artifact: string |
   };
 }
 
-export default function AssistantThreadArea({ showTypingIndicator, statusText, onArtifact }: AssistantThreadAreaProps) {
+export default function AssistantThreadArea({ showTypingIndicator, statusText, onArtifact, skills, onRetryMessage }: AssistantThreadAreaProps) {
   return (
     <ThreadPrimitive.Root className="h-full">
       <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-8 pb-4">
@@ -58,7 +60,7 @@ export default function AssistantThreadArea({ showTypingIndicator, statusText, o
         <div className="max-w-4xl mx-auto space-y-12">
           <ThreadPrimitive.Messages>
             {({ message }) => {
-              if (message.role === "user") return <UserMessage />;
+              if (message.role === "user") return <UserMessage skills={skills} onRetryMessage={onRetryMessage} />;
               if (message.role === "assistant") return <AssistantMessage onArtifact={onArtifact} />;
               return <SystemMessage />;
             }}
@@ -85,20 +87,31 @@ export default function AssistantThreadArea({ showTypingIndicator, statusText, o
   );
 }
 
-function UserMessage() {
+function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryMessage: (message: ChatMessage) => void }) {
+  const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
+  const rawMessage = Array.isArray(raw) ? raw[0] : raw;
   const text = useMessage((s) => {
     const textPart = s.content.find((part) => part.type === "text");
     return textPart?.type === "text" ? textPart.text : "";
   });
   const skillInvocation = parseSkillLikeInvocation(text);
+  const matchedSkill = skillInvocation
+    ? skills.find((skill) => skill.name === skillInvocation.name)
+    : undefined;
+  const badgeStyle = matchedSkill?.active
+    ? "bg-primary/10 text-primary"
+    : "bg-surface-container text-on-surface-variant";
 
   return (
     <MessagePrimitive.Root data-role="user" className="flex flex-col items-end animate-fade-in">
       <div className="bg-surface-container-high rounded-2xl rounded-tr-none p-4 max-w-[80%]">
         {skillInvocation ? (
           <div className="space-y-2 min-w-[16rem]">
-            <div className="inline-flex max-w-full items-center rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary">
-              <span className="font-mono truncate">{skillInvocation.name}</span>
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-container-lowest px-3 py-2">
+              <span className="text-xs font-medium text-on-surface truncate">{skillInvocation.name}</span>
+              <span className={cn("text-[9px] font-bold px-1 py-px rounded shrink-0", badgeStyle)}>
+                {matchedSkill?.active ? "已激活" : "可用"}
+              </span>
             </div>
             {skillInvocation.task && (
               <p className="text-on-surface font-medium leading-relaxed text-sm whitespace-pre-wrap">{skillInvocation.task}</p>
@@ -113,7 +126,18 @@ function UserMessage() {
           </MessagePrimitive.Parts>
         )}
       </div>
-      <MessageMetaTime />
+      <div className="flex items-center gap-3 mt-2">
+        {rawMessage?.retryable && rawMessage.historyIndex != null && (
+          <button
+            type="button"
+            onClick={() => onRetryMessage(rawMessage)}
+            className="text-[10px] text-on-surface-variant hover:text-primary transition-colors font-medium tracking-wider uppercase"
+          >
+            重试
+          </button>
+        )}
+        <MessageMetaTime />
+      </div>
     </MessagePrimitive.Root>
   );
 }

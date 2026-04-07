@@ -15,6 +15,9 @@ export interface ChatMessage {
   timestamp: number;
   streaming?: boolean;
   tools?: ToolExecution[];
+  sessionId?: string;
+  historyIndex?: number;
+  retryable?: boolean;
 }
 
 export interface ToolExecution {

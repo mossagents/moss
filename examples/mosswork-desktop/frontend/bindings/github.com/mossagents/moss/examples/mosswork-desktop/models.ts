@@ -9,13 +9,18 @@ import { Create as $Create } from "@wailsio/runtime";
  * HistoryMessage is a frontend-friendly representation of a session message.
  */
 export class HistoryMessage {
+    "history_index": number;
     "role": string;
     "content": string;
     "thinking"?: string;
     "tools"?: HistoryTool[];
+    "retryable"?: boolean;
 
     /** Creates a new HistoryMessage instance. */
     constructor($$source: Partial<HistoryMessage> = {}) {
+        if (!("history_index" in $$source)) {
+            this["history_index"] = 0;
+        }
         if (!("role" in $$source)) {
             this["role"] = "";
         }
@@ -30,10 +35,10 @@ export class HistoryMessage {
      * Creates a new HistoryMessage instance from a string or object.
      */
     static createFrom($$source: any = {}): HistoryMessage {
-        const $$createField3_0 = $$createType1;
+        const $$createField4_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("tools" in $$parsedSource) {
-            $$parsedSource["tools"] = $$createField3_0($$parsedSource["tools"]);
+            $$parsedSource["tools"] = $$createField4_0($$parsedSource["tools"]);
         }
         return new HistoryMessage($$parsedSource as Partial<HistoryMessage>);
     }

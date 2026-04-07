@@ -40,13 +40,15 @@ type ChatService struct {
 	serviceCtx context.Context
 
 	mu            sync.Mutex
-	running       bool
-	cancel        context.CancelFunc
+	activeRuns    map[string]context.CancelFunc
 	monitorCancel context.CancelFunc
 }
 
 func NewChatService(cfg config) *ChatService {
-	return &ChatService{cfg: cfg}
+	return &ChatService{
+		cfg:        cfg,
+		activeRuns: make(map[string]context.CancelFunc),
+	}
 }
 
 func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
@@ -108,13 +110,18 @@ func (s *ChatService) ServiceShutdown() error {
 	slog.Info("ChatService shutting down...")
 
 	s.mu.Lock()
-	cancel := s.cancel
-	s.cancel = nil
+	cancels := make([]context.CancelFunc, 0, len(s.activeRuns))
+	for sessionID, cancel := range s.activeRuns {
+		if cancel != nil {
+			cancels = append(cancels, cancel)
+		}
+		delete(s.activeRuns, sessionID)
+	}
 	monitorCancel := s.monitorCancel
 	s.monitorCancel = nil
 	s.mu.Unlock()
 
-	if cancel != nil {
+	for _, cancel := range cancels {
 		cancel()
 	}
 	if monitorCancel != nil {
@@ -128,7 +135,7 @@ func (s *ChatService) ServiceShutdown() error {
 	for time.Now().Before(deadline) {
 		time.Sleep(30 * time.Millisecond)
 		s.mu.Lock()
-		running := s.running
+		running := len(s.activeRuns) > 0
 		s.mu.Unlock()
 		if !running {
 			break
@@ -138,7 +145,7 @@ func (s *ChatService) ServiceShutdown() error {
 	// If the goroutine didn't finish in time, force-persist the current session
 	// as cancelled so it isn't left with status="running" on disk.
 	s.mu.Lock()
-	running := s.running
+	running := len(s.activeRuns) > 0
 	sess := s.sess
 	s.mu.Unlock()
 	if running && sess != nil && s.store != nil {
@@ -174,10 +181,6 @@ func (s *ChatService) SendMessage(content string) error {
 	}
 
 	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return fmt.Errorf("agent is already running")
-	}
 	if s.sess == nil || s.k == nil {
 		s.mu.Unlock()
 		return fmt.Errorf("service not initialized")
@@ -188,6 +191,9 @@ func (s *ChatService) SendMessage(content string) error {
 	s.mu.Unlock()
 
 	if strings.HasPrefix(trimmed, "/") {
+		if handled, err := s.tryHandleRetryCommand(trimmed); handled {
+			return err
+		}
 		if rewritten, ok, err := s.rewriteSkillLikeSlashCommand(trimmed); ok {
 			trimmed = rewritten
 			content = rewritten
@@ -219,56 +225,8 @@ func (s *ChatService) SendMessage(content string) error {
 		}
 	}
 
-	s.mu.Lock()
-	s.running = true
-	s.mu.Unlock()
-
-	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
-
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r), "session_id": sessID})
-			}
-			if err := s.persistSession(sess); err != nil {
-				slog.Debug("persist session after run failed", slog.Any("error", err))
-			}
-			s.mu.Lock()
-			s.running = false
-			s.cancel = nil
-			s.mu.Unlock()
-			s.emitDashboard()
-		}()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		// Inject session_id into context — wailsIO reads it per-event, no shared state.
-		ctx = context.WithValue(ctx, sessionIDKey{}, sessID)
-		s.mu.Lock()
-		s.cancel = cancel
-		s.mu.Unlock()
-		defer cancel()
-
-		result, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO)
-		if err != nil {
-			if ctx.Err() != nil {
-				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": sessID})
-				return
-			}
-			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
-			return
-		}
-
-		go s.maybeGenerateTitle(sess)
-
-		emitEvent("chat:done", map[string]any{
-			"session_id":  result.SessionID,
-			"steps":       result.Steps,
-			"tokens_used": result.TokensUsed.TotalTokens,
-			"output":      result.Output,
-		})
-	}()
-
-	return nil
+	_ = sessID
+	return s.sendMessageToSession(sess, content)
 }
 
 func (s *ChatService) SendMessageWithAttachments(content string, attachments []string) error {
@@ -284,8 +242,11 @@ func (s *ChatService) SendMessageWithAttachments(content string, attachments []s
 func (s *ChatService) StopAgent() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.cancel != nil {
-		s.cancel()
+	if s.sess == nil {
+		return
+	}
+	if cancel := s.activeRuns[s.sess.ID]; cancel != nil {
+		cancel()
 	}
 }
 
@@ -345,10 +306,12 @@ type HistoryTool struct {
 
 // HistoryMessage is a frontend-friendly representation of a session message.
 type HistoryMessage struct {
-	Role     string        `json:"role"`
-	Content  string        `json:"content"`
-	Thinking string        `json:"thinking,omitempty"`
-	Tools    []HistoryTool `json:"tools,omitempty"`
+	HistoryIndex int           `json:"history_index"`
+	Role         string        `json:"role"`
+	Content      string        `json:"content"`
+	Thinking     string        `json:"thinking,omitempty"`
+	Tools        []HistoryTool `json:"tools,omitempty"`
+	Retryable    bool          `json:"retryable,omitempty"`
 }
 
 // GetSessionHistory returns the message history of a session in a format suitable for the chat UI.
@@ -387,6 +350,7 @@ func convertToHistoryMessages(msgs []port.Message) []HistoryMessage {
 	}
 
 	var out []HistoryMessage
+	historyIndex := 0
 	for _, msg := range msgs {
 		switch msg.Role {
 		case port.RoleSystem, port.RoleTool:
@@ -396,9 +360,18 @@ func convertToHistoryMessages(msgs []port.Message) []HistoryMessage {
 			if text == "" {
 				continue
 			}
-			out = append(out, HistoryMessage{Role: "user", Content: text})
+			out = append(out, HistoryMessage{
+				HistoryIndex: historyIndex,
+				Role:         "user",
+				Content:      text,
+				Retryable:    true,
+			})
+			historyIndex++
 		case port.RoleAssistant:
-			hm := HistoryMessage{Role: "assistant"}
+			hm := HistoryMessage{
+				HistoryIndex: historyIndex,
+				Role:         "assistant",
+			}
 			for _, cp := range msg.ContentParts {
 				switch cp.Type {
 				case port.ContentPartText:
@@ -419,9 +392,152 @@ func convertToHistoryMessages(msgs []port.Message) []HistoryMessage {
 				continue
 			}
 			out = append(out, hm)
+			historyIndex++
 		}
 	}
 	return out
+}
+
+func (s *ChatService) sendMessageToSession(sess *session.Session, content string) error {
+	if sess == nil || s.k == nil {
+		return fmt.Errorf("service not initialized")
+	}
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return nil
+	}
+
+	s.mu.Lock()
+	if _, running := s.activeRuns[sess.ID]; running {
+		s.mu.Unlock()
+		return fmt.Errorf("agent is already running")
+	}
+	sessID := sess.ID
+	s.mu.Unlock()
+
+	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(content)}})
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				emitEvent("chat:error", map[string]any{"message": fmt.Sprintf("internal error: %v", r), "session_id": sessID})
+			}
+			if err := s.persistSession(sess); err != nil {
+				slog.Debug("persist session after run failed", slog.Any("error", err))
+			}
+			s.mu.Lock()
+			delete(s.activeRuns, sessID)
+			s.mu.Unlock()
+			s.emitDashboard()
+		}()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		ctx = context.WithValue(ctx, sessionIDKey{}, sessID)
+		s.mu.Lock()
+		s.activeRuns[sessID] = cancel
+		s.mu.Unlock()
+		defer cancel()
+
+		result, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO)
+		if err != nil {
+			if ctx.Err() != nil {
+				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": sessID})
+				return
+			}
+			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
+			return
+		}
+
+		go s.maybeGenerateTitle(sess)
+
+		emitEvent("chat:done", map[string]any{
+			"session_id":  result.SessionID,
+			"steps":       result.Steps,
+			"tokens_used": result.TokensUsed.TotalTokens,
+			"output":      result.Output,
+		})
+	}()
+
+	return nil
+}
+
+func locateRetryPoint(msgs []port.Message, targetHistoryIndex int) (int, string, error) {
+	historyIndex := 0
+	for rawIndex, msg := range msgs {
+		switch msg.Role {
+		case port.RoleSystem, port.RoleTool:
+			continue
+		case port.RoleUser:
+			text := strings.TrimSpace(extractTextFromParts(msg.ContentParts))
+			if text == "" {
+				continue
+			}
+			if historyIndex == targetHistoryIndex {
+				return rawIndex, text, nil
+			}
+			historyIndex++
+		case port.RoleAssistant:
+			hasVisibleContent := false
+			for _, cp := range msg.ContentParts {
+				if cp.Type == port.ContentPartText || cp.Type == port.ContentPartReasoning {
+					hasVisibleContent = true
+					break
+				}
+			}
+			if !hasVisibleContent && len(msg.ToolCalls) == 0 {
+				continue
+			}
+			if historyIndex == targetHistoryIndex {
+				return -1, "", fmt.Errorf("retry only supports user messages")
+			}
+			historyIndex++
+		}
+	}
+	return -1, "", fmt.Errorf("message point %d not found", targetHistoryIndex)
+}
+
+func (s *ChatService) retryUserMessage(historyIndex int) error {
+	s.mu.Lock()
+	if s.sess == nil || s.k == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("service not initialized")
+	}
+	sess := s.sess
+	s.mu.Unlock()
+
+	msgs := sess.CopyMessages()
+	rawIndex, content, err := locateRetryPoint(msgs, historyIndex)
+	if err != nil {
+		return err
+	}
+	if rawIndex < 0 {
+		return fmt.Errorf("retry point %d is invalid", historyIndex)
+	}
+
+	truncated := append([]port.Message(nil), msgs[:rawIndex]...)
+	sess.ReplaceMessages(truncated)
+	sess.Status = session.StatusCreated
+	sess.EndedAt = time.Time{}
+	if err := s.persistSession(sess); err != nil {
+		slog.Warn("persist retried session failed", slog.Any("error", err))
+	}
+	s.emitDashboard()
+	return s.sendMessageToSession(sess, content)
+}
+
+func (s *ChatService) tryHandleRetryCommand(content string) (bool, error) {
+	parts := strings.Fields(content)
+	if len(parts) == 0 || parts[0] != "/retry" {
+		return false, nil
+	}
+	if len(parts) != 2 {
+		return true, fmt.Errorf("usage: /retry <history_index>")
+	}
+	idx, err := strconv.Atoi(parts[1])
+	if err != nil || idx < 0 {
+		return true, fmt.Errorf("history_index must be a non-negative integer")
+	}
+	return true, s.retryUserMessage(idx)
 }
 
 func extractTextFromParts(parts []port.ContentPart) string {
@@ -438,9 +554,9 @@ func extractTextFromParts(parts []port.ContentPart) string {
 // If the deleted session is the current active session, the active session is cleared.
 func (s *ChatService) DeleteSession(id string) error {
 	s.mu.Lock()
-	if s.running {
+	if _, running := s.activeRuns[id]; running {
 		s.mu.Unlock()
-		return fmt.Errorf("cannot delete session while agent is running")
+		return fmt.Errorf("cannot delete session while that session is running")
 	}
 	s.mu.Unlock()
 
@@ -463,9 +579,11 @@ func (s *ChatService) DeleteSession(id string) error {
 // Errors from individual deletions are collected and returned as a combined error.
 func (s *ChatService) DeleteSessions(ids []string) error {
 	s.mu.Lock()
-	if s.running {
-		s.mu.Unlock()
-		return fmt.Errorf("cannot delete sessions while agent is running")
+	for _, id := range ids {
+		if _, running := s.activeRuns[id]; running {
+			s.mu.Unlock()
+			return fmt.Errorf("cannot delete session %q while it is running", id)
+		}
 	}
 	s.mu.Unlock()
 
@@ -580,7 +698,11 @@ func (s *ChatService) GetSkills() []SkillInfo {
 func (s *ChatService) IsRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.running
+	if s.sess == nil {
+		return false
+	}
+	_, running := s.activeRuns[s.sess.ID]
+	return running
 }
 
 func (s *ChatService) newSessionConfig() session.SessionConfig {
@@ -966,7 +1088,14 @@ func (s *ChatService) hasSkillLikeTarget(name string) bool {
 }
 
 func buildSkillLikePrompt(name, task string) string {
-	return fmt.Sprintf("Use skill or tool '%s' to complete this request:\n%s", name, task)
+	return fmt.Sprintf(
+		"Use skill or tool '%s' to complete this request.\n"+
+			"If you call run_command, you must provide structured inputs with separate command and args fields. "+
+			"Do not send shell-form command strings when execution paths are restricted.\n"+
+			"Request:\n%s",
+		name,
+		task,
+	)
 }
 
 func (s *ChatService) handleSessionSlashCommand(_ context.Context, _ []string) (string, error) {
@@ -1667,19 +1796,14 @@ func (s *ChatService) GetPresetModels() []ModelPreset {
 // Returns an error if an agent is currently running.
 func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error {
 	s.mu.Lock()
-	if s.running {
+	if len(s.activeRuns) > 0 {
 		s.mu.Unlock()
 		return fmt.Errorf("agent is running; please wait for it to finish")
 	}
-	cancel := s.cancel
-	s.cancel = nil
 	monitorCancel := s.monitorCancel
 	s.monitorCancel = nil
 	s.mu.Unlock()
 
-	if cancel != nil {
-		cancel()
-	}
 	if monitorCancel != nil {
 		monitorCancel()
 	}

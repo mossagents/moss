@@ -4,7 +4,7 @@
 import {
   ChatService as _Chat,
   FileService as _File,
-} from "../../bindings/github.com/mossagents/moss/examples/mosswork-desktop/index.js";
+} from "../../bindings/github.com/mossagents/moss/examples/mosswork-desktop/index.ts";
 
 export const ChatService = {
   sendMessage: (content: string) => _Chat.SendMessage(content),

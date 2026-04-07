@@ -146,7 +146,7 @@ function settleAllRunningTools(
   );
 }
 
-function mapHistoryToMessages(history: any[]): ChatMessage[] {
+function mapHistoryToMessages(history: any[], sessionId: string): ChatMessage[] {
   return history.map((h: any) => ({
     id: nextId(),
     role: (h.role ?? "assistant") as MessageRole,
@@ -161,6 +161,9 @@ function mapHistoryToMessages(history: any[]): ChatMessage[] {
         }))
       : undefined,
     timestamp: Date.now(),
+    sessionId,
+    historyIndex: typeof h.history_index === "number" ? h.history_index : undefined,
+    retryable: !!h.retryable,
   }));
 }
 
@@ -207,7 +210,7 @@ export default function App() {
     const history = await ChatService.getSessionHistory(id);
     loadedSessionIdRef.current = id;
     if (Array.isArray(history)) {
-      setMessages(mapHistoryToMessages(history));
+      setMessages(mapHistoryToMessages(history, id));
     } else {
       setMessages([]);
     }
@@ -470,6 +473,10 @@ export default function App() {
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
+    if (data?.session_id) {
+      loadedSessionIdRef.current = undefined;
+      loadSessionHistory(data.session_id).catch(() => {});
+    }
   });
 
   useWailsEvent<ErrorData>("chat:error", (data) => {
@@ -548,7 +555,7 @@ export default function App() {
       const id = nextId();
       setMessages((prev) => [
         ...prev,
-        { id, role: "user", content, timestamp: Date.now() },
+        { id, role: "user", content, timestamp: Date.now(), sessionId: currentSessionId },
       ]);
       setIsRunning(true);
       setStatusText("正在处理...");
@@ -568,7 +575,7 @@ export default function App() {
         ]);
       }
     },
-    [],
+    [currentSessionId],
   );
 
   const handleStop = useCallback(async () => {
@@ -611,6 +618,29 @@ export default function App() {
       // silently ignore session switch errors
     }
   }, [loadSessionHistory]);
+
+  const handleRetryMessage = useCallback(async (message: ChatMessage) => {
+    const sessionId = message.sessionId ?? currentSessionId;
+    const historyIndex = message.historyIndex;
+    if (!sessionId || historyIndex == null) return;
+
+    setIsRunning(false);
+    setStatusText("");
+    setArtifact(null);
+    streamingIdRef.current = null;
+    loadedSessionIdRef.current = undefined;
+
+    if (sessionId !== currentSessionId) {
+      currentSessionIdRef.current = sessionId;
+      setCurrentSessionId(sessionId);
+      setMessages([]);
+      setWorkerState(null);
+      await ChatService.resumeSession(sessionId);
+    }
+
+    await ChatService.sendCommand(`/retry ${historyIndex}`);
+    await loadSessionHistory(sessionId);
+  }, [currentSessionId, loadSessionHistory]);
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
@@ -774,6 +804,8 @@ export default function App() {
                   showTypingIndicator={showTypingIndicator}
                   statusText={statusText}
                   onArtifact={setArtifact}
+                  skills={skills}
+                  onRetryMessage={handleRetryMessage}
                 />
 
                 {workerState && workerState.tasks.length > 0 && (
