@@ -6,6 +6,7 @@ interface AssistantComposerBarProps {
   attachmentFiles: string[];
   onAttachFiles: () => void;
   onRemoveAttachment: (index: number) => void;
+  inputRef: (node: HTMLTextAreaElement | null) => void;
 }
 
 export default function AssistantComposerBar({
@@ -14,6 +15,7 @@ export default function AssistantComposerBar({
   attachmentFiles,
   onAttachFiles,
   onRemoveAttachment,
+  inputRef,
 }: AssistantComposerBarProps) {
   return (
     <div className="absolute bottom-0 left-0 right-0 p-8 bg-linear-to-t from-background via-background to-transparent pointer-events-none">
@@ -66,6 +68,7 @@ export default function AssistantComposerBar({
             className="flex-1"
           >
             <textarea
+              ref={inputRef}
               className="flex-1 bg-transparent border-none outline-none focus:ring-0 py-3 text-on-surface placeholder:text-on-surface-variant/50 resize-none max-h-48 text-sm"
               rows={1}
               placeholder="描述一个场景... (Shift+Enter 换行)"

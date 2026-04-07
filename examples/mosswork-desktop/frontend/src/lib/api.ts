@@ -4,7 +4,7 @@
 import {
   ChatService as _Chat,
   FileService as _File,
-} from "../../bindings/github.com/mossagents/moss/examples/mosswork-desktop";
+} from "../../bindings/github.com/mossagents/moss/examples/mosswork-desktop/index.js";
 
 export const ChatService = {
   sendMessage: (content: string) => _Chat.SendMessage(content),
@@ -30,6 +30,7 @@ export const ChatService = {
   resumeSession: (id: string) => _Chat.ResumeSession(id),
   getSessionHistory: (id: string) => _Chat.GetSessionHistory(id),
   getTools: () => _Chat.GetTools(),
+  getSkills: () => _Chat.GetSkills(),
 };
 
 export const FileService = {

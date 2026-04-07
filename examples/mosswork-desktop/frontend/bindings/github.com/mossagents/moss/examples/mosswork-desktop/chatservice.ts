@@ -87,11 +87,20 @@ export function GetSettings(): $CancellablePromise<{ [_ in string]?: any }> {
 }
 
 /**
+ * GetSkills returns the list of discovered skills and whether they are active.
+ */
+export function GetSkills(): $CancellablePromise<$models.SkillInfo[]> {
+    return $Call.ByID(1867218119).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
  * GetTools returns the list of tools registered with the kernel.
  */
 export function GetTools(): $CancellablePromise<$models.ToolInfo[]> {
     return $Call.ByID(2116279044).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType10($result);
     });
 }
 
@@ -153,5 +162,7 @@ const $$createType3 = $models.ModelPreset.createFrom;
 const $$createType4 = $Create.Array($$createType3);
 const $$createType5 = $models.HistoryMessage.createFrom;
 const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = $models.ToolInfo.createFrom;
+const $$createType7 = $models.SkillInfo.createFrom;
 const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = $models.ToolInfo.createFrom;
+const $$createType10 = $Create.Array($$createType9);

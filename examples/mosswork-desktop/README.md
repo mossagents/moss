@@ -19,7 +19,7 @@ Type these directly in chat input:
 - `/session` - show current session summary
 - `/sessions` - list persisted sessions
 - `/resume <session_id>` - resume a session
-- `/offload [keep_recent] [note]` - compact context
+- `/compact [keep_recent] [note]` - compact context
 - `/tasks [status] [limit]` - list async tasks
 - `/task <task_id>` - query task result
 - `/task cancel <task_id> [reason]` - cancel task

@@ -12,5 +12,6 @@ export {
     HistoryMessage,
     HistoryTool,
     ModelPreset,
+    SkillInfo,
     ToolInfo
 } from "./models.js";

@@ -23,7 +23,7 @@ import type {
   SessionSummary,
   AutomationTask,
   MessageRole,
-  ToolInfo,
+  SkillInfo,
 } from "@/lib/types";
 import NavSidebar from "@/components/NavSidebar";
 import ChatSidebar from "@/components/ChatSidebar";
@@ -99,6 +99,53 @@ function normalizeWorkerState(input: any): WorkerState | null {
   };
 }
 
+function mapToolParts(
+  parts: ChatMessagePart[] | undefined,
+  updateTool: (tool: ToolExecution) => ToolExecution,
+): ChatMessagePart[] | undefined {
+  if (!parts?.length) return parts;
+  return parts.map((part) =>
+    part.type === "tool" && part.tool
+      ? { ...part, tool: updateTool(part.tool) }
+      : part,
+  );
+}
+
+function updateRunningTools(
+  messages: ChatMessage[],
+  matcher: (tool: ToolExecution) => boolean,
+  updateTool: (tool: ToolExecution) => ToolExecution,
+): ChatMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "assistant" || !message.tools?.length) return message;
+    let changed = false;
+    const tools = message.tools.map((tool) => {
+      if (tool.status !== "running" || !matcher(tool)) return tool;
+      changed = true;
+      return updateTool(tool);
+    });
+    if (!changed) return message;
+    return {
+      ...message,
+      tools,
+      parts: mapToolParts(message.parts, (tool) =>
+        tool.status === "running" && matcher(tool) ? updateTool(tool) : tool,
+      ),
+    };
+  });
+}
+
+function settleAllRunningTools(
+  messages: ChatMessage[],
+  status: ToolExecution["status"],
+): ChatMessage[] {
+  return updateRunningTools(
+    messages,
+    () => true,
+    (tool) => ({ ...tool, status }),
+  );
+}
+
 export default function App() {
   const [module, setModule] = useState<"chat" | "automation" | "settings">("chat");
   const [artifact, setArtifact] = useState<string | null>(null);
@@ -119,12 +166,12 @@ export default function App() {
   const [showAutomationForm, setShowAutomationForm] = useState(false);
 
   // Right info panel
-  const [showInfoPanel, setShowInfoPanel] = useState(false);
-  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [sessionTokens, setSessionTokens] = useState(0);
 
   const streamingIdRef = useRef<string | null>(null);
   const pendingFilesRef = useRef<string[]>([]);
+  const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   // currentSessionIdRef mirrors currentSessionId for use in event handler closures
   const currentSessionIdRef = useRef<string | undefined>(undefined);
 
@@ -141,8 +188,8 @@ export default function App() {
     ChatService.getConfig()
       .then((c: any) => setConfig(c as AppConfig))
       .catch(() => {});
-    ChatService.getTools()
-      .then((t: any) => { if (Array.isArray(t)) setTools(t as ToolInfo[]); })
+    ChatService.getSkills()
+      .then((s: any) => { if (Array.isArray(s)) setSkills(s as SkillInfo[]); })
       .catch(() => {});
   }, []);
 
@@ -215,11 +262,40 @@ export default function App() {
   });
 
   useWailsEvent<StreamData>("chat:text", (data) => {
-    streamingIdRef.current = null;
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
+    const text = data?.content ?? "";
+    if (!text) return;
+
+    if (streamingIdRef.current) {
+      const id = streamingIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? {
+                ...m,
+                content: text,
+                parts: [{ type: "text", text }],
+                streaming: true,
+              }
+            : m,
+        ),
+      );
+      return;
+    }
+
     const id = nextId();
+    streamingIdRef.current = id;
     setMessages((prev) => [
       ...prev,
-      { id, role: "assistant", content: data?.content ?? "", timestamp: Date.now() },
+      {
+        id,
+        role: "assistant",
+        content: text,
+        parts: [{ type: "text", text }],
+        timestamp: Date.now(),
+        streaming: true,
+        tools: [],
+      },
     ]);
   });
 
@@ -292,26 +368,18 @@ export default function App() {
     const toolName = data?.meta?.tool || data?.meta?.name || "";
     const callId = data?.meta?.call_id;
     const isError = data?.meta?.is_error ?? false;
-    const currentId = streamingIdRef.current;
     setMessages((prev) => {
-      const target = currentId
-        ? prev.find((m) => m.id === currentId)
-        : prev[prev.length - 1];
-      if (target?.role === "assistant") {
-        // Match by callId when available (reliable), fall back to name-based matching
-        const matchesTool = (t: ToolExecution) =>
-          t.status === "running" && (callId ? t.callId === callId : t.name === toolName);
-        const updateTool = (t: ToolExecution) =>
-          matchesTool(t)
-            ? { ...t, status: (isError ? "error" as const : "done" as const), result: data?.content }
-            : t;
-        const tools = (target.tools ?? []).map(updateTool);
-        const parts = (target.parts ?? []).map((p) =>
-          p.type === "tool" && p.tool ? { ...p, tool: updateTool(p.tool) } : p,
-        );
-        return prev.map((m) => m.id === target.id ? { ...m, tools, parts } : m);
-      }
-      return prev;
+      const matchesTool = (tool: ToolExecution) =>
+        callId ? tool.callId === callId : tool.name === toolName;
+      return updateRunningTools(
+        prev,
+        matchesTool,
+        (tool) => ({
+          ...tool,
+          status: isError ? "error" : "done",
+          result: data?.content,
+        }),
+      );
     });
   });
 
@@ -364,6 +432,7 @@ export default function App() {
     if (typeof data?.tokens_used === "number" && data.tokens_used > 0) {
       setSessionTokens((prev) => prev + data.tokens_used);
     }
+    setMessages((prev) => settleAllRunningTools(prev, "done"));
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
@@ -371,6 +440,7 @@ export default function App() {
 
   useWailsEvent<ErrorData>("chat:error", (data) => {
     if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
+    setMessages((prev) => settleAllRunningTools(prev, "error"));
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
@@ -383,6 +453,7 @@ export default function App() {
   });
 
   useWailsEvent("chat:cancelled", () => {
+    setMessages((prev) => settleAllRunningTools(prev, "error"));
     streamingIdRef.current = null;
     setIsRunning(false);
     setStatusText("");
@@ -559,6 +630,28 @@ export default function App() {
     ChatService.respondToAsk("", false).catch(() => {});
   }, []);
 
+  const handleInsertSkill = useCallback((skillName: string) => {
+    const el = composerInputRef.current;
+    if (!el) return;
+
+    const insertion = `/${skillName} `;
+    const current = el.value ?? "";
+    const start = el.selectionStart ?? current.length;
+    const end = el.selectionEnd ?? current.length;
+    const prefix = current && start === current.length && !/[\s\n]$/.test(current) ? "\n" : "";
+    const nextValue = `${current.slice(0, start)}${prefix}${insertion}${current.slice(end)}`;
+    const caret = start + prefix.length + insertion.length;
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+    valueSetter?.call(el, nextValue);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.focus();
+    el.setSelectionRange(caret, caret);
+  }, []);
+
+  const handleComposerInputRef = useCallback((node: HTMLTextAreaElement | null) => {
+    composerInputRef.current = node;
+  }, []);
+
   const handlePickAttachments = useCallback(async () => {
     try {
       const picked = await FileService.openFiles();
@@ -653,23 +746,11 @@ export default function App() {
             className="absolute top-0 bottom-0 flex flex-col"
             style={{
               left: "296px",
-              right: artifact ? "400px" : showInfoPanel ? "256px" : "0",
+              right: artifact ? "400px" : "256px",
             }}
           >
             <AssistantRuntimeProvider runtime={runtime}>
               <div className="flex-1 overflow-hidden relative mt-8">
-                {/* Info panel toggle button */}
-                <button
-                  onClick={() => setShowInfoPanel((v) => !v)}
-                  className={`absolute top-2 right-3 z-10 w-7 h-7 flex items-center justify-center rounded-lg transition-colors ${
-                    showInfoPanel
-                      ? "bg-primary/15 text-primary"
-                      : "hover:bg-surface-container text-on-surface-variant hover:text-on-surface"
-                  }`}
-                  title="会话信息"
-                >
-                  <span className="material-symbols-outlined text-[17px]">info</span>
-                </button>
                 <AssistantThreadArea
                   showTypingIndicator={showTypingIndicator}
                   statusText={statusText}
@@ -696,6 +777,7 @@ export default function App() {
                   attachmentFiles={pendingFiles}
                   onAttachFiles={handlePickAttachments}
                   onRemoveAttachment={handleRemoveAttachment}
+                  inputRef={handleComposerInputRef}
                 />
               </div>
             </AssistantRuntimeProvider>
@@ -705,17 +787,15 @@ export default function App() {
             <ArtifactPanel html={artifact} onClose={() => setArtifact(null)} />
           )}
 
-          {showInfoPanel && (
-            <ChatInfoPanel
-              messages={messages}
-              totalTokens={sessionTokens}
-              currentSessionId={currentSessionId}
-              sessions={sessions}
-              tools={tools}
-              config={config}
-              onClose={() => setShowInfoPanel(false)}
-            />
-          )}
+          <ChatInfoPanel
+            messages={messages}
+            totalTokens={sessionTokens}
+            currentSessionId={currentSessionId}
+            sessions={sessions}
+            skills={skills}
+            config={config}
+            onInsertSkill={handleInsertSkill}
+          />
         </>
       )}
 

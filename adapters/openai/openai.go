@@ -427,7 +427,18 @@ func fromOpenAIResponse(c *openai.ChatCompletion) *port.CompletionResponse {
 		},
 		ToolCalls:  toolCalls,
 		Usage:      fromUsage(c.Usage),
-		StopReason: choice.FinishReason,
+		StopReason: normalizeOpenAIStopReason(choice.FinishReason),
+	}
+}
+
+func normalizeOpenAIStopReason(reason string) string {
+	switch strings.TrimSpace(reason) {
+	case "stop":
+		return "end_turn"
+	case "tool_calls":
+		return "tool_use"
+	default:
+		return reason
 	}
 }
 

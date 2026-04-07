@@ -103,6 +103,49 @@ export class ModelPreset {
 }
 
 /**
+ * SkillInfo is a frontend-friendly summary of a discovered skill.
+ */
+export class SkillInfo {
+    "name": string;
+    "description": string;
+    "depends_on"?: string[];
+    "required_env"?: string[];
+    "source"?: string;
+    "active": boolean;
+
+    /** Creates a new SkillInfo instance. */
+    constructor($$source: Partial<SkillInfo> = {}) {
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("description" in $$source)) {
+            this["description"] = "";
+        }
+        if (!("active" in $$source)) {
+            this["active"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SkillInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SkillInfo {
+        const $$createField2_0 = $$createType2;
+        const $$createField3_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("depends_on" in $$parsedSource) {
+            $$parsedSource["depends_on"] = $$createField2_0($$parsedSource["depends_on"]);
+        }
+        if ("required_env" in $$parsedSource) {
+            $$parsedSource["required_env"] = $$createField3_0($$parsedSource["required_env"]);
+        }
+        return new SkillInfo($$parsedSource as Partial<SkillInfo>);
+    }
+}
+
+/**
  * ToolInfo is a frontend-friendly summary of a registered tool.
  */
 export class ToolInfo {
@@ -173,3 +216,4 @@ export class scheduleView {
 // Private type creation functions
 const $$createType0 = HistoryTool.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $Create.Array($Create.Any);

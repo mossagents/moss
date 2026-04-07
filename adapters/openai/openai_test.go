@@ -280,8 +280,8 @@ func TestFromOpenAIResponse_TextOnly(t *testing.T) {
 	if len(resp.ToolCalls) != 0 {
 		t.Errorf("expected 0 tool calls, got %d", len(resp.ToolCalls))
 	}
-	if resp.StopReason != "stop" {
-		t.Errorf("stop_reason = %q, want stop", resp.StopReason)
+	if resp.StopReason != "end_turn" {
+		t.Errorf("stop_reason = %q, want end_turn", resp.StopReason)
 	}
 	if resp.Usage.PromptTokens != 10 {
 		t.Errorf("prompt_tokens = %d, want 10", resp.Usage.PromptTokens)
@@ -345,8 +345,8 @@ func TestFromOpenAIResponse_WithToolCalls(t *testing.T) {
 	if string(tc.Arguments) != `{"city":"Beijing"}` {
 		t.Errorf("tool call args = %s", tc.Arguments)
 	}
-	if resp.StopReason != "tool_calls" {
-		t.Errorf("stop_reason = %q, want tool_calls", resp.StopReason)
+	if resp.StopReason != "tool_use" {
+		t.Errorf("stop_reason = %q, want tool_use", resp.StopReason)
 	}
 }
 

@@ -152,6 +152,15 @@ export interface ToolInfo {
   source?: string;
 }
 
+export interface SkillInfo {
+  name: string;
+  description: string;
+  depends_on?: string[];
+  required_env?: string[];
+  source?: string;
+  active: boolean;
+}
+
 export interface AppSettings {
   provider: string;
   model: string;

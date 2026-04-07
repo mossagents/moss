@@ -52,7 +52,7 @@ export default function RightPanel({ config, isRunning, sessions, schedules, onR
           <div className="space-y-2">
             <QuickAction icon="history" label="列出会话" onClick={() => onRunCommand("/sessions")} />
             <QuickAction icon="event" label="列出定时任务" onClick={() => onRunCommand("/schedules")} />
-            <QuickAction icon="compress" label="执行 Offload" onClick={() => onRunCommand("/offload 20 right-panel")} />
+            <QuickAction icon="compress" label="执行 Compact" onClick={() => onRunCommand("/compact 20 right-panel")} />
             <QuickAction icon="dashboard" label="查看仪表盘" onClick={() => onRunCommand("/dashboard")} />
           </div>
         </div>

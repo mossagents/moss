@@ -14,7 +14,11 @@ tasks:
       - package.json
       - package-lock.json
     generates:
-      - node_modules
+      # npm updates this file when dependencies are installed. Tracking the
+      # directory mtime is unreliable on Windows and causes redundant installs
+      # during `wails3 dev`, which can delay Vite startup long enough for Wails
+      # to give up connecting to the frontend dev server.
+      - node_modules/.package-lock.json
     preconditions:
       - sh: npm version
         msg: "Looks like npm isn't installed. Npm is part of the Node installer: https://nodejs.org/en/download/"

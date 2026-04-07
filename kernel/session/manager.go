@@ -71,7 +71,7 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	id := "sess_" + uuid.New().String()
+	id := uuid.New().String()
 
 	s := &Session{
 		ID:        id,

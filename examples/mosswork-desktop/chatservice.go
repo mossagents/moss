@@ -17,12 +17,14 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/presets/deepagent"
 	"github.com/mossagents/moss/scheduler"
+	"github.com/mossagents/moss/skill"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -79,21 +81,18 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 	}
 	s.k = k
 
-	sess, err := k.NewSession(ctx, s.newSessionConfig())
+	// Repair any sessions left in "running" state from a previous crash before
+	// deciding which thread to restore on startup.
+	s.repairStaleRunningSessions(ctx)
+
+	sess, err := s.restoreOrCreateStartupSession(ctx)
 	if err != nil {
-		return fmt.Errorf("create session: %w", err)
+		return err
 	}
-	sess.SetTitle("New Chat")
 	s.sess = sess
-	if err := s.persistSession(sess); err != nil {
-		slog.Warn("persist startup session failed", slog.Any("error", err))
-	}
 
 	s.startScheduler(ctx)
 	s.startDashboardMonitor(ctx)
-
-	// Repair any sessions left in "running" state from a previous crash.
-	s.repairStaleRunningSessions(ctx)
 
 	s.emitDashboard()
 
@@ -189,20 +188,35 @@ func (s *ChatService) SendMessage(content string) error {
 	s.mu.Unlock()
 
 	if strings.HasPrefix(trimmed, "/") {
-		output, err := s.handleSlashCommand(trimmed)
-		if err != nil {
+		if rewritten, ok, err := s.rewriteSkillLikeSlashCommand(trimmed); ok {
+			trimmed = rewritten
+			content = rewritten
+		} else if err != nil {
 			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
-		} else if strings.TrimSpace(output) != "" {
-			emitEvent("chat:text", map[string]any{"content": output, "session_id": sessID})
+			emitEvent("chat:done", map[string]any{
+				"session_id":  sessID,
+				"steps":       0,
+				"tokens_used": 0,
+				"output":      "",
+			})
+			s.emitDashboard()
+			return nil
+		} else {
+			output, err := s.handleSlashCommand(trimmed)
+			if err != nil {
+				emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": sessID})
+			} else if strings.TrimSpace(output) != "" {
+				emitEvent("chat:text", map[string]any{"content": output, "session_id": sessID})
+			}
+			emitEvent("chat:done", map[string]any{
+				"session_id":  sessID,
+				"steps":       0,
+				"tokens_used": 0,
+				"output":      "",
+			})
+			s.emitDashboard()
+			return nil
 		}
-		emitEvent("chat:done", map[string]any{
-			"session_id":  sessID,
-			"steps":       0,
-			"tokens_used": 0,
-			"output":      "",
-		})
-		s.emitDashboard()
-		return nil
 	}
 
 	s.mu.Lock()
@@ -503,6 +517,16 @@ type ToolInfo struct {
 	Source      string `json:"source,omitempty"`
 }
 
+// SkillInfo is a frontend-friendly summary of a discovered skill.
+type SkillInfo struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	DependsOn   []string `json:"depends_on,omitempty"`
+	RequiredEnv []string `json:"required_env,omitempty"`
+	Source      string   `json:"source,omitempty"`
+	Active      bool     `json:"active"`
+}
+
 // GetTools returns the list of tools registered with the kernel.
 func (s *ChatService) GetTools() []ToolInfo {
 	if s.k == nil {
@@ -518,6 +542,38 @@ func (s *ChatService) GetTools() []ToolInfo {
 			Source:      sp.Source,
 		})
 	}
+	return infos
+}
+
+// GetSkills returns the list of discovered skills and whether they are active.
+func (s *ChatService) GetSkills() []SkillInfo {
+	if s.k == nil {
+		return nil
+	}
+	manager := appruntime.SkillsManager(s.k)
+	workspaceDir := s.cfg.workspace
+	if strings.TrimSpace(workspaceDir) == "" {
+		workspaceDir = "."
+	}
+	manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, s.cfg.trust)
+	infos := make([]SkillInfo, 0, len(manifests))
+	for _, manifest := range manifests {
+		_, active := manager.Get(manifest.Name)
+		infos = append(infos, SkillInfo{
+			Name:        manifest.Name,
+			Description: manifest.Description,
+			DependsOn:   append([]string(nil), manifest.DependsOn...),
+			RequiredEnv: append([]string(nil), manifest.RequiredEnv...),
+			Source:      manifest.Source,
+			Active:      active,
+		})
+	}
+	sort.Slice(infos, func(i, j int) bool {
+		if infos[i].Active != infos[j].Active {
+			return infos[i].Active
+		}
+		return infos[i].Name < infos[j].Name
+	})
 	return infos
 }
 
@@ -819,7 +875,7 @@ var desktopSlashCommandRegistry = map[string]desktopSlashCommandHandler{
 	"/session":         (*ChatService).handleSessionSlashCommand,
 	"/sessions":        (*ChatService).handleSessionsSlashCommand,
 	"/resume":          (*ChatService).handleResumeSlashCommand,
-	"/offload":         (*ChatService).handleOffloadSlashCommand,
+	"/compact":         (*ChatService).handleCompactSlashCommand,
 	"/tasks":           (*ChatService).handleTasksSlashCommand,
 	"/task":            (*ChatService).handleTaskSlashCommand,
 	"/schedules":       (*ChatService).handleSchedulesSlashCommand,
@@ -842,6 +898,75 @@ func (s *ChatService) handleSlashCommand(content string) (string, error) {
 		return "", fmt.Errorf("unknown command: %s", parts[0])
 	}
 	return handler(s, ctx, parts)
+}
+
+func (s *ChatService) rewriteSkillLikeSlashCommand(content string) (string, bool, error) {
+	parts := strings.Fields(content)
+	if len(parts) == 0 {
+		return "", false, nil
+	}
+
+	cmd := strings.TrimSpace(parts[0])
+	if _, ok := desktopSlashCommandRegistry[cmd]; ok {
+		return "", false, nil
+	}
+
+	if cmd == "/skill" {
+		if len(parts) < 3 {
+			return "", true, fmt.Errorf("usage: /skill <name> <task...>")
+		}
+		name := strings.TrimSpace(parts[1])
+		task := strings.TrimSpace(strings.Join(parts[2:], " "))
+		if task == "" {
+			return "", true, fmt.Errorf("usage: /skill <name> <task...>")
+		}
+		if !s.hasSkillLikeTarget(name) {
+			return "", true, fmt.Errorf("unknown skill or tool: %s", name)
+		}
+		return buildSkillLikePrompt(name, task), true, nil
+	}
+
+	name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))
+	if name == "" || !s.hasSkillLikeTarget(name) {
+		return "", false, nil
+	}
+	if len(parts) < 2 {
+		return "", true, fmt.Errorf("usage: /%s <task...>", name)
+	}
+	task := strings.TrimSpace(strings.Join(parts[1:], " "))
+	if task == "" {
+		return "", true, fmt.Errorf("usage: /%s <task...>", name)
+	}
+	return buildSkillLikePrompt(name, task), true, nil
+}
+
+func (s *ChatService) hasSkillLikeTarget(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" || s.k == nil {
+		return false
+	}
+	if _, _, ok := s.k.ToolRegistry().Get(name); ok {
+		return true
+	}
+	if manager := appruntime.SkillsManager(s.k); manager != nil {
+		if _, ok := manager.Get(name); ok {
+			return true
+		}
+	}
+	workspaceDir := s.cfg.workspace
+	if strings.TrimSpace(workspaceDir) == "" {
+		workspaceDir = "."
+	}
+	for _, manifest := range skill.DiscoverSkillManifestsForTrust(workspaceDir, s.cfg.trust) {
+		if manifest.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func buildSkillLikePrompt(name, task string) string {
+	return fmt.Sprintf("Use skill or tool '%s' to complete this request:\n%s", name, task)
 }
 
 func (s *ChatService) handleSessionSlashCommand(_ context.Context, _ []string) (string, error) {
@@ -881,7 +1006,7 @@ func (s *ChatService) handleResumeSlashCommand(_ context.Context, parts []string
 	return "", nil
 }
 
-func (s *ChatService) handleOffloadSlashCommand(ctx context.Context, parts []string) (string, error) {
+func (s *ChatService) handleCompactSlashCommand(ctx context.Context, parts []string) (string, error) {
 	keepRecent := 20
 	noteStart := 1
 	if len(parts) >= 2 {
@@ -1055,6 +1180,42 @@ func (s *ChatService) persistSession(sess *session.Session) error {
 		return nil
 	}
 	return s.store.Save(context.Background(), sess)
+}
+
+func (s *ChatService) restoreOrCreateStartupSession(ctx context.Context) (*session.Session, error) {
+	if s.k == nil {
+		return nil, fmt.Errorf("kernel not initialized")
+	}
+	if s.store != nil {
+		summaries, err := s.store.List(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list sessions: %w", err)
+		}
+		for _, summary := range summaries {
+			sess, err := s.store.Load(ctx, summary.ID)
+			if err != nil {
+				slog.Warn("load startup session failed",
+					slog.String("session_id", summary.ID),
+					slog.Any("error", err),
+				)
+				continue
+			}
+			if sess == nil {
+				continue
+			}
+			return sess, nil
+		}
+	}
+
+	sess, err := s.k.NewSession(ctx, s.newSessionConfig())
+	if err != nil {
+		return nil, fmt.Errorf("create startup session: %w", err)
+	}
+	sess.SetTitle("New Chat")
+	if err := s.persistSession(sess); err != nil {
+		slog.Warn("persist startup session failed", slog.Any("error", err))
+	}
+	return sess, nil
 }
 
 // repairStaleRunningSessions scans the session store for sessions that are
@@ -1583,4 +1744,3 @@ func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error
 	slog.Info("Model updated", slog.String("provider", provider), slog.String("model", model))
 	return nil
 }
-
