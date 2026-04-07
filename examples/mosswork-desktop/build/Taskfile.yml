@@ -121,7 +121,7 @@ tasks:
     cmds:
       - cmd: |
           set +e
-          npx vite --port {{.VITE_PORT}} --strictPort
+          npx vite --host 127.0.0.1 --port {{.VITE_PORT}} --strictPort
           code=$?
           # 130: SIGINT (Unix), 3221225786 / -1073741510: STATUS_CONTROL_C_EXIT (Windows)
           if [ "$code" = "130" ] || [ "$code" = "3221225786" ] || [ "$code" = "-1073741510" ]; then
@@ -131,7 +131,7 @@ tasks:
         platforms: [linux, darwin]
       - cmd: |
           powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
-            npx vite --port {{.VITE_PORT}} --strictPort
+            npx vite --host 127.0.0.1 --port {{.VITE_PORT}} --strictPort
             $code = $LASTEXITCODE
             # 130: SIGINT, -1073741510 / 3221225786: STATUS_CONTROL_C_EXIT
             if ($code -eq 130 -or $code -eq -1073741510 -or $code -eq 3221225786) { exit 0 }

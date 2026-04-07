@@ -98,9 +98,6 @@ function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryM
   const matchedSkill = skillInvocation
     ? skills.find((skill) => skill.name === skillInvocation.name)
     : undefined;
-  const badgeStyle = matchedSkill?.active
-    ? "bg-primary/10 text-primary"
-    : "bg-surface-container text-on-surface-variant";
 
   return (
     <MessagePrimitive.Root data-role="user" className="flex flex-col items-end animate-fade-in">
@@ -108,9 +105,8 @@ function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryM
         {skillInvocation ? (
           <div className="space-y-2 min-w-[16rem]">
             <div className="inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-container-lowest px-3 py-2">
-              <span className="text-xs font-medium text-on-surface truncate">{skillInvocation.name}</span>
-              <span className={cn("text-[9px] font-bold px-1 py-px rounded shrink-0", badgeStyle)}>
-                {matchedSkill?.active ? "已激活" : "可用"}
+              <span className="text-xs font-medium text-on-surface truncate">
+                {matchedSkill?.name ?? skillInvocation.name}
               </span>
             </div>
             {skillInvocation.task && (
@@ -126,17 +122,25 @@ function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryM
           </MessagePrimitive.Parts>
         )}
       </div>
-      <div className="flex items-center gap-3 mt-2">
+      <div className="mt-2 flex items-center justify-end gap-2">
+        <MessageMetaTime />
         {rawMessage?.retryable && rawMessage.historyIndex != null && (
           <button
             type="button"
             onClick={() => onRetryMessage(rawMessage)}
-            className="text-[10px] text-on-surface-variant hover:text-primary transition-colors font-medium tracking-wider uppercase"
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] leading-none",
+              "text-on-surface-variant/85",
+              "transition-all hover:bg-surface-container-lowest hover:text-primary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+              "opacity-70 hover:opacity-100",
+            )}
+            title="从该消息重新执行"
           >
+            <span className="material-symbols-outlined text-[12px] leading-none">restart_alt</span>
             重试
           </button>
         )}
-        <MessageMetaTime />
       </div>
     </MessagePrimitive.Root>
   );
@@ -255,7 +259,7 @@ function SystemMessage() {
 function MessageMetaTime() {
   const createdAt = useMessage((s) => s.createdAt);
   return (
-    <span className="text-[10px] text-on-surface-variant mt-2 font-medium tracking-wider uppercase">
+    <span className="text-[11px] leading-none text-on-surface-variant/70 tabular-nums">
       {createdAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
     </span>
   );
