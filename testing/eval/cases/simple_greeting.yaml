@@ -1,0 +1,16 @@
+id: simple-greeting
+description: Agent 应能友好地回复问候语
+tags: [basic, greeting]
+
+input:
+  messages:
+    - role: user
+      content: "你好，请介绍一下你自己"
+
+expect:
+  contains: ["助手", "帮助"]
+  not_contains: ["error", "fail"]
+  max_steps: 3
+
+scoring:
+  pass_threshold: 0.8
