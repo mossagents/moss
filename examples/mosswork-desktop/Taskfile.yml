@@ -34,6 +34,26 @@ tasks:
     cmds:
       - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
 
+  dev:vite:
+    summary: Start Vite dev server assuming deps are already installed (no npm install dep)
+    dir: frontend
+    cmds:
+      - cmd: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
+            & .\node_modules\.bin\vite.ps1 --port {{.VITE_PORT}} --strictPort
+            $code = $LASTEXITCODE
+            if ($code -eq 130 -or $code -eq -1073741510 -or $code -eq 3221225786) { exit 0 }
+            exit $code
+          }"
+        platforms: [windows]
+      - cmd: |
+          set +e
+          ./node_modules/.bin/vite --port {{.VITE_PORT}} --strictPort
+          code=$?
+          if [ "$code" = "130" ] || [ "$code" = "3221225786" ] || [ "$code" = "-1073741510" ]; then exit 0; fi
+          exit $code
+        platforms: [linux, darwin]
+
   setup:docker:
     summary: Builds Docker image for cross-compilation (~800MB download)
     cmds:

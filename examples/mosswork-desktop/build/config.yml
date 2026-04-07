@@ -55,7 +55,7 @@ dev_mode:
       type: blocking
     - cmd: wails3 task common:install:frontend:deps
       type: blocking
-    - cmd: wails3 task common:dev:frontend
+    - cmd: wails3 task dev:vite
       type: background
     - cmd: wails3 task run
       type: primary
