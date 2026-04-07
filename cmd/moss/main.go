@@ -57,6 +57,8 @@ func main() {
 		reviewCmd(args[1:])
 	case "inspect":
 		inspectCmd(args[1:])
+	case "skill":
+		skillCmd(args[1:])
 	case "version":
 		fmt.Printf("moss %s\n", version)
 	case "help", "--help", "-h":
@@ -97,6 +99,7 @@ func usageText() string {
 Usage:
   moss                    Launch interactive TUI (default)
   moss run [flags]        Run with a specific goal
+  moss skill <sub>        Manage skills (list|search|install|remove|info)
   moss doctor [flags]     Inspect runtime, paths, repo, and extension health
   moss review [args]      Inspect repository review, snapshot, and change state
   moss inspect [args]     Inspect state catalog events and the latest run
