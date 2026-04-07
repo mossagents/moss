@@ -24,6 +24,9 @@ type MemoryManager struct {
 	Episodic EpisodicStore
 	Semantic port.VectorStore
 	Embedder port.Embedder
+
+	pruneConfig   *PruneConfig
+	decayHalfLife time.Duration
 }
 
 // MemoryManagerConfig 配置 MemoryManager。
@@ -36,6 +39,10 @@ type MemoryManagerConfig struct {
 	Semantic port.VectorStore
 	// Embedder 当 Semantic 不为 nil 时必须提供。
 	Embedder port.Embedder
+	// PruneConfig 若非零则在 RunMaintenance 时裁剪 Episodic 记录。
+	PruneConfig *PruneConfig
+	// DecayHalfLife 若非零则在 RunMaintenance 时衰减重要性。
+	DecayHalfLife time.Duration
 }
 
 // NewMemoryManager 创建 MemoryManager。
@@ -47,10 +54,12 @@ func NewMemoryManager(cfg MemoryManagerConfig) *MemoryManager {
 		cfg.Episodic = NewMemoryEpisodicStore()
 	}
 	return &MemoryManager{
-		Working:  cfg.Working,
-		Episodic: cfg.Episodic,
-		Semantic: cfg.Semantic,
-		Embedder: cfg.Embedder,
+		Working:       cfg.Working,
+		Episodic:      cfg.Episodic,
+		Semantic:      cfg.Semantic,
+		Embedder:      cfg.Embedder,
+		pruneConfig:   cfg.PruneConfig,
+		decayHalfLife: cfg.DecayHalfLife,
 	}
 }
 
@@ -165,8 +174,7 @@ func (m *MemoryManager) RecordError(ctx context.Context, sessionID, errMsg strin
 }
 
 // Learn 将文档加入 Semantic Memory（自动嵌入）。
-func (m *MemoryManager) Learn(ctx context.Context, docs []port.VectorDoc) error {
-	if m.Semantic == nil {
+func (m *MemoryManager) Learn(ctx context.Context, docs []port.VectorDoc) error {	if m.Semantic == nil {
 		return fmt.Errorf("memory manager: semantic store not configured")
 	}
 	if m.Embedder == nil {
@@ -191,6 +199,25 @@ func (m *MemoryManager) Learn(ctx context.Context, docs []port.VectorDoc) error 
 		}
 	}
 	return m.Semantic.Upsert(ctx, docs)
+}
+
+// RunMaintenance applies decay and prune to the episodic store if configured.
+func (m *MemoryManager) RunMaintenance(ctx context.Context) error {
+	p, ok := m.Episodic.(Prunable)
+	if !ok {
+		return nil
+	}
+	if m.decayHalfLife > 0 {
+		if err := p.DecayImportance(ctx, m.decayHalfLife); err != nil {
+			return fmt.Errorf("memory maintenance: decay: %w", err)
+		}
+	}
+	if m.pruneConfig != nil {
+		if _, err := p.Prune(ctx, *m.pruneConfig); err != nil {
+			return fmt.Errorf("memory maintenance: prune: %w", err)
+		}
+	}
+	return nil
 }
 
 // ---- 格式化辅助 ----------------------------------------------------------

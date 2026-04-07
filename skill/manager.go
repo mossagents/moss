@@ -105,6 +105,124 @@ func (m *Manager) SystemPromptAdditions() string {
 	return strings.Join(parts, "\n\n")
 }
 
+// RegisterAll 按拓扑顺序注册多个 provider，检测循环依赖并验证版本约束。
+func (m *Manager) RegisterAll(ctx context.Context, providers []Provider, deps Deps) error {
+	sorted, err := TopologicalSort(providers)
+	if err != nil {
+		return err
+	}
+	for _, p := range sorted {
+		if err := m.Register(ctx, p, deps); err != nil {
+			return err
+		}
+		if err := m.ValidateDeps(p); err != nil {
+			_ = m.Unregister(ctx, p.Metadata().Name)
+			return err
+		}
+	}
+	return nil
+}
+
+// TopologicalSort returns providers in dependency-first order.
+// Returns an error if a cycle is detected.
+func TopologicalSort(providers []Provider) ([]Provider, error) {
+	index := make(map[string]Provider, len(providers))
+	for _, p := range providers {
+		index[p.Metadata().Name] = p
+	}
+
+	// Build adjacency list: deps → dependant (for Kahn's algorithm)
+	inDegree := make(map[string]int, len(providers))
+	dependants := make(map[string][]string) // name → slice of names that depend on it
+
+	for _, p := range providers {
+		meta := p.Metadata()
+		if _, ok := inDegree[meta.Name]; !ok {
+			inDegree[meta.Name] = 0
+		}
+		// Collect all dependency names (Requires takes priority, then DependsOn)
+		depNames := resolvedDepNames(meta)
+		for _, dep := range depNames {
+			if _, inSet := index[dep]; !inSet {
+				continue // external dep, skip for sort purposes
+			}
+			inDegree[meta.Name]++
+			dependants[dep] = append(dependants[dep], meta.Name)
+		}
+	}
+
+	// Kahn's algorithm
+	queue := make([]string, 0, len(providers))
+	for _, p := range providers {
+		if inDegree[p.Metadata().Name] == 0 {
+			queue = append(queue, p.Metadata().Name)
+		}
+	}
+
+	result := make([]Provider, 0, len(providers))
+	for len(queue) > 0 {
+		name := queue[0]
+		queue = queue[1:]
+		result = append(result, index[name])
+		for _, dep := range dependants[name] {
+			inDegree[dep]--
+			if inDegree[dep] == 0 {
+				queue = append(queue, dep)
+			}
+		}
+	}
+
+	if len(result) != len(providers) {
+		return nil, fmt.Errorf("skill dependency cycle detected among providers")
+	}
+	return result, nil
+}
+
+// ValidateDeps checks that all dependencies of p are registered with satisfying versions.
+func (m *Manager) ValidateDeps(p Provider) error {
+	meta := p.Metadata()
+
+	// Check Requires (version-constrained)
+	for _, req := range meta.Requires {
+		dep, ok := m.Get(req.Name)
+		if !ok {
+			return fmt.Errorf("skill %q required by %q is not registered", req.Name, meta.Name)
+		}
+		depVersion := dep.Metadata().Version
+		if !IsVersionInRange(depVersion, req.MinVersion, req.MaxVersion) {
+			return fmt.Errorf("skill %q v%s does not satisfy %q requirement (min=%s max=%s)",
+				req.Name, depVersion, meta.Name, req.MinVersion, req.MaxVersion)
+		}
+	}
+
+	// Check legacy DependsOn (name-only)
+	for _, name := range meta.DependsOn {
+		if _, ok := m.Get(name); !ok {
+			return fmt.Errorf("skill %q required by %q (depends_on) is not registered", name, meta.Name)
+		}
+	}
+	return nil
+}
+
+// resolvedDepNames returns all dependency names for a skill, deduped.
+func resolvedDepNames(meta Metadata) []string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, req := range meta.Requires {
+		if !seen[req.Name] {
+			seen[req.Name] = true
+			names = append(names, req.Name)
+		}
+	}
+	for _, name := range meta.DependsOn {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
 // ShutdownAll 关闭所有 provider（逆序）。
 func (m *Manager) ShutdownAll(ctx context.Context) error {
 	m.mu.Lock()

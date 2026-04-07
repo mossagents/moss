@@ -31,16 +31,18 @@ type Episode struct {
 	Kind       EpisodeKind    `json:"kind"`
 	Summary    string         `json:"summary"`
 	Importance float64        `json:"importance"` // 0.0-1.0
+	ExpiresAt  time.Time      `json:"expires_at,omitempty"` // 零值 = 永不过期
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 // EpisodeFilter 过滤条件。
 type EpisodeFilter struct {
-	SessionID  string
-	Kinds      []EpisodeKind
-	MinImportance float64
-	Since      time.Time
-	Until      time.Time
+	SessionID      string
+	Kinds          []EpisodeKind
+	MinImportance  float64
+	Since          time.Time
+	Until          time.Time
+	ExcludeExpired bool // true = 过滤掉 ExpiresAt 已过期的 Episode
 }
 
 // EpisodicStore 提供历史事件的追加存储与检索能力。
@@ -208,7 +210,11 @@ func (s *FileEpisodicStore) Search(_ context.Context, query string, filter Episo
 func (s *FileEpisodicStore) loadAll() ([]Episode, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.readLocked()
+}
 
+// readLocked reads all episodes from disk. Caller must hold s.mu.
+func (s *FileEpisodicStore) readLocked() ([]Episode, error) {
 	f, err := os.Open(s.path)
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -238,6 +244,9 @@ func (s *FileEpisodicStore) loadAll() ([]Episode, error) {
 
 func matchesFilter(ep Episode, f EpisodeFilter) bool {
 	if f.SessionID != "" && ep.SessionID != f.SessionID {
+		return false
+	}
+	if f.ExcludeExpired && !ep.ExpiresAt.IsZero() && time.Now().After(ep.ExpiresAt) {
 		return false
 	}
 	if len(f.Kinds) > 0 {
