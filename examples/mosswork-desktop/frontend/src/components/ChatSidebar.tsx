@@ -67,10 +67,10 @@ export default function ChatSidebar({
       <div className="pt-10 pb-3 px-3 flex gap-2">
         <button
           onClick={onNewSession}
-          disabled={isRunning || manageMode}
+          disabled={manageMode}
           className={cn(
             "flex-1 py-2.5 px-3 bg-primary text-on-primary rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95",
-            (isRunning || manageMode) && "opacity-50 pointer-events-none",
+            manageMode && "opacity-50 pointer-events-none",
           )}
         >
           <span className="material-symbols-outlined text-base">add</span>

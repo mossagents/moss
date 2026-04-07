@@ -19,6 +19,15 @@ interface AssistantThreadAreaProps {
   onArtifact?: (html: string) => void;
 }
 
+function parseSkillLikeInvocation(content: string): { name: string; task: string } | null {
+  const match = content.match(/^Use skill or tool '([^']+)' to complete this request:\s*\n?([\s\S]*)$/);
+  if (!match) return null;
+  return {
+    name: match[1].trim(),
+    task: match[2].trim(),
+  };
+}
+
 function extractArtifact(content: string): { cleaned: string; artifact: string | null } {
   const match = content.match(/<artifact>([\s\S]*?)<\/artifact>/i);
   if (!match) return { cleaned: content, artifact: null };
@@ -77,15 +86,32 @@ export default function AssistantThreadArea({ showTypingIndicator, statusText, o
 }
 
 function UserMessage() {
+  const text = useMessage((s) => {
+    const textPart = s.content.find((part) => part.type === "text");
+    return textPart?.type === "text" ? textPart.text : "";
+  });
+  const skillInvocation = parseSkillLikeInvocation(text);
+
   return (
     <MessagePrimitive.Root data-role="user" className="flex flex-col items-end animate-fade-in">
       <div className="bg-surface-container-high rounded-2xl rounded-tr-none p-4 max-w-[80%]">
-        <MessagePrimitive.Parts>
-          {({ part }) => {
-            if (part.type !== "text") return null;
-            return <p className="text-on-surface font-medium leading-relaxed text-sm whitespace-pre-wrap">{part.text}</p>;
-          }}
-        </MessagePrimitive.Parts>
+        {skillInvocation ? (
+          <div className="space-y-2 min-w-[16rem]">
+            <div className="inline-flex max-w-full items-center rounded-full bg-primary/12 px-3 py-1 text-xs font-semibold text-primary">
+              <span className="font-mono truncate">{skillInvocation.name}</span>
+            </div>
+            {skillInvocation.task && (
+              <p className="text-on-surface font-medium leading-relaxed text-sm whitespace-pre-wrap">{skillInvocation.task}</p>
+            )}
+          </div>
+        ) : (
+          <MessagePrimitive.Parts>
+            {({ part }) => {
+              if (part.type !== "text") return null;
+              return <p className="text-on-surface font-medium leading-relaxed text-sm whitespace-pre-wrap">{part.text}</p>;
+            }}
+          </MessagePrimitive.Parts>
+        )}
       </div>
       <MessageMetaTime />
     </MessagePrimitive.Root>

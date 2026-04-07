@@ -41,7 +41,7 @@ export default function ChatInfoPanel({
   });
 
   return (
-    <aside className="fixed right-0 top-0 bottom-0 w-64 bg-surface-container-low border-l border-outline-variant/30 overflow-y-auto z-20 flex flex-col">
+    <aside className="fixed right-0 top-0 bottom-0 w-80 bg-surface-container-low border-l border-outline-variant/30 overflow-y-auto z-20 flex flex-col">
       {/* Header */}
       <div className="px-4 py-3 mt-8 shrink-0 border-b border-outline-variant/20">
         <span className="text-xs font-bold text-on-surface-variant/70 tracking-widest uppercase">会话信息</span>

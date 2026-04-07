@@ -146,6 +146,24 @@ function settleAllRunningTools(
   );
 }
 
+function mapHistoryToMessages(history: any[]): ChatMessage[] {
+  return history.map((h: any) => ({
+    id: nextId(),
+    role: (h.role ?? "assistant") as MessageRole,
+    content: h.content ?? "",
+    thinking: h.thinking || undefined,
+    tools: Array.isArray(h.tools) && h.tools.length > 0
+      ? h.tools.map((t: any) => ({
+          name: t.name ?? "",
+          status: (t.is_error ? "error" : "done") as "done" | "error" | "running",
+          input: t.input || undefined,
+          result: t.result || undefined,
+        }))
+      : undefined,
+    timestamp: Date.now(),
+  }));
+}
+
 export default function App() {
   const [module, setModule] = useState<"chat" | "automation" | "settings">("chat");
   const [artifact, setArtifact] = useState<string | null>(null);
@@ -174,6 +192,7 @@ export default function App() {
   const composerInputRef = useRef<HTMLTextAreaElement | null>(null);
   // currentSessionIdRef mirrors currentSessionId for use in event handler closures
   const currentSessionIdRef = useRef<string | undefined>(undefined);
+  const loadedSessionIdRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     pendingFilesRef.current = pendingFiles;
@@ -183,6 +202,21 @@ export default function App() {
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
   }, [currentSessionId]);
+
+  const loadSessionHistory = useCallback(async (id: string) => {
+    const history = await ChatService.getSessionHistory(id);
+    loadedSessionIdRef.current = id;
+    if (Array.isArray(history)) {
+      setMessages(mapHistoryToMessages(history));
+    } else {
+      setMessages([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentSessionId || isRunning || loadedSessionIdRef.current === currentSessionId) return;
+    loadSessionHistory(currentSessionId).catch(() => {});
+  }, [currentSessionId, isRunning, loadSessionHistory]);
 
   useEffect(() => {
     ChatService.getConfig()
@@ -549,6 +583,7 @@ export default function App() {
     setSessionTokens(0);
     try {
       await ChatService.newSession();
+      loadedSessionIdRef.current = undefined;
       setMessages([]);
       setPendingFiles([]);
       setArtifact(null);
@@ -563,6 +598,7 @@ export default function App() {
     setSessionTokens(0);
     try {
       // Clear current UI state before switching
+      loadedSessionIdRef.current = undefined;
       setMessages([]);
       setArtifact(null);
       streamingIdRef.current = null;
@@ -570,36 +606,18 @@ export default function App() {
       // Switch the backend session
       await ChatService.resumeSession(id);
       setCurrentSessionId(id);
-      // Load and display the session's message history
-      const history = await ChatService.getSessionHistory(id);
-      if (Array.isArray(history) && history.length > 0) {
-        const msgs: ChatMessage[] = (history as any[]).map((h: any) => ({
-          id: nextId(),
-          role: (h.role ?? "assistant") as MessageRole,
-          content: h.content ?? "",
-          thinking: h.thinking || undefined,
-          tools: Array.isArray(h.tools) && h.tools.length > 0
-            ? h.tools.map((t: any) => ({
-                name: t.name ?? "",
-                status: (t.is_error ? "error" : "done") as "done" | "error" | "running",
-                input: t.input || undefined,
-                result: t.result || undefined,
-              }))
-            : undefined,
-          timestamp: Date.now(),
-        }));
-        setMessages(msgs);
-      }
+      await loadSessionHistory(id);
     } catch {
       // silently ignore session switch errors
     }
-  }, []);
+  }, [loadSessionHistory]);
 
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
       await ChatService.deleteSession(id);
       // If we deleted the current session, clear the chat view
       if (id === currentSessionId) {
+        loadedSessionIdRef.current = undefined;
         setMessages([]);
         setArtifact(null);
         streamingIdRef.current = null;
@@ -611,6 +629,7 @@ export default function App() {
     try {
       await ChatService.deleteSessions(ids);
       if (ids.includes(currentSessionId ?? "")) {
+        loadedSessionIdRef.current = undefined;
         setMessages([]);
         setArtifact(null);
         streamingIdRef.current = null;
@@ -746,7 +765,7 @@ export default function App() {
             className="absolute top-0 bottom-0 flex flex-col"
             style={{
               left: "296px",
-              right: artifact ? "400px" : "256px",
+              right: artifact ? "400px" : "320px",
             }}
           >
             <AssistantRuntimeProvider runtime={runtime}>
