@@ -158,7 +158,7 @@ func (m chatModel) renderSlashPopup(width int) string {
 		}
 		rows = append(rows, row)
 	}
-	footer := composerHintStyle.Render("  ↑↓ navigate  •  Tab/Enter select  •  Esc dismiss")
+	footer := composerHintStyle.Render("  ↑↓ move  •  Tab/Enter select  •  Esc dismiss")
 	rows = append(rows, footer)
 	inner := strings.Join(rows, "\n")
 	return dialogBoxStyle.Width(popupWidth).Render(inner)

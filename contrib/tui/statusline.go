@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/product"
+	intr "github.com/mossagents/moss/kernel/io"
+	"path/filepath"
 	"strings"
 )
 
@@ -154,42 +156,59 @@ func (m chatModel) experimentalEnabled(name string) bool {
 }
 
 func (m chatModel) renderStatusLine() string {
-	items := m.statusLineItems
-	if !m.experimentalEnabled(product.ExperimentalStatuslineCustomization) {
-		items = defaultStatusLineItems
+	values := []string{m.runtimeStateLabel()}
+	if label := strings.TrimSpace(m.progressStatusSummary()); label != "" && label != m.runtimeStateLabel() {
+		values = append(values, label)
 	}
-	values := make([]string, 0, len(items))
-	for _, item := range normalizeStatusLineItems(items) {
-		switch item {
-		case "state":
-			values = append(values, "state="+valueOrDefaultRunState(m.streaming))
-		case "model":
-			label := strings.TrimSpace(m.provider)
-			if strings.TrimSpace(m.model) != "" {
-				label += " (" + strings.TrimSpace(m.model) + ")"
-			}
-			values = append(values, "model="+label)
-		case "workspace":
-			values = append(values, "workspace="+valueOrDefaultString(m.workspace, "."))
-		case "profile":
-			values = append(values, "profile="+valueOrDefaultString(m.profile, "default"))
-		case "trust":
-			values = append(values, "trust="+valueOrDefaultString(m.trust, "trusted"))
-		case "approval":
-			values = append(values, "approval="+valueOrDefaultString(m.approvalMode, "confirm"))
-		case "thread":
-			values = append(values, "thread="+valueOrDefaultString(m.currentSessionID, "(none)"))
-		case "messages":
-			values = append(values, fmt.Sprintf("messages=%d", len(m.messages)))
-		case "theme":
-			values = append(values, "theme="+valueOrDefaultString(m.theme, themeDefault))
-		case "personality":
-			values = append(values, "personality="+valueOrDefaultString(m.personality, product.PersonalityFriendly))
-		case "fast":
-			values = append(values, "fast="+onOff(m.fastMode))
-		case "version":
-			values = append(values, "version="+appVersion)
+	if strings.TrimSpace(m.provider) != "" && (!m.modelAuto || strings.TrimSpace(m.model) != "") {
+		label := strings.TrimSpace(m.provider)
+		if strings.TrimSpace(m.model) != "" {
+			label = strings.TrimSpace(m.model)
 		}
+		values = append(values, label)
+	}
+	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
+		values = append(values, profile)
+	}
+	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
+		values = append(values, "thread "+shortThreadID(threadID))
+	}
+	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
+		values = append(values, filepath.Base(workspace))
+	}
+	if m.streaming && !m.runStartedAt.IsZero() {
+		values = append(values, formatElapsed(m.runStartedAt, m.now()))
 	}
 	return strings.Join(values, " │ ")
+}
+
+func (m chatModel) runtimeStateLabel() string {
+	switch {
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+		return "approval"
+	case m.pendAsk != nil:
+		return "input"
+	case m.streaming && m.hasRunningToolCalls():
+		return "tool"
+	case m.streaming:
+		return "running"
+	default:
+		return "idle"
+	}
+}
+
+func (m chatModel) progressStatusSummary() string {
+	if !m.progress.visible() {
+		return ""
+	}
+	if msg := strings.TrimSpace(m.progress.Message); msg != "" {
+		return truncateDisplayWidth(msg, 40)
+	}
+	if phase := strings.TrimSpace(progressPhaseLabel(m.progress.Phase)); phase != "" {
+		return phase
+	}
+	if status := strings.TrimSpace(progressStatusLabel(m.progress.Status)); status != "" {
+		return strings.ToLower(status)
+	}
+	return ""
 }

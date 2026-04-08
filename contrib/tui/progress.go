@@ -21,16 +21,17 @@ type notificationProgressMsg struct {
 }
 
 type executionProgressState struct {
-	SessionID string
-	Status    string
-	Phase     string
-	Message   string
-	ToolName  string
-	Iteration int
-	MaxSteps  int
-	StartedAt time.Time
-	EndedAt   time.Time
-	UpdatedAt time.Time
+	SessionID   string
+	Status      string
+	Phase       string
+	Message     string
+	ToolName    string
+	ActivityKey string
+	Iteration   int
+	MaxSteps    int
+	StartedAt   time.Time
+	EndedAt     time.Time
+	UpdatedAt   time.Time
 }
 
 func (s executionProgressState) signature() string {
@@ -39,6 +40,7 @@ func (s executionProgressState) signature() string {
 		strings.TrimSpace(s.Phase),
 		strings.TrimSpace(s.Message),
 		strings.TrimSpace(s.ToolName),
+		strings.TrimSpace(s.ActivityKey),
 		fmt.Sprintf("%d", s.Iteration),
 		fmt.Sprintf("%d", s.MaxSteps),
 	}, "\x00")
@@ -78,9 +80,11 @@ func (s executionProgressState) renderLine(now time.Time, width int) string {
 	if !s.visible() {
 		return ""
 	}
-	parts := []string{progressStatusLabel(s.Status)}
+	parts := []string{strings.ToLower(progressStatusLabel(s.Status))}
 	if strings.TrimSpace(s.Phase) != "" {
-		parts = append(parts, progressPhaseLabel(s.Phase))
+		if phase := strings.TrimSpace(progressPhaseLabel(s.Phase)); phase != "" {
+			parts = append(parts, phase)
+		}
 	}
 	if s.Iteration > 0 {
 		if s.MaxSteps > 0 {
@@ -95,19 +99,19 @@ func (s executionProgressState) renderLine(now time.Time, width int) string {
 	if msg := strings.TrimSpace(s.Message); msg != "" {
 		parts = append(parts, msg)
 	}
-	line := "Progress: " + strings.Join(parts, "  │  ")
+	line := "  │ " + strings.Join(parts, "  ·  ")
 	if width > 0 {
-		line = truncateForQueue(line, width)
+		line = truncateDisplayWidth(line, width)
 	}
 	switch s.Status {
 	case "running":
-		return runningStyle.Render(line)
+		return eventPendingStyle.Render(line)
 	case "waiting":
-		return progressStyle.Render(line)
+		return eventSummaryStyle.Render(line)
 	case "failed", "cancelled":
-		return errorStyle.Render(line)
+		return eventErrorStyle.Render(line)
 	default:
-		return mutedStyle.Render(line)
+		return eventSummaryStyle.Render(line)
 	}
 }
 
@@ -122,7 +126,7 @@ func (s executionProgressState) renderTimelineEntry(now time.Time, width int, la
 	if latest {
 		label = "●"
 	}
-	parts := []string{label}
+	parts := []string{"  " + label}
 	if strings.TrimSpace(phase) != "" {
 		parts = append(parts, phase)
 	}
@@ -139,14 +143,14 @@ func (s executionProgressState) renderTimelineEntry(now time.Time, width int, la
 	if latest {
 		switch s.Status {
 		case "failed", "cancelled":
-			return errorStyle.Render(line)
+			return eventErrorStyle.Render(line)
 		case "running", "waiting":
-			return runningStyle.Render(line)
+			return eventPendingStyle.Render(line)
 		default:
-			return mutedStyle.Render(line)
+			return eventSummaryStyle.Render(line)
 		}
 	}
-	return halfMutedStyle.Render(line)
+	return eventDetailStyle.Render(line)
 }
 
 func (m *chatModel) recordProgressSnapshot(next executionProgressState, reset bool) (bool, bool) {
@@ -162,6 +166,17 @@ func (m *chatModel) recordProgressSnapshot(next executionProgressState, reset bo
 	}
 	if len(m.progressTrail) > 0 && m.progressTrail[len(m.progressTrail)-1].signature() == next.signature() {
 		next.EndedAt = m.progressTrail[len(m.progressTrail)-1].EndedAt
+		m.progressTrail[len(m.progressTrail)-1] = next
+		return didReset, false
+	}
+	if len(m.progressTrail) > 0 && shouldCoalesceProgressTrail(m.progressTrail[len(m.progressTrail)-1], next) {
+		prev := m.progressTrail[len(m.progressTrail)-1]
+		if next.StartedAt.IsZero() {
+			next.StartedAt = prev.StartedAt
+		}
+		if next.EndedAt.IsZero() {
+			next.EndedAt = prev.EndedAt
+		}
 		m.progressTrail[len(m.progressTrail)-1] = next
 		return didReset, false
 	}
@@ -257,6 +272,16 @@ func (m *chatModel) recordProgressDetail(status, phase, message string, updatedA
 	}
 	snapshot.SessionID = sessionID
 	snapshot.Message = strings.TrimSpace(message)
+	switch strings.TrimSpace(snapshot.Phase) {
+	case "tools":
+		snapshot.ActivityKey = "tool:" + firstNonEmptyProgress(strings.TrimSpace(snapshot.ToolName), "active")
+	case "approval":
+		snapshot.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(snapshot.ToolName), "active")
+	case "completed", "failed", "cancelled":
+		snapshot.ActivityKey = "run:" + strings.TrimSpace(snapshot.Phase)
+	default:
+		snapshot.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(snapshot.Iteration, 1))
+	}
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()
 	}
@@ -272,6 +297,22 @@ func progressRunChanged(prev, next executionProgressState) bool {
 		return false
 	}
 	return !prev.StartedAt.Equal(next.StartedAt)
+}
+
+func shouldCoalesceProgressTrail(prev, next executionProgressState) bool {
+	if strings.TrimSpace(prev.SessionID) == "" || strings.TrimSpace(prev.SessionID) != strings.TrimSpace(next.SessionID) {
+		return false
+	}
+	if strings.TrimSpace(prev.ActivityKey) == "" || strings.TrimSpace(prev.ActivityKey) != strings.TrimSpace(next.ActivityKey) {
+		return false
+	}
+	if prev.terminal() || next.terminal() {
+		return false
+	}
+	if strings.TrimSpace(prev.Phase) == "approval" || strings.TrimSpace(next.Phase) == "approval" {
+		return false
+	}
+	return true
 }
 
 func (m chatModel) renderProgressBlock(width int) string {
@@ -469,6 +510,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Phase = "starting"
 		next.Message = "run started"
 		next.ToolName = ""
+		next.ActivityKey = "run"
 		next.StartedAt = ts
 	case kobs.ExecutionIterationStarted:
 		next.Status = "running"
@@ -477,11 +519,13 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
+		next.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(next.Iteration, 1))
 		next.Message = fmt.Sprintf("iteration %d started", maxInt(next.Iteration, 1))
 	case kobs.ExecutionLLMStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
+		next.ActivityKey = fmt.Sprintf("thinking:%d", maxInt(next.Iteration, 1))
 		if model := strings.TrimSpace(event.Model); model != "" {
 			next.Message = "calling " + model
 		} else {
@@ -491,6 +535,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Status = "running"
 		next.Phase = "tools"
 		next.ToolName = strings.TrimSpace(event.ToolName)
+		next.ActivityKey = "tool:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "unknown")
 		if next.ToolName != "" {
 			next.Message = "running " + next.ToolName
 		} else {
@@ -500,6 +545,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Status = "waiting"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
+		next.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "request")
 		if next.ToolName != "" {
 			next.Message = "approval required for " + next.ToolName
 		} else if reason := strings.TrimSpace(stringData(event.Data, "reason")); reason != "" {
@@ -511,6 +557,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Status = "running"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
+		next.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "request")
 		if approved, ok := boolData(event.Data, "approved"); ok && !approved {
 			next.Message = "approval denied"
 		} else if next.ToolName != "" {
@@ -525,6 +572,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
+		next.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(next.Iteration, 1))
 		toolCalls, _ := intData(event.Data, "tool_calls")
 		stopReason := strings.TrimSpace(stringData(event.Data, "stop_reason"))
 		tokens, _ := intData(event.Data, "tokens")
@@ -547,6 +595,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Status = "completed"
 		next.Phase = "completed"
 		next.ToolName = ""
+		next.ActivityKey = "run:completed"
 		steps, _ := intData(event.Data, "steps")
 		tokens, _ := intData(event.Data, "tokens")
 		switch {
@@ -561,11 +610,13 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.Status = "failed"
 		next.Phase = "failed"
 		next.ToolName = ""
+		next.ActivityKey = "run:failed"
 		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run failed")
 	case kobs.ExecutionRunCancelled:
 		next.Status = "cancelled"
 		next.Phase = "cancelled"
 		next.ToolName = ""
+		next.ActivityKey = "run:cancelled"
 		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run cancelled")
 	}
 	return next

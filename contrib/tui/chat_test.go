@@ -871,8 +871,8 @@ func TestRenderEditorPaneIncludesProgressBlock(t *testing.T) {
 	m.recalcLayout()
 
 	rendered := m.renderEditorPane(m.generateLayout())
-	if !strings.Contains(rendered, "Progress:") && !strings.Contains(rendered, "Thinking") {
-		t.Fatalf("expected progress block in editor pane, got %q", rendered)
+	if strings.Contains(rendered, "Progress:") || strings.Contains(rendered, "Thinking") || strings.Contains(rendered, "planning changes") {
+		t.Fatalf("expected progress block to move out of editor pane, got %q", rendered)
 	}
 }
 
@@ -2126,7 +2126,7 @@ func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 	m.textarea.SetValue("hello")
 	m.refreshSlashHints()
 	line := m.renderSlashHintLine()
-	if !strings.Contains(line, "/help") || !strings.Contains(line, "Tab completes") {
+	if !strings.Contains(line, "/ for commands") || !strings.Contains(line, "Tab completes") {
 		t.Fatalf("unexpected fallback hint line: %q", line)
 	}
 }
@@ -2143,8 +2143,8 @@ func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	if !strings.Contains(line, "/help") {
 		t.Fatalf("unexpected footer line: %q", line)
 	}
-	if !strings.Contains(line, "Shift+Tab next profile") {
-		t.Fatalf("expected profile hotkey hint in footer, got %q", line)
+	if !strings.Contains(line, "Enter send") || !strings.Contains(line, "Shift+Enter newline") {
+		t.Fatalf("expected prompt-first footer hints, got %q", line)
 	}
 	if strings.Contains(line, "thread=sess_1") || strings.Contains(line, "fast=on") {
 		t.Fatalf("footer should no longer append status line, got %q", line)

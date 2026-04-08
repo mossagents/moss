@@ -50,16 +50,13 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		rows = append(rows, "Ctrl+X removes the latest attachment")
 		sections = append(sections, composerHintStyle.Render("  "+strings.Join(rows, "  •  ")))
 	}
-	if progress := m.renderProgressBlock(layout.MainWidth); strings.TrimSpace(progress) != "" {
-		sections = append(sections, progress)
-	}
 	if m.streaming {
-		runLabel := shimmerText("Running", m.now())
-		sections = append(sections, fmt.Sprintf("  %s %s (%s, double Esc to cancel current run)",
+		runLabel := shimmerText("working", m.now())
+		sections = append(sections, composerHintStyle.Render(fmt.Sprintf("  %s %s  •  %s  •  Esc Esc cancel",
 			spinnerFrame(m.now()),
 			runLabel,
 			formatElapsed(m.runStartedAt, m.now()),
-		))
+		)))
 	}
 	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
 	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
@@ -70,7 +67,14 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 	} else {
 		sections = append(sections, m.renderSlashHintLine())
 	}
-	sections = append(sections, inputBorderStyle.Render(m.textarea.View()))
+	boxStyle := composerBoxStyle.Copy()
+	if m.streaming {
+		boxStyle = boxStyle.BorderForeground(colorPrimary)
+	}
+	if m.pendAsk != nil {
+		boxStyle = boxStyle.BorderForeground(colorSecondary)
+	}
+	sections = append(sections, boxStyle.Render(m.textarea.View()))
 	return lipgloss.NewStyle().
 		Width(layout.MainWidth).
 		Height(layout.EditorHeight).
@@ -86,32 +90,39 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 	if dialog.ID() == overlayTranscript {
 		return dialog.View(m, layout.MainWidth, layout.BodyHeight)
 	}
-	width := min(88, max(52, layout.MainWidth-10))
+	width := min(84, max(48, layout.MainWidth-12))
 	overlay := dialog.View(m, width, layout.BodyHeight)
 	if strings.TrimSpace(overlay) == "" {
 		return ""
 	}
-	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, lipgloss.Center, overlay)
+	vertical := lipgloss.Center
+	switch dialog.ID() {
+	case overlayHelp, overlaySchedule, overlayStatus, overlayModel, overlayTheme, overlayMCP, overlayResume, overlayFork, overlayAgent, overlayMention:
+		vertical = lipgloss.Bottom
+	}
+	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, vertical, overlay)
 }
 
 func (m chatModel) renderStatusPane(width int) string {
 	var status string
 	if m.pendAsk != nil && m.askForm != nil {
 		if m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
-			status = "Tab/Shift+Tab move focus • ↑↓ choose decision • Enter apply • memory applies to this thread only"
+			status = "approval waiting  •  Tab move  •  ↑↓ choose  •  Enter apply  •  Esc close"
 		} else {
-			status = "Tab/Shift+Tab move fields • ↑↓ choose options • Space toggle multi-select • Enter confirm"
+			status = "input requested  •  Tab move  •  ↑↓ choose  •  Enter confirm  •  Esc close"
 		}
 	} else if m.scheduleBrowser != nil {
-		status = "↑↓ choose schedule • e run now • d delete • r refresh • Esc close"
+		status = "schedule  •  ↑↓ choose  •  e run now  •  d delete  •  Esc close"
 	} else if m.pendAsk != nil {
-		status = "Type your reply and press Enter • double Esc cancel run • Ctrl+C clear input"
-	} else if len(m.pendingAttachments) > 0 {
-		status = "Enter send • Ctrl+X remove latest attachment • Shift+Enter newline"
+		status = "reply required  •  Enter confirm  •  Esc Esc cancel run"
 	} else {
-		status = truncateDisplayWidth(m.renderStatusLine(), width)
+		status = m.renderStatusLine()
+		if hint := strings.TrimSpace(m.renderFooterHelpLine()); hint != "" {
+			status += "  " + shellHeaderSeparatorStyle.Render("•") + "  " + hint
+		}
 	}
-	return lipgloss.NewStyle().Width(width).Render(statusHintStyle.Render(status))
+	status = truncateDisplayWidth(status, width)
+	return statusBarStyle.Width(width).Render(statusHintStyle.Render(status))
 }
 
 func (m chatModel) renderBody(layout chatUILayout) string {

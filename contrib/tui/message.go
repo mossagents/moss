@@ -100,38 +100,19 @@ func renderProgressMessage(m chatMessage, width int) string {
 		label = "progress"
 	}
 	text := strings.TrimSpace(m.content)
-	line := label
+	summary := label
 	if text != "" {
-		line += "  " + text
+		summary += " · " + text
 	}
-	wrapped := wrapText(line, width)
-	lines := strings.Split(wrapped, "\n")
-	var b strings.Builder
-	b.WriteString("  ◦ ")
-	b.WriteString(lines[0])
-	for _, line := range lines[1:] {
-		b.WriteString("\n    ")
-		b.WriteString(line)
-	}
-	return halfMutedStyle.Render(b.String())
+	return renderEventSummary(eventSummaryStyle, "progress", summary, "", width)
 }
 
 func renderReasoningMessage(m chatMessage, width int) string {
 	body := strings.Join(strings.Fields(strings.TrimSpace(m.content)), " ")
 	if body == "" {
-		return halfMutedStyle.Render("  ◦ thinking")
+		return renderEventSummary(eventSummaryStyle, "thinking", "", "", width)
 	}
-	line := "thinking  " + body
-	wrapped := wrapText(line, width)
-	lines := strings.Split(wrapped, "\n")
-	var b strings.Builder
-	b.WriteString("  ◦ ")
-	b.WriteString(lines[0])
-	for _, line := range lines[1:] {
-		b.WriteString("\n    ")
-		b.WriteString(line)
-	}
-	return halfMutedStyle.Render(b.String())
+	return renderEventSummary(eventSummaryStyle, "thinking", body, "", width)
 }
 
 func renderRoleMessage(m chatMessage, width int, dotRenderer func(string) string, showTimestamp bool) string {
@@ -201,11 +182,11 @@ func renderSystemMessage(content string, width int) string {
 	content = compactRunSummary(content)
 	wrapped := wrapText(content, width)
 	if wrapped == "" {
-		return "\n  ● "
+		return "  ● "
 	}
 	lines := strings.Split(wrapped, "\n")
 	var b strings.Builder
-	b.WriteString("\n  ● ")
+	b.WriteString("  ● ")
 	b.WriteString(lines[0])
 	for _, line := range lines[1:] {
 		b.WriteString("\n    ")
@@ -316,7 +297,6 @@ func markdownRenderer(width int) (*glamour.TermRenderer, error) {
 	return r, nil
 }
 
-
 // renderAllMessages 渲染所有消息为单个可滚动字符串。
 // 当 toolCollapsed 为 true 时，每个 tool call 默认只显示摘要；展开后显示详细 body。
 func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) string {
@@ -325,33 +305,54 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 	}
 	var b strings.Builder
 	i := 0
+	prevKind := msgKind(-1)
 	for i < len(messages) {
 		m := messages[i]
+		rendered := ""
+		blockKind := m.kind
+		consumed := 1
 		if m.kind == msgToolStart {
 			if startShouldRenderAtResult(messages, i) {
 				i++
 				continue
 			}
-			rendered, consumed := renderToolCallMessages(messages, i, width, toolCollapsed)
-			b.WriteString(rendered)
-			b.WriteString("\n")
-			i += consumed
+			rendered, consumed = renderToolCallMessages(messages, i, width, toolCollapsed)
+			blockKind = msgToolStart
 		} else if m.kind == msgToolResult || m.kind == msgToolError {
 			startIdx := findMatchingToolStartBefore(messages, i)
 			if startIdx >= 0 {
-				b.WriteString(renderToolCall(&messages[startIdx], &m, width, toolCollapsed))
+				rendered = renderToolCall(&messages[startIdx], &m, width, toolCollapsed)
 			} else {
-				b.WriteString(renderToolCall(nil, &m, width, toolCollapsed))
+				rendered = renderToolCall(nil, &m, width, toolCollapsed)
 			}
-			b.WriteString("\n")
-			i++
+			blockKind = m.kind
 		} else {
-			b.WriteString(renderMessage(m, width))
-			b.WriteString("\n")
-			i++
+			rendered = renderMessage(m, width)
 		}
+		if b.Len() > 0 {
+			b.WriteString(transcriptBlockSeparator(prevKind, blockKind))
+		}
+		b.WriteString(rendered)
+		prevKind = blockKind
+		i += consumed
 	}
 	return b.String()
+}
+
+func transcriptBlockSeparator(prev, next msgKind) string {
+	if transcriptDenseBlock(prev) && transcriptDenseBlock(next) {
+		return "\n"
+	}
+	return "\n\n"
+}
+
+func transcriptDenseBlock(kind msgKind) bool {
+	switch kind {
+	case msgToolStart, msgToolResult, msgToolError, msgProgress, msgReasoning:
+		return true
+	default:
+		return false
+	}
 }
 
 func startShouldRenderAtResult(messages []chatMessage, startIdx int) bool {
@@ -576,24 +577,48 @@ func renderShellToolCall(start *chatMessage, result *chatMessage, width int, com
 }
 
 func renderToolHeaderLine(style lipgloss.Style, icon, name, summary, suffix string, width int) string {
-	parts := []string{icon, name}
-	if strings.TrimSpace(summary) != "" {
-		parts = append(parts, truncateDisplayWidth(summary, max(16, width-12)))
+	label := strings.TrimSpace(name)
+	if icon == toolErrorIcon() {
+		label = "error · " + label
+	} else if icon == toolSuccessIcon() {
+		label = "tool · " + label
+	} else {
+		label = "tool · " + label
 	}
-	header := "  " + strings.Join(parts, " ")
-	if strings.TrimSpace(suffix) != "" {
-		header += halfMutedStyle.Render(" · " + suffix)
-	}
-	return style.Render(header)
+	return renderEventSummary(style, label, summary, suffix, width)
 }
 
 func renderToolBodyBlock(style lipgloss.Style, content string) string {
-	return style.Render(indentBlock(content, "    │ "))
+	return style.Render(indentBlock(content, "    "))
 }
 
 func toolPendingIcon() string { return "●" }
 func toolSuccessIcon() string { return "✓" }
 func toolErrorIcon() string   { return "✕" }
+
+func renderEventSummary(style lipgloss.Style, label, summary, suffix string, width int) string {
+	parts := []string{strings.TrimSpace(label)}
+	if trimmed := strings.TrimSpace(summary); trimmed != "" {
+		parts = append(parts, trimmed)
+	}
+	line := strings.Join(parts, " · ")
+	if strings.TrimSpace(suffix) != "" {
+		line += " · " + suffix
+	}
+	wrapped := wrapText(line, max(20, width-4))
+	lines := strings.Split(wrapped, "\n")
+	if len(lines) == 0 {
+		return style.Render("  │ " + strings.TrimSpace(label))
+	}
+	var b strings.Builder
+	b.WriteString("  │ ")
+	b.WriteString(lines[0])
+	for _, line := range lines[1:] {
+		b.WriteString("\n    ")
+		b.WriteString(line)
+	}
+	return style.Render(b.String())
+}
 
 func toolPrettyName(name string) string {
 	switch strings.TrimSpace(name) {

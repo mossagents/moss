@@ -118,7 +118,7 @@ func renderSelectionListDialog(width int, state *selectionListState) string {
 		for i, item := range state.Items {
 			prefix := "  "
 			if i == state.SelectedIndex() {
-				prefix = "▸ "
+				prefix = "› "
 			}
 			line := prefix
 			if state.MultiSelect {
@@ -150,5 +150,5 @@ func renderSelectionListDialog(width int, state *selectionListState) string {
 		body.WriteString("\n\n")
 		body.WriteString(mutedStyle.Render(state.Message))
 	}
-	return renderDialogFrame(width, valueOrDefaultString(state.Title, "Select"), []string{strings.TrimSpace(body.String())}, valueOrDefaultString(state.Footer, "↑↓ choose • Enter apply • Esc close"))
+	return renderDialogFrame(width, valueOrDefaultString(state.Title, "Select"), []string{strings.TrimSpace(body.String())}, valueOrDefaultString(state.Footer, "↑↓ move  •  Enter confirm  •  Esc close"))
 }

@@ -47,6 +47,9 @@ var (
 	topBarStyle = lipgloss.NewStyle().
 			Padding(0, 1)
 
+	shellMetaBarStyle = lipgloss.NewStyle().
+				Padding(0, 1)
+
 	shellRuleStyle = lipgloss.NewStyle().
 			Foreground(colorBorder)
 
@@ -92,7 +95,19 @@ var (
 
 	panelMutedStyle = lipgloss.NewStyle()
 
+	statusBarStyle = lipgloss.NewStyle().
+			Padding(0, 1)
+
+	statusAccentStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorPrimary)
+
 	inputBorderStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(colorBorder).
+				Padding(0, 1)
+
+	composerBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(colorBorder).
 				Padding(0, 1)
@@ -112,6 +127,21 @@ var (
 
 	dialogHelpStyle = lipgloss.NewStyle().
 			Foreground(colorMuted)
+
+	eventSummaryStyle = lipgloss.NewStyle().
+				Foreground(colorMuted)
+
+	eventDetailStyle = lipgloss.NewStyle().
+				Foreground(colorHalfMuted)
+
+	eventPendingStyle = lipgloss.NewStyle().
+				Foreground(colorSecondary)
+
+	eventSuccessStyle = lipgloss.NewStyle().
+				Foreground(colorSuccess)
+
+	eventErrorStyle = lipgloss.NewStyle().
+			Foreground(colorError)
 
 	dialogItemStyle = lipgloss.NewStyle().
 			Padding(0, 1)

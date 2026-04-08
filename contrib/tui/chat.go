@@ -177,7 +177,7 @@ type chatModel struct {
 
 func newChatModel(provider, model, workspace string) chatModel {
 	ta := textarea.New()
-	ta.Placeholder = "Type a message... (Enter to send, Shift+Enter/Alt+Enter/Ctrl+J for newline)"
+	ta.Placeholder = "Ask moss what to do next"
 	ta.Prompt = ""
 	ta.Focus()
 	ta.SetHeight(1)

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
 			"args_preview": `{"command":"go test ./..."}`,
 		},
 	}, 80)
-	for _, want := range []string{"● Bash go test ./...", "command", "│ go test ./..."} {
+	for _, want := range []string{"│ tool · Bash · go test ./...", "command", "go test ./..."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("renderMessage(tool start) missing %q in %q", want, out)
 		}
@@ -79,7 +80,7 @@ func TestRenderMessage_ProgressShowsThinkingDetail(t *testing.T) {
 			"timestamp": ts,
 		},
 	}, 80)
-	for _, want := range []string{"◦", "using tools", "running run_command"} {
+	for _, want := range []string{"│ progress", "using tools", "running run_command"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("progress message missing %q in %q", want, out)
 		}
@@ -119,7 +120,7 @@ func TestRenderMessage_ReasoningShowsTranscriptBlock(t *testing.T) {
 		kind:    msgReasoning,
 		content: "First inspect the redirect chain.\nThen query the API.",
 	}, 80)
-	for _, want := range []string{"◦ thinking", "First inspect the redirect chain. Then query the API."} {
+	for _, want := range []string{"│ thinking", "First inspect the redirect chain. Then query the API."} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("reasoning message missing %q in %q", want, out)
 		}
@@ -137,7 +138,7 @@ func TestRenderMessage_ReasoningWrapsWhenTooLong(t *testing.T) {
 	if !strings.Contains(out, "\n") {
 		t.Fatalf("reasoning message should wrap when too long: %q", out)
 	}
-	for _, want := range []string{"◦ thinking", "First inspect the redirect", "chain and then query"} {
+	for _, want := range []string{"│ thinking", "First inspect", "chain and then query"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("reasoning message missing %q in %q", want, out)
 		}
@@ -155,7 +156,7 @@ func TestRenderMessage_ReasoningWrapsChineseSafely(t *testing.T) {
 	if strings.Contains(out, "�") {
 		t.Fatalf("reasoning output should not contain broken unicode: %q", out)
 	}
-	for _, want := range []string{"◦ thinking", "我获取到了杭州的天气数据"} {
+	for _, want := range []string{"│ thinking", "我获取到", "杭州的天气"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("reasoning output missing %q in %q", want, out)
 		}
@@ -169,7 +170,7 @@ func TestRenderAllMessages_CollapsedShowsPerToolSummary(t *testing.T) {
 		{kind: msgToolStart, content: "view", meta: map[string]any{"tool": "view", "call_id": "b", "args_preview": `{"path":"README.md"}`}},
 		{kind: msgToolResult, content: `"hello"`, meta: map[string]any{"tool": "view", "call_id": "b"}},
 	}, 80, true)
-	for _, want := range []string{"✓ Glob **/*", "✓ View README.md"} {
+	for _, want := range []string{"│ tool · Glob · **/*", "│ tool · View · README.md"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("collapsed per-tool summary missing %q in %q", want, out)
 		}
@@ -178,6 +179,22 @@ func TestRenderAllMessages_CollapsedShowsPerToolSummary(t *testing.T) {
 		if strings.Contains(out, unwanted) {
 			t.Fatalf("collapsed per-tool summary should hide detail %q in %q", unwanted, out)
 		}
+	}
+}
+
+func TestRenderAllMessages_AddsBreathingRoomBetweenDialogueBlocks(t *testing.T) {
+	out := renderAllMessages([]chatMessage{
+		{kind: msgUser, content: "你好"},
+		{kind: msgAssistant, content: "你好，我来帮你。"},
+		{kind: msgProgress, content: "running http_request", meta: map[string]any{"phase": "tools"}},
+		{kind: msgProgress, content: "approval required", meta: map[string]any{"phase": "approval"}},
+		{kind: msgAssistant, content: "已经处理完成。"},
+	}, 80, false)
+	if !regexp.MustCompile(`你好\s*\n\n\s*●\s*你好，我来帮你。`).MatchString(out) {
+		t.Fatalf("expected blank line between dialogue blocks, got %q", out)
+	}
+	if !regexp.MustCompile(`running http_request\s*\n\s*│ progress · awaiting approval`).MatchString(out) {
+		t.Fatalf("expected dense event stack without extra blank line, got %q", out)
 	}
 }
 
@@ -324,7 +341,7 @@ func TestRenderAllMessages_ExpandsToolDetailsAcrossInterveningMessages(t *testin
 	if strings.Contains(collapsed, "result") || strings.Contains(collapsed, `"status": 200`) {
 		t.Fatalf("collapsed tool view should hide detail body, got %q", collapsed)
 	}
-	if !strings.Contains(collapsed, "✓ Http Request https://wttr.in/hangzhou?format=j1") {
+	if !strings.Contains(collapsed, "│ tool · Http Request · https://wttr.in/hangzhou?format=j1") {
 		t.Fatalf("collapsed tool view missing compact summary: %q", collapsed)
 	}
 
@@ -345,7 +362,7 @@ func TestRenderMessage_ToolErrorUsesErrorHeader(t *testing.T) {
 		content: "permission denied",
 		meta:    map[string]any{"tool": "run_command", "duration_ms": int64(12)},
 	}, 80)
-	for _, want := range []string{"✕ Bash", "12ms", "permission denied"} {
+	for _, want := range []string{"│ error · Bash", "12ms", "permission denied"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("tool error missing %q in %q", want, out)
 		}
@@ -366,11 +383,11 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 		},
 	}, 100)
 	for _, want := range []string{
-		"● Bash git --no-pager status --short && git add appkit/runtime/memory.go",
+		"│ tool · Bash · git --no-pager status --short",
 		"task",
-		"│ Commit and push C4 integration updates",
+		"Commit and push C4 integration updates",
 		"command",
-		"│ git --no-pager status --short && git add appkit/runtime/memory.go",
+		"git --no-pager status --short && git add appkit/runtime/memory.go",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("compact shell start missing %q in %q", want, out)
@@ -394,7 +411,7 @@ func TestRenderMessage_ShellToolResultUsesCompactLayout(t *testing.T) {
 			"duration_ms": int64(180),
 		},
 	}, 100)
-	for _, want := range []string{"✓ Bash", "180ms", "exit=0", "stdout: 2026-04-03 Friday"} {
+	for _, want := range []string{"│ tool · Bash", "180ms", "exit=0", "stdout: 2026-04-03 Friday"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("compact shell result missing %q in %q", want, out)
 		}

@@ -8,31 +8,38 @@ import (
 )
 
 func (m chatModel) renderHeaderMetaLine() string {
-	parts := []string{halfMutedStyle.Render(titleCaseWord(valueOrDefaultRunState(m.streaming)))}
+	parts := []string{statusAccentStyle.Render(titleCaseWord(m.runtimeStateLabel()))}
 	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-		parts = append(parts, shellHeaderDetailStyle.Render("thread "+threadID))
+		parts = append(parts, shellHeaderDetailStyle.Render("thread "+shortThreadID(threadID)))
 	}
 	if posture := m.compactPostureSummary(); posture != "" {
 		parts = append(parts, shellHeaderDetailStyle.Render(posture))
 	}
-	return strings.Join(parts, shellHeaderSeparatorStyle.Render(" • "))
+	if m.streaming && !m.runStartedAt.IsZero() {
+		parts = append(parts, shellHeaderDetailStyle.Render(formatElapsed(m.runStartedAt, m.now())))
+	}
+	return shellMetaBarStyle.Render(strings.Join(parts, shellHeaderSeparatorStyle.Render(" • ")))
 }
 
 func (m chatModel) renderSlashHintLine() string {
 	hints := m.currentSlashHints()
 	if len(hints) == 0 {
-		return composerHintStyle.Render("  /help commands  •  @ files  •  Tab completes slash commands")
+		return composerHintStyle.Render("  / for commands  •  @ for files  •  Tab completes")
 	}
-	return composerHintStyle.Render("  Suggestions: " + strings.Join(hints, "  •  ") + "  (Tab to complete)")
+	return composerHintStyle.Render("  Suggestions: " + strings.Join(hints, "  •  ") + "  •  Tab completes")
 }
 
 func (m chatModel) renderFooterHelpLine() string {
-	toolHint := "Ctrl+O expand tools"
-	if !m.toolCollapsed {
-		toolHint = "Ctrl+O collapse tools"
+	if m.streaming {
+		return "Esc Esc cancel  •  /help"
 	}
-	base := fmt.Sprintf("/help  •  %s  •  Shift+Tab next profile  •  ↑↓ history  •  Esc Esc cancel  •  Ctrl+C clear/quit", toolHint)
-	return truncateDisplayWidth(base, m.mainWidth())
+	if m.slashPopup != nil {
+		return "↑↓ navigate  •  Tab complete  •  Esc dismiss"
+	}
+	if m.hasActiveOverlay() {
+		return "↑↓ move  •  Enter confirm  •  Esc close"
+	}
+	return "Enter send  •  Shift+Enter newline  •  ↑↓ history  •  /help"
 }
 
 func (m chatModel) View() string {
@@ -110,4 +117,12 @@ func formatElapsed(start, now time.Time) string {
 	mins := int(seconds) / 60
 	secs := int(seconds) % 60
 	return fmt.Sprintf("%dm%02ds", mins, secs)
+}
+
+func shortThreadID(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 12 {
+		return id
+	}
+	return id[:8] + "…"
 }

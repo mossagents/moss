@@ -34,7 +34,7 @@ func (m chatModel) renderShellHeader() string {
 		details = append(details, shellHeaderDetailStyle.Render(filepath.Base(cwd)))
 	}
 	if provider := strings.TrimSpace(m.provider); provider != "" {
-		if model := strings.TrimSpace(m.model); model != "" {
+		if model := strings.TrimSpace(m.model); model != "" && !m.modelAuto {
 			details = append(details, shellHeaderDetailStyle.Render(provider+" · "+model))
 		} else {
 			details = append(details, shellHeaderDetailStyle.Render(provider))
