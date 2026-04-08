@@ -144,8 +144,6 @@ type chatModel struct {
 	providerID           string
 	providerName         string
 	startupBanner        string
-	sidebarTitle         string
-	renderSidebarFn      func() string
 	model                string
 	modelAuto            bool
 	workspace            string
@@ -577,9 +575,6 @@ func wrappedLineCount(text string, width int) int {
 
 func (m chatModel) mainWidth() int {
 	width := m.width
-	if side := m.shellSidebarWidth(); side > 0 {
-		width -= side + m.shellMainGapWidth()
-	}
 	if width < 40 {
 		return 40
 	}

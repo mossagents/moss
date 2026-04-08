@@ -9,13 +9,13 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/scheduler"
-	mosstui "github.com/mossagents/moss/contrib/tui"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,13 +81,6 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		SidebarTitle:    "mossquant",
-		RenderSidebar: func() string {
-			if rt == nil || rt.profile == nil {
-				return "```text\nmossquant\nTUI investment advisor\n```"
-			}
-			return "```text\n" + strings.TrimSpace(rt.profile.SummaryMarkdown()) + "\n```"
-		},
 		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
 			identity := appconfig.NormalizeProviderIdentity("", provider, flags.DisplayProviderName())
 			runtimeFlags := &appkit.AppFlags{

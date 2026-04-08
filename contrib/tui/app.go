@@ -59,8 +59,6 @@ type Config struct {
 	PromptConfigInstructions string
 	PromptModelInstructions  string
 	ScheduleController       runtime.ScheduleController
-	SidebarTitle             string
-	RenderSidebar            func() string
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -784,8 +782,6 @@ type appModel struct {
 
 func (m *appModel) configureChatShell() {
 	m.chat.startupBanner = m.config.WelcomeBanner
-	m.chat.sidebarTitle = valueOrDefaultString(strings.TrimSpace(m.config.SidebarTitle), configpkg.AppName())
-	m.chat.renderSidebarFn = m.config.RenderSidebar
 	m.chat.setProviderIdentity(m.config.Provider, m.config.ProviderName)
 }
 

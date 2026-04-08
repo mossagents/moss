@@ -20,7 +20,6 @@ var (
 	colorHalfMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "247"}
 	colorSubtle    = lipgloss.AdaptiveColor{Light: "245", Dark: "249"}
 	colorBorder    = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
-
 )
 
 // 样式定义（随主题切换，见 theme.go）
@@ -101,15 +100,6 @@ var (
 				BorderForeground(colorBorder).
 				Padding(0, 1)
 
-	sidebarBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(colorBorder).
-			Padding(1, 2)
-
-	sidebarSectionTitleStyle = lipgloss.NewStyle().
-					Bold(true).
-					Foreground(colorSubtle)
-
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(colorPrimary).
@@ -143,5 +133,3 @@ var (
 	// 用户消息样式（P9）：不加背景色，避免 dot ANSI reset 导致背景只出现在圆点后
 	userMessageStyle = lipgloss.NewStyle()
 )
-
-

@@ -121,15 +121,5 @@ func (m chatModel) renderBody(layout chatUILayout) string {
 	} else if editor := m.renderEditorPane(layout); strings.TrimSpace(editor) != "" {
 		mainBody = lipgloss.JoinVertical(lipgloss.Left, mainBody, editor)
 	}
-
-	body := mainBody
-	if layout.SidebarWidth > 0 {
-		body = lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			mainBody,
-			lipgloss.NewStyle().Width(layout.GapWidth).Render(""),
-			m.renderShellSidebar(layout.SidebarWidth),
-		)
-	}
-	return body
+	return mainBody
 }

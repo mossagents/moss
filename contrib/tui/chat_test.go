@@ -2341,21 +2341,19 @@ func TestRefreshViewportShowsStartupBannerBeforeConversationBegins(t *testing.T)
 	}
 }
 
-func TestChatViewRendersConfiguredSidebar(t *testing.T) {
+func TestChatViewDoesNotRenderSidebarSections(t *testing.T) {
 	m := newChatModel("openai-completions", "gpt-4o", ".")
 	m.ready = true
 	m.width = 160
 	m.height = 30
-	m.sidebarTitle = "mossquant"
-	m.renderSidebarFn = func() string { return "watchlist\nAAPL\nMSFT" }
 	m.messages = []chatMessage{{kind: msgAssistant, content: "Ready."}}
 	m.recalcLayout()
 	m.refreshViewport()
 
 	out := m.View()
-	for _, want := range []string{"mossquant", "watchlist", "Session", "Shortcuts"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("expected chat shell to contain %q, got %q", want, out)
+	for _, unwanted := range []string{"Session", "Shortcuts", "No product-specific context is available yet."} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("expected chat shell not to contain %q after sidebar removal, got %q", unwanted, out)
 		}
 	}
 }

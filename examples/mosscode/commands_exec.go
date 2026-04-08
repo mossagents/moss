@@ -7,12 +7,12 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/interaction"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	mosstui "github.com/mossagents/moss/contrib/tui"
 	"os"
 	"strings"
 )

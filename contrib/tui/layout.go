@@ -5,8 +5,6 @@ type chatUILayout struct {
 	Height         int
 	HeaderHeight   int
 	StatusHeight   int
-	SidebarWidth   int
-	GapWidth       int
 	MainWidth      int
 	BodyHeight     int
 	MainHeight     int
@@ -21,8 +19,6 @@ func (m chatModel) generateLayout() chatUILayout {
 		Height:       max(1, m.height),
 		HeaderHeight: 2,
 		StatusHeight: 1,
-		SidebarWidth: m.shellSidebarWidth(),
-		GapWidth:     m.shellMainGapWidth(),
 		MainWidth:    m.mainWidth(),
 	}
 
