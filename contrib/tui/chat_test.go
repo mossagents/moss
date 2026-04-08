@@ -2370,6 +2370,29 @@ func TestRenderShellHeaderIsSingleLine(t *testing.T) {
 	}
 }
 
+func TestShellProductTitleUsesCompactBrandDisplay(t *testing.T) {
+	previous := configpkg.AppName()
+	t.Cleanup(func() { configpkg.SetAppName(previous) })
+
+	for _, tc := range []struct {
+		name string
+		app  string
+		want string
+	}{
+		{name: "generic chat surface", app: "chat", want: "moss"},
+		{name: "mosscode surface", app: "mosscode", want: "moss"},
+		{name: "custom brand stays intact", app: "acme", want: "acme"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configpkg.SetAppName(tc.app)
+			m := newChatModel("openai-completions", "gpt-4o", ".")
+			if got := m.shellProductTitle(); got != tc.want {
+				t.Fatalf("shellProductTitle() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSlashCommandImageOpenWithoutLocalPathShowsError(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", t.TempDir())
 	m.messages = append(m.messages, chatMessage{

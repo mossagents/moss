@@ -8,11 +8,23 @@ import (
 )
 
 func (m chatModel) shellProductTitle() string {
-	title := strings.TrimSpace(configpkg.AppName())
+	return compactShellBrandTitle(configpkg.AppName())
+}
+
+func compactShellBrandTitle(title string) string {
+	title = strings.TrimSpace(title)
 	if title == "" {
-		title = "moss"
+		return "moss"
 	}
-	return title
+	lower := strings.ToLower(title)
+	switch {
+	case lower == "chat", lower == "assistant", lower == "shell":
+		return "moss"
+	case strings.HasPrefix(lower, "moss"):
+		return "moss"
+	default:
+		return title
+	}
 }
 
 func (m chatModel) renderShellHeader() string {
