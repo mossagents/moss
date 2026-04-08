@@ -5,6 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
+	userattachments "github.com/mossagents/moss/userio/attachments"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -218,7 +219,7 @@ func (m *chatModel) applyMentionCompletion() bool {
 		return false
 	}
 	candidate := m.mentionPopup.selected()
-	draft, err := buildAttachmentDraft(m.workspace, candidate.Path)
+	draft, err := userattachments.BuildAttachmentDraft(m.workspace, candidate.Path)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 		m.mentionPopup = nil
@@ -279,7 +280,7 @@ func (m chatModel) renderMentionPopup(width int) string {
 }
 
 func detectAttachmentKind(path string) string {
-	if !isMediaPath(path) {
+	if !userattachments.IsMediaPath(path) {
 		return "file"
 	}
 	ext := strings.ToLower(filepath.Ext(path))
@@ -293,7 +294,7 @@ func detectAttachmentKind(path string) string {
 	}
 }
 
-func (m *chatModel) appendPendingAttachment(item composerAttachment) {
+func (m *chatModel) appendPendingAttachment(item userattachments.ComposerAttachment) {
 	for _, current := range m.pendingAttachments {
 		if current.Key == item.Key {
 			return
@@ -327,7 +328,7 @@ func (m chatModel) handleMentionPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 		idx := m.mentionPicker.list.SelectedIndex()
 		if idx >= 0 {
 			candidate := m.mentionPicker.candidates[idx]
-			draft, err := buildAttachmentDraft(m.workspace, candidate.Path)
+			draft, err := userattachments.BuildAttachmentDraft(m.workspace, candidate.Path)
 			if err != nil {
 				m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 				m.refreshViewport()
@@ -360,4 +361,3 @@ func (m chatModel) renderMentionPicker(width int) string {
 	}
 	return renderSelectionListDialog(width, m.mentionPicker.list)
 }
-

@@ -31,7 +31,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/providers/embedding"
 	"github.com/mossagents/moss/scheduler"
-	mosstui "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"io"
 	"net/http"
 	"os"

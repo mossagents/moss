@@ -12,7 +12,7 @@ import (
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	mosstui "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"os"
 	"strings"
 )

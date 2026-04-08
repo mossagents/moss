@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/presets/deepagent"
-	mosstui "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"io"
 	"os"
 	"path/filepath"

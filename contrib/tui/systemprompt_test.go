@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,7 +14,7 @@ func TestBuildSystemPrompt_LoadsWorkspaceAgentsMarkdown(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(ws, "AGENTS.md"), []byte("Be precise."), 0o600); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-	got, err := buildSystemPrompt(ws, "trusted", kernel.New())
+	got, err := prompting.BuildSystemPrompt(ws, "trusted", kernel.New())
 	if err != nil {
 		t.Fatalf("build system prompt: %v", err)
 	}
@@ -30,7 +31,7 @@ func TestBuildSystemPrompt_RestrictedSkipsWorkspaceAgentsMarkdown(t *testing.T) 
 	if err := os.WriteFile(filepath.Join(ws, "AGENTS.md"), []byte("Be precise."), 0o600); err != nil {
 		t.Fatalf("write AGENTS.md: %v", err)
 	}
-	got, err := buildSystemPrompt(ws, "restricted", kernel.New())
+	got, err := prompting.BuildSystemPrompt(ws, "restricted", kernel.New())
 	if err != nil {
 		t.Fatalf("build system prompt: %v", err)
 	}

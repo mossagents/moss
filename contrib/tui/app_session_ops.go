@@ -9,6 +9,7 @@ import (
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
 	"sort"
@@ -141,7 +142,7 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		return nil, errors.New("runtime is unavailable")
 	}
 	metadata := map[string]any{}
-	sysPrompt, err := composeSystemPrompt(workspace, trust, k, a.promptConfigInstructions, a.promptModelInstructions, metadata)
+	sysPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, a.promptConfigInstructions, a.promptModelInstructions, metadata)
 	if err != nil {
 		return nil, err
 	}

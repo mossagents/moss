@@ -18,6 +18,8 @@ import (
 	config "github.com/mossagents/moss/config"
 	intr "github.com/mossagents/moss/kernel/interaction"
 	mdl "github.com/mossagents/moss/kernel/model"
+	userapproval "github.com/mossagents/moss/userio/approval"
+	userattachments "github.com/mossagents/moss/userio/attachments"
 )
 
 const (
@@ -130,8 +132,8 @@ type chatModel struct {
 	progress              executionProgressState
 	progressTrail         []executionProgressState
 	lastThinkingSignature string
-	approvalRules         map[string][]approvalMemoryRule
-	projectApprovalRules  []approvalMemoryRule
+	approvalRules         map[string][]userapproval.MemoryRule
+	projectApprovalRules  []userapproval.MemoryRule
 	debugPromptPreview    bool
 
 	// 工具输出折叠
@@ -160,7 +162,7 @@ type chatModel struct {
 
 	queuedInputs       []string
 	queuedParts        [][]mdl.ContentPart
-	pendingAttachments []composerAttachment
+	pendingAttachments []userattachments.ComposerAttachment
 
 	inputHistory  []string
 	historyCursor int
@@ -208,9 +210,9 @@ func newChatModel(provider, model, workspace string) chatModel {
 			experimentalFeatures = append([]string(nil), prefs.Experimental...)
 		}
 	}
-	projectApprovalRules := []approvalMemoryRule(nil)
+	projectApprovalRules := []userapproval.MemoryRule(nil)
 	if projectPrefs, err := product.LoadProjectTUIConfig(workspace); err == nil {
-		projectApprovalRules = approvalProjectRulesFromConfig(projectPrefs)
+		projectApprovalRules = userapproval.ProjectRulesFromConfig(projectPrefs)
 	}
 	applyTheme(theme)
 
@@ -227,7 +229,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		statusLineItems:      statusLineItems,
 		experimentalFeatures: experimentalFeatures,
 		toolCollapsed:        true,
-		approvalRules:        map[string][]approvalMemoryRule{},
+		approvalRules:        map[string][]userapproval.MemoryRule{},
 		projectApprovalRules: projectApprovalRules,
 		overlays:             newOverlayStack(),
 		inputHistory:         loadInputHistory(defaultHistoryPath(), maxInputHistory),
@@ -288,7 +290,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
-	displayText, runText, parts, err := buildComposerSubmission(text, m.workspace, m.pendingAttachments)
+	displayText, runText, parts, err := userattachments.BuildComposerSubmission(text, m.workspace, m.pendingAttachments)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to build attachments: %v", err)})
 		m.refreshViewport()
@@ -446,9 +448,9 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (intr.InputResponse, string, 
 	if ask == nil || ask.request.Type != intr.InputConfirm || ask.request.Approval == nil {
 		return intr.InputResponse{}, "", false
 	}
-	sessionID := approvalSessionID(ask.request.Approval, m.currentSessionID)
+	sessionID := userapproval.SessionID(ask.request.Approval, m.currentSessionID)
 	for _, rule := range m.approvalRules[sessionID] {
-		if !rule.matches(ask.request.Approval, m.currentSessionID) {
+		if !rule.Matches(ask.request.Approval, m.currentSessionID) {
 			continue
 		}
 		resp := intr.InputResponse{
@@ -469,7 +471,7 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (intr.InputResponse, string, 
 		return resp, notice, true
 	}
 	for _, rule := range m.projectApprovalRules {
-		if !rule.matches(ask.request.Approval, m.currentSessionID) {
+		if !rule.Matches(ask.request.Approval, m.currentSessionID) {
 			continue
 		}
 		resp := intr.InputResponse{
@@ -1217,4 +1219,3 @@ func (m chatModel) hasRunningToolCalls() bool {
 	}
 	return false
 }
-

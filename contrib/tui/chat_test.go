@@ -4,6 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
@@ -14,12 +21,7 @@ import (
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-	"testing"
-	"time"
+	userapproval "github.com/mossagents/moss/userio/approval"
 )
 
 type fakeScheduleController struct {
@@ -1502,10 +1504,10 @@ func TestMouseClickDoesNotInsertComposerGarbage(t *testing.T) {
 
 func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
 	cases := map[string]string{
-		approvalChoiceAllowOnce:    "Allow once",
-		approvalChoiceAllowSession: "Session",
-		approvalChoiceAllowProject: "Project",
-		approvalChoiceDeny:         "Deny",
+		userapproval.ChoiceAllowOnce:    "Allow once",
+		userapproval.ChoiceAllowSession: "Session",
+		userapproval.ChoiceAllowProject: "Project",
+		userapproval.ChoiceDeny:         "Deny",
 	}
 	for input, want := range cases {
 		if got := approvalDecisionButtonLabel(input); got != want {
@@ -1528,10 +1530,10 @@ func TestApprovalAskRespectsAllowedScopes(t *testing.T) {
 	if len(fields) != 1 {
 		t.Fatalf("unexpected fields: %#v", fields)
 	}
-	if slices.Contains(fields[0].Options, approvalChoiceAllowProject) {
+	if slices.Contains(fields[0].Options, userapproval.ChoiceAllowProject) {
 		t.Fatalf("project scope should be hidden when not allowed: %#v", fields[0].Options)
 	}
-	if fields[0].Default != approvalChoiceAllowSession {
+	if fields[0].Default != userapproval.ChoiceAllowSession {
 		t.Fatalf("unexpected default approval choice: %q", fields[0].Default)
 	}
 }
@@ -1761,7 +1763,7 @@ func TestApprovalSessionRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
 	m.height = 40
 	m.currentSessionID = "thread-1"
 	m.recalcLayout()
-	m.rememberApprovalRule(approvalMemoryRule{
+	m.rememberApprovalRule(userapproval.MemoryRule{
 		SessionID: "thread-1",
 		Key:       "run_command|git push",
 		Label:     "git push",
@@ -1919,7 +1921,7 @@ func TestApprovalProjectPersistenceErrorStaysInlineInDialog(t *testing.T) {
 		replyCh: replyCh,
 	}
 	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
-	updated.askForm.fields[0].def.Options = []string{approvalChoiceAllowOnce, approvalChoiceAllowProject, approvalChoiceDeny}
+	updated.askForm.fields[0].def.Options = []string{userapproval.ChoiceAllowOnce, userapproval.ChoiceAllowProject, userapproval.ChoiceDeny}
 	updated.askForm.fields[0].singleIndex = 1
 	updated.askForm.fields[0].singleSel = 1
 

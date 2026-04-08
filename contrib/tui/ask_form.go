@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
 	intr "github.com/mossagents/moss/kernel/interaction"
+	userapproval "github.com/mossagents/moss/userio/approval"
 	"strconv"
 	"strings"
 )
@@ -90,24 +91,24 @@ func synthesizeFieldsFromInputRequest(req intr.InputRequest, workspace string) [
 		if req.Approval != nil {
 			explicitScopes := len(req.Approval.AllowedScopes) > 0
 			normalized := intr.NormalizeApprovalRequest(req.Approval)
-			display := buildApprovalDisplay(normalized, "")
+			display := userapproval.BuildDisplay(normalized, "")
 			options := []string{}
 			if !explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeOnce) {
-				options = append(options, approvalChoiceAllowOnce)
+				options = append(options, userapproval.ChoiceAllowOnce)
 			}
 			if strings.TrimSpace(display.RuleKey) != "" && (!explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeSession)) {
-				options = append(options, approvalChoiceAllowSession)
+				options = append(options, userapproval.ChoiceAllowSession)
 			}
 			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(normalized) != nil && (!explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeProject)) {
-				options = append(options, approvalChoiceAllowProject)
+				options = append(options, userapproval.ChoiceAllowProject)
 			}
 			if len(options) == 0 {
-				options = append(options, approvalChoiceAllowOnce)
+				options = append(options, userapproval.ChoiceAllowOnce)
 			}
-			options = append(options, approvalChoiceDeny)
+			options = append(options, userapproval.ChoiceDeny)
 			defaultChoice := approvalChoiceForScope(normalized.DefaultScope)
 			if indexOfApprovalOption(options, defaultChoice) < 0 {
-				defaultChoice = approvalChoiceAllowOnce
+				defaultChoice = userapproval.ChoiceAllowOnce
 			}
 			return []intr.InputField{{
 				Name:        "decision",
@@ -142,11 +143,11 @@ func approvalScopeAllowed(req *intr.ApprovalRequest, scope intr.DecisionScope) b
 func approvalChoiceForScope(scope intr.DecisionScope) string {
 	switch scope {
 	case intr.DecisionScopeSession:
-		return approvalChoiceAllowSession
+		return userapproval.ChoiceAllowSession
 	case intr.DecisionScopeProject:
-		return approvalChoiceAllowProject
+		return userapproval.ChoiceAllowProject
 	default:
-		return approvalChoiceAllowOnce
+		return userapproval.ChoiceAllowOnce
 	}
 }
 
@@ -286,13 +287,13 @@ func (m chatModel) handleApprovalAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	case "right", "down", "tab":
 		selectIndex(field.singleIndex + 1)
 	case "a":
-		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowOnce))
+		selectIndex(indexOfApprovalOption(field.def.Options, userapproval.ChoiceAllowOnce))
 	case "s":
-		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowSession))
+		selectIndex(indexOfApprovalOption(field.def.Options, userapproval.ChoiceAllowSession))
 	case "p":
-		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceAllowProject))
+		selectIndex(indexOfApprovalOption(field.def.Options, userapproval.ChoiceAllowProject))
 	case "d":
-		selectIndex(indexOfApprovalOption(field.def.Options, approvalChoiceDeny))
+		selectIndex(indexOfApprovalOption(field.def.Options, userapproval.ChoiceDeny))
 	case "enter":
 		return m.submitAskForm()
 	}
@@ -426,7 +427,7 @@ func (m *chatModel) resetAskFormState() {
 
 func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]any) (chatModel, tea.Cmd) {
 	selected, _ := formValues["decision"].(string)
-	approved := selected != approvalChoiceDeny
+	approved := selected != userapproval.ChoiceDeny
 	resp := intr.InputResponse{
 		Approved: approved,
 		Decision: &intr.ApprovalDecision{
@@ -447,8 +448,8 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 		notice = "Approval granted for this action."
 	}
 	switch selected {
-	case approvalChoiceAllowSession:
-		if rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeSession, m.now()); ok {
+	case userapproval.ChoiceAllowSession:
+		if rule, ok := userapproval.MemoryRuleFor(ask.request.Approval, m.currentSessionID, userapproval.RuleScopeSession, m.now()); ok {
 			m.rememberApprovalRule(rule)
 		}
 		if perms := approvalSessionPermissions(ask.request.Approval); perms != nil {
@@ -467,14 +468,14 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			resp.Decision.Persistence = intr.DecisionPersistenceSession
 			notice = "Approval granted. Similar actions will be allowed automatically for this session."
 		}
-	case approvalChoiceAllowProject:
+	case userapproval.ChoiceAllowProject:
 		amendment := approvalProjectAmendment(ask.request.Approval)
 		if amendment == nil {
 			m.askForm.errorText = "This approval cannot be remembered for the current project."
 			m.refreshViewport()
 			return m, nil
 		}
-		rule, ok := approvalMemoryRuleFor(ask.request.Approval, m.currentSessionID, approvalRuleScopeProject, m.now())
+		rule, ok := userapproval.MemoryRuleFor(ask.request.Approval, m.currentSessionID, userapproval.RuleScopeProject, m.now())
 		if !ok {
 			m.askForm.errorText = "This approval cannot be remembered for the current project."
 			m.refreshViewport()
@@ -497,7 +498,7 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 		resp.Decision.Scope = intr.DecisionScopeProject
 		resp.Decision.Persistence = intr.DecisionPersistenceProject
 		notice = "Approval granted. The project execution policy has been updated."
-	case approvalChoiceAllowOnce:
+	case userapproval.ChoiceAllowOnce:
 		resp.Decision.Type = intr.ApprovalDecisionApprove
 		resp.Decision.Source = "tui-allow-once"
 		resp.Decision.Scope = intr.DecisionScopeOnce
@@ -516,12 +517,12 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 	return m, nil
 }
 
-func (m *chatModel) rememberApprovalRule(rule approvalMemoryRule) {
-	if rule.scope() != approvalRuleScopeSession || strings.TrimSpace(rule.SessionID) == "" || strings.TrimSpace(rule.Key) == "" {
+func (m *chatModel) rememberApprovalRule(rule userapproval.MemoryRule) {
+	if rule.ScopeValue() != userapproval.RuleScopeSession || strings.TrimSpace(rule.SessionID) == "" || strings.TrimSpace(rule.Key) == "" {
 		return
 	}
 	if m.approvalRules == nil {
-		m.approvalRules = map[string][]approvalMemoryRule{}
+		m.approvalRules = map[string][]userapproval.MemoryRule{}
 	}
 	rules := m.approvalRules[rule.SessionID]
 	for _, existing := range rules {
@@ -532,8 +533,8 @@ func (m *chatModel) rememberApprovalRule(rule approvalMemoryRule) {
 	m.approvalRules[rule.SessionID] = append(rules, rule)
 }
 
-func (m *chatModel) rememberProjectApprovalRule(rule approvalMemoryRule) error {
-	if rule.scope() != approvalRuleScopeProject || strings.TrimSpace(rule.Key) == "" {
+func (m *chatModel) rememberProjectApprovalRule(rule userapproval.MemoryRule) error {
+	if rule.ScopeValue() != userapproval.RuleScopeProject || strings.TrimSpace(rule.Key) == "" {
 		return errors.New("project approval rule is invalid")
 	}
 	if strings.TrimSpace(m.workspace) == "" {
@@ -544,9 +545,9 @@ func (m *chatModel) rememberProjectApprovalRule(rule approvalMemoryRule) error {
 			return nil
 		}
 	}
-	nextRules := append(append([]approvalMemoryRule(nil), m.projectApprovalRules...), rule)
+	nextRules := append(append([]userapproval.MemoryRule(nil), m.projectApprovalRules...), rule)
 	if _, err := product.UpdateProjectTUIConfig(m.workspace, func(cfg *configpkg.TUIConfig) error {
-		cfg.ProjectApprovalRules = approvalProjectRuleConfigs(nextRules)
+		cfg.ProjectApprovalRules = userapproval.ProjectRuleConfigs(nextRules)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("save project approval rule: %w", err)
@@ -666,9 +667,9 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 	if m.askForm == nil || m.pendAsk == nil || m.pendAsk.request.Approval == nil {
 		return ""
 	}
-	display := buildApprovalDisplay(m.pendAsk.request.Approval, m.currentSessionID)
+	display := userapproval.BuildDisplay(m.pendAsk.request.Approval, m.currentSessionID)
 	decisionField := m.askForm.fields[0]
-	selected := approvalChoiceAllowOnce
+	selected := userapproval.ChoiceAllowOnce
 	if len(decisionField.def.Options) > 0 {
 		idx := decisionField.singleSel
 		if idx >= 0 && idx < len(decisionField.def.Options) {
@@ -746,13 +747,13 @@ func renderApprovalDecisionButtons(field askFieldState) []string {
 
 func approvalDecisionButtonLabel(option string) string {
 	switch option {
-	case approvalChoiceAllowOnce:
+	case userapproval.ChoiceAllowOnce:
 		return "Allow once"
-	case approvalChoiceAllowSession:
+	case userapproval.ChoiceAllowSession:
 		return "Session"
-	case approvalChoiceAllowProject:
+	case userapproval.ChoiceAllowProject:
 		return "Project"
-	case approvalChoiceDeny:
+	case userapproval.ChoiceDeny:
 		return "Deny"
 	default:
 		return option
@@ -786,13 +787,13 @@ func renderApprovalButtonRows(items []string, maxWidth int) string {
 	return strings.Join(rows, "\n")
 }
 
-func approvalDecisionNote(selected string, display approvalDisplay) string {
+func approvalDecisionNote(selected string, display userapproval.Display) string {
 	switch selected {
-	case approvalChoiceAllowSession:
+	case userapproval.ChoiceAllowSession:
 		return display.SessionDecisionNote
-	case approvalChoiceAllowProject:
+	case userapproval.ChoiceAllowProject:
 		return display.ProjectDecisionNote
-	case approvalChoiceDeny:
+	case userapproval.ChoiceDeny:
 		return "Deny this action."
 	default:
 		return "Approve only this action."
@@ -801,10 +802,10 @@ func approvalDecisionNote(selected string, display approvalDisplay) string {
 
 func approvalDecisionHelp(options []string) string {
 	parts := []string{"←/→ choose", "Enter apply", "A allow once"}
-	if indexOfApprovalOption(options, approvalChoiceAllowSession) >= 0 {
+	if indexOfApprovalOption(options, userapproval.ChoiceAllowSession) >= 0 {
 		parts = append(parts, "S session")
 	}
-	if indexOfApprovalOption(options, approvalChoiceAllowProject) >= 0 {
+	if indexOfApprovalOption(options, userapproval.ChoiceAllowProject) >= 0 {
 		parts = append(parts, "P project")
 	}
 	parts = append(parts, "D deny", "Esc cancel")
@@ -821,7 +822,7 @@ func approvalSessionPermissions(req *intr.ApprovalRequest) *intr.PermissionProfi
 	if strings.TrimSpace(req.ToolName) != "http_request" {
 		return nil
 	}
-	_, pattern := parseApprovalRequestTarget(req)
+	_, pattern := userapproval.ParseRequestTarget(req)
 	fields := strings.Fields(pattern)
 	if len(fields) < 2 {
 		return nil
@@ -838,7 +839,7 @@ func approvalProjectAmendment(req *intr.ApprovalRequest) *intr.ExecPolicyAmendme
 	}
 	switch strings.TrimSpace(req.ToolName) {
 	case "run_command":
-		_, pattern := parseApprovalCommand(req)
+		_, pattern := userapproval.ParseCommand(req)
 		if strings.TrimSpace(pattern) == "" {
 			return nil
 		}
@@ -849,7 +850,7 @@ func approvalProjectAmendment(req *intr.ApprovalRequest) *intr.ExecPolicyAmendme
 			},
 		}
 	case "http_request":
-		_, pattern := parseApprovalRequestTarget(req)
+		_, pattern := userapproval.ParseRequestTarget(req)
 		fields := strings.Fields(pattern)
 		if len(fields) < 2 {
 			return nil

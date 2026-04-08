@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/scheduler"
-	mosstui "github.com/mossagents/moss/userio/tui"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"os"
 	"path/filepath"
 	"strings"

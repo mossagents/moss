@@ -8,6 +8,8 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	config "github.com/mossagents/moss/config"
 	mdl "github.com/mossagents/moss/kernel/model"
+	userattachments "github.com/mossagents/moss/userio/attachments"
+	userlocation "github.com/mossagents/moss/userio/location"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -776,7 +778,7 @@ func handleOpenSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 		m.refreshViewport()
 		return m, nil
 	}
-	out, err := openWorkspacePath(m.workspace, target)
+	out, err := userlocation.OpenWorkspacePath(m.workspace, target)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("open failed: %v", err)})
 	} else {
@@ -833,7 +835,7 @@ func handleMediaOpenSave(m chatModel, args []string, mediaKind string, usage str
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := openWorkspacePath(m.workspace, target)
+		out, err := userlocation.OpenWorkspacePath(m.workspace, target)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("open failed: %v", err)})
 		} else {
@@ -895,7 +897,7 @@ func handleMediaAttachSlashCommand(m chatModel, args []string, expectedKind stri
 		m.refreshViewport()
 		return m, nil
 	}
-	draft, err := buildAttachmentDraft(m.workspace, strings.Join(args, " "))
+	draft, err := userattachments.BuildAttachmentDraft(m.workspace, strings.Join(args, " "))
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 		m.refreshViewport()
@@ -945,7 +947,6 @@ func toString(v any) string {
 	return s
 }
 
-
 func extensionForMediaMIME(mimeType string) string {
 	switch strings.ToLower(strings.TrimSpace(mimeType)) {
 	case "image/png":
@@ -979,7 +980,7 @@ func handleMentionSlashCommand(m chatModel, args []string, input string, draft s
 		return m.openMentionPicker("", "")
 	}
 	query := strings.Join(args, " ")
-	attachment, err := buildAttachmentDraft(m.workspace, query)
+	attachment, err := userattachments.BuildAttachmentDraft(m.workspace, query)
 	if err == nil {
 		m.appendPendingAttachment(attachment)
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Attached %s to the composer.", attachment.Label)})

@@ -9,6 +9,7 @@ import (
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/userio/prompting"
 	"strings"
 )
 
@@ -138,7 +139,7 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 
 func (s *kernelInitState) createInteractiveSession() error {
 	metadata := map[string]any{}
-	sysPrompt, err := composeSystemPrompt(
+	sysPrompt, err := prompting.ComposeSystemPrompt(
 		s.wCfg.Workspace,
 		s.cfg.Trust,
 		s.k,

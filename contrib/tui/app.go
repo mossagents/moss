@@ -229,7 +229,7 @@ func (a *agentState) refreshSystemPrompt() error {
 	if sess == nil {
 		return errors.New("active thread is unavailable")
 	}
-	nextPrompt, err := composeSystemPrompt(workspace, trust, a.k, a.promptConfigInstructions, a.promptModelInstructions, sess.Config.Metadata)
+	nextPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, a.k, a.promptConfigInstructions, a.promptModelInstructions, sess.Config.Metadata)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	userattachments "github.com/mossagents/moss/userio/attachments"
+	userlocation "github.com/mossagents/moss/userio/location"
 )
 
 func TestExpandInlineFileMentionsLeavesTextUntouched(t *testing.T) {
@@ -14,7 +17,7 @@ func TestExpandInlineFileMentionsLeavesTextUntouched(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello world"), 0o600); err != nil {
 		t.Fatalf("write note: %v", err)
 	}
-	got, err := expandInlineFileMentions("Please inspect @note.txt", workspace)
+	got, err := userattachments.ExpandInlineFileMentions("Please inspect @note.txt", workspace)
 	if err != nil {
 		t.Fatalf("expandInlineFileMentions: %v", err)
 	}
@@ -29,7 +32,7 @@ func TestExpandInlineFileMentionsAddsImageReference(t *testing.T) {
 	if err := os.WriteFile(path, []byte("png"), 0o600); err != nil {
 		t.Fatalf("write image: %v", err)
 	}
-	got, err := expandInlineFileMentions("Please inspect @diagram.png", workspace)
+	got, err := userattachments.ExpandInlineFileMentions("Please inspect @diagram.png", workspace)
 	if err != nil {
 		t.Fatalf("expandInlineFileMentions: %v", err)
 	}
@@ -45,7 +48,7 @@ func TestBuildUserContentPartsAddsInputImagePart(t *testing.T) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatalf("write image: %v", err)
 	}
-	parts, err := buildUserContentParts("Please inspect @diagram.png", workspace)
+	parts, err := userattachments.BuildUserContentParts("Please inspect @diagram.png", workspace)
 	if err != nil {
 		t.Fatalf("buildUserContentParts: %v", err)
 	}
@@ -69,7 +72,7 @@ func TestBuildUserContentPartsAddsFileReferencePart(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 		t.Fatalf("write note: %v", err)
 	}
-	parts, err := buildUserContentParts("Please inspect @note.txt", workspace)
+	parts, err := userattachments.BuildUserContentParts("Please inspect @note.txt", workspace)
 	if err != nil {
 		t.Fatalf("buildUserContentParts: %v", err)
 	}
@@ -91,7 +94,7 @@ func TestBuildUserContentPartsAddsInputAudioPart(t *testing.T) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatalf("write audio: %v", err)
 	}
-	parts, err := buildUserContentParts("Please inspect @voice.wav", workspace)
+	parts, err := userattachments.BuildUserContentParts("Please inspect @voice.wav", workspace)
 	if err != nil {
 		t.Fatalf("buildUserContentParts: %v", err)
 	}
@@ -110,7 +113,7 @@ func TestBuildUserContentPartsAddsInputVideoPart(t *testing.T) {
 	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		t.Fatalf("write video: %v", err)
 	}
-	parts, err := buildUserContentParts("Please inspect @clip.mp4", workspace)
+	parts, err := userattachments.BuildUserContentParts("Please inspect @clip.mp4", workspace)
 	if err != nil {
 		t.Fatalf("buildUserContentParts: %v", err)
 	}
@@ -123,14 +126,14 @@ func TestBuildUserContentPartsAddsInputVideoPart(t *testing.T) {
 }
 
 func TestParseLocationSpecExtractsLine(t *testing.T) {
-	path, line := parseLocationSpec("userio\\tui\\chat.go:42")
+	path, line := userlocation.ParseLocationSpec("userio\\tui\\chat.go:42")
 	if path != "userio\\tui\\chat.go" || line != 42 {
 		t.Fatalf("unexpected location parse: path=%q line=%d", path, line)
 	}
 }
 
 func TestOpenWorkspacePathReturnsErrorForMissingTarget(t *testing.T) {
-	_, err := openWorkspacePath(t.TempDir(), "missing.txt")
+	_, err := userlocation.OpenWorkspacePath(t.TempDir(), "missing.txt")
 	if err == nil {
 		t.Fatal("expected missing file error")
 	}

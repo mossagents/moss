@@ -4,6 +4,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	mdl "github.com/mossagents/moss/kernel/model"
+	userattachments "github.com/mossagents/moss/userio/attachments"
 	"strings"
 	"time"
 )
@@ -55,7 +56,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m, nil
 		case "ctrl+x":
 			if len(m.pendingAttachments) > 0 {
-				m.pendingAttachments = append([]composerAttachment(nil), m.pendingAttachments[:len(m.pendingAttachments)-1]...)
+				m.pendingAttachments = append([]userattachments.ComposerAttachment(nil), m.pendingAttachments[:len(m.pendingAttachments)-1]...)
 				m.refreshViewport()
 				return m, nil
 			}
