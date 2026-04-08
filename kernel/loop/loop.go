@@ -5,16 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	"github.com/mossagents/moss/logging"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -23,7 +13,64 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	"github.com/mossagents/moss/logging"
 )
+
+// ContextCompressionStrategy 枚举上下文压缩策略。
+type ContextCompressionStrategy string
+
+const (
+	// CompressionTruncate 直接截断（默认），保留最近消息，丢弃旧消息。
+	CompressionTruncate ContextCompressionStrategy = "truncate"
+	// CompressionSummary 使用 LLM 生成摘要替代被压缩的历史。
+	CompressionSummary ContextCompressionStrategy = "summary"
+	// CompressionSliding 滑动窗口，窗口外内容一次性生成静态摘要。
+	CompressionSliding ContextCompressionStrategy = "sliding"
+	// CompressionPriority 基于重要性评分保留高价值消息。
+	CompressionPriority ContextCompressionStrategy = "priority"
+)
+
+// ContextCompressionConfig 配置 AgentLoop 的上下文压缩行为。
+// 当设置了 Strategy 时，AgentLoop 会自动注册对应的压缩 middleware。
+// 若已手动通过 kernel.Use() 注册压缩 middleware，无需设置此字段。
+type ContextCompressionConfig struct {
+	// Strategy 压缩策略，默认空（不自动注入，依赖已注册的 middleware）。
+	// 显式设置后，AgentLoop.buildCompressionMiddleware 会自动注入。
+	Strategy ContextCompressionStrategy
+
+	// MaxContextTokens 整个 context window 的 token 上限，0 = 不自动触发压缩。
+	MaxContextTokens int
+
+	// KeepRecent 压缩时保留的最新消息数，默认 20。
+	KeepRecent int
+
+	// SummaryPrompt 摘要指令（仅 summary 策略使用）。
+	SummaryPrompt string
+
+	// MaxSummaryTokens 单次摘要最大 token 数（仅 summary 策略），默认 800。
+	MaxSummaryTokens int
+
+	// WindowSize 滑动窗口大小（仅 sliding 策略），默认 30。
+	WindowSize int
+
+	// MinScore 最低保留分数（仅 priority 策略），默认 0.0。
+	MinScore float64
+
+	// Tokenizer 用于精确 token 计数，nil 时使用字符/4 估算。
+	// 设置此字段后，所有压缩中间件将统一使用该 Tokenizer。
+	Tokenizer mdl.Tokenizer
+}
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
@@ -33,6 +80,9 @@ type LoopConfig struct {
 	MaxConcurrentTools int                    // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
 	LLMRetry           RetryConfig            // LLM 调用重试配置
 	LLMBreaker         *retry.Breaker         // LLM 调用熔断器（可选）
+	// ContextCompression 配置自动上下文压缩（可选）。
+	// 设置后 AgentLoop 会在启动时自动将压缩 middleware 添加到 Chain 头部。
+	ContextCompression ContextCompressionConfig
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
@@ -54,18 +104,19 @@ func (c LoopConfig) maxIter() int {
 
 // AgentLoop 组合所有子系统，驱动 Agent 的 think→act→observe 循环。
 type AgentLoop struct {
-	LLM               mdl.LLM
-	Tools             tool.Registry
-	Chain             *middleware.Chain
-	IO                intr.UserIO
-	Config            LoopConfig
-	Observer          kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
-	LifecycleHook     session.LifecycleHook
-	ToolLifecycleHook session.ToolLifecycleHook
-	RunID             string
-	sidefxMu          sync.Mutex
-	eventSeq          uint64
-	currentTurn       TurnPlan
+	LLM                 mdl.LLM
+	Tools               tool.Registry
+	Chain               *middleware.Chain
+	IO                  intr.UserIO
+	Config              LoopConfig
+	Observer            kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	LifecycleHook       session.LifecycleHook
+	ToolLifecycleHook   session.ToolLifecycleHook
+	RunID               string
+	sidefxMu            sync.Mutex
+	eventSeq            uint64
+	currentTurn         TurnPlan
+	compressionInjected bool // 防止 Run() 重复注入压缩 middleware
 }
 
 // SessionResult 是一次 Session 执行的结果。
@@ -1049,4 +1100,56 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage mdl.T
 		Timestamp: sess.EndedAt.UTC(),
 	})
 	return result
+}
+
+// injectCompressionMiddleware 根据 LoopConfig.ContextCompression 配置自动注入压缩 middleware。
+// 幂等：无论 Run() 被调用多少次，每个 AgentLoop 实例只注入一次。
+// 若已通过 kernel.Use() 手动注册压缩 middleware，不建议同时设置 Strategy，以避免双重压缩。
+func (l *AgentLoop) injectCompressionMiddleware() {
+	cfg := l.Config.ContextCompression
+	if cfg.Strategy == "" || cfg.MaxContextTokens <= 0 {
+		return
+	}
+	if l.compressionInjected {
+		return
+	}
+	l.compressionInjected = true
+
+	if l.Chain == nil {
+		l.Chain = middleware.NewChain()
+	}
+	switch cfg.Strategy {
+	case CompressionTruncate:
+		l.Chain.Use(builtins.AutoTruncate(builtins.TruncateConfig{
+			MaxContextTokens: cfg.MaxContextTokens,
+			KeepRecent:       cfg.KeepRecent,
+			Tokenizer:        cfg.Tokenizer,
+		}))
+	case CompressionSummary:
+		l.Chain.Use(builtins.AutoSummarize(builtins.SummarizeConfig{
+			LLM:              l.LLM,
+			MaxContextTokens: cfg.MaxContextTokens,
+			KeepRecent:       cfg.KeepRecent,
+			SummaryPrompt:    cfg.SummaryPrompt,
+			MaxSummaryTokens: cfg.MaxSummaryTokens,
+			Tokenizer:        cfg.Tokenizer,
+		}))
+	case CompressionSliding:
+		winSize := cfg.WindowSize
+		if winSize <= 0 {
+			winSize = 30
+		}
+		l.Chain.Use(builtins.SlidingWindow(builtins.SlidingWindowConfig{
+			WindowSize:       winSize,
+			MaxContextTokens: cfg.MaxContextTokens,
+			Tokenizer:        cfg.Tokenizer,
+		}))
+	case CompressionPriority:
+		l.Chain.Use(builtins.PriorityCompress(builtins.PriorityConfig{
+			MaxContextTokens: cfg.MaxContextTokens,
+			KeepRecent:       cfg.KeepRecent,
+			MinScore:         cfg.MinScore,
+			Tokenizer:        cfg.Tokenizer,
+		}))
+	}
 }

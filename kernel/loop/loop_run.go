@@ -17,6 +17,9 @@ import (
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
+	// 若配置了 ContextCompression 策略，在运行前注入压缩 middleware。
+	l.injectCompressionMiddleware()
+
 	runStartedAt := time.Now().UTC()
 	l.beginRun(ctx, sess, runStartedAt)
 

@@ -1,0 +1,13 @@
+id: partial.format_output
+version: "1.0.0"
+description: 输出格式要求（通用）
+tags: [partial, format]
+
+template: |
+
+  ## 输出格式
+  - 使用清晰简洁的语言
+  - 代码块使用 Markdown 格式（```语言名）
+  - 文件路径使用反引号标注
+  - 对于复杂任务，先给出计划再执行
+

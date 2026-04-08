@@ -1,0 +1,13 @@
+id: partial.safety
+version: "1.0.0"
+description: 安全约束片段（所有 agent 共用）
+tags: [partial, safety]
+
+template: |
+
+  ## 安全约束
+  - 执行破坏性操作（删除文件、修改系统配置等）前必须确认
+  - 不访问 .env、密钥文件、证书等敏感文件
+  - 不将用户数据发送到外部服务（除非明确授权）
+  - 不执行涉及提权或越权的操作
+

@@ -2,10 +2,11 @@ package builtins
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/middleware"
-	mdl "github.com/mossagents/moss/kernel/model"
 	"strconv"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // TruncateConfig 配置自动 token 截断行为。
@@ -19,8 +20,12 @@ type TruncateConfig struct {
 	// 默认 20。
 	KeepRecent int
 
-	// TokenCounter 自定义 token 计数函数。
-	// 默认使用简单的字符数 / 4 估算。
+	// Tokenizer 用于精确 token 计数。设置后优先于 TokenCounter。
+	// nil 时退回 TokenCounter，TokenCounter 也为 nil 时使用字符/4 估算。
+	Tokenizer mdl.Tokenizer
+
+	// TokenCounter 自定义 token 计数函数（已弃用，建议改用 Tokenizer）。
+	// 当 Tokenizer 未设置时生效。
 	TokenCounter func(mdl.Message) int
 }
 
@@ -39,6 +44,9 @@ func (c TruncateConfig) keepRecent() int {
 }
 
 func (c TruncateConfig) countTokens(msg mdl.Message) int {
+	if c.Tokenizer != nil {
+		return c.Tokenizer.CountMessage(msg)
+	}
 	if c.TokenCounter != nil {
 		return c.TokenCounter(msg)
 	}
