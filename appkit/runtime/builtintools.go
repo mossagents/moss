@@ -544,7 +544,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		bodyData, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPResponseBodyBytes+1))
 		if err != nil {
@@ -1209,7 +1209,6 @@ func repairTruncatedJSON(s string) string {
 
 	if inString && escaped {
 		s += `\`
-		escaped = false
 	}
 	if inString {
 		s += `"`

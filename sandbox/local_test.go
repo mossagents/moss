@@ -100,8 +100,12 @@ func TestLocalSandboxListFiles(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
 
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644)
-	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644)
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	files, err := s.ListFiles("*.txt")
 	if err != nil {
@@ -117,11 +121,21 @@ func TestLocalSandboxListFilesRecursive(t *testing.T) {
 	s, _ := NewLocal(dir)
 
 	// 创建嵌套目录结构
-	os.MkdirAll(filepath.Join(dir, "src", "pkg"), 0755)
-	os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644)
-	os.WriteFile(filepath.Join(dir, "src", "app.go"), []byte("package src"), 0644)
-	os.WriteFile(filepath.Join(dir, "src", "pkg", "util.go"), []byte("package pkg"), 0644)
-	os.WriteFile(filepath.Join(dir, "README.md"), []byte("readme"), 0644)
+	if err := os.MkdirAll(filepath.Join(dir, "src", "pkg"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte("package main"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "app.go"), []byte("package src"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "src", "pkg", "util.go"), []byte("package pkg"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("readme"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	// **/*.go 应匹配所有 .go 文件
 	files, err := s.ListFiles("**/*.go")

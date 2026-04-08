@@ -40,8 +40,12 @@ func TestRegistry_DuplicateRegister(t *testing.T) {
 
 func TestRegistry_List(t *testing.T) {
 	r := NewRegistry()
-	r.Register(AgentConfig{Name: "a", SystemPrompt: "x"})
-	r.Register(AgentConfig{Name: "b", SystemPrompt: "y"})
+	if err := r.Register(AgentConfig{Name: "a", SystemPrompt: "x"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Register(AgentConfig{Name: "b", SystemPrompt: "y"}); err != nil {
+		t.Fatal(err)
+	}
 
 	list := r.List()
 	if len(list) != 2 {

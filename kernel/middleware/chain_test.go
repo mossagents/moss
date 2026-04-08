@@ -45,12 +45,16 @@ func TestChainPhaseFiltering(t *testing.T) {
 	})
 
 	mc := &Context{Session: &session.Session{ID: "test"}}
-	c.Run(context.Background(), BeforeLLM, mc)
+	if err := c.Run(context.Background(), BeforeLLM, mc); err != nil {
+		t.Fatalf("Run BeforeLLM: %v", err)
+	}
 	if called {
 		t.Fatal("should not have matched BeforeToolCall phase")
 	}
 
-	c.Run(context.Background(), BeforeToolCall, mc)
+	if err := c.Run(context.Background(), BeforeToolCall, mc); err != nil {
+		t.Fatalf("Run BeforeToolCall: %v", err)
+	}
 	if !called {
 		t.Fatal("should have matched BeforeToolCall phase")
 	}

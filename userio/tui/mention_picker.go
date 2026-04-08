@@ -111,11 +111,6 @@ func ensureFileIndex(workspace string) []string {
 	return entry.paths
 }
 
-// invalidateFileIndex 清除指定工作区的文件索引缓存（如文件变化后调用）。
-func invalidateFileIndex(workspace string) {
-	fileIndexStore.Delete(workspace)
-}
-
 // listMentionCandidates 使用缓存的文件索引和 fuzzy 过滤返回候选文件列表。
 func listMentionCandidates(workspace, query string, limit int) []mentionCandidate {
 	workspace = strings.TrimSpace(workspace)
@@ -319,22 +314,6 @@ func (m chatModel) openMentionPicker(query, replaceToken string) (chatModel, tea
 	return m, nil
 }
 
-func (m chatModel) openMentionPickerFromComposer() (chatModel, bool) {
-	if !m.experimentalEnabled(product.ExperimentalComposerMentions) {
-		return m, false
-	}
-	value := strings.TrimSpace(m.textarea.Value())
-	if value == "" {
-		return m, false
-	}
-	token := lastMentionToken(value)
-	if token == "" {
-		return m, false
-	}
-	updated, _ := m.openMentionPicker(strings.TrimPrefix(token, "@"), token)
-	return updated, true
-}
-
 func (m chatModel) handleMentionPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	if m.mentionPicker == nil || m.mentionPicker.list == nil || len(m.mentionPicker.candidates) == 0 {
 		return m.closeMentionOverlay(), nil
@@ -382,14 +361,3 @@ func (m chatModel) renderMentionPicker(width int) string {
 	return renderSelectionListDialog(width, m.mentionPicker.list)
 }
 
-func lastMentionToken(value string) string {
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return ""
-	}
-	last := strings.TrimSpace(fields[len(fields)-1])
-	if strings.HasPrefix(last, "@") && len(last) > 1 {
-		return last
-	}
-	return ""
-}

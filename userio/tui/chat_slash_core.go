@@ -945,9 +945,6 @@ func toString(v any) string {
 	return s
 }
 
-func extensionForImageMIME(mimeType string) string {
-	return extensionForMediaMIME(mimeType)
-}
 
 func extensionForMediaMIME(mimeType string) string {
 	switch strings.ToLower(strings.TrimSpace(mimeType)) {

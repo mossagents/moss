@@ -6,10 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/skill"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/mossagents/moss/skill"
 )
 
 // RegistryEntry describes a skill available in a remote registry.
@@ -86,7 +87,7 @@ func (c *HTTPRegistryClient) Get(ctx context.Context, name, version string) (*Re
 	if err != nil {
 		return nil, fmt.Errorf("registry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("registry: skill %q@%q not found", name, version)
 	}
@@ -113,7 +114,7 @@ func (c *HTTPRegistryClient) fetchEntries(ctx context.Context, path string, para
 	if err != nil {
 		return nil, fmt.Errorf("registry: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("registry: status %d", resp.StatusCode)
 	}

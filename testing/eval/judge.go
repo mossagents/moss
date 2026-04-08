@@ -194,7 +194,9 @@ func parseJudgeResponse(text string) (float64, string, error) {
 	if idx := strings.Index(text, `"score"`); idx >= 0 {
 		rest := text[idx+len(`"score"`):]
 		rest = strings.TrimLeft(rest, " \t\n\r:")
-		fmt.Sscanf(rest, "%f", &score)
+		if _, err := fmt.Sscanf(rest, "%f", &score); err != nil {
+			score = 0
+		}
 	}
 	if idx := strings.Index(text, `"reasoning"`); idx >= 0 {
 		rest := text[idx+len(`"reasoning"`):]

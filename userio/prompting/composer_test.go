@@ -65,7 +65,7 @@ func TestCompose_DynamicSectionOrder(t *testing.T) {
 	idxMode := strings.Index(out.Prompt, "## Operating Mode")
 	idxSkills := strings.Index(out.Prompt, "## Skills")
 	idxNotices := strings.Index(out.Prompt, "## Runtime Notices")
-	if !(idxEnv >= 0 && idxCaps > idxEnv && idxMode > idxCaps && idxSkills > idxMode && idxNotices > idxSkills) {
+	if idxEnv < 0 || idxCaps <= idxEnv || idxMode <= idxCaps || idxSkills <= idxMode || idxNotices <= idxSkills {
 		t.Fatalf("unexpected section order:\n%s", out.Prompt)
 	}
 }

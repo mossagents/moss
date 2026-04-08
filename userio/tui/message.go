@@ -316,10 +316,6 @@ func markdownRenderer(width int) (*glamour.TermRenderer, error) {
 	return r, nil
 }
 
-// isToolMsg 判断消息是否属于可折叠的工具类别。
-func isToolMsg(kind msgKind) bool {
-	return kind == msgToolStart || kind == msgToolResult
-}
 
 // renderAllMessages 渲染所有消息为单个可滚动字符串。
 // 当 toolCollapsed 为 true 时，每个 tool call 默认只显示摘要；展开后显示详细 body。

@@ -35,7 +35,7 @@ func NewMemorySandbox() *MemorySandbox {
 
 func (s *MemorySandbox) ResolvePath(path string) (string, error) {
 	if strings.Contains(path, "..") {
-		return "", fmt.Errorf("path %q contains disallowed ..", path)
+		return "", fmt.Errorf("path %q contains disallowed '..'", path)
 	}
 	return path, nil
 }

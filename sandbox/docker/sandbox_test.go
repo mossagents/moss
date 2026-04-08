@@ -78,8 +78,12 @@ func TestMaxFileSizeEnforced(t *testing.T) {
 
 func TestListFiles(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644)
-	os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644)
+		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644); err != nil {
+			t.Fatal(err)
+		}
 	s, err := dockersandbox.New(dockersandbox.DockerConfig{Image: "ubuntu:22.04", WorkDir: dir})
 	if err != nil {
 		t.Fatal(err)

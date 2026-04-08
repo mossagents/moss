@@ -34,7 +34,6 @@ type welcomeModel struct {
 	input        textarea.Model // 复用 textarea 作为单行输入
 	confirmed    bool
 	cancelled    bool
-	now          func() tea.Msg
 }
 
 // WelcomeConfig 是欢迎界面收集的配置。

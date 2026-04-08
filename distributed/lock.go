@@ -116,7 +116,7 @@ func (l *TokenLock) Release(ctx context.Context, resource, token string) error {
 	if err != nil {
 		return fmt.Errorf("distributed: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		return fmt.Errorf("distributed: release status %d", resp.StatusCode)
 	}
@@ -253,7 +253,7 @@ func doJSON(ctx context.Context, client *http.Client, method, rawURL string, bod
 	if err != nil {
 		return fmt.Errorf("distributed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		var apiErr struct{ Error string }
 		if jerr := json.NewDecoder(resp.Body).Decode(&apiErr); jerr == nil && apiErr.Error != "" {

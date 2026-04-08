@@ -103,7 +103,9 @@ func TestA2A_EnvelopeFromJSONMetadata(t *testing.T) {
 
 	// Mimic what happens after JSON round-trip (Metadata["a2a"] becomes map[string]any)
 	var meta map[string]any
-	json.Unmarshal(raw, &meta)
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		t.Fatal(err)
+	}
 
 	msg := taskrt.MailMessage{
 		From:     "a",
@@ -160,14 +162,18 @@ func TestMemoryApprovalStore_List(t *testing.T) {
 			Status:    intr.ApprovalStatusApproved,
 			CreatedAt: time.Now().Add(time.Duration(i) * time.Second),
 		}
-		store.Save(ctx, r)
+		if err := store.Save(ctx, r); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// Different session
-	store.Save(ctx, intr.ApprovalRecord{
+	if err := store.Save(ctx, intr.ApprovalRecord{
 		Request:   intr.ApprovalRequest{ID: "req-other", SessionID: "s2"},
 		Status:    intr.ApprovalStatusDenied,
 		CreatedAt: time.Now(),
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	list, err := store.List(ctx, "s1")
 	if err != nil {
 		t.Fatal(err)

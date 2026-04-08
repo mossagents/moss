@@ -77,7 +77,6 @@ func repairTruncatedJSON(s string) string {
 	}
 	if inString && escaped {
 		s += `\`
-		escaped = false
 	}
 	if inString {
 		s += `"`

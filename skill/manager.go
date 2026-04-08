@@ -97,9 +97,7 @@ func (m *Manager) SystemPromptAdditions() string {
 	var parts []string
 	for _, name := range m.order {
 		if s, ok := m.skills[name]; ok {
-			for _, p := range s.Metadata().Prompts {
-				parts = append(parts, p)
-			}
+			parts = append(parts, s.Metadata().Prompts...)
 		}
 	}
 	return strings.Join(parts, "\n\n")

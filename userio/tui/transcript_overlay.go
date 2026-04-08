@@ -80,13 +80,13 @@ func (m chatModel) handleTranscriptOverlayKey(msg tea.KeyMsg) (chatModel, tea.Cm
 	case "esc", "q", "ctrl+t":
 		return m.closeTranscriptOverlay(), nil
 	case "up", "k":
-		m.transcriptOverlay.viewport.LineUp(1)
+		m.transcriptOverlay.viewport.ScrollUp(1)
 	case "down", "j":
-		m.transcriptOverlay.viewport.LineDown(1)
+		m.transcriptOverlay.viewport.ScrollDown(1)
 	case "pgup", "ctrl+b":
-		m.transcriptOverlay.viewport.HalfViewUp()
+		m.transcriptOverlay.viewport.HalfPageUp()
 	case "pgdown", "ctrl+f":
-		m.transcriptOverlay.viewport.HalfViewDown()
+		m.transcriptOverlay.viewport.HalfPageDown()
 	case "g":
 		m.transcriptOverlay.viewport.GotoTop()
 	case "G":

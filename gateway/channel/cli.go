@@ -61,7 +61,9 @@ func (c *CLI) Receive(ctx context.Context) <-chan kchannel.InboundMessage {
 		reader := bufio.NewReader(c.in)
 
 		for {
-			fmt.Fprint(c.out, c.prompt)
+			if _, err := fmt.Fprint(c.out, c.prompt); err != nil {
+				return
+			}
 			line, err := reader.ReadString('\n')
 			if err == io.EOF {
 				return
@@ -78,7 +80,9 @@ func (c *CLI) Receive(ctx context.Context) <-chan kchannel.InboundMessage {
 			// 内置退出命令
 			lower := strings.ToLower(input)
 			if lower == "/exit" || lower == "/quit" {
-				fmt.Fprintln(c.out, "Bye!")
+				if _, err := fmt.Fprintln(c.out, "Bye!"); err != nil {
+					return
+				}
 				return
 			}
 

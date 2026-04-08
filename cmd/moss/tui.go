@@ -21,28 +21,29 @@ type cliUserIO struct {
 }
 
 func (c *cliUserIO) Send(_ context.Context, msg intr.OutputMessage) error {
+	var err error
 	switch msg.Type {
 	case intr.OutputText:
-		fmt.Fprintln(c.writer, msg.Content)
+		_, err = fmt.Fprintln(c.writer, msg.Content)
 	case intr.OutputStream:
-		fmt.Fprint(c.writer, msg.Content)
+		_, err = fmt.Fprint(c.writer, msg.Content)
 	case intr.OutputStreamEnd:
-		fmt.Fprintln(c.writer)
+		_, err = fmt.Fprintln(c.writer)
 	case intr.OutputReasoning:
-		fmt.Fprintf(c.writer, "💭 %s\n", msg.Content)
+		_, err = fmt.Fprintf(c.writer, "💭 %s\n", msg.Content)
 	case intr.OutputProgress:
-		fmt.Fprintf(c.writer, "⏳ %s\n", msg.Content)
+		_, err = fmt.Fprintf(c.writer, "⏳ %s\n", msg.Content)
 	case intr.OutputToolStart:
-		fmt.Fprintf(c.writer, "🔧 Running %s...\n", msg.Content)
+		_, err = fmt.Fprintf(c.writer, "🔧 Running %s...\n", msg.Content)
 	case intr.OutputToolResult:
 		isErr, _ := msg.Meta["is_error"].(bool)
 		if isErr {
-			fmt.Fprintf(c.writer, "❌ %s\n", msg.Content)
+			_, err = fmt.Fprintf(c.writer, "❌ %s\n", msg.Content)
 		} else {
-			fmt.Fprintf(c.writer, "✅ %s\n", truncate(msg.Content, 200))
+			_, err = fmt.Fprintf(c.writer, "✅ %s\n", truncate(msg.Content, 200))
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *cliUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
@@ -51,11 +52,17 @@ func (c *cliUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputRes
 	case intr.InputConfirm:
 		if req.Approval != nil {
 			options := cliApprovalOptions(req.Approval, c.workspace)
-			fmt.Fprintf(c.writer, "%s\n", req.Prompt)
-			for i, opt := range options {
-				fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt)
+			if _, err := fmt.Fprintf(c.writer, "%s\n", req.Prompt); err != nil {
+				return intr.InputResponse{}, err
 			}
-			fmt.Fprint(c.writer, "Choose decision: ")
+			for i, opt := range options {
+				if _, err := fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt); err != nil {
+					return intr.InputResponse{}, err
+				}
+			}
+			if _, err := fmt.Fprint(c.writer, "Choose decision: "); err != nil {
+				return intr.InputResponse{}, err
+			}
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				return intr.InputResponse{}, err
@@ -68,7 +75,9 @@ func (c *cliUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputRes
 			return c.cliApprovalResponse(req.Approval, selected)
 		}
 		prompt := req.Prompt
-		fmt.Fprintf(c.writer, "%s [y/N]: ", prompt)
+		if _, err := fmt.Fprintf(c.writer, "%s [y/N]: ", prompt); err != nil {
+			return intr.InputResponse{}, err
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return intr.InputResponse{}, err
@@ -87,15 +96,23 @@ func (c *cliUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputRes
 
 	case intr.InputSelect:
 		for i, opt := range req.Options {
-			fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt)
+			if _, err := fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt); err != nil {
+				return intr.InputResponse{}, err
+			}
 		}
-		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
+		if _, err := fmt.Fprintf(c.writer, "%s: ", req.Prompt); err != nil {
+			return intr.InputResponse{}, err
+		}
 		var sel int
-		fmt.Fscan(c.reader, &sel)
+		if _, err := fmt.Fscan(c.reader, &sel); err != nil {
+			return intr.InputResponse{}, err
+		}
 		return intr.InputResponse{Selected: sel - 1}, nil
 
 	default: // FreeText
-		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
+		if _, err := fmt.Fprintf(c.writer, "%s: ", req.Prompt); err != nil {
+			return intr.InputResponse{}, err
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return intr.InputResponse{}, err

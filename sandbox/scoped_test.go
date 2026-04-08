@@ -11,8 +11,12 @@ func TestScopedWorkspace_Isolation(t *testing.T) {
 	ws2 := NewScopedWorkspace("room_2", shared)
 	ctx := context.Background()
 
-	ws1.WriteFile(ctx, "notes.txt", []byte("room1 notes"))
-	ws2.WriteFile(ctx, "notes.txt", []byte("room2 notes"))
+	if err := ws1.WriteFile(ctx, "notes.txt", []byte("room1 notes")); err != nil {
+		t.Fatalf("ws1 WriteFile: %v", err)
+	}
+	if err := ws2.WriteFile(ctx, "notes.txt", []byte("room2 notes")); err != nil {
+		t.Fatalf("ws2 WriteFile: %v", err)
+	}
 
 	d1, err := ws1.ReadFile(ctx, "notes.txt")
 	if err != nil {
@@ -53,11 +57,17 @@ func TestScopedWorkspace_ListFiles(t *testing.T) {
 	kws := NewScopedWorkspace("project", shared)
 	ctx := context.Background()
 
-	kws.WriteFile(ctx, "a.go", []byte("a"))
-	kws.WriteFile(ctx, "b.go", []byte("b"))
+	if err := kws.WriteFile(ctx, "a.go", []byte("a")); err != nil {
+		t.Fatalf("write a.go: %v", err)
+	}
+	if err := kws.WriteFile(ctx, "b.go", []byte("b")); err != nil {
+		t.Fatalf("write b.go: %v", err)
+	}
 
 	// 在 shared 中直接写入不属于 project scope 的文件
-	shared.WriteFile(ctx, "other/c.go", []byte("c"))
+	if err := shared.WriteFile(ctx, "other/c.go", []byte("c")); err != nil {
+		t.Fatalf("shared WriteFile: %v", err)
+	}
 
 	files, err := kws.ListFiles(ctx, "*.go")
 	if err != nil {
@@ -79,7 +89,9 @@ func TestScopedWorkspace_DeleteAndStat(t *testing.T) {
 	kws := NewScopedWorkspace("ns", shared)
 	ctx := context.Background()
 
-	kws.WriteFile(ctx, "file.txt", []byte("data"))
+	if err := kws.WriteFile(ctx, "file.txt", []byte("data")); err != nil {
+		t.Fatalf("WriteFile file.txt: %v", err)
+	}
 
 	info, err := kws.Stat(ctx, "file.txt")
 	if err != nil {

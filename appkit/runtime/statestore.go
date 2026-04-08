@@ -484,7 +484,7 @@ func appendJSONL(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err

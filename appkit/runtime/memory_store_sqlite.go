@@ -98,7 +98,7 @@ func sqliteTableHasColumns(db *sql.DB, table string, required map[string]struct{
 	if err != nil {
 		return false, fmt.Errorf("inspect sqlite memory schema: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	found := make(map[string]struct{}, len(required))
 	var (
 		cid       int
@@ -199,7 +199,7 @@ func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memstore.Mem
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]memstore.MemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)
@@ -261,7 +261,7 @@ func (s *sqliteMemoryStore) Search(ctx context.Context, query memstore.MemoryQue
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := make([]memstore.MemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)

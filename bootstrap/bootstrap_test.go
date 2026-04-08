@@ -13,8 +13,12 @@ func TestLoadFromWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("Be helpful"), 0600)
-	os.WriteFile(filepath.Join(agentsDir, "SOUL.md"), []byte("Friendly tone"), 0600)
+	if err := os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("Be helpful"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentsDir, "SOUL.md"), []byte("Friendly tone"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := Load(dir)
 	if ctx.Agents != "Be helpful" {
@@ -70,12 +74,22 @@ func TestPriority(t *testing.T) {
 	// Create both .agents/ and .moss/ with different content
 	agentsDir := filepath.Join(dir, ".agents")
 	mossDir := filepath.Join(dir, ".moss")
-	os.MkdirAll(agentsDir, 0700)
-	os.MkdirAll(mossDir, 0700)
+	if err := os.MkdirAll(agentsDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(mossDir, 0700); err != nil {
+		t.Fatal(err)
+	}
 
-	os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("project-agents"), 0600)
-	os.WriteFile(filepath.Join(mossDir, "AGENTS.md"), []byte("moss-agents"), 0600)
-	os.WriteFile(filepath.Join(mossDir, "SOUL.md"), []byte("moss-soul"), 0600)
+	if err := os.WriteFile(filepath.Join(agentsDir, "AGENTS.md"), []byte("project-agents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mossDir, "AGENTS.md"), []byte("moss-agents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mossDir, "SOUL.md"), []byte("moss-soul"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := Load(dir)
 

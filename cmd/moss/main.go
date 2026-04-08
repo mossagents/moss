@@ -35,7 +35,7 @@ func main() {
 		logging.GetLogger().Warn("cannot enable debug file logging", slog.Any("error", err))
 	} else {
 		if closer != nil {
-			defer closer.Close()
+			defer func() { _ = closer.Close() }()
 		}
 		if enabled {
 			logging.GetLogger().Info("debug file logging enabled", slog.String("path", path))
@@ -210,7 +210,7 @@ func runCmd(args []string) {
 		logging.GetLogger().Error("error booting kernel", slog.Any("error", err))
 		os.Exit(1)
 	}
-	defer k.Shutdown(ctx)
+	defer func() { _ = k.Shutdown(ctx) }()
 
 	fmt.Printf("🌿 moss %s\n", version)
 	fmt.Printf("Goal: %s\n", *goal)

@@ -36,32 +36,33 @@ func (c *ConsoleIO) maxLen() int {
 }
 
 func (c *ConsoleIO) Send(_ context.Context, msg OutputMessage) error {
+	var err error
 	switch msg.Type {
 	case OutputText:
-		fmt.Fprintln(c.W, msg.Content)
+		_, err = fmt.Fprintln(c.W, msg.Content)
 	case OutputStream:
-		fmt.Fprint(c.W, msg.Content)
+		_, err = fmt.Fprint(c.W, msg.Content)
 	case OutputStreamEnd:
-		fmt.Fprintln(c.W)
+		_, err = fmt.Fprintln(c.W)
 	case OutputReasoning:
-		fmt.Fprintf(c.W, "💭 %s\n", msg.Content)
+		_, err = fmt.Fprintf(c.W, "💭 %s\n", msg.Content)
 	case OutputProgress:
-		fmt.Fprintf(c.W, "⏳ %s\n", msg.Content)
+		_, err = fmt.Fprintf(c.W, "⏳ %s\n", msg.Content)
 	case OutputToolStart:
-		fmt.Fprintf(c.W, "🔧 %s\n", msg.Content)
+		_, err = fmt.Fprintf(c.W, "🔧 %s\n", msg.Content)
 	case OutputToolResult:
 		isErr, _ := msg.Meta["is_error"].(bool)
 		if isErr {
-			fmt.Fprintf(c.W, "❌ %s\n", msg.Content)
+			_, err = fmt.Fprintf(c.W, "❌ %s\n", msg.Content)
 		} else {
 			content := msg.Content
 			if ml := c.maxLen(); len(content) > ml {
 				content = content[:ml] + "..."
 			}
-			fmt.Fprintf(c.W, "✅ %s\n", content)
+			_, err = fmt.Fprintf(c.W, "✅ %s\n", content)
 		}
 	}
-	return nil
+	return err
 }
 
 func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, error) {
@@ -73,7 +74,9 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 		if req.Approval != nil && req.Approval.ToolName != "" {
 			prompt = fmt.Sprintf("%s (tool=%s risk=%s)", req.Prompt, req.Approval.ToolName, req.Approval.Risk)
 		}
-		fmt.Fprintf(c.W, "%s [y/N]: ", prompt)
+		if _, err := fmt.Fprintf(c.W, "%s [y/N]: ", prompt); err != nil {
+			return InputResponse{}, err
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return InputResponse{}, err
@@ -92,9 +95,13 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 
 	case InputSelect:
 		for i, opt := range req.Options {
-			fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
+			if _, err := fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt); err != nil {
+				return InputResponse{}, err
+			}
 		}
-		fmt.Fprintf(c.W, "%s: ", req.Prompt)
+		if _, err := fmt.Fprintf(c.W, "%s: ", req.Prompt); err != nil {
+			return InputResponse{}, err
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return InputResponse{}, err
@@ -114,7 +121,9 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 			}
 			switch field.Type {
 			case InputFieldBoolean:
-				fmt.Fprintf(c.W, "%s [y/N]: ", title)
+				if _, err := fmt.Fprintf(c.W, "%s [y/N]: ", title); err != nil {
+					return InputResponse{}, err
+				}
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					return InputResponse{}, err
@@ -123,9 +132,13 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 				form[field.Name] = answer == "y" || answer == "yes" || answer == "true"
 			case InputFieldSingleSelect:
 				for i, opt := range field.Options {
-					fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
+					if _, err := fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt); err != nil {
+						return InputResponse{}, err
+					}
 				}
-				fmt.Fprintf(c.W, "%s: ", title)
+				if _, err := fmt.Fprintf(c.W, "%s: ", title); err != nil {
+					return InputResponse{}, err
+				}
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					return InputResponse{}, err
@@ -140,9 +153,13 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 				}
 			case InputFieldMultiSelect:
 				for i, opt := range field.Options {
-					fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt)
+					if _, err := fmt.Fprintf(c.W, "  %d) %s\n", i+1, opt); err != nil {
+						return InputResponse{}, err
+					}
 				}
-				fmt.Fprintf(c.W, "%s (comma-separated indexes): ", title)
+				if _, err := fmt.Fprintf(c.W, "%s (comma-separated indexes): ", title); err != nil {
+					return InputResponse{}, err
+				}
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					return InputResponse{}, err
@@ -160,7 +177,9 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 				}
 				form[field.Name] = chosen
 			default:
-				fmt.Fprintf(c.W, "%s: ", title)
+				if _, err := fmt.Fprintf(c.W, "%s: ", title); err != nil {
+					return InputResponse{}, err
+				}
 				line, err := reader.ReadString('\n')
 				if err != nil {
 					return InputResponse{}, err
@@ -171,7 +190,9 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 		return InputResponse{Form: form}, nil
 
 	default:
-		fmt.Fprintf(c.W, "%s: ", req.Prompt)
+		if _, err := fmt.Fprintf(c.W, "%s: ", req.Prompt); err != nil {
+			return InputResponse{}, err
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return InputResponse{}, err

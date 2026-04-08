@@ -2,7 +2,6 @@ package budget
 
 import (
 	"fmt"
-	"sync"
 	"sync/atomic"
 )
 
@@ -63,7 +62,6 @@ type MemoryGovernor struct {
 	usedTokens   int64
 	usedSteps    int64
 	sessionCount int64
-	mu           sync.Mutex
 }
 
 // NewGovernor 创建一个内存 Governor。

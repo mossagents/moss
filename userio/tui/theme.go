@@ -47,7 +47,6 @@ func applyTheme(name string) {
 		shellHeaderDetailStyle = lipgloss.NewStyle()
 		shellHeaderSeparatorStyle = lipgloss.NewStyle()
 		shellHeaderDiagStyle = lipgloss.NewStyle()
-		statusBarStyle = lipgloss.NewStyle()
 		topBarStyle = lipgloss.NewStyle().Padding(0, 1)
 		shellRuleStyle = lipgloss.NewStyle()
 		userLabelStyle = lipgloss.NewStyle().Bold(true)
@@ -61,14 +60,10 @@ func applyTheme(name string) {
 		systemStyle = lipgloss.NewStyle().Italic(true)
 		mutedStyle = lipgloss.NewStyle()
 		halfMutedStyle = lipgloss.NewStyle()
-		panelBaseStyle = lipgloss.NewStyle()
 		panelMutedStyle = lipgloss.NewStyle()
 		inputBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 		sidebarBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
-		sidebarTitleStyle = lipgloss.NewStyle().Bold(true)
 		sidebarSectionTitleStyle = lipgloss.NewStyle().Bold(true)
-		collapsedToolStyle = lipgloss.NewStyle().Italic(true)
-		panelTitleStyle = lipgloss.NewStyle().Bold(true)
 		dialogBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
 		dialogTitleStyle = lipgloss.NewStyle().Bold(true)
 		dialogAccentStyle = lipgloss.NewStyle().Bold(true)
@@ -107,7 +102,6 @@ func applyTheme(name string) {
 		colorHalfMuted = lipgloss.AdaptiveColor{Light: hexHalfMuted, Dark: hexHalfMuted}
 		colorSubtle = lipgloss.AdaptiveColor{Light: hexSubtle, Dark: hexSubtle}
 		colorBorder = lipgloss.AdaptiveColor{Light: hexBorder, Dark: hexBorder}
-		colorUserMsgBg = lipgloss.AdaptiveColor{Light: hexBgUserMsg, Dark: hexBgUserMsg}
 
 		baseStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexFgBase))
 		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexPrimary))
@@ -116,7 +110,6 @@ func applyTheme(name string) {
 		shellHeaderDetailStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted))
 		shellHeaderSeparatorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexSubtle))
 		shellHeaderDiagStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexPrimary))
-		statusBarStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted))
 		topBarStyle = lipgloss.NewStyle().Padding(0, 1)
 		shellRuleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexBorder))
 		userLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexPrimary))
@@ -130,14 +123,10 @@ func applyTheme(name string) {
 		systemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted)).Italic(true)
 		mutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexMuted))
 		halfMutedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexHalfMuted))
-		panelBaseStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgPanel))
 		panelMutedStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgSubtle))
 		inputBorderStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgPanel)).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(hexPrimary)).Padding(0, 1)
 		sidebarBoxStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgPanel)).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(hexBorder)).Padding(1, 2)
-		sidebarTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexPrimary))
 		sidebarSectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexSubtle))
-		collapsedToolStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(hexTool)).Italic(true)
-		panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexSubtle))
 		dialogBoxStyle = lipgloss.NewStyle().Background(lipgloss.Color(hexBgOverlay)).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(hexPrimary)).Padding(1, 2)
 		dialogTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexPrimary))
 		dialogAccentStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(hexSecondary))
@@ -159,7 +148,6 @@ func applyTheme(name string) {
 		colorHalfMuted = lipgloss.AdaptiveColor{Light: "243", Dark: "247"}
 		colorSubtle = lipgloss.AdaptiveColor{Light: "245", Dark: "249"}
 		colorBorder = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
-		colorUserMsgBg = lipgloss.AdaptiveColor{Light: "254", Dark: "237"}
 
 		baseStyle = lipgloss.NewStyle()
 		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
@@ -168,7 +156,6 @@ func applyTheme(name string) {
 		shellHeaderDetailStyle = lipgloss.NewStyle().Foreground(colorMuted)
 		shellHeaderSeparatorStyle = lipgloss.NewStyle().Foreground(colorSubtle)
 		shellHeaderDiagStyle = lipgloss.NewStyle().Foreground(colorPrimary)
-		statusBarStyle = lipgloss.NewStyle().Foreground(colorMuted)
 		topBarStyle = lipgloss.NewStyle().Padding(0, 1)
 		shellRuleStyle = lipgloss.NewStyle().Foreground(colorBorder)
 		userLabelStyle = lipgloss.NewStyle().Bold(true).Foreground(colorUser)
@@ -182,14 +169,10 @@ func applyTheme(name string) {
 		systemStyle = lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 		mutedStyle = lipgloss.NewStyle().Foreground(colorMuted)
 		halfMutedStyle = lipgloss.NewStyle().Foreground(colorHalfMuted)
-		panelBaseStyle = lipgloss.NewStyle()
 		panelMutedStyle = lipgloss.NewStyle()
 		inputBorderStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Padding(0, 1)
 		sidebarBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorBorder).Padding(1, 2)
-		sidebarTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 		sidebarSectionTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorSubtle)
-		collapsedToolStyle = lipgloss.NewStyle().Foreground(colorSecondary).Italic(true)
-		panelTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorSubtle)
 		dialogBoxStyle = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colorPrimary).Padding(1, 2)
 		dialogTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
 		dialogAccentStyle = lipgloss.NewStyle().Bold(true).Foreground(colorSecondary)

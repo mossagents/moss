@@ -194,7 +194,7 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm mdl.StreamingLLM, req md
 	if err != nil {
 		return nil, ensureLLMCallError(err, true, true, mdl.LLMCallMetadata{})
 	}
-	defer iter.Close()
+	defer func() { _ = iter.Close() }()
 	metadataProvider := metadataStreamProvider(iter)
 	state := streamAccumulator{}
 
@@ -260,7 +260,9 @@ func (l *AgentLoop) handleStreamChunkError(
 	if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
 		state.stopReason = "tool_use"
 		if l.IO != nil {
-			l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd})
+			if sendErr := l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd}); sendErr != nil {
+				logging.GetLogger().DebugContext(ctx, "stream end send failed", "error", sendErr)
+			}
 		}
 		return true, nil
 	}
@@ -273,10 +275,12 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk,
 		state.emittedContent = true
 		state.fullReasoning += chunk.ReasoningDelta
 		if l.IO != nil {
-			l.IO.Send(ctx, intr.OutputMessage{
+			if err := l.IO.Send(ctx, intr.OutputMessage{
 				Type:    intr.OutputReasoning,
 				Content: chunk.ReasoningDelta,
-			})
+			}); err != nil {
+				logging.GetLogger().DebugContext(ctx, "reasoning send failed", "error", err)
+			}
 		}
 	}
 
@@ -284,10 +288,12 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk,
 		state.emittedContent = true
 		state.fullContent += chunk.Delta
 		if l.IO != nil {
-			l.IO.Send(ctx, intr.OutputMessage{
+			if err := l.IO.Send(ctx, intr.OutputMessage{
 				Type:    intr.OutputStream,
 				Content: chunk.Delta,
-			})
+			}); err != nil {
+				logging.GetLogger().DebugContext(ctx, "stream chunk send failed", "error", err)
+			}
 		}
 	}
 
@@ -307,7 +313,9 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk,
 		state.stopReason = "tool_use"
 	}
 	if l.IO != nil {
-		l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd})
+		if err := l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd}); err != nil {
+			logging.GetLogger().DebugContext(ctx, "stream completion send failed", "error", err)
+		}
 	}
 	return true
 }
@@ -591,7 +599,7 @@ func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session
 
 func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call mdl.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
 	if l.IO != nil {
-		l.IO.Send(ctx, intr.OutputMessage{
+		if err := l.IO.Send(ctx, intr.OutputMessage{
 			Type:    intr.OutputToolStart,
 			Content: call.Name,
 			Meta: map[string]any{
@@ -600,7 +608,9 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 				"risk":         string(spec.Risk),
 				"args_preview": previewToolArguments(repairedArgs),
 			},
-		})
+		}); err != nil {
+			logging.GetLogger().DebugContext(ctx, "tool start send failed", "session_id", sess.ID, "tool", call.Name, "error", err)
+		}
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), kobs.ExecutionEvent{
 		Type:         kobs.ExecutionToolStarted,
@@ -629,7 +639,9 @@ func (l *AgentLoop) runBeforeToolCallMiddleware(ctx context.Context, sess *sessi
 
 func (l *AgentLoop) runAfterToolCallMiddleware(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
 	l.withSideEffectsLock(func() {
-		l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output)
+		if err := l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output); err != nil {
+			logging.GetLogger().DebugContext(ctx, "after tool middleware failed", "session_id", sess.ID, "tool", spec.Name, "error", err)
+		}
 	})
 }
 
@@ -736,11 +748,13 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call mdl.ToolCall, res
 		"duration_ms": toolDur.Milliseconds(),
 	}
 	appendToolErrorIOMetadata(meta, err)
-	l.IO.Send(ctx, intr.OutputMessage{
+	if sendErr := l.IO.Send(ctx, intr.OutputMessage{
 		Type:    intr.OutputToolResult,
 		Content: mdl.ContentPartsToPlainText(result.ContentParts),
 		Meta:    meta,
-	})
+	}); sendErr != nil {
+		logging.GetLogger().DebugContext(ctx, "tool result send failed", "tool", call.Name, "error", sendErr)
+	}
 }
 
 func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLifecycleEvent) {
@@ -964,7 +978,9 @@ func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Sessio
 		IO:       l.IO,
 		Observer: l.observer(),
 	}
-	l.Chain.Run(ctx, middleware.OnError, mc)
+	if runErr := l.Chain.Run(ctx, middleware.OnError, mc); runErr != nil {
+		logging.GetLogger().DebugContext(ctx, "error middleware failed", "session_id", sess.ID, "error", runErr)
+	}
 }
 
 func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEvent) {

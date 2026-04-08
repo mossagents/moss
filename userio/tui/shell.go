@@ -111,24 +111,6 @@ func (m chatModel) renderShellSidebar(width int) string {
 	return sidebarBoxStyle.Width(contentWidth).Render(body)
 }
 
-func renderShellPanel(width int, title, body string) string {
-	if width < 24 {
-		width = 24
-	}
-	contentWidth := width - sidebarBoxStyle.GetHorizontalFrameSize()
-	if contentWidth < 1 {
-		contentWidth = 1
-	}
-	body = strings.TrimSpace(body)
-	if body == "" {
-		body = "-"
-	}
-	var b strings.Builder
-	b.WriteString(panelTitleStyle.Render(title))
-	b.WriteString("\n")
-	b.WriteString(baseStyle.Render(body))
-	return sidebarBoxStyle.Width(contentWidth).Render(b.String())
-}
 
 func renderSidebarSection(title, body string) string {
 	body = strings.TrimSpace(body)

@@ -118,7 +118,7 @@ func (e *OpenAIEmbedder) EmbedBatch(ctx context.Context, texts []string) ([][]fl
 	if err != nil {
 		return nil, fmt.Errorf("embedding request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024)) // 10MB limit
 	if err != nil {

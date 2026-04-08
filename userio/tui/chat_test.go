@@ -1585,8 +1585,8 @@ func TestAskFormSingleSelectAndConfirm(t *testing.T) {
 		t.Fatal("expected ask form to open via overlay stack")
 	}
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	select {
 	case resp := <-replyCh:
@@ -1622,8 +1622,8 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeySpace})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 
 	select {
 	case resp := <-replyCh:

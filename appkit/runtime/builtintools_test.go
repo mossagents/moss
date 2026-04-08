@@ -220,7 +220,9 @@ func TestReadFile(t *testing.T) {
 	}
 
 	var content string
-	json.Unmarshal(result, &content)
+	if err := json.Unmarshal(result, &content); err != nil {
+		t.Fatalf("unmarshal content: %v", err)
+	}
 	if content != "Hello, World!" {
 		t.Errorf("expected 'Hello, World!', got %q", content)
 	}
@@ -249,7 +251,9 @@ func TestWriteFile(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.Unmarshal(result, &resp)
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %q", resp["status"])
 	}
@@ -275,7 +279,9 @@ func TestEditFile(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(result, &resp)
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", resp["status"])
 	}
@@ -320,7 +326,9 @@ func TestGlobTool(t *testing.T) {
 	}
 
 	var files []string
-	json.Unmarshal(result, &files)
+	if err := json.Unmarshal(result, &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
 	if len(files) != 5 {
 		t.Errorf("expected 5 files from mock list, got %d", len(files))
 	}
@@ -340,7 +348,9 @@ func TestListFiles(t *testing.T) {
 	}
 
 	var files []string
-	json.Unmarshal(result, &files)
+	if err := json.Unmarshal(result, &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
 	if len(files) != 3 {
 		t.Errorf("expected 3 files, got %d: %v", len(files), files)
 	}
@@ -396,7 +406,9 @@ func TestSearchText(t *testing.T) {
 	}
 
 	var matches []searchMatch
-	json.Unmarshal(result, &matches)
+	if err := json.Unmarshal(result, &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
 
 	// Should find "package main" and "func main()" in main.go
 	found := 0
@@ -423,7 +435,9 @@ func TestSearchTextRegex(t *testing.T) {
 	}
 
 	var matches []searchMatch
-	json.Unmarshal(result, &matches)
+	if err := json.Unmarshal(result, &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
 	if len(matches) != 1 {
 		t.Fatalf("expected 1 regex match, got %d: %+v", len(matches), matches)
 	}
@@ -462,7 +476,9 @@ func TestSearchTextMaxResults(t *testing.T) {
 	}
 
 	var matches []searchMatch
-	json.Unmarshal(result, &matches)
+	if err := json.Unmarshal(result, &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
 	if len(matches) != 3 {
 		t.Errorf("expected 3 matches with max_results=3, got %d", len(matches))
 	}
@@ -481,7 +497,9 @@ func TestRunCommand(t *testing.T) {
 	}
 
 	var output sandbox.Output
-	json.Unmarshal(result, &output)
+	if err := json.Unmarshal(result, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
 	if !strings.Contains(output.Stdout, "echo") {
 		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
 	}
@@ -526,7 +544,9 @@ func TestAskUser(t *testing.T) {
 	}
 
 	var answer string
-	json.Unmarshal(result, &answer)
+	if err := json.Unmarshal(result, &answer); err != nil {
+		t.Fatalf("unmarshal answer: %v", err)
+	}
 	if answer != "yes, proceed" {
 		t.Errorf("expected 'yes, proceed', got %q", answer)
 	}
@@ -544,7 +564,9 @@ func TestAskUserNilIO(t *testing.T) {
 	}
 
 	var answer string
-	json.Unmarshal(result, &answer)
+	if err := json.Unmarshal(result, &answer); err != nil {
+		t.Fatalf("unmarshal answer: %v", err)
+	}
 	if !strings.Contains(answer, "no user IO") {
 		t.Errorf("expected fallback message, got %q", answer)
 	}
@@ -663,7 +685,9 @@ func TestToolRiskLevels(t *testing.T) {
 	reg := tool.NewRegistry()
 	sb := newMockSandbox("/ws", nil)
 	io := &mockUserIO{}
-	RegisterBuiltinTools(reg, sb, io, nil, nil)
+	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
+		t.Fatalf("RegisterBuiltinTools: %v", err)
+	}
 
 	for _, c := range cases {
 		spec, _, ok := reg.Get(c.name)
@@ -825,7 +849,9 @@ func TestReadFileWS(t *testing.T) {
 	}
 
 	var content string
-	json.Unmarshal(result, &content)
+	if err := json.Unmarshal(result, &content); err != nil {
+		t.Fatalf("unmarshal content: %v", err)
+	}
 	if content != "Hello via Workspace!" {
 		t.Errorf("expected 'Hello via Workspace!', got %q", content)
 	}
@@ -844,7 +870,9 @@ func TestWriteFileWS(t *testing.T) {
 	}
 
 	var resp map[string]string
-	json.Unmarshal(result, &resp)
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %q", resp["status"])
 	}
@@ -867,7 +895,9 @@ func TestEditFileWS(t *testing.T) {
 	}
 
 	var resp map[string]any
-	json.Unmarshal(result, &resp)
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", resp["status"])
 	}
@@ -888,7 +918,9 @@ func TestListFilesWS(t *testing.T) {
 	}
 
 	var files []string
-	json.Unmarshal(result, &files)
+	if err := json.Unmarshal(result, &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
 	if len(files) != 3 {
 		t.Errorf("expected 3 files, got %d: %v", len(files), files)
 	}
@@ -906,7 +938,9 @@ func TestListFilesWSExcludesHiddenByDefault(t *testing.T) {
 		t.Fatalf("listFilesWS hidden filter: %v", err)
 	}
 	var files []string
-	_ = json.Unmarshal(result, &files)
+	if err := json.Unmarshal(result, &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
 	if len(files) != 1 || files[0] != "a.go" {
 		t.Fatalf("expected only a.go, got %v", files)
 	}
@@ -927,7 +961,9 @@ func TestGlobWS(t *testing.T) {
 	}
 
 	var files []string
-	json.Unmarshal(result, &files)
+	if err := json.Unmarshal(result, &files); err != nil {
+		t.Fatalf("unmarshal files: %v", err)
+	}
 	if len(files) != 2 {
 		t.Errorf("expected 2 files, got %d", len(files))
 	}
@@ -946,7 +982,9 @@ func TestSearchTextWS(t *testing.T) {
 	}
 
 	var matches []searchMatch
-	json.Unmarshal(result, &matches)
+	if err := json.Unmarshal(result, &matches); err != nil {
+		t.Fatalf("unmarshal matches: %v", err)
+	}
 	if len(matches) < 2 {
 		t.Errorf("expected at least 2 matches, got %d: %+v", len(matches), matches)
 	}
@@ -980,7 +1018,9 @@ func TestRunCommandExec(t *testing.T) {
 	}
 
 	var output kws.ExecOutput
-	json.Unmarshal(result, &output)
+	if err := json.Unmarshal(result, &output); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
 	if !strings.Contains(output.Stdout, "echo") {
 		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
 	}
@@ -1052,7 +1092,9 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{"/ws/kws.txt": "from sandbox"})
 
 	reg := tool.NewRegistry()
-	RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil)
+	if err := RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil); err != nil {
+		t.Fatalf("RegisterBuiltinTools: %v", err)
+	}
 
 	_, handler, ok := reg.Get("read_file")
 	if !ok {
@@ -1065,7 +1107,9 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	}
 
 	var content string
-	json.Unmarshal(result, &content)
+	if err := json.Unmarshal(result, &content); err != nil {
+		t.Fatalf("unmarshal content: %v", err)
+	}
 	if content != "from workspace" {
 		t.Errorf("expected workspace content, got %q", content)
 	}

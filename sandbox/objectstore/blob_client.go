@@ -90,6 +90,6 @@ type httpDoer interface {
 }
 
 func readBody(resp *http.Response) ([]byte, error) {
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return io.ReadAll(resp.Body)
 }

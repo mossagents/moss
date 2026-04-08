@@ -2,9 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	intr "github.com/mossagents/moss/kernel/interaction"
-	"strings"
 )
 
 func (m chatModel) renderMainPane(layout chatUILayout) string {
@@ -94,23 +95,23 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 }
 
 func (m chatModel) renderStatusPane(width int) string {
-	status := statusHintStyle.Render(m.renderStatusLine())
+	var status string
 	if m.pendAsk != nil && m.askForm != nil {
 		if m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
-			status = statusHintStyle.Render("Tab/Shift+Tab move focus • ↑↓ choose decision • Enter apply • memory applies to this thread only")
+			status = "Tab/Shift+Tab move focus • ↑↓ choose decision • Enter apply • memory applies to this thread only"
 		} else {
-			status = statusHintStyle.Render("Tab/Shift+Tab move fields • ↑↓ choose options • Space toggle multi-select • Enter confirm")
+			status = "Tab/Shift+Tab move fields • ↑↓ choose options • Space toggle multi-select • Enter confirm"
 		}
 	} else if m.scheduleBrowser != nil {
-		status = statusHintStyle.Render("↑↓ choose schedule • e run now • d delete • r refresh • Esc close")
+		status = "↑↓ choose schedule • e run now • d delete • r refresh • Esc close"
 	} else if m.pendAsk != nil {
-		status = statusHintStyle.Render("Type your reply and press Enter • double Esc cancel run • Ctrl+C clear input")
+		status = "Type your reply and press Enter • double Esc cancel run • Ctrl+C clear input"
 	} else if len(m.pendingAttachments) > 0 {
-		status = statusHintStyle.Render("Enter send • Ctrl+X remove latest attachment • Shift+Enter newline")
+		status = "Enter send • Ctrl+X remove latest attachment • Shift+Enter newline"
 	} else {
-		status = statusHintStyle.Render(truncateDisplayWidth(m.renderFooterHelpLine(), width))
+		status = truncateDisplayWidth(m.renderStatusLine(), width)
 	}
-	return lipgloss.NewStyle().Width(width).Render(status)
+	return lipgloss.NewStyle().Width(width).Render(statusHintStyle.Render(status))
 }
 
 func (m chatModel) renderBody(layout chatUILayout) string {

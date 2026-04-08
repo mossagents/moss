@@ -67,9 +67,15 @@ func skillListCmd(args []string) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tINSTALLED AT\tDIR")
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tINSTALLED AT\tDIR"); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing table: %v\n", err)
+		os.Exit(1)
+	}
 	for _, r := range installed {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.Version, r.InstalledAt.Format("2006-01-02"), r.Dir)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", r.Name, r.Version, r.InstalledAt.Format("2006-01-02"), r.Dir); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing table: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	_ = w.Flush()
 }
@@ -105,13 +111,19 @@ func skillSearchCmd(args []string) {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tVERSION\tAUTHOR\tDESCRIPTION")
+	if _, err := fmt.Fprintln(w, "NAME\tVERSION\tAUTHOR\tDESCRIPTION"); err != nil {
+		fmt.Fprintf(os.Stderr, "error writing table: %v\n", err)
+		os.Exit(1)
+	}
 	for _, e := range entries {
 		desc := e.Description
 		if len(desc) > 60 {
 			desc = desc[:57] + "..."
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.Version, e.Author, desc)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.Name, e.Version, e.Author, desc); err != nil {
+			fmt.Fprintf(os.Stderr, "error writing table: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	_ = w.Flush()
 }

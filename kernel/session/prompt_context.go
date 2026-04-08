@@ -121,9 +121,7 @@ func BuildPromptMessages(messages []mdl.Message, st PromptContextState) []mdl.Me
 	if len(selected) == 0 && len(pinned) == 0 && remaining > 0 {
 		selected = selectDialogTailWithinBudget(dialog, remaining)
 	}
-	for _, msg := range selected {
-		out = append(out, msg)
-	}
+	out = append(out, selected...)
 	return out
 }
 

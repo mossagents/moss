@@ -275,18 +275,6 @@ func scanInstalledPluginSkillManifestDirs(root string) []Manifest {
 	return manifests
 }
 
-// scanSkillDir 扫描目录并加载 Skill 内容。
-func scanSkillDir(dir string) []*Skill {
-	var skills []*Skill
-	for _, mf := range scanSkillManifestDir(dir) {
-		s, err := ParseSkillMD(mf.Source)
-		if err != nil {
-			continue
-		}
-		skills = append(skills, s)
-	}
-	return skills
-}
 
 // scanSkillManifestDir 扫描目录中的 SKILL.md 文件。
 // 支持两种结构：

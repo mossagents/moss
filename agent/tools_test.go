@@ -43,18 +43,22 @@ func (m *mockDelegator) ToolRegistry() tool.Registry {
 
 func TestDelegateAgent(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "researcher",
 		SystemPrompt: "You research.",
 		Tools:        []string{"grep"},
 		MaxSteps:     10,
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 	parentReg := tool.NewRegistry()
-	parentReg.Register(tool.ToolSpec{Name: "grep"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parentReg.Register(tool.ToolSpec{Name: "grep"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"search result"`), nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	delegator := &mockDelegator{registry: parentReg}
 
@@ -94,7 +98,9 @@ func TestDelegateAgent_NotFound(t *testing.T) {
 	delegator := &mockDelegator{registry: tool.NewRegistry()}
 
 	reg := tool.NewRegistry()
-	RegisterTools(reg, agents, tracker, delegator)
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
 
 	_, handler, _ := reg.Get("delegate_agent")
 	input, _ := json.Marshal(delegateInput{Agent: "nonexistent", Task: "x"})
@@ -106,17 +112,21 @@ func TestDelegateAgent_NotFound(t *testing.T) {
 
 func TestDelegateAgent_DepthLimit(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "deep",
 		SystemPrompt: "Deep.",
 		Tools:        []string{},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 	delegator := &mockDelegator{registry: tool.NewRegistry()}
 
 	reg := tool.NewRegistry()
-	RegisterTools(reg, agents, tracker, delegator)
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
 
 	_, handler, _ := reg.Get("delegate_agent")
 	input, _ := json.Marshal(delegateInput{Agent: "deep", Task: "x"})
@@ -131,11 +141,13 @@ func TestDelegateAgent_DepthLimit(t *testing.T) {
 
 func TestSpawnAndQueryAgent(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "worker",
 		SystemPrompt: "Work.",
 		Tools:        []string{},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 
@@ -154,7 +166,9 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	RegisterTools(reg, agents, tracker, delegator)
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
 
 	// Spawn
 	_, spawnHandler, _ := reg.Get("spawn_agent")
@@ -165,7 +179,9 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	}
 
 	var spawnResp map[string]string
-	json.Unmarshal(result, &spawnResp)
+	if err := json.Unmarshal(result, &spawnResp); err != nil {
+		t.Fatal(err)
+	}
 	taskID := spawnResp["task_id"]
 	if taskID == "" {
 		t.Fatal("no task_id returned")
@@ -186,7 +202,9 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	}
 
 	var qResp map[string]any
-	json.Unmarshal(qResult, &qResp)
+	if err := json.Unmarshal(qResult, &qResp); err != nil {
+		t.Fatal(err)
+	}
 	if qResp["status"] != "completed" {
 		t.Errorf("query status = %q, want completed", qResp["status"])
 	}
@@ -197,11 +215,13 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 
 func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "worker",
 		SystemPrompt: "Work.",
 		Tools:        []string{},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 	done := make(chan struct{})
@@ -276,7 +296,9 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 
 func TestTaskToolModeValidation(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
 	tracker := NewTaskTracker()
 	delegator := &mockDelegator{registry: tool.NewRegistry()}
 
@@ -309,7 +331,9 @@ func TestTaskToolModeValidation(t *testing.T) {
 
 func TestUpdateTaskRestartsSameID(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
 	tracker := NewTaskTracker()
 
 	firstStarted := make(chan struct{}, 1)
@@ -408,7 +432,9 @@ func TestUpdateTaskRestartsSameID(t *testing.T) {
 
 func TestListAndCancelTaskTools(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."})
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
 	tracker := NewTaskTracker()
 
 	started := make(chan struct{}, 1)
@@ -491,21 +517,27 @@ func TestListAndCancelTaskTools(t *testing.T) {
 
 func TestScopedToolIsolation(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "limited",
 		SystemPrompt: "Limited.",
 		Tools:        []string{"read_file"},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 
 	parentReg := tool.NewRegistry()
-	parentReg.Register(tool.ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parentReg.Register(tool.ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
-	parentReg.Register(tool.ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := parentReg.Register(tool.ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	var capturedTools tool.Registry
 	delegator := &mockDelegator{
@@ -517,11 +549,15 @@ func TestScopedToolIsolation(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	RegisterTools(reg, agents, tracker, delegator)
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
 
 	_, handler, _ := reg.Get("delegate_agent")
 	input, _ := json.Marshal(delegateInput{Agent: "limited", Task: "test isolation"})
-	handler(context.Background(), input)
+	if _, err := handler(context.Background(), input); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify scoped tools
 	if capturedTools == nil {
@@ -544,11 +580,13 @@ func TestScopedToolIsolation(t *testing.T) {
 
 func TestSpawnAgent_CancelledContext(t *testing.T) {
 	agents := NewRegistry()
-	agents.Register(AgentConfig{
+	if err := agents.Register(AgentConfig{
 		Name:         "worker",
 		SystemPrompt: "Work.",
 		Tools:        []string{},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	tracker := NewTaskTracker()
 	delegator := &mockDelegator{

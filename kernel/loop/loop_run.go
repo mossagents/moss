@@ -58,7 +58,9 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"max_steps": sess.Budget.MaxSteps,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
+	if err := l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session start middleware failed", "session_id", sess.ID, "error", err)
+	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
 		Session:   sess,
@@ -301,15 +303,19 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 			if part.Type != mdl.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
 				continue
 			}
-			l.IO.Send(ctx, intr.OutputMessage{
+			if err := l.IO.Send(ctx, intr.OutputMessage{
 				Type:    intr.OutputReasoning,
 				Content: part.Text,
-			})
+			}); err != nil {
+				logging.GetLogger().DebugContext(ctx, "reasoning output failed", "session_id", sess.ID, "error", err)
+			}
 		}
-		l.IO.Send(ctx, intr.OutputMessage{
+		if err := l.IO.Send(ctx, intr.OutputMessage{
 			Type:    intr.OutputText,
 			Content: *lastOutput,
-		})
+		}); err != nil {
+			logging.GetLogger().DebugContext(ctx, "final output send failed", "session_id", sess.ID, "error", err)
+		}
 	}
 	return nil
 }
@@ -357,7 +363,9 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"tokens": totalUsage.TotalTokens,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
+	if err := l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session end middleware failed", "session_id", sess.ID, "error", err)
+	}
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    true,

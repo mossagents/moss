@@ -50,9 +50,15 @@ func TestMemoryWorkspace_ListFiles(t *testing.T) {
 	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	kws.WriteFile(ctx, "src/a.go", []byte("a"))
-	kws.WriteFile(ctx, "src/b.go", []byte("b"))
-	kws.WriteFile(ctx, "readme.md", []byte("r"))
+	if err := kws.WriteFile(ctx, "src/a.go", []byte("a")); err != nil {
+		t.Fatalf("WriteFile a: %v", err)
+	}
+	if err := kws.WriteFile(ctx, "src/b.go", []byte("b")); err != nil {
+		t.Fatalf("WriteFile b: %v", err)
+	}
+	if err := kws.WriteFile(ctx, "readme.md", []byte("r")); err != nil {
+		t.Fatalf("WriteFile readme: %v", err)
+	}
 
 	matches, err := kws.ListFiles(ctx, "src/*.go")
 	if err != nil {
@@ -67,7 +73,9 @@ func TestMemoryWorkspace_Stat(t *testing.T) {
 	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	kws.WriteFile(ctx, "data.bin", []byte("12345"))
+	if err := kws.WriteFile(ctx, "data.bin", []byte("12345")); err != nil {
+		t.Fatalf("WriteFile data.bin: %v", err)
+	}
 	info, err := kws.Stat(ctx, "data.bin")
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
@@ -84,7 +92,9 @@ func TestMemoryWorkspace_DeleteFile(t *testing.T) {
 	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	kws.WriteFile(ctx, "temp.txt", []byte("tmp"))
+	if err := kws.WriteFile(ctx, "temp.txt", []byte("tmp")); err != nil {
+		t.Fatalf("WriteFile temp.txt: %v", err)
+	}
 	if err := kws.DeleteFile(ctx, "temp.txt"); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
@@ -116,7 +126,9 @@ func TestMemoryWorkspace_PathNormalization(t *testing.T) {
 	ctx := context.Background()
 
 	// 使用反斜杠写入
-	kws.WriteFile(ctx, "src\\main.go", []byte("main"))
+	if err := kws.WriteFile(ctx, "src\\main.go", []byte("main")); err != nil {
+		t.Fatalf("WriteFile normalized path: %v", err)
+	}
 	// 使用正斜杠读取
 	data, err := kws.ReadFile(ctx, "src/main.go")
 	if err != nil {
@@ -132,8 +144,12 @@ func TestMemoryWorkspace_IsolationBetweenInstances(t *testing.T) {
 	ws2 := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	ws1.WriteFile(ctx, "shared.txt", []byte("room1"))
-	ws2.WriteFile(ctx, "shared.txt", []byte("room2"))
+	if err := ws1.WriteFile(ctx, "shared.txt", []byte("room1")); err != nil {
+		t.Fatalf("ws1 WriteFile: %v", err)
+	}
+	if err := ws2.WriteFile(ctx, "shared.txt", []byte("room2")); err != nil {
+		t.Fatalf("ws2 WriteFile: %v", err)
+	}
 
 	d1, _ := ws1.ReadFile(ctx, "shared.txt")
 	d2, _ := ws2.ReadFile(ctx, "shared.txt")

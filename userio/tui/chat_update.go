@@ -111,10 +111,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	case tea.MouseMsg:
 		switch msg.String() {
 		case "wheel up":
-			m.viewport.LineUp(3)
+			m.viewport.ScrollUp(3)
 			return m, nil
 		case "wheel down":
-			m.viewport.LineDown(3)
+			m.viewport.ScrollDown(3)
 			return m, nil
 		default:
 			// Consume click/move events so terminal mouse escape sequences don't fall

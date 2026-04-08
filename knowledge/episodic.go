@@ -159,7 +159,7 @@ func (s *FileEpisodicStore) Append(_ context.Context, ep Episode) error {
 	if err != nil {
 		return fmt.Errorf("episodic store: open: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	_, err = f.WriteString(string(data) + "\n")
 	return err
@@ -222,7 +222,7 @@ func (s *FileEpisodicStore) readLocked() ([]Episode, error) {
 	if err != nil {
 		return nil, fmt.Errorf("episodic store: open for read: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var episodes []Episode
 	scanner := bufio.NewScanner(f)

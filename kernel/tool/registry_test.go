@@ -35,7 +35,9 @@ func TestRegistryDuplicateRegister(t *testing.T) {
 	spec := ToolSpec{Name: "test"}
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
 
-	r.Register(spec, handler)
+	if err := r.Register(spec, handler); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	if err := r.Register(spec, handler); err == nil {
 		t.Fatal("expected error on duplicate register")
 	}
@@ -46,7 +48,9 @@ func TestRegistryUnregister(t *testing.T) {
 	spec := ToolSpec{Name: "test"}
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
 
-	r.Register(spec, handler)
+	if err := r.Register(spec, handler); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	if err := r.Unregister("test"); err != nil {
 		t.Fatalf("Unregister: %v", err)
 	}
@@ -65,8 +69,12 @@ func TestRegistryUnregisterNotFound(t *testing.T) {
 func TestRegistryList(t *testing.T) {
 	r := NewRegistry()
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
-	r.Register(ToolSpec{Name: "a"}, handler)
-	r.Register(ToolSpec{Name: "b"}, handler)
+	if err := r.Register(ToolSpec{Name: "a"}, handler); err != nil {
+		t.Fatalf("Register a: %v", err)
+	}
+	if err := r.Register(ToolSpec{Name: "b"}, handler); err != nil {
+		t.Fatalf("Register b: %v", err)
+	}
 
 	list := r.List()
 	if len(list) != 2 {
@@ -77,9 +85,15 @@ func TestRegistryList(t *testing.T) {
 func TestRegistryListByCapability(t *testing.T) {
 	r := NewRegistry()
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
-	r.Register(ToolSpec{Name: "reader", Capabilities: []string{"read"}}, handler)
-	r.Register(ToolSpec{Name: "writer", Capabilities: []string{"write"}}, handler)
-	r.Register(ToolSpec{Name: "both", Capabilities: []string{"read", "write"}}, handler)
+	if err := r.Register(ToolSpec{Name: "reader", Capabilities: []string{"read"}}, handler); err != nil {
+		t.Fatalf("Register reader: %v", err)
+	}
+	if err := r.Register(ToolSpec{Name: "writer", Capabilities: []string{"write"}}, handler); err != nil {
+		t.Fatalf("Register writer: %v", err)
+	}
+	if err := r.Register(ToolSpec{Name: "both", Capabilities: []string{"read", "write"}}, handler); err != nil {
+		t.Fatalf("Register both: %v", err)
+	}
 
 	readers := r.ListByCapability("read")
 	if len(readers) != 2 {

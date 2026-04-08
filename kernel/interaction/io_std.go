@@ -80,32 +80,35 @@ func NewPrintfIO(w io.Writer) *PrintfIO {
 }
 
 func (p *PrintfIO) Send(_ context.Context, msg OutputMessage) error {
+	var err error
 	switch msg.Type {
 	case OutputText:
-		fmt.Fprintln(p.w, msg.Content)
+		_, err = fmt.Fprintln(p.w, msg.Content)
 	case OutputStream:
-		fmt.Fprint(p.w, msg.Content)
+		_, err = fmt.Fprint(p.w, msg.Content)
 	case OutputStreamEnd:
-		fmt.Fprintln(p.w)
+		_, err = fmt.Fprintln(p.w)
 	case OutputReasoning:
-		fmt.Fprintf(p.w, "💭 %s\n", msg.Content)
+		_, err = fmt.Fprintf(p.w, "💭 %s\n", msg.Content)
 	case OutputProgress:
-		fmt.Fprintf(p.w, "⏳ %s\n", msg.Content)
+		_, err = fmt.Fprintf(p.w, "⏳ %s\n", msg.Content)
 	case OutputToolStart:
-		fmt.Fprintf(p.w, "🔧 %s\n", msg.Content)
+		_, err = fmt.Fprintf(p.w, "🔧 %s\n", msg.Content)
 	case OutputToolResult:
 		isErr, _ := msg.Meta["is_error"].(bool)
 		if isErr {
-			fmt.Fprintf(p.w, "❌ %s\n", msg.Content)
+			_, err = fmt.Fprintf(p.w, "❌ %s\n", msg.Content)
 		} else {
-			fmt.Fprintf(p.w, "✅ %s\n", msg.Content)
+			_, err = fmt.Fprintf(p.w, "✅ %s\n", msg.Content)
 		}
 	}
-	return nil
+	return err
 }
 
 func (p *PrintfIO) Ask(_ context.Context, req InputRequest) (InputResponse, error) {
-	fmt.Fprintln(p.w, req.Prompt)
+	if _, err := fmt.Fprintln(p.w, req.Prompt); err != nil {
+		return InputResponse{}, err
+	}
 	switch req.Type {
 	case InputConfirm:
 		resp := InputResponse{Approved: true}

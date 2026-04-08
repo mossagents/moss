@@ -118,8 +118,12 @@ func TestManagerCancel(t *testing.T) {
 
 func TestManagerList(t *testing.T) {
 	m := NewManager()
-	m.Create(context.Background(), SessionConfig{Goal: "a"})
-	m.Create(context.Background(), SessionConfig{Goal: "b"})
+	if _, err := m.Create(context.Background(), SessionConfig{Goal: "a"}); err != nil {
+		t.Fatalf("Create a: %v", err)
+	}
+	if _, err := m.Create(context.Background(), SessionConfig{Goal: "b"}); err != nil {
+		t.Fatalf("Create b: %v", err)
+	}
 	list := m.List()
 	if len(list) != 2 {
 		t.Fatalf("List len = %d, want 2", len(list))

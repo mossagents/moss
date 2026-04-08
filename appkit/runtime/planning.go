@@ -108,9 +108,6 @@ func WithPlanningDefaults() kernel.Option {
 	return WithPlanningSessionManager(nil)
 }
 
-func registerPlanningOnBoot(k *kernel.Kernel) error {
-	return RegisterPlanningTools(k.ToolRegistry(), k.SessionManager())
-}
 
 func ensurePlanningState(k *kernel.Kernel) *planningState {
 	bridge := kernel.Extensions(k)

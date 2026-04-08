@@ -2,6 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -12,11 +18,6 @@ import (
 	config "github.com/mossagents/moss/config"
 	intr "github.com/mossagents/moss/kernel/interaction"
 	mdl "github.com/mossagents/moss/kernel/model"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
 )
 
 const (
@@ -732,14 +733,6 @@ func (m chatModel) handleConfigCommand(args []string) (chatModel, tea.Cmd) {
 	return m, nil
 }
 
-// maskKey 遮盖 API key 只显示前4和后4位。
-func maskKey(key string) string {
-	if len(key) <= 8 {
-		return "****"
-	}
-	return key[:4] + "****" + key[len(key)-4:]
-}
-
 func valueOrDefaultRunState(running bool) string {
 	if running {
 		return "running"
@@ -1008,49 +1001,6 @@ func filterSlashHints(input string, customCommands []product.CustomCommand, disc
 	return hints
 }
 
-func (m chatModel) renderSlashHelp() string {
-	sections := []string{"Threads and core", "Runtime posture", "Review and recovery", "Tools and integrations"}
-	var b strings.Builder
-	b.WriteString("Available commands:\n")
-	for _, section := range sections {
-		first := true
-		for _, cmd := range slashCommandCatalog {
-			if cmd.HiddenInNav || cmd.Section != section {
-				continue
-			}
-			if first {
-				b.WriteString("\n")
-				b.WriteString(section)
-				b.WriteString(":\n")
-				first = false
-			}
-			fmt.Fprintf(&b, "  %-14s %s\n", cmd.Name, cmd.Summary)
-		}
-	}
-	if len(m.customCommands) > 0 {
-		b.WriteString("\nCustom commands:\n")
-		for _, cmd := range m.customCommands {
-			fmt.Fprintf(&b, "  %-14s %s\n", "/"+cmd.Name, cmd.Summary)
-		}
-	}
-	b.WriteString("\nDirect skill/tool usage:\n")
-	b.WriteString("  /skill <name> <task...>\n")
-	b.WriteString("  /<skill_or_tool_name> <task...>\n")
-	b.WriteString("\nCheckpoint details:\n")
-	b.WriteString("  /checkpoint list [limit]\n")
-	b.WriteString("  /checkpoint show <id|latest>\n")
-	b.WriteString("  /checkpoint create [note]\n")
-	b.WriteString("  /checkpoint replay [<id|latest>] [resume|rerun] [restore]\n")
-	b.WriteString("\nKeyboard shortcuts:\n")
-	b.WriteString("  double Esc     Cancel current running generation/tool execution\n")
-	b.WriteString("  Ctrl+C         Clear input (press twice quickly to quit)\n")
-	b.WriteString("  Ctrl+O         Collapse/expand tool messages\n")
-	b.WriteString("  Enter (running) Queue message to run after current task\n")
-	b.WriteString("  Up/Down        Navigate persisted input history\n")
-	b.WriteString("  Shift+Enter    Insert newline\n")
-	return strings.TrimRight(b.String(), "\n")
-}
-
 func (m chatModel) renderStatusSummary() string {
 	var b strings.Builder
 	b.WriteString("Runtime status:\n")
@@ -1268,10 +1218,3 @@ func (m chatModel) hasRunningToolCalls() bool {
 	return false
 }
 
-// valueOrDefault 返回 s 或 defaultVal。
-func valueOrDefault(s, defaultVal string) string {
-	if s == "" {
-		return defaultVal
-	}
-	return s
-}

@@ -34,7 +34,11 @@ func TestDeliveryQueue_RetryThenSuccess(t *testing.T) {
 	if err := dq.Start(ctx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer dq.Stop(context.Background())
+	defer func() {
+		if err := dq.Stop(context.Background()); err != nil {
+			t.Errorf("stop: %v", err)
+		}
+	}()
 
 	if err := dq.Publish(OutboundMessage{Channel: "cli", To: "u1", Content: "hello"}); err != nil {
 		t.Fatalf("publish: %v", err)
@@ -92,7 +96,11 @@ func TestDeliveryQueue_RecoveryReplaysPending(t *testing.T) {
 	if err := dq2.Start(ctx); err != nil {
 		t.Fatalf("start2: %v", err)
 	}
-	defer dq2.Stop(context.Background())
+	defer func() {
+		if err := dq2.Stop(context.Background()); err != nil {
+			t.Errorf("stop2: %v", err)
+		}
+	}()
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -121,7 +129,11 @@ func TestDeliveryQueue_DeadLetterOnExhaustedRetry(t *testing.T) {
 	if err := dq.Start(ctx); err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	defer dq.Stop(context.Background())
+	defer func() {
+		if err := dq.Stop(context.Background()); err != nil {
+			t.Errorf("stop: %v", err)
+		}
+	}()
 
 	if err := dq.Publish(OutboundMessage{MessageID: "msg-dead", Channel: "cli", To: "u1", Content: "x"}); err != nil {
 		t.Fatalf("publish: %v", err)

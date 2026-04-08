@@ -209,7 +209,7 @@ func (c *S3BlobClient) Head(ctx context.Context, key string) (BlobMeta, error) {
 	if err != nil {
 		return BlobMeta{}, fmt.Errorf("s3 head: %w", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
 		return BlobMeta{}, fmt.Errorf("objectstore: key not found: %s", key)
 	}

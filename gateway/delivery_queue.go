@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	kchannel "github.com/mossagents/moss/kernel/channel"
 	"os"
 	"path/filepath"
 	"sync"
@@ -414,7 +413,7 @@ func appendJSONL(path string, ev persistentEvent) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	enc := json.NewEncoder(f)
 	if err := enc.Encode(ev); err != nil {
 		return fmt.Errorf("encode %s: %w", path, err)
@@ -430,7 +429,7 @@ func readJSONL(path string, fn func(persistentEvent) error) error {
 		}
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -452,12 +451,3 @@ func readJSONL(path string, fn func(persistentEvent) error) error {
 	return nil
 }
 
-func senderForChannel(ch kchannel.Channel) func(context.Context, OutboundMessage) error {
-	return func(ctx context.Context, msg OutboundMessage) error {
-		return ch.Send(ctx, kchannel.OutboundMessage{
-			To:       msg.To,
-			Content:  msg.Content,
-			Metadata: msg.Metadata,
-		})
-	}
-}

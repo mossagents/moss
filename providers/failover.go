@@ -151,7 +151,7 @@ func (f *FailoverLLM) shouldFailover(err error) bool {
 	if !errors.As(err, &callErr) || !callErr.Retryable {
 		return false
 	}
-	return f.cfg.RetryConfig.ShouldRetryOrDefault(nil, callErr)
+	return f.cfg.RetryConfig.ShouldRetryOrDefault(context.TODO(), callErr)
 }
 
 func (f *FailoverLLM) canRetryCandidate(err error) bool {

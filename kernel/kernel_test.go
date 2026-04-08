@@ -171,16 +171,20 @@ func TestKernelIntegration(t *testing.T) {
 	)
 
 	// 注册工具
-	k.ToolRegistry().Register(tool.ToolSpec{
+	if err := k.ToolRegistry().Register(tool.ToolSpec{
 		Name: "read_file", Description: "Read file contents", Risk: tool.RiskLow,
 	}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"package main\nfunc main() {}"`), nil
-	})
-	k.ToolRegistry().Register(tool.ToolSpec{
+	}); err != nil {
+		t.Fatalf("register read_file: %v", err)
+	}
+	if err := k.ToolRegistry().Register(tool.ToolSpec{
 		Name: "write_file", Description: "Write file contents", Risk: tool.RiskHigh,
 	}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
+	}); err != nil {
+		t.Fatalf("register write_file: %v", err)
+	}
 
 	// 设置策略：write_file 需要审批
 	k.WithPolicy(
@@ -821,9 +825,11 @@ func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 		}),
 		WithUserIO(&intr.NoOpIO{}),
 	)
-	k.ToolRegistry().Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := k.ToolRegistry().Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"hello world"`), nil
-	})
+	}); err != nil {
+		t.Fatalf("register greet: %v", err)
+	}
 	bridge := Extensions(k)
 
 	var order []string

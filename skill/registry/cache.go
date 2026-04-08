@@ -96,7 +96,7 @@ func (c *LocalCache) Install(ctx context.Context, entry RegistryEntry) (*Install
 	if err != nil {
 		return nil, fmt.Errorf("registry: download %q: %w", entry.ArchiveURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("registry: download status %d", resp.StatusCode)
 	}
@@ -240,12 +240,12 @@ func writeZipEntry(f *zip.File, target string) error {
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	out, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 	_, err = io.Copy(out, rc)
 	return err
 }

@@ -540,7 +540,9 @@ func TestProcessEvent_ToolUseFlow(t *testing.T) {
 	// 1. content_block_start with tool_use
 	startRaw := `{"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "read_file", "input": {}}}`
 	var startEvent anthropic.MessageStreamEventUnion
-	json.Unmarshal([]byte(startRaw), &startEvent)
+	if err := json.Unmarshal([]byte(startRaw), &startEvent); err != nil {
+		t.Fatal(err)
+	}
 	it.processEvent(startEvent)
 
 	if _, ok := it.toolUseBuilders[1]; !ok {
@@ -550,12 +552,16 @@ func TestProcessEvent_ToolUseFlow(t *testing.T) {
 	// 2. input_json_delta
 	delta1 := `{"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": "{\"path\""}}`
 	var d1 anthropic.MessageStreamEventUnion
-	json.Unmarshal([]byte(delta1), &d1)
+	if err := json.Unmarshal([]byte(delta1), &d1); err != nil {
+		t.Fatal(err)
+	}
 	it.processEvent(d1)
 
 	delta2 := `{"type": "content_block_delta", "index": 1, "delta": {"type": "input_json_delta", "partial_json": ": \"/a.txt\"}"}}`
 	var d2 anthropic.MessageStreamEventUnion
-	json.Unmarshal([]byte(delta2), &d2)
+	if err := json.Unmarshal([]byte(delta2), &d2); err != nil {
+		t.Fatal(err)
+	}
 	it.processEvent(d2)
 
 	if it.toolUseBuilders[1].input != `{"path": "/a.txt"}` {
@@ -565,7 +571,9 @@ func TestProcessEvent_ToolUseFlow(t *testing.T) {
 	// 3. content_block_stop → emit ToolCall
 	stopRaw := `{"type": "content_block_stop", "index": 1}`
 	var stopEvent anthropic.MessageStreamEventUnion
-	json.Unmarshal([]byte(stopRaw), &stopEvent)
+	if err := json.Unmarshal([]byte(stopRaw), &stopEvent); err != nil {
+		t.Fatal(err)
+	}
 	it.processEvent(stopEvent)
 
 	if len(it.pending) != 1 {
@@ -583,7 +591,9 @@ func TestProcessEvent_ToolUseFlow(t *testing.T) {
 
 	// Verify accumulated arguments
 	var args map[string]any
-	json.Unmarshal(it.pending[0].ToolCall.Arguments, &args)
+	if err := json.Unmarshal(it.pending[0].ToolCall.Arguments, &args); err != nil {
+		t.Fatal(err)
+	}
 	if args["path"] != "/a.txt" {
 		t.Errorf("tool call args path = %v", args["path"])
 	}
@@ -602,7 +612,9 @@ func TestProcessEvent_MessageStopEmitsDone(t *testing.T) {
 
 	raw := `{"type": "message_stop"}`
 	var event anthropic.MessageStreamEventUnion
-	json.Unmarshal([]byte(raw), &event)
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
+		t.Fatal(err)
+	}
 	it.processEvent(event)
 
 	if len(it.pending) != 1 {

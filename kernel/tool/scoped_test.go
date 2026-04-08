@@ -8,15 +8,21 @@ import (
 
 func TestScopedRegistry(t *testing.T) {
 	parent := NewRegistry()
-	parent.Register(ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parent.Register(ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
-	parent.Register(ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	}); err != nil {
+		t.Fatalf("register read_file: %v", err)
+	}
+	if err := parent.Register(ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
-	parent.Register(ToolSpec{Name: "run_command"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	}); err != nil {
+		t.Fatalf("register write_file: %v", err)
+	}
+	if err := parent.Register(ToolSpec{Name: "run_command"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
+	}); err != nil {
+		t.Fatalf("register run_command: %v", err)
+	}
 
 	scoped := Scoped(parent, []string{"read_file", "write_file"})
 

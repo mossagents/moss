@@ -128,9 +128,11 @@ func TestLoopToolCall(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	reg.Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"Hello world"`), nil
-	})
+	}); err != nil {
+		t.Fatalf("register greet: %v", err)
+	}
 
 	io := kt.NewRecorderIO()
 	l := &AgentLoop{
@@ -468,10 +470,12 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("should not be called")
 		return nil, nil
-	})
+	}); err != nil {
+		t.Fatalf("register dangerous_tool: %v", err)
+	}
 
 	chain := middleware.NewChain()
 	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
@@ -774,10 +778,12 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 
 func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *testing.T) {
 	reg := tool.NewRegistry()
-	reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not execute")
 		return nil, nil
-	})
+	}); err != nil {
+		t.Fatalf("register dangerous_tool: %v", err)
+	}
 	chain := middleware.NewChain()
 	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	observer := &recordingObserver{}
@@ -1190,10 +1196,12 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	var events []session.ToolLifecycleEvent
 	reg := tool.NewRegistry()
-	reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not be executed")
 		return nil, nil
-	})
+	}); err != nil {
+		t.Fatalf("register dangerous_tool: %v", err)
+	}
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
 			Responses: []mdl.CompletionResponse{

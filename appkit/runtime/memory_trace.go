@@ -13,13 +13,6 @@ type normalizedTrace struct {
 	MessageCount int
 }
 
-func normalizeTraceItems(raw string) ([]string, error) {
-	trace, err := normalizeTrace(raw)
-	if err != nil {
-		return nil, err
-	}
-	return trace.Lines, nil
-}
 
 func normalizeTrace(raw string) (*normalizedTrace, error) {
 	raw = strings.TrimSpace(raw)

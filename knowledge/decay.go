@@ -144,13 +144,13 @@ func (s *FileEpisodicStore) writeAllLocked(episodes []Episode) error {
 	enc := json.NewEncoder(tmp)
 	for _, ep := range episodes {
 		if err := enc.Encode(ep); err != nil {
-			tmp.Close()
-			os.Remove(tmpPath)
+			_ = tmp.Close()
+			_ = os.Remove(tmpPath)
 			return err
 		}
 	}
 	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return err
 	}
 	return os.Rename(tmpPath, s.path)

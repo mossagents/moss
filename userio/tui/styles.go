@@ -21,8 +21,6 @@ var (
 	colorSubtle    = lipgloss.AdaptiveColor{Light: "245", Dark: "249"}
 	colorBorder    = lipgloss.AdaptiveColor{Light: "250", Dark: "238"}
 
-	// user message 背景：极浅灰（亮色终端）/ 极深灰（暗色终端）
-	colorUserMsgBg = lipgloss.AdaptiveColor{Light: "254", Dark: "237"}
 )
 
 // 样式定义（随主题切换，见 theme.go）
@@ -49,9 +47,6 @@ var (
 
 	shellHeaderDiagStyle = lipgloss.NewStyle().
 				Foreground(colorPrimary)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(colorMuted)
 
 	topBarStyle = lipgloss.NewStyle().
 			Padding(0, 1)
@@ -99,8 +94,6 @@ var (
 	halfMutedStyle = lipgloss.NewStyle().
 			Foreground(colorHalfMuted)
 
-	// 不设置背景色：由终端主题控制
-	panelBaseStyle  = lipgloss.NewStyle()
 	panelMutedStyle = lipgloss.NewStyle()
 
 	inputBorderStyle = lipgloss.NewStyle().
@@ -113,21 +106,9 @@ var (
 			BorderForeground(colorBorder).
 			Padding(1, 2)
 
-	sidebarTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(colorPrimary)
-
 	sidebarSectionTitleStyle = lipgloss.NewStyle().
 					Bold(true).
 					Foreground(colorSubtle)
-
-	collapsedToolStyle = lipgloss.NewStyle().
-				Foreground(colorSecondary).
-				Italic(true)
-
-	panelTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(colorSubtle)
 
 	dialogBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -162,3 +143,5 @@ var (
 	// 用户消息样式（P9）：不加背景色，避免 dot ANSI reset 导致背景只出现在圆点后
 	userMessageStyle = lipgloss.NewStyle()
 )
+
+
