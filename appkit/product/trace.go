@@ -3,7 +3,7 @@ package product
 import (
 	"context"
 	"fmt"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"sort"
 	"strconv"

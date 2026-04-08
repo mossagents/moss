@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"context"
@@ -85,3 +85,4 @@ type InputResponse struct {
 	Decision *ApprovalDecision `json:"decision,omitempty"`
 	Form     map[string]any    `json:"form,omitempty"`
 }
+

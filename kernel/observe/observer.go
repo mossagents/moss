@@ -2,7 +2,7 @@ package observe
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"time"
 )

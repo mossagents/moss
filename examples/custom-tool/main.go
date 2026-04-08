@@ -17,7 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"math/rand/v2"

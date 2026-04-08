@@ -2,7 +2,7 @@ package runtime
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"strings"
 	"sync"
 )

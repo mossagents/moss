@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	mossotel "github.com/mossagents/moss/contrib/telemetry/otel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"go.opentelemetry.io/otel/metric/noop"

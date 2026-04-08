@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/skill"

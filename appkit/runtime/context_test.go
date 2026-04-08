@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	kws "github.com/mossagents/moss/kernel/workspace"

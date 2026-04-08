@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	"github.com/mossagents/moss/logging"
 	providers "github.com/mossagents/moss/providers"

@@ -1,7 +1,7 @@
 package observe
 
 import (
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"time"
 )

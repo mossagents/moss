@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
 	mdl "github.com/mossagents/moss/kernel/model"

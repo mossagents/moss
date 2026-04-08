@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"slices"

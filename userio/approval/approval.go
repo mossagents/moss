@@ -8,7 +8,7 @@ import (
 	"time"
 
 	configpkg "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 )
 
 const (

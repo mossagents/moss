@@ -6,7 +6,7 @@ import (
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
 	"os"

@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"io"
@@ -7,3 +7,4 @@ import (
 
 func defaultStdout() io.Writer { return os.Stdout }
 func defaultStdin() io.Reader  { return os.Stdin }
+

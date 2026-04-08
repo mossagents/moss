@@ -2,7 +2,7 @@ package product
 
 import (
 	appconfig "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"path/filepath"
 	"testing"
 )

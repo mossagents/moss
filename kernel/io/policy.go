@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"encoding/json"
@@ -45,3 +45,4 @@ type PolicyResult struct {
 	Reason      PolicyReason    `json:"reason,omitempty"`
 	Meta        map[string]any  `json:"meta,omitempty"`
 }
+

@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"testing"
@@ -45,3 +45,4 @@ func TestNormalizeApprovalDecisionForRequestAssignsScopePersistence(t *testing.T
 		t.Fatalf("expected cache key propagation, got %+v", decision)
 	}
 }
+

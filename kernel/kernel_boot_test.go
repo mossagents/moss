@@ -2,7 +2,7 @@ package kernel
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	kt "github.com/mossagents/moss/testing"
 	"strings"
 	"testing"

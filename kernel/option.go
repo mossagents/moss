@@ -3,7 +3,7 @@ package kernel
 import (
 	"context"
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware"
 	mdl "github.com/mossagents/moss/kernel/model"

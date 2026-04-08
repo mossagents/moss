@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	taskrt "github.com/mossagents/moss/kernel/task"
 )

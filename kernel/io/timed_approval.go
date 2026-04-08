@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"context"
@@ -105,3 +105,4 @@ func (t *TimedApproval) updateRecord(ctx context.Context, r ApprovalRecord, stat
 	r.ResolvedAt = &now
 	_ = t.store.Save(ctx, r)
 }
+

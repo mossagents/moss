@@ -2,7 +2,7 @@ package sandbox
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	kws "github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"

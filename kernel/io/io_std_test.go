@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"bytes"
@@ -169,3 +169,4 @@ func TestBufferIO_ThreadSafe(t *testing.T) {
 		t.Errorf("expected 200, got %d", len(bio.Sent))
 	}
 }
+

@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"context"
@@ -27,3 +27,4 @@ func (id *Identity) HasRole(role string) bool {
 type Authenticator interface {
 	Authenticate(ctx context.Context, token string) (*Identity, error)
 }
+

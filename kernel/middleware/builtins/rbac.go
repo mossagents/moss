@@ -3,7 +3,7 @@ package builtins
 import (
 	"context"
 	"fmt"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/tool"
 )

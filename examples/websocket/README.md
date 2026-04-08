@@ -1,6 +1,6 @@
 # websocket — WebSocket UserIO 适配器示例
 
-演示如何实现 `intr.UserIO`（`kernel/interaction`）接口，通过 WebSocket 将 moss 集成到浏览器中。
+演示如何实现 `intr.UserIO`（`kernel/io`）接口，通过 WebSocket 将 moss 集成到浏览器中。
 
 ## 特性
 

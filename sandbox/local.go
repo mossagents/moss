@@ -3,7 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"os/exec"

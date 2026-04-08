@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	tea "github.com/charmbracelet/bubbletea"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	"sync"
 )
 

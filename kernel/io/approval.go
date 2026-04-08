@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"encoding/json"
@@ -332,3 +332,4 @@ func firstNonEmptyString(values ...string) string {
 	}
 	return ""
 }
+

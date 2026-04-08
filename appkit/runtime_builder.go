@@ -5,7 +5,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 )
 
 // RuntimeResolution captures resolved runtime inputs shared by CLI/TUI entrypoints.

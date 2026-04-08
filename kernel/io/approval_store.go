@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"context"
@@ -90,3 +90,4 @@ func (s *MemoryApprovalStore) List(_ context.Context, sessionID string) ([]Appro
 	}
 	return result, nil
 }
+

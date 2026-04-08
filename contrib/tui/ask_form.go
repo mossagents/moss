@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	"strconv"
 	"strings"

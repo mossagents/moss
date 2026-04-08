@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"context"
@@ -236,3 +236,4 @@ func (b *BufferIO) SentTexts() []string {
 	}
 	return texts
 }
+

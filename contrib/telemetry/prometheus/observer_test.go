@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	mossprom "github.com/mossagents/moss/contrib/telemetry/prometheus"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"

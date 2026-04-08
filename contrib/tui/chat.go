@@ -16,7 +16,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/interaction"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	userattachments "github.com/mossagents/moss/userio/attachments"

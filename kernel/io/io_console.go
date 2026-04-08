@@ -1,4 +1,4 @@
-package interaction
+package io
 
 import (
 	"bufio"
@@ -200,3 +200,4 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 		return InputResponse{Value: strings.TrimSpace(line)}, nil
 	}
 }
+
