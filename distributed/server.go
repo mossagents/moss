@@ -3,10 +3,11 @@ package distributed
 import (
 	"encoding/json"
 	"fmt"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"net/http"
 	"strconv"
 	"strings"
+
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 // TaskRuntimeServer wraps a TaskRuntime (and optionally JobRuntime +
@@ -14,6 +15,7 @@ import (
 // Agent Worker deployments to share a single task queue.
 type TaskRuntimeServer struct {
 	rt   taskrt.TaskRuntime
+	mrt  taskrt.TaskMessageRuntime
 	jrt  taskrt.JobRuntime
 	ajrt taskrt.AtomicJobRuntime
 	mux  *http.ServeMux
@@ -22,7 +24,8 @@ type TaskRuntimeServer struct {
 // NewTaskRuntimeServer creates a server wrapping the provided runtimes.
 // rt must not be nil. jrt and ajrt are optional (endpoints return 501 if nil).
 func NewTaskRuntimeServer(rt taskrt.TaskRuntime, jrt taskrt.JobRuntime, ajrt taskrt.AtomicJobRuntime) *TaskRuntimeServer {
-	s := &TaskRuntimeServer{rt: rt, jrt: jrt, ajrt: ajrt}
+	mrt, _ := rt.(taskrt.TaskMessageRuntime)
+	s := &TaskRuntimeServer{rt: rt, mrt: mrt, jrt: jrt, ajrt: ajrt}
 	s.mux = http.NewServeMux()
 	s.registerRoutes()
 	return s
@@ -56,11 +59,7 @@ func (s *TaskRuntimeServer) registerRoutes() {
 		s.handleClaimNextReady(w, r)
 	})
 	s.mux.HandleFunc("/tasks/", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			s.handleGetTask(w, r)
-		} else {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
+		s.handleTasksSubpath(w, r)
 	})
 	// Jobs
 	s.mux.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +75,31 @@ func (s *TaskRuntimeServer) registerRoutes() {
 	s.mux.HandleFunc("/jobs/", func(w http.ResponseWriter, r *http.Request) {
 		s.handleJobsSubpath(w, r)
 	})
+}
+
+func (s *TaskRuntimeServer) handleTasksSubpath(w http.ResponseWriter, r *http.Request) {
+	// /tasks/{taskID}
+	// /tasks/{taskID}/messages
+	// /tasks/{taskID}/messages/consume
+	path := strings.TrimPrefix(r.URL.Path, "/tasks/")
+	parts := strings.Split(path, "/")
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleGetTask(w, r)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "messages" {
+		s.handleTaskMessages(w, r, parts[0])
+		return
+	}
+	if len(parts) == 3 && parts[1] == "messages" && parts[2] == "consume" {
+		s.handleConsumeTaskMessages(w, r, parts[0])
+		return
+	}
+	http.NotFound(w, r)
 }
 
 // ---- Task handlers -------------------------------------------------------
@@ -141,6 +165,83 @@ func (s *TaskRuntimeServer) handleClaimNextReady(w http.ResponseWriter, r *http.
 		return
 	}
 	writeJSON(w, task)
+}
+
+func (s *TaskRuntimeServer) handleTaskMessages(w http.ResponseWriter, r *http.Request, taskID string) {
+	if s.mrt == nil {
+		http.Error(w, "task message runtime not available", http.StatusNotImplemented)
+		return
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		writeError(w, fmt.Errorf("task id is required"), http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		var body struct {
+			Content string `json:"content"`
+		}
+		if !decode(w, r, &body) {
+			return
+		}
+		msg, err := s.mrt.EnqueueTaskMessage(r.Context(), taskrt.TaskMessage{TaskID: taskID, Content: body.Content})
+		if err == taskrt.ErrTaskNotFound {
+			writeError(w, err, http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, msg)
+	case http.MethodGet:
+		limit := parseIntParam(r.URL.Query().Get("limit"))
+		messages, err := s.mrt.ListTaskMessages(r.Context(), taskID, limit)
+		if err == taskrt.ErrTaskNotFound {
+			writeError(w, err, http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, messages)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *TaskRuntimeServer) handleConsumeTaskMessages(w http.ResponseWriter, r *http.Request, taskID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.mrt == nil {
+		http.Error(w, "task message runtime not available", http.StatusNotImplemented)
+		return
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		writeError(w, fmt.Errorf("task id is required"), http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Limit int `json:"limit"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	messages, err := s.mrt.ConsumeTaskMessages(r.Context(), taskID, body.Limit)
+	if err == taskrt.ErrTaskNotFound {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, messages)
 }
 
 // ---- Job handlers --------------------------------------------------------

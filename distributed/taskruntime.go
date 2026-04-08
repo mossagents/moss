@@ -8,13 +8,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 // RemoteTaskRuntime implements taskrt.TaskRuntime, taskrt.JobRuntime,
@@ -95,6 +96,38 @@ func (r *RemoteTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, 
 		return nil, err
 	}
 	return &task, nil
+}
+
+func (r *RemoteTaskRuntime) EnqueueTaskMessage(ctx context.Context, message taskrt.TaskMessage) (*taskrt.TaskMessage, error) {
+	path := fmt.Sprintf("/tasks/%s/messages", url.PathEscape(message.TaskID))
+	var queued taskrt.TaskMessage
+	if err := r.post(ctx, path, message, &queued); err != nil {
+		return nil, err
+	}
+	return &queued, nil
+}
+
+func (r *RemoteTaskRuntime) ListTaskMessages(ctx context.Context, taskID string, limit int) ([]taskrt.TaskMessage, error) {
+	params := url.Values{}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	path := fmt.Sprintf("/tasks/%s/messages", url.PathEscape(taskID))
+	var messages []taskrt.TaskMessage
+	if err := r.get(ctx, path, params, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (r *RemoteTaskRuntime) ConsumeTaskMessages(ctx context.Context, taskID string, limit int) ([]taskrt.TaskMessage, error) {
+	body := map[string]int{"limit": limit}
+	path := fmt.Sprintf("/tasks/%s/messages/consume", url.PathEscape(taskID))
+	var messages []taskrt.TaskMessage
+	if err := r.post(ctx, path, body, &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
 }
 
 // ---- JobRuntime ----------------------------------------------------------
@@ -240,5 +273,6 @@ func (r *RemoteTaskRuntime) do(req *http.Request, out any) error {
 
 // compile-time interface checks
 var _ taskrt.TaskRuntime = (*RemoteTaskRuntime)(nil)
+var _ taskrt.TaskMessageRuntime = (*RemoteTaskRuntime)(nil)
 var _ taskrt.JobRuntime = (*RemoteTaskRuntime)(nil)
 var _ taskrt.AtomicJobRuntime = (*RemoteTaskRuntime)(nil)

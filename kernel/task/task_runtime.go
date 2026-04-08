@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -132,6 +133,14 @@ type TaskSummary struct {
 	Relations []TaskRelation `json:"relations,omitempty"`
 }
 
+// TaskMessage is a persisted follow-up message queued for a task.
+type TaskMessage struct {
+	ID        string    `json:"id"`
+	TaskID    string    `json:"task_id"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
 // JobQuery 用于筛选 Job。
 type JobQuery struct {
 	AgentName string         `json:"agent_name,omitempty"`
@@ -152,6 +161,13 @@ type TaskRuntime interface {
 	GetTask(ctx context.Context, id string) (*TaskRecord, error)
 	ListTasks(ctx context.Context, query TaskQuery) ([]TaskRecord, error)
 	ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*TaskRecord, error)
+}
+
+// TaskMessageRuntime provides persistent queued follow-up messages for tasks.
+type TaskMessageRuntime interface {
+	EnqueueTaskMessage(ctx context.Context, message TaskMessage) (*TaskMessage, error)
+	ListTaskMessages(ctx context.Context, taskID string, limit int) ([]TaskMessage, error)
+	ConsumeTaskMessages(ctx context.Context, taskID string, limit int) ([]TaskMessage, error)
 }
 
 // TaskGraphRuntime 暴露线程/任务浏览所需的派生查询。
@@ -199,6 +215,8 @@ type MemoryTaskRuntime struct {
 	tasks map[string]TaskRecord
 	jobs  map[string]AgentJob
 	items map[string]map[string]AgentJobItem
+	msgs  map[string][]TaskMessage
+	seq   int64
 }
 
 func NewMemoryTaskRuntime() *MemoryTaskRuntime {
@@ -206,6 +224,7 @@ func NewMemoryTaskRuntime() *MemoryTaskRuntime {
 		tasks: make(map[string]TaskRecord),
 		jobs:  make(map[string]AgentJob),
 		items: make(map[string]map[string]AgentJobItem),
+		msgs:  make(map[string][]TaskMessage),
 	}
 }
 
@@ -319,6 +338,88 @@ func (r *MemoryTaskRuntime) ClaimNextReady(_ context.Context, claimer string, pr
 	cp := *best
 	cp.DependsOn = append([]string(nil), best.DependsOn...)
 	return &cp, nil
+}
+
+func (r *MemoryTaskRuntime) EnqueueTaskMessage(_ context.Context, message TaskMessage) (*TaskMessage, error) {
+	taskID := strings.TrimSpace(message.TaskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	content := strings.TrimSpace(message.Content)
+	if content == "" {
+		return nil, errors.New("content is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	r.seq++
+	queued := TaskMessage{
+		ID:        message.ID,
+		TaskID:    taskID,
+		Content:   content,
+		CreatedAt: time.Now(),
+	}
+	if queued.ID == "" {
+		queued.ID = "msg-" + taskID + "-" + strconv.FormatInt(r.seq, 10)
+	}
+	r.msgs[taskID] = append(r.msgs[taskID], queued)
+	cp := queued
+	return &cp, nil
+}
+
+func (r *MemoryTaskRuntime) ListTaskMessages(_ context.Context, taskID string, limit int) ([]TaskMessage, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	original := r.msgs[taskID]
+	out := make([]TaskMessage, 0, len(original))
+	for _, item := range original {
+		out = append(out, item)
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *MemoryTaskRuntime) ConsumeTaskMessages(_ context.Context, taskID string, limit int) ([]TaskMessage, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	original := r.msgs[taskID]
+	if len(original) == 0 {
+		return []TaskMessage{}, nil
+	}
+	count := len(original)
+	if limit > 0 && limit < count {
+		count = limit
+	}
+	consumed := make([]TaskMessage, 0, count)
+	for i := 0; i < count; i++ {
+		consumed = append(consumed, original[i])
+	}
+	if count >= len(original) {
+		delete(r.msgs, taskID)
+	} else {
+		rest := make([]TaskMessage, 0, len(original)-count)
+		rest = append(rest, original[count:]...)
+		r.msgs[taskID] = rest
+	}
+	return consumed, nil
 }
 
 func (r *MemoryTaskRuntime) ListTaskSummaries(ctx context.Context, query TaskQuery) ([]TaskSummary, error) {

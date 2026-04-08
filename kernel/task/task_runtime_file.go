@@ -17,6 +17,8 @@ type fileTaskRuntimeState struct {
 	Tasks map[string]TaskRecord              `json:"tasks"`
 	Jobs  map[string]AgentJob                `json:"jobs,omitempty"`
 	Items map[string]map[string]AgentJobItem `json:"items,omitempty"`
+	Msgs  map[string][]TaskMessage           `json:"messages,omitempty"`
+	Seq   int64                              `json:"sequence,omitempty"`
 }
 
 // FileTaskRuntime 是基于文件系统的 TaskRuntime 实现。
@@ -27,6 +29,8 @@ type FileTaskRuntime struct {
 	tasks map[string]TaskRecord
 	jobs  map[string]AgentJob
 	items map[string]map[string]AgentJobItem
+	msgs  map[string][]TaskMessage
+	seq   int64
 }
 
 func NewFileTaskRuntime(dir string) (*FileTaskRuntime, error) {
@@ -38,6 +42,7 @@ func NewFileTaskRuntime(dir string) (*FileTaskRuntime, error) {
 		tasks: make(map[string]TaskRecord),
 		jobs:  make(map[string]AgentJob),
 		items: make(map[string]map[string]AgentJobItem),
+		msgs:  make(map[string][]TaskMessage),
 	}
 	if err := rt.load(); err != nil {
 		return nil, err
@@ -201,9 +206,14 @@ func (r *FileTaskRuntime) load() error {
 	if state.Items == nil {
 		state.Items = make(map[string]map[string]AgentJobItem)
 	}
+	if state.Msgs == nil {
+		state.Msgs = make(map[string][]TaskMessage)
+	}
 	r.tasks = state.Tasks
 	r.jobs = state.Jobs
 	r.items = state.Items
+	r.msgs = state.Msgs
+	r.seq = state.Seq
 	return nil
 }
 
@@ -212,6 +222,8 @@ func (r *FileTaskRuntime) persist() error {
 		Tasks: make(map[string]TaskRecord, len(r.tasks)),
 		Jobs:  make(map[string]AgentJob, len(r.jobs)),
 		Items: make(map[string]map[string]AgentJobItem, len(r.items)),
+		Msgs:  make(map[string][]TaskMessage, len(r.msgs)),
+		Seq:   r.seq,
 	}
 	for id, task := range r.tasks {
 		cp := task
@@ -227,6 +239,13 @@ func (r *FileTaskRuntime) persist() error {
 			cpMap[itemID] = item
 		}
 		state.Items[jobID] = cpMap
+	}
+	for taskID, list := range r.msgs {
+		cp := make([]TaskMessage, 0, len(list))
+		for _, item := range list {
+			cp = append(cp, item)
+		}
+		state.Msgs[taskID] = cp
 	}
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
@@ -455,4 +474,92 @@ func (r *FileTaskRuntime) ListJobItems(_ context.Context, query JobItemQuery) ([
 		out = out[:query.Limit]
 	}
 	return out, nil
+}
+
+func (r *FileTaskRuntime) EnqueueTaskMessage(_ context.Context, message TaskMessage) (*TaskMessage, error) {
+	taskID := strings.TrimSpace(message.TaskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	content := strings.TrimSpace(message.Content)
+	if content == "" {
+		return nil, errors.New("content is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	r.seq++
+	queued := TaskMessage{
+		ID:        message.ID,
+		TaskID:    taskID,
+		Content:   content,
+		CreatedAt: time.Now(),
+	}
+	if queued.ID == "" {
+		queued.ID = fmt.Sprintf("msg-%s-%d", taskID, r.seq)
+	}
+	r.msgs[taskID] = append(r.msgs[taskID], queued)
+	if err := r.persist(); err != nil {
+		return nil, err
+	}
+	cp := queued
+	return &cp, nil
+}
+
+func (r *FileTaskRuntime) ListTaskMessages(_ context.Context, taskID string, limit int) ([]TaskMessage, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	original := r.msgs[taskID]
+	out := make([]TaskMessage, 0, len(original))
+	for _, item := range original {
+		out = append(out, item)
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *FileTaskRuntime) ConsumeTaskMessages(_ context.Context, taskID string, limit int) ([]TaskMessage, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("task_id is required")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.tasks[taskID]; !ok {
+		return nil, ErrTaskNotFound
+	}
+	original := r.msgs[taskID]
+	if len(original) == 0 {
+		return []TaskMessage{}, nil
+	}
+	count := len(original)
+	if limit > 0 && limit < count {
+		count = limit
+	}
+	consumed := make([]TaskMessage, 0, count)
+	for i := 0; i < count; i++ {
+		consumed = append(consumed, original[i])
+	}
+	if count >= len(original) {
+		delete(r.msgs, taskID)
+	} else {
+		rest := make([]TaskMessage, 0, len(original)-count)
+		rest = append(rest, original[count:]...)
+		r.msgs[taskID] = rest
+	}
+	if err := r.persist(); err != nil {
+		return nil, err
+	}
+	return consumed, nil
 }

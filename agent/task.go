@@ -85,7 +85,6 @@ func (t *TaskTracker) AddWithCancel(task *Task, cancel context.CancelFunc) {
 // Start 以新的 revision 启动任务，并返回该 revision。
 func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	cp := *task
 	now := time.Now()
 	existing := t.tasks[task.ID]
@@ -108,29 +107,34 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	} else {
 		delete(t.cancels, task.ID)
 	}
-	t.mirror(cp)
 	t.notifyLocked(cp)
+	t.mu.Unlock()
+	t.mirror(cp)
 	return nextRev
 }
 
 func (t *TaskTracker) BindSession(id string, revision int64, sessionID string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	task, ok := t.tasks[id]
 	if !ok {
+		t.mu.Unlock()
 		return
 	}
 	if revision > 0 && task.Revision != revision {
+		t.mu.Unlock()
 		return
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" || task.SessionID == sessionID {
+		t.mu.Unlock()
 		return
 	}
 	task.SessionID = sessionID
 	task.UpdatedAt = time.Now()
-	t.mirror(*task)
-	t.notifyLocked(*task)
+	cp := *task
+	t.notifyLocked(cp)
+	t.mu.Unlock()
+	t.mirror(cp)
 }
 
 // Get 按 ID 查找任务。
@@ -182,12 +186,14 @@ func (t *TaskTracker) CompleteIf(id string, revision int64, result string, token
 
 func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens mdl.TokenUsage) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	var mirrored *Task
 	if task, ok := t.tasks[id]; ok {
 		if revision > 0 && task.Revision != revision {
+			t.mu.Unlock()
 			return
 		}
 		if task.Status != TaskRunning {
+			t.mu.Unlock()
 			return
 		}
 		task.Status = TaskCompleted
@@ -196,8 +202,13 @@ func (t *TaskTracker) completeIf(id string, revision int64, result string, token
 		task.Tokens = tokens
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
-		t.mirror(*task)
-		t.notifyLocked(*task)
+		cp := *task
+		mirrored = &cp
+		t.notifyLocked(cp)
+	}
+	t.mu.Unlock()
+	if mirrored != nil {
+		t.mirror(*mirrored)
 	}
 }
 
@@ -213,12 +224,14 @@ func (t *TaskTracker) FailIf(id string, revision int64, errMsg string) {
 
 func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	var mirrored *Task
 	if task, ok := t.tasks[id]; ok {
 		if revision > 0 && task.Revision != revision {
+			t.mu.Unlock()
 			return
 		}
 		if task.Status != TaskRunning {
+			t.mu.Unlock()
 			return
 		}
 		task.Status = TaskFailed
@@ -226,8 +239,13 @@ func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 		task.Error = errMsg
 		task.UpdatedAt = time.Now()
 		delete(t.cancels, id)
-		t.mirror(*task)
-		t.notifyLocked(*task)
+		cp := *task
+		mirrored = &cp
+		t.notifyLocked(cp)
+	}
+	t.mu.Unlock()
+	if mirrored != nil {
+		t.mirror(*mirrored)
 	}
 }
 
@@ -245,6 +263,7 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 	t.mu.Lock()
 	task, ok := t.tasks[id]
 	cancelFn := t.cancels[id]
+	var mirrored *Task
 	if ok {
 		if revision > 0 && task.Revision != revision {
 			t.mu.Unlock()
@@ -255,12 +274,16 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 			task.Active = false
 			task.Error = errMsg
 			task.UpdatedAt = time.Now()
-			t.mirror(*task)
-			t.notifyLocked(*task)
+			cp := *task
+			mirrored = &cp
+			t.notifyLocked(cp)
 		}
 		delete(t.cancels, id)
 	}
 	t.mu.Unlock()
+	if mirrored != nil {
+		t.mirror(*mirrored)
+	}
 	if cancelFn != nil {
 		cancelFn()
 	}

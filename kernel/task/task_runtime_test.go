@@ -294,3 +294,145 @@ func TestFileTaskRuntime_TaskSummaryQueriesPersist(t *testing.T) {
 		t.Fatalf("unexpected summaries: %+v", summaries)
 	}
 }
+
+func TestMemoryTaskRuntime_TaskMessages(t *testing.T) {
+	rt := NewMemoryTaskRuntime()
+	ctx := context.Background()
+	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg", Status: TaskRunning}); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg", Content: "follow up"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if queued.ID == "" || queued.CreatedAt.IsZero() {
+		t.Fatalf("unexpected queued message: %+v", queued)
+	}
+	list, err := rt.ListTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Content != "follow up" {
+		t.Fatalf("unexpected messages: %+v", list)
+	}
+	consumed, err := rt.ConsumeTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(consumed) != 1 || consumed[0].Content != "follow up" {
+		t.Fatalf("unexpected consumed messages: %+v", consumed)
+	}
+	after, err := rt.ListTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 0 {
+		t.Fatalf("expected consumed queue to be empty, got %+v", after)
+	}
+}
+
+func TestFileTaskRuntime_TaskMessagesPersistAcrossRestart(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "task-messages")
+	ctx := context.Background()
+	rt, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg", Status: TaskRunning}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg", Content: "persist me"}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list, err := reloaded.ListTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Content != "persist me" {
+		t.Fatalf("unexpected persisted messages: %+v", list)
+	}
+	consumed, err := reloaded.ConsumeTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(consumed) != 1 || consumed[0].Content != "persist me" {
+		t.Fatalf("unexpected consumed persisted messages: %+v", consumed)
+	}
+	reloadedAgain, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := reloadedAgain.ListTaskMessages(ctx, "task-msg", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 0 {
+		t.Fatalf("expected consumed persisted queue to be empty, got %+v", after)
+	}
+}
+
+func TestMemoryTaskRuntime_TaskMessagesConsumeWithLimitKeepsRemainder(t *testing.T) {
+	rt := NewMemoryTaskRuntime()
+	ctx := context.Background()
+	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg-limit", Status: TaskRunning}); err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{"m1", "m2", "m3"} {
+		if _, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg-limit", Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	consumed, err := rt.ConsumeTaskMessages(ctx, "task-msg-limit", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(consumed) != 2 || consumed[0].Content != "m1" || consumed[1].Content != "m2" {
+		t.Fatalf("unexpected consumed messages: %+v", consumed)
+	}
+	left, err := rt.ListTaskMessages(ctx, "task-msg-limit", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 || left[0].Content != "m3" {
+		t.Fatalf("unexpected remaining messages: %+v", left)
+	}
+}
+
+func TestFileTaskRuntime_TaskMessagesConsumeWithLimitPersistsRemainder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "task-messages-limit")
+	ctx := context.Background()
+	rt, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg-limit", Status: TaskRunning}); err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{"m1", "m2", "m3"} {
+		if _, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg-limit", Content: content}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	consumed, err := rt.ConsumeTaskMessages(ctx, "task-msg-limit", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(consumed) != 2 || consumed[0].Content != "m1" || consumed[1].Content != "m2" {
+		t.Fatalf("unexpected consumed messages: %+v", consumed)
+	}
+	reloaded, err := NewFileTaskRuntime(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err := reloaded.ListTaskMessages(ctx, "task-msg-limit", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 || left[0].Content != "m3" {
+		t.Fatalf("unexpected persisted remaining messages: %+v", left)
+	}
+}

@@ -2,11 +2,12 @@ package distributed_test
 
 import (
 	"context"
-	"github.com/mossagents/moss/distributed"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/distributed"
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 func setupServer() (*httptest.Server, *distributed.RemoteTaskRuntime) {
@@ -144,6 +145,78 @@ func TestRemoteTaskRuntime_Jobs(t *testing.T) {
 	}
 	if done.Status != taskrt.JobCompleted {
 		t.Errorf("expected completed, got %q", done.Status)
+	}
+}
+
+func TestRemoteTaskRuntime_TaskMessages(t *testing.T) {
+	ts, remote := setupServer()
+	defer ts.Close()
+
+	ctx := context.Background()
+	if err := remote.UpsertTask(ctx, taskrt.TaskRecord{
+		ID:        "t-msg",
+		AgentName: "worker",
+		Goal:      "queued",
+		Status:    taskrt.TaskRunning,
+	}); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	queued, err := remote.EnqueueTaskMessage(ctx, taskrt.TaskMessage{TaskID: "t-msg", Content: "follow-up"})
+	if err != nil {
+		t.Fatalf("EnqueueTaskMessage: %v", err)
+	}
+	if queued.ID == "" || queued.CreatedAt.IsZero() {
+		t.Fatalf("unexpected queued message: %+v", queued)
+	}
+	messages, err := remote.ListTaskMessages(ctx, "t-msg", 10)
+	if err != nil {
+		t.Fatalf("ListTaskMessages: %v", err)
+	}
+	if len(messages) != 1 || messages[0].Content != "follow-up" {
+		t.Fatalf("unexpected messages: %+v", messages)
+	}
+	consumed, err := remote.ConsumeTaskMessages(ctx, "t-msg", 10)
+	if err != nil {
+		t.Fatalf("ConsumeTaskMessages: %v", err)
+	}
+	if len(consumed) != 1 || consumed[0].Content != "follow-up" {
+		t.Fatalf("unexpected consumed messages: %+v", consumed)
+	}
+	after, err := remote.ListTaskMessages(ctx, "t-msg", 10)
+	if err != nil {
+		t.Fatalf("ListTaskMessages after consume: %v", err)
+	}
+	if len(after) != 0 {
+		t.Fatalf("expected consumed queue to be empty, got %+v", after)
+	}
+}
+
+func TestRemoteTaskRuntime_TaskMessagesConsumeWithLimit(t *testing.T) {
+	ts, remote := setupServer()
+	defer ts.Close()
+
+	ctx := context.Background()
+	if err := remote.UpsertTask(ctx, taskrt.TaskRecord{ID: "t-msg-limit", AgentName: "worker", Goal: "queued", Status: taskrt.TaskRunning}); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	for _, content := range []string{"m1", "m2", "m3"} {
+		if _, err := remote.EnqueueTaskMessage(ctx, taskrt.TaskMessage{TaskID: "t-msg-limit", Content: content}); err != nil {
+			t.Fatalf("EnqueueTaskMessage: %v", err)
+		}
+	}
+	consumed, err := remote.ConsumeTaskMessages(ctx, "t-msg-limit", 2)
+	if err != nil {
+		t.Fatalf("ConsumeTaskMessages: %v", err)
+	}
+	if len(consumed) != 2 || consumed[0].Content != "m1" || consumed[1].Content != "m2" {
+		t.Fatalf("unexpected consumed messages: %+v", consumed)
+	}
+	remaining, err := remote.ListTaskMessages(ctx, "t-msg-limit", 10)
+	if err != nil {
+		t.Fatalf("ListTaskMessages: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].Content != "m3" {
+		t.Fatalf("unexpected remaining messages: %+v", remaining)
 	}
 }
 

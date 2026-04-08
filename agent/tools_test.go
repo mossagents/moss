@@ -3,16 +3,17 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	"github.com/mossagents/moss/kernel/loop"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
-	"strings"
-	"sync/atomic"
-	"testing"
-	"time"
 )
 
 // mockDelegator 模拟 Kernel 的委派能力。
@@ -981,14 +982,69 @@ func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
 	}
 }
 
+func TestWriteAgent_AmbiguousAgentTargetRequiresTaskID(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	tracker.Start(&Task{ID: "t-1", AgentName: "worker", Goal: "first", Status: TaskRunning}, nil)
+	tracker.Start(&Task{ID: "t-2", AgentName: "worker", Goal: "second", Status: TaskRunning}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+	_, err := writeHandler(context.Background(), json.RawMessage(`{"target":"worker","message":"follow up"}`))
+	if err == nil || !strings.Contains(err.Error(), "please specify task_id") {
+		t.Fatalf("expected ambiguous target error, got %v", err)
+	}
+}
+
 func TestWriteAgent_QueueOnlyReturnsQueued(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	rt := taskrt.NewMemoryTaskRuntime()
+	tracker := NewTaskTrackerWithRuntime(rt)
+	tracker.Start(&Task{
+		ID:        "t-queue",
+		AgentName: "worker",
+		Goal:      "running",
+		Status:    TaskRunning,
+	}, nil)
+
+	reg := tool.NewRegistry()
+	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{TaskRuntime: rt}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue","message":"queued note","trigger_turn":false}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "queued" || resp["queued"] != true {
+		t.Fatalf("expected queued response, got %s", string(raw))
+	}
+	if resp["consumed_count"] != float64(0) || resp["remaining_count"] != float64(1) {
+		t.Fatalf("expected consumed_count=0 and remaining_count=1, got %s", string(raw))
+	}
+}
+
+func TestWriteAgent_QueueOnlyRequiresPersistentRuntime(t *testing.T) {
 	agents := NewRegistry()
 	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
 		t.Fatal(err)
 	}
 	tracker := NewTaskTracker()
 	tracker.Start(&Task{
-		ID:        "t-queue",
+		ID:        "t-queue-no-runtime",
 		AgentName: "worker",
 		Goal:      "running",
 		Status:    TaskRunning,
@@ -999,12 +1055,9 @@ func TestWriteAgent_QueueOnlyReturnsQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, writeHandler, _ := reg.Get("write_agent")
-	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue","message":"queued note","trigger_turn":false}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(raw), `"status":"queued"`) {
-		t.Fatalf("expected queued response, got %s", string(raw))
+	_, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue-no-runtime","message":"queued note","trigger_turn":false}`))
+	if err == nil || !strings.Contains(err.Error(), "task message persistence") {
+		t.Fatalf("expected persistence requirement error, got %v", err)
 	}
 }
 
@@ -1013,7 +1066,8 @@ func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
 	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
 		t.Fatal(err)
 	}
-	tracker := NewTaskTracker()
+	rt := taskrt.NewMemoryTaskRuntime()
+	tracker := NewTaskTrackerWithRuntime(rt)
 	tracker.Start(&Task{
 		ID:        "t-running",
 		AgentName: "worker",
@@ -1022,7 +1076,7 @@ func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
 	}, func() {})
 
 	reg := tool.NewRegistry()
-	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{TaskRuntime: rt}); err != nil {
 		t.Fatal(err)
 	}
 	_, writeHandler, _ := reg.Get("write_agent")
@@ -1030,8 +1084,85 @@ func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"status":"queued"`) {
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["status"] != "queued" || resp["queued"] != true {
 		t.Fatalf("expected queued response, got %s", string(raw))
+	}
+	if resp["consumed_count"] != float64(0) || resp["remaining_count"] != float64(1) {
+		t.Fatalf("expected consumed_count=0 and remaining_count=1, got %s", string(raw))
+	}
+}
+
+func TestWriteAgent_TriggerTurnConsumesQueuedMessages(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	rt := taskrt.NewMemoryTaskRuntime()
+	tracker := NewTaskTrackerWithRuntime(rt)
+	tracker.Start(&Task{
+		ID:        "t-consume",
+		AgentName: "worker",
+		Goal:      "base goal",
+		Status:    TaskRunning,
+	}, nil)
+
+	done := make(chan struct{}, 1)
+	var capturedGoal string
+	delegator := &mockDelegator{
+		registry: tool.NewRegistry(),
+		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+			capturedGoal = sess.Config.Goal
+			done <- struct{}{}
+			return &loop.SessionResult{Success: true, Output: "ok"}, nil
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := RegisterToolsWithDeps(reg, agents, tracker, delegator, RuntimeDeps{TaskRuntime: rt}); err != nil {
+		t.Fatal(err)
+	}
+	_, writeHandler, _ := reg.Get("write_agent")
+
+	if _, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-consume","message":"queued first","trigger_turn":false}`)); err != nil {
+		t.Fatal(err)
+	}
+	queuedBefore, err := rt.ListTaskMessages(context.Background(), "t-consume", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queuedBefore) != 1 {
+		t.Fatalf("expected one queued message before trigger, got %+v", queuedBefore)
+	}
+
+	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-consume","message":"run now","trigger_turn":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["consumed_count"] != float64(1) || resp["remaining_count"] != float64(0) {
+		t.Fatalf("expected consumed_count=1 and remaining_count=0, got %s", string(raw))
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("expected triggered run to start")
+	}
+	if !strings.Contains(capturedGoal, "queued first") || !strings.Contains(capturedGoal, "run now") {
+		t.Fatalf("expected merged goal to include consumed queued + direct message, got %q", capturedGoal)
+	}
+	queuedAfter, err := rt.ListTaskMessages(context.Background(), "t-consume", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queuedAfter) != 0 {
+		t.Fatalf("expected queued messages consumed after trigger, got %+v", queuedAfter)
 	}
 }
 
@@ -1172,6 +1303,13 @@ func TestResumeAgent_RestartsCompletedTask(t *testing.T) {
 	raw, err := resumeHandler(context.Background(), json.RawMessage(`{"target":"t-resume","message":"run again"}`))
 	if err != nil {
 		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["consumed_count"] != float64(0) || resp["remaining_count"] != float64(0) {
+		t.Fatalf("expected consumed_count=0 and remaining_count=0, got %s", string(raw))
 	}
 	if !strings.Contains(string(raw), `"resumed":true`) {
 		t.Fatalf("expected resumed=true, got %s", string(raw))

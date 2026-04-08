@@ -64,7 +64,7 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 	if err := registerUpdateTask(reg, agents, tracker, delegator); err != nil {
 		return err
 	}
-	if err := registerWriteAgentTool(reg, agents, tracker, delegator); err != nil {
+	if err := registerWriteAgentTool(reg, agents, tracker, delegator, deps.TaskRuntime); err != nil {
 		return err
 	}
 	if err := registerWaitAgentTool(reg, tracker); err != nil {
@@ -73,7 +73,7 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 	if err := registerCloseAgentTool(reg, tracker); err != nil {
 		return err
 	}
-	if err := registerResumeAgentTool(reg, agents, tracker, delegator); err != nil {
+	if err := registerResumeAgentTool(reg, agents, tracker, delegator, deps.TaskRuntime); err != nil {
 		return err
 	}
 	if err := registerTask(reg, agents, tracker, delegator); err != nil {
@@ -277,7 +277,7 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 		InputSchema: json.RawMessage(`{
 			"type":"object",
 			"properties":{
-				"status":{"type":"string","description":"可选: running|completed|failed|cancelled"},
+				"status":{"type":"string","description":"可选: pending|running|completed|failed|cancelled"},
 				"agent":{"type":"string","description":"可选: 按 agent 名称过滤"},
 				"limit":{"type":"integer","description":"可选: 最大返回条数（默认20，最大100）"}
 			}
@@ -339,7 +339,7 @@ func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
-				"status": {"type":"string","description":"可选: running|completed|failed|cancelled"},
+				"status": {"type":"string","description":"可选: pending|running|completed|failed|cancelled"},
 				"agent": {"type":"string","description":"可选: 按 agent 名称过滤"},
 				"limit": {"type":"integer","description":"可选: 最多返回条数（默认20，最大100）"}
 			}
@@ -483,7 +483,12 @@ type writeAgentInput struct {
 	TriggerTurn *bool  `json:"trigger_turn"`
 }
 
-func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
+type queueMetrics struct {
+	ConsumedCount  int
+	RemainingCount int
+}
+
+func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "write_agent",
 		Description: "向后台 agent 写入后续消息（当前最小实现：通过更新任务触发执行）。",
@@ -518,37 +523,73 @@ func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTr
 			return nil, err
 		}
 		if !triggerTurn {
-			return json.Marshal(map[string]any{
-				"target": task.ID,
-				"status": "queued",
-				"note":   "queue-only mode is not yet enabled in runtime; message accepted without immediate execution",
-			})
+			queued, err := enqueueTaskMessage(ctx, runtime, task.ID, msg)
+			if err != nil {
+				return nil, err
+			}
+			remaining, hasQueue, err := countQueuedMessages(ctx, runtime, task.ID)
+			if err != nil {
+				return nil, err
+			}
+			resp := map[string]any{
+				"target":         task.ID,
+				"task_id":        task.ID,
+				"status":         "queued",
+				"queued":         true,
+				"queued_id":      queued.ID,
+				"queued_at":      queued.CreatedAt,
+				"triggered":      false,
+				"consumed_count": 0,
+			}
+			if hasQueue {
+				resp["remaining_count"] = remaining
+			}
+			return json.Marshal(resp)
 		}
 		interrupt := true
 		if in.Interrupt != nil {
 			interrupt = *in.Interrupt
 		}
 		if isActiveTask(task) && !interrupt {
-			return json.Marshal(map[string]any{
-				"target": task.ID,
-				"status": "queued",
-				"note":   "task is running and interrupt=false; message queued",
-			})
+			queued, err := enqueueTaskMessage(ctx, runtime, task.ID, msg)
+			if err != nil {
+				return nil, err
+			}
+			remaining, hasQueue, err := countQueuedMessages(ctx, runtime, task.ID)
+			if err != nil {
+				return nil, err
+			}
+			resp := map[string]any{
+				"target":         task.ID,
+				"task_id":        task.ID,
+				"status":         "queued",
+				"queued":         true,
+				"queued_id":      queued.ID,
+				"queued_at":      queued.CreatedAt,
+				"triggered":      false,
+				"consumed_count": 0,
+			}
+			if hasQueue {
+				resp["remaining_count"] = remaining
+			}
+			return json.Marshal(resp)
 		}
-		updated, err := triggerAgentTurn(ctx, agents, tracker, delegator, task, msg)
+		updated, metrics, err := triggerAgentTurn(ctx, agents, tracker, delegator, runtime, task, msg)
 		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(map[string]any{
-			"target":      updated.ID,
-			"task_id":     updated.ID,
-			"agent":       updated.AgentName,
-			"status":      updated.Status,
-			"revision":    updated.Revision,
-			"session_id":  updated.SessionID,
-			"job_id":      updated.JobID,
-			"job_item_id": updated.JobItemID,
-			"triggered":   true,
+			"target":          updated.ID,
+			"task_id":         updated.ID,
+			"agent":           updated.AgentName,
+			"status":          updated.Status,
+			"revision":        updated.Revision,
+			"session_id":      updated.SessionID,
+			"job_id":          updated.JobID,
+			"job_item_id":     updated.JobItemID,
+			"triggered":       true,
+			"consumed_count":  metrics.ConsumedCount,
+			"remaining_count": metrics.RemainingCount,
 		})
 	}
 	return reg.Register(spec, handler)
@@ -569,7 +610,7 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 			"properties":{
 				"target":{"type":"string","description":"task_id 或 agent 名称"},
 				"timeout_seconds":{"type":"integer","description":"等待超时秒数，默认30，最大300"},
-				"poll_millis":{"type":"integer","description":"轮询间隔毫秒，默认250，最小50"}
+				"poll_millis":{"type":"integer","description":"预留字段，当前实现基于订阅与超时等待"}
 			},
 			"required":["target"]
 		}`),
@@ -729,7 +770,7 @@ type resumeAgentInput struct {
 	Message string `json:"message"`
 }
 
-func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
+func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "resume_agent",
 		Description: "恢复指定 agent 任务（已结束任务可重启，新消息可作为 follow-up）。",
@@ -768,7 +809,7 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 			})
 		}
 		message := strings.TrimSpace(in.Message)
-		updated, err := triggerAgentTurn(ctx, agents, tracker, delegator, task, message)
+		updated, metrics, err := triggerAgentTurn(ctx, agents, tracker, delegator, runtime, task, message)
 		if err != nil {
 			return nil, err
 		}
@@ -776,6 +817,8 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 		resp["target"] = updated.ID
 		resp["resumed"] = true
 		resp["completed"] = isTerminalTaskStatus(updated.Status)
+		resp["consumed_count"] = metrics.ConsumedCount
+		resp["remaining_count"] = metrics.RemainingCount
 		if isRecoverableTask(task) {
 			resp["note"] = "task was recovered from persisted runtime state and restarted"
 		}
@@ -956,6 +999,8 @@ func clampLimit(limit int) int {
 	return limit
 }
 
+const defaultQueuedConsumeLimit = 8
+
 // parseStatusFilter validates and returns a TaskStatus for filter use.
 func parseStatusFilter(raw string) (TaskStatus, error) {
 	if raw == "" {
@@ -963,7 +1008,7 @@ func parseStatusFilter(raw string) (TaskStatus, error) {
 	}
 	status := TaskStatus(strings.TrimSpace(raw))
 	switch status {
-	case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+	case TaskPending, TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
 		return status, nil
 	default:
 		return "", fmt.Errorf("invalid status %q", raw)
@@ -1042,7 +1087,74 @@ func resolveTaskTarget(tracker *TaskTracker, target string) (*Task, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("target %q not found", target)
 	}
+	if len(candidates) > 1 {
+		return nil, fmt.Errorf("target %q is ambiguous: %d tasks found for agent %q; please specify task_id", target, len(candidates), normalized)
+	}
 	return candidates[0], nil
+}
+
+func enqueueTaskMessage(ctx context.Context, runtime taskrt.TaskRuntime, taskID string, message string) (*taskrt.TaskMessage, error) {
+	queue, ok := runtime.(taskrt.TaskMessageRuntime)
+	if !ok || queue == nil {
+		return nil, fmt.Errorf("queued delivery requires a task runtime with task message persistence")
+	}
+	queued, err := queue.EnqueueTaskMessage(ctx, taskrt.TaskMessage{
+		TaskID:  taskID,
+		Content: message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return queued, nil
+}
+
+func consumeQueuedMessages(ctx context.Context, runtime taskrt.TaskRuntime, taskID string, message string) (string, queueMetrics, error) {
+	queue, ok := runtime.(taskrt.TaskMessageRuntime)
+	if !ok || queue == nil {
+		return strings.TrimSpace(message), queueMetrics{}, nil
+	}
+	queued, err := queue.ConsumeTaskMessages(ctx, taskID, defaultQueuedConsumeLimit)
+	if err != nil {
+		if errors.Is(err, taskrt.ErrTaskNotFound) {
+			return "", queueMetrics{}, err
+		}
+		return "", queueMetrics{}, fmt.Errorf("consume queued messages: %w", err)
+	}
+	remaining, err := queue.ListTaskMessages(ctx, taskID, 0)
+	if err != nil {
+		return "", queueMetrics{}, fmt.Errorf("list remaining queued messages: %w", err)
+	}
+	metrics := queueMetrics{ConsumedCount: len(queued), RemainingCount: len(remaining)}
+	parts := make([]string, 0, len(queued)+1)
+	for _, item := range queued {
+		content := strings.TrimSpace(item.Content)
+		if content == "" {
+			continue
+		}
+		parts = append(parts, content)
+	}
+	if current := strings.TrimSpace(message); current != "" {
+		parts = append(parts, current)
+	}
+	if len(parts) == 0 {
+		return "", metrics, nil
+	}
+	if len(parts) == 1 {
+		return parts[0], metrics, nil
+	}
+	return strings.Join(parts, "\n\n"), metrics, nil
+}
+
+func countQueuedMessages(ctx context.Context, runtime taskrt.TaskRuntime, taskID string) (int, bool, error) {
+	queue, ok := runtime.(taskrt.TaskMessageRuntime)
+	if !ok || queue == nil {
+		return 0, false, nil
+	}
+	items, err := queue.ListTaskMessages(ctx, taskID, 0)
+	if err != nil {
+		return 0, true, err
+	}
+	return len(items), true, nil
 }
 
 func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
@@ -1199,9 +1311,14 @@ func triggerAgentTurn(
 	agents *Registry,
 	tracker *TaskTracker,
 	delegator Delegator,
+	runtime taskrt.TaskRuntime,
 	task *Task,
 	message string,
-) (*Task, error) {
+) (*Task, queueMetrics, error) {
+	mergedMessage, metrics, err := consumeQueuedMessages(ctx, runtime, task.ID, message)
+	if err != nil {
+		return nil, queueMetrics{}, err
+	}
 	switch task.Status {
 	case TaskRunning:
 		if !isActiveTask(task) {
@@ -1209,18 +1326,21 @@ func triggerAgentTurn(
 			if createdAt.IsZero() {
 				createdAt = time.Now()
 			}
-			return launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, mergeTaskGoal(task.Goal, message), createdAt)
+			updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, mergeTaskGoal(task.Goal, mergedMessage), createdAt)
+			return updated, metrics, err
 		}
-		return updateBackgroundTask(ctx, agents, tracker, delegator, task.ID, message)
+		updated, err := updateBackgroundTask(ctx, agents, tracker, delegator, task.ID, mergedMessage)
+		return updated, metrics, err
 	case TaskCompleted, TaskFailed, TaskCancelled:
-		newGoal := mergeTaskGoal(task.Goal, message)
+		newGoal := mergeTaskGoal(task.Goal, mergedMessage)
 		createdAt := task.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
-		return launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, newGoal, createdAt)
+		updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, newGoal, createdAt)
+		return updated, metrics, err
 	default:
-		return nil, fmt.Errorf("task %q is not in a triggerable state", task.ID)
+		return nil, queueMetrics{}, fmt.Errorf("task %q is not in a triggerable state", task.ID)
 	}
 }
 
