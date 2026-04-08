@@ -29,7 +29,8 @@ go run . --provider claude
 flags := appkit.ParseAppFlags()
 
 // 2. 创建 Kernel（自动装配工具、技能、MCP servers）
-k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+// intr 来自: github.com/mossagents/moss/kernel/interaction
+k, err := appkit.BuildKernel(ctx, flags, intr.NewConsoleIO())
 
 // 3. 启动 REPL 交互
 appkit.REPL(ctx, appkit.REPLConfig{...}, k, sess)

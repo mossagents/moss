@@ -41,7 +41,7 @@ Browser ──WebSocket──┘         ↕
 |------|------|
 | `RoomManager` | 创建/查找房间，管理房间生命周期 |
 | `Room` | 持有 Kernel + Session，串行处理消息队列 |
-| `RoomIO` | 实现 `port.UserIO`，将 Agent 输出广播到房间 |
+| `RoomIO` | 实现 `intr.UserIO`（`kernel/interaction`），将 Agent 输出广播到房间 |
 | `GameTools` | 4 个自定义工具让 Agent 与游戏交互 |
 
 ## 自定义工具
