@@ -2,46 +2,42 @@
 
 **Agent harness for Go: compose fast, run safely.**
 
-Moss provides a ready-to-run agent stack (CLI + runtime + extension surface) while keeping the core composable and library-first.
+Moss is a library-first agent runtime for Go. The repository is organized around a small reusable kernel, an opinionated runtime assembly layer, and product-style example apps such as `examples\mosscode`.
 
 For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 
-## Why Moss
+## What Moss is today
 
-- Start fast: run a coding agent in minutes with `moss`.
-- Build your own: embed Moss as a Go library and control runtime behavior.
-- Production-minded defaults: policy, sandbox, session, and tool boundaries.
-
-## What is included
-
-- Planning and task tracking tools (including deepagent-style flows).
-- Filesystem and command-execution tools with trust-level controls.
-- Sub-agent delegation for multi-agent workflows.
-- Interactive TUI and headless execution.
-- Extension-friendly architecture with middleware and appkit assembly APIs.
+- A reusable `kernel` for running agent sessions with tools, middleware, policy, and observation.
+- An `appkit` assembly layer for building complete kernels from `AppFlags`.
+- A `presets\deepagent` preset for coding/research/writer-style products.
+- Example apps in `examples\` that act as the real runnable entrypoints in this repository.
 
 ## Quickstart
 
-### 1) Install CLI
+### 1. Run the primary example app
 
-```bash
-go install github.com/mossagents/moss/cmd/moss@latest
+The most complete interactive product surface in the current tree is `examples\mosscode`.
+
+```powershell
+Set-Location examples\mosscode
+go run . --provider openai --model gpt-4o
 ```
 
-### 2) Run in terminal
+Useful variants:
 
-```bash
+```powershell
 # Interactive TUI
-moss
+go run .
 
-# Non-interactive run
-moss run --goal "Fix the bug in main.go" --workspace .
+# One-shot execution
+go run . --prompt "Summarize the repository structure"
 
-# Version
-moss version
+# Diagnostics
+go run . doctor
 ```
 
-### 3) Embed as a Go library
+### 2. Embed Moss as a Go library
 
 ```go
 package main
@@ -75,14 +71,19 @@ func main() {
 	defer k.Shutdown(ctx)
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:     "Fix the bug in main.go",
+		Goal:     "Read README.md and summarize it",
 		Mode:     "oneshot",
-		MaxSteps: 50,
+		MaxSteps: 20,
 	})
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Fix the bug in main.go")}})
+	sess.AppendMessage(mdl.Message{
+		Role: mdl.RoleUser,
+		ContentParts: []mdl.ContentPart{
+			mdl.TextPart("Read README.md and summarize it"),
+		},
+	})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
@@ -92,73 +93,67 @@ func main() {
 }
 ```
 
-For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`.
+For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`. For a fuller product preset, use `presets\deepagent.BuildKernel(...)`.
 
-## CLI at a glance
+## Repository layout
 
-- `moss`: launch interactive TUI.
-- `moss run --goal "..."`: run one goal with flags such as `--workspace`, `--provider`, `--model`, and `--trust`.
-- `moss version`: print CLI version.
+| Path | Purpose |
+|---|---|
+| `kernel\` | Core runtime primitives |
+| `appkit\` | Recommended builders and extension composition |
+| `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
+| `presets\deepagent\` | Product preset for deep-agent style apps |
+| `skill\` / `mcp\` / `agent\` | Capability providers, MCP bridge, delegated agents |
+| `bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
+| `knowledge\`, `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
+| `examples\` | Runnable product and integration examples |
 
 ## Configuration
 
-Global config path: `~/.moss/config.yaml`
+The default application name in the core config package is `moss`, so library users that keep the default naming model can use:
+
+```text
+~\.moss\config.yaml
+```
+
+Example apps override the app name and therefore use their own directories, such as:
+
+- `~\.mosscode\config.yaml`
+- `~\.mossresearch\config.yaml`
+- `~\.mosswriter\config.yaml`
+
+Typical config:
 
 ```yaml
 provider: openai
 model: gpt-4o
 base_url: ""
 api_key: ""
+default_profile: coding
+
 skills:
-  - name: my-mcp-server
+  - name: github
     transport: stdio
     command: npx
-    args: ["-y", "@example/mcp-server"]
+    args: ["-y", "@modelcontextprotocol/server-github"]
 ```
 
-Priority: CLI flags > config file > environment variables
+Priority is:
 
-Common environment variables:
-
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)
-- `MOSS_DEBUG=1` (write debug logs to `~/.moss/debug.log`)
-
-## Architecture
-
-Moss is organized into a minimal runtime core plus top-level feature packages:
-
-- `kernel/`: runtime primitives (loop, tool, session, middleware, port).
-- `appkit/`: high-level assembly helpers.
-- `agent/`, `skill/`, `bootstrap/`, `knowledge/`, `scheduler/`, `gateway/`: feature and support packages.
-- `cmd/moss/`: terminal CLI and TUI entrypoints.
-
-## Presets and customization
-
-- Use `presets/deepagent` for deepagent-style defaults (planning, context compaction, task lifecycle).
-- Add middleware for policy, audit, events, and guardrails.
-- Add custom tools, skills, and MCP servers through runtime setup and config.
+**CLI flags > environment variables > config file**
 
 ## Examples
 
-Reference applications live in `examples/`:
+Reference apps in `examples\`:
 
-- `examples/mosscode/` - coding assistant
-- `examples/mossresearch/` - deep research orchestrator with delegated web research
-- `examples/mosswriter/` - content builder agent with filesystem-based writing workflows
-- `examples/mosswork-desktop/` - desktop cowork assistant with delegated agents and persistent runtime state
-- `examples/mossclaw/` - web automation and scraping workflows
-- `examples/mossquant/` - stateful autonomous loop patterns
-- `examples/mossroom/` - realtime multi-user agent game
-
-Run an example:
-
-```bash
-cd examples/mosscode
-go run .
-```
+- `mosscode` - coding agent product surface
+- `mossresearch` - deep research orchestrator
+- `mosswriter` - content workflow agent
+- `mossclaw` - assistant / gateway / scheduling / knowledge example
+- `mossquant` - stateful analysis loop
+- `mossroom` - realtime multi-user room
+- `mosswork-desktop` - desktop assistant
+- `basic`, `custom-tool`, `websocket` - focused integration examples
 
 ## Documentation
 
@@ -170,30 +165,12 @@ go run .
 - [Changelog](docs/changelog.md)
 - [Roadmap](docs/roadmap.md)
 
-## Security model
-
-Moss follows a tool-boundary security model: the agent can only do what exposed tools allow.
-
-Use sandbox, policy, and tool-level controls rather than relying on prompt-only restrictions.
-
 ## Development checks
 
-```bash
-go vet ./...
+```powershell
 go test ./...
-pwsh ./testing/validate_examples.ps1
 go build ./...
 ```
-
-For per-example verification:
-
-```bash
-cd examples/<name>
-go test ./...
-go build .
-```
-
-Note: `go build ./...` is not a strict pass/fail gate for every example module because some packaging helper directories (for example `examples/mosswork-desktop/build/ios`) are not standalone runnable `main` packages.
 
 ## Compatibility
 

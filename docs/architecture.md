@@ -1,368 +1,157 @@
-# 🏗️ Moss 架构设计
+# 架构概览
 
-> Minimal Agent Runtime Kernel — 5 核心概念 + 2 Port 接口，零外部依赖
+Moss 当前采用 **最小内核 + runtime 装配层 + appkit 扩展层 + examples 产品面** 的结构。核心原则是：**把稳定的运行时原语留在 `kernel\`，把可组合能力放在顶层包和预设里。**
 
----
+## 分层
 
-## 设计哲学
+```text
+Applications / Products
+  examples\mosscode, mossresearch, mosswriter, mossclaw, ...
 
-类比 Linux Kernel：**核心最小化、接口稳定、可扩展**。
+Assembly / Presets
+  appkit
+  presets\deepagent
 
-Kernel 只提供 Agent 运行的不可约原语，所有业务逻辑（Agent 角色、Task 编排、Plan 生成等）在上层应用中实现。
+Runtime capability loading
+  appkit\runtime
+  skill
+  mcp
+  agent
 
-### 第一性原理
+Core runtime
+  kernel
 
-一个 Agent 的本质行为：
-
-```
-loop {
-    observe(context)  → 感知当前状态
-    think(llm)        → 推理下一步行动
-    act(tool)         → 执行动作
-    check(policy)     → 安全检查
-}
-```
-
-这个循环是 **唯一的不可约内核**。其他一切都是为这个循环服务的基础设施。
-
----
-
-## 分层架构
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│                   Applications / Agents                       │
-│  (CLI, TUI, Web 服务, 自定义 Agent, ...)                      │
-├──────────────────────────────────────────────────────────────┤
-│                   Middleware Chain                             │
-│  (PolicyCheck, EventEmitter, Logger, 自定义 Middleware)       │
-├──────────────────────────────────────────────────────────────┤
-│                         KERNEL                                │
-│  ┌────────┐  ┌────────┐  ┌──────────┐  ┌──────────────┐    │
-│  │  Loop  │  │  Tool  │  │ Session  │  │  Middleware  │    │
-│  └────────┘  └────────┘  └──────────┘  └──────────────┘    │
-├──────────────────────────────────────────────────────────────┤
-│                     Ports (Interfaces)                         │
-│  ┌─────────────────────┐  ┌─────────────────────┐           │
-│  │    LLM Port         │  │    UserIO Port      │           │
-│  │  Complete / Stream  │  │    Send / Ask       │           │
-│  └─────────────────────┘  └─────────────────────┘           │
-├──────────────────────────────────────────────────────────────┤
-│                 Adapters (Infrastructure)                      │
-│  Claude / OpenAI / 兼容 API         CLI / TUI / WS / IM     │
-│  LocalSandbox / DockerSandbox                                 │
-└──────────────────────────────────────────────────────────────┘
+Infrastructure / support packages
+  bootstrap  config  providers  logging
+  knowledge  scheduler  gateway  distributed  sandbox
 ```
 
-**依赖规则**：`Adapters → Applications → Kernel → Ports`
+## 关键职责边界
 
-Kernel 层**零外部依赖**（仅 Go stdlib + 自身子包）。
-
----
-
-## 核心概念
-
-| 概念 | 职责 | Linux Kernel 类比 |
-|---|---|---|
-| **Loop** | Agent 执行循环 (think→act→observe) | Process Scheduler |
-| **Tool** | 能力注册、查找、执行 | System Calls |
-| **Session** | 执行上下文 (消息+状态+预算) | Process + Memory |
-| **Middleware** | 统一扩展点 (合并 Hook/Policy/Event) | Kernel Modules |
-| **Workspace/Executor Ports** | 文件与命令执行抽象 | Filesystem + Process Isolation |
-
-### Port 接口
-
-| Port | 职责 |
+| 层 | 主要职责 |
 |---|---|
-| **LLM** | 模型调用 (Complete + Stream) |
-| **UserIO** | 结构化交互协议 (Send + Ask) |
+| `kernel\` | `Kernel`、Session、Tool、Middleware、Model、UserIO、Workspace/Executor、Task、Observe、Checkpoint |
+| `appkit\runtime\` | 默认能力装配：builtin tools、MCP、`SKILL.md`、subagent、context、memory、knowledge、scheduling |
+| `appkit\` | 面向应用的构建入口与扩展组合 API |
+| `presets\deepagent\` | 深代理预设，组合持久化、上下文压缩、委派与工作区隔离 |
+| `skill\` / `mcp\` / `agent\` | 能力提供者、外部工具桥接、委派代理注册 |
+| `examples\` | 真实产品入口和参考实现 |
 
----
+## 推荐装配路径
 
-## 核心子系统
+### 1. 标准装配
 
-### Tool System
+`appkit.BuildKernel(...)`：
 
-```go
-type ToolSpec struct {
-    Name         string          // 唯一名称
-    Description  string          // 供 LLM 理解的描述
-    InputSchema  json.RawMessage // JSON Schema
-    Risk         RiskLevel       // low / medium / high
-    Capabilities []string        // 能力标签
-}
+1. 根据 `AppFlags` 构建 LLM adapter
+2. 创建本地 `Sandbox`
+3. 建立 `kernel.Kernel`
+4. 调用 `runtime.Setup(...)`
+5. 加载 builtin tools / MCP / skills / agents
 
-type ToolHandler func(ctx context.Context, input json.RawMessage) (json.RawMessage, error)
+这是最短的“库优先”入口。
 
-type Registry interface {
-    Register(spec ToolSpec, handler ToolHandler) error
-    Unregister(name string) error
-    Get(name string) (ToolSpec, ToolHandler, bool)
-    List() []ToolSpec
-    ListByCapability(cap string) []ToolSpec
-}
-```
+### 2. 扩展装配
 
-**runtime builtin tools** 是由 `appkit/runtime` 直接实现并注册的一组 first-party tool。  
-它们与 `skill` 包中的 provider 抽象、以及 `mcp` 包中的外部工具桥接是三个不同概念：
+`appkit.BuildKernelWithExtensions(...)` 在上述基础上再拼装：
 
-- **builtin tools**：runtime 自带实现，直接注册到 `ToolRegistry`
-- **skills**：统一生命周期与提示词聚合的 provider 抽象
-- **MCP**：通过协议把外部 server 的工具桥接进本地 runtime
+- `WithSessionStore`
+- `WithPlanning`
+- `WithContextOffload`
+- `WithContextManagement`
+- `WithLoadedBootstrapContextWithTrust`
+- `WithScheduling`
+- `WithKnowledge`
+- `WithPersistentMemories`
+- `AfterBuild`
 
-它们在运行时可以一起工作，但在分包、所有权和权限边界上应当明确区分。
+这也是当前示例应用最常用的装配方式。
 
-**内置工具**：
+### 3. 产品预设
 
-| 工具 | 风险 | 说明 |
-|---|---|---|
-| `read_file` | Low | 读取文件内容 |
-| `write_file` | High | 写入文件（自动创建目录） |
-| `edit_file` | High | 按 old/new 字符串安全替换文件内容 |
-| `glob` | Low | 按 glob 模式查找文件 |
-| `list_files` | Low | Glob 模式列出文件 |
-| `grep` | Low | 正则搜索文件内容 |
-| `run_command` | High | 执行 shell 命令 |
-| `http_request` | High | 发送 HTTP 请求并返回状态、响应头和响应体 |
-| `ask_user` | Medium | 向用户请求输入 |
-| `read_memory` | Low | 读取持久 `/memories` 文件 |
-| `write_memory` | High | 写入持久 `/memories` 文件 |
-| `list_memories` | Low | 列出持久 `/memories` 文件 |
-| `delete_memory` | High | 删除持久 `/memories` 文件 |
+`presets\deepagent.BuildKernel(...)` 基于 `appkit` 扩展出一条完整产品路径，默认接入：
 
-### Session
+- session / checkpoint / task runtime
+- 持久记忆
+- `offload_context` + `compact_conversation`
+- workspace isolation / repo state / patch apply / patch revert
+- 通用 delegated agent
+- planning / mailbox / task graph 相关能力
 
-Session 统一管理对话历史、状态存储和资源预算。
+`examples\mosscode`、`mossresearch`、`mosswriter` 都是在这条路径上继续叠加产品能力。
 
-```go
-type Session struct {
-    ID        string
-    Status    SessionStatus     // created / running / paused / completed / failed / cancelled
-    Config    SessionConfig     // Goal, Mode, TrustLevel, MaxSteps, MaxTokens, SystemPrompt
-    Messages  []port.Message    // 对话历史
-    State     map[string]any    // 键值状态存储
-    Budget    Budget            // MaxTokens, MaxSteps, UsedTokens, UsedSteps
-    CreatedAt time.Time
-    EndedAt   time.Time
-}
+## 运行时能力加载模型
 
-type Manager interface {
-    Create(ctx, cfg) (*Session, error)
-    Get(id) (*Session, bool)
-    List() []*Session
-    Cancel(id) error
-    Notify(id, msg) error       // 跨 Session 注入消息
-}
-```
+`appkit\runtime.Setup(...)` 默认加载四类能力：
 
-### Middleware
+1. **Builtin tools**
+2. **MCP servers**
+3. **Prompt skills (`SKILL.md`)**
+4. **Subagents**
 
-Middleware 是**唯一的扩展机制**，统一替代了 Hook、Policy、EventBus。
+并通过 `runtime.Option` 控制是否启用：
 
-```go
-type Middleware func(ctx context.Context, mc *Context, next Next) error
+- `WithBuiltinTools(false)`
+- `WithMCPServers(false)`
+- `WithSkills(false)`
+- `WithProgressiveSkills(true)`
+- `WithAgents(false)`
+- `WithPlanning(false)`
+- `WithWorkspaceTrust(...)`
 
-// 7 个执行阶段
-BeforeLLM / AfterLLM / BeforeToolCall / AfterToolCall /
-OnSessionStart / OnSessionEnd / OnError
-```
+## 当前产品面位置
 
-执行模型：**洋葱模型** (Onion Model)
+仓库已经不是“单个 `cmd\moss` 二进制 + 所有能力都在根 CLI” 的布局。当前真实入口在 `examples\`：
 
-```
-Request → MW1.Before → MW2.Before → Handler → MW2.After → MW1.After → Response
-```
+- `mosscode`：最完整的 coding agent 产品面
+- `mossresearch`：研究型 orchestrator
+- `mosswriter`：写作型 orchestrator
+- `mossclaw`：assistant / gateway / schedule / knowledge 组合示例
 
-**内置 Middleware**：
+这意味着主文档也应围绕 **library API + example apps** 叙述，而不是围绕旧的单体 CLI 叙述。
 
-| Middleware | 功能 |
+## 配置与信任边界
+
+配置由 `config\` 统一管理：
+
+- 每个应用通过 `config.SetAppName(...)` 绑定自己的目录
+- 全局配置在 `~\.<app>\config.yaml`
+- project assets 是否允许加载，取决于 trust：
+  - `trusted`：允许项目级 profile、skill、bootstrap、MCP 配置
+  - `restricted`：只允许安全默认面
+
+`runtime\profile.go` 负责把 `profile + trust + approval` 解析为实际执行姿态。
+
+## 扩展桥接
+
+`kernel\ExtensionBridge` 是当前扩展层与 Kernel 的正式桥：
+
+- `OnBoot`
+- `OnShutdown`
+- `OnSystemPrompt`
+- `OnSessionLifecycle`
+- `OnToolLifecycle`
+
+这让扩展可以按顺序接入生命周期，而不把业务语义塞回内核。
+
+## 当前包布局
+
+| 目录 | 说明 |
 |---|---|
-| `PolicyCheck` | 工具调用权限检查 (Allow / Deny / RequireApproval) |
-| `EventEmitter` | 事件发布 (glob pattern 匹配) |
-| `Logger` | Phase 耗时日志 |
-| `PatchToolCalls` | 在下一轮 LLM 前补齐缺失 tool_result，避免不完整工具历史破坏推理链 |
+| `kernel\` | 核心运行时原语 |
+| `appkit\` | 构建器与扩展 API |
+| `bootstrap\` | 启动上下文加载 |
+| `config\` | 配置、profile、模板上下文 |
+| `providers\` | LLM / embedder provider 构建 |
+| `skill\` | provider 抽象、`SKILL.md` 解析与发现 |
+| `mcp\` | 外部 MCP server 桥接 |
+| `agent\` | 委派代理注册与任务运行时协作 |
+| `knowledge\` | 知识库抽象 |
+| `scheduler\` | 调度器 |
+| `gateway\` | Channel / Router / Serve 相关能力 |
+| `distributed\` | 分布式实现原型 |
+| `sandbox\` | 本地 / Docker 等执行隔离实现 |
 
-### Deep Agent Preset 分层
+## 一句话总结
 
-DeepAgent 预设能力已下沉到 `presets/deepagent` 包，以保持：
-
-- **最小稳定核心**：kernel 不引入 deepagents 业务语义
-- **扩展层承载能力**：planning/context/offload/async 生命周期通过 extension + middleware 组合
-- **开发者友好**：示例应用可直接 `presets/deepagent.BuildKernel(...)` 一键装配
-
-### Sandbox
-
-所有文件/命令操作经过统一隔离层。
-
-```go
-type Sandbox interface {
-    ResolvePath(path string) (string, error)     // 路径逃逸保护
-    ListFiles(pattern string) ([]string, error)
-    ReadFile(path string) ([]byte, error)
-    WriteFile(path string, content []byte) error
-    Execute(ctx context.Context, cmd string, args []string) (Output, error)
-    Limits() ResourceLimits
-}
-```
-
-`LocalSandbox` 实现：路径逃逸检查 + 自动创建目录 + Shell 自动包装 + 资源限制。
-
-### Agent Loop
-
-核心调度器，组合所有子系统驱动 think→act→observe 循环：
-
-```
-Session Ready → Budget Check → BeforeLLM → LLM.Complete/Stream → AfterLLM
-    → Has ToolCalls?
-      Yes → For each: BeforeToolCall → PolicyCheck → Execute → AfterToolCall → Loop
-      No  → Check StopReason → end_turn? → SessionResult
-```
-
-支持 Streaming：如果 LLM 实现 `StreamingLLM`，自动使用流式模式实时输出。
-
----
-
-## Port 接口详情
-
-### LLM Port
-
-```go
-type LLM interface {
-    Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error)
-}
-
-type StreamingLLM interface {
-    Stream(ctx context.Context, req CompletionRequest) (StreamIterator, error)
-}
-```
-
-### UserIO Port
-
-结构化交互协议，无缝对接 CLI/TUI/Web/Desktop/IM 等所有界面。
-
-```go
-type UserIO interface {
-    Send(ctx context.Context, msg OutputMessage) error     // 推送内容
-    Ask(ctx context.Context, req InputRequest) (InputResponse, error)  // 请求输入
-}
-```
-
-**OutputType**: `text` / `stream` / `stream_end` / `progress` / `tool_start` / `tool_result`
-**InputType**: `free_text` / `confirm` / `select`
-
-**标准实现** (`kernel/port/io_std.go`)：
-
-| 实现 | 场景 | 行为 |
-|---|---|---|
-| `NoOpIO` | 后台任务、纯自动化 | 忽略所有输出，Ask 返回安全默认值 (Confirm=false) |
-| `PrintfIO` | 非交互式 CLI、日志 | 格式化输出到 io.Writer，自动批准确认 |
-| `BufferIO` | 测试 | 线程安全缓冲，支持 `AskFunc` 自定义响应 |
-
----
-
-## 依赖图
-
-```
-adapters/claude, adapters/openai    (外部 SDK)
-    ↓ implements
-kernel/port                         (纯接口，零依赖)
-    ↑ references
-kernel/tool, kernel/session         (独立子系统)
-    ↑ references
-kernel/middleware                   (imports session, tool, port)
-    ↑ references
-kernel/loop                         (imports 以上所有)
-    ↑ references
-kernel/kernel.go                    (Kernel 入口，组合所有子系统)
-    ↑ references
-skill                               (Skill 管理，imports tool, middleware, sandbox, port)
-appkit/runtime                      (runtime 主装配层：skills/agents/mcp/knowledge/memory/builtin 组合入口)
-    ↑ used by
-appkit                            (开发者友好装配)
-    ↑ used by
-cmd/moss                            (CLI/TUI 入口)
-```
-
-**关键隔离**：`kernel/port` 不 import 任何其他 kernel 子包。
-
----
-
-## 设计决策记录
-
-| 决策 | 理由 |
-|---|---|
-| 5 核心概念 (非 7 或 3) | 兼顾简洁与可发现性，便利 API 弥补语义缺口 |
-| Middleware 统一扩展 | 消除 Hook/Policy/EventBus 选择焦虑 |
-| 结构化 UserIO (Send/Ask) | 取代原始文本 IO，无缝对接所有界面 |
-| Approval 非独立概念 | PolicyCheck MW + UserIO.Ask(Confirm) 组合实现 |
-| Task/Plan/Agent 在上层 | Kernel 只有 Session，编排逻辑不属于最小核心 |
-| Sandbox 保持独立 | 作为核心外官方实现层，避免污染 kernel 最小边界 |
-| Kernel 零外部依赖 | 仅 Go stdlib，确保长期稳定演化 |
-
----
-
-## 应用模式指南
-
-### 多轮会话复用 (Reusable Session)
-
-REPL 和 mossroom 等场景需要在同一个 Session 上反复调用 `k.Run()`，每次追加新的 user message 后运行 Agent Loop。这是 Kernel 支持的核心使用模式：
-
-```go
-// 创建一次 Session
-sess, _ := k.NewSession(ctx, session.SessionConfig{...})
-
-// 多轮对话循环
-for {
-    userInput := readInput()
-    sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(userInput)}})
-    result, _ := k.Run(ctx, sess)
-    // Session 状态自动从 completed → running → completed
-}
-```
-
-**注意事项**：
-- Session 消息历史会持续增长，长对话应定期调用 `TruncateMessages()` 或使用 `/compact` 命令
-- Budget 在多轮间累积，按需重置或设置足够大的 MaxSteps
-
-### Per-Instance Kernel（多实例隔离）
-
-当应用需要多个独立 Agent 时（如 mossroom 的每房间一Agent），为每个实例创建独立的 Kernel + Session：
-
-```go
-// 每个房间/用户拥有独立 Kernel
-k := kernel.New(
-    kernel.WithLLM(llm),
-    kernel.WithUserIO(roomIO),  // 自定义 UserIO 适配器
-)
-registerDomainTools(k.ToolRegistry(), instance)
-k.Boot(ctx)
-sess, _ := k.NewSession(ctx, cfg)
-```
-
-这比共享 Kernel + 多 Session 更简单，适合需要独立工具集的场景。
-
-### 自定义 UserIO 适配器
-
-实现 `port.UserIO` 接口是对接任何 UI 的标准方式：
-
-| 场景 | Send 实现 | Ask 实现 |
-|---|---|---|
-| WebSocket 广播 | broadcast JSON 到所有连接 | 自动批准 (Agent 自主) |
-| Telegram Bot | `sendMessage(chatID)` | inline keyboard callback |
-| 后台任务 | 写日志 | `NoOpIO` 默认值 |
-
----
-
-## 子系统成熟度
-
-| 子系统 | 成熟度 | 说明 |
-|---|---|---|
-| Loop, Tool, Session, Middleware, Sandbox | **稳定** | 核心 5 概念，API 稳定 |
-| TaskRuntime / Mailbox / WorkspaceIsolation Ports | **可用（POC）** | 协作任务图、异步邮箱、任务级隔离工作区端口 |
-| LLM Port, UserIO Port | **稳定** | 接口已验证：CLI/TUI/WebSocket/REPL |
-| Skill (BuiltinTool / MCP / SKILL.md) | **稳定** | 三种扩展方式均已使用 |
-| Agent (委派/深度限制) | **可用** | 已在 mossresearch / mosswork-desktop 场景验证 |
-| appkit (REPL / Flags / Serve) | **可用** | 应用脚手架工具箱 |
-| Gateway / Channel | **实验性** | 框架已搭建，未完整集成到主流程 |
-| Knowledge / Embedder | **实验性** | 接口定义完成，尚无示例使用 |
-| Scheduler | **可用** | 独立调度器，可按需启用 |
+**Kernel 保持最小，runtime 负责默认能力装配，appkit 负责应用拼装，deepagent 负责产品级预设，examples 提供真实入口。**

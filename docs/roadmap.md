@@ -1,163 +1,92 @@
-# 🗺️ 开发路线图 (Roadmap)
+# Roadmap
 
----
+当前路线图以 **现有主线代码** 为准：优先巩固 library-first runtime、examples 产品面和单节点生产能力，再推进分布式与托管化能力。
 
 ## 当前状态
 
-Moss 已完成核心 Kernel 实现，包含完整的 Agent Loop、工具系统、技能系统、配置管理和库友好 API。
+已经完成的主线能力：
 
-### 已完成 ✅
+- 最小可嵌入 Kernel
+- `appkit` 官方装配路径
+- `presets\deepagent` 产品级预设
+- builtin / MCP / `SKILL.md` / subagent 统一加载
+- profile / trust / approval / execution policy
+- session / checkpoint / task / memory 持久化
+- workspace isolation、repo state、patch apply / rollback
+- health surface 与 release gates
+- `mosscode` 产品面和多个参考 examples
 
-| 模块 | 状态 | 说明 |
-|---|---|---|
-| Kernel Core | ✅ | 5 概念 + 2 Port，零外部依赖 |
-| Agent Loop | ✅ | think→act→observe + streaming + 重试 |
-| Tool System | ✅ | Registry + ScopedRegistry + runtime builtin tools（文件、命令、HTTP、交互等） |
-| Session | ✅ | 对话历史 + 状态 + 预算 + Router + Store |
-| Middleware | ✅ | 洋葱模型 + PolicyCheck/EventEmitter/Logger |
-| Sandbox | ✅ | LocalSandbox + NoOp + 路径逃逸保护 |
-| LLM Adapters | ✅ | Claude + OpenAI + Gemini（含 BaseURL / 路由能力） |
-| TUI | ✅ | Bubble Tea 交互式终端 |
-| Skill System | ✅ | Builtin Tools Provider + MCPServer + Prompt Skill |
-| Config | ✅ | ~/.moss/config.yaml 统一配置 |
-| Library API | ✅ | appkit.BuildKernel / BuildKernelWithExtensions + 标准 UserIO + Boot 验证 |
-| Agent 委派 | ✅ | delegate_agent / spawn_agent + depth 限制 |
-| Session 持久化 | ✅ | FileStore 文件持久化 |
-| Gateway 框架 | 🧪 | Channel fan-in + Router，实验性 |
-| Knowledge | 🧪 | Memory + Store + Chunker，实验性 |
-| Scheduler | ✅ | 独立定时任务调度器 |
+## 近期重点
 
----
+### 1. 继续收敛文档与产品叙述
 
-## 短期规划 (P1)
+当前仓库的真实入口已经是 `examples\` + `appkit`，后续仍需要继续减少：
 
-### 示例与 CI 基线收敛
+- README 与 examples 之间的漂移
+- library API 与产品命令面的命名差异
+- operator 文档与运行时实际行为的偏差
 
-- 为独立 `examples/*` 模块补齐依赖元数据并纳入校验
-- 在 CI 中同时验证 root `go vet` / `go test` 与 example 模块构建
-- 继续减少 docs / examples / API surface 三者之间的漂移
+### 2. 把 gate/observer 接到更完整的运行时管线
 
-### 使用示例 (Examples)
+现在已经有 normalized metrics 和 release gates，下一步重点是让这些能力更自然地进入：
 
-在 `examples/` 目录下已提供可运行的集成示例：
+- 长期运行实例
+- 服务化 health / readiness
+- 自动化发布流程
 
-| 示例 | 模式 | 验证能力 |
-|---|---|---|
-| `mosscode` | 单 Agent TUI | Kernel + TUI + runtime builtin tools |
-| `mossresearch` | 深度研究编排 | Agent 委派 + 研究子代理 |
-| `mossclaw` | Web 抓取 | 自定义 tool + sandbox |
-| `mossquant` | 有状态循环 | Session 状态 + 领域适配器 |
-| `mossroom` | 多人实时 | Per-Instance Kernel + WebSocket UserIO + 自定义工具集 |
-| `mosswork-desktop` | 桌面协作助理 | Wails UI + 持久会话 + 调度器 |
+### 3. 稳定多实例协作边界
 
-### API 文档自动生成
+当前已具备 `WorkspaceLock`、task runtime、mailbox、gateway、distributed 等基础块；后续重点是：
 
-- 确保所有导出类型的 GoDoc 注释完整
-- 配置 pkg.go.dev 自动索引
+- 分布式状态存储
+- 多实例 workspace 协作
+- 更清晰的多租户隔离模型
 
----
+## 中期方向
 
-## 中期规划 (P2)
+### 服务化与托管化
 
-### 多 Agent 编排
+补齐面向服务部署的统一能力层，例如：
 
-在 Kernel 之上实现 Agent 编排层，支持 Manager → Worker 模式：
+- HTTP / RPC 服务壳
+- 认证鉴权
+- 配额和 admission control
+- 更标准的 metrics / health / audit 接口
 
-```go
-// Manager Agent 通过 Session 创建子任务
-subSess, _ := k.NewSession(ctx, session.SessionConfig{
-    Goal: "Research the topic",
-})
-result, _ := k.Run(ctx, subSess)
+### Knowledge 与 scheduling 的产品化接线
 
-// 或通过 SessionManager.Notify 跨 Session 通信
-k.SessionManager().Notify(otherSessionID, port.Message{...})
-```
+当前 `knowledge\` 和 `scheduler\` 已可用，但还更多停留在“由 example 证明可组合”的阶段。中期目标是把它们变成：
 
-### Docker Sandbox
+- 更稳定的 appkit 扩展组合
+- 更清晰的 operator 配置面
+- 更明确的持久化/回放策略
 
-基于 Docker 容器的 Sandbox 实现，提供更强的执行隔离：
+### 更完整的发布包装
 
-```go
-dockerSb, _ := docker.NewSandbox(docker.Config{
-    Image: "golang:1.24",
-    Mounts: []docker.Mount{{Src: "/workspace", Dst: "/workspace"}},
-})
-k := kernel.New(kernel.WithSandbox(dockerSb))
-```
+包括但不限于：
 
-### 持久化 Session
+- 统一二进制/分发策略
+- 示例应用的安装方式
+- 平台打包与部署模板
 
-基于 Event Sourcing 的 Session 持久化：
+## 长期方向
 
-```go
-// EventEmitter MW → 持久化到存储
-k.OnEvent("*", func(e builtins.Event) {
-    store.Append(e)
-})
+### 分布式 runtime
 
-// 从事件流恢复 Session
-sess, _ := k.SessionManager().Restore(sessionID, events)
-```
+将当前单节点能力推广到多实例场景：
 
-### 更多 LLM Adapter
+- 分布式 session / checkpoint / task runtime
+- 分布式锁
+- 跨实例 worktree / mailbox / event routing
 
-| Adapter | 说明 |
-|---|---|
-| Ollama | 本地模型调用 |
-| Azure OpenAI | Azure 端点支持 |
-| Gemini | Google AI |
-| Failover LLM | 主备切换 |
+### 更强的治理与观测
 
----
+在现有 observer、metrics、gate 的基础上继续推进：
 
-## 长期方向 (P3)
+- 更细粒度成本治理
+- 更稳定的 failover 策略
+- 长周期运行质量回归面板
 
-### 分布式部署
+### 面向更多产品形态的适配层
 
-- EventEmitter → 消息队列（Kafka/NATS）
-- 分布式 SessionManager
-- 水平扩展 Agent Worker
-
-### 技能市场
-
-- 在线 Skill 注册中心
-- `moss install <skill>` 命令
-- 版本管理与依赖解析
-
-### Web IDE 集成
-
-- VS Code 扩展
-- Web 编辑器嵌入
-- Jupyter Notebook 集成
-
-### 可观测性
-
-- OpenTelemetry 集成
-- 结构化日志（slog）
-- 执行轨迹（Trace）可视化
-
----
-
-## 贡献
-
-欢迎参与 Moss 开发：
-
-1. **Issue**: 报告 Bug 或提出功能需求
-2. **Pull Request**: 参照现有代码风格，附带测试
-3. **Skill 贡献**: 创建 MCPServer 或 Skill（SKILL.md）
-
-### 开发环境
-
-```bash
-# 克隆并构建
-git clone https://github.com/mossagents/moss.git
-cd moss
-go build ./...
-
-# 运行测试
-go test ./... -count=1
-
-# 运行 TUI
-go run ./cmd/moss/ --provider openai --model gpt-4o
-```
+当前 examples 已覆盖 coding、research、writer、assistant、desktop、realtime 等模式；长期方向是把这些共性继续抽象为更稳定的应用层构件，而不是让每个产品各自复制拼装逻辑。

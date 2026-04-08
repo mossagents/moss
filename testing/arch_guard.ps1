@@ -96,7 +96,7 @@ if (-not $SkipGates) {
         Write-Host "  ⚠ OVERRIDE ACTIVATED: $OverrideReason" -ForegroundColor Yellow
         Write-Host "    > Recording override in audit trail" -ForegroundColor Cyan
 
-        $overrideLog = Join-Path $repoRoot "docs/v1/release-overrides.log"
+        $overrideLog = Join-Path $repoRoot "docs/release-overrides.log"
         $logDir = Split-Path $overrideLog
         if (-not (Test-Path $logDir)) {
             New-Item -ItemType Directory -Path $logDir -Force | Out-Null

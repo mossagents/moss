@@ -1,307 +1,173 @@
-# 🧩 Builtin Tools / Skills / MCP
+# Skills、Builtin Tools、MCP 与 Subagents
 
-Moss 运行时里有三个容易混淆、但应该明确区分的概念：
+当前仓库里最容易混淆的，不是“有没有 skill”，而是 **不同能力是通过什么机制进入运行时**。在 Moss 里，至少要区分四件事：
 
-- **Builtin Tools**：`appkit/runtime` 直接实现并注册的 first-party tools
-- **Skills**：`skill` 包中的 provider 抽象，以及 `SKILL.md` prompt skill
-- **MCP**：`mcp` 包中通过协议桥接外部工具服务器的 provider
+1. **Builtin tools**：`appkit\runtime` 直接注册的官方工具
+2. **Prompt skills**：从 `SKILL.md` 发现并注入系统提示词
+3. **MCP servers**：通过 `mcp\` 桥接进来的外部工具服务
+4. **Subagents**：注册到 agent registry 的委派代理
 
----
+## 统一抽象：`skill.Provider`
 
-## 概览
-
-```
-┌─────────────────────────────────────────┐
-│           Provider Manager               │
-│  ┌───────────────┐ ┌─────────┐ ┌──────┐ │
-│  │ BuiltinTools  │ │   MCP   │ │Skill │ │
-│  │ (runtime)     │ │ bridge  │ │prompt│ │
-│  └───────────┘ └─────────┘ └────────┘  │
-├─────────────────────────────────────────┤
-│  Kernel: ToolRegistry + Middleware       │
-└─────────────────────────────────────────┘
-```
-
-## Provider 接口（`skill` 包）
-
-所有可加载能力单元都通过 `skill.Provider` 统一生命周期：
+虽然来源不同，这三类 provider（builtin / prompt skill / MCP）共享统一生命周期接口：
 
 ```go
 type Provider interface {
-    Metadata() Metadata
-    Init(ctx context.Context, deps Deps) error
-    Shutdown(ctx context.Context) error
-}
-
-type Metadata struct {
-    Name        string
-    Version     string
-    Description string
-    Tools       []string    // 提供的工具名称列表
-    Prompts     []string    // 系统提示词片段
-}
-
-type Deps struct {
-    ToolRegistry tool.Registry
-    Middleware   *middleware.Chain
-    Sandbox      sandbox.Sandbox
-    UserIO       port.UserIO
+	Metadata() Metadata
+	Init(ctx context.Context, deps Deps) error
+	Shutdown(ctx context.Context) error
 }
 ```
 
----
+`Deps` 里不只有 `ToolRegistry`，还包括当前 Kernel 暴露的关键依赖：
 
-## Builtin Tools（`appkit/runtime`）
+- `Kernel`
+- `ToolRegistry`
+- `Middleware`
+- `Sandbox`
+- `UserIO`
+- `Workspace`
+- `Executor`
+- `TaskRuntime`
+- `Mailbox`
+- `SessionStore`
 
-runtime builtin tools 是由 `appkit/runtime` 直接实现的 first-party tools。
-它们通过一个内部 provider 统一接入生命周期管理，但本质上不是 `SKILL.md` prompt，也不是外部 MCP server。
+这也是为什么现在的能力文档应围绕 **provider + runtime.Setup** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
 
-**注册方式**：通过 `runtime.Setup` 自动装配（推荐）：
+## 1. Builtin tools
+
+`runtime.Setup(...)` 默认会注册官方 builtin tools。当前基础工具包括：
+
+| 工具 | 作用 |
+|---|---|
+| `datetime` | 返回当前时间 |
+| `read_file` / `write_file` / `edit_file` | 文件读写与编辑 |
+| `glob` / `ls` / `grep` | 文件发现与内容搜索 |
+| `run_command` | 命令执行 |
+| `http_request` | HTTP 调用 |
+| `ask_user` | 结构化向用户询问输入 |
+
+在此基础上，扩展还会继续注册更多工具组，例如：
+
+- context：`offload_context`、`compact_conversation`
+- planning / task：`write_todos`、`update_task`、`plan_task`、`claim_task`
+- mailbox：`send_mail`、`read_mailbox`
+- workspace isolation：`acquire_workspace`、`release_workspace`
+- memory：`read_memory`、`write_memory`、`search_memories` 等
+- knowledge：文档摄入与搜索
+- scheduling：计划任务相关工具
+
+## 2. Prompt skills (`SKILL.md`)
+
+Prompt skill 只负责 **向 system prompt 注入额外上下文**，并不直接注册工具。
+
+### 发现目录
+
+项目级：
+
+- `.agents\skills\`
+- `.agent\skills\`
+- `.<app>\skills\`
+- 兼容 legacy：`.moss\skills\`
+
+全局级：
+
+- `~\.copilot\skills\`
+- `~\.copilot\installed-plugins\**\skills\`
+- `~\.agents\skills\`
+- `~\.agent\skills\`
+- `~\.<app>\skills\`
+- `~\.config\agents\skills\`
+
+### trust 规则
+
+project skill 是否可见，取决于当前 trust：
+
+- `trusted`：允许发现和加载项目级 skill
+- `restricted`：跳过项目级 skill，只保留全局安全面
+
+### progressive skills
+
+若启用：
 
 ```go
-import runtime "github.com/mossagents/moss/appkit/runtime"
-
-runtime.Setup(ctx, k, workspaceDir)
+runtime.Setup(ctx, k, workspace,
+	runtime.WithProgressiveSkills(true),
+)
 ```
 
-**提供的 builtin tools**：
+运行时不会立刻注入全部 `SKILL.md` 正文，而是先暴露 skill manifest，并注册按需激活工具。这适合首轮上下文预算更敏感的场景。
 
-| 工具 | 风险等级 | 参数 | 说明 |
-|---|---|---|---|
-| `read_file` | Low | `path` | 读取文件内容 |
-| `write_file` | High | `path`, `content` | 写入文件，自动创建父目录 |
-| `edit_file` | High | `path`, `old_string`, `new_string`, `replace_all` | 按字符串替换编辑文件 |
-| `glob` | Low | `pattern`, `path` | 按 glob 模式查找文件（可限定子路径） |
-| `list_files` | Low | `pattern` | Glob 模式列出文件，支持 `**` 递归 |
-| `grep` | Low | `pattern`, `glob`, `max_results` | 正则（RE2）搜索文件内容 |
-| `run_command` | High | `command`, `args` | 执行 shell 命令 |
-| `http_request` | High | `url`, `method`, `headers`, `body`, `timeout_seconds`, `follow_redirects` | 发送 HTTP 请求并返回响应 |
-| `ask_user` | Medium | `prompt`, `type`, `options` | 向用户请求输入 |
+## 3. MCP servers
 
----
-
-## MCP Provider（`mcp` 包）
-
-通过 [MCP 协议](https://modelcontextprotocol.io/) 连接外部工具服务器。实现位于 `github.com/mossagents/moss/mcp` 包（`mcp.NewMCPServer(...)`），并由 `runtime.Setup` 统一装配。
-
-MCP provider 会把远端工具注册到本地 `ToolRegistry`，并附加 `<server>_` 前缀；它和 runtime builtin tools 共享 registry，但实现来源不同。
-
-### 配置
-
-在 `~/.moss/config.yaml` 或项目级 `moss.yaml` 中添加：
+MCP 通过配置文件声明，由 `mcp\` 包桥接到本地运行时。示例：
 
 ```yaml
 skills:
-  # stdio 传输方式
-  - name: filesystem
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/home/user"]
-
-  # SSE 传输方式
-  - name: remote-tools
-    transport: sse
-    url: http://localhost:8080/mcp
-
-  # 带环境变量
   - name: github
     transport: stdio
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
-    env:
-      GITHUB_TOKEN: "ghp_xxx"
-
-  # 禁用某个 skill
-  - name: disabled-skill
-    transport: stdio
-    command: some-cmd
-    enabled: false
 ```
 
-### 配置合并
+加载流程由 `runtime.Setup(...)` 完成：
 
-Moss 自动合并全局和项目配置：
+1. 读取全局配置
+2. 读取项目配置（受 trust 约束）
+3. 对 project MCP 做审批确认
+4. 按依赖顺序注册 server
+5. 把远端工具注入本地 `ToolRegistry`
 
-| 配置文件 | 路径 | 优先级 |
-|---|---|---|
-| 全局配置 | `~/.moss/config.yaml` | 低 |
-| 项目配置 | `./moss.yaml` | 高（覆盖同名 skill） |
+因此，`skills:` 配置块在今天更准确的含义是：**声明外部 capability provider，主要用于 MCP server**。
+
+## 4. Subagents
+
+Subagent 不是 `SKILL.md`，也不是 MCP。它是注册到 agent registry 的受控委派代理。
+
+来源有两类：
+
+- 代码里直接 `runtime.RegisterSubagent(...)`
+- 工作区中的 `subagents.yaml`
+
+`subagents.yaml` 结构：
+
+```yaml
+researcher:
+  description: Research-focused helper
+  system_prompt: You investigate and summarize evidence.
+  tools: [read_file, grep, http_request]
+  max_steps: 40
+  trust_level: restricted
+```
+
+这类能力被 `examples\mosswriter`、`mossresearch` 等产品面直接使用。
+
+## 5. 默认加载行为
+
+`runtime.Setup(...)` 默认会同时打开：
+
+- builtin tools
+- MCP servers
+- prompt skills
+- subagents
+
+可以按需关闭：
 
 ```go
-// 手动加载和合并
-globalCfg, _ := skill.LoadConfig(skill.DefaultGlobalConfigPath())
-projectCfg, _ := skill.LoadConfig(skill.DefaultProjectConfigPath(workspaceDir))
-merged := skill.MergeConfigs(globalCfg, projectCfg)
-```
-
----
-
-## Prompt Skill（`SKILL.md`）
-
-通过 `SKILL.md` 文件注入系统提示词，兼容 [skills.sh](https://skills.sh) 格式。
-这类 skill 只贡献 prompt，不直接注册 tool。
-
-### SKILL.md 格式
-
-```markdown
----
-name: my-skill
-description: A skill that adds domain knowledge
----
-
-# My Skill
-
-You are an expert in XYZ domain.
-
-## Rules
-- Always follow best practices
-- Use idiomatic Go patterns
-```
-
-YAML frontmatter 定义元数据，Markdown 正文成为系统提示词注入。
-
-### 发现路径
-
-Moss 按以下优先级自动发现 SKILL.md（项目级 > 全局）：
-
-| 路径 | 级别 |
-|---|---|
-| `.agents/skills/SKILL.md` | 项目 |
-| `.agents/skills/*/SKILL.md` | 项目（多 skill） |
-| `.agent/skills/SKILL.md` | 项目 |
-| `.agent/skills/*/SKILL.md` | 项目（多 skill） |
-| `.moss/skills/SKILL.md` | 项目 |
-| `.moss/skills/*/SKILL.md` | 项目（多 skill） |
-| `~/.copilot/skills/SKILL.md` | 全局 |
-| `~/.agent/skills/SKILL.md` | 全局 |
-| `~/.moss/skills/SKILL.md` | 全局 |
-| `~/.config/agents/skills/SKILL.md` | 全局 (Unix) |
-
-### 手动加载
-
-```go
-ps, err := skill.ParseSkillMD("/path/to/SKILL.md")
-runtime.SkillsManager(k).Register(ctx, ps, runtime.Deps(k))
-```
-
-### 按需加载（Progressive Skills）
-
-默认模式下，`runtime.Setup` 会把已发现的 `SKILL.md` 全部立即加载到系统提示词。
-
-若希望降低首轮上下文占用，可启用按需加载：
-
-```go
-runtime.Setup(ctx, k, workspaceDir,
-  runtime.WithProgressiveSkills(true),
+runtime.Setup(ctx, k, workspace,
+	runtime.WithMCPServers(false),
+	runtime.WithSkills(false),
+	runtime.WithAgents(false),
 )
 ```
 
-启用后：
+## 6. 应该如何理解“skills”
 
-- 启动时只发现 Skill 清单（名称/描述/来源），不注入完整正文。
-- 自动注册工具：
-  - `list_skills`：查看可用技能及是否已激活
-  - `activate_skill`：按名称加载某个技能正文到当前会话提示词上下文
-- eager 模式仍为默认，保证向后兼容。
+在当前仓库语境里，**skills 不是单一技术点，而是一组 capability loading 机制的一部分**：
 
----
+- 想要官方工具：看 builtin tools
+- 想要 prompt augmentation：看 `SKILL.md`
+- 想要外部能力：看 MCP
+- 想要可控委派：看 subagents
 
-## Provider Manager
-
-`skill.Manager` 统一管理所有 provider 的生命周期：
-
-```go
-manager := skill.NewManager()
-
-// 注册
-manager.Register(ctx, mySkill, deps)
-
-// 查询
-list := manager.List()              // 所有已注册 skill 的元数据
-s, ok := manager.Get("skill-name")  // 按名称查找
-
-// 系统提示词聚合（主要来自 prompt skills，也可包含其他 provider 的提示词）
-additions := manager.SystemPromptAdditions()
-
-// 卸载
-manager.Unregister(ctx, "skill-name")
-
-// 关闭所有
-manager.ShutdownAll(ctx)
-```
-
----
-
-## runtime.Setup
-
-推荐使用 `runtime.Setup` 一键装配 builtin tools、MCP providers 和 prompt skills：
-
-```go
-// 默认行为：注册 builtin tools + 加载 MCP providers + 发现 prompt skills
-runtime.Setup(ctx, k, workspaceDir)
-
-// 选择性禁用
-runtime.Setup(ctx, k, workspaceDir,
-  runtime.WithBuiltinTools(false),  // 不注册 runtime builtin tools
-  runtime.WithMCPServers(false),    // 不加载 MCP 配置
-  runtime.WithSkills(false),        // 不发现 SKILL.md prompt skills
-)
-```
-
-加载过程中的警告会通过 slog 输出到 stderr，日志级别为 `WARN`。可通过 `logging.ConfigureLogging()` 调整日志级别。
-
----
-
-## Persistent Memories (`/memories`)
-
-deep harness 可通过 appkit 扩展装配一个持久 memory 命名空间（目录形态持久化，跨会话可复用）：
-
-```go
-k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
-  appkit.WithPersistentMemories("C:\\data\\myapp\\memories"),
-)
-```
-
-会自动注册 4 个 memory 工具：
-
-| 工具 | 风险等级 | 参数 | 说明 |
-|---|---|---|---|
-| `read_memory` | Low | `path` | 读取持久记忆文件 |
-| `write_memory` | High | `path`, `content` | 写入/更新持久记忆文件 |
-| `list_memories` | Low | `pattern` | 列出持久记忆文件（glob） |
-| `delete_memory` | High | `path` | 删除持久记忆文件 |
-
----
-
-## Context Offload (`offload_context`)
-
-当会话过长时，可用上下文 offload 工具把早期对话快照持久化到 SessionStore，并仅保留最近对话：
-
-```go
-k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
-  appkit.WithSessionStore(store),
-  appkit.WithContextOffload(store),
-)
-```
-
-工具：
-
-| 工具 | 风险等级 | 参数 | 说明 |
-|---|---|---|---|
-| `offload_context` | Medium | `session_id`, `keep_recent`, `note` | 持久化旧上下文快照并压缩当前会话消息 |
-
----
-
-## Async Delegation Lifecycle
-
-除了 `delegate_agent` / `spawn_agent` / `query_agent` / `task`，现在也支持后台任务生命周期管理工具：
-
-| 工具 | 风险等级 | 参数 | 说明 |
-|---|---|---|---|
-| `list_tasks` | Low | `status`, `agent`, `limit` | 列出后台任务并支持过滤 |
-| `cancel_task` | Medium | `task_id`, `reason` | 取消运行中的后台任务 |
-
-`task` 工具也支持扩展模式：
-
-- `mode=list`：按过滤条件列任务
-- `mode=cancel`：取消指定任务
+真正把它们粘起来的是 `runtime.Setup(...)` 和 `skill.Provider` 抽象。

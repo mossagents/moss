@@ -2,46 +2,42 @@
 
 **面向 Go 的 Agent Harness：快速装配，安全运行。**
 
-Moss 提供开箱可用的智能体技术栈（CLI + Runtime + 扩展能力），同时保持核心可组合、可嵌入（library-first）。
+Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当前仓库围绕一个可复用的最小内核、一个带默认能力装配的运行时层，以及若干产品化示例应用（例如 `examples\mosscode`）组织。
 
-英文文档请查看 [`README.md`](README.md)。
+英文说明请看 [`README.md`](README.md)。
 
-## 为什么选择 Moss
+## 当前仓库提供什么
 
-- 启动快：几分钟内即可使用 `moss` 运行代码智能体。
-- 可深度集成：可作为 Go 库嵌入你的系统，并精细控制运行时行为。
-- 面向生产：默认具备策略、沙箱、会话和工具边界控制能力。
-
-## 开箱包含
-
-- 任务规划与追踪能力（含 deepagent 风格流程）。
-- 文件系统与命令执行工具，支持 trust-level 风险控制。
-- 子代理委派能力，适合多代理协作场景。
-- 交互式 TUI 与非交互执行模式。
-- 扩展友好的架构（middleware + appkit 装配 API）。
+- 可嵌入的 `kernel`：负责 session、tool、middleware、policy、observation 等运行时原语。
+- `appkit`：按 `AppFlags` 构建完整 Kernel 的推荐入口。
+- `presets\deepagent`：适合 coding / research / writer 产品面的预设。
+- `examples\`：当前仓库里的真实可运行入口。
 
 ## 快速开始
 
-### 1) 安装 CLI
+### 1. 先运行主示例应用
 
-```bash
-go install github.com/mossagents/moss/cmd/moss@latest
+当前仓库里最完整的交互式产品面是 `examples\mosscode`。
+
+```powershell
+Set-Location examples\mosscode
+go run . --provider openai --model gpt-4o
 ```
 
-### 2) 在终端运行
+常见变体：
 
-```bash
+```powershell
 # 交互式 TUI
-moss
+go run .
 
-# 非交互执行
-moss run --goal "修复 main.go 中的 bug" --workspace .
+# 一次性执行
+go run . --prompt "Summarize the repository structure"
 
-# 查看版本
-moss version
+# 环境诊断
+go run . doctor
 ```
 
-### 3) 作为 Go 库集成
+### 2. 作为 Go 库集成
 
 ```go
 package main
@@ -75,14 +71,19 @@ func main() {
 	defer k.Shutdown(ctx)
 
 	sess, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:     "Fix the bug in main.go",
+		Goal:     "Read README.md and summarize it",
 		Mode:     "oneshot",
-		MaxSteps: 50,
+		MaxSteps: 20,
 	})
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Fix the bug in main.go")}})
+	sess.AppendMessage(mdl.Message{
+		Role: mdl.RoleUser,
+		ContentParts: []mdl.ContentPart{
+			mdl.TextPart("Read README.md and summarize it"),
+		},
+	})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
@@ -92,73 +93,67 @@ func main() {
 }
 ```
 
-如需按扩展优先方式装配，请使用 `appkit.BuildKernelWithExtensions(...)`。
+如果要按扩展优先方式装配，使用 `appkit.BuildKernelWithExtensions(...)`；如果要做更完整的 deep-agent 产品，使用 `presets\deepagent.BuildKernel(...)`。
 
-## CLI 速览
+## 仓库结构
 
-- `moss`：启动交互式 TUI。
-- `moss run --goal "..."`：执行单目标任务，支持 `--workspace`、`--provider`、`--model`、`--trust` 等参数。
-- `moss version`：输出 CLI 版本。
+| 路径 | 作用 |
+|---|---|
+| `kernel\` | 核心运行时原语 |
+| `appkit\` | 推荐构建器与扩展组合 API |
+| `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
+| `presets\deepagent\` | deep-agent 风格产品预设 |
+| `skill\` / `mcp\` / `agent\` | 能力 provider、MCP 桥接、委派代理 |
+| `bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
+| `knowledge\`、`scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
+| `examples\` | 可运行示例与产品入口 |
 
 ## 配置
 
-全局配置路径：`~/.moss/config.yaml`
+核心配置包默认应用名是 `moss`，因此如果你直接以默认命名嵌入库，配置路径通常是：
+
+```text
+~\.moss\config.yaml
+```
+
+示例应用会覆盖应用名，因此会使用各自目录，例如：
+
+- `~\.mosscode\config.yaml`
+- `~\.mossresearch\config.yaml`
+- `~\.mosswriter\config.yaml`
+
+典型配置：
 
 ```yaml
 provider: openai
 model: gpt-4o
 base_url: ""
 api_key: ""
+default_profile: coding
+
 skills:
-  - name: my-mcp-server
+  - name: github
     transport: stdio
     command: npx
-    args: ["-y", "@example/mcp-server"]
+    args: ["-y", "@modelcontextprotocol/server-github"]
 ```
 
-优先级：CLI 参数 > 配置文件 > 环境变量
+优先级：
 
-常用环境变量：
+**命令行参数 > 环境变量 > 配置文件**
 
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL`
-- `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`（或 `GOOGLE_API_KEY`）
-- `MOSS_DEBUG=1`（将调试日志写入 `~/.moss/debug.log`）
+## 示例应用
 
-## 架构
+`examples\` 目录中的参考入口：
 
-Moss 由最小运行时核心与顶层功能包组成：
-
-- `kernel/`：运行时原语（loop、tool、session、middleware、port）。
-- `appkit/`：高层装配工具。
-- `agent/`、`skill/`、`bootstrap/`、`knowledge/`、`scheduler/`、`gateway/`：功能与支撑包。
-- `cmd/moss/`：终端 CLI 与 TUI 入口。
-
-## 预设与定制
-
-- 使用 `presets/deepagent` 获取 deepagent 风格默认能力（规划、上下文压缩、任务生命周期）。
-- 可通过 middleware 扩展策略、审计、事件和防护逻辑。
-- 可通过 runtime setup 与配置扩展自定义工具、技能和 MCP 服务。
-
-## 示例
-
-示例应用位于 `examples/`：
-
-- `examples/mosscode/` - 代码助手
-- `examples/mossresearch/` - 深度研究编排（含委派 Web 研究）
-- `examples/mosswriter/` - 基于文件系统的内容构建工作流
-- `examples/mosswork-desktop/` - 桌面协作助理（含委派代理和持久运行时状态）
-- `examples/mossclaw/` - Web 自动化与抓取工作流
-- `examples/mossquant/` - 有状态自主循环模式
-- `examples/mossroom/` - 多用户实时 Agent 游戏
-
-运行任一示例：
-
-```bash
-cd examples/mosscode
-go run .
-```
+- `mosscode` - 代码代理产品面
+- `mossresearch` - 深度研究编排
+- `mosswriter` - 写作工作流代理
+- `mossclaw` - assistant / gateway / scheduling / knowledge 示例
+- `mossquant` - 有状态分析循环
+- `mossroom` - 实时多人房间
+- `mosswork-desktop` - 桌面协作助理
+- `basic`、`custom-tool`、`websocket` - 聚焦型集成示例
 
 ## 文档导航
 
@@ -170,30 +165,12 @@ go run .
 - [变更日志](docs/changelog.md)
 - [路线图](docs/roadmap.md)
 
-## 安全模型
-
-Moss 采用工具边界安全模型：Agent 的能力由你显式暴露的工具决定。
-
-建议在沙箱、策略与工具层施加约束，而不是只依赖提示词限制。
-
 ## 开发校验
 
-```bash
-go vet ./...
+```powershell
 go test ./...
-pwsh ./testing/validate_examples.ps1
 go build ./...
 ```
-
-按示例逐个校验：
-
-```bash
-cd examples/<name>
-go test ./...
-go build .
-```
-
-说明：`go build ./...` 不能作为所有示例模块的严格通过门槛，因为部分打包辅助目录（例如 `examples/mosswork-desktop/build/ios`）并非可独立运行的 `main` 包。
 
 ## 兼容性
 
@@ -203,4 +180,3 @@ go build .
 ## 许可证
 
 MIT
-
