@@ -20,7 +20,6 @@ package otel
 
 import (
 	"context"
-	providers "github.com/mossagents/moss/providers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"net/http"

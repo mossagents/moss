@@ -10,10 +10,11 @@ package prometheus
 
 import (
 	"context"
+	"strconv"
+
 	intr "github.com/mossagents/moss/kernel/io"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
-	"strconv"
 )
 
 // Observer implements kobs.Observer by recording kernel events as Prometheus metrics.
@@ -21,6 +22,8 @@ import (
 // fine-grained execution events (OnExecutionEvent) are silently discarded.
 type Observer struct {
 	kobs.NoOpObserver
+
+	metrics *kobs.MetricsAccumulator
 
 	llmCallsTotal    *prom.CounterVec
 	llmDurationSecs  *prom.HistogramVec
@@ -38,6 +41,7 @@ type Observer struct {
 // for isolated testing.
 func New(reg prom.Registerer) (*Observer, error) {
 	o := &Observer{
+		metrics: &kobs.MetricsAccumulator{},
 		llmCallsTotal: prom.NewCounterVec(prom.CounterOpts{
 			Name: "moss_llm_calls_total",
 			Help: "Total LLM API calls, labelled by model, stop reason, and whether an error occurred.",
@@ -97,6 +101,20 @@ func New(reg prom.Registerer) (*Observer, error) {
 		}
 	}
 	return o, nil
+}
+
+func (o *Observer) OnEvent(_ context.Context, e kobs.EventEnvelope) {
+	if o.metrics != nil {
+		o.metrics.ApplyEnvelope(e)
+	}
+}
+
+// NormalizedMetricsMap returns unified success/latency/cost/tool-error counters.
+func (o *Observer) NormalizedMetricsMap() map[string]float64 {
+	if o.metrics == nil {
+		return map[string]float64{}
+	}
+	return o.metrics.Map()
 }
 
 func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {

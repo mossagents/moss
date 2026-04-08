@@ -25,6 +25,8 @@ import (
 type Observer struct {
 	kobs.NoOpObserver
 
+	metrics *kobs.MetricsAccumulator
+
 	llmCallsTotal  metric.Int64Counter
 	llmDurationMs  metric.Int64Histogram
 	llmTokensTotal metric.Int64Counter
@@ -41,7 +43,7 @@ type Observer struct {
 // New creates an Observer using instruments from the given OTEL Meter.
 // All instruments use the "moss." namespace prefix and standard OTEL conventions.
 func New(meter metric.Meter) (*Observer, error) {
-	o := &Observer{}
+	o := &Observer{metrics: &kobs.MetricsAccumulator{}}
 	var err error
 
 	if o.llmCallsTotal, err = meter.Int64Counter("moss.llm.calls",
@@ -102,6 +104,20 @@ func New(meter metric.Meter) (*Observer, error) {
 	}
 
 	return o, nil
+}
+
+func (o *Observer) OnEvent(_ context.Context, e kobs.EventEnvelope) {
+	if o.metrics != nil {
+		o.metrics.ApplyEnvelope(e)
+	}
+}
+
+// NormalizedMetricsMap returns unified success/latency/cost/tool-error counters.
+func (o *Observer) NormalizedMetricsMap() map[string]float64 {
+	if o.metrics == nil {
+		return map[string]float64{}
+	}
+	return o.metrics.Map()
 }
 
 func (o *Observer) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {

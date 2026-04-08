@@ -28,7 +28,7 @@ func TestObserverImplementsPortObserver(t *testing.T) {
 }
 
 func TestObserver_noopDoesNotPanic(t *testing.T) {
-	_ = newTestObs(t)
+	obs := newTestObs(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -38,7 +38,7 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		{
 			name: "llm call",
 			run: func() {
-				kobs.OnLLMCall(ctx, kobs.LLMCallEvent{
+				kobs.ObserveLLMCall(ctx, obs, kobs.LLMCallEvent{
 					Model:            "gpt-4o",
 					Duration:         300 * time.Millisecond,
 					StopReason:       "end_turn",
@@ -50,7 +50,7 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		{
 			name: "llm call with error",
 			run: func() {
-				kobs.OnLLMCall(ctx, kobs.LLMCallEvent{
+				kobs.ObserveLLMCall(ctx, obs, kobs.LLMCallEvent{
 					Model: "claude-3-5-sonnet",
 					Error: errors.New("rate limit"),
 				})
@@ -59,7 +59,7 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		{
 			name: "tool call",
 			run: func() {
-				kobs.OnToolCall(ctx, kobs.ToolCallEvent{
+				kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{
 					ToolName: "bash",
 					Risk:     "high",
 					Duration: 200 * time.Millisecond,
@@ -70,19 +70,19 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		{
 			name: "session event",
 			run: func() {
-				kobs.OnSessionEvent(ctx, kobs.SessionEvent{Type: "completed"})
+				kobs.ObserveSessionEvent(ctx, obs, kobs.SessionEvent{Type: "completed"})
 			},
 		},
 		{
 			name: "approval pending",
 			run: func() {
-				kobs.OnApproval(ctx, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
+				kobs.ObserveApproval(ctx, obs, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
 			},
 		},
 		{
 			name: "approval resolved",
 			run: func() {
-				kobs.OnApproval(ctx, intr.ApprovalEvent{
+				kobs.ObserveApproval(ctx, obs, intr.ApprovalEvent{
 					Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
 					Decision: &intr.ApprovalDecision{Approved: false},
 				})
@@ -91,7 +91,7 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		{
 			name: "error event",
 			run: func() {
-				kobs.OnError(ctx, kobs.ErrorEvent{Phase: "loop"})
+				kobs.ObserveError(ctx, obs, kobs.ErrorEvent{Phase: "loop"})
 			},
 		},
 	}
@@ -102,3 +102,21 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 		})
 	}
 }
+
+func TestObserver_NormalizedMetricsMap(t *testing.T) {
+	obs := newTestObs(t)
+	ctx := context.Background()
+	kobs.ObserveLLMCall(ctx, obs, kobs.LLMCallEvent{Duration: 100 * time.Millisecond, EstimatedCostUSD: 0.01})
+	kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{ToolName: "read_file", Duration: 20 * time.Millisecond})
+	kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{ToolName: "run_command", Duration: 30 * time.Millisecond, Error: errors.New("fail")})
+	kobs.ObserveSessionEvent(ctx, obs, kobs.SessionEvent{Type: "completed"})
+
+	m := obs.NormalizedMetricsMap()
+	if m["success.run_total"] != 1 {
+		t.Fatalf("run total = %v", m["success.run_total"])
+	}
+	if m["tool_error.calls_total"] != 2 || m["tool_error.errors_total"] != 1 {
+		t.Fatalf("tool error counters mismatch: %+v", m)
+	}
+}
+

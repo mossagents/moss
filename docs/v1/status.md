@@ -14,7 +14,8 @@
 | P1-PROMPT-001 | P1 | appkit+kernel | done | - | - | 2026-04-08 | keep prompt version metadata stable |
 | P1-BUDGET-001 | P1 | kernel-session | done | - | - | 2026-04-08 | monitor false block rate and keep observe-only rollback |
 | P1-EVAL-001 | P1 | testing | done | - | - | 2026-04-08 | maintain grouped report performance |
-| P2-OBS-001 | P2 | telemetry | ready | - | - | 2026-04-08 | unify success/latency/cost/tool-error metrics |
+| P2-OBS-001 | P2 | telemetry | done | - | - | 2026-04-08 | monitor p95 overhead and keep NoOp fallback |
+| P2-REL-001 | P2 | release+infra | ready | - | - | 2026-04-08 | wire release gate checklist with arch guard |
 
 状态枚举：`todo` / `ready` / `running` / `blocked` / `review` / `done` / `rolled_back`
 
@@ -27,6 +28,7 @@
 | BATCH-P0-03 | P0-RUNTIME-001 | done | 2026-04-08 | 2026-04-08 | `go test ./kernel/... ./appkit/...` pass | summarize/rag runtime flags landed |
 | BATCH-P1-01 | P1-PROMPT-001,P1-BUDGET-001 | done | 2026-04-08 | 2026-04-08 | `go test ./appkit/... ./kernel/session/... ./kernel/budget/...` pass | prompt version metadata + global budget governance landed |
 | BATCH-P1-02 | P1-EVAL-001 | done | 2026-04-08 | 2026-04-08 | `go test ./testing/eval/...` pass | grouped report by prompt_version and budget_policy landed |
+| BATCH-P2-01 | P2-OBS-001 | done | 2026-04-08 | 2026-04-08 | `go test ./kernel/observe/...` + `go test ./...` (contrib/telemetry) pass | unified success/latency/cost/tool-error metrics map landed |
 
 ## 3. KPI 快照
 
