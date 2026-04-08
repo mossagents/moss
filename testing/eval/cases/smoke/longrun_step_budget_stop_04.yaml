@@ -1,0 +1,17 @@
+id: longrun-step-budget-stop-04
+description: Ensure agent stops when step budget is reached
+tags: [core, long-run, smoke]
+
+input:
+  messages:
+    - role: user
+      content: "在步骤预算内完成排查，超出时请停止并汇报"
+  tools: [read_file, grep_search, run_in_terminal]
+
+expect:
+  contains: ["预算", "停止"]
+  max_steps: 12
+
+scoring:
+  pass_threshold: 0.8
+

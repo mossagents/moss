@@ -3,6 +3,9 @@ package eval
 import (
 	"context"
 	mdl "github.com/mossagents/moss/kernel/model"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,4 +141,99 @@ func TestKernelRunFunc(t *testing.T) {
 	if !results[0].Pass {
 		t.Fatalf("expected pass, score=%.2f reason=%s", results[0].FinalScore, results[0].Scores[0].Reasoning)
 	}
+}
+
+func TestLoadCase_InvalidValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	badCasePath := filepath.Join(tmpDir, "bad_case.yaml")
+
+	badCase := `id: bad-case
+input:
+  messages:
+    - role: user
+      content: "hello"
+expect:
+  contains: ["ok"]
+scoring:
+  weights:
+    rule: 0
+`
+	if err := os.WriteFile(badCasePath, []byte(badCase), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := LoadCase(badCasePath)
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), badCasePath) {
+		t.Fatalf("expected path-aware error, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "scoring.weights[\"rule\"]") {
+		t.Fatalf("expected field-aware error, got %q", err.Error())
+	}
+}
+
+func TestCaseCatalog_CoreCoverage(t *testing.T) {
+	cases, err := LoadDir("cases")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cases) < 20 {
+		t.Fatalf("expected at least 20 runnable cases, got %d", len(cases))
+	}
+
+	caseIDs := make(map[string]bool, len(cases))
+	tagCoverage := map[string]bool{
+		"coding":   false,
+		"tooling":  false,
+		"security": false,
+		"long-run": false,
+	}
+	for _, c := range cases {
+		caseIDs[c.ID] = true
+		for _, tag := range c.Tags {
+			if _, ok := tagCoverage[tag]; ok {
+				tagCoverage[tag] = true
+			}
+		}
+	}
+	for tag, ok := range tagCoverage {
+		if !ok {
+			t.Fatalf("missing required tag coverage: %s", tag)
+		}
+	}
+
+	smokeIDs := mustReadCaseIDs(t, "cases/smoke.txt")
+	if len(smokeIDs) < 8 {
+		t.Fatalf("expected smoke suite >= 8 cases, got %d", len(smokeIDs))
+	}
+	fullIDs := mustReadCaseIDs(t, "cases/full.txt")
+	if len(fullIDs) < 20 {
+		t.Fatalf("expected full suite >= 20 cases, got %d", len(fullIDs))
+	}
+
+	for _, id := range append(smokeIDs, fullIDs...) {
+		if !caseIDs[id] {
+			t.Fatalf("suite references unknown case id: %s", id)
+		}
+	}
+}
+
+func mustReadCaseIDs(t *testing.T, path string) []string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(data), "\n")
+	ids := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		ids = append(ids, line)
+	}
+	return ids
 }

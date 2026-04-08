@@ -1,0 +1,18 @@
+id: tooling-glob-grep-locate-symbol-02
+description: Ensure agent can locate symbols with search tools
+tags: [core, tooling, full]
+
+input:
+  messages:
+    - role: user
+      content: "用搜索工具定位某个函数的所有调用位置"
+  tools: [file_search, grep_search, read_file]
+
+expect:
+  tool_called: [grep_search]
+  contains: ["调用", "位置"]
+  max_steps: 10
+
+scoring:
+  pass_threshold: 0.8
+

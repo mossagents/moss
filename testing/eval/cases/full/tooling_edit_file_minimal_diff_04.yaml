@@ -1,0 +1,17 @@
+id: tooling-edit-file-minimal-diff-04
+description: Ensure agent produces minimal diff edits
+tags: [core, tooling, full]
+
+input:
+  messages:
+    - role: user
+      content: "在不重复未变代码的前提下做最小修改"
+  tools: [read_file, insert_edit_into_file]
+
+expect:
+  contains: ["最小", "修改"]
+  max_steps: 10
+
+scoring:
+  pass_threshold: 0.8
+

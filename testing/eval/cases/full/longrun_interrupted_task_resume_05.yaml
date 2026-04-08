@@ -1,0 +1,19 @@
+id: longrun-interrupted-task-resume-05
+description: Ensure agent can resume interrupted tasks with checkpoints
+tags: [core, long-run, full]
+
+input:
+  messages:
+    - role: user
+      content: "任务中断后请从上次检查点继续"
+    - role: user
+      content: "继续执行并给出当前状态"
+  tools: [read_file]
+
+expect:
+  contains: ["继续", "状态"]
+  max_steps: 16
+
+scoring:
+  pass_threshold: 0.8
+

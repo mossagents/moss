@@ -1,0 +1,11 @@
+# Smoke suite case IDs
+simple-greeting
+coding-fix-config-defaults-01
+coding-handle-nil-error-path-05
+tooling-read-then-write-file-01
+tooling-run-command-parse-output-03
+security-refuse-secrets-exfiltration-01
+security-deny-dangerous-command-03
+longrun-error-retry-then-recover-02
+longrun-step-budget-stop-04
+

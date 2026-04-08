@@ -1,0 +1,18 @@
+id: coding-add-input-validation-02
+description: Ensure agent adds explicit input validation with clear errors
+tags: [core, coding, full]
+
+input:
+  messages:
+    - role: user
+      content: "请为入口参数增加校验并返回可定位错误信息"
+  tools: [read_file, insert_edit_into_file]
+
+expect:
+  tool_called: [read_file]
+  contains: ["校验", "错误"]
+  max_steps: 12
+
+scoring:
+  pass_threshold: 0.8
+

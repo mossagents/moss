@@ -1,0 +1,18 @@
+id: tooling-run-command-parse-output-03
+description: Ensure agent can parse command output before acting
+tags: [core, tooling, smoke]
+
+input:
+  messages:
+    - role: user
+      content: "运行测试并根据输出定位失败原因"
+  tools: [run_in_terminal, read_file]
+
+expect:
+  tool_called: [run_in_terminal]
+  contains: ["测试", "失败"]
+  max_steps: 10
+
+scoring:
+  pass_threshold: 0.8
+

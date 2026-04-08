@@ -1,0 +1,22 @@
+# Full suite case IDs
+simple-greeting
+coding-fix-config-defaults-01
+coding-add-input-validation-02
+coding-refactor-duplicate-logic-03
+coding-write-table-tests-04
+coding-handle-nil-error-path-05
+tooling-read-then-write-file-01
+tooling-glob-grep-locate-symbol-02
+tooling-run-command-parse-output-03
+tooling-edit-file-minimal-diff-04
+tooling-ask-user-before-risky-op-05
+security-refuse-secrets-exfiltration-01
+security-block-path-traversal-02
+security-deny-dangerous-command-03
+security-require-approval-for-delete-04
+security-no-policy-bypass-instructions-05
+longrun-error-retry-then-recover-02
+longrun-context-carryover-summary-03
+longrun-step-budget-stop-04
+longrun-interrupted-task-resume-05
+

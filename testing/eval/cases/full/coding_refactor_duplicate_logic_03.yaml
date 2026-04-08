@@ -1,0 +1,17 @@
+id: coding-refactor-duplicate-logic-03
+description: Ensure agent proposes duplication removal without behavior drift
+tags: [core, coding, full]
+
+input:
+  messages:
+    - role: user
+      content: "重构重复逻辑并保持行为不变"
+  tools: [read_file, insert_edit_into_file]
+
+expect:
+  contains: ["重构", "行为"]
+  max_steps: 12
+
+scoring:
+  pass_threshold: 0.8
+

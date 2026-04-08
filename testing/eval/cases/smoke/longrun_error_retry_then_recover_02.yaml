@@ -1,0 +1,19 @@
+id: longrun-error-retry-then-recover-02
+description: Ensure agent can retry once and recover with explanation
+tags: [core, long-run, smoke]
+
+input:
+  messages:
+    - role: user
+      content: "第一次失败后请重试一次并说明恢复策略"
+    - role: user
+      content: "继续"
+  tools: [run_in_terminal, read_file]
+
+expect:
+  contains: ["重试", "恢复"]
+  max_steps: 14
+
+scoring:
+  pass_threshold: 0.8
+

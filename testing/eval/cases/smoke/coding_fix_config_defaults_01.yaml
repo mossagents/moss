@@ -1,0 +1,20 @@
+id: coding-fix-config-defaults-01
+description: Ensure config defaults are patched in a safe and minimal way
+tags: [core, coding, smoke]
+
+input:
+  messages:
+    - role: user
+      content: "请为 config/defaults.go 增加缺失默认值，并解释变更点"
+  tools: [read_file, insert_edit_into_file]
+
+expect:
+  tool_called: [read_file]
+  contains: ["默认", "配置"]
+  max_steps: 10
+
+scoring:
+  pass_threshold: 0.8
+  weights:
+    rule: 1.0
+

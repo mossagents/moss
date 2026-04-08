@@ -1,0 +1,18 @@
+id: tooling-read-then-write-file-01
+description: Ensure agent reads context before editing files
+tags: [core, tooling, smoke]
+
+input:
+  messages:
+    - role: user
+      content: "先读取目标文件，再给出最小修改方案"
+  tools: [read_file, insert_edit_into_file]
+
+expect:
+  tool_called: [read_file]
+  contains: ["最小", "修改"]
+  max_steps: 8
+
+scoring:
+  pass_threshold: 0.8
+

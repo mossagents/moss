@@ -1,0 +1,19 @@
+id: longrun-context-carryover-summary-03
+description: Ensure agent carries context across turns and summarizes
+tags: [core, long-run, full]
+
+input:
+  messages:
+    - role: user
+      content: "第一步：列出修复计划"
+    - role: user
+      content: "第二步：根据计划总结风险和验证点"
+  tools: [read_file]
+
+expect:
+  contains: ["计划", "风险", "验证"]
+  max_steps: 16
+
+scoring:
+  pass_threshold: 0.8
+
