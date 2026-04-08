@@ -31,25 +31,16 @@ func (m chatModel) renderShellHeader() string {
 	if len(details) == 0 {
 		details = append(details, shellHeaderDetailStyle.Render("not connected"))
 	}
-	maxDetailWidth := max(12, m.width-lipgloss.Width(brand)-8)
+	maxDetailWidth := max(12, m.width-lipgloss.Width(brand)-6)
 	detailText := truncateDisplayWidth(strings.Join(details, shellHeaderSeparatorStyle.Render(" • ")), maxDetailWidth)
-	available := m.width - lipgloss.Width(brand) - lipgloss.Width(detailText) - 2
-	if available < 3 {
-		available = 3
+	parts := []string{brand}
+	if strings.TrimSpace(detailText) != "" {
+		parts = append(parts, shellHeaderSeparatorStyle.Render("•"), detailText)
 	}
-	header := lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		brand,
-		" ",
-		shellHeaderDiagStyle.Render(strings.Repeat("╱", available)),
-		" ",
-		detailText,
-	)
-	return strings.Join([]string{
-		topBarStyle.Width(max(1, m.width)).Render(header),
-		shellRuleStyle.Width(max(1, m.width)).Render(strings.Repeat("─", max(1, m.width-1))),
-	}, "\n")
+	header := lipgloss.JoinHorizontal(lipgloss.Center, parts...)
+	return topBarStyle.Width(max(1, m.width)).Render(header)
 }
+
 func renderDialogFrame(width int, title string, body []string, footer string) string {
 	if width < 40 {
 		width = 40

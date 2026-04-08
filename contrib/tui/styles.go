@@ -44,9 +44,6 @@ var (
 	shellHeaderSeparatorStyle = lipgloss.NewStyle().
 					Foreground(colorSubtle)
 
-	shellHeaderDiagStyle = lipgloss.NewStyle().
-				Foreground(colorPrimary)
-
 	topBarStyle = lipgloss.NewStyle().
 			Padding(0, 1)
 

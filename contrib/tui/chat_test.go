@@ -2358,6 +2358,18 @@ func TestChatViewDoesNotRenderSidebarSections(t *testing.T) {
 	}
 }
 
+func TestRenderShellHeaderIsSingleLine(t *testing.T) {
+	m := newChatModel("openai-completions", "gpt-4o", ".")
+	m.width = 120
+	header := m.renderShellHeader()
+	if strings.Contains(header, "\n") {
+		t.Fatalf("expected simplified shell header to be single-line, got %q", header)
+	}
+	if strings.Contains(header, "╱") || strings.Contains(header, "─") {
+		t.Fatalf("expected simplified shell header to remove decorative separators, got %q", header)
+	}
+}
+
 func TestSlashCommandImageOpenWithoutLocalPathShowsError(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", t.TempDir())
 	m.messages = append(m.messages, chatMessage{

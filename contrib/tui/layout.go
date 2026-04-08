@@ -17,7 +17,7 @@ func (m chatModel) generateLayout() chatUILayout {
 	layout := chatUILayout{
 		Width:        max(1, m.width),
 		Height:       max(1, m.height),
-		HeaderHeight: 2,
+		HeaderHeight: 1,
 		StatusHeight: 1,
 		MainWidth:    m.mainWidth(),
 	}
