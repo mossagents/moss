@@ -92,12 +92,13 @@ The redesign should make the main screen feel like a focused coding transcript r
 6. `contrib/tui/progress.go`
 7. `contrib/tui/statusline.go`
 8. `contrib/tui/shell.go`
-9. `contrib/tui/overlay.go`
-10. `contrib/tui/ask_form.go`
-11. `contrib/tui/selection_list.go`
-12. `contrib/tui/slash_popup.go`
-13. `contrib/tui/chat.go`
-14. `examples/mosscode/` integration points if the product shell needs small behavior alignment
+9. `contrib/tui/layout.go`
+10. `contrib/tui/overlay.go`
+11. `contrib/tui/ask_form.go`
+12. `contrib/tui/selection_list.go`
+13. `contrib/tui/slash_popup.go`
+14. `contrib/tui/chat.go`
+15. `examples/mosscode/commands_exec.go` for launch-time TUI configuration wiring only
 
 ### Out-of-scope surfaces
 
@@ -150,6 +151,23 @@ The transcript becomes the dominant vertical surface. It should render:
 
 There should be no persistent side pane in the default view.
 
+#### Inline-to-overlay escalation rules
+
+Transcript-native prompts should remain inline only when all of the following are true:
+
+1. the action is a simple confirm / reject or one-step acknowledgement
+2. no list navigation is required
+3. no structured form fields are required
+4. no large diff, review body, or extended explanation is required to act safely
+
+The interaction should escalate into an overlay immediately when any of the following is true:
+
+1. the user needs to choose from more than two options
+2. the action requires form input or multiple fields
+3. the action includes diff/review content that is too large for a compact transcript block
+4. the user explicitly requests more detail or expanded context
+5. the viewport is too narrow to present the prompt safely inline
+
 ### Bottom runtime bar + composer
 
 The footer becomes two coordinated surfaces:
@@ -166,7 +184,7 @@ The status bar should move from broad `key=value` inspection toward a short runt
 Recommended content priority:
 
 1. run state: idle / streaming / tool active / approval waiting / error
-2. active model or profile when helpful
+2. active model or profile when the user has selected a non-default or explicitly switched runtime
 3. active session or workspace hint when space allows
 4. one short contextual hint, not a wall of key bindings
 
@@ -229,9 +247,33 @@ Shared characteristics:
 - summaries visible by default
 - verbose details collapsed by default
 - failures and approval-blocked states may auto-expand more aggressively
-- repeated progress updates may coalesce into the latest visible summary where the current state model allows it
+- repeated progress updates may coalesce into the latest visible summary only when they describe the same in-flight activity key and no older row contains terminal, failure, approval, or distinct tool-call state
 
 This keeps the transcript dense and legible while preserving inspectability.
+
+#### Coalescing rules
+
+Coalescing is allowed only for repeated progress-style updates that are all:
+
+1. scoped to the same session and active run
+2. derived from the same activity key or block identity
+3. non-terminal
+4. not carrying an approval request, error, or final outcome
+
+Coalescing must never merge away:
+
+1. tool start/end boundaries
+2. approval request or approval resolution states
+3. failures, cancellations, or completion states
+4. different event identities that happen to have similar labels
+
+#### Fold-state policy
+
+Fold state should be view-local and session-local to the current TUI process:
+
+1. it survives normal scrolling and redraws during the live UI session
+2. it does not need to persist across full app restart or later resume
+3. newly created failure and approval-blocked rows may ignore prior collapse defaults and open by default
 
 ## 6. Overlay and dialog system
 
@@ -289,7 +331,7 @@ The keyboard model should be reorganized around three mental zones:
 - type and send
 - insert newline
 - cancel active run
-- recall recent input where already supported
+- recall recent input
 - trigger slash completion
 
 ### Timeline flow
@@ -314,7 +356,7 @@ The current surface should stop trying to teach every shortcut all the time.
 
 Recommended model:
 
-1. the default status/composer area exposes only a few high-value hints
+1. the default status/composer area exposes only a few high-value hints: send, newline, cancel when active, and help/slash discovery
 2. the full key map and command language live in a dedicated help overlay
 3. slash popup and help overlay use the same terminology and grouping
 4. contextual hints appear when they are relevant, not permanently
@@ -335,10 +377,15 @@ Purpose: define color, spacing, border, emphasis, and shared style primitives.
 ### Shell and layout layer
 
 - `shell.go`
+- `layout.go`
 - `chat_view.go`
 - `chat_components.go`
 
 Purpose: define frame composition, header/body/footer structure, overlay placement, and shared shell helpers.
+
+Boundary note:
+
+- `chat_view.go` and `chat_components.go` belong here only for structural composition, viewport stacking, and shell assembly
 
 ### Transcript rendering layer
 
@@ -350,9 +397,16 @@ Purpose: render user messages, assistant messages, and unified event blocks with
 ### Status and composer layer
 
 - `statusline.go`
-- relevant composer logic in `chat.go` / view composition files
+- `chat_components.go`
+- `chat_view.go`
+- `chat.go`
 
 Purpose: render current runtime state and prompt entry with minimal noise.
+
+Boundary note:
+
+- `chat_components.go` and `chat_view.go` belong here only for status/composer rendering surfaces
+- `chat.go` belongs here only for composer-facing state and focus routing, not for shell layout assembly
 
 ### Overlay interaction layer
 
@@ -369,7 +423,27 @@ Purpose: provide shared modal shell, focus rules, input routing, and specialized
 
 Purpose: own focus state, overlay state, event folding defaults, composer behavior, and interaction routing.
 
+Boundary note:
+
+- `chat.go` remains the orchestration owner for interaction state, while view files consume that state for rendering
+
 The redesign should avoid pushing presentation policy deep into unrelated runtime adapters.
+
+### mosscode product integration boundary
+
+`examples/mosscode` is in scope only for launch-time product wiring, not for custom rendering forks.
+
+Allowed integration work:
+
+1. pass new shared-TUI config defaults or labels through `mosstui.Run(...)`
+2. align welcome/banner/session wording with the new shell tone if required
+3. expose any new shared TUI options needed to keep the product entrypoint coherent
+
+Not allowed in this phase:
+
+1. product-only layout branches that bypass shared `contrib/tui` rendering
+2. duplicate overlay or transcript rendering logic under `examples/mosscode`
+3. mosscode-only interaction rules that diverge from the shared TUI without a shared abstraction
 
 ## 10. Error handling and degraded behavior
 
