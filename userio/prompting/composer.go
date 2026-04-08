@@ -3,6 +3,7 @@ package prompting
 import (
 	_ "embed"
 	"fmt"
+	"hash/fnv"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
 	config "github.com/mossagents/moss/config"
@@ -74,6 +75,8 @@ type ComposeDebugMeta struct {
 	LayerTokenEstimates map[string]int
 	SourceChain         []string
 	InstructionProfile  string
+	PromptAssembly      string
+	PromptVersion       string
 }
 
 const (
@@ -87,6 +90,8 @@ const (
 	MetadataSuppressionReasonsKey  = "prompt.debug.suppression_reasons"
 	MetadataLayerTokensKey         = "prompt.debug.layer_tokens"
 	MetadataInstructionProfileKey  = "prompt.debug.instruction_profile"
+	MetadataPromptAssemblyKey      = "prompt.assembly"
+	MetadataPromptVersionKey       = "prompt.version"
 )
 
 func Compose(in ComposeInput) (ComposeOutput, error) {
@@ -319,6 +324,7 @@ func buildComposeDebugMeta(graph InstructionGraph, envelope PromptEnvelope) Comp
 		LayerTokenEstimates: map[string]int{},
 		SourceChain:         append([]string(nil), graph.SourceChain...),
 		InstructionProfile:  strings.TrimSpace(graph.Profile.ID),
+		PromptAssembly:      "unified",
 	}
 	for _, layer := range graph.Layers {
 		debug.LayerTokenEstimates[layer.ID] = layer.TokenEstimate
@@ -339,7 +345,18 @@ func buildComposeDebugMeta(graph InstructionGraph, envelope PromptEnvelope) Comp
 	if len(debug.LayerTokenEstimates) == 0 {
 		debug.LayerTokenEstimates = nil
 	}
+	debug.PromptVersion = computePromptVersion(envelope.Prompt)
 	return debug
+}
+
+func computePromptVersion(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return "unified:empty"
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(prompt))
+	return fmt.Sprintf("unified:%x", h.Sum64())
 }
 
 func resolveInstructionProfile(profileName, taskMode string) InstructionProfile {
@@ -492,6 +509,10 @@ func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map
 	delete(metadata, MetadataLayerTokensKey)
 	delete(metadata, MetadataSourceChainKey)
 	delete(metadata, MetadataInstructionProfileKey)
+	delete(metadata, MetadataPromptAssemblyKey)
+	delete(metadata, MetadataPromptVersionKey)
+	delete(metadata, session.MetadataPromptAssembly)
+	delete(metadata, session.MetadataPromptVersion)
 	base := strings.TrimSpace(debug.BaseSource)
 	if base != "" {
 		metadata[MetadataBaseSourceKey] = base
@@ -570,6 +591,14 @@ func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map
 	if profile := strings.TrimSpace(debug.InstructionProfile); profile != "" {
 		metadata[MetadataInstructionProfileKey] = profile
 	}
+	if assembly := strings.TrimSpace(debug.PromptAssembly); assembly != "" {
+		metadata[MetadataPromptAssemblyKey] = assembly
+		metadata[session.MetadataPromptAssembly] = assembly
+	}
+	if version := strings.TrimSpace(debug.PromptVersion); version != "" {
+		metadata[MetadataPromptVersionKey] = version
+		metadata[session.MetadataPromptVersion] = version
+	}
 	return metadata
 }
 
@@ -584,6 +613,8 @@ func ComposeDebugMetaFromMetadata(metadata map[string]any) (ComposeDebugMeta, er
 		SuppressedLayers:   metadataStringSlice(metadata, MetadataSuppressedLayersKey),
 		SourceChain:        metadataStringSlice(metadata, MetadataSourceChainKey),
 		InstructionProfile: strings.TrimSpace(metadataString(metadata, MetadataInstructionProfileKey)),
+		PromptAssembly:     strings.TrimSpace(metadataString(metadata, MetadataPromptAssemblyKey)),
+		PromptVersion:      strings.TrimSpace(metadataString(metadata, MetadataPromptVersionKey)),
 	}
 	reasons, err := metadataStringMap(metadata, MetadataSuppressionReasonsKey)
 	if err != nil {

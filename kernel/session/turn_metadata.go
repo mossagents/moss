@@ -8,6 +8,8 @@ const (
 	MetadataRunID              = "run_id"
 	MetadataTurnID             = "turn_id"
 	MetadataInstructionProfile = "instruction_profile"
+	MetadataPromptVersion      = "prompt_version"
+	MetadataPromptAssembly     = "prompt_assembly"
 	MetadataModelLane          = "model_lane"
 	MetadataVisibleTools       = "visible_tools"
 	MetadataHiddenTools        = "hidden_tools"

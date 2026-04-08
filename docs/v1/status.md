@@ -11,6 +11,8 @@
 | P0-EVAL-002 | P0 | testing | done | - | - | 2026-04-08 | prepare baseline file and tune threshold |
 | P0-DOC-001 | P0 | docs | done | - | - | 2026-04-08 | maintain `docs/v1/regression-rollback-handbook.md` and drill records |
 | P0-RUNTIME-001 | P0 | kernel+appkit | done | - | - | 2026-04-08 | monitor core-case success rate and keep fallback path |
+| P1-PROMPT-001 | P1 | appkit+kernel | done | - | - | 2026-04-08 | keep prompt version metadata stable |
+| P1-BUDGET-001 | P1 | kernel-session | ready | - | - | 2026-04-08 | implement aggregated budget governance |
 
 状态枚举：`todo` / `ready` / `running` / `blocked` / `review` / `done` / `rolled_back`
 
@@ -21,6 +23,7 @@
 | BATCH-P0-01 | P0-EVAL-001,P0-EVAL-003 | done | 2026-04-08 | 2026-04-08 | `go test ./testing/eval/...` pass | schema validation + 20-case catalog completed |
 | BATCH-P0-02 | P0-EVAL-002,P0-DOC-001 | done | 2026-04-08 | 2026-04-08 | `go test ./testing/eval/...` pass | baseline compare/gate + rollback handbook delivered |
 | BATCH-P0-03 | P0-RUNTIME-001 | done | 2026-04-08 | 2026-04-08 | `go test ./kernel/... ./appkit/...` pass | summarize/rag runtime flags landed |
+| BATCH-P1-01 | P1-PROMPT-001,P1-BUDGET-001 | running | 2026-04-08 | - | `go test ./appkit/... ./kernel/prompt/... ./kernel/loop/... ./userio/prompting/...` pass | prompt assembly unified path + prompt_version metadata landed |
 
 ## 3. KPI 快照
 

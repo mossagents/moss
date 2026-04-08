@@ -21,6 +21,8 @@ type RuntimeResolution struct {
 type RuntimeFeatureFlags struct {
 	EnableSummarize bool
 	EnableRAG       bool
+	PromptAssembly  string
+	PromptVersion   string
 }
 
 func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
@@ -30,6 +32,8 @@ func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
 	return RuntimeFeatureFlags{
 		EnableSummarize: flags.EnableSummarize,
 		EnableRAG:       flags.EnableRAG,
+		PromptAssembly:  flags.PromptAssembly,
+		PromptVersion:   flags.PromptVersion,
 	}
 }
 

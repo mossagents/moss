@@ -3,12 +3,13 @@ package prompting
 import (
 	"context"
 	"encoding/json"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/tool"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestCompose_PriorityConfigOverSessionOverModel(t *testing.T) {
@@ -127,6 +128,8 @@ func TestAttachComposeDebugMeta(t *testing.T) {
 		SuppressedLayers:   []string{"runtime_notices"},
 		SourceChain:        []string{"base:config", "dynamic:environment", "dynamic:skills"},
 		InstructionProfile: "planning",
+		PromptAssembly:     "unified",
+		PromptVersion:      "unified:abc123",
 		SuppressionReasons: map[string]string{
 			"runtime_notices": "empty_content",
 		},
@@ -155,6 +158,12 @@ func TestAttachComposeDebugMeta(t *testing.T) {
 	if got, _ := meta[MetadataInstructionProfileKey].(string); got != "planning" {
 		t.Fatalf("instruction profile = %q", got)
 	}
+	if got, _ := meta[MetadataPromptAssemblyKey].(string); got != "unified" {
+		t.Fatalf("prompt assembly = %q", got)
+	}
+	if got, _ := meta[MetadataPromptVersionKey].(string); got != "unified:abc123" {
+		t.Fatalf("prompt version = %q", got)
+	}
 }
 
 func TestAttachComposeDebugMeta_ClearsStaleKeysAndRebuildsSourceChain(t *testing.T) {
@@ -167,11 +176,15 @@ func TestAttachComposeDebugMeta_ClearsStaleKeysAndRebuildsSourceChain(t *testing
 		MetadataLayerTokensKey:        map[string]int{"skills": 4},
 		MetadataSourceChainKey:        "base:session -> dynamic:skills",
 		MetadataInstructionProfileKey: "research",
+		MetadataPromptAssemblyKey:     "legacy",
+		MetadataPromptVersionKey:      "legacy:v0",
 	}
 	meta = AttachComposeDebugMeta(meta, ComposeDebugMeta{
 		BaseSource:       "config",
 		DynamicSectionID: []string{"environment"},
 		EnabledLayers:    []string{"base_config", "environment"},
+		PromptAssembly:   "unified",
+		PromptVersion:    "unified:new",
 	})
 	if got, _ := meta[MetadataBaseSourceKey].(string); got != "config" {
 		t.Fatalf("base source = %q", got)
@@ -185,6 +198,9 @@ func TestAttachComposeDebugMeta_ClearsStaleKeysAndRebuildsSourceChain(t *testing
 	if got, _ := meta[MetadataSourceChainKey].(string); got != "base:config -> dynamic:environment" {
 		t.Fatalf("source chain = %q", got)
 	}
+	if got, _ := meta[MetadataPromptAssemblyKey].(string); got != "unified" {
+		t.Fatalf("prompt assembly = %q", got)
+	}
 }
 
 func TestComposeDebugMetaFromMetadata(t *testing.T) {
@@ -197,6 +213,8 @@ func TestComposeDebugMetaFromMetadata(t *testing.T) {
 		MetadataLayerTokensKey:        map[string]any{"base_config": 12.0, "environment": 6},
 		MetadataSourceChainKey:        "base:config -> dynamic:environment",
 		MetadataInstructionProfileKey: "planning",
+		MetadataPromptAssemblyKey:     "unified",
+		MetadataPromptVersionKey:      "unified:deadbeef",
 	})
 	if err != nil {
 		t.Fatalf("ComposeDebugMetaFromMetadata: %v", err)
@@ -212,6 +230,12 @@ func TestComposeDebugMetaFromMetadata(t *testing.T) {
 	}
 	if got := debug.LayerTokenEstimates["base_config"]; got != 12 {
 		t.Fatalf("base token estimate = %d", got)
+	}
+	if got := debug.PromptAssembly; got != "unified" {
+		t.Fatalf("prompt assembly = %q", got)
+	}
+	if got := debug.PromptVersion; got != "unified:deadbeef" {
+		t.Fatalf("prompt version = %q", got)
 	}
 }
 

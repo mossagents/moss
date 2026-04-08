@@ -2,14 +2,15 @@ package loop
 
 import (
 	"context"
+	"strings"
+	"time"
+
 	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/middleware"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
-	"strings"
-	"time"
 )
 
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
@@ -152,6 +153,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	event.Data = map[string]any{
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
+		"prompt_version":      plan.PromptVersion,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	llmStart := time.Now()
@@ -212,6 +214,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		"tokens":              resp.Usage.TotalTokens,
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
+		"prompt_version":      plan.PromptVersion,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 
@@ -228,6 +231,7 @@ func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
 	sess.Config.Metadata[session.MetadataRunID] = plan.RunID
 	sess.Config.Metadata[session.MetadataTurnID] = plan.TurnID
 	sess.Config.Metadata[session.MetadataInstructionProfile] = plan.InstructionProfile
+	sess.Config.Metadata[session.MetadataPromptVersion] = plan.PromptVersion
 	sess.Config.Metadata[session.MetadataModelLane] = plan.ModelRoute.Lane
 	sess.Config.Metadata[session.MetadataVisibleTools] = visibleToolNames(plan.ToolRoute)
 	sess.Config.Metadata[session.MetadataHiddenTools] = hiddenToolNames(plan.ToolRoute)
@@ -266,6 +270,7 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 	turnEvent.Data = map[string]any{
 		"iteration":            plan.Iteration,
 		"instruction_profile":  plan.InstructionProfile,
+		"prompt_version":       plan.PromptVersion,
 		"lightweight_chat":     plan.LightweightChat,
 		"visible_tools_count":  len(visible),
 		"hidden_tools_count":   len(hidden),

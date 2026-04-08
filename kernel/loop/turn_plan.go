@@ -2,11 +2,12 @@ package loop
 
 import (
 	"fmt"
+	"slices"
+	"strings"
+
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"slices"
-	"strings"
 )
 
 type ToolRouteStatus string
@@ -38,6 +39,7 @@ type TurnPlan struct {
 	TurnID             string              `json:"turn_id,omitempty"`
 	Iteration          int                 `json:"iteration,omitempty"`
 	InstructionProfile string              `json:"instruction_profile,omitempty"`
+	PromptVersion      string              `json:"prompt_version,omitempty"`
 	LightweightChat    bool                `json:"lightweight_chat,omitempty"`
 	ToolRoute          []ToolRouteDecision `json:"tool_route,omitempty"`
 	ModelRoute         ModelRoutePlan      `json:"model_route,omitempty"`
@@ -49,11 +51,24 @@ func buildTurnPlan(sess *session.Session, runID string, iteration int, reg tool.
 		TurnID:             buildTurnID(runID, sess, iteration),
 		Iteration:          iteration,
 		InstructionProfile: instructionProfileForSession(sess),
+		PromptVersion:      promptVersionForSession(sess),
 		LightweightChat:    session.LatestUserTurnIsLightweightChat(session.PromptMessages(sess)),
 	}
 	plan.ToolRoute = buildToolRoute(sess, reg, plan)
 	plan.ModelRoute = buildModelRoute(sess, plan)
 	return plan
+}
+
+func promptVersionForSession(sess *session.Session) string {
+	if sess == nil || sess.Config.Metadata == nil {
+		return ""
+	}
+	if raw, ok := sess.Config.Metadata[session.MetadataPromptVersion]; ok {
+		if version, ok := raw.(string); ok {
+			return strings.TrimSpace(version)
+		}
+	}
+	return ""
 }
 
 func buildTurnID(runID string, sess *session.Session, iteration int) string {

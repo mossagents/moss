@@ -22,6 +22,8 @@ type AppFlags struct {
 
 	EnableSummarize bool
 	EnableRAG       bool
+	PromptAssembly  string
+	PromptVersion   string
 }
 
 // ParseAppFlags 注册并解析通用 CLI 参数，合并全局配置文件的值。
@@ -48,6 +50,8 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
+	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
+	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
 }
 
 // BindAppPFlags 将通用参数注册到指定 pflag FlagSet，供 Cobra CLI 直接使用。
@@ -62,6 +66,8 @@ func BindAppPFlags(fs *pflag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
+	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
+	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
 }
 
 // MergeGlobalConfig 从全局配置文件补充未通过 CLI 设置的字段。
@@ -85,6 +91,8 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		f.Profile = FirstNonEmpty(f.Profile, os.Getenv(prefix+"_PROFILE"))
 		f.APIKey = FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
 		f.BaseURL = FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
+		f.PromptAssembly = FirstNonEmpty(f.PromptAssembly, os.Getenv(prefix+"_PROMPT_ASSEMBLY"))
+		f.PromptVersion = FirstNonEmpty(f.PromptVersion, os.Getenv(prefix+"_PROMPT_VERSION"))
 	}
 }
 
@@ -95,6 +103,7 @@ func (f *AppFlags) ApplyDefaults() {
 	f.Name = FirstNonEmpty(f.Name, f.Provider)
 	f.Workspace = FirstNonEmpty(f.Workspace, ".")
 	f.Trust = FirstNonEmpty(f.Trust, config.TrustRestricted)
+	f.PromptAssembly = FirstNonEmpty(f.PromptAssembly, "unified")
 }
 
 func (f *AppFlags) mergeGlobalConfig() {
