@@ -24,7 +24,7 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		return ""
 	}
 
-	var sections []string
+	sections := []string{m.renderComposerMetaLine(layout.MainWidth)}
 	if len(m.queuedInputs) > 0 {
 		queueLines := make([]string, 0, len(m.queuedInputs)+1)
 		queueLines = append(queueLines, fmt.Sprintf("Queued messages (%d)", len(m.queuedInputs)))
@@ -64,15 +64,20 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 	} else if m.mentionPopup != nil && len(m.mentionPopup.items) > 0 {
 		// @ 文件补全弹窗：inline 替代 overlay
 		sections = append(sections, m.renderMentionPopup(layout.MainWidth))
-	} else {
+	} else if len(m.pendingAttachments) == 0 && len(m.queuedInputs) == 0 && !m.streaming {
 		sections = append(sections, m.renderSlashHintLine())
 	}
 	boxStyle := composerBoxStyle.Copy()
-	if m.streaming {
+	if draft := strings.TrimSpace(m.textarea.Value()); draft != "" || len(m.pendingAttachments) > 0 {
+		boxStyle = boxStyle.BorderForeground(colorSubtle)
+	}
+	if m.slashPopup != nil || m.mentionPopup != nil || strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/") || strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@") {
 		boxStyle = boxStyle.BorderForeground(colorPrimary)
 	}
 	if m.pendAsk != nil {
 		boxStyle = boxStyle.BorderForeground(colorSecondary)
+	} else if m.streaming {
+		boxStyle = boxStyle.BorderForeground(colorPrimary)
 	}
 	sections = append(sections, boxStyle.Render(m.textarea.View()))
 	return lipgloss.NewStyle().
@@ -107,18 +112,18 @@ func (m chatModel) renderStatusPane(width int) string {
 	var status string
 	if m.pendAsk != nil && m.askForm != nil {
 		if m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
-			status = "approval waiting  •  Tab move  •  ↑↓ choose  •  Enter apply  •  Esc close"
+			status = "Approval needed  •  Tab move  •  ↑↓ choose  •  Enter apply"
 		} else {
-			status = "input requested  •  Tab move  •  ↑↓ choose  •  Enter confirm  •  Esc close"
+			status = "Input needed  •  Tab move  •  Enter confirm"
 		}
 	} else if m.scheduleBrowser != nil {
-		status = "schedule  •  ↑↓ choose  •  e run now  •  d delete  •  Esc close"
+		status = "Schedule  •  ↑↓ choose  •  e run  •  d delete  •  Esc close"
 	} else if m.pendAsk != nil {
-		status = "reply required  •  Enter confirm  •  Esc Esc cancel run"
+		status = "Reply needed  •  Enter confirm  •  Esc Esc cancel"
 	} else {
 		status = m.renderStatusLine()
 		if hint := strings.TrimSpace(m.renderFooterHelpLine()); hint != "" {
-			status += "  " + shellHeaderSeparatorStyle.Render("•") + "  " + hint
+			status += "  •  " + hint
 		}
 	}
 	status = truncateDisplayWidth(status, width)

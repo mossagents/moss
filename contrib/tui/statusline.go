@@ -156,30 +156,14 @@ func (m chatModel) experimentalEnabled(name string) bool {
 }
 
 func (m chatModel) renderStatusLine() string {
-	values := []string{m.runtimeStateLabel()}
-	if label := strings.TrimSpace(m.progressStatusSummary()); label != "" && label != m.runtimeStateLabel() {
-		values = append(values, label)
-	}
-	if strings.TrimSpace(m.provider) != "" && (!m.modelAuto || strings.TrimSpace(m.model) != "") {
-		label := strings.TrimSpace(m.provider)
-		if strings.TrimSpace(m.model) != "" {
-			label = strings.TrimSpace(m.model)
-		}
-		values = append(values, label)
-	}
-	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
-		values = append(values, profile)
-	}
-	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-		values = append(values, "thread "+shortThreadID(threadID))
-	}
-	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
-		values = append(values, filepath.Base(workspace))
+	values := []string{titleCaseWord(m.runtimeStateLabel())}
+	if summary := strings.TrimSpace(m.statusContextSummary()); summary != "" {
+		values = append(values, summary)
 	}
 	if m.streaming && !m.runStartedAt.IsZero() {
 		values = append(values, formatElapsed(m.runStartedAt, m.now()))
 	}
-	return strings.Join(values, " │ ")
+	return strings.Join(values, "  •  ")
 }
 
 func (m chatModel) runtimeStateLabel() string {
@@ -211,4 +195,72 @@ func (m chatModel) progressStatusSummary() string {
 		return strings.ToLower(status)
 	}
 	return ""
+}
+
+func (m chatModel) statusContextSummary() string {
+	switch {
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+		return "confirmation needed"
+	case m.pendAsk != nil:
+		return "waiting on you"
+	case m.streaming:
+		if summary := strings.TrimSpace(m.progressStatusSummary()); summary != "" {
+			return truncateDisplayWidth(summary, 36)
+		}
+		if m.hasRunningToolCalls() {
+			return "tool call active"
+		}
+	case m.slashPopup != nil:
+		return "command menu"
+	case m.mentionPopup != nil:
+		return "file picker"
+	}
+	if strings.TrimSpace(m.model) != "" {
+		return strings.TrimSpace(m.model)
+	}
+	if strings.TrimSpace(m.provider) != "" && !m.modelAuto {
+		return strings.TrimSpace(m.provider)
+	}
+	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
+		return profile
+	}
+	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
+		return "thread " + shortThreadID(threadID)
+	}
+	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
+		return filepath.Base(workspace)
+	}
+	return ""
+}
+
+func (m chatModel) composerMetaSummary() (string, string) {
+	switch {
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+		return "Approval", "review request before continuing"
+	case m.pendAsk != nil:
+		return "Input", "answer required to continue"
+	case m.mentionPopup != nil:
+		return "Files", "choose a file to attach"
+	case m.slashPopup != nil:
+		return "Slash", "choose a command"
+	case m.streaming:
+		detail := valueOrDefaultString(strings.TrimSpace(m.progressStatusSummary()), "working")
+		if queued := len(m.queuedInputs); queued > 0 {
+			detail += fmt.Sprintf("  •  %d queued", queued)
+		}
+		detail += "  •  Esc Esc cancel"
+		return "Running", detail
+	case len(m.pendingAttachments) > 0:
+		return "Attachments", fmt.Sprintf("%d ready  •  Ctrl+X removes latest", len(m.pendingAttachments))
+	case len(m.queuedInputs) > 0:
+		return "Queued", fmt.Sprintf("%d waiting to send", len(m.queuedInputs))
+	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/"):
+		return "Slash", "type to filter  •  Tab completes"
+	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@"):
+		return "Files", "type to narrow matches"
+	case strings.TrimSpace(m.textarea.Value()) != "":
+		return "Draft", "Enter sends  •  Ctrl+J newline"
+	default:
+		return "Ready", "/ commands  •  @ files"
+	}
 }

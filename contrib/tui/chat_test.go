@@ -2126,8 +2126,37 @@ func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 	m.textarea.SetValue("hello")
 	m.refreshSlashHints()
 	line := m.renderSlashHintLine()
-	if !strings.Contains(line, "/ for commands") || !strings.Contains(line, "Tab completes") {
+	if !strings.Contains(line, "/ commands") || !strings.Contains(line, "Tab completes") {
 		t.Fatalf("unexpected fallback hint line: %q", line)
+	}
+}
+
+func TestRenderComposerMetaLineHighlightsReadyAndDraftStates(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ready := m.renderComposerMetaLine(120)
+	if !strings.Contains(ready, "Ready") || !strings.Contains(ready, "/ commands") || !strings.Contains(ready, "@ files") {
+		t.Fatalf("unexpected ready composer meta: %q", ready)
+	}
+
+	m.textarea.SetValue("hello")
+	draft := m.renderComposerMetaLine(120)
+	if !strings.Contains(draft, "Draft") || !strings.Contains(draft, "Enter sends") || !strings.Contains(draft, "Ctrl+J newline") {
+		t.Fatalf("unexpected draft composer meta: %q", draft)
+	}
+}
+
+func TestRenderComposerMetaLineShowsRunningContext(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.streaming = true
+	m.progress = executionProgressState{
+		SessionID: "sess-1",
+		Status:    "running",
+		Phase:     "tools",
+		Message:   "running run_command",
+	}
+	line := m.renderComposerMetaLine(120)
+	if !strings.Contains(line, "Running") || !strings.Contains(line, "running run_command") || !strings.Contains(line, "Esc Esc cancel") {
+		t.Fatalf("unexpected running composer meta: %q", line)
 	}
 }
 
@@ -2143,11 +2172,26 @@ func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	if !strings.Contains(line, "/help") {
 		t.Fatalf("unexpected footer line: %q", line)
 	}
-	if !strings.Contains(line, "Enter send") || !strings.Contains(line, "Shift+Enter newline") {
+	if !strings.Contains(line, "Enter send") || !strings.Contains(line, "Ctrl+J newline") {
 		t.Fatalf("expected prompt-first footer hints, got %q", line)
 	}
 	if strings.Contains(line, "thread=sess_1") || strings.Contains(line, "fast=on") {
 		t.Fatalf("footer should no longer append status line, got %q", line)
+	}
+}
+
+func TestRenderStatusLineKeepsOnlyPrimaryContext(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.provider = "openai"
+	m.model = "gpt-4o"
+	m.currentSessionID = "sess_123456"
+	m.profile = "planning"
+	line := m.renderStatusLine()
+	if !strings.Contains(line, "Idle") || !strings.Contains(line, "gpt-4o") {
+		t.Fatalf("unexpected compact status line: %q", line)
+	}
+	if strings.Contains(line, "planning") || strings.Contains(line, "thread") {
+		t.Fatalf("status line should keep only primary context, got %q", line)
 	}
 }
 

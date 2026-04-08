@@ -24,22 +24,34 @@ func (m chatModel) renderHeaderMetaLine() string {
 func (m chatModel) renderSlashHintLine() string {
 	hints := m.currentSlashHints()
 	if len(hints) == 0 {
-		return composerHintStyle.Render("  / for commands  •  @ for files  •  Tab completes")
+		return composerHintStyle.Render("  / commands  •  @ files  •  Tab completes")
 	}
-	return composerHintStyle.Render("  Suggestions: " + strings.Join(hints, "  •  ") + "  •  Tab completes")
+	return composerHintStyle.Render("  Commands: " + strings.Join(hints, "  •  ") + "  •  Tab completes")
+}
+
+func (m chatModel) renderComposerMetaLine(width int) string {
+	label, detail := m.composerMetaSummary()
+	line := "  " + label
+	if strings.TrimSpace(detail) != "" {
+		line += "  •  " + detail
+	}
+	return composerHintStyle.Width(width).Render(truncateDisplayWidth(line, max(12, width)))
 }
 
 func (m chatModel) renderFooterHelpLine() string {
 	if m.streaming {
-		return "Esc Esc cancel  •  /help"
+		return "Esc Esc cancel"
+	}
+	if m.mentionPopup != nil {
+		return "Tab attach  •  Esc close"
 	}
 	if m.slashPopup != nil {
-		return "↑↓ navigate  •  Tab complete  •  Esc dismiss"
+		return "Tab complete  •  Esc close"
 	}
 	if m.hasActiveOverlay() {
 		return "↑↓ move  •  Enter confirm  •  Esc close"
 	}
-	return "Enter send  •  Shift+Enter newline  •  ↑↓ history  •  /help"
+	return "Enter send  •  Ctrl+J newline  •  /help"
 }
 
 func (m chatModel) View() string {
