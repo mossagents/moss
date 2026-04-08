@@ -2,14 +2,18 @@ package builtins
 
 import (
 	"context"
+	"strings"
+
 	"github.com/mossagents/moss/kernel/middleware"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/knowledge"
-	"strings"
 )
 
 // RAGConfig 配置 RAG（检索增强生成）注入行为。
 type RAGConfig struct {
+	// Enabled 控制 middleware 是否启用；nil/true=启用，false=禁用。
+	Enabled *bool
+
 	// Manager 提供三层记忆检索能力（必须提供）。
 	Manager *knowledge.MemoryManager
 
@@ -37,6 +41,13 @@ func (c RAGConfig) maxChars() int {
 	return c.MaxChars
 }
 
+func (c RAGConfig) enabled() bool {
+	if c.Enabled == nil {
+		return true
+	}
+	return *c.Enabled
+}
+
 // RAG 构造 RAG 注入 middleware。
 // 在每次 LLM 调用前（BeforeLLM 阶段），检索三层记忆并将结果追加到 system message。
 //
@@ -47,6 +58,9 @@ func (c RAGConfig) maxChars() int {
 //	})))
 func RAG(cfg RAGConfig) middleware.Middleware {
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
+		if !cfg.enabled() {
+			return next(ctx)
+		}
 		if mc.Phase != middleware.BeforeLLM {
 			return next(ctx)
 		}

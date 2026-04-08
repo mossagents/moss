@@ -2,13 +2,14 @@ package builtins
 
 import (
 	"context"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/mossagents/moss/kernel/middleware"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/knowledge"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestRAG_NoManagerSkips(t *testing.T) {
@@ -119,6 +120,34 @@ func TestRAG_CustomQueryExtractor(t *testing.T) {
 
 	if customQuery != "custom_query" {
 		t.Error("expected custom query extractor to be called")
+	}
+}
+
+func TestRAG_DisabledSkips(t *testing.T) {
+	disabled := false
+	mgr := newTestManager(t)
+	sess := &session.Session{
+		ID: "rag-disabled",
+		Messages: []mdl.Message{
+			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("sys")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("query")}},
+		},
+	}
+	mc := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
+
+	called := false
+	err := RAG(RAGConfig{Enabled: &disabled, Manager: mgr})(context.Background(), mc, func(_ context.Context) error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("expected next to be called")
+	}
+	if len(sess.CopyMessages()) != 2 {
+		t.Fatal("disabled rag should not mutate messages")
 	}
 }
 

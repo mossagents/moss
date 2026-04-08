@@ -2,6 +2,7 @@ package appkit
 
 import (
 	"context"
+
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
@@ -13,6 +14,23 @@ type RuntimeResolution struct {
 	Profile            runtime.ResolvedProfile
 	ConfigInstructions string
 	ModelInstructions  string
+	FeatureFlags       RuntimeFeatureFlags
+}
+
+// RuntimeFeatureFlags captures runtime middleware capability switches.
+type RuntimeFeatureFlags struct {
+	EnableSummarize bool
+	EnableRAG       bool
+}
+
+func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
+	if flags == nil {
+		return RuntimeFeatureFlags{}
+	}
+	return RuntimeFeatureFlags{
+		EnableSummarize: flags.EnableSummarize,
+		EnableRAG:       flags.EnableRAG,
+	}
 }
 
 // RuntimeBuilder centralizes profile/instruction resolution and kernel wiring.
@@ -45,6 +63,7 @@ func (RuntimeBuilder) Resolve(flags *AppFlags) (RuntimeResolution, error) {
 		Profile:            resolvedProfile,
 		ConfigInstructions: configInstructions,
 		ModelInstructions:  modelInstructions,
+		FeatureFlags:       resolveRuntimeFeatureFlags(flags),
 	}, nil
 }
 

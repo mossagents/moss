@@ -2,9 +2,10 @@ package appkit
 
 import (
 	"flag"
+	"os"
+
 	config "github.com/mossagents/moss/config"
 	"github.com/spf13/pflag"
-	"os"
 )
 
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。
@@ -18,6 +19,9 @@ type AppFlags struct {
 	Profile   string
 	APIKey    string
 	BaseURL   string
+
+	EnableSummarize bool
+	EnableRAG       bool
 }
 
 // ParseAppFlags 注册并解析通用 CLI 参数，合并全局配置文件的值。
@@ -42,6 +46,8 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.Profile, "profile", "", "Profile name")
 	fs.StringVar(&f.APIKey, "api-key", "", "API key (overrides env)")
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
+	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
+	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
 }
 
 // BindAppPFlags 将通用参数注册到指定 pflag FlagSet，供 Cobra CLI 直接使用。
@@ -54,6 +60,8 @@ func BindAppPFlags(fs *pflag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.Profile, "profile", "", "Profile name")
 	fs.StringVar(&f.APIKey, "api-key", "", "API key (overrides env)")
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
+	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
+	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
 }
 
 // MergeGlobalConfig 从全局配置文件补充未通过 CLI 设置的字段。
