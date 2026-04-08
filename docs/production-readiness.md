@@ -481,3 +481,160 @@ kernel/retry/breaker → 零依赖（纯 Go）
 | 熔断器验证 | LLM 不可用时快速失败而非堆积 | ✅ 5 个熔断器测试通过 |
 | MemoryWorkspace | 内存虚拟文件系统 + 容量限制 + 路径归一化 | ✅ 8 个测试通过 |
 | ScopedWorkspace | 前缀隔离 + 路径穿越防护 | ✅ 4 个测试通过 |
+
+---
+
+## 11 Phase 4.5：发布门禁流程 (P2-REL-001)
+
+> **目标**：未达标版本无法发布，通过 metrics-driven release gates 确保生产质量。
+
+### 11.1 发布门禁设计
+
+发布前必须通过以下 4 道质量门禁（metrics 来自 P2-OBS-001）：
+
+| 门禁名称 | 描述 | 生产阈值 | 预发阈值 | metric key |
+|---|---|---|---|---|
+| **success_rate** | 运行成功率（completed / total） | ≥ 95% | ≥ 90% | success.rate |
+| **llm_latency_avg** | 平均 LLM 延迟（ms） | ≤ 10,000 | ≤ 15,000 | latency.llm_avg_ms |
+| **tool_latency_avg** | 平均工具延迟（ms） | ≤ 5,000 | ≤ 8,000 | latency.tool_avg_ms |
+| **tool_error_rate** | 工具错误率（errors / total calls） | ≤ 5% | ≤ 10% | tool_error.rate |
+
+**关键特性**：
+- 门禁基于 `kernel/observe/NormalizedMetricsSnapshot` 的在进程聚合数据
+- 支持三层环境配置：`prod` / `staging` / `dev`
+- 支持手工 override（带事件记录）用于紧急发布
+
+### 11.2 实现
+
+#### Go 侧：Release Gate Meter
+
+`kernel/observe/gates.go` 提供 `ReleaseGateMeter`：
+
+```go
+// 创建门禁表
+meter := observe.NewReleaseGateMeter()  // 生产默认阈值
+
+// 验证 snapshot
+status := meter.ValidateSnapshot(snapshot, "prod")
+
+// 查询结果
+if status.AllPassed {
+    // 可以发布
+} else {
+    // 发布被阻止，failCount=${status.FailCount}
+}
+```
+
+#### PowerShell 侧：arch_guard.ps1 扩展
+
+升级后的 `testing/arch_guard.ps1`：
+
+```powershell
+# 检查架构规则 + 生产门禁
+.\arch_guard.ps1 -Environment prod
+
+# 预发环境（阈值更宽松）
+.\arch_guard.ps1 -Environment staging
+
+# 手工 override（紧急发布）
+.\arch_guard.ps1 -Environment prod -OverrideReason "incident-2026-04-08-hotfix"
+```
+
+#### 新增模块：ReleaseGateValidator.psm1
+
+PowerShell 辅助库，包含：
+- `Get-DefaultReleaseGates`: 按环境返回门禁配置
+- `Compare-MetricValue`: 值与阈值比较
+- `Test-ReleaseGate`: 单个门禁验证
+- `Format-GateReport`: 生成可读报告
+
+### 11.3 Override 机制与审计
+
+**场景**：生产卡顿，需要紧急发布已验证的补丁。
+
+```powershell
+# 1. 记录 incident ID
+$reason = "incident-2026-04-08-001-llm-timeout-fix"
+
+# 2. 使用 override 标志发布
+.\arch_guard.ps1 -Environment prod -OverrideReason $reason
+
+# 3. 自动记录至审计日志
+#    docs/v1/release-overrides.log
+#    2026-04-08 14:30:45 | prod | incident-2026-04-08-001-llm-timeout-fix | alice
+```
+
+**审计日志格式**：
+```
+timestamp | environment | override_reason | operator
+2026-04-08 14:30:45 | prod | incident-2026-04-08-001-llm-timeout-fix | alice
+```
+
+### 11.4 架构守护（不变）
+
+现有规则保持不变：
+- 非 cmd 包不能 import cmd 包
+- 作为门禁中第 0 道（always enabled）
+
+### 11.5 集成路径
+
+| 阶段 | 实现 | 状态 |
+|---|---|---|
+| **当前（P2-REL-001）** | Go gates.go + extended arch_guard.ps1 | ✅ 已完成 |
+| **CI/CD 集成** | GitHub Actions / GitLab CI 调用 arch_guard.ps1 | 待集成 |
+| **Dashboard** | 发布门禁状态可视化（optional） | 后续需求 |
+| **动态阈值调优** | 从 baseline 自动导出阈值 | 后续需求 |
+
+### 11.6 测试验收
+
+#### Go 单测（kernel/observe/gates_test.go）
+
+- ✅ `TestNewReleaseGateMeter` — 默认门禁加载
+- ✅ `TestValidateSnapshotAllPassed` — 所有门禁通过
+- ✅ `TestValidateSnapshotPartialFailure` — 部分门禁失败
+- ✅ `TestValidateSnapshotLowSuccessRate` — 成功率不足
+- ✅ `TestCompareValue` — 值比较逻辑
+- ✅ `TestGateStatusReport` — 报告生成
+- ✅ `TestDisabledGate` — 禁用门禁行为
+- ✅ `TestMissingMetricInSnapshot` — 缺失 metric 处理
+
+#### PowerShell 验证
+
+```powershell
+# 架构规则检查（现有）
+.\arch_guard.ps1 -Environment prod
+# Expected: ✓ PASSED
+
+# 生产环境门禁（informational）
+.\arch_guard.ps1 -Environment prod
+# Expected: 4 gates listed
+
+# 预发环境门禁（informational，阈值宽松）
+.\arch_guard.ps1 -Environment staging
+# Expected: 4 gates with relaxed thresholds
+
+# Override 审计记录
+.\arch_guard.ps1 -OverrideReason "test-override"
+# Expected: docs/v1/release-overrides.log 新增一行
+
+# 帮助文本
+.\arch_guard.ps1 -Help
+# Expected: 显示用法
+```
+
+### 11.7 回滚路径
+
+**触发条件**：门禁阻止了正常功能热修（>20% 热修失败率）
+
+**回滚方案**：
+1. 临时禁用特定门禁：`arch_guard.ps1 -SkipGates`
+2. 修改阈值：编辑 `kernel/observe/gates.go` 中的默认值
+3. 降级至观察模式：gates 返回 warning 而非 error（代码层面）
+
+**恢复**：
+- 发布补丁后重新启用门禁
+- 更新阈值至可持续水平
+- 记录 postmortem
+
+---
+

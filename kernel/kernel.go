@@ -3,6 +3,10 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	intr "github.com/mossagents/moss/kernel/io"
@@ -16,9 +20,6 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
-	"strings"
-	"sync"
-	"time"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
@@ -321,6 +322,21 @@ func (k *Kernel) Checkpoints() ckpt.CheckpointStore {
 // SessionStore 返回会话持久化存储（可能为 nil）。
 func (k *Kernel) SessionStore() session.SessionStore {
 	return k.store
+}
+
+// ActiveRunCount 返回当前正在执行的 Run 数量。
+func (k *Kernel) ActiveRunCount() int {
+	return k.runs.activeCount()
+}
+
+// IsShuttingDown 返回 Kernel 是否已进入关停流程。
+func (k *Kernel) IsShuttingDown() bool {
+	select {
+	case <-k.shutdownCh:
+		return true
+	default:
+		return false
+	}
 }
 
 // OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。

@@ -3,10 +3,11 @@ package kernel
 import (
 	"context"
 	"fmt"
-	kerrors "github.com/mossagents/moss/kernel/errors"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	kerrors "github.com/mossagents/moss/kernel/errors"
 )
 
 type runKind string
@@ -91,6 +92,12 @@ func (s *runSupervisor) cancelSessionRuns(sessionID string) {
 			rec.cancel()
 		}
 	}
+}
+
+func (s *runSupervisor) activeCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.runs)
 }
 
 func (s *runSupervisor) wait(ctx context.Context) {

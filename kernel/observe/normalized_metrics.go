@@ -29,6 +29,14 @@ func (s NormalizedMetricsSnapshot) Map() map[string]float64 {
 	if s.ToolCallsTotal > 0 {
 		toolErrorRate = s.ToolErrorsTotal / s.ToolCallsTotal
 	}
+	llmAvgMs := 0.0
+	if s.LLMMSCount > 0 {
+		llmAvgMs = s.LLMMSsum / s.LLMMSCount
+	}
+	toolAvgMs := 0.0
+	if s.ToolMSCount > 0 {
+		toolAvgMs = s.ToolMSsum / s.ToolMSCount
+	}
 	return map[string]float64{
 		"success.run_total":         s.RunTotal,
 		"success.run_success_total": s.RunSuccessTotal,
@@ -36,8 +44,10 @@ func (s NormalizedMetricsSnapshot) Map() map[string]float64 {
 		"success.rate":              successRate,
 		"latency.llm_ms_sum":        s.LLMMSsum,
 		"latency.llm_ms_count":      s.LLMMSCount,
+		"latency.llm_avg_ms":        llmAvgMs,
 		"latency.tool_ms_sum":       s.ToolMSsum,
 		"latency.tool_ms_count":     s.ToolMSCount,
+		"latency.tool_avg_ms":       toolAvgMs,
 		"cost.estimated_usd_sum":    s.EstimatedCostUSDSum,
 		"tool_error.calls_total":    s.ToolCallsTotal,
 		"tool_error.errors_total":   s.ToolErrorsTotal,
