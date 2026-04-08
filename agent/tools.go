@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/mossagents/moss/kernel/loop"
 	mdl "github.com/mossagents/moss/kernel/model"
@@ -13,8 +16,6 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/logging"
-	"strings"
-	"time"
 )
 
 // Delegator 是 agent 包对 Kernel 能力的抽象，避免循环依赖。
@@ -262,7 +263,8 @@ func registerReadAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 	return reg.Register(spec, handler)
 }
 
-type listAgentsInput struct {
+// listInput is shared by list_agents and list_tasks (identical fields).
+type listInput struct {
 	Status string `json:"status"`
 	Agent  string `json:"agent"`
 	Limit  int    `json:"limit"`
@@ -283,29 +285,19 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 		Risk: tool.RiskLow,
 	}
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in listAgentsInput
-		if len(strings.TrimSpace(string(input))) > 0 {
-			if err := json.Unmarshal(input, &in); err != nil {
-				return nil, fmt.Errorf("parse input: %w", err)
-			}
+		var in listInput
+		if err := unmarshalOpt(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
 		}
 		filter := TaskFilter{AgentName: strings.TrimSpace(in.Agent)}
 		if in.Status != "" {
-			status := TaskStatus(strings.TrimSpace(in.Status))
-			switch status {
-			case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
-				filter.Status = status
-			default:
-				return nil, fmt.Errorf("invalid status %q", in.Status)
+			status, err := parseStatusFilter(in.Status)
+			if err != nil {
+				return nil, err
 			}
+			filter.Status = status
 		}
-		limit := in.Limit
-		if limit <= 0 {
-			limit = 20
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(in.Limit)
 		tasks := tracker.List(filter)
 		if len(tasks) > limit {
 			tasks = tasks[:limit]
@@ -340,12 +332,6 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 	return reg.Register(spec, handler)
 }
 
-type listTasksInput struct {
-	Status string `json:"status"`
-	Agent  string `json:"agent"`
-	Limit  int    `json:"limit"`
-}
-
 func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
 	spec := tool.ToolSpec{
 		Name:        "list_tasks",
@@ -361,31 +347,19 @@ func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
 		Risk: tool.RiskLow,
 	}
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
-		var in listTasksInput
-		if len(strings.TrimSpace(string(input))) > 0 {
-			if err := json.Unmarshal(input, &in); err != nil {
-				return nil, fmt.Errorf("parse input: %w", err)
-			}
+		var in listInput
+		if err := unmarshalOpt(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
 		}
-		filter := TaskFilter{
-			AgentName: strings.TrimSpace(in.Agent),
-		}
+		filter := TaskFilter{AgentName: strings.TrimSpace(in.Agent)}
 		if in.Status != "" {
-			status := TaskStatus(strings.TrimSpace(in.Status))
-			switch status {
-			case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
-				filter.Status = status
-			default:
-				return nil, fmt.Errorf("invalid status %q", in.Status)
+			status, err := parseStatusFilter(in.Status)
+			if err != nil {
+				return nil, err
 			}
+			filter.Status = status
 		}
-		limit := in.Limit
-		if limit <= 0 {
-			limit = 20
-		}
-		if limit > 100 {
-			limit = 100
-		}
+		limit := clampLimit(in.Limit)
 		tasks := tracker.List(filter)
 		if len(tasks) > limit {
 			tasks = tasks[:limit]
@@ -903,21 +877,13 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 				AgentName: strings.TrimSpace(in.Agent),
 			}
 			if in.Status != "" {
-				status := TaskStatus(strings.TrimSpace(in.Status))
-				switch status {
-				case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
-					filter.Status = status
-				default:
-					return nil, fmt.Errorf("invalid status %q", in.Status)
+				status, err := parseStatusFilter(in.Status)
+				if err != nil {
+					return nil, err
 				}
+				filter.Status = status
 			}
-			limit := in.Limit
-			if limit <= 0 {
-				limit = 20
-			}
-			if limit > 100 {
-				limit = 100
-			}
+			limit := clampLimit(in.Limit)
 			tasks := tracker.List(filter)
 			if len(tasks) > limit {
 				tasks = tasks[:limit]
@@ -975,6 +941,41 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 	}
 
 	return reg.Register(spec, handler)
+}
+
+// ── 工具公共 helpers ─────────────────────────────────
+
+// clampLimit normalises a limit value: default 20, max 100.
+func clampLimit(limit int) int {
+	if limit <= 0 {
+		return 20
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
+}
+
+// parseStatusFilter validates and returns a TaskStatus for filter use.
+func parseStatusFilter(raw string) (TaskStatus, error) {
+	if raw == "" {
+		return "", nil
+	}
+	status := TaskStatus(strings.TrimSpace(raw))
+	switch status {
+	case TaskRunning, TaskCompleted, TaskFailed, TaskCancelled:
+		return status, nil
+	default:
+		return "", fmt.Errorf("invalid status %q", raw)
+	}
+}
+
+// unmarshalOpt unmarshals input JSON only when the payload is non-empty.
+func unmarshalOpt(input json.RawMessage, v any) error {
+	if len(strings.TrimSpace(string(input))) == 0 {
+		return nil
+	}
+	return json.Unmarshal(input, v)
 }
 
 // ── 公共执行逻辑 ─────────────────────────────────────
@@ -1047,7 +1048,7 @@ func resolveTaskTarget(tracker *TaskTracker, target string) (*Task, error) {
 func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
 	cfg, ok := agents.Get(agentName)
 	if !ok {
-		availableNames := make([]string, 0)
+		var availableNames []string
 		for _, a := range agents.List() {
 			availableNames = append(availableNames, a.Name)
 		}
@@ -1321,10 +1322,8 @@ func registerClaimTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 	}
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in claimTaskInput
-		if len(strings.TrimSpace(string(input))) > 0 {
-			if err := json.Unmarshal(input, &in); err != nil {
-				return nil, fmt.Errorf("parse input: %w", err)
-			}
+		if err := unmarshalOpt(input, &in); err != nil {
+			return nil, fmt.Errorf("parse input: %w", err)
 		}
 		claimer := strings.TrimSpace(in.Claimer)
 		if claimer == "" {

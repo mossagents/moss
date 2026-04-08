@@ -9,6 +9,7 @@ import (
 	kobs "github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"strings"
 	"testing"
 	"time"
@@ -27,10 +28,7 @@ func newTestObs(t *testing.T) (*mossprom.Observer, *prom.Registry) {
 // sumCounter gathers all metrics from reg and sums values for the named counter.
 func sumCounter(t *testing.T, reg *prom.Registry, metricName string) float64 {
 	t.Helper()
-	mfs, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
+	mfs := mustGather(t, reg)
 	var total float64
 	for _, mf := range mfs {
 		if mf.GetName() != metricName {
@@ -43,6 +41,24 @@ func sumCounter(t *testing.T, reg *prom.Registry, metricName string) float64 {
 		}
 	}
 	return total
+}
+
+func mustGather(t *testing.T, reg *prom.Registry) []*dto.MetricFamily {
+	t.Helper()
+	mfs, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	return mfs
+}
+
+func hasLabelValue(m *dto.Metric, name, value string) bool {
+	for _, lp := range m.GetLabel() {
+		if lp.GetName() == name && lp.GetValue() == value {
+			return true
+		}
+	}
+	return false
 }
 
 func TestObserverImplementsPortObserver(t *testing.T) {
@@ -61,7 +77,7 @@ func TestNew_doubleRegisterReturnsError(t *testing.T) {
 }
 
 func TestOnLLMCall(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		Model:            "gpt-4o",
 		Duration:         300 * time.Millisecond,
@@ -86,24 +102,22 @@ func TestOnLLMCall(t *testing.T) {
 }
 
 func TestOnLLMCall_withError(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		Model: "claude-3-5-sonnet",
 		Error: errors.New("rate limit"),
 	})
 
 	// error label "true" series should exist
-	mfs, _ := reg.Gather()
+	mfs := mustGather(t, reg)
 	found := false
 	for _, mf := range mfs {
 		if mf.GetName() != "moss_llm_calls_total" {
 			continue
 		}
 		for _, m := range mf.GetMetric() {
-			for _, lp := range m.GetLabel() {
-				if lp.GetName() == "error" && lp.GetValue() == "true" {
-					found = true
-				}
+			if hasLabelValue(m, "error", "true") {
+				found = true
 			}
 		}
 	}
@@ -113,7 +127,7 @@ func TestOnLLMCall_withError(t *testing.T) {
 }
 
 func TestOnToolCall(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnToolCall(context.Background(), kobs.ToolCallEvent{
 		ToolName: "bash",
 		Risk:     "high",
@@ -127,7 +141,7 @@ func TestOnToolCall(t *testing.T) {
 }
 
 func TestOnSessionEvent(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnSessionEvent(context.Background(), kobs.SessionEvent{Type: "completed"})
 	kobs.OnSessionEvent(context.Background(), kobs.SessionEvent{Type: "failed"})
 
@@ -137,28 +151,30 @@ func TestOnSessionEvent(t *testing.T) {
 }
 
 func TestOnApproval_pending(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
 		Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
 	})
 
-	mfs, _ := reg.Gather()
+	mfs := mustGather(t, reg)
+	hasPending := false
 	for _, mf := range mfs {
 		if mf.GetName() != "moss_approvals_total" {
 			continue
 		}
 		for _, m := range mf.GetMetric() {
-			for _, lp := range m.GetLabel() {
-				if lp.GetName() == "decision" && lp.GetValue() != "pending" {
-					t.Errorf("decision label: want pending got %s", lp.GetValue())
-				}
+			if hasLabelValue(m, "decision", "pending") {
+				hasPending = true
 			}
 		}
+	}
+	if !hasPending {
+		t.Fatal("decision label: expected pending series")
 	}
 }
 
 func TestOnApproval_approved(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
 		Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
 		Decision: &intr.ApprovalDecision{Approved: true},
@@ -170,7 +186,7 @@ func TestOnApproval_approved(t *testing.T) {
 }
 
 func TestOnError(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	kobs.OnError(context.Background(), kobs.ErrorEvent{Phase: "loop"})
 
 	if v := sumCounter(t, reg, "moss_errors_total"); v != 1 {
@@ -179,7 +195,7 @@ func TestOnError(t *testing.T) {
 }
 
 func TestMetricDescriptions(t *testing.T) {
-	obs, reg := newTestObs(t)
+	_, reg := newTestObs(t)
 	// Pre-seed one observation per metric family; CounterVec only appears in
 	// Gather() output after at least one label combination has been recorded.
 	ctx := context.Background()
@@ -193,10 +209,7 @@ func TestMetricDescriptions(t *testing.T) {
 	kobs.OnApproval(ctx, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
 	kobs.OnError(ctx, kobs.ErrorEvent{Phase: "p"})
 
-	mfs, err := reg.Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
+	mfs := mustGather(t, reg)
 	names := make([]string, 0, len(mfs))
 	for _, mf := range mfs {
 		names = append(names, mf.GetName())

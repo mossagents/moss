@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 )
 
@@ -69,8 +68,7 @@ func WeatherHandler() tool.ToolHandler {
 			return nil, fmt.Errorf("parse weather data: %w", err)
 		}
 
-		result := wttr.toResult(args.City, args.Lang)
-		return json.Marshal(result)
+		return json.Marshal(wttr.toResult(args.City, args.Lang))
 	}
 }
 
@@ -104,7 +102,6 @@ type wttrCurrent struct {
 type wttrArea struct {
 	AreaName []wttrLangVal `json:"areaName"`
 	Country  []wttrLangVal `json:"country"`
-	Region   []wttrLangVal `json:"region"`
 }
 
 type wttrLangVal struct {
@@ -140,25 +137,26 @@ func (w *wttrResponse) toResult(city, lang string) weatherResult {
 		r.UVIndex = c.UVIndex
 		r.ObsTime = c.ObsTime
 
-		if lang == "zh" && len(c.LangZh) > 0 {
-			r.Condition = c.LangZh[0].Value
-		} else if len(c.WeatherDesc) > 0 {
-			r.Condition = c.WeatherDesc[0].Value
+		if lang == "zh" {
+			r.Condition = firstLangValue(c.LangZh)
+		}
+		if r.Condition == "" {
+			r.Condition = firstLangValue(c.WeatherDesc)
 		}
 	}
 	if len(w.NearestArea) > 0 {
 		a := w.NearestArea[0]
-		if len(a.Country) > 0 {
-			r.Country = a.Country[0].Value
-		}
-		if len(a.AreaName) > 0 && r.City == "" {
-			r.City = a.AreaName[0].Value
+		r.Country = firstLangValue(a.Country)
+		if r.City == "" {
+			r.City = firstLangValue(a.AreaName)
 		}
 	}
 	return r
 }
 
-// jinaAPIKey 从环境变量获取 Jina API Key（搜索和阅读器工具共用）。
-func jinaAPIKey() string {
-	return os.Getenv("JINA_API_KEY")
+func firstLangValue(values []wttrLangVal) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0].Value
 }

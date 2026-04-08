@@ -12,7 +12,6 @@ import (
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/providers"
 	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
 	"golang.org/x/net/websocket"
@@ -28,9 +27,8 @@ import (
 type GameState string
 
 const (
-	StateLobby   GameState = "lobby"
-	StatePlaying GameState = "playing"
-	StateEnded   GameState = "ended"
+	StateLobby GameState = "lobby"
+	StateEnded GameState = "ended"
 )
 
 // ── Player ──────────────────────────────────────────
@@ -303,19 +301,9 @@ func (r *Room) triggerChatStart(p *Player) {
 	r.lastUserMsg = time.Now()
 	r.mu.Unlock()
 
-	result, err := r.k.Run(r.ctx, r.sess)
-	if err != nil {
-		if r.ctx.Err() != nil {
-			return
-		}
-		logging.GetLogger().ErrorContext(r.ctx, "chat auto-start error",
-			slog.String("room", r.Code),
-			slog.Any("error", err),
-		)
-		r.broadcast(ServerMsg{Type: MsgError, Content: "自动启动失败: " + err.Error()})
+	if !r.runSession("chat auto-start error", "自动启动失败", true) {
 		return
 	}
-	_ = result
 
 	// 初始化完成后启动自主对话循环
 	r.startAutoLoop()
@@ -342,19 +330,9 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 	r.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(userMsg)}})
 
 	// 4. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
-	result, err := r.k.Run(r.ctx, r.sess)
-	if err != nil {
-		if r.ctx.Err() != nil {
-			return
-		}
-		logging.GetLogger().ErrorContext(r.ctx, "agent error",
-			slog.String("room", r.Code),
-			slog.Any("error", err),
-		)
-		r.broadcast(ServerMsg{Type: MsgError, Content: "Agent 出错: " + err.Error()})
+	if !r.runSession("agent error", "Agent 出错", true) {
 		return
 	}
-	_ = result
 
 	// 5. 用户发言后重启自主对话计时
 	if r.ScriptID == "chat" {
@@ -362,12 +340,31 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 	}
 }
 
+// runSession 运行一次 Agent 会话，并按需要记录/广播错误。
+func (r *Room) runSession(logMsg, userErrPrefix string, notifyUsers bool) bool {
+	_, err := r.k.Run(r.ctx, r.sess)
+	if err == nil {
+		return true
+	}
+	if r.ctx.Err() != nil {
+		return false
+	}
+
+	logging.GetLogger().ErrorContext(r.ctx, logMsg,
+		slog.String("room", r.Code),
+		slog.Any("error", err),
+	)
+	if notifyUsers {
+		r.broadcast(ServerMsg{Type: MsgError, Content: userErrPrefix + ": " + err.Error()})
+	}
+	return false
+}
+
 // ── 自主对话循环 ────────────────────────────────────
 
 const (
-	autoMaxTurns   = 6                // 最大自主对话轮次
-	autoWindowMins = 10               // 自主对话窗口（分钟）
-	autoFirstDelay = 45 * time.Second // 第一次自主对话延迟
+	autoMaxTurns   = 6  // 最大自主对话轮次
+	autoWindowMins = 10 // 自主对话窗口（分钟）
 )
 
 // autoDelay 返回第 n 轮自主对话的延迟时间（递增）。
@@ -394,19 +391,7 @@ func (r *Room) startAutoLoop() {
 		r.autoTimer.Stop()
 	}
 	delay := autoDelay(r.autoTurnCount)
-	r.autoTimer = time.AfterFunc(delay, func() {
-		r.fireAutoTurn()
-	})
-	r.mu.Unlock()
-}
-
-// stopAutoLoop 停止自主对话计时器。
-func (r *Room) stopAutoLoop() {
-	r.mu.Lock()
-	if r.autoTimer != nil {
-		r.autoTimer.Stop()
-		r.autoTimer = nil
-	}
+	r.autoTimer = time.AfterFunc(delay, r.fireAutoTurn)
 	r.mu.Unlock()
 }
 
@@ -418,29 +403,21 @@ func (r *Room) fireAutoTurn() {
 	state := r.state
 	r.mu.RUnlock()
 
+	elapsed := time.Since(lastMsg)
+
 	// 检查是否超出窗口或轮次限制
-	if state == StateEnded || turnCount >= autoMaxTurns || time.Since(lastMsg) > autoWindowMins*time.Minute {
+	if state == StateEnded || turnCount >= autoMaxTurns || elapsed > autoWindowMins*time.Minute {
 		return
 	}
 
-	elapsed := time.Since(lastMsg)
 	prompt := fmt.Sprintf(`[系统-自主对话]: 距离上次用户发言已过 %d 秒，虚拟角色可以自主闲聊或互动。请自然地让1-2个角色说点什么（闲聊、接之前的话题、互相调侃等），但控制篇幅简短。如果觉得没什么好说的，回复"skip"即可。`,
 		int(elapsed.Seconds()))
 
 	r.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(prompt)}})
 
-	result, err := r.k.Run(r.ctx, r.sess)
-	if err != nil {
-		if r.ctx.Err() != nil {
-			return
-		}
-		logging.GetLogger().ErrorContext(r.ctx, "auto-turn error",
-			slog.String("room", r.Code),
-			slog.Any("error", err),
-		)
+	if !r.runSession("auto-turn error", "", false) {
 		return
 	}
-	_ = result
 
 	// 递增轮次并安排下一轮
 	r.mu.Lock()

@@ -127,9 +127,8 @@ func TestMetadataExtractor_returnsFuncCallableWithNil(t *testing.T) {
 func TestTraceTransport_injectsHeaders(t *testing.T) {
 	setupPropagation(t)
 
-	var capturedTraceparent string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedTraceparent = r.Header.Get("traceparent")
+		_ = r.Header.Get("traceparent")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -147,7 +146,6 @@ func TestTraceTransport_injectsHeaders(t *testing.T) {
 	// noop tracer produces no real span ID, so traceparent may be empty or
 	// "00-000...0-000...0-00". Either way we verify no panic and no mutation
 	// of the original request object.
-	_ = capturedTraceparent
 }
 
 func TestTraceTransport_nilBase_usesDefaultTransport(t *testing.T) {

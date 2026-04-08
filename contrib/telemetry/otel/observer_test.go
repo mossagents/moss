@@ -27,56 +27,78 @@ func TestObserverImplementsPortObserver(t *testing.T) {
 	var _ kobs.Observer = obs
 }
 
-func TestOnLLMCall_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
-		Model:            "gpt-4o",
-		Duration:         300 * time.Millisecond,
-		StopReason:       "end_turn",
-		Usage:            mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
-		EstimatedCostUSD: 0.002,
-	})
-}
+func TestObserver_noopDoesNotPanic(t *testing.T) {
+	_ = newTestObs(t)
+	ctx := context.Background()
 
-func TestOnLLMCall_withError_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
-		Model: "claude-3-5-sonnet",
-		Error: errors.New("rate limit"),
-	})
-}
+	tests := []struct {
+		name string
+		run  func()
+	}{
+		{
+			name: "llm call",
+			run: func() {
+				kobs.OnLLMCall(ctx, kobs.LLMCallEvent{
+					Model:            "gpt-4o",
+					Duration:         300 * time.Millisecond,
+					StopReason:       "end_turn",
+					Usage:            mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
+					EstimatedCostUSD: 0.002,
+				})
+			},
+		},
+		{
+			name: "llm call with error",
+			run: func() {
+				kobs.OnLLMCall(ctx, kobs.LLMCallEvent{
+					Model: "claude-3-5-sonnet",
+					Error: errors.New("rate limit"),
+				})
+			},
+		},
+		{
+			name: "tool call",
+			run: func() {
+				kobs.OnToolCall(ctx, kobs.ToolCallEvent{
+					ToolName: "bash",
+					Risk:     "high",
+					Duration: 200 * time.Millisecond,
+					Error:    errors.New("exit 1"),
+				})
+			},
+		},
+		{
+			name: "session event",
+			run: func() {
+				kobs.OnSessionEvent(ctx, kobs.SessionEvent{Type: "completed"})
+			},
+		},
+		{
+			name: "approval pending",
+			run: func() {
+				kobs.OnApproval(ctx, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
+			},
+		},
+		{
+			name: "approval resolved",
+			run: func() {
+				kobs.OnApproval(ctx, intr.ApprovalEvent{
+					Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
+					Decision: &intr.ApprovalDecision{Approved: false},
+				})
+			},
+		},
+		{
+			name: "error event",
+			run: func() {
+				kobs.OnError(ctx, kobs.ErrorEvent{Phase: "loop"})
+			},
+		},
+	}
 
-func TestOnToolCall_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnToolCall(context.Background(), kobs.ToolCallEvent{
-		ToolName: "bash",
-		Risk:     "high",
-		Duration: 200 * time.Millisecond,
-		Error:    errors.New("exit 1"),
-	})
-}
-
-func TestOnSessionEvent_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnSessionEvent(context.Background(), kobs.SessionEvent{Type: "completed"})
-}
-
-func TestOnApproval_pending_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
-		Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
-	})
-}
-
-func TestOnApproval_resolved_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
-		Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
-		Decision: &intr.ApprovalDecision{Approved: false},
-	})
-}
-
-func TestOnError_noopDoesNotPanic(t *testing.T) {
-	obs := newTestObs(t)
-	kobs.OnError(context.Background(), kobs.ErrorEvent{Phase: "loop"})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run()
+		})
+	}
 }

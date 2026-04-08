@@ -13,6 +13,7 @@ import (
 	intr "github.com/mossagents/moss/kernel/interaction"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
+	"strconv"
 )
 
 // Observer implements kobs.Observer by recording kernel events as Prometheus metrics.
@@ -98,15 +99,8 @@ func New(reg prom.Registerer) (*Observer, error) {
 	return o, nil
 }
 
-func boolLabel(v bool) string {
-	if v {
-		return "true"
-	}
-	return "false"
-}
-
 func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
-	o.llmCallsTotal.WithLabelValues(e.Model, e.StopReason, boolLabel(e.Error != nil)).Inc()
+	o.llmCallsTotal.WithLabelValues(e.Model, e.StopReason, strconv.FormatBool(e.Error != nil)).Inc()
 	o.llmDurationSecs.WithLabelValues(e.Model).Observe(e.Duration.Seconds())
 	if e.Usage.PromptTokens > 0 {
 		o.llmTokensTotal.WithLabelValues(e.Model, "prompt").Add(float64(e.Usage.PromptTokens))
@@ -120,7 +114,7 @@ func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 }
 
 func (o *Observer) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
-	o.toolCallsTotal.WithLabelValues(e.ToolName, e.Risk, boolLabel(e.Error != nil)).Inc()
+	o.toolCallsTotal.WithLabelValues(e.ToolName, e.Risk, strconv.FormatBool(e.Error != nil)).Inc()
 	o.toolDurationSecs.WithLabelValues(e.ToolName, e.Risk).Observe(e.Duration.Seconds())
 }
 
@@ -129,15 +123,17 @@ func (o *Observer) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
 }
 
 func (o *Observer) OnApproval(_ context.Context, e intr.ApprovalEvent) {
-	decision := "pending"
-	if e.Decision != nil {
-		if e.Decision.Approved {
-			decision = "approved"
-		} else {
-			decision = "rejected"
-		}
+	o.approvalsTotal.WithLabelValues(string(e.Request.Kind), approvalDecision(e)).Inc()
+}
+
+func approvalDecision(e intr.ApprovalEvent) string {
+	if e.Decision == nil {
+		return "pending"
 	}
-	o.approvalsTotal.WithLabelValues(string(e.Request.Kind), decision).Inc()
+	if e.Decision.Approved {
+		return "approved"
+	}
+	return "rejected"
 }
 
 func (o *Observer) OnError(_ context.Context, e kobs.ErrorEvent) {

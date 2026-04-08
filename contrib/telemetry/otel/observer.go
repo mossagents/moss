@@ -12,6 +12,7 @@ package otel
 import (
 	"context"
 	"fmt"
+
 	intr "github.com/mossagents/moss/kernel/interaction"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"go.opentelemetry.io/otel/attribute"
@@ -142,18 +143,20 @@ func (o *Observer) OnSessionEvent(ctx context.Context, e kobs.SessionEvent) {
 }
 
 func (o *Observer) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
-	decision := "pending"
-	if e.Decision != nil {
-		if e.Decision.Approved {
-			decision = "approved"
-		} else {
-			decision = "rejected"
-		}
-	}
 	o.approvalsTotal.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("kind", string(e.Request.Kind)),
-		attribute.String("decision", decision),
+		attribute.String("decision", approvalDecision(e)),
 	))
+}
+
+func approvalDecision(e intr.ApprovalEvent) string {
+	if e.Decision == nil {
+		return "pending"
+	}
+	if e.Decision.Approved {
+		return "approved"
+	}
+	return "rejected"
 }
 
 func (o *Observer) OnError(ctx context.Context, e kobs.ErrorEvent) {
