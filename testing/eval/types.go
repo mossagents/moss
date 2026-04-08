@@ -16,8 +16,9 @@
 package eval
 
 import (
-	mdl "github.com/mossagents/moss/kernel/model"
 	"time"
+
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // EvalCase 声明一个评测用例。
@@ -139,3 +140,27 @@ type EvalResult struct {
 	FinalScore float64      `json:"final_score"`
 	Pass       bool         `json:"pass"`
 }
+
+// BaselineSnapshot 定义基线分数快照文件结构。
+type BaselineSnapshot struct {
+	Version string              `json:"version,omitempty"`
+	Cases   []BaselineCaseScore `json:"cases"`
+}
+
+// BaselineCaseScore 是单个 case 的基线记录。
+type BaselineCaseScore struct {
+	CaseID     string  `json:"case_id"`
+	FinalScore float64 `json:"final_score"`
+	Pass       bool    `json:"pass"`
+}
+
+// GateDecision 表示基线回归判定结果。
+type GateDecision struct {
+	Blocked    bool       `json:"blocked"`
+	ReportOnly bool       `json:"report_only"`
+	Threshold  float64    `json:"threshold"`
+	Regressed  []string   `json:"regressed,omitempty"`
+	Reasons    []string   `json:"reasons,omitempty"`
+	Current    []EvalResult `json:"current,omitempty"`
+}
+

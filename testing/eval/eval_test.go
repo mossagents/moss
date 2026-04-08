@@ -237,3 +237,100 @@ func mustReadCaseIDs(t *testing.T, path string) []string {
 	}
 	return ids
 }
+
+func TestBaselineRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	baselinePath := filepath.Join(tmp, "baseline.json")
+
+	results := []EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.91,
+		Pass:       true,
+	}}
+	if err := WriteBaseline(baselinePath, results); err != nil {
+		t.Fatal(err)
+	}
+
+	baseline, err := LoadBaseline(baselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseline.Cases) != 1 || baseline.Cases[0].CaseID != "case-1" {
+		t.Fatalf("unexpected baseline content: %+v", baseline.Cases)
+	}
+}
+
+func TestCompareBaseline_ThresholdBlocks(t *testing.T) {
+	tmp := t.TempDir()
+	baselinePath := filepath.Join(tmp, "baseline.json")
+	if err := WriteBaseline(baselinePath, []EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.95,
+		Pass:       true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := NewRunner(RunnerConfig{BaselinePath: baselinePath, GateScoreDrop: 0.05})
+	decision, err := r.CompareBaseline([]EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.80,
+		Pass:       true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !decision.Blocked {
+		t.Fatalf("expected gate blocked, decision=%+v", decision)
+	}
+}
+
+func TestCompareBaseline_ReportOnly(t *testing.T) {
+	tmp := t.TempDir()
+	baselinePath := filepath.Join(tmp, "baseline.json")
+	if err := WriteBaseline(baselinePath, []EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.95,
+		Pass:       true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	r := NewRunner(RunnerConfig{BaselinePath: baselinePath, GateScoreDrop: 0.05, GateReportOnly: true})
+	decision, err := r.CompareBaseline([]EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.80,
+		Pass:       true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Blocked {
+		t.Fatalf("expected report-only gate, decision=%+v", decision)
+	}
+	if !decision.ReportOnly {
+		t.Fatalf("expected report-only mode, decision=%+v", decision)
+	}
+}
+
+func TestCompareBaseline_MissingBaselineFallback(t *testing.T) {
+	tmp := t.TempDir()
+	baselinePath := filepath.Join(tmp, "missing-baseline.json")
+
+	r := NewRunner(RunnerConfig{BaselinePath: baselinePath, GateScoreDrop: 0.05})
+	decision, err := r.CompareBaseline([]EvalResult{{
+		Run:        EvalRun{CaseID: "case-1"},
+		FinalScore: 0.80,
+		Pass:       true,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Blocked {
+		t.Fatalf("expected non-blocking fallback, decision=%+v", decision)
+	}
+	if !decision.ReportOnly {
+		t.Fatalf("expected fallback report-only, decision=%+v", decision)
+	}
+}
+

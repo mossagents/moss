@@ -2,9 +2,12 @@ package eval
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/google/uuid"
 	mdl "github.com/mossagents/moss/kernel/model"
+	"os"
 	"strings"
 	"time"
 )
@@ -26,6 +29,15 @@ type RunnerConfig struct {
 
 	// Timeout 单个用例的超时时间，默认 60s。
 	Timeout time.Duration
+
+	// BaselinePath 指向 baseline JSON 文件。
+	BaselinePath string
+
+	// GateScoreDrop 为判定分数回归的阈值，默认 0.03。
+	GateScoreDrop float64
+
+	// GateReportOnly 为 true 时仅报告回归，不阻断。
+	GateReportOnly bool
 }
 
 func (c RunnerConfig) timeout() time.Duration {
@@ -40,6 +52,13 @@ func (c RunnerConfig) parallelism() int {
 		return 1
 	}
 	return c.Parallelism
+}
+
+func (c RunnerConfig) gateScoreDrop() float64 {
+	if c.GateScoreDrop <= 0 {
+		return 0.03
+	}
+	return c.GateScoreDrop
 }
 
 // EvalRunner 批量执行评测用例并聚合结果。
@@ -252,3 +271,98 @@ func resolveMessages(c EvalCase) []mdl.Message {
 	}
 	return msgs
 }
+
+// LoadBaseline 读取 baseline JSON。
+func LoadBaseline(path string) (BaselineSnapshot, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return BaselineSnapshot{}, err
+	}
+	var snapshot BaselineSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return BaselineSnapshot{}, fmt.Errorf("eval: parse baseline %s: %w", path, err)
+	}
+	return snapshot, nil
+}
+
+// WriteBaseline 将当前结果保存为 baseline JSON。
+func WriteBaseline(path string, results []EvalResult) error {
+	snapshot := BaselineSnapshot{Version: "v1", Cases: make([]BaselineCaseScore, 0, len(results))}
+	for _, r := range results {
+		snapshot.Cases = append(snapshot.Cases, BaselineCaseScore{
+			CaseID:     r.Run.CaseID,
+			FinalScore: r.FinalScore,
+			Pass:       r.Pass,
+		})
+	}
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("eval: encode baseline: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("eval: write baseline %s: %w", path, err)
+	}
+	return nil
+}
+
+// CompareBaseline 按阈值比较当前结果与 baseline，返回 gate 判定。
+func (r *EvalRunner) CompareBaseline(results []EvalResult) (GateDecision, error) {
+	decision := GateDecision{
+		ReportOnly: r.cfg.GateReportOnly,
+		Threshold:  r.cfg.gateScoreDrop(),
+		Current:    results,
+	}
+	if r.cfg.BaselinePath == "" {
+		decision.ReportOnly = true
+		decision.Reasons = append(decision.Reasons, "baseline path is empty")
+		return decision, nil
+	}
+
+	baseline, err := LoadBaseline(r.cfg.BaselinePath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			decision.ReportOnly = true
+			decision.Reasons = append(decision.Reasons, "baseline file missing; fallback to report-only")
+			return decision, nil
+		}
+		if decision.ReportOnly {
+			decision.Reasons = append(decision.Reasons, fmt.Sprintf("baseline load failed: %v", err))
+			return decision, nil
+		}
+		return decision, err
+	}
+
+	baseMap := make(map[string]BaselineCaseScore, len(baseline.Cases))
+	for _, c := range baseline.Cases {
+		baseMap[c.CaseID] = c
+	}
+
+	regressedSet := make(map[string]bool)
+	for _, cur := range results {
+		base, ok := baseMap[cur.Run.CaseID]
+		if !ok {
+			continue
+		}
+		drop := base.FinalScore - cur.FinalScore
+		if drop > decision.Threshold {
+			if !regressedSet[cur.Run.CaseID] {
+				decision.Regressed = append(decision.Regressed, cur.Run.CaseID)
+				regressedSet[cur.Run.CaseID] = true
+			}
+			decision.Reasons = append(decision.Reasons,
+				fmt.Sprintf("%s score drop %.3f > %.3f", cur.Run.CaseID, drop, decision.Threshold))
+		}
+		if base.Pass && !cur.Pass {
+			if !regressedSet[cur.Run.CaseID] {
+				decision.Regressed = append(decision.Regressed, cur.Run.CaseID)
+				regressedSet[cur.Run.CaseID] = true
+			}
+			decision.Reasons = append(decision.Reasons,
+				fmt.Sprintf("%s pass->fail", cur.Run.CaseID))
+		}
+	}
+
+	decision.Blocked = len(decision.Regressed) > 0 && !decision.ReportOnly
+	return decision, nil
+}
+
