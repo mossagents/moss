@@ -2,12 +2,13 @@ package eval
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 func TestRuleJudge_AllPass(t *testing.T) {
@@ -334,3 +335,52 @@ func TestCompareBaseline_MissingBaselineFallback(t *testing.T) {
 	}
 }
 
+func TestGroupResultsByDimensions(t *testing.T) {
+	results := []EvalResult{
+		{Run: EvalRun{CaseID: "a"}, Pass: true, Dimensions: ReportDimensions{PromptVersion: "pv1", BudgetPolicy: "observe-only"}},
+		{Run: EvalRun{CaseID: "b"}, Pass: false, Dimensions: ReportDimensions{PromptVersion: "pv1", BudgetPolicy: "observe-only"}},
+		{Run: EvalRun{CaseID: "c"}, Pass: true, Dimensions: ReportDimensions{PromptVersion: "pv2", BudgetPolicy: "enforce"}},
+	}
+	groups := GroupResultsByDimensions(results)
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	key := "prompt_version=pv1 | budget_policy=observe-only"
+	if len(groups[key]) != 2 {
+		t.Fatalf("expected 2 results in %s, got %d", key, len(groups[key]))
+	}
+}
+
+func TestEvalRunner_RenderSummary_FlatMode(t *testing.T) {
+	r := NewRunner(RunnerConfig{ReportMode: "flat"})
+	results := []EvalResult{{Run: EvalRun{CaseID: "x", Steps: 1}, FinalScore: 1, Pass: true}}
+	out := r.RenderSummary(results)
+	if !strings.Contains(out, "✅ PASS") {
+		t.Fatalf("expected flat summary output, got %q", out)
+	}
+}
+
+func TestEvalRunner_Run_AssignsDefaultDimensions(t *testing.T) {
+	cases := []EvalCase{{
+		ID:     "dim-case",
+		Expect: EvalExpect{Contains: []string{"hello"}},
+	}}
+	r := NewRunner(RunnerConfig{
+		RunCase: func(_ context.Context, c EvalCase) (EvalRun, error) {
+			return EvalRun{CaseID: c.ID, Output: "hello", Steps: 1}, nil
+		},
+		Judges:        []Judge{NewRuleJudge()},
+		PromptVersion: "pv-default",
+		BudgetPolicy:  "observe-only",
+	})
+	results, err := r.Run(context.Background(), cases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one result, got %d", len(results))
+	}
+	if results[0].Dimensions.PromptVersion != "pv-default" || results[0].Dimensions.BudgetPolicy != "observe-only" {
+		t.Fatalf("unexpected dimensions: %+v", results[0].Dimensions)
+	}
+}

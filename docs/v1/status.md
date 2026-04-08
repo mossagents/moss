@@ -13,7 +13,8 @@
 | P0-RUNTIME-001 | P0 | kernel+appkit | done | - | - | 2026-04-08 | monitor core-case success rate and keep fallback path |
 | P1-PROMPT-001 | P1 | appkit+kernel | done | - | - | 2026-04-08 | keep prompt version metadata stable |
 | P1-BUDGET-001 | P1 | kernel-session | done | - | - | 2026-04-08 | monitor false block rate and keep observe-only rollback |
-| P1-EVAL-001 | P1 | testing | ready | - | - | 2026-04-08 | add grouped report by prompt_version and budget_policy |
+| P1-EVAL-001 | P1 | testing | done | - | - | 2026-04-08 | maintain grouped report performance |
+| P2-OBS-001 | P2 | telemetry | ready | - | - | 2026-04-08 | unify success/latency/cost/tool-error metrics |
 
 状态枚举：`todo` / `ready` / `running` / `blocked` / `review` / `done` / `rolled_back`
 
@@ -25,6 +26,7 @@
 | BATCH-P0-02 | P0-EVAL-002,P0-DOC-001 | done | 2026-04-08 | 2026-04-08 | `go test ./testing/eval/...` pass | baseline compare/gate + rollback handbook delivered |
 | BATCH-P0-03 | P0-RUNTIME-001 | done | 2026-04-08 | 2026-04-08 | `go test ./kernel/... ./appkit/...` pass | summarize/rag runtime flags landed |
 | BATCH-P1-01 | P1-PROMPT-001,P1-BUDGET-001 | done | 2026-04-08 | 2026-04-08 | `go test ./appkit/... ./kernel/session/... ./kernel/budget/...` pass | prompt version metadata + global budget governance landed |
+| BATCH-P1-02 | P1-EVAL-001 | done | 2026-04-08 | 2026-04-08 | `go test ./testing/eval/...` pass | grouped report by prompt_version and budget_policy landed |
 
 ## 3. KPI 快照
 

@@ -139,6 +139,13 @@ type EvalResult struct {
 	Scores     []JudgeScore `json:"scores"`
 	FinalScore float64      `json:"final_score"`
 	Pass       bool         `json:"pass"`
+	Dimensions ReportDimensions `json:"dimensions,omitempty"`
+}
+
+// ReportDimensions captures prompt/budget dimensions used in grouped eval reports.
+type ReportDimensions struct {
+	PromptVersion string `json:"prompt_version,omitempty"`
+	BudgetPolicy  string `json:"budget_policy,omitempty"`
 }
 
 // BaselineSnapshot 定义基线分数快照文件结构。

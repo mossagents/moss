@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -38,6 +39,15 @@ type RunnerConfig struct {
 
 	// GateReportOnly 为 true 时仅报告回归，不阻断。
 	GateReportOnly bool
+
+	// ReportMode 评测报告模式：grouped|flat。
+	ReportMode string
+
+	// PromptVersion 默认 prompt 维度值。
+	PromptVersion string
+
+	// BudgetPolicy 默认 budget 维度值。
+	BudgetPolicy string
 }
 
 func (c RunnerConfig) timeout() time.Duration {
@@ -59,6 +69,17 @@ func (c RunnerConfig) gateScoreDrop() float64 {
 		return 0.03
 	}
 	return c.GateScoreDrop
+}
+
+func (c RunnerConfig) reportMode() string {
+	mode := strings.ToLower(strings.TrimSpace(c.ReportMode))
+	if mode == "" {
+		return "grouped"
+	}
+	if mode != "grouped" && mode != "flat" {
+		return "grouped"
+	}
+	return mode
 }
 
 // EvalRunner 批量执行评测用例并聚合结果。
@@ -156,6 +177,10 @@ func (r *EvalRunner) runOne(ctx context.Context, c EvalCase) (EvalResult, error)
 		Scores:     scores,
 		FinalScore: finalScore,
 		Pass:       finalScore >= c.Scoring.passThreshold(),
+		Dimensions: ReportDimensions{
+			PromptVersion: strings.TrimSpace(r.cfg.PromptVersion),
+			BudgetPolicy:  strings.TrimSpace(r.cfg.BudgetPolicy),
+		},
 	}, nil
 }
 
@@ -222,6 +247,64 @@ func PrintSummary(results []EvalResult) string {
 	}
 	sb.WriteString(fmt.Sprintf("\nTotal: %d  Pass: %d  Fail: %d\n", len(results), pass, fail))
 	return sb.String()
+}
+
+// PrintGroupedSummary 按 prompt_version + budget_policy 维度分组输出摘要。
+func PrintGroupedSummary(results []EvalResult) string {
+	if len(results) == 0 {
+		return "\nTotal: 0  Pass: 0  Fail: 0\n"
+	}
+	groups := GroupResultsByDimensions(results)
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var sb strings.Builder
+	totalPass, totalFail := 0, 0
+	for _, key := range keys {
+		items := groups[key]
+		pass, fail := 0, 0
+		for _, r := range items {
+			if r.Pass {
+				pass++
+				totalPass++
+			} else {
+				fail++
+				totalFail++
+			}
+		}
+		sb.WriteString(fmt.Sprintf("[%s] total=%d pass=%d fail=%d\n", key, len(items), pass, fail))
+	}
+	sb.WriteString(fmt.Sprintf("\nTotal: %d  Pass: %d  Fail: %d\n", len(results), totalPass, totalFail))
+	return sb.String()
+}
+
+// GroupResultsByDimensions 按 prompt_version + budget_policy 维度分组。
+func GroupResultsByDimensions(results []EvalResult) map[string][]EvalResult {
+	groups := make(map[string][]EvalResult)
+	for _, r := range results {
+		pv := strings.TrimSpace(r.Dimensions.PromptVersion)
+		if pv == "" {
+			pv = "unknown"
+		}
+		bp := strings.TrimSpace(r.Dimensions.BudgetPolicy)
+		if bp == "" {
+			bp = "unknown"
+		}
+		key := fmt.Sprintf("prompt_version=%s | budget_policy=%s", pv, bp)
+		groups[key] = append(groups[key], r)
+	}
+	return groups
+}
+
+// RenderSummary 根据 RunnerConfig 的报告模式输出摘要文本。
+func (r *EvalRunner) RenderSummary(results []EvalResult) string {
+	if r.cfg.reportMode() == "flat" {
+		return PrintSummary(results)
+	}
+	return PrintGroupedSummary(results)
 }
 
 // ---- RunCase helper for kernel integration -----------------------------
