@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	mdl "github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/logging"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/logging"
 )
 
 func TestFileStore(t *testing.T) {
@@ -174,6 +175,33 @@ func TestFileStoreOverwrite(t *testing.T) {
 	}
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(entries))
+	}
+}
+
+func TestFileStore_PersistsBudgetPolicy(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	sess := &Session{
+		ID:     "budget-policy",
+		Status: StatusCreated,
+		Config: SessionConfig{
+			Goal:         "policy check",
+			BudgetPolicy: BudgetPolicyObserveOnly,
+		},
+	}
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Load(ctx, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded == nil || loaded.Config.BudgetPolicy != BudgetPolicyObserveOnly {
+		t.Fatalf("budget policy lost after roundtrip: %+v", loaded)
 	}
 }
 

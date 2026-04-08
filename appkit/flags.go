@@ -3,6 +3,8 @@ package appkit
 import (
 	"flag"
 	"os"
+	"strconv"
+	"strings"
 
 	config "github.com/mossagents/moss/config"
 	"github.com/spf13/pflag"
@@ -24,6 +26,11 @@ type AppFlags struct {
 	EnableRAG       bool
 	PromptAssembly  string
 	PromptVersion   string
+
+	BudgetGovernance string
+	GlobalMaxTokens  int
+	GlobalMaxSteps   int
+	GlobalWarnAt     float64
 }
 
 // ParseAppFlags 注册并解析通用 CLI 参数，合并全局配置文件的值。
@@ -52,6 +59,10 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
 	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
 	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
+	fs.StringVar(&f.BudgetGovernance, "budget-governance", "", "Global budget governance mode: off|observe-only|enforce")
+	fs.IntVar(&f.GlobalMaxTokens, "global-max-tokens", 0, "Global token budget cap (0 = unlimited)")
+	fs.IntVar(&f.GlobalMaxSteps, "global-max-steps", 0, "Global step budget cap (0 = unlimited)")
+	fs.Float64Var(&f.GlobalWarnAt, "global-budget-warn-at", 0, "Global budget warning ratio, e.g. 0.8")
 }
 
 // BindAppPFlags 将通用参数注册到指定 pflag FlagSet，供 Cobra CLI 直接使用。
@@ -68,6 +79,10 @@ func BindAppPFlags(fs *pflag.FlagSet, f *AppFlags) {
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
 	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
 	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
+	fs.StringVar(&f.BudgetGovernance, "budget-governance", "", "Global budget governance mode: off|observe-only|enforce")
+	fs.IntVar(&f.GlobalMaxTokens, "global-max-tokens", 0, "Global token budget cap (0 = unlimited)")
+	fs.IntVar(&f.GlobalMaxSteps, "global-max-steps", 0, "Global step budget cap (0 = unlimited)")
+	fs.Float64Var(&f.GlobalWarnAt, "global-budget-warn-at", 0, "Global budget warning ratio, e.g. 0.8")
 }
 
 // MergeGlobalConfig 从全局配置文件补充未通过 CLI 设置的字段。
@@ -93,6 +108,22 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		f.BaseURL = FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
 		f.PromptAssembly = FirstNonEmpty(f.PromptAssembly, os.Getenv(prefix+"_PROMPT_ASSEMBLY"))
 		f.PromptVersion = FirstNonEmpty(f.PromptVersion, os.Getenv(prefix+"_PROMPT_VERSION"))
+		f.BudgetGovernance = FirstNonEmpty(f.BudgetGovernance, os.Getenv(prefix+"_BUDGET_GOVERNANCE"))
+		if raw := strings.TrimSpace(os.Getenv(prefix + "_GLOBAL_MAX_TOKENS")); raw != "" {
+			if v, err := strconv.Atoi(raw); err == nil {
+				f.GlobalMaxTokens = v
+			}
+		}
+		if raw := strings.TrimSpace(os.Getenv(prefix + "_GLOBAL_MAX_STEPS")); raw != "" {
+			if v, err := strconv.Atoi(raw); err == nil {
+				f.GlobalMaxSteps = v
+			}
+		}
+		if raw := strings.TrimSpace(os.Getenv(prefix + "_GLOBAL_BUDGET_WARN_AT")); raw != "" {
+			if v, err := strconv.ParseFloat(raw, 64); err == nil {
+				f.GlobalWarnAt = v
+			}
+		}
 	}
 }
 
@@ -104,6 +135,19 @@ func (f *AppFlags) ApplyDefaults() {
 	f.Workspace = FirstNonEmpty(f.Workspace, ".")
 	f.Trust = FirstNonEmpty(f.Trust, config.TrustRestricted)
 	f.PromptAssembly = FirstNonEmpty(f.PromptAssembly, "unified")
+	f.BudgetGovernance = normalizeBudgetGovernance(FirstNonEmpty(f.BudgetGovernance, "observe-only"))
+	if f.GlobalWarnAt < 0 {
+		f.GlobalWarnAt = 0
+	}
+}
+
+func normalizeBudgetGovernance(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "off", "enforce", "observe-only":
+		return strings.ToLower(strings.TrimSpace(mode))
+	default:
+		return "observe-only"
+	}
 }
 
 func (f *AppFlags) mergeGlobalConfig() {

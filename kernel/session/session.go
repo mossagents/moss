@@ -1,9 +1,10 @@
 package session
 
 import (
-	mdl "github.com/mossagents/moss/kernel/model"
 	"sync"
 	"time"
+
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // SessionStatus 表示 Session 的生命周期状态。
@@ -26,6 +27,7 @@ type SessionConfig struct {
 	TrustLevel   string          `json:"trust_level,omitempty"`
 	MaxSteps     int             `json:"max_steps,omitempty"`
 	MaxTokens    int             `json:"max_tokens,omitempty"`
+	BudgetPolicy string          `json:"budget_policy,omitempty"`
 	Timeout      time.Duration   `json:"timeout,omitempty"`
 	SystemPrompt string          `json:"system_prompt,omitempty"`
 	ModelConfig  mdl.ModelConfig `json:"model_config,omitempty"`

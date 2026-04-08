@@ -6,31 +6,29 @@
 
 ## Tasks
 - P1-PROMPT-001: done
-- P1-BUDGET-001: ready
+- P1-BUDGET-001: done
 
 ## Changes
-- `appkit/flags.go`: add `--prompt-assembly` and `--prompt-version` runtime flags with env support.
-- `appkit/runtime_builder.go`: extend `RuntimeFeatureFlags` with prompt assembly/version values.
-- `appkit/runtime_builder_test.go`: add tests for prompt assembly defaults and prompt version override.
-- `kernel/session/turn_metadata.go`: add `prompt_version` and `prompt_assembly` metadata keys.
-- `userio/prompting/composer.go`: add prompt assembly/version generation and metadata attachment.
-- `userio/prompting/composer_test.go`: add tests for prompt assembly/version metadata attachment and decode.
-- `kernel/loop/turn_plan.go`: include `PromptVersion` in turn plan.
-- `kernel/loop/loop_run.go`: persist and emit `prompt_version` in turn/LLM events.
-- `kernel/loop/turn_plan_test.go`: add prompt version carry-over test.
+- `appkit/flags.go`: add budget governance flags (`--budget-governance`, `--global-max-tokens`, `--global-max-steps`, `--global-budget-warn-at`) with env support.
+- `appkit/runtime_builder.go`: extend `RuntimeFeatureFlags` with budget governance and global budget limits.
+- `appkit/runtime_builder_test.go`: add tests for budget governance defaults and override propagation.
+- `appkit/appkit_test.go`: add defaults/env tests for budget governance options.
+- `kernel/session/session.go`: add `SessionConfig.BudgetPolicy`.
+- `kernel/session/budget_governance.go`: add policy normalization, block decision, and aggregated budget report model.
+- `kernel/session/session_test.go`: add budget governance normalization and aggregate report behavior tests.
+- `kernel/session/store_file_test.go`: add `budget_policy` persistence round-trip test.
 - `docs/v1/status.md`: sync board status.
 
 ## Validation
-- `go test ./appkit/... ./kernel/prompt/... ./kernel/loop/... ./userio/prompting/...` : pass
+- `go test ./appkit/... ./kernel/session/... ./kernel/budget/...` : pass
 - `go test ./testing/eval/...` : pass
 
 ## Risks
-- Prompt assembly mode flag is now tracked in runtime config, but legacy-vs-unified execution branching is currently metadata-first and not hard-routed in all entrypoints.
+- Governance policy/report is now available and persisted, but enforcement remains opt-in (`enforce`) and still requires entrypoint wiring to actively block in production flows.
 
 ## Rollback Actions
-- Set `--prompt-assembly=legacy` and keep existing prompt templates.
-- Use `--prompt-version` override for quick trace correlation while rollback is in progress.
+- Set `--budget-governance=observe-only` (or `off`) to disable blocking immediately.
+- Keep global limits configured while collecting report evidence only.
 
 ## Next
-- execute `P1-BUDGET-001` (global budget governance and aggregated budget report).
-
+- execute `P1-EVAL-001` (grouped eval reporting by `prompt_version` and `budget_policy`).

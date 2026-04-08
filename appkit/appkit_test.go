@@ -148,6 +148,9 @@ func TestCommonFlags_ApplyDefaults(t *testing.T) {
 	if f.PromptAssembly != "unified" {
 		t.Fatalf("PromptAssembly = %q, want unified", f.PromptAssembly)
 	}
+	if f.BudgetGovernance != "observe-only" {
+		t.Fatalf("BudgetGovernance = %q, want observe-only", f.BudgetGovernance)
+	}
 }
 
 func TestCommonFlags_MergeEnv_PromptSettings(t *testing.T) {
@@ -163,6 +166,27 @@ func TestCommonFlags_MergeEnv_PromptSettings(t *testing.T) {
 	}
 	if f.PromptVersion != "p1-unified-v1" {
 		t.Fatalf("PromptVersion = %q, want p1-unified-v1", f.PromptVersion)
+	}
+}
+
+func TestCommonFlags_MergeEnv_BudgetGovernance(t *testing.T) {
+	t.Setenv("MOSS_BUDGET_GOVERNANCE", "enforce")
+	t.Setenv("MOSS_GLOBAL_MAX_TOKENS", "9000")
+	t.Setenv("MOSS_GLOBAL_MAX_STEPS", "120")
+	t.Setenv("MOSS_GLOBAL_BUDGET_WARN_AT", "0.75")
+
+	f := &AppFlags{}
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	if f.BudgetGovernance != "enforce" {
+		t.Fatalf("BudgetGovernance = %q, want enforce", f.BudgetGovernance)
+	}
+	if f.GlobalMaxTokens != 9000 || f.GlobalMaxSteps != 120 {
+		t.Fatalf("unexpected global limits: tokens=%d steps=%d", f.GlobalMaxTokens, f.GlobalMaxSteps)
+	}
+	if f.GlobalWarnAt != 0.75 {
+		t.Fatalf("GlobalWarnAt = %f, want 0.75", f.GlobalWarnAt)
 	}
 }
 

@@ -23,6 +23,10 @@ type RuntimeFeatureFlags struct {
 	EnableRAG       bool
 	PromptAssembly  string
 	PromptVersion   string
+	BudgetGovernance string
+	GlobalMaxTokens  int
+	GlobalMaxSteps   int
+	GlobalWarnAt     float64
 }
 
 func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
@@ -34,6 +38,10 @@ func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
 		EnableRAG:       flags.EnableRAG,
 		PromptAssembly:  flags.PromptAssembly,
 		PromptVersion:   flags.PromptVersion,
+		BudgetGovernance: flags.BudgetGovernance,
+		GlobalMaxTokens:  flags.GlobalMaxTokens,
+		GlobalMaxSteps:   flags.GlobalMaxSteps,
+		GlobalWarnAt:     flags.GlobalWarnAt,
 	}
 }
 

@@ -2,9 +2,10 @@ package session
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
 	"sync/atomic"
 	"testing"
+
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 func TestBudgetExhausted(t *testing.T) {
@@ -194,5 +195,45 @@ func TestWithCancelHook_UsesAwareManager(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&hooked); got != 1 {
 		t.Fatalf("hook called = %d, want 1", got)
+	}
+}
+
+func TestNormalizeBudgetPolicy_DefaultObserveOnly(t *testing.T) {
+	if got := NormalizeBudgetPolicy(""); got != BudgetPolicyObserveOnly {
+		t.Fatalf("expected observe-only default, got %q", got)
+	}
+	if got := NormalizeBudgetPolicy("unknown"); got != BudgetPolicyObserveOnly {
+		t.Fatalf("expected observe-only fallback, got %q", got)
+	}
+}
+
+func TestAggregateBudgetReport_ObserveOnlyDoesNotBlock(t *testing.T) {
+	s1 := &Session{ID: "s1", Budget: Budget{UsedTokens: 80, UsedSteps: 4}}
+	s2 := &Session{ID: "s2", Budget: Budget{UsedTokens: 50, UsedSteps: 3}}
+	report := AggregateBudgetReport(BudgetGovernanceConfig{
+		Policy:          BudgetPolicyObserveOnly,
+		GlobalMaxTokens: 100,
+		GlobalMaxSteps:  10,
+		WarnAt:          0.8,
+	}, []*Session{s1, s2})
+
+	if report.Blocked {
+		t.Fatalf("observe-only should not block, report=%+v", report)
+	}
+	if !report.WarnTriggered {
+		t.Fatalf("expected warning trigger, report=%+v", report)
+	}
+}
+
+func TestAggregateBudgetReport_EnforceBlocks(t *testing.T) {
+	s1 := &Session{ID: "s1", Budget: Budget{UsedTokens: 60, UsedSteps: 2}}
+	s2 := &Session{ID: "s2", Budget: Budget{UsedTokens: 70, UsedSteps: 3}}
+	report := AggregateBudgetReport(BudgetGovernanceConfig{
+		Policy:          BudgetPolicyEnforce,
+		GlobalMaxTokens: 100,
+	}, []*Session{s1, s2})
+
+	if !report.Blocked {
+		t.Fatalf("enforce should block when over global limit, report=%+v", report)
 	}
 }
