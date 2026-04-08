@@ -10,61 +10,61 @@ import (
 )
 
 type DebugConfigReport struct {
-	App              string   `json:"app"`
-	Workspace        string   `json:"workspace"`
-	Provider         string   `json:"provider"`
-	Model            string   `json:"model"`
-	Trust            string   `json:"trust"`
-	ApprovalMode     string   `json:"approval_mode"`
-	Profile          string   `json:"profile"`
-	Theme            string   `json:"theme"`
-	DebugEnabled     bool     `json:"debug_enabled"`
-	GlobalConfig     string   `json:"global_config"`
-	ProjectConfig    string   `json:"project_config"`
-	AppDir           string   `json:"app_dir"`
-	CommandDirs      []string `json:"command_dirs"`
-	StateStoreDir    string   `json:"state_store_dir"`
-	StateEventDir    string   `json:"state_event_dir"`
-	SessionStoreDir  string   `json:"session_store_dir"`
-	TaskRuntimeDir   string   `json:"task_runtime_dir"`
-	MemoryDir        string   `json:"memory_dir"`
-	WorkspaceRootDir string   `json:"workspace_root_dir"`
-	AuditLog         string   `json:"audit_log"`
-	DebugLog         string   `json:"debug_log"`
-	RouterConfig     string   `json:"router_config"`
-	PricingCatalog   string   `json:"pricing_catalog"`
-	DetectedEnv      []string `json:"detected_env"`
-	PromptBaseSource      string `json:"prompt_base_source,omitempty"`
-	PromptDynamicSections string `json:"prompt_dynamic_sections,omitempty"`
-	PromptSourceChain     string `json:"prompt_source_chain,omitempty"`
+	App                   string   `json:"app"`
+	Workspace             string   `json:"workspace"`
+	Provider              string   `json:"provider"`
+	Model                 string   `json:"model"`
+	Trust                 string   `json:"trust"`
+	ApprovalMode          string   `json:"approval_mode"`
+	Profile               string   `json:"profile"`
+	Theme                 string   `json:"theme"`
+	DebugEnabled          bool     `json:"debug_enabled"`
+	GlobalConfig          string   `json:"global_config"`
+	ProjectConfig         string   `json:"project_config"`
+	AppDir                string   `json:"app_dir"`
+	CommandDirs           []string `json:"command_dirs"`
+	StateStoreDir         string   `json:"state_store_dir"`
+	StateEventDir         string   `json:"state_event_dir"`
+	SessionStoreDir       string   `json:"session_store_dir"`
+	TaskRuntimeDir        string   `json:"task_runtime_dir"`
+	MemoryDir             string   `json:"memory_dir"`
+	WorkspaceRootDir      string   `json:"workspace_root_dir"`
+	AuditLog              string   `json:"audit_log"`
+	DebugLog              string   `json:"debug_log"`
+	RouterConfig          string   `json:"router_config"`
+	PricingCatalog        string   `json:"pricing_catalog"`
+	DetectedEnv           []string `json:"detected_env"`
+	PromptBaseSource      string   `json:"prompt_base_source,omitempty"`
+	PromptDynamicSections string   `json:"prompt_dynamic_sections,omitempty"`
+	PromptSourceChain     string   `json:"prompt_source_chain,omitempty"`
 }
 
 func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
 	return DebugConfigReport{
-		App:              appName,
-		Workspace:        workspace,
-		Provider:         provider,
-		Model:            firstNonEmpty(model, "(default)"),
-		Trust:            firstNonEmpty(trust, appconfig.TrustTrusted),
-		ApprovalMode:     firstNonEmpty(approvalMode, "confirm"),
-		Profile:          firstNonEmpty(profile, "default"),
-		Theme:            firstNonEmpty(theme, "default"),
-		DebugEnabled:     os.Getenv("MOSS_DEBUG") == "1",
-		GlobalConfig:     appconfig.DefaultGlobalConfigPath(),
-		ProjectConfig:    appconfig.DefaultProjectConfigPath(workspace),
-		AppDir:           appconfig.AppDir(),
-		CommandDirs:      debugCommandDirs(appName, workspace),
-		StateStoreDir:    StateStoreDir(),
-		StateEventDir:    StateEventDir(),
-		SessionStoreDir:  SessionStoreDir(),
-		TaskRuntimeDir:   TaskRuntimeDir(),
-		MemoryDir:        MemoryDir(),
-		WorkspaceRootDir: WorkspaceIsolationDir(),
-		AuditLog:         AuditLogPath(),
-		DebugLog:         DebugLogPath(),
-		RouterConfig:     filepath.Join(appconfig.AppDir(), "models.yaml"),
-		PricingCatalog:   filepath.Join(appconfig.AppDir(), "pricing.yaml"),
-		DetectedEnv:      detectedEnvVars(),
+		App:                   appName,
+		Workspace:             workspace,
+		Provider:              provider,
+		Model:                 firstNonEmpty(model, "(default)"),
+		Trust:                 firstNonEmpty(trust, appconfig.TrustTrusted),
+		ApprovalMode:          firstNonEmpty(approvalMode, "confirm"),
+		Profile:               firstNonEmpty(profile, "default"),
+		Theme:                 firstNonEmpty(theme, "default"),
+		DebugEnabled:          os.Getenv("MOSS_DEBUG") == "1",
+		GlobalConfig:          appconfig.DefaultGlobalConfigPath(),
+		ProjectConfig:         appconfig.DefaultProjectConfigPath(workspace),
+		AppDir:                appconfig.AppDir(),
+		CommandDirs:           debugCommandDirs(appName, workspace),
+		StateStoreDir:         StateStoreDir(),
+		StateEventDir:         StateEventDir(),
+		SessionStoreDir:       SessionStoreDir(),
+		TaskRuntimeDir:        TaskRuntimeDir(),
+		MemoryDir:             MemoryDir(),
+		WorkspaceRootDir:      WorkspaceIsolationDir(),
+		AuditLog:              AuditLogPath(),
+		DebugLog:              DebugLogPath(),
+		RouterConfig:          filepath.Join(appconfig.AppDir(), "models.yaml"),
+		PricingCatalog:        filepath.Join(appconfig.AppDir(), "pricing.yaml"),
+		DetectedEnv:           detectedEnvVars(),
 		PromptBaseSource:      strings.TrimSpace(promptBaseSource),
 		PromptDynamicSections: strings.TrimSpace(promptDynamicSections),
 		PromptSourceChain:     strings.TrimSpace(promptSourceChain),

@@ -2,12 +2,11 @@ package skill
 
 import (
 	"context"
+	config "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	config "github.com/mossagents/moss/config"
 )
 
 func TestParseSkillMDContent_Valid(t *testing.T) {

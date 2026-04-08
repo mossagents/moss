@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/appkit/product"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"io"
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // cliUserIO 是基于终端的 UserIO 实现（用于 run 命令的 CLI 模式）。
@@ -21,21 +20,21 @@ type cliUserIO struct {
 	profile   string
 }
 
-func (c *cliUserIO) Send(_ context.Context, msg port.OutputMessage) error {
+func (c *cliUserIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	switch msg.Type {
-	case port.OutputText:
+	case intr.OutputText:
 		fmt.Fprintln(c.writer, msg.Content)
-	case port.OutputStream:
+	case intr.OutputStream:
 		fmt.Fprint(c.writer, msg.Content)
-	case port.OutputStreamEnd:
+	case intr.OutputStreamEnd:
 		fmt.Fprintln(c.writer)
-	case port.OutputReasoning:
+	case intr.OutputReasoning:
 		fmt.Fprintf(c.writer, "💭 %s\n", msg.Content)
-	case port.OutputProgress:
+	case intr.OutputProgress:
 		fmt.Fprintf(c.writer, "⏳ %s\n", msg.Content)
-	case port.OutputToolStart:
+	case intr.OutputToolStart:
 		fmt.Fprintf(c.writer, "🔧 Running %s...\n", msg.Content)
-	case port.OutputToolResult:
+	case intr.OutputToolResult:
 		isErr, _ := msg.Meta["is_error"].(bool)
 		if isErr {
 			fmt.Fprintf(c.writer, "❌ %s\n", msg.Content)
@@ -46,10 +45,10 @@ func (c *cliUserIO) Send(_ context.Context, msg port.OutputMessage) error {
 	return nil
 }
 
-func (c *cliUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+func (c *cliUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
 	reader := bufio.NewReader(c.reader)
 	switch req.Type {
-	case port.InputConfirm:
+	case intr.InputConfirm:
 		if req.Approval != nil {
 			options := cliApprovalOptions(req.Approval, c.workspace)
 			fmt.Fprintf(c.writer, "%s\n", req.Prompt)
@@ -59,7 +58,7 @@ func (c *cliUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputRes
 			fmt.Fprint(c.writer, "Choose decision: ")
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				return port.InputResponse{}, err
+				return intr.InputResponse{}, err
 			}
 			choice, err := strconv.Atoi(strings.TrimSpace(line))
 			if err != nil || choice < 1 || choice > len(options) {
@@ -72,36 +71,36 @@ func (c *cliUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputRes
 		fmt.Fprintf(c.writer, "%s [y/N]: ", prompt)
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return port.InputResponse{}, err
+			return intr.InputResponse{}, err
 		}
 		line = strings.TrimSpace(strings.ToLower(line))
 		approved := line == "y" || line == "yes"
-		var decision *port.ApprovalDecision
+		var decision *intr.ApprovalDecision
 		if req.Approval != nil {
-			decision = &port.ApprovalDecision{
+			decision = &intr.ApprovalDecision{
 				RequestID: req.Approval.ID,
 				Approved:  approved,
 				Source:    "cli",
 			}
 		}
-		return port.InputResponse{Approved: approved, Decision: decision}, nil
+		return intr.InputResponse{Approved: approved, Decision: decision}, nil
 
-	case port.InputSelect:
+	case intr.InputSelect:
 		for i, opt := range req.Options {
 			fmt.Fprintf(c.writer, "  %d) %s\n", i+1, opt)
 		}
 		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
 		var sel int
 		fmt.Fscan(c.reader, &sel)
-		return port.InputResponse{Selected: sel - 1}, nil
+		return intr.InputResponse{Selected: sel - 1}, nil
 
 	default: // FreeText
 		fmt.Fprintf(c.writer, "%s: ", req.Prompt)
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			return port.InputResponse{}, err
+			return intr.InputResponse{}, err
 		}
-		return port.InputResponse{Value: strings.TrimSpace(line)}, nil
+		return intr.InputResponse{Value: strings.TrimSpace(line)}, nil
 	}
 }
 
@@ -112,7 +111,7 @@ func truncate(s string, max int) string {
 	return s[:max] + "..."
 }
 
-func cliApprovalOptions(req *port.ApprovalRequest, workspace string) []string {
+func cliApprovalOptions(req *intr.ApprovalRequest, workspace string) []string {
 	options := []string{"Allow once"}
 	if req != nil && strings.TrimSpace(req.CacheKey) != "" {
 		options = append(options, "Allow for this session")
@@ -124,36 +123,36 @@ func cliApprovalOptions(req *port.ApprovalRequest, workspace string) []string {
 	return options
 }
 
-func (c *cliUserIO) cliApprovalResponse(req *port.ApprovalRequest, selected string) (port.InputResponse, error) {
-	decision := &port.ApprovalDecision{
+func (c *cliUserIO) cliApprovalResponse(req *intr.ApprovalRequest, selected string) (intr.InputResponse, error) {
+	decision := &intr.ApprovalDecision{
 		RequestID: req.ID,
-		Type:      port.ApprovalDecisionDeny,
+		Type:      intr.ApprovalDecisionDeny,
 		Approved:  selected != "Deny",
 		Source:    "cli",
 	}
 	switch selected {
 	case "Allow for this session":
 		if req.ProposedPermissions != nil {
-			decision.Type = port.ApprovalDecisionGrantPermission
+			decision.Type = intr.ApprovalDecisionGrantPermission
 			decision.GrantedPermissions = req.ProposedPermissions
 			decision.Source = "cli-session-permission"
 		} else {
-			decision.Type = port.ApprovalDecisionApproveSession
+			decision.Type = intr.ApprovalDecisionApproveSession
 			decision.Source = "cli-session-rule"
 		}
 	case "Always allow for this project":
 		if err := product.PersistProjectApprovalAmendment(c.workspace, c.profile, req.ProposedAmendment); err != nil {
-			return port.InputResponse{}, err
+			return intr.InputResponse{}, err
 		}
-		decision.Type = port.ApprovalDecisionPolicyAmendment
+		decision.Type = intr.ApprovalDecisionPolicyAmendment
 		decision.PolicyAmendment = req.ProposedAmendment
 		decision.Source = "cli-project-amendment"
 	case "Allow once":
-		decision.Type = port.ApprovalDecisionApprove
+		decision.Type = intr.ApprovalDecisionApprove
 		decision.Source = "cli-allow-once"
 	default:
-		decision.Type = port.ApprovalDecisionDeny
+		decision.Type = intr.ApprovalDecisionDeny
 		decision.Source = "cli-deny"
 	}
-	return port.InputResponse{Approved: decision.Type != port.ApprovalDecisionDeny, Decision: port.NormalizeApprovalDecision(decision)}, nil
+	return intr.InputResponse{Approved: decision.Type != intr.ApprovalDecisionDeny, Decision: intr.NormalizeApprovalDecision(decision)}, nil
 }

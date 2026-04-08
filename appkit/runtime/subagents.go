@@ -2,12 +2,11 @@ package runtime
 
 import (
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/kernel"
 	"gopkg.in/yaml.v3"
+	"os"
+	"strings"
 )
 
 type SubagentFileConfig struct {

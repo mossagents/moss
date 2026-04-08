@@ -1,6 +1,8 @@
 package middleware
 
-import "context"
+import (
+	"context"
+)
 
 // Chain 管理有序的 middleware 列表，以洋葱模型执行。
 type Chain struct {

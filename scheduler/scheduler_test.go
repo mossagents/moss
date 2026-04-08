@@ -3,12 +3,11 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"github.com/mossagents/moss/kernel/session"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/session"
 )
 
 type blockingStore struct {

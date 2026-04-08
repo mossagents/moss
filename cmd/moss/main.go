@@ -5,21 +5,21 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
-	"os"
-	"strconv"
-	"strings"
-
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/userio/prompting"
 	"github.com/mossagents/moss/userio/tui"
+	"log/slog"
+	"os"
+	"strconv"
+	"strings"
 )
 
 const version = "0.3.0"
@@ -253,7 +253,7 @@ func runCmd(args []string) {
 		logging.GetLogger().Error("error creating session", slog.Any("error", err))
 		os.Exit(1)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(*goal)}})
+	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(*goal)}})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
@@ -382,7 +382,7 @@ func buildRunSystemPrompt(workspace, trust, configInstructions, modelInstruction
 }
 
 // buildKernelWithIO 构建 Kernel 实例，供 TUI Config.BuildKernel 回调使用。
-func buildKernelWithIO(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+func buildKernelWithIO(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
 	ctx := context.Background()
 	identity := config.NormalizeProviderIdentity("", provider, provider)
 	resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{

@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/logging"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/logging"
 )
 
 func TestFileStore(t *testing.T) {
@@ -41,9 +40,9 @@ func TestFileStore(t *testing.T) {
 			Goal: "test goal",
 			Mode: "test",
 		},
-		Messages: []port.Message{
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}},
-			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("world")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hello")}},
+			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("world")}},
 		},
 		Budget:    Budget{MaxSteps: 10, UsedSteps: 3},
 		CreatedAt: time.Now(),
@@ -399,10 +398,10 @@ func TestFileStoreLoadMigratesLegacyContentFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "hello from legacy" {
+	if got := mdl.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "hello from legacy" {
 		t.Fatalf("message content migration failed: %q", got)
 	}
-	if got := port.ContentPartsToPlainText(loaded.Messages[1].ToolResults[0].ContentParts); got != "legacy tool result" {
+	if got := mdl.ContentPartsToPlainText(loaded.Messages[1].ToolResults[0].ContentParts); got != "legacy tool result" {
 		t.Fatalf("tool result content migration failed: %q", got)
 	}
 }
@@ -435,7 +434,7 @@ func TestFileStoreLoadPrefersContentPartsWhenBothFieldsPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "new" {
+	if got := mdl.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "new" {
 		t.Fatalf("expected content_parts to win, got %q", got)
 	}
 	if !strings.Contains(buf.String(), "migrated legacy message content field") {
@@ -499,9 +498,9 @@ func TestFileStoreSaveWritesNewSchemaOnly(t *testing.T) {
 		ID:     "new-schema",
 		Status: StatusCompleted,
 		Config: SessionConfig{Goal: "schema"},
-		Messages: []port.Message{
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("hello")}},
-			{Role: port.RoleTool, ToolResults: []port.ToolResult{{CallID: "tc1", ContentParts: []port.ContentPart{port.TextPart("ok")}}}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hello")}},
+			{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{{CallID: "tc1", ContentParts: []mdl.ContentPart{mdl.TextPart("ok")}}}},
 		},
 		CreatedAt: time.Now(),
 	}
@@ -531,12 +530,12 @@ func TestFileStoreStripsReasoningPartsOnSaveAndLoad(t *testing.T) {
 		ID:     "reasoning-stripped",
 		Status: StatusCompleted,
 		Config: SessionConfig{Goal: "strip reasoning"},
-		Messages: []port.Message{
+		Messages: []mdl.Message{
 			{
-				Role: port.RoleAssistant,
-				ContentParts: []port.ContentPart{
-					port.ReasoningPart("internal scratchpad"),
-					port.TextPart("visible reply"),
+				Role: mdl.RoleAssistant,
+				ContentParts: []mdl.ContentPart{
+					mdl.ReasoningPart("internal scratchpad"),
+					mdl.TextPart("visible reply"),
 				},
 			},
 		},
@@ -559,10 +558,10 @@ func TestFileStoreStripsReasoningPartsOnSaveAndLoad(t *testing.T) {
 	if loaded == nil || len(loaded.Messages) != 1 {
 		t.Fatalf("unexpected loaded session: %+v", loaded)
 	}
-	if got := port.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
+	if got := mdl.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
 		t.Fatalf("expected reasoning to be stripped, got %q", got)
 	}
-	if got := port.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "visible reply" {
+	if got := mdl.ContentPartsToPlainText(loaded.Messages[0].ContentParts); got != "visible reply" {
 		t.Fatalf("plain text=%q", got)
 	}
 }
@@ -591,7 +590,7 @@ func TestFileStoreLoadRewritesExistingReasoningLeak(t *testing.T) {
 	if loaded == nil {
 		t.Fatal("expected loaded session")
 	}
-	if got := port.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
+	if got := mdl.ContentPartsToReasoningText(loaded.Messages[0].ContentParts); got != "" {
 		t.Fatalf("expected in-memory reasoning to be stripped, got %q", got)
 	}
 	saved, err := os.ReadFile(store.path("dirty-reasoning"))

@@ -1,12 +1,11 @@
 package tui
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	"math"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // shimmerText 对给定文字渲染一个随时间移动的"扫光"高亮动画。

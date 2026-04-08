@@ -3,12 +3,11 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"os"
-
 	"github.com/mossagents/moss/gateway"
 	"github.com/mossagents/moss/gateway/channel"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"os"
 )
 
 type ServeConfig struct {

@@ -2,17 +2,16 @@ package product
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestRecordingIOConfirmDeniesApprovals(t *testing.T) {
 	io := NewRecordingIO(ApprovalModeConfirm)
-	resp, err := io.Ask(context.Background(), port.InputRequest{
-		Type:     port.InputConfirm,
+	resp, err := io.Ask(context.Background(), intr.InputRequest{
+		Type:     intr.InputConfirm,
 		Prompt:   "Allow tool write_file?",
-		Approval: &port.ApprovalRequest{ID: "req-1"},
+		Approval: &intr.ApprovalRequest{ID: "req-1"},
 	})
 	if err != nil {
 		t.Fatalf("Ask: %v", err)
@@ -27,10 +26,10 @@ func TestRecordingIOConfirmDeniesApprovals(t *testing.T) {
 
 func TestRecordingIOFullAutoApprovesAndCapturesEvents(t *testing.T) {
 	io := NewRecordingIO(ApprovalModeFullAuto)
-	resp, err := io.Ask(context.Background(), port.InputRequest{
-		Type:     port.InputConfirm,
+	resp, err := io.Ask(context.Background(), intr.InputRequest{
+		Type:     intr.InputConfirm,
 		Prompt:   "Allow tool write_file?",
-		Approval: &port.ApprovalRequest{ID: "req-2"},
+		Approval: &intr.ApprovalRequest{ID: "req-2"},
 	})
 	if err != nil {
 		t.Fatalf("Ask: %v", err)
@@ -39,14 +38,14 @@ func TestRecordingIOFullAutoApprovesAndCapturesEvents(t *testing.T) {
 		t.Fatal("full-auto mode should auto-approve")
 	}
 
-	if err := io.Send(context.Background(), port.OutputMessage{Type: port.OutputToolResult, Content: "done", Meta: map[string]any{"is_error": true}}); err != nil {
+	if err := io.Send(context.Background(), intr.OutputMessage{Type: intr.OutputToolResult, Content: "done", Meta: map[string]any{"is_error": true}}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	events := io.Events()
 	if len(events) != 1 {
 		t.Fatalf("events=%d, want 1", len(events))
 	}
-	if !events[0].IsError || events[0].Type != port.OutputToolResult {
+	if !events[0].IsError || events[0].Type != intr.OutputToolResult {
 		t.Fatalf("unexpected event: %+v", events[0])
 	}
 }

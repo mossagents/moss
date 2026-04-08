@@ -2,11 +2,10 @@ package builtins
 
 import (
 	"context"
-	"sync"
-	"time"
-
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/middleware"
+	"sync"
+	"time"
 )
 
 // RateLimiter 构造速率限制 middleware。

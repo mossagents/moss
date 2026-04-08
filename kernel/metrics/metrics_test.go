@@ -2,12 +2,12 @@ package metrics_test
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel/metrics"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/metrics"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestMemoryCollector_Counter(t *testing.T) {
@@ -72,17 +72,17 @@ func TestMemoryCollector_ExportPromText(t *testing.T) {
 
 func TestMetricsObserver_LLMCall(t *testing.T) {
 	c := metrics.NewMemoryCollector()
-	obs := metrics.NewObserver(c)
+	observer := metrics.NewObserver(c)
 
 	ctx := context.Background()
-	e := port.LLMCallEvent{
+	e := kobs.LLMCallEvent{
 		SessionID: "s1",
 		Model:     "gpt-4",
 		StartedAt: time.Now(),
 		Duration:  500 * time.Millisecond,
-		Usage:     port.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
+		Usage:     mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
 	}
-	obs.OnLLMCall(ctx, e)
+	observer.OnLLMCall(ctx, e)
 
 	llmCalls := c.Counter(metrics.MetricLLMCallsTotal)
 	if llmCalls.Value() != 1 {
@@ -96,15 +96,15 @@ func TestMetricsObserver_LLMCall(t *testing.T) {
 
 func TestMetricsObserver_ToolCall(t *testing.T) {
 	c := metrics.NewMemoryCollector()
-	obs := metrics.NewObserver(c)
+	observer := metrics.NewObserver(c)
 
 	ctx := context.Background()
-	e := port.ToolCallEvent{
+	e := kobs.ToolCallEvent{
 		SessionID: "s1",
 		ToolName:  "bash",
 		Duration:  200 * time.Millisecond,
 	}
-	obs.OnToolCall(ctx, e)
+	observer.OnToolCall(ctx, e)
 
 	toolCalls := c.Counter(metrics.MetricToolCallsTotal)
 	if toolCalls.Value() != 1 {

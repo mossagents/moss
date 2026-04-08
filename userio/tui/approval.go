@@ -2,13 +2,12 @@ package tui
 
 import (
 	"encoding/json"
+	configpkg "github.com/mossagents/moss/config"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	configpkg "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 const (
@@ -51,7 +50,7 @@ type approvalMemoryRule struct {
 	CreatedAt time.Time
 }
 
-func buildApprovalDisplay(req *port.ApprovalRequest, currentSessionID string) approvalDisplay {
+func buildApprovalDisplay(req *intr.ApprovalRequest, currentSessionID string) approvalDisplay {
 	if req == nil {
 		return approvalDisplay{
 			Title:       "Approval required",
@@ -177,7 +176,7 @@ func buildApprovalDiffPreview(toolName string, input json.RawMessage) string {
 		}
 		if len(lines) > maxLines {
 			b.WriteString("… ")
-			b.WriteString(strconv.Itoa(len(lines)-maxLines))
+			b.WriteString(strconv.Itoa(len(lines) - maxLines))
 			b.WriteString(" more lines\n")
 		}
 		return b.String()
@@ -217,14 +216,14 @@ func buildApprovalDiffPreview(toolName string, input json.RawMessage) string {
 	return ""
 }
 
-func approvalSessionID(req *port.ApprovalRequest, currentSessionID string) string {
+func approvalSessionID(req *intr.ApprovalRequest, currentSessionID string) string {
 	if req != nil && strings.TrimSpace(req.SessionID) != "" {
 		return strings.TrimSpace(req.SessionID)
 	}
 	return strings.TrimSpace(currentSessionID)
 }
 
-func parseApprovalCommand(req *port.ApprovalRequest) (string, string) {
+func parseApprovalCommand(req *intr.ApprovalRequest) (string, string) {
 	if req == nil || len(req.Input) == 0 {
 		return "", ""
 	}
@@ -259,7 +258,7 @@ func parseApprovalCommand(req *port.ApprovalRequest) (string, string) {
 	return commandLine, strings.Join(patternParts, " ")
 }
 
-func parseApprovalRequestTarget(req *port.ApprovalRequest) (string, string) {
+func parseApprovalRequestTarget(req *intr.ApprovalRequest) (string, string) {
 	if req == nil || len(req.Input) == 0 {
 		return "", ""
 	}
@@ -286,7 +285,7 @@ func parseApprovalRequestTarget(req *port.ApprovalRequest) (string, string) {
 	return requestLine, method + " " + parsed.Host
 }
 
-func parseApprovalGenericPreview(req *port.ApprovalRequest) string {
+func parseApprovalGenericPreview(req *intr.ApprovalRequest) string {
 	if req == nil {
 		return ""
 	}
@@ -318,7 +317,7 @@ func quoteApprovalToken(token string) string {
 	return token
 }
 
-func approvalMemoryRuleFor(req *port.ApprovalRequest, currentSessionID string, scope approvalRuleScope, now time.Time) (approvalMemoryRule, bool) {
+func approvalMemoryRuleFor(req *intr.ApprovalRequest, currentSessionID string, scope approvalRuleScope, now time.Time) (approvalMemoryRule, bool) {
 	display := buildApprovalDisplay(req, currentSessionID)
 	if display.RuleKey == "" {
 		return approvalMemoryRule{}, false
@@ -340,7 +339,7 @@ func approvalMemoryRuleFor(req *port.ApprovalRequest, currentSessionID string, s
 	return rule, true
 }
 
-func (r approvalMemoryRule) matches(req *port.ApprovalRequest, currentSessionID string) bool {
+func (r approvalMemoryRule) matches(req *intr.ApprovalRequest, currentSessionID string) bool {
 	if req == nil {
 		return false
 	}

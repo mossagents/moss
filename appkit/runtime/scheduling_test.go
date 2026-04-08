@@ -2,11 +2,10 @@ package runtime
 
 import (
 	"context"
+	"github.com/mossagents/moss/scheduler"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/scheduler"
 )
 
 func TestSchedulerAdapterListAndText(t *testing.T) {

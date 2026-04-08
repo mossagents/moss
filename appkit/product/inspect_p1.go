@@ -3,19 +3,18 @@ package product
 import (
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/agent"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/skill"
+	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/agent"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/skill"
-	"github.com/mossagents/moss/userio/prompting"
 )
 
 type InspectThreadSummary struct {
@@ -136,7 +135,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 		report.Children = append(report.Children, child)
 	}
 	sort.Slice(report.Children, func(i, j int) bool { return report.Children[i].UpdatedAt > report.Children[j].UpdatedAt })
-	cpStore, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
 	if err == nil {
 		if items, err := cpStore.FindBySession(ctx, selected.ID); err == nil {
 			report.Checkpoints = SummarizeCheckpoints(items)
@@ -496,7 +495,7 @@ func collectInspectableAgentDirs(workspace, trust string) []string {
 }
 
 func checkpointCountsBySession(ctx context.Context) map[string]int {
-	store, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return map[string]int{}
 	}

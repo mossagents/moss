@@ -2,11 +2,10 @@ package builtins
 
 import (
 	"context"
-	"math/rand"
-	"time"
-
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/retry"
+	"math/rand"
+	"time"
 )
 
 // RetryConfig 复用 retry.Config，避免维护两套重试配置定义。

@@ -1,19 +1,18 @@
 package product
 
 import (
+	appconfig "github.com/mossagents/moss/config"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"path/filepath"
 	"testing"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 	workspace := t.TempDir()
 	profile := "guarded"
 
-	err := PersistProjectApprovalAmendment(workspace, profile, &port.ExecPolicyAmendment{
-		HTTPRule: &port.ExecPolicyHTTPRule{
+	err := PersistProjectApprovalAmendment(workspace, profile, &intr.ExecPolicyAmendment{
+		HTTPRule: &intr.ExecPolicyHTTPRule{
 			Name:    "allow-api",
 			Match:   "api.example.com",
 			Methods: []string{"GET"},

@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 const (
@@ -26,7 +28,7 @@ const (
 
 // ForkResult 描述一次 session fork 的结构化结果。
 type ForkResult struct {
-	SourceKind       port.ForkSourceKind `json:"source_kind"`
+	SourceKind       ckpt.ForkSourceKind `json:"source_kind"`
 	SourceID         string              `json:"source_id,omitempty"`
 	CheckpointID     string              `json:"checkpoint_id,omitempty"`
 	SessionID        string              `json:"session_id,omitempty"`
@@ -36,12 +38,12 @@ type ForkResult struct {
 }
 
 // CreateCheckpoint captures the current session into a recoverable checkpoint.
-func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, req port.CheckpointCreateRequest) (*port.CheckpointRecord, error) {
+func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, req ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
 	if k.checkpoints == nil {
-		return nil, port.ErrCheckpointUnavailable
+		return nil, ckpt.ErrCheckpointUnavailable
 	}
 	if k.store == nil {
-		return nil, port.ErrCheckpointNotRecoverable
+		return nil, ckpt.ErrCheckpointNotRecoverable
 	}
 	if sess == nil {
 		return nil, fmt.Errorf("session is required")
@@ -65,7 +67,7 @@ func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, re
 	createReq.Lineage = mergeCheckpointLineage(sess, req.Lineage)
 
 	if k.snapshots != nil && strings.TrimSpace(createReq.WorktreeSnapshotID) == "" {
-		snapshot, err := k.snapshots.Create(ctx, port.WorktreeSnapshotRequest{
+		snapshot, err := k.snapshots.Create(ctx, kws.WorktreeSnapshotRequest{
 			SessionID: sess.ID,
 			Note:      strings.TrimSpace(req.Note),
 		})
@@ -74,7 +76,7 @@ func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, re
 			if len(createReq.PatchIDs) == 0 {
 				createReq.PatchIDs = snapshotPatchIDs(snapshot)
 			}
-		} else if err != nil && !errors.Is(err, port.ErrWorktreeSnapshotUnavailable) {
+		} else if err != nil && !errors.Is(err, kws.ErrWorktreeSnapshotUnavailable) {
 			return nil, err
 		}
 	}
@@ -87,7 +89,7 @@ func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, re
 
 // ForkSession creates a new live session from a checkpoint or a source session.
 // When SourceKind=session, the kernel prefers the latest checkpoint for that session.
-func (k *Kernel) ForkSession(ctx context.Context, req port.ForkRequest) (*session.Session, *ForkResult, error) {
+func (k *Kernel) ForkSession(ctx context.Context, req ckpt.ForkRequest) (*session.Session, *ForkResult, error) {
 	sourceSession, checkpointRecord, result, err := k.resolveForkSource(ctx, req)
 	if err != nil {
 		return nil, nil, err
@@ -107,7 +109,7 @@ func (k *Kernel) ForkSession(ctx context.Context, req port.ForkRequest) (*sessio
 		result.CheckpointID = checkpointRecord.ID
 	}
 	result.SessionID = cloned.ID
-	k.emitExecutionEvent(ctx, port.ExecutionSessionForked, cloned.ID, map[string]any{
+	k.emitExecutionEvent(ctx, kobs.ExecutionSessionForked, cloned.ID, map[string]any{
 		"source_kind":       result.SourceKind,
 		"source_id":         result.SourceID,
 		"checkpoint_id":     result.CheckpointID,
@@ -119,9 +121,9 @@ func (k *Kernel) ForkSession(ctx context.Context, req port.ForkRequest) (*sessio
 }
 
 // ReplayFromCheckpoint prepares a fresh session from a checkpoint.
-func (k *Kernel) ReplayFromCheckpoint(ctx context.Context, req port.ReplayRequest) (*session.Session, *port.ReplayResult, error) {
+func (k *Kernel) ReplayFromCheckpoint(ctx context.Context, req ckpt.ReplayRequest) (*session.Session, *ckpt.ReplayResult, error) {
 	if k.checkpoints == nil {
-		return nil, nil, port.ErrCheckpointUnavailable
+		return nil, nil, ckpt.ErrCheckpointUnavailable
 	}
 	record, err := k.checkpoints.Load(ctx, strings.TrimSpace(req.CheckpointID))
 	if err != nil {
@@ -131,23 +133,23 @@ func (k *Kernel) ReplayFromCheckpoint(ctx context.Context, req port.ReplayReques
 	if err != nil {
 		return nil, nil, err
 	}
-	result := &port.ReplayResult{
+	result := &ckpt.ReplayResult{
 		CheckpointID: record.ID,
 		Mode:         req.Mode,
 	}
 	if result.Mode == "" {
-		result.Mode = port.ReplayModeResume
+		result.Mode = ckpt.ReplayModeResume
 	}
 	if req.RestoreWorktree {
 		result.RestoredWorktree, result.Degraded, result.Details = k.restoreCheckpointWorktree(ctx, record)
 	}
 
 	replaySource := source
-	if result.Mode == port.ReplayModeRerun {
+	if result.Mode == ckpt.ReplayModeRerun {
 		replaySource = rerunSession(source)
 	}
 	cloned, err := k.instantiateClonedSession(ctx, replaySource, forkSessionConfigMetadata(replaySource.Config.Metadata, map[string]any{
-		checkpointSourceKindKey: string(port.CheckpointLineageCheckpoint),
+		checkpointSourceKindKey: string(ckpt.CheckpointLineageCheckpoint),
 		checkpointSourceIDKey:   record.ID,
 		checkpointReplayModeKey: string(result.Mode),
 		checkpointNoteKey:       strings.TrimSpace(req.Note),
@@ -159,7 +161,7 @@ func (k *Kernel) ReplayFromCheckpoint(ctx context.Context, req port.ReplayReques
 		return nil, nil, err
 	}
 	result.SessionID = cloned.ID
-	k.emitExecutionEvent(ctx, port.ExecutionReplayPrepared, cloned.ID, map[string]any{
+	k.emitExecutionEvent(ctx, kobs.ExecutionReplayPrepared, cloned.ID, map[string]any{
 		"checkpoint_id":       record.ID,
 		"mode":                result.Mode,
 		"restored_worktree":   result.RestoredWorktree,
@@ -171,10 +173,10 @@ func (k *Kernel) ReplayFromCheckpoint(ctx context.Context, req port.ReplayReques
 	return cloned, result, nil
 }
 
-func (k *Kernel) resolveForkSource(ctx context.Context, req port.ForkRequest) (*session.Session, *port.CheckpointRecord, *ForkResult, error) {
+func (k *Kernel) resolveForkSource(ctx context.Context, req ckpt.ForkRequest) (*session.Session, *ckpt.CheckpointRecord, *ForkResult, error) {
 	sourceKind := req.SourceKind
 	if sourceKind == "" {
-		sourceKind = port.ForkSourceSession
+		sourceKind = ckpt.ForkSourceSession
 	}
 	sourceID := strings.TrimSpace(req.SourceID)
 	if sourceID == "" {
@@ -186,9 +188,9 @@ func (k *Kernel) resolveForkSource(ctx context.Context, req port.ForkRequest) (*
 	}
 
 	switch sourceKind {
-	case port.ForkSourceCheckpoint:
+	case ckpt.ForkSourceCheckpoint:
 		if k.checkpoints == nil {
-			return nil, nil, nil, port.ErrCheckpointUnavailable
+			return nil, nil, nil, ckpt.ErrCheckpointUnavailable
 		}
 		record, err := k.checkpoints.Load(ctx, sourceID)
 		if err != nil {
@@ -203,12 +205,12 @@ func (k *Kernel) resolveForkSource(ctx context.Context, req port.ForkRequest) (*
 		}
 		return sourceSession, record, result, nil
 
-	case port.ForkSourceSession:
+	case ckpt.ForkSourceSession:
 		if k.checkpoints != nil {
 			records, err := k.checkpoints.FindBySession(ctx, sourceID)
 			if err == nil && len(records) > 0 {
 				record := records[0]
-				result.SourceKind = port.ForkSourceCheckpoint
+				result.SourceKind = ckpt.ForkSourceCheckpoint
 				result.SourceID = record.ID
 				result.CheckpointID = record.ID
 				if req.RestoreWorktree {
@@ -248,24 +250,24 @@ func (k *Kernel) loadLiveSession(ctx context.Context, id string) (*session.Sessi
 	return loaded, nil
 }
 
-func (k *Kernel) loadCheckpointSession(ctx context.Context, record *port.CheckpointRecord) (*session.Session, error) {
+func (k *Kernel) loadCheckpointSession(ctx context.Context, record *ckpt.CheckpointRecord) (*session.Session, error) {
 	if record == nil {
-		return nil, port.ErrCheckpointNotFound
+		return nil, ckpt.ErrCheckpointNotFound
 	}
 	if k.store == nil {
-		return nil, port.ErrCheckpointNotRecoverable
+		return nil, ckpt.ErrCheckpointNotRecoverable
 	}
 	loaded, err := k.store.Load(ctx, record.SessionID)
 	if err != nil {
 		return nil, err
 	}
 	if loaded == nil {
-		return nil, port.ErrCheckpointNotRecoverable
+		return nil, ckpt.ErrCheckpointNotRecoverable
 	}
 	return loaded, nil
 }
 
-func (k *Kernel) restoreCheckpointWorktree(ctx context.Context, record *port.CheckpointRecord) (bool, bool, string) {
+func (k *Kernel) restoreCheckpointWorktree(ctx context.Context, record *ckpt.CheckpointRecord) (bool, bool, string) {
 	if record == nil || strings.TrimSpace(record.WorktreeSnapshotID) == "" {
 		return false, true, "checkpoint has no worktree snapshot"
 	}
@@ -274,17 +276,17 @@ func (k *Kernel) restoreCheckpointWorktree(ctx context.Context, record *port.Che
 	}
 	snapshot, err := k.snapshots.Load(ctx, record.WorktreeSnapshotID)
 	if err != nil {
-		if errors.Is(err, port.ErrWorktreeSnapshotNotFound) || errors.Is(err, port.ErrWorktreeSnapshotUnavailable) {
+		if errors.Is(err, kws.ErrWorktreeSnapshotNotFound) || errors.Is(err, kws.ErrWorktreeSnapshotUnavailable) {
 			return false, true, err.Error()
 		}
 		return false, true, err.Error()
 	}
-	if _, err := k.reverts.Revert(ctx, port.PatchRevertRequest{
+	if _, err := k.reverts.Revert(ctx, kws.PatchRevertRequest{
 		Capture:          &snapshot.Capture,
 		RestoreTracked:   true,
 		RestoreUntracked: true,
 	}); err != nil {
-		if errors.Is(err, port.ErrPatchRevertUnavailable) {
+		if errors.Is(err, kws.ErrPatchRevertUnavailable) {
 			return false, true, err.Error()
 		}
 		return false, true, err.Error()
@@ -295,7 +297,7 @@ func (k *Kernel) restoreCheckpointWorktree(ctx context.Context, record *port.Che
 	return false, true, "restored repository capture, but exact checkpoint patch state could not be reconstructed"
 }
 
-func isExactSnapshotRestore(snapshot *port.WorktreeSnapshot) bool {
+func isExactSnapshotRestore(snapshot *kws.WorktreeSnapshot) bool {
 	if snapshot == nil {
 		return false
 	}
@@ -334,9 +336,9 @@ func rerunSession(source *session.Session) *session.Session {
 		return nil
 	}
 	cloned := cloneSession(source)
-	filtered := make([]port.Message, 0, len(cloned.Messages))
+	filtered := make([]mdl.Message, 0, len(cloned.Messages))
 	for _, msg := range cloned.Messages {
-		if msg.Role == port.RoleSystem || msg.Role == port.RoleUser {
+		if msg.Role == mdl.RoleSystem || msg.Role == mdl.RoleUser {
 			filtered = append(filtered, cloneMessage(msg))
 		}
 	}
@@ -348,10 +350,10 @@ func rerunSession(source *session.Session) *session.Session {
 	return cloned
 }
 
-func mergeCheckpointLineage(sess *session.Session, extra []port.CheckpointLineageRef) []port.CheckpointLineageRef {
-	merged := make([]port.CheckpointLineageRef, 0, len(extra)+2)
+func mergeCheckpointLineage(sess *session.Session, extra []ckpt.CheckpointLineageRef) []ckpt.CheckpointLineageRef {
+	merged := make([]ckpt.CheckpointLineageRef, 0, len(extra)+2)
 	seen := make(map[string]bool)
-	add := func(kind port.CheckpointLineageKind, id string) {
+	add := func(kind ckpt.CheckpointLineageKind, id string) {
 		id = strings.TrimSpace(id)
 		if id == "" {
 			return
@@ -361,14 +363,14 @@ func mergeCheckpointLineage(sess *session.Session, extra []port.CheckpointLineag
 			return
 		}
 		seen[key] = true
-		merged = append(merged, port.CheckpointLineageRef{Kind: kind, ID: id})
+		merged = append(merged, ckpt.CheckpointLineageRef{Kind: kind, ID: id})
 	}
 	if sess != nil && sess.Config.Metadata != nil {
 		if kind, ok := sess.Config.Metadata[checkpointSourceKindKey].(string); ok {
-			switch port.CheckpointLineageKind(kind) {
-			case port.CheckpointLineageCheckpoint, port.CheckpointLineageSession, port.CheckpointLineageReplay:
+			switch ckpt.CheckpointLineageKind(kind) {
+			case ckpt.CheckpointLineageCheckpoint, ckpt.CheckpointLineageSession, ckpt.CheckpointLineageReplay:
 				if id, ok := sess.Config.Metadata[checkpointSourceIDKey].(string); ok {
-					add(port.CheckpointLineageKind(kind), id)
+					add(ckpt.CheckpointLineageKind(kind), id)
 				}
 			}
 		}
@@ -377,7 +379,7 @@ func mergeCheckpointLineage(sess *session.Session, extra []port.CheckpointLineag
 		add(item.Kind, item.ID)
 	}
 	if sess != nil {
-		add(port.CheckpointLineageSession, sess.ID)
+		add(ckpt.CheckpointLineageSession, sess.ID)
 	}
 	return merged
 }
@@ -390,7 +392,7 @@ func checkpointSnapshotSessionID(sourceID string) string {
 	return fmt.Sprintf("checkpoint-session-%s-%d", sourceID, time.Now().UnixNano())
 }
 
-func snapshotPatchIDs(snapshot *port.WorktreeSnapshot) []string {
+func snapshotPatchIDs(snapshot *kws.WorktreeSnapshot) []string {
 	if snapshot == nil || len(snapshot.Patches) == 0 {
 		return nil
 	}
@@ -442,23 +444,23 @@ func cloneSessionConfig(cfg session.SessionConfig) session.SessionConfig {
 	return cfg
 }
 
-func cloneMessages(items []port.Message) []port.Message {
+func cloneMessages(items []mdl.Message) []mdl.Message {
 	if len(items) == 0 {
 		return nil
 	}
-	out := make([]port.Message, len(items))
+	out := make([]mdl.Message, len(items))
 	for i, item := range items {
 		out[i] = cloneMessage(item)
 	}
 	return out
 }
 
-func cloneMessage(msg port.Message) port.Message {
+func cloneMessage(msg mdl.Message) mdl.Message {
 	cp := msg
 	if len(msg.ToolCalls) > 0 {
-		cp.ToolCalls = make([]port.ToolCall, len(msg.ToolCalls))
+		cp.ToolCalls = make([]mdl.ToolCall, len(msg.ToolCalls))
 		for i, call := range msg.ToolCalls {
-			cp.ToolCalls[i] = port.ToolCall{
+			cp.ToolCalls[i] = mdl.ToolCall{
 				ID:        call.ID,
 				Name:      call.Name,
 				Arguments: cloneJSON(call.Arguments),
@@ -466,7 +468,7 @@ func cloneMessage(msg port.Message) port.Message {
 		}
 	}
 	if len(msg.ToolResults) > 0 {
-		cp.ToolResults = append([]port.ToolResult(nil), msg.ToolResults...)
+		cp.ToolResults = append([]mdl.ToolResult(nil), msg.ToolResults...)
 	}
 	return cp
 }
@@ -491,12 +493,12 @@ func cloneState(in map[string]any) map[string]any {
 	return out
 }
 
-func (k *Kernel) emitExecutionEvent(ctx context.Context, typ port.ExecutionEventType, sessionID string, data map[string]any) {
+func (k *Kernel) emitExecutionEvent(ctx context.Context, typ kobs.ExecutionEventType, sessionID string, data map[string]any) {
 	observer := k.observer
 	if observer == nil {
-		observer = port.NoOpObserver{}
+		observer = kobs.NoOpObserver{}
 	}
-	port.ObserveExecutionEvent(ctx, observer, port.ExecutionEvent{
+	kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
 		Type:      typ,
 		SessionID: sessionID,
 		Timestamp: time.Now().UTC(),

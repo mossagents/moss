@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	kkws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type localLeaseRecord struct {
@@ -50,7 +49,7 @@ func NewLocalWorkspaceIsolation(root string) (*LocalWorkspaceIsolation, error) {
 	return iso, nil
 }
 
-func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*port.WorkspaceLease, error) {
+func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*kkws.WorkspaceLease, error) {
 	if strings.TrimSpace(taskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
@@ -63,7 +62,7 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*po
 		if err != nil {
 			return nil, err
 		}
-		return &port.WorkspaceLease{
+		return &kkws.WorkspaceLease{
 			WorkspaceID: lease.WorkspaceID,
 			TaskID:      lease.TaskID,
 			AcquiredAt:  lease.AcquiredAt,
@@ -91,7 +90,7 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*po
 		return nil, err
 	}
 
-	return &port.WorkspaceLease{
+	return &kkws.WorkspaceLease{
 		WorkspaceID: wsID,
 		TaskID:      taskID,
 		AcquiredAt:  lease.AcquiredAt,

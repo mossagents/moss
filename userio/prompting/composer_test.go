@@ -3,13 +3,12 @@ package prompting
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/tool"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestCompose_PriorityConfigOverSessionOverModel(t *testing.T) {

@@ -2,9 +2,8 @@ package adapters
 
 import (
 	"context"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // stubEmbedder 用于测试，返回固定维度的随机向量（基于文本哈希）。
@@ -48,7 +47,7 @@ func TestMemoryVectorStore_UpsertAndSearch(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []port.VectorDoc{
+	docs := []mdl.VectorDoc{
 		{ID: "d1", Text: "golang programming language"},
 		{ID: "d2", Text: "python machine learning"},
 		{ID: "d3", Text: "go concurrency patterns"},
@@ -65,7 +64,7 @@ func TestMemoryVectorStore_UpsertAndSearch(t *testing.T) {
 		t.Fatalf("expected 3 docs, got %d", n)
 	}
 
-	results, err := store.Search(ctx, emb, port.VectorQuery{
+	results, err := store.Search(ctx, emb, mdl.VectorQuery{
 		Text:  "golang",
 		Limit: 2,
 	})
@@ -82,7 +81,7 @@ func TestMemoryVectorStore_Delete(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []port.VectorDoc{
+	docs := []mdl.VectorDoc{
 		{ID: "a", Text: "alpha", Embedding: emb.hashToVec("alpha", 4)},
 		{ID: "b", Text: "beta", Embedding: emb.hashToVec("beta", 4)},
 	}
@@ -103,7 +102,7 @@ func TestMemoryVectorStore_Namespace(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []port.VectorDoc{
+	docs := []mdl.VectorDoc{
 		{ID: "x1", Namespace: "ns1", Text: "hello world"},
 		{ID: "x2", Namespace: "ns2", Text: "hello world"},
 	}

@@ -30,7 +30,7 @@ type Episode struct {
 	Timestamp  time.Time      `json:"timestamp"`
 	Kind       EpisodeKind    `json:"kind"`
 	Summary    string         `json:"summary"`
-	Importance float64        `json:"importance"` // 0.0-1.0
+	Importance float64        `json:"importance"`           // 0.0-1.0
 	ExpiresAt  time.Time      `json:"expires_at,omitempty"` // 零值 = 永不过期
 	Metadata   map[string]any `json:"metadata,omitempty"`
 }

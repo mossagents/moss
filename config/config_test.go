@@ -1,6 +1,8 @@
 package config
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestNormalizeProviderIdentity(t *testing.T) {
 	identity := NormalizeProviderIdentity("openai", "", "deepseek")

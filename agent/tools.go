@@ -5,16 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/loop"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/logging"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/logging"
-
-	"github.com/google/uuid"
 )
 
 // Delegator 是 agent 包对 Kernel 能力的抽象，避免循环依赖。
@@ -27,9 +27,9 @@ type Delegator interface {
 
 // RuntimeDeps 描述委派工具可选依赖。
 type RuntimeDeps struct {
-	TaskRuntime port.TaskRuntime
-	Mailbox     port.Mailbox
-	Isolation   port.WorkspaceIsolation
+	TaskRuntime taskrt.TaskRuntime
+	Mailbox     taskrt.Mailbox
+	Isolation   kws.WorkspaceIsolation
 }
 
 // RegisterTools 向工具注册表注册委派相关工具。
@@ -1094,9 +1094,9 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 		"parent_session_id", parentSessionID,
 	)
 
-	sess.AppendMessage(port.Message{
-		Role:         port.RoleUser,
-		ContentParts: []port.ContentPart{port.TextPart(task)},
+	sess.AppendMessage(mdl.Message{
+		Role:         mdl.RoleUser,
+		ContentParts: []mdl.ContentPart{mdl.TextPart(task)},
 	})
 
 	result, err := delegator.RunWithTools(WithSessionID(childCtx, sess.ID), sess, scopedTools)
@@ -1246,7 +1246,7 @@ type planTaskInput struct {
 	DependsOn []string `json:"depends_on"`
 }
 
-func registerPlanTask(reg tool.Registry, runtime port.TaskRuntime) error {
+func registerPlanTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "plan_task",
 		Description: "Create or update a pending task node in task runtime graph, with optional dependencies.",
@@ -1276,11 +1276,11 @@ func registerPlanTask(reg tool.Registry, runtime port.TaskRuntime) error {
 		if goal == "" {
 			return nil, fmt.Errorf("goal is required")
 		}
-		record := port.TaskRecord{
+		record := taskrt.TaskRecord{
 			ID:        id,
 			AgentName: strings.TrimSpace(in.Agent),
 			Goal:      goal,
-			Status:    port.TaskPending,
+			Status:    taskrt.TaskPending,
 			DependsOn: sanitizeDepends(in.DependsOn),
 		}
 		if old, err := runtime.GetTask(ctx, id); err == nil && old != nil {
@@ -1305,7 +1305,7 @@ type claimTaskInput struct {
 	Agent   string `json:"agent"`
 }
 
-func registerClaimTask(reg tool.Registry, runtime port.TaskRuntime) error {
+func registerClaimTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "claim_task",
 		Description: "Claim next ready pending task whose dependencies are completed.",
@@ -1332,7 +1332,7 @@ func registerClaimTask(reg tool.Registry, runtime port.TaskRuntime) error {
 		}
 		task, err := runtime.ClaimNextReady(ctx, claimer, strings.TrimSpace(in.Agent))
 		if err != nil {
-			if errors.Is(err, port.ErrNoReadyTask) {
+			if errors.Is(err, taskrt.ErrNoReadyTask) {
 				return json.Marshal(map[string]any{
 					"status": "empty",
 					"task":   nil,
@@ -1358,7 +1358,7 @@ type sendMailInput struct {
 	Metadata  map[string]any `json:"metadata"`
 }
 
-func registerSendMail(reg tool.Registry, mailbox port.Mailbox) error {
+func registerSendMail(reg tool.Registry, mailbox taskrt.Mailbox) error {
 	spec := tool.ToolSpec{
 		Name:        "send_mail",
 		Description: "Send an async mailbox message to another agent.",
@@ -1388,7 +1388,7 @@ func registerSendMail(reg tool.Registry, mailbox port.Mailbox) error {
 		if to == "" || content == "" {
 			return nil, fmt.Errorf("to and content are required")
 		}
-		msgID, err := mailbox.Send(ctx, port.MailMessage{
+		msgID, err := mailbox.Send(ctx, taskrt.MailMessage{
 			From:      strings.TrimSpace(in.From),
 			To:        to,
 			Subject:   strings.TrimSpace(in.Subject),
@@ -1414,7 +1414,7 @@ type readMailboxInput struct {
 	Limit int    `json:"limit"`
 }
 
-func registerReadMailbox(reg tool.Registry, mailbox port.Mailbox) error {
+func registerReadMailbox(reg tool.Registry, mailbox taskrt.Mailbox) error {
 	spec := tool.ToolSpec{
 		Name:        "read_mailbox",
 		Description: "Read pending mailbox messages for an owner (dequeue).",
@@ -1455,7 +1455,7 @@ type acquireWorkspaceInput struct {
 	TaskID string `json:"task_id"`
 }
 
-func registerAcquireWorkspace(reg tool.Registry, isolation port.WorkspaceIsolation, runtime port.TaskRuntime) error {
+func registerAcquireWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolation, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "acquire_workspace",
 		Description: "Acquire an isolated workspace for a task and return workspace id.",
@@ -1502,7 +1502,7 @@ type releaseWorkspaceInput struct {
 	WorkspaceID string `json:"workspace_id"`
 }
 
-func registerReleaseWorkspace(reg tool.Registry, isolation port.WorkspaceIsolation) error {
+func registerReleaseWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolation) error {
 	spec := tool.ToolSpec{
 		Name:        "release_workspace",
 		Description: "Release an isolated workspace lease.",

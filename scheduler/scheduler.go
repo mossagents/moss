@@ -20,12 +20,11 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/kernel/session"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/mossagents/moss/kernel/session"
 )
 
 // Job 表示一个定时任务。

@@ -1,4 +1,4 @@
-// Package otel provides a port.Observer implementation that records kernel
+// Package otel provides a kobs.Observer implementation that records kernel
 // events as OpenTelemetry metrics using the standard OTEL Metrics API.
 //
 // Usage:
@@ -6,31 +6,31 @@
 //	mp := // your MeterProvider (SDK, OTLP exporter, etc.)
 //	obs, err := otel.New(mp.Meter("github.com/mossagents/moss"))
 //	if err != nil { ... }
-//	kernel.SetObserver(port.JoinObservers(existing, obs))
+//	kernel.SetObserver(kobs.JoinObservers(existing, obs))
 package otel
 
 import (
 	"context"
 	"fmt"
-
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Observer implements port.Observer by recording kernel events as OTEL metrics.
-// It embeds port.NoOpObserver so only metrics-relevant methods are overridden;
+// Observer implements kobs.Observer by recording kernel events as OTEL metrics.
+// It embeds kobs.NoOpObserver so only metrics-relevant methods are overridden;
 // fine-grained execution events (OnExecutionEvent) are silently discarded.
 type Observer struct {
-	port.NoOpObserver
+	kobs.NoOpObserver
 
 	llmCallsTotal  metric.Int64Counter
 	llmDurationMs  metric.Int64Histogram
 	llmTokensTotal metric.Int64Counter
 	llmCostUSD     metric.Float64Counter
 
-	toolCallsTotal  metric.Int64Counter
-	toolDurationMs  metric.Int64Histogram
+	toolCallsTotal metric.Int64Counter
+	toolDurationMs metric.Int64Histogram
 
 	sessionsTotal  metric.Int64Counter
 	approvalsTotal metric.Int64Counter
@@ -103,7 +103,7 @@ func New(meter metric.Meter) (*Observer, error) {
 	return o, nil
 }
 
-func (o *Observer) OnLLMCall(ctx context.Context, e port.LLMCallEvent) {
+func (o *Observer) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {
 	attrs := []attribute.KeyValue{
 		attribute.String("model", e.Model),
 		attribute.String("stop_reason", e.StopReason),
@@ -126,7 +126,7 @@ func (o *Observer) OnLLMCall(ctx context.Context, e port.LLMCallEvent) {
 	}
 }
 
-func (o *Observer) OnToolCall(ctx context.Context, e port.ToolCallEvent) {
+func (o *Observer) OnToolCall(ctx context.Context, e kobs.ToolCallEvent) {
 	attrs := []attribute.KeyValue{
 		attribute.String("tool_name", e.ToolName),
 		attribute.String("risk", e.Risk),
@@ -137,11 +137,11 @@ func (o *Observer) OnToolCall(ctx context.Context, e port.ToolCallEvent) {
 		metric.WithAttributes(attribute.String("tool_name", e.ToolName), attribute.String("risk", e.Risk)))
 }
 
-func (o *Observer) OnSessionEvent(ctx context.Context, e port.SessionEvent) {
+func (o *Observer) OnSessionEvent(ctx context.Context, e kobs.SessionEvent) {
 	o.sessionsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("type", e.Type)))
 }
 
-func (o *Observer) OnApproval(ctx context.Context, e port.ApprovalEvent) {
+func (o *Observer) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
 	decision := "pending"
 	if e.Decision != nil {
 		if e.Decision.Approved {
@@ -156,6 +156,6 @@ func (o *Observer) OnApproval(ctx context.Context, e port.ApprovalEvent) {
 	))
 }
 
-func (o *Observer) OnError(ctx context.Context, e port.ErrorEvent) {
+func (o *Observer) OnError(ctx context.Context, e kobs.ErrorEvent) {
 	o.errorsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("phase", e.Phase)))
 }

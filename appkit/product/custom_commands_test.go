@@ -1,12 +1,11 @@
 package product
 
 import (
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestDiscoverCustomCommandsPrefersProjectWhenTrusted(t *testing.T) {

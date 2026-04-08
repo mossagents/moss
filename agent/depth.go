@@ -1,6 +1,8 @@
 package agent
 
-import "context"
+import (
+	"context"
+)
 
 type contextKey struct{}
 type sessionContextKey struct{}

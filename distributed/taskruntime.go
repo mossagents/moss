@@ -8,18 +8,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
-// RemoteTaskRuntime implements port.TaskRuntime, port.JobRuntime,
-// and port.AtomicJobRuntime over HTTP.
+// RemoteTaskRuntime implements taskrt.TaskRuntime, taskrt.JobRuntime,
+// and taskrt.AtomicJobRuntime over HTTP.
 type RemoteTaskRuntime struct {
 	baseURL    string
 	httpClient *http.Client
@@ -53,19 +52,19 @@ func NewRemoteTaskRuntime(baseURL string, opts ...RemoteOption) *RemoteTaskRunti
 
 // ---- TaskRuntime ---------------------------------------------------------
 
-func (r *RemoteTaskRuntime) UpsertTask(ctx context.Context, task port.TaskRecord) error {
+func (r *RemoteTaskRuntime) UpsertTask(ctx context.Context, task taskrt.TaskRecord) error {
 	return r.post(ctx, "/tasks", task, nil)
 }
 
-func (r *RemoteTaskRuntime) GetTask(ctx context.Context, id string) (*port.TaskRecord, error) {
-	var task port.TaskRecord
+func (r *RemoteTaskRuntime) GetTask(ctx context.Context, id string) (*taskrt.TaskRecord, error) {
+	var task taskrt.TaskRecord
 	if err := r.get(ctx, "/tasks/"+url.PathEscape(id), nil, &task); err != nil {
 		return nil, err
 	}
 	return &task, nil
 }
 
-func (r *RemoteTaskRuntime) ListTasks(ctx context.Context, query port.TaskQuery) ([]port.TaskRecord, error) {
+func (r *RemoteTaskRuntime) ListTasks(ctx context.Context, query taskrt.TaskQuery) ([]taskrt.TaskRecord, error) {
 	params := url.Values{}
 	if query.AgentName != "" {
 		params.Set("agent", query.AgentName)
@@ -82,16 +81,16 @@ func (r *RemoteTaskRuntime) ListTasks(ctx context.Context, query port.TaskQuery)
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))
 	}
-	var tasks []port.TaskRecord
+	var tasks []taskrt.TaskRecord
 	if err := r.get(ctx, "/tasks", params, &tasks); err != nil {
 		return nil, err
 	}
 	return tasks, nil
 }
 
-func (r *RemoteTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*port.TaskRecord, error) {
+func (r *RemoteTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*taskrt.TaskRecord, error) {
 	body := map[string]string{"claimer": claimer, "preferred_agent": preferredAgent}
-	var task port.TaskRecord
+	var task taskrt.TaskRecord
 	if err := r.post(ctx, "/tasks/claim", body, &task); err != nil {
 		return nil, err
 	}
@@ -100,19 +99,19 @@ func (r *RemoteTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, 
 
 // ---- JobRuntime ----------------------------------------------------------
 
-func (r *RemoteTaskRuntime) UpsertJob(ctx context.Context, job port.AgentJob) error {
+func (r *RemoteTaskRuntime) UpsertJob(ctx context.Context, job taskrt.AgentJob) error {
 	return r.post(ctx, "/jobs", job, nil)
 }
 
-func (r *RemoteTaskRuntime) GetJob(ctx context.Context, id string) (*port.AgentJob, error) {
-	var job port.AgentJob
+func (r *RemoteTaskRuntime) GetJob(ctx context.Context, id string) (*taskrt.AgentJob, error) {
+	var job taskrt.AgentJob
 	if err := r.get(ctx, "/jobs/"+url.PathEscape(id), nil, &job); err != nil {
 		return nil, err
 	}
 	return &job, nil
 }
 
-func (r *RemoteTaskRuntime) ListJobs(ctx context.Context, query port.JobQuery) ([]port.AgentJob, error) {
+func (r *RemoteTaskRuntime) ListJobs(ctx context.Context, query taskrt.JobQuery) ([]taskrt.AgentJob, error) {
 	params := url.Values{}
 	if query.AgentName != "" {
 		params.Set("agent", query.AgentName)
@@ -123,19 +122,19 @@ func (r *RemoteTaskRuntime) ListJobs(ctx context.Context, query port.JobQuery) (
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))
 	}
-	var jobs []port.AgentJob
+	var jobs []taskrt.AgentJob
 	if err := r.get(ctx, "/jobs", params, &jobs); err != nil {
 		return nil, err
 	}
 	return jobs, nil
 }
 
-func (r *RemoteTaskRuntime) UpsertJobItem(ctx context.Context, item port.AgentJobItem) error {
+func (r *RemoteTaskRuntime) UpsertJobItem(ctx context.Context, item taskrt.AgentJobItem) error {
 	path := fmt.Sprintf("/jobs/%s/items", url.PathEscape(item.JobID))
 	return r.post(ctx, path, item, nil)
 }
 
-func (r *RemoteTaskRuntime) ListJobItems(ctx context.Context, query port.JobItemQuery) ([]port.AgentJobItem, error) {
+func (r *RemoteTaskRuntime) ListJobItems(ctx context.Context, query taskrt.JobItemQuery) ([]taskrt.AgentJobItem, error) {
 	params := url.Values{}
 	if query.Status != "" {
 		params.Set("status", string(query.Status))
@@ -143,7 +142,7 @@ func (r *RemoteTaskRuntime) ListJobItems(ctx context.Context, query port.JobItem
 	if query.Limit > 0 {
 		params.Set("limit", strconv.Itoa(query.Limit))
 	}
-	var items []port.AgentJobItem
+	var items []taskrt.AgentJobItem
 	path := fmt.Sprintf("/jobs/%s/items", url.PathEscape(query.JobID))
 	if err := r.get(ctx, path, params, &items); err != nil {
 		return nil, err
@@ -153,17 +152,17 @@ func (r *RemoteTaskRuntime) ListJobItems(ctx context.Context, query port.JobItem
 
 // ---- AtomicJobRuntime ----------------------------------------------------
 
-func (r *RemoteTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*port.AgentJobItem, error) {
+func (r *RemoteTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*taskrt.AgentJobItem, error) {
 	path := fmt.Sprintf("/jobs/%s/items/%s/running", url.PathEscape(jobID), url.PathEscape(itemID))
 	body := map[string]string{"executor": executor}
-	var item port.AgentJobItem
+	var item taskrt.AgentJobItem
 	if err := r.post(ctx, path, body, &item); err != nil {
 		return nil, err
 	}
 	return &item, nil
 }
 
-func (r *RemoteTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status port.AgentJobStatus, result string, errMsg string) (*port.AgentJobItem, error) {
+func (r *RemoteTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status taskrt.AgentJobStatus, result string, errMsg string) (*taskrt.AgentJobItem, error) {
 	path := fmt.Sprintf("/jobs/%s/items/%s/result", url.PathEscape(jobID), url.PathEscape(itemID))
 	body := map[string]string{
 		"executor": executor,
@@ -171,7 +170,7 @@ func (r *RemoteTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, item
 		"result":   result,
 		"error":    errMsg,
 	}
-	var item port.AgentJobItem
+	var item taskrt.AgentJobItem
 	if err := r.post(ctx, path, body, &item); err != nil {
 		return nil, err
 	}
@@ -221,7 +220,7 @@ func (r *RemoteTaskRuntime) do(req *http.Request, out any) error {
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode == http.StatusNotFound {
-		return port.ErrTaskNotFound
+		return taskrt.ErrTaskNotFound
 	}
 	if resp.StatusCode == http.StatusNoContent {
 		return nil
@@ -240,6 +239,6 @@ func (r *RemoteTaskRuntime) do(req *http.Request, out any) error {
 }
 
 // compile-time interface checks
-var _ port.TaskRuntime = (*RemoteTaskRuntime)(nil)
-var _ port.JobRuntime = (*RemoteTaskRuntime)(nil)
-var _ port.AtomicJobRuntime = (*RemoteTaskRuntime)(nil)
+var _ taskrt.TaskRuntime = (*RemoteTaskRuntime)(nil)
+var _ taskrt.JobRuntime = (*RemoteTaskRuntime)(nil)
+var _ taskrt.AtomicJobRuntime = (*RemoteTaskRuntime)(nil)

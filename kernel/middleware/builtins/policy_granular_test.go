@@ -1,9 +1,8 @@
 package builtins
 
 import (
-	"testing"
-
 	"github.com/mossagents/moss/kernel/tool"
+	"testing"
 )
 
 func TestRequireApprovalForPathPrefix(t *testing.T) {

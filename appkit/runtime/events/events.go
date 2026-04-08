@@ -1,9 +1,9 @@
 package events
 
 import (
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // StreamEventType is a frontend-facing normalized runtime event type.
@@ -32,7 +32,7 @@ type StreamEvent struct {
 }
 
 // FromOutputMessage maps kernel output messages to a normalized stream event.
-func FromOutputMessage(msg port.OutputMessage, now time.Time) StreamEvent {
+func FromOutputMessage(msg intr.OutputMessage, now time.Time) StreamEvent {
 	event := StreamEvent{
 		Type:      EventUnknown,
 		Timestamp: now,
@@ -40,24 +40,24 @@ func FromOutputMessage(msg port.OutputMessage, now time.Time) StreamEvent {
 		Meta:      cloneMap(msg.Meta),
 	}
 	switch msg.Type {
-	case port.OutputText:
+	case intr.OutputText:
 		event.Type = EventAssistantMessage
-	case port.OutputStream:
+	case intr.OutputStream:
 		event.Type = EventAssistantDelta
-	case port.OutputStreamEnd:
+	case intr.OutputStreamEnd:
 		event.Type = EventAssistantDone
-	case port.OutputProgress:
+	case intr.OutputProgress:
 		event.Type = EventProgress
-	case port.OutputToolStart:
+	case intr.OutputToolStart:
 		event.Type = EventToolStarted
-	case port.OutputToolResult:
+	case intr.OutputToolResult:
 		event.Type = EventToolCompleted
 	}
 	return event
 }
 
 // FromExecutionEvent maps observer execution events to normalized stream events.
-func FromExecutionEvent(e port.ExecutionEvent) StreamEvent {
+func FromExecutionEvent(e kobs.ExecutionEvent) StreamEvent {
 	event := StreamEvent{
 		Type:      EventUnknown,
 		Timestamp: e.Timestamp,
@@ -66,17 +66,17 @@ func FromExecutionEvent(e port.ExecutionEvent) StreamEvent {
 		Meta:      cloneMap(e.Data),
 	}
 	switch e.Type {
-	case port.ExecutionRunStarted:
+	case kobs.ExecutionRunStarted:
 		event.Type = EventRunStarted
-	case port.ExecutionRunCompleted:
+	case kobs.ExecutionRunCompleted:
 		event.Type = EventRunCompleted
-	case port.ExecutionRunFailed, port.ExecutionRunCancelled:
+	case kobs.ExecutionRunFailed, kobs.ExecutionRunCancelled:
 		event.Type = EventRunFailed
-	case port.ExecutionToolStarted:
+	case kobs.ExecutionToolStarted:
 		event.Type = EventToolStarted
-	case port.ExecutionToolCompleted:
+	case kobs.ExecutionToolCompleted:
 		event.Type = EventToolCompleted
-	case port.ExecutionIterationProgress:
+	case kobs.ExecutionIterationProgress:
 		event.Type = EventProgress
 	}
 	if event.Meta == nil {

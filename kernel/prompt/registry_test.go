@@ -1,10 +1,9 @@
 package prompt_test
 
 import (
+	"github.com/mossagents/moss/kernel/prompt"
 	"testing"
 	"testing/fstest"
-
-	"github.com/mossagents/moss/kernel/prompt"
 )
 
 func TestMemoryRegistry_RegisterAndGet(t *testing.T) {

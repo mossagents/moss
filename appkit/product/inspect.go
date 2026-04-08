@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/session"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	appruntime "github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 type InspectReport struct {

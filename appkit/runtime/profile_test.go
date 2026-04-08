@@ -2,15 +2,14 @@ package runtime
 
 import (
 	"encoding/json"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestProfileNamesForWorkspaceIncludesBuiltinsAndConfig(t *testing.T) {

@@ -1,6 +1,8 @@
 package gateway
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestBindingTable_ResolveByTier(t *testing.T) {
 	tb := NewBindingTable()

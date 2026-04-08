@@ -9,21 +9,23 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
 )
 
 const memoryStateKey kernel.ExtensionStateKey = "memory.state"
 
 type state struct {
-	workspace port.Workspace
-	store     port.MemoryStore
-	runtime   port.TaskRuntime
+	workspace kws.Workspace
+	store     memstore.MemoryStore
+	runtime   taskrt.TaskRuntime
 	pipeline  *memoryPipelineManager
 }
 
 // WithMemoryWorkspace 将持久化 memory 工作区接入 Kernel。
-func WithMemoryWorkspace(ws port.Workspace) kernel.Option {
+func WithMemoryWorkspace(ws kws.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
 		st := ensureMemoryState(k)
 		st.workspace = ws
@@ -33,15 +35,15 @@ func WithMemoryWorkspace(ws port.Workspace) kernel.Option {
 	}
 }
 
-func WithMemoryStore(store port.MemoryStore) kernel.Option {
+func WithMemoryStore(store memstore.MemoryStore) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureMemoryState(k).store = store
 	}
 }
 
 // RegisterMemoryToolsCompat 为 memory 命名空间注册标准工具集。
-func RegisterMemoryToolsCompat(reg tool.Registry, ws port.Workspace) error {
-	return RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), port.NewMemoryTaskRuntime())
+func RegisterMemoryToolsCompat(reg tool.Registry, ws kws.Workspace) error {
+	return RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), taskrt.NewMemoryTaskRuntime())
 }
 
 func ensureMemoryState(k *kernel.Kernel) *state {
@@ -62,7 +64,7 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 			st.runtime = k.TaskRuntime()
 		}
 		if st.runtime == nil {
-			st.runtime = port.NewMemoryTaskRuntime()
+			st.runtime = taskrt.NewMemoryTaskRuntime()
 		}
 		st.store = newIndexedMemoryStore(st.store, StateCatalogOf(k))
 		if st.pipeline == nil {
@@ -90,11 +92,11 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	return st
 }
 
-func RegisterMemoryTools(reg tool.Registry, ws port.Workspace, store port.MemoryStore) error {
-	return RegisterMemoryToolsWithRuntime(reg, ws, store, port.NewMemoryTaskRuntime())
+func RegisterMemoryTools(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore) error {
+	return RegisterMemoryToolsWithRuntime(reg, ws, store, taskrt.NewMemoryTaskRuntime())
 }
 
-func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws port.Workspace, store port.MemoryStore, runtime port.TaskRuntime) error {
+func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore, runtime taskrt.TaskRuntime) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -102,14 +104,14 @@ func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws port.Workspace, store 
 		return fmt.Errorf("memory store is nil")
 	}
 	if runtime == nil {
-		runtime = port.NewMemoryTaskRuntime()
+		runtime = taskrt.NewMemoryTaskRuntime()
 	}
 	pipeline := newMemoryPipelineManager(ws, store, runtime)
 	pipeline.Start()
 	return registerMemoryToolsWithPipeline(reg, ws, store, pipeline)
 }
 
-func registerMemoryToolsWithPipeline(reg tool.Registry, ws port.Workspace, store port.MemoryStore, pipeline *memoryPipelineManager) error {
+func registerMemoryToolsWithPipeline(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -273,7 +275,7 @@ var ingestMemoryTraceSpec = tool.ToolSpec{
 	Capabilities: []string{"memory"},
 }
 
-func readMemoryHandler(ws port.Workspace, store port.MemoryStore) tool.ToolHandler {
+func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -292,7 +294,7 @@ func readMemoryHandler(ws port.Workspace, store port.MemoryStore) tool.ToolHandl
 	}
 }
 
-func writeMemoryHandler(ws port.Workspace) tool.ToolHandler {
+func writeMemoryHandler(ws kws.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path    string `json:"path"`
@@ -309,7 +311,7 @@ func writeMemoryHandler(ws port.Workspace) tool.ToolHandler {
 	}
 }
 
-func listMemoriesHandler(ws port.Workspace) tool.ToolHandler {
+func listMemoriesHandler(ws kws.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Pattern string `json:"pattern"`
@@ -328,7 +330,7 @@ func listMemoriesHandler(ws port.Workspace) tool.ToolHandler {
 	}
 }
 
-func deleteMemoryHandler(ws port.Workspace, store port.MemoryStore) tool.ToolHandler {
+func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -347,7 +349,7 @@ func deleteMemoryHandler(ws port.Workspace, store port.MemoryStore) tool.ToolHan
 	}
 }
 
-func readMemoryRecordHandler(store port.MemoryStore) tool.ToolHandler {
+func readMemoryRecordHandler(store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -367,29 +369,29 @@ func readMemoryRecordHandler(store port.MemoryStore) tool.ToolHandler {
 	}
 }
 
-func writeMemoryRecordHandler(ws port.Workspace, store port.MemoryStore) tool.ToolHandler {
+func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
-			Path            string              `json:"path"`
-			Content         string              `json:"content"`
-			Summary         string              `json:"summary"`
-			Tags            []string            `json:"tags"`
-			Citation        port.MemoryCitation `json:"citation"`
-			Stage           port.MemoryStage    `json:"stage"`
-			Status          port.MemoryStatus   `json:"status"`
-			Group           string              `json:"group"`
-			Workspace       string              `json:"workspace"`
-			CWD             string              `json:"cwd"`
-			GitBranch       string              `json:"git_branch"`
-			SourceKind      string              `json:"source_kind"`
-			SourceID        string              `json:"source_id"`
-			SourcePath      string              `json:"source_path"`
-			SourceUpdatedAt string              `json:"source_updated_at"`
+			Path            string                  `json:"path"`
+			Content         string                  `json:"content"`
+			Summary         string                  `json:"summary"`
+			Tags            []string                `json:"tags"`
+			Citation        memstore.MemoryCitation `json:"citation"`
+			Stage           memstore.MemoryStage    `json:"stage"`
+			Status          memstore.MemoryStatus   `json:"status"`
+			Group           string                  `json:"group"`
+			Workspace       string                  `json:"workspace"`
+			CWD             string                  `json:"cwd"`
+			GitBranch       string                  `json:"git_branch"`
+			SourceKind      string                  `json:"source_kind"`
+			SourceID        string                  `json:"source_id"`
+			SourcePath      string                  `json:"source_path"`
+			SourceUpdatedAt string                  `json:"source_updated_at"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		record, err := store.Upsert(ctx, port.MemoryRecord{
+		record, err := store.Upsert(ctx, memstore.MemoryRecord{
 			Path:            in.Path,
 			Content:         in.Content,
 			Summary:         in.Summary,
@@ -419,21 +421,21 @@ func writeMemoryRecordHandler(ws port.Workspace, store port.MemoryStore) tool.To
 	}
 }
 
-func searchMemoriesHandler(store port.MemoryStore) tool.ToolHandler {
+func searchMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
-			Query     string              `json:"query"`
-			Tags      []string            `json:"tags"`
-			Stages    []port.MemoryStage  `json:"stages"`
-			Statuses  []port.MemoryStatus `json:"statuses"`
-			Group     string              `json:"group"`
-			Workspace string              `json:"workspace"`
-			Limit     int                 `json:"limit"`
+			Query     string                  `json:"query"`
+			Tags      []string                `json:"tags"`
+			Stages    []memstore.MemoryStage  `json:"stages"`
+			Statuses  []memstore.MemoryStatus `json:"statuses"`
+			Group     string                  `json:"group"`
+			Workspace string                  `json:"workspace"`
+			Limit     int                     `json:"limit"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		items, err := store.Search(ctx, port.MemoryQuery{
+		items, err := store.Search(ctx, memstore.MemoryQuery{
 			Query:     in.Query,
 			Tags:      in.Tags,
 			Stages:    in.Stages,
@@ -507,11 +509,11 @@ func ingestMemoryTraceHandler(pipeline *memoryPipelineManager) tool.ToolHandler 
 	}
 }
 
-func recordMemoryUsage(ctx context.Context, store port.MemoryStore, path string) error {
+func recordMemoryUsage(ctx context.Context, store memstore.MemoryStore, path string) error {
 	return recordMemoryUsages(ctx, store, []string{path})
 }
 
-func recordMemoryUsages(ctx context.Context, store port.MemoryStore, paths []string) error {
+func recordMemoryUsages(ctx context.Context, store memstore.MemoryStore, paths []string) error {
 	if store == nil || len(paths) == 0 {
 		return nil
 	}

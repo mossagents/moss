@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	. "github.com/mossagents/moss/config"
 )
 
 // --- fakeSkill for testing ---

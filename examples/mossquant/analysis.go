@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel/tool"
 	"math"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ─── Technical Analysis ─────────────────────────────

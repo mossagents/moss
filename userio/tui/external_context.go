@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"mime"
 	"net/http"
 	"os"
@@ -10,8 +11,6 @@ import (
 	runtimepkg "runtime"
 	"strconv"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 const maxAttachedFileBytes = 16 * 1024
@@ -21,7 +20,7 @@ func expandInlineFileMentions(input, workspace string) (string, error) {
 	return input, nil
 }
 
-func buildUserContentParts(input, workspace string) ([]port.ContentPart, error) {
+func buildUserContentParts(input, workspace string) ([]mdl.ContentPart, error) {
 	_, _, parts, err := buildComposerSubmission(input, workspace, nil)
 	return parts, err
 }
@@ -75,7 +74,7 @@ func isMediaPath(path string) bool {
 	}
 }
 
-func detectMediaPart(path string, data []byte) (port.ContentPartType, string, error) {
+func detectMediaPart(path string, data []byte) (mdl.ContentPartType, string, error) {
 	extMIME := strings.ToLower(strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))))
 	sniffMIME := strings.ToLower(strings.TrimSpace(http.DetectContentType(data)))
 	extFamily := mediaFamily(extMIME)
@@ -110,11 +109,11 @@ func detectMediaPart(path string, data []byte) (port.ContentPartType, string, er
 
 	switch family {
 	case "image":
-		return port.ContentPartInputImage, resolvedMIME, nil
+		return mdl.ContentPartInputImage, resolvedMIME, nil
 	case "audio":
-		return port.ContentPartInputAudio, resolvedMIME, nil
+		return mdl.ContentPartInputAudio, resolvedMIME, nil
 	case "video":
-		return port.ContentPartInputVideo, resolvedMIME, nil
+		return mdl.ContentPartInputVideo, resolvedMIME, nil
 	default:
 		return "", "", fmt.Errorf("mentioned media %s has unsupported media family %q", path, family)
 	}

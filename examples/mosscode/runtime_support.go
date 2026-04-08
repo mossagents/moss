@@ -4,21 +4,22 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
-	"time"
-
-	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/presets/deepagent"
+	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
+	"os"
+	"strconv"
+	"strings"
+	"time"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -46,7 +47,7 @@ func initializeCommandRuntime(cfg *config) (func(), error) {
 }
 
 func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, error) {
-	k, _, err := buildKernel(ctx, cfg.flags, &port.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
+	k, _, err := buildKernel(ctx, cfg.flags, &intr.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
 	return k, err
 }
 
@@ -72,7 +73,7 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (pro
 	}, nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, approvalMode string, governance product.GovernanceConfig, observer port.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, approvalMode string, governance product.GovernanceConfig, observer kobs.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
 	logging.GetLogger().DebugContext(ctx, "build kernel requested",
 		"workspace", flags.Workspace,
 		"profile", flags.Profile,
@@ -119,9 +120,9 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, ap
 		"failover_enabled", useFailover,
 	)
 	if router != nil {
-		var llm port.LLM = router
+		var llm mdl.LLM = router
 		if useFailover {
-			failoverLLM, err := adapters.NewFailoverLLM(router, failoverCfg)
+			failoverLLM, err := providers.NewFailoverLLM(router, failoverCfg)
 			if err != nil {
 				return nil, appruntime.ResolvedProfile{}, fmt.Errorf("build failover llm: %w", err)
 			}

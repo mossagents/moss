@@ -1,6 +1,8 @@
 package runtime
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestProbeExecutionSurfaceReady(t *testing.T) {
 	workspace := t.TempDir()

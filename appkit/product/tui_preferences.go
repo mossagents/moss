@@ -2,10 +2,9 @@ package product
 
 import (
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
 	"sort"
 	"strings"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 const (

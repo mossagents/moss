@@ -2,11 +2,10 @@ package kernel
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kt "github.com/mossagents/moss/testing"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
-	kt "github.com/mossagents/moss/testing"
 )
 
 func TestBoot_RequiresLLMAndUserIO(t *testing.T) {
@@ -27,7 +26,7 @@ func TestBoot_RequiresLLMAndUserIO(t *testing.T) {
 		},
 		{
 			name: "both set",
-			opts: []Option{WithLLM(&kt.MockLLM{}), WithUserIO(&port.NoOpIO{})},
+			opts: []Option{WithLLM(&kt.MockLLM{}), WithUserIO(&intr.NoOpIO{})},
 		},
 	}
 

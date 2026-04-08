@@ -3,26 +3,25 @@ package distributed
 import (
 	"encoding/json"
 	"fmt"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"net/http"
 	"strconv"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // TaskRuntimeServer wraps a TaskRuntime (and optionally JobRuntime +
 // AtomicJobRuntime) as an HTTP API server, enabling multi-instance
 // Agent Worker deployments to share a single task queue.
 type TaskRuntimeServer struct {
-	rt     port.TaskRuntime
-	jrt    port.JobRuntime
-	ajrt   port.AtomicJobRuntime
-	mux    *http.ServeMux
+	rt   taskrt.TaskRuntime
+	jrt  taskrt.JobRuntime
+	ajrt taskrt.AtomicJobRuntime
+	mux  *http.ServeMux
 }
 
 // NewTaskRuntimeServer creates a server wrapping the provided runtimes.
 // rt must not be nil. jrt and ajrt are optional (endpoints return 501 if nil).
-func NewTaskRuntimeServer(rt port.TaskRuntime, jrt port.JobRuntime, ajrt port.AtomicJobRuntime) *TaskRuntimeServer {
+func NewTaskRuntimeServer(rt taskrt.TaskRuntime, jrt taskrt.JobRuntime, ajrt taskrt.AtomicJobRuntime) *TaskRuntimeServer {
 	s := &TaskRuntimeServer{rt: rt, jrt: jrt, ajrt: ajrt}
 	s.mux = http.NewServeMux()
 	s.registerRoutes()
@@ -82,7 +81,7 @@ func (s *TaskRuntimeServer) registerRoutes() {
 // ---- Task handlers -------------------------------------------------------
 
 func (s *TaskRuntimeServer) handleUpsertTask(w http.ResponseWriter, r *http.Request) {
-	var task port.TaskRecord
+	var task taskrt.TaskRecord
 	if !decode(w, r, &task) {
 		return
 	}
@@ -96,7 +95,7 @@ func (s *TaskRuntimeServer) handleUpsertTask(w http.ResponseWriter, r *http.Requ
 func (s *TaskRuntimeServer) handleGetTask(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/tasks/")
 	task, err := s.rt.GetTask(r.Context(), id)
-	if err == port.ErrTaskNotFound {
+	if err == taskrt.ErrTaskNotFound {
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
@@ -109,9 +108,9 @@ func (s *TaskRuntimeServer) handleGetTask(w http.ResponseWriter, r *http.Request
 
 func (s *TaskRuntimeServer) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	query := port.TaskQuery{
+	query := taskrt.TaskQuery{
 		AgentName: q.Get("agent"),
-		Status:    port.TaskStatus(q.Get("status")),
+		Status:    taskrt.TaskStatus(q.Get("status")),
 		ClaimedBy: q.Get("claimed_by"),
 		SessionID: q.Get("session_id"),
 		Limit:     parseIntParam(q.Get("limit")),
@@ -133,7 +132,7 @@ func (s *TaskRuntimeServer) handleClaimNextReady(w http.ResponseWriter, r *http.
 		return
 	}
 	task, err := s.rt.ClaimNextReady(r.Context(), body.Claimer, body.PreferredAgent)
-	if err == port.ErrNoReadyTask {
+	if err == taskrt.ErrNoReadyTask {
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
@@ -151,7 +150,7 @@ func (s *TaskRuntimeServer) handleUpsertJob(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "job runtime not available", http.StatusNotImplemented)
 		return
 	}
-	var job port.AgentJob
+	var job taskrt.AgentJob
 	if !decode(w, r, &job) {
 		return
 	}
@@ -168,9 +167,9 @@ func (s *TaskRuntimeServer) handleListJobs(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	q := r.URL.Query()
-	query := port.JobQuery{
+	query := taskrt.JobQuery{
 		AgentName: q.Get("agent"),
-		Status:    port.AgentJobStatus(q.Get("status")),
+		Status:    taskrt.AgentJobStatus(q.Get("status")),
 		Limit:     parseIntParam(q.Get("limit")),
 	}
 	jobs, err := s.jrt.ListJobs(r.Context(), query)
@@ -200,7 +199,7 @@ func (s *TaskRuntimeServer) handleJobsSubpath(w http.ResponseWriter, r *http.Req
 			return
 		}
 		job, err := s.jrt.GetJob(r.Context(), parts[0])
-		if err == port.ErrJobNotFound {
+		if err == taskrt.ErrJobNotFound {
 			writeError(w, err, http.StatusNotFound)
 			return
 		}
@@ -256,7 +255,7 @@ func (s *TaskRuntimeServer) handleUpsertJobItem(w http.ResponseWriter, r *http.R
 		http.Error(w, "job runtime not available", http.StatusNotImplemented)
 		return
 	}
-	var item port.AgentJobItem
+	var item taskrt.AgentJobItem
 	if !decode(w, r, &item) {
 		return
 	}
@@ -274,9 +273,9 @@ func (s *TaskRuntimeServer) handleListJobItems(w http.ResponseWriter, r *http.Re
 		return
 	}
 	q := r.URL.Query()
-	query := port.JobItemQuery{
+	query := taskrt.JobItemQuery{
 		JobID:  jobID,
-		Status: port.AgentJobStatus(q.Get("status")),
+		Status: taskrt.AgentJobStatus(q.Get("status")),
 		Limit:  parseIntParam(q.Get("limit")),
 	}
 	items, err := s.jrt.ListJobItems(r.Context(), query)
@@ -313,9 +312,9 @@ func (s *TaskRuntimeServer) handleReportJobItemResult(w http.ResponseWriter, r *
 	}
 	var body struct {
 		Executor string                `json:"executor"`
-		Status   port.AgentJobStatus  `json:"status"`
-		Result   string               `json:"result"`
-		Error    string               `json:"error"`
+		Status   taskrt.AgentJobStatus `json:"status"`
+		Result   string                `json:"result"`
+		Error    string                `json:"error"`
 	}
 	if !decode(w, r, &body) {
 		return

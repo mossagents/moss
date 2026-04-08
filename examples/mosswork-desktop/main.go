@@ -14,16 +14,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/mossagents/moss/appkit"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"log"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
-
-	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:frontend/dist

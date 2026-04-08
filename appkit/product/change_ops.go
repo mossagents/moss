@@ -2,12 +2,11 @@ package product
 
 import (
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type ChangeStatus string
@@ -27,28 +26,28 @@ const (
 )
 
 type ChangeOperation struct {
-	ID                 string          `json:"id"`
-	RepoRoot           string          `json:"repo_root"`
-	BaseHeadSHA        string          `json:"base_head_sha,omitempty"`
-	SessionID          string          `json:"session_id,omitempty"`
-	RunID              string          `json:"run_id,omitempty"`
-	TurnID             string          `json:"turn_id,omitempty"`
-	InstructionProfile string          `json:"instruction_profile,omitempty"`
-	ModelLane          string          `json:"model_lane,omitempty"`
-	VisibleTools       []string        `json:"visible_tools,omitempty"`
-	HiddenTools        []string        `json:"hidden_tools,omitempty"`
-	PatchID            string          `json:"patch_id,omitempty"`
-	CheckpointID       string          `json:"checkpoint_id,omitempty"`
-	Summary            string          `json:"summary,omitempty"`
-	TargetFiles        []string        `json:"target_files,omitempty"`
-	Status             ChangeStatus    `json:"status"`
-	RecoveryMode       string          `json:"recovery_mode,omitempty"`
-	RecoveryDetails    string          `json:"recovery_details,omitempty"`
-	RollbackMode       RollbackMode    `json:"rollback_mode,omitempty"`
-	RollbackDetails    string          `json:"rollback_details,omitempty"`
-	Capture            *port.RepoState `json:"capture,omitempty"`
-	CreatedAt          time.Time       `json:"created_at"`
-	RolledBackAt       time.Time       `json:"rolled_back_at,omitempty"`
+	ID                 string        `json:"id"`
+	RepoRoot           string        `json:"repo_root"`
+	BaseHeadSHA        string        `json:"base_head_sha,omitempty"`
+	SessionID          string        `json:"session_id,omitempty"`
+	RunID              string        `json:"run_id,omitempty"`
+	TurnID             string        `json:"turn_id,omitempty"`
+	InstructionProfile string        `json:"instruction_profile,omitempty"`
+	ModelLane          string        `json:"model_lane,omitempty"`
+	VisibleTools       []string      `json:"visible_tools,omitempty"`
+	HiddenTools        []string      `json:"hidden_tools,omitempty"`
+	PatchID            string        `json:"patch_id,omitempty"`
+	CheckpointID       string        `json:"checkpoint_id,omitempty"`
+	Summary            string        `json:"summary,omitempty"`
+	TargetFiles        []string      `json:"target_files,omitempty"`
+	Status             ChangeStatus  `json:"status"`
+	RecoveryMode       string        `json:"recovery_mode,omitempty"`
+	RecoveryDetails    string        `json:"recovery_details,omitempty"`
+	RollbackMode       RollbackMode  `json:"rollback_mode,omitempty"`
+	RollbackDetails    string        `json:"rollback_details,omitempty"`
+	Capture            *kws.RepoState `json:"capture,omitempty"`
+	CreatedAt          time.Time     `json:"created_at"`
+	RolledBackAt       time.Time     `json:"rolled_back_at,omitempty"`
 }
 
 type ChangeSummary struct {
@@ -75,10 +74,10 @@ type ChangeSummary struct {
 }
 
 type ApplyChangeRequest struct {
-	Patch     string           `json:"patch"`
-	Summary   string           `json:"summary,omitempty"`
-	SessionID string           `json:"session_id,omitempty"`
-	Source    port.PatchSource `json:"source,omitempty"`
+	Patch     string         `json:"patch"`
+	Summary   string         `json:"summary,omitempty"`
+	SessionID string         `json:"session_id,omitempty"`
+	Source    kws.PatchSource `json:"source,omitempty"`
 }
 
 type RollbackChangeRequest struct {
@@ -218,13 +217,13 @@ func cloneChangeOperation(item *ChangeOperation) *ChangeOperation {
 	return &cp
 }
 
-func cloneRepoState(state *port.RepoState) *port.RepoState {
+func cloneRepoState(state *kws.RepoState) *kws.RepoState {
 	if state == nil {
 		return nil
 	}
 	cp := *state
-	cp.Staged = append([]port.RepoFileState(nil), state.Staged...)
-	cp.Unstaged = append([]port.RepoFileState(nil), state.Unstaged...)
+	cp.Staged = append([]kws.RepoFileState(nil), state.Staged...)
+	cp.Unstaged = append([]kws.RepoFileState(nil), state.Unstaged...)
 	cp.Untracked = append([]string(nil), state.Untracked...)
 	cp.Ignored = append([]string(nil), state.Ignored...)
 	return &cp

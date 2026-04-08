@@ -19,6 +19,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/gateway"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/providers/embedding"
+	"github.com/mossagents/moss/scheduler"
+	mosstui "github.com/mossagents/moss/userio/tui"
 	"io"
 	"net/http"
 	"os"
@@ -26,20 +39,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/adapters/embedding"
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/gateway"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/scheduler"
-	mosstui "github.com/mossagents/moss/userio/tui"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -106,7 +105,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 		Trust:     flags.Trust,
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Name:      provider,
@@ -124,7 +123,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 			activeRuntime = runtime
 			return k, nil
 		},
-		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error {
+		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error {
 			if activeRuntime != nil {
 				activeRuntime.startScheduler(ctx, k, io)
 			}
@@ -145,7 +144,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 }
 
 func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
-	userIO := port.NewConsoleIO()
+	userIO := intr.NewConsoleIO()
 	k, rt, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
 		return err
@@ -181,7 +180,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {
 	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -214,7 +213,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io port.Us
 	return k, &mossclawRuntime{flags: flags, store: store, sched: sched}, nil
 }
 
-func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io port.UserIO) {
+func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io intr.UserIO) {
 	_ = runtime.StartScheduledRunner(ctx, runtime.ScheduledRunnerConfig{
 		Kernel:       k,
 		Scheduler:    r.sched,
@@ -230,22 +229,22 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 			}, nil
 		},
 		BeforeRun: func(jobCtx context.Context, job scheduler.Job) {
-			_ = io.Send(jobCtx, port.OutputMessage{
-				Type:    port.OutputProgress,
+			_ = io.Send(jobCtx, intr.OutputMessage{
+				Type:    intr.OutputProgress,
 				Content: fmt.Sprintf("Scheduled task [%s] started: %s", job.ID, job.Goal),
 			})
 		},
-		RunIO: func(_ context.Context, job scheduler.Job) port.UserIO {
+		RunIO: func(_ context.Context, job scheduler.Job) intr.UserIO {
 			_ = job
 			return runtime.NewScheduledCaptureIO()
 		},
 		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
-			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
+			_ = io.Send(jobCtx, intr.OutputMessage{Type: intr.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
 		},
-		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ port.UserIO) {
-			_ = io.Send(jobCtx, port.OutputMessage{Type: port.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
+		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ intr.UserIO) {
+			_ = io.Send(jobCtx, intr.OutputMessage{Type: intr.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
 		},
-		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO port.UserIO) {
+		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO intr.UserIO) {
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
 				if capture, ok := runIO.(*runtime.ScheduledCaptureIO); ok {
@@ -253,13 +252,13 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 				}
 			}
 			if summary != "" {
-				_ = io.Send(jobCtx, port.OutputMessage{
-					Type:    port.OutputText,
+				_ = io.Send(jobCtx, intr.OutputMessage{
+					Type:    intr.OutputText,
 					Content: fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary),
 				})
 			}
-			_ = io.Send(jobCtx, port.OutputMessage{
-				Type:    port.OutputProgress,
+			_ = io.Send(jobCtx, intr.OutputMessage{
+				Type:    intr.OutputProgress,
 				Content: fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps),
 			})
 		},

@@ -5,11 +5,10 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"time"
-
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/contrib/tools"
 	"github.com/mossagents/moss/kernel/tool"
+	"time"
 )
 
 //go:embed templates/*.tmpl

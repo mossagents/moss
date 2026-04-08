@@ -16,13 +16,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
-	"os"
-
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"math/rand/v2"
+	"os"
 )
 
 func main() {
@@ -31,7 +30,7 @@ func main() {
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	k, err := appkit.BuildKernel(ctx, flags, port.NewConsoleIO())
+	k, err := appkit.BuildKernel(ctx, flags, intr.NewConsoleIO())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

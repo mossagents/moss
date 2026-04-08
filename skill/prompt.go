@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
+	"gopkg.in/yaml.v3"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-
-	appconfig "github.com/mossagents/moss/config"
-	"gopkg.in/yaml.v3"
 )
 
 // Skill 代表一个 skills.sh 兼容的 SKILL.md prompt skill。

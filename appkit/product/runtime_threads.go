@@ -3,10 +3,10 @@ package product
 import (
 	"context"
 	"fmt"
-	"sort"
-
-	"github.com/mossagents/moss/kernel/port"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"sort"
 )
 
 type ThreadBrowseSummary struct {
@@ -19,7 +19,7 @@ func OpenSessionCatalog() (*session.Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("session store: %w", err)
 	}
-	checkpoints, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
@@ -68,7 +68,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 	out := make([]session.ForkSource, 0, len(threads)+len(checkpoints))
 	for _, thread := range threads {
 		out = append(out, session.ForkSource{
-			Kind:      port.ForkSourceSession,
+			Kind:      ckpt.ForkSourceSession,
 			SourceID:  thread.Thread.SessionID,
 			SessionID: thread.Thread.SessionID,
 			Label:     firstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
@@ -77,7 +77,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 	}
 	for _, checkpoint := range checkpoints {
 		out = append(out, session.ForkSource{
-			Kind:         port.ForkSourceCheckpoint,
+			Kind:         ckpt.ForkSourceCheckpoint,
 			SourceID:     checkpoint.ID,
 			SessionID:    checkpoint.SessionID,
 			CheckpointID: checkpoint.ID,
@@ -88,8 +88,8 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 	return out, nil
 }
 
-func ListTaskBrowseSummaries(ctx context.Context, query port.TaskQuery) ([]port.TaskSummary, error) {
-	rt, err := port.NewFileTaskRuntime(TaskRuntimeDir())
+func ListTaskBrowseSummaries(ctx context.Context, query taskrt.TaskQuery) ([]taskrt.TaskSummary, error) {
+	rt, err := taskrt.NewFileTaskRuntime(TaskRuntimeDir())
 	if err != nil {
 		return nil, fmt.Errorf("task runtime: %w", err)
 	}

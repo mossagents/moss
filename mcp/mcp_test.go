@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"strings"
-	"testing"
-
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/sandbox"
+	"os"
+	"strings"
+	"testing"
 )
 
 type fakeMCPClient struct {
@@ -206,15 +205,15 @@ func TestMakeHandler_StopsWhenGuardRejectsInput(t *testing.T) {
 }
 
 type promptIO struct {
-	last port.InputRequest
+	last intr.InputRequest
 	form map[string]any
 }
 
-func (p *promptIO) Send(context.Context, port.OutputMessage) error { return nil }
+func (p *promptIO) Send(context.Context, intr.OutputMessage) error { return nil }
 
-func (p *promptIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+func (p *promptIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
 	p.last = req
-	return port.InputResponse{Form: p.form}, nil
+	return intr.InputResponse{Form: p.form}, nil
 }
 
 func TestResolveMCPRequiredEnvPromptsForMissingValues(t *testing.T) {
@@ -226,7 +225,7 @@ func TestResolveMCPRequiredEnvPromptsForMissingValues(t *testing.T) {
 	if env["API_TOKEN"] != "secret" || env["STATIC"] != "1" {
 		t.Fatalf("unexpected resolved env: %+v", env)
 	}
-	if io.last.Type != port.InputForm || !strings.Contains(io.last.Prompt, "demo") {
+	if io.last.Type != intr.InputForm || !strings.Contains(io.last.Prompt, "demo") {
 		t.Fatalf("expected prompt for missing env, got %+v", io.last)
 	}
 }
@@ -244,7 +243,7 @@ func TestBuildEnvUsesAllowlistedInheritedEnvironment(t *testing.T) {
 		},
 	}
 	t.Setenv("API_TOKEN", "secret")
-	env, err := s.buildEnv(context.Background(), &port.NoOpIO{})
+	env, err := s.buildEnv(context.Background(), &intr.NoOpIO{})
 	if err != nil {
 		t.Fatalf("buildEnv: %v", err)
 	}

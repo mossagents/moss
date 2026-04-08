@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/knowledge"
 )
@@ -17,11 +16,11 @@ func NewMemoryKnowledgeStore() *knowledge.MemoryStore {
 }
 
 // RegisterTools 将 knowledge 能力作为标准扩展工具集接入 Kernel。
-func RegisterKnowledgeTools(k *kernel.Kernel, store knowledge.Store, embedder port.Embedder) error {
+func RegisterKnowledgeTools(k *kernel.Kernel, store knowledge.Store, embedder mdl.Embedder) error {
 	return register(k.ToolRegistry(), store, embedder)
 }
 
-func register(reg tool.Registry, store knowledge.Store, embedder port.Embedder) error {
+func register(reg tool.Registry, store knowledge.Store, embedder mdl.Embedder) error {
 	tools := []struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -59,7 +58,7 @@ Example: ingest_document(id="readme", source="README.md", text="...", chunk_size
 	Capabilities: []string{"knowledge"},
 }
 
-func ingestDocHandler(store knowledge.Store, embedder port.Embedder) tool.ToolHandler {
+func ingestDocHandler(store knowledge.Store, embedder mdl.Embedder) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			ID        string `json:"id"`
@@ -106,7 +105,7 @@ Example: knowledge_search(query="how to deploy", limit=5)`,
 	Capabilities: []string{"knowledge"},
 }
 
-func knowledgeSearchHandler(store knowledge.Store, embedder port.Embedder) tool.ToolHandler {
+func knowledgeSearchHandler(store knowledge.Store, embedder mdl.Embedder) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Query string `json:"query"`

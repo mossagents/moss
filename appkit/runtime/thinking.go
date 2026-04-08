@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel/tool"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ThinkToolConfig controls the shared think_tool registration details.

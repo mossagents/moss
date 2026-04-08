@@ -9,20 +9,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/port"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	kws "github.com/mossagents/moss/kernel/workspace"
 )
 
 const memoryIndexPath = ".moss/memory_index.json"
 
 type workspaceMemoryStore struct {
-	ws port.Workspace
+	ws kws.Workspace
 }
 
-func NewWorkspaceMemoryStore(ws port.Workspace) port.MemoryStore {
+func NewWorkspaceMemoryStore(ws kws.Workspace) memstore.MemoryStore {
 	return &workspaceMemoryStore{ws: ws}
 }
 
-func (s *workspaceMemoryStore) Upsert(ctx context.Context, record port.MemoryRecord) (*port.MemoryRecord, error) {
+func (s *workspaceMemoryStore) Upsert(ctx context.Context, record memstore.MemoryRecord) (*memstore.MemoryRecord, error) {
 	if strings.TrimSpace(record.Path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -32,7 +33,7 @@ func (s *workspaceMemoryStore) Upsert(ctx context.Context, record port.MemoryRec
 		return nil, err
 	}
 	key := normalizeMemoryPath(record.Path)
-	var existing *port.MemoryRecord
+	var existing *memstore.MemoryRecord
 	if current, ok := records[key]; ok {
 		cp := current
 		existing = &cp
@@ -49,7 +50,7 @@ func (s *workspaceMemoryStore) Upsert(ctx context.Context, record port.MemoryRec
 	return &out, nil
 }
 
-func (s *workspaceMemoryStore) GetByPath(ctx context.Context, path string) (*port.MemoryRecord, error) {
+func (s *workspaceMemoryStore) GetByPath(ctx context.Context, path string) (*memstore.MemoryRecord, error) {
 	key := normalizeMemoryPath(path)
 	records, err := s.loadIndex(ctx)
 	if err != nil {
@@ -73,25 +74,25 @@ func (s *workspaceMemoryStore) DeleteByPath(ctx context.Context, path string) er
 	return s.persistIndex(ctx, records)
 }
 
-func (s *workspaceMemoryStore) List(ctx context.Context, limit int) ([]port.MemoryRecord, error) {
+func (s *workspaceMemoryStore) List(ctx context.Context, limit int) ([]memstore.MemoryRecord, error) {
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]port.MemoryRecord, 0, len(records))
+	out := make([]memstore.MemoryRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, record)
 	}
-	sortMemoryRecords(out, port.MemoryQuery{})
+	sortMemoryRecords(out, memstore.MemoryQuery{})
 	return trimMemoryRecords(out, limit), nil
 }
 
-func (s *workspaceMemoryStore) Search(ctx context.Context, query port.MemoryQuery) ([]port.MemoryRecord, error) {
+func (s *workspaceMemoryStore) Search(ctx context.Context, query memstore.MemoryQuery) ([]memstore.MemoryRecord, error) {
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]port.MemoryRecord, 0, len(records))
+	out := make([]memstore.MemoryRecord, 0, len(records))
 	for _, record := range records {
 		if !memoryMatchesQuery(record, query) {
 			continue
@@ -123,43 +124,43 @@ func (s *workspaceMemoryStore) RecordUsage(ctx context.Context, paths []string, 
 	return s.persistIndex(ctx, records)
 }
 
-func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]port.MemoryRecord, error) {
+func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]memstore.MemoryRecord, error) {
 	raw, err := s.ws.ReadFile(ctx, memoryIndexPath)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			return make(map[string]port.MemoryRecord), nil
+			return make(map[string]memstore.MemoryRecord), nil
 		}
 		return nil, err
 	}
-	var records map[string]port.MemoryRecord
+	var records map[string]memstore.MemoryRecord
 	if err := json.Unmarshal(raw, &records); err != nil {
 		return nil, fmt.Errorf("decode memory index: %w", err)
 	}
 	if records == nil {
-		records = make(map[string]port.MemoryRecord)
+		records = make(map[string]memstore.MemoryRecord)
 	}
 	for key, record := range records {
 		record.Path = normalizeMemoryPath(firstNonEmpty(record.Path, key))
 		record.Tags = normalizeMemoryTags(record.Tags)
 		record.Citation = normalizeMemoryCitation(record.Citation)
 		if record.Stage == "" {
-			record.Stage = port.MemoryStageManual
+			record.Stage = memstore.MemoryStageManual
 		}
 		if record.Status == "" {
-			record.Status = port.MemoryStatusActive
+			record.Status = memstore.MemoryStatusActive
 		}
 		records[key] = record
 	}
 	return records, nil
 }
 
-func (s *workspaceMemoryStore) persistIndex(ctx context.Context, records map[string]port.MemoryRecord) error {
+func (s *workspaceMemoryStore) persistIndex(ctx context.Context, records map[string]memstore.MemoryRecord) error {
 	keys := make([]string, 0, len(records))
 	for key := range records {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	ordered := make(map[string]port.MemoryRecord, len(records))
+	ordered := make(map[string]memstore.MemoryRecord, len(records))
 	for _, key := range keys {
 		ordered[key] = records[key]
 	}

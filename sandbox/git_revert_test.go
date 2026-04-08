@@ -2,11 +2,10 @@ package sandbox
 
 import (
 	"context"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestGitPatchRevert_RevertByPatchID(t *testing.T) {
@@ -25,9 +24,9 @@ func TestGitPatchRevert_RevertByPatchID(t *testing.T) {
 	runGit(t, repo, "checkout", "--", "tracked.txt")
 
 	applier := NewGitPatchApply(repo)
-	applied, err := applier.Apply(context.Background(), port.PatchApplyRequest{
+	applied, err := applier.Apply(context.Background(), kws.PatchApplyRequest{
 		Patch:    patch,
-		Source:   port.PatchSourceLLM,
+		Source:   kws.PatchSourceLLM,
 		ThreeWay: true,
 	})
 	if err != nil {
@@ -35,7 +34,7 @@ func TestGitPatchRevert_RevertByPatchID(t *testing.T) {
 	}
 
 	reverter := NewGitPatchRevert(repo)
-	reverted, err := reverter.Revert(context.Background(), port.PatchRevertRequest{
+	reverted, err := reverter.Revert(context.Background(), kws.PatchRevertRequest{
 		PatchID: applied.PatchID,
 	})
 	if err != nil {
@@ -74,7 +73,7 @@ func TestGitPatchRevert_RevertToCapture(t *testing.T) {
 	writeFile(t, untracked, "new\n")
 
 	reverter := NewGitPatchRevert(repo)
-	reverted, err := reverter.Revert(context.Background(), port.PatchRevertRequest{
+	reverted, err := reverter.Revert(context.Background(), kws.PatchRevertRequest{
 		Capture: capture,
 	})
 	if err != nil {
@@ -97,10 +96,10 @@ func TestGitPatchRevert_RevertToCapture(t *testing.T) {
 
 func TestGitPatchRevert_Unavailable(t *testing.T) {
 	reverter := NewGitPatchRevert(t.TempDir())
-	_, err := reverter.Revert(context.Background(), port.PatchRevertRequest{
+	_, err := reverter.Revert(context.Background(), kws.PatchRevertRequest{
 		PatchID: "missing",
 	})
-	if err != port.ErrPatchRevertUnavailable {
+	if err != kws.ErrPatchRevertUnavailable {
 		t.Fatalf("expected ErrPatchRevertUnavailable, got %v", err)
 	}
 }
@@ -112,10 +111,10 @@ func TestGitPatchRevert_PatchNotFound(t *testing.T) {
 	runGit(t, repo, "config", "user.name", "Test User")
 
 	reverter := NewGitPatchRevert(repo)
-	_, err := reverter.Revert(context.Background(), port.PatchRevertRequest{
+	_, err := reverter.Revert(context.Background(), kws.PatchRevertRequest{
 		PatchID: "missing",
 	})
-	if err != port.ErrPatchNotFound {
+	if err != kws.ErrPatchNotFound {
 		t.Fatalf("expected ErrPatchNotFound, got %v", err)
 	}
 }

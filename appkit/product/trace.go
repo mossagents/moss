@@ -3,13 +3,13 @@ package product
 import (
 	"context"
 	"fmt"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type TraceEvent struct {
@@ -73,7 +73,7 @@ func (r *RunTraceRecorder) Snapshot() RunTrace {
 	return out
 }
 
-func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
+func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.LLMCalls++
@@ -96,7 +96,7 @@ func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnToolCall(_ context.Context, e port.ToolCallEvent) {
+func (r *RunTraceRecorder) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.ToolCalls++
@@ -110,7 +110,7 @@ func (r *RunTraceRecorder) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -134,7 +134,7 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionE
 	})
 }
 
-func (r *RunTraceRecorder) OnApproval(_ context.Context, e port.ApprovalEvent) {
+func (r *RunTraceRecorder) OnApproval(_ context.Context, e intr.ApprovalEvent) {
 	data := map[string]any{
 		"id":          e.Request.ID,
 		"reason":      e.Request.Reason,
@@ -159,7 +159,7 @@ func (r *RunTraceRecorder) OnApproval(_ context.Context, e port.ApprovalEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e port.SessionEvent) {
+func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -170,7 +170,7 @@ func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e port.SessionEvent
 	})
 }
 
-func (r *RunTraceRecorder) OnError(_ context.Context, e port.ErrorEvent) {
+func (r *RunTraceRecorder) OnError(_ context.Context, e kobs.ErrorEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -184,10 +184,10 @@ func (r *RunTraceRecorder) OnError(_ context.Context, e port.ErrorEvent) {
 
 type pricingObserver struct {
 	catalog *PricingCatalog
-	next    port.Observer
+	next    kobs.Observer
 }
 
-func NewPricingObserver(catalog *PricingCatalog, next port.Observer) port.Observer {
+func NewPricingObserver(catalog *PricingCatalog, next kobs.Observer) kobs.Observer {
 	if next == nil {
 		return nil
 	}
@@ -197,30 +197,30 @@ func NewPricingObserver(catalog *PricingCatalog, next port.Observer) port.Observ
 	return pricingObserver{catalog: catalog, next: next}
 }
 
-func (o pricingObserver) OnLLMCall(ctx context.Context, e port.LLMCallEvent) {
+func (o pricingObserver) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {
 	if cost, ok := o.catalog.Estimate(e.Usage, e.Model); ok {
 		e.EstimatedCostUSD = cost
 	}
 	o.next.OnLLMCall(ctx, e)
 }
 
-func (o pricingObserver) OnToolCall(ctx context.Context, e port.ToolCallEvent) {
+func (o pricingObserver) OnToolCall(ctx context.Context, e kobs.ToolCallEvent) {
 	o.next.OnToolCall(ctx, e)
 }
 
-func (o pricingObserver) OnExecutionEvent(ctx context.Context, e port.ExecutionEvent) {
+func (o pricingObserver) OnExecutionEvent(ctx context.Context, e kobs.ExecutionEvent) {
 	o.next.OnExecutionEvent(ctx, e)
 }
 
-func (o pricingObserver) OnApproval(ctx context.Context, e port.ApprovalEvent) {
+func (o pricingObserver) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
 	o.next.OnApproval(ctx, e)
 }
 
-func (o pricingObserver) OnSessionEvent(ctx context.Context, e port.SessionEvent) {
+func (o pricingObserver) OnSessionEvent(ctx context.Context, e kobs.SessionEvent) {
 	o.next.OnSessionEvent(ctx, e)
 }
 
-func (o pricingObserver) OnError(ctx context.Context, e port.ErrorEvent) {
+func (o pricingObserver) OnError(ctx context.Context, e kobs.ErrorEvent) {
 	o.next.OnError(ctx, e)
 }
 

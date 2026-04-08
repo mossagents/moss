@@ -3,13 +3,12 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"path"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // MemoryWorkspace 是基于内存的 Workspace 实现。
@@ -99,16 +98,16 @@ func (m *MemoryWorkspace) ListFiles(_ context.Context, pattern string) ([]string
 	return matches, nil
 }
 
-func (m *MemoryWorkspace) Stat(_ context.Context, filePath string) (port.FileInfo, error) {
+func (m *MemoryWorkspace) Stat(_ context.Context, filePath string) (kws.FileInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	p := normalizePath(filePath)
 	f, ok := m.files[p]
 	if !ok {
-		return port.FileInfo{}, fmt.Errorf("file not found: %s", p)
+		return kws.FileInfo{}, fmt.Errorf("file not found: %s", p)
 	}
-	return port.FileInfo{
+	return kws.FileInfo{
 		Name:    path.Base(p),
 		Size:    int64(len(f.content)),
 		IsDir:   false,

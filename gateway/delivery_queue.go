@@ -5,13 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	kchannel "github.com/mossagents/moss/kernel/channel"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type OutboundMessage struct {
@@ -453,9 +452,9 @@ func readJSONL(path string, fn func(persistentEvent) error) error {
 	return nil
 }
 
-func senderForChannel(ch port.Channel) func(context.Context, OutboundMessage) error {
+func senderForChannel(ch kchannel.Channel) func(context.Context, OutboundMessage) error {
 	return func(ctx context.Context, msg OutboundMessage) error {
-		return ch.Send(ctx, port.OutboundMessage{
+		return ch.Send(ctx, kchannel.OutboundMessage{
 			To:       msg.To,
 			Content:  msg.Content,
 			Metadata: msg.Metadata,

@@ -5,15 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/logging"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/logging"
 )
 
 // FileStore 是基于文件系统的 SessionStore 实现。
@@ -292,18 +291,18 @@ type persistedBudget struct {
 }
 
 type persistedMessage struct {
-	Role         port.Role             `json:"role"`
-	ContentParts []port.ContentPart    `json:"content_parts,omitempty"`
+	Role         mdl.Role              `json:"role"`
+	ContentParts []mdl.ContentPart     `json:"content_parts,omitempty"`
 	Content      json.RawMessage       `json:"content,omitempty"`
-	ToolCalls    []port.ToolCall       `json:"tool_calls,omitempty"`
+	ToolCalls    []mdl.ToolCall        `json:"tool_calls,omitempty"`
 	ToolResults  []persistedToolResult `json:"tool_results,omitempty"`
 }
 
 type persistedToolResult struct {
-	CallID       string             `json:"call_id"`
-	ContentParts []port.ContentPart `json:"content_parts,omitempty"`
-	Content      json.RawMessage    `json:"content,omitempty"`
-	IsError      bool               `json:"is_error,omitempty"`
+	CallID       string            `json:"call_id"`
+	ContentParts []mdl.ContentPart `json:"content_parts,omitempty"`
+	Content      json.RawMessage   `json:"content,omitempty"`
+	IsError      bool              `json:"is_error,omitempty"`
 }
 
 func persistedSessionFromSession(sess *Session) persistedSession {
@@ -368,7 +367,7 @@ func (ps *persistedSession) toSession(id string) (*Session, error) {
 	if len(ps.Messages) == 0 {
 		return sess, nil
 	}
-	sess.Messages = make([]port.Message, 0, len(ps.Messages))
+	sess.Messages = make([]mdl.Message, 0, len(ps.Messages))
 	for i, m := range ps.Messages {
 		converted, migrated, err := migrateMessage(m)
 		if err != nil {
@@ -383,8 +382,8 @@ func (ps *persistedSession) toSession(id string) (*Session, error) {
 	return sess, nil
 }
 
-func migrateMessage(m persistedMessage) (port.Message, bool, error) {
-	out := port.Message{
+func migrateMessage(m persistedMessage) (mdl.Message, bool, error) {
+	out := mdl.Message{
 		Role:      m.Role,
 		ToolCalls: m.ToolCalls,
 	}
@@ -392,21 +391,21 @@ func migrateMessage(m persistedMessage) (port.Message, bool, error) {
 	var err error
 	out.ContentParts, migrated, err = migrateContentParts(m.ContentParts, m.Content)
 	if err != nil {
-		return port.Message{}, false, err
+		return mdl.Message{}, false, err
 	}
 	if len(m.ToolResults) == 0 {
 		return out, migrated, nil
 	}
-	out.ToolResults = make([]port.ToolResult, 0, len(m.ToolResults))
+	out.ToolResults = make([]mdl.ToolResult, 0, len(m.ToolResults))
 	for i, tr := range m.ToolResults {
 		contentParts, trMigrated, err := migrateContentParts(tr.ContentParts, tr.Content)
 		if err != nil {
-			return port.Message{}, false, fmt.Errorf("tool_results[%d]: %w", i, err)
+			return mdl.Message{}, false, fmt.Errorf("tool_results[%d]: %w", i, err)
 		}
 		if trMigrated {
 			migrated = true
 		}
-		out.ToolResults = append(out.ToolResults, port.ToolResult{
+		out.ToolResults = append(out.ToolResults, mdl.ToolResult{
 			CallID:       tr.CallID,
 			ContentParts: contentParts,
 			IsError:      tr.IsError,
@@ -415,17 +414,17 @@ func migrateMessage(m persistedMessage) (port.Message, bool, error) {
 	return out, migrated, nil
 }
 
-func sanitizePersistedMessages(messages []port.Message) []port.Message {
+func sanitizePersistedMessages(messages []mdl.Message) []mdl.Message {
 	if len(messages) == 0 {
 		return nil
 	}
-	out := make([]port.Message, 0, len(messages))
+	out := make([]mdl.Message, 0, len(messages))
 	for _, msg := range messages {
-		msg.ContentParts = port.StripReasoningParts(msg.ContentParts)
+		msg.ContentParts = mdl.StripReasoningParts(msg.ContentParts)
 		if len(msg.ToolResults) > 0 {
-			results := make([]port.ToolResult, 0, len(msg.ToolResults))
+			results := make([]mdl.ToolResult, 0, len(msg.ToolResults))
 			for _, tr := range msg.ToolResults {
-				tr.ContentParts = port.StripReasoningParts(tr.ContentParts)
+				tr.ContentParts = mdl.StripReasoningParts(tr.ContentParts)
 				results = append(results, tr)
 			}
 			msg.ToolResults = results
@@ -435,13 +434,13 @@ func sanitizePersistedMessages(messages []port.Message) []port.Message {
 	return out
 }
 
-func reasoningChanged(messages []port.Message) bool {
+func reasoningChanged(messages []mdl.Message) bool {
 	for _, msg := range messages {
-		if len(port.StripReasoningParts(msg.ContentParts)) != len(msg.ContentParts) {
+		if len(mdl.StripReasoningParts(msg.ContentParts)) != len(msg.ContentParts) {
 			return true
 		}
 		for _, tr := range msg.ToolResults {
-			if len(port.StripReasoningParts(tr.ContentParts)) != len(tr.ContentParts) {
+			if len(mdl.StripReasoningParts(tr.ContentParts)) != len(tr.ContentParts) {
 				return true
 			}
 		}
@@ -449,7 +448,7 @@ func reasoningChanged(messages []port.Message) bool {
 	return false
 }
 
-func migrateContentParts(parts []port.ContentPart, legacy json.RawMessage) ([]port.ContentPart, bool, error) {
+func migrateContentParts(parts []mdl.ContentPart, legacy json.RawMessage) ([]mdl.ContentPart, bool, error) {
 	if len(parts) > 0 {
 		if len(legacy) > 0 {
 			return parts, true, nil
@@ -463,5 +462,5 @@ func migrateContentParts(parts []port.ContentPart, legacy json.RawMessage) ([]po
 	if err := json.Unmarshal(legacy, &text); err != nil {
 		return nil, false, fmt.Errorf("legacy content must be string: %w", err)
 	}
-	return []port.ContentPart{port.TextPart(text)}, true, nil
+	return []mdl.ContentPart{mdl.TextPart(text)}, true, nil
 }

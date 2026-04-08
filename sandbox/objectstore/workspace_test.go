@@ -2,9 +2,8 @@ package objectstore_test
 
 import (
 	"context"
-	"testing"
-
 	"github.com/mossagents/moss/sandbox/objectstore"
+	"testing"
 )
 
 func TestMockBlobClient_PutGet(t *testing.T) {
@@ -55,12 +54,12 @@ func TestMockBlobClient_List(t *testing.T) {
 func TestObjectStoreWorkspace_ReadWrite(t *testing.T) {
 	ctx := context.Background()
 	c := objectstore.NewMockBlobClient()
-	ws := objectstore.NewObjectStoreWorkspace(c, "workspaces/test/")
+	kws := objectstore.NewObjectStoreWorkspace(c, "workspaces/test/")
 
-	if err := ws.WriteFile(ctx, "hello.txt", []byte("world")); err != nil {
+	if err := kws.WriteFile(ctx, "hello.txt", []byte("world")); err != nil {
 		t.Fatal(err)
 	}
-	data, err := ws.ReadFile(ctx, "hello.txt")
+	data, err := kws.ReadFile(ctx, "hello.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,13 +71,13 @@ func TestObjectStoreWorkspace_ReadWrite(t *testing.T) {
 func TestObjectStoreWorkspace_ListFiles(t *testing.T) {
 	ctx := context.Background()
 	c := objectstore.NewMockBlobClient()
-	ws := objectstore.NewObjectStoreWorkspace(c, "workspaces/test/")
+	kws := objectstore.NewObjectStoreWorkspace(c, "workspaces/test/")
 
-	_ = ws.WriteFile(ctx, "src/main.go", []byte(""))
-	_ = ws.WriteFile(ctx, "src/util.go", []byte(""))
-	_ = ws.WriteFile(ctx, "README.md", []byte(""))
+	_ = kws.WriteFile(ctx, "src/main.go", []byte(""))
+	_ = kws.WriteFile(ctx, "src/util.go", []byte(""))
+	_ = kws.WriteFile(ctx, "README.md", []byte(""))
 
-	files, err := ws.ListFiles(ctx, "src/*.go")
+	files, err := kws.ListFiles(ctx, "src/*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,10 +89,10 @@ func TestObjectStoreWorkspace_ListFiles(t *testing.T) {
 func TestObjectStoreWorkspace_Stat(t *testing.T) {
 	ctx := context.Background()
 	c := objectstore.NewMockBlobClient()
-	ws := objectstore.NewObjectStoreWorkspace(c, "ws/")
+	kws := objectstore.NewObjectStoreWorkspace(c, "ws/")
 
-	_ = ws.WriteFile(ctx, "data.bin", []byte("12345"))
-	info, err := ws.Stat(ctx, "data.bin")
+	_ = kws.WriteFile(ctx, "data.bin", []byte("12345"))
+	info, err := kws.Stat(ctx, "data.bin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,13 +107,13 @@ func TestObjectStoreWorkspace_Stat(t *testing.T) {
 func TestObjectStoreWorkspace_DeleteFile(t *testing.T) {
 	ctx := context.Background()
 	c := objectstore.NewMockBlobClient()
-	ws := objectstore.NewObjectStoreWorkspace(c, "ws/")
+	kws := objectstore.NewObjectStoreWorkspace(c, "ws/")
 
-	_ = ws.WriteFile(ctx, "tmp.txt", []byte("x"))
-	if err := ws.DeleteFile(ctx, "tmp.txt"); err != nil {
+	_ = kws.WriteFile(ctx, "tmp.txt", []byte("x"))
+	if err := kws.DeleteFile(ctx, "tmp.txt"); err != nil {
 		t.Fatal(err)
 	}
-	_, err := ws.ReadFile(ctx, "tmp.txt")
+	_, err := kws.ReadFile(ctx, "tmp.txt")
 	if err == nil {
 		t.Error("expected error after delete")
 	}

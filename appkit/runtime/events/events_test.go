@@ -1,15 +1,15 @@
 package events
 
 import (
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestFromOutputMessage(t *testing.T) {
 	now := time.Unix(100, 0).UTC()
-	ev := FromOutputMessage(port.OutputMessage{Type: port.OutputStream, Content: "hi"}, now)
+	ev := FromOutputMessage(intr.OutputMessage{Type: intr.OutputStream, Content: "hi"}, now)
 	if ev.Type != EventAssistantDelta {
 		t.Fatalf("want %q got %q", EventAssistantDelta, ev.Type)
 	}
@@ -20,8 +20,8 @@ func TestFromOutputMessage(t *testing.T) {
 
 func TestFromExecutionEvent(t *testing.T) {
 	ts := time.Unix(200, 0).UTC()
-	ev := FromExecutionEvent(port.ExecutionEvent{
-		Type:      port.ExecutionToolCompleted,
+	ev := FromExecutionEvent(kobs.ExecutionEvent{
+		Type:      kobs.ExecutionToolCompleted,
 		Timestamp: ts,
 		SessionID: "s1",
 		ToolName:  "read_file",

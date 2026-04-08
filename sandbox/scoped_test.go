@@ -39,10 +39,10 @@ func TestScopedWorkspace_Isolation(t *testing.T) {
 
 func TestScopedWorkspace_PathTraversalPrevention(t *testing.T) {
 	shared := NewMemoryWorkspace()
-	ws := NewScopedWorkspace("tenant_a", shared)
+	kws := NewScopedWorkspace("tenant_a", shared)
 	ctx := context.Background()
 
-	_, err := ws.ReadFile(ctx, "../tenant_b/secret.txt")
+	_, err := kws.ReadFile(ctx, "../tenant_b/secret.txt")
 	if err == nil {
 		t.Error("should prevent path traversal with '..'")
 	}
@@ -50,16 +50,16 @@ func TestScopedWorkspace_PathTraversalPrevention(t *testing.T) {
 
 func TestScopedWorkspace_ListFiles(t *testing.T) {
 	shared := NewMemoryWorkspace()
-	ws := NewScopedWorkspace("project", shared)
+	kws := NewScopedWorkspace("project", shared)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "a.go", []byte("a"))
-	ws.WriteFile(ctx, "b.go", []byte("b"))
+	kws.WriteFile(ctx, "a.go", []byte("a"))
+	kws.WriteFile(ctx, "b.go", []byte("b"))
 
 	// 在 shared 中直接写入不属于 project scope 的文件
 	shared.WriteFile(ctx, "other/c.go", []byte("c"))
 
-	files, err := ws.ListFiles(ctx, "*.go")
+	files, err := kws.ListFiles(ctx, "*.go")
 	if err != nil {
 		t.Fatalf("ListFiles: %v", err)
 	}
@@ -76,12 +76,12 @@ func TestScopedWorkspace_ListFiles(t *testing.T) {
 
 func TestScopedWorkspace_DeleteAndStat(t *testing.T) {
 	shared := NewMemoryWorkspace()
-	ws := NewScopedWorkspace("ns", shared)
+	kws := NewScopedWorkspace("ns", shared)
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "file.txt", []byte("data"))
+	kws.WriteFile(ctx, "file.txt", []byte("data"))
 
-	info, err := ws.Stat(ctx, "file.txt")
+	info, err := kws.Stat(ctx, "file.txt")
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
@@ -89,11 +89,11 @@ func TestScopedWorkspace_DeleteAndStat(t *testing.T) {
 		t.Errorf("expected size 4, got %d", info.Size)
 	}
 
-	if err := ws.DeleteFile(ctx, "file.txt"); err != nil {
+	if err := kws.DeleteFile(ctx, "file.txt"); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
 
-	_, err = ws.Stat(ctx, "file.txt")
+	_, err = kws.Stat(ctx, "file.txt")
 	if err == nil {
 		t.Error("expected error after delete")
 	}

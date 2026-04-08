@@ -2,9 +2,8 @@ package knowledge
 
 import (
 	"context"
-	"sync"
-
 	"github.com/mossagents/moss/kernel/session"
+	"sync"
 )
 
 // WorkingMemory 管理当前 session 的激活状态（对话摘要、临时变量、当前目标）。

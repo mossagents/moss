@@ -2,12 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
-
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -16,7 +10,13 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 )
 
 const (
@@ -28,7 +28,7 @@ var writeClipboard = clipboard.WriteAll
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
 	output       string
-	outputMedia  []port.ContentPart
+	outputMedia  []mdl.ContentPart
 	trace        *product.RunTraceSummary
 	traceSummary string
 	err          error
@@ -79,9 +79,9 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn                func(string, []port.ContentPart) // 发送用户消息给 agent
-	cancelRunFn           func() bool                      // 取消当前运行中的任务
-	skillListFn           func() string                    // 查询已加载 skills
+	sendFn                func(string, []mdl.ContentPart) // 发送用户消息给 agent
+	cancelRunFn           func() bool                     // 取消当前运行中的任务
+	skillListFn           func() string                   // 查询已加载 skills
 	sessionInfoFn         func() string
 	offloadFn             func(keepRecent int, note string) (string, error)
 	taskListFn            func(status string, limit int) (string, error)
@@ -158,7 +158,7 @@ type chatModel struct {
 	discoveredSkills     []string
 
 	queuedInputs       []string
-	queuedParts        [][]port.ContentPart
+	queuedParts        [][]mdl.ContentPart
 	pendingAttachments []composerAttachment
 
 	inputHistory  []string
@@ -277,8 +277,8 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		m.refreshViewport()
 
 		// 构造回复
-		resp := port.InputResponse{Value: text}
-		if ask.request.Type == port.InputConfirm {
+		resp := intr.InputResponse{Value: text}
+		if ask.request.Type == intr.InputConfirm {
 			text = strings.ToLower(text)
 			resp.Approved = text == "y" || text == "yes"
 		}
@@ -316,29 +316,29 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 	if msg.output != nil {
 		o := msg.output
 		switch o.Type {
-		case port.OutputText:
+		case intr.OutputText:
 			m.messages = append(m.messages, chatMessage{
 				kind:    msgAssistant,
 				content: o.Content,
 				meta:    map[string]any{"timestamp": m.now().UTC()},
 			})
-		case port.OutputStream:
+		case intr.OutputStream:
 			m.appendStream(o.Content)
-		case port.OutputStreamEnd:
+		case intr.OutputStreamEnd:
 			m.streaming = false
 			m.runStartedAt = time.Time{}
-		case port.OutputReasoning:
+		case intr.OutputReasoning:
 			m.appendReasoning(o.Content)
-		case port.OutputProgress:
+		case intr.OutputProgress:
 			m.messages = append(m.messages, chatMessage{kind: msgProgress, content: o.Content})
-		case port.OutputToolStart:
+		case intr.OutputToolStart:
 			meta := cloneMessageMeta(o.Meta)
 			if _, ok := meta["started_at"]; !ok {
 				meta["started_at"] = m.now().UTC()
 			}
 			m.messages = append(m.messages, chatMessage{kind: msgToolStart, content: o.Content, meta: meta})
 			m.recordProgressDetail("running", "tools", "starting "+summarizeTimelineToolStart(strings.TrimSpace(o.Content), toolMetaString(chatMessage{meta: meta}, "args_preview", "")), m.now().UTC())
-		case port.OutputToolResult:
+		case intr.OutputToolResult:
 			m.markToolStartCompleted(o.Meta)
 			meta := cloneMessageMeta(o.Meta)
 			meta["completed_at"] = m.now().UTC()
@@ -377,7 +377,7 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		m.askForm = newAskFormState(msg.ask.request, m.workspace)
 		m.openAskOverlay()
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
-		if msg.ask.request.Type == port.InputConfirm && msg.ask.request.Approval != nil {
+		if msg.ask.request.Type == intr.InputConfirm && msg.ask.request.Approval != nil {
 			notice = "Approval required. Review the requested action and choose how to proceed."
 			m.recordProgressDetail("waiting", "approval", summarizeTimelineApproval(msg.ask.request.Approval), m.now().UTC())
 		}
@@ -441,18 +441,18 @@ func (m chatModel) renderStartupBanner() string {
 	return titleStyle.Render(strings.TrimRight(m.startupBanner, "\r\n"))
 }
 
-func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, bool) {
-	if ask == nil || ask.request.Type != port.InputConfirm || ask.request.Approval == nil {
-		return port.InputResponse{}, "", false
+func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (intr.InputResponse, string, bool) {
+	if ask == nil || ask.request.Type != intr.InputConfirm || ask.request.Approval == nil {
+		return intr.InputResponse{}, "", false
 	}
 	sessionID := approvalSessionID(ask.request.Approval, m.currentSessionID)
 	for _, rule := range m.approvalRules[sessionID] {
 		if !rule.matches(ask.request.Approval, m.currentSessionID) {
 			continue
 		}
-		resp := port.InputResponse{
+		resp := intr.InputResponse{
 			Approved: true,
-			Decision: &port.ApprovalDecision{
+			Decision: &intr.ApprovalDecision{
 				RequestID: ask.request.Approval.ID,
 				Approved:  true,
 				Reason:    "remembered approval for this session",
@@ -471,9 +471,9 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, 
 		if !rule.matches(ask.request.Approval, m.currentSessionID) {
 			continue
 		}
-		resp := port.InputResponse{
+		resp := intr.InputResponse{
 			Approved: true,
-			Decision: &port.ApprovalDecision{
+			Decision: &intr.ApprovalDecision{
 				RequestID: ask.request.Approval.ID,
 				Approved:  true,
 				Reason:    "remembered approval for this project",
@@ -488,7 +488,7 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (port.InputResponse, string, 
 		notice += "."
 		return resp, notice, true
 	}
-	return port.InputResponse{}, "", false
+	return intr.InputResponse{}, "", false
 }
 
 func (m *chatModel) recalcLayout() {
@@ -1167,12 +1167,12 @@ func (m chatModel) invokeSkillLikeCommand(name, task, displayText string) (chatM
 		return m, nil
 	}
 	prompt := fmt.Sprintf("Use skill or tool '%s' to complete this request:\n%s", name, task)
-	return m.dispatchUserSubmission(displayText, prompt, []port.ContentPart{port.TextPart(prompt)})
+	return m.dispatchUserSubmission(displayText, prompt, []mdl.ContentPart{mdl.TextPart(prompt)})
 }
 
-func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []port.ContentPart) (chatModel, tea.Cmd) {
+func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []mdl.ContentPart) (chatModel, tea.Cmd) {
 	if len(parts) == 0 {
-		parts = []port.ContentPart{port.TextPart(strings.TrimSpace(runText))}
+		parts = []mdl.ContentPart{mdl.TextPart(strings.TrimSpace(runText))}
 	}
 	if m.streaming {
 		m.queuedInputs = append(m.queuedInputs, runText)

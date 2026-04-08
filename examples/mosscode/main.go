@@ -3,11 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/logging"
+	"os"
 )
 
 func main() {

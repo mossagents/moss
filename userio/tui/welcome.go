@@ -2,12 +2,11 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	config "github.com/mossagents/moss/config"
+	"strings"
 )
 
 // welcomeState 表示欢迎界面的焦点字段。

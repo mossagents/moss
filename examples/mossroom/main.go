@@ -14,12 +14,11 @@ package main
 import (
 	"context"
 	"embed"
-	"log/slog"
-	"net/http"
-
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/logging"
 	"golang.org/x/net/websocket"
+	"log/slog"
+	"net/http"
 )
 
 //go:embed index.html

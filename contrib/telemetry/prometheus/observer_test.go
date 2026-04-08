@@ -3,14 +3,15 @@ package prometheus_test
 import (
 	"context"
 	"errors"
+	mossprom "github.com/mossagents/moss/contrib/telemetry/prometheus"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	prom "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"strings"
 	"testing"
 	"time"
-
-	mossprom "github.com/mossagents/moss/contrib/telemetry/prometheus"
-	"github.com/mossagents/moss/kernel/port"
-	prom "github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func newTestObs(t *testing.T) (*mossprom.Observer, *prom.Registry) {
@@ -46,7 +47,7 @@ func sumCounter(t *testing.T, reg *prom.Registry, metricName string) float64 {
 
 func TestObserverImplementsPortObserver(t *testing.T) {
 	obs, _ := newTestObs(t)
-	var _ port.Observer = obs
+	var _ kobs.Observer = obs
 }
 
 func TestNew_doubleRegisterReturnsError(t *testing.T) {
@@ -61,11 +62,11 @@ func TestNew_doubleRegisterReturnsError(t *testing.T) {
 
 func TestOnLLMCall(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnLLMCall(context.Background(), port.LLMCallEvent{
+	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		Model:            "gpt-4o",
 		Duration:         300 * time.Millisecond,
 		StopReason:       "end_turn",
-		Usage:            port.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
+		Usage:            mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
 		EstimatedCostUSD: 0.002,
 	})
 
@@ -86,7 +87,7 @@ func TestOnLLMCall(t *testing.T) {
 
 func TestOnLLMCall_withError(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnLLMCall(context.Background(), port.LLMCallEvent{
+	kobs.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		Model: "claude-3-5-sonnet",
 		Error: errors.New("rate limit"),
 	})
@@ -113,7 +114,7 @@ func TestOnLLMCall_withError(t *testing.T) {
 
 func TestOnToolCall(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnToolCall(context.Background(), port.ToolCallEvent{
+	kobs.OnToolCall(context.Background(), kobs.ToolCallEvent{
 		ToolName: "bash",
 		Risk:     "high",
 		Duration: 200 * time.Millisecond,
@@ -127,8 +128,8 @@ func TestOnToolCall(t *testing.T) {
 
 func TestOnSessionEvent(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnSessionEvent(context.Background(), port.SessionEvent{Type: "completed"})
-	obs.OnSessionEvent(context.Background(), port.SessionEvent{Type: "failed"})
+	kobs.OnSessionEvent(context.Background(), kobs.SessionEvent{Type: "completed"})
+	kobs.OnSessionEvent(context.Background(), kobs.SessionEvent{Type: "failed"})
 
 	if v := sumCounter(t, reg, "moss_sessions_total"); v != 2 {
 		t.Errorf("moss_sessions_total: want 2 got %v", v)
@@ -137,8 +138,8 @@ func TestOnSessionEvent(t *testing.T) {
 
 func TestOnApproval_pending(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnApproval(context.Background(), port.ApprovalEvent{
-		Request: port.ApprovalRequest{Kind: port.ApprovalKindTool},
+	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
+		Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
 	})
 
 	mfs, _ := reg.Gather()
@@ -158,9 +159,9 @@ func TestOnApproval_pending(t *testing.T) {
 
 func TestOnApproval_approved(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnApproval(context.Background(), port.ApprovalEvent{
-		Request:  port.ApprovalRequest{Kind: port.ApprovalKindTool},
-		Decision: &port.ApprovalDecision{Approved: true},
+	kobs.OnApproval(context.Background(), intr.ApprovalEvent{
+		Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
+		Decision: &intr.ApprovalDecision{Approved: true},
 	})
 
 	if v := sumCounter(t, reg, "moss_approvals_total"); v != 1 {
@@ -170,7 +171,7 @@ func TestOnApproval_approved(t *testing.T) {
 
 func TestOnError(t *testing.T) {
 	obs, reg := newTestObs(t)
-	obs.OnError(context.Background(), port.ErrorEvent{Phase: "loop"})
+	kobs.OnError(context.Background(), kobs.ErrorEvent{Phase: "loop"})
 
 	if v := sumCounter(t, reg, "moss_errors_total"); v != 1 {
 		t.Errorf("moss_errors_total: want 1 got %v", v)
@@ -182,15 +183,15 @@ func TestMetricDescriptions(t *testing.T) {
 	// Pre-seed one observation per metric family; CounterVec only appears in
 	// Gather() output after at least one label combination has been recorded.
 	ctx := context.Background()
-	obs.OnLLMCall(ctx, port.LLMCallEvent{
+	kobs.OnLLMCall(ctx, kobs.LLMCallEvent{
 		Model: "m", StopReason: "end_turn",
-		Usage:            port.TokenUsage{PromptTokens: 1, CompletionTokens: 1},
+		Usage:            mdl.TokenUsage{PromptTokens: 1, CompletionTokens: 1},
 		EstimatedCostUSD: 0.001,
 	})
-	obs.OnToolCall(ctx, port.ToolCallEvent{ToolName: "t", Risk: "low"})
-	obs.OnSessionEvent(ctx, port.SessionEvent{Type: "created"})
-	obs.OnApproval(ctx, port.ApprovalEvent{Request: port.ApprovalRequest{Kind: port.ApprovalKindTool}})
-	obs.OnError(ctx, port.ErrorEvent{Phase: "p"})
+	kobs.OnToolCall(ctx, kobs.ToolCallEvent{ToolName: "t", Risk: "low"})
+	kobs.OnSessionEvent(ctx, kobs.SessionEvent{Type: "created"})
+	kobs.OnApproval(ctx, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
+	kobs.OnError(ctx, kobs.ErrorEvent{Phase: "p"})
 
 	mfs, err := reg.Gather()
 	if err != nil {

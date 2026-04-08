@@ -3,13 +3,12 @@ package appkit
 import (
 	"context"
 	"fmt"
-
-	"github.com/mossagents/moss/adapters"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/logging"
+	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -22,7 +21,7 @@ import (
 //
 // 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 appkit
 // 层扩展，请使用 BuildKernelWithExtensions。
-func BuildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+func BuildKernel(ctx context.Context, flags *AppFlags, io intr.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, nil, extraOpts...)
 }
 
@@ -30,12 +29,12 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, extraOpts
 //
 // 这是官方推荐的扩展优先装配入口：优先通过 Extension 追加能力，而不是
 // 暴露额外的构建分支给应用层。
-func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io port.UserIO, exts ...Extension) (*kernel.Kernel, error) {
+func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io intr.UserIO, exts ...Extension) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, exts)
 }
 
-func buildKernel(ctx context.Context, flags *AppFlags, io port.UserIO, exts []Extension, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
-	llm, err := adapters.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
+func buildKernel(ctx context.Context, flags *AppFlags, io intr.UserIO, exts []Extension, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+	llm, err := providers.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err
 	}

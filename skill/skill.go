@@ -2,12 +2,13 @@ package skill
 
 import (
 	"context"
-
 	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -54,10 +55,10 @@ type Deps struct {
 	ToolRegistry tool.Registry
 	Middleware   *middleware.Chain
 	Sandbox      sandbox.Sandbox
-	UserIO       port.UserIO
-	Workspace    port.Workspace
-	Executor     port.Executor
-	TaskRuntime  port.TaskRuntime
-	Mailbox      port.Mailbox
+	UserIO       intr.UserIO
+	Workspace    kws.Workspace
+	Executor     kws.Executor
+	TaskRuntime  taskrt.TaskRuntime
+	Mailbox      taskrt.Mailbox
 	SessionStore session.SessionStore
 }

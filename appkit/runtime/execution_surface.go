@@ -3,13 +3,12 @@ package runtime
 import (
 	"context"
 	"errors"
+	"github.com/mossagents/moss/kernel"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/sandbox"
 )
 
 const (
@@ -28,19 +27,19 @@ type ExecutionSurface struct {
 	IsolationEnabled bool
 
 	sandbox           sandbox.Sandbox
-	Workspace         port.Workspace
-	Executor          port.Executor
-	Isolation         port.WorkspaceIsolation
-	RepoStateCapture  port.RepoStateCapture
-	PatchApply        port.PatchApply
-	PatchRevert       port.PatchRevert
-	WorktreeSnapshots port.WorktreeSnapshotStore
+	Workspace         kws.Workspace
+	Executor          kws.Executor
+	Isolation         kws.WorkspaceIsolation
+	RepoStateCapture  kws.RepoStateCapture
+	PatchApply        kws.PatchApply
+	PatchRevert       kws.PatchRevert
+	WorktreeSnapshots kws.WorktreeSnapshotStore
 
 	errors   map[string]error
 	disabled map[string]bool
 }
 
-func newExecutionSurface(sb sandbox.Sandbox, ws port.Workspace, exec port.Executor) *ExecutionSurface {
+func newExecutionSurface(sb sandbox.Sandbox, ws kws.Workspace, exec kws.Executor) *ExecutionSurface {
 	return &ExecutionSurface{
 		sandbox:   sb,
 		Workspace: ws,
@@ -143,7 +142,7 @@ func (s *ExecutionSurface) Sandbox() sandbox.Sandbox {
 	return s.sandbox
 }
 
-func (s *ExecutionSurface) WorkspacePort() port.Workspace {
+func (s *ExecutionSurface) WorkspacePort() kws.Workspace {
 	if s == nil {
 		return nil
 	}
@@ -243,16 +242,16 @@ func (a *kernelWorkspaceAdapter) ListFiles(_ context.Context, pattern string) ([
 	return a.sb.ListFiles(pattern)
 }
 
-func (a *kernelWorkspaceAdapter) Stat(_ context.Context, path string) (port.FileInfo, error) {
+func (a *kernelWorkspaceAdapter) Stat(_ context.Context, path string) (kws.FileInfo, error) {
 	resolved, err := a.sb.ResolvePath(path)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
-	return port.FileInfo{
+	return kws.FileInfo{
 		Name:    info.Name(),
 		Size:    info.Size(),
 		IsDir:   info.IsDir(),

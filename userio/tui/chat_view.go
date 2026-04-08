@@ -2,10 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"github.com/mattn/go-runewidth"
 	"strings"
 	"time"
-
-	"github.com/mattn/go-runewidth"
 )
 
 func (m chatModel) renderHeaderMetaLine() string {

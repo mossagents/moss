@@ -3,11 +3,10 @@ package session
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // Manager 管理 Session 的生命周期。
@@ -16,7 +15,7 @@ type Manager interface {
 	Get(id string) (*Session, bool)
 	List() []*Session
 	Cancel(id string) error
-	Notify(id string, msg port.Message) error // 跨 Session 注入消息
+	Notify(id string, msg mdl.Message) error // 跨 Session 注入消息
 }
 
 // CancelHookAware 是可选扩展契约：实现后可接收 Session.Cancel 的回调。
@@ -77,7 +76,7 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 		ID:        id,
 		Status:    StatusCreated,
 		Config:    cfg,
-		Messages:  make([]port.Message, 0),
+		Messages:  make([]mdl.Message, 0),
 		State:     make(map[string]any),
 		Budget:    Budget{MaxTokens: cfg.MaxTokens, MaxSteps: cfg.MaxSteps},
 		CreatedAt: time.Now(),
@@ -120,7 +119,7 @@ func (m *memoryManager) Cancel(id string) error {
 	return nil
 }
 
-func (m *memoryManager) Notify(id string, msg port.Message) error {
+func (m *memoryManager) Notify(id string, msg mdl.Message) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	s, ok := m.sessions[id]
@@ -162,6 +161,6 @@ func (m *cancelHookManager) Cancel(id string) error {
 	return nil
 }
 
-func (m *cancelHookManager) Notify(id string, msg port.Message) error {
+func (m *cancelHookManager) Notify(id string, msg mdl.Message) error {
 	return m.base.Notify(id, msg)
 }

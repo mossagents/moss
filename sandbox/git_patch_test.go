@@ -2,13 +2,12 @@ package sandbox
 
 import (
 	"context"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestGitPatchApply_Apply(t *testing.T) {
@@ -27,9 +26,9 @@ func TestGitPatchApply_Apply(t *testing.T) {
 	runGit(t, repo, "checkout", "--", "tracked.txt")
 
 	applier := NewGitPatchApply(repo)
-	result, err := applier.Apply(context.Background(), port.PatchApplyRequest{
+	result, err := applier.Apply(context.Background(), kws.PatchApplyRequest{
 		Patch:    patch,
-		Source:   port.PatchSourceLLM,
+		Source:   kws.PatchSourceLLM,
 		ThreeWay: true,
 	})
 	if err != nil {
@@ -66,10 +65,10 @@ func TestGitPatchApply_Failure(t *testing.T) {
 	runGit(t, repo, "checkout", "--", "tracked.txt")
 
 	applier := NewGitPatchApply(repo)
-	if _, err := applier.Apply(context.Background(), port.PatchApplyRequest{Patch: patch}); err != nil {
+	if _, err := applier.Apply(context.Background(), kws.PatchApplyRequest{Patch: patch}); err != nil {
 		t.Fatalf("first apply failed: %v", err)
 	}
-	result, err := applier.Apply(context.Background(), port.PatchApplyRequest{Patch: patch})
+	result, err := applier.Apply(context.Background(), kws.PatchApplyRequest{Patch: patch})
 	if err == nil {
 		t.Fatal("expected second apply to fail")
 	}
@@ -83,8 +82,8 @@ func TestGitPatchApply_Failure(t *testing.T) {
 
 func TestGitPatchApply_Unavailable(t *testing.T) {
 	applier := NewGitPatchApply(t.TempDir())
-	_, err := applier.Apply(context.Background(), port.PatchApplyRequest{Patch: "diff --git a/a b/a"})
-	if err != port.ErrPatchApplyUnavailable {
+	_, err := applier.Apply(context.Background(), kws.PatchApplyRequest{Patch: "diff --git a/a b/a"})
+	if err != kws.ErrPatchApplyUnavailable {
 		t.Fatalf("expected ErrPatchApplyUnavailable, got %v", err)
 	}
 }

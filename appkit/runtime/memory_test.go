@@ -3,17 +3,19 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
+	kt "github.com/mossagents/moss/testing"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/sandbox"
-	kt "github.com/mossagents/moss/testing"
 )
 
 func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
@@ -94,7 +96,7 @@ func TestRegisterMemoryTools_NilWorkspace(t *testing.T) {
 func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithUserIO(&intr.NoOpIO{}),
 		WithMemoryWorkspace(sandbox.NewMemoryWorkspace()),
 	)
 	if err := k.Boot(context.Background()); err != nil {
@@ -112,7 +114,7 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message")
 	}
-	if got := port.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "staged persistent memory tools") {
+	if got := mdl.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "staged persistent memory tools") {
 		t.Fatalf("expected memory prompt hint, got %q", got)
 	}
 }
@@ -158,7 +160,7 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/decision.md")
-	var record port.MemoryRecord
+	var record memstore.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
@@ -178,8 +180,8 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 		t.Fatalf("search_memories failed: %v", err)
 	}
 	var searchResp struct {
-		Count int                 `json:"count"`
-		Items []port.MemoryRecord `json:"items"`
+		Count int                     `json:"count"`
+		Items []memstore.MemoryRecord `json:"items"`
 	}
 	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
 		t.Fatalf("decode search_memories: %v", err)
@@ -232,11 +234,11 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/memory/trace-summary.md")
-	var record port.MemoryRecord
+	var record memstore.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
-	if record.Stage != port.MemoryStageConsolidated {
+	if record.Stage != memstore.MemoryStageConsolidated {
 		t.Fatalf("expected consolidated stage, got %+v", record)
 	}
 	if len(record.Citation.MemoryPaths) == 0 {
@@ -260,7 +262,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, err = store.Upsert(ctx, port.MemoryRecord{
+	_, err = store.Upsert(ctx, memstore.MemoryRecord{
 		Path:    "team/decision.md",
 		Content: "Use sqlite memory backend",
 		Tags:    []string{"state", "sqlite"},
@@ -276,7 +278,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	if got.Summary == "" {
 		t.Fatal("expected summary to be generated")
 	}
-	if got.Stage != port.MemoryStageManual || got.Status != port.MemoryStatusActive {
+	if got.Stage != memstore.MemoryStageManual || got.Status != memstore.MemoryStatusActive {
 		t.Fatalf("expected default stage/status, got %+v", got)
 	}
 	if err := store.RecordUsage(ctx, []string{"team/decision.md"}, time.Now().UTC()); err != nil {
@@ -290,7 +292,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 		t.Fatalf("expected usage tracking, got %+v", got)
 	}
 
-	items, err := store.Search(ctx, port.MemoryQuery{Query: "sqlite", Limit: 10})
+	items, err := store.Search(ctx, memstore.MemoryQuery{Query: "sqlite", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -316,7 +318,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
 	ctx := context.Background()
-	for _, record := range []port.MemoryRecord{
+	for _, record := range []memstore.MemoryRecord{
 		{Path: "team/alpha.md", Content: "sqlite backend decision alpha"},
 		{Path: "team/beta.md", Content: "sqlite backend decision beta"},
 	} {
@@ -330,7 +332,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 	if err := store.RecordUsage(ctx, []string{"team/beta.md"}, time.Now().UTC().Add(time.Millisecond)); err != nil {
 		t.Fatalf("RecordUsage: %v", err)
 	}
-	items, err := store.Search(ctx, port.MemoryQuery{Query: "sqlite backend", Limit: 2})
+	items, err := store.Search(ctx, memstore.MemoryQuery{Query: "sqlite backend", Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -342,12 +344,12 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	taskRuntime := port.NewMemoryTaskRuntime()
-	if err := taskRuntime.UpsertJob(context.Background(), port.AgentJob{
+	taskRuntime := taskrt.NewMemoryTaskRuntime()
+	if err := taskRuntime.UpsertJob(context.Background(), taskrt.AgentJob{
 		ID:        "job-mem",
 		AgentName: "worker",
 		Goal:      "summarize",
-		Status:    port.JobPending,
+		Status:    taskrt.JobPending,
 	}); err != nil {
 		t.Fatalf("UpsertJob: %v", err)
 	}
@@ -387,17 +389,17 @@ func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 	}
 
 	waitForCondition(t, 2*time.Second, func() bool {
-		items, err := taskRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: "job-mem"})
+		items, err := taskRuntime.ListJobItems(ctx, taskrt.JobItemQuery{JobID: "job-mem"})
 		if err != nil || len(items) != 1 {
 			return false
 		}
-		return items[0].Status == port.JobCompleted
+		return items[0].Status == taskrt.JobCompleted
 	})
-	items, err := taskRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: "job-mem"})
+	items, err := taskRuntime.ListJobItems(ctx, taskrt.JobItemQuery{JobID: "job-mem"})
 	if err != nil {
 		t.Fatalf("ListJobItems: %v", err)
 	}
-	if items[0].Status != port.JobCompleted {
+	if items[0].Status != taskrt.JobCompleted {
 		t.Fatalf("expected completed external job item, got %+v", items)
 	}
 }

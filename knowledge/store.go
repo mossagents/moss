@@ -9,8 +9,7 @@ package knowledge
 
 import (
 	"context"
-
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // Document 表示已摄入知识库的一个文档。
@@ -40,10 +39,10 @@ type SearchResult struct {
 // Store 定义知识库的存储接口。
 type Store interface {
 	// Add 添加一个文档到知识库，自动嵌入所有文本块。
-	Add(ctx context.Context, embedder port.Embedder, id, source string, texts []string, metadata map[string]any) error
+	Add(ctx context.Context, embedder mdl.Embedder, id, source string, texts []string, metadata map[string]any) error
 
 	// Search 语义搜索，返回 top-k 最相关的文本块。
-	Search(ctx context.Context, embedder port.Embedder, query string, limit int) ([]SearchResult, error)
+	Search(ctx context.Context, embedder mdl.Embedder, query string, limit int) ([]SearchResult, error)
 
 	// Remove 删除指定 ID 的文档。
 	Remove(id string) error

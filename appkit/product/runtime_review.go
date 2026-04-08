@@ -3,12 +3,11 @@ package product
 import (
 	"context"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/sandbox"
 )
 
 type ReviewReport struct {
@@ -22,16 +21,16 @@ type ReviewReport struct {
 }
 
 type ReviewRepoState struct {
-	Available bool                 `json:"available"`
-	Root      string               `json:"root,omitempty"`
-	Head      string               `json:"head,omitempty"`
-	Branch    string               `json:"branch,omitempty"`
-	Dirty     bool                 `json:"dirty"`
-	Staged    []port.RepoFileState `json:"staged,omitempty"`
-	Unstaged  []port.RepoFileState `json:"unstaged,omitempty"`
-	Untracked []string             `json:"untracked,omitempty"`
-	Ignored   []string             `json:"ignored,omitempty"`
-	Error     string               `json:"error,omitempty"`
+	Available bool               `json:"available"`
+	Root      string             `json:"root,omitempty"`
+	Head      string             `json:"head,omitempty"`
+	Branch    string             `json:"branch,omitempty"`
+	Dirty     bool               `json:"dirty"`
+	Staged    []kws.RepoFileState `json:"staged,omitempty"`
+	Unstaged  []kws.RepoFileState `json:"unstaged,omitempty"`
+	Untracked []string           `json:"untracked,omitempty"`
+	Ignored   []string           `json:"ignored,omitempty"`
+	Error     string             `json:"error,omitempty"`
 }
 
 type ReviewSnapshotSummary struct {
@@ -176,7 +175,7 @@ func RenderReviewReport(report ReviewReport) string {
 	return b.String()
 }
 
-func SummarizeSnapshot(item port.WorktreeSnapshot) ReviewSnapshotSummary {
+func SummarizeSnapshot(item kws.WorktreeSnapshot) ReviewSnapshotSummary {
 	return ReviewSnapshotSummary{
 		ID:         item.ID,
 		SessionID:  item.SessionID,
@@ -189,7 +188,7 @@ func SummarizeSnapshot(item port.WorktreeSnapshot) ReviewSnapshotSummary {
 	}
 }
 
-func summarizeSnapshots(items []port.WorktreeSnapshot) []ReviewSnapshotSummary {
+func summarizeSnapshots(items []kws.WorktreeSnapshot) []ReviewSnapshotSummary {
 	out := make([]ReviewSnapshotSummary, 0, len(items))
 	for _, item := range items {
 		out = append(out, SummarizeSnapshot(item))
@@ -200,7 +199,7 @@ func summarizeSnapshots(items []port.WorktreeSnapshot) []ReviewSnapshotSummary {
 	return out
 }
 
-func renderRepoFiles(b *strings.Builder, label string, items []port.RepoFileState) {
+func renderRepoFiles(b *strings.Builder, label string, items []kws.RepoFileState) {
 	if len(items) == 0 {
 		fmt.Fprintf(b, "%s: none\n", label)
 		return

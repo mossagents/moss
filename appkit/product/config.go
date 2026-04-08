@@ -2,11 +2,10 @@ package product
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
+	"sort"
+	"strings"
 )
 
 type MCPConfigSource string

@@ -3,13 +3,12 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/session"
 	"os"
 	"sort"
 	"strings"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 const DisableProfilesEnv = "MOSSCODE_DISABLE_PROFILES"
@@ -307,8 +306,8 @@ func builtInProfile(name string) appconfig.ProfileConfig {
 			Approval: "full-auto",
 			Session:  appconfig.SessionProfileConfig{MaxSteps: 200},
 			Execution: appconfig.ExecutionProfileConfig{
-				CommandAccess: "allow",
-				HTTPAccess:    "allow",
+				CommandAccess:  "allow",
+				HTTPAccess:     "allow",
 				CommandTimeout: "30s",
 			},
 		}

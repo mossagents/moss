@@ -1,12 +1,11 @@
 package runtime
 
 import (
+	memstore "github.com/mossagents/moss/kernel/memory"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func normalizeMemoryPath(path string) string {
@@ -74,9 +73,9 @@ func normalizeMemoryTags(tags []string) []string {
 	return out
 }
 
-func normalizeMemoryCitation(citation port.MemoryCitation) port.MemoryCitation {
-	out := port.MemoryCitation{
-		Entries:     make([]port.MemoryCitationEntry, 0, len(citation.Entries)),
+func normalizeMemoryCitation(citation memstore.MemoryCitation) memstore.MemoryCitation {
+	out := memstore.MemoryCitation{
+		Entries:     make([]memstore.MemoryCitationEntry, 0, len(citation.Entries)),
 		MemoryPaths: dedupeStrings(citation.MemoryPaths),
 		RolloutIDs:  dedupeStrings(citation.RolloutIDs),
 	}
@@ -100,7 +99,7 @@ func normalizeMemoryCitation(citation port.MemoryCitation) port.MemoryCitation {
 	return out
 }
 
-func normalizeMemoryRecord(record port.MemoryRecord, existing *port.MemoryRecord, now time.Time) port.MemoryRecord {
+func normalizeMemoryRecord(record memstore.MemoryRecord, existing *memstore.MemoryRecord, now time.Time) memstore.MemoryRecord {
 	record.Path = normalizeMemoryPath(record.Path)
 	record.Group = normalizeMemoryPath(record.Group)
 	record.Workspace = strings.TrimSpace(record.Workspace)
@@ -119,8 +118,8 @@ func normalizeMemoryRecord(record port.MemoryRecord, existing *port.MemoryRecord
 		if record.CreatedAt.IsZero() {
 			record.CreatedAt = existing.CreatedAt
 		}
-		record.Stage = port.MemoryStage(firstNonEmpty(string(record.Stage), string(existing.Stage)))
-		record.Status = port.MemoryStatus(firstNonEmpty(string(record.Status), string(existing.Status)))
+		record.Stage = memstore.MemoryStage(firstNonEmpty(string(record.Stage), string(existing.Stage)))
+		record.Status = memstore.MemoryStatus(firstNonEmpty(string(record.Status), string(existing.Status)))
 		if record.Group == "" {
 			record.Group = existing.Group
 		}
@@ -159,10 +158,10 @@ func normalizeMemoryRecord(record port.MemoryRecord, existing *port.MemoryRecord
 		}
 	}
 	if record.Stage == "" {
-		record.Stage = port.MemoryStageManual
+		record.Stage = memstore.MemoryStageManual
 	}
 	if record.Status == "" {
-		record.Status = port.MemoryStatusActive
+		record.Status = memstore.MemoryStatusActive
 	}
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now.UTC()
@@ -192,7 +191,7 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func memoryMatchesQuery(item port.MemoryRecord, query port.MemoryQuery) bool {
+func memoryMatchesQuery(item memstore.MemoryRecord, query memstore.MemoryQuery) bool {
 	if len(query.Tags) > 0 {
 		expected := make(map[string]struct{}, len(query.Tags))
 		for _, tag := range query.Tags {
@@ -251,7 +250,7 @@ func memoryMatchesQuery(item port.MemoryRecord, query port.MemoryQuery) bool {
 	return memoryTextScore(item, needle) > 0
 }
 
-func memoryTextScore(item port.MemoryRecord, needle string) int {
+func memoryTextScore(item memstore.MemoryRecord, needle string) int {
 	if needle == "" {
 		return 0
 	}
@@ -283,7 +282,7 @@ func memoryTextScore(item port.MemoryRecord, needle string) int {
 	return score
 }
 
-func sortMemoryRecords(records []port.MemoryRecord, query port.MemoryQuery) {
+func sortMemoryRecords(records []memstore.MemoryRecord, query memstore.MemoryQuery) {
 	needle := strings.ToLower(strings.TrimSpace(query.Query))
 	sort.Slice(records, func(i, j int) bool {
 		left := records[i]
@@ -308,14 +307,14 @@ func sortMemoryRecords(records []port.MemoryRecord, query port.MemoryQuery) {
 	})
 }
 
-func trimMemoryRecords(records []port.MemoryRecord, limit int) []port.MemoryRecord {
+func trimMemoryRecords(records []memstore.MemoryRecord, limit int) []memstore.MemoryRecord {
 	if limit > 0 && len(records) > limit {
 		return records[:limit]
 	}
 	return records
 }
 
-func memoryFreshness(item port.MemoryRecord) time.Time {
+func memoryFreshness(item memstore.MemoryRecord) time.Time {
 	switch {
 	case !item.LastUsedAt.IsZero():
 		return item.LastUsedAt.UTC()
@@ -328,7 +327,7 @@ func memoryFreshness(item port.MemoryRecord) time.Time {
 	}
 }
 
-func bumpMemoryUsage(record port.MemoryRecord, usedAt time.Time) port.MemoryRecord {
+func bumpMemoryUsage(record memstore.MemoryRecord, usedAt time.Time) memstore.MemoryRecord {
 	if usedAt.IsZero() {
 		usedAt = time.Now().UTC()
 	}

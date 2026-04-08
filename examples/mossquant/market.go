@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel/tool"
 	"math"
 	"math/rand/v2"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ─── Market Simulation ──────────────────────────────

@@ -3,22 +3,21 @@ package sandbox
 import (
 	"encoding/json"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type patchJournalEntry struct {
-	Patch       string           `json:"patch"`
-	TargetFiles []string         `json:"target_files,omitempty"`
-	ThreeWay    bool             `json:"three_way,omitempty"`
-	Cached      bool             `json:"cached,omitempty"`
-	Source      port.PatchSource `json:"source,omitempty"`
-	AppliedAt   time.Time        `json:"applied_at"`
+	Patch       string         `json:"patch"`
+	TargetFiles []string       `json:"target_files,omitempty"`
+	ThreeWay    bool           `json:"three_way,omitempty"`
+	Cached      bool           `json:"cached,omitempty"`
+	Source      kws.PatchSource `json:"source,omitempty"`
+	AppliedAt   time.Time      `json:"applied_at"`
 }
 
 type gitPatchJournal struct {
@@ -52,7 +51,7 @@ func (j *gitPatchJournal) Load(patchID string) (*patchJournalEntry, error) {
 	}
 	entry, ok := state[patchID]
 	if !ok {
-		return nil, port.ErrPatchNotFound
+		return nil, kws.ErrPatchNotFound
 	}
 	cp := entry
 	cp.TargetFiles = append([]string(nil), entry.TargetFiles...)
@@ -70,16 +69,16 @@ func (j *gitPatchJournal) Delete(patchID string) error {
 	return j.persistLocked(state)
 }
 
-func (j *gitPatchJournal) List() ([]port.PatchSnapshotRef, error) {
+func (j *gitPatchJournal) List() ([]kws.PatchSnapshotRef, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	state, err := j.loadLocked()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]port.PatchSnapshotRef, 0, len(state))
+	out := make([]kws.PatchSnapshotRef, 0, len(state))
 	for patchID, entry := range state {
-		out = append(out, port.PatchSnapshotRef{
+		out = append(out, kws.PatchSnapshotRef{
 			PatchID:     patchID,
 			TargetFiles: append([]string(nil), entry.TargetFiles...),
 			Source:      entry.Source,

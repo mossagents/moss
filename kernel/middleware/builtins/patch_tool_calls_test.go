@@ -2,28 +2,27 @@ package builtins
 
 import (
 	"context"
-	"testing"
-
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	"testing"
 )
 
 func TestPatchToolCalls_BackfillsMissingResults(t *testing.T) {
 	sess := &session.Session{
 		ID: "s1",
-		Messages: []port.Message{
+		Messages: []mdl.Message{
 			{
-				Role: port.RoleAssistant,
-				ToolCalls: []port.ToolCall{
+				Role: mdl.RoleAssistant,
+				ToolCalls: []mdl.ToolCall{
 					{ID: "call_1", Name: "grep"},
 					{ID: "call_2", Name: "read_file"},
 				},
 			},
 			{
-				Role: port.RoleTool,
-				ToolResults: []port.ToolResult{
-					{CallID: "call_1", ContentParts: []port.ContentPart{port.TextPart("ok")}},
+				Role: mdl.RoleTool,
+				ToolResults: []mdl.ToolResult{
+					{CallID: "call_1", ContentParts: []mdl.ContentPart{mdl.TextPart("ok")}},
 				},
 			},
 		},
@@ -37,7 +36,7 @@ func TestPatchToolCalls_BackfillsMissingResults(t *testing.T) {
 		t.Fatalf("PatchToolCalls: %v", err)
 	}
 	last := sess.Messages[len(sess.Messages)-1]
-	if last.Role != port.RoleTool || len(last.ToolResults) != 1 {
+	if last.Role != mdl.RoleTool || len(last.ToolResults) != 1 {
 		t.Fatalf("expected one patched tool message, got %+v", last)
 	}
 	if last.ToolResults[0].CallID != "call_2" {
@@ -51,15 +50,15 @@ func TestPatchToolCalls_BackfillsMissingResults(t *testing.T) {
 func TestPatchToolCalls_NoPatchWhenComplete(t *testing.T) {
 	sess := &session.Session{
 		ID: "s2",
-		Messages: []port.Message{
+		Messages: []mdl.Message{
 			{
-				Role:      port.RoleAssistant,
-				ToolCalls: []port.ToolCall{{ID: "call_1", Name: "grep"}},
+				Role:      mdl.RoleAssistant,
+				ToolCalls: []mdl.ToolCall{{ID: "call_1", Name: "grep"}},
 			},
 			{
-				Role: port.RoleTool,
-				ToolResults: []port.ToolResult{
-					{CallID: "call_1", ContentParts: []port.ContentPart{port.TextPart("ok")}},
+				Role: mdl.RoleTool,
+				ToolResults: []mdl.ToolResult{
+					{CallID: "call_1", ContentParts: []mdl.ContentPart{mdl.TextPart("ok")}},
 				},
 			},
 		},
@@ -76,4 +75,3 @@ func TestPatchToolCalls_NoPatchWhenComplete(t *testing.T) {
 		t.Fatalf("expected unchanged message count, got %d", len(sess.Messages))
 	}
 }
-

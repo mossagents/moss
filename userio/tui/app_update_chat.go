@@ -2,13 +2,12 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"strings"
 )
 
 func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -167,7 +166,7 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, model tea.Model,
 		runText := m.postInitRunText
 		m.postInitDisplayText = ""
 		m.postInitRunText = ""
-		nextChat, dispatchCmd := m.chat.dispatchUserSubmission(displayText, runText, []port.ContentPart{port.TextPart(runText)})
+		nextChat, dispatchCmd := m.chat.dispatchUserSubmission(displayText, runText, []mdl.ContentPart{mdl.TextPart(runText)})
 		m.chat = nextChat
 		m.chat.refreshViewport()
 		go agent.publishProgressReplay()
@@ -278,7 +277,7 @@ func (m *appModel) bindDebugCallbacks(agent *agentState) {
 }
 
 func (m *appModel) bindToolingCallbacks(agent *agentState) {
-	m.chat.sendFn = func(text string, parts []port.ContentPart) {
+	m.chat.sendFn = func(text string, parts []mdl.ContentPart) {
 		go agent.appendAndRun(text, parts)
 	}
 	m.chat.cancelRunFn = agent.cancelCurrentRun

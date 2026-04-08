@@ -2,7 +2,9 @@
 
 package main
 
-import "github.com/wailsapp/wails/v3/pkg/application"
+import (
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
 func init() {
 	// Register main function to be called when the Android app initializes

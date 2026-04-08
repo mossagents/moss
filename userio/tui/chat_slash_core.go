@@ -4,15 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/appkit/product"
+	config "github.com/mossagents/moss/config"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
-	config "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type slashCommandHandler func(chatModel, []string, string, string) (chatModel, tea.Cmd)
@@ -93,7 +92,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		return m.dispatchUserSubmission(input, runText, []port.ContentPart{port.TextPart(runText)})
+		return m.dispatchUserSubmission(input, runText, []mdl.ContentPart{mdl.TextPart(runText)})
 	}
 	if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
 		name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))

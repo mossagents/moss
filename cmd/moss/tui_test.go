@@ -3,19 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestCliUserIOSend(t *testing.T) {
 	var buf bytes.Buffer
 	io := &cliUserIO{writer: &buf}
 
-	for _, msg := range []port.OutputMessage{
-		{Type: port.OutputReasoning, Content: "plan next step"},
-		{Type: port.OutputText, Content: "hello"},
+	for _, msg := range []intr.OutputMessage{
+		{Type: intr.OutputReasoning, Content: "plan next step"},
+		{Type: intr.OutputText, Content: "hello"},
 	} {
 		if err := io.Send(context.Background(), msg); err != nil {
 			t.Fatal(err)

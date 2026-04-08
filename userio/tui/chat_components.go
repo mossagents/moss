@@ -2,10 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"strings"
 )
 
 func (m chatModel) renderMainPane(layout chatUILayout) string {
@@ -97,7 +96,7 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 func (m chatModel) renderStatusPane(width int) string {
 	status := statusHintStyle.Render(m.renderStatusLine())
 	if m.pendAsk != nil && m.askForm != nil {
-		if m.pendAsk.request.Type == port.InputConfirm && m.pendAsk.request.Approval != nil {
+		if m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
 			status = statusHintStyle.Render("Tab/Shift+Tab move focus • ↑↓ choose decision • Enter apply • memory applies to this thread only")
 		} else {
 			status = statusHintStyle.Render("Tab/Shift+Tab move fields • ↑↓ choose options • Space toggle multi-select • Enter confirm")

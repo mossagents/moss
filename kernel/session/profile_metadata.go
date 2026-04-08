@@ -1,6 +1,8 @@
 package session
 
-import "strings"
+import (
+	"strings"
+)
 
 const (
 	MetadataEffectiveTrust    = "effective_trust"

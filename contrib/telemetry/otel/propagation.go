@@ -1,5 +1,5 @@
 // Package otel (propagation) provides W3C TraceContext propagation helpers for
-// the moss gateway and HTTP adapters.
+// the moss gateway and HTTP providers.
 //
 // Wire-up example:
 //
@@ -20,10 +20,10 @@ package otel
 
 import (
 	"context"
-	"net/http"
-
+	providers "github.com/mossagents/moss/providers"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+	"net/http"
 )
 
 // MetadataCarrier adapts map[string]any to the OTEL TextMapCarrier interface,

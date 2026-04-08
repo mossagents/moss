@@ -2,12 +2,11 @@ package loop
 
 import (
 	"fmt"
-	"slices"
-	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"slices"
+	"strings"
 )
 
 type ToolRouteStatus string
@@ -29,9 +28,9 @@ type ToolRouteDecision struct {
 }
 
 type ModelRoutePlan struct {
-	Lane         string                `json:"lane,omitempty"`
-	Requirements *port.TaskRequirement `json:"requirements,omitempty"`
-	ReasonCodes  []string              `json:"reason_codes,omitempty"`
+	Lane         string               `json:"lane,omitempty"`
+	Requirements *mdl.TaskRequirement `json:"requirements,omitempty"`
+	ReasonCodes  []string             `json:"reason_codes,omitempty"`
 }
 
 type TurnPlan struct {
@@ -147,7 +146,7 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 		req = cloneTaskRequirement(sess.Config.ModelConfig.Requirements)
 	}
 	if req == nil {
-		req = &port.TaskRequirement{}
+		req = &mdl.TaskRequirement{}
 	}
 	_, _, _, taskMode := session.ProfileMetadataValues(sess)
 	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
@@ -164,7 +163,7 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 		}
 		reasons = append(reasons, "lightweight_chat")
 	case len(visibleTools)+len(approvalTools) > 0:
-		addModelCapability(req, port.CapFunctionCalling)
+		addModelCapability(req, mdl.CapFunctionCalling)
 		reasons = append(reasons, "tool_route")
 		if len(visibleTools)+len(approvalTools) >= 4 {
 			lane = "tool-heavy"
@@ -173,10 +172,10 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 	switch taskMode {
 	case "planning", "research":
 		lane = "reasoning"
-		addModelCapability(req, port.CapReasoning)
+		addModelCapability(req, mdl.CapReasoning)
 		reasons = append(reasons, taskMode+"_mode")
 	case "coding":
-		addModelCapability(req, port.CapCodeGeneration)
+		addModelCapability(req, mdl.CapCodeGeneration)
 		reasons = append(reasons, "coding_mode")
 	}
 	if strings.EqualFold(strings.TrimSpace(firstNonEmptySessionMode(sess)), "background") && lane == "default" {
@@ -192,16 +191,16 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 	}
 }
 
-func cloneTaskRequirement(in *port.TaskRequirement) *port.TaskRequirement {
+func cloneTaskRequirement(in *mdl.TaskRequirement) *mdl.TaskRequirement {
 	if in == nil {
 		return nil
 	}
 	cp := *in
-	cp.Capabilities = append([]port.ModelCapability(nil), in.Capabilities...)
+	cp.Capabilities = append([]mdl.ModelCapability(nil), in.Capabilities...)
 	return &cp
 }
 
-func addModelCapability(req *port.TaskRequirement, cap port.ModelCapability) {
+func addModelCapability(req *mdl.TaskRequirement, cap mdl.ModelCapability) {
 	if req == nil {
 		return
 	}

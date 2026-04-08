@@ -6,15 +6,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // DockerConfig 配置 Docker Sandbox。
@@ -161,7 +160,7 @@ func (d *DockerSandbox) WriteFile(path string, content []byte) error {
 
 // Execute 通过 `docker run --rm` 在容器内执行命令。
 // 工作目录挂载为容器内 /workspace。
-func (d *DockerSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+func (d *DockerSandbox) Execute(ctx context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = d.cfg.Timeout
@@ -173,14 +172,14 @@ func (d *DockerSandbox) Execute(ctx context.Context, req port.ExecRequest) (port
 	}
 
 	if strings.TrimSpace(req.Command) == "" {
-		return port.ExecOutput{}, fmt.Errorf("docker sandbox: command is required")
+		return kws.ExecOutput{}, fmt.Errorf("docker sandbox: command is required")
 	}
 
 	// 构建 docker run 参数
 	dockerArgs := d.buildDockerArgs(req)
 
 	stdout, stderr, exitCode, err := d.exec(ctx, "docker", dockerArgs...)
-	out := port.ExecOutput{
+	out := kws.ExecOutput{
 		Stdout:   string(stdout),
 		Stderr:   string(stderr),
 		ExitCode: exitCode,
@@ -192,7 +191,7 @@ func (d *DockerSandbox) Execute(ctx context.Context, req port.ExecRequest) (port
 }
 
 // buildDockerArgs 构建 docker run 命令参数。
-func (d *DockerSandbox) buildDockerArgs(req port.ExecRequest) []string {
+func (d *DockerSandbox) buildDockerArgs(req kws.ExecRequest) []string {
 	args := []string{"run", "--rm"}
 
 	// 挂载工作目录
@@ -214,7 +213,7 @@ func (d *DockerSandbox) buildDockerArgs(req port.ExecRequest) []string {
 
 	// 网络
 	network := d.cfg.Network
-	if req.Network.Mode == port.ExecNetworkDisabled {
+	if req.Network.Mode == kws.ExecNetworkDisabled {
 		network = "none"
 	}
 	if network != "" {

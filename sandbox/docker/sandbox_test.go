@@ -2,13 +2,12 @@ package docker_test
 
 import (
 	"context"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	dockersandbox "github.com/mossagents/moss/sandbox/docker"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	dockersandbox "github.com/mossagents/moss/sandbox/docker"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestNew_Validation(t *testing.T) {
@@ -108,7 +107,7 @@ func TestExecute_MockSuccess(t *testing.T) {
 	s.SetExecFunc(func(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
 		return []byte("hello"), nil, 0, nil
 	})
-	out, err := s.Execute(context.Background(), port.ExecRequest{Command: "echo", Args: []string{"hello"}})
+	out, err := s.Execute(context.Background(), kws.ExecRequest{Command: "echo", Args: []string{"hello"}})
 	if err != nil {
 		t.Fatal(err)
 	}

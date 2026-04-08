@@ -2,16 +2,15 @@ package tui
 
 import (
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagents/moss/appkit/product"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/appkit/product"
 )
 
 type mentionCandidate struct {
@@ -283,7 +282,6 @@ func (m chatModel) renderMentionPopup(width int) string {
 	inner := strings.Join(rows, "\n")
 	return dialogBoxStyle.Width(popupWidth).Render(inner)
 }
-
 
 func detectAttachmentKind(path string) string {
 	if !isMediaPath(path) {

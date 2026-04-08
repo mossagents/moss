@@ -4,23 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mossagents/moss/kernel"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
 )
 
 type ChangeRuntime struct {
 	Workspace        string
-	RepoStateCapture port.RepoStateCapture
-	PatchApply       port.PatchApply
-	PatchRevert      port.PatchRevert
+	RepoStateCapture kws.RepoStateCapture
+	PatchApply       kws.PatchApply
+	PatchRevert      kws.PatchRevert
 	SessionStore     session.SessionStore
 	SessionLookup    func(string) (*session.Session, bool)
-	CreateCheckpoint func(context.Context, *session.Session, port.CheckpointCreateRequest) (*port.CheckpointRecord, error)
+	CreateCheckpoint func(context.Context, *session.Session, ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error)
 }
 
 func ChangeRuntimeFromKernel(workspace string, k *kernel.Kernel) ChangeRuntime {
@@ -42,7 +42,7 @@ func ChangeRuntimeFromKernel(workspace string, k *kernel.Kernel) ChangeRuntime {
 	}
 }
 
-func (rt ChangeRuntime) repoCapturePort() port.RepoStateCapture {
+func (rt ChangeRuntime) repoCapturePort() kws.RepoStateCapture {
 	if rt.RepoStateCapture != nil {
 		return rt.RepoStateCapture
 	}
@@ -63,7 +63,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		return nil, err
 	}
 	if capture == nil {
-		return nil, port.ErrRepoUnavailable
+		return nil, kws.ErrRepoUnavailable
 	}
 	if capture.IsDirty {
 		return nil, fmt.Errorf("apply requires a clean repository")
@@ -88,7 +88,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		CreatedAt:    time.Now().UTC(),
 	}
 	if req.Source == "" {
-		req.Source = port.PatchSourceUser
+		req.Source = kws.PatchSourceUser
 	}
 	if err := attachTurnMetadata(ctx, rt, op); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		return nil, err
 	}
 
-	result, applyErr := rt.PatchApply.Apply(ctx, port.PatchApplyRequest{
+	result, applyErr := rt.PatchApply.Apply(ctx, kws.PatchApplyRequest{
 		Patch:  req.Patch,
 		Source: req.Source,
 	})
@@ -144,7 +144,7 @@ func RollbackChange(ctx context.Context, rt ChangeRuntime, req RollbackChangeReq
 		return nil, err
 	}
 	if capture == nil {
-		return nil, port.ErrRepoUnavailable
+		return nil, kws.ErrRepoUnavailable
 	}
 	store, err := OpenChangeStore()
 	if err != nil {
@@ -169,7 +169,7 @@ func RollbackChange(ctx context.Context, rt ChangeRuntime, req RollbackChangeReq
 			Message:   manualRecoveryDetails(op, fmt.Sprintf("exact rollback is unavailable for change %q", changeID)),
 		}
 	}
-	result, revertErr := rt.PatchRevert.Revert(ctx, port.PatchRevertRequest{PatchID: op.PatchID})
+	result, revertErr := rt.PatchRevert.Revert(ctx, kws.PatchRevertRequest{PatchID: op.PatchID})
 	if revertErr != nil {
 		if result != nil && result.Reverted {
 			op.Status = ChangeStatusRollbackInconsistent
@@ -264,7 +264,7 @@ func attachCheckpointMetadata(ctx context.Context, rt ChangeRuntime, op *ChangeO
 	if sess == nil {
 		return fmt.Errorf("session %q not found", op.SessionID)
 	}
-	record, err := rt.CreateCheckpoint(ctx, sess, port.CheckpointCreateRequest{
+	record, err := rt.CreateCheckpoint(ctx, sess, ckpt.CheckpointCreateRequest{
 		Note: strings.TrimSpace(op.Summary),
 	})
 	if err != nil {
@@ -320,7 +320,7 @@ func resolveRepoRoot(ctx context.Context, workspace string) (string, error) {
 		return "", err
 	}
 	if capture == nil {
-		return "", port.ErrRepoUnavailable
+		return "", kws.ErrRepoUnavailable
 	}
 	return canonicalRepoRoot(capture.RepoRoot), nil
 }

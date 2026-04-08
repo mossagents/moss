@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
 )
 
 const (
@@ -31,7 +30,7 @@ const (
 	contextBaselineFragmentPrefix = "baseline:"
 )
 
-func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextState, sess *session.Session) (session.PromptContextState, []port.Message, int, error) {
+func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextState, sess *session.Session) (session.PromptContextState, []mdl.Message, int, error) {
 	state := session.ReadPromptContextState(sess)
 	state.Version = contextStateVersion
 	lightweightChat := session.LatestUserTurnIsLightweightChat(sess.Messages)
@@ -89,7 +88,7 @@ func compactSessionContext(
 	sess *session.Session,
 	keepRecent int,
 	note string,
-	llm port.LLM,
+	llm mdl.LLM,
 	withSummary bool,
 ) (map[string]any, error) {
 	if sess == nil {
@@ -107,7 +106,7 @@ func compactSessionContext(
 			"keep_recent":  keepRecent,
 		}, nil
 	}
-	original := append([]port.Message(nil), sess.Messages...)
+	original := append([]mdl.Message(nil), sess.Messages...)
 	snapshotID := fmt.Sprintf("%s_context_%d", sess.ID, time.Now().UnixNano())
 	summaryText := strings.TrimSpace(note)
 	if withSummary {
@@ -209,13 +208,13 @@ func shouldCompactPrompt(sess *session.Session, state session.PromptContextState
 	return false
 }
 
-func buildBaselineFragments(messages []port.Message) []session.PromptContextFragment {
+func buildBaselineFragments(messages []mdl.Message) []session.PromptContextFragment {
 	fragments := make([]session.PromptContextFragment, 0, len(messages))
 	for i, msg := range messages {
-		if msg.Role != port.RoleSystem {
+		if msg.Role != mdl.RoleSystem {
 			continue
 		}
-		text := strings.TrimSpace(port.ContentPartsToPlainText(msg.ContentParts))
+		text := strings.TrimSpace(mdl.ContentPartsToPlainText(msg.ContentParts))
 		if text == "" {
 			continue
 		}
@@ -223,7 +222,7 @@ func buildBaselineFragments(messages []port.Message) []session.PromptContextFrag
 		fragments = append(fragments, session.NewPromptContextFragment(
 			fmt.Sprintf("%s%d", contextBaselineFragmentPrefix, i),
 			kind,
-			port.RoleSystem,
+			mdl.RoleSystem,
 			kind,
 			text,
 		))
@@ -245,22 +244,22 @@ func newSummaryFragment(snapshotID, summary string, withSummary bool) session.Pr
 	return session.NewPromptContextFragment(
 		contextSummaryFragmentID,
 		contextSummaryFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		title,
 		session.FormatPromptContextFragment(label, body),
 	)
 }
 
-func messagesBeforeDialogTail(messages []port.Message, keepRecent int) []port.Message {
+func messagesBeforeDialogTail(messages []mdl.Message, keepRecent int) []mdl.Message {
 	dialogCount := countDialogMessages(messages)
 	cut := dialogCount - keepRecent
 	if cut <= 0 {
-		return append([]port.Message(nil), messages...)
+		return append([]mdl.Message(nil), messages...)
 	}
 	seenDialog := 0
-	out := make([]port.Message, 0, len(messages))
+	out := make([]mdl.Message, 0, len(messages))
 	for _, msg := range messages {
-		if msg.Role == port.RoleSystem {
+		if msg.Role == mdl.RoleSystem {
 			out = append(out, msg)
 			continue
 		}
@@ -312,7 +311,7 @@ func buildSessionStartupFragment(sess *session.Session) session.PromptContextFra
 	return session.NewPromptContextFragment(
 		contextStartupSessionID,
 		contextStartupFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Session runtime context",
 		session.FormatPromptContextFragment("startup_session_context", strings.Join(lines, "\n")),
 	)
@@ -338,21 +337,21 @@ func buildRepoStartupFragment(ctx context.Context, k *kernel.Kernel) session.Pro
 	return session.NewPromptContextFragment(
 		contextStartupRepoID,
 		contextStartupFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Repository state",
 		session.FormatPromptContextFragment("startup_repo_state", strings.Join(lines, "\n")),
 	)
 }
 
 func buildMemoryStartupFragment(ctx context.Context, k *kernel.Kernel) session.PromptContextFragment {
-	ws := k.Workspace()
-	if ws == nil {
+	kws := k.Workspace()
+	if kws == nil {
 		return session.PromptContextFragment{}
 	}
 	paths := []string{"MEMORY.md", "memory_summary.md", "README.md", "AGENTS.md"}
 	chunks := make([]string, 0, len(paths))
 	for _, path := range paths {
-		data, err := ws.ReadFile(ctx, path)
+		data, err := kws.ReadFile(ctx, path)
 		if err != nil {
 			continue
 		}
@@ -368,7 +367,7 @@ func buildMemoryStartupFragment(ctx context.Context, k *kernel.Kernel) session.P
 	return session.NewPromptContextFragment(
 		contextStartupMemoryID,
 		contextStartupFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Workspace memory artifacts",
 		session.FormatPromptContextFragment("startup_memory_context", strings.Join(chunks, "\n\n")),
 	)
@@ -398,18 +397,18 @@ func buildStateCatalogStartupFragment(k *kernel.Kernel, sess *session.Session) s
 	return session.NewPromptContextFragment(
 		contextStartupStateCatalogID,
 		contextStartupFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Recent runtime state",
 		session.FormatPromptContextFragment("startup_state_catalog", strings.Join(lines, "\n")),
 	)
 }
 
 func buildWorkspaceStartupFragment(ctx context.Context, k *kernel.Kernel) session.PromptContextFragment {
-	ws := k.Workspace()
-	if ws == nil {
+	kws := k.Workspace()
+	if kws == nil {
 		return session.PromptContextFragment{}
 	}
-	files, err := ws.ListFiles(ctx, "*")
+	files, err := kws.ListFiles(ctx, "*")
 	if err != nil || len(files) == 0 {
 		return session.PromptContextFragment{}
 	}
@@ -417,7 +416,7 @@ func buildWorkspaceStartupFragment(ctx context.Context, k *kernel.Kernel) sessio
 	return session.NewPromptContextFragment(
 		contextStartupWorkspaceID,
 		contextStartupFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Top-level workspace files",
 		session.FormatPromptContextFragment("startup_workspace_map", strings.Join(limitStrings(files, 12), "\n")),
 	)
@@ -526,7 +525,7 @@ func buildRepoRealtimeFragment(previous, current repoRealtimeState) session.Prom
 	return session.NewPromptContextFragment(
 		contextRealtimeRepoID,
 		contextRealtimeFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Repository changes since last turn",
 		session.FormatPromptContextFragment("realtime_repo_changes", strings.Join(lines, "\n")),
 	)
@@ -540,11 +539,11 @@ func isZeroRepoRealtimeState(state repoRealtimeState) bool {
 }
 
 func captureWorkspaceRealtimeState(ctx context.Context, k *kernel.Kernel) map[string]workspaceRealtimeFile {
-	ws := k.Workspace()
-	if ws == nil {
+	kws := k.Workspace()
+	if kws == nil {
 		return nil
 	}
-	files, err := ws.ListFiles(ctx, "*")
+	files, err := kws.ListFiles(ctx, "*")
 	if err != nil || len(files) == 0 {
 		return nil
 	}
@@ -554,7 +553,7 @@ func captureWorkspaceRealtimeState(ctx context.Context, k *kernel.Kernel) map[st
 	}
 	state := make(map[string]workspaceRealtimeFile, len(files))
 	for _, file := range files {
-		info, err := ws.Stat(ctx, file)
+		info, err := kws.Stat(ctx, file)
 		if err != nil {
 			continue
 		}
@@ -607,7 +606,7 @@ func buildWorkspaceRealtimeFragment(previous, current map[string]workspaceRealti
 	return session.NewPromptContextFragment(
 		contextRealtimeWorkspaceID,
 		contextRealtimeFragmentKind,
-		port.RoleSystem,
+		mdl.RoleSystem,
 		"Workspace changes since last turn",
 		session.FormatPromptContextFragment("realtime_workspace_changes", strings.Join(lines, "\n")),
 	)

@@ -2,10 +2,9 @@ package knowledge_test
 
 import (
 	"context"
+	"github.com/mossagents/moss/knowledge"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/knowledge"
 )
 
 func TestDecayImportanceValue(t *testing.T) {

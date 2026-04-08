@@ -3,12 +3,11 @@ package product
 import (
 	"errors"
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 type CustomCommand struct {

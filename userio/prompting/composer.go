@@ -3,14 +3,13 @@ package prompting
 import (
 	_ "embed"
 	"fmt"
-	"sort"
-	"strings"
-
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"sort"
+	"strings"
 )
 
 //go:embed templates/system_prompt.tmpl

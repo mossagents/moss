@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	"os"
+	"strings"
 )
 
 func runInit(cfg *config) error {

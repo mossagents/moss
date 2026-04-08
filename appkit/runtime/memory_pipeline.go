@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/google/uuid"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 const (
@@ -46,9 +47,9 @@ type memoryPipelineJob struct {
 }
 
 type memoryPipelineManager struct {
-	ws      port.Workspace
-	store   port.MemoryStore
-	runtime port.TaskRuntime
+	ws      kws.Workspace
+	store   memstore.MemoryStore
+	runtime taskrt.TaskRuntime
 
 	executor string
 	stopCh   chan struct{}
@@ -59,7 +60,7 @@ type memoryPipelineManager struct {
 	stopOnce  sync.Once
 }
 
-func newMemoryPipelineManager(ws port.Workspace, store port.MemoryStore, runtime port.TaskRuntime) *memoryPipelineManager {
+func newMemoryPipelineManager(ws kws.Workspace, store memstore.MemoryStore, runtime taskrt.TaskRuntime) *memoryPipelineManager {
 	return &memoryPipelineManager{
 		ws:       ws,
 		store:    store,
@@ -101,7 +102,7 @@ func (m *memoryPipelineManager) Trigger() {
 	}
 }
 
-func (m *memoryPipelineManager) Enqueue(ctx context.Context, job memoryPipelineJob) (*port.AgentJob, error) {
+func (m *memoryPipelineManager) Enqueue(ctx context.Context, job memoryPipelineJob) (*taskrt.AgentJob, error) {
 	job.TargetPath = normalizeMemoryPath(job.TargetPath)
 	job.SourcePath = strings.TrimSpace(strings.ReplaceAll(job.SourcePath, "\\", "/"))
 	job.Workspace = strings.TrimSpace(job.Workspace)
@@ -123,23 +124,23 @@ func (m *memoryPipelineManager) Enqueue(ctx context.Context, job memoryPipelineJ
 	if err := m.saveJob(ctx, job); err != nil {
 		return nil, err
 	}
-	jobRuntime, ok := m.runtime.(port.JobRuntime)
+	jobRuntime, ok := m.runtime.(taskrt.JobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("memory pipeline job runtime is unavailable")
 	}
-	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+	if err := jobRuntime.UpsertJob(ctx, taskrt.AgentJob{
 		ID:        job.JobID,
 		AgentName: memoryPipelineAgentName,
 		Goal:      "process memory pipeline for " + job.TargetPath,
-		Status:    port.JobPending,
+		Status:    taskrt.JobPending,
 	}); err != nil {
 		return nil, err
 	}
 	for _, itemID := range []string{memoryPipelinePhase1Item, memoryPipelinePhase2Item} {
-		if err := jobRuntime.UpsertJobItem(ctx, port.AgentJobItem{
+		if err := jobRuntime.UpsertJobItem(ctx, taskrt.AgentJobItem{
 			JobID:  job.JobID,
 			ItemID: itemID,
-			Status: port.JobPending,
+			Status: taskrt.JobPending,
 		}); err != nil {
 			return nil, err
 		}
@@ -170,7 +171,7 @@ func (m *memoryPipelineManager) loop() {
 }
 
 func (m *memoryPipelineManager) processAll(ctx context.Context) error {
-	jobRuntime, ok := m.runtime.(port.JobRuntime)
+	jobRuntime, ok := m.runtime.(taskrt.JobRuntime)
 	if !ok {
 		return fmt.Errorf("memory pipeline job runtime is unavailable")
 	}
@@ -186,12 +187,12 @@ func (m *memoryPipelineManager) processAll(ctx context.Context) error {
 	return nil
 }
 
-func collectPipelineJobs(ctx context.Context, runtime port.JobRuntime) ([]port.AgentJob, error) {
-	pending, err := runtime.ListJobs(ctx, port.JobQuery{AgentName: memoryPipelineAgentName, Status: port.JobPending})
+func collectPipelineJobs(ctx context.Context, runtime taskrt.JobRuntime) ([]taskrt.AgentJob, error) {
+	pending, err := runtime.ListJobs(ctx, taskrt.JobQuery{AgentName: memoryPipelineAgentName, Status: taskrt.JobPending})
 	if err != nil {
 		return nil, err
 	}
-	running, err := runtime.ListJobs(ctx, port.JobQuery{AgentName: memoryPipelineAgentName, Status: port.JobRunning})
+	running, err := runtime.ListJobs(ctx, taskrt.JobQuery{AgentName: memoryPipelineAgentName, Status: taskrt.JobRunning})
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +206,8 @@ func collectPipelineJobs(ctx context.Context, runtime port.JobRuntime) ([]port.A
 	return out, nil
 }
 
-func (m *memoryPipelineManager) processJob(ctx context.Context, jobRuntime port.JobRuntime, job port.AgentJob) error {
-	atomicRuntime, ok := m.runtime.(port.AtomicJobRuntime)
+func (m *memoryPipelineManager) processJob(ctx context.Context, jobRuntime taskrt.JobRuntime, job taskrt.AgentJob) error {
+	atomicRuntime, ok := m.runtime.(taskrt.AtomicJobRuntime)
 	if !ok {
 		return fmt.Errorf("memory pipeline atomic runtime is unavailable")
 	}
@@ -214,21 +215,21 @@ func (m *memoryPipelineManager) processJob(ctx context.Context, jobRuntime port.
 	if err != nil {
 		return m.failJob(ctx, jobRuntime, atomicRuntime, job, memoryPipelineJob{}, err)
 	}
-	if job.Status == port.JobPending {
-		if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+	if job.Status == taskrt.JobPending {
+		if err := jobRuntime.UpsertJob(ctx, taskrt.AgentJob{
 			ID:        job.ID,
 			AgentName: job.AgentName,
 			Goal:      job.Goal,
-			Status:    port.JobRunning,
+			Status:    taskrt.JobRunning,
 		}); err != nil {
 			return err
 		}
 	}
-	items, err := jobRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: job.ID})
+	items, err := jobRuntime.ListJobItems(ctx, taskrt.JobItemQuery{JobID: job.ID})
 	if err != nil {
 		return m.failJob(ctx, jobRuntime, atomicRuntime, job, payload, err)
 	}
-	itemStatus := make(map[string]port.AgentJobItem, len(items))
+	itemStatus := make(map[string]taskrt.AgentJobItem, len(items))
 	for _, item := range items {
 		itemStatus[item.ItemID] = item
 	}
@@ -239,26 +240,26 @@ func (m *memoryPipelineManager) processJob(ctx context.Context, jobRuntime port.
 	if err != nil {
 		return m.failJob(ctx, jobRuntime, atomicRuntime, job, payload, err)
 	}
-	items, err = jobRuntime.ListJobItems(ctx, port.JobItemQuery{JobID: job.ID})
+	items, err = jobRuntime.ListJobItems(ctx, taskrt.JobItemQuery{JobID: job.ID})
 	if err != nil {
 		return m.failJob(ctx, jobRuntime, atomicRuntime, job, payload, err)
 	}
-	itemStatus = make(map[string]port.AgentJobItem, len(items))
+	itemStatus = make(map[string]taskrt.AgentJobItem, len(items))
 	for _, item := range items {
 		itemStatus[item.ItemID] = item
 	}
 	if err := m.runPhase(ctx, atomicRuntime, job, payload, itemStatus[memoryPipelinePhase2Item], memoryPipelinePhase2Item, m.runPhase2); err != nil {
 		return m.failJob(ctx, jobRuntime, atomicRuntime, job, payload, err)
 	}
-	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+	if err := jobRuntime.UpsertJob(ctx, taskrt.AgentJob{
 		ID:        job.ID,
 		AgentName: job.AgentName,
 		Goal:      job.Goal,
-		Status:    port.JobCompleted,
+		Status:    taskrt.JobCompleted,
 	}); err != nil {
 		return err
 	}
-	if err := m.reportExternalResult(ctx, atomicRuntime, payload, port.JobCompleted, "memory pipeline completed", ""); err != nil {
+	if err := m.reportExternalResult(ctx, atomicRuntime, payload, taskrt.JobCompleted, "memory pipeline completed", ""); err != nil {
 		return err
 	}
 	return nil
@@ -266,14 +267,14 @@ func (m *memoryPipelineManager) processJob(ctx context.Context, jobRuntime port.
 
 func (m *memoryPipelineManager) runPhase(
 	ctx context.Context,
-	runtime port.AtomicJobRuntime,
-	job port.AgentJob,
+	runtime taskrt.AtomicJobRuntime,
+	job taskrt.AgentJob,
 	payload memoryPipelineJob,
-	item port.AgentJobItem,
+	item taskrt.AgentJobItem,
 	itemID string,
 	run func(context.Context, memoryPipelineJob) (string, error),
 ) error {
-	if item.Status == port.JobCompleted {
+	if item.Status == taskrt.JobCompleted {
 		return nil
 	}
 	if _, err := runtime.MarkJobItemRunning(ctx, job.ID, itemID, m.executor); err != nil {
@@ -281,22 +282,22 @@ func (m *memoryPipelineManager) runPhase(
 	}
 	result, err := run(ctx, payload)
 	if err != nil {
-		if _, reportErr := runtime.ReportJobItemResult(ctx, job.ID, itemID, m.executor, port.JobFailed, "", err.Error()); reportErr != nil {
+		if _, reportErr := runtime.ReportJobItemResult(ctx, job.ID, itemID, m.executor, taskrt.JobFailed, "", err.Error()); reportErr != nil {
 			return fmt.Errorf("%v (report failed: %w)", err, reportErr)
 		}
 		return err
 	}
-	_, err = runtime.ReportJobItemResult(ctx, job.ID, itemID, m.executor, port.JobCompleted, result, "")
+	_, err = runtime.ReportJobItemResult(ctx, job.ID, itemID, m.executor, taskrt.JobCompleted, result, "")
 	return err
 }
 
-func (m *memoryPipelineManager) failJob(ctx context.Context, runtime port.JobRuntime, atomicRuntime port.AtomicJobRuntime, job port.AgentJob, payload memoryPipelineJob, cause error) error {
-	_ = m.reportExternalResult(ctx, atomicRuntime, payload, port.JobFailed, "", cause.Error())
-	if updateErr := runtime.UpsertJob(ctx, port.AgentJob{
+func (m *memoryPipelineManager) failJob(ctx context.Context, runtime taskrt.JobRuntime, atomicRuntime taskrt.AtomicJobRuntime, job taskrt.AgentJob, payload memoryPipelineJob, cause error) error {
+	_ = m.reportExternalResult(ctx, atomicRuntime, payload, taskrt.JobFailed, "", cause.Error())
+	if updateErr := runtime.UpsertJob(ctx, taskrt.AgentJob{
 		ID:        job.ID,
 		AgentName: job.AgentName,
 		Goal:      job.Goal,
-		Status:    port.JobFailed,
+		Status:    taskrt.JobFailed,
 	}); updateErr != nil {
 		return fmt.Errorf("%v (job update failed: %w)", cause, updateErr)
 	}
@@ -313,13 +314,13 @@ func (m *memoryPipelineManager) runPhase1(ctx context.Context, payload memoryPip
 		snapshotPath = buildSnapshotMemoryPath(payload.TargetPath, payload.SourcePath, payload.RequestedAt)
 	}
 	content := buildSnapshotMemoryContent(payload, trace)
-	record, err := m.store.Upsert(ctx, port.MemoryRecord{
+	record, err := m.store.Upsert(ctx, memstore.MemoryRecord{
 		Path:            snapshotPath,
 		Content:         content,
 		Summary:         summarizeMemoryContent(strings.Join(trace.Lines, "\n")),
 		Tags:            append(append([]string{}, payload.Tags...), "snapshot"),
-		Stage:           port.MemoryStageSnapshot,
-		Status:          port.MemoryStatusActive,
+		Stage:           memstore.MemoryStageSnapshot,
+		Status:          memstore.MemoryStatusActive,
 		Group:           payload.TargetPath,
 		Workspace:       payload.Workspace,
 		CWD:             payload.CWD,
@@ -328,8 +329,8 @@ func (m *memoryPipelineManager) runPhase1(ctx context.Context, payload memoryPip
 		SourceID:        payload.JobID,
 		SourcePath:      payload.SourcePath,
 		SourceUpdatedAt: payload.SourceUpdatedAt,
-		Citation: port.MemoryCitation{
-			Entries: []port.MemoryCitationEntry{
+		Citation: memstore.MemoryCitation{
+			Entries: []memstore.MemoryCitationEntry{
 				{
 					Path:      payload.SourcePath,
 					LineStart: 1,
@@ -358,10 +359,10 @@ func (m *memoryPipelineManager) runPhase1(ctx context.Context, payload memoryPip
 }
 
 func (m *memoryPipelineManager) runPhase2(ctx context.Context, payload memoryPipelineJob) (string, error) {
-	snapshots, err := m.store.Search(ctx, port.MemoryQuery{
+	snapshots, err := m.store.Search(ctx, memstore.MemoryQuery{
 		Group:    payload.TargetPath,
-		Stages:   []port.MemoryStage{port.MemoryStageSnapshot},
-		Statuses: []port.MemoryStatus{port.MemoryStatusActive},
+		Stages:   []memstore.MemoryStage{memstore.MemoryStageSnapshot},
+		Statuses: []memstore.MemoryStatus{memstore.MemoryStatusActive},
 		Limit:    12,
 	})
 	if err != nil {
@@ -371,13 +372,13 @@ func (m *memoryPipelineManager) runPhase2(ctx context.Context, payload memoryPip
 		return "", fmt.Errorf("no snapshot memories found for %s", payload.TargetPath)
 	}
 	content, summary, citation, sourceUpdatedAt := buildConsolidatedMemory(payload, snapshots)
-	record, err := m.store.Upsert(ctx, port.MemoryRecord{
+	record, err := m.store.Upsert(ctx, memstore.MemoryRecord{
 		Path:            payload.TargetPath,
 		Content:         content,
 		Summary:         summary,
 		Tags:            append(append([]string{}, payload.Tags...), "consolidated"),
-		Stage:           port.MemoryStageConsolidated,
-		Status:          port.MemoryStatusActive,
+		Stage:           memstore.MemoryStageConsolidated,
+		Status:          memstore.MemoryStatusActive,
 		Group:           payload.TargetPath,
 		Workspace:       payload.Workspace,
 		CWD:             firstNonEmpty(payload.CWD, snapshots[0].CWD),
@@ -406,17 +407,17 @@ func (m *memoryPipelineManager) runPhase2(ctx context.Context, payload memoryPip
 }
 
 func (m *memoryPipelineManager) syncArtifacts(ctx context.Context) error {
-	consolidated, err := m.store.Search(ctx, port.MemoryQuery{
-		Stages:   []port.MemoryStage{port.MemoryStageConsolidated},
-		Statuses: []port.MemoryStatus{port.MemoryStatusActive},
+	consolidated, err := m.store.Search(ctx, memstore.MemoryQuery{
+		Stages:   []memstore.MemoryStage{memstore.MemoryStageConsolidated},
+		Statuses: []memstore.MemoryStatus{memstore.MemoryStatusActive},
 		Limit:    200,
 	})
 	if err != nil {
 		return err
 	}
-	snapshots, err := m.store.Search(ctx, port.MemoryQuery{
-		Stages:   []port.MemoryStage{port.MemoryStageSnapshot},
-		Statuses: []port.MemoryStatus{port.MemoryStatusActive},
+	snapshots, err := m.store.Search(ctx, memstore.MemoryQuery{
+		Stages:   []memstore.MemoryStage{memstore.MemoryStageSnapshot},
+		Statuses: []memstore.MemoryStatus{memstore.MemoryStatusActive},
 		Limit:    60,
 	})
 	if err != nil {
@@ -437,7 +438,7 @@ func (m *memoryPipelineManager) syncArtifacts(ctx context.Context) error {
 	return nil
 }
 
-func (m *memoryPipelineManager) pruneRolloutSummaries(ctx context.Context, snapshots []port.MemoryRecord) error {
+func (m *memoryPipelineManager) pruneRolloutSummaries(ctx context.Context, snapshots []memstore.MemoryRecord) error {
 	files, err := m.ws.ListFiles(ctx, memoryRolloutGlob)
 	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "not found") {
 		return err
@@ -457,7 +458,7 @@ func (m *memoryPipelineManager) pruneRolloutSummaries(ctx context.Context, snaps
 	return nil
 }
 
-func (m *memoryPipelineManager) reportExternalResult(ctx context.Context, runtime port.AtomicJobRuntime, payload memoryPipelineJob, status port.AgentJobStatus, result string, errMsg string) error {
+func (m *memoryPipelineManager) reportExternalResult(ctx context.Context, runtime taskrt.AtomicJobRuntime, payload memoryPipelineJob, status taskrt.AgentJobStatus, result string, errMsg string) error {
 	if strings.TrimSpace(payload.ExternalJobID) == "" || strings.TrimSpace(payload.ExternalItemID) == "" || strings.TrimSpace(payload.ExternalExecutor) == "" {
 		return nil
 	}
@@ -563,7 +564,7 @@ func buildSnapshotMemoryContent(payload memoryPipelineJob, trace *normalizedTrac
 	return b.String()
 }
 
-func buildRolloutSummaryContent(payload memoryPipelineJob, trace *normalizedTrace, record port.MemoryRecord) string {
+func buildRolloutSummaryContent(payload memoryPipelineJob, trace *normalizedTrace, record memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("snapshot_path: " + record.Path + "\n")
 	b.WriteString("target_path: " + payload.TargetPath + "\n")
@@ -578,12 +579,12 @@ func buildRolloutSummaryContent(payload memoryPipelineJob, trace *normalizedTrac
 	return b.String()
 }
 
-func buildConsolidatedMemory(payload memoryPipelineJob, snapshots []port.MemoryRecord) (string, string, port.MemoryCitation, time.Time) {
-	sortMemoryRecords(snapshots, port.MemoryQuery{})
+func buildConsolidatedMemory(payload memoryPipelineJob, snapshots []memstore.MemoryRecord) (string, string, memstore.MemoryCitation, time.Time) {
+	sortMemoryRecords(snapshots, memstore.MemoryQuery{})
 	highlights := make([]string, 0, 16)
 	summaries := make([]string, 0, len(snapshots))
-	citation := port.MemoryCitation{
-		Entries:     make([]port.MemoryCitationEntry, 0, len(snapshots)*2),
+	citation := memstore.MemoryCitation{
+		Entries:     make([]memstore.MemoryCitationEntry, 0, len(snapshots)*2),
 		MemoryPaths: make([]string, 0, len(snapshots)),
 	}
 	var newest time.Time
@@ -658,7 +659,7 @@ func buildConsolidatedMemory(payload memoryPipelineJob, snapshots []port.MemoryR
 	return b.String(), summary, citation, newest
 }
 
-func buildMemoryRegistry(records []port.MemoryRecord) string {
+func buildMemoryRegistry(records []memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("# Memory Registry\n\n")
 	if len(records) == 0 {
@@ -686,7 +687,7 @@ func buildMemoryRegistry(records []port.MemoryRecord) string {
 	return b.String()
 }
 
-func buildMemorySummary(records []port.MemoryRecord) string {
+func buildMemorySummary(records []memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("# Memory Summary\n\n")
 	if len(records) == 0 {
@@ -699,7 +700,7 @@ func buildMemorySummary(records []port.MemoryRecord) string {
 	return b.String()
 }
 
-func buildRawMemories(records []port.MemoryRecord) string {
+func buildRawMemories(records []memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("# Raw Memories\n\n")
 	if len(records) == 0 {

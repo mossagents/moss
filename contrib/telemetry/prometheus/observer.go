@@ -1,25 +1,25 @@
-// Package prometheus provides a port.Observer implementation that exports
+// Package prometheus provides a kobs.Observer implementation that exports
 // kernel events as Prometheus metrics.
 //
 // Usage:
 //
 //	obs, err := prometheus.New(prom.DefaultRegisterer)
 //	if err != nil { ... }
-//	kernel.SetObserver(port.JoinObservers(existing, obs))
+//	kernel.SetObserver(kobs.JoinObservers(existing, obs))
 package prometheus
 
 import (
 	"context"
-
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
-// Observer implements port.Observer by recording kernel events as Prometheus metrics.
-// It embeds port.NoOpObserver so that only metrics-relevant methods are overridden;
+// Observer implements kobs.Observer by recording kernel events as Prometheus metrics.
+// It embeds kobs.NoOpObserver so that only metrics-relevant methods are overridden;
 // fine-grained execution events (OnExecutionEvent) are silently discarded.
 type Observer struct {
-	port.NoOpObserver
+	kobs.NoOpObserver
 
 	llmCallsTotal    *prom.CounterVec
 	llmDurationSecs  *prom.HistogramVec
@@ -105,7 +105,7 @@ func boolLabel(v bool) string {
 	return "false"
 }
 
-func (o *Observer) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
+func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	o.llmCallsTotal.WithLabelValues(e.Model, e.StopReason, boolLabel(e.Error != nil)).Inc()
 	o.llmDurationSecs.WithLabelValues(e.Model).Observe(e.Duration.Seconds())
 	if e.Usage.PromptTokens > 0 {
@@ -119,16 +119,16 @@ func (o *Observer) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 	}
 }
 
-func (o *Observer) OnToolCall(_ context.Context, e port.ToolCallEvent) {
+func (o *Observer) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	o.toolCallsTotal.WithLabelValues(e.ToolName, e.Risk, boolLabel(e.Error != nil)).Inc()
 	o.toolDurationSecs.WithLabelValues(e.ToolName, e.Risk).Observe(e.Duration.Seconds())
 }
 
-func (o *Observer) OnSessionEvent(_ context.Context, e port.SessionEvent) {
+func (o *Observer) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
 	o.sessionsTotal.WithLabelValues(e.Type).Inc()
 }
 
-func (o *Observer) OnApproval(_ context.Context, e port.ApprovalEvent) {
+func (o *Observer) OnApproval(_ context.Context, e intr.ApprovalEvent) {
 	decision := "pending"
 	if e.Decision != nil {
 		if e.Decision.Approved {
@@ -140,6 +140,6 @@ func (o *Observer) OnApproval(_ context.Context, e port.ApprovalEvent) {
 	o.approvalsTotal.WithLabelValues(string(e.Request.Kind), decision).Inc()
 }
 
-func (o *Observer) OnError(_ context.Context, e port.ErrorEvent) {
+func (o *Observer) OnError(_ context.Context, e kobs.ErrorEvent) {
 	o.errorsTotal.WithLabelValues(e.Phase).Inc()
 }

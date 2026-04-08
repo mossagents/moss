@@ -1,11 +1,10 @@
 package product
 
 import (
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"testing"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestApplyConfigSetAndUnset(t *testing.T) {

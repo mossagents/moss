@@ -3,13 +3,12 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
-
-	"gopkg.in/yaml.v3"
 )
 
 var appName = "moss"

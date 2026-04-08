@@ -2,10 +2,9 @@ package session
 
 import (
 	"context"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	"sort"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // LineageKind 表示线程/检查点目录里的统一引用类型。
@@ -61,7 +60,7 @@ type CheckpointRef struct {
 
 // ForkSource 统一表示从 session/checkpoint fork 的来源。
 type ForkSource struct {
-	Kind         port.ForkSourceKind `json:"kind"`
+	Kind         ckpt.ForkSourceKind `json:"kind"`
 	SourceID     string              `json:"source_id"`
 	SessionID    string              `json:"session_id,omitempty"`
 	CheckpointID string              `json:"checkpoint_id,omitempty"`
@@ -90,13 +89,13 @@ type SessionCatalog interface {
 	ListThreads(ctx context.Context, query ThreadQuery) ([]ThreadRef, error)
 	GetThread(ctx context.Context, sessionID string) (*ThreadRef, error)
 	ListCheckpoints(ctx context.Context, query CheckpointQuery) ([]CheckpointRef, error)
-	ResolveForkSource(ctx context.Context, kind port.ForkSourceKind, id string) (*ForkSource, error)
+	ResolveForkSource(ctx context.Context, kind ckpt.ForkSourceKind, id string) (*ForkSource, error)
 }
 
 // Catalog 使用 SessionStore/CheckpointStore 适配统一目录查询。
 type Catalog struct {
 	Store       SessionStore
-	Checkpoints port.CheckpointStore
+	Checkpoints ckpt.CheckpointStore
 }
 
 func (c Catalog) ListThreads(ctx context.Context, query ThreadQuery) ([]ThreadRef, error) {
@@ -152,7 +151,7 @@ func (c Catalog) ListCheckpoints(ctx context.Context, query CheckpointQuery) ([]
 		return nil, ErrNotSupported
 	}
 	var (
-		records []port.CheckpointRecord
+		records []ckpt.CheckpointRecord
 		err     error
 	)
 	if strings.TrimSpace(query.SessionID) != "" {
@@ -179,21 +178,21 @@ func (c Catalog) ListCheckpoints(ctx context.Context, query CheckpointQuery) ([]
 	return out, nil
 }
 
-func (c Catalog) ResolveForkSource(ctx context.Context, kind port.ForkSourceKind, id string) (*ForkSource, error) {
+func (c Catalog) ResolveForkSource(ctx context.Context, kind ckpt.ForkSourceKind, id string) (*ForkSource, error) {
 	switch kind {
-	case port.ForkSourceSession:
+	case ckpt.ForkSourceSession:
 		thread, err := c.GetThread(ctx, id)
 		if err != nil || thread == nil {
 			return nil, err
 		}
 		return &ForkSource{
-			Kind:      port.ForkSourceSession,
+			Kind:      ckpt.ForkSourceSession,
 			SourceID:  thread.SessionID,
 			SessionID: thread.SessionID,
 			Label:     firstNonEmpty(thread.Preview, thread.Goal, thread.SessionID),
 			Lineage:   append([]LineageRef(nil), thread.Lineage...),
 		}, nil
-	case port.ForkSourceCheckpoint:
+	case ckpt.ForkSourceCheckpoint:
 		if c.Checkpoints == nil {
 			return nil, ErrNotSupported
 		}
@@ -203,7 +202,7 @@ func (c Catalog) ResolveForkSource(ctx context.Context, kind port.ForkSourceKind
 		}
 		ref := CheckpointRefFromRecord(*record)
 		return &ForkSource{
-			Kind:         port.ForkSourceCheckpoint,
+			Kind:         ckpt.ForkSourceCheckpoint,
 			SourceID:     ref.ID,
 			SessionID:    ref.SessionID,
 			CheckpointID: ref.ID,
@@ -288,7 +287,7 @@ func ThreadRefFromSession(sess *Session) ThreadRef {
 	return ThreadRefFromSummary(summary)
 }
 
-func CheckpointRefFromRecord(record port.CheckpointRecord) CheckpointRef {
+func CheckpointRefFromRecord(record ckpt.CheckpointRecord) CheckpointRef {
 	lineage := make([]LineageRef, 0, len(record.Lineage)+1)
 	for _, ref := range record.Lineage {
 		lineage = append(lineage, LineageRefFromCheckpointLineage(ref, record.SessionID))
@@ -309,12 +308,12 @@ func CheckpointRefFromRecord(record port.CheckpointRecord) CheckpointRef {
 	}
 }
 
-func LineageRefFromCheckpointLineage(ref port.CheckpointLineageRef, sessionID string) LineageRef {
+func LineageRefFromCheckpointLineage(ref ckpt.CheckpointLineageRef, sessionID string) LineageRef {
 	kind := LineageKindCheckpoint
 	switch ref.Kind {
-	case port.CheckpointLineageSession:
+	case ckpt.CheckpointLineageSession:
 		kind = LineageKindSession
-	case port.CheckpointLineageReplay:
+	case ckpt.CheckpointLineageReplay:
 		kind = LineageKindReplay
 	}
 	return LineageRef{

@@ -2,29 +2,28 @@ package main
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"sync"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // sessionIDKey is the context key used to pass session ID to WailsUserIO.
 type sessionIDKey struct{}
 
-// WailsUserIO 实现 port.UserIO，通过 Wails 事件系统与桌面前端通信。
+// WailsUserIO 实现 intr.UserIO，通过 Wails 事件系统与桌面前端通信。
 type WailsUserIO struct {
 	mu    sync.Mutex
-	askCh chan port.InputResponse
+	askCh chan intr.InputResponse
 }
 
-var _ port.UserIO = (*WailsUserIO)(nil)
+var _ intr.UserIO = (*WailsUserIO)(nil)
 
 func NewWailsUserIO() *WailsUserIO {
 	return &WailsUserIO{
-		askCh: make(chan port.InputResponse, 1),
+		askCh: make(chan intr.InputResponse, 1),
 	}
 }
 
-func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
+func (w *WailsUserIO) Send(ctx context.Context, msg intr.OutputMessage) error {
 	// Session ID is carried per-run via context — no shared mutable state.
 	sid, _ := ctx.Value(sessionIDKey{}).(string)
 
@@ -36,19 +35,19 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 	}
 
 	switch msg.Type {
-	case port.OutputText:
+	case intr.OutputText:
 		eventName = "chat:text"
-	case port.OutputStream:
+	case intr.OutputStream:
 		eventName = "chat:stream"
-	case port.OutputStreamEnd:
+	case intr.OutputStreamEnd:
 		eventName = "chat:stream_end"
-	case port.OutputReasoning:
+	case intr.OutputReasoning:
 		eventName = "chat:thinking"
-	case port.OutputProgress:
+	case intr.OutputProgress:
 		eventName = "chat:progress"
-	case port.OutputToolStart:
+	case intr.OutputToolStart:
 		eventName = "chat:tool_start"
-	case port.OutputToolResult:
+	case intr.OutputToolResult:
 		eventName = "chat:tool_result"
 		if isErr, ok := msg.Meta["is_error"].(bool); ok {
 			data["is_error"] = isErr
@@ -61,7 +60,7 @@ func (w *WailsUserIO) Send(ctx context.Context, msg port.OutputMessage) error {
 	return nil
 }
 
-func (w *WailsUserIO) Ask(ctx context.Context, req port.InputRequest) (port.InputResponse, error) {
+func (w *WailsUserIO) Ask(ctx context.Context, req intr.InputRequest) (intr.InputResponse, error) {
 	sid, _ := ctx.Value(sessionIDKey{}).(string)
 
 	emitEvent("chat:ask", map[string]any{
@@ -75,13 +74,13 @@ func (w *WailsUserIO) Ask(ctx context.Context, req port.InputRequest) (port.Inpu
 
 	select {
 	case <-ctx.Done():
-		return port.InputResponse{}, ctx.Err()
+		return intr.InputResponse{}, ctx.Err()
 	case resp := <-w.askCh:
 		return resp, nil
 	}
 }
 
-func (w *WailsUserIO) RespondToAsk(resp port.InputResponse) {
+func (w *WailsUserIO) RespondToAsk(resp intr.InputResponse) {
 	select {
 	case w.askCh <- resp:
 	default:

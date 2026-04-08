@@ -3,9 +3,8 @@ package builtins
 import (
 	"context"
 	"fmt"
-
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -40,19 +39,19 @@ const identityKey = "__identity__"
 
 // SetIdentity 将认证身份存入 Session 的 State。
 // 通常在 OnSessionStart 阶段由认证 middleware 调用。
-func SetIdentity(state map[string]any, id *port.Identity) {
+func SetIdentity(state map[string]any, id *intr.Identity) {
 	if state != nil {
 		state[identityKey] = id
 	}
 }
 
 // GetIdentity 从 Session 的 State 中取出认证身份。
-func GetIdentity(state map[string]any) *port.Identity {
+func GetIdentity(state map[string]any) *intr.Identity {
 	if state == nil {
 		return nil
 	}
 	if v, ok := state[identityKey]; ok {
-		if id, ok := v.(*port.Identity); ok {
+		if id, ok := v.(*intr.Identity); ok {
 			return id
 		}
 	}
@@ -112,7 +111,7 @@ func RBAC(rules []RBACRule) middleware.Middleware {
 // AuthMiddleware 在 OnSessionStart 阶段执行认证。
 // 从 Session.Config.Metadata["auth_token"] 取出 token 进行认证，
 // 认证成功后将 Identity 存入 Session.State。
-func AuthMiddleware(auth port.Authenticator) middleware.Middleware {
+func AuthMiddleware(auth intr.Authenticator) middleware.Middleware {
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		if mc.Phase != middleware.OnSessionStart {
 			return next(ctx)

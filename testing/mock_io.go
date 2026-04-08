@@ -2,17 +2,16 @@ package testing
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"sync"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // RecorderIO 记录所有 Send/Ask 调用的 UserIO 测试桩。
 type RecorderIO struct {
 	mu      sync.Mutex
-	Sent    []port.OutputMessage
-	Asked   []port.InputRequest
-	AskFunc func(port.InputRequest) (port.InputResponse, error)
+	Sent    []intr.OutputMessage
+	Asked   []intr.InputRequest
+	AskFunc func(intr.InputRequest) (intr.InputResponse, error)
 }
 
 // NewRecorderIO 创建记录器 IO。
@@ -21,7 +20,7 @@ func NewRecorderIO() *RecorderIO {
 }
 
 // Send 记录输出消息。
-func (r *RecorderIO) Send(_ context.Context, msg port.OutputMessage) error {
+func (r *RecorderIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Sent = append(r.Sent, msg)
@@ -29,7 +28,7 @@ func (r *RecorderIO) Send(_ context.Context, msg port.OutputMessage) error {
 }
 
 // Ask 记录输入请求并返回预设响应。
-func (r *RecorderIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+func (r *RecorderIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.Asked = append(r.Asked, req)
@@ -37,5 +36,5 @@ func (r *RecorderIO) Ask(_ context.Context, req port.InputRequest) (port.InputRe
 		return r.AskFunc(req)
 	}
 	// 默认批准所有 Confirm 请求
-	return port.InputResponse{Approved: true}, nil
+	return intr.InputResponse{Approved: true}, nil
 }

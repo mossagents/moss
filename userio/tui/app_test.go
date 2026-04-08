@@ -2,22 +2,21 @@ package tui
 
 import (
 	"context"
+	"github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/session"
+	kt "github.com/mossagents/moss/testing"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	kt "github.com/mossagents/moss/testing"
 )
 
 func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 	k := kernel.New(
-		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithUserIO(&intr.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {
@@ -35,7 +34,7 @@ func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 
 func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 	k := kernel.New(
-		kernel.WithUserIO(&port.NoOpIO{}),
+		kernel.WithUserIO(&intr.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {

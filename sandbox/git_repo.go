@@ -3,11 +3,10 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // GitRepoStateCapture 是本地 git 仓库的结构化状态捕获实现。
@@ -23,12 +22,12 @@ func NewGitRepoStateCapture(root string) *GitRepoStateCapture {
 	}
 }
 
-func (c *GitRepoStateCapture) Capture(ctx context.Context) (*port.RepoState, error) {
+func (c *GitRepoStateCapture) Capture(ctx context.Context) (*kws.RepoState, error) {
 	runner := gitRunner{root: c.root, timeout: c.timeout}
 	repoRoot, err := runner.run(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, port.ErrRepoUnavailable
+			return nil, kws.ErrRepoUnavailable
 		}
 		return nil, err
 	}
@@ -45,7 +44,7 @@ func (c *GitRepoStateCapture) Capture(ctx context.Context) (*port.RepoState, err
 		return nil, fmt.Errorf("capture status: %w", err)
 	}
 
-	state := &port.RepoState{
+	state := &kws.RepoState{
 		RepoRoot:   filepath.Clean(strings.TrimSpace(repoRoot)),
 		HeadSHA:    strings.TrimSpace(head),
 		Branch:     strings.TrimSpace(branch),
@@ -57,7 +56,7 @@ func (c *GitRepoStateCapture) Capture(ctx context.Context) (*port.RepoState, err
 	return state, nil
 }
 
-func parsePorcelain(state *port.RepoState, raw string) {
+func parsePorcelain(state *kws.RepoState, raw string) {
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if len(line) < 3 {
@@ -77,13 +76,13 @@ func parsePorcelain(state *port.RepoState, raw string) {
 			continue
 		}
 		if code[0] != ' ' {
-			state.Staged = append(state.Staged, port.RepoFileState{
+			state.Staged = append(state.Staged, kws.RepoFileState{
 				Path:   path,
 				Status: string(code[0]),
 			})
 		}
 		if code[1] != ' ' {
-			state.Unstaged = append(state.Unstaged, port.RepoFileState{
+			state.Unstaged = append(state.Unstaged, kws.RepoFileState{
 				Path:   path,
 				Status: string(code[1]),
 			})

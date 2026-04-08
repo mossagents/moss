@@ -2,10 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/runtime"
+	"strings"
 )
 
 type scheduleBrowserState struct {
@@ -140,7 +139,7 @@ func (m chatModel) renderScheduleBrowser(width int) string {
 	}
 	var sb strings.Builder
 	if len(m.scheduleBrowser.items) == 0 {
-		sb.WriteString(mutedStyle.Render("No scheduled jobs."))
+		sb.WriteString(mutedStyle.Render("No scheduled jkobs."))
 		sb.WriteString("\n")
 	} else {
 		for i, item := range m.scheduleBrowser.items {

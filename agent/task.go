@@ -3,44 +3,44 @@ package agent
 import (
 	"context"
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // TaskStatus 表示异步委派任务的状态。
-type TaskStatus = port.TaskStatus
+type TaskStatus = taskrt.TaskStatus
 
 const (
-	TaskPending   TaskStatus = port.TaskPending
-	TaskRunning   TaskStatus = port.TaskRunning
-	TaskCompleted TaskStatus = port.TaskCompleted
-	TaskFailed    TaskStatus = port.TaskFailed
-	TaskCancelled TaskStatus = port.TaskCancelled
+	TaskPending   TaskStatus = taskrt.TaskPending
+	TaskRunning   TaskStatus = taskrt.TaskRunning
+	TaskCompleted TaskStatus = taskrt.TaskCompleted
+	TaskFailed    TaskStatus = taskrt.TaskFailed
+	TaskCancelled TaskStatus = taskrt.TaskCancelled
 )
 
 // Task 表示一个异步委派任务。
 type Task struct {
-	ID              string          `json:"id"`
-	AgentName       string          `json:"agent_name"`
-	Goal            string          `json:"goal"`
-	Status          TaskStatus      `json:"status"`
-	Active          bool            `json:"active,omitempty"`
-	SessionID       string          `json:"session_id,omitempty"`
-	ParentSessionID string          `json:"parent_session_id,omitempty"`
-	WorkspaceID     string          `json:"workspace_id,omitempty"`
-	JobID           string          `json:"job_id,omitempty"`
-	JobItemID       string          `json:"job_item_id,omitempty"`
-	Result          string          `json:"result,omitempty"`
-	Error           string          `json:"error,omitempty"`
-	Tokens          port.TokenUsage `json:"tokens,omitempty"`
-	Revision        int64           `json:"revision,omitempty"`
-	CreatedAt       time.Time       `json:"created_at,omitempty"`
-	UpdatedAt       time.Time       `json:"updated_at,omitempty"`
+	ID              string         `json:"id"`
+	AgentName       string         `json:"agent_name"`
+	Goal            string         `json:"goal"`
+	Status          TaskStatus     `json:"status"`
+	Active          bool           `json:"active,omitempty"`
+	SessionID       string         `json:"session_id,omitempty"`
+	ParentSessionID string         `json:"parent_session_id,omitempty"`
+	WorkspaceID     string         `json:"workspace_id,omitempty"`
+	JobID           string         `json:"job_id,omitempty"`
+	JobItemID       string         `json:"job_item_id,omitempty"`
+	Result          string         `json:"result,omitempty"`
+	Error           string         `json:"error,omitempty"`
+	Tokens          mdl.TokenUsage `json:"tokens,omitempty"`
+	Revision        int64          `json:"revision,omitempty"`
+	CreatedAt       time.Time      `json:"created_at,omitempty"`
+	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
 }
 
 // TaskTracker 管理异步委派任务的状态。
@@ -49,7 +49,7 @@ type TaskTracker struct {
 	tasks      map[string]*Task
 	cancels    map[string]context.CancelFunc
 	rev        map[string]int64
-	runtime    port.TaskRuntime
+	runtime    taskrt.TaskRuntime
 	watchers   map[string]map[int64]chan Task
 	watcherSeq int64
 }
@@ -65,7 +65,7 @@ func NewTaskTracker() *TaskTracker {
 }
 
 // NewTaskTrackerWithRuntime 创建带 TaskRuntime 镜像的 TaskTracker。
-func NewTaskTrackerWithRuntime(runtime port.TaskRuntime) *TaskTracker {
+func NewTaskTrackerWithRuntime(runtime taskrt.TaskRuntime) *TaskTracker {
 	tt := NewTaskTracker()
 	tt.runtime = runtime
 	tt.hydrate(context.Background())
@@ -171,16 +171,16 @@ func (t *TaskTracker) List(filter TaskFilter) []*Task {
 }
 
 // Complete 将任务标记为完成。
-func (t *TaskTracker) Complete(id, result string, tokens port.TokenUsage) {
+func (t *TaskTracker) Complete(id, result string, tokens mdl.TokenUsage) {
 	t.completeIf(id, 0, result, tokens)
 }
 
 // CompleteIf 在 revision 匹配时将任务标记为完成。
-func (t *TaskTracker) CompleteIf(id string, revision int64, result string, tokens port.TokenUsage) {
+func (t *TaskTracker) CompleteIf(id string, revision int64, result string, tokens mdl.TokenUsage) {
 	t.completeIf(id, revision, result, tokens)
 }
 
-func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens port.TokenUsage) {
+func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens mdl.TokenUsage) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if task, ok := t.tasks[id]; ok {
@@ -317,11 +317,11 @@ func (t *TaskTracker) mirror(task Task) {
 	if t.runtime == nil {
 		return
 	}
-	_ = t.runtime.UpsertTask(context.Background(), port.TaskRecord{
+	_ = t.runtime.UpsertTask(context.Background(), taskrt.TaskRecord{
 		ID:              task.ID,
 		AgentName:       task.AgentName,
 		Goal:            task.Goal,
-		Status:          port.TaskStatus(task.Status),
+		Status:          taskrt.TaskStatus(task.Status),
 		ClaimedBy:       task.AgentName,
 		WorkspaceID:     task.WorkspaceID,
 		SessionID:       task.SessionID,
@@ -333,7 +333,7 @@ func (t *TaskTracker) mirror(task Task) {
 		CreatedAt:       task.CreatedAt,
 		UpdatedAt:       task.UpdatedAt,
 	})
-	jobRuntime, ok := t.runtime.(port.JobRuntime)
+	jobRuntime, ok := t.runtime.(taskrt.JobRuntime)
 	if !ok {
 		return
 	}
@@ -342,7 +342,7 @@ func (t *TaskTracker) mirror(task Task) {
 	if jobID == "" {
 		return
 	}
-	_ = jobRuntime.UpsertJob(context.Background(), port.AgentJob{
+	_ = jobRuntime.UpsertJob(context.Background(), taskrt.AgentJob{
 		ID:        jobID,
 		AgentName: task.AgentName,
 		Goal:      task.Goal,
@@ -353,7 +353,7 @@ func (t *TaskTracker) mirror(task Task) {
 	if itemID == "" {
 		return
 	}
-	_ = jobRuntime.UpsertJobItem(context.Background(), port.AgentJobItem{
+	_ = jobRuntime.UpsertJobItem(context.Background(), taskrt.AgentJobItem{
 		JobID:     jobID,
 		ItemID:    itemID,
 		Status:    jobStatusFromTask(task.Status),
@@ -369,14 +369,14 @@ func (t *TaskTracker) hydrate(ctx context.Context) {
 	if t.runtime == nil {
 		return
 	}
-	records, err := t.runtime.ListTasks(ctx, port.TaskQuery{})
+	records, err := t.runtime.ListTasks(ctx, taskrt.TaskQuery{})
 	if err != nil {
 		return
 	}
-	var jobs map[string]port.AgentJob
-	if jobRuntime, ok := t.runtime.(port.JobRuntime); ok {
-		if listed, err := jobRuntime.ListJobs(ctx, port.JobQuery{}); err == nil {
-			jobs = make(map[string]port.AgentJob, len(listed))
+	var jobs map[string]taskrt.AgentJob
+	if jobRuntime, ok := t.runtime.(taskrt.JobRuntime); ok {
+		if listed, err := jobRuntime.ListJobs(ctx, taskrt.JobQuery{}); err == nil {
+			jobs = make(map[string]taskrt.AgentJob, len(listed))
 			for _, job := range listed {
 				jobs[job.ID] = job
 			}
@@ -431,18 +431,18 @@ func assignTaskJobIDs(task *Task, existing *Task, nextRev int64) {
 	}
 }
 
-func jobStatusFromTask(status TaskStatus) port.AgentJobStatus {
+func jobStatusFromTask(status TaskStatus) taskrt.AgentJobStatus {
 	switch status {
 	case TaskRunning:
-		return port.JobRunning
+		return taskrt.JobRunning
 	case TaskCompleted:
-		return port.JobCompleted
+		return taskrt.JobCompleted
 	case TaskFailed:
-		return port.JobFailed
+		return taskrt.JobFailed
 	case TaskCancelled:
-		return port.JobCancelled
+		return taskrt.JobCancelled
 	default:
-		return port.JobPending
+		return taskrt.JobPending
 	}
 }
 

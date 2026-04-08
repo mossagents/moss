@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"strings"
-
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	mosstui "github.com/mossagents/moss/userio/tui"
+	"os"
+	"strings"
 )
 
 func launchTUI(cfg *config) error {
@@ -38,11 +39,11 @@ func launchTUI(cfg *config) error {
 		APIKey:           flags.APIKey,
 		BaseObserver:     cfg.observer,
 		InitialSessionID: cfg.resumeSessionID,
-		BuildRunTraceObserver: func() (*product.RunTraceRecorder, port.Observer) {
+		BuildRunTraceObserver: func() (*product.RunTraceRecorder, kobs.Observer) {
 			recorder := product.NewRunTraceRecorder()
 			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
@@ -144,15 +145,15 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	}
 	var recorder *product.RecordingIO
 	traceRecorder := product.NewRunTraceRecorder()
-	var userIO port.UserIO
+	var userIO intr.UserIO
 	if cfg.execJSON {
 		recorder = product.NewRecordingIO(cfg.approvalMode)
 		userIO = recorder
 	} else {
-		userIO = port.NewConsoleIO()
+		userIO = intr.NewConsoleIO()
 	}
 	traceObserver := product.NewPricingObserver(cfg.pricingCatalog, traceRecorder)
-	k, resolved, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, port.JoinObservers(cfg.observer, traceObserver))
+	k, resolved, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, kobs.JoinObservers(cfg.observer, traceObserver))
 	if err != nil {
 		report.Error = err.Error()
 		return report, err
@@ -197,7 +198,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		return report, fmt.Errorf("create session: %w", err)
 	}
 	report.SessionID = sess.ID
-	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(cfg.prompt)}})
+	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(cfg.prompt)}})
 
 	result, err := k.Run(ctx, sess)
 	if recorder != nil {

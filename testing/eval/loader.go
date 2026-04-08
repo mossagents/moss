@@ -2,11 +2,10 @@ package eval
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // LoadCase 从 YAML 文件加载单个 EvalCase。

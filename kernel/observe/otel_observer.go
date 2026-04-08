@@ -4,13 +4,10 @@ package observe
 import (
 	"context"
 	"fmt"
-	"time"
-
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-
-	"github.com/mossagents/moss/kernel/port"
+	"time"
 )
 
 // OTelObserver creates OTel spans from kernel Observer events.
@@ -20,7 +17,7 @@ import (
 // Users are responsible for configuring a TracerProvider (e.g. Jaeger, OTLP, Zipkin).
 // Wire it in via otel.SetTracerProvider before creating this observer.
 type OTelObserver struct {
-	port.NoOpObserver
+	NoOpObserver
 	tracer trace.Tracer
 }
 
@@ -37,7 +34,7 @@ func NewOTelObserver(tp trace.TracerProvider) *OTelObserver {
 }
 
 // OnLLMCall creates a backdated OTel span for the completed LLM call.
-func (o *OTelObserver) OnLLMCall(ctx context.Context, e port.LLMCallEvent) {
+func (o *OTelObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 	startTime := e.StartedAt
 	if startTime.IsZero() {
 		startTime = time.Now().Add(-e.Duration)
@@ -65,7 +62,7 @@ func (o *OTelObserver) OnLLMCall(ctx context.Context, e port.LLMCallEvent) {
 }
 
 // OnToolCall creates a backdated OTel span for the completed tool call.
-func (o *OTelObserver) OnToolCall(ctx context.Context, e port.ToolCallEvent) {
+func (o *OTelObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
 	startTime := e.StartedAt
 	if startTime.IsZero() {
 		startTime = time.Now().Add(-e.Duration)
@@ -89,7 +86,7 @@ func (o *OTelObserver) OnToolCall(ctx context.Context, e port.ToolCallEvent) {
 }
 
 // OnSessionEvent creates a span event for session lifecycle changes.
-func (o *OTelObserver) OnSessionEvent(ctx context.Context, e port.SessionEvent) {
+func (o *OTelObserver) OnSessionEvent(ctx context.Context, e SessionEvent) {
 	now := time.Now()
 	_, span := o.tracer.Start(ctx, fmt.Sprintf("moss.session.%s", e.Type),
 		trace.WithTimestamp(now),
@@ -103,7 +100,7 @@ func (o *OTelObserver) OnSessionEvent(ctx context.Context, e port.SessionEvent) 
 }
 
 // OnError creates a span event for unexpected errors.
-func (o *OTelObserver) OnError(ctx context.Context, e port.ErrorEvent) {
+func (o *OTelObserver) OnError(ctx context.Context, e ErrorEvent) {
 	now := time.Now()
 	_, span := o.tracer.Start(ctx, "moss.error",
 		trace.WithTimestamp(now),
@@ -121,5 +118,5 @@ func (o *OTelObserver) OnError(ctx context.Context, e port.ErrorEvent) {
 	span.End(trace.WithTimestamp(now))
 }
 
-// ensure OTelObserver satisfies port.Observer at compile time
-var _ port.Observer = (*OTelObserver)(nil)
+// ensure OTelObserver satisfies Observer at compile time
+var _ Observer = (*OTelObserver)(nil)

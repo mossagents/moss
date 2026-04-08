@@ -4,15 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 	"slices"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/appkit/runtime"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 type notificationProgressMsg struct {
@@ -352,7 +352,7 @@ func summarizeTimelineToolResult(toolName, content string) string {
 	return truncateDisplayWidth(firstNonEmptyLine(trimmed), 72)
 }
 
-func summarizeTimelineApproval(req *port.ApprovalRequest) string {
+func summarizeTimelineApproval(req *intr.ApprovalRequest) string {
 	if req == nil {
 		return "approval required"
 	}
@@ -415,14 +415,14 @@ func progressPhaseLabel(phase string) string {
 }
 
 type executionProgressObserver struct {
-	port.NoOpObserver
+	kobs.NoOpObserver
 	bridge    *BridgeIO
 	sessionID string
 	mu        sync.Mutex
 	state     executionProgressState
 }
 
-func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) port.Observer {
+func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) kobs.Observer {
 	if bridge == nil || sess == nil || strings.TrimSpace(sess.ID) == "" {
 		return nil
 	}
@@ -436,7 +436,7 @@ func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) port.
 	}
 }
 
-func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event port.ExecutionEvent) {
+func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event kobs.ExecutionEvent) {
 	if o == nil || o.bridge == nil || strings.TrimSpace(event.SessionID) != o.sessionID {
 		return
 	}
@@ -447,7 +447,7 @@ func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event po
 	o.bridge.SendProgress(snapshot, false)
 }
 
-func foldExecutionProgressEvent(current executionProgressState, event port.ExecutionEvent) executionProgressState {
+func foldExecutionProgressEvent(current executionProgressState, event kobs.ExecutionEvent) executionProgressState {
 	next := current
 	if id := strings.TrimSpace(event.SessionID); id != "" {
 		next.SessionID = id
@@ -456,7 +456,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 	if ts.IsZero() {
 		ts = time.Now().UTC()
 	}
-	if next.StartedAt.IsZero() && event.Type != port.ExecutionRunCompleted && event.Type != port.ExecutionRunFailed && event.Type != port.ExecutionRunCancelled {
+	if next.StartedAt.IsZero() && event.Type != kobs.ExecutionRunCompleted && event.Type != kobs.ExecutionRunFailed && event.Type != kobs.ExecutionRunCancelled {
 		next.StartedAt = ts
 	}
 	next.UpdatedAt = ts
@@ -464,13 +464,13 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		next.MaxSteps = v
 	}
 	switch event.Type {
-	case port.ExecutionRunStarted:
+	case kobs.ExecutionRunStarted:
 		next.Status = "running"
 		next.Phase = "starting"
 		next.Message = "run started"
 		next.ToolName = ""
 		next.StartedAt = ts
-	case port.ExecutionIterationStarted:
+	case kobs.ExecutionIterationStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -478,7 +478,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 			next.Iteration = v
 		}
 		next.Message = fmt.Sprintf("iteration %d started", maxInt(next.Iteration, 1))
-	case port.ExecutionLLMStarted:
+	case kobs.ExecutionLLMStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -487,7 +487,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		} else {
 			next.Message = "calling model"
 		}
-	case port.ExecutionToolStarted:
+	case kobs.ExecutionToolStarted:
 		next.Status = "running"
 		next.Phase = "tools"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -496,7 +496,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		} else {
 			next.Message = "running tool"
 		}
-	case port.ExecutionApprovalRequest:
+	case kobs.ExecutionApprovalRequest:
 		next.Status = "waiting"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -507,7 +507,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		} else {
 			next.Message = "approval required"
 		}
-	case port.ExecutionApprovalResolved:
+	case kobs.ExecutionApprovalResolved:
 		next.Status = "running"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -518,7 +518,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		} else {
 			next.Message = "approval resolved"
 		}
-	case port.ExecutionIterationProgress:
+	case kobs.ExecutionIterationProgress:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -543,7 +543,7 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		default:
 			next.Message = "iteration updated"
 		}
-	case port.ExecutionRunCompleted:
+	case kobs.ExecutionRunCompleted:
 		next.Status = "completed"
 		next.Phase = "completed"
 		next.ToolName = ""
@@ -557,12 +557,12 @@ func foldExecutionProgressEvent(current executionProgressState, event port.Execu
 		default:
 			next.Message = "run completed"
 		}
-	case port.ExecutionRunFailed:
+	case kobs.ExecutionRunFailed:
 		next.Status = "failed"
 		next.Phase = "failed"
 		next.ToolName = ""
 		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run failed")
-	case port.ExecutionRunCancelled:
+	case kobs.ExecutionRunCancelled:
 		next.Status = "cancelled"
 		next.Phase = "cancelled"
 		next.ToolName = ""
@@ -610,10 +610,10 @@ func latestRunEntries(items []runtime.StateEntry) []runtime.StateEntry {
 	for _, item := range items {
 		collected = append(collected, item)
 		typ := stateEntryEventType(item)
-		if typ == port.ExecutionRunStarted {
+		if typ == kobs.ExecutionRunStarted {
 			break
 		}
-		if typ == port.ExecutionIterationStarted || typ == port.ExecutionIterationProgress || typ == port.ExecutionRunCompleted || typ == port.ExecutionRunFailed || typ == port.ExecutionRunCancelled {
+		if typ == kobs.ExecutionIterationStarted || typ == kobs.ExecutionIterationProgress || typ == kobs.ExecutionRunCompleted || typ == kobs.ExecutionRunFailed || typ == kobs.ExecutionRunCancelled {
 			sawProgress = true
 		}
 	}
@@ -634,9 +634,9 @@ type stateEntryExecutionMetadata struct {
 	Data        map[string]any `json:"data"`
 }
 
-func executionEventFromStateEntry(entry runtime.StateEntry) (port.ExecutionEvent, bool) {
+func executionEventFromStateEntry(entry runtime.StateEntry) (kobs.ExecutionEvent, bool) {
 	if entry.Kind != runtime.StateKindExecutionEvent {
-		return port.ExecutionEvent{}, false
+		return kobs.ExecutionEvent{}, false
 	}
 	meta := stateEntryExecutionMetadata{}
 	if len(entry.Metadata) > 0 {
@@ -647,35 +647,35 @@ func executionEventFromStateEntry(entry runtime.StateEntry) (port.ExecutionEvent
 		eventType = string(stateEntryEventType(entry))
 	}
 	if eventType == "" {
-		return port.ExecutionEvent{}, false
+		return kobs.ExecutionEvent{}, false
 	}
 	ts := entry.SortTime.UTC()
 	if ts.IsZero() {
 		ts = firstTime(entry.UpdatedAt.UTC(), entry.CreatedAt.UTC(), time.Now().UTC())
 	}
-	return port.ExecutionEvent{
-		Type:        port.ExecutionEventType(eventType),
+	return kobs.ExecutionEvent{
+		Type:        kobs.ExecutionEventType(eventType),
 		SessionID:   strings.TrimSpace(entry.SessionID),
 		Timestamp:   ts,
 		ToolName:    strings.TrimSpace(meta.ToolName),
 		Model:       strings.TrimSpace(meta.Model),
 		Risk:        strings.TrimSpace(meta.Risk),
 		ReasonCode:  strings.TrimSpace(meta.ReasonCode),
-		Enforcement: port.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
+		Enforcement: intr.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
 		Duration:    time.Duration(meta.DurationMS) * time.Millisecond,
 		Error:       strings.TrimSpace(entry.Status),
 		Data:        meta.Data,
 	}, true
 }
 
-func stateEntryEventType(entry runtime.StateEntry) port.ExecutionEventType {
+func stateEntryEventType(entry runtime.StateEntry) kobs.ExecutionEventType {
 	if len(entry.Metadata) > 0 {
 		var meta map[string]json.RawMessage
 		if err := json.Unmarshal(entry.Metadata, &meta); err == nil {
 			if raw, ok := meta["event_type"]; ok {
 				var eventType string
 				if json.Unmarshal(raw, &eventType) == nil && strings.TrimSpace(eventType) != "" {
-					return port.ExecutionEventType(strings.TrimSpace(eventType))
+					return kobs.ExecutionEventType(strings.TrimSpace(eventType))
 				}
 			}
 		}
@@ -684,7 +684,7 @@ func stateEntryEventType(entry runtime.StateEntry) port.ExecutionEventType {
 	if idx := strings.Index(title, ":"); idx >= 0 {
 		title = title[:idx]
 	}
-	return port.ExecutionEventType(title)
+	return kobs.ExecutionEventType(title)
 }
 
 func publishProgressReplay(bridge *BridgeIO, k *kernel.Kernel, sess *session.Session) {

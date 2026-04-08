@@ -6,23 +6,24 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
-	"strings"
-	"sync"
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/skill"
 	"github.com/mossagents/moss/userio/prompting"
+	"sort"
+	"strings"
+	"sync"
+	"time"
 )
 
 const appVersion = "0.3.0"
@@ -49,10 +50,10 @@ type Config struct {
 	InitialSessionID         string
 	BaseURL                  string
 	APIKey                   string
-	BaseObserver             port.Observer
-	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	BuildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
-	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
+	BaseObserver             kobs.Observer
+	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error)
+	BuildRunTraceObserver    func() (*product.RunTraceRecorder, kobs.Observer)
+	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error
 	BuildSystemPrompt        func(workspace, trust string) string
 	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
@@ -82,10 +83,10 @@ type agentState struct {
 	trust                    string
 	profile                  string
 	approvalMode             string
-	baseObserver             port.Observer
-	buildRunTraceObserver    func() (*product.RunTraceRecorder, port.Observer)
-	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error)
-	afterBoot                func(ctx context.Context, k *kernel.Kernel, io port.UserIO) error
+	baseObserver             kobs.Observer
+	buildRunTraceObserver    func() (*product.RunTraceRecorder, kobs.Observer)
+	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error)
+	afterBoot                func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error
 	buildSystemPrompt        func(workspace, trust string) string
 	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
@@ -160,7 +161,7 @@ func (a *agentState) sessionSummary() string {
 	}
 	dialogCount := 0
 	for _, msg := range a.sess.Messages {
-		if msg.Role != port.RoleSystem {
+		if msg.Role != mdl.RoleSystem {
 			dialogCount++
 		}
 	}
@@ -410,35 +411,35 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 			switch mode {
 			case "deny":
 				if mc.IO != nil {
-					_ = mc.IO.Send(ctx, port.OutputMessage{
-						Type: port.OutputText,
-						Content: port.FormatDeniedMessage(
+					_ = mc.IO.Send(ctx, intr.OutputMessage{
+						Type: intr.OutputText,
+						Content: intr.FormatDeniedMessage(
 							mc.Tool.Name,
 							"permission override denied tool execution",
 							"permission.override.deny",
-							port.EnforcementHardBlock,
+							intr.EnforcementHardBlock,
 						),
 					})
 				}
 				return builtins.ErrDenied
 			case "ask":
 				if mc.IO != nil {
-					approval := &port.ApprovalRequest{
+					approval := &intr.ApprovalRequest{
 						ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
-						Kind:        port.ApprovalKindTool,
+						Kind:        intr.ApprovalKindTool,
 						SessionID:   mc.Session.ID,
 						ToolName:    mc.Tool.Name,
 						Risk:        string(mc.Tool.Risk),
 						Prompt:      "Allow tool " + mc.Tool.Name + "?",
 						Reason:      "permission override requires approval",
 						ReasonCode:  "permission.override.ask",
-						Enforcement: port.EnforcementRequireApproval,
+						Enforcement: intr.EnforcementRequireApproval,
 						Input:       append(json.RawMessage(nil), mc.Input...),
 						RequestedAt: time.Now().UTC(),
 					}
-					approval.Prompt = port.FormatApprovalPrompt(approval)
-					resp, err := mc.IO.Ask(ctx, port.InputRequest{
-						Type:     port.InputConfirm,
+					approval.Prompt = intr.FormatApprovalPrompt(approval)
+					resp, err := mc.IO.Ask(ctx, intr.InputRequest{
+						Type:     intr.InputConfirm,
 						Prompt:   approval.Prompt,
 						Approval: approval,
 						Meta: map[string]any{
@@ -457,9 +458,9 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 						resp.Approved = resp.Decision.Approved
 					}
 					if !resp.Approved {
-						_ = mc.IO.Send(ctx, port.OutputMessage{
-							Type: port.OutputText,
-							Content: port.FormatDeniedMessage(
+						_ = mc.IO.Send(ctx, intr.OutputMessage{
+							Type: intr.OutputText,
+							Content: intr.FormatDeniedMessage(
 								mc.Tool.Name,
 								approval.Reason,
 								approval.ReasonCode,
@@ -629,7 +630,7 @@ func (a *agentState) cancelTask(taskID, reason string) (string, error) {
 }
 
 // appendAndRun 追加用户消息到 session 并重新执行 agent loop。
-func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
+func (a *agentState) appendAndRun(text string, parts []mdl.ContentPart) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
@@ -643,21 +644,21 @@ func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
 	a.mu.Unlock()
 
 	if len(parts) == 0 {
-		parts = []port.ContentPart{port.TextPart(text)}
+		parts = []mdl.ContentPart{mdl.TextPart(text)}
 	}
-	a.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: parts})
+	a.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: parts})
 	var traceRecorder *product.RunTraceRecorder
 	progressObserver := newExecutionProgressObserver(a.bridge, a.sess)
 	if traceFactory != nil {
 		recorder, runObserver := traceFactory()
 		traceRecorder = recorder
-		a.k.SetObserver(port.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
+		a.k.SetObserver(kobs.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	} else {
-		a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
+		a.k.SetObserver(kobs.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	}
 
 	result, err := a.k.Run(runCtx, a.sess)
-	a.k.SetObserver(port.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
+	a.k.SetObserver(kobs.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 
 	a.mu.Lock()
 	a.running = false
@@ -690,18 +691,18 @@ func (a *agentState) appendAndRun(text string, parts []port.ContentPart) {
 	}
 }
 
-func collectOutputMediaParts(sess *session.Session) []port.ContentPart {
+func collectOutputMediaParts(sess *session.Session) []mdl.ContentPart {
 	if sess == nil || len(sess.Messages) == 0 {
 		return nil
 	}
 	for i := len(sess.Messages) - 1; i >= 0; i-- {
 		msg := sess.Messages[i]
-		if msg.Role != port.RoleAssistant {
+		if msg.Role != mdl.RoleAssistant {
 			continue
 		}
-		var out []port.ContentPart
+		var out []mdl.ContentPart
 		for _, p := range msg.ContentParts {
-			if p.Type == port.ContentPartOutputImage || p.Type == port.ContentPartOutputAudio || p.Type == port.ContentPartOutputVideo {
+			if p.Type == mdl.ContentPartOutputImage || p.Type == mdl.ContentPartOutputAudio || p.Type == mdl.ContentPartOutputVideo {
 				out = append(out, p)
 			}
 		}
@@ -758,7 +759,7 @@ func sessionDialogCount(sess *session.Session) int {
 	}
 	count := 0
 	for _, msg := range sess.Messages {
-		if msg.Role != port.RoleSystem {
+		if msg.Role != mdl.RoleSystem {
 			count++
 		}
 	}

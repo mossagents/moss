@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"testing"
-
 	"github.com/mossagents/moss/scheduler"
+	"testing"
 )
 
 func TestParseInvestorProfileTextFrontMatter(t *testing.T) {

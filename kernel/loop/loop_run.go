@@ -2,13 +2,14 @@ package loop
 
 import (
 	"context"
-	"strings"
-	"time"
-
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
+	"strings"
+	"time"
 )
 
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
@@ -19,7 +20,7 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	l.beginRun(ctx, sess, runStartedAt)
 
 	var lastOutput string
-	var totalUsage port.TokenUsage
+	var totalUsage mdl.TokenUsage
 	maxIter := l.Config.maxIter()
 
 	for i := 0; i < maxIter; i++ {
@@ -48,15 +49,15 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"goal_chars", len(sess.Config.Goal),
 		"max_steps", sess.Budget.MaxSteps,
 	)
-	port.ObserveSessionEvent(ctx, l.observer(), port.SessionEvent{SessionID: sess.ID, Type: "running"})
-	event := l.executionEventBase(sess, port.ExecutionRunStarted, "run", "runtime", "run")
+	kobs.ObserveSessionEvent(ctx, l.observer(), kobs.SessionEvent{SessionID: sess.ID, Type: "running"})
+	event := l.executionEventBase(sess, kobs.ExecutionRunStarted, "run", "runtime", "run")
 	event.Timestamp = runStartedAt
 	event.Data = map[string]any{
 		"mode":      sess.Config.Mode,
 		"goal":      sess.Config.Goal,
 		"max_steps": sess.Budget.MaxSteps,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil)
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
@@ -71,7 +72,7 @@ func (l *AgentLoop) runIteration(
 	iteration int,
 	maxIter int,
 	runStartedAt time.Time,
-	totalUsage *port.TokenUsage,
+	totalUsage *mdl.TokenUsage,
 	lastOutput *string,
 ) (bool, error) {
 	l.currentTurn = buildTurnPlan(sess, l.RunID, iteration, l.Tools)
@@ -113,9 +114,9 @@ func (l *AgentLoop) runIteration(
 }
 
 type iterationLLMResult struct {
-	resp     *port.CompletionResponse
+	resp     *mdl.CompletionResponse
 	streamed bool
-	metadata port.LLMCallMetadata
+	metadata mdl.LLMCallMetadata
 }
 
 func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Session, iteration, maxIter int, runStartedAt time.Time) time.Time {
@@ -127,7 +128,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 		"max_iterations", maxIter,
 		"elapsed_ms", iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 	)
-	event := l.executionEventBase(sess, port.ExecutionIterationStarted, "iteration", "runtime", "iteration")
+	event := l.executionEventBase(sess, kobs.ExecutionIterationStarted, "iteration", "runtime", "iteration")
 	event.Timestamp = iterationStartedAt
 	event.Data = map[string]any{
 		"iteration":      iteration,
@@ -135,7 +136,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 		"max_steps":      sess.Budget.MaxSteps,
 		"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	return iterationStartedAt
 }
 
@@ -144,13 +145,13 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		return nil, err
 	}
 
-	event := l.executionEventBase(sess, port.ExecutionLLMStarted, "llm", "runtime", "llm")
+	event := l.executionEventBase(sess, kobs.ExecutionLLMStarted, "llm", "runtime", "llm")
 	event.Model = sess.Config.ModelConfig.Model
 	event.Data = map[string]any{
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	llmStart := time.Now()
 	resp, streamed, err := l.callLLM(ctx, sess, plan)
 	llmDur := time.Since(llmStart)
@@ -164,18 +165,18 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 			"error", err.Error(),
 		)
 		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
-		port.ObserveLLMCall(ctx, l.observer(), port.LLMCallEvent{
+		kobs.ObserveLLMCall(ctx, l.observer(), kobs.LLMCallEvent{
 			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
 		})
-		port.ObserveError(ctx, l.observer(), port.ErrorEvent{
+		kobs.ObserveError(ctx, l.observer(), kobs.ErrorEvent{
 			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
 		})
-		event := l.executionEventBase(sess, port.ExecutionLLMCompleted, "llm", "runtime", "llm")
+		event := l.executionEventBase(sess, kobs.ExecutionLLMCompleted, "llm", "runtime", "llm")
 		event.Model = metadata.ActualModel
 		event.Duration = llmDur
 		event.Error = err.Error()
 		appendExecutionErrorMetadata(&event, err)
-		port.ObserveExecutionEvent(ctx, l.observer(), event)
+		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 		l.runErrorMiddleware(ctx, sess, err)
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		"tokens", resp.Usage.TotalTokens,
 	)
 	l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
-	port.ObserveLLMCall(ctx, l.observer(), port.LLMCallEvent{
+	kobs.ObserveLLMCall(ctx, l.observer(), kobs.LLMCallEvent{
 		SessionID:  sess.ID,
 		Model:      metadata.ActualModel,
 		StartedAt:  llmStart.UTC(),
@@ -200,7 +201,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		StopReason: resp.StopReason,
 		Streamed:   streamed,
 	})
-	event = l.executionEventBase(sess, port.ExecutionLLMCompleted, "llm", "runtime", "llm")
+	event = l.executionEventBase(sess, kobs.ExecutionLLMCompleted, "llm", "runtime", "llm")
 	event.Model = metadata.ActualModel
 	event.Duration = llmDur
 	event.Data = map[string]any{
@@ -210,7 +211,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 
 	return &iterationLLMResult{resp: resp, streamed: streamed, metadata: metadata}, nil
 }
@@ -232,7 +233,7 @@ func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
 }
 
 func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Session, plan TurnPlan) {
-	routeEvent := l.executionEventBase(sess, port.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
+	routeEvent := l.executionEventBase(sess, kobs.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
 	visible := visibleToolNames(plan.ToolRoute)
 	hidden := hiddenToolNames(plan.ToolRoute)
 	approval := approvalRequiredToolNames(plan.ToolRoute)
@@ -246,20 +247,20 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 		"route_digest":         toolRouteDigest(plan.ToolRoute),
 		"decisions":            toolRoutePayload(plan.ToolRoute),
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), routeEvent)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), routeEvent)
 
-	modelEvent := l.executionEventBase(sess, port.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
+	modelEvent := l.executionEventBase(sess, kobs.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
 	modelEvent.Model = sess.Config.ModelConfig.Model
 	modelEvent.Data = map[string]any{
 		"lane":          plan.ModelRoute.Lane,
 		"reason_codes":  append([]string(nil), plan.ModelRoute.ReasonCodes...),
-		"capabilities":  append([]port.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
+		"capabilities":  append([]mdl.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
 		"max_cost_tier": plan.ModelRoute.Requirements.MaxCostTier,
 		"prefer_cheap":  plan.ModelRoute.Requirements.PreferCheap,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), modelEvent)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), modelEvent)
 
-	turnEvent := l.executionEventBase(sess, port.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
+	turnEvent := l.executionEventBase(sess, kobs.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
 	turnEvent.Data = map[string]any{
 		"iteration":            plan.Iteration,
 		"instruction_profile":  plan.InstructionProfile,
@@ -269,10 +270,10 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 		"approval_tools_count": len(approval),
 		"model_lane":           plan.ModelRoute.Lane,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), turnEvent)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), turnEvent)
 }
 
-func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *port.CompletionResponse, streamed bool, lastOutput *string) error {
+func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *mdl.CompletionResponse, streamed bool, lastOutput *string) error {
 	if len(resp.ToolCalls) > 0 {
 		names := make([]string, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
@@ -289,7 +290,7 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 		return nil
 	}
 
-	*lastOutput = port.ContentPartsToPlainText(resp.Message.ContentParts)
+	*lastOutput = mdl.ContentPartsToPlainText(resp.Message.ContentParts)
 	logging.GetLogger().DebugContext(ctx, "assistant produced final content",
 		"session_id", sess.ID,
 		"streamed", streamed,
@@ -297,16 +298,16 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 	)
 	if l.IO != nil && !streamed {
 		for _, part := range resp.Message.ContentParts {
-			if part.Type != port.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
+			if part.Type != mdl.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
 				continue
 			}
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputReasoning,
+			l.IO.Send(ctx, intr.OutputMessage{
+				Type:    intr.OutputReasoning,
 				Content: part.Text,
 			})
 		}
-		l.IO.Send(ctx, port.OutputMessage{
-			Type:    port.OutputText,
+		l.IO.Send(ctx, intr.OutputMessage{
+			Type:    intr.OutputText,
 			Content: *lastOutput,
 		})
 	}
@@ -321,10 +322,10 @@ func (l *AgentLoop) emitIterationProgress(
 	runStartedAt time.Time,
 	model string,
 	streamed bool,
-	resp *port.CompletionResponse,
+	resp *mdl.CompletionResponse,
 ) {
 	progressAt := time.Now().UTC()
-	event := l.executionEventBase(sess, port.ExecutionIterationProgress, "iteration", "runtime", "iteration")
+	event := l.executionEventBase(sess, kobs.ExecutionIterationProgress, "iteration", "runtime", "iteration")
 	event.Timestamp = progressAt
 	event.Model = model
 	event.Data = map[string]any{
@@ -338,10 +339,10 @@ func (l *AgentLoop) emitIterationProgress(
 		"streamed":       streamed,
 		"tokens":         resp.Usage.TotalTokens,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
-func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage port.TokenUsage, lastOutput string) *SessionResult {
+func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage mdl.TokenUsage, lastOutput string) *SessionResult {
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
 	logging.GetLogger().DebugContext(ctx, "session run completed",
@@ -349,13 +350,13 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"steps", sess.Budget.UsedStepsValue(),
 		"tokens", totalUsage.TotalTokens,
 	)
-	port.ObserveSessionEvent(ctx, l.observer(), port.SessionEvent{SessionID: sess.ID, Type: "completed"})
-	event := l.executionEventBase(sess, port.ExecutionRunCompleted, "run", "runtime", "run")
+	kobs.ObserveSessionEvent(ctx, l.observer(), kobs.SessionEvent{SessionID: sess.ID, Type: "completed"})
+	event := l.executionEventBase(sess, kobs.ExecutionRunCompleted, "run", "runtime", "run")
 	event.Data = map[string]any{
 		"steps":  sess.Budget.UsedStepsValue(),
 		"tokens": totalUsage.TotalTokens,
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil)
 	result := &SessionResult{
 		SessionID:  sess.ID,

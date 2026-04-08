@@ -1,10 +1,9 @@
 package product
 
 import (
+	appconfig "github.com/mossagents/moss/config"
 	"strings"
 	"testing"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestBuildDebugConfigReportIncludesCommandDirs(t *testing.T) {

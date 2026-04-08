@@ -10,7 +10,7 @@ import (
 
 func TestFileJobStoreSaveLoad(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "jobs.json")
+	path := filepath.Join(dir, "jkobs.json")
 
 	store, err := NewFileJobStore(path)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestFileJobStoreLoadNonExistent(t *testing.T) {
 
 func TestSchedulerWithPersistence(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "jobs.json")
+	path := filepath.Join(dir, "jkobs.json")
 
 	store, err := NewFileJobStore(path)
 	if err != nil {
@@ -97,7 +97,7 @@ func TestSchedulerWithPersistence(t *testing.T) {
 
 func TestSchedulerPersistsRunStateAndOnceRemoval(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "jobs.json")
+	path := filepath.Join(dir, "jkobs.json")
 
 	store, err := NewFileJobStore(path)
 	if err != nil {

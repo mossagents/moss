@@ -1,6 +1,8 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestAssessSourceCredibilityOfficial(t *testing.T) {
 	result := assessSourceCredibility(credibilitySource{

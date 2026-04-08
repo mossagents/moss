@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mossagents/moss/appkit/product"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"strings"
-
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type checkpointActionReport struct {
@@ -121,7 +121,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 	if sess == nil {
 		return fmt.Errorf("thread %q not found", sessionID)
 	}
-	record, err := k.CreateCheckpoint(ctx, sess, port.CheckpointCreateRequest{Note: note})
+	record, err := k.CreateCheckpoint(ctx, sess, ckpt.CheckpointCreateRequest{Note: note})
 	if err != nil {
 		return err
 	}
@@ -148,7 +148,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 func runCheckpointFork(ctx context.Context, cfg *config) error {
 	sessionID := strings.TrimSpace(cfg.forkSessionID)
 	checkpointID := strings.TrimSpace(cfg.forkCheckpointID)
-	sourceKind := port.ForkSourceSession
+	sourceKind := ckpt.ForkSourceSession
 	sourceID := sessionID
 	if cfg.forkLatest {
 		if sessionID != "" {
@@ -157,16 +157,16 @@ func runCheckpointFork(ctx context.Context, cfg *config) error {
 		if checkpointID != "" && !strings.EqualFold(checkpointID, "latest") {
 			return fmt.Errorf("use either --checkpoint <id> or --latest, not both")
 		}
-		sourceKind = port.ForkSourceCheckpoint
+		sourceKind = ckpt.ForkSourceCheckpoint
 		sourceID = ""
 	} else if checkpointID != "" {
 		if sourceID != "" {
 			return fmt.Errorf("use either --session or --checkpoint, not both")
 		}
-		sourceKind = port.ForkSourceCheckpoint
+		sourceKind = ckpt.ForkSourceCheckpoint
 		sourceID = checkpointID
 	}
-	if sourceKind == port.ForkSourceSession && sourceID == "" {
+	if sourceKind == ckpt.ForkSourceSession && sourceID == "" {
 		return fmt.Errorf("usage: mosscode fork [--session <thread-id> | --checkpoint <id|latest> | --latest] [--restore-worktree] [--json]")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
@@ -177,14 +177,14 @@ func runCheckpointFork(ctx context.Context, cfg *config) error {
 	if err := k.Boot(ctx); err != nil {
 		return err
 	}
-	if sourceKind == port.ForkSourceCheckpoint {
+	if sourceKind == ckpt.ForkSourceCheckpoint {
 		record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
 		if err != nil {
 			return err
 		}
 		sourceID = record.ID
 	}
-	sess, result, err := k.ForkSession(ctx, port.ForkRequest{
+	sess, result, err := k.ForkSession(ctx, ckpt.ForkRequest{
 		SourceKind:      sourceKind,
 		SourceID:        sourceID,
 		RestoreWorktree: cfg.forkRestoreWorktree,
@@ -219,7 +219,7 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 	checkpointID := strings.TrimSpace(cfg.checkpointID)
 	mode := strings.ToLower(strings.TrimSpace(cfg.checkpointReplayMode))
 	if mode == "" {
-		mode = string(port.ReplayModeResume)
+		mode = string(ckpt.ReplayModeResume)
 	}
 	if cfg.checkpointLatest {
 		if checkpointID != "" && !strings.EqualFold(checkpointID, "latest") {
@@ -230,7 +230,7 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 	if checkpointID == "" && !cfg.checkpointLatest {
 		return fmt.Errorf("usage: mosscode checkpoint replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]")
 	}
-	if mode != string(port.ReplayModeResume) && mode != string(port.ReplayModeRerun) {
+	if mode != string(ckpt.ReplayModeResume) && mode != string(ckpt.ReplayModeRerun) {
 		return fmt.Errorf("replay mode must be resume or rerun")
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
@@ -245,9 +245,9 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return err
 	}
-	sess, result, err := k.ReplayFromCheckpoint(ctx, port.ReplayRequest{
+	sess, result, err := k.ReplayFromCheckpoint(ctx, ckpt.ReplayRequest{
 		CheckpointID:    record.ID,
-		Mode:            port.ReplayMode(mode),
+		Mode:            ckpt.ReplayMode(mode),
 		RestoreWorktree: cfg.checkpointRestoreWorktree,
 	})
 	if err != nil {
@@ -295,7 +295,7 @@ func runApply(ctx context.Context, cfg *config) error {
 		Patch:     string(data),
 		Summary:   summary,
 		SessionID: sessionID,
-		Source:    port.PatchSourceUser,
+		Source:    kws.PatchSourceUser,
 	})
 	report := changeActionReport{
 		Mode:   "apply",

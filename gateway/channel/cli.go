@@ -4,11 +4,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	kchannel "github.com/mossagents/moss/kernel/channel"
 	"io"
 	"os"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // CLI 是基于 stdin/stdout 的终端 Channel 实现。
@@ -54,8 +53,8 @@ func (c *CLI) Name() string { return "cli" }
 // Receive 返回用户输入消息流。
 // 读取 stdin 的每一行作为一条消息。遇到 EOF 或 ctx 取消时关闭 channel。
 // /exit 命令会关闭流。
-func (c *CLI) Receive(ctx context.Context) <-chan port.InboundMessage {
-	ch := make(chan port.InboundMessage)
+func (c *CLI) Receive(ctx context.Context) <-chan kchannel.InboundMessage {
+	ch := make(chan kchannel.InboundMessage)
 
 	go func() {
 		defer close(ch)
@@ -83,7 +82,7 @@ func (c *CLI) Receive(ctx context.Context) <-chan port.InboundMessage {
 				return
 			}
 
-			msg := port.InboundMessage{
+			msg := kchannel.InboundMessage{
 				ChannelName: "cli",
 				SenderID:    "cli",
 				Content:     input,
@@ -101,7 +100,7 @@ func (c *CLI) Receive(ctx context.Context) <-chan port.InboundMessage {
 }
 
 // Send 将回复输出到终端。
-func (c *CLI) Send(_ context.Context, msg port.OutboundMessage) error {
+func (c *CLI) Send(_ context.Context, msg kchannel.OutboundMessage) error {
 	_, err := fmt.Fprintln(c.out, msg.Content)
 	return err
 }
@@ -110,4 +109,4 @@ func (c *CLI) Send(_ context.Context, msg port.OutboundMessage) error {
 func (c *CLI) Close() error { return nil }
 
 // 确保 CLI 实现了 Channel 接口。
-var _ port.Channel = (*CLI)(nil)
+var _ kchannel.Channel = (*CLI)(nil)

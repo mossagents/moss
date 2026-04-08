@@ -3,12 +3,11 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"strings"
-	"time"
-
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
+	"strings"
+	"time"
 )
 
 const sessionStoreStateKey kernel.ExtensionStateKey = "sessionstore.state"

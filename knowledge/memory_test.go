@@ -2,10 +2,9 @@ package knowledge
 
 import (
 	"context"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"math"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // mockEmbedder 用简单的基于词频的"嵌入"做测试（不需要真实 API）。
@@ -51,8 +50,8 @@ func simpleHash(text string, dim int) []float64 {
 	return vec
 }
 
-// 验证 mockEmbedder 实现了 port.Embedder 接口
-var _ port.Embedder = (*mockEmbedder)(nil)
+// 验证 mockEmbedder 实现了 mdl.Embedder 接口
+var _ mdl.Embedder = (*mockEmbedder)(nil)
 
 func TestMemoryStoreAddAndSearch(t *testing.T) {
 	store := NewMemoryStore()

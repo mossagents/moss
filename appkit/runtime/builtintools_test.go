@@ -3,17 +3,18 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/tool"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // ── mock sandbox ─────────────────────────────────────
@@ -21,7 +22,7 @@ import (
 type mockSandbox struct {
 	root        string
 	files       map[string]string // path → content (absolute paths)
-	lastExecReq port.ExecRequest
+	lastExecReq kws.ExecRequest
 }
 
 func newMockSandbox(root string, files map[string]string) *mockSandbox {
@@ -77,7 +78,7 @@ func (m *mockSandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (m *mockSandbox) Execute(_ context.Context, req port.ExecRequest) (sandbox.Output, error) {
+func (m *mockSandbox) Execute(_ context.Context, req kws.ExecRequest) (sandbox.Output, error) {
 	m.lastExecReq = req
 	return sandbox.Output{
 		Stdout:   "mock output for: " + req.Command + " " + strings.Join(req.Args, " "),
@@ -98,22 +99,22 @@ func (e *notFoundError) Error() string { return "file not found: " + e.path }
 type mockUserIO struct {
 	lastQuestion string
 	response     string
-	lastReq      port.InputRequest
+	lastReq      intr.InputRequest
 	formResponse map[string]any
 }
 
-func (m *mockUserIO) Send(_ context.Context, _ port.OutputMessage) error { return nil }
+func (m *mockUserIO) Send(_ context.Context, _ intr.OutputMessage) error { return nil }
 
-func (m *mockUserIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
+func (m *mockUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
 	m.lastQuestion = req.Prompt
 	m.lastReq = req
-	if req.Type == port.InputForm {
+	if req.Type == intr.InputForm {
 		if m.formResponse != nil {
-			return port.InputResponse{Form: m.formResponse}, nil
+			return intr.InputResponse{Form: m.formResponse}, nil
 		}
-		return port.InputResponse{Form: map[string]any{}}, nil
+		return intr.InputResponse{Form: map[string]any{}}, nil
 	}
-	return port.InputResponse{Value: m.response}, nil
+	return intr.InputResponse{Value: m.response}, nil
 }
 
 // ── mock workspace ───────────────────────────────────
@@ -142,11 +143,11 @@ func (m *mockWorkspace) ListFiles(_ context.Context, _ string) ([]string, error)
 	return result, nil
 }
 
-func (m *mockWorkspace) Stat(_ context.Context, path string) (port.FileInfo, error) {
+func (m *mockWorkspace) Stat(_ context.Context, path string) (kws.FileInfo, error) {
 	if _, ok := m.files[path]; ok {
-		return port.FileInfo{Name: path, Size: int64(len(m.files[path]))}, nil
+		return kws.FileInfo{Name: path, Size: int64(len(m.files[path]))}, nil
 	}
-	return port.FileInfo{}, &notFoundError{path: path}
+	return kws.FileInfo{}, &notFoundError{path: path}
 }
 
 func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
@@ -157,12 +158,12 @@ func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
 // ── mock executor ────────────────────────────────────
 
 type mockExecutor struct {
-	lastReq port.ExecRequest
+	lastReq kws.ExecRequest
 }
 
-func (m *mockExecutor) Execute(_ context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+func (m *mockExecutor) Execute(_ context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
 	m.lastReq = req
-	return port.ExecOutput{
+	return kws.ExecOutput{
 		Stdout:   "exec: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
@@ -172,8 +173,8 @@ type mockExecutorLarge struct {
 	stdout string
 }
 
-func (m *mockExecutorLarge) Execute(_ context.Context, _ port.ExecRequest) (port.ExecOutput, error) {
-	return port.ExecOutput{
+func (m *mockExecutorLarge) Execute(_ context.Context, _ kws.ExecRequest) (kws.ExecOutput, error) {
+	return kws.ExecOutput{
 		Stdout:   m.stdout,
 		ExitCode: 0,
 	}, nil
@@ -510,8 +511,8 @@ func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
 	if len(sb.lastExecReq.AllowedPaths) != 1 || sb.lastExecReq.AllowedPaths[0] != sb.root {
 		t.Fatalf("allowed paths = %#v, want [%s]", sb.lastExecReq.AllowedPaths, sb.root)
 	}
-	if sb.lastExecReq.Network.Mode != port.ExecNetworkDisabled {
-		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, port.ExecNetworkDisabled)
+	if sb.lastExecReq.Network.Mode != kws.ExecNetworkDisabled {
+		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, kws.ExecNetworkDisabled)
 	}
 }
 
@@ -585,7 +586,7 @@ func TestAskUserWithRequestedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("askUser with schema: %v", err)
 	}
-	if io.lastReq.Type != port.InputForm {
+	if io.lastReq.Type != intr.InputForm {
 		t.Fatalf("expected InputForm request, got %s", io.lastReq.Type)
 	}
 	if len(io.lastReq.Fields) != 3 {
@@ -638,7 +639,7 @@ func TestAskUserInputRetryUnexpectedEOF(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected retry success, got error: %v", err)
 	}
-	if io.lastReq.Type != port.InputForm {
+	if io.lastReq.Type != intr.InputForm {
 		t.Fatalf("expected InputForm after retry, got %s", io.lastReq.Type)
 	}
 }
@@ -978,7 +979,7 @@ func TestRunCommandExec(t *testing.T) {
 		t.Fatalf("runCommandExec: %v", err)
 	}
 
-	var output port.ExecOutput
+	var output kws.ExecOutput
 	json.Unmarshal(result, &output)
 	if !strings.Contains(output.Stdout, "echo") {
 		t.Errorf("expected stdout to contain command, got %q", output.Stdout)
@@ -1004,8 +1005,8 @@ func TestRunCommandExecPolicyForwarding(t *testing.T) {
 	if exec.lastReq.WorkingDir != "." {
 		t.Fatalf("working dir = %q, want .", exec.lastReq.WorkingDir)
 	}
-	if exec.lastReq.Network.Mode != port.ExecNetworkEnabled {
-		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, port.ExecNetworkEnabled)
+	if exec.lastReq.Network.Mode != kws.ExecNetworkEnabled {
+		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, kws.ExecNetworkEnabled)
 	}
 }
 
@@ -1015,7 +1016,7 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 	}
 	ws := &mockWorkspace{files: map[string]string{}}
 	handler := runCommandHandlerExec(exec, ws)
-	ctx := port.WithToolCallContext(context.Background(), port.ToolCallContext{
+	ctx := toolctx.WithToolCallContext(context.Background(), toolctx.ToolCallContext{
 		SessionID: "sess-1",
 		ToolName:  "run_command",
 		CallID:    "call-1",
@@ -1047,8 +1048,8 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 
 func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	// When both Workspace and Sandbox are provided, Workspace should be used
-	ws := &mockWorkspace{files: map[string]string{"ws.txt": "from workspace"}}
-	sb := newMockSandbox("/ws", map[string]string{"/ws/ws.txt": "from sandbox"})
+	ws := &mockWorkspace{files: map[string]string{"kws.txt": "from workspace"}}
+	sb := newMockSandbox("/ws", map[string]string{"/ws/kws.txt": "from sandbox"})
 
 	reg := tool.NewRegistry()
 	RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil)
@@ -1058,7 +1059,7 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 		t.Fatal("read_file not registered")
 	}
 
-	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "ws.txt"}))
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "kws.txt"}))
 	if err != nil {
 		t.Fatalf("read_file: %v", err)
 	}

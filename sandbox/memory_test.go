@@ -6,16 +6,16 @@ import (
 )
 
 func TestMemoryWorkspace_ReadWriteFile(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
 	// 写入
-	if err := ws.WriteFile(ctx, "hello.txt", []byte("world")); err != nil {
+	if err := kws.WriteFile(ctx, "hello.txt", []byte("world")); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	// 读取
-	data, err := ws.ReadFile(ctx, "hello.txt")
+	data, err := kws.ReadFile(ctx, "hello.txt")
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -24,10 +24,10 @@ func TestMemoryWorkspace_ReadWriteFile(t *testing.T) {
 	}
 
 	// 覆盖写入
-	if err := ws.WriteFile(ctx, "hello.txt", []byte("updated")); err != nil {
+	if err := kws.WriteFile(ctx, "hello.txt", []byte("updated")); err != nil {
 		t.Fatalf("WriteFile overwrite: %v", err)
 	}
-	data, err = ws.ReadFile(ctx, "hello.txt")
+	data, err = kws.ReadFile(ctx, "hello.txt")
 	if err != nil {
 		t.Fatalf("ReadFile after overwrite: %v", err)
 	}
@@ -37,24 +37,24 @@ func TestMemoryWorkspace_ReadWriteFile(t *testing.T) {
 }
 
 func TestMemoryWorkspace_NotFound(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	_, err := ws.ReadFile(ctx, "nonexistent.txt")
+	_, err := kws.ReadFile(ctx, "nonexistent.txt")
 	if err == nil {
 		t.Error("expected error for nonexistent file")
 	}
 }
 
 func TestMemoryWorkspace_ListFiles(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "src/a.go", []byte("a"))
-	ws.WriteFile(ctx, "src/b.go", []byte("b"))
-	ws.WriteFile(ctx, "readme.md", []byte("r"))
+	kws.WriteFile(ctx, "src/a.go", []byte("a"))
+	kws.WriteFile(ctx, "src/b.go", []byte("b"))
+	kws.WriteFile(ctx, "readme.md", []byte("r"))
 
-	matches, err := ws.ListFiles(ctx, "src/*.go")
+	matches, err := kws.ListFiles(ctx, "src/*.go")
 	if err != nil {
 		t.Fatalf("ListFiles: %v", err)
 	}
@@ -64,11 +64,11 @@ func TestMemoryWorkspace_ListFiles(t *testing.T) {
 }
 
 func TestMemoryWorkspace_Stat(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "data.bin", []byte("12345"))
-	info, err := ws.Stat(ctx, "data.bin")
+	kws.WriteFile(ctx, "data.bin", []byte("12345"))
+	info, err := kws.Stat(ctx, "data.bin")
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
@@ -81,44 +81,44 @@ func TestMemoryWorkspace_Stat(t *testing.T) {
 }
 
 func TestMemoryWorkspace_DeleteFile(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
-	ws.WriteFile(ctx, "temp.txt", []byte("tmp"))
-	if err := ws.DeleteFile(ctx, "temp.txt"); err != nil {
+	kws.WriteFile(ctx, "temp.txt", []byte("tmp"))
+	if err := kws.DeleteFile(ctx, "temp.txt"); err != nil {
 		t.Fatalf("DeleteFile: %v", err)
 	}
-	_, err := ws.ReadFile(ctx, "temp.txt")
+	_, err := kws.ReadFile(ctx, "temp.txt")
 	if err == nil {
 		t.Error("expected error after delete")
 	}
 }
 
 func TestMemoryWorkspace_CapacityLimit(t *testing.T) {
-	ws := NewMemoryWorkspace(WithMaxTotalSize(10))
+	kws := NewMemoryWorkspace(WithMaxTotalSize(10))
 	ctx := context.Background()
 
-	if err := ws.WriteFile(ctx, "a.txt", []byte("12345")); err != nil {
+	if err := kws.WriteFile(ctx, "a.txt", []byte("12345")); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	if err := ws.WriteFile(ctx, "b.txt", []byte("12345")); err != nil {
+	if err := kws.WriteFile(ctx, "b.txt", []byte("12345")); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
 	// 超过容量
-	err := ws.WriteFile(ctx, "c.txt", []byte("1"))
+	err := kws.WriteFile(ctx, "c.txt", []byte("1"))
 	if err == nil {
 		t.Error("expected capacity exceeded error")
 	}
 }
 
 func TestMemoryWorkspace_PathNormalization(t *testing.T) {
-	ws := NewMemoryWorkspace()
+	kws := NewMemoryWorkspace()
 	ctx := context.Background()
 
 	// 使用反斜杠写入
-	ws.WriteFile(ctx, "src\\main.go", []byte("main"))
+	kws.WriteFile(ctx, "src\\main.go", []byte("main"))
 	// 使用正斜杠读取
-	data, err := ws.ReadFile(ctx, "src/main.go")
+	data, err := kws.ReadFile(ctx, "src/main.go")
 	if err != nil {
 		t.Fatalf("path normalization failed: %v", err)
 	}

@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/runtime"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/runtime"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 func (a *agentState) listPersistedSessions(limit int) (string, error) {
@@ -205,7 +205,7 @@ func (a *agentState) createCheckpoint(note string) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	record, err := k.CreateCheckpoint(reqCtx, sess, port.CheckpointCreateRequest{Note: strings.TrimSpace(note)})
+	record, err := k.CreateCheckpoint(reqCtx, sess, ckpt.CheckpointCreateRequest{Note: strings.TrimSpace(note)})
 	if err != nil {
 		return "", err
 	}
@@ -265,7 +265,7 @@ func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 	item, err := product.ApplyChange(reqCtx, product.ChangeRuntimeFromKernel(workspace, k), product.ApplyChangeRequest{
 		Patch:   string(data),
 		Summary: strings.TrimSpace(summary),
-		Source:  port.PatchSourceUser,
+		Source:  kws.PatchSourceUser,
 	})
 	if err != nil {
 		var opErr *product.ChangeOperationError
@@ -320,15 +320,15 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 		return "", fmt.Errorf("runtime is unavailable")
 	}
 	if sourceKind == "" {
-		sourceKind = string(port.ForkSourceSession)
+		sourceKind = string(ckpt.ForkSourceSession)
 	}
 	if strings.TrimSpace(sourceID) == "" {
-		if sourceKind == string(port.ForkSourceCheckpoint) {
+		if sourceKind == string(ckpt.ForkSourceCheckpoint) {
 			sourceID = ""
 		} else if current == nil {
 			return "", fmt.Errorf("source id is required")
 		}
-		if sourceKind == string(port.ForkSourceSession) {
+		if sourceKind == string(ckpt.ForkSourceSession) {
 			sourceID = current.ID
 		}
 	}
@@ -349,15 +349,15 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	a.mu.Unlock()
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if sourceKind == string(port.ForkSourceCheckpoint) {
+	if sourceKind == string(ckpt.ForkSourceCheckpoint) {
 		record, err := product.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), sourceID)
 		if err != nil {
 			return "", err
 		}
 		sourceID = record.ID
 	}
-	next, result, err := k.ForkSession(reqCtx, port.ForkRequest{
-		SourceKind:      port.ForkSourceKind(sourceKind),
+	next, result, err := k.ForkSession(reqCtx, ckpt.ForkRequest{
+		SourceKind:      ckpt.ForkSourceKind(sourceKind),
 		SourceID:        strings.TrimSpace(sourceID),
 		RestoreWorktree: restoreWorktree,
 	})
@@ -404,11 +404,11 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	if k == nil || k.Checkpoints() == nil {
 		return "", fmt.Errorf("checkpoint store is unavailable")
 	}
-	replayMode := port.ReplayMode(strings.ToLower(strings.TrimSpace(mode)))
+	replayMode := ckpt.ReplayMode(strings.ToLower(strings.TrimSpace(mode)))
 	if replayMode == "" {
-		replayMode = port.ReplayModeResume
+		replayMode = ckpt.ReplayModeResume
 	}
-	if replayMode != port.ReplayModeResume && replayMode != port.ReplayModeRerun {
+	if replayMode != ckpt.ReplayModeResume && replayMode != ckpt.ReplayModeRerun {
 		return "", fmt.Errorf("replay mode must be resume or rerun")
 	}
 	notice, err := autosaveSessionBeforeSwitch(current, store, ctx)
@@ -435,7 +435,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	a.mu.Unlock()
 	reqCtx, cancel = context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	next, result, err := k.ReplayFromCheckpoint(reqCtx, port.ReplayRequest{
+	next, result, err := k.ReplayFromCheckpoint(reqCtx, ckpt.ReplayRequest{
 		CheckpointID:    record.ID,
 		Mode:            replayMode,
 		RestoreWorktree: restoreWorktree,

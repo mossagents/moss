@@ -1,11 +1,10 @@
 package tui
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	"os"
 	"strings"
 	"sync"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 const (

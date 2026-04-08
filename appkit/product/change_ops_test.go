@@ -2,16 +2,15 @@ package product
 
 import (
 	"context"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/sandbox"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
 )
 
 func TestApplyChangeAndReviewAndRollback(t *testing.T) {

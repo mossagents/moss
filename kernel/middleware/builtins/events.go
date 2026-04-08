@@ -2,10 +2,9 @@ package builtins
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel/middleware"
 	"path"
 	"time"
-
-	"github.com/mossagents/moss/kernel/middleware"
 )
 
 // Event 表示一个系统事件。

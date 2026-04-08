@@ -2,33 +2,34 @@ package sandbox
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"sync"
 	"testing"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type snapshotRecordingObserver struct {
 	mu     sync.Mutex
-	events []port.ExecutionEvent
+	events []kobs.ExecutionEvent
 }
 
-func (o *snapshotRecordingObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
-func (o *snapshotRecordingObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
-func (o *snapshotRecordingObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
-func (o *snapshotRecordingObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
-func (o *snapshotRecordingObserver) OnError(context.Context, port.ErrorEvent)          {}
-func (o *snapshotRecordingObserver) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+func (o *snapshotRecordingObserver) OnLLMCall(context.Context, kobs.LLMCallEvent)      {}
+func (o *snapshotRecordingObserver) OnToolCall(context.Context, kobs.ToolCallEvent)    {}
+func (o *snapshotRecordingObserver) OnApproval(context.Context, intr.ApprovalEvent)    {}
+func (o *snapshotRecordingObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
+func (o *snapshotRecordingObserver) OnError(context.Context, kobs.ErrorEvent)          {}
+func (o *snapshotRecordingObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.events = append(o.events, e)
 }
 
-func (o *snapshotRecordingObserver) snapshot() []port.ExecutionEvent {
+func (o *snapshotRecordingObserver) snapshot() []kobs.ExecutionEvent {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	out := make([]port.ExecutionEvent, len(o.events))
+	out := make([]kobs.ExecutionEvent, len(o.events))
 	copy(out, o.events)
 	return out
 }
@@ -48,9 +49,9 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 	runGit(t, repo, "checkout", "--", "tracked.txt")
 
 	applier := NewGitPatchApply(repo)
-	applied, err := applier.Apply(context.Background(), port.PatchApplyRequest{
+	applied, err := applier.Apply(context.Background(), kws.PatchApplyRequest{
 		Patch:  patch,
-		Source: port.PatchSourceLLM,
+		Source: kws.PatchSourceLLM,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -59,14 +60,14 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 	store := NewGitWorktreeSnapshotStore(repo)
 	obs := &snapshotRecordingObserver{}
 	store.SetObserver(obs)
-	snapshot, err := store.Create(context.Background(), port.WorktreeSnapshotRequest{
+	snapshot, err := store.Create(context.Background(), kws.WorktreeSnapshotRequest{
 		SessionID: "sess-1",
 		Note:      "before review",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Mode != port.WorktreeSnapshotGhostState {
+	if snapshot.Mode != kws.WorktreeSnapshotGhostState {
 		t.Fatalf("unexpected snapshot mode %q", snapshot.Mode)
 	}
 	if snapshot.SessionID != "sess-1" {
@@ -76,7 +77,7 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 		t.Fatalf("expected one patch ref, got %+v", snapshot.Patches)
 	}
 	events := obs.snapshot()
-	if len(events) != 1 || events[0].Type != port.ExecutionSnapshotCreated {
+	if len(events) != 1 || events[0].Type != kobs.ExecutionSnapshotCreated {
 		t.Fatalf("expected snapshot.created event, got %+v", events)
 	}
 	if events[0].SessionID != "sess-1" {
@@ -109,8 +110,8 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 
 func TestGitWorktreeSnapshotStore_Unavailable(t *testing.T) {
 	store := NewGitWorktreeSnapshotStore(t.TempDir())
-	_, err := store.Create(context.Background(), port.WorktreeSnapshotRequest{})
-	if err != port.ErrWorktreeSnapshotUnavailable {
+	_, err := store.Create(context.Background(), kws.WorktreeSnapshotRequest{})
+	if err != kws.ErrWorktreeSnapshotUnavailable {
 		t.Fatalf("expected ErrWorktreeSnapshotUnavailable, got %v", err)
 	}
 }

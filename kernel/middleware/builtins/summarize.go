@@ -3,16 +3,15 @@ package builtins
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"strings"
 )
 
 // SummarizeConfig 配置对话历史摘要压缩行为。
 type SummarizeConfig struct {
 	// LLM 用于生成摘要的模型（必须提供）。
-	LLM port.LLM
+	LLM mdl.LLM
 
 	// MaxContextTokens 触发摘要压缩的 token 阈值。
 	// 当对话历史 token 超过此值时，自动将旧历史压缩为摘要。
@@ -32,10 +31,10 @@ type SummarizeConfig struct {
 	SummaryPrompt string
 
 	// TokenCounter 自定义 token 计数函数。
-	TokenCounter func(port.Message) int
+	TokenCounter func(mdl.Message) int
 
 	// ModelConfig 摘要使用的模型配置（为空时复用 session 模型）。
-	ModelConfig *port.ModelConfig
+	ModelConfig *mdl.ModelConfig
 }
 
 func (c SummarizeConfig) maxContextTokens() int {
@@ -59,7 +58,7 @@ func (c SummarizeConfig) maxSummaryTokens() int {
 	return c.MaxSummaryTokens
 }
 
-func (c SummarizeConfig) countTokens(msg port.Message) int {
+func (c SummarizeConfig) countTokens(msg mdl.Message) int {
 	if c.TokenCounter != nil {
 		return c.TokenCounter(msg)
 	}
@@ -115,9 +114,9 @@ func AutoSummarize(cfg SummarizeConfig) middleware.Middleware {
 		}
 
 		// 分离 system 消息和对话消息
-		var systemMsgs, dialogMsgs []port.Message
+		var systemMsgs, dialogMsgs []mdl.Message
 		for _, m := range msgs {
-			if m.Role == port.RoleSystem {
+			if m.Role == mdl.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)
@@ -140,14 +139,14 @@ func AutoSummarize(cfg SummarizeConfig) middleware.Middleware {
 			summaryText = "[摘要生成失败，已截断] " + notice
 		}
 
-		summaryMsg := port.Message{
-			Role: port.RoleSystem,
-			ContentParts: []port.ContentPart{
-				port.TextPart(buildSummaryNotice(summaryText, len(toCompress))),
+		summaryMsg := mdl.Message{
+			Role: mdl.RoleSystem,
+			ContentParts: []mdl.ContentPart{
+				mdl.TextPart(buildSummaryNotice(summaryText, len(toCompress))),
 			},
 		}
 
-		newMsgs := make([]port.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+		newMsgs := make([]mdl.Message, 0, len(systemMsgs)+1+len(recentMsgs))
 		newMsgs = append(newMsgs, systemMsgs...)
 		newMsgs = append(newMsgs, summaryMsg)
 		newMsgs = append(newMsgs, recentMsgs...)
@@ -157,7 +156,7 @@ func AutoSummarize(cfg SummarizeConfig) middleware.Middleware {
 	}
 }
 
-func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []port.Message) (string, error) {
+func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []mdl.Message) (string, error) {
 	if len(msgs) == 0 {
 		return "", nil
 	}
@@ -165,16 +164,16 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []port.Messa
 	// 将待压缩对话格式化为文本
 	var sb strings.Builder
 	for _, m := range msgs {
-		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, port.ContentPartsToPlainText(m.ContentParts)))
+		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, mdl.ContentPartsToPlainText(m.ContentParts)))
 		for _, tc := range m.ToolCalls {
 			sb.WriteString(fmt.Sprintf("[tool_call:%s]: %s\n", tc.Name, string(tc.Arguments)))
 		}
 		for _, tr := range m.ToolResults {
-			sb.WriteString(fmt.Sprintf("[tool_result]: %s\n", port.ContentPartsToPlainText(tr.ContentParts)))
+			sb.WriteString(fmt.Sprintf("[tool_result]: %s\n", mdl.ContentPartsToPlainText(tr.ContentParts)))
 		}
 	}
 
-	modelCfg := port.ModelConfig{}
+	modelCfg := mdl.ModelConfig{}
 	if cfg.ModelConfig != nil {
 		modelCfg = *cfg.ModelConfig
 	}
@@ -182,15 +181,15 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []port.Messa
 		modelCfg.MaxTokens = cfg.maxSummaryTokens()
 	}
 
-	req := port.CompletionRequest{
-		Messages: []port.Message{
+	req := mdl.CompletionRequest{
+		Messages: []mdl.Message{
 			{
-				Role:         port.RoleSystem,
-				ContentParts: []port.ContentPart{port.TextPart(cfg.summaryPrompt())},
+				Role:         mdl.RoleSystem,
+				ContentParts: []mdl.ContentPart{mdl.TextPart(cfg.summaryPrompt())},
 			},
 			{
-				Role:         port.RoleUser,
-				ContentParts: []port.ContentPart{port.TextPart("对话历史：\n" + sb.String())},
+				Role:         mdl.RoleUser,
+				ContentParts: []mdl.ContentPart{mdl.TextPart("对话历史：\n" + sb.String())},
 			},
 		},
 		Config: modelCfg,
@@ -200,7 +199,7 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []port.Messa
 	if err != nil {
 		return "", err
 	}
-	return port.ContentPartsToPlainText(resp.Message.ContentParts), nil
+	return mdl.ContentPartsToPlainText(resp.Message.ContentParts), nil
 }
 
 func buildSummaryNotice(summary string, compressedCount int) string {

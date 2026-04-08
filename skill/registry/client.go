@@ -6,11 +6,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/skill"
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/mossagents/moss/skill"
 )
 
 // RegistryEntry describes a skill available in a remote registry.

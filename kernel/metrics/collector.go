@@ -25,8 +25,8 @@ type Histogram interface {
 
 // HistogramSnapshot 是直方图在某一时刻的快照。
 type HistogramSnapshot struct {
-	Count  uint64
-	Sum    float64
+	Count   uint64
+	Sum     float64
 	Buckets []BucketCount // 按上界从小到大排列
 }
 
@@ -117,8 +117,8 @@ func (c *MemoryCollector) Snapshot() []MetricFamily {
 		case "c":
 			if cnt, ok := c.counters[name]; ok {
 				families = append(families, MetricFamily{
-					Name: name,
-					Type: "counter",
+					Name:    name,
+					Type:    "counter",
 					Samples: []Sample{{Value: cnt.Value()}},
 				})
 			}
@@ -181,7 +181,7 @@ type atomicCounter struct {
 	bits uint64 // stores float64 bits
 }
 
-func (c *atomicCounter) Inc()          { c.Add(1) }
+func (c *atomicCounter) Inc()           { c.Add(1) }
 func (c *atomicCounter) Value() float64 { return math.Float64frombits(atomic.LoadUint64(&c.bits)) }
 
 func (c *atomicCounter) Add(n float64) {

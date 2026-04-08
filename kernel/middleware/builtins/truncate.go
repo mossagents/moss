@@ -2,11 +2,10 @@ package builtins
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"strconv"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // TruncateConfig 配置自动 token 截断行为。
@@ -22,7 +21,7 @@ type TruncateConfig struct {
 
 	// TokenCounter 自定义 token 计数函数。
 	// 默认使用简单的字符数 / 4 估算。
-	TokenCounter func(port.Message) int
+	TokenCounter func(mdl.Message) int
 }
 
 func (c TruncateConfig) maxContextTokens() int {
@@ -39,7 +38,7 @@ func (c TruncateConfig) keepRecent() int {
 	return c.KeepRecent
 }
 
-func (c TruncateConfig) countTokens(msg port.Message) int {
+func (c TruncateConfig) countTokens(msg mdl.Message) int {
 	if c.TokenCounter != nil {
 		return c.TokenCounter(msg)
 	}
@@ -47,13 +46,13 @@ func (c TruncateConfig) countTokens(msg port.Message) int {
 }
 
 // estimateTokens 简单估算一条消息的 token 数（适用于无 tokenizer 场景）。
-func estimateTokens(msg port.Message) int {
-	total := len(port.ContentPartsToPlainText(msg.ContentParts)) / 4
+func estimateTokens(msg mdl.Message) int {
+	total := len(mdl.ContentPartsToPlainText(msg.ContentParts)) / 4
 	for _, tc := range msg.ToolCalls {
 		total += len(tc.Name)/4 + len(tc.Arguments)/4
 	}
 	for _, tr := range msg.ToolResults {
-		total += len(port.ContentPartsToPlainText(tr.ContentParts)) / 4
+		total += len(mdl.ContentPartsToPlainText(tr.ContentParts)) / 4
 	}
 	if total < 1 && (len(msg.ContentParts) > 0 || len(msg.ToolCalls) > 0 || len(msg.ToolResults) > 0) {
 		total = 1
@@ -92,9 +91,9 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 		}
 
 		// 分离 system 消息和对话消息
-		var systemMsgs, dialogMsgs []port.Message
+		var systemMsgs, dialogMsgs []mdl.Message
 		for _, msg := range sess.CopyMessages() {
-			if msg.Role == port.RoleSystem {
+			if msg.Role == mdl.RoleSystem {
 				systemMsgs = append(systemMsgs, msg)
 			} else {
 				dialogMsgs = append(dialogMsgs, msg)
@@ -112,11 +111,11 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 		// 构造截断摘要作为上下文
 		droppedCount := len(dialogMsgs) - keepRecent
 		if droppedCount > 0 {
-			summary := port.Message{
-				Role:         port.RoleSystem,
-				ContentParts: []port.ContentPart{port.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
+			summary := mdl.Message{
+				Role:         mdl.RoleSystem,
+				ContentParts: []mdl.ContentPart{mdl.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
 			}
-			newMsgs := make([]port.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+			newMsgs := make([]mdl.Message, 0, len(systemMsgs)+1+len(recentMsgs))
 			newMsgs = append(newMsgs, systemMsgs...)
 			newMsgs = append(newMsgs, summary)
 			newMsgs = append(newMsgs, recentMsgs...)

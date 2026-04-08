@@ -5,16 +5,18 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 const (
@@ -376,7 +378,7 @@ func (c *StateCatalog) Query(query StateQuery) (StatePage, error) {
 	return page, nil
 }
 
-func (c *StateCatalog) AppendExecutionEvent(event port.ExecutionEvent) error {
+func (c *StateCatalog) AppendExecutionEvent(event kobs.ExecutionEvent) error {
 	if !c.Enabled() {
 		return nil
 	}
@@ -598,13 +600,13 @@ func sessionSortTime(sess *session.Session) time.Time {
 	return time.Now().UTC()
 }
 
-func LogicalCheckpointSessionID(item *port.CheckpointRecord) string {
+func LogicalCheckpointSessionID(item *ckpt.CheckpointRecord) string {
 	if item == nil {
 		return ""
 	}
 	sessionID := strings.TrimSpace(item.SessionID)
 	for _, ref := range item.Lineage {
-		if ref.Kind == port.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+		if ref.Kind == ckpt.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
 			sessionID = strings.TrimSpace(ref.ID)
 			break
 		}
@@ -612,7 +614,7 @@ func LogicalCheckpointSessionID(item *port.CheckpointRecord) string {
 	return sessionID
 }
 
-func StateEntryFromCheckpoint(item *port.CheckpointRecord) (StateEntry, bool) {
+func StateEntryFromCheckpoint(item *ckpt.CheckpointRecord) (StateEntry, bool) {
 	if item == nil {
 		return StateEntry{}, false
 	}
@@ -636,7 +638,7 @@ func StateEntryFromCheckpoint(item *port.CheckpointRecord) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromTask(task port.TaskRecord) (StateEntry, bool) {
+func StateEntryFromTask(task taskrt.TaskRecord) (StateEntry, bool) {
 	if strings.TrimSpace(task.ID) == "" {
 		return StateEntry{}, false
 	}
@@ -675,7 +677,7 @@ func StateEntryFromTask(task port.TaskRecord) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromJob(job port.AgentJob) (StateEntry, bool) {
+func StateEntryFromJob(job taskrt.AgentJob) (StateEntry, bool) {
 	if strings.TrimSpace(job.ID) == "" {
 		return StateEntry{}, false
 	}
@@ -704,7 +706,7 @@ func StateEntryFromJob(job port.AgentJob) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromJobItem(item port.AgentJobItem) (StateEntry, bool) {
+func StateEntryFromJobItem(item taskrt.AgentJobItem) (StateEntry, bool) {
 	if strings.TrimSpace(item.JobID) == "" || strings.TrimSpace(item.ItemID) == "" {
 		return StateEntry{}, false
 	}
@@ -733,7 +735,7 @@ func StateEntryFromJobItem(item port.AgentJobItem) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
+func StateEntryFromMemory(record memstore.MemoryRecord) (StateEntry, bool) {
 	if strings.TrimSpace(record.Path) == "" {
 		return StateEntry{}, false
 	}
@@ -746,7 +748,7 @@ func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
 		RecordID:   strings.TrimSpace(record.Path),
 		Workspace:  strings.TrimSpace(record.Workspace),
 		RepoRoot:   strings.TrimSpace(record.CWD),
-		Status:     firstNonEmpty(string(record.Status), string(port.MemoryStatusActive)),
+		Status:     firstNonEmpty(string(record.Status), string(memstore.MemoryStatusActive)),
 		Title:      firstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
 		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
@@ -774,7 +776,7 @@ func StateEntryFromMemory(record port.MemoryRecord) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
+func StateEntryFromExecutionEvent(event kobs.ExecutionEvent) StateEntry {
 	recordID := strings.TrimSpace(event.EventID)
 	if recordID == "" {
 		recordID = strings.TrimSpace(event.CallID)
@@ -830,7 +832,7 @@ func StateEntryFromExecutionEvent(event port.ExecutionEvent) StateEntry {
 	}
 }
 
-func executionEventJournalRecord(event port.ExecutionEvent) map[string]any {
+func executionEventJournalRecord(event kobs.ExecutionEvent) map[string]any {
 	return map[string]any{
 		"event_id":      event.EventID,
 		"event_version": event.EventVersion,
@@ -904,18 +906,18 @@ func (s *indexedSessionStore) Watch(ctx context.Context, id string) (<-chan *ses
 }
 
 type indexedCheckpointStore struct {
-	inner   port.CheckpointStore
+	inner   ckpt.CheckpointStore
 	catalog *StateCatalog
 }
 
-func WrapCheckpointStore(store port.CheckpointStore, catalog *StateCatalog) port.CheckpointStore {
+func WrapCheckpointStore(store ckpt.CheckpointStore, catalog *StateCatalog) ckpt.CheckpointStore {
 	if store == nil || catalog == nil || !catalog.Enabled() {
 		return store
 	}
 	return &indexedCheckpointStore{inner: store, catalog: catalog}
 }
 
-func (s *indexedCheckpointStore) Create(ctx context.Context, req port.CheckpointCreateRequest) (*port.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) Create(ctx context.Context, req ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
 	record, err := s.inner.Create(ctx, req)
 	if err != nil {
 		return nil, err
@@ -926,31 +928,31 @@ func (s *indexedCheckpointStore) Create(ctx context.Context, req port.Checkpoint
 	return record, nil
 }
 
-func (s *indexedCheckpointStore) Load(ctx context.Context, id string) (*port.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) Load(ctx context.Context, id string) (*ckpt.CheckpointRecord, error) {
 	return s.inner.Load(ctx, id)
 }
 
-func (s *indexedCheckpointStore) List(ctx context.Context) ([]port.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) List(ctx context.Context) ([]ckpt.CheckpointRecord, error) {
 	return s.inner.List(ctx)
 }
 
-func (s *indexedCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]port.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]ckpt.CheckpointRecord, error) {
 	return s.inner.FindBySession(ctx, sessionID)
 }
 
 type indexedTaskRuntime struct {
-	inner   port.TaskRuntime
+	inner   taskrt.TaskRuntime
 	catalog *StateCatalog
 }
 
-func WrapTaskRuntime(runtime port.TaskRuntime, catalog *StateCatalog) port.TaskRuntime {
+func WrapTaskRuntime(runtime taskrt.TaskRuntime, catalog *StateCatalog) taskrt.TaskRuntime {
 	if runtime == nil || catalog == nil || !catalog.Enabled() {
 		return runtime
 	}
 	return &indexedTaskRuntime{inner: runtime, catalog: catalog}
 }
 
-func (r *indexedTaskRuntime) UpsertTask(ctx context.Context, task port.TaskRecord) error {
+func (r *indexedTaskRuntime) UpsertTask(ctx context.Context, task taskrt.TaskRecord) error {
 	if err := r.inner.UpsertTask(ctx, task); err != nil {
 		return err
 	}
@@ -960,15 +962,15 @@ func (r *indexedTaskRuntime) UpsertTask(ctx context.Context, task port.TaskRecor
 	return nil
 }
 
-func (r *indexedTaskRuntime) GetTask(ctx context.Context, id string) (*port.TaskRecord, error) {
+func (r *indexedTaskRuntime) GetTask(ctx context.Context, id string) (*taskrt.TaskRecord, error) {
 	return r.inner.GetTask(ctx, id)
 }
 
-func (r *indexedTaskRuntime) ListTasks(ctx context.Context, query port.TaskQuery) ([]port.TaskRecord, error) {
+func (r *indexedTaskRuntime) ListTasks(ctx context.Context, query taskrt.TaskQuery) ([]taskrt.TaskRecord, error) {
 	return r.inner.ListTasks(ctx, query)
 }
 
-func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*port.TaskRecord, error) {
+func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string, preferredAgent string) (*taskrt.TaskRecord, error) {
 	task, err := r.inner.ClaimNextReady(ctx, claimer, preferredAgent)
 	if err != nil {
 		return nil, err
@@ -979,34 +981,34 @@ func (r *indexedTaskRuntime) ClaimNextReady(ctx context.Context, claimer string,
 	return task, nil
 }
 
-func (r *indexedTaskRuntime) ListTaskSummaries(ctx context.Context, query port.TaskQuery) ([]port.TaskSummary, error) {
-	if graph, ok := r.inner.(port.TaskGraphRuntime); ok {
+func (r *indexedTaskRuntime) ListTaskSummaries(ctx context.Context, query taskrt.TaskQuery) ([]taskrt.TaskSummary, error) {
+	if graph, ok := r.inner.(taskrt.TaskGraphRuntime); ok {
 		return graph.ListTaskSummaries(ctx, query)
 	}
 	tasks, err := r.inner.ListTasks(ctx, query)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]port.TaskSummary, 0, len(tasks))
+	out := make([]taskrt.TaskSummary, 0, len(tasks))
 	for _, task := range tasks {
-		out = append(out, port.TaskSummaryFromRecord(task))
+		out = append(out, taskrt.TaskSummaryFromRecord(task))
 	}
 	return out, nil
 }
 
-func (r *indexedTaskRuntime) ListTaskRelations(ctx context.Context, taskID string) ([]port.TaskRelation, error) {
-	if graph, ok := r.inner.(port.TaskGraphRuntime); ok {
+func (r *indexedTaskRuntime) ListTaskRelations(ctx context.Context, taskID string) ([]taskrt.TaskRelation, error) {
+	if graph, ok := r.inner.(taskrt.TaskGraphRuntime); ok {
 		return graph.ListTaskRelations(ctx, taskID)
 	}
 	task, err := r.inner.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
-	return port.TaskRelationsFromRecord(*task), nil
+	return taskrt.TaskRelationsFromRecord(*task), nil
 }
 
-func (r *indexedTaskRuntime) UpsertJob(ctx context.Context, job port.AgentJob) error {
-	jobRuntime, ok := r.inner.(port.JobRuntime)
+func (r *indexedTaskRuntime) UpsertJob(ctx context.Context, job taskrt.AgentJob) error {
+	jobRuntime, ok := r.inner.(taskrt.JobRuntime)
 	if !ok {
 		return fmt.Errorf("job runtime is not supported by wrapped task runtime")
 	}
@@ -1019,24 +1021,24 @@ func (r *indexedTaskRuntime) UpsertJob(ctx context.Context, job port.AgentJob) e
 	return nil
 }
 
-func (r *indexedTaskRuntime) GetJob(ctx context.Context, id string) (*port.AgentJob, error) {
-	jobRuntime, ok := r.inner.(port.JobRuntime)
+func (r *indexedTaskRuntime) GetJob(ctx context.Context, id string) (*taskrt.AgentJob, error) {
+	jobRuntime, ok := r.inner.(taskrt.JobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
 	}
 	return jobRuntime.GetJob(ctx, id)
 }
 
-func (r *indexedTaskRuntime) ListJobs(ctx context.Context, query port.JobQuery) ([]port.AgentJob, error) {
-	jobRuntime, ok := r.inner.(port.JobRuntime)
+func (r *indexedTaskRuntime) ListJobs(ctx context.Context, query taskrt.JobQuery) ([]taskrt.AgentJob, error) {
+	jobRuntime, ok := r.inner.(taskrt.JobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
 	}
 	return jobRuntime.ListJobs(ctx, query)
 }
 
-func (r *indexedTaskRuntime) UpsertJobItem(ctx context.Context, item port.AgentJobItem) error {
-	jobRuntime, ok := r.inner.(port.JobRuntime)
+func (r *indexedTaskRuntime) UpsertJobItem(ctx context.Context, item taskrt.AgentJobItem) error {
+	jobRuntime, ok := r.inner.(taskrt.JobRuntime)
 	if !ok {
 		return fmt.Errorf("job runtime is not supported by wrapped task runtime")
 	}
@@ -1049,16 +1051,16 @@ func (r *indexedTaskRuntime) UpsertJobItem(ctx context.Context, item port.AgentJ
 	return nil
 }
 
-func (r *indexedTaskRuntime) ListJobItems(ctx context.Context, query port.JobItemQuery) ([]port.AgentJobItem, error) {
-	jobRuntime, ok := r.inner.(port.JobRuntime)
+func (r *indexedTaskRuntime) ListJobItems(ctx context.Context, query taskrt.JobItemQuery) ([]taskrt.AgentJobItem, error) {
+	jobRuntime, ok := r.inner.(taskrt.JobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("job runtime is not supported by wrapped task runtime")
 	}
 	return jobRuntime.ListJobItems(ctx, query)
 }
 
-func (r *indexedTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*port.AgentJobItem, error) {
-	atomicRuntime, ok := r.inner.(port.AtomicJobRuntime)
+func (r *indexedTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, itemID, executor string) (*taskrt.AgentJobItem, error) {
+	atomicRuntime, ok := r.inner.(taskrt.AtomicJobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("atomic job runtime is not supported by wrapped task runtime")
 	}
@@ -1072,8 +1074,8 @@ func (r *indexedTaskRuntime) MarkJobItemRunning(ctx context.Context, jobID, item
 	return item, nil
 }
 
-func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status port.AgentJobStatus, result string, errMsg string) (*port.AgentJobItem, error) {
-	atomicRuntime, ok := r.inner.(port.AtomicJobRuntime)
+func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, itemID, executor string, status taskrt.AgentJobStatus, result string, errMsg string) (*taskrt.AgentJobItem, error) {
+	atomicRuntime, ok := r.inner.(taskrt.AtomicJobRuntime)
 	if !ok {
 		return nil, fmt.Errorf("atomic job runtime is not supported by wrapped task runtime")
 	}
@@ -1088,18 +1090,18 @@ func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, ite
 }
 
 type stateCatalogObserver struct {
-	port.NoOpObserver
+	kobs.NoOpObserver
 	catalog *StateCatalog
 }
 
-func NewStateCatalogObserver(catalog *StateCatalog) port.Observer {
+func NewStateCatalogObserver(catalog *StateCatalog) kobs.Observer {
 	if catalog == nil || !catalog.Enabled() {
 		return nil
 	}
 	return &stateCatalogObserver{catalog: catalog}
 }
 
-func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event port.ExecutionEvent) {
+func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event kobs.ExecutionEvent) {
 	if err := o.catalog.AppendExecutionEvent(event); err != nil {
 		o.catalog.markError(err)
 	}
@@ -1126,7 +1128,7 @@ func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
 	return state.catalog
 }
 
-func ObserverForStateCatalog(k *kernel.Kernel) port.Observer {
+func ObserverForStateCatalog(k *kernel.Kernel) kobs.Observer {
 	return NewStateCatalogObserver(StateCatalogOf(k))
 }
 

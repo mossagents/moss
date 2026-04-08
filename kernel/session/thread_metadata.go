@@ -2,10 +2,9 @@ package session
 
 import (
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 const (
@@ -126,10 +125,10 @@ func ThreadPreview(sess *Session) string {
 	}
 	for i := len(sess.Messages) - 1; i >= 0; i-- {
 		msg := sess.Messages[i]
-		if msg.Role == port.RoleSystem {
+		if msg.Role == mdl.RoleSystem {
 			continue
 		}
-		text := trimPreview(port.ContentPartsToPlainText(msg.ContentParts), 240)
+		text := trimPreview(mdl.ContentPartsToPlainText(msg.ContentParts), 240)
 		if text != "" {
 			return text
 		}

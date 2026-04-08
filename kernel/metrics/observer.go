@@ -2,9 +2,9 @@ package metrics
 
 import (
 	"context"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // Predefined metric names used by MetricsObserver.
@@ -18,16 +18,16 @@ const (
 	MetricToolDurationSecs = "moss_tool_duration_seconds"
 )
 
-// MetricsObserver implements port.Observer by recording LLM and tool metrics.
+// MetricsObserver implements kobs.Observer by recording LLM and tool metrics.
 type MetricsObserver struct {
-	port.NoOpObserver
+	kobs.NoOpObserver
 
-	llmCalls    Counter
-	llmErrors   Counter
-	llmTokens   Counter
-	llmDuration Histogram
-	toolCalls   Counter
-	toolErrors  Counter
+	llmCalls     Counter
+	llmErrors    Counter
+	llmTokens    Counter
+	llmDuration  Histogram
+	toolCalls    Counter
+	toolErrors   Counter
 	toolDuration Histogram
 }
 
@@ -45,7 +45,7 @@ func NewObserver(c Collector) *MetricsObserver {
 }
 
 // OnLLMCall records LLM call metrics.
-func (o *MetricsObserver) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
+func (o *MetricsObserver) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	o.llmCalls.Inc()
 	if e.Error != nil {
 		o.llmErrors.Inc()
@@ -60,7 +60,7 @@ func (o *MetricsObserver) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 }
 
 // OnToolCall records tool call metrics.
-func (o *MetricsObserver) OnToolCall(_ context.Context, e port.ToolCallEvent) {
+func (o *MetricsObserver) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	o.toolCalls.Inc()
 	if e.Error != nil {
 		o.toolErrors.Inc()
@@ -70,20 +70,20 @@ func (o *MetricsObserver) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	}
 }
 
-// ensure MetricsObserver satisfies port.Observer at compile time
-var _ port.Observer = (*MetricsObserver)(nil)
+// ensure MetricsObserver satisfies kobs.Observer at compile time
+var _ kobs.Observer = (*MetricsObserver)(nil)
 
 // TokenUsage convenience re-export for callers building test events.
-type TokenUsage = port.TokenUsage
+type TokenUsage = mdl.TokenUsage
 
-// NewLLMCallEvent constructs a port.LLMCallEvent for testing purposes.
-func NewLLMCallEvent(sessionID, model string, start time.Time, dur time.Duration, promptToks, completionToks int, err error) port.LLMCallEvent {
-	return port.LLMCallEvent{
+// NewLLMCallEvent constructs a kobs.LLMCallEvent for testing purposes.
+func NewLLMCallEvent(sessionID, model string, start time.Time, dur time.Duration, promptToks, completionToks int, err error) kobs.LLMCallEvent {
+	return kobs.LLMCallEvent{
 		SessionID: sessionID,
 		Model:     model,
 		StartedAt: start,
 		Duration:  dur,
-		Usage: port.TokenUsage{
+		Usage: mdl.TokenUsage{
 			PromptTokens:     promptToks,
 			CompletionTokens: completionToks,
 		},

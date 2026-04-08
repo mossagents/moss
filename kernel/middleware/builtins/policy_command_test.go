@@ -2,9 +2,8 @@ package builtins
 
 import (
 	"encoding/json"
-	"testing"
-
 	"github.com/mossagents/moss/kernel/tool"
+	"testing"
 )
 
 func TestCommandRulesRequireApprovalForMatchedCommand(t *testing.T) {

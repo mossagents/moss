@@ -2,22 +2,26 @@ package kernel
 
 import (
 	"context"
-	"os"
-
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
+	"os"
 )
 
 // Option 是 Kernel 的函数式配置选项。
 type Option func(*Kernel)
 
 // WithLLM 设置 LLM Port。
-func WithLLM(llm port.LLM) Option {
+func WithLLM(llm mdl.LLM) Option {
 	return func(k *Kernel) { k.llm = llm }
 }
 
@@ -37,53 +41,53 @@ func WithSandbox(sb sandbox.Sandbox) Option {
 
 // WithWorkspace 设置 Workspace Port（文件系统抽象）。
 // 当同时设置了 Sandbox 时，内置工具优先使用 Workspace。
-func WithWorkspace(ws port.Workspace) Option {
+func WithWorkspace(ws kws.Workspace) Option {
 	return func(k *Kernel) { k.workspace = ws }
 }
 
 // WithExecutor 设置 Executor Port（命令执行抽象）。
 // 当同时设置了 Sandbox 时，内置工具优先使用 Executor。
-func WithExecutor(exec port.Executor) Option {
+func WithExecutor(exec kws.Executor) Option {
 	return func(k *Kernel) { k.executor = exec }
 }
 
 // WithTaskRuntime 设置 TaskRuntime Port。
-func WithTaskRuntime(tasks port.TaskRuntime) Option {
+func WithTaskRuntime(tasks taskrt.TaskRuntime) Option {
 	return func(k *Kernel) { k.tasks = tasks }
 }
 
 // WithMailbox 设置 Mailbox Port。
-func WithMailbox(mailbox port.Mailbox) Option {
+func WithMailbox(mailbox taskrt.Mailbox) Option {
 	return func(k *Kernel) { k.mailbox = mailbox }
 }
 
 // WithWorkspaceIsolation 设置 WorkspaceIsolation Port。
-func WithWorkspaceIsolation(isolation port.WorkspaceIsolation) Option {
+func WithWorkspaceIsolation(isolation kws.WorkspaceIsolation) Option {
 	return func(k *Kernel) { k.isolation = isolation }
 }
 
 // WithRepoStateCapture 设置 RepoStateCapture Port。
-func WithRepoStateCapture(capture port.RepoStateCapture) Option {
+func WithRepoStateCapture(capture kws.RepoStateCapture) Option {
 	return func(k *Kernel) { k.repoState = capture }
 }
 
 // WithPatchApply 设置 PatchApply Port。
-func WithPatchApply(apply port.PatchApply) Option {
+func WithPatchApply(apply kws.PatchApply) Option {
 	return func(k *Kernel) { k.patches = apply }
 }
 
 // WithPatchRevert 设置 PatchRevert Port。
-func WithPatchRevert(revert port.PatchRevert) Option {
+func WithPatchRevert(revert kws.PatchRevert) Option {
 	return func(k *Kernel) { k.reverts = revert }
 }
 
 // WithWorktreeSnapshots 设置 WorktreeSnapshotStore Port。
-func WithWorktreeSnapshots(store port.WorktreeSnapshotStore) Option {
+func WithWorktreeSnapshots(store kws.WorktreeSnapshotStore) Option {
 	return func(k *Kernel) { k.snapshots = store }
 }
 
 // WithCheckpoints 设置 CheckpointStore Port。
-func WithCheckpoints(store port.CheckpointStore) Option {
+func WithCheckpoints(store ckpt.CheckpointStore) Option {
 	return func(k *Kernel) { k.checkpoints = store }
 }
 
@@ -93,7 +97,7 @@ func WithSessionStore(store session.SessionStore) Option {
 }
 
 // WithUserIO 设置 UserIO Port。
-func WithUserIO(io port.UserIO) Option {
+func WithUserIO(io intr.UserIO) Option {
 	return func(k *Kernel) { k.io = io }
 }
 
@@ -127,7 +131,7 @@ func WithLoopConfig(cfg loop.LoopConfig) Option {
 // WithObserver 设置运行时事件观察者。
 // Observer 用于收集可观测性指标（LLM 调用耗时、工具调用结果等），
 // 不设置则使用 NoOpObserver（零开销）。
-func WithObserver(o port.Observer) Option {
+func WithObserver(o kobs.Observer) Option {
 	return func(k *Kernel) { k.observer = o }
 }
 
@@ -150,7 +154,7 @@ func WithLLMBreaker(cfg retry.BreakerConfig) Option {
 
 // ── Sandbox → Workspace/Executor 适配器 ─────────────
 
-// sandboxWorkspaceAdapter 将任意 Sandbox 适配为 port.Workspace。
+// sandboxWorkspaceAdapter 将任意 Sandbox 适配为 kws.Workspace。
 type sandboxWorkspaceAdapter struct {
 	sb sandbox.Sandbox
 }
@@ -167,16 +171,16 @@ func (a *sandboxWorkspaceAdapter) ListFiles(_ context.Context, pattern string) (
 	return a.sb.ListFiles(pattern)
 }
 
-func (a *sandboxWorkspaceAdapter) Stat(_ context.Context, path string) (port.FileInfo, error) {
+func (a *sandboxWorkspaceAdapter) Stat(_ context.Context, path string) (kws.FileInfo, error) {
 	resolved, err := a.sb.ResolvePath(path)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
-	return port.FileInfo{
+	return kws.FileInfo{
 		Name:    info.Name(),
 		Size:    info.Size(),
 		IsDir:   info.IsDir(),
@@ -192,11 +196,11 @@ func (a *sandboxWorkspaceAdapter) DeleteFile(_ context.Context, path string) err
 	return os.Remove(resolved)
 }
 
-// sandboxExecutorAdapter 将任意 Sandbox 适配为 port.Executor。
+// sandboxExecutorAdapter 将任意 Sandbox 适配为 kws.Executor。
 type sandboxExecutorAdapter struct {
 	sb sandbox.Sandbox
 }
 
-func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
 	return a.sb.Execute(ctx, req)
 }

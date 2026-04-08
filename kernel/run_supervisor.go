@@ -3,11 +3,10 @@ package kernel
 import (
 	"context"
 	"fmt"
+	kerrors "github.com/mossagents/moss/kernel/errors"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	kerrors "github.com/mossagents/moss/kernel/errors"
 )
 
 type runKind string

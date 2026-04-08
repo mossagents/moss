@@ -1,10 +1,9 @@
 package tui
 
 import (
-	"strings"
-
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/userio/prompting"
+	"strings"
 )
 
 // buildSystemPrompt 构造 Agent 的 system prompt。

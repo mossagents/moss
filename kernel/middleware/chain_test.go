@@ -2,9 +2,8 @@ package middleware
 
 import (
 	"context"
-	"testing"
-
 	"github.com/mossagents/moss/kernel/session"
+	"testing"
 )
 
 func TestChainOrdering(t *testing.T) {

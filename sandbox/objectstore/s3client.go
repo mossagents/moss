@@ -49,7 +49,7 @@ func NewS3BlobClient(cfg S3Config, client *http.Client) (*S3BlobClient, error) {
 		cfg.Region = "us-east-1"
 	}
 	if cfg.Endpoint == "" {
-		cfg.Endpoint = fmt.Sprintf("https://s3.%s.amazonaws.com", cfg.Region)
+		cfg.Endpoint = fmt.Sprintf("https://s3.%s.amazonakws.com", cfg.Region)
 	}
 	doer := httpDoer(http.DefaultClient)
 	if client != nil {
@@ -135,9 +135,9 @@ func (c *S3BlobClient) Delete(ctx context.Context, key string) error {
 
 // s3ListBucketResult is the XML response from S3 ListObjects.
 type s3ListBucketResult struct {
-	XMLName  xml.Name  `xml:"ListBucketResult"`
-	Contents []s3Object `xml:"Contents"`
-	IsTruncated bool   `xml:"IsTruncated"`
+	XMLName     xml.Name   `xml:"ListBucketResult"`
+	Contents    []s3Object `xml:"Contents"`
+	IsTruncated bool       `xml:"IsTruncated"`
 }
 
 type s3Object struct {

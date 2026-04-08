@@ -2,11 +2,10 @@ package builtins
 
 import (
 	"context"
-	"strings"
-
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/knowledge"
+	"strings"
 )
 
 // RAGConfig 配置 RAG（检索增强生成）注入行为。
@@ -28,7 +27,7 @@ type RAGConfig struct {
 
 	// QueryExtractor 从最后一条 user message 提取检索查询文本。
 	// 默认从最后一条用户消息提取纯文本。
-	QueryExtractor func(msgs []port.Message) string
+	QueryExtractor func(msgs []mdl.Message) string
 }
 
 func (c RAGConfig) maxChars() int {
@@ -81,14 +80,14 @@ func RAG(cfg RAGConfig) middleware.Middleware {
 }
 
 // extractQuery 从消息列表中提取最后一条 user message 的文本作为检索查询。
-func extractQuery(msgs []port.Message, extractor func([]port.Message) string) string {
+func extractQuery(msgs []mdl.Message, extractor func([]mdl.Message) string) string {
 	if extractor != nil {
 		return extractor(msgs)
 	}
 	// 默认：取最后一条 user 消息的纯文本
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == port.RoleUser {
-			text := port.ContentPartsToPlainText(msgs[i].ContentParts)
+		if msgs[i].Role == mdl.RoleUser {
+			text := mdl.ContentPartsToPlainText(msgs[i].ContentParts)
 			if text != "" {
 				// 截断过长的查询
 				if len(text) > 512 {
@@ -103,35 +102,35 @@ func extractQuery(msgs []port.Message, extractor func([]port.Message) string) st
 
 // appendMemoryContext 将记忆注入追加到 system message。
 func appendMemoryContext(sess interface {
-	CopyMessages() []port.Message
-	ReplaceMessages([]port.Message)
-}, msgs []port.Message, injected string) {
-	newMsgs := make([]port.Message, len(msgs))
+	CopyMessages() []mdl.Message
+	ReplaceMessages([]mdl.Message)
+}, msgs []mdl.Message, injected string) {
+	newMsgs := make([]mdl.Message, len(msgs))
 	copy(newMsgs, msgs)
 
 	// 找到最后一条 system message
 	lastSystemIdx := -1
 	for i, m := range newMsgs {
-		if m.Role == port.RoleSystem {
+		if m.Role == mdl.RoleSystem {
 			lastSystemIdx = i
 		}
 	}
 
 	if lastSystemIdx >= 0 {
 		// 追加到现有 system message 末尾
-		existing := port.ContentPartsToPlainText(newMsgs[lastSystemIdx].ContentParts)
+		existing := mdl.ContentPartsToPlainText(newMsgs[lastSystemIdx].ContentParts)
 		combined := strings.TrimRight(existing, "\n") + "\n\n" + injected
-		newMsgs[lastSystemIdx] = port.Message{
-			Role:         port.RoleSystem,
-			ContentParts: []port.ContentPart{port.TextPart(combined)},
+		newMsgs[lastSystemIdx] = mdl.Message{
+			Role:         mdl.RoleSystem,
+			ContentParts: []mdl.ContentPart{mdl.TextPart(combined)},
 		}
 	} else {
 		// 在消息列表开头插入 system message
-		injectedMsg := port.Message{
-			Role:         port.RoleSystem,
-			ContentParts: []port.ContentPart{port.TextPart(injected)},
+		injectedMsg := mdl.Message{
+			Role:         mdl.RoleSystem,
+			ContentParts: []mdl.ContentPart{mdl.TextPart(injected)},
 		}
-		newMsgs = append([]port.Message{injectedMsg}, newMsgs...)
+		newMsgs = append([]mdl.Message{injectedMsg}, newMsgs...)
 	}
 
 	sess.ReplaceMessages(newMsgs)

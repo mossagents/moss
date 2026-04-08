@@ -13,12 +13,12 @@ package gateway
 import (
 	"context"
 	"fmt"
+	kchannel "github.com/mossagents/moss/kernel/channel"
+	"github.com/mossagents/moss/kernel/loop"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 // Kernel 是 Gateway 所需的 Kernel 子集接口。
@@ -93,9 +93,9 @@ func WithTraceExtractor(fn func(ctx context.Context, metadata map[string]any) co
 type Gateway struct {
 	kernel     Kernel
 	router     *session.Router
-	channels   []port.Channel
+	channels   []kchannel.Channel
 	config     Config
-	chanByName map[string]port.Channel
+	chanByName map[string]kchannel.Channel
 }
 
 // New 创建 Gateway。
@@ -108,12 +108,12 @@ func New(k Kernel, router *session.Router, opts ...Option) *Gateway {
 		kernel:     k,
 		router:     router,
 		config:     cfg,
-		chanByName: make(map[string]port.Channel),
+		chanByName: make(map[string]kchannel.Channel),
 	}
 }
 
 // AddChannel 注册一个消息通道。必须在 Serve 之前调用。
-func (gw *Gateway) AddChannel(ch port.Channel) {
+func (gw *Gateway) AddChannel(ch kchannel.Channel) {
 	gw.channels = append(gw.channels, ch)
 	gw.chanByName[ch.Name()] = ch
 }
@@ -178,8 +178,8 @@ func (gw *Gateway) Serve(ctx context.Context) error {
 
 // inboundWithChannel 关联入站消息和来源 Channel。
 type inboundWithChannel struct {
-	msg port.InboundMessage
-	ch  port.Channel
+	msg kchannel.InboundMessage
+	ch  kchannel.Channel
 }
 
 // fanIn 将多个 Channel 的 Receive 合并到一个 Go channel。
@@ -189,7 +189,7 @@ func (gw *Gateway) fanIn(ctx context.Context) <-chan inboundWithChannel {
 
 	for _, ch := range gw.channels {
 		wg.Add(1)
-		go func(c port.Channel) {
+		go func(c kchannel.Channel) {
 			defer wg.Done()
 			incoming := c.Receive(ctx)
 			for msg := range incoming {
@@ -228,7 +228,7 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	}
 
 	// 2. 追加用户消息
-	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(msg.Content)}})
+	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(msg.Content)}})
 
 	// 3. 运行 Agent Loop
 	result, err := gw.kernel.Run(ctx, sess)
@@ -249,7 +249,7 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 				gw.onError(fmt.Errorf("queue reply to %s/%s: %w", msg.ChannelName, msg.SenderID, err))
 			}
 		} else {
-			outMsg := port.OutboundMessage{
+			outMsg := kchannel.OutboundMessage{
 				To:      msg.SenderID,
 				Content: result.Output,
 			}
@@ -271,7 +271,7 @@ func (gw *Gateway) sendOutbound(ctx context.Context, msg OutboundMessage) error 
 	if !ok {
 		return fmt.Errorf("channel %q not found", msg.Channel)
 	}
-	return ch.Send(ctx, port.OutboundMessage{
+	return ch.Send(ctx, kchannel.OutboundMessage{
 		To:       msg.To,
 		Content:  msg.Content,
 		Metadata: msg.Metadata,

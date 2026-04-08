@@ -2,10 +2,9 @@ package runtime
 
 import (
 	"context"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"strings"
 	"sync"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // ScheduledCaptureIO captures scheduled-job output for fallback summaries.
@@ -19,17 +18,17 @@ func NewScheduledCaptureIO() *ScheduledCaptureIO {
 	return &ScheduledCaptureIO{}
 }
 
-func (s *ScheduledCaptureIO) Send(_ context.Context, msg port.OutputMessage) error {
+func (s *ScheduledCaptureIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	switch msg.Type {
-	case port.OutputStream, port.OutputText:
+	case intr.OutputStream, intr.OutputText:
 		s.stream.WriteString(msg.Content)
-		if msg.Type == port.OutputText {
+		if msg.Type == intr.OutputText {
 			s.stream.WriteString("\n")
 		}
-	case port.OutputToolResult:
+	case intr.OutputToolResult:
 		isErr, _ := msg.Meta["is_error"].(bool)
 		if isErr {
 			s.results = append(s.results, "error: "+strings.TrimSpace(msg.Content))
@@ -38,8 +37,8 @@ func (s *ScheduledCaptureIO) Send(_ context.Context, msg port.OutputMessage) err
 	return nil
 }
 
-func (s *ScheduledCaptureIO) Ask(_ context.Context, req port.InputRequest) (port.InputResponse, error) {
-	return (&port.NoOpIO{}).Ask(context.Background(), req)
+func (s *ScheduledCaptureIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+	return (&intr.NoOpIO{}).Ask(context.Background(), req)
 }
 
 func (s *ScheduledCaptureIO) FinalText() string {

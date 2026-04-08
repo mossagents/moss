@@ -3,20 +3,19 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	rt "github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/scheduler"
 	"os"
 	"path/filepath"
 	"reflect"
 	"runtime"
 	"sort"
 	"testing"
-
-	rt "github.com/mossagents/moss/appkit/runtime"
-	"github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/scheduler"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
@@ -163,7 +162,7 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &port.NoOpIO{},
+	}, &intr.NoOpIO{},
 		WithKernelOptions(kernel.WithParallelToolCalls()),
 		AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			return k.ToolRegistry().Register(tool.ToolSpec{
@@ -201,11 +200,11 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 func TestBuildKernelWithExtensions_NoExtensionsMatchesBuildKernel(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
-	base, err := BuildKernel(context.Background(), flags, &port.NoOpIO{})
+	base, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{})
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
-	withExts, err := BuildKernelWithExtensions(context.Background(), flags, &port.NoOpIO{})
+	withExts, err := BuildKernelWithExtensions(context.Background(), flags, &intr.NoOpIO{})
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -218,7 +217,7 @@ func TestBuildKernelWithExtensions_NoExtensionsMatchesBuildKernel(t *testing.T) 
 func TestBuildKernelWithExtensions_RuntimeOptionsAffectSetup(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
-	k, err := BuildKernelWithExtensions(context.Background(), flags, &port.NoOpIO{},
+	k, err := BuildKernelWithExtensions(context.Background(), flags, &intr.NoOpIO{},
 		WithRuntimeOptions(rt.WithBuiltinTools(false)),
 	)
 	if err != nil {
@@ -255,7 +254,7 @@ func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &port.NoOpIO{}, WithScheduling(scheduler.New()))
+	}, &intr.NoOpIO{}, WithScheduling(scheduler.New()))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -277,7 +276,7 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &port.NoOpIO{}, WithPersistentMemories(memDir))
+	}, &intr.NoOpIO{}, WithPersistentMemories(memDir))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -305,7 +304,7 @@ func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
 	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &port.NoOpIO{}, WithContextOffload(store))
+	}, &intr.NoOpIO{}, WithContextOffload(store))
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
@@ -351,7 +350,7 @@ trust_level: restricted
 		Provider:  "openai",
 		Workspace: workspace,
 		Trust:     "restricted",
-	}, &port.NoOpIO{})
+	}, &intr.NoOpIO{})
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions restricted: %v", err)
 	}
@@ -366,7 +365,7 @@ trust_level: restricted
 		Provider:  "openai",
 		Workspace: workspace,
 		Trust:     "trusted",
-	}, &port.NoOpIO{})
+	}, &intr.NoOpIO{})
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions trusted: %v", err)
 	}

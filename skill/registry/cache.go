@@ -6,14 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/skill"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/skill"
 )
 
 // InstalledRecord tracks a skill that has been installed into the local cache.

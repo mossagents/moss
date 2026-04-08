@@ -2,24 +2,26 @@ package runtime
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	memstore "github.com/mossagents/moss/kernel/memory"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 type spyObserver struct {
-	events []port.ExecutionEvent
+	events []kobs.ExecutionEvent
 }
 
-func (s *spyObserver) OnLLMCall(context.Context, port.LLMCallEvent)      {}
-func (s *spyObserver) OnToolCall(context.Context, port.ToolCallEvent)    {}
-func (s *spyObserver) OnApproval(context.Context, port.ApprovalEvent)    {}
-func (s *spyObserver) OnSessionEvent(context.Context, port.SessionEvent) {}
-func (s *spyObserver) OnError(context.Context, port.ErrorEvent)          {}
-func (s *spyObserver) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+func (s *spyObserver) OnLLMCall(context.Context, kobs.LLMCallEvent)      {}
+func (s *spyObserver) OnToolCall(context.Context, kobs.ToolCallEvent)    {}
+func (s *spyObserver) OnApproval(context.Context, intr.ApprovalEvent)   {}
+func (s *spyObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
+func (s *spyObserver) OnError(context.Context, kobs.ErrorEvent)          {}
+func (s *spyObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
 	s.events = append(s.events, e)
 }
 
@@ -39,11 +41,11 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 	if !ok {
 		t.Fatal("expected visible session entry")
 	}
-	second, ok := StateEntryFromTask(port.TaskRecord{
+	second, ok := StateEntryFromTask(taskrt.TaskRecord{
 		ID:        "task-1",
 		AgentName: "general-purpose",
 		Goal:      "beta task",
-		Status:    port.TaskPending,
+		Status:    taskrt.TaskPending,
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now.Add(-time.Minute),
 	})
@@ -95,9 +97,9 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 	}
 	k := kernel.New(WithStateCatalog(catalog))
 	spy := &spyObserver{}
-	observer := port.JoinObservers(spy, ObserverForStateCatalog(k))
-	event := port.ExecutionEvent{
-		Type:      port.ExecutionToolCompleted,
+	observer := kobs.JoinObservers(spy, ObserverForStateCatalog(k))
+	event := kobs.ExecutionEvent{
+		Type:      kobs.ExecutionToolCompleted,
 		SessionID: "sess-1",
 		ToolName:  "run_command",
 		Timestamp: time.Now().UTC(),
@@ -124,7 +126,7 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 
 func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	now := time.Now().UTC()
-	mem, ok := StateEntryFromMemory(port.MemoryRecord{
+	mem, ok := StateEntryFromMemory(memstore.MemoryRecord{
 		ID:        "m-1",
 		Path:      "team/decision.md",
 		Content:   "sqlite backend selected",
@@ -139,11 +141,11 @@ func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 		t.Fatalf("expected memory kind, got %q", mem.Kind)
 	}
 
-	job, ok := StateEntryFromJob(port.AgentJob{
+	job, ok := StateEntryFromJob(taskrt.AgentJob{
 		ID:        "job-1",
 		AgentName: "worker",
 		Goal:      "process data",
-		Status:    port.JobRunning,
+		Status:    taskrt.JobRunning,
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now,
 	})
@@ -154,10 +156,10 @@ func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 		t.Fatalf("expected job kind, got %q", job.Kind)
 	}
 
-	item, ok := StateEntryFromJobItem(port.AgentJobItem{
+	item, ok := StateEntryFromJobItem(taskrt.AgentJobItem{
 		JobID:     "job-1",
 		ItemID:    "item-1",
-		Status:    port.JobCompleted,
+		Status:    taskrt.JobCompleted,
 		Executor:  "agent-a",
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now,
@@ -175,24 +177,24 @@ func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	wrapped := WrapTaskRuntime(port.NewMemoryTaskRuntime(), catalog)
-	jobRuntime, ok := wrapped.(port.JobRuntime)
+	wrapped := WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
+	jobRuntime, ok := wrapped.(taskrt.JobRuntime)
 	if !ok {
 		t.Fatal("expected wrapped runtime to implement JobRuntime")
 	}
 	ctx := context.Background()
-	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+	if err := jobRuntime.UpsertJob(ctx, taskrt.AgentJob{
 		ID:        "job-x",
 		AgentName: "worker",
 		Goal:      "do work",
-		Status:    port.JobPending,
+		Status:    taskrt.JobPending,
 	}); err != nil {
 		t.Fatalf("UpsertJob: %v", err)
 	}
-	if err := jobRuntime.UpsertJobItem(ctx, port.AgentJobItem{
+	if err := jobRuntime.UpsertJobItem(ctx, taskrt.AgentJobItem{
 		JobID:  "job-x",
 		ItemID: "item-x",
-		Status: port.JobPending,
+		Status: taskrt.JobPending,
 	}); err != nil {
 		t.Fatalf("UpsertJobItem: %v", err)
 	}
@@ -210,28 +212,28 @@ func TestIndexedTaskRuntime_AtomicJobRuntimeMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	wrapped := WrapTaskRuntime(port.NewMemoryTaskRuntime(), catalog)
-	jobRuntime, ok := wrapped.(port.JobRuntime)
+	wrapped := WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
+	jobRuntime, ok := wrapped.(taskrt.JobRuntime)
 	if !ok {
 		t.Fatal("expected wrapped runtime to implement JobRuntime")
 	}
-	atomicRuntime, ok := wrapped.(port.AtomicJobRuntime)
+	atomicRuntime, ok := wrapped.(taskrt.AtomicJobRuntime)
 	if !ok {
 		t.Fatal("expected wrapped runtime to implement AtomicJobRuntime")
 	}
 	ctx := context.Background()
-	if err := jobRuntime.UpsertJob(ctx, port.AgentJob{
+	if err := jobRuntime.UpsertJob(ctx, taskrt.AgentJob{
 		ID:        "job-atomic",
 		AgentName: "worker",
 		Goal:      "atomic",
-		Status:    port.JobPending,
+		Status:    taskrt.JobPending,
 	}); err != nil {
 		t.Fatalf("UpsertJob: %v", err)
 	}
 	if _, err := atomicRuntime.MarkJobItemRunning(ctx, "job-atomic", "item-1", "exec-a"); err != nil {
 		t.Fatalf("MarkJobItemRunning: %v", err)
 	}
-	if _, err := atomicRuntime.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-a", port.JobFailed, "", "boom"); err != nil {
+	if _, err := atomicRuntime.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-a", taskrt.JobFailed, "", "boom"); err != nil {
 		t.Fatalf("ReportJobItemResult: %v", err)
 	}
 	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindJobItem}, Text: "item-1"})

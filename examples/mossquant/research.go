@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"strings"
-	"time"
-
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
+	"strings"
+	"time"
 )
 
 func registerResearchAgents(k *kernel.Kernel, flags *appkit.AppFlags) error {

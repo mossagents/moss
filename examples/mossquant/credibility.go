@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel/tool"
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 type credibilitySource struct {

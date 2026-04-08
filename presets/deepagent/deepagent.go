@@ -3,21 +3,22 @@ package deepagent
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
-	"strings"
-	"time"
-
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
 )
 
 // Config 描述 deep-agent 风格装配的配置项。
@@ -149,7 +150,7 @@ func DefaultConfig() Config {
 }
 
 // BuildKernel builds a deep-agent style kernel preset.
-func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, cfg *Config) (*kernel.Kernel, error) {
+func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, cfg *Config) (*kernel.Kernel, error) {
 	effective := DefaultConfig()
 	if cfg != nil {
 		effective = cfg.ApplyOver(effective)
@@ -198,7 +199,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, cf
 				checkpointDir = filepath.Join(flags.Workspace, "."+effective.AppName, "checkpoints")
 			}
 		}
-		store, err := port.NewFileCheckpointStore(checkpointDir)
+		store, err := ckpt.NewFileCheckpointStore(checkpointDir)
 		if err != nil {
 			return nil, fmt.Errorf("checkpoint store: %w", err)
 		}
@@ -214,7 +215,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO, cf
 				taskDir = filepath.Join(flags.Workspace, "."+effective.AppName, "tasks")
 			}
 		}
-		taskRuntime, err := port.NewFileTaskRuntime(taskDir)
+		taskRuntime, err := taskrt.NewFileTaskRuntime(taskDir)
 		if err != nil {
 			return nil, fmt.Errorf("task runtime: %w", err)
 		}

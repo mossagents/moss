@@ -3,11 +3,10 @@ package testing
 import (
 	"context"
 	"fmt"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"strings"
 	"sync"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // MemorySandbox 是基于内存的 Sandbox 测试桩。
@@ -68,7 +67,7 @@ func (s *MemorySandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (s *MemorySandbox) Execute(_ context.Context, req port.ExecRequest) (sandbox.Output, error) {
+func (s *MemorySandbox) Execute(_ context.Context, req kws.ExecRequest) (sandbox.Output, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Cmds = append(s.Cmds, ExecRecord{Cmd: req.Command, Args: req.Args})

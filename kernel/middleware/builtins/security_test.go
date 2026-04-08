@@ -5,21 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 	"strings"
 	"testing"
 	"time"
-
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 // ── Identity ─────────────────────────────────────────
 
 func TestIdentity_HasRole(t *testing.T) {
-	id := &port.Identity{
+	id := &intr.Identity{
 		UserID: "u1",
 		Roles:  []string{"viewer", "editor"},
 	}
@@ -44,7 +45,7 @@ func TestRBAC_AllowByRole(t *testing.T) {
 		ID:    "s1",
 		State: make(map[string]any),
 	}
-	SetIdentity(sess.State, &port.Identity{UserID: "u1", Roles: []string{"viewer"}})
+	SetIdentity(sess.State, &intr.Identity{UserID: "u1", Roles: []string{"viewer"}})
 
 	// read_file 应允许
 	mc := &middleware.Context{
@@ -91,26 +92,26 @@ func TestRBAC_NoIdentity(t *testing.T) {
 // ── AuthMiddleware ───────────────────────────────────
 
 type mockAuthenticator struct {
-	identity *port.Identity
+	identity *intr.Identity
 	err      error
 }
 
 type executionEventRecorder struct {
-	port.NoOpObserver
-	events []port.ExecutionEvent
+	kobs.NoOpObserver
+	events []kobs.ExecutionEvent
 }
 
-func (r *executionEventRecorder) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+func (r *executionEventRecorder) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
 	r.events = append(r.events, e)
 }
 
-func (m *mockAuthenticator) Authenticate(_ context.Context, _ string) (*port.Identity, error) {
+func (m *mockAuthenticator) Authenticate(_ context.Context, _ string) (*intr.Identity, error) {
 	return m.identity, m.err
 }
 
 func TestAuthMiddleware(t *testing.T) {
 	auth := &mockAuthenticator{
-		identity: &port.Identity{UserID: "u1", Roles: []string{"admin"}},
+		identity: &intr.Identity{UserID: "u1", Roles: []string{"admin"}},
 	}
 	mw := AuthMiddleware(auth)
 
@@ -135,7 +136,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 func TestAuthMiddlewareRequiresToken(t *testing.T) {
 	auth := &mockAuthenticator{
-		identity: &port.Identity{UserID: "u1", Roles: []string{"admin"}},
+		identity: &intr.Identity{UserID: "u1", Roles: []string{"admin"}},
 	}
 	mw := AuthMiddleware(auth)
 	sess := &session.Session{
@@ -157,7 +158,7 @@ func TestAuditLogger_OnToolCall(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)
 
-	logger.OnToolCall(context.Background(), port.ToolCallEvent{
+	logger.OnToolCall(context.Background(), kobs.ToolCallEvent{
 		SessionID: "s1",
 		ToolName:  "read_file",
 		Duration:  50 * time.Millisecond,
@@ -179,11 +180,11 @@ func TestAuditLogger_OnLLMCallIncludesUsageAndCost(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)
 
-	logger.OnLLMCall(context.Background(), port.LLMCallEvent{
+	logger.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		SessionID: "s1",
 		Model:     "gpt-5",
 		Duration:  10 * time.Millisecond,
-		Usage: port.TokenUsage{
+		Usage: mdl.TokenUsage{
 			PromptTokens:     10,
 			CompletionTokens: 5,
 			TotalTokens:      15,
@@ -211,7 +212,7 @@ func TestAuditLogger_OnSessionEvent(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)
 
-	logger.OnSessionEvent(context.Background(), port.SessionEvent{
+	logger.OnSessionEvent(context.Background(), kobs.SessionEvent{
 		SessionID: "s2",
 		Type:      "created",
 	})
@@ -229,20 +230,20 @@ func TestAuditLogger_OnApproval(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)
 
-	logger.OnApproval(context.Background(), port.ApprovalEvent{
+	logger.OnApproval(context.Background(), intr.ApprovalEvent{
 		SessionID: "s3",
 		Type:      "resolved",
-		Request: port.ApprovalRequest{
+		Request: intr.ApprovalRequest{
 			ID:          "approval-1",
-			Kind:        port.ApprovalKindTool,
+			Kind:        intr.ApprovalKindTool,
 			ToolName:    "write_file",
 			Risk:        "high",
 			Reason:      "policy requires approval",
 			ReasonCode:  "tool.requires_approval",
-			Enforcement: port.EnforcementRequireApproval,
+			Enforcement: intr.EnforcementRequireApproval,
 			RequestedAt: time.Now(),
 		},
-		Decision: &port.ApprovalDecision{
+		Decision: &intr.ApprovalDecision{
 			RequestID: "approval-1",
 			Approved:  true,
 			Source:    "cli",
@@ -273,8 +274,8 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 	var buf bytes.Buffer
 	logger := NewAuditLogger(&buf)
 
-	logger.OnExecutionEvent(context.Background(), port.ExecutionEvent{
-		Type:      port.ExecutionToolCompleted,
+	logger.OnExecutionEvent(context.Background(), kobs.ExecutionEvent{
+		Type:      kobs.ExecutionToolCompleted,
 		SessionID: "s4",
 		Timestamp: time.Now(),
 		ToolName:  "write_file",
@@ -300,8 +301,8 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected map data, got %T", entry.Data)
 	}
-	if got := data["type"]; got != string(port.ExecutionToolCompleted) {
-		t.Fatalf("expected execution type %s, got %v", port.ExecutionToolCompleted, got)
+	if got := data["type"]; got != string(kobs.ExecutionToolCompleted) {
+		t.Fatalf("expected execution type %s, got %v", kobs.ExecutionToolCompleted, got)
 	}
 }
 
@@ -376,7 +377,7 @@ func TestRiskBasedPolicy(t *testing.T) {
 }
 
 func TestPolicyCheck_DenySendsHumanReadableMessage(t *testing.T) {
-	io := port.NewBufferIO()
+	io := intr.NewBufferIO()
 	sess := &session.Session{ID: "s1"}
 	mw := PolicyCheck(DenyTool("write_file"))
 	mc := &middleware.Context{
@@ -405,7 +406,7 @@ func TestPolicyCheck_DenySendsHumanReadableMessage(t *testing.T) {
 }
 
 func TestPolicyCheck_ApprovalPromptIncludesReasonCode(t *testing.T) {
-	io := port.NewBufferIO()
+	io := intr.NewBufferIO()
 	sess := &session.Session{ID: "s1"}
 	mw := PolicyCheck(RequireApprovalFor("write_file"))
 	mc := &middleware.Context{
@@ -426,7 +427,7 @@ func TestPolicyCheck_ApprovalPromptIncludesReasonCode(t *testing.T) {
 }
 
 func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
-	io := port.NewBufferIO()
+	io := intr.NewBufferIO()
 	sess := &session.Session{ID: "s5"}
 	observer := &executionEventRecorder{}
 	mw := PolicyCheck(CommandRules(CommandPatternRule{
@@ -453,7 +454,7 @@ func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
 	if len(observer.events) == 0 {
 		t.Fatal("expected policy match event")
 	}
-	if observer.events[0].Type != port.ExecutionPolicyRuleMatched {
+	if observer.events[0].Type != kobs.ExecutionPolicyRuleMatched {
 		t.Fatalf("event type = %s", observer.events[0].Type)
 	}
 	if observer.events[0].Data["rule_name"] != "git-push" {
@@ -465,7 +466,7 @@ func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
 }
 
 func TestPolicyCheck_DenyErrorAndAuditReasonStayConsistent(t *testing.T) {
-	io := port.NewBufferIO()
+	io := intr.NewBufferIO()
 	sess := &session.Session{ID: "s6"}
 	observer := &executionEventRecorder{}
 	mw := PolicyCheck(CommandRules(CommandPatternRule{
@@ -497,7 +498,7 @@ func TestPolicyCheck_DenyErrorAndAuditReasonStayConsistent(t *testing.T) {
 		t.Fatal("expected policy match event")
 	}
 	event := observer.events[0]
-	if event.Type != port.ExecutionPolicyRuleMatched {
+	if event.Type != kobs.ExecutionPolicyRuleMatched {
 		t.Fatalf("expected policy.rule_matched, got %s", event.Type)
 	}
 	if event.ReasonCode != denied.ReasonCode {
@@ -514,11 +515,11 @@ func TestPolicyCheck_DenyErrorAndAuditReasonStayConsistent(t *testing.T) {
 func TestPolicyCheck_ApprovalEventsStayConsistentForApprovedAndDenied(t *testing.T) {
 	runCase := func(t *testing.T, approved bool) {
 		t.Helper()
-		io := port.NewBufferIO()
-		io.AskFunc = func(req port.InputRequest) port.InputResponse {
-			return port.InputResponse{
+		io := intr.NewBufferIO()
+		io.AskFunc = func(req intr.InputRequest) intr.InputResponse {
+			return intr.InputResponse{
 				Approved: approved,
-				Decision: &port.ApprovalDecision{
+				Decision: &intr.ApprovalDecision{
 					RequestID: req.Approval.ID,
 					Approved:  approved,
 					Source:    "test",
@@ -551,13 +552,13 @@ func TestPolicyCheck_ApprovalEventsStayConsistentForApprovedAndDenied(t *testing
 		if !approved && !stderrors.Is(err, ErrDenied) {
 			t.Fatalf("expected denied flow to return ErrDenied, got %v", err)
 		}
-		var request, resolved *port.ExecutionEvent
+		var request, resolved *kobs.ExecutionEvent
 		for i := range observer.events {
 			ev := &observer.events[i]
 			switch ev.Type {
-			case port.ExecutionApprovalRequest:
+			case kobs.ExecutionApprovalRequest:
 				request = ev
-			case port.ExecutionApprovalResolved:
+			case kobs.ExecutionApprovalResolved:
 				resolved = ev
 			}
 		}
@@ -604,7 +605,7 @@ func TestPolicyCheck_AllowRuleEmitsPolicyRuleMetadata(t *testing.T) {
 		t.Fatal("expected policy rule matched event for allow rule")
 	}
 	event := observer.events[0]
-	if event.Type != port.ExecutionPolicyRuleMatched {
+	if event.Type != kobs.ExecutionPolicyRuleMatched {
 		t.Fatalf("expected policy.rule_matched, got %s", event.Type)
 	}
 	if event.Data["policy_rule"] != "git-read" {

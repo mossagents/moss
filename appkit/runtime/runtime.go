@@ -4,21 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
-
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/mcp"
 	"github.com/mossagents/moss/skill"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 const (
@@ -195,16 +196,16 @@ func registerMCPServers(ctx context.Context, cfg config, deps skill.Deps, skills
 	return nil
 }
 
-func approveProjectMCPServer(ctx context.Context, io port.UserIO, workspaceDir string, sc appconfig.SkillConfig) (bool, error) {
+func approveProjectMCPServer(ctx context.Context, io intr.UserIO, workspaceDir string, sc appconfig.SkillConfig) (bool, error) {
 	if io == nil {
-		io = &port.NoOpIO{}
+		io = &intr.NoOpIO{}
 	}
 	target := strings.TrimSpace(sc.URL)
 	if target == "" {
 		target = strings.TrimSpace(sc.Command)
 	}
-	resp, err := io.Ask(ctx, port.InputRequest{
-		Type:         port.InputConfirm,
+	resp, err := io.Ask(ctx, intr.InputRequest{
+		Type:         intr.InputConfirm,
 		Prompt:       fmt.Sprintf("Start project MCP server %q from %s?", sc.Name, appconfig.DefaultProjectConfigPath(workspaceDir)),
 		ConfirmLabel: "Start MCP server",
 		Meta: map[string]any{
@@ -583,9 +584,9 @@ func activateManifestRecursive(ctx context.Context, manager *skill.Manager, mani
 type agentsState struct {
 	registry  *agent.Registry
 	tasks     *agent.TaskTracker
-	runtime   port.TaskRuntime
-	mailbox   port.Mailbox
-	isolation port.WorkspaceIsolation
+	runtime   taskrt.TaskRuntime
+	mailbox   taskrt.Mailbox
+	isolation kws.WorkspaceIsolation
 }
 
 func ensureAgentsState(k *kernel.Kernel) *agentsState {
@@ -605,13 +606,13 @@ func ensureAgentsState(k *kernel.Kernel) *agentsState {
 			st.runtime = k.TaskRuntime()
 		}
 		if st.runtime == nil {
-			st.runtime = port.NewMemoryTaskRuntime()
+			st.runtime = taskrt.NewMemoryTaskRuntime()
 		}
 		if st.mailbox == nil {
 			st.mailbox = k.Mailbox()
 		}
 		if st.mailbox == nil {
-			st.mailbox = port.NewMemoryMailbox()
+			st.mailbox = taskrt.NewMemoryMailbox()
 		}
 		if st.isolation == nil {
 			st.isolation = k.WorkspaceIsolation()
@@ -645,19 +646,19 @@ func WithAgentRegistry(r *agent.Registry) kernel.Option {
 	}
 }
 
-func WithTaskRuntime(rt port.TaskRuntime) kernel.Option {
+func WithTaskRuntime(rt taskrt.TaskRuntime) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureAgentsState(k).runtime = rt
 	}
 }
 
-func WithMailbox(mb port.Mailbox) kernel.Option {
+func WithMailbox(mb taskrt.Mailbox) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureAgentsState(k).mailbox = mb
 	}
 }
 
-func WithWorkspaceIsolation(isolation port.WorkspaceIsolation) kernel.Option {
+func WithWorkspaceIsolation(isolation kws.WorkspaceIsolation) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureAgentsState(k).isolation = isolation
 	}

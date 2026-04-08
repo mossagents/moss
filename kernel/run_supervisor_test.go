@@ -3,10 +3,9 @@ package kernel
 import (
 	"context"
 	stderrors "errors"
+	kerrors "github.com/mossagents/moss/kernel/errors"
 	"testing"
 	"time"
-
-	kerrors "github.com/mossagents/moss/kernel/errors"
 )
 
 func TestRunSupervisorBeginRejectsAfterShutdown(t *testing.T) {

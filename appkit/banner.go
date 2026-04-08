@@ -1,6 +1,8 @@
 package appkit
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // PrintBanner 打印统一格式的应用启动信息。
 //

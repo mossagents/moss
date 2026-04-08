@@ -16,11 +16,10 @@
 package bootstrap
 
 import (
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"strings"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 // Context 包含所有引导文件的内容，用于注入 system prompt。

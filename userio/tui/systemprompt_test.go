@@ -1,12 +1,11 @@
 package tui
 
 import (
+	"github.com/mossagents/moss/kernel"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/mossagents/moss/kernel"
 )
 
 func TestBuildSystemPrompt_LoadsWorkspaceAgentsMarkdown(t *testing.T) {

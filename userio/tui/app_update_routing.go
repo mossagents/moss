@@ -1,6 +1,8 @@
 package tui
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 func (m appModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// 全局窗口大小

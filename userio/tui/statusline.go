@@ -2,9 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	"github.com/mossagents/moss/appkit/product"
+	"strings"
 )
 
 type statusLineItemDef struct {

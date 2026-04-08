@@ -2,11 +2,10 @@ package tui
 
 import (
 	"fmt"
-	"path/filepath"
-	"strings"
-
 	"github.com/charmbracelet/lipgloss"
 	configpkg "github.com/mossagents/moss/config"
+	"path/filepath"
+	"strings"
 )
 
 func (m chatModel) shellProductTitle() string {

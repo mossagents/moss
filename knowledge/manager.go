@@ -12,18 +12,17 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // MemoryManager 聚合三层记忆，提供统一访问和 context 注入接口。
 type MemoryManager struct {
 	Working  *WorkingMemory
 	Episodic EpisodicStore
-	Semantic port.VectorStore
-	Embedder port.Embedder
+	Semantic mdl.VectorStore
+	Embedder mdl.Embedder
 
 	pruneConfig   *PruneConfig
 	decayHalfLife time.Duration
@@ -36,9 +35,9 @@ type MemoryManagerConfig struct {
 	// Episodic 可选，不提供则使用内存实现。
 	Episodic EpisodicStore
 	// Semantic 可选，不提供则禁用语义搜索。
-	Semantic port.VectorStore
+	Semantic mdl.VectorStore
 	// Embedder 当 Semantic 不为 nil 时必须提供。
-	Embedder port.Embedder
+	Embedder mdl.Embedder
 	// PruneConfig 若非零则在 RunMaintenance 时裁剪 Episodic 记录。
 	PruneConfig *PruneConfig
 	// DecayHalfLife 若非零则在 RunMaintenance 时衰减重要性。
@@ -65,12 +64,12 @@ func NewMemoryManager(cfg MemoryManagerConfig) *MemoryManager {
 
 // InjectConfig 控制 context 注入的参数。
 type InjectConfig struct {
-	SessionID    string
-	Query        string        // 语义检索的查询文本（通常是最后一条 user message）
-	EpisodicN    int           // 最近事件数，默认 10
-	SemanticK    int           // 语义检索结果数，默认 5
-	Threshold    float64       // 相似度阈值，默认 0.7
-	MaxChars     int           // 注入内容最大字符数，默认 4000
+	SessionID string
+	Query     string  // 语义检索的查询文本（通常是最后一条 user message）
+	EpisodicN int     // 最近事件数，默认 10
+	SemanticK int     // 语义检索结果数，默认 5
+	Threshold float64 // 相似度阈值，默认 0.7
+	MaxChars  int     // 注入内容最大字符数，默认 4000
 }
 
 func (c *InjectConfig) episodicN() int {
@@ -121,7 +120,7 @@ func (m *MemoryManager) Inject(ctx context.Context, cfg InjectConfig) (string, e
 
 	// 3. Semantic Memory
 	if m.Semantic != nil && m.Embedder != nil && cfg.Query != "" {
-		results, err := m.Semantic.Search(ctx, m.Embedder, port.VectorQuery{
+		results, err := m.Semantic.Search(ctx, m.Embedder, mdl.VectorQuery{
 			Text:      cfg.Query,
 			Limit:     cfg.semanticK(),
 			Threshold: cfg.threshold(),
@@ -174,7 +173,8 @@ func (m *MemoryManager) RecordError(ctx context.Context, sessionID, errMsg strin
 }
 
 // Learn 将文档加入 Semantic Memory（自动嵌入）。
-func (m *MemoryManager) Learn(ctx context.Context, docs []port.VectorDoc) error {	if m.Semantic == nil {
+func (m *MemoryManager) Learn(ctx context.Context, docs []mdl.VectorDoc) error {
+	if m.Semantic == nil {
 		return fmt.Errorf("memory manager: semantic store not configured")
 	}
 	if m.Embedder == nil {
@@ -231,7 +231,7 @@ func formatEpisodes(eps []Episode) string {
 	return sb.String()
 }
 
-func formatVectorResults(results []port.VectorResult) string {
+func formatVectorResults(results []mdl.VectorResult) string {
 	var sb strings.Builder
 	for _, r := range results {
 		sb.WriteString(fmt.Sprintf("[相关度: %.2f] %s\n", r.Score, r.Doc.Text))

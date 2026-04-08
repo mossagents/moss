@@ -2,16 +2,15 @@ package distributed_test
 
 import (
 	"context"
+	"github.com/mossagents/moss/distributed"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/distributed"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func setupServer() (*httptest.Server, *distributed.RemoteTaskRuntime) {
-	rt := port.NewMemoryTaskRuntime()
+	rt := taskrt.NewMemoryTaskRuntime()
 	srv := distributed.NewTaskRuntimeServer(rt, rt, rt)
 	ts := httptest.NewServer(srv.Handler())
 	remote := distributed.NewRemoteTaskRuntime(ts.URL)
@@ -23,11 +22,11 @@ func TestRemoteTaskRuntime_UpsertAndGet(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	task := port.TaskRecord{
+	task := taskrt.TaskRecord{
 		ID:        "t1",
 		AgentName: "agent-a",
 		Goal:      "do something",
-		Status:    port.TaskPending,
+		Status:    taskrt.TaskPending,
 	}
 	if err := remote.UpsertTask(ctx, task); err != nil {
 		t.Fatalf("UpsertTask: %v", err)
@@ -46,7 +45,7 @@ func TestRemoteTaskRuntime_GetNotFound(t *testing.T) {
 	defer ts.Close()
 
 	_, err := remote.GetTask(context.Background(), "missing")
-	if err != port.ErrTaskNotFound {
+	if err != taskrt.ErrTaskNotFound {
 		t.Errorf("got %v, want ErrTaskNotFound", err)
 	}
 }
@@ -57,18 +56,18 @@ func TestRemoteTaskRuntime_ListAndClaim(t *testing.T) {
 
 	ctx := context.Background()
 	for _, id := range []string{"a", "b", "c"} {
-		if err := remote.UpsertTask(ctx, port.TaskRecord{
+		if err := remote.UpsertTask(ctx, taskrt.TaskRecord{
 			ID:        id,
 			AgentName: "worker",
 			Goal:      "task-" + id,
-			Status:    port.TaskPending,
+			Status:    taskrt.TaskPending,
 		}); err != nil {
 			t.Fatalf("UpsertTask %s: %v", id, err)
 		}
 		time.Sleep(1 * time.Millisecond) // ensure ordering
 	}
 
-	tasks, err := remote.ListTasks(ctx, port.TaskQuery{AgentName: "worker"})
+	tasks, err := remote.ListTasks(ctx, taskrt.TaskQuery{AgentName: "worker"})
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
@@ -83,7 +82,7 @@ func TestRemoteTaskRuntime_ListAndClaim(t *testing.T) {
 	if claimed.ID != "a" {
 		t.Errorf("expected first task 'a', got %q", claimed.ID)
 	}
-	if claimed.Status != port.TaskRunning {
+	if claimed.Status != taskrt.TaskRunning {
 		t.Errorf("expected status running, got %q", claimed.Status)
 	}
 }
@@ -93,11 +92,11 @@ func TestRemoteTaskRuntime_Jobs(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	job := port.AgentJob{
+	job := taskrt.AgentJob{
 		ID:        "job-1",
 		AgentName: "worker",
 		Goal:      "batch process",
-		Status:    port.JobPending,
+		Status:    taskrt.JobPending,
 	}
 	if err := remote.UpsertJob(ctx, job); err != nil {
 		t.Fatalf("UpsertJob: %v", err)
@@ -113,15 +112,15 @@ func TestRemoteTaskRuntime_Jobs(t *testing.T) {
 	// Add items
 	for i, id := range []string{"i1", "i2"} {
 		_ = i
-		if err := remote.UpsertJobItem(ctx, port.AgentJobItem{
+		if err := remote.UpsertJobItem(ctx, taskrt.AgentJobItem{
 			JobID:  "job-1",
 			ItemID: id,
-			Status: port.JobPending,
+			Status: taskrt.JobPending,
 		}); err != nil {
 			t.Fatalf("UpsertJobItem %s: %v", id, err)
 		}
 	}
-	items, err := remote.ListJobItems(ctx, port.JobItemQuery{JobID: "job-1"})
+	items, err := remote.ListJobItems(ctx, taskrt.JobItemQuery{JobID: "job-1"})
 	if err != nil {
 		t.Fatalf("ListJobItems: %v", err)
 	}
@@ -134,16 +133,16 @@ func TestRemoteTaskRuntime_Jobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarkJobItemRunning: %v", err)
 	}
-	if item.Status != port.JobRunning {
+	if item.Status != taskrt.JobRunning {
 		t.Errorf("expected running, got %q", item.Status)
 	}
 
 	// Report result
-	done, err := remote.ReportJobItemResult(ctx, "job-1", "i1", "worker-1", port.JobCompleted, "ok", "")
+	done, err := remote.ReportJobItemResult(ctx, "job-1", "i1", "worker-1", taskrt.JobCompleted, "ok", "")
 	if err != nil {
 		t.Fatalf("ReportJobItemResult: %v", err)
 	}
-	if done.Status != port.JobCompleted {
+	if done.Status != taskrt.JobCompleted {
 		t.Errorf("expected completed, got %q", done.Status)
 	}
 }

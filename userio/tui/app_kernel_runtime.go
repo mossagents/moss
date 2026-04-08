@@ -3,10 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	"strings"
 )
 
 func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernel.Kernel, context.Context, context.CancelFunc, error) {

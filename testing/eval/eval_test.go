@@ -2,10 +2,9 @@ package eval
 
 import (
 	"context"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestRuleJudge_AllPass(t *testing.T) {
@@ -112,10 +111,10 @@ func TestLoadCase_YAML(t *testing.T) {
 }
 
 func TestKernelRunFunc(t *testing.T) {
-	runFn := KernelRunFunc(func(_ context.Context, msgs []port.Message) ([]port.Message, []ToolCallLog, int, error) {
-		reply := port.Message{
-			Role:         port.RoleAssistant,
-			ContentParts: []port.ContentPart{port.TextPart("我是 Moss 助手，很高兴帮助你")},
+	runFn := KernelRunFunc(func(_ context.Context, msgs []mdl.Message) ([]mdl.Message, []ToolCallLog, int, error) {
+		reply := mdl.Message{
+			Role:         mdl.RoleAssistant,
+			ContentParts: []mdl.ContentPart{mdl.TextPart("我是 Moss 助手，很高兴帮助你")},
 		}
 		return append(msgs, reply), nil, 1, nil
 	})

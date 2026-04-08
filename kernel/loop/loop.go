@@ -5,6 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	"github.com/mossagents/moss/logging"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -13,31 +23,23 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/logging"
 )
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
-	MaxIterations      int                     // 最大循环次数（默认 50）
-	StopWhen           func(port.Message) bool // 自定义停止条件
-	ParallelToolCall   bool                    // 启用并行工具调用（默认 false，串行执行）
-	MaxConcurrentTools int                     // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
-	LLMRetry           RetryConfig             // LLM 调用重试配置
-	LLMBreaker         *retry.Breaker          // LLM 调用熔断器（可选）
+	MaxIterations      int                    // 最大循环次数（默认 50）
+	StopWhen           func(mdl.Message) bool // 自定义停止条件
+	ParallelToolCall   bool                   // 启用并行工具调用（默认 false，串行执行）
+	MaxConcurrentTools int                    // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
+	LLMRetry           RetryConfig            // LLM 调用重试配置
+	LLMBreaker         *retry.Breaker         // LLM 调用熔断器（可选）
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
 type RetryConfig = retry.Config
 
 type callAttemptResult struct {
-	resp      *port.CompletionResponse
+	resp      *mdl.CompletionResponse
 	streamed  bool
 	retryable bool
 	err       error
@@ -52,12 +54,12 @@ func (c LoopConfig) maxIter() int {
 
 // AgentLoop 组合所有子系统，驱动 Agent 的 think→act→observe 循环。
 type AgentLoop struct {
-	LLM               port.LLM
+	LLM               mdl.LLM
 	Tools             tool.Registry
 	Chain             *middleware.Chain
-	IO                port.UserIO
+	IO                intr.UserIO
 	Config            LoopConfig
-	Observer          port.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	Observer          kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
 	LifecycleHook     session.LifecycleHook
 	ToolLifecycleHook session.ToolLifecycleHook
 	RunID             string
@@ -68,22 +70,22 @@ type AgentLoop struct {
 
 // SessionResult 是一次 Session 执行的结果。
 type SessionResult struct {
-	SessionID  string          `json:"session_id"`
-	Success    bool            `json:"success"`
-	Output     string          `json:"output"`
-	Steps      int             `json:"steps"`
-	TokensUsed port.TokenUsage `json:"tokens_used"`
-	Error      string          `json:"error,omitempty"`
+	SessionID  string         `json:"session_id"`
+	Success    bool           `json:"success"`
+	Output     string         `json:"output"`
+	Steps      int            `json:"steps"`
+	TokensUsed mdl.TokenUsage `json:"tokens_used"`
+	Error      string         `json:"error,omitempty"`
 }
 
-func (l *AgentLoop) observer() port.Observer {
+func (l *AgentLoop) observer() kobs.Observer {
 	if l.Observer != nil {
 		return l.Observer
 	}
-	return port.NoOpObserver{}
+	return kobs.NoOpObserver{}
 }
 
-func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*port.CompletionResponse, bool, error) {
+func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*mdl.CompletionResponse, bool, error) {
 	specs := l.toolSpecs(plan)
 	promptMessages := session.PromptMessages(sess)
 	logging.GetLogger().DebugContext(ctx, "llm request prepared",
@@ -96,7 +98,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	)
 	modelConfig := sess.Config.ModelConfig
 	modelConfig.Requirements = cloneTaskRequirement(plan.ModelRoute.Requirements)
-	req := port.CompletionRequest{
+	req := mdl.CompletionRequest{
 		Messages: promptMessages,
 		Tools:    specs,
 		Config:   modelConfig,
@@ -144,12 +146,12 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	return nil, false, lastErr
 }
 
-func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest) callAttemptResult {
+func (l *AgentLoop) callLLMOnce(ctx context.Context, req mdl.CompletionRequest) callAttemptResult {
 	// 熔断器检查
 	if b := l.Config.LLMBreaker; b != nil {
 		if !b.Allow() {
 			return callAttemptResult{
-				err: &port.LLMCallError{
+				err: &mdl.LLMCallError{
 					Err:       kerrors.New(kerrors.ErrLLMRejected, "LLM circuit breaker is open: too many recent failures"),
 					Retryable: false,
 				},
@@ -159,7 +161,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	}
 
 	// 优先使用 Streaming
-	if sllm, ok := l.LLM.(port.StreamingLLM); ok {
+	if sllm, ok := l.LLM.(mdl.StreamingLLM); ok {
 		resp, err := l.streamLLM(ctx, sllm, req)
 		if err == nil {
 			l.recordBreakerSuccess()
@@ -187,10 +189,10 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req port.CompletionRequest)
 	return callAttemptResult{resp: resp, streamed: false, retryable: llmErrorRetryable(err), err: err}
 }
 
-func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req port.CompletionRequest) (*port.CompletionResponse, error) {
+func (l *AgentLoop) streamLLM(ctx context.Context, sllm mdl.StreamingLLM, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
 	iter, err := sllm.Stream(ctx, req)
 	if err != nil {
-		return nil, ensureLLMCallError(err, true, true, port.LLMCallMetadata{})
+		return nil, ensureLLMCallError(err, true, true, mdl.LLMCallMetadata{})
 	}
 	defer iter.Close()
 	metadataProvider := metadataStreamProvider(iter)
@@ -213,18 +215,18 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 		}
 	}
 
-	msg := port.Message{
-		Role:      port.RoleAssistant,
+	msg := mdl.Message{
+		Role:      mdl.RoleAssistant,
 		ToolCalls: state.toolCalls,
 	}
 	if state.fullReasoning != "" {
-		msg.ContentParts = append(msg.ContentParts, port.ReasoningPart(state.fullReasoning))
+		msg.ContentParts = append(msg.ContentParts, mdl.ReasoningPart(state.fullReasoning))
 	}
 	if state.fullContent != "" {
-		msg.ContentParts = append(msg.ContentParts, port.TextPart(state.fullContent))
+		msg.ContentParts = append(msg.ContentParts, mdl.TextPart(state.fullContent))
 	}
 
-	return &port.CompletionResponse{
+	return &mdl.CompletionResponse{
 		Message:    msg,
 		ToolCalls:  state.toolCalls,
 		Usage:      state.usage,
@@ -236,14 +238,14 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm port.StreamingLLM, req p
 type streamAccumulator struct {
 	fullContent    string
 	fullReasoning  string
-	toolCalls      []port.ToolCall
-	usage          port.TokenUsage
+	toolCalls      []mdl.ToolCall
+	usage          mdl.TokenUsage
 	stopReason     string
 	emittedContent bool
 }
 
-func metadataStreamProvider(iter port.StreamIterator) port.MetadataStreamIterator {
-	if provider, ok := iter.(port.MetadataStreamIterator); ok {
+func metadataStreamProvider(iter mdl.StreamIterator) mdl.MetadataStreamIterator {
+	if provider, ok := iter.(mdl.MetadataStreamIterator); ok {
 		return provider
 	}
 	return nil
@@ -252,13 +254,13 @@ func metadataStreamProvider(iter port.StreamIterator) port.MetadataStreamIterato
 func (l *AgentLoop) handleStreamChunkError(
 	ctx context.Context,
 	err error,
-	metadataProvider port.MetadataStreamIterator,
+	metadataProvider mdl.MetadataStreamIterator,
 	state *streamAccumulator,
 ) (bool, error) {
 	if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
 		state.stopReason = "tool_use"
 		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
+			l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd})
 		}
 		return true, nil
 	}
@@ -266,13 +268,13 @@ func (l *AgentLoop) handleStreamChunkError(
 	return false, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
 }
 
-func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk port.StreamChunk, state *streamAccumulator) bool {
+func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk, state *streamAccumulator) bool {
 	if chunk.ReasoningDelta != "" {
 		state.emittedContent = true
 		state.fullReasoning += chunk.ReasoningDelta
 		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputReasoning,
+			l.IO.Send(ctx, intr.OutputMessage{
+				Type:    intr.OutputReasoning,
 				Content: chunk.ReasoningDelta,
 			})
 		}
@@ -282,8 +284,8 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk port.StreamChunk
 		state.emittedContent = true
 		state.fullContent += chunk.Delta
 		if l.IO != nil {
-			l.IO.Send(ctx, port.OutputMessage{
-				Type:    port.OutputStream,
+			l.IO.Send(ctx, intr.OutputMessage{
+				Type:    intr.OutputStream,
 				Content: chunk.Delta,
 			})
 		}
@@ -305,7 +307,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk port.StreamChunk
 		state.stopReason = "tool_use"
 	}
 	if l.IO != nil {
-		l.IO.Send(ctx, port.OutputMessage{Type: port.OutputStreamEnd})
+		l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd})
 	}
 	return true
 }
@@ -327,14 +329,14 @@ func isRecoverableStreamTailError(err error) bool {
 	return false
 }
 
-func streamMetadata(provider port.MetadataStreamIterator) port.LLMCallMetadata {
+func streamMetadata(provider mdl.MetadataStreamIterator) mdl.LLMCallMetadata {
 	if provider == nil {
-		return port.LLMCallMetadata{}
+		return mdl.LLMCallMetadata{}
 	}
 	return provider.Metadata()
 }
 
-func metadataPtr(meta port.LLMCallMetadata) *port.LLMCallMetadata {
+func metadataPtr(meta mdl.LLMCallMetadata) *mdl.LLMCallMetadata {
 	if strings.TrimSpace(meta.ActualModel) == "" && len(meta.Attempts) == 0 {
 		return nil
 	}
@@ -342,17 +344,17 @@ func metadataPtr(meta port.LLMCallMetadata) *port.LLMCallMetadata {
 	return &copyMeta
 }
 
-func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata port.LLMCallMetadata) error {
+func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata mdl.LLMCallMetadata) error {
 	if err == nil {
 		return nil
 	}
-	var callErr *port.LLMCallError
+	var callErr *mdl.LLMCallError
 	if errors.As(err, &callErr) {
 		merged := *callErr
 		merged.Metadata = mergeLLMMetadata(merged.Metadata, metadata)
 		return &merged
 	}
-	return &port.LLMCallError{
+	return &mdl.LLMCallError{
 		Err:          err,
 		Retryable:    retryable,
 		FallbackSafe: fallbackSafe,
@@ -360,7 +362,7 @@ func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata port.L
 	}
 }
 
-func mergeLLMMetadata(base, overlay port.LLMCallMetadata) port.LLMCallMetadata {
+func mergeLLMMetadata(base, overlay mdl.LLMCallMetadata) mdl.LLMCallMetadata {
 	if strings.TrimSpace(base.ActualModel) == "" {
 		base.ActualModel = overlay.ActualModel
 	}
@@ -374,7 +376,7 @@ func llmErrorRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	var callErr *port.LLMCallError
+	var callErr *mdl.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.Retryable
 	}
@@ -382,16 +384,16 @@ func llmErrorRetryable(err error) bool {
 }
 
 func llmErrorFallbackSafe(err error) bool {
-	var callErr *port.LLMCallError
+	var callErr *mdl.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.FallbackSafe
 	}
 	return false
 }
 
-func llmMetadataFromResponse(defaultModel string, resp *port.CompletionResponse) port.LLMCallMetadata {
+func llmMetadataFromResponse(defaultModel string, resp *mdl.CompletionResponse) mdl.LLMCallMetadata {
 	if resp == nil || resp.Metadata == nil {
-		return port.LLMCallMetadata{ActualModel: defaultModel}
+		return mdl.LLMCallMetadata{ActualModel: defaultModel}
 	}
 	meta := *resp.Metadata
 	if strings.TrimSpace(meta.ActualModel) == "" {
@@ -400,8 +402,8 @@ func llmMetadataFromResponse(defaultModel string, resp *port.CompletionResponse)
 	return meta
 }
 
-func llmMetadataFromError(defaultModel string, err error) port.LLMCallMetadata {
-	var callErr *port.LLMCallError
+func llmMetadataFromError(defaultModel string, err error) mdl.LLMCallMetadata {
+	var callErr *mdl.LLMCallError
 	if errors.As(err, &callErr) {
 		meta := callErr.Metadata
 		if strings.TrimSpace(meta.ActualModel) == "" {
@@ -409,12 +411,12 @@ func llmMetadataFromError(defaultModel string, err error) port.LLMCallMetadata {
 		}
 		return meta
 	}
-	return port.LLMCallMetadata{ActualModel: defaultModel}
+	return mdl.LLMCallMetadata{ActualModel: defaultModel}
 }
 
-func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata port.LLMCallMetadata, exhausted bool) {
+func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata mdl.LLMCallMetadata, exhausted bool) {
 	for _, attempt := range metadata.Attempts {
-		event := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
+		event := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
 		event.Model = attempt.CandidateModel
 		event.Data = map[string]any{
 			"candidate_model": attempt.CandidateModel,
@@ -426,36 +428,36 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 			"outcome":         attempt.Outcome,
 			"model_lane":      l.currentTurn.ModelRoute.Lane,
 		}
-		port.ObserveExecutionEvent(ctx, l.observer(), event)
+		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 		if strings.TrimSpace(attempt.FailoverTo) != "" {
-			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
+			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
 			switchEvent.Model = attempt.CandidateModel
 			switchEvent.Data = map[string]any{
 				"candidate_model": attempt.CandidateModel,
 				"failover_to":     attempt.FailoverTo,
 				"model_lane":      l.currentTurn.ModelRoute.Lane,
 			}
-			port.ObserveExecutionEvent(ctx, l.observer(), switchEvent)
+			kobs.ObserveExecutionEvent(ctx, l.observer(), switchEvent)
 		}
 	}
 	if exhausted && len(metadata.Attempts) > 0 {
-		event := l.executionEventBase(&session.Session{ID: sessionID}, port.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
+		event := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
 		event.Model = metadata.ActualModel
-		port.ObserveExecutionEvent(ctx, l.observer(), event)
+		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	}
 }
 
-func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
+func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
 	if l.Config.ParallelToolCall && len(calls) > 1 {
 		return l.executeToolCallsParallel(ctx, sess, calls)
 	}
 	return l.executeToolCallsSerial(ctx, sess, calls)
 }
 
-func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
+func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
 	for _, call := range calls {
 		result := l.executeSingleToolCall(ctx, sess, call)
-		sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
+		sess.AppendMessage(mdl.Message{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{result}})
 	}
 	return nil
 }
@@ -467,14 +469,14 @@ func (l *AgentLoop) maxConcurrentTools() int {
 	return 8
 }
 
-func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []port.ToolCall) error {
-	results := make([]port.ToolResult, len(calls))
+func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
+	results := make([]mdl.ToolResult, len(calls))
 
 	sem := make(chan struct{}, l.maxConcurrentTools())
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
-		go func(idx int, c port.ToolCall) {
+		go func(idx int, c mdl.ToolCall) {
 			sem <- struct{}{}
 			defer func() {
 				<-sem
@@ -487,12 +489,12 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 
 	// 按顺序追加结果到 session（保持确定性）
 	for _, result := range results {
-		sess.AppendMessage(port.Message{Role: port.RoleTool, ToolResults: []port.ToolResult{result}})
+		sess.AppendMessage(mdl.Message{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{result}})
 	}
 	return nil
 }
 
-func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call port.ToolCall) port.ToolResult {
+func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call mdl.ToolCall) mdl.ToolResult {
 	repairedArgs := repairToolArguments(call.Arguments)
 	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
 		Stage:     session.ToolLifecycleBefore,
@@ -524,7 +526,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 		return l.handleBeforeToolCallError(ctx, sess, call, spec, repairedArgs, beforeErr)
 	}
 
-	toolCtx := port.WithToolCallContext(ctx, port.ToolCallContext{
+	toolCtx := toolctx.WithToolCallContext(ctx, toolctx.ToolCallContext{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		CallID:    call.ID,
@@ -541,17 +543,17 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	return result
 }
 
-func buildToolResult(callID string, output []byte, err error) port.ToolResult {
+func buildToolResult(callID string, output []byte, err error) mdl.ToolResult {
 	if err != nil {
-		return port.ToolResult{
+		return mdl.ToolResult{
 			CallID:       callID,
-			ContentParts: []port.ContentPart{port.TextPart(err.Error())},
+			ContentParts: []mdl.ContentPart{mdl.TextPart(err.Error())},
 			IsError:      true,
 		}
 	}
-	return port.ToolResult{
+	return mdl.ToolResult{
 		CallID:       callID,
-		ContentParts: []port.ContentPart{port.TextPart(string(output))},
+		ContentParts: []mdl.ContentPart{mdl.TextPart(string(output))},
 	}
 }
 
@@ -580,19 +582,17 @@ func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
 	return nil
 }
 
-
-
-func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call port.ToolCall, repairedArgs json.RawMessage) port.ToolResult {
+func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call mdl.ToolCall, repairedArgs json.RawMessage) mdl.ToolResult {
 	err := fmt.Errorf("tool %q not found or not allowed in current turn", call.Name)
 	result := buildToolResult(call.ID, nil, err)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, tool.ToolSpec{}, result, 0, err)
 	return result
 }
 
-func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call port.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
+func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call mdl.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
 	if l.IO != nil {
-		l.IO.Send(ctx, port.OutputMessage{
-			Type:    port.OutputToolStart,
+		l.IO.Send(ctx, intr.OutputMessage{
+			Type:    intr.OutputToolStart,
 			Content: call.Name,
 			Meta: map[string]any{
 				"call_id":      call.ID,
@@ -602,9 +602,9 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 			},
 		})
 	}
-	port.ObserveExecutionEvent(ctx, l.observer(), port.ExecutionEvent{
-		Type:         port.ExecutionToolStarted,
-		EventID:      l.nextEventID(string(port.ExecutionToolStarted)),
+	kobs.ObserveExecutionEvent(ctx, l.observer(), kobs.ExecutionEvent{
+		Type:         kobs.ExecutionToolStarted,
+		EventID:      l.nextEventID(string(kobs.ExecutionToolStarted)),
 		EventVersion: 1,
 		RunID:        strings.TrimSpace(l.RunID),
 		TurnID:       strings.TrimSpace(l.currentTurn.TurnID),
@@ -636,14 +636,14 @@ func (l *AgentLoop) runAfterToolCallMiddleware(ctx context.Context, sess *sessio
 func (l *AgentLoop) handleBeforeToolCallError(
 	ctx context.Context,
 	sess *session.Session,
-	call port.ToolCall,
+	call mdl.ToolCall,
 	spec tool.ToolSpec,
 	repairedArgs json.RawMessage,
 	beforeErr error,
-) port.ToolResult {
+) mdl.ToolResult {
 	normalizedErr := normalizeToolError(beforeErr)
 	result := buildToolResult(call.ID, nil, beforeErr)
-	port.ObserveToolCall(ctx, l.observer(), port.ToolCallEvent{
+	kobs.ObserveToolCall(ctx, l.observer(), kobs.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -651,7 +651,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 		Duration:  0,
 		Error:     normalizedErr,
 	})
-	event := l.executionEventBase(sess, port.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event := l.executionEventBase(sess, kobs.ExecutionToolCompleted, "tool", "runtime", "tool")
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
@@ -660,7 +660,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 	}
 	event.Error = normalizedErr.Error()
 	appendToolErrorMetadata(&event, normalizedErr)
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, 0, normalizedErr)
 	return result
@@ -669,15 +669,15 @@ func (l *AgentLoop) handleBeforeToolCallError(
 func (l *AgentLoop) observeToolCompletion(
 	ctx context.Context,
 	sess *session.Session,
-	call port.ToolCall,
+	call mdl.ToolCall,
 	spec tool.ToolSpec,
 	toolStart time.Time,
 	toolDur time.Duration,
-	result port.ToolResult,
+	result mdl.ToolResult,
 	output []byte,
 	err error,
 ) {
-	port.ObserveToolCall(ctx, l.observer(), port.ToolCallEvent{
+	kobs.ObserveToolCall(ctx, l.observer(), kobs.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -685,7 +685,7 @@ func (l *AgentLoop) observeToolCompletion(
 		Duration:  toolDur,
 		Error:     err,
 	})
-	event := l.executionEventBase(sess, port.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event := l.executionEventBase(sess, kobs.ExecutionToolCompleted, "tool", "runtime", "tool")
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
@@ -698,16 +698,16 @@ func (l *AgentLoop) observeToolCompletion(
 		appendToolErrorMetadata(&event, err)
 	}
 	appendToolExecutionMetadata(&event, output)
-	port.ObserveExecutionEvent(ctx, l.observer(), event)
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
 func (l *AgentLoop) emitToolLifecycleAfter(
 	ctx context.Context,
 	sess *session.Session,
-	call port.ToolCall,
+	call mdl.ToolCall,
 	repairedArgs json.RawMessage,
 	spec tool.ToolSpec,
-	result port.ToolResult,
+	result mdl.ToolResult,
 	toolDur time.Duration,
 	err error,
 ) {
@@ -725,7 +725,7 @@ func (l *AgentLoop) emitToolLifecycleAfter(
 	})
 }
 
-func (l *AgentLoop) sendToolResultIO(ctx context.Context, call port.ToolCall, result port.ToolResult, toolDur time.Duration, err error) {
+func (l *AgentLoop) sendToolResultIO(ctx context.Context, call mdl.ToolCall, result mdl.ToolResult, toolDur time.Duration, err error) {
 	if l.IO == nil {
 		return
 	}
@@ -736,9 +736,9 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call port.ToolCall, re
 		"duration_ms": toolDur.Milliseconds(),
 	}
 	appendToolErrorIOMetadata(meta, err)
-	l.IO.Send(ctx, port.OutputMessage{
-		Type:    port.OutputToolResult,
-		Content: port.ContentPartsToPlainText(result.ContentParts),
+	l.IO.Send(ctx, intr.OutputMessage{
+		Type:    intr.OutputToolResult,
+		Content: mdl.ContentPartsToPlainText(result.ContentParts),
 		Meta:    meta,
 	})
 }
@@ -765,7 +765,7 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			port.ObserveError(context.Background(), l.observer(), port.ErrorEvent{
+			kobs.ObserveError(context.Background(), l.observer(), kobs.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,
@@ -776,7 +776,7 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 	l.ToolLifecycleHook(callCtx, event)
 }
 
-func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMessage) {
+func appendToolExecutionMetadata(event *kobs.ExecutionEvent, output json.RawMessage) {
 	if event == nil || len(output) == 0 {
 		return
 	}
@@ -794,7 +794,7 @@ func appendToolExecutionMetadata(event *port.ExecutionEvent, output json.RawMess
 	}
 }
 
-func appendExecutionErrorMetadata(event *port.ExecutionEvent, err error) {
+func appendExecutionErrorMetadata(event *kobs.ExecutionEvent, err error) {
 	if event == nil || err == nil {
 		return
 	}
@@ -813,7 +813,7 @@ func appendExecutionErrorMetadata(event *port.ExecutionEvent, err error) {
 	}
 }
 
-func appendToolErrorMetadata(event *port.ExecutionEvent, err error) {
+func appendToolErrorMetadata(event *kobs.ExecutionEvent, err error) {
 	appendExecutionErrorMetadata(event, err)
 }
 
@@ -858,15 +858,15 @@ func (l *AgentLoop) withSideEffectsLock(fn func()) {
 	fn()
 }
 
-func (l *AgentLoop) toolSpecs(plan TurnPlan) []port.ToolSpec {
+func (l *AgentLoop) toolSpecs(plan TurnPlan) []mdl.ToolSpec {
 	allowed := allowedToolNames(plan.ToolRoute)
 	if len(allowed) == 0 {
 		return nil
 	}
 	tools := tool.Scoped(l.Tools, allowed).List()
-	specs := make([]port.ToolSpec, len(tools))
+	specs := make([]mdl.ToolSpec, len(tools))
 	for i, t := range tools {
-		specs[i] = port.ToolSpec{
+		specs[i] = mdl.ToolSpec{
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: t.InputSchema,
@@ -905,8 +905,8 @@ func (l *AgentLoop) nextEventID(prefix string) string {
 	return runID + "-" + prefix + "-" + strconv.FormatUint(seq, 10)
 }
 
-func (l *AgentLoop) executionEventBase(sess *session.Session, eventType port.ExecutionEventType, phase, actor, payloadKind string) port.ExecutionEvent {
-	return port.ExecutionEvent{
+func (l *AgentLoop) executionEventBase(sess *session.Session, eventType kobs.ExecutionEventType, phase, actor, payloadKind string) kobs.ExecutionEvent {
+	return kobs.ExecutionEvent{
 		Type:         eventType,
 		EventID:      l.nextEventID(string(eventType)),
 		EventVersion: 1,
@@ -983,7 +983,7 @@ func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEv
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			port.ObserveError(context.Background(), l.observer(), port.ErrorEvent{
+			kobs.ObserveError(context.Background(), l.observer(), kobs.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -994,12 +994,12 @@ func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEv
 	l.LifecycleHook(ctx, event)
 }
 
-func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.TokenUsage, err error) *SessionResult {
-	eventType := port.ExecutionRunFailed
+func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage mdl.TokenUsage, err error) *SessionResult {
+	eventType := kobs.ExecutionRunFailed
 	stage := session.LifecycleFailed
 	if errors.Is(err, context.Canceled) || sess.Status == session.StatusCancelled {
 		sess.Status = session.StatusCancelled
-		eventType = port.ExecutionRunCancelled
+		eventType = kobs.ExecutionRunCancelled
 		stage = session.LifecycleCancelled
 	} else {
 		sess.Status = session.StatusFailed
@@ -1012,7 +1012,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage port.
 		"tokens": usage.TotalTokens,
 	}
 	appendExecutionErrorMetadata(&runEvent, err)
-	port.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
+	kobs.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,

@@ -10,17 +10,17 @@ type overlayID string
 const (
 	overlayTranscript overlayID = "transcript"
 	overlayAsk        overlayID = "ask"
-	overlaySchedule overlayID = "schedule"
-	overlayModel    overlayID = "model"
-	overlayTheme    overlayID = "theme"
-	overlayStatus   overlayID = "statusline"
-	overlayMCP      overlayID = "mcp"
-	overlayHelp     overlayID = "help"
-	overlayReview   overlayID = "review"
-	overlayResume   overlayID = "resume"
-	overlayFork     overlayID = "fork"
-	overlayAgent    overlayID = "agent"
-	overlayMention  overlayID = "mention"
+	overlaySchedule   overlayID = "schedule"
+	overlayModel      overlayID = "model"
+	overlayTheme      overlayID = "theme"
+	overlayStatus     overlayID = "statusline"
+	overlayMCP        overlayID = "mcp"
+	overlayHelp       overlayID = "help"
+	overlayReview     overlayID = "review"
+	overlayResume     overlayID = "resume"
+	overlayFork       overlayID = "fork"
+	overlayAgent      overlayID = "agent"
+	overlayMention    overlayID = "mention"
 )
 
 type overlayDialog interface {

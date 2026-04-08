@@ -6,20 +6,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/providers"
+	providers "github.com/mossagents/moss/providers"
+	"github.com/mossagents/moss/sandbox"
+	"golang.org/x/net/websocket"
 	"log/slog"
 	"math/big"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/adapters"
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/sandbox"
-	"golang.org/x/net/websocket"
 )
 
 // ── 游戏状态 ────────────────────────────────────────
@@ -295,7 +296,7 @@ func (r *Room) triggerChatStart(p *Player) {
 
 	initMsg := fmt.Sprintf("[系统]: 玩家 %s 进入了聊天室，选择的主题是【%s】。\n\n用户指定的角色（请严格使用这些角色）：\n%s\n\n请立刻为每个角色调用 add_virtual_player 注册，然后让它们做自我介绍。",
 		p.Name, r.Topic, strings.Join(charDetails, "\n"))
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(initMsg)}})
+	r.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(initMsg)}})
 
 	// 记录用户活动时间（初始化也算活动）
 	r.mu.Lock()
@@ -338,7 +339,7 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 
 	// 3. 拼接为 "[玩家名]: 内容" 作为用户消息交给 Agent
 	userMsg := fmt.Sprintf("[%s]: %s", pm.player.Name, pm.content)
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(userMsg)}})
+	r.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(userMsg)}})
 
 	// 4. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
 	result, err := r.k.Run(r.ctx, r.sess)
@@ -426,7 +427,7 @@ func (r *Room) fireAutoTurn() {
 	prompt := fmt.Sprintf(`[系统-自主对话]: 距离上次用户发言已过 %d 秒，虚拟角色可以自主闲聊或互动。请自然地让1-2个角色说点什么（闲聊、接之前的话题、互相调侃等），但控制篇幅简短。如果觉得没什么好说的，回复"skip"即可。`,
 		int(elapsed.Seconds()))
 
-	r.sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(prompt)}})
+	r.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(prompt)}})
 
 	result, err := r.k.Run(r.ctx, r.sess)
 	if err != nil {
@@ -451,33 +452,33 @@ func (r *Room) fireAutoTurn() {
 
 // ── RoomIO ──────────────────────────────────────────
 
-// RoomIO 实现 port.UserIO，将 Agent 输出广播到房间所有玩家。
+// RoomIO 实现 intr.UserIO，将 Agent 输出广播到房间所有玩家。
 type RoomIO struct {
 	room *Room
 }
 
-var _ port.UserIO = (*RoomIO)(nil)
+var _ intr.UserIO = (*RoomIO)(nil)
 
-func (io *RoomIO) Send(_ context.Context, msg port.OutputMessage) error {
+func (io *RoomIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	isChatScript := io.room.ScriptID == "chat"
 	switch msg.Type {
-	case port.OutputStream:
+	case intr.OutputStream:
 		if isChatScript {
 			return nil // 陡聊剧本不显示主持人流式输出
 		}
 		io.room.broadcast(ServerMsg{Type: MsgStream, Content: msg.Content, From: "主持人"})
-	case port.OutputStreamEnd:
+	case intr.OutputStreamEnd:
 		if isChatScript {
 			return nil
 		}
 		io.room.broadcast(ServerMsg{Type: MsgStreamEnd, From: "主持人"})
-	case port.OutputText:
+	case intr.OutputText:
 		if isChatScript {
 			return nil // 陡聊剧本主持人隐身，不广播直接文本
 		}
 		io.room.addHistory("主持人", msg.Content, "agent")
 		io.room.broadcast(ServerMsg{Type: MsgAgent, Content: msg.Content, From: "主持人"})
-	case port.OutputToolStart, port.OutputToolResult:
+	case intr.OutputToolStart, intr.OutputToolResult:
 		// 工具调用内部过程不广播给玩家
 	default:
 		io.room.broadcast(ServerMsg{Type: MsgSystem, Content: msg.Content})
@@ -485,9 +486,9 @@ func (io *RoomIO) Send(_ context.Context, msg port.OutputMessage) error {
 	return nil
 }
 
-func (io *RoomIO) Ask(_ context.Context, _ port.InputRequest) (port.InputResponse, error) {
+func (io *RoomIO) Ask(_ context.Context, _ intr.InputRequest) (intr.InputResponse, error) {
 	// 游戏 Agent 的工具调用自动批准
-	return port.InputResponse{Approved: true, Value: "y"}, nil
+	return intr.InputResponse{Approved: true, Value: "y"}, nil
 }
 
 // ── RoomManager ─────────────────────────────────────
@@ -550,7 +551,7 @@ func (rm *RoomManager) CreateRoom(parentCtx context.Context, scriptID string) (*
 	room.io = roomIO
 
 	// 构建该房间专属的 Kernel（无 sandbox，无内置文件工具）
-	llm, err := adapters.BuildLLM(
+	llm, err := providers.BuildLLM(
 		rm.flags.Provider, rm.flags.Model,
 		rm.flags.APIKey, rm.flags.BaseURL,
 	)

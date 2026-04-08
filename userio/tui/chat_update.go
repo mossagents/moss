@@ -2,11 +2,10 @@ package tui
 
 import (
 	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
@@ -202,7 +201,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		if len(m.queuedInputs) > 0 && m.sendFn != nil {
 			next := m.queuedInputs[0]
 			m.queuedInputs = m.queuedInputs[1:]
-			nextParts := []port.ContentPart{port.TextPart(next)}
+			nextParts := []mdl.ContentPart{mdl.TextPart(next)}
 			if len(m.queuedParts) > 0 {
 				nextParts = m.queuedParts[0]
 				m.queuedParts = m.queuedParts[1:]
@@ -255,13 +254,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func outputMediaKind(typ port.ContentPartType) string {
+func outputMediaKind(typ mdl.ContentPartType) string {
 	switch typ {
-	case port.ContentPartOutputImage:
+	case mdl.ContentPartOutputImage:
 		return "image"
-	case port.ContentPartOutputAudio:
+	case mdl.ContentPartOutputAudio:
 		return "audio"
-	case port.ContentPartOutputVideo:
+	case mdl.ContentPartOutputVideo:
 		return "video"
 	default:
 		return ""

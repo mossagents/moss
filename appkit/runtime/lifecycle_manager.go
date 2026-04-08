@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"fmt"
-
 	"github.com/mossagents/moss/kernel"
 )
 

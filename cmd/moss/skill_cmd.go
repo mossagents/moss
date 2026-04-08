@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/skill/registry"
 	"os"
 	"strings"
 	"text/tabwriter"
-
-	"github.com/mossagents/moss/skill/registry"
 )
 
 const defaultRegistryURL = "https://registry.mossagents.io"

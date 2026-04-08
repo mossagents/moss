@@ -2,15 +2,14 @@ package otel_test
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
-	"sort"
-	"testing"
-
 	mossotel "github.com/mossagents/moss/contrib/telemetry/otel"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace/noop"
+	"net/http"
+	"net/http/httptest"
+	"sort"
+	"testing"
 )
 
 // setupPropagation installs a noop tracer + W3C propagator for the test process.

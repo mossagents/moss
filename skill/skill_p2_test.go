@@ -3,9 +3,8 @@ package skill_test
 import (
 	"context"
 	"errors"
-	"testing"
-
 	"github.com/mossagents/moss/skill"
+	"testing"
 )
 
 // ---- version tests -------------------------------------------------------
@@ -72,8 +71,8 @@ type stubSkill struct {
 func (s *stubSkill) Metadata() skill.Metadata {
 	return skill.Metadata{Name: s.name, Version: s.version, Requires: s.requires, DependsOn: s.deps}
 }
-func (s *stubSkill) Init(_ context.Context, _ skill.Deps) error  { return nil }
-func (s *stubSkill) Shutdown(_ context.Context) error            { return nil }
+func (s *stubSkill) Init(_ context.Context, _ skill.Deps) error { return nil }
+func (s *stubSkill) Shutdown(_ context.Context) error           { return nil }
 
 func TestTopologicalSort_NoDeps(t *testing.T) {
 	a := &stubSkill{name: "a"}

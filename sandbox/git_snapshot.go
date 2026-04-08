@@ -4,43 +4,43 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // GitWorktreeSnapshotStore 使用 git metadata 目录持久化 ghost-state 快照。
 type GitWorktreeSnapshotStore struct {
 	root     string
 	timeout  time.Duration
-	observer port.ExecutionObserver
+	observer kobs.ExecutionObserver
 }
 
 func NewGitWorktreeSnapshotStore(root string) *GitWorktreeSnapshotStore {
 	return &GitWorktreeSnapshotStore{
 		root:     root,
 		timeout:  10 * time.Second,
-		observer: port.NoOpObserver{},
+		observer: kobs.NoOpObserver{},
 	}
 }
 
-func (s *GitWorktreeSnapshotStore) SetObserver(observer port.ExecutionObserver) {
+func (s *GitWorktreeSnapshotStore) SetObserver(observer kobs.ExecutionObserver) {
 	if observer == nil {
-		s.observer = port.NoOpObserver{}
+		s.observer = kobs.NoOpObserver{}
 		return
 	}
 	s.observer = observer
 }
 
-func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.WorktreeSnapshotRequest) (*port.WorktreeSnapshot, error) {
+func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req kws.WorktreeSnapshotRequest) (*kws.WorktreeSnapshot, error) {
 	repoRoot, gitDir, journal, err := resolveGitRepo(ctx, s.root, s.timeout)
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, port.ErrWorktreeSnapshotUnavailable
+			return nil, kws.ErrWorktreeSnapshotUnavailable
 		}
 		return nil, err
 	}
@@ -55,10 +55,10 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	if err != nil {
 		return nil, err
 	}
-	snapshot := &port.WorktreeSnapshot{
+	snapshot := &kws.WorktreeSnapshot{
 		ID:        newSnapshotID(capture.HeadSHA),
 		SessionID: strings.TrimSpace(req.SessionID),
-		Mode:      port.WorktreeSnapshotGhostState,
+		Mode:      kws.WorktreeSnapshotGhostState,
 		RepoRoot:  repoRoot,
 		Note:      strings.TrimSpace(req.Note),
 		Capture:   *capture,
@@ -68,8 +68,8 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	if err := persistSnapshot(filepath.Join(gitDir, "moss-snapshots"), snapshot); err != nil {
 		return nil, err
 	}
-	port.ObserveExecutionEvent(ctx, s.observer, port.ExecutionEvent{
-		Type:      port.ExecutionSnapshotCreated,
+	kobs.ObserveExecutionEvent(ctx, s.observer, kobs.ExecutionEvent{
+		Type:      kobs.ExecutionSnapshotCreated,
 		SessionID: snapshot.SessionID,
 		Timestamp: snapshot.CreatedAt,
 		Data: map[string]any{
@@ -83,22 +83,22 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req port.Worktree
 	return snapshot, nil
 }
 
-func (s *GitWorktreeSnapshotStore) Load(ctx context.Context, id string) (*port.WorktreeSnapshot, error) {
+func (s *GitWorktreeSnapshotStore) Load(ctx context.Context, id string) (*kws.WorktreeSnapshot, error) {
 	_, gitDir, _, err := resolveGitRepo(ctx, s.root, s.timeout)
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, port.ErrWorktreeSnapshotUnavailable
+			return nil, kws.ErrWorktreeSnapshotUnavailable
 		}
 		return nil, err
 	}
 	return loadSnapshot(filepath.Join(gitDir, "moss-snapshots"), id)
 }
 
-func (s *GitWorktreeSnapshotStore) List(ctx context.Context) ([]port.WorktreeSnapshot, error) {
+func (s *GitWorktreeSnapshotStore) List(ctx context.Context) ([]kws.WorktreeSnapshot, error) {
 	_, gitDir, _, err := resolveGitRepo(ctx, s.root, s.timeout)
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, port.ErrWorktreeSnapshotUnavailable
+			return nil, kws.ErrWorktreeSnapshotUnavailable
 		}
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (s *GitWorktreeSnapshotStore) List(ctx context.Context) ([]port.WorktreeSna
 		}
 		return nil, fmt.Errorf("list snapshots: %w", err)
 	}
-	out := make([]port.WorktreeSnapshot, 0, len(entries))
+	out := make([]kws.WorktreeSnapshot, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -130,7 +130,7 @@ func (s *GitWorktreeSnapshotStore) List(ctx context.Context) ([]port.WorktreeSna
 	return out, nil
 }
 
-func (s *GitWorktreeSnapshotStore) FindBySession(ctx context.Context, sessionID string) ([]port.WorktreeSnapshot, error) {
+func (s *GitWorktreeSnapshotStore) FindBySession(ctx context.Context, sessionID string) ([]kws.WorktreeSnapshot, error) {
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil, nil
@@ -139,7 +139,7 @@ func (s *GitWorktreeSnapshotStore) FindBySession(ctx context.Context, sessionID 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]port.WorktreeSnapshot, 0, len(items))
+	out := make([]kws.WorktreeSnapshot, 0, len(items))
 	for _, item := range items {
 		if item.SessionID == sessionID {
 			out = append(out, item)
@@ -159,7 +159,7 @@ func newSnapshotID(head string) string {
 	return fmt.Sprintf("snapshot-%s-%d", short, time.Now().UnixNano())
 }
 
-func persistSnapshot(dir string, snapshot *port.WorktreeSnapshot) error {
+func persistSnapshot(dir string, snapshot *kws.WorktreeSnapshot) error {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("create snapshot dir: %w", err)
 	}
@@ -178,16 +178,16 @@ func persistSnapshot(dir string, snapshot *port.WorktreeSnapshot) error {
 	return nil
 }
 
-func loadSnapshot(dir, id string) (*port.WorktreeSnapshot, error) {
+func loadSnapshot(dir, id string) (*kws.WorktreeSnapshot, error) {
 	path := filepath.Join(dir, id+".json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, port.ErrWorktreeSnapshotNotFound
+			return nil, kws.ErrWorktreeSnapshotNotFound
 		}
 		return nil, fmt.Errorf("read snapshot %s: %w", id, err)
 	}
-	var snapshot port.WorktreeSnapshot
+	var snapshot kws.WorktreeSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return nil, fmt.Errorf("unmarshal snapshot %s: %w", id, err)
 	}

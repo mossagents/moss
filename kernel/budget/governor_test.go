@@ -2,11 +2,10 @@ package budget_test
 
 import (
 	"context"
-	"testing"
-
 	"github.com/mossagents/moss/kernel/budget"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/session"
+	"testing"
 )
 
 func TestGovernor_CheckAndRecord(t *testing.T) {

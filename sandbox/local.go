@@ -3,6 +3,8 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,8 +12,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // LocalSandbox 是基于本地文件系统的 Sandbox 实现。
@@ -182,7 +182,7 @@ func (s *LocalSandbox) WriteFile(path string, content []byte) error {
 	return os.WriteFile(resolved, content, 0644)
 }
 
-func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+func (s *LocalSandbox) Execute(ctx context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = s.limits.CommandTimeout
@@ -196,7 +196,7 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	cmd := req.Command
 	args := append([]string(nil), req.Args...)
 	if strings.TrimSpace(cmd) == "" {
-		return port.ExecOutput{}, fmt.Errorf("command is required")
+		return kws.ExecOutput{}, fmt.Errorf("command is required")
 	}
 	shellWrapped := len(args) == 0 && needsShell(cmd)
 
@@ -204,7 +204,7 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	// 这样 LLM 可以直接发送 "ls -la" 或 "go build ./..." 等完整 shell 命令。
 	if shellWrapped {
 		if err := rejectShellChaining(cmd); err != nil {
-			return port.ExecOutput{}, err
+			return kws.ExecOutput{}, err
 		}
 		if runtime.GOOS == "windows" {
 			args = []string{"/C", cmd}
@@ -217,7 +217,7 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 
 	// 防止通过显式传入 sh/bash 等 binary + -c 参数绕过 shell chaining 检查。
 	if err := rejectShellBinaryArgs(cmd, args); err != nil {
-		return port.ExecOutput{}, err
+		return kws.ExecOutput{}, err
 	}
 
 	c := exec.CommandContext(ctx, cmd, args...)
@@ -225,42 +225,42 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	if wd := strings.TrimSpace(req.WorkingDir); wd != "" {
 		resolved, err := s.ResolvePath(wd)
 		if err != nil {
-			return port.ExecOutput{}, err
+			return kws.ExecOutput{}, err
 		}
 		workDir = resolved
 	}
 	if len(req.AllowedPaths) > 0 {
 		allowedRoots, err := s.resolveAllowedRoots(req.AllowedPaths)
 		if err != nil {
-			return port.ExecOutput{}, err
+			return kws.ExecOutput{}, err
 		}
 		if !isWithinAllowedRoots(workDir, allowedRoots) {
-			return port.ExecOutput{}, fmt.Errorf("working directory %q is outside allowed execution paths", workDir)
+			return kws.ExecOutput{}, fmt.Errorf("working directory %q is outside allowed execution paths", workDir)
 		}
 		if shellWrapped {
-			return port.ExecOutput{}, fmt.Errorf("shell-form commands are not allowed when execution paths are restricted; provide structured command and args")
+			return kws.ExecOutput{}, fmt.Errorf("shell-form commands are not allowed when execution paths are restricted; provide structured command and args")
 		}
 		if err := validateExecPathAccess(cmd, args, workDir, allowedRoots); err != nil {
-			return port.ExecOutput{}, err
+			return kws.ExecOutput{}, err
 		}
 	}
 	c.Dir = workDir
 
 	env, customized := buildCommandEnv(req)
-	outputMeta := port.ExecOutput{}
+	outputMeta := kws.ExecOutput{}
 	if len(req.Network.AllowHosts) > 0 {
-		return port.ExecOutput{}, fmt.Errorf("network host allowlists are not supported by the local sandbox executor")
+		return kws.ExecOutput{}, fmt.Errorf("network host allowlists are not supported by the local sandbox executor")
 	}
-	if req.Network.Mode == port.ExecNetworkDisabled {
+	if req.Network.Mode == kws.ExecNetworkDisabled {
 		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
-			return port.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
+			return kws.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
 		}
 		if !customized {
 			env = envMapToSlice(SafeInheritedEnvironment())
 			customized = true
 		}
 		env = applySoftNetworkLimit(env)
-		outputMeta.Enforcement = port.EnforcementSoftLimit
+		outputMeta.Enforcement = intr.EnforcementSoftLimit
 		outputMeta.Degraded = true
 		outputMeta.Details = "hard network isolation unavailable in local sandbox; applied soft network limit via environment"
 	}
@@ -291,7 +291,7 @@ func (s *LocalSandbox) Execute(ctx context.Context, req port.ExecRequest) (port.
 	return out, nil
 }
 
-func buildCommandEnv(req port.ExecRequest) ([]string, bool) {
+func buildCommandEnv(req kws.ExecRequest) ([]string, bool) {
 	customized := req.ClearEnv || len(req.Env) > 0
 	if !customized {
 		return nil, false
@@ -564,7 +564,7 @@ func (s *LocalSandbox) Limits() ResourceLimits {
 	return s.limits
 }
 
-// LocalWorkspace 将 LocalSandbox 适配为 port.Workspace 接口。
+// LocalWorkspace 将 LocalSandbox 适配为 kws.Workspace 接口。
 type LocalWorkspace struct {
 	sb *LocalSandbox
 }
@@ -586,16 +586,16 @@ func (w *LocalWorkspace) ListFiles(_ context.Context, pattern string) ([]string,
 	return w.sb.ListFiles(pattern)
 }
 
-func (w *LocalWorkspace) Stat(_ context.Context, path string) (port.FileInfo, error) {
+func (w *LocalWorkspace) Stat(_ context.Context, path string) (kws.FileInfo, error) {
 	resolved, err := w.sb.ResolvePath(path)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return port.FileInfo{}, err
+		return kws.FileInfo{}, err
 	}
-	return port.FileInfo{
+	return kws.FileInfo{
 		Name:    info.Name(),
 		Size:    info.Size(),
 		IsDir:   info.IsDir(),
@@ -611,7 +611,7 @@ func (w *LocalWorkspace) DeleteFile(_ context.Context, path string) error {
 	return os.Remove(resolved)
 }
 
-// LocalExecutor 将 LocalSandbox 适配为 port.Executor 接口。
+// LocalExecutor 将 LocalSandbox 适配为 kws.Executor 接口。
 type LocalExecutor struct {
 	sb *LocalSandbox
 }
@@ -621,6 +621,6 @@ func NewLocalExecutor(sb *LocalSandbox) *LocalExecutor {
 	return &LocalExecutor{sb: sb}
 }
 
-func (e *LocalExecutor) Execute(ctx context.Context, req port.ExecRequest) (port.ExecOutput, error) {
+func (e *LocalExecutor) Execute(ctx context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
 	return e.sb.Execute(ctx, req)
 }

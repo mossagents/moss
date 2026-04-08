@@ -1,13 +1,12 @@
 package product
 
 import (
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestResolveRouterConfigPathPrefersExplicit(t *testing.T) {

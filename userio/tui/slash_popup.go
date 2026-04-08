@@ -2,10 +2,9 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
+	"strings"
 )
 
 // slashPopupItem 是弹窗中的一个候选命令项。

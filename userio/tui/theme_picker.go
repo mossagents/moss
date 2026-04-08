@@ -2,11 +2,10 @@ package tui
 
 import (
 	"fmt"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
+	"strings"
 )
 
 type themePickerOption struct {

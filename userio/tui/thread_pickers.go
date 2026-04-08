@@ -3,12 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/kernel/port"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	kernelsession "github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"strings"
 )
 
 type resumePickerState struct {
@@ -192,12 +192,12 @@ func (m chatModel) renderForkPicker(width int) string {
 }
 
 type agentPickerState struct {
-	tasks []port.TaskSummary
+	tasks []taskrt.TaskSummary
 	list  *selectionListState
 }
 
 func newAgentPickerState() (*agentPickerState, error) {
-	tasks, err := product.ListTaskBrowseSummaries(context.Background(), port.TaskQuery{Limit: 20})
+	tasks, err := product.ListTaskBrowseSummaries(context.Background(), taskrt.TaskQuery{Limit: 20})
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func renderThreadBrowseSummary(item product.ThreadBrowseSummary) string {
 
 func forkSourceTitle(source kernelsession.ForkSource) string {
 	switch source.Kind {
-	case port.ForkSourceCheckpoint:
+	case ckpt.ForkSourceCheckpoint:
 		return "checkpoint " + firstPopulatedString(source.CheckpointID, source.SourceID)
 	default:
 		return "thread " + firstPopulatedString(source.SessionID, source.SourceID)
@@ -314,7 +314,7 @@ func forkSourceSubtitle(source kernelsession.ForkSource) string {
 	if strings.TrimSpace(source.Label) != "" {
 		return source.Label
 	}
-	if source.Kind == port.ForkSourceCheckpoint {
+	if source.Kind == ckpt.ForkSourceCheckpoint {
 		return valueOrDefaultString(source.CheckpointID, source.SourceID)
 	}
 	return valueOrDefaultString(source.SessionID, source.SourceID)
@@ -336,7 +336,7 @@ func renderForkSourceDetail(source kernelsession.ForkSource) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func taskTitle(task port.TaskSummary) string {
+func taskTitle(task taskrt.TaskSummary) string {
 	return firstPopulatedString(task.Goal, task.AgentName, task.Handle.ID)
 }
 
@@ -349,7 +349,7 @@ func firstPopulatedString(values ...string) string {
 	return ""
 }
 
-func renderTaskSummary(task port.TaskSummary) string {
+func renderTaskSummary(task taskrt.TaskSummary) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Task: %s\n", task.Handle.ID)
 	fmt.Fprintf(&b, "Status: %s\n", task.Status)

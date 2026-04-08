@@ -2,13 +2,13 @@ package product
 
 import (
 	"context"
+	appconfig "github.com/mossagents/moss/config"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
 )
 
 func TestResolvePricingCatalogPathPrefersExplicit(t *testing.T) {
@@ -48,7 +48,7 @@ func TestOpenPricingCatalogAndEstimate(t *testing.T) {
 	if resolved != path {
 		t.Fatalf("resolved=%q, want %q", resolved, path)
 	}
-	cost, ok := catalog.Estimate(port.TokenUsage{PromptTokens: 500000, CompletionTokens: 250000}, "gpt-5")
+	cost, ok := catalog.Estimate(mdl.TokenUsage{PromptTokens: 500000, CompletionTokens: 250000}, "gpt-5")
 	if !ok {
 		t.Fatal("expected cost match")
 	}
@@ -64,11 +64,11 @@ func TestPricingObserverAnnotatesTraceRecorder(t *testing.T) {
 			"gpt-5": {PromptPer1MUSD: 1.0, CompletionPer1MUSD: 2.0},
 		},
 	}, recorder)
-	observer.OnLLMCall(context.Background(), port.LLMCallEvent{
+	observer.OnLLMCall(context.Background(), kobs.LLMCallEvent{
 		SessionID: "sess-1",
 		Model:     "gpt-5",
 		Duration:  5 * time.Millisecond,
-		Usage: port.TokenUsage{
+		Usage: mdl.TokenUsage{
 			PromptTokens:     500000,
 			CompletionTokens: 250000,
 			TotalTokens:      750000,

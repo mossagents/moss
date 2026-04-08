@@ -3,9 +3,8 @@ package builtins
 import (
 	"context"
 	"fmt"
-
 	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // PatchToolCalls ensures every assistant tool call in history has a matching tool result.
@@ -19,7 +18,7 @@ func PatchToolCalls() middleware.Middleware {
 			return next(ctx)
 		}
 
-		pending := make(map[string]port.ToolCall)
+		pending := make(map[string]mdl.ToolCall)
 		for _, msg := range mc.Session.Messages {
 			for _, tc := range msg.ToolCalls {
 				if tc.ID == "" {
@@ -38,15 +37,15 @@ func PatchToolCalls() middleware.Middleware {
 			return next(ctx)
 		}
 
-		patches := make([]port.Message, 0, len(pending))
+		patches := make([]mdl.Message, 0, len(pending))
 		for callID, tc := range pending {
-			patches = append(patches, port.Message{
-				Role: port.RoleTool,
-				ToolResults: []port.ToolResult{
+			patches = append(patches, mdl.Message{
+				Role: mdl.RoleTool,
+				ToolResults: []mdl.ToolResult{
 					{
 						CallID:       callID,
 						IsError:      true,
-						ContentParts: []port.ContentPart{port.TextPart(fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name))},
+						ContentParts: []mdl.ContentPart{mdl.TextPart(fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name))},
 					},
 				},
 			})

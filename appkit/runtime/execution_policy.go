@@ -1,16 +1,17 @@
 package runtime
 
 import (
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/session"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
 	"path/filepath"
 	"strings"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
 )
 
 const executionPolicyStateKey kernel.ExtensionStateKey = "execution-policy.state"
@@ -24,14 +25,14 @@ const (
 )
 
 type CommandExecutionPolicy struct {
-	Access         ExecutionAccess        `json:"access"`
-	DefaultTimeout time.Duration          `json:"default_timeout"`
-	MaxTimeout     time.Duration          `json:"max_timeout"`
-	AllowedPaths   []string               `json:"allowed_paths,omitempty"`
-	ClearEnv       bool                   `json:"clear_env,omitempty"`
-	Env            map[string]string      `json:"env,omitempty"`
-	Network        port.ExecNetworkPolicy `json:"network"`
-	Rules          []CommandRule          `json:"rules,omitempty"`
+	Access         ExecutionAccess      `json:"access"`
+	DefaultTimeout time.Duration        `json:"default_timeout"`
+	MaxTimeout     time.Duration        `json:"max_timeout"`
+	AllowedPaths   []string             `json:"allowed_paths,omitempty"`
+	ClearEnv       bool                 `json:"clear_env,omitempty"`
+	Env            map[string]string    `json:"env,omitempty"`
+	Network        kws.ExecNetworkPolicy `json:"network"`
+	Rules          []CommandRule        `json:"rules,omitempty"`
 }
 
 type HTTPExecutionPolicy struct {
@@ -176,7 +177,7 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 			AllowedPaths:   append([]string(nil), defaults.AllowedPaths...),
 			ClearEnv:       defaults.ClearEnv,
 			Env:            cloneStringMap(defaults.Env),
-			Network:        port.ExecNetworkPolicy{Mode: port.ExecNetworkEnabled},
+			Network:        kws.ExecNetworkPolicy{Mode: kws.ExecNetworkEnabled},
 		},
 		HTTP: HTTPExecutionPolicy{
 			Access:          accessForApprovalMode(mode),
@@ -194,8 +195,8 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 		if policy.HTTP.Access != ExecutionAccessDeny {
 			policy.HTTP.Access = ExecutionAccessRequireApproval
 		}
-		policy.Command.Network = port.ExecNetworkPolicy{
-			Mode:            port.ExecNetworkDisabled,
+		policy.Command.Network = kws.ExecNetworkPolicy{
+			Mode:            kws.ExecNetworkDisabled,
 			PreferHardBlock: true,
 			AllowSoftLimit:  true,
 		}
@@ -207,12 +208,12 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 		policy.Command.MaxTimeout = policy.Command.DefaultTimeout
 	}
 	if policy.Command.Network.Mode == "" {
-		policy.Command.Network.Mode = port.ExecNetworkEnabled
+		policy.Command.Network.Mode = kws.ExecNetworkEnabled
 	}
 	return policy
 }
 
-func commandPolicyDefaults(sb sandbox.Sandbox, workspace string, _ port.Workspace) CommandExecutionPolicy {
+func commandPolicyDefaults(sb sandbox.Sandbox, workspace string, _ kws.Workspace) CommandExecutionPolicy {
 	timeout := 30 * time.Second
 	allowedPaths := []string{}
 	if sb != nil {
@@ -269,20 +270,20 @@ func cloneExecutionPolicy(policy ExecutionPolicy) ExecutionPolicy {
 	return policy
 }
 
-func MergeExecutionPolicyPermissions(policy ExecutionPolicy, perms port.PermissionProfile) ExecutionPolicy {
+func MergeExecutionPolicyPermissions(policy ExecutionPolicy, perms intr.PermissionProfile) ExecutionPolicy {
 	policy = cloneExecutionPolicy(policy)
 	policy.Command.AllowedPaths = normalizeStringSlice(append(policy.Command.AllowedPaths, perms.CommandPaths...))
 	policy.HTTP.AllowedHosts = normalizeStringSlice(append(policy.HTTP.AllowedHosts, perms.HTTPHosts...))
 	if perms.CommandNetwork != nil {
 		if perms.CommandNetwork.Enabled {
-			policy.Command.Network.Mode = port.ExecNetworkEnabled
+			policy.Command.Network.Mode = kws.ExecNetworkEnabled
 		}
 		policy.Command.Network.AllowHosts = normalizeStringSlice(append(policy.Command.Network.AllowHosts, perms.CommandNetwork.AllowHosts...))
 	}
 	return policy
 }
 
-func ExecutionPolicyForToolContext(ctx port.ToolCallContext, k *kernel.Kernel, base ExecutionPolicy) ExecutionPolicy {
+func ExecutionPolicyForToolContext(ctx toolctx.ToolCallContext, k *kernel.Kernel, base ExecutionPolicy) ExecutionPolicy {
 	if k == nil || strings.TrimSpace(ctx.SessionID) == "" {
 		return base
 	}

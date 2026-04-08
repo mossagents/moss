@@ -2,13 +2,12 @@ package product
 
 import (
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/kernel/retry"
+	providers "github.com/mossagents/moss/providers"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/adapters"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/retry"
 )
 
 const defaultLLMBreakerReset = 30 * time.Second
@@ -96,9 +95,9 @@ func (c GovernanceConfig) BreakerConfig() *retry.BreakerConfig {
 	}
 }
 
-func (c GovernanceConfig) FailoverConfig() (adapters.FailoverConfig, bool) {
+func (c GovernanceConfig) FailoverConfig() (providers.FailoverConfig, bool) {
 	if !c.LLMFailoverEnabled {
-		return adapters.FailoverConfig{}, false
+		return providers.FailoverConfig{}, false
 	}
 	defaults := DefaultGovernanceConfig()
 	retryCfg := retry.Config{
@@ -112,7 +111,7 @@ func (c GovernanceConfig) FailoverConfig() (adapters.FailoverConfig, bool) {
 		retryCfg.MaxDelay = durationOrDefault(c.LLMRetryMaxDelay, defaults.LLMRetryMaxDelay)
 		retryCfg.Multiplier = 2.0
 	}
-	return adapters.FailoverConfig{
+	return providers.FailoverConfig{
 		MaxCandidates:         intOrDefault(c.LLMFailoverMaxCandidates, defaults.LLMFailoverMaxCandidates),
 		RetryConfig:           retryCfg,
 		BreakerConfig:         c.BreakerConfig(),
@@ -133,12 +132,12 @@ func ResolveRouterConfigPath(workspace, explicit string) string {
 	return ""
 }
 
-func OpenModelRouter(workspace, explicit string) (*adapters.ModelRouter, string, error) {
+func OpenModelRouter(workspace, explicit string) (*providers.ModelRouter, string, error) {
 	path := ResolveRouterConfigPath(workspace, explicit)
 	if strings.TrimSpace(path) == "" {
 		return nil, "", nil
 	}
-	router, err := adapters.NewModelRouterFromFile(path)
+	router, err := providers.NewModelRouterFromFile(path)
 	if err != nil {
 		return nil, path, err
 	}
@@ -210,7 +209,7 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		return report
 	}
 
-	router, err := adapters.NewModelRouterFromFile(path)
+	router, err := providers.NewModelRouterFromFile(path)
 	if err != nil {
 		report.Error = err.Error()
 		return report

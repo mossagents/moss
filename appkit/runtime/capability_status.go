@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	stdruntime "runtime"
@@ -11,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	appconfig "github.com/mossagents/moss/config"
 )
 
 type CapabilityStatus struct {

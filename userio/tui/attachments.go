@@ -3,11 +3,10 @@ package tui
 import (
 	"encoding/base64"
 	"fmt"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 type composerAttachment struct {
@@ -16,16 +15,16 @@ type composerAttachment struct {
 	Path    string
 	Kind    string
 	Summary string
-	Part    port.ContentPart
+	Part    mdl.ContentPart
 }
 
 type resolvedMention struct {
 	Token string
 	Path  string
-	Part  port.ContentPart
+	Part  mdl.ContentPart
 }
 
-func buildComposerSubmission(input, workspace string, pending []composerAttachment) (string, string, []port.ContentPart, error) {
+func buildComposerSubmission(input, workspace string, pending []composerAttachment) (string, string, []mdl.ContentPart, error) {
 	runText := strings.TrimSpace(input)
 	mentions, err := resolveMentionParts(runText, workspace)
 	if err != nil {
@@ -49,9 +48,9 @@ func buildComposerSubmission(input, workspace string, pending []composerAttachme
 	for _, mention := range mentions {
 		appendAttachment(composerAttachmentFromPart(mention.Path, mention.Part))
 	}
-	parts := make([]port.ContentPart, 0, len(attachments)+1)
+	parts := make([]mdl.ContentPart, 0, len(attachments)+1)
 	if runText != "" {
-		parts = append(parts, port.TextPart(runText))
+		parts = append(parts, mdl.TextPart(runText))
 	}
 	for _, item := range attachments {
 		parts = append(parts, item.Part)
@@ -90,7 +89,7 @@ func resolveMentionParts(input, workspace string) ([]resolvedMention, error) {
 			continue
 		}
 		seen[key] = struct{}{}
-		part, err := buildAttachmentPart(path, &port.MentionBinding{
+		part, err := buildAttachmentPart(path, &mdl.MentionBinding{
 			Trigger: "@",
 			Value:   token,
 			Target:  path,
@@ -118,13 +117,13 @@ func buildAttachmentDraft(workspace, raw string) (composerAttachment, error) {
 	return composerAttachmentFromPart(path, part), nil
 }
 
-func buildAttachmentPart(path string, mention *port.MentionBinding) (port.ContentPart, error) {
+func buildAttachmentPart(path string, mention *mdl.MentionBinding) (mdl.ContentPart, error) {
 	if !isMediaPath(path) {
 		info, err := os.Stat(path)
 		if err != nil {
-			return port.ContentPart{}, fmt.Errorf("stat attachment %s: %w", path, err)
+			return mdl.ContentPart{}, fmt.Errorf("stat attachment %s: %w", path, err)
 		}
-		return port.FileRefPart(port.AttachmentRef{
+		return mdl.FileRefPart(mdl.AttachmentRef{
 			Name:      filepath.Base(path),
 			Path:      path,
 			SizeBytes: info.Size(),
@@ -133,31 +132,31 @@ func buildAttachmentPart(path string, mention *port.MentionBinding) (port.Conten
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return port.ContentPart{}, fmt.Errorf("read media attachment %s: %w", path, err)
+		return mdl.ContentPart{}, fmt.Errorf("read media attachment %s: %w", path, err)
 	}
 	partType, mimeType, err := detectMediaPart(path, data)
 	if err != nil {
-		return port.ContentPart{}, err
+		return mdl.ContentPart{}, err
 	}
-	part := port.MediaInlinePart(partType, mimeType, base64.StdEncoding.EncodeToString(data), path)
+	part := mdl.MediaInlinePart(partType, mimeType, base64.StdEncoding.EncodeToString(data), path)
 	if mention != nil {
 		part.Mention = mention
 	}
 	return part, nil
 }
 
-func composerAttachmentFromPart(path string, part port.ContentPart) composerAttachment {
+func composerAttachmentFromPart(path string, part mdl.ContentPart) composerAttachment {
 	label := filepath.Base(path)
 	if strings.TrimSpace(label) == "" {
 		label = path
 	}
 	kind := "file"
 	switch part.Type {
-	case port.ContentPartInputImage:
+	case mdl.ContentPartInputImage:
 		kind = "image"
-	case port.ContentPartInputAudio:
+	case mdl.ContentPartInputAudio:
 		kind = "audio"
-	case port.ContentPartInputVideo:
+	case mdl.ContentPartInputVideo:
 		kind = "video"
 	}
 	summary := valueOrDefaultString(path, label)

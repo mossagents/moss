@@ -3,14 +3,13 @@ package product
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
-
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
 	"github.com/mossagents/moss/kernel/tool"
+	"strings"
 )
 
 const (
@@ -162,7 +161,7 @@ func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.
 	return decision
 }
 
-func PersistProjectApprovalAmendment(workspace, profile string, amendment *port.ExecPolicyAmendment) error {
+func PersistProjectApprovalAmendment(workspace, profile string, amendment *intr.ExecPolicyAmendment) error {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return fmt.Errorf("workspace is required")

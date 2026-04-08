@@ -2,14 +2,13 @@ package builtins
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/knowledge"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/knowledge"
 )
 
 func TestRAG_NoManagerSkips(t *testing.T) {
@@ -50,9 +49,9 @@ func TestRAG_InjectsMemoryContextIntoSystemMessage(t *testing.T) {
 
 	sess := &session.Session{
 		ID: "s1",
-		Messages: []port.Message{
-			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are a helpful assistant.")}},
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("查询认证相关问题")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("You are a helpful assistant.")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("查询认证相关问题")}},
 		},
 	}
 	mc := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
@@ -69,8 +68,8 @@ func TestRAG_InjectsMemoryContextIntoSystemMessage(t *testing.T) {
 	msgs := sess.CopyMessages()
 	sysText := ""
 	for _, m := range msgs {
-		if m.Role == port.RoleSystem {
-			sysText = port.ContentPartsToPlainText(m.ContentParts)
+		if m.Role == mdl.RoleSystem {
+			sysText = mdl.ContentPartsToPlainText(m.ContentParts)
 		}
 	}
 	// 应包含原始 system prompt 和注入的 memory_context
@@ -84,8 +83,8 @@ func TestRAG_InsertsNewSystemMessageIfNone(t *testing.T) {
 
 	sess := &session.Session{
 		ID: "s2",
-		Messages: []port.Message{
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("帮我找找 bug")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("帮我找找 bug")}},
 		},
 	}
 	mc := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
@@ -93,7 +92,7 @@ func TestRAG_InsertsNewSystemMessageIfNone(t *testing.T) {
 	_ = RAG(RAGConfig{Manager: mgr})(context.Background(), mc, func(_ context.Context) error { return nil })
 
 	msgs := sess.CopyMessages()
-	if msgs[0].Role != port.RoleSystem {
+	if msgs[0].Role != mdl.RoleSystem {
 		t.Error("expected first message to be system message with injected context")
 	}
 }
@@ -103,8 +102,8 @@ func TestRAG_CustomQueryExtractor(t *testing.T) {
 
 	sess := &session.Session{
 		ID: "s3",
-		Messages: []port.Message{
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("some user message")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("some user message")}},
 		},
 	}
 	mc := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
@@ -112,7 +111,7 @@ func TestRAG_CustomQueryExtractor(t *testing.T) {
 	customQuery := ""
 	_ = RAG(RAGConfig{
 		Manager: mgr,
-		QueryExtractor: func(msgs []port.Message) string {
+		QueryExtractor: func(msgs []mdl.Message) string {
 			customQuery = "custom_query"
 			return customQuery
 		},

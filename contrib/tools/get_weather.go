@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/kernel/tool"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"time"
-
-	"github.com/mossagents/moss/kernel/tool"
 )
 
 var WeatherSpec = tool.ToolSpec{

@@ -4,19 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/appkit"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/skill"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/appkit"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
-	"github.com/mossagents/moss/skill"
 )
 
 const disableStateCatalogEnv = "MOSSCODE_DISABLE_STATE_CATALOG"
@@ -269,7 +270,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 	commandNetworkDegraded := false
 	if executionPolicy.Command.Access == appruntime.ExecutionAccessDeny {
 		commandNetworkEnforcement = "disabled"
-	} else if executionPolicy.Command.Network.Mode == port.ExecNetworkDisabled {
+	} else if executionPolicy.Command.Network.Mode == kws.ExecNetworkDisabled {
 		commandNetworkEnforcement = "soft-limit"
 		commandNetworkDegraded = true
 	}
@@ -394,7 +395,7 @@ func populateDoctorSessionsHealth(ctx context.Context, report *DoctorReport) (se
 }
 
 func buildDoctorTaskHealth() DoctorTaskHealth {
-	if _, err := port.NewFileTaskRuntime(TaskRuntimeDir()); err != nil {
+	if _, err := taskrt.NewFileTaskRuntime(TaskRuntimeDir()); err != nil {
 		return DoctorTaskHealth{Type: "file", Ready: false, Error: err.Error()}
 	}
 	return DoctorTaskHealth{Type: "file", Ready: true}
@@ -592,14 +593,14 @@ type CheckpointDetail struct {
 	Note         string                      `json:"note,omitempty"`
 	PatchIDs     []string                    `json:"patch_ids,omitempty"`
 	PatchCount   int                         `json:"patch_count"`
-	Lineage      []port.CheckpointLineageRef `json:"lineage,omitempty"`
+	Lineage      []ckpt.CheckpointLineageRef `json:"lineage,omitempty"`
 	LineageDepth int                         `json:"lineage_depth"`
 	Metadata     map[string]any              `json:"metadata,omitempty"`
 	MetadataKeys []string                    `json:"metadata_keys,omitempty"`
 	CreatedAt    time.Time                   `json:"created_at"`
 }
 
-func SummarizeCheckpoint(item port.CheckpointRecord) CheckpointSummary {
+func SummarizeCheckpoint(item ckpt.CheckpointRecord) CheckpointSummary {
 	sessionID := checkpointSessionID(item)
 	return CheckpointSummary{
 		ID:           item.ID,
@@ -612,10 +613,10 @@ func SummarizeCheckpoint(item port.CheckpointRecord) CheckpointSummary {
 	}
 }
 
-func checkpointSessionID(item port.CheckpointRecord) string {
+func checkpointSessionID(item ckpt.CheckpointRecord) string {
 	sessionID := item.SessionID
 	for _, ref := range item.Lineage {
-		if ref.Kind == port.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+		if ref.Kind == ckpt.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
 			sessionID = ref.ID
 			break
 		}
@@ -623,7 +624,7 @@ func checkpointSessionID(item port.CheckpointRecord) string {
 	return sessionID
 }
 
-func DescribeCheckpoint(item port.CheckpointRecord) CheckpointDetail {
+func DescribeCheckpoint(item ckpt.CheckpointRecord) CheckpointDetail {
 	keys := make([]string, 0, len(item.Metadata))
 	for key := range item.Metadata {
 		keys = append(keys, key)
@@ -636,7 +637,7 @@ func DescribeCheckpoint(item port.CheckpointRecord) CheckpointDetail {
 		Note:         item.Note,
 		PatchIDs:     append([]string(nil), item.PatchIDs...),
 		PatchCount:   len(item.PatchIDs),
-		Lineage:      append([]port.CheckpointLineageRef(nil), item.Lineage...),
+		Lineage:      append([]ckpt.CheckpointLineageRef(nil), item.Lineage...),
 		LineageDepth: len(item.Lineage),
 		Metadata:     cloneAnyMap(item.Metadata),
 		MetadataKeys: keys,
@@ -644,7 +645,7 @@ func DescribeCheckpoint(item port.CheckpointRecord) CheckpointDetail {
 	}
 }
 
-func SummarizeCheckpoints(items []port.CheckpointRecord) []CheckpointSummary {
+func SummarizeCheckpoints(items []ckpt.CheckpointRecord) []CheckpointSummary {
 	out := make([]CheckpointSummary, 0, len(items))
 	for _, item := range items {
 		out = append(out, SummarizeCheckpoint(item))
@@ -656,13 +657,13 @@ func SummarizeCheckpoints(items []port.CheckpointRecord) []CheckpointSummary {
 }
 
 func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error) {
-	store, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
 	items, err := store.List(ctx)
 	if err != nil {
-		if err == port.ErrCheckpointUnavailable {
+		if err == ckpt.ErrCheckpointUnavailable {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list checkpoints: %w", err)
@@ -674,9 +675,9 @@ func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error
 	return out, nil
 }
 
-func ResolveCheckpointRecord(ctx context.Context, store port.CheckpointStore, selector string) (*port.CheckpointRecord, error) {
+func ResolveCheckpointRecord(ctx context.Context, store ckpt.CheckpointStore, selector string) (*ckpt.CheckpointRecord, error) {
 	if store == nil {
-		return nil, port.ErrCheckpointUnavailable
+		return nil, ckpt.ErrCheckpointUnavailable
 	}
 	selector = strings.TrimSpace(selector)
 	if selector == "" || strings.EqualFold(selector, "latest") {
@@ -685,7 +686,7 @@ func ResolveCheckpointRecord(ctx context.Context, store port.CheckpointStore, se
 			return nil, err
 		}
 		if len(items) == 0 {
-			return nil, port.ErrCheckpointNotFound
+			return nil, ckpt.ErrCheckpointNotFound
 		}
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].CreatedAt.Equal(items[j].CreatedAt) {
@@ -701,12 +702,12 @@ func ResolveCheckpointRecord(ctx context.Context, store port.CheckpointStore, se
 		return nil, err
 	}
 	if item == nil {
-		return nil, port.ErrCheckpointNotFound
+		return nil, ckpt.ErrCheckpointNotFound
 	}
 	return item, nil
 }
 
-func LoadCheckpointWithStore(ctx context.Context, store port.CheckpointStore, selector string) (*CheckpointDetail, error) {
+func LoadCheckpointWithStore(ctx context.Context, store ckpt.CheckpointStore, selector string) (*CheckpointDetail, error) {
 	item, err := ResolveCheckpointRecord(ctx, store, selector)
 	if err != nil {
 		return nil, err
@@ -716,7 +717,7 @@ func LoadCheckpointWithStore(ctx context.Context, store port.CheckpointStore, se
 }
 
 func LoadCheckpoint(ctx context.Context, checkpointID string) (*CheckpointDetail, error) {
-	store, err := port.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
@@ -814,11 +815,11 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func listSnapshots(ctx context.Context, workspace string) ([]port.WorktreeSnapshot, error) {
+func listSnapshots(ctx context.Context, workspace string) ([]kws.WorktreeSnapshot, error) {
 	store := sandbox.NewGitWorktreeSnapshotStore(workspace)
 	snapshots, err := store.List(ctx)
 	if err != nil {
-		if err == port.ErrWorktreeSnapshotUnavailable {
+		if err == kws.ErrWorktreeSnapshotUnavailable {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list snapshots: %w", err)

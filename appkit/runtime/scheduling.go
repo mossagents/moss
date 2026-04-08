@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strings"
-
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
+	"sort"
+	"strings"
 )
 
 const schedulingStateKey kernel.ExtensionStateKey = "scheduling.state"
@@ -76,7 +75,7 @@ func (a SchedulerAdapter) ListText() (string, error) {
 		return "", err
 	}
 	if len(items) == 0 {
-		return "No background scheduled jobs.", nil
+		return "No background scheduled jkobs.", nil
 	}
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Schedules (%d):\n", len(items)))

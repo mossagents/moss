@@ -1,6 +1,8 @@
 package tool
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // ScopedRegistry 按工具名白名单过滤的只读 Registry 视图。
 type ScopedRegistry struct {

@@ -1,26 +1,25 @@
 package session
 
 import (
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"strings"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 const ApprovalStateKey = "approval_state"
 
 type ApprovalState struct {
 	Rules              []ApprovalRule         `json:"rules,omitempty"`
-	GrantedPermissions port.PermissionProfile `json:"granted_permissions,omitempty"`
+	GrantedPermissions intr.PermissionProfile `json:"granted_permissions,omitempty"`
 }
 
 type ApprovalRule struct {
-	CacheKey  string                    `json:"cache_key,omitempty"`
-	CacheLabel string                   `json:"cache_label,omitempty"`
-	ToolName  string                    `json:"tool_name,omitempty"`
-	Category  port.ApprovalCategory     `json:"category,omitempty"`
-	Type      port.ApprovalDecisionType `json:"type,omitempty"`
-	CreatedAt time.Time                 `json:"created_at,omitempty"`
+	CacheKey   string                    `json:"cache_key,omitempty"`
+	CacheLabel string                    `json:"cache_label,omitempty"`
+	ToolName   string                    `json:"tool_name,omitempty"`
+	Category   intr.ApprovalCategory     `json:"category,omitempty"`
+	Type       intr.ApprovalDecisionType `json:"type,omitempty"`
+	CreatedAt  time.Time                 `json:"created_at,omitempty"`
 }
 
 func ApprovalStateOf(sess *Session) ApprovalState {
@@ -54,7 +53,7 @@ func SetApprovalState(sess *Session, state ApprovalState) {
 	sess.State[ApprovalStateKey] = cloneApprovalState(state)
 }
 
-func RememberApprovalRule(sess *Session, req *port.ApprovalRequest, decisionType port.ApprovalDecisionType, now time.Time) {
+func RememberApprovalRule(sess *Session, req *intr.ApprovalRequest, decisionType intr.ApprovalDecisionType, now time.Time) {
 	if sess == nil || req == nil {
 		return
 	}
@@ -79,7 +78,7 @@ func RememberApprovalRule(sess *Session, req *port.ApprovalRequest, decisionType
 	SetApprovalState(sess, state)
 }
 
-func MatchingApprovalRule(sess *Session, req *port.ApprovalRequest) (ApprovalRule, bool) {
+func MatchingApprovalRule(sess *Session, req *intr.ApprovalRequest) (ApprovalRule, bool) {
 	if sess == nil || req == nil {
 		return ApprovalRule{}, false
 	}
@@ -96,7 +95,7 @@ func MatchingApprovalRule(sess *Session, req *port.ApprovalRequest) (ApprovalRul
 	return ApprovalRule{}, false
 }
 
-func MergeGrantedPermissions(sess *Session, perms *port.PermissionProfile) {
+func MergeGrantedPermissions(sess *Session, perms *intr.PermissionProfile) {
 	if sess == nil || perms == nil {
 		return
 	}
@@ -105,11 +104,11 @@ func MergeGrantedPermissions(sess *Session, perms *port.PermissionProfile) {
 	SetApprovalState(sess, state)
 }
 
-func GrantedPermissionsOf(sess *Session) port.PermissionProfile {
+func GrantedPermissionsOf(sess *Session) intr.PermissionProfile {
 	return ApprovalStateOf(sess).GrantedPermissions
 }
 
-func PermissionProfileCovers(granted port.PermissionProfile, needed *port.PermissionProfile) bool {
+func PermissionProfileCovers(granted intr.PermissionProfile, needed *intr.PermissionProfile) bool {
 	if needed == nil {
 		return false
 	}
@@ -145,7 +144,7 @@ func cloneApprovalState(state ApprovalState) ApprovalState {
 	return state
 }
 
-func clonePermissionProfile(profile port.PermissionProfile) port.PermissionProfile {
+func clonePermissionProfile(profile intr.PermissionProfile) intr.PermissionProfile {
 	profile.CommandPaths = append([]string(nil), profile.CommandPaths...)
 	profile.HTTPHosts = append([]string(nil), profile.HTTPHosts...)
 	if profile.CommandNetwork != nil {
@@ -156,12 +155,12 @@ func clonePermissionProfile(profile port.PermissionProfile) port.PermissionProfi
 	return profile
 }
 
-func mergePermissionProfiles(base, extra port.PermissionProfile) port.PermissionProfile {
+func mergePermissionProfiles(base, extra intr.PermissionProfile) intr.PermissionProfile {
 	base.CommandPaths = appendUniqueFold(base.CommandPaths, extra.CommandPaths...)
 	base.HTTPHosts = appendUniqueFold(base.HTTPHosts, extra.HTTPHosts...)
 	if extra.CommandNetwork != nil {
 		if base.CommandNetwork == nil {
-			base.CommandNetwork = &port.CommandNetworkPermission{}
+			base.CommandNetwork = &intr.CommandNetworkPermission{}
 		}
 		base.CommandNetwork.Enabled = base.CommandNetwork.Enabled || extra.CommandNetwork.Enabled
 		base.CommandNetwork.AllowHosts = appendUniqueFold(base.CommandNetwork.AllowHosts, extra.CommandNetwork.AllowHosts...)

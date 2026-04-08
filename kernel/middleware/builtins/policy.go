@@ -5,34 +5,34 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	"github.com/mossagents/moss/kernel/middleware"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
-
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 // PolicyDecision 表示权限决策。
-type PolicyDecision = port.PolicyDecision
+type PolicyDecision = intr.PolicyDecision
 
 const (
-	Allow           PolicyDecision = port.PolicyAllow
-	Deny            PolicyDecision = port.PolicyDeny
-	RequireApproval PolicyDecision = port.PolicyRequireApproval
+	Allow           PolicyDecision = intr.PolicyAllow
+	Deny            PolicyDecision = intr.PolicyDeny
+	RequireApproval PolicyDecision = intr.PolicyRequireApproval
 )
 
-type PolicyContext = port.PolicyContext
-type PolicyResult = port.PolicyResult
-type EnforcementMode = port.EnforcementMode
+type PolicyContext = intr.PolicyContext
+type PolicyResult = intr.PolicyResult
+type EnforcementMode = intr.EnforcementMode
 
 const (
-	EnforcementHardBlock       EnforcementMode = port.EnforcementHardBlock
-	EnforcementRequireApproval EnforcementMode = port.EnforcementRequireApproval
-	EnforcementSoftLimit       EnforcementMode = port.EnforcementSoftLimit
+	EnforcementHardBlock       EnforcementMode = intr.EnforcementHardBlock
+	EnforcementRequireApproval EnforcementMode = intr.EnforcementRequireApproval
+	EnforcementSoftLimit       EnforcementMode = intr.EnforcementSoftLimit
 )
 
 // ErrDenied 表示工具调用被 Policy 拒绝。
@@ -109,8 +109,8 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, mc *middleware.Context, res
 	if mc.Session != nil {
 		sessionID = mc.Session.ID
 	}
-	port.ObserveExecutionEvent(ctx, mc.Observer, port.ExecutionEvent{
-		Type:        port.ExecutionPolicyRuleMatched,
+	kobs.ObserveExecutionEvent(ctx, mc.Observer, kobs.ExecutionEvent{
+		Type:        kobs.ExecutionPolicyRuleMatched,
 		SessionID:   sessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    mc.Tool.Name,
@@ -125,9 +125,9 @@ func applyPolicyDecision(ctx context.Context, mc *middleware.Context, result Pol
 	switch result.Decision {
 	case Deny:
 		if mc.IO != nil {
-			_ = mc.IO.Send(ctx, port.OutputMessage{
-				Type: port.OutputText,
-				Content: port.FormatDeniedMessage(
+			_ = mc.IO.Send(ctx, intr.OutputMessage{
+				Type: intr.OutputText,
+				Content: intr.FormatDeniedMessage(
 					mc.Tool.Name,
 					result.Reason.Message,
 					result.Reason.Code,
@@ -149,13 +149,13 @@ func applyPolicyDecision(ctx context.Context, mc *middleware.Context, result Pol
 func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result PolicyResult) error {
 	approval := buildApprovalRequest(mc, result)
 	observer := approvalObserver(mc)
-	port.ObserveApproval(ctx, observer, port.ApprovalEvent{
+	kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
 		SessionID: approval.SessionID,
 		Type:      "requested",
 		Request:   *approval,
 	})
-	port.ObserveExecutionEvent(ctx, observer, port.ExecutionEvent{
-		Type:        port.ExecutionApprovalRequest,
+	kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
+		Type:        kobs.ExecutionApprovalRequest,
 		SessionID:   approval.SessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    approval.ToolName,
@@ -165,15 +165,15 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		Data:        approvalRequestData(approval, mc.Input, result.Meta),
 	})
 	if auto := autoApprovalDecision(mc, approval); auto != nil {
-		resolved := port.NormalizeApprovalDecisionForRequest(approval, auto)
-		port.ObserveApproval(ctx, observer, port.ApprovalEvent{
+		resolved := intr.NormalizeApprovalDecisionForRequest(approval, auto)
+		kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
 			SessionID: approval.SessionID,
 			Type:      "resolved",
 			Request:   *approval,
 			Decision:  resolved,
 		})
-		port.ObserveExecutionEvent(ctx, observer, port.ExecutionEvent{
-			Type:        port.ExecutionApprovalResolved,
+		kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
+			Type:        kobs.ExecutionApprovalResolved,
 			SessionID:   approval.SessionID,
 			Timestamp:   time.Now().UTC(),
 			ToolName:    approval.ToolName,
@@ -185,8 +185,8 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		applyApprovalDecision(mc, approval, resolved)
 		return nil
 	}
-	resp, err := mc.IO.Ask(ctx, port.InputRequest{
-		Type:     port.InputConfirm,
+	resp, err := mc.IO.Ask(ctx, intr.InputRequest{
+		Type:     intr.InputConfirm,
 		Prompt:   approval.Prompt,
 		Approval: approval,
 		Meta: map[string]any{
@@ -202,14 +202,14 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		return err
 	}
 	resolved := normalizeApprovalDecision(resp, approval)
-	port.ObserveApproval(ctx, observer, port.ApprovalEvent{
+	kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
 		SessionID: approval.SessionID,
 		Type:      "resolved",
 		Request:   *approval,
 		Decision:  resolved,
 	})
-	port.ObserveExecutionEvent(ctx, observer, port.ExecutionEvent{
-		Type:        port.ExecutionApprovalResolved,
+	kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
+		Type:        kobs.ExecutionApprovalResolved,
 		SessionID:   approval.SessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    approval.ToolName,
@@ -225,11 +225,11 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 	return nil
 }
 
-func approvalObserver(mc *middleware.Context) port.Observer {
+func approvalObserver(mc *middleware.Context) kobs.Observer {
 	if mc != nil && mc.Observer != nil {
 		return mc.Observer
 	}
-	return port.NoOpObserver{}
+	return kobs.NoOpObserver{}
 }
 
 func copyPolicyMeta(meta map[string]any) map[string]any {
@@ -240,7 +240,7 @@ func copyPolicyMeta(meta map[string]any) map[string]any {
 	return data
 }
 
-func approvalRequestData(approval *port.ApprovalRequest, input []byte, meta map[string]any) map[string]any {
+func approvalRequestData(approval *intr.ApprovalRequest, input []byte, meta map[string]any) map[string]any {
 	data := map[string]any{
 		"approval_id": approval.ID,
 		"reason":      approval.Reason,
@@ -257,7 +257,7 @@ func approvalRequestData(approval *port.ApprovalRequest, input []byte, meta map[
 	return data
 }
 
-func approvalResolvedData(approval *port.ApprovalRequest, resolved *port.ApprovalDecision, input []byte, meta map[string]any) map[string]any {
+func approvalResolvedData(approval *intr.ApprovalRequest, resolved *intr.ApprovalDecision, input []byte, meta map[string]any) map[string]any {
 	data := map[string]any{
 		"approval_id": approval.ID,
 		"approved":    resolved.Approved,
@@ -285,7 +285,7 @@ func denyResult(code, message string) PolicyResult {
 	return PolicyResult{
 		Decision:    Deny,
 		Enforcement: EnforcementHardBlock,
-		Reason: port.PolicyReason{
+		Reason: intr.PolicyReason{
 			Code:    code,
 			Message: message,
 		},
@@ -296,7 +296,7 @@ func requireApprovalResult(code, message string) PolicyResult {
 	return PolicyResult{
 		Decision:    RequireApproval,
 		Enforcement: EnforcementRequireApproval,
-		Reason: port.PolicyReason{
+		Reason: intr.PolicyReason{
 			Code:    code,
 			Message: message,
 		},
@@ -362,7 +362,7 @@ func buildPolicyContext(mc *middleware.Context) PolicyContext {
 	return ctx
 }
 
-func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.ApprovalRequest {
+func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *intr.ApprovalRequest {
 	sessionID := ""
 	if mc.Session != nil {
 		sessionID = mc.Session.ID
@@ -376,14 +376,14 @@ func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.App
 		prompt = "Allow tool " + mc.Tool.Name + "?"
 	}
 	category, actionLabel, actionValue, scopeLabel, scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment := describeApproval(toolName, mc.Input)
-	req := &port.ApprovalRequest{
+	req := &intr.ApprovalRequest{
 		ID:                  fmt.Sprintf("approval-%d", time.Now().UnixNano()),
-		Kind:                port.ApprovalKindTool,
+		Kind:                intr.ApprovalKindTool,
 		Category:            category,
 		SessionID:           sessionID,
 		ToolName:            toolName,
 		Risk:                risk,
-		Prompt:              port.FormatApprovalPrompt(&port.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
+		Prompt:              intr.FormatApprovalPrompt(&intr.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
 		Reason:              result.Reason.Message,
 		ReasonCode:          result.Reason.Code,
 		Enforcement:         result.Enforcement,
@@ -401,7 +401,7 @@ func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.App
 		RequestedAt:         time.Now().UTC(),
 	}
 	if amendment != nil {
-		req.RuleBinding = &port.RuleBinding{
+		req.RuleBinding = &intr.RuleBinding{
 			Category:    category,
 			ToolName:    toolName,
 			Label:       scopeLabel,
@@ -411,10 +411,10 @@ func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *port.App
 			HTTPRule:    amendment.HTTPRule,
 		}
 	}
-	return port.NormalizeApprovalRequest(req)
+	return intr.NormalizeApprovalRequest(req)
 }
 
-func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalRequest) *port.ApprovalDecision {
+func normalizeApprovalDecision(resp intr.InputResponse, req *intr.ApprovalRequest) *intr.ApprovalDecision {
 	if resp.Decision != nil {
 		decision := *resp.Decision
 		if decision.RequestID == "" {
@@ -423,13 +423,13 @@ func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalReques
 		if decision.DecidedAt.IsZero() {
 			decision.DecidedAt = time.Now().UTC()
 		}
-		return port.NormalizeApprovalDecisionForRequest(req, &decision)
+		return intr.NormalizeApprovalDecisionForRequest(req, &decision)
 	}
-	decisionType := port.ApprovalDecisionDeny
+	decisionType := intr.ApprovalDecisionDeny
 	if resp.Approved {
-		decisionType = port.ApprovalDecisionApprove
+		decisionType = intr.ApprovalDecisionApprove
 	}
-	return port.NormalizeApprovalDecisionForRequest(req, &port.ApprovalDecision{
+	return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
 		RequestID: req.ID,
 		Type:      decisionType,
 		Approved:  resp.Approved,
@@ -438,12 +438,12 @@ func normalizeApprovalDecision(resp port.InputResponse, req *port.ApprovalReques
 	})
 }
 
-func autoApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest) *port.ApprovalDecision {
+func autoApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest) *intr.ApprovalDecision {
 	if mc == nil || mc.Session == nil || req == nil {
 		return nil
 	}
 	if rule, ok := session.MatchingApprovalRule(mc.Session, req); ok {
-		return port.NormalizeApprovalDecisionForRequest(req, &port.ApprovalDecision{
+		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
 			RequestID: req.ID,
 			Type:      rule.Type,
 			Approved:  true,
@@ -453,9 +453,9 @@ func autoApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest) *po
 		})
 	}
 	if session.PermissionProfileCovers(session.GrantedPermissionsOf(mc.Session), req.ProposedPermissions) {
-		return port.NormalizeApprovalDecisionForRequest(req, &port.ApprovalDecision{
+		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
 			RequestID: req.ID,
-			Type:      port.ApprovalDecisionGrantPermission,
+			Type:      intr.ApprovalDecisionGrantPermission,
 			Approved:  true,
 			Reason:    "required permissions already granted for this session",
 			Source:    "session-permissions",
@@ -465,21 +465,21 @@ func autoApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest) *po
 	return nil
 }
 
-func applyApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest, decision *port.ApprovalDecision) {
+func applyApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest, decision *intr.ApprovalDecision) {
 	if mc == nil || mc.Session == nil || req == nil || decision == nil || !decision.Approved {
 		return
 	}
 	switch decision.Type {
-	case port.ApprovalDecisionApproveSession:
+	case intr.ApprovalDecisionApproveSession:
 		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
-	case port.ApprovalDecisionGrantPermission:
+	case intr.ApprovalDecisionGrantPermission:
 		perms := decision.GrantedPermissions
 		if perms == nil {
 			perms = req.ProposedPermissions
 		}
 		session.MergeGrantedPermissions(mc.Session, perms)
 		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
-	case port.ApprovalDecisionPolicyAmendment:
+	case intr.ApprovalDecisionPolicyAmendment:
 		if req.ProposedPermissions != nil {
 			session.MergeGrantedPermissions(mc.Session, req.ProposedPermissions)
 		}
@@ -487,7 +487,7 @@ func applyApprovalDecision(mc *middleware.Context, req *port.ApprovalRequest, de
 	}
 }
 
-func describeApproval(toolName string, input []byte) (port.ApprovalCategory, string, string, string, string, string, string, string, string, *port.PermissionProfile, *port.ExecPolicyAmendment) {
+func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, string, string, string, string, string, string, string, string, *intr.PermissionProfile, *intr.ExecPolicyAmendment) {
 	switch strings.TrimSpace(toolName) {
 	case "run_command":
 		commandLine, pattern := parseApprovalCommand(input)
@@ -507,16 +507,16 @@ func describeApproval(toolName string, input []byte) (port.ApprovalCategory, str
 			sessionNote = "Future matching commands in this session will be approved automatically."
 			projectNote = "Future matching commands in this project will follow the saved execution rule."
 		}
-		var amendment *port.ExecPolicyAmendment
+		var amendment *intr.ExecPolicyAmendment
 		if pattern != "" {
-			amendment = &port.ExecPolicyAmendment{
-				CommandRule: &port.ExecPolicyCommandRule{
+			amendment = &intr.ExecPolicyAmendment{
+				CommandRule: &intr.ExecPolicyCommandRule{
 					Name:  "allow-" + sanitizeApprovalName(pattern),
 					Match: pattern + "*",
 				},
 			}
 		}
-		return port.ApprovalCategoryCommand, "Command", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, amendment
+		return intr.ApprovalCategoryCommand, "Command", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, amendment
 	case "http_request":
 		requestLine, host, method := parseApprovalRequestTarget(input)
 		actionValue := requestLine
@@ -528,24 +528,24 @@ func describeApproval(toolName string, input []byte) (port.ApprovalCategory, str
 		sessionNote := ""
 		projectNote := ""
 		scopeValue := ""
-		var perms *port.PermissionProfile
-		var amendment *port.ExecPolicyAmendment
+		var perms *intr.PermissionProfile
+		var amendment *intr.ExecPolicyAmendment
 		if host != "" {
 			cacheKey = "http_request|" + strings.ToUpper(method) + " " + host
 			cacheLabel = strings.ToUpper(method) + " " + host
 			scopeValue = cacheLabel
 			sessionNote = "This host will be allowed for the rest of the session."
 			projectNote = "This host will be added to the project's execution policy."
-			perms = &port.PermissionProfile{HTTPHosts: []string{host}}
-			amendment = &port.ExecPolicyAmendment{
-				HTTPRule: &port.ExecPolicyHTTPRule{
+			perms = &intr.PermissionProfile{HTTPHosts: []string{host}}
+			amendment = &intr.ExecPolicyAmendment{
+				HTTPRule: &intr.ExecPolicyHTTPRule{
 					Name:    "allow-" + sanitizeApprovalName(host),
 					Match:   host,
 					Methods: []string{strings.ToUpper(method)},
 				},
 			}
 		}
-		return port.ApprovalCategoryHTTP, "Request", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment
+		return intr.ApprovalCategoryHTTP, "Request", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment
 	default:
 		preview := parseApprovalGenericPreview(input)
 		if preview == "" {
@@ -563,7 +563,7 @@ func describeApproval(toolName string, input []byte) (port.ApprovalCategory, str
 			sessionNote = "Future matching actions in this session will be approved automatically."
 			projectNote = "Future matching actions in this project will follow the saved execution rule."
 		}
-		return port.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
+		return intr.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
 	}
 }
 

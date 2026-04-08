@@ -1,13 +1,12 @@
 package tui
 
 import (
+	tea "github.com/charmbracelet/bubbletea"
+	appconfig "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
-	appconfig "github.com/mossagents/moss/config"
 )
 
 func TestSlashCommandProfileList(t *testing.T) {

@@ -4,13 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/kernel"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
 	"io"
 	"os"
 	"strings"
-
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 // REPLConfig 配置 REPL 引擎。
@@ -67,7 +66,7 @@ func REPL(ctx context.Context, cfg REPLConfig, k *kernel.Kernel, sess *session.S
 			continue
 		}
 
-		sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(input)}})
+		sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(input)}})
 
 		result, err := k.Run(ctx, sess)
 		if err != nil {
@@ -89,9 +88,9 @@ func handleREPLCommand(input string, sess *session.Session, appName string, comp
 		fmt.Println("Bye!")
 		return true
 	case "/clear":
-		var systemMsgs []port.Message
+		var systemMsgs []mdl.Message
 		for _, m := range sess.Messages {
-			if m.Role == port.RoleSystem {
+			if m.Role == mdl.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			}
 		}
@@ -100,9 +99,9 @@ func handleREPLCommand(input string, sess *session.Session, appName string, comp
 		sess.Budget.UsedTokens = 0
 		fmt.Println("✓ Conversation cleared.")
 	case "/compact":
-		var systemMsgs, dialogMsgs []port.Message
+		var systemMsgs, dialogMsgs []mdl.Message
 		for _, m := range sess.Messages {
-			if m.Role == port.RoleSystem {
+			if m.Role == mdl.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)

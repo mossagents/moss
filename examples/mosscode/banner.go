@@ -1,6 +1,8 @@
 package main
 
-import _ "embed"
+import (
+	_ "embed"
+)
 
 //go:embed banner.txt
 var welcomeBanner string

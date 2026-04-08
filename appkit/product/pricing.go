@@ -2,13 +2,12 @@ package product
 
 import (
 	"fmt"
+	appconfig "github.com/mossagents/moss/config"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"strings"
-
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/port"
-	"gopkg.in/yaml.v3"
 )
 
 type PricingCatalog struct {
@@ -52,7 +51,7 @@ func OpenPricingCatalog(workspace, explicit string) (*PricingCatalog, string, er
 	return &catalog, path, nil
 }
 
-func (c *PricingCatalog) Estimate(usage port.TokenUsage, model string) (float64, bool) {
+func (c *PricingCatalog) Estimate(usage mdl.TokenUsage, model string) (float64, bool) {
 	if c == nil || len(c.Models) == 0 {
 		return 0, false
 	}

@@ -1,6 +1,8 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"github.com/charmbracelet/lipgloss"
+)
 
 // ANSI 语义色常量（default 主题使用）。
 // 使用 ANSI 16 色，在亮色/暗色终端下均可正常显示。

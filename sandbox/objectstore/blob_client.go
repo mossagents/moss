@@ -1,4 +1,4 @@
-// Package objectstore provides a port.Workspace implementation backed by
+// Package objectstore provides a kws.Workspace implementation backed by
 // S3-compatible object storage (AWS S3, GCS XML API, MinIO, Cloudflare R2).
 // No AWS SDK is required; all requests are signed via pure net/http.
 package objectstore

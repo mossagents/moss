@@ -3,11 +3,11 @@ package builtins
 import (
 	"context"
 	"encoding/json"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"io"
 	"sync"
 	"time"
-
-	"github.com/mossagents/moss/kernel/port"
 )
 
 // AuditLogger 通过 Observer 接口记录审计日志。
@@ -43,7 +43,7 @@ func (a *AuditLogger) write(entry auditEntry) {
 	_, _ = a.writer.Write(data)
 }
 
-func (a *AuditLogger) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
+func (a *AuditLogger) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	errMsg := ""
 	if e.Error != nil {
 		errMsg = e.Error.Error()
@@ -72,7 +72,7 @@ func (a *AuditLogger) OnLLMCall(_ context.Context, e port.LLMCallEvent) {
 	})
 }
 
-func (a *AuditLogger) OnToolCall(_ context.Context, e port.ToolCallEvent) {
+func (a *AuditLogger) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	errMsg := ""
 	if e.Error != nil {
 		errMsg = e.Error.Error()
@@ -94,7 +94,7 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e port.ToolCallEvent) {
 	})
 }
 
-func (a *AuditLogger) OnExecutionEvent(_ context.Context, e port.ExecutionEvent) {
+func (a *AuditLogger) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
 	data := map[string]any{
 		"type": e.Type,
 	}
@@ -133,7 +133,7 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e port.ExecutionEvent)
 	})
 }
 
-func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
+func (a *AuditLogger) OnApproval(_ context.Context, e intr.ApprovalEvent) {
 	data := map[string]any{
 		"id":           e.Request.ID,
 		"kind":         e.Request.Kind,
@@ -168,7 +168,7 @@ func (a *AuditLogger) OnApproval(_ context.Context, e port.ApprovalEvent) {
 	})
 }
 
-func (a *AuditLogger) OnSessionEvent(_ context.Context, e port.SessionEvent) {
+func (a *AuditLogger) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
 	a.write(auditEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Type:      "session_" + e.Type,
@@ -176,7 +176,7 @@ func (a *AuditLogger) OnSessionEvent(_ context.Context, e port.SessionEvent) {
 	})
 }
 
-func (a *AuditLogger) OnError(_ context.Context, e port.ErrorEvent) {
+func (a *AuditLogger) OnError(_ context.Context, e kobs.ErrorEvent) {
 	a.write(auditEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Type:      "error",

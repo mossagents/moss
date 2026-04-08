@@ -3,16 +3,16 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/kernel/loop"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/sandbox"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // mockDelegator 模拟 Kernel 的委派能力。
@@ -148,7 +148,7 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "async done",
-				TokensUsed: port.TokenUsage{TotalTokens: 42},
+				TokensUsed: mdl.TokenUsage{TotalTokens: 42},
 			}, nil
 		},
 	}
@@ -215,7 +215,7 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "ok: " + sess.Config.Goal,
-				TokensUsed: port.TokenUsage{TotalTokens: 10},
+				TokensUsed: mdl.TokenUsage{TotalTokens: 10},
 			}, nil
 		},
 	}
@@ -327,7 +327,7 @@ func TestUpdateTaskRestartsSameID(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
-				TokensUsed: port.TokenUsage{TotalTokens: 5},
+				TokensUsed: mdl.TokenUsage{TotalTokens: 5},
 			}, nil
 		},
 	}
@@ -635,7 +635,7 @@ func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
 	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
 		t.Fatal(err)
 	}
-	tracker := NewTaskTrackerWithRuntime(port.NewMemoryTaskRuntime())
+	tracker := NewTaskTrackerWithRuntime(taskrt.NewMemoryTaskRuntime())
 	delegator := &mockDelegator{registry: tool.NewRegistry()}
 	reg := tool.NewRegistry()
 	isolation, err := sandbox.NewLocalWorkspaceIsolation(t.TempDir())
@@ -643,8 +643,8 @@ func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := RuntimeDeps{
-		TaskRuntime: port.NewMemoryTaskRuntime(),
-		Mailbox:     port.NewMemoryMailbox(),
+		TaskRuntime: taskrt.NewMemoryTaskRuntime(),
+		Mailbox:     taskrt.NewMemoryMailbox(),
 		Isolation:   isolation,
 	}
 	if err := RegisterToolsWithDeps(reg, agents, tracker, delegator, deps); err != nil {
@@ -658,8 +658,8 @@ func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
 }
 
 func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
-	rt := port.NewMemoryTaskRuntime()
-	mb := port.NewMemoryMailbox()
+	rt := taskrt.NewMemoryTaskRuntime()
+	mb := taskrt.NewMemoryMailbox()
 	iso, err := sandbox.NewLocalWorkspaceIsolation(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -688,7 +688,7 @@ func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
 	if _, err := plan(context.Background(), json.RawMessage(`{"id":"t-dep","goal":"dep done"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.UpsertTask(context.Background(), port.TaskRecord{ID: "t-dep", Goal: "dep done", Status: port.TaskCompleted}); err != nil {
+	if err := rt.UpsertTask(context.Background(), taskrt.TaskRecord{ID: "t-dep", Goal: "dep done", Status: taskrt.TaskCompleted}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := plan(context.Background(), json.RawMessage(`{"id":"t-main","agent":"worker","goal":"main","depends_on":["t-dep"]}`)); err != nil {
@@ -732,12 +732,12 @@ func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
 }
 
 func TestTaskTrackerHydratesPersistedTaskRuntime(t *testing.T) {
-	rt := port.NewMemoryTaskRuntime()
-	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+	rt := taskrt.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), taskrt.TaskRecord{
 		ID:              "persisted-task",
 		AgentName:       "worker",
 		Goal:            "resume later",
-		Status:          port.TaskRunning,
+		Status:          taskrt.TaskRunning,
 		SessionID:       "sess-child",
 		ParentSessionID: "sess-parent",
 		JobID:           "persisted-task",
@@ -746,11 +746,11 @@ func TestTaskTrackerHydratesPersistedTaskRuntime(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := rt.UpsertJob(context.Background(), port.AgentJob{
+	if err := rt.UpsertJob(context.Background(), taskrt.AgentJob{
 		ID:        "persisted-task",
 		AgentName: "worker",
 		Goal:      "resume later",
-		Status:    port.JobRunning,
+		Status:    taskrt.JobRunning,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -774,12 +774,12 @@ func TestTaskTrackerHydratesPersistedTaskRuntime(t *testing.T) {
 }
 
 func TestWaitAgent_ReturnsRecoverableForHydratedRunningTask(t *testing.T) {
-	rt := port.NewMemoryTaskRuntime()
-	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+	rt := taskrt.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), taskrt.TaskRecord{
 		ID:        "persisted-task",
 		AgentName: "worker",
 		Goal:      "resume later",
-		Status:    port.TaskRunning,
+		Status:    taskrt.TaskRunning,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -806,12 +806,12 @@ func TestWaitAgent_ReturnsRecoverableForHydratedRunningTask(t *testing.T) {
 }
 
 func TestResumeAgent_RestartsHydratedRunningTask(t *testing.T) {
-	rt := port.NewMemoryTaskRuntime()
-	if err := rt.UpsertTask(context.Background(), port.TaskRecord{
+	rt := taskrt.NewMemoryTaskRuntime()
+	if err := rt.UpsertTask(context.Background(), taskrt.TaskRecord{
 		ID:        "persisted-task",
 		AgentName: "worker",
 		Goal:      "resume later",
-		Status:    port.TaskRunning,
+		Status:    taskrt.TaskRunning,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -898,7 +898,7 @@ func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
-				TokensUsed: port.TokenUsage{TotalTokens: 3},
+				TokensUsed: mdl.TokenUsage{TotalTokens: 3},
 			}, nil
 		},
 	}
@@ -1044,7 +1044,7 @@ func TestWaitAgent_ReturnsOnStateChange(t *testing.T) {
 	_, waitHandler, _ := reg.Get("wait_agent")
 	go func() {
 		time.Sleep(80 * time.Millisecond)
-		tracker.CompleteIf("t-wait", revision, "ok", port.TokenUsage{})
+		tracker.CompleteIf("t-wait", revision, "ok", mdl.TokenUsage{})
 	}()
 	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"t-wait","timeout_seconds":2,"poll_millis":50}`))
 	if err != nil {

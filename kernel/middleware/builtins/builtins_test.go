@@ -3,13 +3,12 @@ package builtins
 import (
 	"context"
 	"errors"
+	"github.com/mossagents/moss/kernel/middleware"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestRetry_SuccessOnFirstAttempt(t *testing.T) {
@@ -175,10 +174,10 @@ func TestAutoTruncate_NoTruncationNeeded(t *testing.T) {
 
 	sess := &session.Session{
 		ID: "test",
-		Messages: []port.Message{
-			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("You are a helpful assistant.")}},
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("Hello")}},
-			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("Hi there!")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("You are a helpful assistant.")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")}},
+			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("Hi there!")}},
 		},
 	}
 	mc := &middleware.Context{
@@ -201,21 +200,21 @@ func TestAutoTruncate_TriggersWhenOverThreshold(t *testing.T) {
 	mw := AutoTruncate(TruncateConfig{
 		MaxContextTokens: 10, // 很低的阈值
 		KeepRecent:       2,
-		TokenCounter: func(msg port.Message) int {
-			return len(port.ContentPartsToPlainText(msg.ContentParts))
+		TokenCounter: func(msg mdl.Message) int {
+			return len(mdl.ContentPartsToPlainText(msg.ContentParts))
 		},
 	})
 
 	sess := &session.Session{
 		ID: "test",
-		Messages: []port.Message{
-			{Role: port.RoleSystem, ContentParts: []port.ContentPart{port.TextPart("system prompt here")}},
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("first message")}},
-			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("first reply")}},
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("second message")}},
-			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("second reply")}},
-			{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart("third message")}},
-			{Role: port.RoleAssistant, ContentParts: []port.ContentPart{port.TextPart("third reply")}},
+		Messages: []mdl.Message{
+			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("system prompt here")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("first message")}},
+			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("first reply")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("second message")}},
+			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("second reply")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("third message")}},
+			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("third reply")}},
 		},
 	}
 	mc := &middleware.Context{
@@ -235,17 +234,17 @@ func TestAutoTruncate_TriggersWhenOverThreshold(t *testing.T) {
 	}
 
 	// 第一条应是 system
-	if sess.Messages[0].Role != port.RoleSystem || port.ContentPartsToPlainText(sess.Messages[0].ContentParts) != "system prompt here" {
+	if sess.Messages[0].Role != mdl.RoleSystem || mdl.ContentPartsToPlainText(sess.Messages[0].ContentParts) != "system prompt here" {
 		t.Fatalf("first message should be original system message")
 	}
 
 	// 第二条应是截断通知
-	if sess.Messages[1].Role != port.RoleSystem {
+	if sess.Messages[1].Role != mdl.RoleSystem {
 		t.Fatalf("second message should be truncation notice (system role)")
 	}
 
 	// 最后两条应是最近的对话
-	if port.ContentPartsToPlainText(sess.Messages[2].ContentParts) != "third message" || port.ContentPartsToPlainText(sess.Messages[3].ContentParts) != "third reply" {
+	if mdl.ContentPartsToPlainText(sess.Messages[2].ContentParts) != "third message" || mdl.ContentPartsToPlainText(sess.Messages[3].ContentParts) != "third reply" {
 		t.Fatalf("last two messages should be most recent dialog")
 	}
 }

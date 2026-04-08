@@ -2,10 +2,9 @@ package appkit
 
 import (
 	"flag"
-	"os"
-
 	config "github.com/mossagents/moss/config"
 	"github.com/spf13/pflag"
+	"os"
 )
 
 // AppFlags 包含所有 MOSS 应用共享的 CLI 参数。

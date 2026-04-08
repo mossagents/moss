@@ -3,8 +3,8 @@ package middleware
 import (
 	"context"
 	"encoding/json"
-
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -30,8 +30,8 @@ type Context struct {
 	Input    json.RawMessage // 工具输入（仅 BeforeToolCall）
 	Result   json.RawMessage // 工具结果（仅 AfterToolCall）
 	Error    error           // 错误信息（仅 OnError）
-	IO       port.UserIO     // 用户交互接口
-	Observer port.Observer   // 运行事件观察者
+	IO       intr.UserIO     // 用户交互接口
+	Observer kobs.Observer    // 运行事件观察者
 }
 
 // Next 调用链中的下一个 middleware。

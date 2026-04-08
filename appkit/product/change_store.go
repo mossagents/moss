@@ -4,14 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	appruntime "github.com/mossagents/moss/appkit/runtime"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 )
 
 type FileChangeStore struct {

@@ -3,41 +3,45 @@ package kernel
 import (
 	"context"
 	"fmt"
-	"strings"
-	"sync"
-	"time"
-
+	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	kerrors "github.com/mossagents/moss/kernel/errors"
+	intr "github.com/mossagents/moss/kernel/interaction"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/middleware/builtins"
-	"github.com/mossagents/moss/kernel/port"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
-	llm         port.LLM
-	io          port.UserIO
+	llm         mdl.LLM
+	io          intr.UserIO
 	sandbox     sandbox.Sandbox
-	workspace   port.Workspace
-	executor    port.Executor
-	tasks       port.TaskRuntime
-	mailbox     port.Mailbox
-	isolation   port.WorkspaceIsolation
-	repoState   port.RepoStateCapture
-	patches     port.PatchApply
-	reverts     port.PatchRevert
-	snapshots   port.WorktreeSnapshotStore
-	checkpoints port.CheckpointStore
+	workspace   kws.Workspace
+	executor    kws.Executor
+	tasks       taskrt.TaskRuntime
+	mailbox     taskrt.Mailbox
+	isolation   kws.WorkspaceIsolation
+	repoState   kws.RepoStateCapture
+	patches     kws.PatchApply
+	reverts     kws.PatchRevert
+	snapshots   kws.WorktreeSnapshotStore
+	checkpoints ckpt.CheckpointStore
 	store       session.SessionStore
 	tools       tool.Registry
 	sessions    session.Manager
 	chain       *middleware.Chain
 	loopCfg     loop.LoopConfig
-	observer    port.Observer
+	observer    kobs.Observer
 	ext         *extensionState
 
 	shutdownCh   chan struct{}
@@ -74,7 +78,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 		errs = append(errs, "LLM port is required (use kernel.WithLLM())")
 	}
 	if k.io == nil {
-		errs = append(errs, "UserIO port is not set (use kernel.WithUserIO(), or port.NoOpIO{} / port.NewPrintfIO())")
+		errs = append(errs, "UserIO port is not set (use kernel.WithUserIO(), or intr.NoOpIO{} / intr.NewPrintfIO())")
 	}
 
 	if len(errs) > 0 {
@@ -95,9 +99,9 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 	sysPrompt := k.extendSystemPrompt(cfg.SystemPrompt)
 	if sysPrompt != "" {
 		existing := sess.CopyMessages()
-		sess.ReplaceMessages(append([]port.Message{{
-			Role:         port.RoleSystem,
-			ContentParts: []port.ContentPart{port.TextPart(sysPrompt)},
+		sess.ReplaceMessages(append([]mdl.Message{{
+			Role:         mdl.RoleSystem,
+			ContentParts: []mdl.ContentPart{mdl.TextPart(sysPrompt)},
 		}}, existing...))
 	}
 
@@ -116,17 +120,17 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 }
 
 // RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
-func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io port.UserIO) (*loop.SessionResult, error) {
+func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io intr.UserIO) (*loop.SessionResult, error) {
 	return k.runSession(ctx, sess, runKindWithUserIO, k.tools, io)
 }
 
 // RunWithTools 使用指定的工具注册表运行 Agent Loop。
 // 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
 func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
-	return k.runSession(ctx, sess, runKindDelegated, tools, &port.NoOpIO{})
+	return k.runSession(ctx, sess, runKindDelegated, tools, &intr.NoOpIO{})
 }
 
-func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, io port.UserIO) (*loop.SessionResult, error) {
+func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, io intr.UserIO) (*loop.SessionResult, error) {
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
@@ -206,43 +210,43 @@ func (k *Kernel) Middleware() *middleware.Chain {
 }
 
 // UserIO 返回默认交互端口（可能为 nil）。
-func (k *Kernel) UserIO() port.UserIO {
+func (k *Kernel) UserIO() intr.UserIO {
 	return k.io
 }
 
 // LLM 返回默认模型端口（可能为 nil）。
-func (k *Kernel) LLM() port.LLM {
+func (k *Kernel) LLM() mdl.LLM {
 	return k.llm
 }
 
 // SetLLM 在构建后更新默认模型端口。
-func (k *Kernel) SetLLM(llm port.LLM) {
+func (k *Kernel) SetLLM(llm mdl.LLM) {
 	k.llm = llm
 }
 
 // SetObserver 在构建后更新运行时事件观察者。
-func (k *Kernel) SetObserver(observer port.Observer) {
+func (k *Kernel) SetObserver(observer kobs.Observer) {
 	k.observer = observer
 	k.propagateObserver(observer)
 }
 
-func (k *Kernel) propagateObserver(observer port.Observer) {
+func (k *Kernel) propagateObserver(observer kobs.Observer) {
 	if observer == nil {
-		observer = port.NoOpObserver{}
+		observer = kobs.NoOpObserver{}
 	}
-	if aware, ok := k.snapshots.(interface{ SetObserver(port.ExecutionObserver) }); ok {
+	if aware, ok := k.snapshots.(interface{ SetObserver(kobs.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
-	if aware, ok := k.checkpoints.(interface{ SetObserver(port.ExecutionObserver) }); ok {
+	if aware, ok := k.checkpoints.(interface{ SetObserver(kobs.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
 }
 
-func (k *Kernel) observerOrNoOp() port.Observer {
+func (k *Kernel) observerOrNoOp() kobs.Observer {
 	if k.observer != nil {
 		return k.observer
 	}
-	return port.NoOpObserver{}
+	return kobs.NoOpObserver{}
 }
 
 func contextOrBackground(ctx context.Context) context.Context {
@@ -265,52 +269,52 @@ func (k *Kernel) Sandbox() sandbox.Sandbox {
 }
 
 // Workspace 返回工作区抽象（可能为 nil）。
-func (k *Kernel) Workspace() port.Workspace {
+func (k *Kernel) Workspace() kws.Workspace {
 	return k.workspace
 }
 
 // Executor 返回命令执行器（可能为 nil）。
-func (k *Kernel) Executor() port.Executor {
+func (k *Kernel) Executor() kws.Executor {
 	return k.executor
 }
 
 // TaskRuntime 返回任务运行时端口（可能为 nil）。
-func (k *Kernel) TaskRuntime() port.TaskRuntime {
+func (k *Kernel) TaskRuntime() taskrt.TaskRuntime {
 	return k.tasks
 }
 
 // Mailbox 返回代理邮箱端口（可能为 nil）。
-func (k *Kernel) Mailbox() port.Mailbox {
+func (k *Kernel) Mailbox() taskrt.Mailbox {
 	return k.mailbox
 }
 
 // WorkspaceIsolation 返回工作区隔离端口（可能为 nil）。
-func (k *Kernel) WorkspaceIsolation() port.WorkspaceIsolation {
+func (k *Kernel) WorkspaceIsolation() kws.WorkspaceIsolation {
 	return k.isolation
 }
 
 // RepoStateCapture 返回仓库状态捕获端口（可能为 nil）。
-func (k *Kernel) RepoStateCapture() port.RepoStateCapture {
+func (k *Kernel) RepoStateCapture() kws.RepoStateCapture {
 	return k.repoState
 }
 
 // PatchApply 返回结构化补丁应用端口（可能为 nil）。
-func (k *Kernel) PatchApply() port.PatchApply {
+func (k *Kernel) PatchApply() kws.PatchApply {
 	return k.patches
 }
 
 // PatchRevert 返回结构化补丁回滚端口（可能为 nil）。
-func (k *Kernel) PatchRevert() port.PatchRevert {
+func (k *Kernel) PatchRevert() kws.PatchRevert {
 	return k.reverts
 }
 
 // WorktreeSnapshots 返回 worktree/ghost-state 快照端口（可能为 nil）。
-func (k *Kernel) WorktreeSnapshots() port.WorktreeSnapshotStore {
+func (k *Kernel) WorktreeSnapshots() kws.WorktreeSnapshotStore {
 	return k.snapshots
 }
 
 // Checkpoints 返回 checkpoint 存储端口（可能为 nil）。
-func (k *Kernel) Checkpoints() port.CheckpointStore {
+func (k *Kernel) Checkpoints() ckpt.CheckpointStore {
 	return k.checkpoints
 }
 

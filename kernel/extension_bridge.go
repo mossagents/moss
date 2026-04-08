@@ -2,12 +2,11 @@ package kernel
 
 import (
 	"context"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 	"log/slog"
 	"sort"
 	"sync"
-
-	"github.com/mossagents/moss/kernel/port"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 // ExtensionStateKey 标识一个扩展状态槽。
@@ -184,7 +183,7 @@ func (k *Kernel) runSessionLifecycleHook(ctx context.Context, hook session.Lifec
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			port.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), port.ErrorEvent{
+			kobs.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), kobs.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -210,7 +209,7 @@ func (k *Kernel) runToolLifecycleHook(ctx context.Context, hook session.ToolLife
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			port.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), port.ErrorEvent{
+			kobs.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), kobs.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,

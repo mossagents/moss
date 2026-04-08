@@ -2,11 +2,10 @@ package prompt
 
 import (
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"io/fs"
 	"path/filepath"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // FSLoader 从文件系统加载 prompt 模板。

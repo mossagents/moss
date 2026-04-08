@@ -4,11 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 type FileService struct {

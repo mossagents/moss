@@ -4,19 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"path/filepath"
-	"regexp"
-	"slices"
-	"strconv"
-	"strings"
-	"time"
-
 	"github.com/mossagents/moss/bootstrap"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/scheduler"
 	"gopkg.in/yaml.v3"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"time"
 )
 
 type InvestorProfile struct {

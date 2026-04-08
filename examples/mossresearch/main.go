@@ -5,22 +5,22 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
-
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/port"
+	intr "github.com/mossagents/moss/kernel/interaction"
+	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/presets/deepagent"
 	mosstui "github.com/mossagents/moss/userio/tui"
+	"io"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -105,7 +105,7 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io port.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Name:      provider,
@@ -133,7 +133,7 @@ func launchTUI(cfg *config) error {
 }
 
 func runOneShot(ctx context.Context, cfg *config) error {
-	userIO := port.NewConsoleIO()
+	userIO := intr.NewConsoleIO()
 	k, err := buildKernel(ctx, cfg.flags, userIO)
 	if err != nil {
 		return err
@@ -173,7 +173,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.AppendMessage(port.Message{Role: port.RoleUser, ContentParts: []port.ContentPart{port.TextPart(cfg.prompt)}})
+	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(cfg.prompt)}})
 
 	result, err := k.Run(ctx, sess)
 	if err != nil {
@@ -193,7 +193,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	return nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io port.UserIO) (*kernel.Kernel, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO) (*kernel.Kernel, error) {
 	deepCfg := deepagent.DefaultConfig()
 	deepCfg.AppName = appName
 	deepCfg.GeneralPurposeName = "research-generalist"

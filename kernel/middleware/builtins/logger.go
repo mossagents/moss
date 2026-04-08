@@ -2,10 +2,9 @@ package builtins
 
 import (
 	"context"
+	"github.com/mossagents/moss/kernel/middleware"
 	"log/slog"
 	"time"
-
-	"github.com/mossagents/moss/kernel/middleware"
 )
 
 // Logger 构造日志 middleware，记录每个 phase 的开始/结束/耗时。
