@@ -63,8 +63,5 @@ func (m chatModel) editorPaneHeight(width int) int {
 	if len(m.queuedInputs) > 0 {
 		height++
 	}
-	if m.streaming {
-		height++
-	}
 	return height
 }

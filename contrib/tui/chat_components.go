@@ -50,22 +50,12 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		rows = append(rows, "Ctrl+X removes the latest attachment")
 		sections = append(sections, composerHintStyle.Render("  "+strings.Join(rows, "  •  ")))
 	}
-	if m.streaming {
-		runLabel := shimmerText("working", m.now())
-		sections = append(sections, composerHintStyle.Render(fmt.Sprintf("  %s %s  •  %s  •  Esc Esc cancel",
-			spinnerFrame(m.now()),
-			runLabel,
-			formatElapsed(m.runStartedAt, m.now()),
-		)))
-	}
 	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
 	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
 		sections = append(sections, m.renderSlashPopup(layout.MainWidth))
 	} else if m.mentionPopup != nil && len(m.mentionPopup.items) > 0 {
 		// @ 文件补全弹窗：inline 替代 overlay
 		sections = append(sections, m.renderMentionPopup(layout.MainWidth))
-	} else if len(m.pendingAttachments) == 0 && len(m.queuedInputs) == 0 && !m.streaming {
-		sections = append(sections, m.renderSlashHintLine())
 	}
 	boxStyle := composerBoxStyle.Copy()
 	if draft := strings.TrimSpace(m.textarea.Value()); draft != "" || len(m.pendingAttachments) > 0 {

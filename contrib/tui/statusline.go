@@ -236,13 +236,13 @@ func (m chatModel) statusContextSummary() string {
 func (m chatModel) composerMetaSummary() (string, string) {
 	switch {
 	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
-		return "Approval", "review request before continuing"
+		return "Approval", "confirmation needed  •  Tab move, Enter apply"
 	case m.pendAsk != nil:
-		return "Input", "answer required to continue"
+		return "Input", "answer required  •  Enter confirm"
 	case m.mentionPopup != nil:
-		return "Files", "choose a file to attach"
+		return "Attach", "file picker  •  Tab attach"
 	case m.slashPopup != nil:
-		return "Slash", "choose a command"
+		return "Command", fmt.Sprintf("%s  •  Tab complete", m.composerSlashContext())
 	case m.streaming:
 		detail := valueOrDefaultString(strings.TrimSpace(m.progressStatusSummary()), "working")
 		if queued := len(m.queuedInputs); queued > 0 {
@@ -251,16 +251,46 @@ func (m chatModel) composerMetaSummary() (string, string) {
 		detail += "  •  Esc Esc cancel"
 		return "Running", detail
 	case len(m.pendingAttachments) > 0:
-		return "Attachments", fmt.Sprintf("%d ready  •  Ctrl+X removes latest", len(m.pendingAttachments))
+		return "Attach", fmt.Sprintf("%d ready  •  Ctrl+X remove latest", len(m.pendingAttachments))
 	case len(m.queuedInputs) > 0:
-		return "Queued", fmt.Sprintf("%d waiting to send", len(m.queuedInputs))
+		return "Queued", fmt.Sprintf("%d waiting  •  keep typing", len(m.queuedInputs))
 	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/"):
-		return "Slash", "type to filter  •  Tab completes"
+		return "Command", fmt.Sprintf("%s  •  Tab complete", m.composerSlashContext())
 	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@"):
-		return "Files", "type to narrow matches"
+		return "Attach", "file picker  •  Tab attach"
 	case strings.TrimSpace(m.textarea.Value()) != "":
-		return "Draft", "Enter sends  •  Ctrl+J newline"
+		return "Draft", fmt.Sprintf("%s  •  Enter send, Ctrl+J newline", m.composerContextLabel())
 	default:
-		return "Ready", "/ commands  •  @ files"
+		return "Ready", fmt.Sprintf("%s  •  / commands, @ files", m.composerContextLabel())
 	}
+}
+
+func (m chatModel) composerContextLabel() string {
+	if strings.TrimSpace(m.model) != "" {
+		return strings.TrimSpace(m.model)
+	}
+	if strings.TrimSpace(m.provider) != "" {
+		return strings.TrimSpace(m.provider)
+	}
+	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
+		return profile
+	}
+	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
+		return "thread " + shortThreadID(threadID)
+	}
+	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
+		return filepath.Base(workspace)
+	}
+	return "session"
+}
+
+func (m chatModel) composerSlashContext() string {
+	hints := m.currentSlashHints()
+	if len(hints) == 0 {
+		return "type to filter"
+	}
+	if len(hints) > 3 {
+		hints = hints[:3]
+	}
+	return strings.Join(hints, ", ")
 }

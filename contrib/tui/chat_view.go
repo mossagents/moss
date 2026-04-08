@@ -40,18 +40,18 @@ func (m chatModel) renderComposerMetaLine(width int) string {
 
 func (m chatModel) renderFooterHelpLine() string {
 	if m.streaming {
-		return "Esc Esc cancel"
+		return ""
 	}
 	if m.mentionPopup != nil {
-		return "Tab attach  •  Esc close"
+		return "Esc close"
 	}
 	if m.slashPopup != nil {
-		return "Tab complete  •  Esc close"
+		return "Esc close"
 	}
 	if m.hasActiveOverlay() {
 		return "↑↓ move  •  Enter confirm  •  Esc close"
 	}
-	return "Enter send  •  Ctrl+J newline  •  /help"
+	return "/help"
 }
 
 func (m chatModel) View() string {

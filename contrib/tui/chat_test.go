@@ -2134,13 +2134,13 @@ func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 func TestRenderComposerMetaLineHighlightsReadyAndDraftStates(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	ready := m.renderComposerMetaLine(120)
-	if !strings.Contains(ready, "Ready") || !strings.Contains(ready, "/ commands") || !strings.Contains(ready, "@ files") {
+	if !strings.Contains(ready, "Ready") || !strings.Contains(ready, "gpt-4o") || !strings.Contains(ready, "/ commands, @ files") {
 		t.Fatalf("unexpected ready composer meta: %q", ready)
 	}
 
 	m.textarea.SetValue("hello")
 	draft := m.renderComposerMetaLine(120)
-	if !strings.Contains(draft, "Draft") || !strings.Contains(draft, "Enter sends") || !strings.Contains(draft, "Ctrl+J newline") {
+	if !strings.Contains(draft, "Draft") || !strings.Contains(draft, "gpt-4o") || !strings.Contains(draft, "Enter send, Ctrl+J newline") {
 		t.Fatalf("unexpected draft composer meta: %q", draft)
 	}
 }
@@ -2160,6 +2160,29 @@ func TestRenderComposerMetaLineShowsRunningContext(t *testing.T) {
 	}
 }
 
+func TestRenderEditorPaneDoesNotRepeatRunningMetaWithExtraStreamingRow(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 30
+	m.streaming = true
+	m.progress = executionProgressState{
+		SessionID: "sess-1",
+		Status:    "running",
+		Phase:     "model",
+		Message:   "calling model",
+	}
+	m.runStartedAt = time.Now().Add(-400 * time.Millisecond)
+	m.recalcLayout()
+
+	rendered := m.renderEditorPane(m.generateLayout())
+	if strings.Count(rendered, "Esc Esc cancel") != 1 {
+		t.Fatalf("expected a single cancel hint in editor pane, got %q", rendered)
+	}
+	if strings.Contains(rendered, "working") {
+		t.Fatalf("expected extra streaming row to be removed, got %q", rendered)
+	}
+}
+
 func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.width = 220
@@ -2172,8 +2195,8 @@ func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
 	if !strings.Contains(line, "/help") {
 		t.Fatalf("unexpected footer line: %q", line)
 	}
-	if !strings.Contains(line, "Enter send") || !strings.Contains(line, "Ctrl+J newline") {
-		t.Fatalf("expected prompt-first footer hints, got %q", line)
+	if strings.Contains(line, "Enter send") || strings.Contains(line, "Ctrl+J newline") {
+		t.Fatalf("footer should stay minimal, got %q", line)
 	}
 	if strings.Contains(line, "thread=sess_1") || strings.Contains(line, "fast=on") {
 		t.Fatalf("footer should no longer append status line, got %q", line)
@@ -2192,6 +2215,21 @@ func TestRenderStatusLineKeepsOnlyPrimaryContext(t *testing.T) {
 	}
 	if strings.Contains(line, "planning") || strings.Contains(line, "thread") {
 		t.Fatalf("status line should keep only primary context, got %q", line)
+	}
+}
+
+func TestRenderEditorPaneDoesNotRepeatIdleComposerHints(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 30
+	m.recalcLayout()
+
+	rendered := m.renderEditorPane(m.generateLayout())
+	if strings.Count(rendered, "/ commands") != 1 {
+		t.Fatalf("expected composer hints once, got %q", rendered)
+	}
+	if strings.Contains(rendered, "Tab completes") {
+		t.Fatalf("expected duplicate slash hint row to be removed, got %q", rendered)
 	}
 }
 
@@ -2359,8 +2397,8 @@ func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) 
 	m.refreshViewport()
 	idleHeight := m.viewport.Height
 
-	if idleHeight != runningHeight+1 {
-		t.Fatalf("viewport height after running=%d idle=%d, want idle to recover one line", runningHeight, idleHeight)
+	if idleHeight != runningHeight {
+		t.Fatalf("viewport height after running=%d idle=%d, want matching height after removing duplicate running row", runningHeight, idleHeight)
 	}
 }
 
