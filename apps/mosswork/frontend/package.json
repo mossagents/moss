@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node_modules/.bin/vite",
-    "build:dev": "node_modules/.bin/tsc && vite build --mode development",
-    "build": "node_modules/.bin/tsc && vite build --mode production",
-    "preview": "node_modules/.bin/vite preview"
+    "dev": "vite",
+    "build:dev": "tsc && vite build --mode development",
+    "build": "tsc && vite build --mode production",
+    "preview": "vite preview"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.12.20",
