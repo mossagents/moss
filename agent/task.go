@@ -51,27 +51,52 @@ type TaskTracker struct {
 	tasks      map[string]*Task
 	cancels    map[string]context.CancelFunc
 	rev        map[string]int64
+	store      TaskStore
 	runtime    taskrt.TaskRuntime
 	watchers   map[string]map[int64]chan Task
 	watcherSeq int64
 }
 
-// NewTaskTracker 创建 TaskTracker。
-func NewTaskTracker() *TaskTracker {
-	return &TaskTracker{
+// TaskTrackerOption configures a TaskTracker.
+type TaskTrackerOption func(*TaskTracker)
+
+// WithTaskStore sets a custom TaskStore for persistence.
+func WithTaskStore(store TaskStore) TaskTrackerOption {
+	return func(t *TaskTracker) {
+		t.store = store
+	}
+}
+
+// WithTaskRuntime sets a TaskRuntime for distributed mirroring.
+func WithTaskRuntime(runtime taskrt.TaskRuntime) TaskTrackerOption {
+	return func(t *TaskTracker) {
+		t.runtime = runtime
+	}
+}
+
+// NewTaskTracker creates a TaskTracker with the given options.
+// Defaults to MemoryTaskStore if no store is provided.
+func NewTaskTracker(opts ...TaskTrackerOption) *TaskTracker {
+	tt := &TaskTracker{
 		tasks:    make(map[string]*Task),
 		cancels:  make(map[string]context.CancelFunc),
 		rev:      make(map[string]int64),
 		watchers: make(map[string]map[int64]chan Task),
 	}
+	for _, opt := range opts {
+		opt(tt)
+	}
+	if tt.store == nil {
+		tt.store = NewMemoryTaskStore()
+	}
+	tt.restoreFromStore(context.Background())
+	tt.hydrate(context.Background())
+	return tt
 }
 
 // NewTaskTrackerWithRuntime 创建带 TaskRuntime 镜像的 TaskTracker。
 func NewTaskTrackerWithRuntime(runtime taskrt.TaskRuntime) *TaskTracker {
-	tt := NewTaskTracker()
-	tt.runtime = runtime
-	tt.hydrate(context.Background())
-	return tt
+	return NewTaskTracker(WithTaskRuntime(runtime))
 }
 
 // Add 注册一个新任务。
@@ -111,6 +136,7 @@ func (t *TaskTracker) Start(task *Task, cancel context.CancelFunc) int64 {
 	}
 	t.notifyLocked(cp)
 	t.mu.Unlock()
+	t.persist(&cp)
 	t.mirror(cp)
 	return nextRev
 }
@@ -136,6 +162,7 @@ func (t *TaskTracker) BindSession(id string, revision int64, sessionID string) {
 	cp := *task
 	t.notifyLocked(cp)
 	t.mu.Unlock()
+	t.persist(&cp)
 	t.mirror(cp)
 }
 
@@ -210,6 +237,7 @@ func (t *TaskTracker) completeIf(id string, revision int64, result string, token
 	}
 	t.mu.Unlock()
 	if mirrored != nil {
+		t.persist(mirrored)
 		t.mirror(*mirrored)
 	}
 }
@@ -247,6 +275,7 @@ func (t *TaskTracker) failIf(id string, revision int64, errMsg string) {
 	}
 	t.mu.Unlock()
 	if mirrored != nil {
+		t.persist(mirrored)
 		t.mirror(*mirrored)
 	}
 }
@@ -284,6 +313,7 @@ func (t *TaskTracker) cancelIf(id string, revision int64, errMsg string) {
 	}
 	t.mu.Unlock()
 	if mirrored != nil {
+		t.persist(mirrored)
 		t.mirror(*mirrored)
 	}
 	if cancelFn != nil {
@@ -369,6 +399,38 @@ func (t *TaskTracker) CleanupWatchers() {
 				delete(byTask, watchID)
 			}
 			delete(t.watchers, taskID)
+		}
+	}
+}
+
+// persist saves the task to the store, logging errors.
+func (t *TaskTracker) persist(task *Task) {
+	if t.store == nil {
+		return
+	}
+	if err := t.store.Save(context.Background(), task); err != nil {
+		slog.Default().Error("TaskTracker: persist failed",
+			slog.String("task_id", task.ID),
+			slog.Any("error", err))
+	}
+}
+
+// restoreFromStore loads tasks from the store into the in-memory map.
+func (t *TaskTracker) restoreFromStore(ctx context.Context) {
+	if t.store == nil {
+		return
+	}
+	tasks, err := t.store.List(ctx)
+	if err != nil {
+		slog.Default().Error("TaskTracker: restore from store failed", slog.Any("error", err))
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, task := range tasks {
+		t.tasks[task.ID] = task
+		if task.Revision > t.rev[task.ID] {
+			t.rev[task.ID] = task.Revision
 		}
 	}
 }
