@@ -219,6 +219,8 @@ func (s *Session) TruncateMessages(maxTokens int, counter func(mdl.Message) int)
 
 // SetState 设置键值状态。
 func (s *Session) SetState(key string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.State == nil {
 		s.State = make(map[string]any)
 	}
@@ -227,9 +229,32 @@ func (s *Session) SetState(key string, value any) {
 
 // GetState 获取键值状态。
 func (s *Session) GetState(key string) (any, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if s.State == nil {
 		return nil, false
 	}
 	v, ok := s.State[key]
 	return v, ok
+}
+
+// DeleteState 删除键值状态。
+func (s *Session) DeleteState(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.State, key)
+}
+
+// CopyState 在读锁保护下返回状态的浅拷贝。
+func (s *Session) CopyState() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.State) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(s.State))
+	for k, v := range s.State {
+		out[k] = v
+	}
+	return out
 }

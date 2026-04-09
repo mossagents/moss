@@ -23,10 +23,10 @@ type ApprovalRule struct {
 }
 
 func ApprovalStateOf(sess *Session) ApprovalState {
-	if sess == nil || sess.State == nil {
+	if sess == nil {
 		return ApprovalState{}
 	}
-	raw, ok := sess.State[ApprovalStateKey]
+	raw, ok := sess.GetState(ApprovalStateKey)
 	if !ok {
 		return ApprovalState{}
 	}
@@ -47,10 +47,7 @@ func SetApprovalState(sess *Session, state ApprovalState) {
 	if sess == nil {
 		return
 	}
-	if sess.State == nil {
-		sess.State = map[string]any{}
-	}
-	sess.State[ApprovalStateKey] = cloneApprovalState(state)
+	sess.SetState(ApprovalStateKey, cloneApprovalState(state))
 }
 
 func RememberApprovalRule(sess *Session, req *intr.ApprovalRequest, decisionType intr.ApprovalDecisionType, now time.Time) {

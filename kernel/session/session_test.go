@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -84,6 +85,60 @@ func TestSessionState(t *testing.T) {
 	if ok {
 		t.Fatal("expected not found for missing key")
 	}
+}
+
+func TestSessionDeleteState(t *testing.T) {
+	s := &Session{ID: "test"}
+	s.SetState("a", 1)
+	s.DeleteState("a")
+	if _, ok := s.GetState("a"); ok {
+		t.Fatal("expected key to be deleted")
+	}
+	// deleting from nil map should not panic
+	s2 := &Session{ID: "test2"}
+	s2.DeleteState("noop")
+}
+
+func TestSessionCopyState(t *testing.T) {
+	s := &Session{ID: "test"}
+	if got := s.CopyState(); got != nil {
+		t.Fatalf("expected nil for empty state, got %v", got)
+	}
+	s.SetState("a", 1)
+	s.SetState("b", "two")
+	cp := s.CopyState()
+	if len(cp) != 2 || cp["a"] != 1 || cp["b"] != "two" {
+		t.Fatalf("CopyState = %v, want map[a:1 b:two]", cp)
+	}
+	// mutating copy must not affect original
+	cp["a"] = 999
+	v, _ := s.GetState("a")
+	if v != 1 {
+		t.Fatal("mutating copy affected original")
+	}
+}
+
+func TestSessionStateConcurrent(t *testing.T) {
+	s := &Session{ID: "concurrent"}
+	const goroutines = 50
+	const iterations = 200
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for g := 0; g < goroutines; g++ {
+		go func(id int) {
+			defer wg.Done()
+			key := "key"
+			for i := 0; i < iterations; i++ {
+				s.SetState(key, i)
+				s.GetState(key)
+				s.CopyState()
+				s.DeleteState(key)
+			}
+			_ = id
+		}(g)
+	}
+	wg.Wait()
 }
 
 func TestManagerCreateAndGet(t *testing.T) {
