@@ -68,11 +68,13 @@ Historical spec and plan docs should be updated narrowly:
 - fix outdated app-role wording that still calls those two apps “examples”
 
 Do not rewrite implementation status, design rationale, or unrelated file lists beyond what is required to keep the moved app references correct.
+Completed historical task tables, file inventories, and recorded test commands should remain unchanged when they are serving as historical implementation snapshots.
 
 Apply this historical wording rule:
 
 - normalize wording when the old wording would be false or misleading to a current reader about the app path, app name, repo role, or CLI entrypoint
 - keep wording unchanged when it is about unrelated historical implementation detail, sequencing, or design rationale that does not depend on the moved app location
+- keep completed task logs, completed file lists, and completed historical test-command records unchanged even if they mention the old paths, unless the surrounding prose is being corrected for current repository facts
 - keep `mosswork-desktop` only when the text is explicitly describing rename history; otherwise normalize it to `mosswork`
 
 ### 4. Validation
@@ -84,6 +86,7 @@ After edits, verify:
 3. The repo still describes `examples\` as a valid examples directory for the other reference apps.
 4. The `moss` CLI narrative consistently says that users run `moss`, and that this entrypoint targets `mosscode`.
 5. Repo-wide documentation search checks show no stale references for the moved apps in the old locations.
+6. Every changed Markdown link, relative path, and run-command example that was updated from `examples\...` to `apps\...` is verified against the current tree.
 
 Required search checklist:
 
@@ -98,6 +101,7 @@ Allowed validation exception:
 
 - `mosswork-desktop` may remain only in explicit rename-history wording that explains the old name before it became `mosswork`
 - `examples\mosscode`, `examples\mosswork`, and `examples\mosswork-desktop` may remain only in explicit move-history wording or in this spec's rename-rule mapping section where old paths are being mapped to new paths
+- old paths may remain inside preserved completed task tables, preserved historical file inventories, and preserved recorded historical test commands
 
 ## Expected Files
 
