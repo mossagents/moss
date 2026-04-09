@@ -3,7 +3,7 @@ package product
 import (
 	"context"
 	"fmt"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"sort"
@@ -19,7 +19,7 @@ func OpenSessionCatalog() (*session.Catalog, error) {
 	if err != nil {
 		return nil, fmt.Errorf("session store: %w", err)
 	}
-	checkpoints, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
@@ -68,21 +68,21 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 	out := make([]session.ForkSource, 0, len(threads)+len(checkpoints))
 	for _, thread := range threads {
 		out = append(out, session.ForkSource{
-			Kind:      ckpt.ForkSourceSession,
+			Kind:      checkpoint.ForkSourceSession,
 			SourceID:  thread.Thread.SessionID,
 			SessionID: thread.Thread.SessionID,
 			Label:     firstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
 			Lineage:   append([]session.LineageRef(nil), thread.Thread.Lineage...),
 		})
 	}
-	for _, checkpoint := range checkpoints {
+	for _, ckpt := range checkpoints {
 		out = append(out, session.ForkSource{
-			Kind:         ckpt.ForkSourceCheckpoint,
-			SourceID:     checkpoint.ID,
-			SessionID:    checkpoint.SessionID,
-			CheckpointID: checkpoint.ID,
-			Label:        firstNonEmpty(checkpoint.Note, checkpoint.ID),
-			Lineage:      append([]session.LineageRef(nil), checkpoint.Lineage...),
+			Kind:         checkpoint.ForkSourceCheckpoint,
+			SourceID:     ckpt.ID,
+			SessionID:    ckpt.SessionID,
+			CheckpointID: ckpt.ID,
+			Label:        firstNonEmpty(ckpt.Note, ckpt.ID),
+			Lineage:      append([]session.LineageRef(nil), ckpt.Lineage...),
 		})
 	}
 	return out, nil

@@ -11,14 +11,14 @@ import (
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	kernio "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 )
 
-func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*mdl.CompletionResponse, bool, error) {
+func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*model.CompletionResponse, bool, error) {
 	specs := l.toolSpecs(plan)
 	promptMessages := session.PromptMessages(sess)
 	logging.GetLogger().DebugContext(ctx, "llm request prepared",
@@ -31,7 +31,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	)
 	modelConfig := sess.Config.ModelConfig
 	modelConfig.Requirements = cloneTaskRequirement(plan.ModelRoute.Requirements)
-	req := mdl.CompletionRequest{
+	req := model.CompletionRequest{
 		Messages: promptMessages,
 		Tools:    specs,
 		Config:   modelConfig,
@@ -79,12 +79,12 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	return nil, false, lastErr
 }
 
-func (l *AgentLoop) callLLMOnce(ctx context.Context, req mdl.CompletionRequest) callAttemptResult {
+func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest) callAttemptResult {
 	// 熔断器检查
 	if b := l.Config.LLMBreaker; b != nil {
 		if !b.Allow() {
 			return callAttemptResult{
-				err: &mdl.LLMCallError{
+				err: &model.LLMCallError{
 					Err:       kerrors.New(kerrors.ErrLLMRejected, "LLM circuit breaker is open: too many recent failures"),
 					Retryable: false,
 				},
@@ -94,7 +94,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req mdl.CompletionRequest) 
 	}
 
 	// 优先使用 Streaming
-	if sllm, ok := l.LLM.(mdl.StreamingLLM); ok {
+	if sllm, ok := l.LLM.(model.StreamingLLM); ok {
 		resp, err := l.streamLLM(ctx, sllm, req)
 		if err == nil {
 			l.recordBreakerSuccess()
@@ -122,10 +122,10 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req mdl.CompletionRequest) 
 	return callAttemptResult{resp: resp, streamed: false, retryable: llmErrorRetryable(err), err: err}
 }
 
-func (l *AgentLoop) streamLLM(ctx context.Context, sllm mdl.StreamingLLM, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (l *AgentLoop) streamLLM(ctx context.Context, sllm model.StreamingLLM, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	iter, err := sllm.Stream(ctx, req)
 	if err != nil {
-		return nil, ensureLLMCallError(err, true, true, mdl.LLMCallMetadata{})
+		return nil, ensureLLMCallError(err, true, true, model.LLMCallMetadata{})
 	}
 	defer func() { _ = iter.Close() }()
 	metadataProvider := metadataStreamProvider(iter)
@@ -148,18 +148,18 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm mdl.StreamingLLM, req md
 		}
 	}
 
-	msg := mdl.Message{
-		Role:      mdl.RoleAssistant,
+	msg := model.Message{
+		Role:      model.RoleAssistant,
 		ToolCalls: state.toolCalls,
 	}
 	if state.fullReasoning != "" {
-		msg.ContentParts = append(msg.ContentParts, mdl.ReasoningPart(state.fullReasoning))
+		msg.ContentParts = append(msg.ContentParts, model.ReasoningPart(state.fullReasoning))
 	}
 	if state.fullContent != "" {
-		msg.ContentParts = append(msg.ContentParts, mdl.TextPart(state.fullContent))
+		msg.ContentParts = append(msg.ContentParts, model.TextPart(state.fullContent))
 	}
 
-	return &mdl.CompletionResponse{
+	return &model.CompletionResponse{
 		Message:    msg,
 		ToolCalls:  state.toolCalls,
 		Usage:      state.usage,
@@ -171,14 +171,14 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm mdl.StreamingLLM, req md
 type streamAccumulator struct {
 	fullContent    string
 	fullReasoning  string
-	toolCalls      []mdl.ToolCall
-	usage          mdl.TokenUsage
+	toolCalls      []model.ToolCall
+	usage          model.TokenUsage
 	stopReason     string
 	emittedContent bool
 }
 
-func metadataStreamProvider(iter mdl.StreamIterator) mdl.MetadataStreamIterator {
-	if provider, ok := iter.(mdl.MetadataStreamIterator); ok {
+func metadataStreamProvider(iter model.StreamIterator) model.MetadataStreamIterator {
+	if provider, ok := iter.(model.MetadataStreamIterator); ok {
 		return provider
 	}
 	return nil
@@ -187,13 +187,13 @@ func metadataStreamProvider(iter mdl.StreamIterator) mdl.MetadataStreamIterator 
 func (l *AgentLoop) handleStreamChunkError(
 	ctx context.Context,
 	err error,
-	metadataProvider mdl.MetadataStreamIterator,
+	metadataProvider model.MetadataStreamIterator,
 	state *streamAccumulator,
 ) (bool, error) {
 	if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
 		state.stopReason = "tool_use"
 		if l.IO != nil {
-			if sendErr := l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd}); sendErr != nil {
+			if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {
 				logging.GetLogger().DebugContext(ctx, "stream end send failed", "error", sendErr)
 			}
 		}
@@ -203,13 +203,13 @@ func (l *AgentLoop) handleStreamChunkError(
 	return false, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
 }
 
-func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk, state *streamAccumulator) bool {
+func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChunk, state *streamAccumulator) bool {
 	if chunk.ReasoningDelta != "" {
 		state.emittedContent = true
 		state.fullReasoning += chunk.ReasoningDelta
 		if l.IO != nil {
-			if err := l.IO.Send(ctx, intr.OutputMessage{
-				Type:    intr.OutputReasoning,
+			if err := l.IO.Send(ctx, kernio.OutputMessage{
+				Type:    kernio.OutputReasoning,
 				Content: chunk.ReasoningDelta,
 			}); err != nil {
 				logging.GetLogger().DebugContext(ctx, "reasoning send failed", "error", err)
@@ -221,8 +221,8 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk,
 		state.emittedContent = true
 		state.fullContent += chunk.Delta
 		if l.IO != nil {
-			if err := l.IO.Send(ctx, intr.OutputMessage{
-				Type:    intr.OutputStream,
+			if err := l.IO.Send(ctx, kernio.OutputMessage{
+				Type:    kernio.OutputStream,
 				Content: chunk.Delta,
 			}); err != nil {
 				logging.GetLogger().DebugContext(ctx, "stream chunk send failed", "error", err)
@@ -246,7 +246,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk mdl.StreamChunk,
 		state.stopReason = "tool_use"
 	}
 	if l.IO != nil {
-		if err := l.IO.Send(ctx, intr.OutputMessage{Type: intr.OutputStreamEnd}); err != nil {
+		if err := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); err != nil {
 			logging.GetLogger().DebugContext(ctx, "stream completion send failed", "error", err)
 		}
 	}
@@ -270,14 +270,14 @@ func isRecoverableStreamTailError(err error) bool {
 	return false
 }
 
-func streamMetadata(provider mdl.MetadataStreamIterator) mdl.LLMCallMetadata {
+func streamMetadata(provider model.MetadataStreamIterator) model.LLMCallMetadata {
 	if provider == nil {
-		return mdl.LLMCallMetadata{}
+		return model.LLMCallMetadata{}
 	}
 	return provider.Metadata()
 }
 
-func metadataPtr(meta mdl.LLMCallMetadata) *mdl.LLMCallMetadata {
+func metadataPtr(meta model.LLMCallMetadata) *model.LLMCallMetadata {
 	if strings.TrimSpace(meta.ActualModel) == "" && len(meta.Attempts) == 0 {
 		return nil
 	}
@@ -285,17 +285,17 @@ func metadataPtr(meta mdl.LLMCallMetadata) *mdl.LLMCallMetadata {
 	return &copyMeta
 }
 
-func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata mdl.LLMCallMetadata) error {
+func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata model.LLMCallMetadata) error {
 	if err == nil {
 		return nil
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		merged := *callErr
 		merged.Metadata = mergeLLMMetadata(merged.Metadata, metadata)
 		return &merged
 	}
-	return &mdl.LLMCallError{
+	return &model.LLMCallError{
 		Err:          err,
 		Retryable:    retryable,
 		FallbackSafe: fallbackSafe,
@@ -303,7 +303,7 @@ func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata mdl.LL
 	}
 }
 
-func mergeLLMMetadata(base, overlay mdl.LLMCallMetadata) mdl.LLMCallMetadata {
+func mergeLLMMetadata(base, overlay model.LLMCallMetadata) model.LLMCallMetadata {
 	if strings.TrimSpace(base.ActualModel) == "" {
 		base.ActualModel = overlay.ActualModel
 	}
@@ -317,7 +317,7 @@ func llmErrorRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.Retryable
 	}
@@ -325,16 +325,16 @@ func llmErrorRetryable(err error) bool {
 }
 
 func llmErrorFallbackSafe(err error) bool {
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.FallbackSafe
 	}
 	return false
 }
 
-func llmMetadataFromResponse(defaultModel string, resp *mdl.CompletionResponse) mdl.LLMCallMetadata {
+func llmMetadataFromResponse(defaultModel string, resp *model.CompletionResponse) model.LLMCallMetadata {
 	if resp == nil || resp.Metadata == nil {
-		return mdl.LLMCallMetadata{ActualModel: defaultModel}
+		return model.LLMCallMetadata{ActualModel: defaultModel}
 	}
 	meta := *resp.Metadata
 	if strings.TrimSpace(meta.ActualModel) == "" {
@@ -343,8 +343,8 @@ func llmMetadataFromResponse(defaultModel string, resp *mdl.CompletionResponse) 
 	return meta
 }
 
-func llmMetadataFromError(defaultModel string, err error) mdl.LLMCallMetadata {
-	var callErr *mdl.LLMCallError
+func llmMetadataFromError(defaultModel string, err error) model.LLMCallMetadata {
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		meta := callErr.Metadata
 		if strings.TrimSpace(meta.ActualModel) == "" {
@@ -352,12 +352,12 @@ func llmMetadataFromError(defaultModel string, err error) mdl.LLMCallMetadata {
 		}
 		return meta
 	}
-	return mdl.LLMCallMetadata{ActualModel: defaultModel}
+	return model.LLMCallMetadata{ActualModel: defaultModel}
 }
 
-func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata mdl.LLMCallMetadata, exhausted bool) {
+func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, metadata model.LLMCallMetadata, exhausted bool) {
 	for _, attempt := range metadata.Attempts {
-		event := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
+		event := l.executionEventBase(&session.Session{ID: sessionID}, observe.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
 		event.Model = attempt.CandidateModel
 		event.Data = map[string]any{
 			"candidate_model": attempt.CandidateModel,
@@ -369,21 +369,21 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 			"outcome":         attempt.Outcome,
 			"model_lane":      l.currentTurn.ModelRoute.Lane,
 		}
-		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+		observe.ObserveExecutionEvent(ctx, l.observer(), event)
 		if strings.TrimSpace(attempt.FailoverTo) != "" {
-			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
+			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, observe.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
 			switchEvent.Model = attempt.CandidateModel
 			switchEvent.Data = map[string]any{
 				"candidate_model": attempt.CandidateModel,
 				"failover_to":     attempt.FailoverTo,
 				"model_lane":      l.currentTurn.ModelRoute.Lane,
 			}
-			kobs.ObserveExecutionEvent(ctx, l.observer(), switchEvent)
+			observe.ObserveExecutionEvent(ctx, l.observer(), switchEvent)
 		}
 	}
 	if exhausted && len(metadata.Attempts) > 0 {
-		event := l.executionEventBase(&session.Session{ID: sessionID}, kobs.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
+		event := l.executionEventBase(&session.Session{ID: sessionID}, observe.ExecutionEventType("llm_failover_exhausted"), "llm", "runtime", "llm_attempt")
 		event.Model = metadata.ActualModel
-		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+		observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	}
 }

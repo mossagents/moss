@@ -1,4 +1,4 @@
-package kernel
+﻿package kernel
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/errors"
 )
 
 type runKind string
@@ -43,11 +43,11 @@ func (s *runSupervisor) begin(parent context.Context, sessionID string, kind run
 	defer s.mu.Unlock()
 
 	if s.closing {
-		return nil, "", kerrors.New(kerrors.ErrShutdown, "kernel is shutting down")
+		return nil, "", errors.New(errors.ErrShutdown, "kernel is shutting down")
 	}
 	for _, rec := range s.runs {
 		if rec.sessionID == sessionID {
-			return nil, "", kerrors.New(kerrors.ErrSessionRunning, fmt.Sprintf("session %q already has an active run", sessionID))
+			return nil, "", errors.New(errors.ErrSessionRunning, fmt.Sprintf("session %q already has an active run", sessionID))
 		}
 	}
 

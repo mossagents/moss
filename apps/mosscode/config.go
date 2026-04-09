@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 const appName = "mosscode"
@@ -48,7 +48,7 @@ type config struct {
 	changesLimit              int
 	changesShowID             string
 	explicitFlags             []string
-	observer                  kobs.Observer
+	observer                  observe.Observer
 	pricingCatalog            *product.PricingCatalog
 }
 

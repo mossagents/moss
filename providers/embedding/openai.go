@@ -6,15 +6,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"io"
 	"net/http"
 	"os"
 	"time"
 )
 
-// 确保实现 mdl.Embedder 接口。
-var _ mdl.Embedder = (*OpenAIEmbedder)(nil)
+// 确保实现 model.Embedder 接口。
+var _ model.Embedder = (*OpenAIEmbedder)(nil)
 
 const (
 	DefaultModel     = "text-embedding-3-small"

@@ -9,7 +9,7 @@ import (
 
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 type planTaskInput struct {
@@ -230,7 +230,7 @@ type acquireWorkspaceInput struct {
 	TaskID string `json:"task_id"`
 }
 
-func registerAcquireWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolation, runtime taskrt.TaskRuntime) error {
+func registerAcquireWorkspace(reg tool.Registry, isolation workspace.WorkspaceIsolation, runtime taskrt.TaskRuntime) error {
 	spec := tool.ToolSpec{
 		Name:        "acquire_workspace",
 		Description: "Acquire an isolated workspace for a task and return workspace id.",
@@ -278,7 +278,7 @@ type releaseWorkspaceInput struct {
 	WorkspaceID string `json:"workspace_id"`
 }
 
-func registerReleaseWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolation) error {
+func registerReleaseWorkspace(reg tool.Registry, isolation workspace.WorkspaceIsolation) error {
 	spec := tool.ToolSpec{
 		Name:        "release_workspace",
 		Description: "Release an isolated workspace lease.",

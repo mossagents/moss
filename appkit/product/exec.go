@@ -2,13 +2,13 @@ package product
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"strings"
 	"sync"
 )
 
 type ExecOutputEvent struct {
-	Type    intr.OutputType `json:"type"`
+	Type    io.OutputType `json:"type"`
 	Content string          `json:"content"`
 	IsError bool            `json:"is_error,omitempty"`
 }
@@ -44,12 +44,12 @@ func NewRecordingIO(mode string) *RecordingIO {
 	return &RecordingIO{mode: NormalizeApprovalMode(mode)}
 }
 
-func (r *RecordingIO) Send(_ context.Context, msg intr.OutputMessage) error {
+func (r *RecordingIO) Send(_ context.Context, msg io.OutputMessage) error {
 	event := ExecOutputEvent{
 		Type:    msg.Type,
 		Content: strings.TrimSpace(msg.Content),
 	}
-	if msg.Type == intr.OutputToolResult {
+	if msg.Type == io.OutputToolResult {
 		event.IsError, _ = msg.Meta["is_error"].(bool)
 	}
 	r.mu.Lock()
@@ -58,7 +58,7 @@ func (r *RecordingIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	return nil
 }
 
-func (r *RecordingIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+func (r *RecordingIO) Ask(_ context.Context, req io.InputRequest) (io.InputResponse, error) {
 	return recordingResponse(r.mode, req), nil
 }
 
@@ -70,26 +70,26 @@ func (r *RecordingIO) Events() []ExecOutputEvent {
 	return out
 }
 
-func recordingResponse(mode string, req intr.InputRequest) intr.InputResponse {
+func recordingResponse(mode string, req io.InputRequest) io.InputResponse {
 	approved := mode == ApprovalModeFullAuto
 	switch req.Type {
-	case intr.InputConfirm:
-		resp := intr.InputResponse{Approved: approved}
+	case io.InputConfirm:
+		resp := io.InputResponse{Approved: approved}
 		if req.Approval != nil {
 			source := "recording-deny"
 			if approved {
 				source = "recording-auto"
 			}
-			resp.Decision = &intr.ApprovalDecision{
+			resp.Decision = &io.ApprovalDecision{
 				RequestID: req.Approval.ID,
 				Approved:  approved,
 				Source:    source,
 			}
 		}
 		return resp
-	case intr.InputSelect:
-		return intr.InputResponse{Selected: 0}
-	case intr.InputForm:
+	case io.InputSelect:
+		return io.InputResponse{Selected: 0}
+	case io.InputForm:
 		form := make(map[string]any, len(req.Fields))
 		for _, field := range req.Fields {
 			if field.Default != nil {
@@ -97,11 +97,11 @@ func recordingResponse(mode string, req intr.InputRequest) intr.InputResponse {
 				continue
 			}
 			switch field.Type {
-			case intr.InputFieldBoolean:
+			case io.InputFieldBoolean:
 				form[field.Name] = approved
-			case intr.InputFieldMultiSelect:
+			case io.InputFieldMultiSelect:
 				form[field.Name] = []string{}
-			case intr.InputFieldSingleSelect:
+			case io.InputFieldSingleSelect:
 				if len(field.Options) > 0 {
 					form[field.Name] = field.Options[0]
 				} else {
@@ -111,8 +111,8 @@ func recordingResponse(mode string, req intr.InputRequest) intr.InputResponse {
 				form[field.Name] = ""
 			}
 		}
-		return intr.InputResponse{Form: form}
+		return io.InputResponse{Form: form}
 	default:
-		return intr.InputResponse{}
+		return io.InputResponse{}
 	}
 }

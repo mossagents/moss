@@ -1,4 +1,4 @@
-// Package otel provides a kobs.Observer implementation that records kernel
+// Package otel provides a observe.Observer implementation that records kernel
 // events as OpenTelemetry metrics using the standard OTEL Metrics API.
 //
 // Usage:
@@ -6,26 +6,26 @@
 //	mp := // your MeterProvider (SDK, OTLP exporter, etc.)
 //	obs, err := otel.New(mp.Meter("github.com/mossagents/moss"))
 //	if err != nil { ... }
-//	kernel.SetObserver(kobs.JoinObservers(existing, obs))
+//	kernel.SetObserver(observe.JoinObservers(existing, obs))
 package otel
 
 import (
 	"context"
 	"fmt"
 
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
 
-// Observer implements kobs.Observer by recording kernel events as OTEL metrics.
-// It embeds kobs.NoOpObserver so only metrics-relevant methods are overridden;
+// Observer implements observe.Observer by recording kernel events as OTEL metrics.
+// It embeds observe.NoOpObserver so only metrics-relevant methods are overridden;
 // fine-grained execution events (OnExecutionEvent) are silently discarded.
 type Observer struct {
-	kobs.NoOpObserver
+	observe.NoOpObserver
 
-	metrics *kobs.MetricsAccumulator
+	metrics *observe.MetricsAccumulator
 
 	llmCallsTotal  metric.Int64Counter
 	llmDurationMs  metric.Int64Histogram
@@ -43,7 +43,7 @@ type Observer struct {
 // New creates an Observer using instruments from the given OTEL Meter.
 // All instruments use the "moss." namespace prefix and standard OTEL conventions.
 func New(meter metric.Meter) (*Observer, error) {
-	o := &Observer{metrics: &kobs.MetricsAccumulator{}}
+	o := &Observer{metrics: &observe.MetricsAccumulator{}}
 	var err error
 
 	if o.llmCallsTotal, err = meter.Int64Counter("moss.llm.calls",
@@ -106,7 +106,7 @@ func New(meter metric.Meter) (*Observer, error) {
 	return o, nil
 }
 
-func (o *Observer) OnEvent(_ context.Context, e kobs.EventEnvelope) {
+func (o *Observer) OnEvent(_ context.Context, e observe.EventEnvelope) {
 	if o.metrics != nil {
 		o.metrics.ApplyEnvelope(e)
 	}
@@ -120,7 +120,7 @@ func (o *Observer) NormalizedMetricsMap() map[string]float64 {
 	return o.metrics.Map()
 }
 
-func (o *Observer) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {
+func (o *Observer) OnLLMCall(ctx context.Context, e observe.LLMCallEvent) {
 	attrs := []attribute.KeyValue{
 		attribute.String("model", e.Model),
 		attribute.String("stop_reason", e.StopReason),
@@ -143,7 +143,7 @@ func (o *Observer) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {
 	}
 }
 
-func (o *Observer) OnToolCall(ctx context.Context, e kobs.ToolCallEvent) {
+func (o *Observer) OnToolCall(ctx context.Context, e observe.ToolCallEvent) {
 	attrs := []attribute.KeyValue{
 		attribute.String("tool_name", e.ToolName),
 		attribute.String("risk", e.Risk),
@@ -154,18 +154,18 @@ func (o *Observer) OnToolCall(ctx context.Context, e kobs.ToolCallEvent) {
 		metric.WithAttributes(attribute.String("tool_name", e.ToolName), attribute.String("risk", e.Risk)))
 }
 
-func (o *Observer) OnSessionEvent(ctx context.Context, e kobs.SessionEvent) {
+func (o *Observer) OnSessionEvent(ctx context.Context, e observe.SessionEvent) {
 	o.sessionsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("type", e.Type)))
 }
 
-func (o *Observer) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
+func (o *Observer) OnApproval(ctx context.Context, e io.ApprovalEvent) {
 	o.approvalsTotal.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("kind", string(e.Request.Kind)),
 		attribute.String("decision", approvalDecision(e)),
 	))
 }
 
-func approvalDecision(e intr.ApprovalEvent) string {
+func approvalDecision(e io.ApprovalEvent) string {
 	if e.Decision == nil {
 		return "pending"
 	}
@@ -175,6 +175,6 @@ func approvalDecision(e intr.ApprovalEvent) string {
 	return "rejected"
 }
 
-func (o *Observer) OnError(ctx context.Context, e kobs.ErrorEvent) {
+func (o *Observer) OnError(ctx context.Context, e observe.ErrorEvent) {
 	o.errorsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("phase", e.Phase)))
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 )
 
 // RuntimeResolution captures resolved runtime inputs shared by CLI/TUI entrypoints.
@@ -80,7 +80,7 @@ func (RuntimeBuilder) Resolve(flags *AppFlags) (RuntimeResolution, error) {
 }
 
 // BuildKernel resolves runtime inputs then builds a kernel with the resolved flags.
-func (b RuntimeBuilder) BuildKernel(ctx context.Context, flags *AppFlags, io intr.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, RuntimeResolution, error) {
+func (b RuntimeBuilder) BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, RuntimeResolution, error) {
 	resolution, err := b.Resolve(flags)
 	if err != nil {
 		return nil, RuntimeResolution{}, err

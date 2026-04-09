@@ -7,20 +7,20 @@ import (
 	"sync"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // SummarizeConfig 配置对话历史摘要压缩行为。
 type SummarizeConfig struct {
 	Enabled          *bool
-	LLM              mdl.LLM
+	LLM              model.LLM
 	MaxContextTokens int
 	KeepRecent       int
 	MaxSummaryTokens int
 	SummaryPrompt    string
-	Tokenizer        mdl.Tokenizer
-	TokenCounter     func(mdl.Message) int
-	ModelConfig      *mdl.ModelConfig
+	Tokenizer        model.Tokenizer
+	TokenCounter     func(model.Message) int
+	ModelConfig      *model.ModelConfig
 }
 
 func (c SummarizeConfig) maxContextTokens() int {
@@ -44,7 +44,7 @@ func (c SummarizeConfig) maxSummaryTokens() int {
 	return c.MaxSummaryTokens
 }
 
-func (c SummarizeConfig) countTokens(msg mdl.Message) int {
+func (c SummarizeConfig) countTokens(msg model.Message) int {
 	if c.Tokenizer != nil {
 		return c.Tokenizer.CountMessage(msg)
 	}
@@ -134,9 +134,9 @@ func AutoSummarize(cfg SummarizeConfig) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		var systemMsgs, dialogMsgs []mdl.Message
+		var systemMsgs, dialogMsgs []model.Message
 		for _, m := range msgs {
-			if m.Role == mdl.RoleSystem {
+			if m.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)
@@ -151,7 +151,7 @@ func AutoSummarize(cfg SummarizeConfig) hooks.Hook[hooks.LLMEvent] {
 		toCompress := dialogMsgs[:len(dialogMsgs)-keepRecent]
 		recentMsgs := dialogMsgs[len(dialogMsgs)-keepRecent:]
 
-		msgHash := mdl.HashMessages(toCompress)
+		msgHash := model.HashMessages(toCompress)
 		summaryText, cached := getCached(msgHash)
 		if !cached {
 			var err error
@@ -164,14 +164,14 @@ func AutoSummarize(cfg SummarizeConfig) hooks.Hook[hooks.LLMEvent] {
 			}
 		}
 
-		summaryMsg := mdl.Message{
-			Role: mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart(buildSummaryNotice(summaryText, len(toCompress))),
+		summaryMsg := model.Message{
+			Role: model.RoleSystem,
+			ContentParts: []model.ContentPart{
+				model.TextPart(buildSummaryNotice(summaryText, len(toCompress))),
 			},
 		}
 
-		newMsgs := make([]mdl.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+		newMsgs := make([]model.Message, 0, len(systemMsgs)+1+len(recentMsgs))
 		newMsgs = append(newMsgs, systemMsgs...)
 		newMsgs = append(newMsgs, summaryMsg)
 		newMsgs = append(newMsgs, recentMsgs...)
@@ -181,23 +181,23 @@ func AutoSummarize(cfg SummarizeConfig) hooks.Hook[hooks.LLMEvent] {
 	}
 }
 
-func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []mdl.Message) (string, error) {
+func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []model.Message) (string, error) {
 	if len(msgs) == 0 {
 		return "", nil
 	}
 
 	var sb strings.Builder
 	for _, m := range msgs {
-		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, mdl.ContentPartsToPlainText(m.ContentParts)))
+		sb.WriteString(fmt.Sprintf("[%s]: %s\n", m.Role, model.ContentPartsToPlainText(m.ContentParts)))
 		for _, tc := range m.ToolCalls {
 			sb.WriteString(fmt.Sprintf("[tool_call:%s]: %s\n", tc.Name, string(tc.Arguments)))
 		}
 		for _, tr := range m.ToolResults {
-			sb.WriteString(fmt.Sprintf("[tool_result]: %s\n", mdl.ContentPartsToPlainText(tr.ContentParts)))
+			sb.WriteString(fmt.Sprintf("[tool_result]: %s\n", model.ContentPartsToPlainText(tr.ContentParts)))
 		}
 	}
 
-	modelCfg := mdl.ModelConfig{}
+	modelCfg := model.ModelConfig{}
 	if cfg.ModelConfig != nil {
 		modelCfg = *cfg.ModelConfig
 	}
@@ -205,15 +205,15 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []mdl.Messag
 		modelCfg.MaxTokens = cfg.maxSummaryTokens()
 	}
 
-	req := mdl.CompletionRequest{
-		Messages: []mdl.Message{
+	req := model.CompletionRequest{
+		Messages: []model.Message{
 			{
-				Role:         mdl.RoleSystem,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(cfg.summaryPrompt())},
+				Role:         model.RoleSystem,
+				ContentParts: []model.ContentPart{model.TextPart(cfg.summaryPrompt())},
 			},
 			{
-				Role:         mdl.RoleUser,
-				ContentParts: []mdl.ContentPart{mdl.TextPart("对话历史：\n" + sb.String())},
+				Role:         model.RoleUser,
+				ContentParts: []model.ContentPart{model.TextPart("对话历史：\n" + sb.String())},
 			},
 		},
 		Config: modelCfg,
@@ -223,7 +223,7 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []mdl.Messag
 	if err != nil {
 		return "", err
 	}
-	return mdl.ContentPartsToPlainText(resp.Message.ContentParts), nil
+	return model.ContentPartsToPlainText(resp.Message.ContentParts), nil
 }
 
 func buildSummaryNotice(summary string, compressedCount int) string {

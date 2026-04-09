@@ -4,7 +4,7 @@ import (
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,7 +18,7 @@ func DebugLogPath() string {
 	return filepath.Join(appconfig.AppDir(), "debug.log")
 }
 
-func OpenAuditObserver() (kobs.Observer, io.Closer, error) {
+func OpenAuditObserver() (observe.Observer, io.Closer, error) {
 	path := AuditLogPath()
 	if path == "" {
 		return nil, nil, fmt.Errorf("audit log path is unavailable")

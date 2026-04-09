@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"strings"
 )
 
@@ -166,7 +166,7 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, model tea.Model,
 		runText := m.postInitRunText
 		m.postInitDisplayText = ""
 		m.postInitRunText = ""
-		nextChat, dispatchCmd := m.chat.dispatchUserSubmission(displayText, runText, []mdl.ContentPart{mdl.TextPart(runText)})
+		nextChat, dispatchCmd := m.chat.dispatchUserSubmission(displayText, runText, []model.ContentPart{model.TextPart(runText)})
 		m.chat = nextChat
 		m.chat.refreshViewport()
 		go agent.publishProgressReplay()
@@ -277,7 +277,7 @@ func (m *appModel) bindDebugCallbacks(agent *agentState) {
 }
 
 func (m *appModel) bindToolingCallbacks(agent *agentState) {
-	m.chat.sendFn = func(text string, parts []mdl.ContentPart) {
+	m.chat.sendFn = func(text string, parts []model.ContentPart) {
 		go agent.appendAndRun(text, parts)
 	}
 	m.chat.cancelRunFn = agent.cancelCurrentRun

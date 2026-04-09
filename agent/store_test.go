@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"os"
 	"path/filepath"
 	"testing"
@@ -257,7 +257,7 @@ func TestTaskTracker_FileTaskStore_PersistAcrossReconstruction(t *testing.T) {
 	}
 
 	// Complete the task in tt2 and verify persistence.
-	tt2.Complete("tt-1", "done", mdl.TokenUsage{})
+	tt2.Complete("tt-1", "done", model.TokenUsage{})
 
 	store3 := NewFileTaskStore(path)
 	tt3 := NewTaskTracker(WithTaskStore(store3))

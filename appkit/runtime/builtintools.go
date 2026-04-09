@@ -16,10 +16,10 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -30,7 +30,7 @@ const maxHTTPResponseBodyBytes = 256 * 1024
 // 这些工具由 appkit/runtime 直接提供，不是 prompt skills，也不是通过 MCP 桥接的外部工具。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
-func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws kws.Workspace, exec kws.Executor) []string {
+func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws workspace.Workspace, exec workspace.Executor) []string {
 	surface := newExecutionSurface(sb, ws, exec)
 	names := []string{}
 	if surface.HasWorkspace() {
@@ -46,11 +46,11 @@ func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws kws.Workspace, exec kws.E
 // RegisterBuiltinTools 注册 runtime 自带的 builtin tools 到 registry。
 // 优先使用 Workspace/Executor 接口；未提供时回退到 Sandbox。
 // builtin tools 是 first-party runtime capability，不经过 skill prompt 解析，也不依赖 MCP transport。
-func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io intr.UserIO, ws kws.Workspace, exec kws.Executor) error {
+func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, io kernio.UserIO, ws workspace.Workspace, exec workspace.Executor) error {
 	return RegisterBuiltinToolsForKernel(nil, reg, sb, io, ws, exec)
 }
 
-func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandbox.Sandbox, io intr.UserIO, ws kws.Workspace, exec kws.Executor) error {
+func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandbox.Sandbox, io kernio.UserIO, ws workspace.Workspace, exec workspace.Executor) error {
 	type entry struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -640,11 +640,11 @@ func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.Tool
 	}
 }
 
-func runCommandHandlerExec(exec kws.Executor, ws kws.Workspace) tool.ToolHandler {
+func runCommandHandlerExec(exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
 	return runCommandHandlerExecWithPolicy(nil, exec, ws)
 }
 
-func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec kws.Executor, ws kws.Workspace) tool.ToolHandler {
+func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -672,7 +672,7 @@ func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec kws.Executor, ws kws
 
 // ─── Workspace-based handlers ────────────────────────
 
-func readFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func readFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Path string `json:"path"`
@@ -688,7 +688,7 @@ func readFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
 	}
 }
 
-func writeFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func writeFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Path    string `json:"path"`
@@ -704,7 +704,7 @@ func writeFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
 	}
 }
 
-func editFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func editFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Path       string `json:"path"`
@@ -735,7 +735,7 @@ func editFileHandlerWS(ws kws.Workspace) tool.ToolHandler {
 	}
 }
 
-func globHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func globHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Pattern string `json:"pattern"`
@@ -753,7 +753,7 @@ func globHandlerWS(ws kws.Workspace) tool.ToolHandler {
 	}
 }
 
-func listFilesHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func listFilesHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Pattern       string `json:"pattern"`
@@ -779,7 +779,7 @@ func listFilesHandlerWS(ws kws.Workspace) tool.ToolHandler {
 	}
 }
 
-func grepHandlerWS(ws kws.Workspace) tool.ToolHandler {
+func grepHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Pattern    string `json:"pattern"`
@@ -849,7 +849,7 @@ var askUserSpec = tool.ToolSpec{
 	Capabilities: []string{"interaction"},
 }
 
-func askUserHandler(io intr.UserIO) tool.ToolHandler {
+func askUserHandler(io kernio.UserIO) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Question        string         `json:"question"`
@@ -861,8 +861,8 @@ func askUserHandler(io intr.UserIO) tool.ToolHandler {
 		if io == nil {
 			return json.Marshal("ask_user: no user IO available")
 		}
-		req := intr.InputRequest{
-			Type:   intr.InputFreeText,
+		req := kernio.InputRequest{
+			Type:   kernio.InputFreeText,
 			Prompt: params.Question,
 		}
 		fields, err := buildAskUserFields(params.RequestedSchema)
@@ -870,7 +870,7 @@ func askUserHandler(io intr.UserIO) tool.ToolHandler {
 			return nil, err
 		}
 		if len(fields) > 0 {
-			req.Type = intr.InputForm
+			req.Type = kernio.InputForm
 			req.Fields = fields
 			req.ConfirmLabel = "Confirm"
 		}
@@ -878,14 +878,14 @@ func askUserHandler(io intr.UserIO) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
-		if req.Type == intr.InputForm {
+		if req.Type == kernio.InputForm {
 			return json.Marshal(resp.Form)
 		}
 		return json.Marshal(resp.Value)
 	}
 }
 
-func buildAskUserFields(schema map[string]any) ([]intr.InputField, error) {
+func buildAskUserFields(schema map[string]any) ([]kernio.InputField, error) {
 	if len(schema) == 0 {
 		return nil, nil
 	}
@@ -914,13 +914,13 @@ func buildAskUserFields(schema map[string]any) ([]intr.InputField, error) {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	fields := make([]intr.InputField, 0, len(keys))
+	fields := make([]kernio.InputField, 0, len(keys))
 	for _, name := range keys {
 		rawDef, ok := props[name].(map[string]any)
 		if !ok {
 			continue
 		}
-		field := intr.InputField{
+		field := kernio.InputField{
 			Name:        name,
 			Title:       toString(rawDef["title"]),
 			Description: toString(rawDef["description"]),
@@ -932,22 +932,22 @@ func buildAskUserFields(schema map[string]any) ([]intr.InputField, error) {
 		ftype := strings.ToLower(toString(rawDef["type"]))
 		switch ftype {
 		case "boolean":
-			field.Type = intr.InputFieldBoolean
+			field.Type = kernio.InputFieldBoolean
 		case "array":
-			field.Type = intr.InputFieldMultiSelect
+			field.Type = kernio.InputFieldMultiSelect
 		case "number":
-			field.Type = intr.InputFieldNumber
+			field.Type = kernio.InputFieldNumber
 		case "integer":
-			field.Type = intr.InputFieldInteger
+			field.Type = kernio.InputFieldInteger
 		default:
 			if enum := toStringSlice(rawDef["enum"]); len(enum) > 0 {
-				field.Type = intr.InputFieldSingleSelect
+				field.Type = kernio.InputFieldSingleSelect
 				field.Options = enum
 			} else {
-				field.Type = intr.InputFieldString
+				field.Type = kernio.InputFieldString
 			}
 		}
-		if field.Type == intr.InputFieldMultiSelect {
+		if field.Type == kernio.InputFieldMultiSelect {
 			items, _ := rawDef["items"].(map[string]any)
 			field.Options = toStringSlice(items["enum"])
 		}
@@ -981,13 +981,13 @@ func toStringSlice(v any) []string {
 	return out
 }
 
-func normalizeDefaultForField(ft intr.InputFieldType, v any) any {
+func normalizeDefaultForField(ft kernio.InputFieldType, v any) any {
 	switch ft {
-	case intr.InputFieldBoolean:
+	case kernio.InputFieldBoolean:
 		if b, ok := v.(bool); ok {
 			return b
 		}
-	case intr.InputFieldNumber:
+	case kernio.InputFieldNumber:
 		switch n := v.(type) {
 		case float64:
 			return n
@@ -998,7 +998,7 @@ func normalizeDefaultForField(ft intr.InputFieldType, v any) any {
 				return parsed
 			}
 		}
-	case intr.InputFieldInteger:
+	case kernio.InputFieldInteger:
 		switch n := v.(type) {
 		case float64:
 			return int(n)
@@ -1009,7 +1009,7 @@ func normalizeDefaultForField(ft intr.InputFieldType, v any) any {
 				return parsed
 			}
 		}
-	case intr.InputFieldMultiSelect:
+	case kernio.InputFieldMultiSelect:
 		if vals := toStringSlice(v); len(vals) > 0 {
 			return vals
 		}
@@ -1127,7 +1127,7 @@ func scopedPattern(pattern, scopePath string) string {
 	return filepath.Join(scopePath, pattern)
 }
 
-func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.Sandbox, ws kws.Workspace) ExecutionPolicy {
+func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.Sandbox, ws workspace.Workspace) ExecutionPolicy {
 	if k != nil {
 		policy := ExecutionPolicyOf(k)
 		if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
@@ -1144,8 +1144,8 @@ func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.
 	return resolveExecutionPolicy(appconfig.TrustTrusted, "full-auto", commandPolicyDefaults(sb, workspace, ws))
 }
 
-func buildExecRequest(command string, args []string, policy ExecutionPolicy) kws.ExecRequest {
-	req := kws.ExecRequest{
+func buildExecRequest(command string, args []string, policy ExecutionPolicy) workspace.ExecRequest {
+	req := workspace.ExecRequest{
 		Command:  command,
 		Args:     append([]string(nil), args...),
 		Timeout:  policy.Command.DefaultTimeout,

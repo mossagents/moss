@@ -7,7 +7,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 // Delegator 是 agent 包对 Kernel 能力的抽象，避免循环依赖。
@@ -22,7 +22,7 @@ type Delegator interface {
 type RuntimeDeps struct {
 	TaskRuntime taskrt.TaskRuntime
 	Mailbox     taskrt.Mailbox
-	Isolation   kws.WorkspaceIsolation
+	Isolation   workspace.WorkspaceIsolation
 }
 
 // RegisterTools 向工具注册表注册委派相关工具。

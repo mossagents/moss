@@ -2,7 +2,7 @@ package kernel
 
 import (
 	"context"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"log/slog"
 	"sort"
@@ -183,7 +183,7 @@ func (k *Kernel) runSessionLifecycleHook(ctx context.Context, hook session.Lifec
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			kobs.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), kobs.ErrorEvent{
+			observe.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), observe.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -209,7 +209,7 @@ func (k *Kernel) runToolLifecycleHook(ctx context.Context, hook session.ToolLife
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			kobs.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), kobs.ErrorEvent{
+			observe.ObserveError(contextOrBackground(ctx), k.observerOrNoOp(), observe.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,

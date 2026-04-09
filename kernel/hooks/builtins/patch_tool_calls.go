@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // PatchToolCalls ensures every assistant tool call in history has a matching tool result.
@@ -19,7 +19,7 @@ func PatchToolCalls() hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		pending := make(map[string]mdl.ToolCall)
+		pending := make(map[string]model.ToolCall)
 		for _, msg := range ev.Session.Messages {
 			for _, tc := range msg.ToolCalls {
 				if tc.ID == "" {
@@ -38,15 +38,15 @@ func PatchToolCalls() hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		patches := make([]mdl.Message, 0, len(pending))
+		patches := make([]model.Message, 0, len(pending))
 		for callID, tc := range pending {
-			patches = append(patches, mdl.Message{
-				Role: mdl.RoleTool,
-				ToolResults: []mdl.ToolResult{
+			patches = append(patches, model.Message{
+				Role: model.RoleTool,
+				ToolResults: []model.ToolResult{
 					{
 						CallID:       callID,
 						IsError:      true,
-						ContentParts: []mdl.ContentPart{mdl.TextPart(fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name))},
+						ContentParts: []model.ContentPart{model.TextPart(fmt.Sprintf("missing tool result patched for call %q (%s)", callID, tc.Name))},
 					},
 				},
 			})

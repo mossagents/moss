@@ -2,9 +2,9 @@ package sandbox
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -12,24 +12,24 @@ import (
 
 type snapshotRecordingObserver struct {
 	mu     sync.Mutex
-	events []kobs.ExecutionEvent
+	events []observe.ExecutionEvent
 }
 
-func (o *snapshotRecordingObserver) OnLLMCall(context.Context, kobs.LLMCallEvent)      {}
-func (o *snapshotRecordingObserver) OnToolCall(context.Context, kobs.ToolCallEvent)    {}
-func (o *snapshotRecordingObserver) OnApproval(context.Context, intr.ApprovalEvent)    {}
-func (o *snapshotRecordingObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
-func (o *snapshotRecordingObserver) OnError(context.Context, kobs.ErrorEvent)          {}
-func (o *snapshotRecordingObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
+func (o *snapshotRecordingObserver) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
+func (o *snapshotRecordingObserver) OnToolCall(context.Context, observe.ToolCallEvent)    {}
+func (o *snapshotRecordingObserver) OnApproval(context.Context, io.ApprovalEvent)    {}
+func (o *snapshotRecordingObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
+func (o *snapshotRecordingObserver) OnError(context.Context, observe.ErrorEvent)          {}
+func (o *snapshotRecordingObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.events = append(o.events, e)
 }
 
-func (o *snapshotRecordingObserver) snapshot() []kobs.ExecutionEvent {
+func (o *snapshotRecordingObserver) snapshot() []observe.ExecutionEvent {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	out := make([]kobs.ExecutionEvent, len(o.events))
+	out := make([]observe.ExecutionEvent, len(o.events))
 	copy(out, o.events)
 	return out
 }
@@ -49,9 +49,9 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 	runGit(t, repo, "checkout", "--", "tracked.txt")
 
 	applier := NewGitPatchApply(repo)
-	applied, err := applier.Apply(context.Background(), kws.PatchApplyRequest{
+	applied, err := applier.Apply(context.Background(), workspace.PatchApplyRequest{
 		Patch:  patch,
-		Source: kws.PatchSourceLLM,
+		Source: workspace.PatchSourceLLM,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -60,14 +60,14 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 	store := NewGitWorktreeSnapshotStore(repo)
 	obs := &snapshotRecordingObserver{}
 	store.SetObserver(obs)
-	snapshot, err := store.Create(context.Background(), kws.WorktreeSnapshotRequest{
+	snapshot, err := store.Create(context.Background(), workspace.WorktreeSnapshotRequest{
 		SessionID: "sess-1",
 		Note:      "before review",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snapshot.Mode != kws.WorktreeSnapshotGhostState {
+	if snapshot.Mode != workspace.WorktreeSnapshotGhostState {
 		t.Fatalf("unexpected snapshot mode %q", snapshot.Mode)
 	}
 	if snapshot.SessionID != "sess-1" {
@@ -77,7 +77,7 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 		t.Fatalf("expected one patch ref, got %+v", snapshot.Patches)
 	}
 	events := obs.snapshot()
-	if len(events) != 1 || events[0].Type != kobs.ExecutionSnapshotCreated {
+	if len(events) != 1 || events[0].Type != observe.ExecutionSnapshotCreated {
 		t.Fatalf("expected snapshot.created event, got %+v", events)
 	}
 	if events[0].SessionID != "sess-1" {
@@ -110,8 +110,8 @@ func TestGitWorktreeSnapshotStore_CreateLoadList(t *testing.T) {
 
 func TestGitWorktreeSnapshotStore_Unavailable(t *testing.T) {
 	store := NewGitWorktreeSnapshotStore(t.TempDir())
-	_, err := store.Create(context.Background(), kws.WorktreeSnapshotRequest{})
-	if err != kws.ErrWorktreeSnapshotUnavailable {
+	_, err := store.Create(context.Background(), workspace.WorktreeSnapshotRequest{})
+	if err != workspace.ErrWorktreeSnapshotUnavailable {
 		t.Fatalf("expected ErrWorktreeSnapshotUnavailable, got %v", err)
 	}
 }

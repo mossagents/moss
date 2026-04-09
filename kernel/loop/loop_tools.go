@@ -9,14 +9,14 @@ import (
 	"sync"
 	"time"
 
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 )
 
-func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
+func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []model.ToolCall) error {
 	if len(calls) == 0 {
 		return nil
 	}
@@ -41,17 +41,17 @@ func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session,
 }
 
 func (l *AgentLoop) emitExecutionPlanValidated(ctx context.Context, sess *session.Session, plan ExecutionPlan) {
-	event := l.executionEventBase(sess, kobs.ExecutionEventType("execution.plan_validated"), "planning", "runtime", "execution_plan")
+	event := l.executionEventBase(sess, observe.ExecutionEventType("execution.plan_validated"), "planning", "runtime", "execution_plan")
 	event.Data = map[string]any{
 		"call_count": len(plan.Calls),
 		"call_ids":   executionPlanCallIDs(plan),
 		"calls":      executionPlanPayload(plan),
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
-func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session.Session, calls []mdl.ToolCall, err error) {
-	event := l.executionEventBase(sess, kobs.ExecutionEventType("execution.plan_invalid"), "planning", "runtime", "execution_plan")
+func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session.Session, calls []model.ToolCall, err error) {
+	event := l.executionEventBase(sess, observe.ExecutionEventType("execution.plan_invalid"), "planning", "runtime", "execution_plan")
 	names := make([]string, 0, len(calls))
 	for _, call := range calls {
 		names = append(names, call.Name)
@@ -61,13 +61,13 @@ func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session
 		"call_count": len(calls),
 		"tool_names": names,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
-func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
+func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []model.ToolCall) error {
 	for _, call := range calls {
 		result := l.executeSingleToolCall(ctx, sess, call)
-		sess.AppendMessage(mdl.Message{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{result}})
+		sess.AppendMessage(model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}})
 	}
 	return nil
 }
@@ -80,25 +80,25 @@ func (l *AgentLoop) maxConcurrentTools() int {
 }
 
 type toolAdmissionCandidate struct {
-	call mdl.ToolCall
+	call model.ToolCall
 	spec tool.ToolSpec
 	ok   bool
 }
 
-func (l *AgentLoop) admitToolCallBatches(calls []mdl.ToolCall) [][]mdl.ToolCall {
+func (l *AgentLoop) admitToolCallBatches(calls []model.ToolCall) [][]model.ToolCall {
 	if len(calls) == 0 {
 		return nil
 	}
 	if !l.Config.ParallelToolCall || len(calls) == 1 {
-		return [][]mdl.ToolCall{append([]mdl.ToolCall(nil), calls...)}
+		return [][]model.ToolCall{append([]model.ToolCall(nil), calls...)}
 	}
-	batches := make([][]mdl.ToolCall, 0, len(calls))
+	batches := make([][]model.ToolCall, 0, len(calls))
 	current := make([]toolAdmissionCandidate, 0, min(len(calls), l.maxConcurrentTools()))
 	flush := func() {
 		if len(current) == 0 {
 			return
 		}
-		batch := make([]mdl.ToolCall, 0, len(current))
+		batch := make([]model.ToolCall, 0, len(current))
 		for _, candidate := range current {
 			batch = append(batch, candidate.call)
 		}
@@ -116,7 +116,7 @@ func (l *AgentLoop) admitToolCallBatches(calls []mdl.ToolCall) [][]mdl.ToolCall 
 	return batches
 }
 
-func (l *AgentLoop) describeToolCallForAdmission(call mdl.ToolCall) toolAdmissionCandidate {
+func (l *AgentLoop) describeToolCallForAdmission(call model.ToolCall) toolAdmissionCandidate {
 	spec, _, ok := l.Tools.Get(call.Name)
 	return toolAdmissionCandidate{
 		call: call,
@@ -255,14 +255,14 @@ func hasEffect(spec tool.ToolSpec, want tool.Effect) bool {
 	return false
 }
 
-func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
-	results := make([]mdl.ToolResult, len(calls))
+func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []model.ToolCall) error {
+	results := make([]model.ToolResult, len(calls))
 
 	sem := make(chan struct{}, l.maxConcurrentTools())
 	var wg sync.WaitGroup
 	for i, call := range calls {
 		wg.Add(1)
-		go func(idx int, c mdl.ToolCall) {
+		go func(idx int, c model.ToolCall) {
 			sem <- struct{}{}
 			defer func() {
 				<-sem
@@ -275,12 +275,12 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 
 	// 按顺序追加结果到 session（保持确定性）
 	for _, result := range results {
-		sess.AppendMessage(mdl.Message{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{result}})
+		sess.AppendMessage(model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}})
 	}
 	return nil
 }
 
-func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call mdl.ToolCall) mdl.ToolResult {
+func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call model.ToolCall) model.ToolResult {
 	repairedArgs := repairToolArguments(call.Arguments)
 	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
 		Stage:     session.ToolLifecycleBefore,
@@ -329,17 +329,17 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	return result
 }
 
-func buildToolResult(callID string, output []byte, err error) mdl.ToolResult {
+func buildToolResult(callID string, output []byte, err error) model.ToolResult {
 	if err != nil {
-		return mdl.ToolResult{
+		return model.ToolResult{
 			CallID:       callID,
-			ContentParts: []mdl.ContentPart{mdl.TextPart(err.Error())},
+			ContentParts: []model.ContentPart{model.TextPart(err.Error())},
 			IsError:      true,
 		}
 	}
-	return mdl.ToolResult{
+	return model.ToolResult{
 		CallID:       callID,
-		ContentParts: []mdl.ContentPart{mdl.TextPart(string(output))},
+		ContentParts: []model.ContentPart{model.TextPart(string(output))},
 	}
 }
 
@@ -368,7 +368,7 @@ func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
 	return nil
 }
 
-func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call mdl.ToolCall, repairedArgs json.RawMessage) mdl.ToolResult {
+func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call model.ToolCall, repairedArgs json.RawMessage) model.ToolResult {
 	err := fmt.Errorf("tool %q not found or not allowed in current turn", call.Name)
 	result := buildToolResult(call.ID, nil, err)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, tool.ToolSpec{}, result, 0, err)

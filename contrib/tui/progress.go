@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"slices"
 	"strings"
@@ -393,7 +393,7 @@ func summarizeTimelineToolResult(toolName, content string) string {
 	return truncateDisplayWidth(firstNonEmptyLine(trimmed), 72)
 }
 
-func summarizeTimelineApproval(req *intr.ApprovalRequest) string {
+func summarizeTimelineApproval(req *io.ApprovalRequest) string {
 	if req == nil {
 		return "approval required"
 	}
@@ -456,14 +456,14 @@ func progressPhaseLabel(phase string) string {
 }
 
 type executionProgressObserver struct {
-	kobs.NoOpObserver
+	observe.NoOpObserver
 	bridge    *BridgeIO
 	sessionID string
 	mu        sync.Mutex
 	state     executionProgressState
 }
 
-func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) kobs.Observer {
+func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) observe.Observer {
 	if bridge == nil || sess == nil || strings.TrimSpace(sess.ID) == "" {
 		return nil
 	}
@@ -477,7 +477,7 @@ func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) kobs.
 	}
 }
 
-func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event kobs.ExecutionEvent) {
+func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event observe.ExecutionEvent) {
 	if o == nil || o.bridge == nil || strings.TrimSpace(event.SessionID) != o.sessionID {
 		return
 	}
@@ -488,7 +488,7 @@ func (o *executionProgressObserver) OnExecutionEvent(_ context.Context, event ko
 	o.bridge.SendProgress(snapshot, false)
 }
 
-func foldExecutionProgressEvent(current executionProgressState, event kobs.ExecutionEvent) executionProgressState {
+func foldExecutionProgressEvent(current executionProgressState, event observe.ExecutionEvent) executionProgressState {
 	next := current
 	if id := strings.TrimSpace(event.SessionID); id != "" {
 		next.SessionID = id
@@ -497,7 +497,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 	if ts.IsZero() {
 		ts = time.Now().UTC()
 	}
-	if next.StartedAt.IsZero() && event.Type != kobs.ExecutionRunCompleted && event.Type != kobs.ExecutionRunFailed && event.Type != kobs.ExecutionRunCancelled {
+	if next.StartedAt.IsZero() && event.Type != observe.ExecutionRunCompleted && event.Type != observe.ExecutionRunFailed && event.Type != observe.ExecutionRunCancelled {
 		next.StartedAt = ts
 	}
 	next.UpdatedAt = ts
@@ -505,14 +505,14 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		next.MaxSteps = v
 	}
 	switch event.Type {
-	case kobs.ExecutionRunStarted:
+	case observe.ExecutionRunStarted:
 		next.Status = "running"
 		next.Phase = "starting"
 		next.Message = "run started"
 		next.ToolName = ""
 		next.ActivityKey = "run"
 		next.StartedAt = ts
-	case kobs.ExecutionIterationStarted:
+	case observe.ExecutionIterationStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -521,7 +521,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		}
 		next.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(next.Iteration, 1))
 		next.Message = fmt.Sprintf("iteration %d started", maxInt(next.Iteration, 1))
-	case kobs.ExecutionLLMStarted:
+	case observe.ExecutionLLMStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -531,7 +531,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		} else {
 			next.Message = "calling model"
 		}
-	case kobs.ExecutionToolStarted:
+	case observe.ExecutionToolStarted:
 		next.Status = "running"
 		next.Phase = "tools"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -541,7 +541,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		} else {
 			next.Message = "running tool"
 		}
-	case kobs.ExecutionApprovalRequest:
+	case observe.ExecutionApprovalRequest:
 		next.Status = "waiting"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -553,7 +553,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		} else {
 			next.Message = "approval required"
 		}
-	case kobs.ExecutionApprovalResolved:
+	case observe.ExecutionApprovalResolved:
 		next.Status = "running"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
@@ -565,7 +565,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		} else {
 			next.Message = "approval resolved"
 		}
-	case kobs.ExecutionIterationProgress:
+	case observe.ExecutionIterationProgress:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
@@ -591,7 +591,7 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		default:
 			next.Message = "iteration updated"
 		}
-	case kobs.ExecutionRunCompleted:
+	case observe.ExecutionRunCompleted:
 		next.Status = "completed"
 		next.Phase = "completed"
 		next.ToolName = ""
@@ -606,13 +606,13 @@ func foldExecutionProgressEvent(current executionProgressState, event kobs.Execu
 		default:
 			next.Message = "run completed"
 		}
-	case kobs.ExecutionRunFailed:
+	case observe.ExecutionRunFailed:
 		next.Status = "failed"
 		next.Phase = "failed"
 		next.ToolName = ""
 		next.ActivityKey = "run:failed"
 		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run failed")
-	case kobs.ExecutionRunCancelled:
+	case observe.ExecutionRunCancelled:
 		next.Status = "cancelled"
 		next.Phase = "cancelled"
 		next.ToolName = ""
@@ -661,10 +661,10 @@ func latestRunEntries(items []runtime.StateEntry) []runtime.StateEntry {
 	for _, item := range items {
 		collected = append(collected, item)
 		typ := stateEntryEventType(item)
-		if typ == kobs.ExecutionRunStarted {
+		if typ == observe.ExecutionRunStarted {
 			break
 		}
-		if typ == kobs.ExecutionIterationStarted || typ == kobs.ExecutionIterationProgress || typ == kobs.ExecutionRunCompleted || typ == kobs.ExecutionRunFailed || typ == kobs.ExecutionRunCancelled {
+		if typ == observe.ExecutionIterationStarted || typ == observe.ExecutionIterationProgress || typ == observe.ExecutionRunCompleted || typ == observe.ExecutionRunFailed || typ == observe.ExecutionRunCancelled {
 			sawProgress = true
 		}
 	}
@@ -685,9 +685,9 @@ type stateEntryExecutionMetadata struct {
 	Data        map[string]any `json:"data"`
 }
 
-func executionEventFromStateEntry(entry runtime.StateEntry) (kobs.ExecutionEvent, bool) {
+func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEvent, bool) {
 	if entry.Kind != runtime.StateKindExecutionEvent {
-		return kobs.ExecutionEvent{}, false
+		return observe.ExecutionEvent{}, false
 	}
 	meta := stateEntryExecutionMetadata{}
 	if len(entry.Metadata) > 0 {
@@ -698,35 +698,35 @@ func executionEventFromStateEntry(entry runtime.StateEntry) (kobs.ExecutionEvent
 		eventType = string(stateEntryEventType(entry))
 	}
 	if eventType == "" {
-		return kobs.ExecutionEvent{}, false
+		return observe.ExecutionEvent{}, false
 	}
 	ts := entry.SortTime.UTC()
 	if ts.IsZero() {
 		ts = firstTime(entry.UpdatedAt.UTC(), entry.CreatedAt.UTC(), time.Now().UTC())
 	}
-	return kobs.ExecutionEvent{
-		Type:        kobs.ExecutionEventType(eventType),
+	return observe.ExecutionEvent{
+		Type:        observe.ExecutionEventType(eventType),
 		SessionID:   strings.TrimSpace(entry.SessionID),
 		Timestamp:   ts,
 		ToolName:    strings.TrimSpace(meta.ToolName),
 		Model:       strings.TrimSpace(meta.Model),
 		Risk:        strings.TrimSpace(meta.Risk),
 		ReasonCode:  strings.TrimSpace(meta.ReasonCode),
-		Enforcement: intr.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
+		Enforcement: io.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
 		Duration:    time.Duration(meta.DurationMS) * time.Millisecond,
 		Error:       strings.TrimSpace(entry.Status),
 		Data:        meta.Data,
 	}, true
 }
 
-func stateEntryEventType(entry runtime.StateEntry) kobs.ExecutionEventType {
+func stateEntryEventType(entry runtime.StateEntry) observe.ExecutionEventType {
 	if len(entry.Metadata) > 0 {
 		var meta map[string]json.RawMessage
 		if err := json.Unmarshal(entry.Metadata, &meta); err == nil {
 			if raw, ok := meta["event_type"]; ok {
 				var eventType string
 				if json.Unmarshal(raw, &eventType) == nil && strings.TrimSpace(eventType) != "" {
-					return kobs.ExecutionEventType(strings.TrimSpace(eventType))
+					return observe.ExecutionEventType(strings.TrimSpace(eventType))
 				}
 			}
 		}
@@ -735,7 +735,7 @@ func stateEntryEventType(entry runtime.StateEntry) kobs.ExecutionEventType {
 	if idx := strings.Index(title, ":"); idx >= 0 {
 		title = title[:idx]
 	}
-	return kobs.ExecutionEventType(title)
+	return observe.ExecutionEventType(title)
 }
 
 func publishProgressReplay(bridge *BridgeIO, k *kernel.Kernel, sess *session.Session) {

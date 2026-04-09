@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
@@ -30,7 +30,7 @@ func BenchmarkToolCallDispatch(b *testing.B) {
 		Status: session.StatusRunning,
 		Budget: session.Budget{MaxSteps: 1000000},
 	}
-	call := mdl.ToolCall{
+	call := model.ToolCall{
 		ID:        "c1",
 		Name:      "echo",
 		Arguments: json.RawMessage(`{"msg":"hello"}`),
@@ -67,7 +67,7 @@ func BenchmarkHooksPipeline(b *testing.B) {
 		Status: session.StatusRunning,
 		Budget: session.Budget{MaxSteps: 1000000},
 	}
-	call := mdl.ToolCall{
+	call := model.ToolCall{
 		ID:        "c1",
 		Name:      "noop",
 		Arguments: json.RawMessage(`{}`),

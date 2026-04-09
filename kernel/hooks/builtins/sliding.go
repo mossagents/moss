@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // SlidingWindowConfig 配置滑动窗口上下文压缩行为。
@@ -13,9 +13,9 @@ type SlidingWindowConfig struct {
 	Enabled          *bool
 	WindowSize       int
 	MaxContextTokens int
-	Summarizer       func(ctx context.Context, msgs []mdl.Message) (string, error)
-	Tokenizer        mdl.Tokenizer
-	TokenCounter     func(mdl.Message) int
+	Summarizer       func(ctx context.Context, msgs []model.Message) (string, error)
+	Tokenizer        model.Tokenizer
+	TokenCounter     func(model.Message) int
 }
 
 func (c SlidingWindowConfig) windowSize() int {
@@ -32,7 +32,7 @@ func (c SlidingWindowConfig) maxContextTokens() int {
 	return c.MaxContextTokens
 }
 
-func (c SlidingWindowConfig) countTokens(msg mdl.Message) int {
+func (c SlidingWindowConfig) countTokens(msg model.Message) int {
 	if c.Tokenizer != nil {
 		return c.Tokenizer.CountMessage(msg)
 	}
@@ -71,9 +71,9 @@ func SlidingWindow(cfg SlidingWindowConfig) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		var systemMsgs, dialogMsgs []mdl.Message
+		var systemMsgs, dialogMsgs []model.Message
 		for _, m := range msgs {
-			if m.Role == mdl.RoleSystem {
+			if m.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)
@@ -95,12 +95,12 @@ func SlidingWindow(cfg SlidingWindowConfig) hooks.Hook[hooks.LLMEvent] {
 			}
 		}
 
-		summaryMsg := mdl.Message{
-			Role:         mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{mdl.TextPart(summaryText)},
+		summaryMsg := model.Message{
+			Role:         model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart(summaryText)},
 		}
 
-		newMsgs := make([]mdl.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+		newMsgs := make([]model.Message, 0, len(systemMsgs)+1+len(recentMsgs))
 		newMsgs = append(newMsgs, systemMsgs...)
 		newMsgs = append(newMsgs, summaryMsg)
 		newMsgs = append(newMsgs, recentMsgs...)

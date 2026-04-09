@@ -24,7 +24,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/gateway"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
@@ -105,7 +105,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 		Trust:     flags.Trust,
 		BaseURL:   flags.BaseURL,
 		APIKey:    flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Name:      provider,
@@ -123,7 +123,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 			activeRuntime = runtime
 			return k, nil
 		},
-		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error {
+		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io kernio.UserIO) error {
 			if activeRuntime != nil {
 				activeRuntime.startScheduler(ctx, k, io)
 			}
@@ -144,7 +144,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 }
 
 func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
-	userIO := intr.NewConsoleIO()
+	userIO := kernio.NewConsoleIO()
 	k, rt, err := buildMiniclawKernel(ctx, flags, userIO)
 	if err != nil {
 		return err
@@ -180,7 +180,7 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 	}, k)
 }
 
-func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {
+func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {
 	storeDir := filepath.Join(appconfig.AppDir(), "sessions")
 	store, err := session.NewFileStore(storeDir)
 	if err != nil {
@@ -213,7 +213,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io intr.Us
 	return k, &mossclawRuntime{flags: flags, store: store, sched: sched}, nil
 }
 
-func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io intr.UserIO) {
+func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io kernio.UserIO) {
 	_ = runtime.StartScheduledRunner(ctx, runtime.ScheduledRunnerConfig{
 		Kernel:       k,
 		Scheduler:    r.sched,
@@ -229,22 +229,22 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 			}, nil
 		},
 		BeforeRun: func(jobCtx context.Context, job scheduler.Job) {
-			_ = io.Send(jobCtx, intr.OutputMessage{
-				Type:    intr.OutputProgress,
+			_ = io.Send(jobCtx, kernio.OutputMessage{
+				Type:    kernio.OutputProgress,
 				Content: fmt.Sprintf("Scheduled task [%s] started: %s", job.ID, job.Goal),
 			})
 		},
-		RunIO: func(_ context.Context, job scheduler.Job) intr.UserIO {
+		RunIO: func(_ context.Context, job scheduler.Job) kernio.UserIO {
 			_ = job
 			return runtime.NewScheduledCaptureIO()
 		},
 		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
-			_ = io.Send(jobCtx, intr.OutputMessage{Type: intr.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
+			_ = io.Send(jobCtx, kernio.OutputMessage{Type: kernio.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
 		},
-		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ intr.UserIO) {
-			_ = io.Send(jobCtx, intr.OutputMessage{Type: intr.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
+		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ kernio.UserIO) {
+			_ = io.Send(jobCtx, kernio.OutputMessage{Type: kernio.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
 		},
-		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO intr.UserIO) {
+		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO kernio.UserIO) {
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
 				if capture, ok := runIO.(*runtime.ScheduledCaptureIO); ok {
@@ -252,13 +252,13 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 				}
 			}
 			if summary != "" {
-				_ = io.Send(jobCtx, intr.OutputMessage{
-					Type:    intr.OutputText,
+				_ = io.Send(jobCtx, kernio.OutputMessage{
+					Type:    kernio.OutputText,
 					Content: fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary),
 				})
 			}
-			_ = io.Send(jobCtx, intr.OutputMessage{
-				Type:    intr.OutputProgress,
+			_ = io.Send(jobCtx, kernio.OutputMessage{
+				Type:    kernio.OutputProgress,
 				Content: fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps),
 			})
 		},

@@ -6,28 +6,28 @@ import (
 	"sort"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // MessageScorer 对单条消息进行重要性评分。
 type MessageScorer interface {
-	Score(msg mdl.Message) float64
+	Score(msg model.Message) float64
 }
 
 // MessageScorerFunc 是 MessageScorer 的函数适配器。
-type MessageScorerFunc func(msg mdl.Message) float64
+type MessageScorerFunc func(msg model.Message) float64
 
-func (f MessageScorerFunc) Score(msg mdl.Message) float64 { return f(msg) }
+func (f MessageScorerFunc) Score(msg model.Message) float64 { return f(msg) }
 
 // RuleScorer 基于规则对消息进行重要性评分。
 type RuleScorer struct{}
 
-func (RuleScorer) Score(msg mdl.Message) float64 {
-	if msg.Role == mdl.RoleSystem {
+func (RuleScorer) Score(msg model.Message) float64 {
+	if msg.Role == model.RoleSystem {
 		return 1.0
 	}
 	score := 0.5
-	text := mdl.ContentPartsToPlainText(msg.ContentParts)
+	text := model.ContentPartsToPlainText(msg.ContentParts)
 	for _, kw := range []string{"error", "failed", "exception", "panic"} {
 		if containsLower(text, kw) {
 			score += 0.3
@@ -71,8 +71,8 @@ type PriorityConfig struct {
 	MinScore         float64
 	KeepRecent       int
 	MaxContextTokens int
-	Tokenizer        mdl.Tokenizer
-	TokenCounter     func(mdl.Message) int
+	Tokenizer        model.Tokenizer
+	TokenCounter     func(model.Message) int
 }
 
 func (c PriorityConfig) scorer() MessageScorer {
@@ -96,7 +96,7 @@ func (c PriorityConfig) maxContextTokens() int {
 	return c.MaxContextTokens
 }
 
-func (c PriorityConfig) countTokens(msg mdl.Message) int {
+func (c PriorityConfig) countTokens(msg model.Message) int {
 	if c.Tokenizer != nil {
 		return c.Tokenizer.CountMessage(msg)
 	}
@@ -135,9 +135,9 @@ func PriorityCompress(cfg PriorityConfig) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		var systemMsgs, dialogMsgs []mdl.Message
+		var systemMsgs, dialogMsgs []model.Message
 		for _, m := range msgs {
-			if m.Role == mdl.RoleSystem {
+			if m.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)
@@ -166,7 +166,7 @@ func PriorityCompress(cfg PriorityConfig) hooks.Hook[hooks.LLMEvent] {
 		}
 
 		type scoredMsg struct {
-			msg   mdl.Message
+			msg   model.Message
 			score float64
 			orig  int
 		}
@@ -191,7 +191,7 @@ func PriorityCompress(cfg PriorityConfig) hooks.Hook[hooks.LLMEvent] {
 			}
 		}
 
-		var keptMsgs []mdl.Message
+		var keptMsgs []model.Message
 		droppedCount := 0
 		for i, m := range candidateMsgs {
 			if kept[i] {
@@ -201,14 +201,14 @@ func PriorityCompress(cfg PriorityConfig) hooks.Hook[hooks.LLMEvent] {
 			}
 		}
 
-		newMsgs := make([]mdl.Message, 0, len(systemMsgs)+len(keptMsgs)+1+len(recentMsgs))
+		newMsgs := make([]model.Message, 0, len(systemMsgs)+len(keptMsgs)+1+len(recentMsgs))
 		newMsgs = append(newMsgs, systemMsgs...)
 		newMsgs = append(newMsgs, keptMsgs...)
 		if droppedCount > 0 {
-			noticeMsg := mdl.Message{
-				Role: mdl.RoleSystem,
-				ContentParts: []mdl.ContentPart{
-					mdl.TextPart(buildPriorityNotice(droppedCount, totalTokens, cfg.maxContextTokens())),
+			noticeMsg := model.Message{
+				Role: model.RoleSystem,
+				ContentParts: []model.ContentPart{
+					model.TextPart(buildPriorityNotice(droppedCount, totalTokens, cfg.maxContextTokens())),
 				},
 			}
 			newMsgs = append(newMsgs, noticeMsg)

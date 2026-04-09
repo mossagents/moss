@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	memstore "github.com/mossagents/moss/kernel/memory"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"os"
@@ -378,7 +378,7 @@ func (c *StateCatalog) Query(query StateQuery) (StatePage, error) {
 	return page, nil
 }
 
-func (c *StateCatalog) AppendExecutionEvent(event kobs.ExecutionEvent) error {
+func (c *StateCatalog) AppendExecutionEvent(event observe.ExecutionEvent) error {
 	if !c.Enabled() {
 		return nil
 	}
@@ -600,13 +600,13 @@ func sessionSortTime(sess *session.Session) time.Time {
 	return time.Now().UTC()
 }
 
-func LogicalCheckpointSessionID(item *ckpt.CheckpointRecord) string {
+func LogicalCheckpointSessionID(item *checkpoint.CheckpointRecord) string {
 	if item == nil {
 		return ""
 	}
 	sessionID := strings.TrimSpace(item.SessionID)
 	for _, ref := range item.Lineage {
-		if ref.Kind == ckpt.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+		if ref.Kind == checkpoint.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
 			sessionID = strings.TrimSpace(ref.ID)
 			break
 		}
@@ -614,7 +614,7 @@ func LogicalCheckpointSessionID(item *ckpt.CheckpointRecord) string {
 	return sessionID
 }
 
-func StateEntryFromCheckpoint(item *ckpt.CheckpointRecord) (StateEntry, bool) {
+func StateEntryFromCheckpoint(item *checkpoint.CheckpointRecord) (StateEntry, bool) {
 	if item == nil {
 		return StateEntry{}, false
 	}
@@ -735,7 +735,7 @@ func StateEntryFromJobItem(item taskrt.AgentJobItem) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromMemory(record memstore.MemoryRecord) (StateEntry, bool) {
+func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
 	if strings.TrimSpace(record.Path) == "" {
 		return StateEntry{}, false
 	}
@@ -748,7 +748,7 @@ func StateEntryFromMemory(record memstore.MemoryRecord) (StateEntry, bool) {
 		RecordID:   strings.TrimSpace(record.Path),
 		Workspace:  strings.TrimSpace(record.Workspace),
 		RepoRoot:   strings.TrimSpace(record.CWD),
-		Status:     firstNonEmpty(string(record.Status), string(memstore.MemoryStatusActive)),
+		Status:     firstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
 		Title:      firstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
 		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
@@ -776,7 +776,7 @@ func StateEntryFromMemory(record memstore.MemoryRecord) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromExecutionEvent(event kobs.ExecutionEvent) StateEntry {
+func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 	recordID := strings.TrimSpace(event.EventID)
 	if recordID == "" {
 		recordID = strings.TrimSpace(event.CallID)
@@ -832,7 +832,7 @@ func StateEntryFromExecutionEvent(event kobs.ExecutionEvent) StateEntry {
 	}
 }
 
-func executionEventJournalRecord(event kobs.ExecutionEvent) map[string]any {
+func executionEventJournalRecord(event observe.ExecutionEvent) map[string]any {
 	return map[string]any{
 		"event_id":      event.EventID,
 		"event_version": event.EventVersion,
@@ -906,18 +906,18 @@ func (s *indexedSessionStore) Watch(ctx context.Context, id string) (<-chan *ses
 }
 
 type indexedCheckpointStore struct {
-	inner   ckpt.CheckpointStore
+	inner   checkpoint.CheckpointStore
 	catalog *StateCatalog
 }
 
-func WrapCheckpointStore(store ckpt.CheckpointStore, catalog *StateCatalog) ckpt.CheckpointStore {
+func WrapCheckpointStore(store checkpoint.CheckpointStore, catalog *StateCatalog) checkpoint.CheckpointStore {
 	if store == nil || catalog == nil || !catalog.Enabled() {
 		return store
 	}
 	return &indexedCheckpointStore{inner: store, catalog: catalog}
 }
 
-func (s *indexedCheckpointStore) Create(ctx context.Context, req ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) Create(ctx context.Context, req checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error) {
 	record, err := s.inner.Create(ctx, req)
 	if err != nil {
 		return nil, err
@@ -928,15 +928,15 @@ func (s *indexedCheckpointStore) Create(ctx context.Context, req ckpt.Checkpoint
 	return record, nil
 }
 
-func (s *indexedCheckpointStore) Load(ctx context.Context, id string) (*ckpt.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) Load(ctx context.Context, id string) (*checkpoint.CheckpointRecord, error) {
 	return s.inner.Load(ctx, id)
 }
 
-func (s *indexedCheckpointStore) List(ctx context.Context) ([]ckpt.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) List(ctx context.Context) ([]checkpoint.CheckpointRecord, error) {
 	return s.inner.List(ctx)
 }
 
-func (s *indexedCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]ckpt.CheckpointRecord, error) {
+func (s *indexedCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]checkpoint.CheckpointRecord, error) {
 	return s.inner.FindBySession(ctx, sessionID)
 }
 
@@ -1090,18 +1090,18 @@ func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, ite
 }
 
 type stateCatalogObserver struct {
-	kobs.NoOpObserver
+	observe.NoOpObserver
 	catalog *StateCatalog
 }
 
-func NewStateCatalogObserver(catalog *StateCatalog) kobs.Observer {
+func NewStateCatalogObserver(catalog *StateCatalog) observe.Observer {
 	if catalog == nil || !catalog.Enabled() {
 		return nil
 	}
 	return &stateCatalogObserver{catalog: catalog}
 }
 
-func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event kobs.ExecutionEvent) {
+func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event observe.ExecutionEvent) {
 	if err := o.catalog.AppendExecutionEvent(event); err != nil {
 		o.catalog.markError(err)
 	}
@@ -1128,7 +1128,7 @@ func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
 	return state.catalog
 }
 
-func ObserverForStateCatalog(k *kernel.Kernel) kobs.Observer {
+func ObserverForStateCatalog(k *kernel.Kernel) observe.Observer {
 	return NewStateCatalogObserver(StateCatalogOf(k))
 }
 

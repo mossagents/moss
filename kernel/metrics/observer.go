@@ -2,8 +2,8 @@ package metrics
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"time"
 )
 
@@ -18,9 +18,9 @@ const (
 	MetricToolDurationSecs = "moss_tool_duration_seconds"
 )
 
-// MetricsObserver implements kobs.Observer by recording LLM and tool metrics.
+// MetricsObserver implements observe.Observer by recording LLM and tool metrics.
 type MetricsObserver struct {
-	kobs.NoOpObserver
+	observe.NoOpObserver
 
 	llmCalls     Counter
 	llmErrors    Counter
@@ -45,7 +45,7 @@ func NewObserver(c Collector) *MetricsObserver {
 }
 
 // OnLLMCall records LLM call metrics.
-func (o *MetricsObserver) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
+func (o *MetricsObserver) OnLLMCall(_ context.Context, e observe.LLMCallEvent) {
 	o.llmCalls.Inc()
 	if e.Error != nil {
 		o.llmErrors.Inc()
@@ -60,7 +60,7 @@ func (o *MetricsObserver) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 }
 
 // OnToolCall records tool call metrics.
-func (o *MetricsObserver) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
+func (o *MetricsObserver) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
 	o.toolCalls.Inc()
 	if e.Error != nil {
 		o.toolErrors.Inc()
@@ -70,20 +70,20 @@ func (o *MetricsObserver) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	}
 }
 
-// ensure MetricsObserver satisfies kobs.Observer at compile time
-var _ kobs.Observer = (*MetricsObserver)(nil)
+// ensure MetricsObserver satisfies observe.Observer at compile time
+var _ observe.Observer = (*MetricsObserver)(nil)
 
 // TokenUsage convenience re-export for callers building test events.
-type TokenUsage = mdl.TokenUsage
+type TokenUsage = model.TokenUsage
 
-// NewLLMCallEvent constructs a kobs.LLMCallEvent for testing purposes.
-func NewLLMCallEvent(sessionID, model string, start time.Time, dur time.Duration, promptToks, completionToks int, err error) kobs.LLMCallEvent {
-	return kobs.LLMCallEvent{
+// NewLLMCallEvent constructs a observe.LLMCallEvent for testing purposes.
+func NewLLMCallEvent(sessionID, modelName string, start time.Time, dur time.Duration, promptToks, completionToks int, err error) observe.LLMCallEvent {
+	return observe.LLMCallEvent{
 		SessionID: sessionID,
-		Model:     model,
+		Model:     modelName,
 		StartedAt: start,
 		Duration:  dur,
-		Usage: mdl.TokenUsage{
+		Usage: model.TokenUsage{
 			PromptTokens:     promptToks,
 			CompletionTokens: completionToks,
 		},

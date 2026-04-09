@@ -5,7 +5,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	kernelsession "github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"strings"
@@ -303,7 +303,7 @@ func renderThreadBrowseSummary(item product.ThreadBrowseSummary) string {
 
 func forkSourceTitle(source kernelsession.ForkSource) string {
 	switch source.Kind {
-	case ckpt.ForkSourceCheckpoint:
+	case checkpoint.ForkSourceCheckpoint:
 		return "checkpoint " + firstPopulatedString(source.CheckpointID, source.SourceID)
 	default:
 		return "thread " + firstPopulatedString(source.SessionID, source.SourceID)
@@ -314,7 +314,7 @@ func forkSourceSubtitle(source kernelsession.ForkSource) string {
 	if strings.TrimSpace(source.Label) != "" {
 		return source.Label
 	}
-	if source.Kind == ckpt.ForkSourceCheckpoint {
+	if source.Kind == checkpoint.ForkSourceCheckpoint {
 		return valueOrDefaultString(source.CheckpointID, source.SourceID)
 	}
 	return valueOrDefaultString(source.SessionID, source.SourceID)

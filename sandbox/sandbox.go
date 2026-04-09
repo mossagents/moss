@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 // Sandbox 是安全隔离层，所有文件与命令操作必须经由此接口。
@@ -19,13 +19,13 @@ type Sandbox interface {
 	// WriteFile 写入文件内容。
 	WriteFile(path string, content []byte) error
 	// Execute 执行命令。
-	Execute(ctx context.Context, req kws.ExecRequest) (kws.ExecOutput, error)
+	Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error)
 	// Limits 返回当前资源限制。
 	Limits() ResourceLimits
 }
 
 // Output 是命令执行的结果。
-type Output = kws.ExecOutput
+type Output = workspace.ExecOutput
 
 // ResourceLimits 表示 sandbox 的资源限制。
 // Zero values for limit fields mean "unlimited" (no enforcement).

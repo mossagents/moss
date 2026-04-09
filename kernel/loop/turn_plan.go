@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -38,7 +38,7 @@ type ToolRouteDecision struct {
 
 type ModelRoutePlan struct {
 	Lane         string               `json:"lane,omitempty"`
-	Requirements *mdl.TaskRequirement `json:"requirements,omitempty"`
+	Requirements *model.TaskRequirement `json:"requirements,omitempty"`
 	ReasonCodes  []string             `json:"reason_codes,omitempty"`
 }
 
@@ -181,7 +181,7 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 		req = cloneTaskRequirement(sess.Config.ModelConfig.Requirements)
 	}
 	if req == nil {
-		req = &mdl.TaskRequirement{}
+		req = &model.TaskRequirement{}
 	}
 	_, _, _, taskMode := session.ProfileMetadataValues(sess)
 	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
@@ -198,7 +198,7 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 		}
 		reasons = append(reasons, "lightweight_chat")
 	case len(visibleTools)+len(approvalTools) > 0:
-		addModelCapability(req, mdl.CapFunctionCalling)
+		addModelCapability(req, model.CapFunctionCalling)
 		reasons = append(reasons, "tool_route")
 		if len(visibleTools)+len(approvalTools) >= 4 {
 			lane = "tool-heavy"
@@ -207,10 +207,10 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 	switch taskMode {
 	case "planning", "research":
 		lane = "reasoning"
-		addModelCapability(req, mdl.CapReasoning)
+		addModelCapability(req, model.CapReasoning)
 		reasons = append(reasons, taskMode+"_mode")
 	case "coding":
-		addModelCapability(req, mdl.CapCodeGeneration)
+		addModelCapability(req, model.CapCodeGeneration)
 		reasons = append(reasons, "coding_mode")
 	}
 	if strings.EqualFold(strings.TrimSpace(firstNonEmptySessionMode(sess)), "background") && lane == "default" {
@@ -226,16 +226,16 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 	}
 }
 
-func cloneTaskRequirement(in *mdl.TaskRequirement) *mdl.TaskRequirement {
+func cloneTaskRequirement(in *model.TaskRequirement) *model.TaskRequirement {
 	if in == nil {
 		return nil
 	}
 	cp := *in
-	cp.Capabilities = append([]mdl.ModelCapability(nil), in.Capabilities...)
+	cp.Capabilities = append([]model.ModelCapability(nil), in.Capabilities...)
 	return &cp
 }
 
-func addModelCapability(req *mdl.TaskRequirement, cap mdl.ModelCapability) {
+func addModelCapability(req *model.TaskRequirement, cap model.ModelCapability) {
 	if req == nil {
 		return
 	}

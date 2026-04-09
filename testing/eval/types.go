@@ -18,7 +18,7 @@ package eval
 import (
 	"time"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // EvalCase 声明一个评测用例。
@@ -34,7 +34,7 @@ type EvalCase struct {
 // EvalInput 定义评测的输入条件。
 type EvalInput struct {
 	// Messages 是发给 Agent 的初始消息序列。
-	Messages []mdl.Message `yaml:"-" json:"messages,omitempty"`
+	Messages []model.Message `yaml:"-" json:"messages,omitempty"`
 	// RawMessages 是 YAML 友好的消息定义，加载时转换为 Messages。
 	RawMessages []RawMessage `yaml:"messages" json:"-"`
 	// Tools 限制可用工具集（空 = 使用 runner 默认工具集）。
@@ -118,7 +118,7 @@ type EvalRun struct {
 	StartedAt time.Time     `json:"started_at"`
 	Duration  time.Duration `json:"duration"`
 	Steps     int           `json:"steps"`
-	Messages  []mdl.Message `json:"messages"`
+	Messages  []model.Message `json:"messages"`
 	ToolCalls []ToolCallLog `json:"tool_calls,omitempty"`
 	Output    string        `json:"output"`
 	Error     string        `json:"error,omitempty"`

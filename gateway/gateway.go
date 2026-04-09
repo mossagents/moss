@@ -15,7 +15,7 @@ import (
 	"fmt"
 	kchannel "github.com/mossagents/moss/kernel/channel"
 	"github.com/mossagents/moss/kernel/loop"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"sync"
 	"time"
@@ -228,7 +228,7 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	}
 
 	// 2. 追加用户消息
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(msg.Content)}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}})
 
 	// 3. 运行 Agent Loop
 	result, err := gw.kernel.Run(ctx, sess)

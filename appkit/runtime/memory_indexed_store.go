@@ -2,24 +2,24 @@ package runtime
 
 import (
 	"context"
-	memstore "github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/memory"
 	"io"
 	"time"
 )
 
 type indexedMemoryStore struct {
-	base    memstore.MemoryStore
+	base    memory.MemoryStore
 	catalog *StateCatalog
 }
 
-func newIndexedMemoryStore(base memstore.MemoryStore, catalog *StateCatalog) memstore.MemoryStore {
+func newIndexedMemoryStore(base memory.MemoryStore, catalog *StateCatalog) memory.MemoryStore {
 	if base == nil || catalog == nil || !catalog.Enabled() {
 		return base
 	}
 	return &indexedMemoryStore{base: base, catalog: catalog}
 }
 
-func (s *indexedMemoryStore) Upsert(ctx context.Context, record memstore.MemoryRecord) (*memstore.MemoryRecord, error) {
+func (s *indexedMemoryStore) Upsert(ctx context.Context, record memory.MemoryRecord) (*memory.MemoryRecord, error) {
 	out, err := s.base.Upsert(ctx, record)
 	if err != nil {
 		return nil, err
@@ -28,7 +28,7 @@ func (s *indexedMemoryStore) Upsert(ctx context.Context, record memstore.MemoryR
 	return out, nil
 }
 
-func (s *indexedMemoryStore) GetByPath(ctx context.Context, path string) (*memstore.MemoryRecord, error) {
+func (s *indexedMemoryStore) GetByPath(ctx context.Context, path string) (*memory.MemoryRecord, error) {
 	return s.base.GetByPath(ctx, path)
 }
 
@@ -39,11 +39,11 @@ func (s *indexedMemoryStore) DeleteByPath(ctx context.Context, path string) erro
 	return s.catalog.Delete(StateKindMemory, normalizeMemoryPath(path))
 }
 
-func (s *indexedMemoryStore) List(ctx context.Context, limit int) ([]memstore.MemoryRecord, error) {
+func (s *indexedMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
 	return s.base.List(ctx, limit)
 }
 
-func (s *indexedMemoryStore) Search(ctx context.Context, query memstore.MemoryQuery) ([]memstore.MemoryRecord, error) {
+func (s *indexedMemoryStore) Search(ctx context.Context, query memory.MemoryQuery) ([]memory.MemoryRecord, error) {
 	return s.base.Search(ctx, query)
 }
 
@@ -69,7 +69,7 @@ func (s *indexedMemoryStore) Close() error {
 	return closer.Close()
 }
 
-func (s *indexedMemoryStore) syncRecord(record memstore.MemoryRecord) {
+func (s *indexedMemoryStore) syncRecord(record memory.MemoryRecord) {
 	if entry, ok := StateEntryFromMemory(record); ok {
 		if err := s.catalog.Upsert(entry); err != nil {
 			s.catalog.markError(err)

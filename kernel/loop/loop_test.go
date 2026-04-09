@@ -1,4 +1,4 @@
-package loop
+﻿package loop
 
 import (
 	"context"
@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	kernio "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
@@ -25,11 +25,11 @@ import (
 
 func TestLoopTextOnly(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello!")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Hello!")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 10},
+				Usage:      model.TokenUsage{TotalTokens: 10},
 			},
 		},
 	}
@@ -44,7 +44,7 @@ func TestLoopTextOnly(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-1",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -65,10 +65,10 @@ func TestLoopTextOnly(t *testing.T) {
 
 func TestLoopStreamingReasoning(t *testing.T) {
 	mock := &kt.MockStreamingLLM{
-		Chunks: [][]mdl.StreamChunk{{
+		Chunks: [][]model.StreamChunk{{
 			{ReasoningDelta: "First inspect the redirect. "},
 			{ReasoningDelta: "Then query the weather endpoint."},
-			{Delta: "Hangzhou is cloudy.", Done: true, Usage: &mdl.TokenUsage{TotalTokens: 10}},
+			{Delta: "Hangzhou is cloudy.", Done: true, Usage: &model.TokenUsage{TotalTokens: 10}},
 		}},
 	}
 	io := kt.NewRecorderIO()
@@ -81,7 +81,7 @@ func TestLoopStreamingReasoning(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-reasoning-stream",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("weather?")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("weather?")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -92,12 +92,12 @@ func TestLoopStreamingReasoning(t *testing.T) {
 	if !result.Success {
 		t.Fatalf("expected success, got error: %s", result.Error)
 	}
-	if got := mdl.ContentPartsToReasoningText(sess.Messages[len(sess.Messages)-1].ContentParts); got != "First inspect the redirect. Then query the weather endpoint." {
+	if got := model.ContentPartsToReasoningText(sess.Messages[len(sess.Messages)-1].ContentParts); got != "First inspect the redirect. Then query the weather endpoint." {
 		t.Fatalf("session reasoning = %q", got)
 	}
 	foundReasoning := false
 	for _, msg := range io.Sent {
-		if msg.Type == intr.OutputReasoning {
+		if msg.Type == kernio.OutputReasoning {
 			foundReasoning = true
 			break
 		}
@@ -109,21 +109,21 @@ func TestLoopStreamingReasoning(t *testing.T) {
 
 func TestLoopToolCall(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message: mdl.Message{
-					Role:         mdl.RoleAssistant,
-					ContentParts: []mdl.ContentPart{mdl.TextPart("")},
-					ToolCalls:    []mdl.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+				Message: model.Message{
+					Role:         model.RoleAssistant,
+					ContentParts: []model.ContentPart{model.TextPart("")},
+					ToolCalls:    []model.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 				},
-				ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+				ToolCalls:  []model.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 15},
+				Usage:      model.TokenUsage{TotalTokens: 15},
 			},
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("Done!")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Done!")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 10},
+				Usage:      model.TokenUsage{TotalTokens: 10},
 			},
 		},
 	}
@@ -145,7 +145,7 @@ func TestLoopToolCall(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-2",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Greet the world")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Greet the world")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -164,10 +164,10 @@ func TestLoopToolCall(t *testing.T) {
 	hasToolStart := false
 	hasToolResult := false
 	for _, msg := range io.Sent {
-		if msg.Type == intr.OutputToolStart {
+		if msg.Type == kernio.OutputToolStart {
 			hasToolStart = true
 		}
-		if msg.Type == intr.OutputToolResult {
+		if msg.Type == kernio.OutputToolResult {
 			hasToolResult = true
 		}
 	}
@@ -178,11 +178,11 @@ func TestLoopToolCall(t *testing.T) {
 
 func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("你好！有什么我可以帮你的？")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("你好！有什么我可以帮你的？")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 8},
+				Usage:      model.TokenUsage{TotalTokens: 8},
 			},
 		},
 	}
@@ -198,10 +198,10 @@ func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 	}
 	sess := &session.Session{
 		ID: "test-greeting-no-tools",
-		Messages: []mdl.Message{
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("继续分析项目结构")}},
-			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("我先读取 README")}},
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("你好")}},
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("继续分析项目结构")}},
+			{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("我先读取 README")}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("你好")}},
 		},
 		Budget: session.Budget{MaxSteps: 4},
 	}
@@ -217,18 +217,18 @@ func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 	if len(mock.Calls[0].Messages) != 1 {
 		t.Fatalf("messages=%d, want 1", len(mock.Calls[0].Messages))
 	}
-	if got := mdl.ContentPartsToPlainText(mock.Calls[0].Messages[0].ContentParts); got != "你好" {
+	if got := model.ContentPartsToPlainText(mock.Calls[0].Messages[0].ContentParts); got != "你好" {
 		t.Fatalf("prompt message=%q, want 你好", got)
 	}
 }
 
 func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("Plan first.")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Plan first.")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 12},
+				Usage:      model.TokenUsage{TotalTokens: 12},
 			},
 		},
 	}
@@ -260,7 +260,7 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 				session.MetadataEffectiveApproval: "confirm",
 			},
 		},
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Please plan the refactor")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Please plan the refactor")}}},
 		Budget:   session.Budget{MaxSteps: 4},
 	}
 	if _, err := l.Run(context.Background(), sess); err != nil {
@@ -275,7 +275,7 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 	if mock.Calls[0].Config.Requirements == nil || mock.Calls[0].Config.Requirements.Lane != "reasoning" {
 		t.Fatalf("unexpected model lane: %+v", mock.Calls[0].Config.Requirements)
 	}
-	if !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, mdl.CapReasoning) || !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, mdl.CapFunctionCalling) {
+	if !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, model.CapReasoning) || !slices.Contains(mock.Calls[0].Config.Requirements.Capabilities, model.CapFunctionCalling) {
 		t.Fatalf("unexpected capabilities: %+v", mock.Calls[0].Config.Requirements.Capabilities)
 	}
 	if got := sess.Config.Metadata[session.MetadataModelLane]; got != "reasoning" {
@@ -286,7 +286,7 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 	}
 	foundToolRouteEvent := false
 	for _, event := range observer.execution {
-		if event.Type == kobs.ExecutionEventType("tool.route_planned") {
+		if event.Type == observe.ExecutionEventType("tool.route_planned") {
 			foundToolRouteEvent = true
 			if event.EventID == "" || event.RunID != "run-phase2" || event.TurnID == "" {
 				t.Fatalf("unexpected route event envelope: %+v", event)
@@ -308,20 +308,20 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 
 func TestLoopHiddenToolCallReturnsNotAllowedError(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message: mdl.Message{
-					Role:      mdl.RoleAssistant,
-					ToolCalls: []mdl.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
+				Message: model.Message{
+					Role:      model.RoleAssistant,
+					ToolCalls: []model.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
 				},
-				ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
+				ToolCalls:  []model.ToolCall{{ID: "c1", Name: "write_file", Arguments: json.RawMessage(`{"path":"x","content":"y"}`)}},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 10},
+				Usage:      model.TokenUsage{TotalTokens: 10},
 			},
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 8},
+				Usage:      model.TokenUsage{TotalTokens: 8},
 			},
 		},
 	}
@@ -342,7 +342,7 @@ func TestLoopHiddenToolCallReturnsNotAllowedError(t *testing.T) {
 				session.MetadataTaskMode: "planning",
 			},
 		},
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Plan the change")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Plan the change")}}},
 		Budget:   session.Budget{MaxSteps: 4},
 	}
 	if _, err := l.Run(context.Background(), sess); err != nil {
@@ -352,21 +352,21 @@ func TestLoopHiddenToolCallReturnsNotAllowedError(t *testing.T) {
 		t.Fatalf("expected tool result message, got %+v", sess.Messages)
 	}
 	toolMsg := sess.Messages[2]
-	if toolMsg.Role != mdl.RoleTool || len(toolMsg.ToolResults) != 1 {
+	if toolMsg.Role != model.RoleTool || len(toolMsg.ToolResults) != 1 {
 		t.Fatalf("unexpected tool message: %+v", toolMsg)
 	}
-	if got := mdl.ContentPartsToPlainText(toolMsg.ToolResults[0].ContentParts); !strings.Contains(got, "not allowed in current turn") {
+	if got := model.ContentPartsToPlainText(toolMsg.ToolResults[0].ContentParts); !strings.Contains(got, "not allowed in current turn") {
 		t.Fatalf("unexpected tool error: %q", got)
 	}
 }
 
 func TestLoopExecutionProgressEvents(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 9},
+				Usage:      model.TokenUsage{TotalTokens: 9},
 			},
 		},
 	}
@@ -380,23 +380,23 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-progress-events",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	if _, err := l.Run(context.Background(), sess); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	types := make([]kobs.ExecutionEventType, 0, len(observer.execution))
+	types := make([]observe.ExecutionEventType, 0, len(observer.execution))
 	for _, event := range observer.execution {
 		types = append(types, event.Type)
 	}
-	wantOrder := []kobs.ExecutionEventType{
-		kobs.ExecutionRunStarted,
-		kobs.ExecutionIterationStarted,
-		kobs.ExecutionLLMStarted,
-		kobs.ExecutionLLMCompleted,
-		kobs.ExecutionIterationProgress,
-		kobs.ExecutionRunCompleted,
+	wantOrder := []observe.ExecutionEventType{
+		observe.ExecutionRunStarted,
+		observe.ExecutionIterationStarted,
+		observe.ExecutionLLMStarted,
+		observe.ExecutionLLMCompleted,
+		observe.ExecutionIterationProgress,
+		observe.ExecutionRunCompleted,
 	}
 	lastIndex := -1
 	for _, want := range wantOrder {
@@ -412,10 +412,10 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 		}
 		lastIndex = found
 	}
-	var progress kobs.ExecutionEvent
+	var progress observe.ExecutionEvent
 	found := false
 	for _, event := range observer.execution {
-		if event.Type == kobs.ExecutionIterationProgress {
+		if event.Type == observe.ExecutionIterationProgress {
 			progress = event
 			found = true
 			break
@@ -433,10 +433,10 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	if progress.EventID == "" || progress.EventVersion != 1 || progress.Phase != "iteration" || progress.PayloadKind != "iteration" {
 		t.Fatalf("unexpected progress envelope: %+v", progress)
 	}
-	var completed kobs.ExecutionEvent
+	var completed observe.ExecutionEvent
 	found = false
 	for _, event := range observer.execution {
-		if event.Type == kobs.ExecutionRunCompleted {
+		if event.Type == observe.ExecutionRunCompleted {
 			completed = event
 			found = true
 			break
@@ -452,20 +452,20 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 
 func TestLoopPolicyDeny(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message: mdl.Message{
-					Role:      mdl.RoleAssistant,
-					ToolCalls: []mdl.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+				Message: model.Message{
+					Role:      model.RoleAssistant,
+					ToolCalls: []model.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
 				},
-				ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+				ToolCalls:  []model.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 10},
+				Usage:      model.TokenUsage{TotalTokens: 10},
 			},
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("Ok")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Ok")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 5},
+				Usage:      model.TokenUsage{TotalTokens: 5},
 			},
 		},
 	}
@@ -492,7 +492,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-3",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Do something dangerous")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Do something dangerous")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -507,10 +507,10 @@ func TestLoopPolicyDeny(t *testing.T) {
 
 	// 验证 tool result 包含 denied 错误
 	found := false
-	var toolResultMsg *intr.OutputMessage
+	var toolResultMsg *kernio.OutputMessage
 	for _, msg := range sess.Messages {
 		for _, tr := range msg.ToolResults {
-			if tr.IsError && mdl.ContentPartsToPlainText(tr.ContentParts) == builtins.ErrDenied.Error() {
+			if tr.IsError && model.ContentPartsToPlainText(tr.ContentParts) == builtins.ErrDenied.Error() {
 				found = true
 			}
 		}
@@ -520,7 +520,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 	for i := range io.Sent {
 		msg := &io.Sent[i]
-		if msg.Type == intr.OutputToolResult {
+		if msg.Type == kernio.OutputToolResult {
 			toolResultMsg = msg
 			break
 		}
@@ -528,8 +528,8 @@ func TestLoopPolicyDeny(t *testing.T) {
 	if toolResultMsg == nil {
 		t.Fatal("expected tool_result message")
 	}
-	if got := toolResultMsg.Meta["error_code"]; got != string(kerrors.ErrPolicyDenied) {
-		t.Fatalf("expected error_code %s, got %v", kerrors.ErrPolicyDenied, got)
+	if got := toolResultMsg.Meta["error_code"]; got != string(errors.ErrPolicyDenied) {
+		t.Fatalf("expected error_code %s, got %v", errors.ErrPolicyDenied, got)
 	}
 	if got := toolResultMsg.Meta["reason_code"]; got != "tool.denied" {
 		t.Fatalf("expected reason_code tool.denied, got %v", got)
@@ -538,11 +538,11 @@ func TestLoopPolicyDeny(t *testing.T) {
 
 func TestLoopBudgetExhausted(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("step 1")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("step 1")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 100},
+				Usage:      model.TokenUsage{TotalTokens: 100},
 			},
 		},
 	}
@@ -556,7 +556,7 @@ func TestLoopBudgetExhausted(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-4",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("test")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("test")}}},
 		Budget:   session.Budget{MaxSteps: 1},
 	}
 
@@ -571,11 +571,11 @@ func TestLoopBudgetExhausted(t *testing.T) {
 
 func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("large token response")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("large token response")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 11},
+				Usage:      model.TokenUsage{TotalTokens: 11},
 			},
 		},
 	}
@@ -589,7 +589,7 @@ func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 	sess := &session.Session{
 		ID:       "budget-tokens",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("test")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("test")}}},
 		Budget:   session.Budget{MaxTokens: 10, MaxSteps: 10},
 	}
 
@@ -610,26 +610,26 @@ func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 
 func TestLoopParallelToolCalls(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message: mdl.Message{
-					Role: mdl.RoleAssistant,
-					ToolCalls: []mdl.ToolCall{
+				Message: model.Message{
+					Role: model.RoleAssistant,
+					ToolCalls: []model.ToolCall{
 						{ID: "c1", Name: "slow_one", Arguments: json.RawMessage(`{}`)},
 						{ID: "c2", Name: "slow_two", Arguments: json.RawMessage(`{}`)},
 					},
 				},
-				ToolCalls: []mdl.ToolCall{
+				ToolCalls: []model.ToolCall{
 					{ID: "c1", Name: "slow_one", Arguments: json.RawMessage(`{}`)},
 					{ID: "c2", Name: "slow_two", Arguments: json.RawMessage(`{}`)},
 				},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 10},
+				Usage:      model.TokenUsage{TotalTokens: 10},
 			},
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 5},
+				Usage:      model.TokenUsage{TotalTokens: 5},
 			},
 		},
 	}
@@ -666,7 +666,7 @@ func TestLoopParallelToolCalls(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-parallel",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("run both tools")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("run both tools")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -724,7 +724,7 @@ func TestAdmitToolCallBatches_SerializesConflictingWorkspaceWrites(t *testing.T)
 		},
 	}
 
-	batches := l.admitToolCallBatches([]mdl.ToolCall{
+	batches := l.admitToolCallBatches([]model.ToolCall{
 		{ID: "c1", Name: "write_one", Arguments: json.RawMessage(`{}`)},
 		{ID: "c2", Name: "write_two", Arguments: json.RawMessage(`{}`)},
 	})
@@ -749,7 +749,7 @@ func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
 	sess := &session.Session{
 		ID:       "cancelled-loop",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -805,17 +805,17 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 	l := &AgentLoop{Tools: reg, IO: kt.NewRecorderIO()}
 	sess := &session.Session{ID: "sess-json-repair", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
 
-	call := mdl.ToolCall{
+	call := model.ToolCall{
 		ID:        "c1",
 		Name:      "echo_json",
 		Arguments: json.RawMessage(`{"a":1`),
 	}
 	result := l.executeSingleToolCall(context.Background(), sess, call)
 	if result.IsError {
-		t.Fatalf("expected repaired args to succeed, got error: %s", mdl.ContentPartsToPlainText(result.ContentParts))
+		t.Fatalf("expected repaired args to succeed, got error: %s", model.ContentPartsToPlainText(result.ContentParts))
 	}
 	var out map[string]any
-	if err := json.Unmarshal([]byte(mdl.ContentPartsToPlainText(result.ContentParts)), &out); err != nil {
+	if err := json.Unmarshal([]byte(model.ContentPartsToPlainText(result.ContentParts)), &out); err != nil {
 		t.Fatalf("decode result: %v", err)
 	}
 	if out["a"] != float64(1) {
@@ -841,17 +841,17 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 		Observer: observer,
 	}
 	sess := &session.Session{ID: "sess-policy-meta", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
-	call := mdl.ToolCall{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}
+	call := model.ToolCall{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}
 
 	result := l.executeSingleToolCall(context.Background(), sess, call)
 	if !result.IsError {
 		t.Fatalf("expected denied tool result, got %+v", result)
 	}
 
-	var toolCompleted *kobs.ExecutionEvent
+	var toolCompleted *observe.ExecutionEvent
 	for i := range observer.execution {
 		ev := &observer.execution[i]
-		if ev.Type == kobs.ExecutionToolCompleted {
+		if ev.Type == observe.ExecutionToolCompleted {
 			toolCompleted = ev
 			break
 		}
@@ -859,8 +859,8 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 	if toolCompleted == nil {
 		t.Fatal("expected tool.completed event")
 	}
-	if got := toolCompleted.Data["error_code"]; got != string(kerrors.ErrPolicyDenied) {
-		t.Fatalf("expected error_code %s, got %v", kerrors.ErrPolicyDenied, got)
+	if got := toolCompleted.Data["error_code"]; got != string(errors.ErrPolicyDenied) {
+		t.Fatalf("expected error_code %s, got %v", errors.ErrPolicyDenied, got)
 	}
 	if got := toolCompleted.Data["reason_code"]; got != "tool.denied" {
 		t.Fatalf("expected reason_code tool.denied, got %v", got)
@@ -869,7 +869,7 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 
 func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
 	observer := &recordingObserver{}
-	loopErr := kerrors.New(kerrors.ErrLLMCall, "llm failed")
+	loopErr := errors.New(errors.ErrLLMCall, "llm failed")
 	l := &AgentLoop{
 		LLM:      &errorLLM{err: loopErr},
 		Tools:    tool.NewRegistry(),
@@ -879,16 +879,16 @@ func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-llm-error-code",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	if _, err := l.Run(context.Background(), sess); err == nil {
 		t.Fatal("expected run to fail")
 	}
-	var llmCompleted *kobs.ExecutionEvent
+	var llmCompleted *observe.ExecutionEvent
 	for i := range observer.execution {
 		ev := &observer.execution[i]
-		if ev.Type == kobs.ExecutionLLMCompleted && ev.Error != "" {
+		if ev.Type == observe.ExecutionLLMCompleted && ev.Error != "" {
 			llmCompleted = ev
 			break
 		}
@@ -896,14 +896,14 @@ func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
 	if llmCompleted == nil {
 		t.Fatal("expected llm.completed error event")
 	}
-	if got := llmCompleted.Data["error_code"]; got != string(kerrors.ErrLLMCall) {
-		t.Fatalf("expected error_code %s, got %v", kerrors.ErrLLMCall, got)
+	if got := llmCompleted.Data["error_code"]; got != string(errors.ErrLLMCall) {
+		t.Fatalf("expected error_code %s, got %v", errors.ErrLLMCall, got)
 	}
 }
 
 func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	observer := &recordingObserver{}
-	loopErr := kerrors.New(kerrors.ErrLLMCall, "llm failed")
+	loopErr := errors.New(errors.ErrLLMCall, "llm failed")
 	l := &AgentLoop{
 		LLM:      &errorLLM{err: loopErr},
 		Tools:    tool.NewRegistry(),
@@ -913,16 +913,16 @@ func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-run-failed-error-code",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 5},
 	}
 	if _, err := l.Run(context.Background(), sess); err == nil {
 		t.Fatal("expected run to fail")
 	}
-	var runFailed *kobs.ExecutionEvent
+	var runFailed *observe.ExecutionEvent
 	for i := range observer.execution {
 		ev := &observer.execution[i]
-		if ev.Type == kobs.ExecutionRunFailed {
+		if ev.Type == observe.ExecutionRunFailed {
 			runFailed = ev
 			break
 		}
@@ -930,8 +930,8 @@ func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	if runFailed == nil {
 		t.Fatal("expected run.failed event")
 	}
-	if got := runFailed.Data["error_code"]; got != string(kerrors.ErrLLMCall) {
-		t.Fatalf("expected error_code %s, got %v", kerrors.ErrLLMCall, got)
+	if got := runFailed.Data["error_code"]; got != string(errors.ErrLLMCall) {
+		t.Fatalf("expected error_code %s, got %v", errors.ErrLLMCall, got)
 	}
 }
 
@@ -939,7 +939,7 @@ type blockingLLM struct {
 	calls int32
 }
 
-func (b *blockingLLM) Complete(ctx context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (b *blockingLLM) Complete(ctx context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	atomic.AddInt32(&b.calls, 1)
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -948,18 +948,18 @@ func (b *blockingLLM) Complete(ctx context.Context, _ mdl.CompletionRequest) (*m
 type flakyLLM struct {
 	failures int32
 	calls    int32
-	resp     mdl.CompletionResponse
+	resp     model.CompletionResponse
 }
 
 type errorLLM struct {
 	err error
 }
 
-func (e *errorLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (e *errorLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	return nil, e.err
 }
 
-func (f *flakyLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (f *flakyLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	call := atomic.AddInt32(&f.calls, 1)
 	if call <= f.failures {
 		return nil, context.DeadlineExceeded
@@ -971,18 +971,18 @@ func (f *flakyLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.Co
 type flakyStreamingLLM struct {
 	failures int32
 	calls    int32
-	chunks   []mdl.StreamChunk
-	resp     *mdl.CompletionResponse
+	chunks   []model.StreamChunk
+	resp     *model.CompletionResponse
 }
 
-func (f *flakyStreamingLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (f *flakyStreamingLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	if f.resp != nil {
 		return f.resp, nil
 	}
 	return nil, context.DeadlineExceeded
 }
 
-func (f *flakyStreamingLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (f *flakyStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	call := atomic.AddInt32(&f.calls, 1)
 	if call <= f.failures {
 		return &errIterator{err: context.DeadlineExceeded}, nil
@@ -991,13 +991,13 @@ func (f *flakyStreamingLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (
 }
 
 type sliceIterator struct {
-	chunks []mdl.StreamChunk
+	chunks []model.StreamChunk
 	index  int
 }
 
-func (it *sliceIterator) Next() (mdl.StreamChunk, error) {
+func (it *sliceIterator) Next() (model.StreamChunk, error) {
 	if it.index >= len(it.chunks) {
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 	chunk := it.chunks[it.index]
 	it.index++
@@ -1011,38 +1011,38 @@ type errIterator struct {
 	called bool
 }
 
-func (it *errIterator) Next() (mdl.StreamChunk, error) {
+func (it *errIterator) Next() (model.StreamChunk, error) {
 	if it.called {
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 	it.called = true
-	return mdl.StreamChunk{}, it.err
+	return model.StreamChunk{}, it.err
 }
 
 func (it *errIterator) Close() error { return nil }
 
 type metadataStreamingLLM struct {
-	chunks   []mdl.StreamChunk
-	metadata mdl.LLMCallMetadata
+	chunks   []model.StreamChunk
+	metadata model.LLMCallMetadata
 }
 
-func (m *metadataStreamingLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (m *metadataStreamingLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	return nil, context.DeadlineExceeded
 }
 
-func (m *metadataStreamingLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (m *metadataStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	return &metadataIterator{chunks: m.chunks, metadata: m.metadata}, nil
 }
 
 type metadataIterator struct {
-	chunks   []mdl.StreamChunk
+	chunks   []model.StreamChunk
 	index    int
-	metadata mdl.LLMCallMetadata
+	metadata model.LLMCallMetadata
 }
 
-func (it *metadataIterator) Next() (mdl.StreamChunk, error) {
+func (it *metadataIterator) Next() (model.StreamChunk, error) {
 	if it.index >= len(it.chunks) {
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 	chunk := it.chunks[it.index]
 	it.index++
@@ -1051,21 +1051,21 @@ func (it *metadataIterator) Next() (mdl.StreamChunk, error) {
 
 func (it *metadataIterator) Close() error { return nil }
 
-func (it *metadataIterator) Metadata() mdl.LLMCallMetadata { return it.metadata }
+func (it *metadataIterator) Metadata() model.LLMCallMetadata { return it.metadata }
 
 type postEmissionErrorLLM struct {
 	completeCalls int32
 }
 
-func (p *postEmissionErrorLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (p *postEmissionErrorLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	atomic.AddInt32(&p.completeCalls, 1)
-	return &mdl.CompletionResponse{
-		Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("fallback")}},
+	return &model.CompletionResponse{
+		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("fallback")}},
 		StopReason: "end_turn",
 	}, nil
 }
 
-func (p *postEmissionErrorLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (p *postEmissionErrorLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	return &postEmissionIterator{}, nil
 }
 
@@ -1073,13 +1073,13 @@ type postEmissionIterator struct {
 	calls int
 }
 
-func (it *postEmissionIterator) Next() (mdl.StreamChunk, error) {
+func (it *postEmissionIterator) Next() (model.StreamChunk, error) {
 	it.calls++
 	switch it.calls {
 	case 1:
-		return mdl.StreamChunk{Delta: "partial"}, nil
+		return model.StreamChunk{Delta: "partial"}, nil
 	default:
-		return mdl.StreamChunk{}, context.DeadlineExceeded
+		return model.StreamChunk{}, context.DeadlineExceeded
 	}
 }
 
@@ -1089,46 +1089,46 @@ type toolThenErrIterator struct {
 	calls int
 }
 
-func (it *toolThenErrIterator) Next() (mdl.StreamChunk, error) {
+func (it *toolThenErrIterator) Next() (model.StreamChunk, error) {
 	it.calls++
 	switch it.calls {
 	case 1:
-		tc := mdl.ToolCall{ID: "call_t", Name: "noop", Arguments: json.RawMessage(`{"x":1}`)}
-		return mdl.StreamChunk{ToolCall: &tc}, nil
+		tc := model.ToolCall{ID: "call_t", Name: "noop", Arguments: json.RawMessage(`{"x":1}`)}
+		return model.StreamChunk{ToolCall: &tc}, nil
 	case 2:
-		return mdl.StreamChunk{}, io.ErrUnexpectedEOF
+		return model.StreamChunk{}, io.ErrUnexpectedEOF
 	default:
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 }
 
 func (it *toolThenErrIterator) Close() error { return nil }
 
 type recordingObserver struct {
-	llmCalls  []kobs.LLMCallEvent
-	execution []kobs.ExecutionEvent
-	errors    []kobs.ErrorEvent
+	llmCalls  []observe.LLMCallEvent
+	execution []observe.ExecutionEvent
+	errors    []observe.ErrorEvent
 }
 
-func (o *recordingObserver) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
+func (o *recordingObserver) OnLLMCall(_ context.Context, e observe.LLMCallEvent) {
 	o.llmCalls = append(o.llmCalls, e)
 }
 
-func (o *recordingObserver) OnToolCall(context.Context, kobs.ToolCallEvent) {}
+func (o *recordingObserver) OnToolCall(context.Context, observe.ToolCallEvent) {}
 
-func (o *recordingObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
+func (o *recordingObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	o.execution = append(o.execution, e)
 }
 
-func (o *recordingObserver) OnApproval(context.Context, intr.ApprovalEvent)    {}
-func (o *recordingObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
-func (o *recordingObserver) OnError(_ context.Context, e kobs.ErrorEvent) {
+func (o *recordingObserver) OnApproval(context.Context, kernio.ApprovalEvent)    {}
+func (o *recordingObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
+func (o *recordingObserver) OnError(_ context.Context, e observe.ErrorEvent) {
 	o.errors = append(o.errors, e)
 }
 
 func (o *recordingObserver) lastCompletedModel() string {
 	for i := len(o.execution) - 1; i >= 0; i-- {
-		if o.execution[i].Type == kobs.ExecutionLLMCompleted {
+		if o.execution[i].Type == observe.ExecutionLLMCompleted {
 			return o.execution[i].Model
 		}
 	}
@@ -1137,11 +1137,11 @@ func (o *recordingObserver) lastCompletedModel() string {
 
 type toolThenErrLLM struct{}
 
-func (t *toolThenErrLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (t *toolThenErrLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	return nil, nil
 }
 
-func (t *toolThenErrLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (t *toolThenErrLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	return &toolThenErrIterator{}, nil
 }
 
@@ -1149,10 +1149,10 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 	l := &AgentLoop{
 		LLM: &flakyLLM{
 			failures: 2,
-			resp: mdl.CompletionResponse{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("retried")}},
+			resp: model.CompletionResponse{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("retried")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 7},
+				Usage:      model.TokenUsage{TotalTokens: 7},
 			},
 		},
 		Tools: tool.NewRegistry(),
@@ -1169,7 +1169,7 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-retry-sync",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1190,10 +1190,10 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 	var stages []session.LifecycleStage
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
-			Responses: []mdl.CompletionResponse{{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("ok")}},
+			Responses: []model.CompletionResponse{{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("ok")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 3},
+				Usage:      model.TokenUsage{TotalTokens: 3},
 			}},
 		},
 		Tools:    tool.NewRegistry(),
@@ -1210,7 +1210,7 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-lifecycle-panic",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)
@@ -1251,20 +1251,20 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	}
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
-			Responses: []mdl.CompletionResponse{
+			Responses: []model.CompletionResponse{
 				{
-					Message: mdl.Message{
-						Role:      mdl.RoleAssistant,
-						ToolCalls: []mdl.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+					Message: model.Message{
+						Role:      model.RoleAssistant,
+						ToolCalls: []model.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
 					},
-					ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
+					ToolCalls:  []model.ToolCall{{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}},
 					StopReason: "tool_use",
-					Usage:      mdl.TokenUsage{TotalTokens: 5},
+					Usage:      model.TokenUsage{TotalTokens: 5},
 				},
 				{
-					Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+					Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 					StopReason: "end_turn",
-					Usage:      mdl.TokenUsage{TotalTokens: 3},
+					Usage:      model.TokenUsage{TotalTokens: 3},
 				},
 			},
 		},
@@ -1280,7 +1280,7 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-tool-lifecycle-denied",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("do the dangerous thing")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("do the dangerous thing")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)
@@ -1310,14 +1310,14 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	streamLLM := &flakyStreamingLLM{
 		failures: 1,
-		chunks: []mdl.StreamChunk{
+		chunks: []model.StreamChunk{
 			{Delta: "ok"},
-			{Done: true, Usage: &mdl.TokenUsage{TotalTokens: 3}},
+			{Done: true, Usage: &model.TokenUsage{TotalTokens: 3}},
 		},
-		resp: &mdl.CompletionResponse{
-			Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("fallback")}},
+		resp: &model.CompletionResponse{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("fallback")}},
 			StopReason: "end_turn",
-			Usage:      mdl.TokenUsage{TotalTokens: 2},
+			Usage:      model.TokenUsage{TotalTokens: 2},
 		},
 	}
 	l := &AgentLoop{
@@ -1336,7 +1336,7 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-retry-stream",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1356,11 +1356,11 @@ func TestLoopLLMCallUsesActualModelMetadata(t *testing.T) {
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		LLM: &kt.MockLLM{
-			Responses: []mdl.CompletionResponse{{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("ok")}},
+			Responses: []model.CompletionResponse{{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("ok")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 3},
-				Metadata:   &mdl.LLMCallMetadata{ActualModel: "router-picked"},
+				Usage:      model.TokenUsage{TotalTokens: 3},
+				Metadata:   &model.LLMCallMetadata{ActualModel: "router-picked"},
 			}},
 		},
 		Tools:    tool.NewRegistry(),
@@ -1371,7 +1371,7 @@ func TestLoopLLMCallUsesActualModelMetadata(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-actual-model",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1393,11 +1393,11 @@ func TestLoopStreamingUsesIteratorMetadataActualModel(t *testing.T) {
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		LLM: &metadataStreamingLLM{
-			chunks: []mdl.StreamChunk{
+			chunks: []model.StreamChunk{
 				{Delta: "streamed"},
-				{Done: true, Usage: &mdl.TokenUsage{TotalTokens: 2}},
+				{Done: true, Usage: &model.TokenUsage{TotalTokens: 2}},
 			},
-			metadata: mdl.LLMCallMetadata{ActualModel: "stream-router"},
+			metadata: model.LLMCallMetadata{ActualModel: "stream-router"},
 		},
 		Tools:    tool.NewRegistry(),
 		IO:       kt.NewRecorderIO(),
@@ -1407,7 +1407,7 @@ func TestLoopStreamingUsesIteratorMetadataActualModel(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-stream-model",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1440,7 +1440,7 @@ func TestLoopStreamingAfterVisibleOutputDoesNotSyncFallback(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-post-emission-no-fallback",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 
@@ -1474,7 +1474,7 @@ func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
 	sess := &session.Session{
 		ID:       "test-tail-json-error",
 		Status:   session.StatusCreated,
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("run")}}},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("run")}}},
 		Budget:   session.Budget{MaxSteps: 10},
 	}
 	result, err := l.Run(context.Background(), sess)

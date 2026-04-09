@@ -10,19 +10,19 @@ import (
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/logging"
 )
 
-func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call mdl.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
+func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call model.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
 	if l.IO != nil {
-		if err := l.IO.Send(ctx, intr.OutputMessage{
-			Type:    intr.OutputToolStart,
+		if err := l.IO.Send(ctx, io.OutputMessage{
+			Type:    io.OutputToolStart,
 			Content: call.Name,
 			Meta: map[string]any{
 				"call_id":      call.ID,
@@ -34,9 +34,9 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 			logging.GetLogger().DebugContext(ctx, "tool start send failed", "session_id", sess.ID, "tool", call.Name, "error", err)
 		}
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), kobs.ExecutionEvent{
-		Type:         kobs.ExecutionToolStarted,
-		EventID:      l.nextEventID(string(kobs.ExecutionToolStarted)),
+	observe.ObserveExecutionEvent(ctx, l.observer(), observe.ExecutionEvent{
+		Type:         observe.ExecutionToolStarted,
+		EventID:      l.nextEventID(string(observe.ExecutionToolStarted)),
 		EventVersion: 1,
 		RunID:        strings.TrimSpace(l.RunID),
 		TurnID:       strings.TrimSpace(l.currentTurn.TurnID),
@@ -82,14 +82,14 @@ func (l *AgentLoop) runAfterToolCallHook(ctx context.Context, sess *session.Sess
 func (l *AgentLoop) handleBeforeToolCallError(
 	ctx context.Context,
 	sess *session.Session,
-	call mdl.ToolCall,
+	call model.ToolCall,
 	spec tool.ToolSpec,
 	repairedArgs json.RawMessage,
 	beforeErr error,
-) mdl.ToolResult {
+) model.ToolResult {
 	normalizedErr := normalizeToolError(beforeErr)
 	result := buildToolResult(call.ID, nil, beforeErr)
-	kobs.ObserveToolCall(ctx, l.observer(), kobs.ToolCallEvent{
+	observe.ObserveToolCall(ctx, l.observer(), observe.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -97,7 +97,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 		Duration:  0,
 		Error:     normalizedErr,
 	})
-	event := l.executionEventBase(sess, kobs.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event := l.executionEventBase(sess, observe.ExecutionToolCompleted, "tool", "runtime", "tool")
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
@@ -106,7 +106,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 	}
 	event.Error = normalizedErr.Error()
 	appendToolErrorMetadata(&event, normalizedErr)
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, 0, normalizedErr)
 	return result
@@ -115,15 +115,15 @@ func (l *AgentLoop) handleBeforeToolCallError(
 func (l *AgentLoop) observeToolCompletion(
 	ctx context.Context,
 	sess *session.Session,
-	call mdl.ToolCall,
+	call model.ToolCall,
 	spec tool.ToolSpec,
 	toolStart time.Time,
 	toolDur time.Duration,
-	result mdl.ToolResult,
+	result model.ToolResult,
 	output []byte,
 	err error,
 ) {
-	kobs.ObserveToolCall(ctx, l.observer(), kobs.ToolCallEvent{
+	observe.ObserveToolCall(ctx, l.observer(), observe.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		Risk:      string(spec.Risk),
@@ -131,7 +131,7 @@ func (l *AgentLoop) observeToolCompletion(
 		Duration:  toolDur,
 		Error:     err,
 	})
-	event := l.executionEventBase(sess, kobs.ExecutionToolCompleted, "tool", "runtime", "tool")
+	event := l.executionEventBase(sess, observe.ExecutionToolCompleted, "tool", "runtime", "tool")
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
@@ -144,16 +144,16 @@ func (l *AgentLoop) observeToolCompletion(
 		appendToolErrorMetadata(&event, err)
 	}
 	appendToolExecutionMetadata(&event, output)
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
 func (l *AgentLoop) emitToolLifecycleAfter(
 	ctx context.Context,
 	sess *session.Session,
-	call mdl.ToolCall,
+	call model.ToolCall,
 	repairedArgs json.RawMessage,
 	spec tool.ToolSpec,
-	result mdl.ToolResult,
+	result model.ToolResult,
 	toolDur time.Duration,
 	err error,
 ) {
@@ -171,7 +171,7 @@ func (l *AgentLoop) emitToolLifecycleAfter(
 	})
 }
 
-func (l *AgentLoop) sendToolResultIO(ctx context.Context, call mdl.ToolCall, result mdl.ToolResult, toolDur time.Duration, err error) {
+func (l *AgentLoop) sendToolResultIO(ctx context.Context, call model.ToolCall, result model.ToolResult, toolDur time.Duration, err error) {
 	if l.IO == nil {
 		return
 	}
@@ -182,9 +182,9 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call mdl.ToolCall, res
 		"duration_ms": toolDur.Milliseconds(),
 	}
 	appendToolErrorIOMetadata(meta, err)
-	if sendErr := l.IO.Send(ctx, intr.OutputMessage{
-		Type:    intr.OutputToolResult,
-		Content: mdl.ContentPartsToPlainText(result.ContentParts),
+	if sendErr := l.IO.Send(ctx, io.OutputMessage{
+		Type:    io.OutputToolResult,
+		Content: model.ContentPartsToPlainText(result.ContentParts),
 		Meta:    meta,
 	}); sendErr != nil {
 		logging.GetLogger().DebugContext(ctx, "tool result send failed", "tool", call.Name, "error", sendErr)
@@ -213,7 +213,7 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 				slog.String("call_id", event.CallID),
 				slog.Any("panic", r),
 			)
-			kobs.ObserveError(context.Background(), l.observer(), kobs.ErrorEvent{
+			observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "tool_lifecycle_hook",
 				Error:     err,
@@ -224,7 +224,7 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 	l.ToolLifecycleHook(callCtx, event)
 }
 
-func appendToolExecutionMetadata(event *kobs.ExecutionEvent, output json.RawMessage) {
+func appendToolExecutionMetadata(event *observe.ExecutionEvent, output json.RawMessage) {
 	if event == nil || len(output) == 0 {
 		return
 	}
@@ -242,7 +242,7 @@ func appendToolExecutionMetadata(event *kobs.ExecutionEvent, output json.RawMess
 	}
 }
 
-func appendExecutionErrorMetadata(event *kobs.ExecutionEvent, err error) {
+func appendExecutionErrorMetadata(event *observe.ExecutionEvent, err error) {
 	if event == nil || err == nil {
 		return
 	}
@@ -261,7 +261,7 @@ func appendExecutionErrorMetadata(event *kobs.ExecutionEvent, err error) {
 	}
 }
 
-func appendToolErrorMetadata(event *kobs.ExecutionEvent, err error) {
+func appendToolErrorMetadata(event *observe.ExecutionEvent, err error) {
 	appendExecutionErrorMetadata(event, err)
 }
 

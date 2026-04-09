@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
@@ -40,14 +40,14 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	events := []kobs.ExecutionEvent{
+	events := []observe.ExecutionEvent{
 		{
 			EventID:      "evt-turn",
 			EventVersion: 1,
 			SessionID:    "sess-inspect",
 			RunID:        "run-1",
 			TurnID:       "run-1-turn-001",
-			Type:         kobs.ExecutionEventType("turn.plan_prepared"),
+			Type:         observe.ExecutionEventType("turn.plan_prepared"),
 			Timestamp:    now,
 			Phase:        "planning",
 			Actor:        "runtime",
@@ -67,7 +67,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			SessionID:    "sess-inspect",
 			RunID:        "run-1",
 			TurnID:       "run-1-turn-001",
-			Type:         kobs.ExecutionEventType("tool.route_planned"),
+			Type:         observe.ExecutionEventType("tool.route_planned"),
 			Timestamp:    now.Add(time.Millisecond),
 			Phase:        "planning",
 			Actor:        "runtime",
@@ -89,7 +89,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			SessionID:    "sess-inspect",
 			RunID:        "run-1",
 			TurnID:       "run-1-turn-001",
-			Type:         kobs.ExecutionEventType("model.route_planned"),
+			Type:         observe.ExecutionEventType("model.route_planned"),
 			Timestamp:    now.Add(2 * time.Millisecond),
 			Phase:        "planning",
 			Actor:        "runtime",
@@ -98,7 +98,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			Data: map[string]any{
 				"lane":          "reasoning",
 				"reason_codes":  []string{"planning_mode"},
-				"capabilities":  []mdl.ModelCapability{mdl.CapReasoning},
+				"capabilities":  []model.ModelCapability{model.CapReasoning},
 				"max_cost_tier": 0,
 				"prefer_cheap":  false,
 			},
@@ -109,7 +109,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			SessionID:    "sess-inspect",
 			RunID:        "run-1",
 			TurnID:       "run-1-turn-001",
-			Type:         kobs.ExecutionEventType("llm_failover_attempt"),
+			Type:         observe.ExecutionEventType("llm_failover_attempt"),
 			Timestamp:    now.Add(3 * time.Millisecond),
 			Phase:        "llm",
 			Actor:        "runtime",
@@ -243,11 +243,11 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if err := store.Save(ctx, child); err != nil {
 		t.Fatalf("save child: %v", err)
 	}
-	cpStore, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("checkpoint store: %v", err)
 	}
-	if _, err := cpStore.Create(ctx, ckpt.CheckpointCreateRequest{SessionID: "sess-root", Note: "before switch"}); err != nil {
+	if _, err := cpStore.Create(ctx, checkpoint.CheckpointCreateRequest{SessionID: "sess-root", Note: "before switch"}); err != nil {
 		t.Fatalf("create checkpoint: %v", err)
 	}
 	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
@@ -361,11 +361,11 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 		t.Fatalf("save child: %v", err)
 	}
 
-	cpStore, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("checkpoint store: %v", err)
 	}
-	checkpoint, err := cpStore.Create(ctx, ckpt.CheckpointCreateRequest{
+	checkpoint, err := cpStore.Create(ctx, checkpoint.CheckpointCreateRequest{
 		SessionID: child.ID,
 		Note:      "before replay",
 		PatchIDs:  []string{"patch-1", "patch-2"},
@@ -406,14 +406,14 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	for _, event := range []kobs.ExecutionEvent{
+	for _, event := range []observe.ExecutionEvent{
 		{
 			EventID:      "evt-gov-model",
 			EventVersion: 1,
 			SessionID:    child.ID,
 			RunID:        "run-gov-1",
 			TurnID:       "run-gov-1-turn-001",
-			Type:         kobs.ExecutionEventType("model.route_planned"),
+			Type:         observe.ExecutionEventType("model.route_planned"),
 			Timestamp:    now.Add(-10 * time.Second),
 			Phase:        "planning",
 			Actor:        "runtime",
@@ -429,7 +429,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			SessionID:    child.ID,
 			RunID:        "run-gov-1",
 			TurnID:       "run-gov-1-turn-001",
-			Type:         kobs.ExecutionEventType("llm_failover_attempt"),
+			Type:         observe.ExecutionEventType("llm_failover_attempt"),
 			Timestamp:    now.Add(-9 * time.Second),
 			Phase:        "llm",
 			Actor:        "runtime",
@@ -445,7 +445,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			SessionID:    child.ID,
 			RunID:        "run-gov-1",
 			TurnID:       "run-gov-1-turn-001",
-			Type:         kobs.ExecutionApprovalRequest,
+			Type:         observe.ExecutionApprovalRequest,
 			Timestamp:    now.Add(-8 * time.Second),
 			Phase:        "approval",
 			Actor:        "runtime",
@@ -460,7 +460,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			SessionID:    child.ID,
 			RunID:        "run-gov-1",
 			TurnID:       "run-gov-1-turn-001",
-			Type:         kobs.ExecutionApprovalResolved,
+			Type:         observe.ExecutionApprovalResolved,
 			Timestamp:    now.Add(-7 * time.Second),
 			Phase:        "approval",
 			Actor:        "runtime",

@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/scheduler"
 )
@@ -15,15 +15,15 @@ type ScheduledRunnerConfig struct {
 	Kernel             *kernel.Kernel
 	Scheduler          *scheduler.Scheduler
 	SessionStore       session.SessionStore
-	DefaultIO          intr.UserIO
+	DefaultIO          io.UserIO
 	BuildSessionConfig func(context.Context, scheduler.Job) (session.SessionConfig, error)
-	RunIO              func(context.Context, scheduler.Job) intr.UserIO
+	RunIO              func(context.Context, scheduler.Job) io.UserIO
 	BeforeRun          func(context.Context, scheduler.Job)
 	OnPrepareError     func(context.Context, scheduler.Job, error)
 	OnCreateError      func(context.Context, scheduler.Job, error)
-	OnRunError         func(context.Context, scheduler.Job, *session.Session, error, intr.UserIO)
+	OnRunError         func(context.Context, scheduler.Job, *session.Session, error, io.UserIO)
 	OnSaveError        func(context.Context, scheduler.Job, *session.Session, error)
-	OnComplete         func(context.Context, scheduler.Job, *session.Session, *loop.SessionResult, intr.UserIO)
+	OnComplete         func(context.Context, scheduler.Job, *session.Session, *loop.SessionResult, io.UserIO)
 }
 
 func StartScheduledRunner(ctx context.Context, cfg ScheduledRunnerConfig) error {
@@ -69,7 +69,7 @@ func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job schedul
 		return nil, nil, err
 	}
 
-	jobSess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(job.Goal)}})
+	jobSess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(job.Goal)}})
 
 	runIO := cfg.DefaultIO
 	if cfg.RunIO != nil {

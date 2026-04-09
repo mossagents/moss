@@ -12,8 +12,8 @@ import (
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/logging"
@@ -25,15 +25,15 @@ func (l *AgentLoop) withSideEffectsLock(fn func()) {
 	fn()
 }
 
-func (l *AgentLoop) toolSpecs(plan TurnPlan) []mdl.ToolSpec {
+func (l *AgentLoop) toolSpecs(plan TurnPlan) []model.ToolSpec {
 	allowed := allowedToolNames(plan.ToolRoute)
 	if len(allowed) == 0 {
 		return nil
 	}
 	tools := tool.Scoped(l.Tools, allowed).List()
-	specs := make([]mdl.ToolSpec, len(tools))
+	specs := make([]model.ToolSpec, len(tools))
 	for i, t := range tools {
-		specs[i] = mdl.ToolSpec{
+		specs[i] = model.ToolSpec{
 			Name:        t.Name,
 			Description: t.Description,
 			InputSchema: t.InputSchema,
@@ -72,8 +72,8 @@ func (l *AgentLoop) nextEventID(prefix string) string {
 	return runID + "-" + prefix + "-" + strconv.FormatUint(seq, 10)
 }
 
-func (l *AgentLoop) executionEventBase(sess *session.Session, eventType kobs.ExecutionEventType, phase, actor, payloadKind string) kobs.ExecutionEvent {
-	return kobs.ExecutionEvent{
+func (l *AgentLoop) executionEventBase(sess *session.Session, eventType observe.ExecutionEventType, phase, actor, payloadKind string) observe.ExecutionEvent {
+	return observe.ExecutionEvent{
 		Type:         eventType,
 		EventID:      l.nextEventID(string(eventType)),
 		EventVersion: 1,
@@ -147,7 +147,7 @@ func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEv
 				slog.String("session_id", sessionID),
 				slog.Any("panic", r),
 			)
-			kobs.ObserveError(context.Background(), l.observer(), kobs.ErrorEvent{
+			observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
 				SessionID: sessionID,
 				Phase:     "session_lifecycle_hook",
 				Error:     err,
@@ -158,12 +158,12 @@ func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEv
 	l.LifecycleHook(ctx, event)
 }
 
-func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage mdl.TokenUsage, err error) *SessionResult {
-	eventType := kobs.ExecutionRunFailed
+func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model.TokenUsage, err error) *SessionResult {
+	eventType := observe.ExecutionRunFailed
 	stage := session.LifecycleFailed
 	if errors.Is(err, context.Canceled) || sess.Status == session.StatusCancelled {
 		sess.Status = session.StatusCancelled
-		eventType = kobs.ExecutionRunCancelled
+		eventType = observe.ExecutionRunCancelled
 		stage = session.LifecycleCancelled
 	} else {
 		sess.Status = session.StatusFailed
@@ -176,7 +176,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage mdl.T
 		"tokens": usage.TotalTokens,
 	}
 	appendExecutionErrorMetadata(&runEvent, err)
-	kobs.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
+	observe.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,

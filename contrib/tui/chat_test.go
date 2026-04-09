@@ -16,9 +16,9 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	userapproval "github.com/mossagents/moss/userio/approval"
@@ -325,8 +325,8 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 	}
 	m.applyProgressSnapshot(m.progress, true)
 
-	updated, _ := m.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputToolStart,
+	updated, _ := m.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputToolStart,
 		Content: "http_request",
 		Meta: map[string]any{
 			"tool":         "http_request",
@@ -340,9 +340,9 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 	}
 
 	updated, _ = updated.handleBridge(bridgeMsg{ask: &bridgeAsk{
-		request: intr.InputRequest{
-			Type: intr.InputConfirm,
-			Approval: &intr.ApprovalRequest{
+		request: io.InputRequest{
+			Type: io.InputConfirm,
+			Approval: &io.ApprovalRequest{
 				ID:          "approval-1",
 				SessionID:   "sess_1",
 				ToolName:    "http_request",
@@ -352,7 +352,7 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 				RequestedAt: now.Add(time.Second),
 			},
 		},
-		replyCh: make(chan intr.InputResponse, 1),
+		replyCh: make(chan io.InputResponse, 1),
 	}})
 	transcript = renderAllMessages(updated.messages, 120, false)
 	for _, want := range []string{"approval required for Http Request https://wttr.in/hangzhou?format=j1", "risk=medium"} {
@@ -361,8 +361,8 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 		}
 	}
 
-	updated, _ = updated.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputToolResult,
+	updated, _ = updated.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputToolResult,
 		Content: `{"status":200,"body":"ok"}`,
 		Meta: map[string]any{
 			"tool":        "http_request",
@@ -380,12 +380,12 @@ func TestHandleBridge_AppendsReasoningTranscript(t *testing.T) {
 	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
 	m.streaming = true
 
-	updated, _ := m.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputReasoning,
+	updated, _ := m.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
 		Content: "First inspect the redirect chain.",
 	}})
-	updated, _ = updated.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputReasoning,
+	updated, _ = updated.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
 		Content: " Then query the API.",
 	}})
 
@@ -404,12 +404,12 @@ func TestHandleBridge_AppendsReasoningTranscript(t *testing.T) {
 func TestHandleBridge_AppendsAdjacentReasoningWhenNotStreaming(t *testing.T) {
 	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
 
-	updated, _ := m.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputReasoning,
+	updated, _ := m.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
 		Content: "这个",
 	}})
-	updated, _ = updated.handleBridge(bridgeMsg{output: &intr.OutputMessage{
-		Type:    intr.OutputReasoning,
+	updated, _ = updated.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
 		Content: "项目的其他文件",
 	}})
 
@@ -683,7 +683,7 @@ func TestSlashCommandForkOpensPicker(t *testing.T) {
 
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.checkpointForkFn = func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
-		if sourceKind != string(ckpt.ForkSourceSession) || sourceID != "sess-fork" || !restoreWorktree {
+		if sourceKind != string(checkpoint.ForkSourceSession) || sourceID != "sess-fork" || !restoreWorktree {
 			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restoreWorktree)
 		}
 		return "Forked thread sess-fork.", nil
@@ -936,7 +936,7 @@ func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
 		t.Fatalf("syncCustomCommands notice: %s", notice)
 	}
 	dispatched := ""
-	m.sendFn = func(text string, _ []mdl.ContentPart) { dispatched = text }
+	m.sendFn = func(text string, _ []model.ContentPart) { dispatched = text }
 	updated, _ := m.handleSlashCommand("/review-pr focus tests")
 	if !updated.streaming {
 		t.Fatal("expected custom command to start a run")
@@ -949,7 +949,7 @@ func TestCustomSlashCommandDispatchesPrompt(t *testing.T) {
 func TestSlashCommandSearchDispatchesPrompt(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	dispatched := ""
-	m.sendFn = func(text string, _ []mdl.ContentPart) { dispatched = text }
+	m.sendFn = func(text string, _ []model.ContentPart) { dispatched = text }
 	updated, _ := m.handleSlashCommand("/search recent golang releases")
 	if !updated.streaming {
 		t.Fatal("expected /search to start a run")
@@ -1222,7 +1222,7 @@ func TestSlashCommandForkLatestShorthand(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	m.checkpointForkFn = func(sourceKind, sourceID string, restore bool) (string, error) {
-		if sourceKind != string(ckpt.ForkSourceCheckpoint) || sourceID != "" || !restore {
+		if sourceKind != string(checkpoint.ForkSourceCheckpoint) || sourceID != "" || !restore {
 			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restore)
 		}
 		return "Switched to forked thread sess_latest from checkpoint cp-latest.", nil
@@ -1517,12 +1517,12 @@ func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
 }
 
 func TestApprovalAskRespectsAllowedScopes(t *testing.T) {
-	fields := synthesizeFieldsFromInputRequest(intr.InputRequest{
-		Type: intr.InputConfirm,
-		Approval: &intr.ApprovalRequest{
+	fields := synthesizeFieldsFromInputRequest(io.InputRequest{
+		Type: io.InputConfirm,
+		Approval: &io.ApprovalRequest{
 			ToolName:      "run_command",
-			AllowedScopes: []intr.DecisionScope{intr.DecisionScopeOnce, intr.DecisionScopeSession},
-			DefaultScope:  intr.DecisionScopeSession,
+			AllowedScopes: []io.DecisionScope{io.DecisionScopeOnce, io.DecisionScopeSession},
+			DefaultScope:  io.DecisionScopeSession,
 			CacheKey:      "run_command|git push",
 			Input:         json.RawMessage(`{"command":"git","args":["push"]}`),
 		},
@@ -1571,13 +1571,13 @@ func TestAskFormSingleSelectAndConfirm(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	ask := &bridgeAsk{
-		request: intr.InputRequest{
-			Type:   intr.InputForm,
+		request: io.InputRequest{
+			Type:   io.InputForm,
 			Prompt: "Choose one",
-			Fields: []intr.InputField{
-				{Name: "database", Type: intr.InputFieldSingleSelect, Options: []string{"PostgreSQL", "MySQL"}, Required: true},
+			Fields: []io.InputField{
+				{Name: "database", Type: io.InputFieldSingleSelect, Options: []string{"PostgreSQL", "MySQL"}, Required: true},
 			},
 		},
 		replyCh: replyCh,
@@ -1608,13 +1608,13 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	ask := &bridgeAsk{
-		request: intr.InputRequest{
-			Type:   intr.InputForm,
+		request: io.InputRequest{
+			Type:   io.InputForm,
 			Prompt: "Choose features",
-			Fields: []intr.InputField{
-				{Name: "features", Type: intr.InputFieldMultiSelect, Options: []string{"A", "B", "C"}, Required: true},
+			Fields: []io.InputField{
+				{Name: "features", Type: io.InputFieldMultiSelect, Options: []string{"A", "B", "C"}, Required: true},
 			},
 		},
 		replyCh: replyCh,
@@ -1653,11 +1653,11 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)
 	}
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	ask := &bridgeAsk{
-		request: intr.InputRequest{
-			Type: intr.InputConfirm,
-			Approval: &intr.ApprovalRequest{
+		request: io.InputRequest{
+			Type: io.InputConfirm,
+			Approval: &io.ApprovalRequest{
 				ID:        "req-1",
 				SessionID: "thread-1",
 				ToolName:  "run_command",
@@ -1703,9 +1703,9 @@ func TestApprovalAllowForSessionRemembersSimilarCommands(t *testing.T) {
 			t.Fatalf("marshal input: %v", err)
 		}
 		return &bridgeAsk{
-			request: intr.InputRequest{
-				Type: intr.InputConfirm,
-				Approval: &intr.ApprovalRequest{
+			request: io.InputRequest{
+				Type: io.InputConfirm,
+				Approval: &io.ApprovalRequest{
 					ID:        id,
 					SessionID: "thread-1",
 					ToolName:  "run_command",
@@ -1714,7 +1714,7 @@ func TestApprovalAllowForSessionRemembersSimilarCommands(t *testing.T) {
 					Input:     input,
 				},
 			},
-			replyCh: make(chan intr.InputResponse, 1),
+			replyCh: make(chan io.InputResponse, 1),
 		}
 	}
 
@@ -1776,11 +1776,11 @@ func TestApprovalSessionRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)
 	}
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	ask := &bridgeAsk{
-		request: intr.InputRequest{
-			Type: intr.InputConfirm,
-			Approval: &intr.ApprovalRequest{
+		request: io.InputRequest{
+			Type: io.InputConfirm,
+			Approval: &io.ApprovalRequest{
 				ID:        "req-3",
 				SessionID: "thread-1",
 				ToolName:  "run_command",
@@ -1821,9 +1821,9 @@ func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
 			t.Fatalf("marshal input: %v", err)
 		}
 		return &bridgeAsk{
-			request: intr.InputRequest{
-				Type: intr.InputConfirm,
-				Approval: &intr.ApprovalRequest{
+			request: io.InputRequest{
+				Type: io.InputConfirm,
+				Approval: &io.ApprovalRequest{
 					ID:        id,
 					SessionID: sessionID,
 					ToolName:  "run_command",
@@ -1832,7 +1832,7 @@ func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
 					Input:     input,
 				},
 			},
-			replyCh: make(chan intr.InputResponse, 1),
+			replyCh: make(chan io.InputResponse, 1),
 		}
 	}
 
@@ -1905,11 +1905,11 @@ func TestApprovalProjectPersistenceErrorStaysInlineInDialog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)
 	}
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	ask := &bridgeAsk{
-		request: intr.InputRequest{
-			Type: intr.InputConfirm,
-			Approval: &intr.ApprovalRequest{
+		request: io.InputRequest{
+			Type: io.InputConfirm,
+			Approval: &io.ApprovalRequest{
 				ID:        "req-1",
 				SessionID: "thread-1",
 				ToolName:  "run_command",
@@ -1967,7 +1967,7 @@ func TestSlashSkillCommandDispatchesPrompt(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	sent := ""
-	m.sendFn = func(text string, _ []mdl.ContentPart) { sent = text }
+	m.sendFn = func(text string, _ []model.ContentPart) { sent = text }
 
 	updated, _ := m.handleSlashCommand("/skill http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
 	if !updated.streaming {
@@ -1985,7 +1985,7 @@ func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
 	m.height = 40
 	m.recalcLayout()
 	sent := ""
-	m.sendFn = func(text string, _ []mdl.ContentPart) { sent = text }
+	m.sendFn = func(text string, _ []model.ContentPart) { sent = text }
 
 	updated, _ := m.handleSlashCommand("/http_request 访问 https://mossagents.github.io/ ，告诉我主要内容")
 	if !updated.streaming {
@@ -2283,12 +2283,12 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	m.streaming = true
 	m.queuedInputs = []string{"next one"}
 	sent := ""
-	var sentParts []mdl.ContentPart
-	m.sendFn = func(text string, parts []mdl.ContentPart) {
+	var sentParts []model.ContentPart
+	m.sendFn = func(text string, parts []model.ContentPart) {
 		sent = text
 		sentParts = parts
 	}
-	m.queuedParts = [][]mdl.ContentPart{{mdl.TextPart("next one")}}
+	m.queuedParts = [][]model.ContentPart{{model.TextPart("next one")}}
 
 	updated, _ := m.Update(sessionResultMsg{})
 	if sent != "next one" {
@@ -2300,7 +2300,7 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	if !updated.streaming {
 		t.Fatal("expected streaming to continue with dequeued message")
 	}
-	if len(sentParts) != 1 || sentParts[0].Type != mdl.ContentPartText {
+	if len(sentParts) != 1 || sentParts[0].Type != model.ContentPartText {
 		t.Fatalf("queued parts not forwarded: %+v", sentParts)
 	}
 	for _, msg := range updated.messages {
@@ -2318,8 +2318,8 @@ func TestSessionResult_AppendsOutputImageMessage(t *testing.T) {
 	m.recalcLayout()
 
 	updated, _ := m.Update(sessionResultMsg{
-		outputMedia: []mdl.ContentPart{
-			mdl.ImageURLPart(mdl.ContentPartOutputImage, "https://example.com/image.png", ""),
+		outputMedia: []model.ContentPart{
+			model.ImageURLPart(model.ContentPartOutputImage, "https://example.com/image.png", ""),
 		},
 	})
 	if len(updated.messages) == 0 {

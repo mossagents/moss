@@ -3,7 +3,7 @@ package sandbox
 import (
 	"encoding/json"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"sort"
@@ -16,7 +16,7 @@ type patchJournalEntry struct {
 	TargetFiles []string       `json:"target_files,omitempty"`
 	ThreeWay    bool           `json:"three_way,omitempty"`
 	Cached      bool           `json:"cached,omitempty"`
-	Source      kws.PatchSource `json:"source,omitempty"`
+	Source      workspace.PatchSource `json:"source,omitempty"`
 	AppliedAt   time.Time      `json:"applied_at"`
 }
 
@@ -51,7 +51,7 @@ func (j *gitPatchJournal) Load(patchID string) (*patchJournalEntry, error) {
 	}
 	entry, ok := state[patchID]
 	if !ok {
-		return nil, kws.ErrPatchNotFound
+		return nil, workspace.ErrPatchNotFound
 	}
 	cp := entry
 	cp.TargetFiles = append([]string(nil), entry.TargetFiles...)
@@ -69,16 +69,16 @@ func (j *gitPatchJournal) Delete(patchID string) error {
 	return j.persistLocked(state)
 }
 
-func (j *gitPatchJournal) List() ([]kws.PatchSnapshotRef, error) {
+func (j *gitPatchJournal) List() ([]workspace.PatchSnapshotRef, error) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	state, err := j.loadLocked()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]kws.PatchSnapshotRef, 0, len(state))
+	out := make([]workspace.PatchSnapshotRef, 0, len(state))
 	for patchID, entry := range state {
-		out = append(out, kws.PatchSnapshotRef{
+		out = append(out, workspace.PatchSnapshotRef{
 			PatchID:     patchID,
 			TargetFiles: append([]string(nil), entry.TargetFiles...),
 			Source:      entry.Source,

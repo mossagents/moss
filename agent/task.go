@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"log/slog"
 	"sort"
@@ -39,7 +39,7 @@ type Task struct {
 	JobItemID       string              `json:"job_item_id,omitempty"`
 	Result          string              `json:"result,omitempty"`
 	Error           string              `json:"error,omitempty"`
-	Tokens          mdl.TokenUsage      `json:"tokens,omitempty"`
+	Tokens          model.TokenUsage      `json:"tokens,omitempty"`
 	Revision        int64               `json:"revision,omitempty"`
 	CreatedAt       time.Time           `json:"created_at,omitempty"`
 	UpdatedAt       time.Time           `json:"updated_at,omitempty"`
@@ -204,16 +204,16 @@ func (t *TaskTracker) List(filter TaskFilter) []*Task {
 }
 
 // Complete 将任务标记为完成。
-func (t *TaskTracker) Complete(id, result string, tokens mdl.TokenUsage) {
+func (t *TaskTracker) Complete(id, result string, tokens model.TokenUsage) {
 	t.completeIf(id, 0, result, tokens)
 }
 
 // CompleteIf 在 revision 匹配时将任务标记为完成。
-func (t *TaskTracker) CompleteIf(id string, revision int64, result string, tokens mdl.TokenUsage) {
+func (t *TaskTracker) CompleteIf(id string, revision int64, result string, tokens model.TokenUsage) {
 	t.completeIf(id, revision, result, tokens)
 }
 
-func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens mdl.TokenUsage) {
+func (t *TaskTracker) completeIf(id string, revision int64, result string, tokens model.TokenUsage) {
 	t.mu.Lock()
 	var mirrored *Task
 	if task, ok := t.tasks[id]; ok {

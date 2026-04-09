@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/loop"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -164,7 +164,7 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "async done",
-				TokensUsed: mdl.TokenUsage{TotalTokens: 42},
+				TokensUsed: model.TokenUsage{TotalTokens: 42},
 			}, nil
 		},
 	}
@@ -239,7 +239,7 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "ok: " + sess.Config.Goal,
-				TokensUsed: mdl.TokenUsage{TotalTokens: 10},
+				TokensUsed: model.TokenUsage{TotalTokens: 10},
 			}, nil
 		},
 	}
@@ -392,7 +392,7 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "contract ok",
-				TokensUsed: mdl.TokenUsage{TotalTokens: 9},
+				TokensUsed: model.TokenUsage{TotalTokens: 9},
 			}, nil
 		},
 	}
@@ -537,7 +537,7 @@ func TestUpdateTaskRestartsSameID(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
-				TokensUsed: mdl.TokenUsage{TotalTokens: 5},
+				TokensUsed: model.TokenUsage{TotalTokens: 5},
 			}, nil
 		},
 	}
@@ -1159,7 +1159,7 @@ func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
 				SessionID:  sess.ID,
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
-				TokensUsed: mdl.TokenUsage{TotalTokens: 3},
+				TokensUsed: model.TokenUsage{TotalTokens: 3},
 			}, nil
 		},
 	}
@@ -1435,7 +1435,7 @@ func TestWaitAgent_ReturnsOnStateChange(t *testing.T) {
 	_, waitHandler, _ := reg.Get("wait_agent")
 	go func() {
 		time.Sleep(80 * time.Millisecond)
-		tracker.CompleteIf("t-wait", revision, "ok", mdl.TokenUsage{})
+		tracker.CompleteIf("t-wait", revision, "ok", model.TokenUsage{})
 	}()
 	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"t-wait","timeout_seconds":2,"poll_millis":50}`))
 	if err != nil {

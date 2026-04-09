@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -25,7 +25,7 @@ func TestBuildExecutionPlanPopulatesToolSemantics(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 
-	plan, err := buildExecutionPlan([]mdl.ToolCall{{
+	plan, err := buildExecutionPlan([]model.ToolCall{{
 		ID:        "call-1",
 		Name:      "write_file",
 		Arguments: json.RawMessage(`{"path":"x","content":"y"}`),

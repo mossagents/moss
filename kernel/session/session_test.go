@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 func TestBudgetExhausted(t *testing.T) {
@@ -56,18 +56,18 @@ func TestBudgetTryConsumeAtomicBoundaries(t *testing.T) {
 func TestSessionAppendAndTruncate(t *testing.T) {
 	s := &Session{
 		ID:       "test",
-		Messages: make([]mdl.Message, 0),
+		Messages: make([]model.Message, 0),
 	}
 
 	for i := 0; i < 10; i++ {
-		s.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("msg")}})
+		s.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("msg")}})
 	}
 	if len(s.Messages) != 10 {
 		t.Fatalf("len = %d, want 10", len(s.Messages))
 	}
 
 	// 每条消息 1 token，最多保留 5 token
-	s.TruncateMessages(5, func(m mdl.Message) int { return 1 })
+	s.TruncateMessages(5, func(m model.Message) int { return 1 })
 	if len(s.Messages) != 5 {
 		t.Fatalf("after truncate len = %d, want 5", len(s.Messages))
 	}
@@ -189,12 +189,12 @@ func TestManagerList(t *testing.T) {
 func TestManagerNotify(t *testing.T) {
 	m := NewManager()
 	s, _ := m.Create(context.Background(), SessionConfig{Goal: "test"})
-	msg := mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hello")}}
+	msg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hello")}}
 	if err := m.Notify(s.ID, msg); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	got, _ := m.Get(s.ID)
-	if len(got.Messages) != 1 || mdl.ContentPartsToPlainText(got.Messages[0].ContentParts) != "hello" {
+	if len(got.Messages) != 1 || model.ContentPartsToPlainText(got.Messages[0].ContentParts) != "hello" {
 		t.Fatalf("Messages = %v, want 1 message with 'hello'", got.Messages)
 	}
 }
@@ -209,7 +209,7 @@ func (m *dummyManager) Create(_ context.Context, _ SessionConfig) (*Session, err
 
 func (m *dummyManager) Get(_ string) (*Session, bool) { return &Session{ID: "dummy"}, true }
 func (m *dummyManager) List() []*Session              { return []*Session{} }
-func (m *dummyManager) Notify(_ string, _ mdl.Message) error {
+func (m *dummyManager) Notify(_ string, _ model.Message) error {
 	return nil
 }
 func (m *dummyManager) Cancel(_ string) error {

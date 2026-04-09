@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/knowledge"
 )
 
@@ -17,7 +17,7 @@ type RAGConfig struct {
 	EpisodicN      int
 	SemanticK      int
 	Threshold      float64
-	QueryExtractor func(msgs []mdl.Message) string
+	QueryExtractor func(msgs []model.Message) string
 }
 
 func (c RAGConfig) maxChars() int {
@@ -68,13 +68,13 @@ func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 	}
 }
 
-func extractQuery(msgs []mdl.Message, extractor func([]mdl.Message) string) string {
+func extractQuery(msgs []model.Message, extractor func([]model.Message) string) string {
 	if extractor != nil {
 		return extractor(msgs)
 	}
 	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == mdl.RoleUser {
-			text := mdl.ContentPartsToPlainText(msgs[i].ContentParts)
+		if msgs[i].Role == model.RoleUser {
+			text := model.ContentPartsToPlainText(msgs[i].ContentParts)
 			if text != "" {
 				if len(text) > 512 {
 					text = text[:512]
@@ -87,33 +87,33 @@ func extractQuery(msgs []mdl.Message, extractor func([]mdl.Message) string) stri
 }
 
 func appendMemoryContext(sess interface {
-	CopyMessages() []mdl.Message
-	ReplaceMessages([]mdl.Message)
-}, msgs []mdl.Message, injected string) {
-	newMsgs := make([]mdl.Message, len(msgs))
+	CopyMessages() []model.Message
+	ReplaceMessages([]model.Message)
+}, msgs []model.Message, injected string) {
+	newMsgs := make([]model.Message, len(msgs))
 	copy(newMsgs, msgs)
 
 	lastSystemIdx := -1
 	for i, m := range newMsgs {
-		if m.Role == mdl.RoleSystem {
+		if m.Role == model.RoleSystem {
 			lastSystemIdx = i
 		}
 	}
 
 	if lastSystemIdx >= 0 {
-		existing := mdl.ContentPartsToPlainText(newMsgs[lastSystemIdx].ContentParts)
+		existing := model.ContentPartsToPlainText(newMsgs[lastSystemIdx].ContentParts)
 		base := stripMemoryContext(existing)
 		combined := strings.TrimRight(base, "\n") + "\n\n" + injected
-		newMsgs[lastSystemIdx] = mdl.Message{
-			Role:         mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{mdl.TextPart(combined)},
+		newMsgs[lastSystemIdx] = model.Message{
+			Role:         model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart(combined)},
 		}
 	} else {
-		injectedMsg := mdl.Message{
-			Role:         mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{mdl.TextPart(injected)},
+		injectedMsg := model.Message{
+			Role:         model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart(injected)},
 		}
-		newMsgs = append([]mdl.Message{injectedMsg}, newMsgs...)
+		newMsgs = append([]model.Message{injectedMsg}, newMsgs...)
 	}
 
 	sess.ReplaceMessages(newMsgs)

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"io"
 	"os"
@@ -66,7 +66,7 @@ func REPL(ctx context.Context, cfg REPLConfig, k *kernel.Kernel, sess *session.S
 			continue
 		}
 
-		sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(input)}})
+		sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(input)}})
 
 		result, err := k.Run(ctx, sess)
 		if err != nil {
@@ -88,9 +88,9 @@ func handleREPLCommand(input string, sess *session.Session, appName string, comp
 		fmt.Println("Bye!")
 		return true
 	case "/clear":
-		var systemMsgs []mdl.Message
+		var systemMsgs []model.Message
 		for _, m := range sess.Messages {
-			if m.Role == mdl.RoleSystem {
+			if m.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			}
 		}
@@ -99,9 +99,9 @@ func handleREPLCommand(input string, sess *session.Session, appName string, comp
 		sess.Budget.UsedTokens = 0
 		fmt.Println("✓ Conversation cleared.")
 	case "/compact":
-		var systemMsgs, dialogMsgs []mdl.Message
+		var systemMsgs, dialogMsgs []model.Message
 		for _, m := range sess.Messages {
-			if m.Role == mdl.RoleSystem {
+			if m.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, m)
 			} else {
 				dialogMsgs = append(dialogMsgs, m)

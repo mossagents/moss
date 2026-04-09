@@ -2,23 +2,23 @@ package testing
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"io"
 )
 
 // MockLLM 是可编程的 LLM 测试桩。
 type MockLLM struct {
-	Responses []mdl.CompletionResponse
-	Calls     []mdl.CompletionRequest
+	Responses []model.CompletionResponse
+	Calls     []model.CompletionRequest
 	index     int
 }
 
 // Complete 按预设顺序返回响应。
-func (m *MockLLM) Complete(_ context.Context, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (m *MockLLM) Complete(_ context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	m.Calls = append(m.Calls, req)
 	if m.index >= len(m.Responses) {
-		return &mdl.CompletionResponse{
-			Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+		return &model.CompletionResponse{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 			StopReason: "end_turn",
 		}, nil
 	}
@@ -30,15 +30,15 @@ func (m *MockLLM) Complete(_ context.Context, req mdl.CompletionRequest) (*mdl.C
 // MockStreamingLLM 是可编程的 StreamingLLM 测试桩。
 type MockStreamingLLM struct {
 	MockLLM
-	Chunks [][]mdl.StreamChunk
+	Chunks [][]model.StreamChunk
 	sIndex int
 }
 
 // Stream 返回预设的 chunk 序列。
-func (m *MockStreamingLLM) Stream(_ context.Context, req mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (m *MockStreamingLLM) Stream(_ context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
 	m.Calls = append(m.Calls, req)
 	if m.sIndex >= len(m.Chunks) {
-		return &mockIterator{chunks: []mdl.StreamChunk{{Done: true}}}, nil
+		return &mockIterator{chunks: []model.StreamChunk{{Done: true}}}, nil
 	}
 	chunks := m.Chunks[m.sIndex]
 	m.sIndex++
@@ -46,13 +46,13 @@ func (m *MockStreamingLLM) Stream(_ context.Context, req mdl.CompletionRequest) 
 }
 
 type mockIterator struct {
-	chunks []mdl.StreamChunk
+	chunks []model.StreamChunk
 	index  int
 }
 
-func (it *mockIterator) Next() (mdl.StreamChunk, error) {
+func (it *mockIterator) Next() (model.StreamChunk, error) {
 	if it.index >= len(it.chunks) {
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 	c := it.chunks[it.index]
 	it.index++

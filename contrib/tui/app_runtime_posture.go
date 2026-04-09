@@ -7,7 +7,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	"reflect"
 	"strings"
@@ -35,9 +35,9 @@ func autosaveSessionBeforeSwitch(current *session.Session, store session.Session
 	return fmt.Sprintf("Previous thread %s auto-saved. Use /resume %s or /resume to continue it later.", current.ID, current.ID), nil
 }
 
-func loadCheckpointSourceSession(ctx context.Context, store session.SessionStore, record *ckpt.CheckpointRecord) (*session.Session, string, error) {
+func loadCheckpointSourceSession(ctx context.Context, store session.SessionStore, record *checkpoint.CheckpointRecord) (*session.Session, string, error) {
 	if record == nil {
-		return nil, "", ckpt.ErrCheckpointNotFound
+		return nil, "", checkpoint.ErrCheckpointNotFound
 	}
 	if store == nil {
 		return nil, "", fmt.Errorf("session store is unavailable")
@@ -58,8 +58,8 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 	store := a.store
 	k := a.k
 	a.mu.Unlock()
-	switch ckpt.ForkSourceKind(sourceKind) {
-	case ckpt.ForkSourceCheckpoint:
+	switch checkpoint.ForkSourceKind(sourceKind) {
+	case checkpoint.ForkSourceCheckpoint:
 		if k == nil || k.Checkpoints() == nil {
 			return nil, "", fmt.Errorf("checkpoint store is unavailable")
 		}
@@ -68,7 +68,7 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 			return nil, "", err
 		}
 		return loadCheckpointSourceSession(ctx, store, record)
-	case ckpt.ForkSourceSession:
+	case checkpoint.ForkSourceSession:
 		if current != nil && strings.TrimSpace(current.ID) == strings.TrimSpace(sourceID) {
 			return current, postureWarningForSession(current), nil
 		}

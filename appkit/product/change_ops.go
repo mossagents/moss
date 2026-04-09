@@ -2,7 +2,7 @@ package product
 
 import (
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -45,7 +45,7 @@ type ChangeOperation struct {
 	RecoveryDetails    string        `json:"recovery_details,omitempty"`
 	RollbackMode       RollbackMode  `json:"rollback_mode,omitempty"`
 	RollbackDetails    string        `json:"rollback_details,omitempty"`
-	Capture            *kws.RepoState `json:"capture,omitempty"`
+	Capture            *workspace.RepoState `json:"capture,omitempty"`
 	CreatedAt          time.Time     `json:"created_at"`
 	RolledBackAt       time.Time     `json:"rolled_back_at,omitempty"`
 }
@@ -77,7 +77,7 @@ type ApplyChangeRequest struct {
 	Patch     string         `json:"patch"`
 	Summary   string         `json:"summary,omitempty"`
 	SessionID string         `json:"session_id,omitempty"`
-	Source    kws.PatchSource `json:"source,omitempty"`
+	Source    workspace.PatchSource `json:"source,omitempty"`
 }
 
 type RollbackChangeRequest struct {
@@ -217,13 +217,13 @@ func cloneChangeOperation(item *ChangeOperation) *ChangeOperation {
 	return &cp
 }
 
-func cloneRepoState(state *kws.RepoState) *kws.RepoState {
+func cloneRepoState(state *workspace.RepoState) *workspace.RepoState {
 	if state == nil {
 		return nil
 	}
 	cp := *state
-	cp.Staged = append([]kws.RepoFileState(nil), state.Staged...)
-	cp.Unstaged = append([]kws.RepoFileState(nil), state.Unstaged...)
+	cp.Staged = append([]workspace.RepoFileState(nil), state.Staged...)
+	cp.Unstaged = append([]workspace.RepoFileState(nil), state.Unstaged...)
 	cp.Untracked = append([]string(nil), state.Untracked...)
 	cp.Ignored = append([]string(nil), state.Ignored...)
 	return &cp

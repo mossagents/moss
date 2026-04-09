@@ -10,7 +10,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -451,7 +451,7 @@ Sub-commands:
 			bindAppAndProductCobraFlags(replayCmd, cfg)
 			replayCmd.Flags().StringVar(&cfg.checkpointID, "checkpoint", "", "Checkpoint ID to replay")
 			replayCmd.Flags().BoolVar(&cfg.checkpointLatest, "latest", false, "Replay the latest persisted checkpoint")
-			replayCmd.Flags().StringVar(&cfg.checkpointReplayMode, "mode", string(ckpt.ReplayModeResume), "Replay mode: resume|rerun")
+			replayCmd.Flags().StringVar(&cfg.checkpointReplayMode, "mode", string(checkpoint.ReplayModeResume), "Replay mode: resume|rerun")
 			replayCmd.Flags().BoolVar(&cfg.checkpointRestoreWorktree, "restore-worktree", false, "Attempt worktree restore before replay")
 			replayCmd.Flags().BoolVar(&cfg.checkpointJSON, "json", false, "Emit checkpoint replay output as JSON")
 			return replayCmd

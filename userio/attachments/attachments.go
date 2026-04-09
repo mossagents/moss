@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 type ComposerAttachment struct {
@@ -18,13 +18,13 @@ type ComposerAttachment struct {
 	Path    string
 	Kind    string
 	Summary string
-	Part    mdl.ContentPart
+	Part    model.ContentPart
 }
 
 type resolvedMention struct {
 	Token string
 	Path  string
-	Part  mdl.ContentPart
+	Part  model.ContentPart
 }
 
 func ExpandInlineFileMentions(input, workspace string) (string, error) {
@@ -32,7 +32,7 @@ func ExpandInlineFileMentions(input, workspace string) (string, error) {
 	return input, nil
 }
 
-func BuildUserContentParts(input, workspace string) ([]mdl.ContentPart, error) {
+func BuildUserContentParts(input, workspace string) ([]model.ContentPart, error) {
 	_, _, parts, err := BuildComposerSubmission(input, workspace, nil)
 	return parts, err
 }
@@ -73,7 +73,7 @@ func IsMediaPath(path string) bool {
 	}
 }
 
-func DetectMediaPart(path string, data []byte) (mdl.ContentPartType, string, error) {
+func DetectMediaPart(path string, data []byte) (model.ContentPartType, string, error) {
 	extMIME := strings.ToLower(strings.TrimSpace(mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))))
 	sniffMIME := strings.ToLower(strings.TrimSpace(http.DetectContentType(data)))
 	extFamily := mediaFamily(extMIME)
@@ -108,11 +108,11 @@ func DetectMediaPart(path string, data []byte) (mdl.ContentPartType, string, err
 
 	switch family {
 	case "image":
-		return mdl.ContentPartInputImage, resolvedMIME, nil
+		return model.ContentPartInputImage, resolvedMIME, nil
 	case "audio":
-		return mdl.ContentPartInputAudio, resolvedMIME, nil
+		return model.ContentPartInputAudio, resolvedMIME, nil
 	case "video":
-		return mdl.ContentPartInputVideo, resolvedMIME, nil
+		return model.ContentPartInputVideo, resolvedMIME, nil
 	default:
 		return "", "", fmt.Errorf("mentioned media %s has unsupported media family %q", path, family)
 	}
@@ -132,7 +132,7 @@ func mediaFamily(mimeType string) string {
 	}
 }
 
-func BuildComposerSubmission(input, workspace string, pending []ComposerAttachment) (string, string, []mdl.ContentPart, error) {
+func BuildComposerSubmission(input, workspace string, pending []ComposerAttachment) (string, string, []model.ContentPart, error) {
 	runText := strings.TrimSpace(input)
 	mentions, err := resolveMentionParts(runText, workspace)
 	if err != nil {
@@ -156,9 +156,9 @@ func BuildComposerSubmission(input, workspace string, pending []ComposerAttachme
 	for _, mention := range mentions {
 		appendAttachment(composerAttachmentFromPart(mention.Path, mention.Part))
 	}
-	parts := make([]mdl.ContentPart, 0, len(attachments)+1)
+	parts := make([]model.ContentPart, 0, len(attachments)+1)
 	if runText != "" {
-		parts = append(parts, mdl.TextPart(runText))
+		parts = append(parts, model.TextPart(runText))
 	}
 	for _, item := range attachments {
 		parts = append(parts, item.Part)
@@ -198,7 +198,7 @@ func resolveMentionParts(input, workspace string) ([]resolvedMention, error) {
 		}
 		seen[key] = struct{}{}
 		start := strings.Index(input, token)
-		part, err := buildAttachmentPart(path, &mdl.MentionBinding{
+		part, err := buildAttachmentPart(path, &model.MentionBinding{
 			Trigger: "@",
 			Value:   token,
 			Target:  path,
@@ -226,13 +226,13 @@ func BuildAttachmentDraft(workspace, raw string) (ComposerAttachment, error) {
 	return composerAttachmentFromPart(path, part), nil
 }
 
-func buildAttachmentPart(path string, mention *mdl.MentionBinding) (mdl.ContentPart, error) {
+func buildAttachmentPart(path string, mention *model.MentionBinding) (model.ContentPart, error) {
 	if !IsMediaPath(path) {
 		info, err := os.Stat(path)
 		if err != nil {
-			return mdl.ContentPart{}, fmt.Errorf("stat attachment %s: %w", path, err)
+			return model.ContentPart{}, fmt.Errorf("stat attachment %s: %w", path, err)
 		}
-		return mdl.FileRefPart(mdl.AttachmentRef{
+		return model.FileRefPart(model.AttachmentRef{
 			Name:      filepath.Base(path),
 			Path:      path,
 			SizeBytes: info.Size(),
@@ -241,31 +241,31 @@ func buildAttachmentPart(path string, mention *mdl.MentionBinding) (mdl.ContentP
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return mdl.ContentPart{}, fmt.Errorf("read media attachment %s: %w", path, err)
+		return model.ContentPart{}, fmt.Errorf("read media attachment %s: %w", path, err)
 	}
 	partType, mimeType, err := DetectMediaPart(path, data)
 	if err != nil {
-		return mdl.ContentPart{}, err
+		return model.ContentPart{}, err
 	}
-	part := mdl.MediaInlinePart(partType, mimeType, base64.StdEncoding.EncodeToString(data), path)
+	part := model.MediaInlinePart(partType, mimeType, base64.StdEncoding.EncodeToString(data), path)
 	if mention != nil {
 		part.Mention = mention
 	}
 	return part, nil
 }
 
-func composerAttachmentFromPart(path string, part mdl.ContentPart) ComposerAttachment {
+func composerAttachmentFromPart(path string, part model.ContentPart) ComposerAttachment {
 	label := filepath.Base(path)
 	if strings.TrimSpace(label) == "" {
 		label = path
 	}
 	kind := "file"
 	switch part.Type {
-	case mdl.ContentPartInputImage:
+	case model.ContentPartInputImage:
 		kind = "image"
-	case mdl.ContentPartInputAudio:
+	case model.ContentPartInputAudio:
 		kind = "audio"
-	case mdl.ContentPartInputVideo:
+	case model.ContentPartInputVideo:
 		kind = "video"
 	}
 	summary := label

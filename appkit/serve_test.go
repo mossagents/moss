@@ -7,23 +7,23 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 // stubLLM satisfies kernel.WithLLM for test kernels.
 type stubLLM struct{}
 
-func (stubLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
-	return &mdl.CompletionResponse{}, nil
+func (stubLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
+	return &model.CompletionResponse{}, nil
 }
 
 func newHealthTestKernel(t *testing.T) *kernel.Kernel {
 	t.Helper()
 	return kernel.New(
 		kernel.WithLLM(stubLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 	)
 }
 
@@ -66,7 +66,7 @@ func TestHealth_ShuttingDown(t *testing.T) {
 func TestHealth_WithMetrics(t *testing.T) {
 	k := newHealthTestKernel(t)
 
-	snap := kobs.NormalizedMetricsSnapshot{
+	snap := observe.NormalizedMetricsSnapshot{
 		RunTotal:            100,
 		RunSuccessTotal:     97,
 		RunFailedTotal:      3,
@@ -104,7 +104,7 @@ func TestHealth_WithMetrics(t *testing.T) {
 func TestHealth_WithEmptyMetrics(t *testing.T) {
 	k := newHealthTestKernel(t)
 	// Zero snapshot must not panic and must yield zero values.
-	h := Health(k, kobs.NormalizedMetricsSnapshot{})
+	h := Health(k, observe.NormalizedMetricsSnapshot{})
 	if h.SuccessRate != 0 {
 		t.Errorf("SuccessRate = %v, want 0", h.SuccessRate)
 	}
@@ -119,7 +119,7 @@ func TestHealth_WithEmptyMetrics(t *testing.T) {
 
 func TestHealthJSON_ContainsRequiredFields(t *testing.T) {
 	k := newHealthTestKernel(t)
-	snap := kobs.NormalizedMetricsSnapshot{
+	snap := observe.NormalizedMetricsSnapshot{
 		RunTotal:        10,
 		RunSuccessTotal: 9,
 		LLMMSsum:        5000,
@@ -165,7 +165,7 @@ func TestHealthJSON_IsValidJSON(t *testing.T) {
 
 func TestHealthText_ContainsRequiredFields(t *testing.T) {
 	k := newHealthTestKernel(t)
-	snap := kobs.NormalizedMetricsSnapshot{
+	snap := observe.NormalizedMetricsSnapshot{
 		RunTotal:        50,
 		RunSuccessTotal: 48,
 		LLMMSsum:        10000,

@@ -3,36 +3,36 @@ package kernel
 import (
 	"context"
 	"errors"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"testing"
 )
 
 type stubCheckpointStore struct {
-	createFn        func(context.Context, ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error)
-	loadFn          func(context.Context, string) (*ckpt.CheckpointRecord, error)
-	findBySessionFn func(context.Context, string) ([]ckpt.CheckpointRecord, error)
+	createFn        func(context.Context, checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error)
+	loadFn          func(context.Context, string) (*checkpoint.CheckpointRecord, error)
+	findBySessionFn func(context.Context, string) ([]checkpoint.CheckpointRecord, error)
 }
 
-func (s *stubCheckpointStore) Create(ctx context.Context, req ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
+func (s *stubCheckpointStore) Create(ctx context.Context, req checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error) {
 	if s.createFn != nil {
 		return s.createFn(ctx, req)
 	}
 	return nil, nil
 }
 
-func (s *stubCheckpointStore) Load(ctx context.Context, id string) (*ckpt.CheckpointRecord, error) {
+func (s *stubCheckpointStore) Load(ctx context.Context, id string) (*checkpoint.CheckpointRecord, error) {
 	if s.loadFn != nil {
 		return s.loadFn(ctx, id)
 	}
 	return nil, nil
 }
 
-func (*stubCheckpointStore) List(context.Context) ([]ckpt.CheckpointRecord, error) { return nil, nil }
+func (*stubCheckpointStore) List(context.Context) ([]checkpoint.CheckpointRecord, error) { return nil, nil }
 
-func (s *stubCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]ckpt.CheckpointRecord, error) {
+func (s *stubCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]checkpoint.CheckpointRecord, error) {
 	if s.findBySessionFn != nil {
 		return s.findBySessionFn(ctx, sessionID)
 	}
@@ -40,34 +40,34 @@ func (s *stubCheckpointStore) FindBySession(ctx context.Context, sessionID strin
 }
 
 type stubSnapshotStore struct {
-	createFn func(context.Context, kws.WorktreeSnapshotRequest) (*kws.WorktreeSnapshot, error)
-	loadFn   func(context.Context, string) (*kws.WorktreeSnapshot, error)
+	createFn func(context.Context, workspace.WorktreeSnapshotRequest) (*workspace.WorktreeSnapshot, error)
+	loadFn   func(context.Context, string) (*workspace.WorktreeSnapshot, error)
 }
 
-func (s *stubSnapshotStore) Create(ctx context.Context, req kws.WorktreeSnapshotRequest) (*kws.WorktreeSnapshot, error) {
+func (s *stubSnapshotStore) Create(ctx context.Context, req workspace.WorktreeSnapshotRequest) (*workspace.WorktreeSnapshot, error) {
 	if s.createFn != nil {
 		return s.createFn(ctx, req)
 	}
 	return nil, nil
 }
 
-func (s *stubSnapshotStore) Load(ctx context.Context, id string) (*kws.WorktreeSnapshot, error) {
+func (s *stubSnapshotStore) Load(ctx context.Context, id string) (*workspace.WorktreeSnapshot, error) {
 	if s.loadFn != nil {
 		return s.loadFn(ctx, id)
 	}
 	return nil, nil
 }
 
-func (*stubSnapshotStore) List(context.Context) ([]kws.WorktreeSnapshot, error) { return nil, nil }
-func (*stubSnapshotStore) FindBySession(context.Context, string) ([]kws.WorktreeSnapshot, error) {
+func (*stubSnapshotStore) List(context.Context) ([]workspace.WorktreeSnapshot, error) { return nil, nil }
+func (*stubSnapshotStore) FindBySession(context.Context, string) ([]workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
 
 type stubPatchRevert struct {
-	revertFn func(context.Context, kws.PatchRevertRequest) (*kws.PatchRevertResult, error)
+	revertFn func(context.Context, workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error)
 }
 
-func (s *stubPatchRevert) Revert(ctx context.Context, req kws.PatchRevertRequest) (*kws.PatchRevertResult, error) {
+func (s *stubPatchRevert) Revert(ctx context.Context, req workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error) {
 	if s.revertFn != nil {
 		return s.revertFn(ctx, req)
 	}
@@ -76,27 +76,27 @@ func (s *stubPatchRevert) Revert(ctx context.Context, req kws.PatchRevertRequest
 
 func TestKernelCreateCheckpointPersistsFrozenSessionAndSnapshot(t *testing.T) {
 	store := mustFileStore(t)
-	createdReqs := make([]ckpt.CheckpointCreateRequest, 0, 1)
+	createdReqs := make([]checkpoint.CheckpointCreateRequest, 0, 1)
 	k := New(
 		WithSessionStore(store),
 		WithCheckpoints(&stubCheckpointStore{
-			createFn: func(_ context.Context, req ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
+			createFn: func(_ context.Context, req checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error) {
 				createdReqs = append(createdReqs, req)
-				return &ckpt.CheckpointRecord{
+				return &checkpoint.CheckpointRecord{
 					ID:                 "checkpoint-1",
 					SessionID:          req.SessionID,
 					WorktreeSnapshotID: req.WorktreeSnapshotID,
 					PatchIDs:           append([]string(nil), req.PatchIDs...),
-					Lineage:            append([]ckpt.CheckpointLineageRef(nil), req.Lineage...),
+					Lineage:            append([]checkpoint.CheckpointLineageRef(nil), req.Lineage...),
 				}, nil
 			},
 		}),
 		WithWorktreeSnapshots(&stubSnapshotStore{
-			createFn: func(_ context.Context, req kws.WorktreeSnapshotRequest) (*kws.WorktreeSnapshot, error) {
-				return &kws.WorktreeSnapshot{
+			createFn: func(_ context.Context, req workspace.WorktreeSnapshotRequest) (*workspace.WorktreeSnapshot, error) {
+				return &workspace.WorktreeSnapshot{
 					ID:        "snapshot-1",
 					SessionID: req.SessionID,
-					Patches:   []kws.PatchSnapshotRef{{PatchID: "patch-1"}},
+					Patches:   []workspace.PatchSnapshotRef{{PatchID: "patch-1"}},
 				}, nil
 			},
 		}),
@@ -105,12 +105,12 @@ func TestKernelCreateCheckpointPersistsFrozenSessionAndSnapshot(t *testing.T) {
 		ID:     "sess-source",
 		Status: session.StatusRunning,
 		Config: session.SessionConfig{Goal: "ship it"},
-		Messages: []mdl.Message{
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hello")}},
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hello")}},
 		},
 	}
 
-	record, err := k.CreateCheckpoint(context.Background(), source, ckpt.CheckpointCreateRequest{
+	record, err := k.CreateCheckpoint(context.Background(), source, checkpoint.CheckpointCreateRequest{
 		Note: "before replay",
 	})
 	if err != nil {
@@ -150,10 +150,10 @@ func TestKernelForkSessionPrefersCheckpointAndMarksDegradedRestore(t *testing.T)
 		ID:     "checkpoint-session-1",
 		Status: session.StatusPaused,
 		Config: session.SessionConfig{Goal: "ship it"},
-		Messages: []mdl.Message{
-			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("sys")}},
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("user")}},
-			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("assistant")}},
+		Messages: []model.Message{
+			{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("sys")}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("user")}},
+			{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("assistant")}},
 		},
 	}); err != nil {
 		t.Fatalf("save checkpoint session: %v", err)
@@ -161,11 +161,11 @@ func TestKernelForkSessionPrefersCheckpointAndMarksDegradedRestore(t *testing.T)
 	k := New(
 		WithSessionStore(store),
 		WithCheckpoints(&stubCheckpointStore{
-			findBySessionFn: func(_ context.Context, sessionID string) ([]ckpt.CheckpointRecord, error) {
+			findBySessionFn: func(_ context.Context, sessionID string) ([]checkpoint.CheckpointRecord, error) {
 				if sessionID != "sess-live" {
 					t.Fatalf("unexpected sessionID %q", sessionID)
 				}
-				return []ckpt.CheckpointRecord{{
+				return []checkpoint.CheckpointRecord{{
 					ID:                 "checkpoint-1",
 					SessionID:          "checkpoint-session-1",
 					WorktreeSnapshotID: "snapshot-1",
@@ -173,30 +173,30 @@ func TestKernelForkSessionPrefersCheckpointAndMarksDegradedRestore(t *testing.T)
 			},
 		}),
 		WithWorktreeSnapshots(&stubSnapshotStore{
-			loadFn: func(_ context.Context, id string) (*kws.WorktreeSnapshot, error) {
-				return &kws.WorktreeSnapshot{
+			loadFn: func(_ context.Context, id string) (*workspace.WorktreeSnapshot, error) {
+				return &workspace.WorktreeSnapshot{
 					ID: id,
-					Capture: kws.RepoState{
+					Capture: workspace.RepoState{
 						IsDirty:   true,
-						Staged:    []kws.RepoFileState{{Path: "a.go", Status: "M"}},
+						Staged:    []workspace.RepoFileState{{Path: "a.go", Status: "M"}},
 						Untracked: []string{"tmp.txt"},
 					},
-					Patches: []kws.PatchSnapshotRef{{PatchID: "patch-1"}},
+					Patches: []workspace.PatchSnapshotRef{{PatchID: "patch-1"}},
 				}, nil
 			},
 		}),
 		WithPatchRevert(&stubPatchRevert{
-			revertFn: func(_ context.Context, req kws.PatchRevertRequest) (*kws.PatchRevertResult, error) {
+			revertFn: func(_ context.Context, req workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error) {
 				if req.Capture == nil || !req.RestoreTracked || !req.RestoreUntracked {
 					t.Fatalf("unexpected revert request %+v", req)
 				}
-				return &kws.PatchRevertResult{Reverted: true}, nil
+				return &workspace.PatchRevertResult{Reverted: true}, nil
 			},
 		}),
 	)
 
-	cloned, result, err := k.ForkSession(context.Background(), ckpt.ForkRequest{
-		SourceKind:      ckpt.ForkSourceSession,
+	cloned, result, err := k.ForkSession(context.Background(), checkpoint.ForkRequest{
+		SourceKind:      checkpoint.ForkSourceSession,
 		SourceID:        "sess-live",
 		RestoreWorktree: true,
 		Note:            "fork it",
@@ -207,7 +207,7 @@ func TestKernelForkSessionPrefersCheckpointAndMarksDegradedRestore(t *testing.T)
 	if cloned.ID == "" || cloned.ID == "checkpoint-session-1" {
 		t.Fatalf("expected new live session id, got %q", cloned.ID)
 	}
-	if result.SourceKind != ckpt.ForkSourceCheckpoint || result.CheckpointID != "checkpoint-1" {
+	if result.SourceKind != checkpoint.ForkSourceCheckpoint || result.CheckpointID != "checkpoint-1" {
 		t.Fatalf("unexpected fork result %+v", result)
 	}
 	if result.RestoredWorktree {
@@ -224,11 +224,11 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 		ID:     "checkpoint-session-1",
 		Status: session.StatusPaused,
 		Config: session.SessionConfig{Goal: "ship it", MaxSteps: 10},
-		Messages: []mdl.Message{
-			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("sys")}},
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("user")}},
-			{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("assistant")}},
-			{Role: mdl.RoleTool, ContentParts: []mdl.ContentPart{mdl.TextPart("tool")}},
+		Messages: []model.Message{
+			{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("sys")}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("user")}},
+			{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("assistant")}},
+			{Role: model.RoleTool, ContentParts: []model.ContentPart{model.TextPart("tool")}},
 		},
 		State:  map[string]any{"phase": "mid"},
 		Budget: session.Budget{MaxSteps: 10, UsedSteps: 4, UsedTokens: 100},
@@ -238,26 +238,26 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 	k := New(
 		WithSessionStore(store),
 		WithCheckpoints(&stubCheckpointStore{
-			loadFn: func(_ context.Context, id string) (*ckpt.CheckpointRecord, error) {
-				return &ckpt.CheckpointRecord{ID: id, SessionID: "checkpoint-session-1"}, nil
+			loadFn: func(_ context.Context, id string) (*checkpoint.CheckpointRecord, error) {
+				return &checkpoint.CheckpointRecord{ID: id, SessionID: "checkpoint-session-1"}, nil
 			},
 		}),
 	)
 
-	cloned, result, err := k.ReplayFromCheckpoint(context.Background(), ckpt.ReplayRequest{
+	cloned, result, err := k.ReplayFromCheckpoint(context.Background(), checkpoint.ReplayRequest{
 		CheckpointID: "checkpoint-1",
-		Mode:         ckpt.ReplayModeRerun,
+		Mode:         checkpoint.ReplayModeRerun,
 	})
 	if err != nil {
 		t.Fatalf("ReplayFromCheckpoint: %v", err)
 	}
-	if result.Mode != ckpt.ReplayModeRerun {
+	if result.Mode != checkpoint.ReplayModeRerun {
 		t.Fatalf("mode = %q", result.Mode)
 	}
 	if len(cloned.Messages) != 2 {
 		t.Fatalf("messages = %+v", cloned.Messages)
 	}
-	if cloned.Messages[0].Role != mdl.RoleSystem || cloned.Messages[1].Role != mdl.RoleUser {
+	if cloned.Messages[0].Role != model.RoleSystem || cloned.Messages[1].Role != model.RoleUser {
 		t.Fatalf("unexpected rerun messages %+v", cloned.Messages)
 	}
 	if cloned.Budget.UsedSteps != 0 || cloned.Budget.UsedTokens != 0 {
@@ -280,23 +280,23 @@ func TestKernelReplayFromCheckpointReportsUnavailableRestoreAsDegraded(t *testin
 	k := New(
 		WithSessionStore(store),
 		WithCheckpoints(&stubCheckpointStore{
-			loadFn: func(_ context.Context, id string) (*ckpt.CheckpointRecord, error) {
-				return &ckpt.CheckpointRecord{ID: id, SessionID: "checkpoint-session-1", WorktreeSnapshotID: "snapshot-1"}, nil
+			loadFn: func(_ context.Context, id string) (*checkpoint.CheckpointRecord, error) {
+				return &checkpoint.CheckpointRecord{ID: id, SessionID: "checkpoint-session-1", WorktreeSnapshotID: "snapshot-1"}, nil
 			},
 		}),
 		WithWorktreeSnapshots(&stubSnapshotStore{
-			loadFn: func(_ context.Context, id string) (*kws.WorktreeSnapshot, error) {
-				return &kws.WorktreeSnapshot{ID: id}, nil
+			loadFn: func(_ context.Context, id string) (*workspace.WorktreeSnapshot, error) {
+				return &workspace.WorktreeSnapshot{ID: id}, nil
 			},
 		}),
 		WithPatchRevert(&stubPatchRevert{
-			revertFn: func(context.Context, kws.PatchRevertRequest) (*kws.PatchRevertResult, error) {
-				return nil, kws.ErrPatchRevertUnavailable
+			revertFn: func(context.Context, workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error) {
+				return nil, workspace.ErrPatchRevertUnavailable
 			},
 		}),
 	)
 
-	_, result, err := k.ReplayFromCheckpoint(context.Background(), ckpt.ReplayRequest{
+	_, result, err := k.ReplayFromCheckpoint(context.Background(), checkpoint.ReplayRequest{
 		CheckpointID:    "checkpoint-1",
 		RestoreWorktree: true,
 	})
@@ -318,8 +318,8 @@ func TestKernelCreateCheckpointRequiresSessionStore(t *testing.T) {
 	k := New(
 		WithCheckpoints(&stubCheckpointStore{}),
 	)
-	_, err := k.CreateCheckpoint(context.Background(), &session.Session{ID: "sess-1"}, ckpt.CheckpointCreateRequest{})
-	if !errors.Is(err, ckpt.ErrCheckpointNotRecoverable) {
+	_, err := k.CreateCheckpoint(context.Background(), &session.Session{ID: "sess-1"}, checkpoint.CheckpointCreateRequest{})
+	if !errors.Is(err, checkpoint.ErrCheckpointNotRecoverable) {
 		t.Fatalf("expected ErrCheckpointNotRecoverable, got %v", err)
 	}
 }

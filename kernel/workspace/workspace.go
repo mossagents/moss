@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"sync"
 	"time"
 )
@@ -88,7 +88,7 @@ type ExecOutput struct {
 	Stdout      string               `json:"stdout"`
 	Stderr      string               `json:"stderr"`
 	ExitCode    int                  `json:"exit_code"`
-	Enforcement intr.EnforcementMode `json:"enforcement,omitempty"`
+	Enforcement io.EnforcementMode `json:"enforcement,omitempty"`
 	Degraded    bool                 `json:"degraded,omitempty"`
 	Details     string               `json:"details,omitempty"`
 }

@@ -4,9 +4,9 @@ import (
 	"sync"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -54,13 +54,13 @@ type ContextCompressionConfig struct {
 
 	// Tokenizer 用于精确 token 计数，nil 时使用字符/4 估算。
 	// 设置此字段后，所有压缩中间件将统一使用该 Tokenizer。
-	Tokenizer mdl.Tokenizer
+	Tokenizer model.Tokenizer
 }
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
 	MaxIterations      int                    // 最大循环次数（默认 50）
-	StopWhen           func(mdl.Message) bool // 自定义停止条件
+	StopWhen           func(model.Message) bool // 自定义停止条件
 	ParallelToolCall   bool                   // 启用并行工具调用（默认 false，串行执行）
 	MaxConcurrentTools int                    // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
 	LLMRetry           RetryConfig            // LLM 调用重试配置
@@ -74,7 +74,7 @@ type LoopConfig struct {
 type RetryConfig = retry.Config
 
 type callAttemptResult struct {
-	resp      *mdl.CompletionResponse
+	resp      *model.CompletionResponse
 	streamed  bool
 	retryable bool
 	err       error
@@ -89,12 +89,12 @@ func (c LoopConfig) maxIter() int {
 
 // AgentLoop 组合所有子系统，驱动 Agent 的 think→act→observe 循环。
 type AgentLoop struct {
-	LLM                 mdl.LLM
+	LLM                 model.LLM
 	Tools               tool.Registry
 	Hooks               *hooks.Registry
-	IO                  intr.UserIO
+	IO                  io.UserIO
 	Config              LoopConfig
-	Observer            kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	Observer            observe.Observer // 可观测性观察者（可选，默认 NoOpObserver）
 	LifecycleHook       session.LifecycleHook
 	ToolLifecycleHook   session.ToolLifecycleHook
 	RunID               string
@@ -110,13 +110,13 @@ type SessionResult struct {
 	Success    bool           `json:"success"`
 	Output     string         `json:"output"`
 	Steps      int            `json:"steps"`
-	TokensUsed mdl.TokenUsage `json:"tokens_used"`
+	TokensUsed model.TokenUsage `json:"tokens_used"`
 	Error      string         `json:"error,omitempty"`
 }
 
-func (l *AgentLoop) observer() kobs.Observer {
+func (l *AgentLoop) observer() observe.Observer {
 	if l.Observer != nil {
 		return l.Observer
 	}
-	return kobs.NoOpObserver{}
+	return observe.NoOpObserver{}
 }

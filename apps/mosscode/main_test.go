@@ -13,7 +13,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
 func initTestApp(t *testing.T) {
@@ -31,11 +31,11 @@ func initTestApp(t *testing.T) {
 func TestRunCheckpointListJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := ckpt.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	if _, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{
+	if _, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{
 		SessionID: "sess-1",
 		Note:      "before risky change",
 	}); err != nil {
@@ -140,11 +140,11 @@ func TestRunCompletionPowerShellOutputsCompleter(t *testing.T) {
 func TestRunCheckpointShowJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := ckpt.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	record, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{
+	record, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{
 		SessionID: "sess-1",
 		PatchIDs:  []string{"patch-1", "patch-2"},
 		Metadata:  map[string]any{"source": "test"},
@@ -172,16 +172,16 @@ func TestRunCheckpointShowJSON(t *testing.T) {
 func TestRunCheckpointShowLatestJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := ckpt.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	first, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{SessionID: "sess-1", Note: "first"})
+	first, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{SessionID: "sess-1", Note: "first"})
 	if err != nil {
 		t.Fatalf("Create first checkpoint: %v", err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	second, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{SessionID: "sess-2", Note: "second"})
+	second, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{SessionID: "sess-2", Note: "second"})
 	if err != nil {
 		t.Fatalf("Create second checkpoint: %v", err)
 	}
@@ -303,11 +303,11 @@ func TestRunRollbackRequiresChange(t *testing.T) {
 
 func TestExecuteCLIForCheckpointShowSupportsInterspersedFlags(t *testing.T) {
 	initTestApp(t)
-	store, err := ckpt.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	if _, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{SessionID: "sess-1", Note: "latest"}); err != nil {
+	if _, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{SessionID: "sess-1", Note: "latest"}); err != nil {
 		t.Fatalf("Create checkpoint: %v", err)
 	}
 	cfg := &config{

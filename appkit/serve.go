@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -79,7 +79,7 @@ type HealthOutput struct {
 // metrics is an optional normalized metrics snapshot from P2-OBS-001
 // (kernel/observe.NormalizedMetricsSnapshot).  If omitted, latency and
 // success-rate fields default to zero.
-func Health(k *kernel.Kernel, metrics ...kobs.NormalizedMetricsSnapshot) HealthOutput {
+func Health(k *kernel.Kernel, metrics ...observe.NormalizedMetricsSnapshot) HealthOutput {
 	status := HealthStatusOK
 	if k.IsShuttingDown() {
 		status = HealthStatusShuttingDown
@@ -104,7 +104,7 @@ func Health(k *kernel.Kernel, metrics ...kobs.NormalizedMetricsSnapshot) HealthO
 
 // HealthJSON serializes a health snapshot to a JSON string.
 // Returns an error string if serialization fails.
-func HealthJSON(k *kernel.Kernel, metrics ...kobs.NormalizedMetricsSnapshot) string {
+func HealthJSON(k *kernel.Kernel, metrics ...observe.NormalizedMetricsSnapshot) string {
 	h := Health(k, metrics...)
 	b, err := json.Marshal(h)
 	if err != nil {
@@ -118,7 +118,7 @@ func HealthJSON(k *kernel.Kernel, metrics ...kobs.NormalizedMetricsSnapshot) str
 // Example output:
 //
 //	status=ok active_runs=2 llm_latency_avg_ms=1234.5 tool_latency_avg_ms=45.0 success_rate=0.97 tool_error_rate=0.01 total_runs=100
-func HealthText(k *kernel.Kernel, metrics ...kobs.NormalizedMetricsSnapshot) string {
+func HealthText(k *kernel.Kernel, metrics ...observe.NormalizedMetricsSnapshot) string {
 	h := Health(k, metrics...)
 	return fmt.Sprintf(
 		"status=%s active_runs=%d llm_latency_avg_ms=%.1f tool_latency_avg_ms=%.1f success_rate=%.4f tool_error_rate=%.4f total_runs=%.0f",

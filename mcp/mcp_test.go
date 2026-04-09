@@ -8,7 +8,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/sandbox"
 	"os"
 	"strings"
@@ -205,28 +205,28 @@ func TestMakeHandler_StopsWhenGuardRejectsInput(t *testing.T) {
 }
 
 type promptIO struct {
-	last intr.InputRequest
+	last io.InputRequest
 	form map[string]any
 }
 
-func (p *promptIO) Send(context.Context, intr.OutputMessage) error { return nil }
+func (p *promptIO) Send(context.Context, io.OutputMessage) error { return nil }
 
-func (p *promptIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+func (p *promptIO) Ask(_ context.Context, req io.InputRequest) (io.InputResponse, error) {
 	p.last = req
-	return intr.InputResponse{Form: p.form}, nil
+	return io.InputResponse{Form: p.form}, nil
 }
 
 func TestResolveMCPRequiredEnvPromptsForMissingValues(t *testing.T) {
-	io := &promptIO{form: map[string]any{"API_TOKEN": "secret"}}
-	env, err := resolveMCPRequiredEnv(context.Background(), io, "demo", map[string]string{"STATIC": "1"}, []string{"API_TOKEN"})
+	testIO := &promptIO{form: map[string]any{"API_TOKEN": "secret"}}
+	env, err := resolveMCPRequiredEnv(context.Background(), testIO, "demo", map[string]string{"STATIC": "1"}, []string{"API_TOKEN"})
 	if err != nil {
 		t.Fatalf("resolveMCPRequiredEnv: %v", err)
 	}
 	if env["API_TOKEN"] != "secret" || env["STATIC"] != "1" {
 		t.Fatalf("unexpected resolved env: %+v", env)
 	}
-	if io.last.Type != intr.InputForm || !strings.Contains(io.last.Prompt, "demo") {
-		t.Fatalf("expected prompt for missing env, got %+v", io.last)
+	if testIO.last.Type != io.InputForm || !strings.Contains(testIO.last.Prompt, "demo") {
+		t.Fatalf("expected prompt for missing env, got %+v", testIO.last)
 	}
 }
 
@@ -243,7 +243,7 @@ func TestBuildEnvUsesAllowlistedInheritedEnvironment(t *testing.T) {
 		},
 	}
 	t.Setenv("API_TOKEN", "secret")
-	env, err := s.buildEnv(context.Background(), &intr.NoOpIO{})
+	env, err := s.buildEnv(context.Background(), &io.NoOpIO{})
 	if err != nil {
 		t.Fatalf("buildEnv: %v", err)
 	}

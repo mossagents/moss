@@ -3,7 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path"
 	"sort"
 	"strings"
@@ -98,16 +98,16 @@ func (m *MemoryWorkspace) ListFiles(_ context.Context, pattern string) ([]string
 	return matches, nil
 }
 
-func (m *MemoryWorkspace) Stat(_ context.Context, filePath string) (kws.FileInfo, error) {
+func (m *MemoryWorkspace) Stat(_ context.Context, filePath string) (workspace.FileInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	p := normalizePath(filePath)
 	f, ok := m.files[p]
 	if !ok {
-		return kws.FileInfo{}, fmt.Errorf("file not found: %s", p)
+		return workspace.FileInfo{}, fmt.Errorf("file not found: %s", p)
 	}
-	return kws.FileInfo{
+	return workspace.FileInfo{
 		Name:    path.Base(p),
 		Size:    int64(len(f.content)),
 		IsDir:   false,

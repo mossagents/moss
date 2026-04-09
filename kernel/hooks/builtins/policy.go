@@ -13,29 +13,29 @@ import (
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
 // PolicyDecision 表示权限决策。
-type PolicyDecision = intr.PolicyDecision
+type PolicyDecision = io.PolicyDecision
 
 const (
-	Allow           PolicyDecision = intr.PolicyAllow
-	Deny            PolicyDecision = intr.PolicyDeny
-	RequireApproval PolicyDecision = intr.PolicyRequireApproval
+	Allow           PolicyDecision = io.PolicyAllow
+	Deny            PolicyDecision = io.PolicyDeny
+	RequireApproval PolicyDecision = io.PolicyRequireApproval
 )
 
-type PolicyContext = intr.PolicyContext
-type PolicyResult = intr.PolicyResult
-type EnforcementMode = intr.EnforcementMode
+type PolicyContext = io.PolicyContext
+type PolicyResult = io.PolicyResult
+type EnforcementMode = io.EnforcementMode
 
 const (
-	EnforcementHardBlock       EnforcementMode = intr.EnforcementHardBlock
-	EnforcementRequireApproval EnforcementMode = intr.EnforcementRequireApproval
-	EnforcementSoftLimit       EnforcementMode = intr.EnforcementSoftLimit
+	EnforcementHardBlock       EnforcementMode = io.EnforcementHardBlock
+	EnforcementRequireApproval EnforcementMode = io.EnforcementRequireApproval
+	EnforcementSoftLimit       EnforcementMode = io.EnforcementSoftLimit
 )
 
 // ErrDenied 表示工具调用被 Policy 拒绝。
@@ -115,8 +115,8 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, ev *hooks.ToolEvent, result
 	if ev.Session != nil {
 		sessionID = ev.Session.ID
 	}
-	kobs.ObserveExecutionEvent(ctx, ev.Observer, kobs.ExecutionEvent{
-		Type:        kobs.ExecutionPolicyRuleMatched,
+	observe.ObserveExecutionEvent(ctx, ev.Observer, observe.ExecutionEvent{
+		Type:        observe.ExecutionPolicyRuleMatched,
 		SessionID:   sessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    ev.Tool.Name,
@@ -131,9 +131,9 @@ func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result Policy
 	switch result.Decision {
 	case Deny:
 		if ev.IO != nil {
-			_ = ev.IO.Send(ctx, intr.OutputMessage{
-				Type: intr.OutputText,
-				Content: intr.FormatDeniedMessage(
+			_ = ev.IO.Send(ctx, io.OutputMessage{
+				Type: io.OutputText,
+				Content: io.FormatDeniedMessage(
 					ev.Tool.Name,
 					result.Reason.Message,
 					result.Reason.Code,
@@ -155,13 +155,13 @@ func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result Policy
 func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) error {
 	approval := buildApprovalRequest(ev, result)
 	observer := approvalObserver(ev)
-	kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
+	observe.ObserveApproval(ctx, observer, io.ApprovalEvent{
 		SessionID: approval.SessionID,
 		Type:      "requested",
 		Request:   *approval,
 	})
-	kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
-		Type:        kobs.ExecutionApprovalRequest,
+	observe.ObserveExecutionEvent(ctx, observer, observe.ExecutionEvent{
+		Type:        observe.ExecutionApprovalRequest,
 		SessionID:   approval.SessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    approval.ToolName,
@@ -171,15 +171,15 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Data:        approvalRequestData(approval, ev.Input, result.Meta),
 	})
 	if auto := autoApprovalDecision(ev, approval); auto != nil {
-		resolved := intr.NormalizeApprovalDecisionForRequest(approval, auto)
-		kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
+		resolved := io.NormalizeApprovalDecisionForRequest(approval, auto)
+		observe.ObserveApproval(ctx, observer, io.ApprovalEvent{
 			SessionID: approval.SessionID,
 			Type:      "resolved",
 			Request:   *approval,
 			Decision:  resolved,
 		})
-		kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
-			Type:        kobs.ExecutionApprovalResolved,
+		observe.ObserveExecutionEvent(ctx, observer, observe.ExecutionEvent{
+			Type:        observe.ExecutionApprovalResolved,
 			SessionID:   approval.SessionID,
 			Timestamp:   time.Now().UTC(),
 			ToolName:    approval.ToolName,
@@ -191,8 +191,8 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		applyApprovalDecision(ev, approval, resolved)
 		return nil
 	}
-	resp, err := ev.IO.Ask(ctx, intr.InputRequest{
-		Type:     intr.InputConfirm,
+	resp, err := ev.IO.Ask(ctx, io.InputRequest{
+		Type:     io.InputConfirm,
 		Prompt:   approval.Prompt,
 		Approval: approval,
 		Meta: map[string]any{
@@ -208,14 +208,14 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		return err
 	}
 	resolved := normalizeApprovalDecision(resp, approval)
-	kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
+	observe.ObserveApproval(ctx, observer, io.ApprovalEvent{
 		SessionID: approval.SessionID,
 		Type:      "resolved",
 		Request:   *approval,
 		Decision:  resolved,
 	})
-	kobs.ObserveExecutionEvent(ctx, observer, kobs.ExecutionEvent{
-		Type:        kobs.ExecutionApprovalResolved,
+	observe.ObserveExecutionEvent(ctx, observer, observe.ExecutionEvent{
+		Type:        observe.ExecutionApprovalResolved,
 		SessionID:   approval.SessionID,
 		Timestamp:   time.Now().UTC(),
 		ToolName:    approval.ToolName,
@@ -231,11 +231,11 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 	return nil
 }
 
-func approvalObserver(ev *hooks.ToolEvent) kobs.Observer {
+func approvalObserver(ev *hooks.ToolEvent) observe.Observer {
 	if ev != nil && ev.Observer != nil {
 		return ev.Observer
 	}
-	return kobs.NoOpObserver{}
+	return observe.NoOpObserver{}
 }
 
 func copyPolicyMeta(meta map[string]any) map[string]any {
@@ -246,7 +246,7 @@ func copyPolicyMeta(meta map[string]any) map[string]any {
 	return data
 }
 
-func approvalRequestData(approval *intr.ApprovalRequest, input []byte, meta map[string]any) map[string]any {
+func approvalRequestData(approval *io.ApprovalRequest, input []byte, meta map[string]any) map[string]any {
 	data := map[string]any{
 		"approval_id": approval.ID,
 		"reason":      approval.Reason,
@@ -263,7 +263,7 @@ func approvalRequestData(approval *intr.ApprovalRequest, input []byte, meta map[
 	return data
 }
 
-func approvalResolvedData(approval *intr.ApprovalRequest, resolved *intr.ApprovalDecision, input []byte, meta map[string]any) map[string]any {
+func approvalResolvedData(approval *io.ApprovalRequest, resolved *io.ApprovalDecision, input []byte, meta map[string]any) map[string]any {
 	data := map[string]any{
 		"approval_id": approval.ID,
 		"approved":    resolved.Approved,
@@ -291,7 +291,7 @@ func denyResult(code, message string) PolicyResult {
 	return PolicyResult{
 		Decision:    Deny,
 		Enforcement: EnforcementHardBlock,
-		Reason: intr.PolicyReason{
+		Reason: io.PolicyReason{
 			Code:    code,
 			Message: message,
 		},
@@ -302,7 +302,7 @@ func requireApprovalResult(code, message string) PolicyResult {
 	return PolicyResult{
 		Decision:    RequireApproval,
 		Enforcement: EnforcementRequireApproval,
-		Reason: intr.PolicyReason{
+		Reason: io.PolicyReason{
 			Code:    code,
 			Message: message,
 		},
@@ -401,7 +401,7 @@ func effectsToStrings(effects []tool.Effect) []string {
 	return out
 }
 
-func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *intr.ApprovalRequest {
+func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *io.ApprovalRequest {
 	sessionID := ""
 	if ev.Session != nil {
 		sessionID = ev.Session.ID
@@ -415,14 +415,14 @@ func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *intr.Approv
 		prompt = "Allow tool " + ev.Tool.Name + "?"
 	}
 	category, actionLabel, actionValue, scopeLabel, scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment := describeApproval(toolName, ev.Input)
-	req := &intr.ApprovalRequest{
+	req := &io.ApprovalRequest{
 		ID:                  fmt.Sprintf("approval-%d", time.Now().UnixNano()),
-		Kind:                intr.ApprovalKindTool,
+		Kind:                io.ApprovalKindTool,
 		Category:            category,
 		SessionID:           sessionID,
 		ToolName:            toolName,
 		Risk:                risk,
-		Prompt:              intr.FormatApprovalPrompt(&intr.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
+		Prompt:              io.FormatApprovalPrompt(&io.ApprovalRequest{ToolName: toolName, Risk: risk, Prompt: prompt, Reason: result.Reason.Message, ReasonCode: result.Reason.Code, Enforcement: result.Enforcement}),
 		Reason:              result.Reason.Message,
 		ReasonCode:          result.Reason.Code,
 		Enforcement:         result.Enforcement,
@@ -440,7 +440,7 @@ func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *intr.Approv
 		RequestedAt:         time.Now().UTC(),
 	}
 	if amendment != nil {
-		req.RuleBinding = &intr.RuleBinding{
+		req.RuleBinding = &io.RuleBinding{
 			Category:    category,
 			ToolName:    toolName,
 			Label:       scopeLabel,
@@ -450,10 +450,10 @@ func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *intr.Approv
 			HTTPRule:    amendment.HTTPRule,
 		}
 	}
-	return intr.NormalizeApprovalRequest(req)
+	return io.NormalizeApprovalRequest(req)
 }
 
-func normalizeApprovalDecision(resp intr.InputResponse, req *intr.ApprovalRequest) *intr.ApprovalDecision {
+func normalizeApprovalDecision(resp io.InputResponse, req *io.ApprovalRequest) *io.ApprovalDecision {
 	if resp.Decision != nil {
 		decision := *resp.Decision
 		if decision.RequestID == "" {
@@ -462,13 +462,13 @@ func normalizeApprovalDecision(resp intr.InputResponse, req *intr.ApprovalReques
 		if decision.DecidedAt.IsZero() {
 			decision.DecidedAt = time.Now().UTC()
 		}
-		return intr.NormalizeApprovalDecisionForRequest(req, &decision)
+		return io.NormalizeApprovalDecisionForRequest(req, &decision)
 	}
-	decisionType := intr.ApprovalDecisionDeny
+	decisionType := io.ApprovalDecisionDeny
 	if resp.Approved {
-		decisionType = intr.ApprovalDecisionApprove
+		decisionType = io.ApprovalDecisionApprove
 	}
-	return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
+	return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
 		RequestID: req.ID,
 		Type:      decisionType,
 		Approved:  resp.Approved,
@@ -477,12 +477,12 @@ func normalizeApprovalDecision(resp intr.InputResponse, req *intr.ApprovalReques
 	})
 }
 
-func autoApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest) *intr.ApprovalDecision {
+func autoApprovalDecision(ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
 	if ev == nil || ev.Session == nil || req == nil {
 		return nil
 	}
 	if rule, ok := session.MatchingApprovalRule(ev.Session, req); ok {
-		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
+		return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
 			RequestID: req.ID,
 			Type:      rule.Type,
 			Approved:  true,
@@ -492,9 +492,9 @@ func autoApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest) *intr.
 		})
 	}
 	if session.PermissionProfileCovers(session.GrantedPermissionsOf(ev.Session), req.ProposedPermissions) {
-		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
+		return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
 			RequestID: req.ID,
-			Type:      intr.ApprovalDecisionGrantPermission,
+			Type:      io.ApprovalDecisionGrantPermission,
 			Approved:  true,
 			Reason:    "required permissions already granted for this session",
 			Source:    "session-permissions",
@@ -504,21 +504,21 @@ func autoApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest) *intr.
 	return nil
 }
 
-func applyApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest, decision *intr.ApprovalDecision) {
+func applyApprovalDecision(ev *hooks.ToolEvent, req *io.ApprovalRequest, decision *io.ApprovalDecision) {
 	if ev == nil || ev.Session == nil || req == nil || decision == nil || !decision.Approved {
 		return
 	}
 	switch decision.Type {
-	case intr.ApprovalDecisionApproveSession:
+	case io.ApprovalDecisionApproveSession:
 		session.RememberApprovalRule(ev.Session, req, decision.Type, decision.DecidedAt)
-	case intr.ApprovalDecisionGrantPermission:
+	case io.ApprovalDecisionGrantPermission:
 		perms := decision.GrantedPermissions
 		if perms == nil {
 			perms = req.ProposedPermissions
 		}
 		session.MergeGrantedPermissions(ev.Session, perms)
 		session.RememberApprovalRule(ev.Session, req, decision.Type, decision.DecidedAt)
-	case intr.ApprovalDecisionPolicyAmendment:
+	case io.ApprovalDecisionPolicyAmendment:
 		if req.ProposedPermissions != nil {
 			session.MergeGrantedPermissions(ev.Session, req.ProposedPermissions)
 		}
@@ -526,7 +526,7 @@ func applyApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest, decis
 	}
 }
 
-func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, string, string, string, string, string, string, string, string, *intr.PermissionProfile, *intr.ExecPolicyAmendment) {
+func describeApproval(toolName string, input []byte) (io.ApprovalCategory, string, string, string, string, string, string, string, string, *io.PermissionProfile, *io.ExecPolicyAmendment) {
 	switch strings.TrimSpace(toolName) {
 	case "run_command":
 		commandLine, pattern := parseApprovalCommand(input)
@@ -546,16 +546,16 @@ func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, str
 			sessionNote = "Future matching commands in this session will be approved automatically."
 			projectNote = "Future matching commands in this project will follow the saved execution rule."
 		}
-		var amendment *intr.ExecPolicyAmendment
+		var amendment *io.ExecPolicyAmendment
 		if pattern != "" {
-			amendment = &intr.ExecPolicyAmendment{
-				CommandRule: &intr.ExecPolicyCommandRule{
+			amendment = &io.ExecPolicyAmendment{
+				CommandRule: &io.ExecPolicyCommandRule{
 					Name:  "allow-" + sanitizeApprovalName(pattern),
 					Match: pattern + "*",
 				},
 			}
 		}
-		return intr.ApprovalCategoryCommand, "Command", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, amendment
+		return io.ApprovalCategoryCommand, "Command", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, amendment
 	case "http_request":
 		requestLine, host, method := parseApprovalRequestTarget(input)
 		actionValue := requestLine
@@ -567,24 +567,24 @@ func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, str
 		sessionNote := ""
 		projectNote := ""
 		scopeValue := ""
-		var perms *intr.PermissionProfile
-		var amendment *intr.ExecPolicyAmendment
+		var perms *io.PermissionProfile
+		var amendment *io.ExecPolicyAmendment
 		if host != "" {
 			cacheKey = "http_request|" + strings.ToUpper(method) + " " + host
 			cacheLabel = strings.ToUpper(method) + " " + host
 			scopeValue = cacheLabel
 			sessionNote = "This host will be allowed for the rest of the session."
 			projectNote = "This host will be added to the project's execution policy."
-			perms = &intr.PermissionProfile{HTTPHosts: []string{host}}
-			amendment = &intr.ExecPolicyAmendment{
-				HTTPRule: &intr.ExecPolicyHTTPRule{
+			perms = &io.PermissionProfile{HTTPHosts: []string{host}}
+			amendment = &io.ExecPolicyAmendment{
+				HTTPRule: &io.ExecPolicyHTTPRule{
 					Name:    "allow-" + sanitizeApprovalName(host),
 					Match:   host,
 					Methods: []string{strings.ToUpper(method)},
 				},
 			}
 		}
-		return intr.ApprovalCategoryHTTP, "Request", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment
+		return io.ApprovalCategoryHTTP, "Request", actionValue, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment
 	default:
 		preview := parseApprovalGenericPreview(input)
 		if preview == "" {
@@ -603,7 +603,7 @@ func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, str
 			sessionNote = "This exact action will be approved automatically in this session."
 			projectNote = "Future matching actions in this project will follow the saved execution rule."
 		}
-		return intr.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
+		return io.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
 	}
 }
 

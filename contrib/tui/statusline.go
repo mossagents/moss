@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/product"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"path/filepath"
 	"strings"
 )
@@ -168,7 +168,7 @@ func (m chatModel) renderStatusLine() string {
 
 func (m chatModel) runtimeStateLabel() string {
 	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
 		return "approval"
 	case m.pendAsk != nil:
 		return "input"
@@ -199,7 +199,7 @@ func (m chatModel) progressStatusSummary() string {
 
 func (m chatModel) statusContextSummary() string {
 	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
 		return "confirmation needed"
 	case m.pendAsk != nil:
 		return "waiting on you"
@@ -235,7 +235,7 @@ func (m chatModel) statusContextSummary() string {
 
 func (m chatModel) composerMetaSummary() (string, string) {
 	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil:
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
 		return "Approval", "confirmation needed  •  Tab move, Enter apply"
 	case m.pendAsk != nil:
 		return "Input", "answer required  •  Enter confirm"

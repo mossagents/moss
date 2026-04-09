@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/mossagents/moss/kernel/loop"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -270,9 +270,9 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 		"parent_session_id", parentSessionID,
 	)
 
-	sess.AppendMessage(mdl.Message{
-		Role:         mdl.RoleUser,
-		ContentParts: []mdl.ContentPart{mdl.TextPart(task)},
+	sess.AppendMessage(model.Message{
+		Role:         model.RoleUser,
+		ContentParts: []model.ContentPart{model.TextPart(task)},
 	})
 
 	result, err := delegator.RunWithTools(WithSessionID(runCtx, sess.ID), sess, scopedTools)

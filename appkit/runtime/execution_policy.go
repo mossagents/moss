@@ -3,11 +3,11 @@ package runtime
 import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"path/filepath"
 	"strings"
@@ -31,7 +31,7 @@ type CommandExecutionPolicy struct {
 	AllowedPaths   []string             `json:"allowed_paths,omitempty"`
 	ClearEnv       bool                 `json:"clear_env,omitempty"`
 	Env            map[string]string    `json:"env,omitempty"`
-	Network        kws.ExecNetworkPolicy `json:"network"`
+	Network        workspace.ExecNetworkPolicy `json:"network"`
 	Rules          []CommandRule        `json:"rules,omitempty"`
 }
 
@@ -177,7 +177,7 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 			AllowedPaths:   append([]string(nil), defaults.AllowedPaths...),
 			ClearEnv:       defaults.ClearEnv,
 			Env:            cloneStringMap(defaults.Env),
-			Network:        kws.ExecNetworkPolicy{Mode: kws.ExecNetworkEnabled},
+			Network:        workspace.ExecNetworkPolicy{Mode: workspace.ExecNetworkEnabled},
 		},
 		HTTP: HTTPExecutionPolicy{
 			Access:          accessForApprovalMode(mode),
@@ -195,8 +195,8 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 		if policy.HTTP.Access != ExecutionAccessDeny {
 			policy.HTTP.Access = ExecutionAccessRequireApproval
 		}
-		policy.Command.Network = kws.ExecNetworkPolicy{
-			Mode:            kws.ExecNetworkDisabled,
+		policy.Command.Network = workspace.ExecNetworkPolicy{
+			Mode:            workspace.ExecNetworkDisabled,
 			PreferHardBlock: true,
 			AllowSoftLimit:  true,
 		}
@@ -208,12 +208,12 @@ func resolveExecutionPolicy(trust, approvalMode string, defaults CommandExecutio
 		policy.Command.MaxTimeout = policy.Command.DefaultTimeout
 	}
 	if policy.Command.Network.Mode == "" {
-		policy.Command.Network.Mode = kws.ExecNetworkEnabled
+		policy.Command.Network.Mode = workspace.ExecNetworkEnabled
 	}
 	return policy
 }
 
-func commandPolicyDefaults(sb sandbox.Sandbox, workspace string, _ kws.Workspace) CommandExecutionPolicy {
+func commandPolicyDefaults(sb sandbox.Sandbox, workspace string, _ workspace.Workspace) CommandExecutionPolicy {
 	timeout := 30 * time.Second
 	allowedPaths := []string{}
 	if sb != nil {
@@ -270,13 +270,13 @@ func cloneExecutionPolicy(policy ExecutionPolicy) ExecutionPolicy {
 	return policy
 }
 
-func MergeExecutionPolicyPermissions(policy ExecutionPolicy, perms intr.PermissionProfile) ExecutionPolicy {
+func MergeExecutionPolicyPermissions(policy ExecutionPolicy, perms io.PermissionProfile) ExecutionPolicy {
 	policy = cloneExecutionPolicy(policy)
 	policy.Command.AllowedPaths = normalizeStringSlice(append(policy.Command.AllowedPaths, perms.CommandPaths...))
 	policy.HTTP.AllowedHosts = normalizeStringSlice(append(policy.HTTP.AllowedHosts, perms.HTTPHosts...))
 	if perms.CommandNetwork != nil {
 		if perms.CommandNetwork.Enabled {
-			policy.Command.Network.Mode = kws.ExecNetworkEnabled
+			policy.Command.Network.Mode = workspace.ExecNetworkEnabled
 		}
 		policy.Command.Network.AllowHosts = normalizeStringSlice(append(policy.Command.Network.AllowHosts, perms.CommandNetwork.AllowHosts...))
 	}

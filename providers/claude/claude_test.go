@@ -3,7 +3,7 @@ package claude
 import (
 	"encoding/json"
 	"github.com/anthropics/anthropic-sdk-go"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"testing"
 )
@@ -11,9 +11,9 @@ import (
 // ─── toAnthropicMessages ─────────────────────────────
 
 func TestToAnthropicMessages_SystemExtracted(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("You are a helpful assistant.")}},
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")}},
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("You are a helpful assistant.")}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hello")}},
 	}
 	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
 	if err != nil {
@@ -35,10 +35,10 @@ func TestToAnthropicMessages_SystemExtracted(t *testing.T) {
 }
 
 func TestToAnthropicMessages_MultipleSystemMerged(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("System A")}},
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("System B")}},
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hi")}},
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("System A")}},
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("System B")}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}},
 	}
 	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
 	if err != nil {
@@ -54,12 +54,12 @@ func TestToAnthropicMessages_MultipleSystemMerged(t *testing.T) {
 }
 
 func TestToAnthropicMessages_AssistantWithToolCalls(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("What's the weather?")}},
+	msgs := []model.Message{
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("What's the weather?")}},
 		{
-			Role:         mdl.RoleAssistant,
-			ContentParts: []mdl.ContentPart{mdl.TextPart("Let me check.")},
-			ToolCalls: []mdl.ToolCall{
+			Role:         model.RoleAssistant,
+			ContentParts: []model.ContentPart{model.TextPart("Let me check.")},
+			ToolCalls: []model.ToolCall{
 				{ID: "tc_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
 			},
 		},
@@ -84,12 +84,12 @@ func TestToAnthropicMessages_AssistantWithToolCalls(t *testing.T) {
 }
 
 func TestToAnthropicMessages_ToolResults(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleTool,
-			ToolResults: []mdl.ToolResult{
-				{CallID: "tc_1", ContentParts: []mdl.ContentPart{mdl.TextPart("Sunny, 25°C")}},
-				{CallID: "tc_2", ContentParts: []mdl.ContentPart{mdl.TextPart("error: timeout")}, IsError: true},
+			Role: model.RoleTool,
+			ToolResults: []model.ToolResult{
+				{CallID: "tc_1", ContentParts: []model.ContentPart{model.TextPart("Sunny, 25°C")}},
+				{CallID: "tc_2", ContentParts: []model.ContentPart{model.TextPart("error: timeout")}, IsError: true},
 			},
 		},
 	}
@@ -111,8 +111,8 @@ func TestToAnthropicMessages_ToolResults(t *testing.T) {
 }
 
 func TestToAnthropicMessages_EmptyAssistantSkipped(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("")}, ToolCalls: nil},
+	msgs := []model.Message{
+		{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("")}, ToolCalls: nil},
 	}
 	_, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
 	if err != nil {
@@ -125,12 +125,12 @@ func TestToAnthropicMessages_EmptyAssistantSkipped(t *testing.T) {
 }
 
 func TestToAnthropicMessages_UserWithInputImage(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("describe this"),
-				mdl.ImageInlinePart(mdl.ContentPartInputImage, "image/png", "abcd", "a.png"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("describe this"),
+				model.ImageInlinePart(model.ContentPartInputImage, "image/png", "abcd", "a.png"),
 			},
 		},
 	}
@@ -152,12 +152,12 @@ func TestToAnthropicMessages_UserWithInputImage(t *testing.T) {
 }
 
 func TestToAnthropicMessages_UserWithInputVideo(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("summarize this"),
-				mdl.MediaInlinePart(mdl.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("summarize this"),
+				model.MediaInlinePart(model.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
 			},
 		},
 	}
@@ -176,11 +176,11 @@ func TestToAnthropicMessages_UserWithInputVideo(t *testing.T) {
 }
 
 func TestToAnthropicMessages_UserWithInputAudioFailsCapability(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.MediaInlinePart(mdl.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.MediaInlinePart(model.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
 			},
 		},
 	}
@@ -194,15 +194,15 @@ func TestToAnthropicMessages_UserWithInputAudioFailsCapability(t *testing.T) {
 }
 
 func TestToAnthropicMessages_ToolResultWithOutputImage(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleTool,
-			ToolResults: []mdl.ToolResult{
+			Role: model.RoleTool,
+			ToolResults: []model.ToolResult{
 				{
 					CallID: "tc_1",
-					ContentParts: []mdl.ContentPart{
-						mdl.TextPart("done"),
-						mdl.ImageURLPart(mdl.ContentPartOutputImage, "https://example.com/out.png", ""),
+					ContentParts: []model.ContentPart{
+						model.TextPart("done"),
+						model.ImageURLPart(model.ContentPartOutputImage, "https://example.com/out.png", ""),
 					},
 				},
 			},
@@ -223,10 +223,10 @@ func TestToAnthropicMessages_ToolResultWithOutputImage(t *testing.T) {
 }
 
 func TestToAnthropicMessages_UnsupportedPartFails(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role:         mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{{Type: mdl.ContentPartOutputImage, URL: "https://example.com/out.png"}},
+			Role:         model.RoleUser,
+			ContentParts: []model.ContentPart{{Type: model.ContentPartOutputImage, URL: "https://example.com/out.png"}},
 		},
 	}
 	_, _, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")
@@ -238,7 +238,7 @@ func TestToAnthropicMessages_UnsupportedPartFails(t *testing.T) {
 // ─── toAnthropicTools ────────────────────────────────
 
 func TestToAnthropicTools(t *testing.T) {
-	tools := []mdl.ToolSpec{
+	tools := []model.ToolSpec{
 		{
 			Name:        "read_file",
 			Description: "Read a file",
@@ -265,9 +265,9 @@ func TestToAnthropicTools(t *testing.T) {
 
 func TestBuildParams_ResponseFormatJSONObject(t *testing.T) {
 	c := New("")
-	params, err := c.buildParams(mdl.CompletionRequest{
-		Messages:       []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
-		ResponseFormat: &mdl.ResponseFormat{Type: "json_object"},
+	params, err := c.buildParams(model.CompletionRequest{
+		Messages:       []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
+		ResponseFormat: &model.ResponseFormat{Type: "json_object"},
 	})
 	if err != nil {
 		t.Fatalf("buildParams: %v", err)
@@ -288,11 +288,11 @@ func TestBuildParams_ResponseFormatJSONObject(t *testing.T) {
 
 func TestBuildParams_ResponseFormatJSONSchema(t *testing.T) {
 	c := New("")
-	params, err := c.buildParams(mdl.CompletionRequest{
-		Messages: []mdl.Message{{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}}},
-		ResponseFormat: &mdl.ResponseFormat{
+	params, err := c.buildParams(model.CompletionRequest{
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}},
+		ResponseFormat: &model.ResponseFormat{
 			Type: "json_schema",
-			JSONSchema: &mdl.JSONSchemaSpec{
+			JSONSchema: &model.JSONSchemaSpec{
 				Name:   "trade_signal",
 				Schema: json.RawMessage(`{"type":"object","properties":{"signal":{"type":"string"}},"required":["signal"]}`),
 			},
@@ -333,10 +333,10 @@ func TestFromAnthropicResponse_TextOnly(t *testing.T) {
 
 	resp := fromAnthropicResponse(&msg)
 
-	if resp.Message.Role != mdl.RoleAssistant {
+	if resp.Message.Role != model.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
 		t.Errorf("content = %q, want Hello World", got)
 	}
 	if len(resp.ToolCalls) != 0 {
@@ -377,7 +377,7 @@ func TestFromAnthropicResponse_WithToolUse(t *testing.T) {
 
 	resp := fromAnthropicResponse(&msg)
 
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
 		t.Errorf("content = %q", got)
 	}
 	if len(resp.ToolCalls) != 1 {
@@ -441,9 +441,9 @@ func TestFromAnthropicResponse_MultipleToolCalls(t *testing.T) {
 func TestBuildParams_Defaults(t *testing.T) {
 	c := &Client{model: "test-model", maxTokens: 4096}
 
-	req := mdl.CompletionRequest{
-		Messages: []mdl.Message{
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")}},
+	req := model.CompletionRequest{
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hello")}},
 		},
 	}
 	params, err := c.buildParams(req)
@@ -462,11 +462,11 @@ func TestBuildParams_Defaults(t *testing.T) {
 func TestBuildParams_ConfigOverrides(t *testing.T) {
 	c := &Client{model: "default-model", maxTokens: 4096}
 
-	req := mdl.CompletionRequest{
-		Messages: []mdl.Message{
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")}},
+	req := model.CompletionRequest{
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hello")}},
 		},
-		Config: mdl.ModelConfig{
+		Config: model.ModelConfig{
 			Model:     "override-model",
 			MaxTokens: 2048,
 		},
@@ -487,10 +487,10 @@ func TestBuildParams_ConfigOverrides(t *testing.T) {
 func TestBuildParams_SystemSeparated(t *testing.T) {
 	c := &Client{model: "m", maxTokens: 100}
 
-	req := mdl.CompletionRequest{
-		Messages: []mdl.Message{
-			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("Be concise.")}},
-			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hi")}},
+	req := model.CompletionRequest{
+		Messages: []model.Message{
+			{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("Be concise.")}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}},
 		},
 	}
 	params, err := c.buildParams(req)
@@ -607,7 +607,7 @@ func TestProcessEvent_ToolUseFlow(t *testing.T) {
 func TestProcessEvent_MessageStopEmitsDone(t *testing.T) {
 	it := &streamIterator{
 		toolUseBuilders: make(map[int]*toolUseBuilder),
-		usage:           mdl.TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
+		usage:           model.TokenUsage{PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15},
 	}
 
 	raw := `{"type": "message_stop"}`
@@ -635,16 +635,16 @@ func TestProcessEvent_MessageStopEmitsDone(t *testing.T) {
 
 func TestMessageConversion_RoundTrip(t *testing.T) {
 	// 构建一个完整的对话序列，验证映射完整性
-	msgs := []mdl.Message{
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("You are helpful.")}},
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Read /etc/hosts")}},
-		{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("I'll read the file.")}, ToolCalls: []mdl.ToolCall{
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("You are helpful.")}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Read /etc/hosts")}},
+		{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("I'll read the file.")}, ToolCalls: []model.ToolCall{
 			{ID: "tc_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"/etc/hosts"}`)},
 		}},
-		{Role: mdl.RoleTool, ToolResults: []mdl.ToolResult{
-			{CallID: "tc_1", ContentParts: []mdl.ContentPart{mdl.TextPart("127.0.0.1 localhost")}},
+		{Role: model.RoleTool, ToolResults: []model.ToolResult{
+			{CallID: "tc_1", ContentParts: []model.ContentPart{model.TextPart("127.0.0.1 localhost")}},
 		}},
-		{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("The file contains: 127.0.0.1 localhost")}},
+		{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("The file contains: 127.0.0.1 localhost")}},
 	}
 
 	system, messages, err := toAnthropicMessages(msgs, "claude-sonnet-4-20250514")

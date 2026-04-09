@@ -7,10 +7,10 @@ import (
 	"github.com/mossagents/moss/appkit"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/skill"
 	"os"
@@ -259,18 +259,18 @@ type DoctorExtensionHealth struct {
 	Error            string                        `json:"error,omitempty"`
 }
 
-func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
+func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
-	projectConfigPath := appconfig.DefaultProjectConfigPath(workspace)
+	projectConfigPath := appconfig.DefaultProjectConfigPath(workspaceDir)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
 	normalizedApprovalMode := NormalizeApprovalMode(approvalMode)
-	executionPolicy := resolveDoctorExecutionPolicy(workspace, flags, explicitFlags, trust, normalizedApprovalMode)
+	executionPolicy := resolveDoctorExecutionPolicy(workspaceDir, flags, explicitFlags, trust, normalizedApprovalMode)
 	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
 	commandNetworkEnforcement := "none"
 	commandNetworkDegraded := false
 	if executionPolicy.Command.Access == appruntime.ExecutionAccessDeny {
 		commandNetworkEnforcement = "disabled"
-	} else if executionPolicy.Command.Network.Mode == kws.ExecNetworkDisabled {
+	} else if executionPolicy.Command.Network.Mode == workspace.ExecNetworkDisabled {
 		commandNetworkEnforcement = "soft-limit"
 		commandNetworkDegraded = true
 	}
@@ -281,7 +281,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 	report := DoctorReport{
 		App:       appName,
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Workspace: workspace,
+		Workspace: workspaceDir,
 		Config: DoctorConfigReport{
 			ExplicitFlags:        explicitFlags,
 			DetectedEnv:          detectedEnvVars(),
@@ -316,7 +316,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			HTTPFollowRedirects:       executionPolicy.HTTP.FollowRedirects,
 		},
 		Governance: DoctorGovernanceReport{
-			Model: BuildGovernanceReport(workspace, governanceCfg),
+			Model: BuildGovernanceReport(workspaceDir, governanceCfg),
 		},
 		Paths: DoctorPathsReport{
 			AppDir:             checkWritableDir(appconfig.AppDir()),
@@ -326,7 +326,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 			MemoryDir:          checkWritableDir(MemoryDir()),
 			TaskRuntimeDir:     checkWritableDir(TaskRuntimeDir()),
 			WorkspaceIsolation: checkWritableDir(WorkspaceIsolationDir()),
-			PricingCatalog:     checkWritableFile(defaultPricingCatalogPath(workspace, governanceCfg.PricingCatalogPath)),
+			PricingCatalog:     checkWritableFile(defaultPricingCatalogPath(workspaceDir, governanceCfg.PricingCatalogPath)),
 			AuditLog:           checkWritableFile(AuditLogPath()),
 			DebugLog:           checkWritableFile(DebugLogPath()),
 		},
@@ -334,16 +334,16 @@ func BuildDoctorReport(ctx context.Context, appName, workspace string, flags *ap
 
 	report.Health.State = buildDoctorStateHealth()
 	if catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled()); err == nil {
-		if adaptive, err := buildInspectGovernance(ctx, workspace, catalog, 200); err == nil {
+		if adaptive, err := buildInspectGovernance(ctx, workspaceDir, catalog, 200); err == nil {
 			report.Governance.Adaptive = adaptive
 		}
 	}
 	sessionStore, summaries := populateDoctorSessionsHealth(ctx, &report)
 	report.Health.Tasks = buildDoctorTaskHealth()
 	report.Health.Workspace = buildDoctorWorkspaceHealth()
-	report.Health.Extensions = buildDoctorExtensionHealth(workspace, trust, projectAssetsAllowed, projectConfigPath)
-	report.Health.Repo = buildDoctorRepoHealth(ctx, workspace)
-	report.Health.Snapshots = buildDoctorSnapshotHealth(ctx, workspace, sessionStore, summaries)
+	report.Health.Extensions = buildDoctorExtensionHealth(workspaceDir, trust, projectAssetsAllowed, projectConfigPath)
+	report.Health.Repo = buildDoctorRepoHealth(ctx, workspaceDir)
+	report.Health.Snapshots = buildDoctorSnapshotHealth(ctx, workspaceDir, sessionStore, summaries)
 
 	return report
 }
@@ -593,14 +593,14 @@ type CheckpointDetail struct {
 	Note         string                      `json:"note,omitempty"`
 	PatchIDs     []string                    `json:"patch_ids,omitempty"`
 	PatchCount   int                         `json:"patch_count"`
-	Lineage      []ckpt.CheckpointLineageRef `json:"lineage,omitempty"`
+	Lineage      []checkpoint.CheckpointLineageRef `json:"lineage,omitempty"`
 	LineageDepth int                         `json:"lineage_depth"`
 	Metadata     map[string]any              `json:"metadata,omitempty"`
 	MetadataKeys []string                    `json:"metadata_keys,omitempty"`
 	CreatedAt    time.Time                   `json:"created_at"`
 }
 
-func SummarizeCheckpoint(item ckpt.CheckpointRecord) CheckpointSummary {
+func SummarizeCheckpoint(item checkpoint.CheckpointRecord) CheckpointSummary {
 	sessionID := checkpointSessionID(item)
 	return CheckpointSummary{
 		ID:           item.ID,
@@ -613,10 +613,10 @@ func SummarizeCheckpoint(item ckpt.CheckpointRecord) CheckpointSummary {
 	}
 }
 
-func checkpointSessionID(item ckpt.CheckpointRecord) string {
+func checkpointSessionID(item checkpoint.CheckpointRecord) string {
 	sessionID := item.SessionID
 	for _, ref := range item.Lineage {
-		if ref.Kind == ckpt.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
+		if ref.Kind == checkpoint.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
 			sessionID = ref.ID
 			break
 		}
@@ -624,7 +624,7 @@ func checkpointSessionID(item ckpt.CheckpointRecord) string {
 	return sessionID
 }
 
-func DescribeCheckpoint(item ckpt.CheckpointRecord) CheckpointDetail {
+func DescribeCheckpoint(item checkpoint.CheckpointRecord) CheckpointDetail {
 	keys := make([]string, 0, len(item.Metadata))
 	for key := range item.Metadata {
 		keys = append(keys, key)
@@ -637,7 +637,7 @@ func DescribeCheckpoint(item ckpt.CheckpointRecord) CheckpointDetail {
 		Note:         item.Note,
 		PatchIDs:     append([]string(nil), item.PatchIDs...),
 		PatchCount:   len(item.PatchIDs),
-		Lineage:      append([]ckpt.CheckpointLineageRef(nil), item.Lineage...),
+		Lineage:      append([]checkpoint.CheckpointLineageRef(nil), item.Lineage...),
 		LineageDepth: len(item.Lineage),
 		Metadata:     cloneAnyMap(item.Metadata),
 		MetadataKeys: keys,
@@ -645,7 +645,7 @@ func DescribeCheckpoint(item ckpt.CheckpointRecord) CheckpointDetail {
 	}
 }
 
-func SummarizeCheckpoints(items []ckpt.CheckpointRecord) []CheckpointSummary {
+func SummarizeCheckpoints(items []checkpoint.CheckpointRecord) []CheckpointSummary {
 	out := make([]CheckpointSummary, 0, len(items))
 	for _, item := range items {
 		out = append(out, SummarizeCheckpoint(item))
@@ -657,13 +657,13 @@ func SummarizeCheckpoints(items []ckpt.CheckpointRecord) []CheckpointSummary {
 }
 
 func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error) {
-	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
 	items, err := store.List(ctx)
 	if err != nil {
-		if err == ckpt.ErrCheckpointUnavailable {
+		if err == checkpoint.ErrCheckpointUnavailable {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list checkpoints: %w", err)
@@ -675,9 +675,9 @@ func ListCheckpoints(ctx context.Context, limit int) ([]CheckpointSummary, error
 	return out, nil
 }
 
-func ResolveCheckpointRecord(ctx context.Context, store ckpt.CheckpointStore, selector string) (*ckpt.CheckpointRecord, error) {
+func ResolveCheckpointRecord(ctx context.Context, store checkpoint.CheckpointStore, selector string) (*checkpoint.CheckpointRecord, error) {
 	if store == nil {
-		return nil, ckpt.ErrCheckpointUnavailable
+		return nil, checkpoint.ErrCheckpointUnavailable
 	}
 	selector = strings.TrimSpace(selector)
 	if selector == "" || strings.EqualFold(selector, "latest") {
@@ -686,7 +686,7 @@ func ResolveCheckpointRecord(ctx context.Context, store ckpt.CheckpointStore, se
 			return nil, err
 		}
 		if len(items) == 0 {
-			return nil, ckpt.ErrCheckpointNotFound
+			return nil, checkpoint.ErrCheckpointNotFound
 		}
 		sort.Slice(items, func(i, j int) bool {
 			if items[i].CreatedAt.Equal(items[j].CreatedAt) {
@@ -702,12 +702,12 @@ func ResolveCheckpointRecord(ctx context.Context, store ckpt.CheckpointStore, se
 		return nil, err
 	}
 	if item == nil {
-		return nil, ckpt.ErrCheckpointNotFound
+		return nil, checkpoint.ErrCheckpointNotFound
 	}
 	return item, nil
 }
 
-func LoadCheckpointWithStore(ctx context.Context, store ckpt.CheckpointStore, selector string) (*CheckpointDetail, error) {
+func LoadCheckpointWithStore(ctx context.Context, store checkpoint.CheckpointStore, selector string) (*CheckpointDetail, error) {
 	item, err := ResolveCheckpointRecord(ctx, store, selector)
 	if err != nil {
 		return nil, err
@@ -717,7 +717,7 @@ func LoadCheckpointWithStore(ctx context.Context, store ckpt.CheckpointStore, se
 }
 
 func LoadCheckpoint(ctx context.Context, checkpointID string) (*CheckpointDetail, error) {
-	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
@@ -815,11 +815,11 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func listSnapshots(ctx context.Context, workspace string) ([]kws.WorktreeSnapshot, error) {
-	store := sandbox.NewGitWorktreeSnapshotStore(workspace)
+func listSnapshots(ctx context.Context, workspaceDir string) ([]workspace.WorktreeSnapshot, error) {
+	store := sandbox.NewGitWorktreeSnapshotStore(workspaceDir)
 	snapshots, err := store.List(ctx)
 	if err != nil {
-		if err == kws.ErrWorktreeSnapshotUnavailable {
+		if err == workspace.ErrWorktreeSnapshotUnavailable {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("list snapshots: %w", err)

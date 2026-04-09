@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // SessionStatus 表示 Session 的生命周期状态。
@@ -30,7 +30,7 @@ type SessionConfig struct {
 	BudgetPolicy string          `json:"budget_policy,omitempty"`
 	Timeout      time.Duration   `json:"timeout,omitempty"`
 	SystemPrompt string          `json:"system_prompt,omitempty"`
-	ModelConfig  mdl.ModelConfig `json:"model_config,omitempty"`
+	ModelConfig  model.ModelConfig `json:"model_config,omitempty"`
 	Metadata     map[string]any  `json:"metadata,omitempty"`
 }
 
@@ -112,7 +112,7 @@ type Session struct {
 	Status    SessionStatus  `json:"status"`
 	Config    SessionConfig  `json:"config"`
 	Title     string         `json:"title,omitempty"` // user-facing display title
-	Messages  []mdl.Message  `json:"messages"`
+	Messages  []model.Message  `json:"messages"`
 	State     map[string]any `json:"state,omitempty"`
 	Budget    Budget         `json:"budget"`
 	CreatedAt time.Time      `json:"created_at"`
@@ -121,14 +121,14 @@ type Session struct {
 }
 
 // AppendMessage 追加一条消息到对话历史。
-func (s *Session) AppendMessage(msg mdl.Message) {
+func (s *Session) AppendMessage(msg model.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Messages = append(s.Messages, msg)
 }
 
 // ReplaceMessages 原子地替换完整的消息历史。
-func (s *Session) ReplaceMessages(msgs []mdl.Message) {
+func (s *Session) ReplaceMessages(msgs []model.Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Messages = msgs
@@ -136,13 +136,13 @@ func (s *Session) ReplaceMessages(msgs []mdl.Message) {
 
 // CopyMessages 在读锁保护下返回消息历史的浅拷贝。
 // 供需要并发安全读取的调用方使用（如 PromptMessages）。
-func (s *Session) CopyMessages() []mdl.Message {
+func (s *Session) CopyMessages() []model.Message {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if len(s.Messages) == 0 {
 		return nil
 	}
-	out := make([]mdl.Message, len(s.Messages))
+	out := make([]model.Message, len(s.Messages))
 	copy(out, s.Messages)
 	return out
 }
@@ -150,16 +150,16 @@ func (s *Session) CopyMessages() []mdl.Message {
 // UpdateSystemPrompt 原子地更新或插入系统提示消息。
 // 若消息历史的第一条是 system 消息则原地更新，否则前插。
 func (s *Session) UpdateSystemPrompt(prompt string) {
-	newMsg := mdl.Message{
-		Role:         mdl.RoleSystem,
-		ContentParts: []mdl.ContentPart{mdl.TextPart(prompt)},
+	newMsg := model.Message{
+		Role:         model.RoleSystem,
+		ContentParts: []model.ContentPart{model.TextPart(prompt)},
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if len(s.Messages) > 0 && s.Messages[0].Role == mdl.RoleSystem {
+	if len(s.Messages) > 0 && s.Messages[0].Role == model.RoleSystem {
 		s.Messages[0].ContentParts = newMsg.ContentParts
 	} else {
-		s.Messages = append([]mdl.Message{newMsg}, s.Messages...)
+		s.Messages = append([]model.Message{newMsg}, s.Messages...)
 	}
 }
 
@@ -180,7 +180,7 @@ func (s *Session) GetTitle() string {
 // TruncateMessages 按 token 预算截断对话历史，保留最近的消息。
 // counter 函数返回单条消息的 token 数。
 // 系统提示消息（role=system）不会被截断。
-func (s *Session) TruncateMessages(maxTokens int, counter func(mdl.Message) int) {
+func (s *Session) TruncateMessages(maxTokens int, counter func(model.Message) int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -191,7 +191,7 @@ func (s *Session) TruncateMessages(maxTokens int, counter func(mdl.Message) int)
 	// 定位 system 消息的边界，确保截断不会移除系统提示。
 	systemBoundary := 0
 	for i, msg := range s.Messages {
-		if msg.Role == mdl.RoleSystem {
+		if msg.Role == model.RoleSystem {
 			systemBoundary = i + 1
 		}
 	}

@@ -20,8 +20,8 @@ import (
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/presets/deepagent"
 	"github.com/mossagents/moss/scheduler"
@@ -252,7 +252,7 @@ func (s *ChatService) StopAgent() {
 }
 
 func (s *ChatService) RespondToAsk(value string, approved bool) {
-	s.wailsIO.RespondToAsk(intr.InputResponse{Value: value, Approved: approved})
+	s.wailsIO.RespondToAsk(io.InputResponse{Value: value, Approved: approved})
 }
 
 func (s *ChatService) NewSession() error {
@@ -341,9 +341,9 @@ func (s *ChatService) GetSessionHistory(id string) ([]HistoryMessage, error) {
 	return convertToHistoryMessages(sess.CopyMessages()), nil
 }
 
-func convertToHistoryMessages(msgs []mdl.Message) []HistoryMessage {
+func convertToHistoryMessages(msgs []model.Message) []HistoryMessage {
 	// Build call ID → tool result mapping from tool-role messages.
-	toolResults := make(map[string]mdl.ToolResult)
+	toolResults := make(map[string]model.ToolResult)
 	for _, msg := range msgs {
 		for _, tr := range msg.ToolResults {
 			toolResults[tr.CallID] = tr
@@ -354,9 +354,9 @@ func convertToHistoryMessages(msgs []mdl.Message) []HistoryMessage {
 	historyIndex := 0
 	for _, msg := range msgs {
 		switch msg.Role {
-		case mdl.RoleSystem, mdl.RoleTool:
+		case model.RoleSystem, model.RoleTool:
 			continue
-		case mdl.RoleUser:
+		case model.RoleUser:
 			text := extractTextFromParts(msg.ContentParts)
 			if text == "" {
 				continue
@@ -368,16 +368,16 @@ func convertToHistoryMessages(msgs []mdl.Message) []HistoryMessage {
 				Retryable:    true,
 			})
 			historyIndex++
-		case mdl.RoleAssistant:
+		case model.RoleAssistant:
 			hm := HistoryMessage{
 				HistoryIndex: historyIndex,
 				Role:         "assistant",
 			}
 			for _, cp := range msg.ContentParts {
 				switch cp.Type {
-				case mdl.ContentPartText:
+				case model.ContentPartText:
 					hm.Content += cp.Text
-				case mdl.ContentPartReasoning:
+				case model.ContentPartReasoning:
 					hm.Thinking += cp.Text
 				}
 			}
@@ -416,7 +416,7 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 	sessID := sess.ID
 	s.mu.Unlock()
 
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(content)}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}})
 
 	go func() {
 		defer func() {
@@ -462,13 +462,13 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 	return nil
 }
 
-func locateRetryPoint(msgs []mdl.Message, targetHistoryIndex int) (int, string, error) {
+func locateRetryPoint(msgs []model.Message, targetHistoryIndex int) (int, string, error) {
 	historyIndex := 0
 	for rawIndex, msg := range msgs {
 		switch msg.Role {
-		case mdl.RoleSystem, mdl.RoleTool:
+		case model.RoleSystem, model.RoleTool:
 			continue
-		case mdl.RoleUser:
+		case model.RoleUser:
 			text := strings.TrimSpace(extractTextFromParts(msg.ContentParts))
 			if text == "" {
 				continue
@@ -477,10 +477,10 @@ func locateRetryPoint(msgs []mdl.Message, targetHistoryIndex int) (int, string, 
 				return rawIndex, text, nil
 			}
 			historyIndex++
-		case mdl.RoleAssistant:
+		case model.RoleAssistant:
 			hasVisibleContent := false
 			for _, cp := range msg.ContentParts {
-				if cp.Type == mdl.ContentPartText || cp.Type == mdl.ContentPartReasoning {
+				if cp.Type == model.ContentPartText || cp.Type == model.ContentPartReasoning {
 					hasVisibleContent = true
 					break
 				}
@@ -515,7 +515,7 @@ func (s *ChatService) retryUserMessage(historyIndex int) error {
 		return fmt.Errorf("retry point %d is invalid", historyIndex)
 	}
 
-	truncated := append([]mdl.Message(nil), msgs[:rawIndex]...)
+	truncated := append([]model.Message(nil), msgs[:rawIndex]...)
 	sess.ReplaceMessages(truncated)
 	sess.Status = session.StatusCreated
 	sess.EndedAt = time.Time{}
@@ -541,10 +541,10 @@ func (s *ChatService) tryHandleRetryCommand(content string) (bool, error) {
 	return true, s.retryUserMessage(idx)
 }
 
-func extractTextFromParts(parts []mdl.ContentPart) string {
+func extractTextFromParts(parts []model.ContentPart) string {
 	var sb strings.Builder
 	for _, cp := range parts {
-		if cp.Type == mdl.ContentPartText {
+		if cp.Type == model.ContentPartText {
 			sb.WriteString(cp.Text)
 		}
 	}
@@ -1276,7 +1276,7 @@ func (s *ChatService) sessionSummary() string {
 	}
 	dialogCount := 0
 	for _, msg := range s.sess.Messages {
-		if msg.Role != mdl.RoleSystem {
+		if msg.Role != model.RoleSystem {
 			dialogCount++
 		}
 	}
@@ -1392,7 +1392,7 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 	}
 	dialogCount := 0
 	for _, m := range sess.Messages {
-		if m.Role != mdl.RoleSystem {
+		if m.Role != model.RoleSystem {
 			dialogCount++
 		}
 	}
@@ -1411,7 +1411,7 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 		ID:       offloadID,
 		Status:   session.StatusCompleted,
 		Config:   sess.Config,
-		Messages: append([]mdl.Message(nil), sess.Messages...),
+		Messages: append([]model.Message(nil), sess.Messages...),
 		State: map[string]any{
 			"offload_of": sess.ID,
 			"note":       note,
@@ -1482,11 +1482,11 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 	msgs := sess.CopyMessages()
 	var firstUser, firstAssistant string
 	for _, m := range msgs {
-		if m.Role == mdl.RoleUser && firstUser == "" {
-			firstUser = mdl.ContentPartsToPlainText(m.ContentParts)
+		if m.Role == model.RoleUser && firstUser == "" {
+			firstUser = model.ContentPartsToPlainText(m.ContentParts)
 		}
-		if m.Role == mdl.RoleAssistant && firstAssistant == "" {
-			firstAssistant = mdl.ContentPartsToPlainText(m.ContentParts)
+		if m.Role == model.RoleAssistant && firstAssistant == "" {
+			firstAssistant = model.ContentPartsToPlainText(m.ContentParts)
 		}
 		if firstUser != "" && firstAssistant != "" {
 			break
@@ -1512,20 +1512,20 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	resp, err := llm.Complete(ctx, mdl.CompletionRequest{
-		Messages: []mdl.Message{
+	resp, err := llm.Complete(ctx, model.CompletionRequest{
+		Messages: []model.Message{
 			{
-				Role: mdl.RoleSystem,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(
+				Role: model.RoleSystem,
+				ContentParts: []model.ContentPart{model.TextPart(
 					"你是一个会话标题生成器。根据以下对话内容，生成一个简洁的中文标题（不超过15字，只输出标题本身，不含引号、标点符号、序号、解释说明）。",
 				)},
 			},
 			{
-				Role:         mdl.RoleUser,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(prompt)},
+				Role:         model.RoleUser,
+				ContentParts: []model.ContentPart{model.TextPart(prompt)},
 			},
 		},
-		Config: mdl.ModelConfig{
+		Config: model.ModelConfig{
 			MaxTokens:   64,
 			Temperature: 0.3,
 		},
@@ -1535,7 +1535,7 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 		return ""
 	}
 
-	title := strings.TrimSpace(mdl.ContentPartsToPlainText(resp.Message.ContentParts))
+	title := strings.TrimSpace(model.ContentPartsToPlainText(resp.Message.ContentParts))
 	title = strings.Trim(title, `"'"""''`)
 	title = strings.TrimSpace(title)
 
@@ -1627,9 +1627,9 @@ func (s *ChatService) RunAutomationNow(id string) error {
 					slog.Warn("RunAutomationNow: create session failed", slog.Any("error", err))
 					return
 				}
-				sess.AppendMessage(mdl.Message{
-					Role:         mdl.RoleUser,
-					ContentParts: []mdl.ContentPart{mdl.TextPart(job.Goal)},
+				sess.AppendMessage(model.Message{
+					Role:         model.RoleUser,
+					ContentParts: []model.ContentPart{model.TextPart(job.Goal)},
 				})
 				if _, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO); err != nil {
 					slog.Warn("RunAutomationNow: run failed", slog.Any("error", err))

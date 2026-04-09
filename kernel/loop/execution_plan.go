@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -26,7 +26,7 @@ type ExecutionPlanCall struct {
 	Rationale       string          `json:"rationale,omitempty"`
 }
 
-func buildExecutionPlan(calls []mdl.ToolCall, reg tool.Registry) (ExecutionPlan, error) {
+func buildExecutionPlan(calls []model.ToolCall, reg tool.Registry) (ExecutionPlan, error) {
 	plan := ExecutionPlan{Calls: make([]ExecutionPlanCall, 0, len(calls))}
 	for _, call := range calls {
 		planCall := ExecutionPlanCall{

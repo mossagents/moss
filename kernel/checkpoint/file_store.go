@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,7 +18,7 @@ import (
 type FileCheckpointStore struct {
 	dir      string
 	mu       sync.Mutex
-	observer kobs.ExecutionObserver
+	observer observe.ExecutionObserver
 }
 
 func NewFileCheckpointStore(dir string) (*FileCheckpointStore, error) {
@@ -27,13 +27,13 @@ func NewFileCheckpointStore(dir string) (*FileCheckpointStore, error) {
 	}
 	return &FileCheckpointStore{
 		dir:      dir,
-		observer: kobs.NoOpObserver{},
+		observer: observe.NoOpObserver{},
 	}, nil
 }
 
-func (fs *FileCheckpointStore) SetObserver(observer kobs.ExecutionObserver) {
+func (fs *FileCheckpointStore) SetObserver(observer observe.ExecutionObserver) {
 	if observer == nil {
-		fs.observer = kobs.NoOpObserver{}
+		fs.observer = observe.NoOpObserver{}
 		return
 	}
 	fs.observer = observer
@@ -67,8 +67,8 @@ func (fs *FileCheckpointStore) Create(ctx context.Context, req CheckpointCreateR
 	if err := fs.persist(record); err != nil {
 		return nil, err
 	}
-	kobs.ObserveExecutionEvent(ctx, fs.observer, kobs.ExecutionEvent{
-		Type:      kobs.ExecutionCheckpointCreated,
+	observe.ObserveExecutionEvent(ctx, fs.observer, observe.ExecutionEvent{
+		Type:      observe.ExecutionCheckpointCreated,
 		SessionID: record.SessionID,
 		Timestamp: record.CreatedAt,
 		Data: map[string]any{

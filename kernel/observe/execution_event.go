@@ -1,7 +1,7 @@
 package observe
 
 import (
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"time"
 )
 
@@ -45,7 +45,7 @@ type ExecutionEvent struct {
 	CallID       string               `json:"call_id,omitempty"`
 	Risk         string               `json:"risk,omitempty"`
 	ReasonCode   string               `json:"reason_code,omitempty"`
-	Enforcement  intr.EnforcementMode `json:"enforcement,omitempty"`
+	Enforcement  io.EnforcementMode `json:"enforcement,omitempty"`
 	Model        string               `json:"model,omitempty"`
 	Duration     time.Duration        `json:"duration,omitempty"`
 	Error        string               `json:"error,omitempty"`

@@ -6,15 +6,15 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // TruncateConfig 配置自动 token 截断行为。
 type TruncateConfig struct {
 	MaxContextTokens int
 	KeepRecent       int
-	Tokenizer        mdl.Tokenizer
-	TokenCounter     func(mdl.Message) int
+	Tokenizer        model.Tokenizer
+	TokenCounter     func(model.Message) int
 }
 
 func (c TruncateConfig) maxContextTokens() int {
@@ -31,7 +31,7 @@ func (c TruncateConfig) keepRecent() int {
 	return c.KeepRecent
 }
 
-func (c TruncateConfig) countTokens(msg mdl.Message) int {
+func (c TruncateConfig) countTokens(msg model.Message) int {
 	if c.Tokenizer != nil {
 		return c.Tokenizer.CountMessage(msg)
 	}
@@ -42,13 +42,13 @@ func (c TruncateConfig) countTokens(msg mdl.Message) int {
 }
 
 // estimateTokens 简单估算一条消息的 token 数。
-func estimateTokens(msg mdl.Message) int {
-	total := len(mdl.ContentPartsToPlainText(msg.ContentParts)) / 4
+func estimateTokens(msg model.Message) int {
+	total := len(model.ContentPartsToPlainText(msg.ContentParts)) / 4
 	for _, tc := range msg.ToolCalls {
 		total += len(tc.Name)/4 + len(tc.Arguments)/4
 	}
 	for _, tr := range msg.ToolResults {
-		total += len(mdl.ContentPartsToPlainText(tr.ContentParts)) / 4
+		total += len(model.ContentPartsToPlainText(tr.ContentParts)) / 4
 	}
 	if total < 1 && (len(msg.ContentParts) > 0 || len(msg.ToolCalls) > 0 || len(msg.ToolResults) > 0) {
 		total = 1
@@ -74,9 +74,9 @@ func AutoTruncate(cfg TruncateConfig) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		var systemMsgs, dialogMsgs []mdl.Message
+		var systemMsgs, dialogMsgs []model.Message
 		for _, msg := range sess.CopyMessages() {
-			if msg.Role == mdl.RoleSystem {
+			if msg.Role == model.RoleSystem {
 				systemMsgs = append(systemMsgs, msg)
 			} else {
 				dialogMsgs = append(dialogMsgs, msg)
@@ -91,11 +91,11 @@ func AutoTruncate(cfg TruncateConfig) hooks.Hook[hooks.LLMEvent] {
 		recentMsgs := dialogMsgs[len(dialogMsgs)-keepRecent:]
 		droppedCount := len(dialogMsgs) - keepRecent
 		if droppedCount > 0 {
-			summary := mdl.Message{
-				Role:         mdl.RoleSystem,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
+			summary := model.Message{
+				Role:         model.RoleSystem,
+				ContentParts: []model.ContentPart{model.TextPart(buildTruncationNotice(droppedCount, totalTokens, cfg.maxContextTokens()))},
 			}
-			newMsgs := make([]mdl.Message, 0, len(systemMsgs)+1+len(recentMsgs))
+			newMsgs := make([]model.Message, 0, len(systemMsgs)+1+len(recentMsgs))
 			newMsgs = append(newMsgs, systemMsgs...)
 			newMsgs = append(newMsgs, summary)
 			newMsgs = append(newMsgs, recentMsgs...)

@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -39,19 +39,19 @@ func (r RBACRule) matchesTool(toolName string) bool {
 const identityKey = "__identity__"
 
 // SetIdentity 将认证身份存入 Session 的 State。
-func SetIdentity(state map[string]any, id *intr.Identity) {
+func SetIdentity(state map[string]any, id *io.Identity) {
 	if state != nil {
 		state[identityKey] = id
 	}
 }
 
 // GetIdentity 从 Session 的 State 中取出认证身份。
-func GetIdentity(state map[string]any) *intr.Identity {
+func GetIdentity(state map[string]any) *io.Identity {
 	if state == nil {
 		return nil
 	}
 	if v, ok := state[identityKey]; ok {
-		if id, ok := v.(*intr.Identity); ok {
+		if id, ok := v.(*io.Identity); ok {
 			return id
 		}
 	}
@@ -110,7 +110,7 @@ func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
 // AuthMiddleware 在 OnSessionStart 阶段执行认证。
 // 从 Session.Config.Metadata["auth_token"] 取出 token 进行认证，
 // 认证成功后将 Identity 存入 Session.State。
-func AuthMiddleware(auth intr.Authenticator) hooks.Hook[hooks.SessionEvent] {
+func AuthMiddleware(auth io.Authenticator) hooks.Hook[hooks.SessionEvent] {
 	return func(ctx context.Context, ev *hooks.SessionEvent) error {
 		token, _ := ev.Session.Config.Metadata["auth_token"].(string)
 		if token == "" {

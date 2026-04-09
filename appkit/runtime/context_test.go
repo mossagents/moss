@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	memstore "github.com/mossagents/moss/kernel/memory"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 	"strings"
@@ -18,10 +18,10 @@ import (
 )
 
 type stubRepoStateCapture struct {
-	state *kws.RepoState
+	state *workspace.RepoState
 }
 
-func (s stubRepoStateCapture) Capture(context.Context) (*kws.RepoState, error) {
+func (s stubRepoStateCapture) Capture(context.Context) (*workspace.RepoState, error) {
 	return s.state, nil
 }
 
@@ -33,11 +33,11 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	}
 	ws := sandbox.NewMemoryWorkspace()
 	k := kernel.New(
-		kernel.WithLLM(&kt.MockLLM{Responses: []mdl.CompletionResponse{{
-			Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("summary")}},
+		kernel.WithLLM(&kt.MockLLM{Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("summary")}},
 			StopReason: "end_turn",
 		}}}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		WithMemoryWorkspace(ws),
 		WithContextSessionStore(store),
 		ConfigureContext(
@@ -106,7 +106,7 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetByPath: %v", err)
 	}
-	if record == nil || record.Stage != memstore.MemoryStageSnapshot || record.SourceKind != "context_summary" {
+	if record == nil || record.Stage != memory.MemoryStageSnapshot || record.SourceKind != "context_summary" {
 		t.Fatalf("unexpected memory record: %+v", record)
 	}
 	waitForCondition(t, 2*time.Second, func() bool {
@@ -114,12 +114,12 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 		return err == nil && strings.Contains(string(raw), recordPath)
 	})
 	prompt := session.PromptMessages(sess)
-	if got := mdl.ContentPartsToPlainText(prompt[0].ContentParts); !strings.Contains(got, "Use compact_conversation") {
+	if got := model.ContentPartsToPlainText(prompt[0].ContentParts); !strings.Contains(got, "Use compact_conversation") {
 		t.Fatalf("unexpected prompt baseline: %q", got)
 	}
 	var hasSummary bool
 	for _, msg := range prompt {
-		if strings.Contains(mdl.ContentPartsToPlainText(msg.ContentParts), "<context_summary>") {
+		if strings.Contains(model.ContentPartsToPlainText(msg.ContentParts), "<context_summary>") {
 			hasSummary = true
 			break
 		}
@@ -162,15 +162,15 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	if err := ws.WriteFile(ctx, "README.md", []byte("Workspace readme")); err != nil {
 		t.Fatalf("WriteFile README.md: %v", err)
 	}
-	llm := &kt.MockLLM{Responses: []mdl.CompletionResponse{{
-		Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+	llm := &kt.MockLLM{Responses: []model.CompletionResponse{{
+		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 		StopReason: "end_turn",
 	}}}
 	k := kernel.New(
 		kernel.WithLLM(llm),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithWorkspace(ws),
-		kernel.WithRepoStateCapture(stubRepoStateCapture{state: &kws.RepoState{
+		kernel.WithRepoStateCapture(stubRepoStateCapture{state: &workspace.RepoState{
 			RepoRoot:  "D:/Codes/qiulin/moss",
 			Branch:    "main",
 			IsDirty:   true,
@@ -246,18 +246,18 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	if err := ws.WriteFile(ctx, "README.md", []byte("initial")); err != nil {
 		t.Fatalf("WriteFile README.md: %v", err)
 	}
-	repo := &kws.RepoState{
+	repo := &workspace.RepoState{
 		RepoRoot: "D:/Codes/qiulin/moss",
 		Branch:   "main",
 		IsDirty:  false,
 	}
-	llm := &kt.MockLLM{Responses: []mdl.CompletionResponse{
-		{Message: mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("first")}}, StopReason: "end_turn"},
-		{Message: mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("second")}}, StopReason: "end_turn"},
+	llm := &kt.MockLLM{Responses: []model.CompletionResponse{
+		{Message: model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("first")}}, StopReason: "end_turn"},
+		{Message: model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("second")}}, StopReason: "end_turn"},
 	}}
 	k := kernel.New(
 		kernel.WithLLM(llm),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithWorkspace(ws),
 		kernel.WithRepoStateCapture(stubRepoStateCapture{state: repo}),
 		WithContextSessionStore(store),
@@ -273,7 +273,7 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("first turn")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("first turn")}})
 	if _, err := k.Run(ctx, sess); err != nil {
 		t.Fatalf("Run first: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	if err := ws.WriteFile(ctx, "NEW.txt", []byte("changed")); err != nil {
 		t.Fatalf("WriteFile NEW.txt: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("second turn")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("second turn")}})
 	if _, err := k.Run(ctx, sess); err != nil {
 		t.Fatalf("Run second: %v", err)
 	}
@@ -301,12 +301,12 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
-	llm := &kt.MockLLM{Responses: []mdl.CompletionResponse{
-		{Message: mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("你好！")}}, StopReason: "end_turn"},
+	llm := &kt.MockLLM{Responses: []model.CompletionResponse{
+		{Message: model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("你好！")}}, StopReason: "end_turn"},
 	}}
 	k := kernel.New(
 		kernel.WithLLM(llm),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		WithContextSessionStore(store),
 		ConfigureContext(
 			WithContextPromptBudget(400),
@@ -323,9 +323,9 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("帮我分析 README")}})
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("我先看看项目结构")}})
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("你好")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("帮我分析 README")}})
+	sess.AppendMessage(model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("我先看看项目结构")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("你好")}})
 	if _, err := k.Run(ctx, sess); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -349,19 +349,19 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 }
 
 func appendDialog(sess *session.Session, texts ...string) {
-	roles := []mdl.Role{mdl.RoleUser, mdl.RoleAssistant}
+	roles := []model.Role{model.RoleUser, model.RoleAssistant}
 	for i, text := range texts {
-		sess.AppendMessage(mdl.Message{
+		sess.AppendMessage(model.Message{
 			Role:         roles[i%len(roles)],
-			ContentParts: []mdl.ContentPart{mdl.TextPart(text)},
+			ContentParts: []model.ContentPart{model.TextPart(text)},
 		})
 	}
 }
 
-func flattenMessageText(messages []mdl.Message) string {
+func flattenMessageText(messages []model.Message) string {
 	lines := make([]string, 0, len(messages))
 	for _, msg := range messages {
-		lines = append(lines, mdl.ContentPartsToPlainText(msg.ContentParts))
+		lines = append(lines, model.ContentPartsToPlainText(msg.ContentParts))
 	}
 	return strings.Join(lines, "\n")
 }

@@ -1,8 +1,8 @@
 package events
 
 import (
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"time"
 )
 
@@ -32,7 +32,7 @@ type StreamEvent struct {
 }
 
 // FromOutputMessage maps kernel output messages to a normalized stream event.
-func FromOutputMessage(msg intr.OutputMessage, now time.Time) StreamEvent {
+func FromOutputMessage(msg io.OutputMessage, now time.Time) StreamEvent {
 	event := StreamEvent{
 		Type:      EventUnknown,
 		Timestamp: now,
@@ -40,24 +40,24 @@ func FromOutputMessage(msg intr.OutputMessage, now time.Time) StreamEvent {
 		Meta:      cloneMap(msg.Meta),
 	}
 	switch msg.Type {
-	case intr.OutputText:
+	case io.OutputText:
 		event.Type = EventAssistantMessage
-	case intr.OutputStream:
+	case io.OutputStream:
 		event.Type = EventAssistantDelta
-	case intr.OutputStreamEnd:
+	case io.OutputStreamEnd:
 		event.Type = EventAssistantDone
-	case intr.OutputProgress:
+	case io.OutputProgress:
 		event.Type = EventProgress
-	case intr.OutputToolStart:
+	case io.OutputToolStart:
 		event.Type = EventToolStarted
-	case intr.OutputToolResult:
+	case io.OutputToolResult:
 		event.Type = EventToolCompleted
 	}
 	return event
 }
 
 // FromExecutionEvent maps observer execution events to normalized stream events.
-func FromExecutionEvent(e kobs.ExecutionEvent) StreamEvent {
+func FromExecutionEvent(e observe.ExecutionEvent) StreamEvent {
 	event := StreamEvent{
 		Type:      EventUnknown,
 		Timestamp: e.Timestamp,
@@ -66,17 +66,17 @@ func FromExecutionEvent(e kobs.ExecutionEvent) StreamEvent {
 		Meta:      cloneMap(e.Data),
 	}
 	switch e.Type {
-	case kobs.ExecutionRunStarted:
+	case observe.ExecutionRunStarted:
 		event.Type = EventRunStarted
-	case kobs.ExecutionRunCompleted:
+	case observe.ExecutionRunCompleted:
 		event.Type = EventRunCompleted
-	case kobs.ExecutionRunFailed, kobs.ExecutionRunCancelled:
+	case observe.ExecutionRunFailed, observe.ExecutionRunCancelled:
 		event.Type = EventRunFailed
-	case kobs.ExecutionToolStarted:
+	case observe.ExecutionToolStarted:
 		event.Type = EventToolStarted
-	case kobs.ExecutionToolCompleted:
+	case observe.ExecutionToolCompleted:
 		event.Type = EventToolCompleted
-	case kobs.ExecutionIterationProgress:
+	case observe.ExecutionIterationProgress:
 		event.Type = EventProgress
 	}
 	if event.Meta == nil {

@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	memstore "github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/hooks"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
@@ -33,7 +33,7 @@ const (
 type contextState struct {
 	store                    session.SessionStore
 	manager                  session.Manager
-	memoryStore              memstore.MemoryStore
+	memoryStore              memory.MemoryStore
 	memoryPipeline           *memoryPipelineManager
 	triggerDialog            int
 	keepRecent               int
@@ -250,7 +250,7 @@ func runtimeContextToolSpec(spec tool.ToolSpec) tool.ToolSpec {
 	return spec
 }
 
-func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mdl.LLM) error {
+func registerCompactConversationTool(reg tool.Registry, st *contextState, llm model.LLM) error {
 	if st.compactToolRegistered {
 		return nil
 	}
@@ -313,24 +313,24 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm md
 	return nil
 }
 
-func countDialogMessages(msgs []mdl.Message) int {
+func countDialogMessages(msgs []model.Message) int {
 	count := 0
 	for _, m := range msgs {
-		if m.Role != mdl.RoleSystem {
+		if m.Role != model.RoleSystem {
 			count++
 		}
 	}
 	return count
 }
 
-func buildSummary(ctx context.Context, llm mdl.LLM, msgs []mdl.Message) string {
+func buildSummary(ctx context.Context, llm model.LLM, msgs []model.Message) string {
 	if llm == nil {
 		return ""
 	}
-	reqMsgs := []mdl.Message{
+	reqMsgs := []model.Message{
 		{
-			Role:         mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{mdl.TextPart("Summarize the earlier conversation in <=120 words, focusing on decisions, open tasks, and constraints.")},
+			Role:         model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart("Summarize the earlier conversation in <=120 words, focusing on decisions, open tasks, and constraints.")},
 		},
 	}
 	for _, m := range msgs {
@@ -339,17 +339,17 @@ func buildSummary(ctx context.Context, llm mdl.LLM, msgs []mdl.Message) string {
 		}
 		reqMsgs = append(reqMsgs, m)
 	}
-	resp, err := llm.Complete(ctx, mdl.CompletionRequest{
+	resp, err := llm.Complete(ctx, model.CompletionRequest{
 		Messages: reqMsgs,
-		Config:   mdl.ModelConfig{Temperature: 0},
+		Config:   model.ModelConfig{Temperature: 0},
 	})
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(mdl.ContentPartsToPlainText(resp.Message.ContentParts))
+	return strings.TrimSpace(model.ContentPartsToPlainText(resp.Message.ContentParts))
 }
 
-func includeMessageInMemorySummary(msg mdl.Message) bool {
+func includeMessageInMemorySummary(msg model.Message) bool {
 	kind := classifyContextFragment(msg)
 	switch kind {
 	case contextFragmentAgentsMD, contextFragmentSkill:
@@ -359,9 +359,9 @@ func includeMessageInMemorySummary(msg mdl.Message) bool {
 	}
 }
 
-func classifyContextFragment(msg mdl.Message) contextFragmentKind {
-	content := strings.TrimSpace(strings.ToLower(mdl.ContentPartsToPlainText(msg.ContentParts)))
-	if msg.Role != mdl.RoleSystem {
+func classifyContextFragment(msg model.Message) contextFragmentKind {
+	content := strings.TrimSpace(strings.ToLower(model.ContentPartsToPlainText(msg.ContentParts)))
+	if msg.Role != model.RoleSystem {
 		return contextFragmentDialog
 	}
 	switch {
@@ -385,13 +385,13 @@ func classifyContextFragment(msg mdl.Message) contextFragmentKind {
 func compactWithSummary(
 	ctx context.Context,
 	store session.SessionStore,
-	memoryStore memstore.MemoryStore,
+	memoryStore memory.MemoryStore,
 	memoryPipeline *memoryPipelineManager,
 	manager session.Manager,
 	sessionID string,
 	keepRecent int,
 	note string,
-	llm mdl.LLM,
+	llm model.LLM,
 ) (map[string]any, error) {
 	sess, ok := manager.Get(sessionID)
 	if !ok || sess == nil {

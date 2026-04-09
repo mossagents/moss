@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/kernel"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/knowledge"
 	"github.com/mossagents/moss/sandbox"
@@ -158,7 +158,7 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 }
 
 // WithKnowledge 按官方推荐方式注册知识库工具集。
-func WithKnowledge(store knowledge.Store, embedder mdl.Embedder) Extension {
+func WithKnowledge(store knowledge.Store, embedder model.Embedder) Extension {
 	return AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 		return runtime.RegisterKnowledgeTools(k, store, embedder)
 	})

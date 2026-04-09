@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	config "github.com/mossagents/moss/config"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"gopkg.in/yaml.v3"
 	"os"
 	"sort"
@@ -37,7 +37,7 @@ type ModelProfile struct {
 	CostTier int `yaml:"cost_tier"`
 
 	// Capabilities 模型具备的能力列表。
-	Capabilities []mdl.ModelCapability `yaml:"capabilities"`
+	Capabilities []model.ModelCapability `yaml:"capabilities"`
 
 	// MaxTokens 最大输出 token 数。
 	MaxTokens int `yaml:"max_tokens,omitempty"`
@@ -47,7 +47,7 @@ type ModelProfile struct {
 }
 
 // HasCapability 检查模型是否具备指定能力。
-func (p *ModelProfile) HasCapability(cap mdl.ModelCapability) bool {
+func (p *ModelProfile) HasCapability(cap model.ModelCapability) bool {
 	for _, c := range p.Capabilities {
 		if c == cap {
 			return true
@@ -57,7 +57,7 @@ func (p *ModelProfile) HasCapability(cap mdl.ModelCapability) bool {
 }
 
 // HasAllCapabilities 检查模型是否具备所有指定能力。
-func (p *ModelProfile) HasAllCapabilities(caps []mdl.ModelCapability) bool {
+func (p *ModelProfile) HasAllCapabilities(caps []model.ModelCapability) bool {
 	for _, cap := range caps {
 		if !p.HasCapability(cap) {
 			return false
@@ -69,11 +69,11 @@ func (p *ModelProfile) HasAllCapabilities(caps []mdl.ModelCapability) bool {
 // routedModel 将配置画像与实际 LLM 实例关联。
 type routedModel struct {
 	profile ModelProfile
-	llm     mdl.LLM
+	llm     model.LLM
 }
 
 // ModelRouter 根据任务需求动态选择最优模型。
-// 实现 mdl.LLM 和 mdl.StreamingLLM 接口，可直接传入 kernel.WithLLM()。
+// 实现 model.LLM 和 model.StreamingLLM 接口，可直接传入 kernel.WithLLM()。
 type ModelRouter struct {
 	models       []routedModel
 	defaultModel *routedModel
@@ -151,7 +151,7 @@ func NewModelRouterFromFile(path string) (*ModelRouter, error) {
 
 // Complete 根据请求中的 TaskRequirement 选择最优模型并调用。
 // 若未指定需求，使用默认模型。
-func (r *ModelRouter) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (r *ModelRouter) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	rm, err := r.selectModel(req.Config.Requirements)
 	if err != nil {
 		return nil, err
@@ -161,7 +161,7 @@ func (r *ModelRouter) Complete(ctx context.Context, req mdl.CompletionRequest) (
 		return nil, attachModelMetadata(err, rm.profile.Name)
 	}
 	if resp.Metadata == nil {
-		resp.Metadata = &mdl.LLMCallMetadata{}
+		resp.Metadata = &model.LLMCallMetadata{}
 	}
 	if strings.TrimSpace(resp.Metadata.ActualModel) == "" {
 		resp.Metadata.ActualModel = rm.profile.Name
@@ -171,18 +171,18 @@ func (r *ModelRouter) Complete(ctx context.Context, req mdl.CompletionRequest) (
 
 // Stream 根据请求中的 TaskRequirement 选择最优模型并以流式调用。
 // 若选中的模型不支持 StreamingLLM，返回错误。
-func (r *ModelRouter) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (r *ModelRouter) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
 	rm, err := r.selectModel(req.Config.Requirements)
 	if err != nil {
 		return nil, err
 	}
-	sllm, ok := rm.llm.(mdl.StreamingLLM)
+	sllm, ok := rm.llm.(model.StreamingLLM)
 	if !ok {
-		return nil, &mdl.LLMCallError{
+		return nil, &model.LLMCallError{
 			Err:          fmt.Errorf("model router: selected model %q does not support streaming", rm.profile.Name),
 			Retryable:    true,
 			FallbackSafe: true,
-			Metadata:     mdl.LLMCallMetadata{ActualModel: rm.profile.Name},
+			Metadata:     model.LLMCallMetadata{ActualModel: rm.profile.Name},
 		}
 	}
 	iter, err := sllm.Stream(ctx, req)
@@ -191,7 +191,7 @@ func (r *ModelRouter) Stream(ctx context.Context, req mdl.CompletionRequest) (md
 	}
 	return &routerStreamIterator{
 		inner: iter,
-		metadata: mdl.LLMCallMetadata{
+		metadata: model.LLMCallMetadata{
 			ActualModel: rm.profile.Name,
 		},
 	}, nil
@@ -215,7 +215,7 @@ func (r *ModelRouter) DefaultModel() string {
 }
 
 // selectModel 根据任务需求选择最优模型。
-func (r *ModelRouter) selectModel(req *mdl.TaskRequirement) (*routedModel, error) {
+func (r *ModelRouter) selectModel(req *model.TaskRequirement) (*routedModel, error) {
 	candidates, err := r.orderedCandidates(req)
 	if err != nil {
 		return nil, err
@@ -224,7 +224,7 @@ func (r *ModelRouter) selectModel(req *mdl.TaskRequirement) (*routedModel, error
 	return &selected, nil
 }
 
-func (r *ModelRouter) orderedCandidates(req *mdl.TaskRequirement) ([]routedModel, error) {
+func (r *ModelRouter) orderedCandidates(req *model.TaskRequirement) ([]routedModel, error) {
 	if req == nil {
 		return r.defaultOrderedCandidates(), nil
 	}
@@ -263,7 +263,7 @@ func (r *ModelRouter) orderedCandidates(req *mdl.TaskRequirement) ([]routedModel
 	return candidates, nil
 }
 
-func routeScore(profile ModelProfile, req *mdl.TaskRequirement) int {
+func routeScore(profile ModelProfile, req *model.TaskRequirement) int {
 	score := 0
 	if req == nil {
 		return score
@@ -274,14 +274,14 @@ func routeScore(profile ModelProfile, req *mdl.TaskRequirement) int {
 	case "background-task":
 		score += 80 - profile.CostTier*10
 	case "reasoning":
-		if profile.HasCapability(mdl.CapReasoning) {
+		if profile.HasCapability(model.CapReasoning) {
 			score += 120
 		}
 	case "tool-heavy":
-		if profile.HasCapability(mdl.CapFunctionCalling) {
+		if profile.HasCapability(model.CapFunctionCalling) {
 			score += 100
 		}
-		if profile.HasCapability(mdl.CapLongContext) {
+		if profile.HasCapability(model.CapLongContext) {
 			score += 20
 		}
 	}
@@ -313,7 +313,7 @@ func (r *ModelRouter) defaultOrderedCandidates() []routedModel {
 }
 
 // noModelError 生成详细的无模型可用错误信息。
-func (r *ModelRouter) noModelError(req *mdl.TaskRequirement) error {
+func (r *ModelRouter) noModelError(req *model.TaskRequirement) error {
 	var needed []string
 	for _, cap := range req.Capabilities {
 		needed = append(needed, string(cap))
@@ -347,11 +347,11 @@ func (r *ModelRouter) noModelError(req *mdl.TaskRequirement) error {
 }
 
 type routerStreamIterator struct {
-	inner    mdl.StreamIterator
-	metadata mdl.LLMCallMetadata
+	inner    model.StreamIterator
+	metadata model.LLMCallMetadata
 }
 
-func (it *routerStreamIterator) Next() (mdl.StreamChunk, error) {
+func (it *routerStreamIterator) Next() (model.StreamChunk, error) {
 	return it.inner.Next()
 }
 
@@ -359,8 +359,8 @@ func (it *routerStreamIterator) Close() error {
 	return it.inner.Close()
 }
 
-func (it *routerStreamIterator) Metadata() mdl.LLMCallMetadata {
-	if provider, ok := it.inner.(mdl.MetadataStreamIterator); ok {
+func (it *routerStreamIterator) Metadata() model.LLMCallMetadata {
+	if provider, ok := it.inner.(model.MetadataStreamIterator); ok {
 		meta := provider.Metadata()
 		if strings.TrimSpace(meta.ActualModel) == "" {
 			meta.ActualModel = it.metadata.ActualModel
@@ -370,34 +370,34 @@ func (it *routerStreamIterator) Metadata() mdl.LLMCallMetadata {
 	return it.metadata
 }
 
-func attachModelMetadata(err error, model string) error {
+func attachModelMetadata(err error, modelName string) error {
 	if err == nil {
 		return nil
 	}
-	if callErr, ok := err.(*mdl.LLMCallError); ok {
+	if callErr, ok := err.(*model.LLMCallError); ok {
 		if strings.TrimSpace(callErr.Metadata.ActualModel) != "" {
 			return err
 		}
 		merged := *callErr
-		merged.Metadata.ActualModel = model
+		merged.Metadata.ActualModel = modelName
 		return &merged
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		if strings.TrimSpace(callErr.Metadata.ActualModel) != "" {
 			return err
 		}
-		return &mdl.LLMCallError{
+		return &model.LLMCallError{
 			Err:          err,
 			Retryable:    callErr.Retryable,
 			FallbackSafe: callErr.FallbackSafe,
-			Metadata:     mdl.LLMCallMetadata{ActualModel: model},
+			Metadata:     model.LLMCallMetadata{ActualModel: modelName},
 		}
 	}
-	return &mdl.LLMCallError{
+	return &model.LLMCallError{
 		Err:          err,
 		Retryable:    true,
 		FallbackSafe: true,
-		Metadata:     mdl.LLMCallMetadata{ActualModel: model},
+		Metadata:     model.LLMCallMetadata{ActualModel: modelName},
 	}
 }

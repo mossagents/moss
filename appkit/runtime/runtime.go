@@ -1,4 +1,4 @@
-package runtime
+﻿package runtime
 
 import (
 	"context"
@@ -7,12 +7,12 @@ import (
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/mcp"
 	"github.com/mossagents/moss/skill"
@@ -196,16 +196,16 @@ func registerMCPServers(ctx context.Context, cfg config, deps skill.Deps, skills
 	return nil
 }
 
-func approveProjectMCPServer(ctx context.Context, io intr.UserIO, workspaceDir string, sc appconfig.SkillConfig) (bool, error) {
-	if io == nil {
-		io = &intr.NoOpIO{}
+func approveProjectMCPServer(ctx context.Context, userIO io.UserIO, workspaceDir string, sc appconfig.SkillConfig) (bool, error) {
+	if userIO == nil {
+		userIO = &io.NoOpIO{}
 	}
 	target := strings.TrimSpace(sc.URL)
 	if target == "" {
 		target = strings.TrimSpace(sc.Command)
 	}
-	resp, err := io.Ask(ctx, intr.InputRequest{
-		Type:         intr.InputConfirm,
+	resp, err := userIO.Ask(ctx, io.InputRequest{
+		Type:         io.InputConfirm,
 		Prompt:       fmt.Sprintf("Start project MCP server %q from %s?", sc.Name, appconfig.DefaultProjectConfigPath(workspaceDir)),
 		ConfirmLabel: "Start MCP server",
 		Meta: map[string]any{
@@ -586,7 +586,7 @@ type agentsState struct {
 	tasks     *agent.TaskTracker
 	runtime   taskrt.TaskRuntime
 	mailbox   taskrt.Mailbox
-	isolation kws.WorkspaceIsolation
+	isolation workspace.WorkspaceIsolation
 }
 
 func ensureAgentsState(k *kernel.Kernel) *agentsState {
@@ -625,7 +625,7 @@ func ensureAgentsState(k *kernel.Kernel) *agentsState {
 			Mailbox:     st.mailbox,
 			Isolation:   st.isolation,
 		}); err != nil {
-			return kerrors.Wrap(kerrors.ErrInternal, "register agent delegation tools", err)
+			return errors.Wrap(errors.ErrInternal, "register agent delegation tools", err)
 		}
 		return nil
 	})
@@ -658,7 +658,7 @@ func WithMailbox(mb taskrt.Mailbox) kernel.Option {
 	}
 }
 
-func WithWorkspaceIsolation(isolation kws.WorkspaceIsolation) kernel.Option {
+func WithWorkspaceIsolation(isolation workspace.WorkspaceIsolation) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureAgentsState(k).isolation = isolation
 	}

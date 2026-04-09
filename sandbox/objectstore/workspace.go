@@ -3,13 +3,13 @@ package objectstore
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-// ObjectStoreWorkspace implements kws.Workspace over a BlobClient.
+// ObjectStoreWorkspace implements workspace.Workspace over a BlobClient.
 //
 // All paths are relative to rootPrefix inside the bucket. For example:
 //
@@ -84,12 +84,12 @@ func (w *ObjectStoreWorkspace) ListFiles(ctx context.Context, pattern string) ([
 }
 
 // Stat returns metadata for the given path.
-func (w *ObjectStoreWorkspace) Stat(ctx context.Context, path string) (kws.FileInfo, error) {
+func (w *ObjectStoreWorkspace) Stat(ctx context.Context, path string) (workspace.FileInfo, error) {
 	meta, err := w.client.Head(ctx, w.key(path))
 	if err != nil {
-		return kws.FileInfo{}, fmt.Errorf("workspace stat %q: %w", path, err)
+		return workspace.FileInfo{}, fmt.Errorf("workspace stat %q: %w", path, err)
 	}
-	return kws.FileInfo{
+	return workspace.FileInfo{
 		Name:    filepath.Base(path),
 		Size:    meta.Size,
 		IsDir:   false,
@@ -129,8 +129,8 @@ func globPrefix(pattern string) string {
 	return pattern
 }
 
-// ensure ObjectStoreWorkspace satisfies kws.Workspace at compile time
-var _ kws.Workspace = (*ObjectStoreWorkspace)(nil)
+// ensure ObjectStoreWorkspace satisfies workspace.Workspace at compile time
+var _ workspace.Workspace = (*ObjectStoreWorkspace)(nil)
 
 // StaticFileInfo is a convenience FileInfo used for stub implementations.
-var StaticFileInfo = kws.FileInfo{ModTime: time.Time{}}
+var StaticFileInfo = workspace.FileInfo{ModTime: time.Time{}}

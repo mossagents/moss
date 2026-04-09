@@ -1,9 +1,9 @@
-package kernel
+﻿package kernel
 
 import (
 	"context"
 	stderrors "errors"
-	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/errors"
 	"testing"
 	"time"
 )
@@ -17,8 +17,8 @@ func TestRunSupervisorBeginRejectsAfterShutdown(t *testing.T) {
 		t.Fatal("expected begin to fail while shutting down")
 	}
 
-	var kerr *kerrors.Error
-	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrShutdown {
+	var kerr *errors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != errors.ErrShutdown {
 		t.Fatalf("expected ErrShutdown, got: %v", err)
 	}
 }
@@ -86,8 +86,8 @@ func TestRunSupervisorBeginRejectsConcurrentSameSession(t *testing.T) {
 		t.Fatal("expected second begin to fail for same session")
 	}
 
-	var kerr *kerrors.Error
-	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrSessionRunning {
+	var kerr *errors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != errors.ErrSessionRunning {
 		t.Fatalf("expected ErrSessionRunning, got: %v", err)
 	}
 }

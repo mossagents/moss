@@ -2,7 +2,7 @@ package knowledge
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"math"
 	"testing"
 )
@@ -50,8 +50,8 @@ func simpleHash(text string, dim int) []float64 {
 	return vec
 }
 
-// 验证 mockEmbedder 实现了 mdl.Embedder 接口
-var _ mdl.Embedder = (*mockEmbedder)(nil)
+// 验证 mockEmbedder 实现了 model.Embedder 接口
+var _ model.Embedder = (*mockEmbedder)(nil)
 
 func TestMemoryStoreAddAndSearch(t *testing.T) {
 	store := NewMemoryStore()

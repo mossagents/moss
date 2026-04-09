@@ -3,7 +3,7 @@ package product
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"sort"
 	"strings"
@@ -26,8 +26,8 @@ type ReviewRepoState struct {
 	Head      string             `json:"head,omitempty"`
 	Branch    string             `json:"branch,omitempty"`
 	Dirty     bool               `json:"dirty"`
-	Staged    []kws.RepoFileState `json:"staged,omitempty"`
-	Unstaged  []kws.RepoFileState `json:"unstaged,omitempty"`
+	Staged    []workspace.RepoFileState `json:"staged,omitempty"`
+	Unstaged  []workspace.RepoFileState `json:"unstaged,omitempty"`
 	Untracked []string           `json:"untracked,omitempty"`
 	Ignored   []string           `json:"ignored,omitempty"`
 	Error     string             `json:"error,omitempty"`
@@ -175,7 +175,7 @@ func RenderReviewReport(report ReviewReport) string {
 	return b.String()
 }
 
-func SummarizeSnapshot(item kws.WorktreeSnapshot) ReviewSnapshotSummary {
+func SummarizeSnapshot(item workspace.WorktreeSnapshot) ReviewSnapshotSummary {
 	return ReviewSnapshotSummary{
 		ID:         item.ID,
 		SessionID:  item.SessionID,
@@ -188,7 +188,7 @@ func SummarizeSnapshot(item kws.WorktreeSnapshot) ReviewSnapshotSummary {
 	}
 }
 
-func summarizeSnapshots(items []kws.WorktreeSnapshot) []ReviewSnapshotSummary {
+func summarizeSnapshots(items []workspace.WorktreeSnapshot) []ReviewSnapshotSummary {
 	out := make([]ReviewSnapshotSummary, 0, len(items))
 	for _, item := range items {
 		out = append(out, SummarizeSnapshot(item))
@@ -199,7 +199,7 @@ func summarizeSnapshots(items []kws.WorktreeSnapshot) []ReviewSnapshotSummary {
 	return out
 }
 
-func renderRepoFiles(b *strings.Builder, label string, items []kws.RepoFileState) {
+func renderRepoFiles(b *strings.Builder, label string, items []workspace.RepoFileState) {
 	if len(items) == 0 {
 		fmt.Fprintf(b, "%s: none\n", label)
 		return

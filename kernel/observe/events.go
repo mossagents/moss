@@ -1,7 +1,7 @@
 package observe
 
 import (
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"time"
 )
@@ -72,7 +72,7 @@ type EventEnvelope struct {
 	LLM       *LLMCallEvent       `json:"llm,omitempty"`
 	Tool      *ToolCallEvent      `json:"tool,omitempty"`
 	Execution *ExecutionEvent     `json:"execution,omitempty"`
-	Approval  *intr.ApprovalEvent `json:"approval,omitempty"`
+	Approval  *io.ApprovalEvent `json:"approval,omitempty"`
 	Session   *SessionEvent       `json:"session,omitempty"`
 	Error     *ErrorEvent         `json:"error,omitempty"`
 	Turn      *TurnEvent          `json:"turn,omitempty"`
@@ -114,7 +114,7 @@ func EnvelopeFromExecutionEvent(e ExecutionEvent) EventEnvelope {
 	return envelope
 }
 
-func EnvelopeFromApprovalEvent(e intr.ApprovalEvent) EventEnvelope {
+func EnvelopeFromApprovalEvent(e io.ApprovalEvent) EventEnvelope {
 	timestamp := e.Request.RequestedAt
 	if e.Decision != nil && !e.Decision.DecidedAt.IsZero() {
 		timestamp = e.Decision.DecidedAt
