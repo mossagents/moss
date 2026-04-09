@@ -94,6 +94,15 @@ func (b *Breaker) RecordFailure() {
 	}
 }
 
+// ForceReset 强制将熔断器重置为 Closed 状态，无需等待 ResetAfter。
+func (b *Breaker) ForceReset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.failures = 0
+	b.state = StateClosed
+	b.halfOpenAllowed = false
+}
+
 // State 返回当前状态。
 func (b *Breaker) State() BreakerState {
 	b.mu.Lock()

@@ -7,12 +7,16 @@ import (
 
 // BudgetGuard 在 BeforeLLM 阶段检查全局预算是否耗尽。
 // 耗尽时返回 ErrBudgetExhausted 阻止 LLM 调用。
+// 同时使用 TryReserve 预检 1 步的余量，防止超支。
 func BudgetGuard(gov Governor) middleware.Middleware {
 	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
 		if mc.Phase != middleware.BeforeLLM {
 			return next(ctx)
 		}
 		if !gov.Check() {
+			return ErrBudgetExhausted
+		}
+		if !gov.TryReserve(0, 1) {
 			return ErrBudgetExhausted
 		}
 		return next(ctx)

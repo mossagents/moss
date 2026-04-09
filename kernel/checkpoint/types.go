@@ -24,6 +24,8 @@ type CheckpointLineageRef struct {
 // CheckpointRecord 描述一个可恢复的 checkpoint。
 type CheckpointRecord struct {
 	ID                 string                 `json:"id"`
+	// Version 表示 checkpoint 记录的 schema 版本，用于未来格式迁移。
+	Version            int                    `json:"version"`
 	SessionID          string                 `json:"session_id"`
 	WorktreeSnapshotID string                 `json:"worktree_snapshot_id,omitempty"`
 	PatchIDs           []string               `json:"patch_ids,omitempty"`
@@ -32,6 +34,9 @@ type CheckpointRecord struct {
 	Metadata           map[string]any         `json:"metadata,omitempty"`
 	CreatedAt          time.Time              `json:"created_at"`
 }
+
+// CurrentCheckpointVersion 是当前 CheckpointRecord 的 schema 版本号。
+const CurrentCheckpointVersion = 1
 
 // CheckpointCreateRequest 描述创建 checkpoint 的请求。
 type CheckpointCreateRequest struct {

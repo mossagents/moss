@@ -1126,8 +1126,8 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 		return "", fmt.Errorf("agent %q not found", agentName)
 	}
 	depth := Depth(ctx)
-	if depth >= MaxDelegationDepth {
-		return "", fmt.Errorf("delegation depth limit (%d) exceeded", MaxDelegationDepth)
+	if depth >= MaxDepth(ctx) {
+		return "", fmt.Errorf("delegation depth limit (%d) exceeded", MaxDepth(ctx))
 	}
 
 	taskID := uuid.New().String()
@@ -1307,8 +1307,8 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 	}
 
 	depth := Depth(ctx)
-	if depth >= MaxDelegationDepth {
-		return nil, fmt.Errorf("delegation depth limit (%d) exceeded", MaxDelegationDepth)
+	if depth >= MaxDepth(ctx) {
+		return nil, fmt.Errorf("delegation depth limit (%d) exceeded", MaxDepth(ctx))
 	}
 
 	parentSessionID := SessionID(ctx)

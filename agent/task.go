@@ -346,6 +346,31 @@ func (t *TaskTracker) notifyLocked(task Task) {
 			}
 		}
 	}
+	// 任务达到终态时自动关闭所有 watcher，防止无限增长。
+	if task.Status == TaskCompleted || task.Status == TaskFailed || task.Status == TaskCancelled {
+		for watchID, ch := range byTask {
+			close(ch)
+			delete(byTask, watchID)
+		}
+		delete(t.watchers, task.ID)
+	}
+}
+
+// CleanupWatchers 清除所有已终态任务的残留 watcher。
+// 可在维护周期中调用，防止 watcher map 无限增长。
+func (t *TaskTracker) CleanupWatchers() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for taskID, byTask := range t.watchers {
+		task, ok := t.tasks[taskID]
+		if !ok || task.Status == TaskCompleted || task.Status == TaskFailed || task.Status == TaskCancelled {
+			for watchID, ch := range byTask {
+				close(ch)
+				delete(byTask, watchID)
+			}
+			delete(t.watchers, taskID)
+		}
+	}
 }
 
 func (t *TaskTracker) mirror(task Task) {

@@ -95,3 +95,33 @@ func TestBreaker_SuccessResetsCount(t *testing.T) {
 		t.Error("success should have reset failure count")
 	}
 }
+
+func TestBreaker_ForceReset(t *testing.T) {
+	b := NewBreaker(BreakerConfig{MaxFailures: 1, ResetAfter: time.Hour})
+	b.RecordFailure()
+
+	if b.State() != StateOpen {
+		t.Errorf("expected StateOpen, got %d", b.State())
+	}
+
+	b.ForceReset()
+
+	if b.State() != StateClosed {
+		t.Errorf("expected StateClosed after ForceReset, got %d", b.State())
+	}
+	if !b.Allow() {
+		t.Error("should allow after ForceReset")
+	}
+}
+
+func TestConfig_TotalTimeoutOrDefault(t *testing.T) {
+	c := Config{TotalTimeout: 5 * time.Second}
+	if c.TotalTimeoutOrDefault() != 5*time.Second {
+		t.Errorf("expected 5s, got %v", c.TotalTimeoutOrDefault())
+	}
+
+	c2 := Config{}
+	if c2.TotalTimeoutOrDefault() != 0 {
+		t.Errorf("expected 0, got %v", c2.TotalTimeoutOrDefault())
+	}
+}

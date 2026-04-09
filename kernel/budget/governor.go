@@ -47,6 +47,9 @@ func (s BudgetSnapshot) StepsPct() float64 {
 type Governor interface {
 	Record(sessionID string, tokens, steps int)
 	Check() bool
+	// TryReserve 在消耗前预检是否有足够预算。
+	// 返回 true 表示预算充足（不会实际扣减）。
+	TryReserve(tokens, steps int) bool
 	Snapshot() BudgetSnapshot
 	Reset()
 }
@@ -90,6 +93,20 @@ func (g *MemoryGovernor) Check() bool {
 		return false
 	}
 	if g.budget.MaxSteps > 0 && steps >= g.budget.MaxSteps {
+		return false
+	}
+	return true
+}
+
+// TryReserve 在 LLM 调用前预检预算是否充足。
+// 返回 true 表示扣减 tokens/steps 后仍不超出限额（不会实际扣减）。
+func (g *MemoryGovernor) TryReserve(tokens, steps int) bool {
+	usedTokens := atomic.LoadInt64(&g.usedTokens)
+	usedSteps := atomic.LoadInt64(&g.usedSteps)
+	if g.budget.MaxTokens > 0 && usedTokens+int64(tokens) > g.budget.MaxTokens {
+		return false
+	}
+	if g.budget.MaxSteps > 0 && usedSteps+int64(steps) > g.budget.MaxSteps {
 		return false
 	}
 	return true

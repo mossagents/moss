@@ -49,6 +49,7 @@ func (fs *FileCheckpointStore) Create(ctx context.Context, req CheckpointCreateR
 	}
 	record := &CheckpointRecord{
 		ID:                 newCheckpointID(sessionID),
+		Version:            CurrentCheckpointVersion,
 		SessionID:          sessionID,
 		WorktreeSnapshotID: strings.TrimSpace(req.WorktreeSnapshotID),
 		PatchIDs:           append([]string(nil), req.PatchIDs...),
