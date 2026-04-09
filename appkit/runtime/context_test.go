@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
+	memstore "github.com/mossagents/moss/kernel/memory"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 	kws "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 	"strings"
 	"testing"
+	"time"
 )
 
 type stubRepoStateCapture struct {
@@ -28,12 +31,14 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
+	ws := sandbox.NewMemoryWorkspace()
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{Responses: []mdl.CompletionResponse{{
 			Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("summary")}},
 			StopReason: "end_turn",
 		}}}),
 		kernel.WithUserIO(&intr.NoOpIO{}),
+		WithMemoryWorkspace(ws),
 		WithContextSessionStore(store),
 		ConfigureContext(
 			WithKeepRecent(2),
@@ -93,6 +98,21 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	if snapshot == nil || len(snapshot.Messages) != before {
 		t.Fatalf("unexpected snapshot: %+v", snapshot)
 	}
+	recordPath, _ := out["memory_record_path"].(string)
+	if strings.TrimSpace(recordPath) == "" {
+		t.Fatalf("expected memory_record_path in tool output: %+v", out)
+	}
+	record, err := ensureMemoryState(k).store.GetByPath(ctx, recordPath)
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if record == nil || record.Stage != memstore.MemoryStageSnapshot || record.SourceKind != "context_summary" {
+		t.Fatalf("unexpected memory record: %+v", record)
+	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		raw, err := ws.ReadFile(ctx, "raw_memories.md")
+		return err == nil && strings.Contains(string(raw), recordPath)
+	})
 	prompt := session.PromptMessages(sess)
 	if got := mdl.ContentPartsToPlainText(prompt[0].ContentParts); !strings.Contains(got, "Use compact_conversation") {
 		t.Fatalf("unexpected prompt baseline: %q", got)
@@ -106,6 +126,22 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	}
 	if !hasSummary {
 		t.Fatalf("expected compact summary in prompt: %+v", prompt)
+	}
+}
+
+func TestContextToolsExposeExecutionMetadata(t *testing.T) {
+	spec := runtimeContextToolSpec(tool.ToolSpec{Name: "compact_conversation"})
+	if len(spec.Effects) != 2 || spec.Effects[0] != tool.EffectGraphMutation || spec.Effects[1] != tool.EffectWritesMemory {
+		t.Fatalf("effects = %v", spec.Effects)
+	}
+	if spec.SideEffectClass != tool.SideEffectTaskGraph {
+		t.Fatalf("side_effect_class = %q", spec.SideEffectClass)
+	}
+	if spec.ApprovalClass != tool.ApprovalClassPolicyGuarded {
+		t.Fatalf("approval_class = %q", spec.ApprovalClass)
+	}
+	if spec.PlannerVisibility != tool.PlannerVisibilityVisibleWithConstraints {
+		t.Fatalf("planner_visibility = %q", spec.PlannerVisibility)
 	}
 }
 

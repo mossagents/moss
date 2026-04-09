@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	memstore "github.com/mossagents/moss/kernel/memory"
@@ -83,6 +84,74 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 	}
 	if _, err := readHandler(ctx, readInput); err == nil {
 		t.Fatal("expected read_memory to fail after delete")
+	}
+}
+
+func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
+		t.Fatalf("RegisterMemoryToolsCompat: %v", err)
+	}
+	cases := []struct {
+		name       string
+		effect     tool.Effect
+		sideEffect tool.SideEffectClass
+		approval   tool.ApprovalClass
+	}{
+		{"read_memory", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone},
+		{"write_memory", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassExplicitUser},
+		{"ingest_memory_trace", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassPolicyGuarded},
+	}
+	for _, tc := range cases {
+		spec, _, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("tool %q not registered", tc.name)
+		}
+		if effects := spec.EffectiveEffects(); len(effects) != 1 || effects[0] != tc.effect {
+			t.Fatalf("%s effects = %v", tc.name, effects)
+		}
+		if spec.SideEffectClass != tc.sideEffect {
+			t.Fatalf("%s side_effect_class = %q", tc.name, spec.SideEffectClass)
+		}
+		if spec.ApprovalClass != tc.approval {
+			t.Fatalf("%s approval_class = %q", tc.name, spec.ApprovalClass)
+		}
+	}
+}
+
+func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
+	ctx := context.Background()
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	store := NewWorkspaceMemoryStore(ws)
+	if err := ws.WriteFile(ctx, "team/legacy.txt", []byte("legacy memory")); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := RegisterMemoryTools(reg, ws, store); err != nil {
+		t.Fatalf("RegisterMemoryTools: %v", err)
+	}
+	_, readHandler, ok := reg.Get("read_memory")
+	if !ok {
+		t.Fatal("read_memory not registered")
+	}
+	raw, err := readHandler(ctx, json.RawMessage(`{"path":"team/legacy.txt"}`))
+	if err != nil {
+		t.Fatalf("read_memory: %v", err)
+	}
+	var content string
+	if err := json.Unmarshal(raw, &content); err != nil {
+		t.Fatalf("decode read_memory: %v", err)
+	}
+	if content != "legacy memory" {
+		t.Fatalf("content = %q", content)
+	}
+	record, err := store.GetByPath(ctx, "team/legacy.txt")
+	if err != nil {
+		t.Fatalf("GetByPath: %v", err)
+	}
+	if record == nil || record.SourceKind != "projection.reconciled" {
+		t.Fatalf("unexpected reconciled record: %+v", record)
 	}
 }
 
@@ -248,6 +317,80 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 	waitForCondition(t, 2*time.Second, func() bool {
 		memorySummary, err = ws.ReadFile(ctx, "memory_summary.md")
 		return err == nil && strings.Contains(string(memorySummary), "team/memory/trace-summary.md")
+	})
+}
+
+func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	ctx := context.Background()
+	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	if !ok {
+		t.Fatal("ingest_memory_trace not registered")
+	}
+	_, readRecord, ok := reg.Get("read_memory_record")
+	if !ok {
+		t.Fatal("read_memory_record not registered")
+	}
+	targetPath := "team/memory/promoted-fact.md"
+	for idx, trace := range []string{
+		`{"type":"message","role":"user","content":"Use sqlite for runtime state"}`,
+		`{"type":"message","role":"assistant","content":"Confirmed sqlite remains the runtime state backend"}`,
+	} {
+		input, _ := json.Marshal(map[string]any{
+			"source_path": fmt.Sprintf("trace/session-%d.jsonl", idx+1),
+			"trace":       trace,
+			"target_path": targetPath,
+			"tags":        []string{"trace", "decision"},
+		})
+		if _, err := ingestTrace(ctx, input); err != nil {
+			t.Fatalf("ingest_memory_trace(%d): %v", idx+1, err)
+		}
+	}
+	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "promoted/promoted-fact.md")
+	var record memstore.MemoryRecord
+	if err := json.Unmarshal(recordRaw, &record); err != nil {
+		t.Fatalf("decode promoted record: %v", err)
+	}
+	if record.Stage != memstore.MemoryStagePromoted || record.SourceKind != "promotion" {
+		t.Fatalf("unexpected promoted record: %+v", record)
+	}
+	if !strings.Contains(record.Content, "confidence: 1.0") {
+		t.Fatalf("expected promoted confidence in content, got %q", record.Content)
+	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		registry, err := ws.ReadFile(ctx, "MEMORY.md")
+		return err == nil && strings.Contains(string(registry), "promoted/promoted-fact.md")
+	})
+}
+
+func TestWriteMemory_SyncsDerivedArtifacts(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	ctx := context.Background()
+	_, writeMemory, ok := reg.Get("write_memory")
+	if !ok {
+		t.Fatal("write_memory not registered")
+	}
+	if _, err := writeMemory(ctx, mustJSON(t, map[string]any{
+		"path":    "team/manual-decision.md",
+		"content": "Use sqlite for state queries.",
+	})); err != nil {
+		t.Fatalf("write_memory: %v", err)
+	}
+	waitForCondition(t, 2*time.Second, func() bool {
+		registry, err := ws.ReadFile(ctx, "MEMORY.md")
+		if err != nil || !strings.Contains(string(registry), "team/manual-decision.md") {
+			return false
+		}
+		summary, err := ws.ReadFile(ctx, "memory_summary.md")
+		return err == nil && strings.Contains(string(summary), "team/manual-decision.md")
 	})
 }
 

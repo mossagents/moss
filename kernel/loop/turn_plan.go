@@ -19,13 +19,21 @@ const (
 )
 
 type ToolRouteDecision struct {
-	Name         string          `json:"name"`
-	Source       string          `json:"source,omitempty"`
-	Owner        string          `json:"owner,omitempty"`
-	Risk         tool.RiskLevel  `json:"risk,omitempty"`
-	Status       ToolRouteStatus `json:"status"`
-	Capabilities []string        `json:"capabilities,omitempty"`
-	ReasonCodes  []string        `json:"reason_codes,omitempty"`
+	Name               string                  `json:"name"`
+	Source             string                  `json:"source,omitempty"`
+	Owner              string                  `json:"owner,omitempty"`
+	Risk               tool.RiskLevel          `json:"risk,omitempty"`
+	Status             ToolRouteStatus         `json:"status"`
+	Capabilities       []string                `json:"capabilities,omitempty"`
+	Effects            []tool.Effect           `json:"effects,omitempty"`
+	SideEffectClass    tool.SideEffectClass    `json:"side_effect_class,omitempty"`
+	ApprovalClass      tool.ApprovalClass      `json:"approval_class,omitempty"`
+	PlannerVisibility  tool.PlannerVisibility  `json:"planner_visibility,omitempty"`
+	CommutativityClass tool.CommutativityClass `json:"commutativity_class,omitempty"`
+	Idempotent         bool                    `json:"idempotent,omitempty"`
+	ResourceScope      []string                `json:"resource_scope,omitempty"`
+	LockScope          []string                `json:"lock_scope,omitempty"`
+	ReasonCodes        []string                `json:"reason_codes,omitempty"`
 }
 
 type ModelRoutePlan struct {
@@ -119,19 +127,31 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 	specs := reg.List()
 	decisions := make([]ToolRouteDecision, 0, len(specs))
 	for _, spec := range specs {
+		effects := spec.EffectiveEffects()
 		decision := ToolRouteDecision{
-			Name:         spec.Name,
-			Source:       classifyToolSource(spec),
-			Owner:        classifyToolOwner(spec),
-			Risk:         spec.Risk,
-			Status:       ToolRouteVisible,
-			Capabilities: append([]string(nil), spec.Capabilities...),
+			Name:               spec.Name,
+			Source:             classifyToolSource(spec),
+			Owner:              classifyToolOwner(spec),
+			Risk:               spec.Risk,
+			Status:             ToolRouteVisible,
+			Capabilities:       append([]string(nil), spec.Capabilities...),
+			Effects:            append([]tool.Effect(nil), effects...),
+			SideEffectClass:    spec.EffectiveSideEffectClass(),
+			ApprovalClass:      spec.EffectiveApprovalClass(),
+			PlannerVisibility:  spec.EffectivePlannerVisibility(),
+			CommutativityClass: spec.EffectiveCommutativityClass(),
+			Idempotent:         spec.Idempotent,
+			ResourceScope:      append([]string(nil), spec.ResourceScope...),
+			LockScope:          append([]string(nil), spec.LockScope...),
 		}
 		switch {
+		case decision.PlannerVisibility == tool.PlannerVisibilityHidden:
+			decision.Status = ToolRouteHidden
+			decision.ReasonCodes = append(decision.ReasonCodes, "planner_hidden")
 		case plan.LightweightChat:
 			decision.Status = ToolRouteHidden
 			decision.ReasonCodes = append(decision.ReasonCodes, "lightweight_chat")
-		case taskMode == "readonly" && spec.Risk != tool.RiskLow:
+		case taskMode == "readonly" && !spec.IsReadOnly():
 			decision.Status = ToolRouteHidden
 			decision.ReasonCodes = append(decision.ReasonCodes, "readonly_mode")
 		case (taskMode == "planning" || taskMode == "research") && shouldHideForPlanning(spec):
@@ -140,9 +160,9 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 		case trust == "restricted" && shouldRequireApprovalForRestricted(spec):
 			decision.Status = ToolRouteApprovalRequired
 			decision.ReasonCodes = append(decision.ReasonCodes, "restricted_trust")
-		case approval != "full-auto" && spec.Risk == tool.RiskHigh:
+		case approval != "full-auto" && shouldRequireApprovalForTurn(spec):
 			decision.Status = ToolRouteApprovalRequired
-			decision.ReasonCodes = append(decision.ReasonCodes, "high_risk_requires_approval")
+			decision.ReasonCodes = append(decision.ReasonCodes, "approval_class_requires_approval")
 		}
 		if decision.Status == ToolRouteVisible {
 			decision.ReasonCodes = append(decision.ReasonCodes, "visible")
@@ -279,12 +299,20 @@ func toolRoutePayload(route []ToolRouteDecision) []map[string]any {
 	payload := make([]map[string]any, 0, len(route))
 	for _, decision := range route {
 		item := map[string]any{
-			"name":         decision.Name,
-			"status":       string(decision.Status),
-			"source":       decision.Source,
-			"owner":        decision.Owner,
-			"risk":         string(decision.Risk),
-			"reason_codes": append([]string(nil), decision.ReasonCodes...),
+			"name":                decision.Name,
+			"status":              string(decision.Status),
+			"source":              decision.Source,
+			"owner":               decision.Owner,
+			"risk":                string(decision.Risk),
+			"reason_codes":        append([]string(nil), decision.ReasonCodes...),
+			"effects":             effectsToStrings(decision.Effects),
+			"side_effect_class":   string(decision.SideEffectClass),
+			"approval_class":      string(decision.ApprovalClass),
+			"planner_visibility":  string(decision.PlannerVisibility),
+			"commutativity_class": string(decision.CommutativityClass),
+			"idempotent":          decision.Idempotent,
+			"resource_scope":      append([]string(nil), decision.ResourceScope...),
+			"lock_scope":          append([]string(nil), decision.LockScope...),
 		}
 		if len(decision.Capabilities) > 0 {
 			item["capabilities"] = append([]string(nil), decision.Capabilities...)
@@ -321,31 +349,32 @@ func classifyToolOwner(spec tool.ToolSpec) string {
 }
 
 func shouldHideForPlanning(spec tool.ToolSpec) bool {
-	if spec.Risk != tool.RiskHigh {
-		return false
-	}
 	if classifyToolSource(spec) == "agent" {
 		return false
 	}
-	for _, cap := range spec.Capabilities {
-		switch strings.TrimSpace(cap) {
-		case "filesystem", "workspace":
+	for _, effect := range spec.EffectiveEffects() {
+		switch effect {
+		case tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectExternalSideEffect:
 			return true
 		}
 	}
-	switch strings.TrimSpace(spec.Name) {
-	case "write_file", "edit_file", "run_command":
-		return true
-	default:
-		return false
-	}
+	return false
 }
 
 func shouldRequireApprovalForRestricted(spec tool.ToolSpec) bool {
-	if spec.Risk == tool.RiskHigh {
+	if !spec.IsReadOnly() {
 		return true
 	}
-	return classifyToolSource(spec) == "agent" && spec.Risk != tool.RiskLow
+	return spec.EffectiveApprovalClass() != tool.ApprovalClassNone
+}
+
+func shouldRequireApprovalForTurn(spec tool.ToolSpec) bool {
+	switch spec.EffectiveApprovalClass() {
+	case tool.ApprovalClassExplicitUser, tool.ApprovalClassSupervisorOnly:
+		return true
+	default:
+		return spec.Risk == tool.RiskHigh
+	}
 }
 
 func normalizeTurnApproval(mode string) string {
@@ -376,6 +405,17 @@ func compactStrings(items []string) []string {
 		if item != "" && !slices.Contains(out, item) {
 			out = append(out, item)
 		}
+	}
+	return out
+}
+
+func effectsToStrings(effects []tool.Effect) []string {
+	out := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		if effect == "" {
+			continue
+		}
+		out = append(out, string(effect))
 	}
 	return out
 }

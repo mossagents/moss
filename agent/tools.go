@@ -106,11 +106,53 @@ func RegisterToolsWithDeps(reg tool.Registry, agents *Registry, tracker *TaskTra
 	return nil
 }
 
+func agentToolSpec(spec tool.ToolSpec) tool.ToolSpec {
+	switch spec.Name {
+	case "query_agent", "read_agent", "list_agents", "list_tasks", "wait_agent", "read_mailbox":
+		spec.Effects = []tool.Effect{tool.EffectReadOnly}
+		spec.SideEffectClass = tool.SideEffectNone
+		spec.ApprovalClass = tool.ApprovalClassNone
+		spec.PlannerVisibility = tool.PlannerVisibilityVisible
+		spec.Idempotent = true
+		spec.CommutativityClass = tool.CommutativityFullyCommutative
+		spec.ResourceScope = []string{"graph:tasks"}
+		if spec.Name == "read_mailbox" {
+			spec.ResourceScope = []string{"graph:mailbox"}
+		}
+	case "send_mail":
+		spec.Effects = []tool.Effect{tool.EffectGraphMutation}
+		spec.ResourceScope = []string{"graph:mailbox"}
+		spec.LockScope = []string{"graph:mailbox"}
+		spec.SideEffectClass = tool.SideEffectTaskGraph
+		spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "acquire_workspace", "release_workspace":
+		spec.Effects = []tool.Effect{tool.EffectGraphMutation, tool.EffectWritesWorkspace}
+		spec.ResourceScope = []string{"graph:workspace", "workspace:lease"}
+		spec.LockScope = []string{"graph:workspace", "workspace:lease"}
+		spec.SideEffectClass = tool.SideEffectWorkspace
+		spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "delegate_agent", "spawn_agent", "cancel_task", "update_task", "write_agent", "close_agent", "resume_agent", "task", "plan_task", "claim_task":
+		spec.Effects = []tool.Effect{tool.EffectGraphMutation}
+		spec.ResourceScope = []string{"graph:tasks"}
+		spec.LockScope = []string{"graph:tasks"}
+		spec.SideEffectClass = tool.SideEffectTaskGraph
+		spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	}
+	return spec
+}
+
 // ── delegate_agent (同步) ─────────────────────────────
 
 type delegateInput struct {
-	Agent string `json:"agent"`
-	Task  string `json:"task"`
+	Agent    string              `json:"agent"`
+	Task     string              `json:"task"`
+	Contract taskrt.TaskContract `json:"contract"`
 }
 
 func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) error {
@@ -121,13 +163,23 @@ func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) 
 			"type": "object",
 			"properties": {
 				"agent": {"type": "string", "description": "目标 Agent 名称"},
-				"task":  {"type": "string", "description": "要委派的具体任务描述"}
+				"task":  {"type": "string", "description": "要委派的具体任务描述"},
+				"contract": {"type":"object","description":"可选: 子任务资源合同","properties":{
+					"input_context":{"type":"string"},
+					"budget":{"type":"object","properties":{"max_steps":{"type":"integer"},"max_tokens":{"type":"integer"},"timeout_sec":{"type":"integer"}}},
+					"approval_ceiling":{"type":"string","enum":["none","policy_guarded","explicit_user_approval","supervisor_only"]},
+					"writable_scopes":{"type":"array","items":{"type":"string"}},
+					"memory_scope":{"type":"string"},
+					"allowed_effects":{"type":"array","items":{"type":"string","enum":["read_only","writes_workspace","writes_memory","external_side_effect","graph_mutation"]}},
+					"return_artifacts":{"type":"array","items":{"type":"string"}}
+				}}
 			},
 			"required": ["agent", "task"]
 		}`),
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in delegateInput
@@ -135,15 +187,21 @@ func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) 
 			return nil, fmt.Errorf("parse input: %w", err)
 		}
 
-		result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task)
+		result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task, in.Contract)
 		if err != nil {
 			return nil, err
 		}
 
-		return json.Marshal(map[string]string{
+		return json.Marshal(map[string]any{
 			"agent":  in.Agent,
 			"status": "completed",
 			"result": result.Output,
+			"supervisor_artifact": buildSupervisorArtifact(&Task{
+				AgentName: in.Agent,
+				Status:    TaskCompleted,
+				Result:    result.Output,
+				Contract:  in.Contract,
+			}),
 		})
 	}
 
@@ -153,8 +211,9 @@ func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) 
 // ── spawn_agent (异步) ────────────────────────────────
 
 type spawnInput struct {
-	Agent string `json:"agent"`
-	Task  string `json:"task"`
+	Agent    string              `json:"agent"`
+	Task     string              `json:"task"`
+	Contract taskrt.TaskContract `json:"contract"`
 }
 
 func registerSpawn(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
@@ -165,20 +224,30 @@ func registerSpawn(reg tool.Registry, agents *Registry, tracker *TaskTracker, de
 			"type": "object",
 			"properties": {
 				"agent": {"type": "string", "description": "目标 Agent 名称"},
-				"task":  {"type": "string", "description": "任务描述"}
+				"task":  {"type": "string", "description": "任务描述"},
+				"contract": {"type":"object","description":"可选: 子任务资源合同","properties":{
+					"input_context":{"type":"string"},
+					"budget":{"type":"object","properties":{"max_steps":{"type":"integer"},"max_tokens":{"type":"integer"},"timeout_sec":{"type":"integer"}}},
+					"approval_ceiling":{"type":"string","enum":["none","policy_guarded","explicit_user_approval","supervisor_only"]},
+					"writable_scopes":{"type":"array","items":{"type":"string"}},
+					"memory_scope":{"type":"string"},
+					"allowed_effects":{"type":"array","items":{"type":"string","enum":["read_only","writes_workspace","writes_memory","external_side_effect","graph_mutation"]}},
+					"return_artifacts":{"type":"array","items":{"type":"string"}}
+				}}
 			},
 			"required": ["agent", "task"]
 		}`),
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in spawnInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("parse input: %w", err)
 		}
-		taskID, err := startBackgroundTask(ctx, agents, tracker, delegator, in.Agent, in.Task)
+		taskID, err := startBackgroundTask(ctx, agents, tracker, delegator, in.Agent, in.Task, in.Contract)
 		if err != nil {
 			return nil, err
 		}
@@ -211,6 +280,7 @@ func registerQuery(reg tool.Registry, tracker *TaskTracker) error {
 		}`),
 		Risk: tool.RiskLow,
 	}
+	spec = agentToolSpec(spec)
 
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in queryInput
@@ -246,6 +316,7 @@ func registerReadAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		}`),
 		Risk: tool.RiskLow,
 	}
+	spec = agentToolSpec(spec)
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in readAgentInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -284,6 +355,7 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 		}`),
 		Risk: tool.RiskLow,
 	}
+	spec = agentToolSpec(spec)
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in listInput
 		if err := unmarshalOpt(input, &in); err != nil {
@@ -346,6 +418,7 @@ func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
 		}`),
 		Risk: tool.RiskLow,
 	}
+	spec = agentToolSpec(spec)
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in listInput
 		if err := unmarshalOpt(input, &in); err != nil {
@@ -392,6 +465,7 @@ func registerCancelTask(reg tool.Registry, tracker *TaskTracker) error {
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in cancelTaskInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -445,6 +519,7 @@ func registerUpdateTask(reg tool.Registry, agents *Registry, tracker *TaskTracke
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in updateTaskInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -505,6 +580,7 @@ func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTr
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in writeAgentInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -616,6 +692,7 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		}`),
 		Risk: tool.RiskLow,
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in waitAgentInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -722,6 +799,7 @@ func registerCloseAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in closeAgentInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -785,6 +863,7 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in resumeAgentInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -830,13 +909,14 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 // ── task（统一入口） ───────────────────────────────────
 
 type taskInput struct {
-	Mode   string `json:"mode"`
-	Agent  string `json:"agent"`
-	Task   string `json:"task"`
-	TaskID string `json:"task_id"`
-	Status string `json:"status"`
-	Limit  int    `json:"limit"`
-	Reason string `json:"reason"`
+	Mode     string              `json:"mode"`
+	Agent    string              `json:"agent"`
+	Task     string              `json:"task"`
+	TaskID   string              `json:"task_id"`
+	Status   string              `json:"status"`
+	Limit    int                 `json:"limit"`
+	Reason   string              `json:"reason"`
+	Contract taskrt.TaskContract `json:"contract"`
 }
 
 func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, delegator Delegator) error {
@@ -852,12 +932,22 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 				"task_id": {"type": "string", "description": "Task ID returned by background mode (required for query/cancel/update)"},
 				"status": {"type": "string", "description": "Optional status filter for mode=list"},
 				"limit": {"type": "integer", "description": "Optional max results for mode=list"},
-				"reason": {"type": "string", "description": "Optional cancel reason for mode=cancel"}
+				"reason": {"type": "string", "description": "Optional cancel reason for mode=cancel"},
+				"contract": {"type":"object","description":"Optional child task contract for sync/background","properties":{
+					"input_context":{"type":"string"},
+					"budget":{"type":"object","properties":{"max_steps":{"type":"integer"},"max_tokens":{"type":"integer"},"timeout_sec":{"type":"integer"}}},
+					"approval_ceiling":{"type":"string","enum":["none","policy_guarded","explicit_user_approval","supervisor_only"]},
+					"writable_scopes":{"type":"array","items":{"type":"string"}},
+					"memory_scope":{"type":"string"},
+					"allowed_effects":{"type":"array","items":{"type":"string","enum":["read_only","writes_workspace","writes_memory","external_side_effect","graph_mutation"]}},
+					"return_artifacts":{"type":"array","items":{"type":"string"}}
+				}}
 			}
 		}`),
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"delegation"},
 	}
+	spec = agentToolSpec(spec)
 
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in taskInput
@@ -877,15 +967,21 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 			if strings.TrimSpace(in.Task) == "" {
 				return nil, fmt.Errorf("task is required for mode=sync")
 			}
-			result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task)
+			result, err := runAgent(ctx, agents, nil, "", 0, delegator, in.Agent, in.Task, in.Contract)
 			if err != nil {
 				return nil, err
 			}
-			return json.Marshal(map[string]string{
+			return json.Marshal(map[string]any{
 				"mode":   "sync",
 				"agent":  in.Agent,
 				"status": "completed",
 				"result": result.Output,
+				"supervisor_artifact": buildSupervisorArtifact(&Task{
+					AgentName: in.Agent,
+					Status:    TaskCompleted,
+					Result:    result.Output,
+					Contract:  in.Contract,
+				}),
 			})
 		case "background":
 			if strings.TrimSpace(in.Agent) == "" {
@@ -894,7 +990,7 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 			if strings.TrimSpace(in.Task) == "" {
 				return nil, fmt.Errorf("task is required for mode=background")
 			}
-			taskID, err := startBackgroundTask(ctx, agents, tracker, delegator, in.Agent, in.Task)
+			taskID, err := startBackgroundTask(ctx, agents, tracker, delegator, in.Agent, in.Task, in.Contract)
 			if err != nil {
 				return nil, err
 			}
@@ -1025,7 +1121,7 @@ func unmarshalOpt(input json.RawMessage, v any) error {
 
 // ── 公共执行逻辑 ─────────────────────────────────────
 
-func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTracker, delegator Delegator, agentName, goal string) (string, error) {
+func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTracker, delegator Delegator, agentName, goal string, contract taskrt.TaskContract) (string, error) {
 	if _, ok := agents.Get(agentName); !ok {
 		return "", fmt.Errorf("agent %q not found", agentName)
 	}
@@ -1040,7 +1136,7 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 		"agent", agentName,
 		"parent_session_id", SessionID(ctx),
 	)
-	if _, err := launchBackgroundTask(ctx, agents, tracker, delegator, taskID, agentName, goal, time.Time{}); err != nil {
+	if _, err := launchBackgroundTask(ctx, agents, tracker, delegator, taskID, agentName, goal, contract, time.Time{}); err != nil {
 		return "", err
 	}
 	return taskID, nil
@@ -1064,6 +1160,10 @@ func buildTaskResponse(task *Task) map[string]any {
 	if task.JobItemID != "" {
 		resp["job_item_id"] = task.JobItemID
 	}
+	if task.Contract.TaskID != "" || len(task.Contract.AllowedEffects) > 0 || task.Contract.ApprovalCeiling != "" || task.Contract.Budget.MaxSteps > 0 || task.Contract.Budget.MaxTokens > 0 || task.Contract.Budget.TimeoutSec > 0 {
+		resp["contract"] = task.Contract
+	}
+	resp["supervisor_artifact"] = buildSupervisorArtifact(task)
 	switch task.Status {
 	case TaskCompleted:
 		resp["result"] = task.Result
@@ -1071,6 +1171,45 @@ func buildTaskResponse(task *Task) map[string]any {
 		resp["error"] = task.Error
 	}
 	return resp
+}
+
+func buildSupervisorArtifact(task *Task) map[string]any {
+	artifact := map[string]any{
+		"task_id": task.ID,
+		"agent":   task.AgentName,
+		"status":  task.Status,
+		"summary": summarizeSupervisorResult(task),
+		"structured_result": map[string]any{
+			"task_id":           task.ID,
+			"agent_name":        task.AgentName,
+			"status":            task.Status,
+			"session_id":        task.SessionID,
+			"parent_session_id": task.ParentSessionID,
+			"job_id":            task.JobID,
+			"job_item_id":       task.JobItemID,
+			"result":            task.Result,
+			"error":             task.Error,
+			"contract":          task.Contract,
+		},
+	}
+	return artifact
+}
+
+func summarizeSupervisorResult(task *Task) string {
+	switch task.Status {
+	case TaskCompleted:
+		if strings.TrimSpace(task.Result) != "" {
+			return strings.TrimSpace(task.Result)
+		}
+		return "task completed"
+	case TaskFailed, TaskCancelled:
+		if strings.TrimSpace(task.Error) != "" {
+			return strings.TrimSpace(task.Error)
+		}
+		return "task ended without a result"
+	default:
+		return "task is running under supervisor control"
+	}
 }
 
 func resolveTaskTarget(tracker *TaskTracker, target string) (*Task, error) {
@@ -1157,7 +1296,7 @@ func countQueuedMessages(ctx context.Context, runtime taskrt.TaskRuntime, taskID
 	return len(items), true, nil
 }
 
-func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string) (*loop.SessionResult, error) {
+func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string, requestedContract taskrt.TaskContract) (*loop.SessionResult, error) {
 	cfg, ok := agents.Get(agentName)
 	if !ok {
 		var availableNames []string
@@ -1181,14 +1320,39 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 		"depth", depth+1,
 	)
 
-	scopedTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
+	baseTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
+	contract := normalizeTaskContract(requestedContract, firstNonEmpty(taskID, requestedContract.TaskID), task, baseTools, cfg)
+	scopedTools := withTaskContract(baseTools, contract)
 
-	sess, err := delegator.NewSession(childCtx, session.SessionConfig{
+	sessionPrompt := strings.TrimSpace(cfg.SystemPrompt)
+	contractPrompt := strings.TrimSpace(renderTaskContractPrompt(contract))
+	if contractPrompt != "" {
+		if sessionPrompt == "" {
+			sessionPrompt = contractPrompt
+		} else {
+			sessionPrompt += "\n\n" + contractPrompt
+		}
+	}
+	metadata := map[string]any{"child_task_contract": contract}
+	maxSteps := cfg.MaxSteps
+	if contract.Budget.MaxSteps > 0 {
+		maxSteps = contract.Budget.MaxSteps
+	}
+	maxTokens := 0
+	if contract.Budget.MaxTokens > 0 {
+		maxTokens = contract.Budget.MaxTokens
+	}
+	runCtx, cancel := applyContractTimeout(childCtx, contract)
+	defer cancel()
+
+	sess, err := delegator.NewSession(runCtx, session.SessionConfig{
 		Goal:         task,
 		Mode:         "delegated",
 		TrustLevel:   cfg.TrustLevel,
-		SystemPrompt: cfg.SystemPrompt,
-		MaxSteps:     cfg.MaxSteps,
+		SystemPrompt: sessionPrompt,
+		MaxSteps:     maxSteps,
+		MaxTokens:    maxTokens,
+		Metadata:     metadata,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create session for agent %q: %w", agentName, err)
@@ -1212,7 +1376,7 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 		ContentParts: []mdl.ContentPart{mdl.TextPart(task)},
 	})
 
-	result, err := delegator.RunWithTools(WithSessionID(childCtx, sess.ID), sess, scopedTools)
+	result, err := delegator.RunWithTools(WithSessionID(runCtx, sess.ID), sess, scopedTools)
 	if err != nil {
 		logging.GetLogger().DebugContext(ctx, "delegated agent failed",
 			"agent", agentName,
@@ -1239,13 +1403,20 @@ func launchBackgroundTask(
 	tracker *TaskTracker,
 	delegator Delegator,
 	taskID, agentName, goal string,
+	contract taskrt.TaskContract,
 	createdAt time.Time,
 ) (*Task, error) {
+	cfg, ok := agents.Get(agentName)
+	if !ok {
+		return nil, fmt.Errorf("agent %q not found", agentName)
+	}
+	contract = normalizeTaskContract(contract, taskID, goal, tool.Scoped(delegator.ToolRegistry(), cfg.Tools), cfg)
 	task := &Task{
 		ID:              taskID,
 		AgentName:       agentName,
 		Goal:            goal,
 		Status:          TaskRunning,
+		Contract:        contract,
 		ParentSessionID: SessionID(ctx),
 		CreatedAt:       createdAt,
 	}
@@ -1253,7 +1424,7 @@ func launchBackgroundTask(
 	revision := tracker.Start(task, cancel)
 
 	go func(rev int64) {
-		result, err := runAgent(WithSessionID(taskCtx, task.ParentSessionID), agents, tracker, taskID, rev, delegator, agentName, goal)
+		result, err := runAgent(WithSessionID(taskCtx, task.ParentSessionID), agents, tracker, taskID, rev, delegator, agentName, goal, contract)
 		if err != nil {
 			logging.GetLogger().DebugContext(taskCtx, "background task failed",
 				"task_id", taskID,
@@ -1300,10 +1471,10 @@ func updateBackgroundTask(
 		createdAt = time.Now()
 	}
 	if !isActiveTask(task) {
-		return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
+		return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, task.Contract, createdAt)
 	}
 	tracker.CancelIf(taskID, task.Revision, "restarted with updated instructions")
-	return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, createdAt)
+	return launchBackgroundTask(ctx, agents, tracker, delegator, taskID, task.AgentName, newGoal, task.Contract, createdAt)
 }
 
 func triggerAgentTurn(
@@ -1326,7 +1497,7 @@ func triggerAgentTurn(
 			if createdAt.IsZero() {
 				createdAt = time.Now()
 			}
-			updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, mergeTaskGoal(task.Goal, mergedMessage), createdAt)
+			updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, mergeTaskGoal(task.Goal, mergedMessage), task.Contract, createdAt)
 			return updated, metrics, err
 		}
 		updated, err := updateBackgroundTask(ctx, agents, tracker, delegator, task.ID, mergedMessage)
@@ -1337,7 +1508,7 @@ func triggerAgentTurn(
 		if createdAt.IsZero() {
 			createdAt = time.Now()
 		}
-		updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, newGoal, createdAt)
+		updated, err := launchBackgroundTask(ctx, agents, tracker, delegator, task.ID, task.AgentName, newGoal, task.Contract, createdAt)
 		return updated, metrics, err
 	default:
 		return nil, queueMetrics{}, fmt.Errorf("task %q is not in a triggerable state", task.ID)
@@ -1384,6 +1555,7 @@ func registerPlanTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"planning", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in planTaskInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -1440,6 +1612,7 @@ func registerClaimTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"planning", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in claimTaskInput
 		if err := unmarshalOpt(input, &in); err != nil {
@@ -1497,6 +1670,7 @@ func registerSendMail(reg tool.Registry, mailbox taskrt.Mailbox) error {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"communication", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in sendMailInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -1548,6 +1722,7 @@ func registerReadMailbox(reg tool.Registry, mailbox taskrt.Mailbox) error {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"communication", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in readMailboxInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -1588,6 +1763,7 @@ func registerAcquireWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolatio
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"workspace", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in acquireWorkspaceInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -1635,6 +1811,7 @@ func registerReleaseWorkspace(reg tool.Registry, isolation kws.WorkspaceIsolatio
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"workspace", "delegation"},
 	}
+	spec = agentToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in releaseWorkspaceInput
 		if err := json.Unmarshal(input, &in); err != nil {

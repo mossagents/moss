@@ -81,7 +81,7 @@ func TestDelegateAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var resp map[string]string
+	var resp map[string]any
 	if err := json.Unmarshal(result, &resp); err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +90,9 @@ func TestDelegateAgent(t *testing.T) {
 	}
 	if resp["agent"] != "researcher" {
 		t.Errorf("agent = %q", resp["agent"])
+	}
+	if _, ok := resp["supervisor_artifact"]; !ok {
+		t.Fatalf("expected supervisor_artifact in response: %+v", resp)
 	}
 }
 
@@ -256,7 +259,7 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("task sync: %v", err)
 	}
-	var syncResp map[string]string
+	var syncResp map[string]any
 	if err := json.Unmarshal(syncResult, &syncResp); err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +296,9 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	if queryResp["mode"] != "query" || queryResp["status"] != "completed" {
 		t.Fatalf("unexpected query response: %+v", queryResp)
 	}
+	if _, ok := queryResp["supervisor_artifact"]; !ok {
+		t.Fatalf("expected supervisor_artifact in query response: %+v", queryResp)
+	}
 }
 
 func TestTaskToolModeValidation(t *testing.T) {
@@ -328,6 +334,185 @@ func TestTaskToolModeValidation(t *testing.T) {
 			t.Fatalf("expected validation error for input: %+v", c)
 		}
 	}
+}
+
+func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{
+		Name:         "worker",
+		SystemPrompt: "Work.",
+		Tools:        []string{"read_file", "write_file"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	parentReg := tool.NewRegistry()
+	if err := parentReg.Register(tool.ToolSpec{
+		Name:         "read_file",
+		Risk:         tool.RiskLow,
+		Capabilities: []string{"filesystem"},
+	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"read ok"`), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := parentReg.Register(tool.ToolSpec{
+		Name:          "write_file",
+		Risk:          tool.RiskHigh,
+		Capabilities:  []string{"filesystem"},
+		Effects:       []tool.Effect{tool.EffectWritesWorkspace},
+		ApprovalClass: tool.ApprovalClassExplicitUser,
+	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"status":"ok"}`), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	delegator := &mockDelegator{
+		registry: parentReg,
+		runFn: func(_ context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+			defer close(done)
+			if sess.Config.MaxSteps != 3 || sess.Config.MaxTokens != 111 {
+				t.Fatalf("unexpected budget in session config: %+v", sess.Config)
+			}
+			if !strings.Contains(sess.Config.SystemPrompt, "<child_task_contract>") {
+				t.Fatalf("expected contract prompt in system prompt, got %q", sess.Config.SystemPrompt)
+			}
+			if len(tools.List()) != 1 || tools.List()[0].Name != "read_file" {
+				t.Fatalf("unexpected scoped tools: %+v", tools.List())
+			}
+			_, writeHandler, ok := tools.Get("write_file")
+			if !ok {
+				t.Fatal("expected write_file to be addressable for contract violation")
+			}
+			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "violates child task contract") {
+				t.Fatalf("expected contract violation, got %v", err)
+			}
+			return &loop.SessionResult{
+				SessionID:  sess.ID,
+				Success:    true,
+				Output:     "contract ok",
+				TokensUsed: mdl.TokenUsage{TotalTokens: 9},
+			}, nil
+		},
+	}
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, taskHandler, ok := reg.Get("task")
+	if !ok {
+		t.Fatal("task tool not registered")
+	}
+	raw, err := taskHandler(context.Background(), mustJSON(t, taskInput{
+		Mode:  "background",
+		Agent: "worker",
+		Task:  "bounded execution",
+		Contract: taskrt.TaskContract{
+			Budget: taskrt.TaskBudget{MaxSteps: 3, MaxTokens: 111},
+			AllowedEffects: []tool.Effect{
+				tool.EffectReadOnly,
+			},
+			ApprovalCeiling: tool.ApprovalClassPolicyGuarded,
+		},
+	}))
+	if err != nil {
+		t.Fatalf("task background: %v", err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatal(err)
+	}
+	taskID, _ := resp["task_id"].(string)
+	if taskID == "" {
+		t.Fatalf("missing task_id: %+v", resp)
+	}
+	<-done
+	deadline := time.After(2 * time.Second)
+	for {
+		task, ok := tracker.Get(taskID)
+		if ok && task.Status == TaskCompleted {
+			if task.Contract.Budget.MaxSteps != 3 || task.Contract.ApprovalCeiling != tool.ApprovalClassPolicyGuarded {
+				t.Fatalf("unexpected persisted contract: %+v", task.Contract)
+			}
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("task %q did not complete with persisted contract", taskID)
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func TestDelegateAgentContractWritableScope(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{
+		Name:         "worker",
+		SystemPrompt: "Work.",
+		Tools:        []string{"write_file"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tracker := NewTaskTracker()
+	parentReg := tool.NewRegistry()
+	if err := parentReg.Register(tool.ToolSpec{
+		Name:          "write_file",
+		Risk:          tool.RiskHigh,
+		Capabilities:  []string{"filesystem"},
+		Effects:       []tool.Effect{tool.EffectWritesWorkspace},
+		ApprovalClass: tool.ApprovalClassExplicitUser,
+	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"status":"ok"}`), nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	delegator := &mockDelegator{
+		registry: parentReg,
+		runFn: func(_ context.Context, _ *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+			_, writeHandler, ok := tools.Get("write_file")
+			if !ok {
+				t.Fatal("write_file not available")
+			}
+			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "outside writable scopes") {
+				t.Fatalf("expected writable scope violation, got %v", err)
+			}
+			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "docs/ok.txt"})); err != nil {
+				t.Fatalf("expected in-scope write to succeed, got %v", err)
+			}
+			return &loop.SessionResult{Success: true, Output: "scoped"}, nil
+		},
+	}
+	reg := tool.NewRegistry()
+	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
+		t.Fatal(err)
+	}
+	_, handler, ok := reg.Get("delegate_agent")
+	if !ok {
+		t.Fatal("delegate_agent not registered")
+	}
+	_, err := handler(context.Background(), mustJSON(t, delegateInput{
+		Agent: "worker",
+		Task:  "write docs",
+		Contract: taskrt.TaskContract{
+			AllowedEffects:  []tool.Effect{tool.EffectWritesWorkspace},
+			ApprovalCeiling: tool.ApprovalClassExplicitUser,
+			WritableScopes:  []string{"workspace:docs/**"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("delegate_agent: %v", err)
+	}
+}
+
+func mustJSON(t *testing.T, value any) json.RawMessage {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	return raw
 }
 
 func TestUpdateTaskRestartsSameID(t *testing.T) {
@@ -692,6 +877,43 @@ func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
 	for _, name := range []string{"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace"} {
 		if _, _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected tool %q", name)
+		}
+	}
+}
+
+func TestRegisterTools_ExecutionMetadata(t *testing.T) {
+	agents := NewRegistry()
+	if err := agents.Register(AgentConfig{Name: "worker", SystemPrompt: "Work."}); err != nil {
+		t.Fatal(err)
+	}
+	reg := tool.NewRegistry()
+	tracker := NewTaskTracker()
+	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
+		t.Fatalf("RegisterTools: %v", err)
+	}
+	cases := []struct {
+		name       string
+		effect     tool.Effect
+		sideEffect tool.SideEffectClass
+		approval   tool.ApprovalClass
+	}{
+		{"spawn_agent", tool.EffectGraphMutation, tool.SideEffectTaskGraph, tool.ApprovalClassPolicyGuarded},
+		{"query_agent", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone},
+		{"task", tool.EffectGraphMutation, tool.SideEffectTaskGraph, tool.ApprovalClassPolicyGuarded},
+	}
+	for _, tc := range cases {
+		spec, _, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("tool %q not found", tc.name)
+		}
+		if effects := spec.EffectiveEffects(); len(effects) == 0 || effects[0] != tc.effect {
+			t.Fatalf("%s effects = %v", tc.name, effects)
+		}
+		if spec.SideEffectClass != tc.sideEffect {
+			t.Fatalf("%s side_effect_class = %q", tc.name, spec.SideEffectClass)
+		}
+		if spec.ApprovalClass != tc.approval {
+			t.Fatalf("%s approval_class = %q", tc.name, spec.ApprovalClass)
 		}
 	}
 }
@@ -1318,7 +1540,10 @@ func TestResumeAgent_RestartsCompletedTask(t *testing.T) {
 	if !ok {
 		t.Fatal("missing resumed task")
 	}
-	if updated.Status != TaskRunning {
-		t.Fatalf("expected running status, got %+v", updated)
+	if updated.Status != TaskRunning && updated.Status != TaskCompleted {
+		t.Fatalf("expected running or completed status, got %+v", updated)
+	}
+	if updated.Revision < 2 {
+		t.Fatalf("expected resumed task revision >= 2, got %+v", updated)
 	}
 }

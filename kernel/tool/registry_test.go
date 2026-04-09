@@ -105,3 +105,56 @@ func TestRegistryListByCapability(t *testing.T) {
 		t.Fatalf("ListByCapability(write) len = %d, want 2", len(writers))
 	}
 }
+
+func TestToolSpecEffectiveMetadataFallbacks(t *testing.T) {
+	spec := ToolSpec{
+		Name:         "write_file",
+		Risk:         RiskHigh,
+		Capabilities: []string{"filesystem"},
+	}
+	if got := spec.EffectiveEffects(); len(got) != 1 || got[0] != EffectWritesWorkspace {
+		t.Fatalf("EffectiveEffects() = %v", got)
+	}
+	if got := spec.EffectiveSideEffectClass(); got != SideEffectWorkspace {
+		t.Fatalf("EffectiveSideEffectClass() = %q", got)
+	}
+	if got := spec.EffectiveApprovalClass(); got != ApprovalClassExplicitUser {
+		t.Fatalf("EffectiveApprovalClass() = %q", got)
+	}
+	if got := spec.EffectivePlannerVisibility(); got != PlannerVisibilityVisible {
+		t.Fatalf("EffectivePlannerVisibility() = %q", got)
+	}
+	if spec.IsReadOnly() {
+		t.Fatal("IsReadOnly() = true, want false")
+	}
+}
+
+func TestToolSpecEffectiveMetadataHonorsExplicitFields(t *testing.T) {
+	spec := ToolSpec{
+		Name:               "custom",
+		Risk:               RiskHigh,
+		Effects:            []Effect{EffectReadOnly, EffectReadOnly},
+		SideEffectClass:    SideEffectMemory,
+		ApprovalClass:      ApprovalClassSupervisorOnly,
+		PlannerVisibility:  PlannerVisibilityHidden,
+		CommutativityClass: CommutativityFullyCommutative,
+	}
+	if got := spec.EffectiveEffects(); len(got) != 1 || got[0] != EffectReadOnly {
+		t.Fatalf("EffectiveEffects() = %v", got)
+	}
+	if got := spec.EffectiveSideEffectClass(); got != SideEffectMemory {
+		t.Fatalf("EffectiveSideEffectClass() = %q", got)
+	}
+	if got := spec.EffectiveApprovalClass(); got != ApprovalClassSupervisorOnly {
+		t.Fatalf("EffectiveApprovalClass() = %q", got)
+	}
+	if got := spec.EffectivePlannerVisibility(); got != PlannerVisibilityHidden {
+		t.Fatalf("EffectivePlannerVisibility() = %q", got)
+	}
+	if got := spec.EffectiveCommutativityClass(); got != CommutativityFullyCommutative {
+		t.Fatalf("EffectiveCommutativityClass() = %q", got)
+	}
+	if !spec.IsReadOnly() {
+		t.Fatal("IsReadOnly() = false, want true")
+	}
+}

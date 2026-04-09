@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"math/rand"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -507,10 +508,51 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 }
 
 func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
-	if l.Config.ParallelToolCall && len(calls) > 1 {
-		return l.executeToolCallsParallel(ctx, sess, calls)
+	if len(calls) == 0 {
+		return nil
 	}
-	return l.executeToolCallsSerial(ctx, sess, calls)
+	plan, err := buildExecutionPlan(calls, l.Tools)
+	if err != nil {
+		l.emitExecutionPlanRejected(ctx, sess, calls, err)
+		return err
+	}
+	l.emitExecutionPlanValidated(ctx, sess, plan)
+	for _, batch := range l.admitToolCallBatches(calls) {
+		if l.Config.ParallelToolCall && len(batch) > 1 {
+			if err := l.executeToolCallsParallel(ctx, sess, batch); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := l.executeToolCallsSerial(ctx, sess, batch); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (l *AgentLoop) emitExecutionPlanValidated(ctx context.Context, sess *session.Session, plan ExecutionPlan) {
+	event := l.executionEventBase(sess, kobs.ExecutionEventType("execution.plan_validated"), "planning", "runtime", "execution_plan")
+	event.Data = map[string]any{
+		"call_count": len(plan.Calls),
+		"call_ids":   executionPlanCallIDs(plan),
+		"calls":      executionPlanPayload(plan),
+	}
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+}
+
+func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session.Session, calls []mdl.ToolCall, err error) {
+	event := l.executionEventBase(sess, kobs.ExecutionEventType("execution.plan_invalid"), "planning", "runtime", "execution_plan")
+	names := make([]string, 0, len(calls))
+	for _, call := range calls {
+		names = append(names, call.Name)
+	}
+	event.Error = err.Error()
+	event.Data = map[string]any{
+		"call_count": len(calls),
+		"tool_names": names,
+	}
+	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
 func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {
@@ -526,6 +568,182 @@ func (l *AgentLoop) maxConcurrentTools() int {
 		return l.Config.MaxConcurrentTools
 	}
 	return 8
+}
+
+type toolAdmissionCandidate struct {
+	call mdl.ToolCall
+	spec tool.ToolSpec
+	ok   bool
+}
+
+func (l *AgentLoop) admitToolCallBatches(calls []mdl.ToolCall) [][]mdl.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	if !l.Config.ParallelToolCall || len(calls) == 1 {
+		return [][]mdl.ToolCall{append([]mdl.ToolCall(nil), calls...)}
+	}
+	batches := make([][]mdl.ToolCall, 0, len(calls))
+	current := make([]toolAdmissionCandidate, 0, min(len(calls), l.maxConcurrentTools()))
+	flush := func() {
+		if len(current) == 0 {
+			return
+		}
+		batch := make([]mdl.ToolCall, 0, len(current))
+		for _, candidate := range current {
+			batch = append(batch, candidate.call)
+		}
+		batches = append(batches, batch)
+		current = current[:0]
+	}
+	for _, call := range calls {
+		candidate := l.describeToolCallForAdmission(call)
+		if len(current) > 0 && (len(current) >= l.maxConcurrentTools() || conflictsWithBatch(candidate, current)) {
+			flush()
+		}
+		current = append(current, candidate)
+	}
+	flush()
+	return batches
+}
+
+func (l *AgentLoop) describeToolCallForAdmission(call mdl.ToolCall) toolAdmissionCandidate {
+	spec, _, ok := l.Tools.Get(call.Name)
+	return toolAdmissionCandidate{
+		call: call,
+		spec: spec,
+		ok:   ok,
+	}
+}
+
+func conflictsWithBatch(candidate toolAdmissionCandidate, batch []toolAdmissionCandidate) bool {
+	for _, existing := range batch {
+		if toolCallsConflict(candidate, existing) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolCallsConflict(a, b toolAdmissionCandidate) bool {
+	if !a.ok || !b.ok {
+		return true
+	}
+	if a.spec.IsReadOnly() && b.spec.IsReadOnly() {
+		return false
+	}
+	scopesA := normalizedAdmissionScopes(a.spec)
+	scopesB := normalizedAdmissionScopes(b.spec)
+	if hasEffect(a.spec, tool.EffectExternalSideEffect) || hasEffect(b.spec, tool.EffectExternalSideEffect) {
+		return externalSideEffectConflict(a.spec, b.spec, scopesA, scopesB)
+	}
+	if hasEffect(a.spec, tool.EffectGraphMutation) && hasEffect(b.spec, tool.EffectGraphMutation) {
+		return admissionScopesConflict(scopesA, scopesB)
+	}
+	return admissionScopesConflict(scopesA, scopesB)
+}
+
+func normalizedAdmissionScopes(spec tool.ToolSpec) []string {
+	raw := make([]string, 0, len(spec.ResourceScope)+len(spec.LockScope)+2)
+	raw = append(raw, spec.ResourceScope...)
+	raw = append(raw, spec.LockScope...)
+	if len(raw) == 0 {
+		switch spec.EffectiveSideEffectClass() {
+		case tool.SideEffectWorkspace:
+			raw = append(raw, "workspace:*")
+		case tool.SideEffectMemory:
+			raw = append(raw, "memory:*")
+		case tool.SideEffectNetwork:
+			raw = append(raw, "network:*")
+		case tool.SideEffectProcess:
+			raw = append(raw, "process:*")
+		case tool.SideEffectTaskGraph:
+			raw = append(raw, "graph:*")
+		case tool.SideEffectNone:
+			if !spec.IsReadOnly() {
+				raw = append(raw, "runtime:*")
+			}
+		}
+	}
+	out := make([]string, 0, len(raw))
+	for _, scope := range raw {
+		scope = strings.ToLower(strings.TrimSpace(scope))
+		if scope == "" {
+			continue
+		}
+		if !slices.Contains(out, scope) {
+			out = append(out, scope)
+		}
+	}
+	return out
+}
+
+func admissionScopesConflict(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, left := range a {
+		for _, right := range b {
+			if normalizedScopeOverlap(left, right) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func normalizedScopeOverlap(a, b string) bool {
+	rootA, targetA := splitNormalizedScope(a)
+	rootB, targetB := splitNormalizedScope(b)
+	if rootA == "" || rootB == "" || rootA != rootB {
+		return false
+	}
+	if targetA == "*" || targetB == "*" {
+		return true
+	}
+	return targetA == targetB ||
+		strings.HasPrefix(targetA, targetB+"/") ||
+		strings.HasPrefix(targetB, targetA+"/")
+}
+
+func splitNormalizedScope(scope string) (string, string) {
+	scope = strings.ToLower(strings.TrimSpace(scope))
+	if scope == "" {
+		return "", ""
+	}
+	root, target, ok := strings.Cut(scope, ":")
+	if !ok {
+		return scope, "*"
+	}
+	root = strings.TrimSpace(root)
+	target = strings.TrimSpace(target)
+	if target == "" {
+		target = "*"
+	}
+	return root, target
+}
+
+func externalSideEffectConflict(a, b tool.ToolSpec, scopesA, scopesB []string) bool {
+	if a.EffectiveCommutativityClass() == tool.CommutativityFullyCommutative &&
+		b.EffectiveCommutativityClass() == tool.CommutativityFullyCommutative {
+		return false
+	}
+	if a.Idempotent && b.Idempotent &&
+		a.EffectiveCommutativityClass() == tool.CommutativityTargetSafe &&
+		b.EffectiveCommutativityClass() == tool.CommutativityTargetSafe &&
+		!admissionScopesConflict(scopesA, scopesB) {
+		return false
+	}
+	return admissionScopesConflict(scopesA, scopesB)
+}
+
+func hasEffect(spec tool.ToolSpec, want tool.Effect) bool {
+	for _, effect := range spec.EffectiveEffects() {
+		if effect == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.Session, calls []mdl.ToolCall) error {

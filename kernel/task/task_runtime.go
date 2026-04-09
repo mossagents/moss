@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // TaskStatus 表示任务运行时状态。
@@ -23,21 +25,42 @@ const (
 
 // TaskRecord 是跨 agent/runtime 共享的任务记录。
 type TaskRecord struct {
-	ID              string     `json:"id"`
-	AgentName       string     `json:"agent_name"`
-	Goal            string     `json:"goal"`
-	Status          TaskStatus `json:"status"`
-	DependsOn       []string   `json:"depends_on,omitempty"`
-	ClaimedBy       string     `json:"claimed_by,omitempty"`
-	WorkspaceID     string     `json:"workspace_id,omitempty"`
-	SessionID       string     `json:"session_id,omitempty"`
-	ParentSessionID string     `json:"parent_session_id,omitempty"`
-	JobID           string     `json:"job_id,omitempty"`
-	JobItemID       string     `json:"job_item_id,omitempty"`
-	Result          string     `json:"result,omitempty"`
-	Error           string     `json:"error,omitempty"`
-	CreatedAt       time.Time  `json:"created_at,omitempty"`
-	UpdatedAt       time.Time  `json:"updated_at,omitempty"`
+	ID              string       `json:"id"`
+	AgentName       string       `json:"agent_name"`
+	Goal            string       `json:"goal"`
+	Status          TaskStatus   `json:"status"`
+	DependsOn       []string     `json:"depends_on,omitempty"`
+	Contract        TaskContract `json:"contract,omitempty"`
+	ClaimedBy       string       `json:"claimed_by,omitempty"`
+	WorkspaceID     string       `json:"workspace_id,omitempty"`
+	SessionID       string       `json:"session_id,omitempty"`
+	ParentSessionID string       `json:"parent_session_id,omitempty"`
+	JobID           string       `json:"job_id,omitempty"`
+	JobItemID       string       `json:"job_item_id,omitempty"`
+	Result          string       `json:"result,omitempty"`
+	Error           string       `json:"error,omitempty"`
+	CreatedAt       time.Time    `json:"created_at,omitempty"`
+	UpdatedAt       time.Time    `json:"updated_at,omitempty"`
+}
+
+// TaskBudget defines runtime ceilings owned by the supervisor.
+type TaskBudget struct {
+	MaxSteps   int `json:"max_steps,omitempty"`
+	MaxTokens  int `json:"max_tokens,omitempty"`
+	TimeoutSec int `json:"timeout_sec,omitempty"`
+}
+
+// TaskContract defines the explicit resource contract for a child task.
+type TaskContract struct {
+	TaskID          string             `json:"task_id,omitempty"`
+	Goal            string             `json:"goal,omitempty"`
+	InputContext    string             `json:"input_context,omitempty"`
+	Budget          TaskBudget         `json:"budget,omitempty"`
+	ApprovalCeiling tool.ApprovalClass `json:"approval_ceiling,omitempty"`
+	WritableScopes  []string           `json:"writable_scopes,omitempty"`
+	MemoryScope     string             `json:"memory_scope,omitempty"`
+	AllowedEffects  []tool.Effect      `json:"allowed_effects,omitempty"`
+	ReturnArtifacts []string           `json:"return_artifacts,omitempty"`
 }
 
 // AgentJobStatus 表示 Job/Item 状态机状态。

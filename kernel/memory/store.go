@@ -26,6 +26,7 @@ const (
 	MemoryStageManual       MemoryStage = "manual"
 	MemoryStageSnapshot     MemoryStage = "snapshot"
 	MemoryStageConsolidated MemoryStage = "consolidated"
+	MemoryStagePromoted     MemoryStage = "promoted"
 )
 
 type MemoryStatus string

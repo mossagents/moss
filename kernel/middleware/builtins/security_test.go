@@ -426,6 +426,45 @@ func TestPolicyCheck_ApprovalPromptIncludesReasonCode(t *testing.T) {
 	}
 }
 
+func TestRequireApprovalForEffects_UsesEffectiveToolEffects(t *testing.T) {
+	rule := RequireApprovalForEffects(tool.EffectWritesMemory)
+	result := rule(PolicyContext{
+		Tool: tool.ToolSpec{
+			Name:         "write_memory",
+			Risk:         tool.RiskLow,
+			Capabilities: []string{"memory"},
+		},
+	})
+	if result.Decision != RequireApproval {
+		t.Fatalf("decision = %s, want %s", result.Decision, RequireApproval)
+	}
+	if result.Reason.Code != "tool.effect_requires_approval" {
+		t.Fatalf("reason code = %q", result.Reason.Code)
+	}
+	if result.Meta["effect"] != string(tool.EffectWritesMemory) {
+		t.Fatalf("meta = %+v", result.Meta)
+	}
+}
+
+func TestDenyApprovalClasses_UsesEffectiveApprovalClass(t *testing.T) {
+	rule := DenyApprovalClasses(tool.ApprovalClassSupervisorOnly)
+	result := rule(PolicyContext{
+		Tool: tool.ToolSpec{
+			Name:          "internal_supervisor",
+			ApprovalClass: tool.ApprovalClassSupervisorOnly,
+		},
+	})
+	if result.Decision != Deny {
+		t.Fatalf("decision = %s, want %s", result.Decision, Deny)
+	}
+	if result.Reason.Code != "tool.approval_class_denied" {
+		t.Fatalf("reason code = %q", result.Reason.Code)
+	}
+	if result.Meta["approval_class"] != string(tool.ApprovalClassSupervisorOnly) {
+		t.Fatalf("meta = %+v", result.Meta)
+	}
+}
+
 func TestPolicyCheck_EmitsPolicyRuleMatchedEvent(t *testing.T) {
 	io := intr.NewBufferIO()
 	sess := &session.Session{ID: "s5"}

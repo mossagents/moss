@@ -3,7 +3,8 @@ package product
 import (
 	appconfig "github.com/mossagents/moss/config"
 	intr "github.com/mossagents/moss/kernel/io"
-	"path/filepath"
+	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/tool"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 		t.Fatalf("PersistProjectApprovalAmendment: %v", err)
 	}
 
-	cfg, err := appconfig.LoadConfig(filepath.Join(workspace, "moss.yaml"))
+	cfg, err := appconfig.LoadConfig(appconfig.DefaultProjectConfigPath(workspace))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -36,5 +37,35 @@ func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 	rule := profileCfg.Execution.HTTPRules[0]
 	if rule.Match != "api.example.com" || rule.Access != "allow" {
 		t.Fatalf("unexpected rule: %+v", rule)
+	}
+}
+
+func TestEvaluatePolicy_ConfirmModeUsesEffectSemantics(t *testing.T) {
+	rules, err := ApprovalModePolicyRules(ApprovalModeConfirm)
+	if err != nil {
+		t.Fatalf("ApprovalModePolicyRules: %v", err)
+	}
+	decision := EvaluatePolicy(rules, tool.ToolSpec{
+		Name:         "write_memory",
+		Risk:         tool.RiskLow,
+		Capabilities: []string{"memory"},
+	}, nil)
+	if decision != builtins.RequireApproval {
+		t.Fatalf("decision = %s, want %s", decision, builtins.RequireApproval)
+	}
+}
+
+func TestEvaluatePolicy_ReadOnlyModeDeniesGraphMutation(t *testing.T) {
+	rules, err := ApprovalModePolicyRules(ApprovalModeReadOnly)
+	if err != nil {
+		t.Fatalf("ApprovalModePolicyRules: %v", err)
+	}
+	decision := EvaluatePolicy(rules, tool.ToolSpec{
+		Name:         "offload_context",
+		Risk:         tool.RiskLow,
+		Capabilities: []string{"context"},
+	}, nil)
+	if decision != builtins.Deny {
+		t.Fatalf("decision = %s, want %s", decision, builtins.Deny)
 	}
 }

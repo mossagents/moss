@@ -692,6 +692,52 @@ func TestLoopParallelToolCalls(t *testing.T) {
 	}
 }
 
+func TestAdmitToolCallBatches_SerializesConflictingWorkspaceWrites(t *testing.T) {
+	reg := tool.NewRegistry()
+	handler := func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	}
+	if err := reg.Register(tool.ToolSpec{
+		Name:            "write_one",
+		Risk:            tool.RiskHigh,
+		Effects:         []tool.Effect{tool.EffectWritesWorkspace},
+		SideEffectClass: tool.SideEffectWorkspace,
+		ResourceScope:   []string{"workspace:docs/spec.md"},
+	}, handler); err != nil {
+		t.Fatalf("register write_one: %v", err)
+	}
+	if err := reg.Register(tool.ToolSpec{
+		Name:            "write_two",
+		Risk:            tool.RiskHigh,
+		Effects:         []tool.Effect{tool.EffectWritesWorkspace},
+		SideEffectClass: tool.SideEffectWorkspace,
+		ResourceScope:   []string{"workspace:docs/spec.md"},
+	}, handler); err != nil {
+		t.Fatalf("register write_two: %v", err)
+	}
+
+	l := &AgentLoop{
+		Tools: reg,
+		Config: LoopConfig{
+			ParallelToolCall: true,
+		},
+	}
+
+	batches := l.admitToolCallBatches([]mdl.ToolCall{
+		{ID: "c1", Name: "write_one", Arguments: json.RawMessage(`{}`)},
+		{ID: "c2", Name: "write_two", Arguments: json.RawMessage(`{}`)},
+	})
+	if len(batches) != 2 {
+		t.Fatalf("batch len = %d, want 2", len(batches))
+	}
+	if len(batches[0]) != 1 || len(batches[1]) != 1 {
+		t.Fatalf("unexpected batch sizes: %d, %d", len(batches[0]), len(batches[1]))
+	}
+	if batches[0][0].Name != "write_one" || batches[1][0].Name != "write_two" {
+		t.Fatalf("unexpected batch order: %#v", batches)
+	}
+}
+
 func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
 	bl := &blockingLLM{}
 	l := &AgentLoop{
@@ -1073,7 +1119,7 @@ func (o *recordingObserver) OnExecutionEvent(_ context.Context, e kobs.Execution
 	o.execution = append(o.execution, e)
 }
 
-func (o *recordingObserver) OnApproval(context.Context, intr.ApprovalEvent)   {}
+func (o *recordingObserver) OnApproval(context.Context, intr.ApprovalEvent)    {}
 func (o *recordingObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
 func (o *recordingObserver) OnError(_ context.Context, e kobs.ErrorEvent) {
 	o.errors = append(o.errors, e)

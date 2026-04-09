@@ -407,26 +407,36 @@ func (m *memoryPipelineManager) runPhase2(ctx context.Context, payload memoryPip
 }
 
 func (m *memoryPipelineManager) syncArtifacts(ctx context.Context) error {
-	consolidated, err := m.store.Search(ctx, memstore.MemoryQuery{
-		Stages:   []memstore.MemoryStage{memstore.MemoryStageConsolidated},
-		Statuses: []memstore.MemoryStatus{memstore.MemoryStatusActive},
-		Limit:    200,
-	})
+	records, err := m.store.List(ctx, 0)
 	if err != nil {
 		return err
 	}
-	snapshots, err := m.store.Search(ctx, memstore.MemoryQuery{
-		Stages:   []memstore.MemoryStage{memstore.MemoryStageSnapshot},
-		Statuses: []memstore.MemoryStatus{memstore.MemoryStatusActive},
-		Limit:    60,
-	})
+	if err := m.syncPromotedRecords(ctx, records); err != nil {
+		return err
+	}
+	records, err = m.store.List(ctx, 0)
 	if err != nil {
 		return err
 	}
-	if err := m.ws.WriteFile(ctx, memoryRegistryPath, []byte(buildMemoryRegistry(consolidated))); err != nil {
+	primary := make([]memstore.MemoryRecord, 0, len(records))
+	snapshots := make([]memstore.MemoryRecord, 0, len(records))
+	for _, record := range records {
+		if record.Status != "" && record.Status != memstore.MemoryStatusActive {
+			continue
+		}
+		switch record.Stage {
+		case memstore.MemoryStageSnapshot:
+			snapshots = append(snapshots, record)
+		default:
+			primary = append(primary, record)
+		}
+	}
+	sortMemoryRecords(primary, memstore.MemoryQuery{})
+	sortMemoryRecords(snapshots, memstore.MemoryQuery{})
+	if err := m.ws.WriteFile(ctx, memoryRegistryPath, []byte(buildMemoryRegistry(primary))); err != nil {
 		return err
 	}
-	if err := m.ws.WriteFile(ctx, memorySummaryPath, []byte(buildMemorySummary(consolidated))); err != nil {
+	if err := m.ws.WriteFile(ctx, memorySummaryPath, []byte(buildMemorySummary(primary))); err != nil {
 		return err
 	}
 	if err := m.ws.WriteFile(ctx, memoryRawMemoriesPath, []byte(buildRawMemories(snapshots))); err != nil {
@@ -436,6 +446,79 @@ func (m *memoryPipelineManager) syncArtifacts(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (m *memoryPipelineManager) syncPromotedRecords(ctx context.Context, records []memstore.MemoryRecord) error {
+	candidates := make([]memstore.MemoryRecord, 0, len(records))
+	activePromoted := make(map[string]memstore.MemoryRecord)
+	for _, record := range records {
+		if record.Status != "" && record.Status != memstore.MemoryStatusActive {
+			continue
+		}
+		switch record.Stage {
+		case memstore.MemoryStagePromoted:
+			activePromoted[record.Path] = record
+		case memstore.MemoryStageConsolidated:
+			if qualifiesForPromotion(record) {
+				candidates = append(candidates, record)
+			}
+		}
+	}
+	keep := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		promoted := buildPromotedRecord(candidate)
+		keep[promoted.Path] = struct{}{}
+		if _, err := m.store.Upsert(ctx, promoted); err != nil {
+			return err
+		}
+	}
+	for path, record := range activePromoted {
+		if _, ok := keep[path]; ok {
+			continue
+		}
+		record.Status = memstore.MemoryStatusSuperseded
+		if _, err := m.store.Upsert(ctx, record); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func qualifiesForPromotion(record memstore.MemoryRecord) bool {
+	if record.Stage != memstore.MemoryStageConsolidated || record.Status == memstore.MemoryStatusSuperseded || record.Status == memstore.MemoryStatusArchived {
+		return false
+	}
+	if promotionConfidence(record) < 0.8 {
+		return false
+	}
+	return corroborationCount(record) >= 2
+}
+
+func buildPromotedRecord(record memstore.MemoryRecord) memstore.MemoryRecord {
+	confidence := promotionConfidence(record)
+	path := promotedMemoryPath(record)
+	group := record.Group
+	if group == "" {
+		group = record.Path
+	}
+	content := buildPromotedMemoryContent(record, confidence)
+	return memstore.MemoryRecord{
+		Path:            path,
+		Content:         content,
+		Summary:         firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)),
+		Tags:            append(append([]string{}, record.Tags...), "promoted"),
+		Citation:        record.Citation,
+		Stage:           memstore.MemoryStagePromoted,
+		Status:          memstore.MemoryStatusActive,
+		Group:           group,
+		Workspace:       record.Workspace,
+		CWD:             record.CWD,
+		GitBranch:       record.GitBranch,
+		SourceKind:      "promotion",
+		SourceID:        record.ID,
+		SourcePath:      record.Path,
+		SourceUpdatedAt: memoryFreshness(record),
+	}
 }
 
 func (m *memoryPipelineManager) pruneRolloutSummaries(ctx context.Context, snapshots []memstore.MemoryRecord) error {
@@ -659,15 +742,127 @@ func buildConsolidatedMemory(payload memoryPipelineJob, snapshots []memstore.Mem
 	return b.String(), summary, citation, newest
 }
 
+func promotedMemoryPath(record memstore.MemoryRecord) string {
+	stem := sanitizeMemoryStem(firstNonEmpty(record.Group, record.Path, record.SourcePath))
+	if stem == "" {
+		stem = "fact"
+	}
+	return filepath.ToSlash(filepath.Join("promoted", stem+".md"))
+}
+
+func buildPromotedMemoryContent(record memstore.MemoryRecord, confidence float64) string {
+	var b strings.Builder
+	b.WriteString("# Promoted Fact\n\n")
+	b.WriteString("source_record: " + record.Path + "\n")
+	b.WriteString(fmt.Sprintf("confidence: %.1f\n", confidence))
+	if record.Group != "" {
+		b.WriteString("group: " + record.Group + "\n")
+	}
+	if !memoryFreshness(record).IsZero() {
+		b.WriteString("source_updated_at: " + memoryFreshness(record).UTC().Format(time.RFC3339) + "\n")
+	}
+	b.WriteString("\n## Fact\n\n")
+	b.WriteString(firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)))
+	b.WriteString("\n\n## Evidence\n\n")
+	for _, path := range dedupeStrings(record.Citation.MemoryPaths) {
+		b.WriteString("- " + path + "\n")
+	}
+	for _, entry := range record.Citation.Entries {
+		b.WriteString("- " + entry.Path)
+		if entry.Note != "" {
+			b.WriteString(": " + entry.Note)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func promotionConfidence(record memstore.MemoryRecord) float64 {
+	confidence := 0.4
+	if corroborationCount(record) >= 2 {
+		confidence += 0.2
+	}
+	if distinctCitationWindowCount(record) >= 2 {
+		confidence += 0.2
+	}
+	if record.Stage == memstore.MemoryStageConsolidated {
+		confidence += 0.1
+	}
+	if strings.EqualFold(strings.TrimSpace(record.SourceKind), "consolidation") {
+		confidence += 0.1
+	}
+	if confidence > 1.0 {
+		return 1.0
+	}
+	return confidence
+}
+
+func corroborationCount(record memstore.MemoryRecord) int {
+	seen := make(map[string]struct{})
+	for _, path := range record.Citation.MemoryPaths {
+		path = normalizeMemoryPath(path)
+		if path == "" {
+			continue
+		}
+		seen[path] = struct{}{}
+	}
+	for _, entry := range record.Citation.Entries {
+		path := strings.TrimSpace(strings.ReplaceAll(entry.Path, "\\", "/"))
+		if path == "" {
+			continue
+		}
+		seen[path] = struct{}{}
+	}
+	if len(seen) == 0 && strings.TrimSpace(record.SourcePath) != "" {
+		return 1
+	}
+	return len(seen)
+}
+
+func distinctCitationWindowCount(record memstore.MemoryRecord) int {
+	seen := make(map[string]struct{})
+	for _, path := range record.Citation.MemoryPaths {
+		key := windowKeyForCitation(path)
+		if key != "" {
+			seen[key] = struct{}{}
+		}
+	}
+	for _, entry := range record.Citation.Entries {
+		key := windowKeyForCitation(entry.Path)
+		if key != "" {
+			seen[key] = struct{}{}
+		}
+	}
+	if len(seen) == 0 && strings.TrimSpace(record.SourcePath) != "" {
+		return 1
+	}
+	return len(seen)
+}
+
+func windowKeyForCitation(path string) string {
+	path = normalizeMemoryPath(path)
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "snapshots/") {
+		return path
+	}
+	if idx := strings.Index(path, "/"); idx > 0 {
+		return path[:idx]
+	}
+	return path
+}
+
 func buildMemoryRegistry(records []memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("# Memory Registry\n\n")
 	if len(records) == 0 {
-		b.WriteString("No consolidated memories yet.\n")
+		b.WriteString("No active memories yet.\n")
 		return b.String()
 	}
 	for _, record := range records {
 		b.WriteString("## " + record.Path + "\n")
+		b.WriteString("- stage: " + string(record.Stage) + "\n")
 		if record.Group != "" {
 			b.WriteString("- group: " + record.Group + "\n")
 		}
@@ -691,7 +886,7 @@ func buildMemorySummary(records []memstore.MemoryRecord) string {
 	var b strings.Builder
 	b.WriteString("# Memory Summary\n\n")
 	if len(records) == 0 {
-		b.WriteString("No consolidated memories yet.\n")
+		b.WriteString("No active memories yet.\n")
 		return b.String()
 	}
 	for _, record := range trimMemoryRecords(records, 12) {

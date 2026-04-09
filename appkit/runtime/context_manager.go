@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
+	memstore "github.com/mossagents/moss/kernel/memory"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
@@ -55,7 +56,7 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 	currentTokens := session.EstimateMessagesTokens(currentPrompt)
 	if !lightweightChat && shouldCompactPrompt(sess, state, st, currentTokens) {
 		session.WritePromptContextState(sess, state)
-		if _, err := compactSessionContext(ctx, st.store, sess, state.KeepRecent, "auto compact", k.LLM(), true); err != nil {
+		if _, err := compactSessionContext(ctx, st.store, st.memoryStore, st.memoryPipeline, sess, state.KeepRecent, "auto compact", k.LLM(), true); err != nil {
 			return state, nil, 0, err
 		}
 		state = session.ReadPromptContextState(sess)
@@ -85,6 +86,8 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 func compactSessionContext(
 	ctx context.Context,
 	store session.SessionStore,
+	memoryStore memstore.MemoryStore,
+	memoryPipeline *memoryPipelineManager,
 	sess *session.Session,
 	keepRecent int,
 	note string,
@@ -143,6 +146,17 @@ func compactSessionContext(
 			return nil, fmt.Errorf("save context snapshot: %w", err)
 		}
 	}
+	memoryRecordPath := ""
+	if memoryStore != nil {
+		record, err := persistContextSummaryMemory(ctx, memoryStore, sess, snapshotID, summaryText, withSummary)
+		if err != nil {
+			return nil, err
+		}
+		memoryRecordPath = record.Path
+		if err := syncMemoryArtifacts(ctx, memoryPipeline); err != nil {
+			return nil, err
+		}
+	}
 	state := session.ReadPromptContextState(sess)
 	state.Version = contextStateVersion
 	state.BaselineFragments = buildBaselineFragments(sess.Messages)
@@ -182,6 +196,7 @@ func compactSessionContext(
 		"status":                   "offloaded",
 		"session_id":               sess.ID,
 		"snapshot_session":         snapshotID,
+		"memory_record_path":       memoryRecordPath,
 		"dialog_before":            dialogCount,
 		"kept_recent":              keepRecent,
 		"compacted_dialog_count":   state.CompactedDialogCount,
@@ -190,6 +205,37 @@ func compactSessionContext(
 		"summary":                  summaryText,
 		"last_prompt_fragment_ids": append([]string(nil), state.LastFragmentDiff...),
 	}, nil
+}
+
+func persistContextSummaryMemory(
+	ctx context.Context,
+	store memstore.MemoryStore,
+	sess *session.Session,
+	snapshotID string,
+	summary string,
+	withSummary bool,
+) (*memstore.MemoryRecord, error) {
+	if store == nil || sess == nil {
+		return nil, fmt.Errorf("context summary memory requires memory store and session")
+	}
+	mode := "offload"
+	if withSummary {
+		mode = "summary"
+	}
+	content := strings.TrimSpace(summary)
+	recordPath := normalizeMemoryPath(fmt.Sprintf("context_snapshots/%s/%s.md", strings.TrimSpace(sess.ID), strings.TrimSpace(snapshotID)))
+	return store.Upsert(ctx, memstore.MemoryRecord{
+		Path:       recordPath,
+		Content:    content,
+		Summary:    content,
+		Tags:       []string{"context", "session:" + strings.TrimSpace(sess.ID), mode},
+		Stage:      memstore.MemoryStageSnapshot,
+		Status:     memstore.MemoryStatusActive,
+		Group:      normalizeMemoryPath("context_snapshots/" + strings.TrimSpace(sess.ID)),
+		SourceKind: "context_" + mode,
+		SourceID:   strings.TrimSpace(snapshotID),
+		SourcePath: strings.TrimSpace(snapshotID),
+	})
 }
 
 func shouldCompactPrompt(sess *session.Session, state session.PromptContextState, st *contextState, promptTokens int) bool {

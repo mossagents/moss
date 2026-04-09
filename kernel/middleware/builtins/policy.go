@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/middleware"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 	"net/url"
 	"strconv"
 	"strings"
@@ -102,6 +103,9 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, mc *middleware.Context, res
 	data := copyPolicyMeta(result.Meta)
 	data["reason"] = result.Reason.Message
 	data["reason_code"] = result.Reason.Code
+	for k, v := range policyToolSemantics(mc.Tool) {
+		data[k] = v
+	}
 	for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
 		data[k] = v
 	}
@@ -360,6 +364,39 @@ func buildPolicyContext(mc *middleware.Context) PolicyContext {
 		ctx.Identity = GetIdentity(mc.Session.State)
 	}
 	return ctx
+}
+
+func policyToolSemantics(spec *tool.ToolSpec) map[string]any {
+	if spec == nil {
+		return nil
+	}
+	data := map[string]any{
+		"side_effect_class":  string(spec.EffectiveSideEffectClass()),
+		"approval_class":     string(spec.EffectiveApprovalClass()),
+		"planner_visibility": string(spec.EffectivePlannerVisibility()),
+		"idempotent":         spec.Idempotent,
+	}
+	if effects := spec.EffectiveEffects(); len(effects) > 0 {
+		data["effects"] = effectsToStrings(effects)
+	}
+	if len(spec.ResourceScope) > 0 {
+		data["resource_scope"] = append([]string(nil), spec.ResourceScope...)
+	}
+	if len(spec.LockScope) > 0 {
+		data["lock_scope"] = append([]string(nil), spec.LockScope...)
+	}
+	return data
+}
+
+func effectsToStrings(effects []tool.Effect) []string {
+	out := make([]string, 0, len(effects))
+	for _, effect := range effects {
+		if effect == "" {
+			continue
+		}
+		out = append(out, string(effect))
+	}
+	return out
 }
 
 func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *intr.ApprovalRequest {
@@ -705,6 +742,84 @@ func RequireApprovalFor(names ...string) PolicyRule {
 	return func(ctx PolicyContext) PolicyResult {
 		if _, ok := set[ctx.Tool.Name]; ok {
 			return requireApprovalResult("tool.requires_approval", "tool requires approval by policy")
+		}
+		return allowResult()
+	}
+}
+
+// DenyEffects denies tools whose effective effects intersect the provided set.
+func DenyEffects(effects ...tool.Effect) PolicyRule {
+	set := make(map[tool.Effect]struct{}, len(effects))
+	for _, effect := range effects {
+		if effect != "" {
+			set[effect] = struct{}{}
+		}
+	}
+	return func(ctx PolicyContext) PolicyResult {
+		for _, effect := range ctx.Tool.EffectiveEffects() {
+			if _, ok := set[effect]; ok {
+				result := denyResult("tool.effect_denied", "tool effect is denied by policy")
+				result.Meta = map[string]any{"effect": string(effect)}
+				return result
+			}
+		}
+		return allowResult()
+	}
+}
+
+// RequireApprovalForEffects requires approval when a tool exposes matching effects.
+func RequireApprovalForEffects(effects ...tool.Effect) PolicyRule {
+	set := make(map[tool.Effect]struct{}, len(effects))
+	for _, effect := range effects {
+		if effect != "" {
+			set[effect] = struct{}{}
+		}
+	}
+	return func(ctx PolicyContext) PolicyResult {
+		for _, effect := range ctx.Tool.EffectiveEffects() {
+			if _, ok := set[effect]; ok {
+				result := requireApprovalResult("tool.effect_requires_approval", "tool effect requires approval by policy")
+				result.Meta = map[string]any{"effect": string(effect)}
+				return result
+			}
+		}
+		return allowResult()
+	}
+}
+
+// DenyApprovalClasses denies tools whose effective approval class matches the provided set.
+func DenyApprovalClasses(classes ...tool.ApprovalClass) PolicyRule {
+	set := make(map[tool.ApprovalClass]struct{}, len(classes))
+	for _, class := range classes {
+		if class != "" {
+			set[class] = struct{}{}
+		}
+	}
+	return func(ctx PolicyContext) PolicyResult {
+		class := ctx.Tool.EffectiveApprovalClass()
+		if _, ok := set[class]; ok {
+			result := denyResult("tool.approval_class_denied", "tool approval class is denied by policy")
+			result.Meta = map[string]any{"approval_class": string(class)}
+			return result
+		}
+		return allowResult()
+	}
+}
+
+// RequireApprovalForApprovalClasses requires approval for matching approval classes.
+func RequireApprovalForApprovalClasses(classes ...tool.ApprovalClass) PolicyRule {
+	set := make(map[tool.ApprovalClass]struct{}, len(classes))
+	for _, class := range classes {
+		if class != "" {
+			set[class] = struct{}{}
+		}
+	}
+	return func(ctx PolicyContext) PolicyResult {
+		class := ctx.Tool.EffectiveApprovalClass()
+		if _, ok := set[class]; ok {
+			result := requireApprovalResult("tool.approval_class_requires_approval", "tool approval class requires approval by policy")
+			result.Meta = map[string]any{"approval_class": string(class)}
+			return result
 		}
 		return allowResult()
 	}

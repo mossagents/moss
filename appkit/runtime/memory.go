@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -108,6 +109,9 @@ func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws kws.Workspace, store m
 	}
 	pipeline := newMemoryPipelineManager(ws, store, runtime)
 	pipeline.Start()
+	if err := pipeline.syncArtifacts(context.Background()); err != nil {
+		return err
+	}
 	return registerMemoryToolsWithPipeline(reg, ws, store, pipeline)
 }
 
@@ -122,24 +126,55 @@ func registerMemoryToolsWithPipeline(reg tool.Registry, ws kws.Workspace, store 
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
 	}{
-		{readMemorySpec, readMemoryHandler(ws, store)},
-		{writeMemorySpec, writeMemoryHandler(ws)},
-		{listMemoriesSpec, listMemoriesHandler(ws)},
-		{deleteMemorySpec, deleteMemoryHandler(ws, store)},
+		{readMemorySpec, readMemoryHandler(ws, store, pipeline)},
+		{writeMemorySpec, writeMemoryHandler(ws, store, pipeline)},
+		{listMemoriesSpec, listMemoriesHandler(store)},
+		{deleteMemorySpec, deleteMemoryHandler(ws, store, pipeline)},
 		{readMemoryRecordSpec, readMemoryRecordHandler(store)},
-		{writeMemoryRecordSpec, writeMemoryRecordHandler(ws, store)},
+		{writeMemoryRecordSpec, writeMemoryRecordHandler(ws, store, pipeline)},
 		{searchMemoriesSpec, searchMemoriesHandler(store)},
 		{ingestMemoryTraceSpec, ingestMemoryTraceHandler(pipeline)},
 	}
 	for _, t := range tools {
-		if _, _, exists := reg.Get(t.spec.Name); exists {
+		spec := runtimeMemoryToolSpec(t.spec)
+		if _, _, exists := reg.Get(spec.Name); exists {
 			continue
 		}
-		if err := reg.Register(t.spec, t.handler); err != nil {
+		if err := reg.Register(spec, t.handler); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func runtimeMemoryToolSpec(spec tool.ToolSpec) tool.ToolSpec {
+	switch spec.Name {
+	case "read_memory", "list_memories", "read_memory_record", "search_memories":
+		spec.Effects = []tool.Effect{tool.EffectReadOnly}
+		spec.ResourceScope = []string{"memory:*"}
+		spec.SideEffectClass = tool.SideEffectNone
+		spec.ApprovalClass = tool.ApprovalClassNone
+		spec.PlannerVisibility = tool.PlannerVisibilityVisible
+		spec.Idempotent = true
+		spec.CommutativityClass = tool.CommutativityFullyCommutative
+	case "write_memory", "delete_memory", "write_memory_record":
+		spec.Effects = []tool.Effect{tool.EffectWritesMemory}
+		spec.ResourceScope = []string{"memory:*"}
+		spec.LockScope = []string{"memory:*"}
+		spec.SideEffectClass = tool.SideEffectMemory
+		spec.ApprovalClass = tool.ApprovalClassExplicitUser
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "ingest_memory_trace":
+		spec.Effects = []tool.Effect{tool.EffectWritesMemory}
+		spec.ResourceScope = []string{"memory:*"}
+		spec.LockScope = []string{"memory:*"}
+		spec.SideEffectClass = tool.SideEffectMemory
+		spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	}
+	return spec
 }
 
 var readMemorySpec = tool.ToolSpec{
@@ -215,7 +250,7 @@ var writeMemoryRecordSpec = tool.ToolSpec{
 			"summary":{"type":"string"},
 			"tags":{"type":"array","items":{"type":"string"}},
 			"citation":{"type":"object"},
-			"stage":{"type":"string","enum":["manual","snapshot","consolidated"]},
+			"stage":{"type":"string","enum":["manual","snapshot","consolidated","promoted"]},
 			"status":{"type":"string","enum":["active","superseded","archived"]},
 			"group":{"type":"string"},
 			"workspace":{"type":"string"},
@@ -240,7 +275,7 @@ var searchMemoriesSpec = tool.ToolSpec{
 		"properties":{
 			"query":{"type":"string"},
 			"tags":{"type":"array","items":{"type":"string"}},
-			"stages":{"type":"array","items":{"type":"string","enum":["manual","snapshot","consolidated"]}},
+			"stages":{"type":"array","items":{"type":"string","enum":["manual","snapshot","consolidated","promoted"]}},
 			"statuses":{"type":"array","items":{"type":"string","enum":["active","superseded","archived"]}},
 			"group":{"type":"string"},
 			"workspace":{"type":"string"},
@@ -275,7 +310,7 @@ var ingestMemoryTraceSpec = tool.ToolSpec{
 	Capabilities: []string{"memory"},
 }
 
-func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
+func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -283,18 +318,23 @@ func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHa
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		data, err := ws.ReadFile(ctx, in.Path)
+		record, reconciled, err := ensureMemoryRecord(ctx, ws, store, in.Path)
 		if err != nil {
 			return nil, err
 		}
-		if err := recordMemoryUsage(ctx, store, normalizeMemoryPath(in.Path)); err != nil {
+		if reconciled {
+			if err := syncMemoryArtifacts(ctx, pipeline); err != nil {
+				return nil, err
+			}
+		}
+		if err := recordMemoryUsage(ctx, store, record.Path); err != nil {
 			return nil, err
 		}
-		return json.Marshal(string(data))
+		return json.Marshal(record.Content)
 	}
 }
 
-func writeMemoryHandler(ws kws.Workspace) tool.ToolHandler {
+func writeMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path    string `json:"path"`
@@ -304,14 +344,28 @@ func writeMemoryHandler(ws kws.Workspace) tool.ToolHandler {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 		in.Path = normalizeMemoryPath(in.Path)
-		if err := ws.WriteFile(ctx, in.Path, []byte(in.Content)); err != nil {
+		record, err := store.Upsert(ctx, memstore.MemoryRecord{
+			Path:       in.Path,
+			Content:    in.Content,
+			Stage:      memstore.MemoryStageManual,
+			Status:     memstore.MemoryStatusActive,
+			SourceKind: "tool.write_memory",
+			SourcePath: in.Path,
+		})
+		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(map[string]string{"status": "ok", "path": in.Path})
+		if err := ws.WriteFile(ctx, record.Path, []byte(record.Content)); err != nil {
+			return nil, err
+		}
+		if err := syncMemoryArtifacts(ctx, pipeline); err != nil {
+			return nil, err
+		}
+		return json.Marshal(map[string]string{"status": "ok", "path": record.Path})
 	}
 }
 
-func listMemoriesHandler(ws kws.Workspace) tool.ToolHandler {
+func listMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Pattern string `json:"pattern"`
@@ -319,18 +373,28 @@ func listMemoriesHandler(ws kws.Workspace) tool.ToolHandler {
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		if in.Pattern == "" {
-			in.Pattern = "**/*"
+		pattern := strings.TrimSpace(in.Pattern)
+		if pattern == "" {
+			pattern = "**/*"
 		}
-		files, err := ws.ListFiles(ctx, in.Pattern)
+		items, err := store.List(ctx, 0)
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(files)
+		paths := make([]string, 0, len(items))
+		for _, item := range items {
+			if item.Status != "" && item.Status != memstore.MemoryStatusActive {
+				continue
+			}
+			if matchesMemoryPattern(pattern, item.Path) {
+				paths = append(paths, item.Path)
+			}
+		}
+		return json.Marshal(paths)
 	}
 }
 
-func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
+func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -343,6 +407,9 @@ func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore) tool.Tool
 			return nil, err
 		}
 		if err := store.DeleteByPath(ctx, in.Path); err != nil {
+			return nil, err
+		}
+		if err := syncMemoryArtifacts(ctx, pipeline); err != nil {
 			return nil, err
 		}
 		return json.Marshal(map[string]string{"status": "deleted", "path": in.Path})
@@ -369,7 +436,7 @@ func readMemoryRecordHandler(store memstore.MemoryStore) tool.ToolHandler {
 	}
 }
 
-func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore) tool.ToolHandler {
+func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path            string                  `json:"path"`
@@ -415,6 +482,9 @@ func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore) tool
 			return nil, err
 		}
 		if err := recordMemoryUsages(ctx, store, record.Citation.MemoryPaths); err != nil {
+			return nil, err
+		}
+		if err := syncMemoryArtifacts(ctx, pipeline); err != nil {
 			return nil, err
 		}
 		return json.Marshal(record)
@@ -507,6 +577,67 @@ func ingestMemoryTraceHandler(pipeline *memoryPipelineManager) tool.ToolHandler 
 			"agent_name":  job.AgentName,
 		})
 	}
+}
+
+func ensureMemoryRecord(ctx context.Context, ws kws.Workspace, store memstore.MemoryStore, path string) (*memstore.MemoryRecord, bool, error) {
+	path = normalizeMemoryPath(path)
+	record, err := store.GetByPath(ctx, path)
+	if err == nil && record != nil {
+		return record, false, nil
+	}
+	data, readErr := ws.ReadFile(ctx, path)
+	if readErr != nil {
+		if err != nil {
+			return nil, false, err
+		}
+		return nil, false, readErr
+	}
+	record, err = store.Upsert(ctx, memstore.MemoryRecord{
+		Path:       path,
+		Content:    string(data),
+		Stage:      memstore.MemoryStageManual,
+		Status:     memstore.MemoryStatusActive,
+		SourceKind: "projection.reconciled",
+		SourcePath: path,
+	})
+	return record, true, err
+}
+
+func syncMemoryArtifacts(ctx context.Context, pipeline *memoryPipelineManager) error {
+	if pipeline == nil {
+		return nil
+	}
+	return pipeline.syncArtifacts(ctx)
+}
+
+func matchesMemoryPattern(pattern string, path string) bool {
+	pattern = strings.TrimSpace(strings.ReplaceAll(pattern, "\\", "/"))
+	path = strings.TrimSpace(strings.ReplaceAll(path, "\\", "/"))
+	if pattern == "" || pattern == "**/*" || pattern == "*" {
+		return true
+	}
+	if matched, err := filepath.Match(pattern, path); err == nil && matched {
+		return true
+	}
+	if strings.HasPrefix(pattern, "**/") {
+		return matchesMemoryPattern(strings.TrimPrefix(pattern, "**/"), path)
+	}
+	if strings.Contains(pattern, "*") {
+		parts := strings.Split(pattern, "*")
+		offset := 0
+		for _, part := range parts {
+			if part == "" {
+				continue
+			}
+			idx := strings.Index(path[offset:], part)
+			if idx < 0 {
+				return false
+			}
+			offset += idx + len(part)
+		}
+		return true
+	}
+	return path == pattern
 }
 
 func recordMemoryUsage(ctx context.Context, store memstore.MemoryStore, path string) error {

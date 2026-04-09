@@ -25,22 +25,23 @@ const (
 
 // Task 表示一个异步委派任务。
 type Task struct {
-	ID              string         `json:"id"`
-	AgentName       string         `json:"agent_name"`
-	Goal            string         `json:"goal"`
-	Status          TaskStatus     `json:"status"`
-	Active          bool           `json:"active,omitempty"`
-	SessionID       string         `json:"session_id,omitempty"`
-	ParentSessionID string         `json:"parent_session_id,omitempty"`
-	WorkspaceID     string         `json:"workspace_id,omitempty"`
-	JobID           string         `json:"job_id,omitempty"`
-	JobItemID       string         `json:"job_item_id,omitempty"`
-	Result          string         `json:"result,omitempty"`
-	Error           string         `json:"error,omitempty"`
-	Tokens          mdl.TokenUsage `json:"tokens,omitempty"`
-	Revision        int64          `json:"revision,omitempty"`
-	CreatedAt       time.Time      `json:"created_at,omitempty"`
-	UpdatedAt       time.Time      `json:"updated_at,omitempty"`
+	ID              string              `json:"id"`
+	AgentName       string              `json:"agent_name"`
+	Goal            string              `json:"goal"`
+	Status          TaskStatus          `json:"status"`
+	Contract        taskrt.TaskContract `json:"contract,omitempty"`
+	Active          bool                `json:"active,omitempty"`
+	SessionID       string              `json:"session_id,omitempty"`
+	ParentSessionID string              `json:"parent_session_id,omitempty"`
+	WorkspaceID     string              `json:"workspace_id,omitempty"`
+	JobID           string              `json:"job_id,omitempty"`
+	JobItemID       string              `json:"job_item_id,omitempty"`
+	Result          string              `json:"result,omitempty"`
+	Error           string              `json:"error,omitempty"`
+	Tokens          mdl.TokenUsage      `json:"tokens,omitempty"`
+	Revision        int64               `json:"revision,omitempty"`
+	CreatedAt       time.Time           `json:"created_at,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at,omitempty"`
 }
 
 // TaskTracker 管理异步委派任务的状态。
@@ -345,6 +346,7 @@ func (t *TaskTracker) mirror(task Task) {
 		AgentName:       task.AgentName,
 		Goal:            task.Goal,
 		Status:          taskrt.TaskStatus(task.Status),
+		Contract:        task.Contract,
 		ClaimedBy:       task.AgentName,
 		WorkspaceID:     task.WorkspaceID,
 		SessionID:       task.SessionID,
@@ -413,6 +415,7 @@ func (t *TaskTracker) hydrate(ctx context.Context) {
 			AgentName:       record.AgentName,
 			Goal:            record.Goal,
 			Status:          TaskStatus(record.Status),
+			Contract:        record.Contract,
 			Active:          false,
 			SessionID:       record.SessionID,
 			ParentSessionID: record.ParentSessionID,

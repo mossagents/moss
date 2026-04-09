@@ -18,21 +18,6 @@ const (
 	ApprovalModeFullAuto = "full-auto"
 )
 
-var (
-	confirmModeTools = []string{
-		"write_file", "edit_file", "run_command", "http_request",
-		"spawn_agent", "task", "cancel_task", "update_task",
-		"write_memory", "delete_memory", "offload_context",
-		"acquire_workspace", "release_workspace",
-	}
-	readOnlyDeniedTools = []string{
-		"write_file", "edit_file", "run_command", "http_request",
-		"spawn_agent", "task", "cancel_task", "update_task",
-		"write_memory", "delete_memory", "offload_context",
-		"acquire_workspace", "release_workspace",
-	}
-)
-
 func NormalizeApprovalMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "confirm", "ask", "safe":
@@ -73,20 +58,24 @@ func approvalModePolicyRulesForPolicy(mode string, policy runtime.ExecutionPolic
 	rules := append([]builtins.PolicyRule{}, runtime.ExecutionPolicyRules(policy)...)
 	switch mode {
 	case ApprovalModeReadOnly:
-		denied := filterToolNames(readOnlyDeniedTools, "run_command", "http_request")
 		rules = append(rules,
-			builtins.DenyTool(denied...),
+			builtins.DenyEffects(tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectGraphMutation),
+			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
 			builtins.DefaultAllow(),
 		)
 	case ApprovalModeConfirm:
-		requireApproval := filterToolNames(confirmModeTools, "run_command", "http_request")
 		rules = append(rules,
 			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
-			builtins.RequireApprovalFor(requireApproval...),
+			builtins.RequireApprovalForEffects(tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectGraphMutation),
+			builtins.RequireApprovalForApprovalClasses(tool.ApprovalClassExplicitUser),
+			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
 			builtins.DefaultAllow(),
 		)
 	case ApprovalModeFullAuto:
-		rules = append(rules, builtins.DefaultAllow())
+		rules = append(rules,
+			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
+			builtins.DefaultAllow(),
+		)
 	}
 	return rules
 }
@@ -124,24 +113,6 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) err
 		k.WithPolicy(rules...)
 	}
 	return nil
-}
-
-func filterToolNames(items []string, excluded ...string) []string {
-	if len(items) == 0 {
-		return nil
-	}
-	skip := make(map[string]struct{}, len(excluded))
-	for _, item := range excluded {
-		skip[item] = struct{}{}
-	}
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if _, ok := skip[item]; ok {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
 }
 
 func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {

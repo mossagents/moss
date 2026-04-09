@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
+	memstore "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/middleware"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -32,6 +33,8 @@ const (
 type contextState struct {
 	store                    session.SessionStore
 	manager                  session.Manager
+	memoryStore              memstore.MemoryStore
+	memoryPipeline           *memoryPipelineManager
 	triggerDialog            int
 	keepRecent               int
 	triggerTokens            int
@@ -143,6 +146,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"context"},
 	}
+	spec = runtimeContextToolSpec(spec)
 
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
@@ -165,7 +169,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 		if !ok || sess == nil {
 			return nil, fmt.Errorf("session %q not found", in.SessionID)
 		}
-		out, err := compactSessionContext(ctx, store, sess, in.KeepRecent, in.Note, nil, false)
+		out, err := compactSessionContext(ctx, store, nil, nil, sess, in.KeepRecent, in.Note, nil, false)
 		if err != nil {
 			return nil, err
 		}
@@ -204,8 +208,15 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		return st
 	}
 	bridge.OnBoot(130, func(_ context.Context, k *kernel.Kernel) error {
+		memState := ensureMemoryState(k)
 		if st.manager == nil {
 			st.manager = k.SessionManager()
+		}
+		if st.memoryStore == nil {
+			st.memoryStore = memState.store
+		}
+		if st.memoryPipeline == nil {
+			st.memoryPipeline = memState.pipeline
 		}
 		if st.store == nil || st.manager == nil {
 			return nil
@@ -226,6 +237,17 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		return "Use compact_conversation to keep prompt-visible context within budget with structured summaries, startup context, and snapshot-backed compaction."
 	})
 	return st
+}
+
+func runtimeContextToolSpec(spec tool.ToolSpec) tool.ToolSpec {
+	spec.Effects = []tool.Effect{tool.EffectGraphMutation, tool.EffectWritesMemory}
+	spec.ResourceScope = []string{"graph:conversation", "memory:session"}
+	spec.LockScope = []string{"graph:conversation", "memory:session"}
+	spec.SideEffectClass = tool.SideEffectTaskGraph
+	spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+	spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+	spec.CommutativityClass = tool.CommutativityNonCommutative
+	return spec
 }
 
 func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mdl.LLM) error {
@@ -250,6 +272,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm md
 		Risk:         tool.RiskMedium,
 		Capabilities: []string{"context"},
 	}
+	spec = runtimeContextToolSpec(spec)
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		if st.store == nil || st.manager == nil {
 			return nil, fmt.Errorf("context compaction requires session store and manager")
@@ -277,7 +300,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm md
 		if keep <= 0 {
 			keep = 20
 		}
-		out, err := compactWithSummary(ctx, st.store, st.manager, in.SessionID, keep, in.Note, llm)
+		out, err := compactWithSummary(ctx, st.store, st.memoryStore, st.memoryPipeline, st.manager, in.SessionID, keep, in.Note, llm)
 		if err != nil {
 			return nil, err
 		}
@@ -362,6 +385,8 @@ func classifyContextFragment(msg mdl.Message) contextFragmentKind {
 func compactWithSummary(
 	ctx context.Context,
 	store session.SessionStore,
+	memoryStore memstore.MemoryStore,
+	memoryPipeline *memoryPipelineManager,
 	manager session.Manager,
 	sessionID string,
 	keepRecent int,
@@ -372,7 +397,7 @@ func compactWithSummary(
 	if !ok || sess == nil {
 		return nil, fmt.Errorf("session %q not found", sessionID)
 	}
-	return compactSessionContext(ctx, store, sess, keepRecent, note, llm, true)
+	return compactSessionContext(ctx, store, memoryStore, memoryPipeline, sess, keepRecent, note, llm, true)
 }
 
 // AutoCompactMiddleware 在 BeforeLLM 阶段按 token 预算刷新 prompt 上下文。

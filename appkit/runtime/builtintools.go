@@ -100,11 +100,57 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 }
 
 func builtinToolSpec(spec tool.ToolSpec, owner string, requiresWorkspace, requiresExecutor, requiresSandbox bool) tool.ToolSpec {
+	spec = applyRuntimeBuiltinExecutionMetadata(spec)
 	spec.Source = "builtin"
 	spec.Owner = strings.TrimSpace(owner)
 	spec.RequiresWorkspace = requiresWorkspace
 	spec.RequiresExecutor = requiresExecutor
 	spec.RequiresSandbox = requiresSandbox
+	return spec
+}
+
+func applyRuntimeBuiltinExecutionMetadata(spec tool.ToolSpec) tool.ToolSpec {
+	switch spec.Name {
+	case "datetime":
+		spec.Effects = []tool.Effect{tool.EffectReadOnly}
+		spec.SideEffectClass = tool.SideEffectNone
+		spec.ApprovalClass = tool.ApprovalClassNone
+		spec.PlannerVisibility = tool.PlannerVisibilityVisible
+		spec.Idempotent = true
+		spec.CommutativityClass = tool.CommutativityFullyCommutative
+	case "read_file", "glob", "ls", "grep":
+		spec.Effects = []tool.Effect{tool.EffectReadOnly}
+		spec.ResourceScope = []string{"workspace:*"}
+		spec.SideEffectClass = tool.SideEffectNone
+		spec.ApprovalClass = tool.ApprovalClassNone
+		spec.PlannerVisibility = tool.PlannerVisibilityVisible
+		spec.Idempotent = true
+		spec.CommutativityClass = tool.CommutativityFullyCommutative
+	case "write_file", "edit_file":
+		spec.Effects = []tool.Effect{tool.EffectWritesWorkspace}
+		spec.ResourceScope = []string{"workspace:*"}
+		spec.LockScope = []string{"workspace:*"}
+		spec.SideEffectClass = tool.SideEffectWorkspace
+		spec.ApprovalClass = tool.ApprovalClassExplicitUser
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "run_command":
+		spec.Effects = []tool.Effect{tool.EffectExternalSideEffect}
+		spec.ResourceScope = []string{"workspace:*", "process:command"}
+		spec.LockScope = []string{"process:command"}
+		spec.SideEffectClass = tool.SideEffectProcess
+		spec.ApprovalClass = tool.ApprovalClassExplicitUser
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "http_request":
+		spec.Effects = []tool.Effect{tool.EffectExternalSideEffect}
+		spec.ResourceScope = []string{"network:http"}
+		spec.LockScope = []string{"network:http"}
+		spec.SideEffectClass = tool.SideEffectNetwork
+		spec.ApprovalClass = tool.ApprovalClassExplicitUser
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	}
 	return spec
 }
 

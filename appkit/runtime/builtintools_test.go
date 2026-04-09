@@ -701,6 +701,44 @@ func TestToolRiskLevels(t *testing.T) {
 	}
 }
 
+func TestBuiltinToolExecutionMetadata(t *testing.T) {
+	reg := tool.NewRegistry()
+	sb := newMockSandbox("/ws", nil)
+	if err := RegisterBuiltinTools(reg, sb, &mockUserIO{}, nil, nil); err != nil {
+		t.Fatalf("RegisterBuiltinTools: %v", err)
+	}
+	cases := []struct {
+		name           string
+		effect         tool.Effect
+		sideEffect     tool.SideEffectClass
+		approvalClass  tool.ApprovalClass
+		plannerVisible tool.PlannerVisibility
+	}{
+		{"read_file", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone, tool.PlannerVisibilityVisible},
+		{"write_file", tool.EffectWritesWorkspace, tool.SideEffectWorkspace, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
+		{"run_command", tool.EffectExternalSideEffect, tool.SideEffectProcess, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
+		{"http_request", tool.EffectExternalSideEffect, tool.SideEffectNetwork, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
+	}
+	for _, tc := range cases {
+		spec, _, ok := reg.Get(tc.name)
+		if !ok {
+			t.Fatalf("tool %q not found", tc.name)
+		}
+		if effects := spec.EffectiveEffects(); len(effects) != 1 || effects[0] != tc.effect {
+			t.Fatalf("%s effects = %v", tc.name, effects)
+		}
+		if spec.SideEffectClass != tc.sideEffect {
+			t.Fatalf("%s side_effect_class = %q", tc.name, spec.SideEffectClass)
+		}
+		if spec.ApprovalClass != tc.approvalClass {
+			t.Fatalf("%s approval_class = %q", tc.name, spec.ApprovalClass)
+		}
+		if spec.PlannerVisibility != tc.plannerVisible {
+			t.Fatalf("%s planner_visibility = %q", tc.name, spec.PlannerVisibility)
+		}
+	}
+}
+
 func TestInvalidInput(t *testing.T) {
 	sb := newMockSandbox("/ws", nil)
 	cases := []struct {
