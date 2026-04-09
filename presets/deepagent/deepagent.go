@@ -10,7 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -290,7 +290,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, cf
 			return nil, err
 		}
 	}
-	k.Middleware().Use(builtins.PatchToolCalls())
+	k.Hooks().BeforeLLM.On(builtins.PatchToolCalls())
 
 	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(

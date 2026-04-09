@@ -307,7 +307,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 
 	l.emitToolStarted(ctx, sess, call, spec, repairedArgs)
 
-	beforeErr := l.runBeforeToolCallMiddleware(ctx, sess, spec, call.Arguments)
+	beforeErr := l.runBeforeToolCallHook(ctx, sess, spec, call.Arguments)
 	if beforeErr != nil {
 		return l.handleBeforeToolCallError(ctx, sess, call, spec, repairedArgs, beforeErr)
 	}
@@ -323,7 +323,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	toolDur := time.Since(toolStart)
 	result := buildToolResult(call.ID, output, err)
 	l.observeToolCompletion(ctx, sess, call, spec, toolStart, toolDur, result, output, err)
-	l.runAfterToolCallMiddleware(ctx, sess, spec, output)
+	l.runAfterToolCallHook(ctx, sess, spec, output)
 	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, toolDur, err)
 	l.sendToolResultIO(ctx, call, result, toolDur, err)
 	return result

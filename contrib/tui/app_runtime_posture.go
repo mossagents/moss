@@ -223,7 +223,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if oldCancel != nil {
 		oldCancel()
 	}
-	k.Middleware().Use(a.permissionOverrideMiddleware())
+	k.Hooks().BeforeToolCall.Intercept(a.permissionOverrideInterceptor())
 	a.mu.Lock()
 	a.k = k
 	a.ctx = ctx

@@ -11,7 +11,7 @@ import (
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -51,18 +51,30 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 	})
 }
 
-func (l *AgentLoop) runBeforeToolCallMiddleware(ctx context.Context, sess *session.Session, spec tool.ToolSpec, input []byte) error {
+func (l *AgentLoop) runBeforeToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, input []byte) error {
 	var err error
 	l.withSideEffectsLock(func() {
-		err = l.runMiddleware(ctx, middleware.BeforeToolCall, sess, &spec, input, nil)
+		err = l.safeChain().BeforeToolCall.Run(ctx, &hooks.ToolEvent{
+			Session:  sess,
+			Tool:     &spec,
+			Input:    input,
+			IO:       l.IO,
+			Observer: l.observer(),
+		})
 	})
 	return err
 }
 
-func (l *AgentLoop) runAfterToolCallMiddleware(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
+func (l *AgentLoop) runAfterToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
 	l.withSideEffectsLock(func() {
-		if err := l.runMiddleware(ctx, middleware.AfterToolCall, sess, &spec, nil, output); err != nil {
-			logging.GetLogger().DebugContext(ctx, "after tool middleware failed", "session_id", sess.ID, "tool", spec.Name, "error", err)
+		if err := l.safeChain().AfterToolCall.Run(ctx, &hooks.ToolEvent{
+			Session:  sess,
+			Tool:     &spec,
+			Result:   output,
+			IO:       l.IO,
+			Observer: l.observer(),
+		}); err != nil {
+			logging.GetLogger().DebugContext(ctx, "after tool hook failed", "session_id", sess.ID, "tool", spec.Name, "error", err)
 		}
 	})
 }

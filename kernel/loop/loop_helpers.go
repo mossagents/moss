@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -106,33 +106,28 @@ func (l *AgentLoop) recordBreakerFailure() {
 	}
 }
 
-func (l *AgentLoop) runMiddleware(ctx context.Context, phase middleware.Phase, sess *session.Session, t *tool.ToolSpec, input, result []byte) error {
-	if l.Chain == nil {
-		return nil
+// safeChain returns a non-nil Registry, using the loop's Chain or a shared empty fallback.
+var emptyRegistry = hooks.NewRegistry()
+
+func (l *AgentLoop) safeChain() *hooks.Registry {
+	if l.Chain != nil {
+		return l.Chain
 	}
-	mc := &middleware.Context{
-		Session:  sess,
-		Tool:     t,
-		Input:    input,
-		Result:   result,
-		IO:       l.IO,
-		Observer: l.observer(),
-	}
-	return l.Chain.Run(ctx, phase, mc)
+	return emptyRegistry
 }
 
-func (l *AgentLoop) runErrorMiddleware(ctx context.Context, sess *session.Session, err error) {
+func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err error) {
 	if l.Chain == nil {
 		return
 	}
-	mc := &middleware.Context{
+	ev := &hooks.ErrorEvent{
 		Session:  sess,
 		Error:    err,
 		IO:       l.IO,
 		Observer: l.observer(),
 	}
-	if runErr := l.Chain.Run(ctx, middleware.OnError, mc); runErr != nil {
-		logging.GetLogger().DebugContext(ctx, "error middleware failed", "session_id", sess.ID, "error", runErr)
+	if runErr := l.Chain.OnError.Run(ctx, ev); runErr != nil {
+		logging.GetLogger().DebugContext(ctx, "error hook failed", "session_id", sess.ID, "error", runErr)
 	}
 }
 
@@ -204,10 +199,10 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage mdl.T
 	return result
 }
 
-// injectCompressionMiddleware 根据 LoopConfig.ContextCompression 配置自动注入压缩 middleware。
+// injectCompressionHooks 根据 LoopConfig.ContextCompression 配置自动注入压缩 hook。
 // 幂等：无论 Run() 被调用多少次，每个 AgentLoop 实例只注入一次。
-// 若已通过 kernel.Use() 手动注册压缩 middleware，不建议同时设置 Strategy，以避免双重压缩。
-func (l *AgentLoop) injectCompressionMiddleware() {
+// 若已通过 kernel.OnBeforeLLM() 手动注册压缩 hook，不建议同时设置 Strategy，以避免双重压缩。
+func (l *AgentLoop) injectCompressionHooks() {
 	cfg := l.Config.ContextCompression
 	if cfg.Strategy == "" || cfg.MaxContextTokens <= 0 {
 		return
@@ -218,17 +213,17 @@ func (l *AgentLoop) injectCompressionMiddleware() {
 	l.compressionInjected = true
 
 	if l.Chain == nil {
-		l.Chain = middleware.NewChain()
+		l.Chain = hooks.NewRegistry()
 	}
 	switch cfg.Strategy {
 	case CompressionTruncate:
-		l.Chain.Use(builtins.AutoTruncate(builtins.TruncateConfig{
+		l.Chain.BeforeLLM.On(builtins.AutoTruncate(builtins.TruncateConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			Tokenizer:        cfg.Tokenizer,
 		}))
 	case CompressionSummary:
-		l.Chain.Use(builtins.AutoSummarize(builtins.SummarizeConfig{
+		l.Chain.BeforeLLM.On(builtins.AutoSummarize(builtins.SummarizeConfig{
 			LLM:              l.LLM,
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
@@ -241,13 +236,13 @@ func (l *AgentLoop) injectCompressionMiddleware() {
 		if winSize <= 0 {
 			winSize = 30
 		}
-		l.Chain.Use(builtins.SlidingWindow(builtins.SlidingWindowConfig{
+		l.Chain.BeforeLLM.On(builtins.SlidingWindow(builtins.SlidingWindowConfig{
 			WindowSize:       winSize,
 			MaxContextTokens: cfg.MaxContextTokens,
 			Tokenizer:        cfg.Tokenizer,
 		}))
 	case CompressionPriority:
-		l.Chain.Use(builtins.PriorityCompress(builtins.PriorityConfig{
+		l.Chain.BeforeLLM.On(builtins.PriorityCompress(builtins.PriorityConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			MinScore:         cfg.MinScore,

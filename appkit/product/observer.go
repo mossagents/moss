@@ -3,7 +3,7 @@ package product
 import (
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"io"
 	"os"

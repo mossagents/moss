@@ -3,11 +3,12 @@ package builtins
 import (
 	"context"
 	"encoding/json"
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
 	"io"
 	"sync"
 	"time"
+
+	intr "github.com/mossagents/moss/kernel/io"
+	kobs "github.com/mossagents/moss/kernel/observe"
 )
 
 // AuditLogger 通过 Observer 接口记录审计日志。
@@ -19,7 +20,6 @@ type AuditLogger struct {
 }
 
 // NewAuditLogger 创建审计日志记录器。
-// writer 为日志输出目标（如 os.File、bytes.Buffer 等）。
 func NewAuditLogger(writer io.Writer) *AuditLogger {
 	return &AuditLogger{writer: writer}
 }
@@ -144,7 +144,6 @@ func (a *AuditLogger) OnApproval(_ context.Context, e intr.ApprovalEvent) {
 		"enforcement":  e.Request.Enforcement,
 		"requested_at": e.Request.RequestedAt.UTC().Format(time.RFC3339),
 	}
-	// Prefer the event's own timestamp over time.Now() for accurate audit trails.
 	ts := e.Request.RequestedAt.UTC()
 	if e.Decision != nil {
 		data["approved"] = e.Decision.Approved

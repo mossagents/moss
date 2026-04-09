@@ -3,23 +3,24 @@ package builtins
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/middleware"
+
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // PatchToolCalls ensures every assistant tool call in history has a matching tool result.
 // Missing results are backfilled before the next LLM turn to keep provider adapters stable.
-func PatchToolCalls() middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeLLM || mc.Session == nil {
-			return next(ctx)
+func PatchToolCalls() hooks.Hook[hooks.LLMEvent] {
+	return func(ctx context.Context, ev *hooks.LLMEvent) error {
+		if ev.Session == nil {
+			return nil
 		}
-		if len(mc.Session.Messages) == 0 {
-			return next(ctx)
+		if len(ev.Session.Messages) == 0 {
+			return nil
 		}
 
 		pending := make(map[string]mdl.ToolCall)
-		for _, msg := range mc.Session.Messages {
+		for _, msg := range ev.Session.Messages {
 			for _, tc := range msg.ToolCalls {
 				if tc.ID == "" {
 					continue
@@ -34,7 +35,7 @@ func PatchToolCalls() middleware.Middleware {
 			}
 		}
 		if len(pending) == 0 {
-			return next(ctx)
+			return nil
 		}
 
 		patches := make([]mdl.Message, 0, len(pending))
@@ -50,7 +51,7 @@ func PatchToolCalls() middleware.Middleware {
 				},
 			})
 		}
-		mc.Session.Messages = append(mc.Session.Messages, patches...)
-		return next(ctx)
+		ev.Session.Messages = append(ev.Session.Messages, patches...)
+		return nil
 	}
 }

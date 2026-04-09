@@ -6,16 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
-	kobs "github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
+	intr "github.com/mossagents/moss/kernel/io"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 // PolicyDecision 表示权限决策。
@@ -68,21 +69,21 @@ func (e *PolicyDeniedError) AsKernelError() *kerrors.Error {
 // PolicyRule 评估单个工具调用的权限。
 type PolicyRule func(ctx PolicyContext) PolicyResult
 
-// PolicyCheck 构造 policy middleware，遍历 rules 取最严格决策（Deny > RequireApproval > Allow）。
-func PolicyCheck(rules ...PolicyRule) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeToolCall || mc.Tool == nil {
-			return next(ctx)
+// PolicyCheck 构造 policy hook，遍历 rules 取最严格决策（Deny > RequireApproval > Allow）。
+func PolicyCheck(rules ...PolicyRule) hooks.Hook[hooks.ToolEvent] {
+	return func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Tool == nil {
+			return nil
 		}
 
-		policyCtx := buildPolicyContext(mc)
+		policyCtx := buildPolicyContext(ev)
 		result := evaluatePolicyRules(policyCtx, rules)
-		emitPolicyRuleMatchedEvent(ctx, mc, result)
-		if err := applyPolicyDecision(ctx, mc, result); err != nil {
+		emitPolicyRuleMatchedEvent(ctx, ev, result)
+		if err := applyPolicyDecision(ctx, ev, result); err != nil {
 			return err
 		}
 
-		return next(ctx)
+		return nil
 	}
 }
 
@@ -97,63 +98,63 @@ func evaluatePolicyRules(policyCtx PolicyContext, rules []PolicyRule) PolicyResu
 	return result
 }
 
-func emitPolicyRuleMatchedEvent(ctx context.Context, mc *middleware.Context, result PolicyResult) {
-	if mc == nil || mc.Observer == nil || mc.Tool == nil || len(result.Meta) == 0 {
+func emitPolicyRuleMatchedEvent(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) {
+	if ev == nil || ev.Observer == nil || ev.Tool == nil || len(result.Meta) == 0 {
 		return
 	}
 	data := copyPolicyMeta(result.Meta)
 	data["reason"] = result.Reason.Message
 	data["reason_code"] = result.Reason.Code
-	for k, v := range policyToolSemantics(mc.Tool) {
+	for k, v := range policyToolSemantics(ev.Tool) {
 		data[k] = v
 	}
-	for k, v := range extractPolicyInputDetails(mc.Tool.Name, mc.Input) {
+	for k, v := range extractPolicyInputDetails(ev.Tool.Name, ev.Input) {
 		data[k] = v
 	}
 	sessionID := ""
-	if mc.Session != nil {
-		sessionID = mc.Session.ID
+	if ev.Session != nil {
+		sessionID = ev.Session.ID
 	}
-	kobs.ObserveExecutionEvent(ctx, mc.Observer, kobs.ExecutionEvent{
+	kobs.ObserveExecutionEvent(ctx, ev.Observer, kobs.ExecutionEvent{
 		Type:        kobs.ExecutionPolicyRuleMatched,
 		SessionID:   sessionID,
 		Timestamp:   time.Now().UTC(),
-		ToolName:    mc.Tool.Name,
-		Risk:        string(mc.Tool.Risk),
+		ToolName:    ev.Tool.Name,
+		Risk:        string(ev.Tool.Risk),
 		ReasonCode:  result.Reason.Code,
 		Enforcement: result.Enforcement,
 		Data:        data,
 	})
 }
 
-func applyPolicyDecision(ctx context.Context, mc *middleware.Context, result PolicyResult) error {
+func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) error {
 	switch result.Decision {
 	case Deny:
-		if mc.IO != nil {
-			_ = mc.IO.Send(ctx, intr.OutputMessage{
+		if ev.IO != nil {
+			_ = ev.IO.Send(ctx, intr.OutputMessage{
 				Type: intr.OutputText,
 				Content: intr.FormatDeniedMessage(
-					mc.Tool.Name,
+					ev.Tool.Name,
 					result.Reason.Message,
 					result.Reason.Code,
 					result.Enforcement,
 				),
 			})
 		}
-		return policyDeniedError(mc, result)
+		return policyDeniedError(ev, result)
 	case RequireApproval:
-		if mc.IO == nil {
+		if ev.IO == nil {
 			return nil
 		}
-		return handlePolicyApproval(ctx, mc, result)
+		return handlePolicyApproval(ctx, ev, result)
 	default:
 		return nil
 	}
 }
 
-func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result PolicyResult) error {
-	approval := buildApprovalRequest(mc, result)
-	observer := approvalObserver(mc)
+func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) error {
+	approval := buildApprovalRequest(ev, result)
+	observer := approvalObserver(ev)
 	kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
 		SessionID: approval.SessionID,
 		Type:      "requested",
@@ -167,9 +168,9 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Data:        approvalRequestData(approval, mc.Input, result.Meta),
+		Data:        approvalRequestData(approval, ev.Input, result.Meta),
 	})
-	if auto := autoApprovalDecision(mc, approval); auto != nil {
+	if auto := autoApprovalDecision(ev, approval); auto != nil {
 		resolved := intr.NormalizeApprovalDecisionForRequest(approval, auto)
 		kobs.ObserveApproval(ctx, observer, intr.ApprovalEvent{
 			SessionID: approval.SessionID,
@@ -185,18 +186,18 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 			Risk:        approval.Risk,
 			ReasonCode:  approval.ReasonCode,
 			Enforcement: approval.Enforcement,
-			Data:        approvalResolvedData(approval, resolved, mc.Input, result.Meta),
+			Data:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 		})
-		applyApprovalDecision(mc, approval, resolved)
+		applyApprovalDecision(ev, approval, resolved)
 		return nil
 	}
-	resp, err := mc.IO.Ask(ctx, intr.InputRequest{
+	resp, err := ev.IO.Ask(ctx, intr.InputRequest{
 		Type:     intr.InputConfirm,
 		Prompt:   approval.Prompt,
 		Approval: approval,
 		Meta: map[string]any{
-			"tool":        mc.Tool.Name,
-			"input":       mc.Input,
+			"tool":        ev.Tool.Name,
+			"input":       ev.Input,
 			"approval_id": approval.ID,
 			"reason":      approval.Reason,
 			"reason_code": approval.ReasonCode,
@@ -221,18 +222,18 @@ func handlePolicyApproval(ctx context.Context, mc *middleware.Context, result Po
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Data:        approvalResolvedData(approval, resolved, mc.Input, result.Meta),
+		Data:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 	})
 	if !resolved.Approved {
-		return policyDeniedError(mc, result)
+		return policyDeniedError(ev, result)
 	}
-	applyApprovalDecision(mc, approval, resolved)
+	applyApprovalDecision(ev, approval, resolved)
 	return nil
 }
 
-func approvalObserver(mc *middleware.Context) kobs.Observer {
-	if mc != nil && mc.Observer != nil {
-		return mc.Observer
+func approvalObserver(ev *hooks.ToolEvent) kobs.Observer {
+	if ev != nil && ev.Observer != nil {
+		return ev.Observer
 	}
 	return kobs.NoOpObserver{}
 }
@@ -354,15 +355,15 @@ func severity(d PolicyDecision) int {
 	}
 }
 
-func buildPolicyContext(mc *middleware.Context) PolicyContext {
+func buildPolicyContext(ev *hooks.ToolEvent) PolicyContext {
 	ctx := PolicyContext{
-		Tool:  *mc.Tool,
-		Input: append([]byte(nil), mc.Input...),
+		Tool:  *ev.Tool,
+		Input: append([]byte(nil), ev.Input...),
 	}
-	if mc.Session != nil {
-		ctx.SessionID = mc.Session.ID
-		ctx.SessionState = mc.Session.State
-		ctx.Identity = GetIdentity(mc.Session.State)
+	if ev.Session != nil {
+		ctx.SessionID = ev.Session.ID
+		ctx.SessionState = ev.Session.State
+		ctx.Identity = GetIdentity(ev.Session.State)
 	}
 	return ctx
 }
@@ -400,20 +401,20 @@ func effectsToStrings(effects []tool.Effect) []string {
 	return out
 }
 
-func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *intr.ApprovalRequest {
+func buildApprovalRequest(ev *hooks.ToolEvent, result PolicyResult) *intr.ApprovalRequest {
 	sessionID := ""
-	if mc.Session != nil {
-		sessionID = mc.Session.ID
+	if ev.Session != nil {
+		sessionID = ev.Session.ID
 	}
 	risk := ""
 	toolName := ""
 	prompt := "Allow requested action?"
-	if mc.Tool != nil {
-		toolName = mc.Tool.Name
-		risk = string(mc.Tool.Risk)
-		prompt = "Allow tool " + mc.Tool.Name + "?"
+	if ev.Tool != nil {
+		toolName = ev.Tool.Name
+		risk = string(ev.Tool.Risk)
+		prompt = "Allow tool " + ev.Tool.Name + "?"
 	}
-	category, actionLabel, actionValue, scopeLabel, scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment := describeApproval(toolName, mc.Input)
+	category, actionLabel, actionValue, scopeLabel, scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, perms, amendment := describeApproval(toolName, ev.Input)
 	req := &intr.ApprovalRequest{
 		ID:                  fmt.Sprintf("approval-%d", time.Now().UnixNano()),
 		Kind:                intr.ApprovalKindTool,
@@ -425,7 +426,7 @@ func buildApprovalRequest(mc *middleware.Context, result PolicyResult) *intr.App
 		Reason:              result.Reason.Message,
 		ReasonCode:          result.Reason.Code,
 		Enforcement:         result.Enforcement,
-		Input:               append([]byte(nil), mc.Input...),
+		Input:               append([]byte(nil), ev.Input...),
 		ActionLabel:         actionLabel,
 		ActionValue:         actionValue,
 		ScopeLabel:          scopeLabel,
@@ -476,11 +477,11 @@ func normalizeApprovalDecision(resp intr.InputResponse, req *intr.ApprovalReques
 	})
 }
 
-func autoApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest) *intr.ApprovalDecision {
-	if mc == nil || mc.Session == nil || req == nil {
+func autoApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest) *intr.ApprovalDecision {
+	if ev == nil || ev.Session == nil || req == nil {
 		return nil
 	}
-	if rule, ok := session.MatchingApprovalRule(mc.Session, req); ok {
+	if rule, ok := session.MatchingApprovalRule(ev.Session, req); ok {
 		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
 			RequestID: req.ID,
 			Type:      rule.Type,
@@ -490,7 +491,7 @@ func autoApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest) *in
 			DecidedAt: time.Now().UTC(),
 		})
 	}
-	if session.PermissionProfileCovers(session.GrantedPermissionsOf(mc.Session), req.ProposedPermissions) {
+	if session.PermissionProfileCovers(session.GrantedPermissionsOf(ev.Session), req.ProposedPermissions) {
 		return intr.NormalizeApprovalDecisionForRequest(req, &intr.ApprovalDecision{
 			RequestID: req.ID,
 			Type:      intr.ApprovalDecisionGrantPermission,
@@ -503,25 +504,25 @@ func autoApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest) *in
 	return nil
 }
 
-func applyApprovalDecision(mc *middleware.Context, req *intr.ApprovalRequest, decision *intr.ApprovalDecision) {
-	if mc == nil || mc.Session == nil || req == nil || decision == nil || !decision.Approved {
+func applyApprovalDecision(ev *hooks.ToolEvent, req *intr.ApprovalRequest, decision *intr.ApprovalDecision) {
+	if ev == nil || ev.Session == nil || req == nil || decision == nil || !decision.Approved {
 		return
 	}
 	switch decision.Type {
 	case intr.ApprovalDecisionApproveSession:
-		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+		session.RememberApprovalRule(ev.Session, req, decision.Type, decision.DecidedAt)
 	case intr.ApprovalDecisionGrantPermission:
 		perms := decision.GrantedPermissions
 		if perms == nil {
 			perms = req.ProposedPermissions
 		}
-		session.MergeGrantedPermissions(mc.Session, perms)
-		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+		session.MergeGrantedPermissions(ev.Session, perms)
+		session.RememberApprovalRule(ev.Session, req, decision.Type, decision.DecidedAt)
 	case intr.ApprovalDecisionPolicyAmendment:
 		if req.ProposedPermissions != nil {
-			session.MergeGrantedPermissions(mc.Session, req.ProposedPermissions)
+			session.MergeGrantedPermissions(ev.Session, req.ProposedPermissions)
 		}
-		session.RememberApprovalRule(mc.Session, req, decision.Type, decision.DecidedAt)
+		session.RememberApprovalRule(ev.Session, req, decision.Type, decision.DecidedAt)
 	}
 }
 
@@ -595,8 +596,6 @@ func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, str
 		projectNote := ""
 		scopeValue := ""
 		if strings.TrimSpace(toolName) != "" {
-			// 将工具名与输入指纹一起作为 cache key，防止相同工具名但不同参数的调用
-			// 因一次批准而被整体自动放行。
 			inputHash := shortInputHash(input)
 			cacheKey = "tool|" + toolName + "|" + inputHash
 			cacheLabel = toolName
@@ -710,10 +709,10 @@ func sanitizeApprovalName(value string) string {
 	return value
 }
 
-func policyDeniedError(mc *middleware.Context, result PolicyResult) error {
+func policyDeniedError(ev *hooks.ToolEvent, result PolicyResult) error {
 	toolName := ""
-	if mc != nil && mc.Tool != nil {
-		toolName = mc.Tool.Name
+	if ev != nil && ev.Tool != nil {
+		toolName = ev.Tool.Name
 	}
 	return &PolicyDeniedError{
 		ToolName:    toolName,
@@ -837,7 +836,6 @@ func DefaultAllow() PolicyRule {
 }
 
 // shortInputHash 返回 input 内容的 8 位十六进制 FNV-1a 指纹。
-// 用于让 approval cache key 与实际调用参数绑定，避免批准一次就放行同名工具的全部后续调用。
 func shortInputHash(input []byte) string {
 	h := fnv.New32a()
 	_, _ = h.Write(input)

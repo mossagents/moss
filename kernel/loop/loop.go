@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
@@ -27,11 +27,11 @@ const (
 )
 
 // ContextCompressionConfig 配置 AgentLoop 的上下文压缩行为。
-// 当设置了 Strategy 时，AgentLoop 会自动注册对应的压缩 middleware。
-// 若已手动通过 kernel.Use() 注册压缩 middleware，无需设置此字段。
+// 当设置了 Strategy 时，AgentLoop 会自动注册对应的压缩 hook。
+// 若已手动通过 kernel.OnBeforeLLM() 注册压缩 hook，无需设置此字段。
 type ContextCompressionConfig struct {
-	// Strategy 压缩策略，默认空（不自动注入，依赖已注册的 middleware）。
-	// 显式设置后，AgentLoop.buildCompressionMiddleware 会自动注入。
+	// Strategy 压缩策略，默认空（不自动注入，依赖已注册的 hook）。
+	// 显式设置后，AgentLoop 会自动注入压缩 hook。
 	Strategy ContextCompressionStrategy
 
 	// MaxContextTokens 整个 context window 的 token 上限，0 = 不自动触发压缩。
@@ -66,7 +66,7 @@ type LoopConfig struct {
 	LLMRetry           RetryConfig            // LLM 调用重试配置
 	LLMBreaker         *retry.Breaker         // LLM 调用熔断器（可选）
 	// ContextCompression 配置自动上下文压缩（可选）。
-	// 设置后 AgentLoop 会在启动时自动将压缩 middleware 添加到 Chain 头部。
+	// 设置后 AgentLoop 会在启动时自动将压缩 hook 添加到 BeforeLLM pipeline。
 	ContextCompression ContextCompressionConfig
 }
 
@@ -91,7 +91,7 @@ func (c LoopConfig) maxIter() int {
 type AgentLoop struct {
 	LLM                 mdl.LLM
 	Tools               tool.Registry
-	Chain               *middleware.Chain
+	Chain               *hooks.Registry
 	IO                  intr.UserIO
 	Config              LoopConfig
 	Observer            kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
@@ -101,7 +101,7 @@ type AgentLoop struct {
 	sidefxMu            sync.Mutex
 	eventSeq            uint64
 	currentTurn         TurnPlan
-	compressionInjected bool // 防止 Run() 重复注入压缩 middleware
+	compressionInjected bool // 防止 Run() 重复注入压缩 hook
 }
 
 // SessionResult 是一次 Session 执行的结果。

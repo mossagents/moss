@@ -2,24 +2,21 @@ package builtins
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/middleware"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
 )
 
-// RateLimiter 构造速率限制 middleware。
+// RateLimiter 构造速率限制 hook。
 // 在 BeforeLLM 阶段按 Session 维度限流。
 // rps 为每秒允许的请求数，burst 为突发容量。
-func RateLimiter(rps int, burst int) middleware.Middleware {
+func RateLimiter(rps int, burst int) hooks.Hook[hooks.LLMEvent] {
 	limiters := &sync.Map{} // session_id → *tokenBucket
 
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeLLM {
-			return next(ctx)
-		}
-
-		sessID := mc.Session.ID
+	return func(ctx context.Context, ev *hooks.LLMEvent) error {
+		sessID := ev.Session.ID
 		v, _ := limiters.LoadOrStore(sessID, newTokenBucket(rps, burst))
 		bucket := v.(*tokenBucket)
 
@@ -27,7 +24,7 @@ func RateLimiter(rps int, burst int) middleware.Middleware {
 			return errors.New(errors.ErrRateLimit, "rate limit exceeded for session "+sessID)
 		}
 
-		return next(ctx)
+		return nil
 	}
 }
 

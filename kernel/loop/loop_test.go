@@ -6,8 +6,8 @@ import (
 	stderrors "errors"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -477,8 +477,8 @@ func TestLoopPolicyDeny(t *testing.T) {
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 
-	chain := middleware.NewChain()
-	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain := hooks.NewRegistry()
+	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 
 	io := kt.NewRecorderIO()
 	l := &AgentLoop{
@@ -830,8 +830,8 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 	}); err != nil {
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
-	chain := middleware.NewChain()
-	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain := hooks.NewRegistry()
+	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		Tools:    reg,
@@ -1238,8 +1238,8 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 
 func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	observer := &recordingObserver{}
-	chain := middleware.NewChain()
-	chain.Use(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain := hooks.NewRegistry()
+	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	var events []session.ToolLifecycleEvent
 	reg := tool.NewRegistry()
 	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {

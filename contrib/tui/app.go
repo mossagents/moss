@@ -13,8 +13,8 @@ import (
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -400,19 +400,19 @@ func (a *agentState) permissionSummary() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase == middleware.BeforeToolCall && mc.Tool != nil {
+func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.ToolEvent] {
+	return func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
+		if ev.Tool != nil {
 			a.mu.Lock()
-			mode := a.permissions[mc.Tool.Name]
+			mode := a.permissions[ev.Tool.Name]
 			a.mu.Unlock()
 			switch mode {
 			case "deny":
-				if mc.IO != nil {
-					_ = mc.IO.Send(ctx, intr.OutputMessage{
+				if ev.IO != nil {
+					_ = ev.IO.Send(ctx, intr.OutputMessage{
 						Type: intr.OutputText,
 						Content: intr.FormatDeniedMessage(
-							mc.Tool.Name,
+							ev.Tool.Name,
 							"permission override denied tool execution",
 							"permission.override.deny",
 							intr.EnforcementHardBlock,
@@ -421,28 +421,28 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 				}
 				return builtins.ErrDenied
 			case "ask":
-				if mc.IO != nil {
+				if ev.IO != nil {
 					approval := &intr.ApprovalRequest{
 						ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
 						Kind:        intr.ApprovalKindTool,
-						SessionID:   mc.Session.ID,
-						ToolName:    mc.Tool.Name,
-						Risk:        string(mc.Tool.Risk),
-						Prompt:      "Allow tool " + mc.Tool.Name + "?",
+						SessionID:   ev.Session.ID,
+						ToolName:    ev.Tool.Name,
+						Risk:        string(ev.Tool.Risk),
+						Prompt:      "Allow tool " + ev.Tool.Name + "?",
 						Reason:      "permission override requires approval",
 						ReasonCode:  "permission.override.ask",
 						Enforcement: intr.EnforcementRequireApproval,
-						Input:       append(json.RawMessage(nil), mc.Input...),
+						Input:       append(json.RawMessage(nil), ev.Input...),
 						RequestedAt: time.Now().UTC(),
 					}
 					approval.Prompt = intr.FormatApprovalPrompt(approval)
-					resp, err := mc.IO.Ask(ctx, intr.InputRequest{
+					resp, err := ev.IO.Ask(ctx, intr.InputRequest{
 						Type:     intr.InputConfirm,
 						Prompt:   approval.Prompt,
 						Approval: approval,
 						Meta: map[string]any{
-							"tool":        mc.Tool.Name,
-							"input":       mc.Input,
+							"tool":        ev.Tool.Name,
+							"input":       ev.Input,
 							"approval_id": approval.ID,
 							"reason":      approval.Reason,
 							"reason_code": approval.ReasonCode,
@@ -456,10 +456,10 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 						resp.Approved = resp.Decision.Approved
 					}
 					if !resp.Approved {
-						_ = mc.IO.Send(ctx, intr.OutputMessage{
+						_ = ev.IO.Send(ctx, intr.OutputMessage{
 							Type: intr.OutputText,
 							Content: intr.FormatDeniedMessage(
-								mc.Tool.Name,
+								ev.Tool.Name,
 								approval.Reason,
 								approval.ReasonCode,
 								approval.Enforcement,

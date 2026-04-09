@@ -9,10 +9,10 @@ import (
 
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -40,7 +40,7 @@ type Kernel struct {
 	store       session.SessionStore
 	tools       tool.Registry
 	sessions    session.Manager
-	chain       *middleware.Chain
+	chain       *hooks.Registry
 	loopCfg     loop.LoopConfig
 	observer    kobs.Observer
 	ext         *extensionState
@@ -55,7 +55,7 @@ func New(opts ...Option) *Kernel {
 	k := &Kernel{
 		tools:      tool.NewRegistry(),
 		sessions:   session.NewManager(),
-		chain:      middleware.NewChain(),
+		chain:      hooks.NewRegistry(),
 		ext:        newExtensionState(),
 		shutdownCh: make(chan struct{}),
 		runs:       newRunSupervisor(),
@@ -145,8 +145,7 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 	l := &loop.AgentLoop{
 		LLM:      k.llm,
 		Tools:    tools,
-		Chain:    k.chain,
-		IO:       io,
+		Chain:    k.chain,		IO:       io,
 		Config:   k.loopCfg,
 		Observer: k.observer,
 		RunID:    runID,
@@ -205,8 +204,8 @@ func (k *Kernel) SessionManager() session.Manager {
 	return k.sessions
 }
 
-// Middleware 返回中间件链。
-func (k *Kernel) Middleware() *middleware.Chain {
+// Hooks 返回 hook 注册表。
+func (k *Kernel) Hooks() *hooks.Registry {
 	return k.chain
 }
 
@@ -339,12 +338,12 @@ func (k *Kernel) IsShuttingDown() bool {
 	}
 }
 
-// OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。
+// OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
 func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
-	k.chain.Use(builtins.EventEmitter(pattern, handler))
+	builtins.InstallEventEmitter(pattern, handler)(k.chain)
 }
 
-// WithPolicy 设置权限策略（便利 API，内部实现为 PolicyCheck middleware）。
+// WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
-	k.chain.Use(builtins.PolicyCheck(rules...))
+	k.chain.BeforeToolCall.On(builtins.PolicyCheck(rules...))
 }

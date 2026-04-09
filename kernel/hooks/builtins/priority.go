@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 )
 
@@ -20,13 +19,7 @@ type MessageScorerFunc func(msg mdl.Message) float64
 
 func (f MessageScorerFunc) Score(msg mdl.Message) float64 { return f(msg) }
 
-// RuleScorer 基于规则对消息进行重要性评分，无需 LLM 开销。
-//
-// 评分规则：
-//   - system message：1.0（始终最高）
-//   - 包含 error/failed/exception/panic 关键词的消息：+0.3
-//   - tool result 消息：+0.1
-//   - 基础分：0.5
+// RuleScorer 基于规则对消息进行重要性评分。
 type RuleScorer struct{}
 
 func (RuleScorer) Score(msg mdl.Message) float64 {
@@ -34,12 +27,12 @@ func (RuleScorer) Score(msg mdl.Message) float64 {
 		return 1.0
 	}
 	score := 0.5
-	text := strings.ToLower(mdl.ContentPartsToPlainText(msg.ContentParts))
-	if strings.Contains(text, "error") ||
-		strings.Contains(text, "failed") ||
-		strings.Contains(text, "exception") ||
-		strings.Contains(text, "panic") {
-		score += 0.3
+	text := mdl.ContentPartsToPlainText(msg.ContentParts)
+	for _, kw := range []string{"error", "failed", "exception", "panic"} {
+		if containsLower(text, kw) {
+			score += 0.3
+			break
+		}
 	}
 	if len(msg.ToolResults) > 0 {
 		score += 0.1
@@ -50,34 +43,36 @@ func (RuleScorer) Score(msg mdl.Message) float64 {
 	return score
 }
 
+func containsLower(text, keyword string) bool {
+	lower := make([]byte, len(text))
+	for i := 0; i < len(text); i++ {
+		c := text[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 32
+		}
+		lower[i] = c
+	}
+	return len(keyword) <= len(lower) && indexOf(string(lower), keyword) >= 0
+}
+
+func indexOf(s, substr string) int {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}
+
 // PriorityConfig 配置基于消息重要性评分的上下文压缩行为。
-//
-// 策略：对每条消息评分，按分数降序保留，直到满足 token 限制。
-// system messages 和最近 KeepRecent 条消息不参与评分淘汰。
 type PriorityConfig struct {
-	// Enabled 控制 middleware 是否启用；nil/true=启用，false=禁用。
-	Enabled *bool
-
-	// Scorer 消息重要性评分器，默认使用 RuleScorer。
-	Scorer MessageScorer
-
-	// MinScore 保留的最低分数阈值（0.0-1.0），低于此分数的消息优先被淘汰。
-	// 默认 0.0（不强制过滤，只按 token 预算淘汰）。
-	MinScore float64
-
-	// KeepRecent 始终保留最近 N 条消息（不参与评分淘汰），默认 10。
-	KeepRecent int
-
-	// MaxContextTokens 触发压缩的 token 阈值，默认 80000。
+	Enabled          *bool
+	Scorer           MessageScorer
+	MinScore         float64
+	KeepRecent       int
 	MaxContextTokens int
-
-	// Tokenizer 用于精确 token 计数。设置后优先于 TokenCounter。
-	// nil 时退回 TokenCounter，TokenCounter 也为 nil 时使用字符/4 估算。
-	Tokenizer mdl.Tokenizer
-
-	// TokenCounter 自定义 token 计数函数（已弃用，建议改用 Tokenizer）。
-	// 当 Tokenizer 未设置时生效。
-	TokenCounter func(mdl.Message) int
+	Tokenizer        mdl.Tokenizer
+	TokenCounter     func(mdl.Message) int
 }
 
 func (c PriorityConfig) scorer() MessageScorer {
@@ -118,34 +113,17 @@ func (c PriorityConfig) enabled() bool {
 	return *c.Enabled
 }
 
-// PriorityCompress 构造基于消息重要性评分的上下文压缩 middleware。
-//
-// 在每次 LLM 调用前，若 token 数超过阈值：
-//  1. system messages 始终保留
-//  2. 最近 KeepRecent 条消息始终保留
-//  3. 剩余消息按评分降序排列，在 token 预算内尽量保留高分消息
-//  4. 被淘汰的消息用压缩通知替代
-//
-// 用法：
-//
-//	k := kernel.New(kernel.Use(builtins.PriorityCompress(builtins.PriorityConfig{
-//	    Scorer:           builtins.RuleScorer{},
-//	    KeepRecent:       10,
-//	    MaxContextTokens: 100000,
-//	})))
-func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
+// PriorityCompress 构造基于消息重要性评分的上下文压缩 hook。
+func PriorityCompress(cfg PriorityConfig) hooks.Hook[hooks.LLMEvent] {
+	return func(ctx context.Context, ev *hooks.LLMEvent) error {
 		if !cfg.enabled() {
-			return next(ctx)
+			return nil
 		}
-		if mc.Phase != middleware.BeforeLLM {
-			return next(ctx)
-		}
-		if mc.Session == nil {
-			return next(ctx)
+		if ev.Session == nil {
+			return nil
 		}
 
-		sess := mc.Session
+		sess := ev.Session
 		msgs := sess.CopyMessages()
 
 		totalTokens := 0
@@ -154,7 +132,7 @@ func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
 		}
 
 		if totalTokens <= cfg.maxContextTokens() {
-			return next(ctx)
+			return nil
 		}
 
 		var systemMsgs, dialogMsgs []mdl.Message
@@ -175,10 +153,9 @@ func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
 		candidateMsgs := dialogMsgs[:len(dialogMsgs)-keepRecent]
 
 		if len(candidateMsgs) == 0 {
-			return next(ctx)
+			return nil
 		}
 
-		// 计算保留预算：maxTokens - systemMsgs tokens - recentMsgs tokens
 		scorer := cfg.scorer()
 		budgetTokens := cfg.maxContextTokens()
 		for _, m := range systemMsgs {
@@ -188,11 +165,10 @@ func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
 			budgetTokens -= cfg.countTokens(m)
 		}
 
-		// 按评分降序排列候选消息
 		type scoredMsg struct {
 			msg   mdl.Message
 			score float64
-			orig  int // 原始位置，用于恢复顺序
+			orig  int
 		}
 		scored := make([]scoredMsg, len(candidateMsgs))
 		for i, m := range candidateMsgs {
@@ -202,7 +178,6 @@ func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
 			return scored[i].score > scored[j].score
 		})
 
-		// 贪心选取：分数高的优先保留，直到 token 预算耗尽
 		kept := make([]bool, len(candidateMsgs))
 		remaining := budgetTokens
 		for _, sm := range scored {
@@ -241,7 +216,7 @@ func PriorityCompress(cfg PriorityConfig) middleware.Middleware {
 		newMsgs = append(newMsgs, recentMsgs...)
 		sess.ReplaceMessages(newMsgs)
 
-		return next(ctx)
+		return nil
 	}
 }
 

@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/logging"
 	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
@@ -73,7 +73,7 @@ func buildKernel(ctx context.Context, flags *AppFlags, io intr.UserIO, exts []Ex
 		}
 	}
 	if logging.DebugEnabled() {
-		k.Middleware().Use(builtins.Logger())
+		builtins.InstallLogger(k.Hooks())
 		logging.GetLogger().DebugContext(ctx, "kernel built",
 			"workspace", flags.Workspace,
 			"trust", flags.Trust,

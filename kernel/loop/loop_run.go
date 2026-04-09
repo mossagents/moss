@@ -6,7 +6,7 @@ import (
 	"time"
 
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -17,8 +17,8 @@ import (
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
-	// 若配置了 ContextCompression 策略，在运行前注入压缩 middleware。
-	l.injectCompressionMiddleware()
+	// 若配置了 ContextCompression 策略，在运行前注入压缩 hook。
+	l.injectCompressionHooks()
 
 	runStartedAt := time.Now().UTC()
 	l.beginRun(ctx, sess, runStartedAt)
@@ -62,8 +62,8 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"max_steps": sess.Budget.MaxSteps,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session start middleware failed", "session_id", sess.ID, "error", err)
+	if err := l.safeChain().OnSessionStart.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session start hook failed", "session_id", sess.ID, "error", err)
 	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
@@ -100,7 +100,7 @@ func (l *AgentLoop) runIteration(
 		return true, nil
 	}
 
-	if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
+	if err := l.safeChain().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return false, err
 	}
 
@@ -147,7 +147,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 }
 
 func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*iterationLLMResult, error) {
-	if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
+	if err := l.safeChain().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return nil, err
 	}
 
@@ -184,7 +184,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		event.Error = err.Error()
 		appendExecutionErrorMetadata(&event, err)
 		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-		l.runErrorMiddleware(ctx, sess, err)
+		l.runErrorHook(ctx, sess, err)
 		return nil, err
 	}
 
@@ -294,7 +294,7 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 			"tool_calls", strings.Join(names, ","),
 		)
 		if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
-			l.runErrorMiddleware(ctx, sess, err)
+			l.runErrorHook(ctx, sess, err)
 			return err
 		}
 		return nil
@@ -371,8 +371,8 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"tokens": totalUsage.TotalTokens,
 	}
 	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session end middleware failed", "session_id", sess.ID, "error", err)
+	if err := l.safeChain().OnSessionEnd.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session end hook failed", "session_id", sess.ID, "error", err)
 	}
 	result := &SessionResult{
 		SessionID:  sess.ID,

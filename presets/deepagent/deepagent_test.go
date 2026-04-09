@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
@@ -243,9 +243,9 @@ func TestBuildKernel_PatchesOrphanToolCalls(t *testing.T) {
 			{ID: "orphan-1", Name: "run_command", Arguments: json.RawMessage(`{"command":"echo"}`)},
 		},
 	})
-	mc := &middleware.Context{Session: sess}
-	if err := k.Middleware().Run(context.Background(), middleware.BeforeLLM, mc); err != nil {
-		t.Fatalf("middleware run: %v", err)
+	ev := &hooks.LLMEvent{Session: sess}
+	if err := k.Hooks().BeforeLLM.Run(context.Background(), ev); err != nil {
+		t.Fatalf("hooks run: %v", err)
 	}
 	last := sess.Messages[len(sess.Messages)-1]
 	if last.Role != mdl.RoleTool || len(last.ToolResults) != 1 {

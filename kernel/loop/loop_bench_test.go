@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -43,11 +43,11 @@ func BenchmarkToolCallDispatch(b *testing.B) {
 	}
 }
 
-func BenchmarkMiddlewareChain(b *testing.B) {
-	chain := middleware.NewChain()
+func BenchmarkHooksPipeline(b *testing.B) {
+	chain := hooks.NewRegistry()
 	for range 5 {
-		chain.Use(func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-			return next(ctx)
+		chain.BeforeLLM.On(func(ctx context.Context, ev *hooks.LLMEvent) error {
+			return nil
 		})
 	}
 

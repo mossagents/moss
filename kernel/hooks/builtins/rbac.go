@@ -3,8 +3,9 @@ package builtins
 import (
 	"context"
 	"fmt"
+
+	"github.com/mossagents/moss/kernel/hooks"
 	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -38,7 +39,6 @@ func (r RBACRule) matchesTool(toolName string) bool {
 const identityKey = "__identity__"
 
 // SetIdentity 将认证身份存入 Session 的 State。
-// 通常在 OnSessionStart 阶段由认证 middleware 调用。
 func SetIdentity(state map[string]any, id *intr.Identity) {
 	if state != nil {
 		state[identityKey] = id
@@ -58,22 +58,22 @@ func GetIdentity(state map[string]any) *intr.Identity {
 	return nil
 }
 
-// RBAC 构造基于角色的工具访问控制 middleware。
+// RBAC 构造基于角色的工具访问控制 hook。
 // 规则按顺序匹配，第一条匹配的规则决定访问权限。
 // 配置规则后默认拒绝：缺失身份或无匹配规则都会被拦截。
-func RBAC(rules []RBACRule) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeToolCall || mc.Tool == nil {
-			return next(ctx)
+func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
+	return func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Tool == nil {
+			return nil
 		}
 		if len(rules) == 0 {
-			return next(ctx)
+			return nil
 		}
 
-		identity := GetIdentity(mc.Session.State)
+		identity := GetIdentity(ev.Session.State)
 		if identity == nil {
 			return &PolicyDeniedError{
-				ToolName:    mc.Tool.Name,
+				ToolName:    ev.Tool.Name,
 				ReasonCode:  "rbac.identity_required",
 				Reason:      "authenticated identity is required by RBAC policy",
 				Enforcement: EnforcementHardBlock,
@@ -84,23 +84,22 @@ func RBAC(rules []RBACRule) middleware.Middleware {
 			if !identity.HasRole(rule.Role) {
 				continue
 			}
-			if !rule.matchesTool(mc.Tool.Name) {
+			if !rule.matchesTool(ev.Tool.Name) {
 				continue
 			}
-			// 第一条匹配的规则
 			if rule.Action == RBACDeny {
 				return &PolicyDeniedError{
-					ToolName:    mc.Tool.Name,
+					ToolName:    ev.Tool.Name,
 					ReasonCode:  "rbac.role_denied",
 					Reason:      "tool access denied by RBAC role policy",
 					Enforcement: EnforcementHardBlock,
 				}
 			}
-			return next(ctx)
+			return nil
 		}
 
 		return &PolicyDeniedError{
-			ToolName:    mc.Tool.Name,
+			ToolName:    ev.Tool.Name,
 			ReasonCode:  "rbac.no_matching_rule",
 			Reason:      "tool access denied because no RBAC rule matched",
 			Enforcement: EnforcementHardBlock,
@@ -111,13 +110,9 @@ func RBAC(rules []RBACRule) middleware.Middleware {
 // AuthMiddleware 在 OnSessionStart 阶段执行认证。
 // 从 Session.Config.Metadata["auth_token"] 取出 token 进行认证，
 // 认证成功后将 Identity 存入 Session.State。
-func AuthMiddleware(auth intr.Authenticator) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.OnSessionStart {
-			return next(ctx)
-		}
-
-		token, _ := mc.Session.Config.Metadata["auth_token"].(string)
+func AuthMiddleware(auth intr.Authenticator) hooks.Hook[hooks.SessionEvent] {
+	return func(ctx context.Context, ev *hooks.SessionEvent) error {
+		token, _ := ev.Session.Config.Metadata["auth_token"].(string)
 		if token == "" {
 			return fmt.Errorf("auth token is required")
 		}
@@ -127,16 +122,15 @@ func AuthMiddleware(auth intr.Authenticator) middleware.Middleware {
 			return err
 		}
 
-		if mc.Session.State == nil {
-			mc.Session.State = make(map[string]any)
+		if ev.Session.State == nil {
+			ev.Session.State = make(map[string]any)
 		}
-		SetIdentity(mc.Session.State, identity)
-		return next(ctx)
+		SetIdentity(ev.Session.State, identity)
+		return nil
 	}
 }
 
 // RiskBasedPolicy 创建一个基于工具风险等级的 PolicyRule。
-// 对指定风险级别及以上的工具调用执行指定决策。
 func RiskBasedPolicy(minRisk tool.RiskLevel, decision PolicyDecision) PolicyRule {
 	return func(ctx PolicyContext) PolicyResult {
 		if riskSeverity(ctx.Tool.Risk) < riskSeverity(minRisk) {

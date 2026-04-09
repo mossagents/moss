@@ -445,7 +445,7 @@ func Deps(k *kernel.Kernel) skill.Deps {
 	return skill.Deps{
 		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
-		Middleware:   k.Middleware(),
+		Hooks:        k.Hooks(),
 		Sandbox:      k.Sandbox(),
 		UserIO:       k.UserIO(),
 		Workspace:    k.Workspace(),

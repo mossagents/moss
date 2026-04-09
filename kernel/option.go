@@ -5,7 +5,7 @@ import (
 	ckpt "github.com/mossagents/moss/kernel/checkpoint"
 	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
@@ -101,9 +101,50 @@ func WithUserIO(io intr.UserIO) Option {
 	return func(k *Kernel) { k.io = io }
 }
 
-// Use 追加一个 Middleware。
-func Use(mw middleware.Middleware) Option {
-	return func(k *Kernel) { k.chain.Use(mw) }
+// Use 追加一个 BeforeLLM hook（向后兼容便利方法）。
+// 新代码应优先使用 OnBeforeLLM / OnBeforeToolCall / Install 等类型安全方法。
+func Use(hook hooks.Hook[hooks.LLMEvent]) Option {
+	return func(k *Kernel) { k.chain.BeforeLLM.On(hook) }
+}
+
+// OnBeforeLLM 注册 BeforeLLM hook。
+func OnBeforeLLM(hook hooks.Hook[hooks.LLMEvent]) Option {
+	return func(k *Kernel) { k.chain.BeforeLLM.On(hook) }
+}
+
+// OnAfterLLM 注册 AfterLLM hook。
+func OnAfterLLM(hook hooks.Hook[hooks.LLMEvent]) Option {
+	return func(k *Kernel) { k.chain.AfterLLM.On(hook) }
+}
+
+// OnBeforeToolCall 注册 BeforeToolCall hook。
+func OnBeforeToolCall(hook hooks.Hook[hooks.ToolEvent]) Option {
+	return func(k *Kernel) { k.chain.BeforeToolCall.On(hook) }
+}
+
+// OnAfterToolCall 注册 AfterToolCall hook。
+func OnAfterToolCall(hook hooks.Hook[hooks.ToolEvent]) Option {
+	return func(k *Kernel) { k.chain.AfterToolCall.On(hook) }
+}
+
+// OnSessionStart 注册 OnSessionStart hook。
+func OnSessionStart(hook hooks.Hook[hooks.SessionEvent]) Option {
+	return func(k *Kernel) { k.chain.OnSessionStart.On(hook) }
+}
+
+// OnSessionEnd 注册 OnSessionEnd hook。
+func OnSessionEnd(hook hooks.Hook[hooks.SessionEvent]) Option {
+	return func(k *Kernel) { k.chain.OnSessionEnd.On(hook) }
+}
+
+// OnError 注册 OnError hook。
+func OnError(hook hooks.Hook[hooks.ErrorEvent]) Option {
+	return func(k *Kernel) { k.chain.OnError.On(hook) }
+}
+
+// Install 安装跨 pipeline 的 hook 安装器（如 Logger、EventEmitter）。
+func Install(installer func(*hooks.Registry)) Option {
+	return func(k *Kernel) { installer(k.chain) }
 }
 
 // WithToolRegistry 替换默认的 Tool Registry。

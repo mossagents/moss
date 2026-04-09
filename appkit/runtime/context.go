@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/kernel"
 	memstore "github.com/mossagents/moss/kernel/memory"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -41,7 +41,7 @@ type contextState struct {
 	maxPromptTokens          int
 	startupTokens            int
 	compactToolRegistered    bool
-	autoMiddlewareRegistered bool
+	autoHookRegistered bool
 }
 
 type offloadState struct {
@@ -224,9 +224,9 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		if err := registerCompactConversationTool(k.ToolRegistry(), st, k.LLM()); err != nil {
 			return err
 		}
-		if !st.autoMiddlewareRegistered {
-			k.Middleware().Use(AutoCompactMiddleware(k))
-			st.autoMiddlewareRegistered = true
+		if !st.autoHookRegistered {
+			k.Hooks().BeforeLLM.On(AutoCompactHook(k))
+			st.autoHookRegistered = true
 		}
 		return nil
 	})
@@ -400,16 +400,16 @@ func compactWithSummary(
 	return compactSessionContext(ctx, store, memoryStore, memoryPipeline, sess, keepRecent, note, llm, true)
 }
 
-// AutoCompactMiddleware 在 BeforeLLM 阶段按 token 预算刷新 prompt 上下文。
-func AutoCompactMiddleware(k *kernel.Kernel) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeLLM || mc.Session == nil {
-			return next(ctx)
+// AutoCompactHook 在 BeforeLLM 阶段按 token 预算刷新 prompt 上下文。
+func AutoCompactHook(k *kernel.Kernel) hooks.Hook[hooks.LLMEvent] {
+	return func(ctx context.Context, ev *hooks.LLMEvent) error {
+		if ev.Session == nil {
+			return nil
 		}
 		st := ensureContextState(k)
-		if _, _, _, err := preparePromptContext(ctx, k, st, mc.Session); err != nil {
+		if _, _, _, err := preparePromptContext(ctx, k, st, ev.Session); err != nil {
 			return err
 		}
-		return next(ctx)
+		return nil
 	}
 }

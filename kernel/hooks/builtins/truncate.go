@@ -5,28 +5,16 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	mdl "github.com/mossagents/moss/kernel/model"
 )
 
 // TruncateConfig 配置自动 token 截断行为。
 type TruncateConfig struct {
-	// MaxContextTokens 触发截断的 token 阈值。
-	// 当对话历史总 token 超过此值时，自动保留最近的消息。
-	// 默认 80000。
 	MaxContextTokens int
-
-	// KeepRecent 截断后保留的最近消息数（不含 system 消息）。
-	// 默认 20。
-	KeepRecent int
-
-	// Tokenizer 用于精确 token 计数。设置后优先于 TokenCounter。
-	// nil 时退回 TokenCounter，TokenCounter 也为 nil 时使用字符/4 估算。
-	Tokenizer mdl.Tokenizer
-
-	// TokenCounter 自定义 token 计数函数（已弃用，建议改用 Tokenizer）。
-	// 当 Tokenizer 未设置时生效。
-	TokenCounter func(mdl.Message) int
+	KeepRecent       int
+	Tokenizer        mdl.Tokenizer
+	TokenCounter     func(mdl.Message) int
 }
 
 func (c TruncateConfig) maxContextTokens() int {
@@ -53,7 +41,7 @@ func (c TruncateConfig) countTokens(msg mdl.Message) int {
 	return estimateTokens(msg)
 }
 
-// estimateTokens 简单估算一条消息的 token 数（适用于无 tokenizer 场景）。
+// estimateTokens 简单估算一条消息的 token 数。
 func estimateTokens(msg mdl.Message) int {
 	total := len(mdl.ContentPartsToPlainText(msg.ContentParts)) / 4
 	for _, tc := range msg.ToolCalls {
@@ -68,37 +56,24 @@ func estimateTokens(msg mdl.Message) int {
 	return total
 }
 
-// AutoTruncate 构造自动 token 截断 middleware。
+// AutoTruncate 构造自动 token 截断 hook。
 // 在每次 LLM 调用前检查对话历史长度，超过阈值时自动截断，保留 system 消息和最近的对话。
-//
-// 用法：
-//
-//	k := kernel.New(kernel.Use(builtins.AutoTruncate(builtins.TruncateConfig{
-//	    MaxContextTokens: 100000,
-//	    KeepRecent:       30,
-//	})))
-func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase != middleware.BeforeLLM {
-			return next(ctx)
-		}
-
-		sess := mc.Session
+func AutoTruncate(cfg TruncateConfig) hooks.Hook[hooks.LLMEvent] {
+	return func(ctx context.Context, ev *hooks.LLMEvent) error {
+		sess := ev.Session
 		if sess == nil {
-			return next(ctx)
+			return nil
 		}
 
-		// 计算当前总 token
 		totalTokens := 0
 		for _, msg := range sess.CopyMessages() {
 			totalTokens += cfg.countTokens(msg)
 		}
 
 		if totalTokens <= cfg.maxContextTokens() {
-			return next(ctx)
+			return nil
 		}
 
-		// 分离 system 消息和对话消息
 		var systemMsgs, dialogMsgs []mdl.Message
 		for _, msg := range sess.CopyMessages() {
 			if msg.Role == mdl.RoleSystem {
@@ -113,10 +88,7 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 			keepRecent = len(dialogMsgs)
 		}
 
-		// 保留最近的对话
 		recentMsgs := dialogMsgs[len(dialogMsgs)-keepRecent:]
-
-		// 构造截断摘要作为上下文
 		droppedCount := len(dialogMsgs) - keepRecent
 		if droppedCount > 0 {
 			summary := mdl.Message{
@@ -130,12 +102,12 @@ func AutoTruncate(cfg TruncateConfig) middleware.Middleware {
 			sess.ReplaceMessages(newMsgs)
 		}
 
-		return next(ctx)
+		return nil
 	}
 }
 
-// DefaultAutoTruncate 返回使用默认配置的截断 middleware。
-func DefaultAutoTruncate() middleware.Middleware {
+// DefaultAutoTruncate 返回使用默认配置的截断 hook。
+func DefaultAutoTruncate() hooks.Hook[hooks.LLMEvent] {
 	return AutoTruncate(TruncateConfig{})
 }
 
