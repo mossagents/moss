@@ -92,6 +92,11 @@ Build strong orchestration on top of execution and memory:
 
 Tool metadata must become executable policy and scheduling input.
 
+Field distinction:
+
+- `effects` are fine-grained execution labels used by planner, scheduler, and execution plans
+- `side_effect_class` is the coarse-grained routing/approval bucket used for policy, persistence, and governance defaults
+
 Required fields:
 
 - `effects`
@@ -231,6 +236,11 @@ Conflict algorithm:
 4. Within each ready set, pick the conflict-free subset using deterministic ordering: topological-ready order first, then original planner order, then lexical `call_id`.
 5. Remaining ready calls are deferred to later batches.
 
+Child-contract widening detection:
+
+- every child-submitted execution plan must be validated against the issued child task contract before scheduler admission
+- if any declared effect, writable scope, or memory scope exceeds the contract, runtime emits a supervisor error event and rejects the plan version before execution starts
+
 Denied-call protocol:
 
 - a denied call is terminal for the current admitted plan version
@@ -316,6 +326,7 @@ Canonical record fields should include:
 - `scope`
 - `kind`
 - `status`
+- `canonical_subject`
 - `source_event_id`
 - `summary`
 - `content`
@@ -393,11 +404,6 @@ Deterministic summary normalization:
 - `execution_artifact`: `canonical_subject = artifact type + "|" + source event id`
 
 `canonical_subject` must be derived by the memory pipeline from structured event metadata, not freeform semantic similarity.
-
-Child-contract widening detection:
-
-- every child-submitted execution plan must be validated against the issued child task contract before scheduler admission
-- if any declared effect, writable scope, or memory scope exceeds the contract, runtime emits a supervisor error event and rejects the plan version before execution starts
 
 Derived views:
 
@@ -631,7 +637,7 @@ Minimal interface shapes:
 type LedgerQuery struct {
     SessionID    string
     TaskID       string
-    Phase        string
+    EventStage   string
     AfterEventID string
     Limit        int
 }
