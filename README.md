@@ -1,4 +1,4 @@
-# Moss
+# Moss Agents
 
 **Agent harness for Go: compose fast, run safely.**
 
