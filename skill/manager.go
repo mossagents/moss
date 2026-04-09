@@ -7,6 +7,14 @@ import (
 	"sync"
 )
 
+// maxSkillPromptTotalRunes caps the total rune length of all skill prompt
+// additions combined. Prevents large or numerous skills from overflowing the
+// model's system-prompt budget.
+const maxSkillPromptTotalRunes = 16000
+
+// skillPromptTruncationMarker is appended when a prompt body is cut short.
+const skillPromptTruncationMarker = "\n... [skill prompt truncated]"
+
 // Manager 管理所有已加载的 providers。
 // builtin tools、prompt skills、MCP providers 都通过它统一完成注册、生命周期和提示词聚合。
 type Manager struct {
@@ -91,13 +99,33 @@ func (m *Manager) Get(name string) (Provider, bool) {
 }
 
 // SystemPromptAdditions 汇总所有 provider 提供的 system prompt 片段。
+// 总长度以 rune 为单位上限为 maxSkillPromptTotalRunes，超出部分截断。
 func (m *Manager) SystemPromptAdditions() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var parts []string
+	totalRunes := 0
 	for _, name := range m.order {
-		if s, ok := m.skills[name]; ok {
-			parts = append(parts, s.Metadata().Prompts...)
+		if totalRunes >= maxSkillPromptTotalRunes {
+			break
+		}
+		s, ok := m.skills[name]
+		if !ok {
+			continue
+		}
+		for _, p := range s.Metadata().Prompts {
+			if totalRunes >= maxSkillPromptTotalRunes {
+				break
+			}
+			runes := []rune(p)
+			remaining := maxSkillPromptTotalRunes - totalRunes
+			if len(runes) > remaining {
+				p = string(runes[:remaining]) + skillPromptTruncationMarker
+				totalRunes = maxSkillPromptTotalRunes
+			} else {
+				totalRunes += len(runes)
+			}
+			parts = append(parts, p)
 		}
 	}
 	return strings.Join(parts, "\n\n")

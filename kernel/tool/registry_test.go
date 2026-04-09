@@ -158,3 +158,47 @@ func TestToolSpecEffectiveMetadataHonorsExplicitFields(t *testing.T) {
 		t.Fatal("IsReadOnly() = false, want true")
 	}
 }
+
+func TestEffectiveEffects_RiskTakesPriorityOverName(t *testing.T) {
+	// A RiskHigh tool whose name looks read-like must NOT be downgraded to
+	// EffectReadOnly via the name heuristic.
+	cases := []struct {
+		name         string
+		risk         RiskLevel
+		capabilities []string
+		wantEffect   Effect
+	}{
+		{
+			name:       "RiskHigh no caps: read_data → ExternalSideEffect",
+			risk:       RiskHigh,
+			wantEffect: EffectExternalSideEffect,
+		},
+		{
+			name:         "RiskHigh filesystem: read_data → WritesWorkspace",
+			risk:         RiskHigh,
+			capabilities: []string{"filesystem"},
+			wantEffect:   EffectWritesWorkspace,
+		},
+		{
+			name:         "RiskMedium workspace: get_file → WritesWorkspace",
+			risk:         RiskMedium,
+			capabilities: []string{"workspace"},
+			wantEffect:   EffectWritesWorkspace,
+		},
+		{
+			name:         "RiskLow filesystem: read_data → ReadOnly",
+			risk:         RiskLow,
+			capabilities: []string{"filesystem"},
+			wantEffect:   EffectReadOnly,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := ToolSpec{Name: "read_data", Risk: tc.risk, Capabilities: tc.capabilities}
+			effects := spec.EffectiveEffects()
+			if len(effects) != 1 || effects[0] != tc.wantEffect {
+				t.Fatalf("EffectiveEffects() = %v, want [%s]", effects, tc.wantEffect)
+			}
+		})
+	}
+}

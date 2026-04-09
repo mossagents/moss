@@ -334,6 +334,16 @@ func (t *TaskTracker) notifyLocked(task Task) {
 		select {
 		case ch <- task:
 		default:
+			// Channel buffer full — drain the oldest (stale) item and retry so
+			// the latest state (especially terminal states) always gets delivered.
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- task:
+			default:
+			}
 		}
 	}
 }

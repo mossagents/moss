@@ -110,16 +110,16 @@ func (s ToolSpec) EffectiveEffects() []Effect {
 		}
 		return []Effect{EffectGraphMutation}
 	case hasCapability(s.Capabilities, "filesystem"), hasCapability(s.Capabilities, "workspace"):
-		if s.Risk == RiskLow || isReadLikeToolName(s.Name) {
+		if s.Risk == RiskLow {
 			return []Effect{EffectReadOnly}
 		}
 		return []Effect{EffectWritesWorkspace}
-	case isReadLikeToolName(s.Name):
-		return []Effect{EffectReadOnly}
 	case s.Risk == RiskHigh:
 		return []Effect{EffectExternalSideEffect}
 	case s.Risk == RiskMedium:
 		return []Effect{EffectGraphMutation}
+	case isReadLikeToolName(s.Name):
+		return []Effect{EffectReadOnly}
 	default:
 		return []Effect{EffectReadOnly}
 	}
