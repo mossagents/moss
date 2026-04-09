@@ -14,7 +14,7 @@ Those two applications are now core Moss Agents applications rather than example
 1. Make all repository docs reflect `apps\mosscode` and `apps\mosswork` as core applications.
 2. Keep `examples\` documented as a normal examples directory for reference applications.
 3. Update historical spec and plan files so they no longer point `mosscode` or `mosswork` at `examples\...`.
-4. Document that the existing `moss` CLI entrypoint points to `mosscode`.
+4. Document that the command users invoke remains `moss`, and that this CLI entrypoint targets the `mosscode` application surface.
 
 ## Non-Goals
 
@@ -41,7 +41,7 @@ The repository documentation should consistently describe the application surfac
 - `apps\mosscode`: core coding application and the primary interactive app surface
 - `apps\mosswork`: core work/collaboration application
 - `examples\`: reference examples that remain useful for smaller patterns and integrations
-- `moss` CLI: points to `mosscode`
+- `moss` CLI: the command users run is still `moss`, and this CLI entrypoint targets `mosscode`
 
 Where docs currently describe `examples\mosscode` as the primary product surface, that should become `apps\mosscode`.
 
@@ -67,6 +67,11 @@ Historical spec and plan docs should be updated narrowly:
 
 Do not rewrite implementation status, design rationale, or unrelated file lists beyond what is required to keep the moved app references correct.
 
+Apply this historical wording rule:
+
+- normalize wording when the old wording would be false or misleading to a current reader about the app path, app name, repo role, or CLI entrypoint
+- keep wording unchanged when it is about unrelated historical implementation detail, sequencing, or design rationale that does not depend on the moved app location
+
 ### 4. Validation
 
 After edits, verify:
@@ -74,7 +79,16 @@ After edits, verify:
 1. User-facing docs no longer describe `mosscode` or `mosswork` as example apps.
 2. Historical specs/plans no longer point those two apps at `examples\...`.
 3. The repo still describes `examples\` as a valid examples directory for the other reference apps.
-4. The `moss` CLI entrypoint narrative consistently points to `mosscode`.
+4. The `moss` CLI narrative consistently says that users run `moss`, and that this entrypoint targets `mosscode`.
+5. Repo-wide search checks show no stale references for the moved apps in the old locations.
+
+Required search checklist:
+
+- `examples[\\/]mosscode`
+- `examples[\\/]mosswork-desktop`
+- `mosswork-desktop`
+- `example app`
+- `example apps`
 
 ## Expected Files
 
