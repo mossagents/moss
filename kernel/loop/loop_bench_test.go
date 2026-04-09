@@ -61,7 +61,7 @@ func BenchmarkHooksPipeline(b *testing.B) {
 		b.Fatalf("register: %v", err)
 	}
 
-	l := &AgentLoop{Tools: reg, Chain: chain, IO: kt.NewRecorderIO()}
+	l := &AgentLoop{Tools: reg, Hooks: chain, IO: kt.NewRecorderIO()}
 	sess := &session.Session{
 		ID:     "bench-mw",
 		Status: session.StatusRunning,

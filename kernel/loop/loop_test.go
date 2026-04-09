@@ -4,15 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	kt "github.com/mossagents/moss/testing"
 	"io"
 	"reflect"
 	"slices"
@@ -20,6 +11,16 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	intr "github.com/mossagents/moss/kernel/io"
+	mdl "github.com/mossagents/moss/kernel/model"
+	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	kt "github.com/mossagents/moss/testing"
 )
 
 func TestLoopTextOnly(t *testing.T) {
@@ -484,7 +485,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	l := &AgentLoop{
 		LLM:   mock,
 		Tools: reg,
-		Chain: chain,
+		Hooks: chain,
 		IO:    io,
 	}
 
@@ -835,7 +836,7 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		Tools:    reg,
-		Chain:    chain,
+		Hooks:    chain,
 		IO:       kt.NewRecorderIO(),
 		Observer: observer,
 	}
@@ -1268,7 +1269,7 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 			},
 		},
 		Tools:    reg,
-		Chain:    chain,
+		Hooks:    chain,
 		IO:       kt.NewRecorderIO(),
 		Observer: observer,
 		ToolLifecycleHook: func(_ context.Context, event session.ToolLifecycleEvent) {

@@ -110,14 +110,14 @@ func (l *AgentLoop) recordBreakerFailure() {
 var emptyRegistry = hooks.NewRegistry()
 
 func (l *AgentLoop) safeChain() *hooks.Registry {
-	if l.Chain != nil {
-		return l.Chain
+	if l.Hooks != nil {
+		return l.Hooks
 	}
 	return emptyRegistry
 }
 
 func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err error) {
-	if l.Chain == nil {
+	if l.Hooks == nil {
 		return
 	}
 	ev := &hooks.ErrorEvent{
@@ -126,7 +126,7 @@ func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err
 		IO:       l.IO,
 		Observer: l.observer(),
 	}
-	if runErr := l.Chain.OnError.Run(ctx, ev); runErr != nil {
+	if runErr := l.Hooks.OnError.Run(ctx, ev); runErr != nil {
 		logging.GetLogger().DebugContext(ctx, "error hook failed", "session_id", sess.ID, "error", runErr)
 	}
 }
@@ -212,18 +212,18 @@ func (l *AgentLoop) injectCompressionHooks() {
 	}
 	l.compressionInjected = true
 
-	if l.Chain == nil {
-		l.Chain = hooks.NewRegistry()
+	if l.Hooks == nil {
+		l.Hooks = hooks.NewRegistry()
 	}
 	switch cfg.Strategy {
 	case CompressionTruncate:
-		l.Chain.BeforeLLM.On(builtins.AutoTruncate(builtins.TruncateConfig{
+		l.Hooks.BeforeLLM.On(builtins.AutoTruncate(builtins.TruncateConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			Tokenizer:        cfg.Tokenizer,
 		}))
 	case CompressionSummary:
-		l.Chain.BeforeLLM.On(builtins.AutoSummarize(builtins.SummarizeConfig{
+		l.Hooks.BeforeLLM.On(builtins.AutoSummarize(builtins.SummarizeConfig{
 			LLM:              l.LLM,
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
@@ -236,13 +236,13 @@ func (l *AgentLoop) injectCompressionHooks() {
 		if winSize <= 0 {
 			winSize = 30
 		}
-		l.Chain.BeforeLLM.On(builtins.SlidingWindow(builtins.SlidingWindowConfig{
+		l.Hooks.BeforeLLM.On(builtins.SlidingWindow(builtins.SlidingWindowConfig{
 			WindowSize:       winSize,
 			MaxContextTokens: cfg.MaxContextTokens,
 			Tokenizer:        cfg.Tokenizer,
 		}))
 	case CompressionPriority:
-		l.Chain.BeforeLLM.On(builtins.PriorityCompress(builtins.PriorityConfig{
+		l.Hooks.BeforeLLM.On(builtins.PriorityCompress(builtins.PriorityConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			MinScore:         cfg.MinScore,

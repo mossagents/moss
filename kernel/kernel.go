@@ -143,9 +143,9 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 	defer k.runs.end(runID)
 
 	l := &loop.AgentLoop{
-		LLM:      k.llm,
-		Tools:    tools,
-		Chain:    k.chain,		IO:       io,
+		LLM:   k.llm,
+		Tools: tools,
+		Hooks: k.chain, IO: io,
 		Config:   k.loopCfg,
 		Observer: k.observer,
 		RunID:    runID,

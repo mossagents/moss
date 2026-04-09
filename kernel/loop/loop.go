@@ -3,8 +3,8 @@ package loop
 import (
 	"sync"
 
-	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks"
+	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	kobs "github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
@@ -91,7 +91,7 @@ func (c LoopConfig) maxIter() int {
 type AgentLoop struct {
 	LLM                 mdl.LLM
 	Tools               tool.Registry
-	Chain               *hooks.Registry
+	Hooks               *hooks.Registry
 	IO                  intr.UserIO
 	Config              LoopConfig
 	Observer            kobs.Observer // 可观测性观察者（可选，默认 NoOpObserver）
@@ -120,4 +120,3 @@ func (l *AgentLoop) observer() kobs.Observer {
 	}
 	return kobs.NoOpObserver{}
 }
-
