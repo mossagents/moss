@@ -9,6 +9,17 @@ import (
 	"testing"
 )
 
+func writeProjectConfig(t *testing.T, workspace string, data []byte) {
+	t.Helper()
+	path := appconfig.DefaultProjectConfigPath(workspace)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+}
+
 func TestSlashCommandProfileList(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
@@ -21,9 +32,7 @@ func TestSlashCommandProfileList(t *testing.T) {
 	if err := os.MkdirAll(appDir, 0o700); err != nil {
 		t.Fatalf("mkdir app dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  sandboxed:\n    label: Sandboxed\n"), 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, []byte("profiles:\n  sandboxed:\n    label: Sandboxed\n"))
 
 	m := newChatModel("openai", "gpt-4o", workspace)
 	m.trust = appconfig.TrustTrusted
@@ -66,9 +75,7 @@ func TestShiftTabCyclesProfile(t *testing.T) {
 	appconfig.SetAppName("mosscode")
 	t.Cleanup(func() { appconfig.SetAppName("moss") })
 
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  zzz:\n    label: ZZZ\n"), 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, []byte("profiles:\n  zzz:\n    label: ZZZ\n"))
 
 	m := newChatModel("openai", "gpt-4o", workspace)
 	m.ready = true

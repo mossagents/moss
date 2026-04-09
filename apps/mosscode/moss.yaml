@@ -1,0 +1,15 @@
+default_profile: default
+profiles:
+    default:
+        execution:
+            http_rules:
+                - name: allow-wttr-in
+                  match: wttr.in
+                  methods:
+                    - GET
+                  access: allow
+tui:
+    project_approval_rules:
+        - tool_name: http_request
+          key: http_request|GET wttr.in
+          label: GET wttr.in

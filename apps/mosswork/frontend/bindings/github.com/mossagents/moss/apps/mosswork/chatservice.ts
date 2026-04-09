@@ -12,7 +12,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as $models from "./models.ts";
+import * as $models from "./models.js";
 
 /**
  * AddAutomation creates or replaces a scheduled automation task.

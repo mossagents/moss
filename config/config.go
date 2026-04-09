@@ -500,6 +500,14 @@ func DefaultGlobalConfigPath() string {
 	return filepath.Join(d, "config.yaml")
 }
 
+func DefaultProjectConfigDir(workspace string) string {
+	workspace = strings.TrimSpace(workspace)
+	if workspace == "" {
+		return ""
+	}
+	return filepath.Join(workspace, ".moss")
+}
+
 func LoadGlobalConfig() (*Config, error) {
 	yamlPath := DefaultGlobalConfigPath()
 	if yamlPath == "" {
@@ -515,7 +523,11 @@ func LoadGlobalConfig() (*Config, error) {
 }
 
 func DefaultProjectConfigPath(workspace string) string {
-	return filepath.Join(workspace, "moss.yaml")
+	dir := DefaultProjectConfigDir(workspace)
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "config.yaml")
 }
 
 func LoadProjectConfig(workspace string) (*Config, error) {

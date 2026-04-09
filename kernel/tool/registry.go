@@ -22,6 +22,7 @@ type entry struct {
 type mapRegistry struct {
 	mu      sync.RWMutex
 	entries map[string]entry
+	order   []string // insertion order for deterministic List()
 }
 
 // NewRegistry 创建基于 map 的默认 Registry 实现。
@@ -36,6 +37,7 @@ func (r *mapRegistry) Register(spec ToolSpec, handler ToolHandler) error {
 		return fmt.Errorf("tool %q already registered", spec.Name)
 	}
 	r.entries[spec.Name] = entry{spec: spec, handler: handler}
+	r.order = append(r.order, spec.Name)
 	return nil
 }
 
@@ -46,6 +48,12 @@ func (r *mapRegistry) Unregister(name string) error {
 		return fmt.Errorf("tool %q not found", name)
 	}
 	delete(r.entries, name)
+	for i, n := range r.order {
+		if n == name {
+			r.order = append(r.order[:i], r.order[i+1:]...)
+			break
+		}
+	}
 	return nil
 }
 
@@ -62,9 +70,11 @@ func (r *mapRegistry) Get(name string) (ToolSpec, ToolHandler, bool) {
 func (r *mapRegistry) List() []ToolSpec {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	specs := make([]ToolSpec, 0, len(r.entries))
-	for _, e := range r.entries {
-		specs = append(specs, e.spec)
+	specs := make([]ToolSpec, 0, len(r.order))
+	for _, name := range r.order {
+		if e, ok := r.entries[name]; ok {
+			specs = append(specs, e.spec)
+		}
 	}
 	return specs
 }
@@ -73,7 +83,11 @@ func (r *mapRegistry) ListByCapability(cap string) []ToolSpec {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	var specs []ToolSpec
-	for _, e := range r.entries {
+	for _, name := range r.order {
+		e, ok := r.entries[name]
+		if !ok {
+			continue
+		}
 		for _, c := range e.spec.Capabilities {
 			if c == cap {
 				specs = append(specs, e.spec)

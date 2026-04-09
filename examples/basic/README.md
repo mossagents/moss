@@ -4,7 +4,7 @@
 
 ## 特点
 
-- **零配置文件**：无需 `moss.yaml` 或模板文件
+- **零配置文件**：无需 `.\.moss\config.yaml` 或模板文件
 - **一行装配**：`appkit.BuildKernel` 自动完成 LLM 适配器、工具注册、技能加载
 - **REPL 交互**：终端命令行对话，支持 `/help`、`/clear`、`/exit`
 - **8 个内置工具**：read_file、write_file、edit_file、glob、list_files、grep、run_command、ask_user

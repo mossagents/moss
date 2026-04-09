@@ -12,6 +12,17 @@ import (
 	"testing"
 )
 
+func writeProjectConfig(t *testing.T, workspace string, data []byte) {
+	t.Helper()
+	path := appconfig.DefaultProjectConfigPath(workspace)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir project config dir: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+}
+
 func TestProfileNamesForWorkspaceIncludesBuiltinsAndConfig(t *testing.T) {
 	home := t.TempDir()
 	workspace := t.TempDir()
@@ -27,9 +38,7 @@ func TestProfileNamesForWorkspaceIncludesBuiltinsAndConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(appDir, "config.yaml"), []byte("profiles:\n  custom-global:\n    label: Custom Global\n"), 0o600); err != nil {
 		t.Fatalf("write global config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  custom-project:\n    label: Custom Project\n"), 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, []byte("profiles:\n  custom-project:\n    label: Custom Project\n"))
 
 	names, err := ProfileNamesForWorkspace(workspace, appconfig.TrustTrusted)
 	if err != nil {
@@ -57,9 +66,7 @@ func TestProfileNamesForWorkspaceRestrictedSkipsProjectConfig(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(appDir, "config.yaml"), []byte("profiles:\n  custom-global:\n    label: Custom Global\n"), 0o600); err != nil {
 		t.Fatalf("write global config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), []byte("profiles:\n  custom-project:\n    label: Custom Project\n"), 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, []byte("profiles:\n  custom-project:\n    label: Custom Project\n"))
 
 	names, err := ProfileNamesForWorkspace(workspace, appconfig.TrustRestricted)
 	if err != nil {
@@ -114,9 +121,7 @@ func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
 		t.Fatalf("mkdir app dir: %v", err)
 	}
 	configData := []byte("profiles:\n  guarded:\n    execution:\n      command_rules:\n        - name: git-push\n          match: \"git push*\"\n          access: require-approval\n")
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), configData, 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, configData)
 
 	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
 		Workspace:        workspace,
@@ -147,9 +152,7 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 		t.Fatalf("mkdir app dir: %v", err)
 	}
 	configData := []byte("profiles:\n  guarded:\n    execution:\n      http_rules:\n        - name: api-host\n          match: \"api.example.com\"\n          methods: [GET]\n          access: require-approval\n")
-	if err := os.WriteFile(filepath.Join(workspace, "moss.yaml"), configData, 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
+	writeProjectConfig(t, workspace, configData)
 
 	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
 		Workspace:        workspace,

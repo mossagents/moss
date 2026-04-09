@@ -538,6 +538,50 @@ File body.
 	}
 }
 
+func TestParseSkillMD_VersionAndRequires(t *testing.T) {
+	const content = "---\n" +
+		"name: versioned-skill\n" +
+		"version: 1.2.3\n" +
+		"description: skill with version and requires\n" +
+		"requires:\n" +
+		"  - name: other-skill\n" +
+		"    min_version: \"0.5.0\"\n" +
+		"---\n" +
+		"Skill body.\n"
+	s, err := ParseSkillMDContent(content, "test")
+	if err != nil {
+		t.Fatalf("ParseSkillMDContent: %v", err)
+	}
+	meta := s.Metadata()
+	if meta.Version != "1.2.3" {
+		t.Errorf("Version = %q, want 1.2.3", meta.Version)
+	}
+	if len(meta.Requires) != 1 {
+		t.Fatalf("Requires len = %d, want 1", len(meta.Requires))
+	}
+	if meta.Requires[0].Name != "other-skill" {
+		t.Errorf("Requires[0].Name = %q, want other-skill", meta.Requires[0].Name)
+	}
+	if meta.Requires[0].MinVersion != "0.5.0" {
+		t.Errorf("Requires[0].MinVersion = %q, want 0.5.0", meta.Requires[0].MinVersion)
+	}
+}
+
+func TestParseSkillMD_DefaultVersion(t *testing.T) {
+	const content = "---\n" +
+		"name: no-version-skill\n" +
+		"description: no version field\n" +
+		"---\n" +
+		"Body.\n"
+	s, err := ParseSkillMDContent(content, "test")
+	if err != nil {
+		t.Fatalf("ParseSkillMDContent: %v", err)
+	}
+	if v := s.Metadata().Version; v != "0.0.0" {
+		t.Errorf("default Version = %q, want 0.0.0", v)
+	}
+}
+
 func TestParseSkillMD_NotExist(t *testing.T) {
 	_, err := ParseSkillMD("/nonexistent/SKILL.md")
 	if err == nil {

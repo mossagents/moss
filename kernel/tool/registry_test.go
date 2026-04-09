@@ -202,3 +202,36 @@ func TestEffectiveEffects_RiskTakesPriorityOverName(t *testing.T) {
 		})
 	}
 }
+func TestRegistryList_DeterministicOrder(t *testing.T) {
+r := NewRegistry()
+handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
+names := []string{"zebra", "apple", "mango", "cherry"}
+for _, n := range names {
+if err := r.Register(ToolSpec{Name: n}, handler); err != nil {
+t.Fatalf("Register %s: %v", n, err)
+}
+}
+got := r.List()
+if len(got) != len(names) {
+t.Fatalf("List() len = %d, want %d", len(got), len(names))
+}
+for i, spec := range got {
+if spec.Name != names[i] {
+t.Errorf("List()[%d] = %q, want %q (insertion order)", i, spec.Name, names[i])
+}
+}
+// Unregister middle entry and verify order is preserved.
+if err := r.Unregister("mango"); err != nil {
+t.Fatal(err)
+}
+got = r.List()
+wantAfter := []string{"zebra", "apple", "cherry"}
+if len(got) != len(wantAfter) {
+t.Fatalf("after unregister List() len = %d, want %d", len(got), len(wantAfter))
+}
+for i, spec := range got {
+if spec.Name != wantAfter[i] {
+t.Errorf("after unregister List()[%d] = %q, want %q", i, spec.Name, wantAfter[i])
+}
+}
+}

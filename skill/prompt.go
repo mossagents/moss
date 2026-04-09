@@ -7,6 +7,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"gopkg.in/yaml.v3"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,8 +18,10 @@ import (
 // 也不会替代 runtime builtin tools 或 MCP providers。
 type Skill struct {
 	name        string
+	version     string
 	description string
 	dependsOn   []string
+	requires    []SkillDep
 	requiredEnv []string
 	body        string // markdown 正文（去除 frontmatter 后的内容）
 	source      string // 文件来源路径
@@ -27,21 +30,25 @@ type Skill struct {
 // Manifest 描述一个可发现的 SKILL.md（不包含正文内容）。
 // 用于按需激活场景，避免在发现阶段注入全部提示词。
 type Manifest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	DependsOn   []string `json:"depends_on,omitempty"`
-	RequiredEnv []string `json:"required_env,omitempty"`
-	Source      string   `json:"source"`
+	Name        string     `json:"name"`
+	Version     string     `json:"version,omitempty"`
+	Description string     `json:"description"`
+	DependsOn   []string   `json:"depends_on,omitempty"`
+	Requires    []SkillDep `json:"requires,omitempty"`
+	RequiredEnv []string   `json:"required_env,omitempty"`
+	Source      string     `json:"source"`
 }
 
 var _ Provider = (*Skill)(nil)
 
 // skillFrontmatter 是 SKILL.md 的 YAML frontmatter 结构。
 type skillFrontmatter struct {
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	DependsOn   []string `yaml:"depends_on"`
-	RequiredEnv []string `yaml:"required_env"`
+	Name        string     `yaml:"name"`
+	Version     string     `yaml:"version"`
+	Description string     `yaml:"description"`
+	DependsOn   []string   `yaml:"depends_on"`
+	Requires    []SkillDep `yaml:"requires"`
+	RequiredEnv []string   `yaml:"required_env"`
 }
 
 // ParseSkillMD 从指定路径解析 SKILL.md 文件。
@@ -71,8 +78,10 @@ func ParseSkillMDContent(content, source string) (*Skill, error) {
 
 	return &Skill{
 		name:        meta.Name,
+		version:     meta.Version,
 		description: meta.Description,
 		dependsOn:   append([]string(nil), meta.DependsOn...),
+		requires:    append([]SkillDep(nil), meta.Requires...),
 		requiredEnv: append([]string(nil), meta.RequiredEnv...),
 		body:        strings.TrimSpace(body),
 		source:      source,
@@ -80,12 +89,17 @@ func ParseSkillMDContent(content, source string) (*Skill, error) {
 }
 
 func (s *Skill) Metadata() Metadata {
+	version := s.version
+	if version == "" {
+		version = "0.0.0"
+	}
 	return Metadata{
 		Name:        s.name,
-		Version:     "0.0.0",
+		Version:     version,
 		Description: s.description,
 		Prompts:     []string{s.body},
 		DependsOn:   append([]string(nil), s.dependsOn...),
+		Requires:    append([]SkillDep(nil), s.requires...),
 		RequiredEnv: append([]string(nil), s.requiredEnv...),
 	}
 }
@@ -242,23 +256,42 @@ func DiscoverSkillManifestsWithOptions(workspace string, opts DiscoverOptions) [
 		}
 	}
 
+	projectNames := make(map[string]bool, len(seen))
+	for k := range seen {
+		projectNames[k] = true
+	}
+
 	// 扫描 global 目录
 	if opts.IncludeGlobal {
 		for _, dir := range globalDirs {
 			for _, m := range scanSkillManifestDir(dir) {
-				if !seen[m.Name] {
-					seen[m.Name] = true
-					manifests = append(manifests, m)
+				if seen[m.Name] {
+					if projectNames[m.Name] {
+						slog.Default().Debug("global skill shadowed by project skill",
+							"name", m.Name,
+							"global_source", m.Source,
+						)
+					}
+					continue
 				}
+				seen[m.Name] = true
+				manifests = append(manifests, m)
 			}
 		}
 	}
 	if opts.IncludeInstalledPlugins && home != "" {
 		for _, m := range scanInstalledPluginSkillManifestDirs(filepath.Join(home, ".copilot", "installed-plugins")) {
-			if !seen[m.Name] {
-				seen[m.Name] = true
-				manifests = append(manifests, m)
+			if seen[m.Name] {
+				if projectNames[m.Name] {
+					slog.Default().Debug("installed-plugin skill shadowed by project skill",
+						"name", m.Name,
+						"plugin_source", m.Source,
+					)
+				}
+				continue
 			}
+			seen[m.Name] = true
+			manifests = append(manifests, m)
 		}
 	}
 
@@ -333,8 +366,10 @@ func parseSkillManifestFile(path string) (Manifest, error) {
 	}
 	return Manifest{
 		Name:        strings.TrimSpace(meta.Name),
+		Version:     strings.TrimSpace(meta.Version),
 		Description: strings.TrimSpace(meta.Description),
 		DependsOn:   append([]string(nil), meta.DependsOn...),
+		Requires:    append([]SkillDep(nil), meta.Requires...),
 		RequiredEnv: append([]string(nil), meta.RequiredEnv...),
 		Source:      path,
 	}, nil
