@@ -53,6 +53,8 @@ Apply these rules consistently:
 - `examples/mosscode` → `apps/mosscode`
 - `examples\mosswork-desktop` → `apps\mosswork`
 - `examples/mosswork-desktop` → `apps/mosswork`
+- `examples\mosswork` → `apps\mosswork`
+- `examples/mosswork` → `apps/mosswork`
 - `mosswork-desktop` → `mosswork` when referring to the application name
 
 Only apply the rename/path update when the reference is specifically about the relocated core applications. References to other `examples\...` apps stay unchanged.
@@ -71,6 +73,7 @@ Apply this historical wording rule:
 
 - normalize wording when the old wording would be false or misleading to a current reader about the app path, app name, repo role, or CLI entrypoint
 - keep wording unchanged when it is about unrelated historical implementation detail, sequencing, or design rationale that does not depend on the moved app location
+- keep `mosswork-desktop` only when the text is explicitly describing rename history; otherwise normalize it to `mosswork`
 
 ### 4. Validation
 
@@ -86,9 +89,14 @@ Required search checklist:
 
 - `examples[\\/]mosscode`
 - `examples[\\/]mosswork-desktop`
+- `examples[\\/]mosswork`
 - `mosswork-desktop`
 - `mosscode` lines that still describe it as an example app or example entrypoint
 - `mosswork` lines that still describe it as an example app or example entrypoint
+
+Allowed validation exception:
+
+- `mosswork-desktop` may remain only in explicit rename-history wording that explains the old name before it became `mosswork`
 
 ## Expected Files
 
