@@ -1,6 +1,6 @@
 # mosswork
 
-`mosswork` is a lightweight but production-oriented desktop cowork assistant built on `moss` + Wails.
+`mosswork` is one of the two core Moss Agents applications: a lightweight but production-oriented desktop cowork assistant built on `moss` + Wails.
 
 ## What it includes
 
@@ -56,7 +56,7 @@ wails3 dev
 
 ## Notes
 
-- In this environment, Go toolchain is `1.24.2`, while example module targets `go 1.25`, so `go test ./...` may fail locally until matching toolchain is installed.
+- In this environment, Go toolchain is `1.24.2`, while the `mosswork` module targets `go 1.25`, so `go test ./...` may fail locally until matching toolchain is installed.
 - Validation recommendation:
   - Use `go test ./...` for module tests.
   - Use `go build .` for module build verification.
