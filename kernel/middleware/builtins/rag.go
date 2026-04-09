@@ -114,7 +114,10 @@ func extractQuery(msgs []mdl.Message, extractor func([]mdl.Message) string) stri
 	return ""
 }
 
-// appendMemoryContext 将记忆注入追加到 system message。
+// appendMemoryContext 将记忆注入写入 system message，替换上一轮注入的旧内容。
+//
+// 每次调用都先从目标 system message 中移除已有的 <memory_context>…</memory_context>
+// 块，再追加本轮最新内容，避免多轮累积导致 token 持续膨胀。
 func appendMemoryContext(sess interface {
 	CopyMessages() []mdl.Message
 	ReplaceMessages([]mdl.Message)
@@ -131,9 +134,10 @@ func appendMemoryContext(sess interface {
 	}
 
 	if lastSystemIdx >= 0 {
-		// 追加到现有 system message 末尾
+		// 先移除上一轮写入的 <memory_context> 块，再追加本轮内容。
 		existing := mdl.ContentPartsToPlainText(newMsgs[lastSystemIdx].ContentParts)
-		combined := strings.TrimRight(existing, "\n") + "\n\n" + injected
+		base := stripMemoryContext(existing)
+		combined := strings.TrimRight(base, "\n") + "\n\n" + injected
 		newMsgs[lastSystemIdx] = mdl.Message{
 			Role:         mdl.RoleSystem,
 			ContentParts: []mdl.ContentPart{mdl.TextPart(combined)},
@@ -148,4 +152,27 @@ func appendMemoryContext(sess interface {
 	}
 
 	sess.ReplaceMessages(newMsgs)
+}
+
+// stripMemoryContext 移除文本中所有完整或不完整的 <memory_context>…</memory_context> 块
+// 及其前置换行/空格，使重复调用不会累积。
+func stripMemoryContext(text string) string {
+	const open = "<memory_context>"
+	const close = "</memory_context>"
+	for {
+		start := strings.Index(text, open)
+		if start < 0 {
+			break
+		}
+		end := strings.Index(text[start:], close)
+		if end < 0 {
+			// 未闭合块：截断到 open 处。
+			text = strings.TrimRight(text[:start], "\n ")
+			break
+		}
+		end = start + end + len(close)
+		// 去掉 open 前的换行/空格，保留其余内容。
+		text = strings.TrimRight(text[:start], "\n ") + text[end:]
+	}
+	return text
 }

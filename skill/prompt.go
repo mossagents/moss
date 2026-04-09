@@ -91,7 +91,13 @@ func (s *Skill) Metadata() Metadata {
 }
 
 func (s *Skill) Init(_ context.Context, _ Deps) error {
-	return nil // 纯提示词 skill，无需初始化
+	// 校验 SKILL.md frontmatter 中声明的必要环境变量。
+	for _, env := range s.requiredEnv {
+		if strings.TrimSpace(os.Getenv(env)) == "" {
+			return fmt.Errorf("skill %q requires environment variable %q which is not set", s.name, env)
+		}
+	}
+	return nil
 }
 
 func (s *Skill) Shutdown(_ context.Context) error {

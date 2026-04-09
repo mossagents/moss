@@ -5,6 +5,7 @@ import (
 	"fmt"
 	mdl "github.com/mossagents/moss/kernel/model"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -341,7 +342,7 @@ func (t *TaskTracker) mirror(task Task) {
 	if t.runtime == nil {
 		return
 	}
-	_ = t.runtime.UpsertTask(context.Background(), taskrt.TaskRecord{
+	if err := t.runtime.UpsertTask(context.Background(), taskrt.TaskRecord{
 		ID:              task.ID,
 		AgentName:       task.AgentName,
 		Goal:            task.Goal,
@@ -357,7 +358,11 @@ func (t *TaskTracker) mirror(task Task) {
 		Error:           task.Error,
 		CreatedAt:       task.CreatedAt,
 		UpdatedAt:       task.UpdatedAt,
-	})
+	}); err != nil {
+		slog.Default().Error("task mirror: UpsertTask failed",
+			slog.String("task_id", task.ID),
+			slog.Any("error", err))
+	}
 	jobRuntime, ok := t.runtime.(taskrt.JobRuntime)
 	if !ok {
 		return
@@ -367,18 +372,23 @@ func (t *TaskTracker) mirror(task Task) {
 	if jobID == "" {
 		return
 	}
-	_ = jobRuntime.UpsertJob(context.Background(), taskrt.AgentJob{
+	if err := jobRuntime.UpsertJob(context.Background(), taskrt.AgentJob{
 		ID:        jobID,
 		AgentName: task.AgentName,
 		Goal:      task.Goal,
 		Status:    jobStatusFromTask(task.Status),
 		CreatedAt: task.CreatedAt,
 		UpdatedAt: task.UpdatedAt,
-	})
+	}); err != nil {
+		slog.Default().Error("task mirror: UpsertJob failed",
+			slog.String("task_id", task.ID),
+			slog.String("job_id", jobID),
+			slog.Any("error", err))
+	}
 	if itemID == "" {
 		return
 	}
-	_ = jobRuntime.UpsertJobItem(context.Background(), taskrt.AgentJobItem{
+	if err := jobRuntime.UpsertJobItem(context.Background(), taskrt.AgentJobItem{
 		JobID:     jobID,
 		ItemID:    itemID,
 		Status:    jobStatusFromTask(task.Status),
@@ -387,7 +397,13 @@ func (t *TaskTracker) mirror(task Task) {
 		Error:     task.Error,
 		CreatedAt: task.CreatedAt,
 		UpdatedAt: task.UpdatedAt,
-	})
+	}); err != nil {
+		slog.Default().Error("task mirror: UpsertJobItem failed",
+			slog.String("task_id", task.ID),
+			slog.String("job_id", jobID),
+			slog.String("item_id", itemID),
+			slog.Any("error", err))
+	}
 }
 
 func (t *TaskTracker) hydrate(ctx context.Context) {

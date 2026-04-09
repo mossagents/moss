@@ -151,7 +151,80 @@ func TestRAG_DisabledSkips(t *testing.T) {
 	}
 }
 
-// newTestManager 创建一个有少量数据的测试 MemoryManager。
+func TestRAG_DoesNotAccumulateAcrossTurns(t *testing.T) {
+	mgr := newTestManager(t)
+
+	sess := &session.Session{
+		ID: "accumulate-test",
+		Messages: []mdl.Message{
+			{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("Base system prompt.")}},
+			{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("first query")}},
+		},
+	}
+	mc := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
+	mw := RAG(RAGConfig{Manager: mgr})
+
+	// 模拟第一轮 BeforeLLM
+	_ = mw(context.Background(), mc, func(_ context.Context) error { return nil })
+
+	// 模拟第二轮 BeforeLLM（同一 session，memory_context 应替换而非累积）
+	mc2 := &middleware.Context{Phase: middleware.BeforeLLM, Session: sess}
+	_ = mw(context.Background(), mc2, func(_ context.Context) error { return nil })
+
+	msgs := sess.CopyMessages()
+	sysText := ""
+	for _, m := range msgs {
+		if m.Role == mdl.RoleSystem {
+			sysText = mdl.ContentPartsToPlainText(m.ContentParts)
+		}
+	}
+
+	// <memory_context> 标签在最终文本中应恰好出现一次
+	count := strings.Count(sysText, "<memory_context>")
+	if count != 1 {
+		t.Errorf("expected exactly 1 <memory_context> block after two turns, got %d; content:\n%s", count, sysText)
+	}
+	if !strings.Contains(sysText, "Base system prompt.") {
+		t.Error("original system prompt should be preserved")
+	}
+}
+
+func TestStripMemoryContext(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no block",
+			input: "hello world",
+			want:  "hello world",
+		},
+		{
+			name:  "block at end",
+			input: "base\n\n<memory_context>\ndata\n</memory_context>",
+			want:  "base",
+		},
+		{
+			name:  "multiple blocks",
+			input: "<memory_context>a</memory_context> mid <memory_context>b</memory_context>",
+			want:  " mid",
+		},
+		{
+			name:  "unterminated block",
+			input: "base\n\n<memory_context>\nunfinished",
+			want:  "base",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := stripMemoryContext(tc.input)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 func newTestManager(t *testing.T) *knowledge.MemoryManager {
 	t.Helper()
 	wm := knowledge.NewWorkingMemory()

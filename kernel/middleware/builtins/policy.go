@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	intr "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/middleware"
@@ -594,10 +595,13 @@ func describeApproval(toolName string, input []byte) (intr.ApprovalCategory, str
 		projectNote := ""
 		scopeValue := ""
 		if strings.TrimSpace(toolName) != "" {
-			cacheKey = "tool|" + toolName
+			// 将工具名与输入指纹一起作为 cache key，防止相同工具名但不同参数的调用
+			// 因一次批准而被整体自动放行。
+			inputHash := shortInputHash(input)
+			cacheKey = "tool|" + toolName + "|" + inputHash
 			cacheLabel = toolName
 			scopeValue = toolName
-			sessionNote = "Future matching actions in this session will be approved automatically."
+			sessionNote = "This exact action will be approved automatically in this session."
 			projectNote = "Future matching actions in this project will follow the saved execution rule."
 		}
 		return intr.ApprovalCategoryTool, "Action", preview, "Matching rule", scopeValue, cacheKey, cacheLabel, sessionNote, projectNote, nil, nil
@@ -830,4 +834,12 @@ func DefaultAllow() PolicyRule {
 	return func(_ PolicyContext) PolicyResult {
 		return allowResult()
 	}
+}
+
+// shortInputHash 返回 input 内容的 8 位十六进制 FNV-1a 指纹。
+// 用于让 approval cache key 与实际调用参数绑定，避免批准一次就放行同名工具的全部后续调用。
+func shortInputHash(input []byte) string {
+	h := fnv.New32a()
+	_, _ = h.Write(input)
+	return fmt.Sprintf("%08x", h.Sum32())
 }

@@ -544,3 +544,30 @@ func TestParseSkillMD_NotExist(t *testing.T) {
 		t.Error("expected error for nonexistent file")
 	}
 }
+
+func TestSkillInit_RequiredEnvValidation(t *testing.T) {
+	const skillMD = `---
+name: env-check-skill
+description: skill with required env
+required_env:
+  - MOSS_TEST_REQUIRED_VAR
+---
+Skill body.
+`
+	s, err := ParseSkillMDContent(skillMD, "test")
+	if err != nil {
+		t.Fatalf("ParseSkillMDContent: %v", err)
+	}
+
+	// Env var not set → Init must return an error.
+	os.Unsetenv("MOSS_TEST_REQUIRED_VAR")
+	if err := s.Init(context.Background(), Deps{}); err == nil {
+		t.Error("expected error when required env var is missing, got nil")
+	}
+
+	// Env var set → Init must succeed.
+	t.Setenv("MOSS_TEST_REQUIRED_VAR", "somevalue")
+	if err := s.Init(context.Background(), Deps{}); err != nil {
+		t.Errorf("expected no error when required env var is set, got: %v", err)
+	}
+}
