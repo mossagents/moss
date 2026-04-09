@@ -1,0 +1,101 @@
+# Apps Doc Realignment Design
+
+## Problem
+
+The repository structure changed in two important ways:
+
+1. `mosscode` and `mosswork` moved out of `examples\` and now live under `apps\`.
+2. `mosswork-desktop` was renamed to `mosswork`.
+
+Those two applications are now core Moss Agents applications rather than examples. Existing repository documentation still describes them as example entrypoints in multiple places, including user-facing docs and historical spec/plan documents. That leaves the repo with conflicting narratives about where the primary apps live, how to run them, and what the `moss` CLI points to.
+
+## Goals
+
+1. Make all repository docs reflect `apps\mosscode` and `apps\mosswork` as core applications.
+2. Keep `examples\` documented as a normal examples directory for reference applications.
+3. Update historical spec and plan files so they no longer point `mosscode` or `mosswork` at `examples\...`.
+4. Document that the existing `moss` CLI entrypoint points to `mosscode`.
+
+## Non-Goals
+
+1. Do not rewrite historical technical decisions unrelated to path and app-position changes.
+2. Do not broadly rewrite docs for other applications that remain under `examples\`.
+3. Do not change code or runtime behavior as part of this task.
+
+## Recommended Approach
+
+Use a focused documentation realignment sweep:
+
+1. Update the primary external narrative in `README.md`, `README_ZH.md`, and the main `docs\` pages.
+2. Update historical `docs\superpowers\specs\` and `plan\` files only where they refer to `mosscode` or `mosswork-desktop` with outdated paths, names, or roles.
+3. Preserve the rest of each historical document as-is.
+
+This approach keeps the repo historically readable while removing path drift and conflicting entrypoint descriptions.
+
+## Design
+
+### 1. Repository narrative
+
+The repository documentation should consistently describe the application surfaces like this:
+
+- `apps\mosscode`: core coding application and the primary interactive app surface
+- `apps\mosswork`: core work/collaboration application
+- `examples\`: reference examples that remain useful for smaller patterns and integrations
+- `moss` CLI: points to `mosscode`
+
+Where docs currently describe `examples\mosscode` as the primary product surface, that should become `apps\mosscode`.
+
+### 2. Rename and path replacement rules
+
+Apply these rules consistently:
+
+- `examples\mosscode` → `apps\mosscode`
+- `examples/mosscode` → `apps/mosscode`
+- `examples\mosswork-desktop` → `apps\mosswork`
+- `examples/mosswork-desktop` → `apps/mosswork`
+- `mosswork-desktop` → `mosswork` when referring to the application name
+
+Only apply the rename/path update when the reference is specifically about the relocated core applications. References to other `examples\...` apps stay unchanged.
+
+### 3. Historical document policy
+
+Historical spec and plan docs should be updated narrowly:
+
+- fix outdated paths to the two relocated apps
+- fix outdated app naming for `mosswork`
+- fix outdated app-role wording that still calls those two apps “examples”
+
+Do not rewrite implementation status, design rationale, or unrelated file lists beyond what is required to keep the moved app references correct.
+
+### 4. Validation
+
+After edits, verify:
+
+1. User-facing docs no longer describe `mosscode` or `mosswork` as example apps.
+2. Historical specs/plans no longer point those two apps at `examples\...`.
+3. The repo still describes `examples\` as a valid examples directory for the other reference apps.
+4. The `moss` CLI entrypoint narrative consistently points to `mosscode`.
+
+## Expected Files
+
+Likely touched files include:
+
+- `README.md`
+- `README_ZH.md`
+- `docs\getting-started.md`
+- `docs\architecture.md`
+- `docs\production-readiness.md`
+- `docs\roadmap.md`
+- `docs\changelog.md`
+- `docs\skills.md`
+- historical files under `docs\superpowers\specs\`
+- historical files under `plan\`
+
+## Risks
+
+1. Over-updating historical documents could accidentally change old design intent rather than just correcting repository facts.
+2. Under-updating the docs would leave mixed `apps\...` and `examples\...` narratives in the same repo.
+
+## Recommendation
+
+Proceed with the narrow fact-correction sweep described above, with special care around historical documents so the edits are limited to paths, naming, and current repository role descriptions for `mosscode` and `mosswork`.
