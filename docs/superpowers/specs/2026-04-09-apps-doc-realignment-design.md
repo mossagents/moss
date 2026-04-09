@@ -97,6 +97,7 @@ Required search checklist:
 Allowed validation exception:
 
 - `mosswork-desktop` may remain only in explicit rename-history wording that explains the old name before it became `mosswork`
+- `examples\mosscode`, `examples\mosswork`, and `examples\mosswork-desktop` may remain only in explicit move-history wording or in this spec's rename-rule mapping section where old paths are being mapped to new paths
 
 ## Expected Files
 
@@ -104,6 +105,8 @@ Likely touched files include:
 
 - `README.md`
 - `README_ZH.md`
+- `apps\mosscode\README.md`
+- `apps\mosswork\README.md`
 - `docs\getting-started.md`
 - `docs\architecture.md`
 - `docs\production-readiness.md`
