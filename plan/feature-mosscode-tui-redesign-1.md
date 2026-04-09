@@ -23,10 +23,10 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 - **REQ-005**: Overlay workflows must share one shell language and one keyboard contract for navigate / confirm / close.
 - **REQ-006**: Full-help discoverability must move into a dedicated help surface; the default footer/status area may show only send, newline, cancel-when-active, and help/slash discovery hints.
 - **REQ-007**: Existing operator capabilities must remain reachable after the redesign, including help, review, checkpoint/resume/fork, model/theme, MCP, schedule, and mention flows.
-- **REQ-008**: Launch-time `mosscode` wiring in `examples/mosscode/commands_exec.go` may only pass shared TUI defaults/config; do not fork product-only rendering behavior.
+- **REQ-008**: Launch-time `mosscode` wiring in `apps/mosscode/commands_exec.go` may only pass shared TUI defaults/config; do not fork product-only rendering behavior.
 - **SEC-001**: Do not weaken approval UX; approval-required, blocked, error, cancel, and terminal states must remain explicit even when other details are collapsed.
 - **CON-001**: Reuse existing Bubble Tea / Lip Gloss composition in `contrib/tui`; do not introduce a second rendering stack.
-- **CON-002**: Keep all changes within shared TUI files and the approved `examples/mosscode/commands_exec.go` integration point unless implementation proves a supporting picker/update file is required for the new shared overlay contract.
+- **CON-002**: Keep all changes within shared TUI files and the approved `apps/mosscode/commands_exec.go` integration point unless implementation proves a supporting picker/update file is required for the new shared overlay contract.
 - **CON-003**: Maintain narrow-terminal usability; header metadata and secondary hints must collapse before transcript readability does.
 - **GUD-001**: Follow current file boundaries: theme/tokens, shell/layout, transcript rendering, status/composer, overlay interaction, and state orchestration.
 - **PAT-001**: Prefer extending existing renderer and key-handler seams (`View`, `generateLayout`, `renderStatusLine`, `renderMessage`, `renderProgressBlock`, overlay `HandleKey` methods, `chatModel.Update`) instead of creating parallel render paths.
@@ -43,7 +43,7 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 | TASK-002 | Refactor `contrib/tui/layout.go` (`generateLayout`, `editorPaneHeight`) and `contrib/tui/chat_components.go` (`renderMainPane`, `renderEditorPane`, `renderStatusPane`, `renderBody`) so the default chat screen is a single-column transcript with a bottom runtime bar + composer and no persistent side pane. | | |
 | TASK-003 | Refactor `contrib/tui/chat_view.go` (`renderHeaderMetaLine`, `renderSlashHintLine`, `renderFooterHelpLine`, `View`) and `contrib/tui/shell.go` helpers so the header becomes a thin session/product strip and the default footer stops rendering dense always-on shortcut copy. | | |
 | TASK-004 | Refactor `contrib/tui/statusline.go` (`renderStatusLine`) and `contrib/tui/chat.go` (`renderStatusSummary`, `compactPostureSummary`, `inputBoxHeight`, `adjustInputHeight`, `visibleInputHeight`, `visibleProgressHeight`) so the status bar becomes runtime-first and the composer becomes prompt-first with explicit idle / slash-active / busy / approval-pending states. | | |
-| TASK-005 | Update `examples/mosscode/commands_exec.go` `launchTUI` wiring only if the shared TUI requires new default labels/config fields to keep `mosscode` startup aligned with the redesigned shell. | | |
+| TASK-005 | Update `apps/mosscode/commands_exec.go` `launchTUI` wiring only if the shared TUI requires new default labels/config fields to keep `mosscode` startup aligned with the redesigned shell. | | |
 
 ### Implementation Phase 2
 
@@ -70,20 +70,20 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 
 ### Implementation Phase 4
 
-- **GOAL-004**: Add regression coverage and execute the required repository validations for both the shared TUI module and the nested `examples/mosscode` module.
+- **GOAL-004**: Add regression coverage and execute the required repository validations for both the shared TUI module and the nested `apps/mosscode` module.
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
 | TASK-015 | Extend `contrib/tui/chat_test.go`, `contrib/tui/message_test.go`, `contrib/tui/progress_test.go`, and `contrib/tui/app_test.go` with focused assertions for transcript-first layout, status/composer hints, unified event-block rendering, progress coalescing, overlay lifecycle, and keyboard routing regressions. | | |
-| TASK-016 | Run `gofmt -w contrib/tui/*.go examples/mosscode/commands_exec.go` after code changes and keep imports/order deterministic. | | |
+| TASK-016 | Run `gofmt -w contrib/tui/*.go apps/mosscode/commands_exec.go` after code changes and keep imports/order deterministic. | | |
 | TASK-017 | From `D:\Codes\qiulin\moss`, run `go test ./...` and `go build ./...`; fix only regressions introduced by the TUI redesign in the root module. | | |
-| TASK-018 | From `D:\Codes\qiulin\moss\examples\mosscode`, run `go test .` and `go build .`; fix only regressions introduced by the redesign in the nested `mosscode` module. | | |
+| TASK-018 | From `D:\Codes\qiulin\moss\apps\mosscode`, run `go test .` and `go build .`; fix only regressions introduced by the redesign in the nested `mosscode` module. | | |
 
 ## 3. Alternatives
 
 - **ALT-001**: Add the redesign as an optional theme toggle. Rejected because the approved design explicitly replaces the default direction instead of introducing a second long-lived UX.
 - **ALT-002**: Restyle only colors and borders without changing layout or interaction. Rejected because the user approved high-impact interaction changes, and the core problem includes layout, discoverability, and overlay coherence.
-- **ALT-003**: Implement product-specific `mosscode` shell behavior under `examples/mosscode` instead of updating the shared TUI. Rejected because the approved design is for the shared TUI consumed by `mosscode`, not a one-off fork.
+- **ALT-003**: Implement product-specific `mosscode` shell behavior under `apps/mosscode` instead of updating the shared TUI. Rejected because the approved design is for the shared TUI consumed by `mosscode`, not a one-off fork.
 
 ## 4. Dependencies
 
@@ -123,7 +123,7 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 - **FILE-026**: `contrib/tui/message_test.go` — transcript rendering regression coverage.
 - **FILE-027**: `contrib/tui/progress_test.go` — progress/coalescing regression coverage.
 - **FILE-028**: `contrib/tui/app_test.go` — top-level TUI render/startup coverage.
-- **FILE-029**: `examples/mosscode/commands_exec.go` — `mosscode` TUI launch-time integration only.
+- **FILE-029**: `apps/mosscode/commands_exec.go` — `mosscode` TUI launch-time integration only.
 
 ## 6. Testing
 
@@ -135,7 +135,7 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 - **TEST-006**: Verify overlay close/confirm/navigation behavior is consistent across ask forms, selection lists, help, review, resume/fork, and model/theme flows.
 - **TEST-007**: Verify history recall, slash completion, overlay navigation, and escape/cancel routing continue to work with the new keyboard zones.
 - **TEST-008**: Run `go test ./...` and `go build ./...` from the repository root.
-- **TEST-009**: Run `go test .` and `go build .` from `examples/mosscode`.
+- **TEST-009**: Run `go test .` and `go build .` from `apps/mosscode`.
 
 ## 7. Risks & Assumptions
 
@@ -144,7 +144,7 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 - **RISK-003**: Progress coalescing can hide meaningful state if activity identity is implemented too loosely.
 - **RISK-004**: Narrow-terminal rendering may regress if the redesign keeps too much footer/header metadata visible.
 - **ASSUMPTION-001**: The approved design spec is the behavioral source of truth for escalation rules, fold-state policy, and discoverability decisions.
-- **ASSUMPTION-002**: `examples/mosscode` remains a thin shared-TUI consumer; product integration should stay limited to `launchTUI` configuration unless the shared contract requires a new exposed option.
+- **ASSUMPTION-002**: `apps/mosscode` remains a thin shared-TUI consumer; product integration should stay limited to `launchTUI` configuration unless the shared contract requires a new exposed option.
 
 ## 8. Related Specifications / Further Reading
 
@@ -154,4 +154,4 @@ Implement the approved `mosscode` TUI redesign described in `docs/superpowers/sp
 - `contrib/tui/message.go`
 - `contrib/tui/progress.go`
 - `contrib/tui/overlay.go`
-- `examples/mosscode/commands_exec.go`
+- `apps/mosscode/commands_exec.go`

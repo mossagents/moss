@@ -1,6 +1,6 @@
 # 快速开始
 
-这份仓库当前是 **library-first runtime + examples 产品入口** 的结构：最直接的体验方式是运行 `examples\mosscode`，要嵌入到自己的 Go 应用里则使用 `appkit` 或 `presets\deepagent`。
+这份仓库当前是 **library-first runtime + apps 核心应用 + examples 参考示例** 的结构：最直接的体验方式是运行 `apps\mosscode`，要嵌入到自己的 Go 应用里则使用 `appkit` 或 `presets\deepagent`。
 
 ## 先决条件
 
@@ -9,10 +9,10 @@
 
 ## 1. 运行仓库自带产品入口
 
-当前仓库树里最完整的交互式产品面是 `examples\mosscode`。
+当前仓库树里最完整的交互式产品面是 `apps\mosscode`。打包后的 `moss` CLI 入口也指向 `mosscode`。
 
 ```powershell
-Set-Location examples\mosscode
+Set-Location apps\mosscode
 go run . --provider openai --model gpt-4o
 ```
 
@@ -37,7 +37,7 @@ go run . debug-config
 - 全局配置：`~\.mosscode\config.yaml`
 - 会话/检查点/任务/记忆：`~\.mosscode\...`
 
-其它示例应用也遵循同样的模式，例如 `mossresearch` 使用 `~\.mossresearch`，`mosswriter` 使用 `~\.mosswriter`。
+其它核心应用和示例也遵循同样的模式，例如 `mosswork` 使用 `~\.mosswork`，`mossresearch` 使用 `~\.mossresearch`。
 
 ## 2. 配置模型与运行参数
 
@@ -181,24 +181,29 @@ k, err := deepagent.BuildKernel(ctx, flags, io, nil)
 
 | 场景 | 推荐入口 |
 |---|---|
-| 想马上体验当前仓库能力 | `examples\mosscode` |
+| 想马上体验当前仓库能力 | `apps\mosscode` |
 | 想构建最小可运行应用 | `appkit.BuildKernel` |
 | 想按官方扩展方式组合能力 | `appkit.BuildKernelWithExtensions` |
 | 想做 deep-agent 风格应用 | `presets\deepagent.BuildKernel` |
 
-## 5. 示例应用一览
+## 5. 应用与示例一览
+
+`apps\` 目录里的核心应用：
+
+| 目录 | 用途 |
+|---|---|
+| `apps\mosscode` | 代码代理核心应用，含 TUI、治理、评审、检查点与变更回滚 |
+| `apps\mosswork` | 桌面协作核心应用 |
 
 `examples\` 目录里的参考入口：
 
 | 目录 | 用途 |
 |---|---|
-| `examples\mosscode` | 代码代理产品面，含 TUI、治理、评审、检查点与变更回滚 |
 | `examples\mossresearch` | 深度研究编排，偏研究与证据收集 |
 | `examples\mosswriter` | 内容生成工作流 |
 | `examples\mossclaw` | 个人助理 / Web 抓取 / Gateway 模式 |
 | `examples\mossquant` | 有状态分析循环 |
 | `examples\mossroom` | 多人实时房间 |
-| `examples\mosswork-desktop` | 桌面协作助理 |
 | `examples\basic` | 最小示例 |
 | `examples\custom-tool` | 自定义工具接入 |
 | `examples\websocket` | 自定义 `UserIO` / WebSocket 场景 |

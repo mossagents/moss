@@ -1,12 +1,13 @@
 # 架构概览
 
-Moss 当前采用 **最小内核 + runtime 装配层 + appkit 扩展层 + examples 产品面** 的结构。核心原则是：**把稳定的运行时原语留在 `kernel\`，把可组合能力放在顶层包和预设里。**
+Moss 当前采用 **最小内核 + runtime 装配层 + appkit 扩展层 + apps 核心应用 + examples 参考示例** 的结构。核心原则是：**把稳定的运行时原语留在 `kernel\`，把可组合能力放在顶层包和预设里。**
 
 ## 分层
 
 ```text
 Applications / Products
-  examples\mosscode, mossresearch, mosswriter, mossclaw, ...
+  apps\mosscode, apps\mosswork
+  examples\mossresearch, mosswriter, mossclaw, ...
 
 Assembly / Presets
   appkit
@@ -35,7 +36,8 @@ Infrastructure / support packages
 | `appkit\` | 面向应用的构建入口与扩展组合 API |
 | `presets\deepagent\` | 深代理预设，组合持久化、上下文压缩、委派与工作区隔离 |
 | `skill\` / `mcp\` / `agent\` | 能力提供者、外部工具桥接、委派代理注册 |
-| `examples\` | 真实产品入口和参考实现 |
+| `apps\` | 核心应用入口 |
+| `examples\` | 参考实现与集成示例 |
 
 ## 推荐装配路径
 
@@ -65,7 +67,7 @@ Infrastructure / support packages
 - `WithPersistentMemories`
 - `AfterBuild`
 
-这也是当前示例应用最常用的装配方式。
+这也是当前核心应用和较完整示例最常用的装配方式。
 
 ### 3. 产品预设
 
@@ -78,7 +80,7 @@ Infrastructure / support packages
 - 通用 delegated agent
 - planning / mailbox / task graph 相关能力
 
-`examples\mosscode`、`mossresearch`、`mosswriter` 都是在这条路径上继续叠加产品能力。
+`apps\mosscode`、`examples\mossresearch`、`examples\mosswriter` 都是在这条路径上继续叠加产品能力。
 
 ## 运行时能力加载模型
 
@@ -101,14 +103,15 @@ Infrastructure / support packages
 
 ## 当前产品面位置
 
-仓库已经不是“单个 `cmd\moss` 二进制 + 所有能力都在根 CLI” 的布局。当前真实入口在 `examples\`：
+仓库已经不是“单个 `cmd\moss` 二进制 + 所有能力都在根 CLI” 的布局。当前真实入口分为 `apps\` 和 `examples\`：
 
-- `mosscode`：最完整的 coding agent 产品面
-- `mossresearch`：研究型 orchestrator
-- `mosswriter`：写作型 orchestrator
-- `mossclaw`：assistant / gateway / schedule / knowledge 组合示例
+- `apps\mosscode`：最完整的 coding agent 核心应用，也是 `moss` CLI 的目标产品面
+- `apps\mosswork`：桌面协作核心应用
+- `examples\mossresearch`：研究型 orchestrator
+- `examples\mosswriter`：写作型 orchestrator
+- `examples\mossclaw`：assistant / gateway / schedule / knowledge 组合示例
 
-这意味着主文档也应围绕 **library API + example apps** 叙述，而不是围绕旧的单体 CLI 叙述。
+这意味着主文档也应围绕 **library API + core apps + reference examples** 叙述，而不是围绕旧的单体 CLI 叙述。
 
 ## 配置与信任边界
 
@@ -154,4 +157,4 @@ Infrastructure / support packages
 
 ## 一句话总结
 
-**Kernel 保持最小，runtime 负责默认能力装配，appkit 负责应用拼装，deepagent 负责产品级预设，examples 提供真实入口。**
+**Kernel 保持最小，runtime 负责默认能力装配，appkit 负责应用拼装，deepagent 负责产品级预设，apps 提供核心入口，examples 提供参考实现。**

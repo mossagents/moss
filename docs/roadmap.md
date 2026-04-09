@@ -1,6 +1,6 @@
 # Roadmap
 
-当前路线图以 **现有主线代码** 为准：优先巩固 library-first runtime、examples 产品面和单节点生产能力，再推进分布式与托管化能力。
+当前路线图以 **现有主线代码** 为准：优先巩固 library-first runtime、`apps\` 核心应用、`examples\` 参考示例和单节点生产能力，再推进分布式与托管化能力。
 
 ## 当前状态
 
@@ -14,13 +14,13 @@
 - session / checkpoint / task / memory 持久化
 - workspace isolation、repo state、patch apply / rollback
 - health surface 与 release gates
-- `mosscode` 产品面和多个参考 examples
+- `apps\mosscode` 核心应用与多个参考 examples
 
 ## 近期重点
 
 ### 1. 继续收敛文档与产品叙述
 
-当前仓库的真实入口已经是 `examples\` + `appkit`，后续仍需要继续减少：
+当前仓库的真实入口已经是 `apps\` + `examples\` + `appkit`，后续仍需要继续减少：
 
 - README 与 examples 之间的漂移
 - library API 与产品命令面的命名差异
@@ -55,7 +55,7 @@
 
 ### Knowledge 与 scheduling 的产品化接线
 
-当前 `knowledge\` 和 `scheduler\` 已可用，但还更多停留在“由 example 证明可组合”的阶段。中期目标是把它们变成：
+当前 `knowledge\` 和 `scheduler\` 已可用，但还更多停留在“由 apps / examples 证明可组合”的阶段。中期目标是把它们变成：
 
 - 更稳定的 appkit 扩展组合
 - 更清晰的 operator 配置面
@@ -66,7 +66,7 @@
 包括但不限于：
 
 - 统一二进制/分发策略
-- 示例应用的安装方式
+- 核心应用与示例应用的安装方式
 - 平台打包与部署模板
 
 ## 长期方向
@@ -89,4 +89,4 @@
 
 ### 面向更多产品形态的适配层
 
-当前 examples 已覆盖 coding、research、writer、assistant、desktop、realtime 等模式；长期方向是把这些共性继续抽象为更稳定的应用层构件，而不是让每个产品各自复制拼装逻辑。
+当前 `apps\` + `examples\` 已覆盖 coding、research、writer、assistant、desktop、realtime 等模式；长期方向是把这些共性继续抽象为更稳定的应用层构件，而不是让每个产品各自复制拼装逻辑。

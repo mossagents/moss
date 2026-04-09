@@ -32,7 +32,7 @@
 
 ### mosscode 产品面成熟
 
-`examples\mosscode` 从基础 coding assistant 演进到当前的产品化入口，已包含：
+`apps\mosscode` 从基础 coding assistant 演进到当前的核心应用入口，已包含：
 
 - profile / trust / approval 解析
 - doctor / debug-config / config / review 等 operator 命令
@@ -89,6 +89,6 @@
 - library-first kernel
 - runtime capability loading
 - profile-based execution posture
-- example apps 作为产品参考实现
+- core apps + reference examples 作为产品入口与参考实现
 
 旧版 changelog 中那些已经失真的版本号、旧入口和废弃 API，不再在这里重复保留。

@@ -124,7 +124,7 @@ The next bounded subproject should add a first-class, layered profile model that
 3. `appkit/runtime`
 4. `appkit/product`
 5. `appkit` builder / extension assembly
-6. `examples/mosscode`
+6. `apps/mosscode`
 7. `userio/tui`
 
 ### Out-of-scope behavior
@@ -316,7 +316,7 @@ This means existing automation that sets `--trust` and `--approval` keeps workin
 
 ### CLI
 
-`examples/mosscode` should add:
+`apps/mosscode` should add:
 
 - `--profile <name>`
 - `config profiles`
@@ -521,7 +521,7 @@ Primary expected touch points:
 - `appkit/product/approval.go`
 - `appkit/extensions.go`
 - `appkit/builder.go`
-- `examples/mosscode/main.go`
+- `apps/mosscode/main.go`
 - `userio/tui/chat.go`
 - `userio/tui/app.go`
 

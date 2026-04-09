@@ -135,7 +135,7 @@ The first P1 delivery should keep the current file stores intact and layer a reb
    - `kernel/port.FileCheckpointStore`
    - `appkit/product.FileChangeStore`
    - `kernel/port.FileTaskRuntime`
-5. `examples/mosscode`
+5. `apps/mosscode`
    - wiring for product entrypoint usage when the catalog feature is enabled
 
 ### Out-of-scope behavior
@@ -391,7 +391,7 @@ This makes event durability less fragile than tying history only to the sidecar 
 
 ### Observer composition contract
 
-The current repo build flow allows product entrypoints such as `examples/mosscode` to call `k.SetObserver(...)` after kernel construction.
+The current repo build flow allows product entrypoints such as `apps/mosscode` to call `k.SetObserver(...)` after kernel construction.
 
 For this phase, the contract must therefore be explicit:
 
@@ -595,7 +595,7 @@ The first delivery needs both unit and integration coverage.
 
 - targeted `go test` for `appkit/runtime`, `appkit/product`, `kernel/port`, and impacted integration paths
 - full `go test ./... -count=1`
-- `examples\mosscode` independent `go build .`
+- `apps\mosscode` independent `go build .`
 
 ## Open follow-on work enabled by this design
 

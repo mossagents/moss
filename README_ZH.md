@@ -2,7 +2,7 @@
 
 **面向 Go 的 Agent Harness：快速装配，安全运行。**
 
-Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当前仓库围绕一个可复用的最小内核、一个带默认能力装配的运行时层，以及若干产品化示例应用（例如 `examples\mosscode`）组织。
+Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当前仓库围绕一个可复用的最小内核、一个带默认能力装配的运行时层、`apps\` 下的两个核心应用，以及 `examples\` 下的参考示例组织。
 
 英文说明请看 [`README.md`](README.md)。
 
@@ -11,16 +11,17 @@ Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当
 - 可嵌入的 `kernel`：负责 session、tool、middleware、policy、observation 等运行时原语。
 - `appkit`：按 `AppFlags` 构建完整 Kernel 的推荐入口。
 - `presets\deepagent`：适合 coding / research / writer 产品面的预设。
-- `examples\`：当前仓库里的真实可运行入口。
+- `apps\`：当前仓库里的核心应用入口，其中 `apps\mosscode` 是主交互产品面，打包后的 `moss` CLI 入口指向 `mosscode`。
+- `examples\`：普通参考示例目录。
 
 ## 快速开始
 
-### 1. 先运行主示例应用
+### 1. 先运行主应用
 
-当前仓库里最完整的交互式产品面是 `examples\mosscode`。
+当前仓库里最完整的交互式产品面是 `apps\mosscode`。
 
 ```powershell
-Set-Location examples\mosscode
+Set-Location apps\mosscode
 go run . --provider openai --model gpt-4o
 ```
 
@@ -106,7 +107,8 @@ func main() {
 | `skill\` / `mcp\` / `agent\` | 能力 provider、MCP 桥接、委派代理 |
 | `bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
 | `knowledge\`、`scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
-| `examples\` | 可运行示例与产品入口 |
+| `apps\` | 核心应用入口（`mosscode`、`mosswork`） |
+| `examples\` | 可运行参考示例与集成样例 |
 
 ## 配置
 
@@ -116,7 +118,7 @@ func main() {
 ~\.moss\config.yaml
 ```
 
-示例应用会覆盖应用名，因此会使用各自目录，例如：
+核心应用和示例都会覆盖应用名，因此会使用各自目录，例如：
 
 - `~\.mosscode\config.yaml`
 - `~\.mossresearch\config.yaml`
@@ -142,17 +144,20 @@ skills:
 
 **命令行参数 > 环境变量 > 配置文件**
 
-## 示例应用
+## 应用与示例
+
+`apps\` 下的核心应用：
+
+- `mosscode` - 代码代理产品面，也是打包后 `moss` CLI 的目标应用
+- `mosswork` - 桌面协作助理
 
 `examples\` 目录中的参考入口：
 
-- `mosscode` - 代码代理产品面
 - `mossresearch` - 深度研究编排
 - `mosswriter` - 写作工作流代理
 - `mossclaw` - assistant / gateway / scheduling / knowledge 示例
 - `mossquant` - 有状态分析循环
 - `mossroom` - 实时多人房间
-- `mosswork-desktop` - 桌面协作助理
 - `basic`、`custom-tool`、`websocket` - 聚焦型集成示例
 
 ## 文档导航

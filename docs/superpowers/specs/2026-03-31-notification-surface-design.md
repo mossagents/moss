@@ -290,4 +290,4 @@ The first slice must not replace or special-case the existing observer chain.
 
 - targeted `go test` for `kernel/loop`, `kernel/port`, `appkit/runtime`, `appkit/product`, `userio/tui`
 - full `go test ./... -count=1`
-- `examples\mosscode` independent `go build .`
+- `apps\mosscode` independent `go build .`

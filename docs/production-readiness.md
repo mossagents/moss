@@ -6,7 +6,7 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 
 ### 1.1 执行姿态与权限控制
 
-当前产品面（尤其是 `examples\mosscode`）已经把以下概念接到运行时：
+当前产品面（尤其是 `apps\mosscode`）已经把以下概念接到运行时：
 
 - `trust`：`trusted` / `restricted`
 - `approval mode`
@@ -167,12 +167,12 @@ docs\release-overrides.log
 
 ### 4.3 发布与包装
 
-当前 examples 已经可以直接运行，但还缺少统一的：
+当前 `apps\` 核心应用和 `examples\` 参考示例都已经可以直接运行，但还缺少统一的：
 
 - 发布工件策略
 - 版本打包约定
 - 平台安装分发入口
-- 对 README / docs / examples 的统一产品叙述
+- 对 README / docs / apps / examples 的统一产品叙述
 
 ## 5. 是否已经“生产可用”
 

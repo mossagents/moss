@@ -2,7 +2,7 @@
 
 **Agent harness for Go: compose fast, run safely.**
 
-Moss is a library-first agent runtime for Go. The repository is organized around a small reusable kernel, an opinionated runtime assembly layer, and product-style example apps such as `examples\mosscode`.
+Moss is a library-first agent runtime for Go. The repository is organized around a small reusable kernel, an opinionated runtime assembly layer, two core applications under `apps\`, and reference examples under `examples\`.
 
 For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 
@@ -11,16 +11,17 @@ For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 - A reusable `kernel` for running agent sessions with tools, middleware, policy, and observation.
 - An `appkit` assembly layer for building complete kernels from `AppFlags`.
 - A `presets\deepagent` preset for coding/research/writer-style products.
-- Example apps in `examples\` that act as the real runnable entrypoints in this repository.
+- Core applications in `apps\`, with `apps\mosscode` as the primary interactive app surface and the packaged `moss` CLI entrypoint targeting `mosscode`.
+- Reference examples in `examples\` for smaller integrations and product patterns.
 
 ## Quickstart
 
-### 1. Run the primary example app
+### 1. Run the primary app
 
-The most complete interactive product surface in the current tree is `examples\mosscode`.
+The most complete interactive product surface in the current tree is `apps\mosscode`.
 
 ```powershell
-Set-Location examples\mosscode
+Set-Location apps\mosscode
 go run . --provider openai --model gpt-4o
 ```
 
@@ -106,7 +107,8 @@ For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`. For a
 | `skill\` / `mcp\` / `agent\` | Capability providers, MCP bridge, delegated agents |
 | `bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
 | `knowledge\`, `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
-| `examples\` | Runnable product and integration examples |
+| `apps\` | Core application surfaces (`mosscode`, `mosswork`) |
+| `examples\` | Runnable reference and integration examples |
 
 ## Configuration
 
@@ -116,7 +118,7 @@ The default application name in the core config package is `moss`, so library us
 ~\.moss\config.yaml
 ```
 
-Example apps override the app name and therefore use their own directories, such as:
+Applications and examples override the app name and therefore use their own directories, such as:
 
 - `~\.mosscode\config.yaml`
 - `~\.mossresearch\config.yaml`
@@ -142,17 +144,20 @@ Priority is:
 
 **CLI flags > environment variables > config file**
 
-## Examples
+## Applications and examples
+
+Core apps in `apps\`:
+
+- `mosscode` - coding agent product surface and target of the packaged `moss` CLI entrypoint
+- `mosswork` - desktop work/collaboration assistant
 
 Reference apps in `examples\`:
 
-- `mosscode` - coding agent product surface
 - `mossresearch` - deep research orchestrator
 - `mosswriter` - content workflow agent
 - `mossclaw` - assistant / gateway / scheduling / knowledge example
 - `mossquant` - stateful analysis loop
 - `mossroom` - realtime multi-user room
-- `mosswork-desktop` - desktop assistant
 - `basic`, `custom-tool`, `websocket` - focused integration examples
 
 ## Documentation

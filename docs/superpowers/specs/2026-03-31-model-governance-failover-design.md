@@ -126,7 +126,7 @@ Layer responsibilities:
   - expose failover config defaults
   - discover/report active router + failover settings
   - support doctor/governance rendering
-- `examples/mosscode/main.go`
+- `apps/mosscode/main.go`
   - assemble router and optional failover wrapper
   - disable loop-level LLM retry/breaker when the wrapper is active
 - `kernel/loop`
@@ -351,7 +351,7 @@ Extend governance tests to validate:
 
 ### Product wiring tests
 
-Extend `examples/mosscode` tests to validate:
+Extend `apps/mosscode` tests to validate:
 
 - build path keeps existing single-model behavior when failover is disabled
 - failover-enabled build path wraps the router and disables loop-level retry/breaker ownership

@@ -1,6 +1,6 @@
 # mosscode
 
-`mosscode` 是一个“轻量但生产可用”的代码助手示例：默认 TUI，多轮会话，支持 one-shot 执行。
+`mosscode` 是 Moss Agents 框架的核心代码助手应用：默认 TUI，多轮会话，支持 one-shot 执行。打包后的 `moss` CLI 入口指向这个应用面。
 
 ## 功能
 

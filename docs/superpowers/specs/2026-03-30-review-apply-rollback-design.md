@@ -135,7 +135,7 @@ The existing layers continue to own their current responsibilities:
 - `sandbox`: repo capture, patch apply, patch revert, patch journal
 - `kernel`: session persistence, checkpoint creation, replay/fork orchestration
 - `product/runtime`: review reports and new change-operation orchestration
-- `examples/mosscode`: user-facing commands and rendering
+- `apps/mosscode`: user-facing commands and rendering
 - `userio/tui`: interactive slash command entrypoints and status messaging
 
 This keeps the mutation path explicit and isolates product workflow from the core LLM execution loop.
@@ -368,7 +368,7 @@ At minimum, cover four layers.
 - fallback repo-capture rollback works when patch rollback is unavailable
 - unavailable cases surface explicit errors
 
-### CLI (`examples/mosscode`)
+### CLI (`apps/mosscode`)
 
 - `apply` validates required patch input
 - `changes list/show` produce stable human and JSON output

@@ -98,7 +98,7 @@ The redesign should make the main screen feel like a focused coding transcript r
 12. `contrib/tui/selection_list.go`
 13. `contrib/tui/slash_popup.go`
 14. `contrib/tui/chat.go`
-15. `examples/mosscode/commands_exec.go` for launch-time TUI configuration wiring only
+15. `apps/mosscode/commands_exec.go` for launch-time TUI configuration wiring only
 
 ### Out-of-scope surfaces
 
@@ -431,7 +431,7 @@ The redesign should avoid pushing presentation policy deep into unrelated runtim
 
 ### mosscode product integration boundary
 
-`examples/mosscode` is in scope only for launch-time product wiring, not for custom rendering forks.
+`apps/mosscode` is in scope only for launch-time product wiring, not for custom rendering forks.
 
 Allowed integration work:
 
@@ -442,7 +442,7 @@ Allowed integration work:
 Not allowed in this phase:
 
 1. product-only layout branches that bypass shared `contrib/tui` rendering
-2. duplicate overlay or transcript rendering logic under `examples/mosscode`
+2. duplicate overlay or transcript rendering logic under `apps/mosscode`
 3. mosscode-only interaction rules that diverge from the shared TUI without a shared abstraction
 
 ## 10. Error handling and degraded behavior
