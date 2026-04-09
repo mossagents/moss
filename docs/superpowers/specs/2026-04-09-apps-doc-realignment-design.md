@@ -80,15 +80,15 @@ After edits, verify:
 2. Historical specs/plans no longer point those two apps at `examples\...`.
 3. The repo still describes `examples\` as a valid examples directory for the other reference apps.
 4. The `moss` CLI narrative consistently says that users run `moss`, and that this entrypoint targets `mosscode`.
-5. Repo-wide search checks show no stale references for the moved apps in the old locations.
+5. Repo-wide documentation search checks show no stale references for the moved apps in the old locations.
 
 Required search checklist:
 
 - `examples[\\/]mosscode`
 - `examples[\\/]mosswork-desktop`
 - `mosswork-desktop`
-- `example app`
-- `example apps`
+- `mosscode` lines that still describe it as an example app or example entrypoint
+- `mosswork` lines that still describe it as an example app or example entrypoint
 
 ## Expected Files
 
