@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -263,10 +264,18 @@ func (m chatModel) statusLineItemValue(name string) string {
 		return valueOrDefaultString(m.model, m.provider)
 	case "workspace":
 		ws := strings.TrimSpace(m.workspace)
-		if ws == "" || ws == "." {
-			return "."
+		if ws == "" {
+			ws = "."
 		}
-		return filepath.Base(ws)
+		abs, err := filepath.Abs(ws)
+		if err != nil {
+			abs = ws
+		}
+		display := shortenHomePath(abs)
+		if branch := gitBranchInDir(abs); branch != "" {
+			display += " (" + branch + ")"
+		}
+		return display
 	case "profile":
 		return valueOrDefaultString(m.profile, "default")
 	case "trust":
@@ -303,4 +312,36 @@ func (m chatModel) statusLineItemValue(name string) string {
 	default:
 		return ""
 	}
+}
+
+// shortenHomePath replaces the user's home directory prefix with "~".
+func shortenHomePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return "~" + path[len(home):]
+	}
+	return path
+}
+
+// gitBranchInDir reads the current branch from <dir>/.git/HEAD without
+// spawning a subprocess. Returns "" if the directory is not a git repo or
+// is in a detached-HEAD state.
+func gitBranchInDir(dir string) string {
+	headPath := filepath.Join(dir, ".git", "HEAD")
+	data, err := os.ReadFile(headPath)
+	if err != nil {
+		return ""
+	}
+	line := strings.TrimSpace(string(data))
+	const prefix = "ref: refs/heads/"
+	if strings.HasPrefix(line, prefix) {
+		return strings.TrimPrefix(line, prefix)
+	}
+	return "" // detached HEAD — don't show a branch label
 }
