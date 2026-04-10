@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
@@ -832,7 +833,7 @@ func Run(cfg Config) error {
 		m.welcome = newWelcomeModel(defaultProviderID, defaultProviderName, cfg.Model, cfg.Workspace, cfg.WelcomeBanner)
 	}
 
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	bridge.SetProgram(p)
 
 	_, err := p.Run()
@@ -840,6 +841,14 @@ func Run(cfg Config) error {
 }
 
 func (m appModel) Init() tea.Cmd {
+	// Enable alternate scroll mode. By sending this from within a Cmd (rather
+	// than before p.Run()), we ensure Bubble Tea has already enabled VT
+	// processing on Windows before the sequence is written.
+	altScrollCmd := func() tea.Msg {
+		os.Stdout.WriteString("\x1b[?1007h")
+		return nil
+	}
+
 	if m.state == stateChat {
 		// 跳过 Welcome 直接进入 Chat，同时启动 textarea 光标闪烁和 kernel 初始化
 		if strings.TrimSpace(m.config.Trust) != "" {
@@ -848,9 +857,9 @@ func (m appModel) Init() tea.Cmd {
 		if strings.TrimSpace(m.config.ApprovalMode) != "" {
 			m.chat.approvalMode = m.config.ApprovalMode
 		}
-		return tea.Batch(m.chat.Init(), m.initCmd)
+		return tea.Batch(m.chat.Init(), m.initCmd, altScrollCmd)
 	}
-	return m.welcome.Init()
+	return tea.Batch(m.welcome.Init(), altScrollCmd)
 }
 
 func (m appModel) View() string {

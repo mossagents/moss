@@ -79,12 +79,6 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.copyPicker = newCopyPickerState(m.messages)
 			m.openCopyOverlay()
 			return m, nil
-		case "ctrl+s":
-			m.mousePassthrough = !m.mousePassthrough
-			if m.mousePassthrough {
-				return m, func() tea.Msg { return tea.DisableMouse() }
-			}
-			return m, func() tea.Msg { return tea.EnableMouseCellMotion() }
 		case "ctrl+v":
 			text, err := readClipboard()
 			if err == nil && strings.TrimSpace(text) != "" {
@@ -108,7 +102,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			if msg.String() == "down" {
 				delta = 1
 			}
-			// 弹窗可见时，上下键导航弹窗
+			// Popups: navigate list items.
 			if m.slashPopup != nil {
 				m.slashPopup.move(delta)
 				m.refreshViewport()
@@ -122,7 +116,19 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			if hints := m.currentSlashHints(); len(hints) > 0 {
 				return m, nil
 			}
-			return m.handleHistoryNavigation(msg.String())
+			// Scroll the chat viewport. The terminal converts wheel events to
+			// up/down arrows via alternate scroll mode (CSI ?1007h), so this
+			// handles both the scroll wheel and keyboard arrow keys.
+			if delta == -1 {
+				m.viewport.ScrollUp(3)
+			} else {
+				m.viewport.ScrollDown(3)
+			}
+			m.refreshViewport()
+			return m, nil
+		case "alt+up", "alt+down":
+			dir := strings.TrimPrefix(msg.String(), "alt+")
+			return m.handleHistoryNavigation(dir)
 		case "tab":
 			if m.applySlashCompletion() {
 				m.adjustInputHeight()
@@ -150,20 +156,6 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				}
 			}
 			return m.handleSend()
-		}
-
-	case tea.MouseMsg:
-		switch msg.String() {
-		case "wheel up":
-			m.viewport.ScrollUp(3)
-			return m, nil
-		case "wheel down":
-			m.viewport.ScrollDown(3)
-			return m, nil
-		default:
-			// Consume click/move events so terminal mouse escape sequences don't fall
-			// through into the composer as literal text.
-			return m, nil
 		}
 
 	case bridgeMsg:

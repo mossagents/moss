@@ -104,8 +104,6 @@ func (m chatModel) renderStatusPane(width int) string {
 	// Determine left hint text based on current state.
 	var leftStr, rightStr string
 	switch {
-	case m.mousePassthrough:
-		leftStr = "drag to select  •  ctrl+s exit select mode"
 	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
 		leftStr = "Tab move  •  ↑↓ choose  •  Enter apply"
 		rightStr = "approval"
@@ -123,7 +121,7 @@ func (m chatModel) renderStatusPane(width int) string {
 		}
 		leftStr += "Esc Esc cancel"
 	default:
-		leftStr = "ctrl+y copy  •  ctrl+s select  •  shift+tab profile  •  ctrl+o tools  •  /help"
+		leftStr = "ctrl+y copy  •  alt+↑/↓ history  •  shift+tab profile  •  ctrl+o tools  •  /help"
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {
 			for _, widget := range ext.StatusWidgets {
