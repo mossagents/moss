@@ -112,7 +112,8 @@ func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
 // 认证成功后将 Identity 存入 Session.State。
 func AuthMiddleware(auth io.Authenticator) hooks.Hook[hooks.SessionEvent] {
 	return func(ctx context.Context, ev *hooks.SessionEvent) error {
-		token, _ := ev.Session.Config.Metadata["auth_token"].(string)
+		v, _ := ev.Session.GetMetadata("auth_token")
+		token, _ := v.(string)
 		if token == "" {
 			return fmt.Errorf("auth token is required")
 		}
@@ -122,10 +123,7 @@ func AuthMiddleware(auth io.Authenticator) hooks.Hook[hooks.SessionEvent] {
 			return err
 		}
 
-		if ev.Session.State == nil {
-			ev.Session.State = make(map[string]any)
-		}
-		SetIdentity(ev.Session.State, identity)
+		ev.Session.SetState(identityKey, identity)
 		return nil
 	}
 }

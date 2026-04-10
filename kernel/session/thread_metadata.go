@@ -17,95 +17,90 @@ const (
 	MetadataThreadTaskID           = "thread_task_id"
 )
 
-func ensureSessionMetadata(sess *Session) map[string]any {
+func ensureSessionMetadata(sess *Session) {
 	if sess == nil {
-		return nil
+		return
 	}
+	sess.mu.Lock()
 	if sess.Config.Metadata == nil {
 		sess.Config.Metadata = make(map[string]any)
 	}
-	return sess.Config.Metadata
+	sess.mu.Unlock()
 }
 
 func SetThreadSource(sess *Session, source string) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	source = strings.TrimSpace(source)
 	if source == "" {
-		delete(meta, MetadataThreadSource)
+		sess.DeleteMetadata(MetadataThreadSource)
 		return
 	}
-	meta[MetadataThreadSource] = source
+	sess.SetMetadata(MetadataThreadSource, source)
 }
 
 func SetThreadParent(sess *Session, parentID string) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	parentID = strings.TrimSpace(parentID)
 	if parentID == "" {
-		delete(meta, MetadataThreadParentID)
+		sess.DeleteMetadata(MetadataThreadParentID)
 		return
 	}
-	meta[MetadataThreadParentID] = parentID
+	sess.SetMetadata(MetadataThreadParentID, parentID)
 }
 
 func SetThreadTaskID(sess *Session, taskID string) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		delete(meta, MetadataThreadTaskID)
+		sess.DeleteMetadata(MetadataThreadTaskID)
 		return
 	}
-	meta[MetadataThreadTaskID] = taskID
+	sess.SetMetadata(MetadataThreadTaskID, taskID)
 }
 
 func SetThreadArchived(sess *Session, archived bool) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	if !archived {
-		delete(meta, MetadataThreadArchived)
+		sess.DeleteMetadata(MetadataThreadArchived)
 		return
 	}
-	meta[MetadataThreadArchived] = true
+	sess.SetMetadata(MetadataThreadArchived, true)
 }
 
 func TouchThreadActivity(sess *Session, when time.Time, kind string) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	if when.IsZero() {
 		when = time.Now().UTC()
 	}
-	meta[MetadataThreadLastActivityAt] = when.UTC().Format(time.RFC3339Nano)
+	sess.SetMetadata(MetadataThreadLastActivityAt, when.UTC().Format(time.RFC3339Nano))
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
-		delete(meta, MetadataThreadLastActivityKind)
+		sess.DeleteMetadata(MetadataThreadLastActivityKind)
 		return
 	}
-	meta[MetadataThreadLastActivityKind] = kind
+	sess.SetMetadata(MetadataThreadLastActivityKind, kind)
 }
 
 func SetThreadPreview(sess *Session, preview string) {
-	meta := ensureSessionMetadata(sess)
-	if meta == nil {
+	if sess == nil {
 		return
 	}
 	preview = trimPreview(preview, 240)
 	if preview == "" {
-		delete(meta, MetadataThreadPreview)
+		sess.DeleteMetadata(MetadataThreadPreview)
 		return
 	}
-	meta[MetadataThreadPreview] = preview
+	sess.SetMetadata(MetadataThreadPreview, preview)
 }
 
 func RefreshThreadMetadata(sess *Session, when time.Time, kind string) {
@@ -120,11 +115,14 @@ func ThreadPreview(sess *Session) string {
 	if sess == nil {
 		return ""
 	}
-	if preview := metadataString(sess.Config.Metadata, MetadataThreadPreview); preview != "" {
-		return trimPreview(preview, 240)
+	if v, ok := sess.GetMetadata(MetadataThreadPreview); ok {
+		if preview, _ := v.(string); preview != "" {
+			return trimPreview(preview, 240)
+		}
 	}
-	for i := len(sess.Messages) - 1; i >= 0; i-- {
-		msg := sess.Messages[i]
+	msgs := sess.CopyMessages()
+	for i := len(msgs) - 1; i >= 0; i-- {
+		msg := msgs[i]
 		if msg.Role == model.RoleSystem {
 			continue
 		}
@@ -140,9 +138,11 @@ func ThreadActivityTime(sess *Session) time.Time {
 	if sess == nil {
 		return time.Time{}
 	}
-	if raw := metadataString(sess.Config.Metadata, MetadataThreadLastActivityAt); raw != "" {
-		if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-			return ts.UTC()
+	if v, ok := sess.GetMetadata(MetadataThreadLastActivityAt); ok {
+		if raw, _ := v.(string); raw != "" {
+			if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+				return ts.UTC()
+			}
 		}
 	}
 	if !sess.EndedAt.IsZero() {
@@ -158,12 +158,13 @@ func ThreadMetadataValues(sess *Session) (source, parentID, taskID, preview, act
 	if sess == nil {
 		return "", "", "", "", "", false, time.Time{}
 	}
-	return metadataString(sess.Config.Metadata, MetadataThreadSource),
-		metadataString(sess.Config.Metadata, MetadataThreadParentID),
-		metadataString(sess.Config.Metadata, MetadataThreadTaskID),
+	meta := sess.CopyMetadata()
+	return metadataString(meta, MetadataThreadSource),
+		metadataString(meta, MetadataThreadParentID),
+		metadataString(meta, MetadataThreadTaskID),
 		ThreadPreview(sess),
-		metadataString(sess.Config.Metadata, MetadataThreadLastActivityKind),
-		metadataBool(sess.Config.Metadata, MetadataThreadArchived),
+		metadataString(meta, MetadataThreadLastActivityKind),
+		metadataBool(meta, MetadataThreadArchived),
 		ThreadActivityTime(sess)
 }
 

@@ -27,8 +27,9 @@ func ProfileMetadataValues(sess *Session) (profile, effectiveTrust, effectiveApp
 	if sess == nil {
 		return "", "", "", ""
 	}
+	meta := sess.CopyMetadata()
 	return strings.TrimSpace(sess.Config.Profile),
-		metadataString(sess.Config.Metadata, MetadataEffectiveTrust),
-		metadataString(sess.Config.Metadata, MetadataEffectiveApproval),
-		metadataString(sess.Config.Metadata, MetadataTaskMode)
+		metadataString(meta, MetadataEffectiveTrust),
+		metadataString(meta, MetadataEffectiveApproval),
+		metadataString(meta, MetadataTaskMode)
 }

@@ -117,7 +117,7 @@ type Session struct {
 	Budget    Budget         `json:"budget"`
 	CreatedAt time.Time      `json:"created_at"`
 	EndedAt   time.Time      `json:"ended_at,omitempty"`
-	mu        sync.RWMutex   `json:"-"` // protects Messages and Title for concurrent access
+	mu        sync.RWMutex   `json:"-"` // protects Messages, Title, Config.Metadata, and State for concurrent access
 }
 
 // AppendMessage 追加一条消息到对话历史。
@@ -257,4 +257,75 @@ func (s *Session) CopyState() map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+// SetMetadata 线程安全地设置 Config.Metadata 键值。
+func (s *Session) SetMetadata(key string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Config.Metadata == nil {
+		s.Config.Metadata = make(map[string]any)
+	}
+	s.Config.Metadata[key] = value
+}
+
+// GetMetadata 线程安全地读取 Config.Metadata 键值。
+func (s *Session) GetMetadata(key string) (any, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.Config.Metadata == nil {
+		return nil, false
+	}
+	v, ok := s.Config.Metadata[key]
+	return v, ok
+}
+
+// DeleteMetadata 线程安全地删除 Config.Metadata 键值。
+func (s *Session) DeleteMetadata(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.Config.Metadata, key)
+}
+
+// EnsureMetadata 线程安全地确保 Config.Metadata 已初始化并返回副本。
+func (s *Session) EnsureMetadata() map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Config.Metadata == nil {
+		s.Config.Metadata = make(map[string]any)
+	}
+	out := make(map[string]any, len(s.Config.Metadata))
+	for k, v := range s.Config.Metadata {
+		out[k] = v
+	}
+	return out
+}
+
+// CopyMetadata 在读锁保护下返回 Config.Metadata 的浅拷贝。
+func (s *Session) CopyMetadata() map[string]any {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.Config.Metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(s.Config.Metadata))
+	for k, v := range s.Config.Metadata {
+		out[k] = v
+	}
+	return out
+}
+
+// SetMetadataBatch 线程安全地批量设置多个 Config.Metadata 键值。
+func (s *Session) SetMetadataBatch(pairs map[string]any) {
+	if len(pairs) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Config.Metadata == nil {
+		s.Config.Metadata = make(map[string]any)
+	}
+	for k, v := range pairs {
+		s.Config.Metadata[k] = v
+	}
 }

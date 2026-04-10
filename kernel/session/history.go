@@ -18,10 +18,7 @@ func MarkHistoryHidden(sess *Session) {
 	if sess == nil {
 		return
 	}
-	if sess.Config.Metadata == nil {
-		sess.Config.Metadata = make(map[string]any)
-	}
-	sess.Config.Metadata[HistoryHiddenMetadataKey] = true
+	sess.SetMetadata(HistoryHiddenMetadataKey, true)
 }
 
 // VisibleInHistory 返回 Session 是否应出现在普通历史查询中。
@@ -29,8 +26,9 @@ func VisibleInHistory(sess *Session) bool {
 	if sess == nil {
 		return false
 	}
-	return !metadataBool(sess.Config.Metadata, checkpointSnapshotHiddenMetadataKey) &&
-		!metadataBool(sess.Config.Metadata, HistoryHiddenMetadataKey)
+	meta := sess.CopyMetadata()
+	return !metadataBool(meta, checkpointSnapshotHiddenMetadataKey) &&
+		!metadataBool(meta, HistoryHiddenMetadataKey)
 }
 
 func metadataBool(metadata map[string]any, key string) bool {

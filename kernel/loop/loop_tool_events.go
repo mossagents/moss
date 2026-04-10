@@ -199,29 +199,33 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLif
 	if callCtx == nil {
 		callCtx = context.Background()
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			sessionID := ""
-			if event.Session != nil {
-				sessionID = event.Session.ID
+	// Serialize lifecycle hooks to prevent concurrent mutation of session
+	// state (e.g. Config.Metadata writes in session-store persistence hook).
+	l.withSideEffectsLock(func() {
+		defer func() {
+			if r := recover(); r != nil {
+				sessionID := ""
+				if event.Session != nil {
+					sessionID = event.Session.ID
+				}
+				err := fmt.Errorf("tool lifecycle hook panic: %v", r)
+				slog.Default().ErrorContext(callCtx, "tool lifecycle hook panic",
+					slog.String("stage", string(event.Stage)),
+					slog.String("session_id", sessionID),
+					slog.String("tool", event.ToolName),
+					slog.String("call_id", event.CallID),
+					slog.Any("panic", r),
+				)
+				observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
+					SessionID: sessionID,
+					Phase:     "tool_lifecycle_hook",
+					Error:     err,
+					Message:   err.Error(),
+				})
 			}
-			err := fmt.Errorf("tool lifecycle hook panic: %v", r)
-			slog.Default().ErrorContext(callCtx, "tool lifecycle hook panic",
-				slog.String("stage", string(event.Stage)),
-				slog.String("session_id", sessionID),
-				slog.String("tool", event.ToolName),
-				slog.String("call_id", event.CallID),
-				slog.Any("panic", r),
-			)
-			observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
-				SessionID: sessionID,
-				Phase:     "tool_lifecycle_hook",
-				Error:     err,
-				Message:   err.Error(),
-			})
-		}
-	}()
-	l.ToolLifecycleHook(callCtx, event)
+		}()
+		l.ToolLifecycleHook(callCtx, event)
+	})
 }
 
 func appendToolExecutionMetadata(event *observe.ExecutionEvent, output json.RawMessage) {

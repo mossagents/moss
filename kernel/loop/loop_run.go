@@ -228,17 +228,16 @@ func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
 	if sess == nil {
 		return
 	}
-	if sess.Config.Metadata == nil {
-		sess.Config.Metadata = map[string]any{}
-	}
-	sess.Config.Metadata[session.MetadataRunID] = plan.RunID
-	sess.Config.Metadata[session.MetadataTurnID] = plan.TurnID
-	sess.Config.Metadata[session.MetadataInstructionProfile] = plan.InstructionProfile
-	sess.Config.Metadata[session.MetadataPromptVersion] = plan.PromptVersion
-	sess.Config.Metadata[session.MetadataModelLane] = plan.ModelRoute.Lane
-	sess.Config.Metadata[session.MetadataVisibleTools] = visibleToolNames(plan.ToolRoute)
-	sess.Config.Metadata[session.MetadataHiddenTools] = hiddenToolNames(plan.ToolRoute)
-	sess.Config.Metadata[session.MetadataToolRouteDigest] = toolRouteDigest(plan.ToolRoute)
+	sess.SetMetadataBatch(map[string]any{
+		session.MetadataRunID:              plan.RunID,
+		session.MetadataTurnID:             plan.TurnID,
+		session.MetadataInstructionProfile: plan.InstructionProfile,
+		session.MetadataPromptVersion:      plan.PromptVersion,
+		session.MetadataModelLane:          plan.ModelRoute.Lane,
+		session.MetadataVisibleTools:       visibleToolNames(plan.ToolRoute),
+		session.MetadataHiddenTools:        hiddenToolNames(plan.ToolRoute),
+		session.MetadataToolRouteDigest:    toolRouteDigest(plan.ToolRoute),
+	})
 }
 
 func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Session, plan TurnPlan) {

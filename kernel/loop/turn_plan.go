@@ -68,11 +68,11 @@ func buildTurnPlan(sess *session.Session, runID string, iteration int, reg tool.
 }
 
 func promptVersionForSession(sess *session.Session) string {
-	if sess == nil || sess.Config.Metadata == nil {
+	if sess == nil {
 		return ""
 	}
-	if raw, ok := sess.Config.Metadata[session.MetadataPromptVersion]; ok {
-		if version, ok := raw.(string); ok {
+	if v, ok := sess.GetMetadata(session.MetadataPromptVersion); ok {
+		if version, ok := v.(string); ok {
 			return strings.TrimSpace(version)
 		}
 	}
@@ -94,19 +94,17 @@ func instructionProfileForSession(sess *session.Session) string {
 	if sess == nil {
 		return "default"
 	}
-	if sess.Config.Metadata != nil {
-		if raw, ok := sess.Config.Metadata[session.MetadataInstructionProfile]; ok {
-			if profile, ok := raw.(string); ok && strings.TrimSpace(profile) != "" {
-				return strings.TrimSpace(profile)
-			}
+	if v, ok := sess.GetMetadata(session.MetadataInstructionProfile); ok {
+		if profile, ok := v.(string); ok && strings.TrimSpace(profile) != "" {
+			return strings.TrimSpace(profile)
 		}
 	}
 	_, _, _, taskMode := session.ProfileMetadataValues(sess)
 	if strings.TrimSpace(taskMode) != "" {
 		return taskMode
 	}
-	if raw, ok := sess.Config.Metadata[session.MetadataTaskMode]; ok {
-		if taskMode, ok := raw.(string); ok && strings.TrimSpace(taskMode) != "" {
+	if v, ok := sess.GetMetadata(session.MetadataTaskMode); ok {
+		if taskMode, ok := v.(string); ok && strings.TrimSpace(taskMode) != "" {
 			return strings.TrimSpace(taskMode)
 		}
 	}

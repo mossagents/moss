@@ -131,7 +131,7 @@ func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools 
 	return k.runSession(ctx, sess, runKindDelegated, tools, &io.NoOpIO{})
 }
 
-func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, io io.UserIO) (*loop.SessionResult, error) {
+func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, userIO io.UserIO) (*loop.SessionResult, error) {
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
@@ -142,10 +142,15 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 	defer cancel()
 	defer k.runs.end(runID)
 
+	// Ensure IO is goroutine-safe for parallel tool execution.
+	if _, ok := userIO.(*io.SyncIO); !ok {
+		userIO = io.NewSyncIO(userIO)
+	}
+
 	l := &loop.AgentLoop{
 		LLM:   k.llm,
 		Tools: tools,
-		Hooks: k.chain, IO: io,
+		Hooks: k.chain, IO: userIO,
 		Config:   k.loopCfg,
 		Observer: k.observer,
 		RunID:    runID,

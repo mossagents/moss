@@ -53,11 +53,8 @@ func (k *Kernel) CreateCheckpoint(ctx context.Context, sess *session.Session, re
 	frozen.ID = checkpointSnapshotSessionID(sess.ID)
 	frozen.Status = session.StatusPaused
 	frozen.EndedAt = time.Now().UTC()
-	if frozen.Config.Metadata == nil {
-		frozen.Config.Metadata = make(map[string]any)
-	}
-	frozen.Config.Metadata[checkpointSnapshotHiddenKey] = true
-	frozen.Config.Metadata[checkpointSnapshotSourceKey] = sess.ID
+	frozen.SetMetadata(checkpointSnapshotHiddenKey, true)
+	frozen.SetMetadata(checkpointSnapshotSourceKey, sess.ID)
 	if err := k.store.Save(ctx, frozen); err != nil {
 		return nil, fmt.Errorf("save checkpoint session snapshot: %w", err)
 	}
@@ -365,12 +362,16 @@ func mergeCheckpointLineage(sess *session.Session, extra []checkpoint.Checkpoint
 		seen[key] = true
 		merged = append(merged, checkpoint.CheckpointLineageRef{Kind: kind, ID: id})
 	}
-	if sess != nil && sess.Config.Metadata != nil {
-		if kind, ok := sess.Config.Metadata[checkpointSourceKindKey].(string); ok {
-			switch checkpoint.CheckpointLineageKind(kind) {
-			case checkpoint.CheckpointLineageCheckpoint, checkpoint.CheckpointLineageSession, checkpoint.CheckpointLineageReplay:
-				if id, ok := sess.Config.Metadata[checkpointSourceIDKey].(string); ok {
-					add(checkpoint.CheckpointLineageKind(kind), id)
+	if sess != nil {
+		if v, ok := sess.GetMetadata(checkpointSourceKindKey); ok {
+			if kind, ok := v.(string); ok {
+				switch checkpoint.CheckpointLineageKind(kind) {
+				case checkpoint.CheckpointLineageCheckpoint, checkpoint.CheckpointLineageSession, checkpoint.CheckpointLineageReplay:
+					if v2, ok2 := sess.GetMetadata(checkpointSourceIDKey); ok2 {
+						if id, ok3 := v2.(string); ok3 {
+							add(checkpoint.CheckpointLineageKind(kind), id)
+						}
+					}
 				}
 			}
 		}

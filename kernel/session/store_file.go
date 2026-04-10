@@ -1,6 +1,7 @@
 package session
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -130,8 +131,8 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
-		left := firstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
-		right := firstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
+		left := strutil.FirstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
+		right := strutil.FirstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
 		if left == right {
 			return summaries[i].ID < summaries[j].ID
 		}
@@ -147,15 +148,7 @@ func formatSessionTime(ts time.Time) string {
 	return ts.UTC().Format("2006-01-02 15:04:05")
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
+
 
 func (fs *FileStore) Delete(_ context.Context, id string) error {
 	fs.mu.Lock()
@@ -310,11 +303,19 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 		return persistedSession{}
 	}
 	snap := sess.Budget.Clone()
+	// Take thread-safe snapshots of mutable fields.
+	messages := sess.CopyMessages()
+	state := sess.CopyState()
+	metadata := sess.CopyMetadata()
+
+	cfg := sess.Config
+	cfg.Metadata = metadata
+
 	out := persistedSession{
 		ID:     sess.ID,
 		Status: sess.Status,
-		Config: sess.Config,
-		State:  sess.State,
+		Config: cfg,
+		State:  state,
 		Budget: persistedBudget{
 			MaxTokens:  snap.MaxTokens,
 			MaxSteps:   snap.MaxSteps,
@@ -324,11 +325,11 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 		CreatedAt: sess.CreatedAt,
 		EndedAt:   sess.EndedAt,
 	}
-	if len(sess.Messages) == 0 {
+	if len(messages) == 0 {
 		return out
 	}
-	out.Messages = make([]persistedMessage, 0, len(sess.Messages))
-	for _, msg := range sanitizePersistedMessages(sess.Messages) {
+	out.Messages = make([]persistedMessage, 0, len(messages))
+	for _, msg := range sanitizePersistedMessages(messages) {
 		pm := persistedMessage{
 			Role:         msg.Role,
 			ContentParts: msg.ContentParts,

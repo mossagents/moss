@@ -34,6 +34,10 @@ type AllocationSnapshot struct {
 
 // BudgetPool manages named budget allocations for different subsystems.
 // Each allocation has independent token/step limits, tracked within the global Governor.
+//
+// 预算体系分两层：
+//   - BudgetPool（会话级）：为每个 Session/子系统分配独立的 token/step 配额
+//   - MemoryGovernor（全局级）：跨所有 Session 的总预算限制和告警
 type BudgetPool struct {
 	mu          sync.RWMutex
 	allocations map[string]*Allocation
@@ -85,8 +89,9 @@ func (p *BudgetPool) Record(name, sessionID string, tokens, steps int) error {
 // TryReserve checks if a named allocation has capacity for the requested tokens and steps.
 func (p *BudgetPool) TryReserve(name string, tokens, steps int) bool {
 	p.mu.RLock()
+	defer p.mu.RUnlock()
+
 	a, ok := p.allocations[name]
-	p.mu.RUnlock()
 	if !ok {
 		return false
 	}
@@ -142,10 +147,11 @@ func (p *BudgetPool) Snapshot() []AllocationSnapshot {
 // Preempt transfers unused budget from lower-priority allocations to the named one.
 // Returns the amount of tokens and steps reclaimed.
 func (p *BudgetPool) Preempt(name string, needTokens, needSteps int64) (reclaimedTokens, reclaimedSteps int64) {
-	p.mu.RLock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	target, ok := p.allocations[name]
 	if !ok {
-		p.mu.RUnlock()
 		return 0, 0
 	}
 
@@ -156,7 +162,6 @@ func (p *BudgetPool) Preempt(name string, needTokens, needSteps int64) (reclaime
 			donors = append(donors, a)
 		}
 	}
-	p.mu.RUnlock()
 
 	sort.Slice(donors, func(i, j int) bool {
 		return donors[i].Priority < donors[j].Priority
