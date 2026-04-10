@@ -879,7 +879,7 @@ func TestRenderEditorPaneIncludesProgressBlock(t *testing.T) {
 func TestNewChatModelSupportsMultilineBindings(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	keys := m.textarea.KeyMap.InsertNewline.Keys()
-	for _, want := range []string{"shift+enter", "alt+enter", "ctrl+j"} {
+	for _, want := range []string{"shift+enter", "alt+enter"} {
 		if !slices.Contains(keys, want) {
 			t.Fatalf("missing multiline binding %q in %v", want, keys)
 		}

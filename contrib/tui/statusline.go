@@ -211,7 +211,7 @@ func (m chatModel) composerMetaSummary() (string, string) {
 	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@"):
 		return "Attach", "file picker  •  Tab attach"
 	case strings.TrimSpace(m.textarea.Value()) != "":
-		return "Draft", "Enter send  •  Ctrl+J newline"
+		return "Draft", "Enter send  •  Shift+Enter newline"
 	default:
 		return "Ready", "/ commands  •  @ files"
 	}

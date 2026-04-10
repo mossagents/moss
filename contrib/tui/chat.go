@@ -210,7 +210,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 	ta.CharLimit = 4096
 	// Bubble Tea does not reliably expose Shift+Enter on all terminals, so keep it
 	// as a best-effort binding and add portable fallbacks for multiline input.
-	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "alt+enter", "ctrl+j")
+	ta.KeyMap.InsertNewline.SetKeys("shift+enter", "alt+enter")
 	theme := resolveThemeName(os.Getenv("MOSSCODE_THEME"))
 	personality := product.PersonalityFriendly
 	var fastMode bool
