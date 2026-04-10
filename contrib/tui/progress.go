@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -274,13 +275,13 @@ func (m *chatModel) recordProgressDetail(status, phase, message string, updatedA
 	snapshot.Message = strings.TrimSpace(message)
 	switch strings.TrimSpace(snapshot.Phase) {
 	case "tools":
-		snapshot.ActivityKey = "tool:" + firstNonEmptyProgress(strings.TrimSpace(snapshot.ToolName), "active")
+		snapshot.ActivityKey = "tool:" + strutil.FirstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
 	case "approval":
-		snapshot.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(snapshot.ToolName), "active")
+		snapshot.ActivityKey = "approval:" + strutil.FirstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
 	case "completed", "failed", "cancelled":
 		snapshot.ActivityKey = "run:" + strings.TrimSpace(snapshot.Phase)
 	default:
-		snapshot.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(snapshot.Iteration, 1))
+		snapshot.ActivityKey = fmt.Sprintf("iteration:%d", max(snapshot.Iteration, 1))
 	}
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()
@@ -519,13 +520,13 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
-		next.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(next.Iteration, 1))
-		next.Message = fmt.Sprintf("iteration %d started", maxInt(next.Iteration, 1))
+		next.ActivityKey = fmt.Sprintf("iteration:%d", max(next.Iteration, 1))
+		next.Message = fmt.Sprintf("iteration %d started", max(next.Iteration, 1))
 	case observe.ExecutionLLMStarted:
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
-		next.ActivityKey = fmt.Sprintf("thinking:%d", maxInt(next.Iteration, 1))
+		next.ActivityKey = fmt.Sprintf("thinking:%d", max(next.Iteration, 1))
 		if model := strings.TrimSpace(event.Model); model != "" {
 			next.Message = "calling " + model
 		} else {
@@ -535,7 +536,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "tools"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "tool:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "unknown")
+		next.ActivityKey = "tool:" + strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "unknown")
 		if next.ToolName != "" {
 			next.Message = "running " + next.ToolName
 		} else {
@@ -545,7 +546,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "waiting"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "request")
+		next.ActivityKey = "approval:" + strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
 		if next.ToolName != "" {
 			next.Message = "approval required for " + next.ToolName
 		} else if reason := strings.TrimSpace(stringData(event.Data, "reason")); reason != "" {
@@ -557,7 +558,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "approval:" + firstNonEmptyProgress(strings.TrimSpace(event.ToolName), "request")
+		next.ActivityKey = "approval:" + strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
 		if approved, ok := boolData(event.Data, "approved"); ok && !approved {
 			next.Message = "approval denied"
 		} else if next.ToolName != "" {
@@ -572,7 +573,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
-		next.ActivityKey = fmt.Sprintf("iteration:%d", maxInt(next.Iteration, 1))
+		next.ActivityKey = fmt.Sprintf("iteration:%d", max(next.Iteration, 1))
 		toolCalls, _ := intData(event.Data, "tool_calls")
 		stopReason := strings.TrimSpace(stringData(event.Data, "stop_reason"))
 		tokens, _ := intData(event.Data, "tokens")
@@ -611,13 +612,13 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Phase = "failed"
 		next.ToolName = ""
 		next.ActivityKey = "run:failed"
-		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run failed")
+		next.Message = strutil.FirstNonEmpty(strings.TrimSpace(event.Error), "run failed")
 	case observe.ExecutionRunCancelled:
 		next.Status = "cancelled"
 		next.Phase = "cancelled"
 		next.ToolName = ""
 		next.ActivityKey = "run:cancelled"
-		next.Message = firstNonEmptyProgress(strings.TrimSpace(event.Error), "run cancelled")
+		next.Message = strutil.FirstNonEmpty(strings.TrimSpace(event.Error), "run cancelled")
 	}
 	return next
 }
@@ -801,16 +802,9 @@ func firstTime(values ...time.Time) time.Time {
 	return time.Time{}
 }
 
-func firstNonEmptyProgress(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
 
-func maxInt(a, b int) int {
+
+func max(a, b int) int {
 	if a > b {
 		return a
 	}

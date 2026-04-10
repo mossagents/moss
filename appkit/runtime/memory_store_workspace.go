@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -140,7 +141,7 @@ func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]memory
 		records = make(map[string]memory.MemoryRecord)
 	}
 	for key, record := range records {
-		record.Path = normalizeMemoryPath(firstNonEmpty(record.Path, key))
+		record.Path = normalizeMemoryPath(strutil.FirstNonEmpty(record.Path, key))
 		record.Tags = normalizeMemoryTags(record.Tags)
 		record.Citation = normalizeMemoryCitation(record.Citation)
 		if record.Stage == "" {

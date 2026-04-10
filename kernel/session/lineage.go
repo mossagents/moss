@@ -1,6 +1,7 @@
 package session
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"sort"
@@ -189,7 +190,7 @@ func (c Catalog) ResolveForkSource(ctx context.Context, kind checkpoint.ForkSour
 			Kind:      checkpoint.ForkSourceSession,
 			SourceID:  thread.SessionID,
 			SessionID: thread.SessionID,
-			Label:     firstNonEmpty(thread.Preview, thread.Goal, thread.SessionID),
+			Label:     strutil.FirstNonEmpty(thread.Preview, thread.Goal, thread.SessionID),
 			Lineage:   append([]LineageRef(nil), thread.Lineage...),
 		}, nil
 	case checkpoint.ForkSourceCheckpoint:
@@ -206,7 +207,7 @@ func (c Catalog) ResolveForkSource(ctx context.Context, kind checkpoint.ForkSour
 			SourceID:     ref.ID,
 			SessionID:    ref.SessionID,
 			CheckpointID: ref.ID,
-			Label:        firstNonEmpty(ref.Note, ref.ID),
+			Label:        strutil.FirstNonEmpty(ref.Note, ref.ID),
 			Lineage:      append([]LineageRef(nil), ref.Lineage...),
 		}, nil
 	default:
@@ -219,7 +220,7 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 		Kind:      LineageKindSession,
 		ID:        summary.ID,
 		SessionID: summary.ID,
-		Label:     firstNonEmpty(summary.Preview, summary.Goal, summary.ID),
+		Label:     strutil.FirstNonEmpty(summary.Preview, summary.Goal, summary.ID),
 	}}
 	if summary.ParentID != "" {
 		lineage = append(lineage, LineageRef{
@@ -296,7 +297,7 @@ func CheckpointRefFromRecord(record checkpoint.CheckpointRecord) CheckpointRef {
 		Kind:      LineageKindCheckpoint,
 		ID:        record.ID,
 		SessionID: record.SessionID,
-		Label:     firstNonEmpty(record.Note, record.ID),
+		Label:     strutil.FirstNonEmpty(record.Note, record.ID),
 	})
 	return CheckpointRef{
 		ID:                 record.ID,

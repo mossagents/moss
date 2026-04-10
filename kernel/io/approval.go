@@ -1,6 +1,7 @@
 package io
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -204,7 +205,7 @@ func NormalizeApprovalRequest(req *ApprovalRequest) *ApprovalRequest {
 		req.RuleBinding = &RuleBinding{
 			Category:    req.Category,
 			ToolName:    req.ToolName,
-			Label:       firstNonEmptyString(req.ScopeLabel, req.CacheLabel),
+			Label:       strutil.FirstNonEmpty(req.ScopeLabel, req.CacheLabel),
 			Match:       req.ScopeValue,
 			CacheKey:    req.CacheKey,
 			Persistence: req.DefaultPersistence,
@@ -323,13 +324,4 @@ func defaultPersistenceForScope(scope DecisionScope) DecisionPersistence {
 	}
 }
 
-func firstNonEmptyString(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
 

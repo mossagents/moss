@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/memory"
 	"path/filepath"
 	"sort"
@@ -114,12 +115,12 @@ func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRe
 		record.Summary = summarizeMemoryContent(record.Content)
 	}
 	if existing != nil {
-		record.ID = firstNonEmpty(record.ID, existing.ID)
+		record.ID = strutil.FirstNonEmpty(record.ID, existing.ID)
 		if record.CreatedAt.IsZero() {
 			record.CreatedAt = existing.CreatedAt
 		}
-		record.Stage = memory.MemoryStage(firstNonEmpty(string(record.Stage), string(existing.Stage)))
-		record.Status = memory.MemoryStatus(firstNonEmpty(string(record.Status), string(existing.Status)))
+		record.Stage = memory.MemoryStage(strutil.FirstNonEmpty(string(record.Stage), string(existing.Stage)))
+		record.Status = memory.MemoryStatus(strutil.FirstNonEmpty(string(record.Status), string(existing.Status)))
 		if record.Group == "" {
 			record.Group = existing.Group
 		}

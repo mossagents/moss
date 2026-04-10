@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -381,8 +382,8 @@ func (m *memoryPipelineManager) runPhase2(ctx context.Context, payload memoryPip
 		Status:          memory.MemoryStatusActive,
 		Group:           payload.TargetPath,
 		Workspace:       payload.Workspace,
-		CWD:             firstNonEmpty(payload.CWD, snapshots[0].CWD),
-		GitBranch:       firstNonEmpty(payload.GitBranch, snapshots[0].GitBranch),
+		CWD:             strutil.FirstNonEmpty(payload.CWD, snapshots[0].CWD),
+		GitBranch:       strutil.FirstNonEmpty(payload.GitBranch, snapshots[0].GitBranch),
 		SourceKind:      "consolidation",
 		SourceID:        payload.JobID,
 		SourcePath:      payload.SourcePath,
@@ -505,7 +506,7 @@ func buildPromotedRecord(record memory.MemoryRecord) memory.MemoryRecord {
 	return memory.MemoryRecord{
 		Path:            path,
 		Content:         content,
-		Summary:         firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)),
+		Summary:         strutil.FirstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)),
 		Tags:            append(append([]string{}, record.Tags...), "promoted"),
 		Citation:        record.Citation,
 		Stage:           memory.MemoryStagePromoted,
@@ -618,7 +619,7 @@ func sanitizeMemoryStem(value string) string {
 
 func buildSnapshotMemoryContent(payload memoryPipelineJob, trace *normalizedTrace) string {
 	var b strings.Builder
-	title := firstNonEmpty(payload.TargetPath, payload.SourcePath, payload.JobID)
+	title := strutil.FirstNonEmpty(payload.TargetPath, payload.SourcePath, payload.JobID)
 	b.WriteString("# Snapshot Memory\n\n")
 	b.WriteString("target_path: " + payload.TargetPath + "\n")
 	if payload.SourcePath != "" {
@@ -743,7 +744,7 @@ func buildConsolidatedMemory(payload memoryPipelineJob, snapshots []memory.Memor
 }
 
 func promotedMemoryPath(record memory.MemoryRecord) string {
-	stem := sanitizeMemoryStem(firstNonEmpty(record.Group, record.Path, record.SourcePath))
+	stem := sanitizeMemoryStem(strutil.FirstNonEmpty(record.Group, record.Path, record.SourcePath))
 	if stem == "" {
 		stem = "fact"
 	}
@@ -762,7 +763,7 @@ func buildPromotedMemoryContent(record memory.MemoryRecord, confidence float64) 
 		b.WriteString("source_updated_at: " + memoryFreshness(record).UTC().Format(time.RFC3339) + "\n")
 	}
 	b.WriteString("\n## Fact\n\n")
-	b.WriteString(firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)))
+	b.WriteString(strutil.FirstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)))
 	b.WriteString("\n\n## Evidence\n\n")
 	for _, path := range dedupeStrings(record.Citation.MemoryPaths) {
 		b.WriteString("- " + path + "\n")
@@ -866,7 +867,7 @@ func buildMemoryRegistry(records []memory.MemoryRecord) string {
 		if record.Group != "" {
 			b.WriteString("- group: " + record.Group + "\n")
 		}
-		b.WriteString("- summary: " + firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)) + "\n")
+		b.WriteString("- summary: " + strutil.FirstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)) + "\n")
 		b.WriteString(fmt.Sprintf("- usage_count: %d\n", record.UsageCount))
 		if !record.LastUsedAt.IsZero() {
 			b.WriteString("- last_used_at: " + record.LastUsedAt.UTC().Format(time.RFC3339) + "\n")
@@ -890,7 +891,7 @@ func buildMemorySummary(records []memory.MemoryRecord) string {
 		return b.String()
 	}
 	for _, record := range trimMemoryRecords(records, 12) {
-		b.WriteString("- `" + record.Path + "`: " + firstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)) + "\n")
+		b.WriteString("- `" + record.Path + "`: " + strutil.FirstNonEmpty(record.Summary, summarizeMemoryContent(record.Content)) + "\n")
 	}
 	return b.String()
 }

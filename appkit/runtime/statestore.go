@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -568,7 +569,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 		SessionID:  sess.ID,
 		Status:     string(sess.Status),
 		Title:      title,
-		Summary:    firstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
+		Summary:    strutil.FirstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
 		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, taskID, preview, activityKind),
 		SortTime:   sortTime,
 		CreatedAt:  sess.CreatedAt,
@@ -624,7 +625,7 @@ func StateEntryFromCheckpoint(item *checkpoint.CheckpointRecord) (StateEntry, bo
 		RecordID:   item.ID,
 		SessionID:  sessionID,
 		Status:     "created",
-		Title:      firstNonEmpty(strings.TrimSpace(item.Note), item.ID),
+		Title:      strutil.FirstNonEmpty(strings.TrimSpace(item.Note), item.ID),
 		Summary:    fmt.Sprintf("patches=%d lineage=%d", len(item.PatchIDs), len(item.Lineage)),
 		SearchText: normalizeStateText(item.ID, sessionID, item.Note),
 		SortTime:   item.CreatedAt.UTC(),
@@ -719,7 +720,7 @@ func StateEntryFromJobItem(item taskrt.AgentJobItem) (StateEntry, bool) {
 		Kind:       StateKindJobItem,
 		RecordID:   recordID,
 		Status:     string(item.Status),
-		Title:      firstNonEmpty(item.ItemID, recordID),
+		Title:      strutil.FirstNonEmpty(item.ItemID, recordID),
 		Summary:    strings.TrimSpace(item.Executor),
 		SearchText: normalizeStateText(item.JobID, item.ItemID, item.Executor, item.Result, item.Error, string(item.Status)),
 		SortTime:   sortTime.UTC(),
@@ -748,8 +749,8 @@ func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
 		RecordID:   strings.TrimSpace(record.Path),
 		Workspace:  strings.TrimSpace(record.Workspace),
 		RepoRoot:   strings.TrimSpace(record.CWD),
-		Status:     firstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
-		Title:      firstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
+		Status:     strutil.FirstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
+		Title:      strutil.FirstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
 		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
 		SortTime:   sortTime.UTC(),
@@ -782,7 +783,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 		recordID = strings.TrimSpace(event.CallID)
 	}
 	if recordID == "" {
-		recordID = fmt.Sprintf("%d-%s-%s", event.Timestamp.UTC().UnixNano(), event.Type, firstNonEmpty(strings.TrimSpace(event.ToolName), strings.TrimSpace(event.Model)))
+		recordID = fmt.Sprintf("%d-%s-%s", event.Timestamp.UTC().UnixNano(), event.Type, strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), strings.TrimSpace(event.Model)))
 	}
 	title := string(event.Type)
 	if strings.TrimSpace(event.ToolName) != "" {
@@ -794,7 +795,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 		SessionID: strings.TrimSpace(event.SessionID),
 		Status:    strings.TrimSpace(event.Error),
 		Title:     title,
-		Summary:   firstNonEmpty(strings.TrimSpace(event.ReasonCode), strings.TrimSpace(event.Risk)),
+		Summary:   strutil.FirstNonEmpty(strings.TrimSpace(event.ReasonCode), strings.TrimSpace(event.Risk)),
 		SearchText: normalizeStateText(
 			string(event.Type),
 			event.SessionID,
@@ -1142,11 +1143,4 @@ func ensureStateCatalogState(k *kernel.Kernel) *stateCatalogState {
 	return state
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
+

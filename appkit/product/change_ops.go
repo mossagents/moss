@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"fmt"
 	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
@@ -145,10 +146,10 @@ func RenderChangeSummaries(items []ChangeSummary) string {
 		fmt.Fprintf(&b, "- %s | status=%s | patch=%s | files=%d | created=%s | summary=%s\n",
 			item.ID,
 			item.Status,
-			firstNonEmpty(item.PatchID, "(pending)"),
+			strutil.FirstNonEmpty(item.PatchID, "(pending)"),
 			len(item.TargetFiles),
 			item.CreatedAt.UTC().Format(time.RFC3339),
-			firstNonEmpty(item.Summary, "(none)"),
+			strutil.FirstNonEmpty(item.Summary, "(none)"),
 		)
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -160,17 +161,17 @@ func RenderChangeDetail(item *ChangeOperation) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Change: %s\n", item.ID)
-	fmt.Fprintf(&b, "  repo:      %s\n", firstNonEmpty(item.RepoRoot, "(none)"))
-	fmt.Fprintf(&b, "  head:      %s\n", firstNonEmpty(item.BaseHeadSHA, "(none)"))
-	fmt.Fprintf(&b, "  session:   %s\n", firstNonEmpty(item.SessionID, "(none)"))
-	fmt.Fprintf(&b, "  run:       %s\n", firstNonEmpty(item.RunID, "(none)"))
-	fmt.Fprintf(&b, "  turn:      %s\n", firstNonEmpty(item.TurnID, "(none)"))
-	fmt.Fprintf(&b, "  profile:   %s\n", firstNonEmpty(item.InstructionProfile, "(none)"))
-	fmt.Fprintf(&b, "  model lane:%s\n", padField(firstNonEmpty(item.ModelLane, "(none)")))
-	fmt.Fprintf(&b, "  patch:     %s\n", firstNonEmpty(item.PatchID, "(none)"))
-	fmt.Fprintf(&b, "  checkpoint:%s\n", padField(firstNonEmpty(item.CheckpointID, "(none)")))
+	fmt.Fprintf(&b, "  repo:      %s\n", strutil.FirstNonEmpty(item.RepoRoot, "(none)"))
+	fmt.Fprintf(&b, "  head:      %s\n", strutil.FirstNonEmpty(item.BaseHeadSHA, "(none)"))
+	fmt.Fprintf(&b, "  session:   %s\n", strutil.FirstNonEmpty(item.SessionID, "(none)"))
+	fmt.Fprintf(&b, "  run:       %s\n", strutil.FirstNonEmpty(item.RunID, "(none)"))
+	fmt.Fprintf(&b, "  turn:      %s\n", strutil.FirstNonEmpty(item.TurnID, "(none)"))
+	fmt.Fprintf(&b, "  profile:   %s\n", strutil.FirstNonEmpty(item.InstructionProfile, "(none)"))
+	fmt.Fprintf(&b, "  model lane:%s\n", padField(strutil.FirstNonEmpty(item.ModelLane, "(none)")))
+	fmt.Fprintf(&b, "  patch:     %s\n", strutil.FirstNonEmpty(item.PatchID, "(none)"))
+	fmt.Fprintf(&b, "  checkpoint:%s\n", padField(strutil.FirstNonEmpty(item.CheckpointID, "(none)")))
 	fmt.Fprintf(&b, "  status:    %s\n", item.Status)
-	fmt.Fprintf(&b, "  recovery:  %s\n", firstNonEmpty(item.RecoveryMode, "(none)"))
+	fmt.Fprintf(&b, "  recovery:  %s\n", strutil.FirstNonEmpty(item.RecoveryMode, "(none)"))
 	if strings.TrimSpace(item.RecoveryDetails) != "" {
 		fmt.Fprintf(&b, "  recovery details: %s\n", item.RecoveryDetails)
 	}
@@ -193,8 +194,8 @@ func RenderChangeDetail(item *ChangeOperation) string {
 	}
 	if item.Capture != nil {
 		fmt.Fprintf(&b, "  capture:   head=%s branch=%s dirty=%t\n",
-			firstNonEmpty(item.Capture.HeadSHA, "(none)"),
-			firstNonEmpty(item.Capture.Branch, "(detached)"),
+			strutil.FirstNonEmpty(item.Capture.HeadSHA, "(none)"),
+			strutil.FirstNonEmpty(item.Capture.Branch, "(detached)"),
 			item.Capture.IsDirty,
 		)
 	}
@@ -264,7 +265,7 @@ func manualRecoveryDetails(item *ChangeOperation, base string) string {
 			parts = append(parts, "checkpoint="+item.CheckpointID)
 		}
 		if item.Capture != nil {
-			parts = append(parts, "capture_head="+firstNonEmpty(item.Capture.HeadSHA, "(none)"))
+			parts = append(parts, "capture_head="+strutil.FirstNonEmpty(item.Capture.HeadSHA, "(none)"))
 		}
 	}
 	return strings.Join(compactStrings(parts), "; ")

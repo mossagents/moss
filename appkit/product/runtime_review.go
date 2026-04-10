@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -124,7 +125,7 @@ func RenderReviewReport(report ReviewReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "mosscode review (%s)\n", report.Mode)
 	if report.Repo.Available {
-		fmt.Fprintf(&b, "Repo: %s @ %s", report.Repo.Root, firstNonEmpty(report.Repo.Branch, "(detached)"))
+		fmt.Fprintf(&b, "Repo: %s @ %s", report.Repo.Root, strutil.FirstNonEmpty(report.Repo.Branch, "(detached)"))
 		if report.Repo.Dirty {
 			b.WriteString(" dirty=true")
 		}
@@ -146,7 +147,7 @@ func RenderReviewReport(report ReviewReport) string {
 		b.WriteString("Snapshots:\n")
 		for _, snapshot := range report.Snapshots {
 			fmt.Fprintf(&b, "- %s | created=%s | head=%s | patches=%d | session=%s | note=%s\n",
-				snapshot.ID, snapshot.CreatedAt.UTC().Format(time.RFC3339), firstNonEmpty(snapshot.Head, "(none)"), snapshot.PatchCount, firstNonEmpty(snapshot.SessionID, "(none)"), firstNonEmpty(snapshot.Note, "(none)"))
+				snapshot.ID, snapshot.CreatedAt.UTC().Format(time.RFC3339), strutil.FirstNonEmpty(snapshot.Head, "(none)"), snapshot.PatchCount, strutil.FirstNonEmpty(snapshot.SessionID, "(none)"), strutil.FirstNonEmpty(snapshot.Note, "(none)"))
 		}
 	case "snapshot":
 		if report.Snapshot == nil {
@@ -155,12 +156,12 @@ func RenderReviewReport(report ReviewReport) string {
 		}
 		snapshot := report.Snapshot
 		fmt.Fprintf(&b, "Snapshot: %s\n", snapshot.ID)
-		fmt.Fprintf(&b, "  session: %s\n", firstNonEmpty(snapshot.SessionID, "(none)"))
+		fmt.Fprintf(&b, "  session: %s\n", strutil.FirstNonEmpty(snapshot.SessionID, "(none)"))
 		fmt.Fprintf(&b, "  mode:    %s\n", snapshot.Mode)
-		fmt.Fprintf(&b, "  branch:  %s\n", firstNonEmpty(snapshot.Branch, "(detached)"))
-		fmt.Fprintf(&b, "  head:    %s\n", firstNonEmpty(snapshot.Head, "(none)"))
+		fmt.Fprintf(&b, "  branch:  %s\n", strutil.FirstNonEmpty(snapshot.Branch, "(detached)"))
+		fmt.Fprintf(&b, "  head:    %s\n", strutil.FirstNonEmpty(snapshot.Head, "(none)"))
 		fmt.Fprintf(&b, "  patches: %d\n", snapshot.PatchCount)
-		fmt.Fprintf(&b, "  note:    %s\n", firstNonEmpty(snapshot.Note, "(none)"))
+		fmt.Fprintf(&b, "  note:    %s\n", strutil.FirstNonEmpty(snapshot.Note, "(none)"))
 	case "changes":
 		if len(report.Changes) == 0 {
 			b.WriteString("Changes: none\n")

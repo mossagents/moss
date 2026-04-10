@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,11 +45,11 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 		App:                   appName,
 		Workspace:             workspace,
 		Provider:              provider,
-		Model:                 firstNonEmpty(model, "(default)"),
-		Trust:                 firstNonEmpty(trust, appconfig.TrustTrusted),
-		ApprovalMode:          firstNonEmpty(approvalMode, "confirm"),
-		Profile:               firstNonEmpty(profile, "default"),
-		Theme:                 firstNonEmpty(theme, "default"),
+		Model:                 strutil.FirstNonEmpty(model, "(default)"),
+		Trust:                 strutil.FirstNonEmpty(trust, appconfig.TrustTrusted),
+		ApprovalMode:          strutil.FirstNonEmpty(approvalMode, "confirm"),
+		Profile:               strutil.FirstNonEmpty(profile, "default"),
+		Theme:                 strutil.FirstNonEmpty(theme, "default"),
 		DebugEnabled:          os.Getenv("MOSS_DEBUG") == "1",
 		GlobalConfig:          appconfig.DefaultGlobalConfigPath(),
 		ProjectConfig:         appconfig.DefaultProjectConfigPath(workspace),
@@ -74,14 +75,14 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 func RenderDebugConfigReport(report DebugConfigReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "mosscode debug-config\n")
-	fmt.Fprintf(&b, "Workspace: %s\n", firstNonEmpty(report.Workspace, "."))
+	fmt.Fprintf(&b, "Workspace: %s\n", strutil.FirstNonEmpty(report.Workspace, "."))
 	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s | profile=%s | theme=%s\n",
-		firstNonEmpty(report.Provider, "(default)"),
-		firstNonEmpty(report.Model, "(default)"),
-		firstNonEmpty(report.Trust, appconfig.TrustTrusted),
-		firstNonEmpty(report.ApprovalMode, "confirm"),
-		firstNonEmpty(report.Profile, "default"),
-		firstNonEmpty(report.Theme, "default"))
+		strutil.FirstNonEmpty(report.Provider, "(default)"),
+		strutil.FirstNonEmpty(report.Model, "(default)"),
+		strutil.FirstNonEmpty(report.Trust, appconfig.TrustTrusted),
+		strutil.FirstNonEmpty(report.ApprovalMode, "confirm"),
+		strutil.FirstNonEmpty(report.Profile, "default"),
+		strutil.FirstNonEmpty(report.Theme, "default"))
 	fmt.Fprintf(&b, "Debug logging: enabled=%t path=%s\n", report.DebugEnabled, report.DebugLog)
 	fmt.Fprintf(&b, "Global config: %s\n", renderDebugPath(report.GlobalConfig))
 	fmt.Fprintf(&b, "Project config: %s\n", renderDebugPath(report.ProjectConfig))

@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
@@ -53,12 +54,12 @@ func ShowConfig(flags *appkit.AppFlags, showSensitive bool) (string, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Config file: %s\n", cfgPath)
 	fmt.Fprintf(&b, "Persisted defaults:\n")
-	fmt.Fprintf(&b, "  provider: %s\n", firstNonEmpty(cfg.EffectiveAPIType(), "(not set)"))
-	fmt.Fprintf(&b, "  name:     %s\n", firstNonEmpty(cfg.DisplayProviderName(), "(not set)"))
-	fmt.Fprintf(&b, "  model:    %s\n", firstNonEmpty(cfg.Model, "(not set)"))
-	fmt.Fprintf(&b, "  base_url: %s\n", firstNonEmpty(cfg.BaseURL, "(not set)"))
-	fmt.Fprintf(&b, "  tui.theme: %s\n", firstNonEmpty(cfg.TUI.Theme, "default"))
-	fmt.Fprintf(&b, "  tui.personality: %s\n", firstNonEmpty(cfg.TUI.Personality, PersonalityFriendly))
+	fmt.Fprintf(&b, "  provider: %s\n", strutil.FirstNonEmpty(cfg.EffectiveAPIType(), "(not set)"))
+	fmt.Fprintf(&b, "  name:     %s\n", strutil.FirstNonEmpty(cfg.DisplayProviderName(), "(not set)"))
+	fmt.Fprintf(&b, "  model:    %s\n", strutil.FirstNonEmpty(cfg.Model, "(not set)"))
+	fmt.Fprintf(&b, "  base_url: %s\n", strutil.FirstNonEmpty(cfg.BaseURL, "(not set)"))
+	fmt.Fprintf(&b, "  tui.theme: %s\n", strutil.FirstNonEmpty(cfg.TUI.Theme, "default"))
+	fmt.Fprintf(&b, "  tui.personality: %s\n", strutil.FirstNonEmpty(cfg.TUI.Personality, PersonalityFriendly))
 	fastMode := "false"
 	if cfg.TUI.FastMode != nil && *cfg.TUI.FastMode {
 		fastMode = "true"
@@ -76,10 +77,10 @@ func ShowConfig(flags *appkit.AppFlags, showSensitive bool) (string, error) {
 	}
 	if flags != nil {
 		fmt.Fprintf(&b, "\nEffective runtime:\n")
-		fmt.Fprintf(&b, "  provider: %s\n", firstNonEmpty(flags.EffectiveAPIType(), "(not set)"))
-		fmt.Fprintf(&b, "  name:     %s\n", firstNonEmpty(flags.DisplayProviderName(), "(not set)"))
-		fmt.Fprintf(&b, "  model:    %s\n", firstNonEmpty(flags.Model, "(default)"))
-		fmt.Fprintf(&b, "  base_url: %s\n", firstNonEmpty(flags.BaseURL, "(not set)"))
+		fmt.Fprintf(&b, "  provider: %s\n", strutil.FirstNonEmpty(flags.EffectiveAPIType(), "(not set)"))
+		fmt.Fprintf(&b, "  name:     %s\n", strutil.FirstNonEmpty(flags.DisplayProviderName(), "(not set)"))
+		fmt.Fprintf(&b, "  model:    %s\n", strutil.FirstNonEmpty(flags.Model, "(default)"))
+		fmt.Fprintf(&b, "  base_url: %s\n", strutil.FirstNonEmpty(flags.BaseURL, "(not set)"))
 	}
 	return b.String(), nil
 }
@@ -209,7 +210,7 @@ func RenderMCPServerList(servers []MCPServerConfigView) string {
 	fmt.Fprintf(&b, "Configured MCP servers:\n")
 	for _, server := range servers {
 		fmt.Fprintf(&b, "  - %s [%s] transport=%s enabled=%t effective=%t status=%s",
-			server.Name, server.Source, firstNonEmpty(server.Transport, "-"), server.Enabled, server.Effective, server.Status)
+			server.Name, server.Source, strutil.FirstNonEmpty(server.Transport, "-"), server.Enabled, server.Effective, server.Status)
 		if server.Target != "" {
 			fmt.Fprintf(&b, " target=%s", server.Target)
 		}
@@ -233,7 +234,7 @@ func RenderMCPServerDetail(servers []MCPServerConfigView) string {
 		fmt.Fprintf(&b, "MCP server: %s\n", server.Name)
 		fmt.Fprintf(&b, "  source:     %s\n", server.Source)
 		fmt.Fprintf(&b, "  path:       %s\n", server.Path)
-		fmt.Fprintf(&b, "  transport:  %s\n", firstNonEmpty(server.Transport, "-"))
+		fmt.Fprintf(&b, "  transport:  %s\n", strutil.FirstNonEmpty(server.Transport, "-"))
 		fmt.Fprintf(&b, "  enabled:    %t\n", server.Enabled)
 		fmt.Fprintf(&b, "  effective:  %t\n", server.Effective)
 		fmt.Fprintf(&b, "  status:     %s\n", server.Status)
@@ -332,14 +333,7 @@ func maskKey(key string) string {
 	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return value
-		}
-	}
-	return ""
-}
+
 
 func buildMCPServerViews(workspace, trust string, globalCfg, projectCfg *appconfig.Config) []MCPServerConfigView {
 	trust = appconfig.NormalizeTrustLevel(trust)

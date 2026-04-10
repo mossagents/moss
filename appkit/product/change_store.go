@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -171,7 +172,7 @@ func stateEntryFromChange(item *ChangeOperation) appruntime.StateEntry {
 		SessionID: strings.TrimSpace(item.SessionID),
 		RepoRoot:  canonicalRepoRoot(item.RepoRoot),
 		Status:    string(item.Status),
-		Title:     firstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
+		Title:     strutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
 		Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
 		SearchText: strings.ToLower(strings.TrimSpace(strings.Join(compactStrings([]string{
 			item.ID,

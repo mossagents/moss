@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"encoding/json"
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
@@ -107,7 +108,7 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	}
 	requested := strings.TrimSpace(opts.RequestedProfile)
 	if requested == "" {
-		requested = firstNonEmptyProfile(
+		requested = strutil.FirstNonEmpty(
 			strings.TrimSpace(projectCfg.DefaultProfile),
 			strings.TrimSpace(globalCfg.DefaultProfile),
 			"default",
@@ -117,8 +118,8 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	if !ok {
 		return ResolvedProfile{}, fmt.Errorf("unknown profile %q", requested)
 	}
-	trust := appconfig.NormalizeTrustLevel(firstNonEmptyProfile(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
-	approval := normalizeExecutionApprovalMode(firstNonEmptyProfile(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
+	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
+	approval := normalizeExecutionApprovalMode(strutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
 	policy := ResolveExecutionPolicyForWorkspace(opts.Workspace, trust, approval)
 	var overrideErr error
 	policy, overrideErr = ApplyProfileExecution(policy, resolvedCfg.Execution)
@@ -128,8 +129,8 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	return ResolvedProfile{
 		RequestedName:   requested,
 		Name:            requested,
-		Label:           firstNonEmptyProfile(strings.TrimSpace(resolvedCfg.Label), requested),
-		TaskMode:        firstNonEmptyProfile(strings.TrimSpace(resolvedCfg.TaskMode), requested),
+		Label:           strutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.Label), requested),
+		TaskMode:        strutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.TaskMode), requested),
 		Trust:           trust,
 		ApprovalMode:    approval,
 		ExecutionPolicy: policy,
@@ -138,17 +139,17 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 }
 
 func ResolveProfileFromPosture(profileName string, posture SessionPosture) (ResolvedProfile, error) {
-	trust := appconfig.NormalizeTrustLevel(firstNonEmptyProfile(posture.EffectiveTrust, appconfig.TrustTrusted))
-	approval := normalizeExecutionApprovalMode(firstNonEmptyProfile(posture.EffectiveApproval, "confirm"))
+	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(posture.EffectiveTrust, appconfig.TrustTrusted))
+	approval := normalizeExecutionApprovalMode(strutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
 	policy := posture.ExecutionPolicy
 	if !posture.HasExecution {
 		policy = ResolveExecutionPolicyForWorkspace("", trust, approval)
 	}
 	return ResolvedProfile{
 		RequestedName:   strings.TrimSpace(profileName),
-		Name:            firstNonEmptyProfile(strings.TrimSpace(profileName), "legacy"),
-		Label:           firstNonEmptyProfile(strings.TrimSpace(profileName), "legacy"),
-		TaskMode:        firstNonEmptyProfile(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
+		Name:            strutil.FirstNonEmpty(strings.TrimSpace(profileName), "legacy"),
+		Label:           strutil.FirstNonEmpty(strings.TrimSpace(profileName), "legacy"),
+		TaskMode:        strutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
 		Trust:           trust,
 		ApprovalMode:    approval,
 		ExecutionPolicy: policy,
@@ -182,9 +183,9 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 		return posture
 	}
 	posture.Profile = strings.TrimSpace(sess.Config.Profile)
-	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(firstNonEmptyProfile(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
+	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
 	posture.EffectiveApproval = normalizeExecutionApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
-	posture.TaskMode = firstNonEmptyProfile(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
+	posture.TaskMode = strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
 	if policy, ok := metadataExecutionPolicy(sess.Config.Metadata); ok {
 		posture.ExecutionPolicy = policy
 		posture.HasExecution = true
@@ -258,8 +259,8 @@ func ApplyProfileExecution(policy ExecutionPolicy, override appconfig.ExecutionP
 }
 
 func resolveLegacyProfile(opts ProfileResolveOptions) ResolvedProfile {
-	trust := appconfig.NormalizeTrustLevel(firstNonEmptyProfile(opts.Trust, appconfig.TrustTrusted))
-	approval := normalizeExecutionApprovalMode(firstNonEmptyProfile(opts.ApprovalMode, "confirm"))
+	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(opts.Trust, appconfig.TrustTrusted))
+	approval := normalizeExecutionApprovalMode(strutil.FirstNonEmpty(opts.ApprovalMode, "confirm"))
 	return ResolvedProfile{
 		RequestedName:   "",
 		Name:            "default",
@@ -497,11 +498,4 @@ func metadataExecutionPolicy(meta map[string]any) (ExecutionPolicy, bool) {
 	return policy, true
 }
 
-func firstNonEmptyProfile(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
+

@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -243,7 +244,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		if err != nil {
 			return InspectReport{}, err
 		}
-		report.SessionID = firstNonEmpty(compare.Left.SessionID, compare.Right.SessionID)
+		report.SessionID = strutil.FirstNonEmpty(compare.Left.SessionID, compare.Right.SessionID)
 		report.Compare = compare
 		return report, nil
 	case "governance":
@@ -287,10 +288,10 @@ func RenderInspectReport(report InspectReport) string {
 				item.SortTime.UTC().Format(time.RFC3339),
 				item.Kind,
 				item.RecordID,
-				firstNonEmpty(item.SessionID, "(none)"),
-				firstNonEmpty(item.Title, "(none)"),
-				firstNonEmpty(item.Status, "(none)"),
-				firstNonEmpty(item.Summary, "(none)"),
+				strutil.FirstNonEmpty(item.SessionID, "(none)"),
+				strutil.FirstNonEmpty(item.Title, "(none)"),
+				strutil.FirstNonEmpty(item.Status, "(none)"),
+				strutil.FirstNonEmpty(item.Summary, "(none)"),
 			)
 		}
 	case "run":
@@ -300,15 +301,15 @@ func RenderInspectReport(report InspectReport) string {
 		}
 		run := report.Run
 		fmt.Fprintf(&b, "Run session: %s\n", run.SessionID)
-		fmt.Fprintf(&b, "Run id:      %s\n", firstNonEmpty(run.RunID, "(none)"))
-		fmt.Fprintf(&b, "Turn id:     %s\n", firstNonEmpty(run.TurnID, "(none)"))
+		fmt.Fprintf(&b, "Run id:      %s\n", strutil.FirstNonEmpty(run.RunID, "(none)"))
+		fmt.Fprintf(&b, "Turn id:     %s\n", strutil.FirstNonEmpty(run.TurnID, "(none)"))
 		if run.TurnPlan != nil {
 			fmt.Fprintf(
 				&b,
 				"Turn plan:   iteration=%d profile=%s lane=%s lightweight=%t visible=%d hidden=%d approval=%d\n",
 				run.TurnPlan.Iteration,
-				firstNonEmpty(run.TurnPlan.InstructionProfile, "(default)"),
-				firstNonEmpty(run.TurnPlan.ModelLane, "(default)"),
+				strutil.FirstNonEmpty(run.TurnPlan.InstructionProfile, "(default)"),
+				strutil.FirstNonEmpty(run.TurnPlan.ModelLane, "(default)"),
 				run.TurnPlan.LightweightChat,
 				run.TurnPlan.VisibleToolsCount,
 				run.TurnPlan.HiddenToolsCount,
@@ -319,22 +320,22 @@ func RenderInspectReport(report InspectReport) string {
 			fmt.Fprintf(
 				&b,
 				"Model route: configured=%s lane=%s prefer_cheap=%t max_cost_tier=%d reasons=%s capabilities=%s\n",
-				firstNonEmpty(run.ModelRoute.ConfiguredModel, "(default)"),
-				firstNonEmpty(run.ModelRoute.Lane, "(default)"),
+				strutil.FirstNonEmpty(run.ModelRoute.ConfiguredModel, "(default)"),
+				strutil.FirstNonEmpty(run.ModelRoute.Lane, "(default)"),
 				run.ModelRoute.PreferCheap,
 				run.ModelRoute.MaxCostTier,
-				firstNonEmpty(strings.Join(run.ModelRoute.ReasonCodes, ","), "(none)"),
-				firstNonEmpty(strings.Join(run.ModelRoute.Capabilities, ","), "(none)"),
+				strutil.FirstNonEmpty(strings.Join(run.ModelRoute.ReasonCodes, ","), "(none)"),
+				strutil.FirstNonEmpty(strings.Join(run.ModelRoute.Capabilities, ","), "(none)"),
 			)
 		}
 		if run.ToolRoute != nil {
 			fmt.Fprintf(
 				&b,
 				"Tool route:  visible=%s hidden=%s approval=%s digest=%s\n",
-				firstNonEmpty(strings.Join(run.ToolRoute.VisibleTools, ","), "(none)"),
-				firstNonEmpty(strings.Join(run.ToolRoute.HiddenTools, ","), "(none)"),
-				firstNonEmpty(strings.Join(run.ToolRoute.ApprovalTools, ","), "(none)"),
-				firstNonEmpty(run.ToolRoute.RouteDigest, "(none)"),
+				strutil.FirstNonEmpty(strings.Join(run.ToolRoute.VisibleTools, ","), "(none)"),
+				strutil.FirstNonEmpty(strings.Join(run.ToolRoute.HiddenTools, ","), "(none)"),
+				strutil.FirstNonEmpty(strings.Join(run.ToolRoute.ApprovalTools, ","), "(none)"),
+				strutil.FirstNonEmpty(run.ToolRoute.RouteDigest, "(none)"),
 			)
 			if len(run.ToolRoute.Decisions) > 0 {
 				b.WriteString("Tool decisions:\n")
@@ -343,11 +344,11 @@ func RenderInspectReport(report InspectReport) string {
 						&b,
 						"- %s | status=%s | source=%s | owner=%s | risk=%s | reasons=%s\n",
 						decision.Name,
-						firstNonEmpty(decision.Status, "(none)"),
-						firstNonEmpty(decision.Source, "(none)"),
-						firstNonEmpty(decision.Owner, "(none)"),
-						firstNonEmpty(decision.Risk, "(none)"),
-						firstNonEmpty(strings.Join(decision.ReasonCodes, ","), "(none)"),
+						strutil.FirstNonEmpty(decision.Status, "(none)"),
+						strutil.FirstNonEmpty(decision.Source, "(none)"),
+						strutil.FirstNonEmpty(decision.Owner, "(none)"),
+						strutil.FirstNonEmpty(decision.Risk, "(none)"),
+						strutil.FirstNonEmpty(strings.Join(decision.ReasonCodes, ","), "(none)"),
 					)
 				}
 			}
@@ -360,13 +361,13 @@ func RenderInspectReport(report InspectReport) string {
 				fmt.Fprintf(
 					&b,
 					"- model=%s attempt=%d retry=%d outcome=%s breaker=%s next=%s reason=%s\n",
-					firstNonEmpty(item.CandidateModel, "(none)"),
+					strutil.FirstNonEmpty(item.CandidateModel, "(none)"),
 					item.AttemptIndex,
 					item.CandidateRetry,
-					firstNonEmpty(item.Outcome, "(none)"),
-					firstNonEmpty(item.BreakerState, "(none)"),
-					firstNonEmpty(item.FailoverTo, "(none)"),
-					firstNonEmpty(item.FailureReason, "(none)"),
+					strutil.FirstNonEmpty(item.Outcome, "(none)"),
+					strutil.FirstNonEmpty(item.BreakerState, "(none)"),
+					strutil.FirstNonEmpty(item.FailoverTo, "(none)"),
+					strutil.FirstNonEmpty(item.FailureReason, "(none)"),
 				)
 			}
 		}
@@ -380,9 +381,9 @@ func RenderInspectReport(report InspectReport) string {
 					"- %s | id=%s | status=%s | title=%s | summary=%s\n",
 					item.SortTime.UTC().Format(time.RFC3339),
 					item.RecordID,
-					firstNonEmpty(item.Status, "(none)"),
-					firstNonEmpty(item.Title, "(none)"),
-					firstNonEmpty(item.Summary, "(none)"),
+					strutil.FirstNonEmpty(item.Status, "(none)"),
+					strutil.FirstNonEmpty(item.Title, "(none)"),
+					strutil.FirstNonEmpty(item.Summary, "(none)"),
 				)
 			}
 		}
@@ -405,15 +406,15 @@ func RenderInspectReport(report InspectReport) string {
 				item.ID,
 				item.Status,
 				item.Recoverable,
-				firstNonEmpty(item.Source, "(none)"),
-				firstNonEmpty(item.ParentID, "(none)"),
-				firstNonEmpty(item.TaskID, "(none)"),
+				strutil.FirstNonEmpty(item.Source, "(none)"),
+				strutil.FirstNonEmpty(item.ParentID, "(none)"),
+				strutil.FirstNonEmpty(item.TaskID, "(none)"),
 				item.CheckpointCount,
 				item.ChangeCount,
 				item.TaskCount,
 				item.Archived,
-				firstNonEmpty(item.UpdatedAt, "(none)"),
-				firstNonEmpty(item.Preview, "(none)"),
+				strutil.FirstNonEmpty(item.UpdatedAt, "(none)"),
+				strutil.FirstNonEmpty(item.Preview, "(none)"),
 			)
 		}
 	case "thread":

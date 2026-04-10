@@ -1,6 +1,7 @@
 package product
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/kernel/checkpoint"
@@ -71,7 +72,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 			Kind:      checkpoint.ForkSourceSession,
 			SourceID:  thread.Thread.SessionID,
 			SessionID: thread.Thread.SessionID,
-			Label:     firstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
+			Label:     strutil.FirstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
 			Lineage:   append([]session.LineageRef(nil), thread.Thread.Lineage...),
 		})
 	}
@@ -81,7 +82,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 			SourceID:     ckpt.ID,
 			SessionID:    ckpt.SessionID,
 			CheckpointID: ckpt.ID,
-			Label:        firstNonEmpty(ckpt.Note, ckpt.ID),
+			Label:        strutil.FirstNonEmpty(ckpt.Note, ckpt.ID),
 			Lineage:      append([]session.LineageRef(nil), ckpt.Lineage...),
 		})
 	}

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -374,7 +375,7 @@ func buildRepoStartupFragment(ctx context.Context, k *kernel.Kernel) session.Pro
 	}
 	lines := []string{
 		fmt.Sprintf("Repo root: %s", strings.TrimSpace(state.RepoRoot)),
-		fmt.Sprintf("Branch: %s", firstNonEmpty(strings.TrimSpace(state.Branch), "(detached)")),
+		fmt.Sprintf("Branch: %s", strutil.FirstNonEmpty(strings.TrimSpace(state.Branch), "(detached)")),
 		fmt.Sprintf("Dirty: %t", state.IsDirty),
 	}
 	if len(state.Untracked) > 0 {
@@ -434,7 +435,7 @@ func buildStateCatalogStartupFragment(k *kernel.Kernel, sess *session.Session) s
 	}
 	lines := make([]string, 0, len(page.Items))
 	for _, item := range page.Items {
-		line := fmt.Sprintf("- [%s/%s] %s", item.Kind, firstNonEmpty(item.Status, "active"), strings.TrimSpace(item.Title))
+		line := fmt.Sprintf("- [%s/%s] %s", item.Kind, strutil.FirstNonEmpty(item.Status, "active"), strings.TrimSpace(item.Title))
 		if summary := strings.TrimSpace(item.Summary); summary != "" {
 			line += " - " + summary
 		}
@@ -557,7 +558,7 @@ func buildRepoRealtimeFragment(previous, current repoRealtimeState) session.Prom
 	}
 	lines := make([]string, 0, 4)
 	if previous.Branch != current.Branch {
-		lines = append(lines, fmt.Sprintf("Branch changed: %s -> %s", firstNonEmpty(previous.Branch, "(detached)"), firstNonEmpty(current.Branch, "(detached)")))
+		lines = append(lines, fmt.Sprintf("Branch changed: %s -> %s", strutil.FirstNonEmpty(previous.Branch, "(detached)"), strutil.FirstNonEmpty(current.Branch, "(detached)")))
 	}
 	if previous.Dirty != current.Dirty {
 		lines = append(lines, fmt.Sprintf("Dirty changed: %t -> %t", previous.Dirty, current.Dirty))

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"bytes"
 	"fmt"
 	"gopkg.in/yaml.v3"
@@ -204,9 +205,9 @@ func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity 
 	provider = normalizeLLMAPIType(provider)
 	name = strings.TrimSpace(name)
 
-	apiType = firstNonEmpty(provider, apiType)
-	provider = firstNonEmpty(provider, apiType)
-	name = firstNonEmpty(name, apiType, provider)
+	apiType = strutil.FirstNonEmpty(provider, apiType)
+	provider = strutil.FirstNonEmpty(provider, apiType)
+	name = strutil.FirstNonEmpty(name, apiType, provider)
 
 	return ProviderIdentity{
 		APIType:  apiType,
@@ -216,11 +217,11 @@ func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity 
 }
 
 func (p ProviderIdentity) EffectiveAPIType() string {
-	return normalizeLLMAPIType(firstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider)))
+	return normalizeLLMAPIType(strutil.FirstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider)))
 }
 
 func (p ProviderIdentity) DisplayName() string {
-	return firstNonEmpty(strings.TrimSpace(p.Name), p.EffectiveAPIType())
+	return strutil.FirstNonEmpty(strings.TrimSpace(p.Name), p.EffectiveAPIType())
 }
 
 func (p ProviderIdentity) Label() string {
@@ -554,8 +555,8 @@ func ResolvePromptInstructionLayers(workspace, trust string) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
-	configInstructions := firstNonEmpty(projectCfg.BaseInstructions, globalCfg.BaseInstructions)
-	modelInstructions := firstNonEmpty(projectCfg.ModelInstructions, globalCfg.ModelInstructions)
+	configInstructions := strutil.FirstNonEmpty(projectCfg.BaseInstructions, globalCfg.BaseInstructions)
+	modelInstructions := strutil.FirstNonEmpty(projectCfg.ModelInstructions, globalCfg.ModelInstructions)
 	return configInstructions, modelInstructions, nil
 }
 
@@ -679,11 +680,4 @@ skills:
   #   url: http://localhost:3000/sse
 `
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
+

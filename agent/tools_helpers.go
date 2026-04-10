@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"errors"
 	"fmt"
@@ -220,7 +221,7 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 	)
 
 	baseTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
-	contract := normalizeTaskContract(requestedContract, firstNonEmpty(taskID, requestedContract.TaskID), task, baseTools, cfg)
+	contract := normalizeTaskContract(requestedContract, strutil.FirstNonEmpty(taskID, requestedContract.TaskID), task, baseTools, cfg)
 	scopedTools := withTaskContract(baseTools, contract)
 
 	sessionPrompt := strings.TrimSpace(cfg.SystemPrompt)
