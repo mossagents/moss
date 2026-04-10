@@ -27,6 +27,15 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return overlay.HandleKey(m, msg)
 		}
+		// Extension key bindings evaluated before built-in handlers.
+		ctx := m.tuiContext()
+		for _, ext := range m.extensions {
+			if handler, ok := ext.KeyBindings[msg.String()]; ok {
+				if consumed, cmd := handler(ctx); consumed {
+					return m, cmd
+				}
+			}
+		}
 		switch msg.String() {
 		case "ctrl+c":
 			return m.handleCtrlC()
@@ -218,6 +227,37 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 
 	case gitBranchMsg:
 		m.gitBranch = string(msg)
+		return m, nil
+
+	case openCustomOverlayMsg:
+		for _, ext := range m.extensions {
+			if ext.Overlays != nil {
+				if factory, ok := ext.Overlays[msg.id]; ok {
+					m.customOverlayImpl = factory()
+					if m.overlays != nil {
+						m.overlays.Open(overlayExt)
+					}
+					return m, nil
+				}
+			}
+		}
+		return m, nil
+
+	case closeCustomOverlayMsg:
+		m.customOverlayImpl = nil
+		if m.overlays != nil {
+			m.overlays.Close(overlayExt)
+		}
+		return m, nil
+
+	case sendFromOverlayMsg:
+		m.customOverlayImpl = nil
+		if m.overlays != nil {
+			m.overlays.Close(overlayExt)
+		}
+		if strings.TrimSpace(msg.text) != "" {
+			return m.submitInjectedText(msg.text)
+		}
 		return m, nil
 
 	case threadSwitchResultMsg:

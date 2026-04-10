@@ -8,11 +8,22 @@ import (
 )
 
 func (m chatModel) renderHeaderMetaLine() string {
-	posture := m.compactPostureSummary()
-	if posture == "" {
+	var parts []string
+	if posture := m.compactPostureSummary(); posture != "" {
+		parts = append(parts, posture)
+	}
+	ctx := m.tuiContext()
+	for _, ext := range m.extensions {
+		for _, widget := range ext.HeaderMetaWidgets {
+			if seg := strings.TrimSpace(widget(ctx)); seg != "" {
+				parts = append(parts, seg)
+			}
+		}
+	}
+	if len(parts) == 0 {
 		return shellMetaBarStyle.Render("")
 	}
-	return shellMetaBarStyle.Render(shellHeaderDetailStyle.Render(posture))
+	return shellMetaBarStyle.Render(shellHeaderDetailStyle.Render(strings.Join(parts, "  •  ")))
 }
 
 func (m chatModel) renderComposerMetaLine(width int) string {

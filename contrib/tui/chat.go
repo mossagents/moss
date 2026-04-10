@@ -194,6 +194,10 @@ type chatModel struct {
 	slashHints    []string
 	slashPopup    *slashPopupState
 
+	// Extension system
+	extensions       []*Extension
+	customOverlayImpl CustomOverlay
+
 	now          func() time.Time
 	lastEscAt    time.Time
 	lastCtrlC    time.Time
@@ -266,6 +270,64 @@ func (m *chatModel) setProviderIdentity(provider, providerName string) {
 	m.providerID = identity.Provider
 	m.providerName = identity.Name
 	m.provider = identity.Label()
+}
+
+// tuiContext returns a read-only snapshot of the current TUI state for use by extensions.
+func (m chatModel) tuiContext() TUIContext {
+	return TUIContext{
+		Workspace:   m.workspace,
+		Provider:    m.provider,
+		Model:       m.model,
+		Profile:     m.profile,
+		Trust:       m.trust,
+		SessionID:   m.currentSessionID,
+		IsStreaming: m.streaming,
+		InputValue:  m.textarea.Value(),
+		Width:       m.width,
+	}
+}
+
+// overlayContext returns an OverlayContext for the given overlay dimensions.
+func (m chatModel) overlayContext(w, h int) OverlayContext {
+	return OverlayContext{TUIContext: m.tuiContext(), OverlayWidth: w, OverlayHeight: h}
+}
+
+// submitInjectedText sends text as if submitted by the user.
+// Text starting with "/" is dispatched as a slash command.
+func (m chatModel) submitInjectedText(text string) (chatModel, tea.Cmd) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return m, nil
+	}
+	if strings.HasPrefix(text, "/") {
+		return m.handleSlashCommand(text)
+	}
+	return m.dispatchUserSubmission(text, text, []model.ContentPart{model.TextPart(text)})
+}
+
+// installExtensions validates and attaches a set of extensions to the model.
+// Returns an error if any extension registers a duplicate slash command or
+// attempts to override a core key binding.
+func (m *chatModel) installExtensions(exts []*Extension) error {
+	seen := map[string]string{}
+	for _, ext := range exts {
+		if ext == nil {
+			continue
+		}
+		for cmd := range ext.SlashCommands {
+			if prev, ok := seen[cmd]; ok {
+				return fmt.Errorf("tui extension %q: slash command %s already registered by %q", ext.Name, cmd, prev)
+			}
+			seen[cmd] = ext.Name
+		}
+		for key := range ext.KeyBindings {
+			if coreKeys[key] {
+				return fmt.Errorf("tui extension %q: cannot override core key binding %q", ext.Name, key)
+			}
+		}
+	}
+	m.extensions = exts
+	return nil
 }
 
 func (m chatModel) Init() tea.Cmd {

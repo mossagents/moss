@@ -87,6 +87,13 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	if handler, ok := slashCommandRegistry[cmd]; ok {
 		return handler(m, args, input, draft)
 	}
+	// Extension slash commands (after built-ins, before workspace custom commands).
+	ctx := m.tuiContext()
+	for _, ext := range m.extensions {
+		if handler, ok := ext.SlashCommands[cmd]; ok {
+			return m, handler(ctx, args)
+		}
+	}
 	if custom, ok := m.findCustomCommand(cmd); ok {
 		runText := product.RenderCustomCommandPrompt(custom, strings.TrimSpace(strings.Join(args, " ")), m.workspace)
 		if runText == "" {

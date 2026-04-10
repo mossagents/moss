@@ -59,6 +59,9 @@ type Config struct {
 	PromptConfigInstructions string
 	PromptModelInstructions  string
 	ScheduleController       runtime.ScheduleController
+	// Extensions registers custom slash commands, key bindings, widgets, and overlays.
+	// Duplicate slash command names across extensions cause Run to return an error.
+	Extensions []*Extension
 }
 
 // kernelReadyMsg 表示 kernel 已初始化并启动，session 已创建。
@@ -813,6 +816,9 @@ func Run(cfg Config) error {
 		m.state = stateChat
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		if err := m.chat.installExtensions(cfg.Extensions); err != nil {
+			return err
+		}
 		m.chat.modelAuto = !hasPersistedModelOverride()
 		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {
@@ -875,6 +881,9 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		// Ignore installExtensions error here — welcome flow can't surface it cleanly.
+		// Extensions provided via Config are already validated on first boot.
+		_ = m.chat.installExtensions(m.config.Extensions)
 		m.chat.modelAuto = !hasPersistedModelOverride()
 		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {

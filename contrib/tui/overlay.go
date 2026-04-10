@@ -21,6 +21,7 @@ const (
 	overlayFork       overlayID = "fork"
 	overlayAgent      overlayID = "agent"
 	overlayMention    overlayID = "mention"
+	overlayExt        overlayID = "ext" // custom extension overlay
 )
 
 type overlayDialog interface {
@@ -490,6 +491,10 @@ func (m chatModel) activeOverlay() overlayDialog {
 			if m.mentionPicker != nil {
 				return mentionOverlayDialog{}
 			}
+		case overlayExt:
+			if m.customOverlayImpl != nil {
+				return extOverlayAdapter{impl: m.customOverlayImpl}
+			}
 		}
 	}
 	if m.transcriptOverlay != nil {
@@ -532,4 +537,22 @@ func (m chatModel) activeOverlay() overlayDialog {
 		return mentionOverlayDialog{}
 	}
 	return nil
+}
+
+// extOverlayAdapter wraps a CustomOverlay so it satisfies overlayDialog,
+// integrating custom overlays into the existing overlay stack.
+type extOverlayAdapter struct {
+	impl CustomOverlay
+}
+
+func (a extOverlayAdapter) ID() overlayID { return overlayExt }
+
+func (a extOverlayAdapter) View(m chatModel, width, height int) string {
+	return a.impl.View(m.overlayContext(width, height))
+}
+
+func (a extOverlayAdapter) HandleKey(m chatModel, msg tea.KeyMsg) (chatModel, tea.Cmd) {
+	ctx := m.overlayContext(m.width, m.height)
+	cmd := a.impl.HandleKey(ctx, msg)
+	return m, cmd
 }

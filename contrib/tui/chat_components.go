@@ -122,6 +122,14 @@ func (m chatModel) renderStatusPane(width int) string {
 		leftStr += "Esc Esc cancel"
 	default:
 		leftStr = "shift+tab profile  •  ctrl+o tools  •  /help"
+		ctx := m.tuiContext()
+		for _, ext := range m.extensions {
+			for _, widget := range ext.StatusWidgets {
+				if seg := strings.TrimSpace(widget(ctx)); seg != "" {
+					leftStr += "  •  " + seg
+				}
+			}
+		}
 	}
 
 	// Thread ID on the right (unless overridden above).

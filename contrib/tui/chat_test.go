@@ -2515,3 +2515,151 @@ func TestSlashCommandMediaSavePersistsAudioData(t *testing.T) {
 		t.Fatalf("expected saved audio file: %v", err)
 	}
 }
+
+// --- Extension system tests ---
+
+func TestInstallExtensionsDuplicateSlashCommandReturnsError(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ext1 := &Extension{Name: "alpha", SlashCommands: map[string]SlashHandlerFunc{"/foo": func(ctx TUIContext, args []string) tea.Cmd { return nil }}}
+	ext2 := &Extension{Name: "beta", SlashCommands: map[string]SlashHandlerFunc{"/foo": func(ctx TUIContext, args []string) tea.Cmd { return nil }}}
+	if err := m.installExtensions([]*Extension{ext1, ext2}); err == nil {
+		t.Fatal("expected error for duplicate slash command, got nil")
+	}
+}
+
+func TestInstallExtensionsCoreKeyOverrideReturnsError(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ext := &Extension{Name: "bad", KeyBindings: map[string]KeyHandlerFunc{"ctrl+c": func(ctx TUIContext) (bool, tea.Cmd) { return true, nil }}}
+	if err := m.installExtensions([]*Extension{ext}); err == nil {
+		t.Fatal("expected error for core key override, got nil")
+	}
+}
+
+func TestExtensionSlashCommandDispatch(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	called := false
+	ext := &Extension{
+		Name: "test",
+		SlashCommands: map[string]SlashHandlerFunc{
+			"/hello": func(ctx TUIContext, args []string) tea.Cmd {
+				called = true
+				return nil
+			},
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	m, _ = m.handleSlashCommand("/hello world")
+	if !called {
+		t.Fatal("extension slash handler was not called")
+	}
+}
+
+func TestExtensionSlashCommandDoesNotOverrideBuiltin(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	extCalled := false
+	ext := &Extension{
+		Name: "test",
+		SlashCommands: map[string]SlashHandlerFunc{
+			"/help": func(ctx TUIContext, args []string) tea.Cmd {
+				extCalled = true
+				return nil
+			},
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	m, _ = m.handleSlashCommand("/help")
+	if extCalled {
+		t.Fatal("extension should not override built-in /help command")
+	}
+}
+
+func TestExtensionKeyBindingFires(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	fired := false
+	ext := &Extension{
+		Name: "test",
+		KeyBindings: map[string]KeyHandlerFunc{
+			"ctrl+k": func(ctx TUIContext) (bool, tea.Cmd) {
+				fired = true
+				return true, nil
+			},
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlK})
+	if !fired {
+		t.Fatal("extension key binding was not fired")
+	}
+}
+
+func TestExtensionStatusWidget(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ext := &Extension{
+		Name:          "test",
+		StatusWidgets: []WidgetFunc{func(ctx TUIContext) string { return "my-status" }},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	m.width = 120
+	bar := m.renderStatusPane(120)
+	if !strings.Contains(bar, "my-status") {
+		t.Fatalf("expected extension status widget in status pane, got %q", bar)
+	}
+}
+
+func TestExtensionHeaderMetaWidget(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ext := &Extension{
+		Name:              "test",
+		HeaderMetaWidgets: []WidgetFunc{func(ctx TUIContext) string { return "meta-extra" }},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	line := m.renderHeaderMetaLine()
+	if !strings.Contains(line, "meta-extra") {
+		t.Fatalf("expected extension meta widget in header meta line, got %q", line)
+	}
+}
+
+func TestExtensionCustomOverlayOpenClose(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	ext := &Extension{
+		Name: "test",
+		Overlays: map[string]func() CustomOverlay{
+			"my-overlay": func() CustomOverlay { return &testOverlay{} },
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	// Open the overlay via message.
+	m, _ = m.Update(openCustomOverlayMsg{id: "my-overlay"})
+	if m.customOverlayImpl == nil {
+		t.Fatal("customOverlayImpl should be set after open")
+	}
+	if m.activeOverlay() == nil || m.activeOverlay().ID() != overlayExt {
+		t.Fatal("activeOverlay should return extOverlayAdapter after open")
+	}
+	// Close the overlay.
+	m, _ = m.Update(closeCustomOverlayMsg{})
+	if m.customOverlayImpl != nil {
+		t.Fatal("customOverlayImpl should be nil after close")
+	}
+	if m.activeOverlay() != nil {
+		t.Fatal("activeOverlay should return nil after close")
+	}
+}
+
+type testOverlay struct{}
+
+func (o *testOverlay) ID() string                                                   { return "my-overlay" }
+func (o *testOverlay) View(ctx OverlayContext) string                               { return "test overlay" }
+func (o *testOverlay) HandleKey(ctx OverlayContext, key tea.KeyMsg) tea.Cmd         { return nil }
