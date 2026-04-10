@@ -1372,6 +1372,42 @@ func TestSlashCommandStatuslineSetPersistsSelection(t *testing.T) {
 	}
 }
 
+func TestStatusLineBarRendersConfiguredItems(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", "/home/user/myproject")
+	m.ready = true
+	m.width = 160
+	m.height = 40
+	m.recalcLayout()
+	m.currentSessionID = "abcdef1234567890"
+	m.statusLineItems = []string{"model", "workspace", "thread"}
+	m.messages = []chatMessage{
+		{kind: msgUser, content: "hello"},
+		{kind: msgAssistant, content: "hi"},
+	}
+
+	bar := m.renderStatusPane(160)
+	for _, want := range []string{"gpt-4o", "myproject", "thread abcdef"} {
+		if !strings.Contains(bar, want) {
+			t.Fatalf("status bar missing %q:\n%s", want, bar)
+		}
+	}
+}
+
+func TestStatusLineBarSkipsEmptyItems(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.statusLineItems = []string{"model", "thread", "fast"}
+	m.fastMode = false
+	bar := m.renderStatusLineBar()
+	if strings.Contains(bar, "fast") {
+		t.Fatalf("expected fast to be omitted when fastMode=false, got %q", bar)
+	}
+	m.fastMode = true
+	bar = m.renderStatusLineBar()
+	if !strings.Contains(bar, "fast") {
+		t.Fatalf("expected fast to appear when fastMode=true, got %q", bar)
+	}
+}
+
 func TestSlashCommandFastUpdatesPromptMode(t *testing.T) {
 	configpkg.SetAppName("mosscode")
 	t.Setenv("APPDATA", t.TempDir())

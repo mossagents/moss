@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/kernel/io"
-	"strings"
 )
 
 type statusLineItemDef struct {
@@ -238,4 +240,67 @@ func (m chatModel) composerSlashContext() string {
 		hints = hints[:3]
 	}
 	return strings.Join(hints, ", ")
+}
+
+// renderStatusLineBar renders the configured status-line items as a compact
+// "•"-joined string suitable for the bottom bar's right side.
+func (m chatModel) renderStatusLineBar() string {
+	items := normalizeStatusLineItems(m.statusLineItems)
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if seg := m.statusLineItemValue(item); seg != "" {
+			parts = append(parts, seg)
+		}
+	}
+	return strings.Join(parts, "  •  ")
+}
+
+func (m chatModel) statusLineItemValue(name string) string {
+	switch name {
+	case "state":
+		return m.runtimeStateLabel()
+	case "model":
+		return valueOrDefaultString(m.model, m.provider)
+	case "workspace":
+		ws := strings.TrimSpace(m.workspace)
+		if ws == "" || ws == "." {
+			return "."
+		}
+		return filepath.Base(ws)
+	case "profile":
+		return valueOrDefaultString(m.profile, "default")
+	case "trust":
+		return valueOrDefaultString(m.trust, "trusted")
+	case "approval":
+		return valueOrDefaultString(m.approvalMode, "auto")
+	case "thread":
+		if id := strings.TrimSpace(m.currentSessionID); id != "" {
+			return "thread " + shortThreadID(id)
+		}
+		return ""
+	case "messages":
+		n := 0
+		for _, msg := range m.messages {
+			if msg.kind == msgUser || msg.kind == msgAssistant {
+				n++
+			}
+		}
+		if n == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%d msgs", n)
+	case "theme":
+		return valueOrDefaultString(m.theme, themeDefault)
+	case "personality":
+		return m.personality
+	case "fast":
+		if m.fastMode {
+			return "fast"
+		}
+		return ""
+	case "version":
+		return "" // injected via build; not available in chatModel
+	default:
+		return ""
+	}
 }

@@ -133,11 +133,9 @@ func (m chatModel) renderStatusPane(width int) string {
 		}
 	}
 
-	// Thread ID on the right (unless overridden above).
+	// Status line items on the right (unless overridden above).
 	if rightStr == "" {
-		if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-			rightStr = "thread " + shortThreadID(threadID)
-		}
+		rightStr = m.renderStatusLineBar()
 	}
 
 	left := statusHintStyle.Render(leftStr)
