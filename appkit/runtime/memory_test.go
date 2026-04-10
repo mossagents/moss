@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	memstore "github.com/mossagents/moss/kernel/memory"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -165,7 +165,7 @@ func TestRegisterMemoryTools_NilWorkspace(t *testing.T) {
 func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		WithMemoryWorkspace(sandbox.NewMemoryWorkspace()),
 	)
 	if err := k.Boot(context.Background()); err != nil {
@@ -183,7 +183,7 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message")
 	}
-	if got := mdl.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "staged persistent memory tools") {
+	if got := model.ContentPartsToPlainText(sess.Messages[0].ContentParts); !strings.Contains(got, "staged persistent memory tools") {
 		t.Fatalf("expected memory prompt hint, got %q", got)
 	}
 }
@@ -229,7 +229,7 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/decision.md")
-	var record memstore.MemoryRecord
+	var record memory.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	}
 	var searchResp struct {
 		Count int                     `json:"count"`
-		Items []memstore.MemoryRecord `json:"items"`
+		Items []memory.MemoryRecord `json:"items"`
 	}
 	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
 		t.Fatalf("decode search_memories: %v", err)
@@ -303,11 +303,11 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/memory/trace-summary.md")
-	var record memstore.MemoryRecord
+	var record memory.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
-	if record.Stage != memstore.MemoryStageConsolidated {
+	if record.Stage != memory.MemoryStageConsolidated {
 		t.Fatalf("expected consolidated stage, got %+v", record)
 	}
 	if len(record.Citation.MemoryPaths) == 0 {
@@ -351,11 +351,11 @@ func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
 		}
 	}
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "promoted/promoted-fact.md")
-	var record memstore.MemoryRecord
+	var record memory.MemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode promoted record: %v", err)
 	}
-	if record.Stage != memstore.MemoryStagePromoted || record.SourceKind != "promotion" {
+	if record.Stage != memory.MemoryStagePromoted || record.SourceKind != "promotion" {
 		t.Fatalf("unexpected promoted record: %+v", record)
 	}
 	if !strings.Contains(record.Content, "confidence: 1.0") {
@@ -405,7 +405,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, err = store.Upsert(ctx, memstore.MemoryRecord{
+	_, err = store.Upsert(ctx, memory.MemoryRecord{
 		Path:    "team/decision.md",
 		Content: "Use sqlite memory backend",
 		Tags:    []string{"state", "sqlite"},
@@ -421,7 +421,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	if got.Summary == "" {
 		t.Fatal("expected summary to be generated")
 	}
-	if got.Stage != memstore.MemoryStageManual || got.Status != memstore.MemoryStatusActive {
+	if got.Stage != memory.MemoryStageManual || got.Status != memory.MemoryStatusActive {
 		t.Fatalf("expected default stage/status, got %+v", got)
 	}
 	if err := store.RecordUsage(ctx, []string{"team/decision.md"}, time.Now().UTC()); err != nil {
@@ -435,7 +435,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 		t.Fatalf("expected usage tracking, got %+v", got)
 	}
 
-	items, err := store.Search(ctx, memstore.MemoryQuery{Query: "sqlite", Limit: 10})
+	items, err := store.Search(ctx, memory.MemoryQuery{Query: "sqlite", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
 	ctx := context.Background()
-	for _, record := range []memstore.MemoryRecord{
+	for _, record := range []memory.MemoryRecord{
 		{Path: "team/alpha.md", Content: "sqlite backend decision alpha"},
 		{Path: "team/beta.md", Content: "sqlite backend decision beta"},
 	} {
@@ -475,7 +475,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 	if err := store.RecordUsage(ctx, []string{"team/beta.md"}, time.Now().UTC().Add(time.Millisecond)); err != nil {
 		t.Fatalf("RecordUsage: %v", err)
 	}
-	items, err := store.Search(ctx, memstore.MemoryQuery{Query: "sqlite backend", Limit: 2})
+	items, err := store.Search(ctx, memory.MemoryQuery{Query: "sqlite backend", Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}

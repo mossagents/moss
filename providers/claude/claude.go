@@ -7,16 +7,16 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"io"
 	"net/http"
 	"strings"
 )
 
-// 确保实现 mdl.LLM 和 mdl.StreamingLLM 接口。
+// 确保实现 model.LLM 和 model.StreamingLLM 接口。
 var (
-	_ mdl.LLM          = (*Client)(nil)
-	_ mdl.StreamingLLM = (*Client)(nil)
+	_ model.LLM          = (*Client)(nil)
+	_ model.StreamingLLM = (*Client)(nil)
 )
 
 const DefaultModel = "claude-sonnet-4-20250514"
@@ -98,8 +98,8 @@ func NewWithBaseURL(apiKey, baseURL string, opts ...Option) *Client {
 	return c
 }
 
-// Complete 实现 mdl.LLM（同步模式）。
-func (c *Client) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+// Complete 实现 model.LLM（同步模式）。
+func (c *Client) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	params, err := c.buildParams(req)
 	if err != nil {
 		return nil, err
@@ -111,8 +111,8 @@ func (c *Client) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.
 	return fromAnthropicResponse(msg), nil
 }
 
-// Stream 实现 mdl.StreamingLLM（流式模式）。
-func (c *Client) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.StreamIterator, error) {
+// Stream 实现 model.StreamingLLM（流式模式）。
+func (c *Client) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
 	params, err := c.buildParams(req)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func (c *Client) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.Str
 }
 
 // buildParams 构建 Anthropic API 请求参数。
-func (c *Client) buildParams(req mdl.CompletionRequest) (anthropic.MessageNewParams, error) {
+func (c *Client) buildParams(req model.CompletionRequest) (anthropic.MessageNewParams, error) {
 	model := c.model
 	maxTokens := c.maxTokens
 	if req.Config.Model != "" {
@@ -184,15 +184,15 @@ func (c *Client) buildParams(req mdl.CompletionRequest) (anthropic.MessageNewPar
 // normalizeMessages merges consecutive messages with the same role, excluding
 // system and tool messages, to prevent API-level validation errors from strict
 // providers such as DeepSeek that forbid consecutive same-role turns.
-func normalizeMessages(msgs []mdl.Message) []mdl.Message {
+func normalizeMessages(msgs []model.Message) []model.Message {
 	if len(msgs) == 0 {
 		return nil
 	}
-	out := make([]mdl.Message, 0, len(msgs))
+	out := make([]model.Message, 0, len(msgs))
 	for _, msg := range msgs {
 		if len(out) > 0 &&
-			msg.Role != mdl.RoleSystem &&
-			msg.Role != mdl.RoleTool &&
+			msg.Role != model.RoleSystem &&
+			msg.Role != model.RoleTool &&
 			out[len(out)-1].Role == msg.Role {
 			last := &out[len(out)-1]
 			last.ContentParts = append(last.ContentParts, msg.ContentParts...)
@@ -204,28 +204,28 @@ func normalizeMessages(msgs []mdl.Message) []mdl.Message {
 	return out
 }
 
-func toAnthropicMessages(msgs []mdl.Message, model string) ([]anthropic.TextBlockParam, []anthropic.MessageParam, error) {
+func toAnthropicMessages(msgs []model.Message, modelName string) ([]anthropic.TextBlockParam, []anthropic.MessageParam, error) {
 	msgs = normalizeMessages(msgs)
 	var system []anthropic.TextBlockParam
 	var messages []anthropic.MessageParam
 
 	for _, msg := range msgs {
 		switch msg.Role {
-		case mdl.RoleSystem:
-			text, err := contentPartsToTextOnlyString(msg.ContentParts, "claude", model, "system")
+		case model.RoleSystem:
+			text, err := contentPartsToTextOnlyString(msg.ContentParts, "claude", modelName, "system")
 			if err != nil {
 				return nil, nil, err
 			}
 			system = append(system, anthropic.TextBlockParam{Text: text})
-		case mdl.RoleUser:
-			blocks, err := toAnthropicUserBlocks(msg.ContentParts, model)
+		case model.RoleUser:
+			blocks, err := toAnthropicUserBlocks(msg.ContentParts, modelName)
 			if err != nil {
 				return nil, nil, err
 			}
 			messages = append(messages, anthropic.NewUserMessage(blocks...))
-		case mdl.RoleAssistant:
+		case model.RoleAssistant:
 			var blocks []anthropic.ContentBlockParamUnion
-			content, err := contentPartsToTextOnlyString(msg.ContentParts, "claude", model, "assistant")
+			content, err := contentPartsToTextOnlyString(msg.ContentParts, "claude", modelName, "assistant")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -240,10 +240,10 @@ func toAnthropicMessages(msgs []mdl.Message, model string) ([]anthropic.TextBloc
 			if len(blocks) > 0 {
 				messages = append(messages, anthropic.NewAssistantMessage(blocks...))
 			}
-		case mdl.RoleTool:
+		case model.RoleTool:
 			var blocks []anthropic.ContentBlockParamUnion
 			for _, tr := range msg.ToolResults {
-				contentBlocks, err := toAnthropicToolResultBlocks(tr.ContentParts, model)
+				contentBlocks, err := toAnthropicToolResultBlocks(tr.ContentParts, modelName)
 				if err != nil {
 					return nil, nil, err
 				}
@@ -263,7 +263,7 @@ func toAnthropicMessages(msgs []mdl.Message, model string) ([]anthropic.TextBloc
 	return system, messages, nil
 }
 
-func toAnthropicTools(tools []mdl.ToolSpec) []anthropic.ToolUnionParam {
+func toAnthropicTools(tools []model.ToolSpec) []anthropic.ToolUnionParam {
 	result := make([]anthropic.ToolUnionParam, len(tools))
 	for i, t := range tools {
 		var schema anthropic.ToolInputSchemaParam
@@ -283,18 +283,18 @@ func toAnthropicTools(tools []mdl.ToolSpec) []anthropic.ToolUnionParam {
 
 // ─── 响应映射 ────────────────────────────────────────
 
-func fromAnthropicResponse(msg *anthropic.Message) *mdl.CompletionResponse {
-	var contentParts []mdl.ContentPart
-	var toolCalls []mdl.ToolCall
+func fromAnthropicResponse(msg *anthropic.Message) *model.CompletionResponse {
+	var contentParts []model.ContentPart
+	var toolCalls []model.ToolCall
 
 	for _, block := range msg.Content {
 		switch v := block.AsAny().(type) {
 		case anthropic.TextBlock:
 			if strings.TrimSpace(v.Text) != "" {
-				contentParts = append(contentParts, mdl.TextPart(v.Text))
+				contentParts = append(contentParts, model.TextPart(v.Text))
 			}
 		case anthropic.ToolUseBlock:
-			toolCalls = append(toolCalls, mdl.ToolCall{
+			toolCalls = append(toolCalls, model.ToolCall{
 				ID:        v.ID,
 				Name:      v.Name,
 				Arguments: v.Input,
@@ -302,14 +302,14 @@ func fromAnthropicResponse(msg *anthropic.Message) *mdl.CompletionResponse {
 		}
 	}
 
-	return &mdl.CompletionResponse{
-		Message: mdl.Message{
-			Role:         mdl.RoleAssistant,
+	return &model.CompletionResponse{
+		Message: model.Message{
+			Role:         model.RoleAssistant,
 			ContentParts: contentParts,
 			ToolCalls:    toolCalls,
 		},
 		ToolCalls: toolCalls,
-		Usage: mdl.TokenUsage{
+		Usage: model.TokenUsage{
 			PromptTokens:     int(msg.Usage.InputTokens),
 			CompletionTokens: int(msg.Usage.OutputTokens),
 			TotalTokens:      int(msg.Usage.InputTokens + msg.Usage.OutputTokens),
@@ -318,42 +318,42 @@ func fromAnthropicResponse(msg *anthropic.Message) *mdl.CompletionResponse {
 	}
 }
 
-func toAnthropicUserBlocks(parts []mdl.ContentPart, model string) ([]anthropic.ContentBlockParamUnion, error) {
+func toAnthropicUserBlocks(parts []model.ContentPart, modelName string) ([]anthropic.ContentBlockParamUnion, error) {
 	result := make([]anthropic.ContentBlockParamUnion, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
-		case mdl.ContentPartText:
+		case model.ContentPartText:
 			result = append(result, anthropic.NewTextBlock(part.Text))
-		case mdl.ContentPartInputImage:
+		case model.ContentPartInputImage:
 			block, err := toAnthropicImageBlock(part)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, block)
-		case mdl.ContentPartInputAudio:
-			return nil, capabilityUnavailableError("claude", model, "user", part.Type, "audio input is not supported by current anthropic content blocks")
-		case mdl.ContentPartInputVideo:
+		case model.ContentPartInputAudio:
+			return nil, capabilityUnavailableError("claude", modelName, "user", part.Type, "audio input is not supported by current anthropic content blocks")
+		case model.ContentPartInputVideo:
 			block, err := toAnthropicVideoBlock(part)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, block)
 		default:
-			return nil, unsupportedPartError("claude", model, "user", part.Type)
+			return nil, unsupportedPartError("claude", modelName, "user", part.Type)
 		}
 	}
 	return result, nil
 }
 
-func toAnthropicToolResultBlocks(parts []mdl.ContentPart, model string) ([]anthropic.ToolResultBlockParamContentUnion, error) {
+func toAnthropicToolResultBlocks(parts []model.ContentPart, modelName string) ([]anthropic.ToolResultBlockParamContentUnion, error) {
 	result := make([]anthropic.ToolResultBlockParamContentUnion, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
-		case mdl.ContentPartText:
+		case model.ContentPartText:
 			result = append(result, anthropic.ToolResultBlockParamContentUnion{
 				OfText: &anthropic.TextBlockParam{Text: part.Text},
 			})
-		case mdl.ContentPartOutputImage:
+		case model.ContentPartOutputImage:
 			block, err := toAnthropicImageBlock(part)
 			if err != nil {
 				return nil, err
@@ -361,18 +361,18 @@ func toAnthropicToolResultBlocks(parts []mdl.ContentPart, model string) ([]anthr
 			result = append(result, anthropic.ToolResultBlockParamContentUnion{
 				OfImage: block.OfImage,
 			})
-		case mdl.ContentPartOutputAudio:
-			return nil, capabilityUnavailableError("claude", model, "tool_result", part.Type, "audio output blocks are not supported by current anthropic content blocks")
-		case mdl.ContentPartOutputVideo:
-			return nil, capabilityUnavailableError("claude", model, "tool_result", part.Type, "video output blocks are not supported by current anthropic content blocks")
+		case model.ContentPartOutputAudio:
+			return nil, capabilityUnavailableError("claude", modelName, "tool_result", part.Type, "audio output blocks are not supported by current anthropic content blocks")
+		case model.ContentPartOutputVideo:
+			return nil, capabilityUnavailableError("claude", modelName, "tool_result", part.Type, "video output blocks are not supported by current anthropic content blocks")
 		default:
-			return nil, unsupportedPartError("claude", model, "tool_result", part.Type)
+			return nil, unsupportedPartError("claude", modelName, "tool_result", part.Type)
 		}
 	}
 	return result, nil
 }
 
-func toAnthropicImageBlock(part mdl.ContentPart) (anthropic.ContentBlockParamUnion, error) {
+func toAnthropicImageBlock(part model.ContentPart) (anthropic.ContentBlockParamUnion, error) {
 	if strings.TrimSpace(part.URL) != "" {
 		return anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: part.URL}), nil
 	}
@@ -391,7 +391,7 @@ func toAnthropicImageBlock(part mdl.ContentPart) (anthropic.ContentBlockParamUni
 	}
 }
 
-func toAnthropicVideoBlock(part mdl.ContentPart) (anthropic.ContentBlockParamUnion, error) {
+func toAnthropicVideoBlock(part model.ContentPart) (anthropic.ContentBlockParamUnion, error) {
 	if strings.TrimSpace(part.URL) != "" {
 		return anthropic.NewDocumentBlock(anthropic.URLPDFSourceParam{URL: part.URL}), nil
 	}
@@ -400,25 +400,25 @@ func toAnthropicVideoBlock(part mdl.ContentPart) (anthropic.ContentBlockParamUni
 	}), nil
 }
 
-func contentPartsToTextOnlyString(parts []mdl.ContentPart, provider, model, role string) (string, error) {
+func contentPartsToTextOnlyString(parts []model.ContentPart, provider, modelName, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if role == "assistant" && part.Type == mdl.ContentPartReasoning {
+		if role == "assistant" && part.Type == model.ContentPartReasoning {
 			continue
 		}
-		if part.Type != mdl.ContentPartText {
-			return "", unsupportedPartError(provider, model, role, part.Type)
+		if part.Type != model.ContentPartText {
+			return "", unsupportedPartError(provider, modelName, role, part.Type)
 		}
 		textParts = append(textParts, part.Text)
 	}
 	return strings.Join(textParts, "\n"), nil
 }
 
-func unsupportedPartError(provider, model, role string, typ mdl.ContentPartType) error {
+func unsupportedPartError(provider, model, role string, typ model.ContentPartType) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s unsupported content part type=%q", provider, model, role, typ)
 }
 
-func capabilityUnavailableError(provider, model, role string, typ mdl.ContentPartType, reason string) error {
+func capabilityUnavailableError(provider, model, role string, typ model.ContentPartType, reason string) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s content part type=%q capability unavailable: %s", provider, model, role, typ, reason)
 }
 
@@ -432,13 +432,13 @@ type toolUseBuilder struct {
 
 type streamIterator struct {
 	stream          *ssestream.Stream[anthropic.MessageStreamEventUnion]
-	pending         []mdl.StreamChunk
+	pending         []model.StreamChunk
 	done            bool
-	usage           mdl.TokenUsage
+	usage           model.TokenUsage
 	toolUseBuilders map[int]*toolUseBuilder
 }
 
-func (it *streamIterator) Next() (mdl.StreamChunk, error) {
+func (it *streamIterator) Next() (model.StreamChunk, error) {
 	for {
 		if len(it.pending) > 0 {
 			chunk := it.pending[0]
@@ -446,14 +446,14 @@ func (it *streamIterator) Next() (mdl.StreamChunk, error) {
 			return chunk, nil
 		}
 		if it.done {
-			return mdl.StreamChunk{}, io.EOF
+			return model.StreamChunk{}, io.EOF
 		}
 		if !it.stream.Next() {
 			if err := it.stream.Err(); err != nil {
-				return mdl.StreamChunk{}, err
+				return model.StreamChunk{}, err
 			}
 			it.done = true
-			return mdl.StreamChunk{}, io.EOF
+			return model.StreamChunk{}, io.EOF
 		}
 		it.processEvent(it.stream.Current())
 	}
@@ -475,7 +475,7 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 	case anthropic.ContentBlockDeltaEvent:
 		switch d := e.Delta.AsAny().(type) {
 		case anthropic.TextDelta:
-			it.pending = append(it.pending, mdl.StreamChunk{Delta: d.Text})
+			it.pending = append(it.pending, model.StreamChunk{Delta: d.Text})
 		case anthropic.InputJSONDelta:
 			if tb, ok := it.toolUseBuilders[int(e.Index)]; ok {
 				tb.input += d.PartialJSON
@@ -488,12 +488,12 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 			if input == "" {
 				input = "{}"
 			}
-			tc := mdl.ToolCall{
+			tc := model.ToolCall{
 				ID:        tb.id,
 				Name:      tb.name,
 				Arguments: json.RawMessage(input),
 			}
-			it.pending = append(it.pending, mdl.StreamChunk{ToolCall: &tc})
+			it.pending = append(it.pending, model.StreamChunk{ToolCall: &tc})
 			delete(it.toolUseBuilders, int(e.Index))
 		}
 
@@ -502,7 +502,7 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 		it.usage.TotalTokens = it.usage.PromptTokens + it.usage.CompletionTokens
 
 	case anthropic.MessageStopEvent:
-		it.pending = append(it.pending, mdl.StreamChunk{
+		it.pending = append(it.pending, model.StreamChunk{
 			Done:  true,
 			Usage: &it.usage,
 		})

@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"time"
 )
 
@@ -23,7 +23,7 @@ type LifecycleResult struct {
 	Success    bool           `json:"success"`
 	Output     string         `json:"output,omitempty"`
 	Steps      int            `json:"steps"`
-	TokensUsed mdl.TokenUsage `json:"tokens_used"`
+	TokensUsed model.TokenUsage `json:"tokens_used"`
 	Error      string         `json:"error,omitempty"`
 }
 
@@ -54,7 +54,7 @@ type ToolLifecycleEvent struct {
 	ToolName  string             `json:"tool_name"`
 	CallID    string             `json:"call_id,omitempty"`
 	Arguments json.RawMessage    `json:"arguments,omitempty"`
-	Result    *mdl.ToolResult    `json:"result,omitempty"`
+	Result    *model.ToolResult    `json:"result,omitempty"`
 	Risk      string             `json:"risk,omitempty"`
 	Duration  time.Duration      `json:"duration,omitempty"`
 	Error     error              `json:"-"`

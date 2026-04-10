@@ -2,7 +2,7 @@ package openai
 
 import (
 	"encoding/json"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/openai/openai-go"
 	"strings"
 	"testing"
@@ -11,9 +11,9 @@ import (
 // ─── toOpenAIMessages ────────────────────────────────
 
 func TestToOpenAIMessages_SystemMessage(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("You are a helpful assistant.")}},
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")}},
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("You are a helpful assistant.")}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hello")}},
 	}
 	result, err := toOpenAIMessages(msgs, "gpt-4o")
 	if err != nil {
@@ -32,12 +32,12 @@ func TestToOpenAIMessages_SystemMessage(t *testing.T) {
 }
 
 func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("What's the weather?")}},
+	msgs := []model.Message{
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("What's the weather?")}},
 		{
-			Role:         mdl.RoleAssistant,
-			ContentParts: []mdl.ContentPart{mdl.TextPart("Let me check.")},
-			ToolCalls: []mdl.ToolCall{
+			Role:         model.RoleAssistant,
+			ContentParts: []model.ContentPart{model.TextPart("Let me check.")},
+			ToolCalls: []model.ToolCall{
 				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
 			},
 		},
@@ -66,12 +66,12 @@ func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
 }
 
 func TestToOpenAIMessages_ToolResults(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleTool,
-			ToolResults: []mdl.ToolResult{
-				{CallID: "call_1", ContentParts: []mdl.ContentPart{mdl.TextPart("Sunny, 25°C")}},
-				{CallID: "call_2", ContentParts: []mdl.ContentPart{mdl.TextPart("error: timeout")}, IsError: true},
+			Role: model.RoleTool,
+			ToolResults: []model.ToolResult{
+				{CallID: "call_1", ContentParts: []model.ContentPart{model.TextPart("Sunny, 25°C")}},
+				{CallID: "call_2", ContentParts: []model.ContentPart{model.TextPart("error: timeout")}, IsError: true},
 			},
 		},
 	}
@@ -102,8 +102,8 @@ func TestToOpenAIMessages_ToolResults(t *testing.T) {
 }
 
 func TestToOpenAIMessages_EmptyAssistantSkipped(t *testing.T) {
-	msgs := []mdl.Message{
-		{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("")}, ToolCalls: nil},
+	msgs := []model.Message{
+		{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("")}, ToolCalls: nil},
 	}
 	result, err := toOpenAIMessages(msgs, "gpt-4o")
 	if err != nil {
@@ -116,12 +116,12 @@ func TestToOpenAIMessages_EmptyAssistantSkipped(t *testing.T) {
 }
 
 func TestToOpenAIMessages_UserWithInputImage(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("describe this"),
-				mdl.ImageInlinePart(mdl.ContentPartInputImage, "image/png", "abcd", "a.png"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("describe this"),
+				model.ImageInlinePart(model.ContentPartInputImage, "image/png", "abcd", "a.png"),
 			},
 		},
 	}
@@ -143,12 +143,12 @@ func TestToOpenAIMessages_UserWithInputImage(t *testing.T) {
 }
 
 func TestToOpenAIMessages_UserWithInputAudio(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("transcribe this"),
-				mdl.MediaInlinePart(mdl.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("transcribe this"),
+				model.MediaInlinePart(model.ContentPartInputAudio, "audio/wav", "abcd", "a.wav"),
 			},
 		},
 	}
@@ -170,12 +170,12 @@ func TestToOpenAIMessages_UserWithInputAudio(t *testing.T) {
 }
 
 func TestToOpenAIMessages_UserWithInputVideo(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("summarize this video"),
-				mdl.MediaInlinePart(mdl.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("summarize this video"),
+				model.MediaInlinePart(model.ContentPartInputVideo, "video/mp4", "abcd", "clip.mp4"),
 			},
 		},
 	}
@@ -197,10 +197,10 @@ func TestToOpenAIMessages_UserWithInputVideo(t *testing.T) {
 }
 
 func TestToOpenAIMessages_UnsupportedPartFails(t *testing.T) {
-	msgs := []mdl.Message{
+	msgs := []model.Message{
 		{
-			Role:         mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{{Type: mdl.ContentPartOutputImage, URL: "https://example.com/out.png"}},
+			Role:         model.RoleUser,
+			ContentParts: []model.ContentPart{{Type: model.ContentPartOutputImage, URL: "https://example.com/out.png"}},
 		},
 	}
 	_, err := toOpenAIMessages(msgs, "gpt-4o")
@@ -212,7 +212,7 @@ func TestToOpenAIMessages_UnsupportedPartFails(t *testing.T) {
 // ─── toOpenAITools ───────────────────────────────────
 
 func TestToOpenAITools(t *testing.T) {
-	tools := []mdl.ToolSpec{
+	tools := []model.ToolSpec{
 		{
 			Name:        "read_file",
 			Description: "Read a file",
@@ -270,10 +270,10 @@ func TestFromOpenAIResponse_TextOnly(t *testing.T) {
 
 	resp := fromOpenAIResponse(&completion)
 
-	if resp.Message.Role != mdl.RoleAssistant {
+	if resp.Message.Role != model.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "Hello World" {
 		t.Errorf("content = %q, want Hello World", got)
 	}
 	if len(resp.ToolCalls) != 0 {
@@ -328,7 +328,7 @@ func TestFromOpenAIResponse_WithToolCalls(t *testing.T) {
 
 	resp := fromOpenAIResponse(&completion)
 
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "Let me check." {
 		t.Errorf("content = %q", got)
 	}
 	if len(resp.ToolCalls) != 1 {
@@ -383,7 +383,7 @@ func TestFromOpenAIResponse_WithAudio(t *testing.T) {
 	if len(resp.Message.ContentParts) != 2 {
 		t.Fatalf("expected text+audio content parts, got %d", len(resp.Message.ContentParts))
 	}
-	if resp.Message.ContentParts[1].Type != mdl.ContentPartOutputAudio {
+	if resp.Message.ContentParts[1].Type != model.ContentPartOutputAudio {
 		t.Fatalf("expected output_audio part, got %s", resp.Message.ContentParts[1].Type)
 	}
 }
@@ -414,13 +414,13 @@ func TestFromOpenAIResponse_WithReasoningContent(t *testing.T) {
 	if len(resp.Message.ContentParts) != 2 {
 		t.Fatalf("expected reasoning+text parts, got %d", len(resp.Message.ContentParts))
 	}
-	if resp.Message.ContentParts[0].Type != mdl.ContentPartReasoning {
+	if resp.Message.ContentParts[0].Type != model.ContentPartReasoning {
 		t.Fatalf("expected first part reasoning, got %s", resp.Message.ContentParts[0].Type)
 	}
-	if got := mdl.ContentPartsToReasoningText(resp.Message.ContentParts); got != "Need to verify the redirect first." {
+	if got := model.ContentPartsToReasoningText(resp.Message.ContentParts); got != "Need to verify the redirect first." {
 		t.Fatalf("reasoning = %q", got)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "The site redirects with HTTP 301." {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "The site redirects with HTTP 301." {
 		t.Fatalf("plain text = %q", got)
 	}
 }
@@ -450,13 +450,13 @@ func TestFromOpenAIResponse_ReasoningOnly(t *testing.T) {
 	if len(resp.Message.ContentParts) != 1 {
 		t.Fatalf("expected reasoning-only part, got %d", len(resp.Message.ContentParts))
 	}
-	if resp.Message.ContentParts[0].Type != mdl.ContentPartReasoning {
+	if resp.Message.ContentParts[0].Type != model.ContentPartReasoning {
 		t.Fatalf("expected reasoning part, got %s", resp.Message.ContentParts[0].Type)
 	}
-	if got := mdl.ContentPartsToReasoningText(resp.Message.ContentParts); got != "This requires more analysis." {
+	if got := model.ContentPartsToReasoningText(resp.Message.ContentParts); got != "This requires more analysis." {
 		t.Fatalf("reasoning = %q", got)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
 		t.Fatalf("plain text = %q, want empty", got)
 	}
 }
@@ -476,10 +476,10 @@ func TestFromOpenAIResponse_EmptyChoices(t *testing.T) {
 	}
 
 	resp := fromOpenAIResponse(&completion)
-	if resp.Message.Role != mdl.RoleAssistant {
+	if resp.Message.Role != model.RoleAssistant {
 		t.Errorf("role = %s, want assistant", resp.Message.Role)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "" {
 		t.Errorf("expected empty content, got %q", got)
 	}
 }
@@ -571,7 +571,7 @@ func TestStreamIterator_SingleToolCall(t *testing.T) {
 	}`))
 
 	// pending 中不应有文本 delta，只有工具调用
-	var toolChunks []mdl.StreamChunk
+	var toolChunks []model.StreamChunk
 	for _, p := range it.pending {
 		if p.ToolCall != nil {
 			toolChunks = append(toolChunks, p)
@@ -615,7 +615,7 @@ func TestStreamIterator_ParallelToolCalls(t *testing.T) {
 		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
 	}`))
 
-	var toolChunks []mdl.StreamChunk
+	var toolChunks []model.StreamChunk
 	for _, p := range it.pending {
 		if p.ToolCall != nil {
 			toolChunks = append(toolChunks, p)
@@ -649,7 +649,7 @@ func TestStreamIterator_EmptyToolArgs(t *testing.T) {
 		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
 	}`))
 
-	var tc *mdl.ToolCall
+	var tc *model.ToolCall
 	for _, p := range it.pending {
 		if p.ToolCall != nil {
 			tc = p.ToolCall
@@ -676,7 +676,7 @@ func TestStreamIterator_TruncatedEscapedToolArgs_Repaired(t *testing.T) {
 		"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]
 	}`))
 
-	var tc *mdl.ToolCall
+	var tc *model.ToolCall
 	for _, p := range it.pending {
 		if p.ToolCall != nil {
 			tc = p.ToolCall

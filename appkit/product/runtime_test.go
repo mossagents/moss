@@ -4,9 +4,9 @@ import (
 	"context"
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,16 +47,16 @@ func TestSelectResumeSummarySpecificRequiresRecoverable(t *testing.T) {
 
 func TestSummarizeSnapshot(t *testing.T) {
 	now := time.Now().UTC()
-	summary := SummarizeSnapshot(kws.WorktreeSnapshot{
+	summary := SummarizeSnapshot(workspace.WorktreeSnapshot{
 		ID:        "snap-1",
 		SessionID: "sess-1",
-		Mode:      kws.WorktreeSnapshotGhostState,
+		Mode:      workspace.WorktreeSnapshotGhostState,
 		Note:      "before review",
-		Capture: kws.RepoState{
+		Capture: workspace.RepoState{
 			HeadSHA: "abc123",
 			Branch:  "main",
 		},
-		Patches:   []kws.PatchSnapshotRef{{PatchID: "p1"}},
+		Patches:   []workspace.PatchSnapshotRef{{PatchID: "p1"}},
 		CreatedAt: now,
 	})
 	if summary.ID != "snap-1" || summary.SessionID != "sess-1" {
@@ -69,12 +69,12 @@ func TestSummarizeSnapshot(t *testing.T) {
 
 func TestSummarizeCheckpoint(t *testing.T) {
 	now := time.Now().UTC()
-	summary := SummarizeCheckpoint(ckpt.CheckpointRecord{
+	summary := SummarizeCheckpoint(checkpoint.CheckpointRecord{
 		ID:                 "cp-1",
 		SessionID:          "sess-1",
 		WorktreeSnapshotID: "snap-1",
 		PatchIDs:           []string{"p1", "p2"},
-		Lineage:            []ckpt.CheckpointLineageRef{{Kind: ckpt.CheckpointLineageSession, ID: "sess-1"}},
+		Lineage:            []checkpoint.CheckpointLineageRef{{Kind: checkpoint.CheckpointLineageSession, ID: "sess-1"}},
 		Note:               "before risky change",
 		CreatedAt:          now,
 	})
@@ -104,14 +104,14 @@ func TestRenderCheckpointSummaries(t *testing.T) {
 }
 
 func TestDescribeCheckpointSortsMetadataKeys(t *testing.T) {
-	detail := DescribeCheckpoint(ckpt.CheckpointRecord{
+	detail := DescribeCheckpoint(checkpoint.CheckpointRecord{
 		ID:                 "cp-1",
 		SessionID:          "sess-hidden",
 		WorktreeSnapshotID: "snap-1",
 		PatchIDs:           []string{"patch-1", "patch-2"},
-		Lineage: []ckpt.CheckpointLineageRef{
-			{Kind: ckpt.CheckpointLineageCheckpoint, ID: "cp-0"},
-			{Kind: ckpt.CheckpointLineageSession, ID: "sess-1"},
+		Lineage: []checkpoint.CheckpointLineageRef{
+			{Kind: checkpoint.CheckpointLineageCheckpoint, ID: "cp-0"},
+			{Kind: checkpoint.CheckpointLineageSession, ID: "sess-1"},
 		},
 		Metadata: map[string]any{
 			"zeta":  1,
@@ -185,7 +185,7 @@ func TestRenderCheckpointDetail(t *testing.T) {
 		Note:         "before risky change",
 		PatchIDs:     []string{"patch-1", "patch-2"},
 		PatchCount:   2,
-		Lineage:      []ckpt.CheckpointLineageRef{{Kind: ckpt.CheckpointLineageSession, ID: "sess-1"}},
+		Lineage:      []checkpoint.CheckpointLineageRef{{Kind: checkpoint.CheckpointLineageSession, ID: "sess-1"}},
 		LineageDepth: 1,
 		MetadataKeys: []string{"source", "trigger"},
 		CreatedAt:    time.Unix(12, 0).UTC(),
@@ -200,17 +200,17 @@ func TestRenderCheckpointDetail(t *testing.T) {
 func TestListCheckpoints(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	if _, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{
+	if _, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{
 		SessionID: "sess-1",
 		Note:      "a",
 	}); err != nil {
 		t.Fatalf("Create first checkpoint: %v", err)
 	}
-	if _, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{
+	if _, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{
 		SessionID: "sess-2",
 		Note:      "b",
 	}); err != nil {
@@ -228,11 +228,11 @@ func TestListCheckpoints(t *testing.T) {
 func TestLoadCheckpoint(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	record, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{
+	record, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{
 		SessionID: "sess-1",
 		PatchIDs:  []string{"patch-1"},
 		Metadata:  map[string]any{"source": "test"},
@@ -252,16 +252,16 @@ func TestLoadCheckpoint(t *testing.T) {
 func TestResolveCheckpointRecordLatest(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
-	first, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{SessionID: "sess-1", Note: "first"})
+	first, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{SessionID: "sess-1", Note: "first"})
 	if err != nil {
 		t.Fatalf("Create first checkpoint: %v", err)
 	}
 	time.Sleep(2 * time.Millisecond)
-	second, err := store.Create(context.Background(), ckpt.CheckpointCreateRequest{SessionID: "sess-2", Note: "second"})
+	second, err := store.Create(context.Background(), checkpoint.CheckpointCreateRequest{SessionID: "sess-2", Note: "second"})
 	if err != nil {
 		t.Fatalf("Create second checkpoint: %v", err)
 	}

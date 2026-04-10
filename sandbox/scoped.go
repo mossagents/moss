@@ -3,7 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path"
 	"strings"
 )
@@ -12,12 +12,12 @@ import (
 // 适用于多租户场景：不同用户/房间共享底层存储，但文件路径互相隔离。
 type ScopedWorkspace struct {
 	prefix string
-	inner  kws.Workspace
+	inner  workspace.Workspace
 }
 
 // NewScopedWorkspace 创建带前缀隔离的 Workspace。
 // prefix 不应以 "/" 开头，会自动规范化。
-func NewScopedWorkspace(prefix string, inner kws.Workspace) *ScopedWorkspace {
+func NewScopedWorkspace(prefix string, inner workspace.Workspace) *ScopedWorkspace {
 	prefix = strings.TrimPrefix(prefix, "/")
 	if prefix != "" && !strings.HasSuffix(prefix, "/") {
 		prefix += "/"
@@ -79,10 +79,10 @@ func (s *ScopedWorkspace) ListFiles(ctx context.Context, pattern string) ([]stri
 	return result, nil
 }
 
-func (s *ScopedWorkspace) Stat(ctx context.Context, path string) (kws.FileInfo, error) {
+func (s *ScopedWorkspace) Stat(ctx context.Context, path string) (workspace.FileInfo, error) {
 	sp, err := s.scopedPath(path)
 	if err != nil {
-		return kws.FileInfo{}, err
+		return workspace.FileInfo{}, err
 	}
 	return s.inner.Stat(ctx, sp)
 }

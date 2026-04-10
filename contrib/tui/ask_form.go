@@ -7,14 +7,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	"strconv"
 	"strings"
 )
 
 type askFieldState struct {
-	def         intr.InputField
+	def         io.InputField
 	text        string
 	boolValue   bool
 	singleIndex int
@@ -31,7 +31,7 @@ type askFormState struct {
 	errorText    string
 }
 
-func newAskFormState(req intr.InputRequest, workspace string) *askFormState {
+func newAskFormState(req io.InputRequest, workspace string) *askFormState {
 	fields := req.Fields
 	if len(fields) == 0 {
 		fields = synthesizeFieldsFromInputRequest(req, workspace)
@@ -44,17 +44,17 @@ func newAskFormState(req intr.InputRequest, workspace string) *askFormState {
 	if out.confirmLabel == "" {
 		out.confirmLabel = "Confirm"
 	}
-	if req.Type == intr.InputConfirm && req.Approval != nil {
+	if req.Type == io.InputConfirm && req.Approval != nil {
 		out.confirmLabel = "Apply decision"
 	}
 	for _, f := range fields {
 		st := askFieldState{def: f, multiSel: map[int]bool{}}
 		switch f.Type {
-		case intr.InputFieldBoolean:
+		case io.InputFieldBoolean:
 			if b, ok := f.Default.(bool); ok {
 				st.boolValue = b
 			}
-		case intr.InputFieldSingleSelect:
+		case io.InputFieldSingleSelect:
 			st.singleSel = 0
 			st.singleIndex = 0
 			if s, ok := f.Default.(string); ok {
@@ -65,7 +65,7 @@ func newAskFormState(req intr.InputRequest, workspace string) *askFormState {
 					}
 				}
 			}
-		case intr.InputFieldMultiSelect:
+		case io.InputFieldMultiSelect:
 			if arr, ok := f.Default.([]string); ok {
 				for _, v := range arr {
 					for i, opt := range f.Options {
@@ -85,21 +85,21 @@ func newAskFormState(req intr.InputRequest, workspace string) *askFormState {
 	return out
 }
 
-func synthesizeFieldsFromInputRequest(req intr.InputRequest, workspace string) []intr.InputField {
+func synthesizeFieldsFromInputRequest(req io.InputRequest, workspace string) []io.InputField {
 	switch req.Type {
-	case intr.InputConfirm:
+	case io.InputConfirm:
 		if req.Approval != nil {
 			explicitScopes := len(req.Approval.AllowedScopes) > 0
-			normalized := intr.NormalizeApprovalRequest(req.Approval)
+			normalized := io.NormalizeApprovalRequest(req.Approval)
 			display := userapproval.BuildDisplay(normalized, "")
 			options := []string{}
-			if !explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeOnce) {
+			if !explicitScopes || approvalScopeAllowed(normalized, io.DecisionScopeOnce) {
 				options = append(options, userapproval.ChoiceAllowOnce)
 			}
-			if strings.TrimSpace(display.RuleKey) != "" && (!explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeSession)) {
+			if strings.TrimSpace(display.RuleKey) != "" && (!explicitScopes || approvalScopeAllowed(normalized, io.DecisionScopeSession)) {
 				options = append(options, userapproval.ChoiceAllowSession)
 			}
-			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(normalized) != nil && (!explicitScopes || approvalScopeAllowed(normalized, intr.DecisionScopeProject)) {
+			if strings.TrimSpace(workspace) != "" && approvalProjectAmendment(normalized) != nil && (!explicitScopes || approvalScopeAllowed(normalized, io.DecisionScopeProject)) {
 				options = append(options, userapproval.ChoiceAllowProject)
 			}
 			if len(options) == 0 {
@@ -110,9 +110,9 @@ func synthesizeFieldsFromInputRequest(req intr.InputRequest, workspace string) [
 			if indexOfApprovalOption(options, defaultChoice) < 0 {
 				defaultChoice = userapproval.ChoiceAllowOnce
 			}
-			return []intr.InputField{{
+			return []io.InputField{{
 				Name:        "decision",
-				Type:        intr.InputFieldSingleSelect,
+				Type:        io.InputFieldSingleSelect,
 				Title:       "Decision",
 				Description: "Choose whether to allow this action once, remember matching actions, or deny it.",
 				Required:    true,
@@ -120,17 +120,17 @@ func synthesizeFieldsFromInputRequest(req intr.InputRequest, workspace string) [
 				Default:     defaultChoice,
 			}}
 		}
-		return []intr.InputField{{Name: "approved", Type: intr.InputFieldBoolean, Title: req.Prompt, Required: true}}
-	case intr.InputSelect:
-		return []intr.InputField{{Name: "selected", Type: intr.InputFieldSingleSelect, Title: req.Prompt, Required: true, Options: req.Options}}
+		return []io.InputField{{Name: "approved", Type: io.InputFieldBoolean, Title: req.Prompt, Required: true}}
+	case io.InputSelect:
+		return []io.InputField{{Name: "selected", Type: io.InputFieldSingleSelect, Title: req.Prompt, Required: true, Options: req.Options}}
 	default:
-		return []intr.InputField{{Name: "value", Type: intr.InputFieldString, Title: req.Prompt, Required: true}}
+		return []io.InputField{{Name: "value", Type: io.InputFieldString, Title: req.Prompt, Required: true}}
 	}
 }
 
-func approvalScopeAllowed(req *intr.ApprovalRequest, scope intr.DecisionScope) bool {
+func approvalScopeAllowed(req *io.ApprovalRequest, scope io.DecisionScope) bool {
 	if req == nil {
-		return scope == intr.DecisionScopeOnce
+		return scope == io.DecisionScopeOnce
 	}
 	for _, allowed := range req.AllowedScopes {
 		if allowed == scope {
@@ -140,11 +140,11 @@ func approvalScopeAllowed(req *intr.ApprovalRequest, scope intr.DecisionScope) b
 	return false
 }
 
-func approvalChoiceForScope(scope intr.DecisionScope) string {
+func approvalChoiceForScope(scope io.DecisionScope) string {
 	switch scope {
-	case intr.DecisionScopeSession:
+	case io.DecisionScopeSession:
 		return userapproval.ChoiceAllowSession
-	case intr.DecisionScopeProject:
+	case io.DecisionScopeProject:
 		return userapproval.ChoiceAllowProject
 	default:
 		return userapproval.ChoiceAllowOnce
@@ -161,7 +161,7 @@ func (m *chatModel) activateAskField() {
 	}
 	f := m.askForm.fields[m.askForm.focusIndex]
 	switch f.def.Type {
-	case intr.InputFieldString, intr.InputFieldNumber, intr.InputFieldInteger:
+	case io.InputFieldString, io.InputFieldNumber, io.InputFieldInteger:
 		m.textarea.SetValue(f.text)
 		m.textarea.Focus()
 	default:
@@ -198,12 +198,12 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	}
 	field := &form.fields[form.focusIndex]
 	switch field.def.Type {
-	case intr.InputFieldBoolean:
+	case io.InputFieldBoolean:
 		if msg.String() == "enter" || msg.String() == " " {
 			field.boolValue = !field.boolValue
 			m.refreshViewport()
 		}
-	case intr.InputFieldSingleSelect:
+	case io.InputFieldSingleSelect:
 		switch msg.String() {
 		case "up":
 			if field.singleIndex > 0 {
@@ -219,7 +219,7 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 			m.activateAskField()
 		}
 		m.refreshViewport()
-	case intr.InputFieldMultiSelect:
+	case io.InputFieldMultiSelect:
 		switch msg.String() {
 		case "up":
 			if field.multiCursor > 0 {
@@ -258,7 +258,7 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 }
 
 func (m chatModel) isApprovalAskActive() bool {
-	return m.askForm != nil && m.pendAsk != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil
+	return m.askForm != nil && m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil
 }
 
 func (m chatModel) handleApprovalAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
@@ -316,9 +316,9 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	formValues := map[string]any{}
 	for _, f := range m.askForm.fields {
 		switch f.def.Type {
-		case intr.InputFieldBoolean:
+		case io.InputFieldBoolean:
 			formValues[f.def.Name] = f.boolValue
-		case intr.InputFieldSingleSelect:
+		case io.InputFieldSingleSelect:
 			if len(f.def.Options) == 0 {
 				formValues[f.def.Name] = ""
 			} else {
@@ -328,7 +328,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 				}
 				formValues[f.def.Name] = f.def.Options[idx]
 			}
-		case intr.InputFieldMultiSelect:
+		case io.InputFieldMultiSelect:
 			values := make([]string, 0, len(f.multiSel))
 			for i, opt := range f.def.Options {
 				if f.multiSel[i] {
@@ -336,7 +336,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 				}
 			}
 			formValues[f.def.Name] = values
-		case intr.InputFieldNumber:
+		case io.InputFieldNumber:
 			s := strings.TrimSpace(f.text)
 			if s == "" {
 				formValues[f.def.Name] = float64(0)
@@ -349,7 +349,7 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 				return m, nil
 			}
 			formValues[f.def.Name] = n
-		case intr.InputFieldInteger:
+		case io.InputFieldInteger:
 			s := strings.TrimSpace(f.text)
 			if s == "" {
 				formValues[f.def.Name] = 0
@@ -384,20 +384,20 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 	}
 
 	ask := m.pendAsk
-	if ask.request.Type == intr.InputConfirm && ask.request.Approval != nil {
+	if ask.request.Type == io.InputConfirm && ask.request.Approval != nil {
 		return m.submitApprovalAskForm(ask, formValues)
 	}
 
 	m.resetAskFormState()
 
-	if ask.request.Type == intr.InputForm {
-		ask.replyCh <- intr.InputResponse{Form: formValues}
+	if ask.request.Type == io.InputForm {
+		ask.replyCh <- io.InputResponse{Form: formValues}
 	} else {
 		switch ask.request.Type {
-		case intr.InputConfirm:
+		case io.InputConfirm:
 			approved, _ := formValues["approved"].(bool)
-			ask.replyCh <- intr.InputResponse{Approved: approved}
-		case intr.InputSelect:
+			ask.replyCh <- io.InputResponse{Approved: approved}
+		case io.InputSelect:
 			selectedValue, _ := formValues["selected"].(string)
 			idx := 0
 			for i, opt := range ask.request.Options {
@@ -406,10 +406,10 @@ func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
 					break
 				}
 			}
-			ask.replyCh <- intr.InputResponse{Selected: idx}
+			ask.replyCh <- io.InputResponse{Selected: idx}
 		default:
 			val, _ := formValues["value"].(string)
-			ask.replyCh <- intr.InputResponse{Value: val}
+			ask.replyCh <- io.InputResponse{Value: val}
 		}
 	}
 	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Form submitted."})
@@ -428,18 +428,18 @@ func (m *chatModel) resetAskFormState() {
 func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]any) (chatModel, tea.Cmd) {
 	selected, _ := formValues["decision"].(string)
 	approved := selected != userapproval.ChoiceDeny
-	resp := intr.InputResponse{
+	resp := io.InputResponse{
 		Approved: approved,
-		Decision: &intr.ApprovalDecision{
+		Decision: &io.ApprovalDecision{
 			RequestID: ask.request.Approval.ID,
-			Type:      intr.ApprovalDecisionDeny,
+			Type:      io.ApprovalDecisionDeny,
 			Approved:  approved,
 			Source:    "tui-approval",
 			DecidedAt: m.now().UTC(),
 		},
 	}
 	if ask.request.Approval != nil {
-		normalized := intr.NormalizeApprovalRequest(ask.request.Approval)
+		normalized := io.NormalizeApprovalRequest(ask.request.Approval)
 		resp.Decision.RuleBinding = normalized.RuleBinding
 		resp.Decision.CacheKey = normalized.CacheKey
 	}
@@ -453,19 +453,19 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			m.rememberApprovalRule(rule)
 		}
 		if perms := approvalSessionPermissions(ask.request.Approval); perms != nil {
-			resp.Decision.Type = intr.ApprovalDecisionGrantPermission
+			resp.Decision.Type = io.ApprovalDecisionGrantPermission
 			resp.Decision.GrantedPermissions = perms
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "grant requested permissions for this session"
-			resp.Decision.Scope = intr.DecisionScopeSession
-			resp.Decision.Persistence = intr.DecisionPersistenceSession
+			resp.Decision.Scope = io.DecisionScopeSession
+			resp.Decision.Persistence = io.DecisionPersistenceSession
 			notice = "Approval granted. The requested permissions are now available for this session."
 		} else {
-			resp.Decision.Type = intr.ApprovalDecisionApproveSession
+			resp.Decision.Type = io.ApprovalDecisionApproveSession
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "remember similar actions for this session"
-			resp.Decision.Scope = intr.DecisionScopeSession
-			resp.Decision.Persistence = intr.DecisionPersistenceSession
+			resp.Decision.Scope = io.DecisionScopeSession
+			resp.Decision.Persistence = io.DecisionPersistenceSession
 			notice = "Approval granted. Similar actions will be allowed automatically for this session."
 		}
 	case userapproval.ChoiceAllowProject:
@@ -491,25 +491,25 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			m.refreshViewport()
 			return m, nil
 		}
-		resp.Decision.Type = intr.ApprovalDecisionPolicyAmendment
+		resp.Decision.Type = io.ApprovalDecisionPolicyAmendment
 		resp.Decision.PolicyAmendment = amendment
 		resp.Decision.Source = "tui-project-rule"
 		resp.Decision.Reason = "persist matching policy amendment for this project"
-		resp.Decision.Scope = intr.DecisionScopeProject
-		resp.Decision.Persistence = intr.DecisionPersistenceProject
+		resp.Decision.Scope = io.DecisionScopeProject
+		resp.Decision.Persistence = io.DecisionPersistenceProject
 		notice = "Approval granted. The project execution policy has been updated."
 	case userapproval.ChoiceAllowOnce:
-		resp.Decision.Type = intr.ApprovalDecisionApprove
+		resp.Decision.Type = io.ApprovalDecisionApprove
 		resp.Decision.Source = "tui-allow-once"
-		resp.Decision.Scope = intr.DecisionScopeOnce
-		resp.Decision.Persistence = intr.DecisionPersistenceRequest
+		resp.Decision.Scope = io.DecisionScopeOnce
+		resp.Decision.Persistence = io.DecisionPersistenceRequest
 	default:
-		resp.Decision.Type = intr.ApprovalDecisionDeny
+		resp.Decision.Type = io.ApprovalDecisionDeny
 		resp.Decision.Source = "tui-deny"
-		resp.Decision.Scope = intr.DecisionScopeOnce
-		resp.Decision.Persistence = intr.DecisionPersistenceRequest
+		resp.Decision.Scope = io.DecisionScopeOnce
+		resp.Decision.Persistence = io.DecisionPersistenceRequest
 	}
-	resp.Decision = intr.NormalizeApprovalDecisionForRequest(ask.request.Approval, resp.Decision)
+	resp.Decision = io.NormalizeApprovalDecisionForRequest(ask.request.Approval, resp.Decision)
 	m.resetAskFormState()
 	ask.replyCh <- resp
 	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
@@ -564,7 +564,7 @@ func (m chatModel) renderAskForm(width int) string {
 		width = 30
 	}
 	var sb strings.Builder
-	if m.pendAsk != nil && m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
+	if m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil {
 		return m.renderApprovalAskForm(width)
 	}
 	sb.WriteString(wrapText(m.askForm.prompt, width-4))
@@ -599,13 +599,13 @@ func (m chatModel) renderAskForm(width int) string {
 			sb.WriteString("\n")
 		}
 		switch f.def.Type {
-		case intr.InputFieldBoolean:
+		case io.InputFieldBoolean:
 			val := "false"
 			if f.boolValue {
 				val = "true"
 			}
 			sb.WriteString("    [toggle] " + val + "\n")
-		case intr.InputFieldSingleSelect:
+		case io.InputFieldSingleSelect:
 			for idx, opt := range f.def.Options {
 				cursor := " "
 				if idx == f.singleIndex && m.askForm.focusIndex == i {
@@ -622,7 +622,7 @@ func (m chatModel) renderAskForm(width int) string {
 					sb.WriteString(dialogItemStyle.Render(line) + "\n")
 				}
 			}
-		case intr.InputFieldMultiSelect:
+		case io.InputFieldMultiSelect:
 			for idx, opt := range f.def.Options {
 				cursor := " "
 				if idx == f.multiCursor && m.askForm.focusIndex == i {
@@ -812,7 +812,7 @@ func approvalDecisionHelp(options []string) string {
 	return strings.Join(parts, " • ")
 }
 
-func approvalSessionPermissions(req *intr.ApprovalRequest) *intr.PermissionProfile {
+func approvalSessionPermissions(req *io.ApprovalRequest) *io.PermissionProfile {
 	if req == nil {
 		return nil
 	}
@@ -827,10 +827,10 @@ func approvalSessionPermissions(req *intr.ApprovalRequest) *intr.PermissionProfi
 	if len(fields) < 2 {
 		return nil
 	}
-	return &intr.PermissionProfile{HTTPHosts: []string{fields[1]}}
+	return &io.PermissionProfile{HTTPHosts: []string{fields[1]}}
 }
 
-func approvalProjectAmendment(req *intr.ApprovalRequest) *intr.ExecPolicyAmendment {
+func approvalProjectAmendment(req *io.ApprovalRequest) *io.ExecPolicyAmendment {
 	if req == nil {
 		return nil
 	}
@@ -843,8 +843,8 @@ func approvalProjectAmendment(req *intr.ApprovalRequest) *intr.ExecPolicyAmendme
 		if strings.TrimSpace(pattern) == "" {
 			return nil
 		}
-		return &intr.ExecPolicyAmendment{
-			CommandRule: &intr.ExecPolicyCommandRule{
+		return &io.ExecPolicyAmendment{
+			CommandRule: &io.ExecPolicyCommandRule{
 				Name:  "allow-" + approvalRuleSlug(pattern),
 				Match: pattern + "*",
 			},
@@ -855,8 +855,8 @@ func approvalProjectAmendment(req *intr.ApprovalRequest) *intr.ExecPolicyAmendme
 		if len(fields) < 2 {
 			return nil
 		}
-		return &intr.ExecPolicyAmendment{
-			HTTPRule: &intr.ExecPolicyHTTPRule{
+		return &io.ExecPolicyAmendment{
+			HTTPRule: &io.ExecPolicyHTTPRule{
 				Name:    "allow-" + approvalRuleSlug(fields[1]),
 				Match:   fields[1],
 				Methods: []string{strings.ToUpper(fields[0])},

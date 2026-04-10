@@ -11,6 +11,8 @@ type Config struct {
 	InitialDelay time.Duration
 	MaxDelay     time.Duration
 	Multiplier   float64
+	// TotalTimeout 限制所有重试的总时间预算。0 = 无限制。
+	TotalTimeout time.Duration
 	ShouldRetry  func(error) bool
 }
 
@@ -55,4 +57,9 @@ func (c Config) ShouldRetryOrDefault(ctx context.Context, err error) bool {
 		return c.ShouldRetry(err)
 	}
 	return true
+}
+
+// TotalTimeoutOrDefault 返回总超时时间，0 = 无限制。
+func (c Config) TotalTimeoutOrDefault() time.Duration {
+	return c.TotalTimeout
 }

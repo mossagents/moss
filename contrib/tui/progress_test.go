@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/mossagents/moss/appkit/runtime"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"path/filepath"
 	"strings"
@@ -62,39 +62,39 @@ func TestRebuildExecutionProgressUsesLatestRun(t *testing.T) {
 		Budget: session.Budget{MaxSteps: 12},
 	}
 	base := time.Now().UTC().Add(-time.Minute)
-	events := []kobs.ExecutionEvent{
+	events := []observe.ExecutionEvent{
 		{
-			Type:      kobs.ExecutionRunStarted,
+			Type:      observe.ExecutionRunStarted,
 			SessionID: sess.ID,
 			Timestamp: base,
 			Data:      map[string]any{"max_steps": 12},
 		},
 		{
-			Type:      kobs.ExecutionIterationStarted,
+			Type:      observe.ExecutionIterationStarted,
 			SessionID: sess.ID,
 			Timestamp: base.Add(1 * time.Second),
 			Data:      map[string]any{"iteration": 1, "max_steps": 12},
 		},
 		{
-			Type:      kobs.ExecutionRunCompleted,
+			Type:      observe.ExecutionRunCompleted,
 			SessionID: sess.ID,
 			Timestamp: base.Add(2 * time.Second),
 			Data:      map[string]any{"steps": 1, "tokens": 20},
 		},
 		{
-			Type:      kobs.ExecutionRunStarted,
+			Type:      observe.ExecutionRunStarted,
 			SessionID: sess.ID,
 			Timestamp: base.Add(3 * time.Second),
 			Data:      map[string]any{"max_steps": 12},
 		},
 		{
-			Type:      kobs.ExecutionIterationStarted,
+			Type:      observe.ExecutionIterationStarted,
 			SessionID: sess.ID,
 			Timestamp: base.Add(4 * time.Second),
 			Data:      map[string]any{"iteration": 2, "max_steps": 12},
 		},
 		{
-			Type:      kobs.ExecutionToolStarted,
+			Type:      observe.ExecutionToolStarted,
 			SessionID: sess.ID,
 			Timestamp: base.Add(5 * time.Second),
 			ToolName:  "run_command",

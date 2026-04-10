@@ -1,29 +1,29 @@
-// Package prometheus provides a kobs.Observer implementation that exports
+// Package prometheus provides a observe.Observer implementation that exports
 // kernel events as Prometheus metrics.
 //
 // Usage:
 //
 //	obs, err := prometheus.New(prom.DefaultRegisterer)
 //	if err != nil { ... }
-//	kernel.SetObserver(kobs.JoinObservers(existing, obs))
+//	kernel.SetObserver(observe.JoinObservers(existing, obs))
 package prometheus
 
 import (
 	"context"
 	"strconv"
 
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
 )
 
-// Observer implements kobs.Observer by recording kernel events as Prometheus metrics.
-// It embeds kobs.NoOpObserver so that only metrics-relevant methods are overridden;
+// Observer implements observe.Observer by recording kernel events as Prometheus metrics.
+// It embeds observe.NoOpObserver so that only metrics-relevant methods are overridden;
 // fine-grained execution events (OnExecutionEvent) are silently discarded.
 type Observer struct {
-	kobs.NoOpObserver
+	observe.NoOpObserver
 
-	metrics *kobs.MetricsAccumulator
+	metrics *observe.MetricsAccumulator
 
 	llmCallsTotal    *prom.CounterVec
 	llmDurationSecs  *prom.HistogramVec
@@ -41,7 +41,7 @@ type Observer struct {
 // for isolated testing.
 func New(reg prom.Registerer) (*Observer, error) {
 	o := &Observer{
-		metrics: &kobs.MetricsAccumulator{},
+		metrics: &observe.MetricsAccumulator{},
 		llmCallsTotal: prom.NewCounterVec(prom.CounterOpts{
 			Name: "moss_llm_calls_total",
 			Help: "Total LLM API calls, labelled by model, stop reason, and whether an error occurred.",
@@ -103,7 +103,7 @@ func New(reg prom.Registerer) (*Observer, error) {
 	return o, nil
 }
 
-func (o *Observer) OnEvent(_ context.Context, e kobs.EventEnvelope) {
+func (o *Observer) OnEvent(_ context.Context, e observe.EventEnvelope) {
 	if o.metrics != nil {
 		o.metrics.ApplyEnvelope(e)
 	}
@@ -117,7 +117,7 @@ func (o *Observer) NormalizedMetricsMap() map[string]float64 {
 	return o.metrics.Map()
 }
 
-func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
+func (o *Observer) OnLLMCall(_ context.Context, e observe.LLMCallEvent) {
 	o.llmCallsTotal.WithLabelValues(e.Model, e.StopReason, strconv.FormatBool(e.Error != nil)).Inc()
 	o.llmDurationSecs.WithLabelValues(e.Model).Observe(e.Duration.Seconds())
 	if e.Usage.PromptTokens > 0 {
@@ -131,20 +131,20 @@ func (o *Observer) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	}
 }
 
-func (o *Observer) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
+func (o *Observer) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
 	o.toolCallsTotal.WithLabelValues(e.ToolName, e.Risk, strconv.FormatBool(e.Error != nil)).Inc()
 	o.toolDurationSecs.WithLabelValues(e.ToolName, e.Risk).Observe(e.Duration.Seconds())
 }
 
-func (o *Observer) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
+func (o *Observer) OnSessionEvent(_ context.Context, e observe.SessionEvent) {
 	o.sessionsTotal.WithLabelValues(e.Type).Inc()
 }
 
-func (o *Observer) OnApproval(_ context.Context, e intr.ApprovalEvent) {
+func (o *Observer) OnApproval(_ context.Context, e io.ApprovalEvent) {
 	o.approvalsTotal.WithLabelValues(string(e.Request.Kind), approvalDecision(e)).Inc()
 }
 
-func approvalDecision(e intr.ApprovalEvent) string {
+func approvalDecision(e io.ApprovalEvent) string {
 	if e.Decision == nil {
 		return "pending"
 	}
@@ -154,6 +154,6 @@ func approvalDecision(e intr.ApprovalEvent) string {
 	return "rejected"
 }
 
-func (o *Observer) OnError(_ context.Context, e kobs.ErrorEvent) {
+func (o *Observer) OnError(_ context.Context, e observe.ErrorEvent) {
 	o.errorsTotal.WithLabelValues(e.Phase).Inc()
 }

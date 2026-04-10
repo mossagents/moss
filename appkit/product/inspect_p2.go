@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"sort"
 	"strconv"
@@ -120,7 +120,7 @@ type inspectGovernanceTurn struct {
 }
 
 func buildInspectReplay(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, target string) (*InspectReplayReport, error) {
-	checkpoints, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, 
 	if err != nil {
 		return nil, err
 	}
-	checkpoints, err := ckpt.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, err
 	}
@@ -292,12 +292,12 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 		case "llm_failover_exhausted":
 			report.Failover.Exhausted++
 			turn.exhausted = true
-		case string(kobs.ExecutionApprovalRequest):
+		case string(observe.ExecutionApprovalRequest):
 			report.Approvals.Requested++
 			if reason := strings.TrimSpace(stringData(event.Data, "reason_code")); reason != "" {
 				reasons[reason]++
 			}
-		case string(kobs.ExecutionApprovalResolved):
+		case string(observe.ExecutionApprovalResolved):
 			report.Approvals.Resolved++
 			if boolValue(event.Data, "approved") {
 				report.Approvals.Approved++
@@ -476,7 +476,7 @@ func renderInspectGovernanceReport(b *strings.Builder, report InspectGovernanceR
 	}
 }
 
-func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints ckpt.CheckpointStore, selector string) (InspectCompareTarget, error) {
+func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
 	kind, raw := splitInspectCompareSelector(selector)
 	switch kind {
 	case "checkpoint":
@@ -511,7 +511,7 @@ func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCata
 	}, nil
 }
 
-func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints ckpt.CheckpointStore, target string) (InspectCompareTarget, error) {
+func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
 	record, err := ResolveCheckpointRecord(ctx, checkpoints, target)
 	if err != nil {
 		return InspectCompareTarget{}, err

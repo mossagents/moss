@@ -6,8 +6,8 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/tool"
 	"strings"
 )
@@ -132,7 +132,7 @@ func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.
 	return decision
 }
 
-func PersistProjectApprovalAmendment(workspace, profile string, amendment *intr.ExecPolicyAmendment) error {
+func PersistProjectApprovalAmendment(workspace, profile string, amendment *io.ExecPolicyAmendment) error {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return fmt.Errorf("workspace is required")

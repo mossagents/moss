@@ -2,21 +2,21 @@ package session
 
 import (
 	"context"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"path/filepath"
 	"testing"
 	"time"
 )
 
 type checkpointCatalogStub struct {
-	records map[string]ckpt.CheckpointRecord
+	records map[string]checkpoint.CheckpointRecord
 }
 
-func (s checkpointCatalogStub) Create(context.Context, ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
-	return nil, ckpt.ErrCheckpointUnavailable
+func (s checkpointCatalogStub) Create(context.Context, checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error) {
+	return nil, checkpoint.ErrCheckpointUnavailable
 }
 
-func (s checkpointCatalogStub) Load(_ context.Context, id string) (*ckpt.CheckpointRecord, error) {
+func (s checkpointCatalogStub) Load(_ context.Context, id string) (*checkpoint.CheckpointRecord, error) {
 	record, ok := s.records[id]
 	if !ok {
 		return nil, nil
@@ -25,16 +25,16 @@ func (s checkpointCatalogStub) Load(_ context.Context, id string) (*ckpt.Checkpo
 	return &cp, nil
 }
 
-func (s checkpointCatalogStub) List(context.Context) ([]ckpt.CheckpointRecord, error) {
-	out := make([]ckpt.CheckpointRecord, 0, len(s.records))
+func (s checkpointCatalogStub) List(context.Context) ([]checkpoint.CheckpointRecord, error) {
+	out := make([]checkpoint.CheckpointRecord, 0, len(s.records))
 	for _, record := range s.records {
 		out = append(out, record)
 	}
 	return out, nil
 }
 
-func (s checkpointCatalogStub) FindBySession(_ context.Context, sessionID string) ([]ckpt.CheckpointRecord, error) {
-	var out []ckpt.CheckpointRecord
+func (s checkpointCatalogStub) FindBySession(_ context.Context, sessionID string) ([]checkpoint.CheckpointRecord, error) {
+	var out []checkpoint.CheckpointRecord
 	for _, record := range s.records {
 		if record.SessionID == sessionID {
 			out = append(out, record)
@@ -66,13 +66,13 @@ func TestCatalogListsThreadsAndCheckpoints(t *testing.T) {
 	catalog := Catalog{
 		Store: store,
 		Checkpoints: checkpointCatalogStub{
-			records: map[string]ckpt.CheckpointRecord{
+			records: map[string]checkpoint.CheckpointRecord{
 				"cp-1": {
 					ID:        "cp-1",
 					SessionID: "sess-1",
 					Note:      "before fork",
-					Lineage: []ckpt.CheckpointLineageRef{
-						{Kind: ckpt.CheckpointLineageSession, ID: "sess-1"},
+					Lineage: []checkpoint.CheckpointLineageRef{
+						{Kind: checkpoint.CheckpointLineageSession, ID: "sess-1"},
 					},
 					CreatedAt: time.Now().UTC(),
 				},
@@ -94,7 +94,7 @@ func TestCatalogListsThreadsAndCheckpoints(t *testing.T) {
 	if len(checkpoints) != 1 || checkpoints[0].ID != "cp-1" {
 		t.Fatalf("unexpected checkpoints: %+v", checkpoints)
 	}
-	source, err := catalog.ResolveForkSource(context.Background(), ckpt.ForkSourceCheckpoint, "cp-1")
+	source, err := catalog.ResolveForkSource(context.Background(), checkpoint.ForkSourceCheckpoint, "cp-1")
 	if err != nil {
 		t.Fatal(err)
 	}

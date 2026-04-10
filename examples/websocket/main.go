@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime/events"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 	"golang.org/x/net/websocket"
@@ -133,7 +133,7 @@ func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websock
 		}
 
 		if msg.Type == "user" && msg.Content != "" {
-			sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart(msg.Content)}})
+			sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}})
 			result, err := k.Run(connCtx, sess)
 			if err != nil {
 				if connCtx.Err() != nil {
@@ -198,20 +198,20 @@ type wsMsg struct {
 	AskType  string                `json:"ask_type,omitempty"` // confirm, select, free_text
 	Options  []string              `json:"options,omitempty"`  // select 选项
 	Meta     map[string]any        `json:"meta,omitempty"`
-	Approval *intr.ApprovalRequest `json:"approval,omitempty"`
+	Approval *io.ApprovalRequest `json:"approval,omitempty"`
 }
 
 // ── WebSocket UserIO 实现 ───────────────────────────
 
-// WebSocketIO 实现 intr.UserIO，通过 WebSocket 双向通信。
+// WebSocketIO 实现 io.UserIO，通过 WebSocket 双向通信。
 type WebSocketIO struct {
 	conn *websocket.Conn
 	mu   sync.Mutex
 }
 
-var _ intr.UserIO = (*WebSocketIO)(nil)
+var _ io.UserIO = (*WebSocketIO)(nil)
 
-func (w *WebSocketIO) Send(_ context.Context, msg intr.OutputMessage) error {
+func (w *WebSocketIO) Send(_ context.Context, msg io.OutputMessage) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -223,7 +223,7 @@ func (w *WebSocketIO) Send(_ context.Context, msg intr.OutputMessage) error {
 	return websocket.JSON.Send(w.conn, wsMsg{Type: wsType, Content: ev.Content, Meta: ev.Meta})
 }
 
-func (w *WebSocketIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+func (w *WebSocketIO) Ask(_ context.Context, req io.InputRequest) (io.InputResponse, error) {
 	w.mu.Lock()
 	askType := string(req.Type)
 	err := websocket.JSON.Send(w.conn, wsMsg{
@@ -236,20 +236,20 @@ func (w *WebSocketIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputR
 	})
 	w.mu.Unlock()
 	if err != nil {
-		return intr.InputResponse{}, err
+		return io.InputResponse{}, err
 	}
 
 	// 阻塞等待客户端回复
 	var reply wsMsg
 	if err := websocket.JSON.Receive(w.conn, &reply); err != nil {
-		return intr.InputResponse{}, err
+		return io.InputResponse{}, err
 	}
 
-	resp := intr.InputResponse{Value: reply.Content}
-	if req.Type == intr.InputConfirm {
+	resp := io.InputResponse{Value: reply.Content}
+	if req.Type == io.InputConfirm {
 		resp.Approved = reply.Content == "y" || reply.Content == "yes"
 		if req.Approval != nil {
-			resp.Decision = &intr.ApprovalDecision{
+			resp.Decision = &io.ApprovalDecision{
 				RequestID: req.Approval.ID,
 				Approved:  resp.Approved,
 				Source:    "websocket",

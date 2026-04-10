@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
-	memstore "github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/memory"
 	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
@@ -25,7 +25,7 @@ func (s *sqliteMemoryStore) Close() error {
 	return s.db.Close()
 }
 
-func NewSQLiteMemoryStore(dbPath string) (memstore.MemoryStore, error) {
+func NewSQLiteMemoryStore(dbPath string) (memory.MemoryStore, error) {
 	dbPath = strings.TrimSpace(dbPath)
 	if dbPath == "" {
 		return nil, fmt.Errorf("memory sqlite path is empty")
@@ -128,7 +128,7 @@ func sqliteTableHasColumns(db *sql.DB, table string, required map[string]struct{
 	return true, nil
 }
 
-func (s *sqliteMemoryStore) Upsert(ctx context.Context, record memstore.MemoryRecord) (*memstore.MemoryRecord, error) {
+func (s *sqliteMemoryStore) Upsert(ctx context.Context, record memory.MemoryRecord) (*memory.MemoryRecord, error) {
 	if strings.TrimSpace(record.Path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -175,7 +175,7 @@ ON CONFLICT(path) DO UPDATE SET
 	return &out, nil
 }
 
-func (s *sqliteMemoryStore) GetByPath(ctx context.Context, path string) (*memstore.MemoryRecord, error) {
+func (s *sqliteMemoryStore) GetByPath(ctx context.Context, path string) (*memory.MemoryRecord, error) {
 	key := normalizeMemoryPath(path)
 	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
 	record, err := scanMemoryRecord(row)
@@ -194,13 +194,13 @@ func (s *sqliteMemoryStore) DeleteByPath(ctx context.Context, path string) error
 	return err
 }
 
-func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memstore.MemoryRecord, error) {
+func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]memstore.MemoryRecord, 0)
+	out := make([]memory.MemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)
 		if err != nil {
@@ -211,11 +211,11 @@ func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memstore.Mem
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sortMemoryRecords(out, memstore.MemoryQuery{})
+	sortMemoryRecords(out, memory.MemoryQuery{})
 	return trimMemoryRecords(out, limit), nil
 }
 
-func (s *sqliteMemoryStore) Search(ctx context.Context, query memstore.MemoryQuery) ([]memstore.MemoryRecord, error) {
+func (s *sqliteMemoryStore) Search(ctx context.Context, query memory.MemoryQuery) ([]memory.MemoryRecord, error) {
 	q := `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
 	args := make([]any, 0, 16)
 	if group := normalizeMemoryPath(query.Group); group != "" {
@@ -262,7 +262,7 @@ func (s *sqliteMemoryStore) Search(ctx context.Context, query memstore.MemoryQue
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]memstore.MemoryRecord, 0)
+	out := make([]memory.MemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)
 		if err != nil {
@@ -315,7 +315,7 @@ type memoryScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanMemoryRecord(scanner memoryScanner) (*memstore.MemoryRecord, error) {
+func scanMemoryRecord(scanner memoryScanner) (*memory.MemoryRecord, error) {
 	var (
 		id              string
 		path            string
@@ -341,13 +341,13 @@ func scanMemoryRecord(scanner memoryScanner) (*memstore.MemoryRecord, error) {
 	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
-	record := &memstore.MemoryRecord{
+	record := &memory.MemoryRecord{
 		ID:              id,
 		Path:            normalizeMemoryPath(path),
 		Content:         content,
 		Summary:         summary,
-		Stage:           memstore.MemoryStage(stage),
-		Status:          memstore.MemoryStatus(status),
+		Stage:           memory.MemoryStage(stage),
+		Status:          memory.MemoryStatus(status),
 		Group:           normalizeMemoryPath(group),
 		Workspace:       workspace,
 		CWD:             cwd,
@@ -366,10 +366,10 @@ func scanMemoryRecord(scanner memoryScanner) (*memstore.MemoryRecord, error) {
 	record.Tags = normalizeMemoryTags(record.Tags)
 	record.Citation = normalizeMemoryCitation(record.Citation)
 	if record.Stage == "" {
-		record.Stage = memstore.MemoryStageManual
+		record.Stage = memory.MemoryStageManual
 	}
 	if record.Status == "" {
-		record.Status = memstore.MemoryStatusActive
+		record.Status = memory.MemoryStatusActive
 	}
 	return record, nil
 }

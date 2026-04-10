@@ -2,7 +2,7 @@ package session
 
 import (
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
 )
@@ -125,10 +125,10 @@ func ThreadPreview(sess *Session) string {
 	}
 	for i := len(sess.Messages) - 1; i >= 0; i-- {
 		msg := sess.Messages[i]
-		if msg.Role == mdl.RoleSystem {
+		if msg.Role == model.RoleSystem {
 			continue
 		}
-		text := trimPreview(mdl.ContentPartsToPlainText(msg.ContentParts), 240)
+		text := trimPreview(model.ContentPartsToPlainText(msg.ContentParts), 240)
 		if text != "" {
 			return text
 		}

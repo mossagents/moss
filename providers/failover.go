@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"io"
 	"strings"
@@ -42,13 +42,13 @@ func NewFailoverLLM(router *ModelRouter, cfg FailoverConfig) (*FailoverLLM, erro
 	}, nil
 }
 
-func (f *FailoverLLM) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (f *FailoverLLM) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	candidates, err := f.candidates(req.Config.Requirements)
 	if err != nil {
 		return nil, err
 	}
 
-	attempts := make([]mdl.LLMCallAttempt, 0, len(candidates))
+	attempts := make([]model.LLMCallAttempt, 0, len(candidates))
 	maxRetries := f.maxRetries()
 	lastModel := ""
 
@@ -66,7 +66,7 @@ func (f *FailoverLLM) Complete(ctx context.Context, req mdl.CompletionRequest) (
 			resp, err := candidate.llm.Complete(ctx, req)
 			if err == nil {
 				f.recordBreakerSuccess(candidate.profile.Name)
-				attempts = append(attempts, mdl.LLMCallAttempt{
+				attempts = append(attempts, model.LLMCallAttempt{
 					CandidateModel: candidate.profile.Name,
 					AttemptIndex:   idx + 1,
 					CandidateRetry: candidateRetry,
@@ -77,7 +77,7 @@ func (f *FailoverLLM) Complete(ctx context.Context, req mdl.CompletionRequest) (
 
 			f.recordBreakerFailure(candidate.profile.Name)
 			failoverEligible := f.shouldFailover(err)
-			attempt := mdl.LLMCallAttempt{
+			attempt := model.LLMCallAttempt{
 				CandidateModel: candidate.profile.Name,
 				AttemptIndex:   idx + 1,
 				CandidateRetry: candidateRetry,
@@ -108,7 +108,7 @@ func (f *FailoverLLM) Complete(ctx context.Context, req mdl.CompletionRequest) (
 	return nil, exhaustedFailoverError(fmt.Errorf("llm failover exhausted"), lastModel, attempts)
 }
 
-func (f *FailoverLLM) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (f *FailoverLLM) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
 	candidates, err := f.candidates(req.Config.Requirements)
 	if err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (f *FailoverLLM) Stream(ctx context.Context, req mdl.CompletionRequest) (md
 	}, nil
 }
 
-func (f *FailoverLLM) candidates(req *mdl.TaskRequirement) ([]routedModel, error) {
+func (f *FailoverLLM) candidates(req *model.TaskRequirement) ([]routedModel, error) {
 	candidates, err := f.router.orderedCandidates(req)
 	if err != nil {
 		return nil, err
@@ -147,7 +147,7 @@ func (f *FailoverLLM) shouldFailover(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if !errors.As(err, &callErr) || !callErr.Retryable {
 		return false
 	}
@@ -209,13 +209,13 @@ func (f *FailoverLLM) recordBreakerFailure(model string) {
 	}
 }
 
-func (f *FailoverLLM) handleBreakerOpen(model string, idx int, candidates []routedModel, attempts *[]mdl.LLMCallAttempt) (bool, error) {
-	breaker := f.breakerFor(model)
+func (f *FailoverLLM) handleBreakerOpen(modelName string, idx int, candidates []routedModel, attempts *[]model.LLMCallAttempt) (bool, error) {
+	breaker := f.breakerFor(modelName)
 	if breaker == nil || breaker.Allow() {
 		return false, nil
 	}
-	attempt := mdl.LLMCallAttempt{
-		CandidateModel: model,
+	attempt := model.LLMCallAttempt{
+		CandidateModel: modelName,
 		AttemptIndex:   idx + 1,
 		BreakerState:   "open",
 		Outcome:        "skipped",
@@ -225,33 +225,33 @@ func (f *FailoverLLM) handleBreakerOpen(model string, idx int, candidates []rout
 		(*attempts)[len(*attempts)-1].FailoverTo = candidates[idx+1].profile.Name
 		return true, nil
 	}
-	err := kerrors.New(kerrors.ErrLLMRejected, fmt.Sprintf("LLM circuit breaker is open for %s", model))
+	err := kerrors.New(kerrors.ErrLLMRejected, fmt.Sprintf("LLM circuit breaker is open for %s", modelName))
 	if f.cfg.FailoverOnBreakerOpen {
-		return false, exhaustedFailoverError(err, model, *attempts)
+		return false, exhaustedFailoverError(err, modelName, *attempts)
 	}
-	return false, withMetadata(err, false, false, model, *attempts)
+	return false, withMetadata(err, false, false, modelName, *attempts)
 }
 
 type failoverStreamIterator struct {
 	parent          *FailoverLLM
 	ctx             context.Context
-	req             mdl.CompletionRequest
+	req             model.CompletionRequest
 	candidates      []routedModel
-	attempts        []mdl.LLMCallAttempt
+	attempts        []model.LLMCallAttempt
 	currentIndex    int
 	currentRetry    int
-	currentIter     mdl.StreamIterator
+	currentIter     model.StreamIterator
 	currentModel    string
 	emitted         bool
 	selectedModel   string
 	completedStream bool
 }
 
-func (it *failoverStreamIterator) Next() (mdl.StreamChunk, error) {
+func (it *failoverStreamIterator) Next() (model.StreamChunk, error) {
 	for {
 		if it.currentIter == nil {
 			if err := it.openCurrent(); err != nil {
-				return mdl.StreamChunk{}, err
+				return model.StreamChunk{}, err
 			}
 		}
 
@@ -274,18 +274,18 @@ func (it *failoverStreamIterator) Next() (mdl.StreamChunk, error) {
 			if !it.completedStream {
 				it.recordSelectedAttempt()
 			}
-			return mdl.StreamChunk{}, io.EOF
+			return model.StreamChunk{}, io.EOF
 		}
 		if it.emitted {
 			it.parent.recordBreakerFailure(it.currentModel)
-			return mdl.StreamChunk{}, withMetadata(err, false, false, it.currentModel, it.Metadata().Attempts)
+			return model.StreamChunk{}, withMetadata(err, false, false, it.currentModel, it.Metadata().Attempts)
 		}
 
 		_ = it.currentIter.Close()
 		it.currentIter = nil
 		it.parent.recordBreakerFailure(it.currentModel)
 		if finalErr := it.handlePreEmissionError(err); finalErr != nil {
-			return mdl.StreamChunk{}, finalErr
+			return model.StreamChunk{}, finalErr
 		}
 	}
 }
@@ -297,15 +297,15 @@ func (it *failoverStreamIterator) Close() error {
 	return it.currentIter.Close()
 }
 
-func (it *failoverStreamIterator) Metadata() mdl.LLMCallMetadata {
-	meta := mdl.LLMCallMetadata{
+func (it *failoverStreamIterator) Metadata() model.LLMCallMetadata {
+	meta := model.LLMCallMetadata{
 		ActualModel: it.selectedModel,
-		Attempts:    append([]mdl.LLMCallAttempt(nil), it.attempts...),
+		Attempts:    append([]model.LLMCallAttempt(nil), it.attempts...),
 	}
 	if strings.TrimSpace(meta.ActualModel) == "" {
 		meta.ActualModel = it.currentModel
 	}
-	if provider, ok := it.currentIter.(mdl.MetadataStreamIterator); ok {
+	if provider, ok := it.currentIter.(model.MetadataStreamIterator); ok {
 		meta = mergeResponseMetadata(meta, provider.Metadata())
 	}
 	return meta
@@ -320,7 +320,7 @@ func (it *failoverStreamIterator) openCurrent() error {
 		candidate := it.candidates[it.currentIndex]
 		it.currentModel = candidate.profile.Name
 		if breaker := it.parent.breakerFor(candidate.profile.Name); breaker != nil && !breaker.Allow() {
-			attempt := mdl.LLMCallAttempt{
+			attempt := model.LLMCallAttempt{
 				CandidateModel: candidate.profile.Name,
 				AttemptIndex:   it.currentIndex + 1,
 				BreakerState:   "open",
@@ -340,13 +340,13 @@ func (it *failoverStreamIterator) openCurrent() error {
 			return withMetadata(err, false, false, candidate.profile.Name, it.attempts)
 		}
 
-		sllm, ok := candidate.llm.(mdl.StreamingLLM)
+		sllm, ok := candidate.llm.(model.StreamingLLM)
 		if !ok {
-			fallbackErr := &mdl.LLMCallError{
+			fallbackErr := &model.LLMCallError{
 				Err:          fmt.Errorf("model %q does not support streaming", candidate.profile.Name),
 				Retryable:    false,
 				FallbackSafe: true,
-				Metadata:     mdl.LLMCallMetadata{ActualModel: candidate.profile.Name},
+				Metadata:     model.LLMCallMetadata{ActualModel: candidate.profile.Name},
 			}
 			if it.trySyncFallback(candidate, fallbackErr) {
 				return nil
@@ -375,7 +375,7 @@ func (it *failoverStreamIterator) openCurrent() error {
 
 func (it *failoverStreamIterator) handlePreEmissionError(err error) error {
 	failoverEligible := it.parent.shouldFailover(err)
-	attempt := mdl.LLMCallAttempt{
+	attempt := model.LLMCallAttempt{
 		CandidateModel: it.currentModel,
 		AttemptIndex:   it.currentIndex + 1,
 		CandidateRetry: it.currentRetry,
@@ -427,7 +427,7 @@ func (it *failoverStreamIterator) recordSelectedAttempt() {
 			return
 		}
 	}
-	it.attempts = append(it.attempts, mdl.LLMCallAttempt{
+	it.attempts = append(it.attempts, model.LLMCallAttempt{
 		CandidateModel: it.currentModel,
 		AttemptIndex:   it.currentIndex + 1,
 		CandidateRetry: it.currentRetry,
@@ -437,7 +437,7 @@ func (it *failoverStreamIterator) recordSelectedAttempt() {
 
 type failoverExhaustedError struct {
 	cause    error
-	attempts []mdl.LLMCallAttempt
+	attempts []model.LLMCallAttempt
 }
 
 func (e *failoverExhaustedError) Error() string {
@@ -467,20 +467,20 @@ func (e *failoverExhaustedError) Unwrap() error {
 	return e.cause
 }
 
-func exhaustedFailoverError(err error, model string, attempts []mdl.LLMCallAttempt) error {
+func exhaustedFailoverError(err error, modelName string, attempts []model.LLMCallAttempt) error {
 	return withMetadata(&failoverExhaustedError{
 		cause:    err,
-		attempts: append([]mdl.LLMCallAttempt(nil), attempts...),
-	}, false, false, model, attempts)
+		attempts: append([]model.LLMCallAttempt(nil), attempts...),
+	}, false, false, modelName, attempts)
 }
 
-func ensureResponseMetadata(resp *mdl.CompletionResponse, model string, attempts []mdl.LLMCallAttempt) *mdl.CompletionResponse {
+func ensureResponseMetadata(resp *model.CompletionResponse, modelName string, attempts []model.LLMCallAttempt) *model.CompletionResponse {
 	if resp == nil {
 		return nil
 	}
-	base := mdl.LLMCallMetadata{
-		ActualModel: model,
-		Attempts:    append([]mdl.LLMCallAttempt(nil), attempts...),
+	base := model.LLMCallMetadata{
+		ActualModel: modelName,
+		Attempts:    append([]model.LLMCallAttempt(nil), attempts...),
 	}
 	if resp.Metadata != nil {
 		merged := mergeResponseMetadata(base, *resp.Metadata)
@@ -491,7 +491,7 @@ func ensureResponseMetadata(resp *mdl.CompletionResponse, model string, attempts
 	return resp
 }
 
-func mergeResponseMetadata(base, overlay mdl.LLMCallMetadata) mdl.LLMCallMetadata {
+func mergeResponseMetadata(base, overlay model.LLMCallMetadata) model.LLMCallMetadata {
 	if strings.TrimSpace(overlay.ActualModel) != "" {
 		base.ActualModel = overlay.ActualModel
 	}
@@ -501,20 +501,20 @@ func mergeResponseMetadata(base, overlay mdl.LLMCallMetadata) mdl.LLMCallMetadat
 	return base
 }
 
-func withMetadata(err error, retryable, fallbackSafe bool, model string, attempts []mdl.LLMCallAttempt) error {
+func withMetadata(err error, retryable, fallbackSafe bool, modelName string, attempts []model.LLMCallAttempt) error {
 	if err == nil {
 		return nil
 	}
-	metadata := mdl.LLMCallMetadata{
-		ActualModel: model,
-		Attempts:    append([]mdl.LLMCallAttempt(nil), attempts...),
+	metadata := model.LLMCallMetadata{
+		ActualModel: modelName,
+		Attempts:    append([]model.LLMCallAttempt(nil), attempts...),
 	}
-	if callErr, ok := err.(*mdl.LLMCallError); ok {
+	if callErr, ok := err.(*model.LLMCallError); ok {
 		merged := *callErr
 		merged.Metadata = mergeResponseMetadata(metadata, merged.Metadata)
 		return &merged
 	}
-	return &mdl.LLMCallError{
+	return &model.LLMCallError{
 		Err:          err,
 		Retryable:    retryable,
 		FallbackSafe: fallbackSafe,
@@ -523,7 +523,7 @@ func withMetadata(err error, retryable, fallbackSafe bool, model string, attempt
 }
 
 func llmErrorRetryable(err error) bool {
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.Retryable
 	}
@@ -531,7 +531,7 @@ func llmErrorRetryable(err error) bool {
 }
 
 func llmErrorFallbackSafe(err error) bool {
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		return callErr.FallbackSafe
 	}
@@ -539,47 +539,47 @@ func llmErrorFallbackSafe(err error) bool {
 }
 
 type completionIterator struct {
-	resp          *mdl.CompletionResponse
-	metadata      mdl.LLMCallMetadata
+	resp          *model.CompletionResponse
+	metadata      model.LLMCallMetadata
 	index         int
 	sentReasoning bool
 	sentDone      bool
 }
 
-func newCompletionIterator(resp *mdl.CompletionResponse) mdl.StreamIterator {
-	meta := mdl.LLMCallMetadata{}
+func newCompletionIterator(resp *model.CompletionResponse) model.StreamIterator {
+	meta := model.LLMCallMetadata{}
 	if resp != nil && resp.Metadata != nil {
 		meta = *resp.Metadata
 	}
 	return &completionIterator{resp: resp, metadata: meta}
 }
 
-func (it *completionIterator) Next() (mdl.StreamChunk, error) {
+func (it *completionIterator) Next() (model.StreamChunk, error) {
 	if it.resp == nil {
-		return mdl.StreamChunk{}, io.EOF
+		return model.StreamChunk{}, io.EOF
 	}
 	if !it.sentReasoning {
 		it.sentReasoning = true
-		if reasoning := mdl.ContentPartsToReasoningText(it.resp.Message.ContentParts); reasoning != "" {
-			return mdl.StreamChunk{ReasoningDelta: reasoning}, nil
+		if reasoning := model.ContentPartsToReasoningText(it.resp.Message.ContentParts); reasoning != "" {
+			return model.StreamChunk{ReasoningDelta: reasoning}, nil
 		}
 	}
 	if it.index < len(it.resp.ToolCalls) {
 		call := it.resp.ToolCalls[it.index]
 		it.index++
-		return mdl.StreamChunk{ToolCall: &call}, nil
+		return model.StreamChunk{ToolCall: &call}, nil
 	}
 	if !it.sentDone {
 		it.sentDone = true
-		content := mdl.ContentPartsToPlainText(it.resp.Message.ContentParts)
+		content := model.ContentPartsToPlainText(it.resp.Message.ContentParts)
 		if len(it.resp.ToolCalls) == 0 && content != "" {
-			return mdl.StreamChunk{Delta: content, Done: true, Usage: &it.resp.Usage}, nil
+			return model.StreamChunk{Delta: content, Done: true, Usage: &it.resp.Usage}, nil
 		}
-		return mdl.StreamChunk{Done: true, Usage: &it.resp.Usage}, nil
+		return model.StreamChunk{Done: true, Usage: &it.resp.Usage}, nil
 	}
-	return mdl.StreamChunk{}, io.EOF
+	return model.StreamChunk{}, io.EOF
 }
 
 func (it *completionIterator) Close() error { return nil }
 
-func (it *completionIterator) Metadata() mdl.LLMCallMetadata { return it.metadata }
+func (it *completionIterator) Metadata() model.LLMCallMetadata { return it.metadata }

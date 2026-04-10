@@ -2,7 +2,7 @@ package providers
 
 import (
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/providers/claude"
 	"github.com/mossagents/moss/providers/gemini"
 	"github.com/mossagents/moss/providers/openai"
@@ -18,7 +18,7 @@ import (
 //   - "gemini" / "google"：Google Gemini API
 //
 // apiKey 和 baseURL 为空时使用环境变量默认值。
-func BuildLLM(apiType, model, apiKey, baseURL string) (mdl.LLM, error) {
+func BuildLLM(apiType, model, apiKey, baseURL string) (model.LLM, error) {
 	switch strings.ToLower(apiType) {
 	case "claude", "anthropic":
 		var opts []claude.Option

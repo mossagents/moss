@@ -3,13 +3,13 @@ package tui
 import (
 	"context"
 	tea "github.com/charmbracelet/bubbletea"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"sync"
 )
 
 // bridgeMsg 是从 UserIO 桥接到 Bubble Tea 的消息类型。
 type bridgeMsg struct {
-	output *intr.OutputMessage
+	output *io.OutputMessage
 	ask    *bridgeAsk
 }
 
@@ -17,11 +17,11 @@ type refreshMsg struct{}
 
 // bridgeAsk 表示一个阻塞式用户输入请求。
 type bridgeAsk struct {
-	request intr.InputRequest
-	replyCh chan intr.InputResponse
+	request io.InputRequest
+	replyCh chan io.InputResponse
 }
 
-// BridgeIO 实现 intr.UserIO，桥接 kernel 与 Bubble Tea TUI。
+// BridgeIO 实现 io.UserIO，桥接 kernel 与 Bubble Tea TUI。
 // kernel 在后台 goroutine 调用 Send/Ask，BridgeIO 将消息发送到 tea.Program。
 type BridgeIO struct {
 	program *tea.Program
@@ -41,7 +41,7 @@ func (b *BridgeIO) SetProgram(p *tea.Program) {
 }
 
 // Send 向用户推送内容（非阻塞，通过 tea.Program.Send 注入消息）。
-func (b *BridgeIO) Send(_ context.Context, msg intr.OutputMessage) error {
+func (b *BridgeIO) Send(_ context.Context, msg io.OutputMessage) error {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
@@ -77,15 +77,15 @@ func (b *BridgeIO) SendProgress(snapshot executionProgressState, setCurrent bool
 }
 
 // Ask 向用户请求输入（阻塞当前 goroutine，等待 TUI 回复）。
-func (b *BridgeIO) Ask(ctx context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+func (b *BridgeIO) Ask(ctx context.Context, req io.InputRequest) (io.InputResponse, error) {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
 	if p == nil {
-		return intr.InputResponse{}, nil
+		return io.InputResponse{}, nil
 	}
 
-	replyCh := make(chan intr.InputResponse, 1)
+	replyCh := make(chan io.InputResponse, 1)
 	p.Send(bridgeMsg{
 		ask: &bridgeAsk{
 			request: req,
@@ -95,7 +95,7 @@ func (b *BridgeIO) Ask(ctx context.Context, req intr.InputRequest) (intr.InputRe
 
 	select {
 	case <-ctx.Done():
-		return intr.InputResponse{}, ctx.Err()
+		return io.InputResponse{}, ctx.Err()
 	case resp := <-replyCh:
 		return resp, nil
 	}

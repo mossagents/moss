@@ -5,7 +5,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	kt "github.com/mossagents/moss/testing"
 	"os"
@@ -16,7 +16,7 @@ import (
 
 func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 	k := kernel.New(
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {
@@ -34,7 +34,7 @@ func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 
 func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 	k := kernel.New(
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {

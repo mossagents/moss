@@ -3,7 +3,7 @@ package budget_test
 import (
 	"context"
 	"github.com/mossagents/moss/kernel/budget"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
 	"testing"
 )
@@ -79,12 +79,11 @@ func TestBudgetGuard_Blocks(t *testing.T) {
 	gov := budget.NewGovernor(budget.GlobalBudget{MaxTokens: 1}, nil)
 	gov.Record("s1", 1, 0) // exhaust
 
-	mw := budget.BudgetGuard(gov)
-	mc := &middleware.Context{
-		Phase:   middleware.BeforeLLM,
+	hook := budget.BudgetGuard(gov)
+	ev := &hooks.LLMEvent{
 		Session: &session.Session{ID: "s1"},
 	}
-	err := mw(context.Background(), mc, func(_ context.Context) error { return nil })
+	err := hook(context.Background(), ev)
 	if err == nil {
 		t.Fatal("expected ErrBudgetExhausted")
 	}
@@ -92,29 +91,23 @@ func TestBudgetGuard_Blocks(t *testing.T) {
 
 func TestBudgetGuard_Passes(t *testing.T) {
 	gov := budget.NewGovernor(budget.GlobalBudget{MaxTokens: 1000}, nil)
-	mw := budget.BudgetGuard(gov)
-	mc := &middleware.Context{
-		Phase:   middleware.BeforeLLM,
+	hook := budget.BudgetGuard(gov)
+	ev := &hooks.LLMEvent{
 		Session: &session.Session{ID: "s1"},
 	}
-	called := false
-	err := mw(context.Background(), mc, func(_ context.Context) error {
-		called = true
-		return nil
-	})
-	if err != nil || !called {
-		t.Fatalf("expected pass, err=%v called=%v", err, called)
+	err := hook(context.Background(), ev)
+	if err != nil {
+		t.Fatalf("expected pass, err=%v", err)
 	}
 }
 
 func TestBudgetRecorder_Records(t *testing.T) {
 	gov := budget.NewGovernor(budget.GlobalBudget{MaxSteps: 10}, nil)
-	mw := budget.BudgetRecorder(gov)
-	mc := &middleware.Context{
-		Phase:   middleware.AfterLLM,
+	hook := budget.BudgetRecorder(gov)
+	ev := &hooks.LLMEvent{
 		Session: &session.Session{ID: "s1"},
 	}
-	_ = mw(context.Background(), mc, func(_ context.Context) error { return nil })
+	_ = hook(context.Background(), ev)
 	if gov.Snapshot().UsedSteps != 1 {
 		t.Fatalf("expected 1 step recorded, got %d", gov.Snapshot().UsedSteps)
 	}
@@ -122,5 +115,47 @@ func TestBudgetRecorder_Records(t *testing.T) {
 	budget.BudgetTokenRecorder(gov, "s1", 100)
 	if gov.Snapshot().UsedTokens != 100 {
 		t.Fatalf("expected 100 tokens, got %d", gov.Snapshot().UsedTokens)
+	}
+}
+
+func TestGovernor_TryReserve(t *testing.T) {
+	gov := budget.NewGovernor(budget.GlobalBudget{MaxTokens: 100, MaxSteps: 5}, nil)
+	gov.Record("s1", 80, 3)
+
+	// 20 tokens left, 2 steps left
+	if !gov.TryReserve(20, 2) {
+		t.Fatal("expected TryReserve(20,2) to succeed")
+	}
+	if gov.TryReserve(21, 0) {
+		t.Fatal("expected TryReserve(21,0) to fail — exceeds token budget")
+	}
+	if gov.TryReserve(0, 3) {
+		t.Fatal("expected TryReserve(0,3) to fail — exceeds step budget")
+	}
+	// TryReserve should not mutate state
+	snap := gov.Snapshot()
+	if snap.UsedTokens != 80 || snap.UsedSteps != 3 {
+		t.Fatalf("TryReserve must not mutate state: %+v", snap)
+	}
+}
+
+func TestGovernor_TryReserveNoLimits(t *testing.T) {
+	gov := budget.NewGovernor(budget.GlobalBudget{}, nil)
+	if !gov.TryReserve(1_000_000, 1_000_000) {
+		t.Fatal("expected TryReserve to succeed when no limits set")
+	}
+}
+
+func TestBudgetGuard_PreCheckBlocks(t *testing.T) {
+	gov := budget.NewGovernor(budget.GlobalBudget{MaxSteps: 2}, nil)
+	gov.Record("s1", 0, 2) // exactly at limit
+
+	hook := budget.BudgetGuard(gov)
+	ev := &hooks.LLMEvent{
+		Session: &session.Session{ID: "s1"},
+	}
+	err := hook(context.Background(), ev)
+	if err == nil {
+		t.Fatal("expected ErrBudgetExhausted from pre-check")
 	}
 }

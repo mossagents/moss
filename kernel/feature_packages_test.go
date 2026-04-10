@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
@@ -124,13 +124,13 @@ func TestA2A_EnvelopeFromJSONMetadata(t *testing.T) {
 // ---- ApprovalStore Tests ----
 
 func TestMemoryApprovalStore_SaveAndGet(t *testing.T) {
-	store := intr.NewMemoryApprovalStore()
+	store := io.NewMemoryApprovalStore()
 	ctx := context.Background()
 
-	req := intr.ApprovalRequest{ID: "req-1", SessionID: "s1", Prompt: "allow?"}
-	record := intr.ApprovalRecord{
+	req := io.ApprovalRequest{ID: "req-1", SessionID: "s1", Prompt: "allow?"}
+	record := io.ApprovalRecord{
 		Request:   req,
-		Status:    intr.ApprovalStatusPending,
+		Status:    io.ApprovalStatusPending,
 		CreatedAt: time.Now(),
 	}
 	if err := store.Save(ctx, record); err != nil {
@@ -140,26 +140,26 @@ func TestMemoryApprovalStore_SaveAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Status != intr.ApprovalStatusPending {
+	if got.Status != io.ApprovalStatusPending {
 		t.Fatalf("expected pending, got %s", got.Status)
 	}
 }
 
 func TestMemoryApprovalStore_NotFound(t *testing.T) {
-	store := intr.NewMemoryApprovalStore()
+	store := io.NewMemoryApprovalStore()
 	_, err := store.Get(context.Background(), "nonexistent")
-	if err != intr.ErrApprovalNotFound {
+	if err != io.ErrApprovalNotFound {
 		t.Fatalf("expected ErrApprovalNotFound, got %v", err)
 	}
 }
 
 func TestMemoryApprovalStore_List(t *testing.T) {
-	store := intr.NewMemoryApprovalStore()
+	store := io.NewMemoryApprovalStore()
 	ctx := context.Background()
 	for i := 0; i < 3; i++ {
-		r := intr.ApprovalRecord{
-			Request:   intr.ApprovalRequest{ID: "req-" + string(rune('1'+i)), SessionID: "s1"},
-			Status:    intr.ApprovalStatusApproved,
+		r := io.ApprovalRecord{
+			Request:   io.ApprovalRequest{ID: "req-" + string(rune('1'+i)), SessionID: "s1"},
+			Status:    io.ApprovalStatusApproved,
 			CreatedAt: time.Now().Add(time.Duration(i) * time.Second),
 		}
 		if err := store.Save(ctx, r); err != nil {
@@ -167,9 +167,9 @@ func TestMemoryApprovalStore_List(t *testing.T) {
 		}
 	}
 	// Different session
-	if err := store.Save(ctx, intr.ApprovalRecord{
-		Request:   intr.ApprovalRequest{ID: "req-other", SessionID: "s2"},
-		Status:    intr.ApprovalStatusDenied,
+	if err := store.Save(ctx, io.ApprovalRecord{
+		Request:   io.ApprovalRequest{ID: "req-other", SessionID: "s2"},
+		Status:    io.ApprovalStatusDenied,
 		CreatedAt: time.Now(),
 	}); err != nil {
 		t.Fatal(err)
@@ -184,8 +184,8 @@ func TestMemoryApprovalStore_List(t *testing.T) {
 }
 
 func TestMemoryApprovalStore_RequiresID(t *testing.T) {
-	store := intr.NewMemoryApprovalStore()
-	err := store.Save(context.Background(), intr.ApprovalRecord{})
+	store := io.NewMemoryApprovalStore()
+	err := store.Save(context.Background(), io.ApprovalRecord{})
 	if err == nil {
 		t.Fatal("expected error when request ID is empty")
 	}
@@ -194,14 +194,14 @@ func TestMemoryApprovalStore_RequiresID(t *testing.T) {
 // ---- TimedApproval Tests ----
 
 type mockUserIO struct {
-	resp intr.InputResponse
+	resp io.InputResponse
 	err  error
 	// delay simulates async processing
 	delay time.Duration
 }
 
-func (m *mockUserIO) Send(_ context.Context, _ intr.OutputMessage) error { return nil }
-func (m *mockUserIO) Ask(_ context.Context, _ intr.InputRequest) (intr.InputResponse, error) {
+func (m *mockUserIO) Send(_ context.Context, _ io.OutputMessage) error { return nil }
+func (m *mockUserIO) Ask(_ context.Context, _ io.InputRequest) (io.InputResponse, error) {
 	if m.delay > 0 {
 		time.Sleep(m.delay)
 	}
@@ -209,14 +209,14 @@ func (m *mockUserIO) Ask(_ context.Context, _ intr.InputRequest) (intr.InputResp
 }
 
 func TestTimedApproval_Approved(t *testing.T) {
-	mock := &mockUserIO{resp: intr.InputResponse{Approved: true}}
-	store := intr.NewMemoryApprovalStore()
-	ta := intr.NewTimedApproval(mock, store, 5*time.Second)
+	mock := &mockUserIO{resp: io.InputResponse{Approved: true}}
+	store := io.NewMemoryApprovalStore()
+	ta := io.NewTimedApproval(mock, store, 5*time.Second)
 
-	req := intr.InputRequest{
-		Type:     intr.InputConfirm,
+	req := io.InputRequest{
+		Type:     io.InputConfirm,
 		Prompt:   "allow?",
-		Approval: &intr.ApprovalRequest{ID: "r1", SessionID: "s1"},
+		Approval: &io.ApprovalRequest{ID: "r1", SessionID: "s1"},
 	}
 	resp, err := ta.Ask(context.Background(), req)
 	if err != nil {
@@ -229,20 +229,20 @@ func TestTimedApproval_Approved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Status != intr.ApprovalStatusApproved {
+	if record.Status != io.ApprovalStatusApproved {
 		t.Fatalf("expected approved record, got %s", record.Status)
 	}
 }
 
 func TestTimedApproval_TimedOut(t *testing.T) {
 	mock := &mockUserIO{delay: 200 * time.Millisecond}
-	store := intr.NewMemoryApprovalStore()
-	ta := intr.NewTimedApproval(mock, store, 20*time.Millisecond)
+	store := io.NewMemoryApprovalStore()
+	ta := io.NewTimedApproval(mock, store, 20*time.Millisecond)
 
-	req := intr.InputRequest{
-		Type:     intr.InputConfirm,
+	req := io.InputRequest{
+		Type:     io.InputConfirm,
 		Prompt:   "allow?",
-		Approval: &intr.ApprovalRequest{ID: "r2", SessionID: "s1"},
+		Approval: &io.ApprovalRequest{ID: "r2", SessionID: "s1"},
 	}
 	resp, err := ta.Ask(context.Background(), req)
 	if err != nil {
@@ -255,15 +255,15 @@ func TestTimedApproval_TimedOut(t *testing.T) {
 		t.Fatal("expected timeout reason in decision")
 	}
 	record, _ := store.Get(context.Background(), "r2")
-	if record != nil && record.Status != intr.ApprovalStatusTimedOut {
+	if record != nil && record.Status != io.ApprovalStatusTimedOut {
 		t.Fatalf("expected timed_out record, got %s", record.Status)
 	}
 }
 
 func TestTimedApproval_NonApproval_PassThrough(t *testing.T) {
-	mock := &mockUserIO{resp: intr.InputResponse{Value: "hello"}}
-	ta := intr.NewTimedApproval(mock, nil, 5*time.Second)
-	req := intr.InputRequest{Type: intr.InputFreeText, Prompt: "say something"}
+	mock := &mockUserIO{resp: io.InputResponse{Value: "hello"}}
+	ta := io.NewTimedApproval(mock, nil, 5*time.Second)
+	req := io.InputRequest{Type: io.InputFreeText, Prompt: "say something"}
 	resp, err := ta.Ask(context.Background(), req)
 	if err != nil || resp.Value != "hello" {
 		t.Fatalf("expected passthrough, got resp=%v err=%v", resp, err)
@@ -273,59 +273,59 @@ func TestTimedApproval_NonApproval_PassThrough(t *testing.T) {
 // ---- ModelConfig Validation Tests ----
 
 func TestValidateModelConfigExtra_Valid(t *testing.T) {
-	schema := mdl.ExtraSchema{
-		"temperature_scale": {Kind: mdl.ExtraFieldString, AllowedValues: []string{"celsius", "fahrenheit"}},
-		"use_cache":         {Kind: mdl.ExtraFieldBool},
-		"top_k":             {Kind: mdl.ExtraFieldNumber},
+	schema := model.ExtraSchema{
+		"temperature_scale": {Kind: model.ExtraFieldString, AllowedValues: []string{"celsius", "fahrenheit"}},
+		"use_cache":         {Kind: model.ExtraFieldBool},
+		"top_k":             {Kind: model.ExtraFieldNumber},
 	}
-	cfg := mdl.ModelConfig{
+	cfg := model.ModelConfig{
 		Extra: map[string]any{
 			"temperature_scale": "celsius",
 			"use_cache":         true,
 			"top_k":             40.0,
 		},
 	}
-	if err := mdl.ValidateModelConfigExtra(cfg, schema); err != nil {
+	if err := model.ValidateModelConfigExtra(cfg, schema); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestValidateModelConfigExtra_InvalidType(t *testing.T) {
-	schema := mdl.ExtraSchema{"flag": {Kind: mdl.ExtraFieldBool}}
-	cfg := mdl.ModelConfig{Extra: map[string]any{"flag": "yes"}}
-	if err := mdl.ValidateModelConfigExtra(cfg, schema); err == nil {
+	schema := model.ExtraSchema{"flag": {Kind: model.ExtraFieldBool}}
+	cfg := model.ModelConfig{Extra: map[string]any{"flag": "yes"}}
+	if err := model.ValidateModelConfigExtra(cfg, schema); err == nil {
 		t.Fatal("expected type error")
 	}
 }
 
 func TestValidateModelConfigExtra_DisallowedValue(t *testing.T) {
-	schema := mdl.ExtraSchema{"mode": {Kind: mdl.ExtraFieldString, AllowedValues: []string{"fast", "slow"}}}
-	cfg := mdl.ModelConfig{Extra: map[string]any{"mode": "turbo"}}
-	if err := mdl.ValidateModelConfigExtra(cfg, schema); err == nil {
+	schema := model.ExtraSchema{"mode": {Kind: model.ExtraFieldString, AllowedValues: []string{"fast", "slow"}}}
+	cfg := model.ModelConfig{Extra: map[string]any{"mode": "turbo"}}
+	if err := model.ValidateModelConfigExtra(cfg, schema); err == nil {
 		t.Fatal("expected disallowed value error")
 	}
 }
 
 func TestValidateModelConfigExtra_Required_Missing(t *testing.T) {
-	schema := mdl.ExtraSchema{"api_key": {Kind: mdl.ExtraFieldString, Required: true}}
-	cfg := mdl.ModelConfig{Extra: map[string]any{}}
-	if err := mdl.ValidateModelConfigExtra(cfg, schema); err == nil {
+	schema := model.ExtraSchema{"api_key": {Kind: model.ExtraFieldString, Required: true}}
+	cfg := model.ModelConfig{Extra: map[string]any{}}
+	if err := model.ValidateModelConfigExtra(cfg, schema); err == nil {
 		t.Fatal("expected required field error")
 	}
 }
 
 func TestValidateModelConfigExtraStrict_UnknownField(t *testing.T) {
-	schema := mdl.ExtraSchema{"known": {Kind: mdl.ExtraFieldAny}}
-	cfg := mdl.ModelConfig{Extra: map[string]any{"known": "ok", "unknown": "bad"}}
-	if err := mdl.ValidateModelConfigExtraStrict(cfg, schema); err == nil {
+	schema := model.ExtraSchema{"known": {Kind: model.ExtraFieldAny}}
+	cfg := model.ModelConfig{Extra: map[string]any{"known": "ok", "unknown": "bad"}}
+	if err := model.ValidateModelConfigExtraStrict(cfg, schema); err == nil {
 		t.Fatal("expected unknown field error in strict mode")
 	}
 }
 
 func TestValidateModelConfigExtra_NilExtra(t *testing.T) {
-	schema := mdl.ExtraSchema{"opt": {Kind: mdl.ExtraFieldString}}
-	cfg := mdl.ModelConfig{}
-	if err := mdl.ValidateModelConfigExtra(cfg, schema); err != nil {
+	schema := model.ExtraSchema{"opt": {Kind: model.ExtraFieldString}}
+	cfg := model.ModelConfig{}
+	if err := model.ValidateModelConfigExtra(cfg, schema); err != nil {
 		t.Fatalf("unexpected error for nil extra: %v", err)
 	}
 }

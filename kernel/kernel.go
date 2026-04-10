@@ -1,4 +1,4 @@
-package kernel
+﻿package kernel
 
 import (
 	"context"
@@ -7,42 +7,42 @@ import (
 	"sync"
 	"time"
 
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
-	llm         mdl.LLM
-	io          intr.UserIO
+	llm         model.LLM
+	io          io.UserIO
 	sandbox     sandbox.Sandbox
-	workspace   kws.Workspace
-	executor    kws.Executor
+	workspace   workspace.Workspace
+	executor    workspace.Executor
 	tasks       taskrt.TaskRuntime
 	mailbox     taskrt.Mailbox
-	isolation   kws.WorkspaceIsolation
-	repoState   kws.RepoStateCapture
-	patches     kws.PatchApply
-	reverts     kws.PatchRevert
-	snapshots   kws.WorktreeSnapshotStore
-	checkpoints ckpt.CheckpointStore
+	isolation   workspace.WorkspaceIsolation
+	repoState   workspace.RepoStateCapture
+	patches     workspace.PatchApply
+	reverts     workspace.PatchRevert
+	snapshots   workspace.WorktreeSnapshotStore
+	checkpoints checkpoint.CheckpointStore
 	store       session.SessionStore
 	tools       tool.Registry
 	sessions    session.Manager
-	chain       *middleware.Chain
+	chain       *hooks.Registry
 	loopCfg     loop.LoopConfig
-	observer    kobs.Observer
+	observer    observe.Observer
 	ext         *extensionState
 
 	shutdownCh   chan struct{}
@@ -55,7 +55,7 @@ func New(opts ...Option) *Kernel {
 	k := &Kernel{
 		tools:      tool.NewRegistry(),
 		sessions:   session.NewManager(),
-		chain:      middleware.NewChain(),
+		chain:      hooks.NewRegistry(),
 		ext:        newExtensionState(),
 		shutdownCh: make(chan struct{}),
 		runs:       newRunSupervisor(),
@@ -79,11 +79,11 @@ func (k *Kernel) Boot(ctx context.Context) error {
 		errs = append(errs, "LLM port is required (use kernel.WithLLM())")
 	}
 	if k.io == nil {
-		errs = append(errs, "UserIO port is not set (use kernel.WithUserIO(), or intr.NoOpIO{} / intr.NewPrintfIO())")
+		errs = append(errs, "UserIO port is not set (use kernel.WithUserIO(), or io.NoOpIO{} / io.NewPrintfIO())")
 	}
 
 	if len(errs) > 0 {
-		return kerrors.New(kerrors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
+		return errors.New(errors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
 	k.propagateObserver(k.observer)
 	return k.bootExtensions(ctx)
@@ -100,9 +100,9 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 	sysPrompt := k.extendSystemPrompt(cfg.SystemPrompt)
 	if sysPrompt != "" {
 		existing := sess.CopyMessages()
-		sess.ReplaceMessages(append([]mdl.Message{{
-			Role:         mdl.RoleSystem,
-			ContentParts: []mdl.ContentPart{mdl.TextPart(sysPrompt)},
+		sess.ReplaceMessages(append([]model.Message{{
+			Role:         model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart(sysPrompt)},
 		}}, existing...))
 	}
 
@@ -121,17 +121,17 @@ func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionR
 }
 
 // RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
-func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io intr.UserIO) (*loop.SessionResult, error) {
+func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io io.UserIO) (*loop.SessionResult, error) {
 	return k.runSession(ctx, sess, runKindWithUserIO, k.tools, io)
 }
 
 // RunWithTools 使用指定的工具注册表运行 Agent Loop。
 // 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
 func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
-	return k.runSession(ctx, sess, runKindDelegated, tools, &intr.NoOpIO{})
+	return k.runSession(ctx, sess, runKindDelegated, tools, &io.NoOpIO{})
 }
 
-func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, io intr.UserIO) (*loop.SessionResult, error) {
+func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, io io.UserIO) (*loop.SessionResult, error) {
 	if err := k.checkShutdown(); err != nil {
 		return nil, err
 	}
@@ -143,10 +143,9 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 	defer k.runs.end(runID)
 
 	l := &loop.AgentLoop{
-		LLM:      k.llm,
-		Tools:    tools,
-		Chain:    k.chain,
-		IO:       io,
+		LLM:   k.llm,
+		Tools: tools,
+		Hooks: k.chain, IO: io,
 		Config:   k.loopCfg,
 		Observer: k.observer,
 		RunID:    runID,
@@ -189,7 +188,7 @@ func (k *Kernel) Shutdown(ctx context.Context) error {
 func (k *Kernel) checkShutdown() error {
 	select {
 	case <-k.shutdownCh:
-		return kerrors.New(kerrors.ErrShutdown, "kernel is shutting down")
+		return errors.New(errors.ErrShutdown, "kernel is shutting down")
 	default:
 		return nil
 	}
@@ -205,49 +204,49 @@ func (k *Kernel) SessionManager() session.Manager {
 	return k.sessions
 }
 
-// Middleware 返回中间件链。
-func (k *Kernel) Middleware() *middleware.Chain {
+// Hooks 返回 hook 注册表。
+func (k *Kernel) Hooks() *hooks.Registry {
 	return k.chain
 }
 
 // UserIO 返回默认交互端口（可能为 nil）。
-func (k *Kernel) UserIO() intr.UserIO {
+func (k *Kernel) UserIO() io.UserIO {
 	return k.io
 }
 
 // LLM 返回默认模型端口（可能为 nil）。
-func (k *Kernel) LLM() mdl.LLM {
+func (k *Kernel) LLM() model.LLM {
 	return k.llm
 }
 
 // SetLLM 在构建后更新默认模型端口。
-func (k *Kernel) SetLLM(llm mdl.LLM) {
+func (k *Kernel) SetLLM(llm model.LLM) {
 	k.llm = llm
 }
 
 // SetObserver 在构建后更新运行时事件观察者。
-func (k *Kernel) SetObserver(observer kobs.Observer) {
+func (k *Kernel) SetObserver(observer observe.Observer) {
 	k.observer = observer
 	k.propagateObserver(observer)
 }
 
-func (k *Kernel) propagateObserver(observer kobs.Observer) {
+func (k *Kernel) propagateObserver(observer observe.Observer) {
 	if observer == nil {
-		observer = kobs.NoOpObserver{}
+		observer = observe.NoOpObserver{}
 	}
-	if aware, ok := k.snapshots.(interface{ SetObserver(kobs.ExecutionObserver) }); ok {
+	if aware, ok := k.snapshots.(interface{ SetObserver(observe.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
-	if aware, ok := k.checkpoints.(interface{ SetObserver(kobs.ExecutionObserver) }); ok {
+	if aware, ok := k.checkpoints.(interface{ SetObserver(observe.ExecutionObserver) }); ok {
 		aware.SetObserver(observer)
 	}
 }
 
-func (k *Kernel) observerOrNoOp() kobs.Observer {
+func (k *Kernel) observerOrNoOp() observe.Observer {
 	if k.observer != nil {
 		return k.observer
 	}
-	return kobs.NoOpObserver{}
+	return observe.NoOpObserver{}
 }
 
 func contextOrBackground(ctx context.Context) context.Context {
@@ -270,12 +269,12 @@ func (k *Kernel) Sandbox() sandbox.Sandbox {
 }
 
 // Workspace 返回工作区抽象（可能为 nil）。
-func (k *Kernel) Workspace() kws.Workspace {
+func (k *Kernel) Workspace() workspace.Workspace {
 	return k.workspace
 }
 
 // Executor 返回命令执行器（可能为 nil）。
-func (k *Kernel) Executor() kws.Executor {
+func (k *Kernel) Executor() workspace.Executor {
 	return k.executor
 }
 
@@ -290,32 +289,32 @@ func (k *Kernel) Mailbox() taskrt.Mailbox {
 }
 
 // WorkspaceIsolation 返回工作区隔离端口（可能为 nil）。
-func (k *Kernel) WorkspaceIsolation() kws.WorkspaceIsolation {
+func (k *Kernel) WorkspaceIsolation() workspace.WorkspaceIsolation {
 	return k.isolation
 }
 
 // RepoStateCapture 返回仓库状态捕获端口（可能为 nil）。
-func (k *Kernel) RepoStateCapture() kws.RepoStateCapture {
+func (k *Kernel) RepoStateCapture() workspace.RepoStateCapture {
 	return k.repoState
 }
 
 // PatchApply 返回结构化补丁应用端口（可能为 nil）。
-func (k *Kernel) PatchApply() kws.PatchApply {
+func (k *Kernel) PatchApply() workspace.PatchApply {
 	return k.patches
 }
 
 // PatchRevert 返回结构化补丁回滚端口（可能为 nil）。
-func (k *Kernel) PatchRevert() kws.PatchRevert {
+func (k *Kernel) PatchRevert() workspace.PatchRevert {
 	return k.reverts
 }
 
 // WorktreeSnapshots 返回 worktree/ghost-state 快照端口（可能为 nil）。
-func (k *Kernel) WorktreeSnapshots() kws.WorktreeSnapshotStore {
+func (k *Kernel) WorktreeSnapshots() workspace.WorktreeSnapshotStore {
 	return k.snapshots
 }
 
 // Checkpoints 返回 checkpoint 存储端口（可能为 nil）。
-func (k *Kernel) Checkpoints() ckpt.CheckpointStore {
+func (k *Kernel) Checkpoints() checkpoint.CheckpointStore {
 	return k.checkpoints
 }
 
@@ -339,12 +338,12 @@ func (k *Kernel) IsShuttingDown() bool {
 	}
 }
 
-// OnEvent 注册事件监听（便利 API，内部实现为 EventEmitter middleware）。
+// OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
 func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
-	k.chain.Use(builtins.EventEmitter(pattern, handler))
+	builtins.InstallEventEmitter(pattern, handler)(k.chain)
 }
 
-// WithPolicy 设置权限策略（便利 API，内部实现为 PolicyCheck middleware）。
+// WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
-	k.chain.Use(builtins.PolicyCheck(rules...))
+	k.chain.BeforeToolCall.On(builtins.PolicyCheck(rules...))
 }

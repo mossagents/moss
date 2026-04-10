@@ -5,17 +5,17 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	kt "github.com/mossagents/moss/testing"
 	"sync"
 	"sync/atomic"
@@ -25,74 +25,74 @@ import (
 
 type recordingObserver struct {
 	mu     sync.Mutex
-	events []kobs.ExecutionEvent
+	events []observe.ExecutionEvent
 }
 
 type observerAwareSnapshotStore struct {
-	observer kobs.ExecutionObserver
+	observer observe.ExecutionObserver
 }
 
 type observerAwareCheckpointStore struct {
-	observer kobs.ExecutionObserver
+	observer observe.ExecutionObserver
 }
 
-func (o *recordingObserver) OnLLMCall(context.Context, kobs.LLMCallEvent)      {}
-func (o *recordingObserver) OnToolCall(context.Context, kobs.ToolCallEvent)    {}
-func (o *recordingObserver) OnApproval(context.Context, intr.ApprovalEvent)    {}
-func (o *recordingObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
-func (o *recordingObserver) OnError(context.Context, kobs.ErrorEvent)          {}
+func (o *recordingObserver) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
+func (o *recordingObserver) OnToolCall(context.Context, observe.ToolCallEvent)    {}
+func (o *recordingObserver) OnApproval(context.Context, io.ApprovalEvent)    {}
+func (o *recordingObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
+func (o *recordingObserver) OnError(context.Context, observe.ErrorEvent)          {}
 
-func (o *recordingObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
+func (o *recordingObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.events = append(o.events, e)
 }
 
-func (o *recordingObserver) snapshot() []kobs.ExecutionEvent {
+func (o *recordingObserver) snapshot() []observe.ExecutionEvent {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	out := make([]kobs.ExecutionEvent, len(o.events))
+	out := make([]observe.ExecutionEvent, len(o.events))
 	copy(out, o.events)
 	return out
 }
 
-func (s *observerAwareSnapshotStore) SetObserver(observer kobs.ExecutionObserver) {
+func (s *observerAwareSnapshotStore) SetObserver(observer observe.ExecutionObserver) {
 	s.observer = observer
 }
 
-func (s *observerAwareCheckpointStore) SetObserver(observer kobs.ExecutionObserver) {
+func (s *observerAwareCheckpointStore) SetObserver(observer observe.ExecutionObserver) {
 	s.observer = observer
 }
 
-func (*observerAwareSnapshotStore) Create(context.Context, kws.WorktreeSnapshotRequest) (*kws.WorktreeSnapshot, error) {
+func (*observerAwareSnapshotStore) Create(context.Context, workspace.WorktreeSnapshotRequest) (*workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
 
-func (*observerAwareSnapshotStore) Load(context.Context, string) (*kws.WorktreeSnapshot, error) {
+func (*observerAwareSnapshotStore) Load(context.Context, string) (*workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
 
-func (*observerAwareSnapshotStore) List(context.Context) ([]kws.WorktreeSnapshot, error) {
+func (*observerAwareSnapshotStore) List(context.Context) ([]workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
 
-func (*observerAwareSnapshotStore) FindBySession(context.Context, string) ([]kws.WorktreeSnapshot, error) {
+func (*observerAwareSnapshotStore) FindBySession(context.Context, string) ([]workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
 
-func (*observerAwareCheckpointStore) Create(context.Context, ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error) {
+func (*observerAwareCheckpointStore) Create(context.Context, checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error) {
 	return nil, nil
 }
 
-func (*observerAwareCheckpointStore) Load(context.Context, string) (*ckpt.CheckpointRecord, error) {
+func (*observerAwareCheckpointStore) Load(context.Context, string) (*checkpoint.CheckpointRecord, error) {
 	return nil, nil
 }
 
-func (*observerAwareCheckpointStore) List(context.Context) ([]ckpt.CheckpointRecord, error) {
+func (*observerAwareCheckpointStore) List(context.Context) ([]checkpoint.CheckpointRecord, error) {
 	return nil, nil
 }
 
-func (*observerAwareCheckpointStore) FindBySession(context.Context, string) ([]ckpt.CheckpointRecord, error) {
+func (*observerAwareCheckpointStore) FindBySession(context.Context, string) ([]checkpoint.CheckpointRecord, error) {
 	return nil, nil
 }
 
@@ -100,7 +100,7 @@ type blockingLLM struct {
 	calls int32
 }
 
-func (b *blockingLLM) Complete(ctx context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (b *blockingLLM) Complete(ctx context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	atomic.AddInt32(&b.calls, 1)
 	<-ctx.Done()
 	return nil, ctx.Err()
@@ -121,52 +121,52 @@ func (m *nonHookSessionManager) Create(ctx context.Context, cfg session.SessionC
 func (m *nonHookSessionManager) Get(id string) (*session.Session, bool) { return m.base.Get(id) }
 func (m *nonHookSessionManager) List() []*session.Session               { return m.base.List() }
 func (m *nonHookSessionManager) Cancel(id string) error                 { return m.base.Cancel(id) }
-func (m *nonHookSessionManager) Notify(id string, msg mdl.Message) error {
+func (m *nonHookSessionManager) Notify(id string, msg model.Message) error {
 	return m.base.Notify(id, msg)
 }
 
 func TestKernelIntegration(t *testing.T) {
 	// MockLLM: 先请求 tool call，然后 text 回复
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{
+		Responses: []model.CompletionResponse{
 			{
-				Message: mdl.Message{
-					Role:         mdl.RoleAssistant,
-					ContentParts: []mdl.ContentPart{mdl.TextPart("Let me read the file.")},
-					ToolCalls:    []mdl.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
+				Message: model.Message{
+					Role:         model.RoleAssistant,
+					ContentParts: []model.ContentPart{model.TextPart("Let me read the file.")},
+					ToolCalls:    []model.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
 				},
-				ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
+				ToolCalls:  []model.ToolCall{{ID: "c1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 20},
+				Usage:      model.TokenUsage{TotalTokens: 20},
 			},
 			{
-				Message: mdl.Message{
-					Role:         mdl.RoleAssistant,
-					ContentParts: []mdl.ContentPart{mdl.TextPart("Now let me write a fix.")},
-					ToolCalls:    []mdl.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
+				Message: model.Message{
+					Role:         model.RoleAssistant,
+					ContentParts: []model.ContentPart{model.TextPart("Now let me write a fix.")},
+					ToolCalls:    []model.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
 				},
-				ToolCalls:  []mdl.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
+				ToolCalls:  []model.ToolCall{{ID: "c2", Name: "write_file", Arguments: json.RawMessage(`{"path":"main.go","content":"fixed"}`)}},
 				StopReason: "tool_use",
-				Usage:      mdl.TokenUsage{TotalTokens: 25},
+				Usage:      model.TokenUsage{TotalTokens: 25},
 			},
 			{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("I've fixed the null pointer bug in main.go.")}},
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("I've fixed the null pointer bug in main.go.")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 15},
+				Usage:      model.TokenUsage{TotalTokens: 15},
 			},
 		},
 	}
 
-	io := kt.NewRecorderIO()
+	recIO := kt.NewRecorderIO()
 	// 当被要求审批时，批准
-	io.AskFunc = func(req intr.InputRequest) (intr.InputResponse, error) {
-		return intr.InputResponse{Approved: true}, nil
+	recIO.AskFunc = func(req io.InputRequest) (io.InputResponse, error) {
+		return io.InputResponse{Approved: true}, nil
 	}
 
 	obs := &recordingObserver{}
 	k := New(
 		WithLLM(mock),
-		WithUserIO(io),
+		WithUserIO(recIO),
 		WithObserver(obs),
 	)
 
@@ -213,7 +213,7 @@ func TestKernelIntegration(t *testing.T) {
 	}
 
 	// 注入初始用户消息
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("Fix the null pointer in main.go")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Fix the null pointer in main.go")}})
 
 	// 运行
 	result, err := k.Run(context.Background(), sess)
@@ -221,14 +221,14 @@ func TestKernelIntegration(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if len(io.Asked) == 0 {
+	if len(recIO.Asked) == 0 {
 		t.Fatal("expected approval prompt to be asked")
 	}
-	if io.Asked[0].Approval == nil {
+	if recIO.Asked[0].Approval == nil {
 		t.Fatal("expected structured approval request on confirm prompt")
 	}
-	if io.Asked[0].Approval.ToolName != "write_file" {
-		t.Fatalf("expected approval for write_file, got %+v", io.Asked[0].Approval)
+	if recIO.Asked[0].Approval.ToolName != "write_file" {
+		t.Fatalf("expected approval for write_file, got %+v", recIO.Asked[0].Approval)
 	}
 
 	// 验证结果
@@ -248,8 +248,8 @@ func TestKernelIntegration(t *testing.T) {
 	}
 
 	// 验证 write_file 审批被触发
-	if len(io.Asked) != 1 {
-		t.Fatalf("Ask calls = %d, want 1 (write_file approval)", len(io.Asked))
+	if len(recIO.Asked) != 1 {
+		t.Fatalf("Ask calls = %d, want 1 (write_file approval)", len(recIO.Asked))
 	}
 
 	// 验证事件被触发
@@ -261,15 +261,15 @@ func TestKernelIntegration(t *testing.T) {
 	if len(execEvents) == 0 {
 		t.Fatal("expected execution events")
 	}
-	expected := map[kobs.ExecutionEventType]bool{
-		kobs.ExecutionRunStarted:       false,
-		kobs.ExecutionLLMStarted:       false,
-		kobs.ExecutionLLMCompleted:     false,
-		kobs.ExecutionToolStarted:      false,
-		kobs.ExecutionToolCompleted:    false,
-		kobs.ExecutionApprovalRequest:  false,
-		kobs.ExecutionApprovalResolved: false,
-		kobs.ExecutionRunCompleted:     false,
+	expected := map[observe.ExecutionEventType]bool{
+		observe.ExecutionRunStarted:       false,
+		observe.ExecutionLLMStarted:       false,
+		observe.ExecutionLLMCompleted:     false,
+		observe.ExecutionToolStarted:      false,
+		observe.ExecutionToolCompleted:    false,
+		observe.ExecutionApprovalRequest:  false,
+		observe.ExecutionApprovalResolved: false,
+		observe.ExecutionRunCompleted:     false,
 	}
 	for _, e := range execEvents {
 		if _, ok := expected[e.Type]; ok {
@@ -289,7 +289,7 @@ func TestSetObserverUpdatesObserverAwareStores(t *testing.T) {
 	checkpoints := &observerAwareCheckpointStore{}
 	k := New(
 		WithLLM(&kt.MockLLM{}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 		WithObserver(initial),
 		WithWorktreeSnapshots(snapshots),
 		WithCheckpoints(checkpoints),
@@ -323,7 +323,7 @@ func TestKernelBootWiresObserverIntoSnapshotStore(t *testing.T) {
 	store := &observerAwareSnapshotStore{}
 	k := New(
 		WithLLM(&kt.MockLLM{}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 		WithObserver(obs),
 		WithWorktreeSnapshots(store),
 	)
@@ -340,7 +340,7 @@ func TestKernelBootWiresObserverIntoCheckpointStore(t *testing.T) {
 	store := &observerAwareCheckpointStore{}
 	k := New(
 		WithLLM(&kt.MockLLM{}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 		WithObserver(obs),
 		WithCheckpoints(store),
 	)
@@ -354,8 +354,8 @@ func TestKernelBootWiresObserverIntoCheckpointStore(t *testing.T) {
 
 func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	mock := &kt.MockLLM{
-		Responses: []mdl.CompletionResponse{{
-			Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("hello from override")}},
+		Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("hello from override")}},
 			StopReason: "end_turn",
 		}},
 	}
@@ -375,7 +375,7 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("hi")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}})
 
 	result, err := k.RunWithUserIO(context.Background(), sess, overrideIO)
 	if err != nil {
@@ -398,7 +398,7 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 func TestKernelRunRejectedWhenShuttingDown(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -419,8 +419,8 @@ func TestKernelRunRejectedWhenShuttingDown(t *testing.T) {
 		t.Fatal("expected shutdown rejection error")
 	}
 
-	var kerr *kerrors.Error
-	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrShutdown {
+	var kerr *errors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != errors.ErrShutdown {
 		t.Fatalf("expected ErrShutdown, got: %v", err)
 	}
 }
@@ -429,7 +429,7 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 	bl := &blockingLLM{}
 	k := New(
 		WithLLM(bl),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -440,7 +440,7 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -478,7 +478,7 @@ func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
 	bl := &blockingLLM{}
 	k := New(
 		WithLLM(bl),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -489,7 +489,7 @@ func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -528,7 +528,7 @@ func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) 
 	mgr := newNonHookSessionManager()
 	k := New(
 		WithLLM(bl),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 		WithSessionManager(mgr),
 	)
 
@@ -540,7 +540,7 @@ func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) 
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
 
 	runErrCh := make(chan error, 1)
 	go func() {
@@ -604,7 +604,7 @@ func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
 			bl := &blockingLLM{}
 			k := New(
 				WithLLM(bl),
-				WithUserIO(&intr.NoOpIO{}),
+				WithUserIO(&io.NoOpIO{}),
 			)
 
 			if err := k.Boot(context.Background()); err != nil {
@@ -619,7 +619,7 @@ func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSession: %v", err)
 			}
-			sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}})
+			sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
 
 			start := time.Now()
 			_, err = tt.run(k, sess)
@@ -640,7 +640,7 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	bl := &blockingLLM{}
 	k := New(
 		WithLLM(bl),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -651,7 +651,7 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("wait")}})
+	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
 
 	firstRunErrCh := make(chan error, 1)
 	go func() {
@@ -672,8 +672,8 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected second run to be rejected for same session")
 	}
-	var kerr *kerrors.Error
-	if !stderrors.As(err, &kerr) || kerr.Code != kerrors.ErrSessionRunning {
+	var kerr *errors.Error
+	if !stderrors.As(err, &kerr) || kerr.Code != errors.ErrSessionRunning {
 		t.Fatalf("expected ErrSessionRunning, got: %v", err)
 	}
 
@@ -693,7 +693,7 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 	bridge := Extensions(k)
 
@@ -732,7 +732,7 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 	if len(sess.Messages) == 0 {
 		t.Fatal("expected system prompt message to be injected")
 	}
-	if got, want := mdl.ContentPartsToPlainText(sess.Messages[0].ContentParts), "base\n\nprompt-10\n\nprompt-20"; got != want {
+	if got, want := model.ContentPartsToPlainText(sess.Messages[0].ContentParts), "base\n\nprompt-10\n\nprompt-20"; got != want {
 		t.Fatalf("system prompt = %q, want %q", got, want)
 	}
 
@@ -754,13 +754,13 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
-			Responses: []mdl.CompletionResponse{{
-				Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+			Responses: []model.CompletionResponse{{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 				StopReason: "end_turn",
-				Usage:      mdl.TokenUsage{TotalTokens: 3},
+				Usage:      model.TokenUsage{TotalTokens: 3},
 			}},
 		}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 	bridge := Extensions(k)
 
@@ -805,25 +805,25 @@ func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
 func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
-			Responses: []mdl.CompletionResponse{
+			Responses: []model.CompletionResponse{
 				{
-					Message: mdl.Message{
-						Role:         mdl.RoleAssistant,
-						ContentParts: []mdl.ContentPart{mdl.TextPart("")},
-						ToolCalls:    []mdl.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+					Message: model.Message{
+						Role:         model.RoleAssistant,
+						ContentParts: []model.ContentPart{model.TextPart("")},
+						ToolCalls:    []model.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 					},
-					ToolCalls:  []mdl.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
+					ToolCalls:  []model.ToolCall{{ID: "c1", Name: "greet", Arguments: json.RawMessage(`{"name":"world"}`)}},
 					StopReason: "tool_use",
-					Usage:      mdl.TokenUsage{TotalTokens: 5},
+					Usage:      model.TokenUsage{TotalTokens: 5},
 				},
 				{
-					Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("done")}},
+					Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
 					StopReason: "end_turn",
-					Usage:      mdl.TokenUsage{TotalTokens: 3},
+					Usage:      model.TokenUsage{TotalTokens: 3},
 				},
 			},
 		}),
-		WithUserIO(&intr.NoOpIO{}),
+		WithUserIO(&io.NoOpIO{}),
 	)
 	if err := k.ToolRegistry().Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"hello world"`), nil

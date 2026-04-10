@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/mossagents/moss/kernel"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"os"
 	"strings"
@@ -27,19 +27,19 @@ type ExecutionSurface struct {
 	IsolationEnabled bool
 
 	sandbox           sandbox.Sandbox
-	Workspace         kws.Workspace
-	Executor          kws.Executor
-	Isolation         kws.WorkspaceIsolation
-	RepoStateCapture  kws.RepoStateCapture
-	PatchApply        kws.PatchApply
-	PatchRevert       kws.PatchRevert
-	WorktreeSnapshots kws.WorktreeSnapshotStore
+	Workspace         workspace.Workspace
+	Executor          workspace.Executor
+	Isolation         workspace.WorkspaceIsolation
+	RepoStateCapture  workspace.RepoStateCapture
+	PatchApply        workspace.PatchApply
+	PatchRevert       workspace.PatchRevert
+	WorktreeSnapshots workspace.WorktreeSnapshotStore
 
 	errors   map[string]error
 	disabled map[string]bool
 }
 
-func newExecutionSurface(sb sandbox.Sandbox, ws kws.Workspace, exec kws.Executor) *ExecutionSurface {
+func newExecutionSurface(sb sandbox.Sandbox, ws workspace.Workspace, exec workspace.Executor) *ExecutionSurface {
 	return &ExecutionSurface{
 		sandbox:   sb,
 		Workspace: ws,
@@ -142,7 +142,7 @@ func (s *ExecutionSurface) Sandbox() sandbox.Sandbox {
 	return s.sandbox
 }
 
-func (s *ExecutionSurface) WorkspacePort() kws.Workspace {
+func (s *ExecutionSurface) WorkspacePort() workspace.Workspace {
 	if s == nil {
 		return nil
 	}
@@ -242,16 +242,16 @@ func (a *kernelWorkspaceAdapter) ListFiles(_ context.Context, pattern string) ([
 	return a.sb.ListFiles(pattern)
 }
 
-func (a *kernelWorkspaceAdapter) Stat(_ context.Context, path string) (kws.FileInfo, error) {
+func (a *kernelWorkspaceAdapter) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
 	resolved, err := a.sb.ResolvePath(path)
 	if err != nil {
-		return kws.FileInfo{}, err
+		return workspace.FileInfo{}, err
 	}
 	info, err := os.Stat(resolved)
 	if err != nil {
-		return kws.FileInfo{}, err
+		return workspace.FileInfo{}, err
 	}
-	return kws.FileInfo{
+	return workspace.FileInfo{
 		Name:    info.Name(),
 		Size:    info.Size(),
 		IsDir:   info.IsDir(),

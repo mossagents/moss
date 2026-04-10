@@ -14,9 +14,9 @@ import (
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/presets/deepagent"
 	providers "github.com/mossagents/moss/providers"
@@ -48,7 +48,7 @@ func initializeCommandRuntime(cfg *config) (func(), error) {
 }
 
 func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, error) {
-	k, _, err := buildKernel(ctx, cfg.flags, &intr.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
+	k, _, err := buildKernel(ctx, cfg.flags, &io.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
 	return k, err
 }
 
@@ -74,7 +74,7 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (pro
 	}, nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, approvalMode string, governance product.GovernanceConfig, observer kobs.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
 	logging.GetLogger().DebugContext(ctx, "build kernel requested",
 		"workspace", flags.Workspace,
 		"profile", flags.Profile,
@@ -121,7 +121,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, ap
 		"failover_enabled", useFailover,
 	)
 	if router != nil {
-		var llm mdl.LLM = router
+		var llm model.LLM = router
 		if useFailover {
 			failoverLLM, err := providers.NewFailoverLLM(router, failoverCfg)
 			if err != nil {

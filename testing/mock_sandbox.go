@@ -3,7 +3,7 @@ package testing
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"strings"
 	"sync"
@@ -67,7 +67,7 @@ func (s *MemorySandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (s *MemorySandbox) Execute(_ context.Context, req kws.ExecRequest) (sandbox.Output, error) {
+func (s *MemorySandbox) Execute(_ context.Context, req workspace.ExecRequest) (sandbox.Output, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Cmds = append(s.Cmds, ExecRecord{Cmd: req.Command, Args: req.Args})

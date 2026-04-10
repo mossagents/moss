@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"reflect"
@@ -23,7 +23,7 @@ func TestBuildKernel_DefaultPreset(t *testing.T) {
 		Trust:     "restricted",
 	}
 
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, nil)
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestBuildKernel_PersistsExecutionCapabilities(t *testing.T) {
 		Trust:     "trusted",
 	}
 
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, nil)
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestBuildKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
 		Trust:     "trusted",
 		Profile:   "planning",
 	}
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, nil)
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
@@ -153,7 +153,7 @@ func TestBuildKernel_DisableGeneralPurpose(t *testing.T) {
 	}
 
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnsureGeneralPurpose:     &disable,
 		EnableSessionStore:       &disable,
 		EnablePersistentMemories: &disable,
@@ -176,7 +176,7 @@ func TestBuildKernel_DisableWorkspaceIsolation(t *testing.T) {
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnableWorkspaceIsolation: &disable,
 	})
 	if err != nil {
@@ -194,7 +194,7 @@ func TestBuildKernel_DisableTaskRuntime(t *testing.T) {
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnableTaskRuntime: &disable,
 	})
 	if err != nil {
@@ -212,7 +212,7 @@ func TestBuildKernel_DisableCheckpointStore(t *testing.T) {
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnableCheckpointStore: &disable,
 	})
 	if err != nil {
@@ -229,7 +229,7 @@ func TestBuildKernel_PatchesOrphanToolCalls(t *testing.T) {
 		Workspace: ".",
 		Trust:     "restricted",
 	}
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, nil)
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
@@ -237,24 +237,24 @@ func TestBuildKernel_PatchesOrphanToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(mdl.Message{
-		Role: mdl.RoleAssistant,
-		ToolCalls: []mdl.ToolCall{
+	sess.AppendMessage(model.Message{
+		Role: model.RoleAssistant,
+		ToolCalls: []model.ToolCall{
 			{ID: "orphan-1", Name: "run_command", Arguments: json.RawMessage(`{"command":"echo"}`)},
 		},
 	})
-	mc := &middleware.Context{Session: sess}
-	if err := k.Middleware().Run(context.Background(), middleware.BeforeLLM, mc); err != nil {
-		t.Fatalf("middleware run: %v", err)
+	ev := &hooks.LLMEvent{Session: sess}
+	if err := k.Hooks().BeforeLLM.Run(context.Background(), ev); err != nil {
+		t.Fatalf("hooks run: %v", err)
 	}
 	last := sess.Messages[len(sess.Messages)-1]
-	if last.Role != mdl.RoleTool || len(last.ToolResults) != 1 {
+	if last.Role != model.RoleTool || len(last.ToolResults) != 1 {
 		t.Fatalf("expected patched tool message, got %+v", last)
 	}
 	if last.ToolResults[0].CallID != "orphan-1" || !last.ToolResults[0].IsError {
 		t.Fatalf("unexpected patched result %+v", last.ToolResults[0])
 	}
-	patchText := mdl.ContentPartsToPlainText(last.ToolResults[0].ContentParts)
+	patchText := model.ContentPartsToPlainText(last.ToolResults[0].ContentParts)
 	if !strings.Contains(patchText, "missing tool result patched") {
 		t.Fatalf("unexpected patch content %q", patchText)
 	}
@@ -266,7 +266,7 @@ func TestBuildKernel_DefaultLLMRetryInjected(t *testing.T) {
 		Workspace: ".",
 		Trust:     "restricted",
 	}
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, nil)
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestBuildKernel_CustomLLMGovernanceApplied(t *testing.T) {
 		Trust:     "restricted",
 	}
 	enableRetry := true
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnableDefaultLLMRetry: &enableRetry,
 		LLMRetryConfig: &retry.Config{
 			MaxRetries:   4,
@@ -325,7 +325,7 @@ func TestBuildKernel_DisableDefaultLLMRetry(t *testing.T) {
 		Trust:     "restricted",
 	}
 	disableRetry := false
-	k, err := BuildKernel(context.Background(), flags, &intr.NoOpIO{}, &Config{
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
 		EnableDefaultLLMRetry: &disableRetry,
 	})
 	if err != nil {

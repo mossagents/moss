@@ -104,3 +104,41 @@ func TestErrorWithCauseString(t *testing.T) {
 		t.Errorf("expected %q, got %q", want, err.Error())
 	}
 }
+
+func TestNewErrorCodes(t *testing.T) {
+	cases := []struct {
+		code Code
+		want string
+	}{
+		{ErrToolTimeout, "TOOL_TIMEOUT"},
+		{ErrToolSchemaInvalid, "TOOL_SCHEMA_INVALID"},
+		{ErrSandboxTimeout, "SANDBOX_TIMEOUT"},
+		{ErrCheckpointFailed, "CHECKPOINT_FAILED"},
+		{ErrCheckpointNotFound, "CHECKPOINT_NOT_FOUND"},
+		{ErrDelegationDepth, "DELEGATION_DEPTH"},
+		{ErrDelegationContract, "DELEGATION_CONTRACT"},
+		{ErrAgentNotFound, "AGENT_NOT_FOUND"},
+	}
+	for _, tc := range cases {
+		err := New(tc.code, "test")
+		if string(err.Code) != tc.want {
+			t.Errorf("code %s: expected %q, got %q", tc.code, tc.want, string(err.Code))
+		}
+		if GetCode(err) != tc.code {
+			t.Errorf("GetCode round-trip failed for %s", tc.code)
+		}
+	}
+}
+
+func TestNewErrorCodesIs(t *testing.T) {
+	err1 := New(ErrDelegationDepth, "too deep")
+	err2 := New(ErrDelegationDepth, "max reached")
+	if !errors.Is(err1, err2) {
+		t.Error("same code should match via errors.Is")
+	}
+
+	err3 := New(ErrDelegationContract, "contract violated")
+	if errors.Is(err1, err3) {
+		t.Error("different codes should not match")
+	}
+}

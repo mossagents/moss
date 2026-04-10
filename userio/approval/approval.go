@@ -8,7 +8,7 @@ import (
 	"time"
 
 	configpkg "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 )
 
 const (
@@ -51,7 +51,7 @@ type MemoryRule struct {
 	CreatedAt time.Time
 }
 
-func BuildDisplay(req *intr.ApprovalRequest, currentSessionID string) Display {
+func BuildDisplay(req *io.ApprovalRequest, currentSessionID string) Display {
 	if req == nil {
 		return Display{
 			Title:       "Approval required",
@@ -214,14 +214,14 @@ func buildDiffPreview(toolName string, input json.RawMessage) string {
 	return ""
 }
 
-func SessionID(req *intr.ApprovalRequest, currentSessionID string) string {
+func SessionID(req *io.ApprovalRequest, currentSessionID string) string {
 	if req != nil && strings.TrimSpace(req.SessionID) != "" {
 		return strings.TrimSpace(req.SessionID)
 	}
 	return strings.TrimSpace(currentSessionID)
 }
 
-func ParseCommand(req *intr.ApprovalRequest) (string, string) {
+func ParseCommand(req *io.ApprovalRequest) (string, string) {
 	if req == nil || len(req.Input) == 0 {
 		return "", ""
 	}
@@ -256,7 +256,7 @@ func ParseCommand(req *intr.ApprovalRequest) (string, string) {
 	return commandLine, strings.Join(patternParts, " ")
 }
 
-func ParseRequestTarget(req *intr.ApprovalRequest) (string, string) {
+func ParseRequestTarget(req *io.ApprovalRequest) (string, string) {
 	if req == nil || len(req.Input) == 0 {
 		return "", ""
 	}
@@ -283,7 +283,7 @@ func ParseRequestTarget(req *intr.ApprovalRequest) (string, string) {
 	return requestLine, method + " " + parsed.Host
 }
 
-func parseGenericPreview(req *intr.ApprovalRequest) string {
+func parseGenericPreview(req *io.ApprovalRequest) string {
 	if req == nil || len(req.Input) == 0 {
 		return ""
 	}
@@ -312,7 +312,7 @@ func quoteToken(token string) string {
 	return token
 }
 
-func MemoryRuleFor(req *intr.ApprovalRequest, currentSessionID string, scope RuleScope, now time.Time) (MemoryRule, bool) {
+func MemoryRuleFor(req *io.ApprovalRequest, currentSessionID string, scope RuleScope, now time.Time) (MemoryRule, bool) {
 	display := BuildDisplay(req, currentSessionID)
 	if display.RuleKey == "" {
 		return MemoryRule{}, false
@@ -334,7 +334,7 @@ func MemoryRuleFor(req *intr.ApprovalRequest, currentSessionID string, scope Rul
 	return rule, true
 }
 
-func (r MemoryRule) Matches(req *intr.ApprovalRequest, currentSessionID string) bool {
+func (r MemoryRule) Matches(req *io.ApprovalRequest, currentSessionID string) bool {
 	if req == nil || strings.TrimSpace(r.Key) == "" {
 		return false
 	}

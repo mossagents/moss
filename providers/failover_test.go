@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"io"
 	"strings"
@@ -23,7 +23,7 @@ func TestFailoverLLMComplete_FirstCandidateSuccess(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	resp, err := llm.Complete(context.Background(), mdl.CompletionRequest{})
+	resp, err := llm.Complete(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestFailoverLLMComplete_FailsOverToSecondCandidate(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	resp, err := llm.Complete(context.Background(), mdl.CompletionRequest{})
+	resp, err := llm.Complete(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestFailoverLLMComplete_RetriesCandidateBeforeSwitching(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	resp, err := llm.Complete(context.Background(), mdl.CompletionRequest{})
+	resp, err := llm.Complete(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Complete: %v", err)
 	}
@@ -107,10 +107,10 @@ func TestFailoverLLMComplete_BreakerOpenSkipsPrimaryOnLaterCall(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	if _, err := llm.Complete(context.Background(), mdl.CompletionRequest{}); err != nil {
+	if _, err := llm.Complete(context.Background(), model.CompletionRequest{}); err != nil {
 		t.Fatalf("first Complete: %v", err)
 	}
-	if _, err := llm.Complete(context.Background(), mdl.CompletionRequest{}); err != nil {
+	if _, err := llm.Complete(context.Background(), model.CompletionRequest{}); err != nil {
 		t.Fatalf("second Complete: %v", err)
 	}
 	if got := atomic.LoadInt32(&primary.completeCalls); got != 1 {
@@ -128,14 +128,14 @@ func TestFailoverLLMComplete_AllCandidatesFailReturnsAggregatedError(t *testing.
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	_, err = llm.Complete(context.Background(), mdl.CompletionRequest{})
+	_, err = llm.Complete(context.Background(), model.CompletionRequest{})
 	if err == nil {
 		t.Fatal("expected failover exhaustion error")
 	}
 	if !strings.Contains(err.Error(), "primary") || !strings.Contains(err.Error(), "secondary") {
 		t.Fatalf("expected aggregated candidate names in error, got %v", err)
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if !errorAs(err, &callErr) || len(callErr.Metadata.Attempts) < 2 {
 		t.Fatalf("expected metadata attempts on error, got %v", err)
 	}
@@ -143,9 +143,9 @@ func TestFailoverLLMComplete_AllCandidatesFailReturnsAggregatedError(t *testing.
 
 func TestFailoverLLMStream_StartupFailureFallsThroughToNextCandidate(t *testing.T) {
 	primary := &streamScriptLLM{streamErr: retryableErr(io.ErrUnexpectedEOF)}
-	secondary := &streamScriptLLM{chunks: []mdl.StreamChunk{
+	secondary := &streamScriptLLM{chunks: []model.StreamChunk{
 		{Delta: "ok"},
-		{Done: true, Usage: &mdl.TokenUsage{TotalTokens: 1}},
+		{Done: true, Usage: &model.TokenUsage{TotalTokens: 1}},
 	}}
 	router := newTestRouter([]routedModel{
 		{profile: ModelProfile{Name: "primary", IsDefault: true}, llm: primary},
@@ -156,7 +156,7 @@ func TestFailoverLLMStream_StartupFailureFallsThroughToNextCandidate(t *testing.
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	iter, err := llm.Stream(context.Background(), mdl.CompletionRequest{})
+	iter, err := llm.Stream(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestFailoverLLMStream_StartupFailureFallsThroughToNextCandidate(t *testing.
 	if output != "ok" {
 		t.Fatalf("output = %q, want ok", output)
 	}
-	metaProvider, ok := iter.(mdl.MetadataStreamIterator)
+	metaProvider, ok := iter.(model.MetadataStreamIterator)
 	if !ok {
 		t.Fatal("expected metadata stream iterator")
 	}
@@ -177,10 +177,10 @@ func TestFailoverLLMStream_StartupFailureFallsThroughToNextCandidate(t *testing.
 }
 
 func TestFailoverLLMStream_PostEmissionErrorDoesNotFailover(t *testing.T) {
-	primary := &streamScriptLLM{chunks: []mdl.StreamChunk{{Delta: "partial"}}, nextErr: retryableErr(io.ErrUnexpectedEOF)}
-	secondary := &streamScriptLLM{chunks: []mdl.StreamChunk{
+	primary := &streamScriptLLM{chunks: []model.StreamChunk{{Delta: "partial"}}, nextErr: retryableErr(io.ErrUnexpectedEOF)}
+	secondary := &streamScriptLLM{chunks: []model.StreamChunk{
 		{Delta: "ok"},
-		{Done: true, Usage: &mdl.TokenUsage{TotalTokens: 1}},
+		{Done: true, Usage: &model.TokenUsage{TotalTokens: 1}},
 	}}
 	router := newTestRouter([]routedModel{
 		{profile: ModelProfile{Name: "primary", IsDefault: true}, llm: primary},
@@ -191,7 +191,7 @@ func TestFailoverLLMStream_PostEmissionErrorDoesNotFailover(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	iter, err := llm.Stream(context.Background(), mdl.CompletionRequest{})
+	iter, err := llm.Stream(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestFailoverLLMStream_PostEmissionErrorDoesNotFailover(t *testing.T) {
 	if got := atomic.LoadInt32(&secondary.streamCalls); got != 0 {
 		t.Fatalf("expected no secondary stream failover after emission, got %d stream calls", got)
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if !errorAs(err, &callErr) || callErr.FallbackSafe {
 		t.Fatalf("expected unsafe post-emission error, got %v", err)
 	}
@@ -221,7 +221,7 @@ func TestFailoverLLMStream_NonStreamingCandidateFallsBackToSyncBeforeEmission(t 
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	iter, err := llm.Stream(context.Background(), mdl.CompletionRequest{})
+	iter, err := llm.Stream(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestFailoverLLMComplete_PlainErrorsDoNotFailover(t *testing.T) {
 		t.Fatalf("NewFailoverLLM: %v", err)
 	}
 
-	_, err = llm.Complete(context.Background(), mdl.CompletionRequest{})
+	_, err = llm.Complete(context.Background(), model.CompletionRequest{})
 	if err == nil {
 		t.Fatal("expected plain error to stop without failover")
 	}
@@ -254,7 +254,7 @@ func TestFailoverLLMComplete_PlainErrorsDoNotFailover(t *testing.T) {
 }
 
 type syncResult struct {
-	resp *mdl.CompletionResponse
+	resp *model.CompletionResponse
 	err  error
 }
 
@@ -263,7 +263,7 @@ type syncSequenceLLM struct {
 	completeCalls int32
 }
 
-func (s *syncSequenceLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+func (s *syncSequenceLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
 	call := int(atomic.AddInt32(&s.completeCalls, 1)) - 1
 	if call >= len(s.results) {
 		return nil, context.DeadlineExceeded
@@ -272,20 +272,20 @@ func (s *syncSequenceLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (
 }
 
 type streamScriptLLM struct {
-	chunks      []mdl.StreamChunk
+	chunks      []model.StreamChunk
 	streamErr   error
 	nextErr     error
 	streamCalls int32
 }
 
-func (s *streamScriptLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
-	return &mdl.CompletionResponse{
-		Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("sync")}},
+func (s *streamScriptLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
+	return &model.CompletionResponse{
+		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("sync")}},
 		StopReason: "end_turn",
 	}, nil
 }
 
-func (s *streamScriptLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (s *streamScriptLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	atomic.AddInt32(&s.streamCalls, 1)
 	if s.streamErr != nil {
 		return nil, s.streamErr
@@ -294,12 +294,12 @@ func (s *streamScriptLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (md
 }
 
 type scriptedStreamIterator struct {
-	chunks  []mdl.StreamChunk
+	chunks  []model.StreamChunk
 	nextErr error
 	index   int
 }
 
-func (it *scriptedStreamIterator) Next() (mdl.StreamChunk, error) {
+func (it *scriptedStreamIterator) Next() (model.StreamChunk, error) {
 	if it.index < len(it.chunks) {
 		chunk := it.chunks[it.index]
 		it.index++
@@ -308,14 +308,14 @@ func (it *scriptedStreamIterator) Next() (mdl.StreamChunk, error) {
 	if it.nextErr != nil {
 		err := it.nextErr
 		it.nextErr = nil
-		return mdl.StreamChunk{}, err
+		return model.StreamChunk{}, err
 	}
-	return mdl.StreamChunk{}, io.EOF
+	return model.StreamChunk{}, io.EOF
 }
 
 func (it *scriptedStreamIterator) Close() error { return nil }
 
-func drainStream(iter mdl.StreamIterator) (string, error) {
+func drainStream(iter model.StreamIterator) (string, error) {
 	var builder strings.Builder
 	for {
 		chunk, err := iter.Next()
@@ -334,5 +334,5 @@ func errorAs(err error, target any) bool {
 }
 
 func retryableErr(err error) error {
-	return &mdl.LLMCallError{Err: err, Retryable: true}
+	return &model.LLMCallError{Err: err, Retryable: true}
 }

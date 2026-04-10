@@ -1,7 +1,7 @@
 package runtime
 
 import (
-	memstore "github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/memory"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -73,9 +73,9 @@ func normalizeMemoryTags(tags []string) []string {
 	return out
 }
 
-func normalizeMemoryCitation(citation memstore.MemoryCitation) memstore.MemoryCitation {
-	out := memstore.MemoryCitation{
-		Entries:     make([]memstore.MemoryCitationEntry, 0, len(citation.Entries)),
+func normalizeMemoryCitation(citation memory.MemoryCitation) memory.MemoryCitation {
+	out := memory.MemoryCitation{
+		Entries:     make([]memory.MemoryCitationEntry, 0, len(citation.Entries)),
 		MemoryPaths: dedupeStrings(citation.MemoryPaths),
 		RolloutIDs:  dedupeStrings(citation.RolloutIDs),
 	}
@@ -99,7 +99,7 @@ func normalizeMemoryCitation(citation memstore.MemoryCitation) memstore.MemoryCi
 	return out
 }
 
-func normalizeMemoryRecord(record memstore.MemoryRecord, existing *memstore.MemoryRecord, now time.Time) memstore.MemoryRecord {
+func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRecord, now time.Time) memory.MemoryRecord {
 	record.Path = normalizeMemoryPath(record.Path)
 	record.Group = normalizeMemoryPath(record.Group)
 	record.Workspace = strings.TrimSpace(record.Workspace)
@@ -118,8 +118,8 @@ func normalizeMemoryRecord(record memstore.MemoryRecord, existing *memstore.Memo
 		if record.CreatedAt.IsZero() {
 			record.CreatedAt = existing.CreatedAt
 		}
-		record.Stage = memstore.MemoryStage(firstNonEmpty(string(record.Stage), string(existing.Stage)))
-		record.Status = memstore.MemoryStatus(firstNonEmpty(string(record.Status), string(existing.Status)))
+		record.Stage = memory.MemoryStage(firstNonEmpty(string(record.Stage), string(existing.Stage)))
+		record.Status = memory.MemoryStatus(firstNonEmpty(string(record.Status), string(existing.Status)))
 		if record.Group == "" {
 			record.Group = existing.Group
 		}
@@ -158,10 +158,10 @@ func normalizeMemoryRecord(record memstore.MemoryRecord, existing *memstore.Memo
 		}
 	}
 	if record.Stage == "" {
-		record.Stage = memstore.MemoryStageManual
+		record.Stage = memory.MemoryStageManual
 	}
 	if record.Status == "" {
-		record.Status = memstore.MemoryStatusActive
+		record.Status = memory.MemoryStatusActive
 	}
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now.UTC()
@@ -191,7 +191,7 @@ func dedupeStrings(values []string) []string {
 	return out
 }
 
-func memoryMatchesQuery(item memstore.MemoryRecord, query memstore.MemoryQuery) bool {
+func memoryMatchesQuery(item memory.MemoryRecord, query memory.MemoryQuery) bool {
 	if len(query.Tags) > 0 {
 		expected := make(map[string]struct{}, len(query.Tags))
 		for _, tag := range query.Tags {
@@ -250,7 +250,7 @@ func memoryMatchesQuery(item memstore.MemoryRecord, query memstore.MemoryQuery) 
 	return memoryTextScore(item, needle) > 0
 }
 
-func memoryTextScore(item memstore.MemoryRecord, needle string) int {
+func memoryTextScore(item memory.MemoryRecord, needle string) int {
 	if needle == "" {
 		return 0
 	}
@@ -282,7 +282,7 @@ func memoryTextScore(item memstore.MemoryRecord, needle string) int {
 	return score
 }
 
-func sortMemoryRecords(records []memstore.MemoryRecord, query memstore.MemoryQuery) {
+func sortMemoryRecords(records []memory.MemoryRecord, query memory.MemoryQuery) {
 	needle := strings.ToLower(strings.TrimSpace(query.Query))
 	sort.Slice(records, func(i, j int) bool {
 		left := records[i]
@@ -307,14 +307,14 @@ func sortMemoryRecords(records []memstore.MemoryRecord, query memstore.MemoryQue
 	})
 }
 
-func trimMemoryRecords(records []memstore.MemoryRecord, limit int) []memstore.MemoryRecord {
+func trimMemoryRecords(records []memory.MemoryRecord, limit int) []memory.MemoryRecord {
 	if limit > 0 && len(records) > limit {
 		return records[:limit]
 	}
 	return records
 }
 
-func memoryFreshness(item memstore.MemoryRecord) time.Time {
+func memoryFreshness(item memory.MemoryRecord) time.Time {
 	switch {
 	case !item.LastUsedAt.IsZero():
 		return item.LastUsedAt.UTC()
@@ -327,7 +327,7 @@ func memoryFreshness(item memstore.MemoryRecord) time.Time {
 	}
 }
 
-func bumpMemoryUsage(record memstore.MemoryRecord, usedAt time.Time) memstore.MemoryRecord {
+func bumpMemoryUsage(record memory.MemoryRecord, usedAt time.Time) memory.MemoryRecord {
 	if usedAt.IsZero() {
 		usedAt = time.Now().UTC()
 	}

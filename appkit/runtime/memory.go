@@ -10,23 +10,23 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel"
-	memstore "github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/memory"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 const memoryStateKey kernel.ExtensionStateKey = "memory.state"
 
 type state struct {
-	workspace kws.Workspace
-	store     memstore.MemoryStore
+	workspace workspace.Workspace
+	store     memory.MemoryStore
 	runtime   taskrt.TaskRuntime
 	pipeline  *memoryPipelineManager
 }
 
 // WithMemoryWorkspace 将持久化 memory 工作区接入 Kernel。
-func WithMemoryWorkspace(ws kws.Workspace) kernel.Option {
+func WithMemoryWorkspace(ws workspace.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
 		st := ensureMemoryState(k)
 		st.workspace = ws
@@ -36,14 +36,14 @@ func WithMemoryWorkspace(ws kws.Workspace) kernel.Option {
 	}
 }
 
-func WithMemoryStore(store memstore.MemoryStore) kernel.Option {
+func WithMemoryStore(store memory.MemoryStore) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureMemoryState(k).store = store
 	}
 }
 
 // RegisterMemoryToolsCompat 为 memory 命名空间注册标准工具集。
-func RegisterMemoryToolsCompat(reg tool.Registry, ws kws.Workspace) error {
+func RegisterMemoryToolsCompat(reg tool.Registry, ws workspace.Workspace) error {
 	return RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), taskrt.NewMemoryTaskRuntime())
 }
 
@@ -93,11 +93,11 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	return st
 }
 
-func RegisterMemoryTools(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore) error {
+func RegisterMemoryTools(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore) error {
 	return RegisterMemoryToolsWithRuntime(reg, ws, store, taskrt.NewMemoryTaskRuntime())
 }
 
-func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore, runtime taskrt.TaskRuntime) error {
+func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, runtime taskrt.TaskRuntime) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -115,7 +115,7 @@ func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws kws.Workspace, store m
 	return registerMemoryToolsWithPipeline(reg, ws, store, pipeline)
 }
 
-func registerMemoryToolsWithPipeline(reg tool.Registry, ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) error {
+func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -310,7 +310,7 @@ var ingestMemoryTraceSpec = tool.ToolSpec{
 	Capabilities: []string{"memory"},
 }
 
-func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
+func readMemoryHandler(ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -334,7 +334,7 @@ func readMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *m
 	}
 }
 
-func writeMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
+func writeMemoryHandler(ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path    string `json:"path"`
@@ -344,11 +344,11 @@ func writeMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 		in.Path = normalizeMemoryPath(in.Path)
-		record, err := store.Upsert(ctx, memstore.MemoryRecord{
+		record, err := store.Upsert(ctx, memory.MemoryRecord{
 			Path:       in.Path,
 			Content:    in.Content,
-			Stage:      memstore.MemoryStageManual,
-			Status:     memstore.MemoryStatusActive,
+			Stage:      memory.MemoryStageManual,
+			Status:     memory.MemoryStatusActive,
 			SourceKind: "tool.write_memory",
 			SourcePath: in.Path,
 		})
@@ -365,7 +365,7 @@ func writeMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *
 	}
 }
 
-func listMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
+func listMemoriesHandler(store memory.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Pattern string `json:"pattern"`
@@ -383,7 +383,7 @@ func listMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
 		}
 		paths := make([]string, 0, len(items))
 		for _, item := range items {
-			if item.Status != "" && item.Status != memstore.MemoryStatusActive {
+			if item.Status != "" && item.Status != memory.MemoryStatusActive {
 				continue
 			}
 			if matchesMemoryPattern(pattern, item.Path) {
@@ -394,7 +394,7 @@ func listMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
 	}
 }
 
-func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
+func deleteMemoryHandler(ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -416,7 +416,7 @@ func deleteMemoryHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline 
 	}
 }
 
-func readMemoryRecordHandler(store memstore.MemoryStore) tool.ToolHandler {
+func readMemoryRecordHandler(store memory.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path string `json:"path"`
@@ -436,16 +436,16 @@ func readMemoryRecordHandler(store memstore.MemoryStore) tool.ToolHandler {
 	}
 }
 
-func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
+func writeMemoryRecordHandler(ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Path            string                  `json:"path"`
 			Content         string                  `json:"content"`
 			Summary         string                  `json:"summary"`
 			Tags            []string                `json:"tags"`
-			Citation        memstore.MemoryCitation `json:"citation"`
-			Stage           memstore.MemoryStage    `json:"stage"`
-			Status          memstore.MemoryStatus   `json:"status"`
+			Citation        memory.MemoryCitation `json:"citation"`
+			Stage           memory.MemoryStage    `json:"stage"`
+			Status          memory.MemoryStatus   `json:"status"`
 			Group           string                  `json:"group"`
 			Workspace       string                  `json:"workspace"`
 			CWD             string                  `json:"cwd"`
@@ -458,7 +458,7 @@ func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore, pipe
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		record, err := store.Upsert(ctx, memstore.MemoryRecord{
+		record, err := store.Upsert(ctx, memory.MemoryRecord{
 			Path:            in.Path,
 			Content:         in.Content,
 			Summary:         in.Summary,
@@ -491,13 +491,13 @@ func writeMemoryRecordHandler(ws kws.Workspace, store memstore.MemoryStore, pipe
 	}
 }
 
-func searchMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
+func searchMemoriesHandler(store memory.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
 			Query     string                  `json:"query"`
 			Tags      []string                `json:"tags"`
-			Stages    []memstore.MemoryStage  `json:"stages"`
-			Statuses  []memstore.MemoryStatus `json:"statuses"`
+			Stages    []memory.MemoryStage  `json:"stages"`
+			Statuses  []memory.MemoryStatus `json:"statuses"`
 			Group     string                  `json:"group"`
 			Workspace string                  `json:"workspace"`
 			Limit     int                     `json:"limit"`
@@ -505,7 +505,7 @@ func searchMemoriesHandler(store memstore.MemoryStore) tool.ToolHandler {
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		items, err := store.Search(ctx, memstore.MemoryQuery{
+		items, err := store.Search(ctx, memory.MemoryQuery{
 			Query:     in.Query,
 			Tags:      in.Tags,
 			Stages:    in.Stages,
@@ -579,7 +579,7 @@ func ingestMemoryTraceHandler(pipeline *memoryPipelineManager) tool.ToolHandler 
 	}
 }
 
-func ensureMemoryRecord(ctx context.Context, ws kws.Workspace, store memstore.MemoryStore, path string) (*memstore.MemoryRecord, bool, error) {
+func ensureMemoryRecord(ctx context.Context, ws workspace.Workspace, store memory.MemoryStore, path string) (*memory.MemoryRecord, bool, error) {
 	path = normalizeMemoryPath(path)
 	record, err := store.GetByPath(ctx, path)
 	if err == nil && record != nil {
@@ -592,11 +592,11 @@ func ensureMemoryRecord(ctx context.Context, ws kws.Workspace, store memstore.Me
 		}
 		return nil, false, readErr
 	}
-	record, err = store.Upsert(ctx, memstore.MemoryRecord{
+	record, err = store.Upsert(ctx, memory.MemoryRecord{
 		Path:       path,
 		Content:    string(data),
-		Stage:      memstore.MemoryStageManual,
-		Status:     memstore.MemoryStatusActive,
+		Stage:      memory.MemoryStageManual,
+		Status:     memory.MemoryStatusActive,
 		SourceKind: "projection.reconciled",
 		SourcePath: path,
 	})
@@ -640,11 +640,11 @@ func matchesMemoryPattern(pattern string, path string) bool {
 	return path == pattern
 }
 
-func recordMemoryUsage(ctx context.Context, store memstore.MemoryStore, path string) error {
+func recordMemoryUsage(ctx context.Context, store memory.MemoryStore, path string) error {
 	return recordMemoryUsages(ctx, store, []string{path})
 }
 
-func recordMemoryUsages(ctx context.Context, store memstore.MemoryStore, paths []string) error {
+func recordMemoryUsages(ctx context.Context, store memory.MemoryStore, paths []string) error {
 	if store == nil || len(paths) == 0 {
 		return nil
 	}

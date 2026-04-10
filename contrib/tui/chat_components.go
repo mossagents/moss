@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 )
 
 func (m chatModel) renderMainPane(layout chatUILayout) string {
@@ -101,7 +101,7 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 func (m chatModel) renderStatusPane(width int) string {
 	var status string
 	if m.pendAsk != nil && m.askForm != nil {
-		if m.pendAsk.request.Type == intr.InputConfirm && m.pendAsk.request.Approval != nil {
+		if m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil {
 			status = "Approval needed  •  Tab move  •  ↑↓ choose  •  Enter apply"
 		} else {
 			status = "Input needed  •  Tab move  •  Enter confirm"

@@ -1,7 +1,7 @@
 package agent
 
 import (
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"testing"
 )
 
@@ -94,7 +94,7 @@ func TestTaskTracker(t *testing.T) {
 		t.Fatalf("internal task should not be mutated through Get result, got %q", gotAgain.Status)
 	}
 
-	tt.Complete("t1", "done", mdl.TokenUsage{TotalTokens: 100})
+	tt.Complete("t1", "done", model.TokenUsage{TotalTokens: 100})
 	got, _ = tt.Get("t1")
 	if got.Status != TaskCompleted {
 		t.Errorf("status = %q, want completed", got.Status)

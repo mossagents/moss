@@ -3,7 +3,7 @@ package eval
 import (
 	"context"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"strings"
 )
 
@@ -110,11 +110,11 @@ func toolCallSet(logs []ToolCallLog) map[string]bool {
 
 // LLMJudge 使用 LLM-as-judge 对运行结果进行语义评分。
 type LLMJudge struct {
-	LLM mdl.LLM
+	LLM model.LLM
 }
 
 // NewLLMJudge 创建基于 LLM 的 Judge。
-func NewLLMJudge(llm mdl.LLM) Judge { return &LLMJudge{LLM: llm} }
+func NewLLMJudge(llm model.LLM) Judge { return &LLMJudge{LLM: llm} }
 
 func (j *LLMJudge) Name() string { return "llm" }
 
@@ -127,22 +127,22 @@ func (j *LLMJudge) Score(ctx context.Context, run EvalRun, expect EvalExpect) (J
 	}
 
 	prompt := buildJudgePrompt(run, *expect.Judge)
-	req := mdl.CompletionRequest{
-		Messages: []mdl.Message{
+	req := model.CompletionRequest{
+		Messages: []model.Message{
 			{
-				Role:         mdl.RoleSystem,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(judgeSystemPrompt)},
+				Role:         model.RoleSystem,
+				ContentParts: []model.ContentPart{model.TextPart(judgeSystemPrompt)},
 			},
 			{
-				Role:         mdl.RoleUser,
-				ContentParts: []mdl.ContentPart{mdl.TextPart(prompt)},
+				Role:         model.RoleUser,
+				ContentParts: []model.ContentPart{model.TextPart(prompt)},
 			},
 		},
-		Config: mdl.ModelConfig{
+		Config: model.ModelConfig{
 			Model:     expect.Judge.Model,
 			MaxTokens: 512,
 		},
-		ResponseFormat: &mdl.ResponseFormat{Type: "json_object"},
+		ResponseFormat: &model.ResponseFormat{Type: "json_object"},
 	}
 
 	resp, err := j.LLM.Complete(ctx, req)
@@ -150,7 +150,7 @@ func (j *LLMJudge) Score(ctx context.Context, run EvalRun, expect EvalExpect) (J
 		return JudgeScore{}, fmt.Errorf("LLMJudge: %w", err)
 	}
 
-	text := mdl.ContentPartsToPlainText(resp.Message.ContentParts)
+	text := model.ContentPartsToPlainText(resp.Message.ContentParts)
 	score, reasoning, err := parseJudgeResponse(text)
 	if err != nil {
 		return JudgeScore{JudgeName: j.Name(), Score: 0, Reasoning: text, Pass: false}, nil

@@ -2,7 +2,7 @@ package knowledge
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"math"
 	"sort"
 	"sync"
@@ -19,7 +19,7 @@ func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{docs: make(map[string]*Document)}
 }
 
-func (m *MemoryStore) Add(ctx context.Context, embedder mdl.Embedder, id, source string, texts []string, metadata map[string]any) error {
+func (m *MemoryStore) Add(ctx context.Context, embedder model.Embedder, id, source string, texts []string, metadata map[string]any) error {
 	if len(texts) == 0 {
 		return nil
 	}
@@ -53,7 +53,7 @@ func (m *MemoryStore) Add(ctx context.Context, embedder mdl.Embedder, id, source
 	return nil
 }
 
-func (m *MemoryStore) Search(ctx context.Context, embedder mdl.Embedder, query string, limit int) ([]SearchResult, error) {
+func (m *MemoryStore) Search(ctx context.Context, embedder model.Embedder, query string, limit int) ([]SearchResult, error) {
 	// 嵌入查询
 	queryVec, err := embedder.Embed(ctx, query)
 	if err != nil {

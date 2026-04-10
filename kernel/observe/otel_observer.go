@@ -34,6 +34,8 @@ func NewOTelObserver(tp trace.TracerProvider) *OTelObserver {
 }
 
 // OnLLMCall creates a backdated OTel span for the completed LLM call.
+// If a TraceContext is present in ctx, it is recorded as a span link and
+// any baggage entries are added as span attributes.
 func (o *OTelObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 	startTime := e.StartedAt
 	if startTime.IsZero() {
@@ -41,7 +43,7 @@ func (o *OTelObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 	}
 	endTime := startTime.Add(e.Duration)
 
-	_, span := o.tracer.Start(ctx, "moss.llm.call",
+	opts := []trace.SpanStartOption{
 		trace.WithTimestamp(startTime),
 		trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
@@ -53,7 +55,11 @@ func (o *OTelObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 			attribute.Bool("ai.streamed", e.Streamed),
 			attribute.Float64("ai.estimated_cost_usd", e.EstimatedCostUSD),
 		),
-	)
+	}
+	opts = appendTraceContextOpts(ctx, opts)
+
+	_, span := o.tracer.Start(ctx, "moss.llm.call", opts...)
+	addBaggageAttributes(ctx, span)
 	if e.Error != nil {
 		span.RecordError(e.Error)
 		span.SetStatus(codes.Error, e.Error.Error())
@@ -62,6 +68,8 @@ func (o *OTelObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 }
 
 // OnToolCall creates a backdated OTel span for the completed tool call.
+// If a TraceContext is present in ctx, it is recorded as a span link and
+// any baggage entries are added as span attributes.
 func (o *OTelObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
 	startTime := e.StartedAt
 	if startTime.IsZero() {
@@ -69,7 +77,7 @@ func (o *OTelObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
 	}
 	endTime := startTime.Add(e.Duration)
 
-	_, span := o.tracer.Start(ctx, "moss.tool.call",
+	opts := []trace.SpanStartOption{
 		trace.WithTimestamp(startTime),
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
@@ -77,7 +85,11 @@ func (o *OTelObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
 			attribute.String("tool.name", e.ToolName),
 			attribute.String("tool.risk", e.Risk),
 		),
-	)
+	}
+	opts = appendTraceContextOpts(ctx, opts)
+
+	_, span := o.tracer.Start(ctx, "moss.tool.call", opts...)
+	addBaggageAttributes(ctx, span)
 	if e.Error != nil {
 		span.RecordError(e.Error)
 		span.SetStatus(codes.Error, e.Error.Error())
@@ -116,6 +128,37 @@ func (o *OTelObserver) OnError(ctx context.Context, e ErrorEvent) {
 		span.SetStatus(codes.Error, e.Error.Error())
 	}
 	span.End(trace.WithTimestamp(now))
+}
+
+// appendTraceContextOpts adds a span link from the TraceContext if present.
+func appendTraceContextOpts(ctx context.Context, opts []trace.SpanStartOption) []trace.SpanStartOption {
+	tc, ok := TraceContextFrom(ctx)
+	if !ok {
+		return opts
+	}
+	opts = append(opts,
+		trace.WithAttributes(
+			attribute.String("moss.trace_id", tc.TraceID),
+			attribute.String("moss.span_id", tc.SpanID),
+		),
+	)
+	if tc.ParentID != "" {
+		opts = append(opts, trace.WithAttributes(attribute.String("moss.parent_id", tc.ParentID)))
+	}
+	return opts
+}
+
+// addBaggageAttributes sets baggage entries from the TraceContext as span attributes.
+func addBaggageAttributes(ctx context.Context, span trace.Span) {
+	tc, ok := TraceContextFrom(ctx)
+	if !ok || len(tc.Baggage) == 0 {
+		return
+	}
+	attrs := make([]attribute.KeyValue, 0, len(tc.Baggage))
+	for k, v := range tc.Baggage {
+		attrs = append(attrs, attribute.String("moss.baggage."+k, v))
+	}
+	span.SetAttributes(attrs...)
 }
 
 // ensure OTelObserver satisfies Observer at compile time

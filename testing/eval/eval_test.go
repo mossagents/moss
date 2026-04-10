@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 func TestRuleJudge_AllPass(t *testing.T) {
@@ -115,10 +115,10 @@ func TestLoadCase_YAML(t *testing.T) {
 }
 
 func TestKernelRunFunc(t *testing.T) {
-	runFn := KernelRunFunc(func(_ context.Context, msgs []mdl.Message) ([]mdl.Message, []ToolCallLog, int, error) {
-		reply := mdl.Message{
-			Role:         mdl.RoleAssistant,
-			ContentParts: []mdl.ContentPart{mdl.TextPart("我是 Moss 助手，很高兴帮助你")},
+	runFn := KernelRunFunc(func(_ context.Context, msgs []model.Message) ([]model.Message, []ToolCallLog, int, error) {
+		reply := model.Message{
+			Role:         model.RoleAssistant,
+			ContentParts: []model.ContentPart{model.TextPart("我是 Moss 助手，很高兴帮助你")},
 		}
 		return append(msgs, reply), nil, 1, nil
 	})

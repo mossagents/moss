@@ -3,8 +3,8 @@ package metrics_test
 import (
 	"context"
 	"github.com/mossagents/moss/kernel/metrics"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"strings"
 	"testing"
 	"time"
@@ -75,12 +75,12 @@ func TestMetricsObserver_LLMCall(t *testing.T) {
 	observer := metrics.NewObserver(c)
 
 	ctx := context.Background()
-	e := kobs.LLMCallEvent{
+	e := observe.LLMCallEvent{
 		SessionID: "s1",
 		Model:     "gpt-4",
 		StartedAt: time.Now(),
 		Duration:  500 * time.Millisecond,
-		Usage:     mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
+		Usage:     model.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
 	}
 	observer.OnLLMCall(ctx, e)
 
@@ -99,7 +99,7 @@ func TestMetricsObserver_ToolCall(t *testing.T) {
 	observer := metrics.NewObserver(c)
 
 	ctx := context.Background()
-	e := kobs.ToolCallEvent{
+	e := observe.ToolCallEvent{
 		SessionID: "s1",
 		ToolName:  "bash",
 		Duration:  200 * time.Millisecond,

@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"strconv"
 	"strings"
 )
@@ -139,7 +139,7 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 	if len(args) == 0 {
 		return m.openForkPicker()
 	}
-	sourceKind := string(ckpt.ForkSourceSession)
+	sourceKind := string(checkpoint.ForkSourceSession)
 	sourceID := ""
 	restore := false
 	rest := args
@@ -147,7 +147,7 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 		switch strings.ToLower(strings.TrimSpace(rest[0])) {
 		case "session", "checkpoint":
 			sourceKind = strings.ToLower(strings.TrimSpace(rest[0]))
-			if sourceKind == string(ckpt.ForkSourceSession) && (len(rest) < 2 || strings.TrimSpace(rest[1]) == "") {
+			if sourceKind == string(checkpoint.ForkSourceSession) && (len(rest) < 2 || strings.TrimSpace(rest[1]) == "") {
 				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /fork [session <id>|checkpoint <id|latest>|latest] [restore]"})
 				m.refreshViewport()
 				return m, nil
@@ -159,7 +159,7 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 				rest = rest[1:]
 			}
 		case "latest":
-			sourceKind = string(ckpt.ForkSourceCheckpoint)
+			sourceKind = string(checkpoint.ForkSourceCheckpoint)
 			rest = rest[1:]
 		}
 	}

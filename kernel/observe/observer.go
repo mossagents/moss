@@ -2,8 +2,8 @@ package observe
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"time"
 )
 
@@ -24,7 +24,7 @@ type ExecutionObserver interface {
 
 // ApprovalObserver receives approval request and resolution events.
 type ApprovalObserver interface {
-	OnApproval(ctx context.Context, e intr.ApprovalEvent)
+	OnApproval(ctx context.Context, e io.ApprovalEvent)
 }
 
 // SessionObserver receives session lifecycle events.
@@ -84,7 +84,7 @@ type LLMCallEvent struct {
 	Model            string         `json:"model,omitempty"`
 	StartedAt        time.Time      `json:"started_at,omitempty"`
 	Duration         time.Duration  `json:"duration_ms"`
-	Usage            mdl.TokenUsage `json:"usage"`
+	Usage            model.TokenUsage `json:"usage"`
 	EstimatedCostUSD float64        `json:"estimated_cost_usd,omitempty"`
 	StopReason       string         `json:"stop_reason,omitempty"`
 	Streamed         bool           `json:"streamed"`
@@ -121,7 +121,7 @@ type NoOpObserver struct{}
 func (NoOpObserver) OnLLMCall(_ context.Context, _ LLMCallEvent)          {}
 func (NoOpObserver) OnToolCall(_ context.Context, _ ToolCallEvent)        {}
 func (NoOpObserver) OnExecutionEvent(_ context.Context, _ ExecutionEvent) {}
-func (NoOpObserver) OnApproval(_ context.Context, _ intr.ApprovalEvent)   {}
+func (NoOpObserver) OnApproval(_ context.Context, _ io.ApprovalEvent)   {}
 func (NoOpObserver) OnSessionEvent(_ context.Context, _ SessionEvent)     {}
 func (NoOpObserver) OnError(_ context.Context, _ ErrorEvent)              {}
 func (NoOpObserver) OnEvent(_ context.Context, _ EventEnvelope)           {}
@@ -130,46 +130,54 @@ type joinedObserver []Observer
 
 func (o joinedObserver) OnLLMCall(ctx context.Context, e LLMCallEvent) {
 	for _, observer := range o {
-		observer.OnLLMCall(ctx, e)
+		safeObserve(func() { observer.OnLLMCall(ctx, e) })
 	}
 }
 
 func (o joinedObserver) OnToolCall(ctx context.Context, e ToolCallEvent) {
 	for _, observer := range o {
-		observer.OnToolCall(ctx, e)
+		safeObserve(func() { observer.OnToolCall(ctx, e) })
 	}
 }
 
 func (o joinedObserver) OnExecutionEvent(ctx context.Context, e ExecutionEvent) {
 	for _, observer := range o {
-		observer.OnExecutionEvent(ctx, e)
+		safeObserve(func() { observer.OnExecutionEvent(ctx, e) })
 	}
 }
 
-func (o joinedObserver) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
+func (o joinedObserver) OnApproval(ctx context.Context, e io.ApprovalEvent) {
 	for _, observer := range o {
-		observer.OnApproval(ctx, e)
+		safeObserve(func() { observer.OnApproval(ctx, e) })
 	}
 }
 
 func (o joinedObserver) OnSessionEvent(ctx context.Context, e SessionEvent) {
 	for _, observer := range o {
-		observer.OnSessionEvent(ctx, e)
+		safeObserve(func() { observer.OnSessionEvent(ctx, e) })
 	}
 }
 
 func (o joinedObserver) OnError(ctx context.Context, e ErrorEvent) {
 	for _, observer := range o {
-		observer.OnError(ctx, e)
+		safeObserve(func() { observer.OnError(ctx, e) })
 	}
 }
 
 func (o joinedObserver) OnEvent(ctx context.Context, e EventEnvelope) {
 	for _, observer := range o {
 		if aware, ok := observer.(EventObserver); ok {
-			aware.OnEvent(ctx, e)
+			safeObserve(func() { aware.OnEvent(ctx, e) })
 		}
 	}
+}
+
+// safeObserve 执行 observer 回调并捕获 panic，防止单个 observer 崩溃影响其他 observer。
+func safeObserve(fn func()) {
+	defer func() {
+		recover() //nolint:errcheck // observer panic is intentionally silenced
+	}()
+	fn()
 }
 
 func ObserveLLMCall(ctx context.Context, observer LLMObserver, e LLMCallEvent) {
@@ -196,7 +204,7 @@ func ObserveExecutionEvent(ctx context.Context, observer ExecutionObserver, e Ex
 	observeEvent(ctx, observer, EnvelopeFromExecutionEvent(e))
 }
 
-func ObserveApproval(ctx context.Context, observer ApprovalObserver, e intr.ApprovalEvent) {
+func ObserveApproval(ctx context.Context, observer ApprovalObserver, e io.ApprovalEvent) {
 	if observer == nil {
 		return
 	}

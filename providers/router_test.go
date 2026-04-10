@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"io"
 	"os"
 	"path/filepath"
@@ -17,9 +17,9 @@ type fakeLLM struct {
 	name string
 }
 
-func (f *fakeLLM) Complete(_ context.Context, _ mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
-	return &mdl.CompletionResponse{
-		Message:    mdl.Message{Role: mdl.RoleAssistant, ContentParts: []mdl.ContentPart{mdl.TextPart("response from " + f.name)}},
+func (f *fakeLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
+	return &model.CompletionResponse{
+		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("response from " + f.name)}},
 		StopReason: "end_turn",
 	}, nil
 }
@@ -29,13 +29,13 @@ type fakeStreamingLLM struct {
 	fakeLLM
 }
 
-func (f *fakeStreamingLLM) Stream(_ context.Context, _ mdl.CompletionRequest) (mdl.StreamIterator, error) {
+func (f *fakeStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
 	return &emptyIterator{}, nil
 }
 
 type emptyIterator struct{}
 
-func (emptyIterator) Next() (mdl.StreamChunk, error) { return mdl.StreamChunk{}, io.EOF }
+func (emptyIterator) Next() (model.StreamChunk, error) { return model.StreamChunk{}, io.EOF }
 func (emptyIterator) Close() error                   { return nil }
 
 // newTestRouter 创建测试用 ModelRouter，直接注入 fakeLLM。
@@ -90,7 +90,7 @@ func TestSelectModel_EmptyCapabilities_ReturnsDefault(t *testing.T) {
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{})
+	rm, err := r.selectModel(&model.TaskRequirement{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestSelectModel_MatchCapability(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "text-only", CostTier: 1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapFunctionCalling},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapFunctionCalling},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "text-only"},
@@ -112,15 +112,15 @@ func TestSelectModel_MatchCapability(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "multimodal", CostTier: 3,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapImageGeneration, mdl.CapFunctionCalling},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapImageGeneration, model.CapFunctionCalling},
 			},
 			llm: &fakeLLM{name: "multimodal"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapImageGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapImageGeneration},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,14 +135,14 @@ func TestSelectModel_PreferCheap(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "expensive", CostTier: 3,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapCodeGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapCodeGeneration},
 			},
 			llm: &fakeLLM{name: "expensive"},
 		},
 		{
 			profile: ModelProfile{
 				Name: "cheap", CostTier: 1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapCodeGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapCodeGeneration},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "cheap"},
@@ -150,8 +150,8 @@ func TestSelectModel_PreferCheap(t *testing.T) {
 	}
 	r := newTestRouter(models, 1)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapTextGeneration},
 		PreferCheap:  true,
 	})
 	if err != nil {
@@ -167,14 +167,14 @@ func TestSelectModel_MaxCostTier(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "expensive", CostTier: 3,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapReasoning},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapReasoning},
 			},
 			llm: &fakeLLM{name: "expensive"},
 		},
 		{
 			profile: ModelProfile{
 				Name: "mid", CostTier: 2,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapReasoning},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapReasoning},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "mid"},
@@ -182,8 +182,8 @@ func TestSelectModel_MaxCostTier(t *testing.T) {
 	}
 	r := newTestRouter(models, 1)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapTextGeneration},
 		MaxCostTier:  2,
 	})
 	if err != nil {
@@ -200,7 +200,7 @@ func TestSelectModel_ReasoningLanePrefersReasoningModel(t *testing.T) {
 			profile: ModelProfile{
 				Name:         "cheap",
 				CostTier:     1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "cheap"},
@@ -209,15 +209,15 @@ func TestSelectModel_ReasoningLanePrefersReasoningModel(t *testing.T) {
 			profile: ModelProfile{
 				Name:         "reasoner",
 				CostTier:     3,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapReasoning},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapReasoning},
 			},
 			llm: &fakeLLM{name: "reasoner"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapTextGeneration},
 		Lane:         "reasoning",
 	})
 	if err != nil {
@@ -234,7 +234,7 @@ func TestSelectModel_ToolHeavyLanePrefersFunctionCallingModel(t *testing.T) {
 			profile: ModelProfile{
 				Name:         "default",
 				CostTier:     1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "default"},
@@ -243,15 +243,15 @@ func TestSelectModel_ToolHeavyLanePrefersFunctionCallingModel(t *testing.T) {
 			profile: ModelProfile{
 				Name:         "tooler",
 				CostTier:     2,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapFunctionCalling, mdl.CapLongContext},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapFunctionCalling, model.CapLongContext},
 			},
 			llm: &fakeLLM{name: "tooler"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapTextGeneration},
 		Lane:         "tool-heavy",
 	})
 	if err != nil {
@@ -269,7 +269,7 @@ func TestSelectModel_CheapLaneWithoutCapabilitiesStillPrefersCheapModel(t *testi
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
+	rm, err := r.selectModel(&model.TaskRequirement{
 		Lane:        "cheap",
 		PreferCheap: true,
 		MaxCostTier: 1,
@@ -287,7 +287,7 @@ func TestSelectModel_NoMatch_ReturnsError(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "text-only", CostTier: 1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "text-only"},
@@ -295,8 +295,8 @@ func TestSelectModel_NoMatch_ReturnsError(t *testing.T) {
 	}
 	r := newTestRouter(models, 0)
 
-	_, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapImageGeneration},
+	_, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapImageGeneration},
 	})
 	if err == nil {
 		t.Fatal("expected error for unmatched capability, got nil")
@@ -311,7 +311,7 @@ func TestSelectModel_PreferStrongest_WhenNotCheap(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "basic", CostTier: 1,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 				IsDefault:    true,
 			},
 			llm: &fakeLLM{name: "basic"},
@@ -319,15 +319,15 @@ func TestSelectModel_PreferStrongest_WhenNotCheap(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "advanced", CostTier: 2,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapReasoning, mdl.CapCodeGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapReasoning, model.CapCodeGeneration},
 			},
 			llm: &fakeLLM{name: "advanced"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	rm, err := r.selectModel(&mdl.TaskRequirement{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+	rm, err := r.selectModel(&model.TaskRequirement{
+		Capabilities: []model.ModelCapability{model.CapTextGeneration},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -342,14 +342,14 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "default", CostTier: 1, IsDefault: true,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 			},
 			llm: &fakeLLM{name: "default"},
 		},
 		{
 			profile: ModelProfile{
 				Name: "vision", CostTier: 2,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapImageUnderstanding},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapImageUnderstanding},
 			},
 			llm: &fakeLLM{name: "vision"},
 		},
@@ -357,11 +357,11 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	r := newTestRouter(models, 0)
 
 	// 不指定需求 → 默认模型
-	resp, err := r.Complete(context.Background(), mdl.CompletionRequest{})
+	resp, err := r.Complete(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from default" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from default" {
 		t.Errorf("expected default model response, got %q", got)
 	}
 	if resp.Metadata == nil || resp.Metadata.ActualModel != "default" {
@@ -369,17 +369,17 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	}
 
 	// 指定需求 → 选择 vision 模型
-	resp, err = r.Complete(context.Background(), mdl.CompletionRequest{
-		Config: mdl.ModelConfig{
-			Requirements: &mdl.TaskRequirement{
-				Capabilities: []mdl.ModelCapability{mdl.CapImageUnderstanding},
+	resp, err = r.Complete(context.Background(), model.CompletionRequest{
+		Config: model.ModelConfig{
+			Requirements: &model.TaskRequirement{
+				Capabilities: []model.ModelCapability{model.CapImageUnderstanding},
 			},
 		},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from vision" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "response from vision" {
 		t.Errorf("expected vision model response, got %q", got)
 	}
 	if resp.Metadata == nil || resp.Metadata.ActualModel != "vision" {
@@ -392,14 +392,14 @@ func TestStream_NonStreamingModel_ReturnsError(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "no-stream", CostTier: 1, IsDefault: true,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 			},
 			llm: &fakeLLM{name: "no-stream"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	_, err := r.Stream(context.Background(), mdl.CompletionRequest{})
+	_, err := r.Stream(context.Background(), model.CompletionRequest{})
 	if err == nil {
 		t.Fatal("expected error for non-streaming model")
 	}
@@ -410,18 +410,18 @@ func TestStream_StreamingModel_Works(t *testing.T) {
 		{
 			profile: ModelProfile{
 				Name: "streamer", CostTier: 1, IsDefault: true,
-				Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration},
+				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 			},
 			llm: &fakeStreamingLLM{fakeLLM{name: "streamer"}},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	iter, err := r.Stream(context.Background(), mdl.CompletionRequest{})
+	iter, err := r.Stream(context.Background(), model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	provider, ok := iter.(mdl.MetadataStreamIterator)
+	provider, ok := iter.(model.MetadataStreamIterator)
 	if !ok {
 		t.Fatal("expected metadata stream iterator")
 	}
@@ -431,7 +431,7 @@ func TestStream_StreamingModel_Works(t *testing.T) {
 }
 
 func TestAttachModelMetadata_DirectLLMCallErrorCopiesInsteadOfMutating(t *testing.T) {
-	original := &mdl.LLMCallError{
+	original := &model.LLMCallError{
 		Err:          io.ErrUnexpectedEOF,
 		Retryable:    true,
 		FallbackSafe: true,
@@ -444,7 +444,7 @@ func TestAttachModelMetadata_DirectLLMCallErrorCopiesInsteadOfMutating(t *testin
 	if strings.TrimSpace(original.Metadata.ActualModel) != "" {
 		t.Fatalf("original error metadata was mutated: %+v", original.Metadata)
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if !errors.As(got, &callErr) {
 		t.Fatalf("expected LLMCallError, got %T", got)
 	}
@@ -454,7 +454,7 @@ func TestAttachModelMetadata_DirectLLMCallErrorCopiesInsteadOfMutating(t *testin
 }
 
 func TestAttachModelMetadata_WrappedLLMCallErrorPreservesWrapperAndFlags(t *testing.T) {
-	inner := &mdl.LLMCallError{
+	inner := &model.LLMCallError{
 		Err:          fmt.Errorf("provider rejected request"),
 		Retryable:    false,
 		FallbackSafe: false,
@@ -468,7 +468,7 @@ func TestAttachModelMetadata_WrappedLLMCallErrorPreservesWrapperAndFlags(t *test
 	if strings.TrimSpace(inner.Metadata.ActualModel) != "" {
 		t.Fatalf("wrapped inner error metadata was mutated: %+v", inner.Metadata)
 	}
-	var callErr *mdl.LLMCallError
+	var callErr *model.LLMCallError
 	if !errors.As(got, &callErr) {
 		t.Fatalf("expected LLMCallError, got %T", got)
 	}
@@ -482,24 +482,24 @@ func TestAttachModelMetadata_WrappedLLMCallErrorPreservesWrapperAndFlags(t *test
 
 func TestHasCapability(t *testing.T) {
 	p := ModelProfile{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapImageGeneration},
+		Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapImageGeneration},
 	}
-	if !p.HasCapability(mdl.CapTextGeneration) {
+	if !p.HasCapability(model.CapTextGeneration) {
 		t.Error("expected HasCapability(text_generation) = true")
 	}
-	if p.HasCapability(mdl.CapReasoning) {
+	if p.HasCapability(model.CapReasoning) {
 		t.Error("expected HasCapability(reasoning) = false")
 	}
 }
 
 func TestHasAllCapabilities(t *testing.T) {
 	p := ModelProfile{
-		Capabilities: []mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapImageGeneration, mdl.CapFunctionCalling},
+		Capabilities: []model.ModelCapability{model.CapTextGeneration, model.CapImageGeneration, model.CapFunctionCalling},
 	}
-	if !p.HasAllCapabilities([]mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapImageGeneration}) {
+	if !p.HasAllCapabilities([]model.ModelCapability{model.CapTextGeneration, model.CapImageGeneration}) {
 		t.Error("expected HasAllCapabilities([text, image]) = true")
 	}
-	if p.HasAllCapabilities([]mdl.ModelCapability{mdl.CapTextGeneration, mdl.CapReasoning}) {
+	if p.HasAllCapabilities([]model.ModelCapability{model.CapTextGeneration, model.CapReasoning}) {
 		t.Error("expected HasAllCapabilities([text, reasoning]) = false")
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
 	"unicode"
@@ -18,7 +18,7 @@ const promptContextStateKey = "prompt_context"
 type PromptContextFragment struct {
 	ID     string   `json:"id"`
 	Kind   string   `json:"kind"`
-	Role   mdl.Role `json:"role"`
+	Role   model.Role `json:"role"`
 	Title  string   `json:"title,omitempty"`
 	Text   string   `json:"text"`
 	Hash   string   `json:"hash,omitempty"`
@@ -69,7 +69,7 @@ func WritePromptContextState(sess *Session, st PromptContextState) {
 	sess.SetState(promptContextStateKey, normalizePromptContextState(st))
 }
 
-func PromptMessages(sess *Session) []mdl.Message {
+func PromptMessages(sess *Session) []model.Message {
 	if sess == nil {
 		return nil
 	}
@@ -81,13 +81,13 @@ func PromptMessages(sess *Session) []mdl.Message {
 	return BuildPromptMessages(msgs, st)
 }
 
-func BuildPromptMessages(messages []mdl.Message, st PromptContextState) []mdl.Message {
+func BuildPromptMessages(messages []model.Message, st PromptContextState) []model.Message {
 	st = normalizePromptContextState(st)
 	if st.Version == 0 {
 		return lightweightChatPromptMessages(messages)
 	}
 	fragments := append(append(append([]PromptContextFragment(nil), st.BaselineFragments...), st.StartupFragments...), st.DynamicFragments...)
-	out := make([]mdl.Message, 0, len(messages)+len(fragments))
+	out := make([]model.Message, 0, len(messages)+len(fragments))
 	remaining := st.PromptBudget
 	for _, fragment := range fragments {
 		msg := fragmentMessage(fragment)
@@ -107,12 +107,12 @@ func BuildPromptMessages(messages []mdl.Message, st PromptContextState) []mdl.Me
 		return append(out, dialog...)
 	}
 	pinnedStart := latestUserMessageIndex(dialog)
-	pinned := []mdl.Message(nil)
+	pinned := []model.Message(nil)
 	if pinnedStart >= 0 {
-		pinned = append([]mdl.Message(nil), dialog[pinnedStart:]...)
+		pinned = append([]model.Message(nil), dialog[pinnedStart:]...)
 		dialog = dialog[:pinnedStart]
 	}
-	selected := make([]mdl.Message, 0, len(dialog)+len(pinned))
+	selected := make([]model.Message, 0, len(dialog)+len(pinned))
 	if remaining > 0 {
 		earlier := selectDialogTailWithinBudget(dialog, maxInt(0, remaining-EstimateMessagesTokens(pinned)))
 		selected = append(selected, earlier...)
@@ -125,7 +125,7 @@ func BuildPromptMessages(messages []mdl.Message, st PromptContextState) []mdl.Me
 	return out
 }
 
-func EstimateMessagesTokens(messages []mdl.Message) int {
+func EstimateMessagesTokens(messages []model.Message) int {
 	total := 0
 	for _, msg := range messages {
 		total += EstimateMessageTokens(msg)
@@ -133,7 +133,7 @@ func EstimateMessagesTokens(messages []mdl.Message) int {
 	return total
 }
 
-func EstimateMessageTokens(msg mdl.Message) int {
+func EstimateMessageTokens(msg model.Message) int {
 	total := 4
 	if len(msg.ToolCalls) > 0 {
 		total += 12 * len(msg.ToolCalls)
@@ -143,7 +143,7 @@ func EstimateMessageTokens(msg mdl.Message) int {
 	}
 	for _, part := range msg.ContentParts {
 		switch part.Type {
-		case mdl.ContentPartText, mdl.ContentPartReasoning:
+		case model.ContentPartText, model.ContentPartReasoning:
 			total += EstimateTextTokens(part.Text)
 		default:
 			total += 32
@@ -162,7 +162,7 @@ func EstimateTextTokens(text string) int {
 	return maxInt(1, (runes+3)/4+lines)
 }
 
-func NewPromptContextFragment(id, kind string, role mdl.Role, title, text string) PromptContextFragment {
+func NewPromptContextFragment(id, kind string, role model.Role, title, text string) PromptContextFragment {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return PromptContextFragment{}
@@ -171,7 +171,7 @@ func NewPromptContextFragment(id, kind string, role mdl.Role, title, text string
 		id = kind + ":" + fragmentHash(kind+"\n"+title+"\n"+text)
 	}
 	if role == "" {
-		role = mdl.RoleSystem
+		role = model.RoleSystem
 	}
 	return PromptContextFragment{
 		ID:     strings.TrimSpace(id),
@@ -251,28 +251,28 @@ func normalizePromptFragments(fragments []PromptContextFragment) []PromptContext
 	return out
 }
 
-func fragmentMessage(fragment PromptContextFragment) *mdl.Message {
+func fragmentMessage(fragment PromptContextFragment) *model.Message {
 	if strings.TrimSpace(fragment.Text) == "" {
 		return nil
 	}
 	role := fragment.Role
 	if role == "" {
-		role = mdl.RoleSystem
+		role = model.RoleSystem
 	}
-	return &mdl.Message{
+	return &model.Message{
 		Role:         role,
-		ContentParts: []mdl.ContentPart{mdl.TextPart(fragment.Text)},
+		ContentParts: []model.ContentPart{model.TextPart(fragment.Text)},
 	}
 }
 
-func dialogMessagesAfter(messages []mdl.Message, skipDialog int) []mdl.Message {
+func dialogMessagesAfter(messages []model.Message, skipDialog int) []model.Message {
 	if skipDialog <= 0 {
-		return append([]mdl.Message(nil), filterDialogMessages(messages)...)
+		return append([]model.Message(nil), filterDialogMessages(messages)...)
 	}
 	dialogSeen := 0
-	out := make([]mdl.Message, 0, len(messages))
+	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
-		if msg.Role == mdl.RoleSystem {
+		if msg.Role == model.RoleSystem {
 			continue
 		}
 		dialogSeen++
@@ -284,10 +284,10 @@ func dialogMessagesAfter(messages []mdl.Message, skipDialog int) []mdl.Message {
 	return out
 }
 
-func filterDialogMessages(messages []mdl.Message) []mdl.Message {
-	out := make([]mdl.Message, 0, len(messages))
+func filterDialogMessages(messages []model.Message) []model.Message {
+	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
-		if msg.Role == mdl.RoleSystem {
+		if msg.Role == model.RoleSystem {
 			continue
 		}
 		out = append(out, msg)
@@ -295,29 +295,29 @@ func filterDialogMessages(messages []mdl.Message) []mdl.Message {
 	return out
 }
 
-func latestUserMessageIndex(messages []mdl.Message) int {
+func latestUserMessageIndex(messages []model.Message) int {
 	for i := len(messages) - 1; i >= 0; i-- {
-		if messages[i].Role == mdl.RoleUser {
+		if messages[i].Role == model.RoleUser {
 			return i
 		}
 	}
 	return -1
 }
 
-func latestUserTurnMessages(messages []mdl.Message) []mdl.Message {
+func latestUserTurnMessages(messages []model.Message) []model.Message {
 	idx := latestUserMessageIndex(messages)
 	if idx < 0 {
-		return append([]mdl.Message(nil), messages...)
+		return append([]model.Message(nil), messages...)
 	}
-	return append([]mdl.Message(nil), messages[idx:]...)
+	return append([]model.Message(nil), messages[idx:]...)
 }
 
-func LatestUserTurnIsLightweightChat(messages []mdl.Message) bool {
+func LatestUserTurnIsLightweightChat(messages []model.Message) bool {
 	idx := latestUserMessageIndex(messages)
 	if idx < 0 {
 		return false
 	}
-	text := normalizeLightweightChatText(mdl.ContentPartsToPlainText(messages[idx].ContentParts))
+	text := normalizeLightweightChatText(model.ContentPartsToPlainText(messages[idx].ContentParts))
 	if text == "" {
 		return false
 	}
@@ -362,29 +362,29 @@ func normalizeLightweightChatText(text string) string {
 	return b.String()
 }
 
-func lightweightChatPromptMessages(messages []mdl.Message) []mdl.Message {
+func lightweightChatPromptMessages(messages []model.Message) []model.Message {
 	dialog := filterDialogMessages(messages)
 	if LatestUserTurnIsLightweightChat(dialog) {
-		out := make([]mdl.Message, 0, len(messages))
+		out := make([]model.Message, 0, len(messages))
 		for _, msg := range messages {
-			if msg.Role == mdl.RoleSystem {
+			if msg.Role == model.RoleSystem {
 				out = append(out, msg)
 			}
 		}
 		out = append(out, latestUserTurnMessages(dialog)...)
 		return out
 	}
-	return append([]mdl.Message(nil), messages...)
+	return append([]model.Message(nil), messages...)
 }
 
-func selectDialogTailWithinBudget(messages []mdl.Message, budget int) []mdl.Message {
+func selectDialogTailWithinBudget(messages []model.Message, budget int) []model.Message {
 	if len(messages) == 0 {
 		return nil
 	}
 	if budget <= 0 {
 		return nil
 	}
-	selected := make([]mdl.Message, 0, len(messages))
+	selected := make([]model.Message, 0, len(messages))
 	used := 0
 	for i := len(messages) - 1; i >= 0; i-- {
 		cost := EstimateMessageTokens(messages[i])

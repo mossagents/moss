@@ -2,7 +2,7 @@ package adapters
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"testing"
 )
 
@@ -47,7 +47,7 @@ func TestMemoryVectorStore_UpsertAndSearch(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []mdl.VectorDoc{
+	docs := []model.VectorDoc{
 		{ID: "d1", Text: "golang programming language"},
 		{ID: "d2", Text: "python machine learning"},
 		{ID: "d3", Text: "go concurrency patterns"},
@@ -64,7 +64,7 @@ func TestMemoryVectorStore_UpsertAndSearch(t *testing.T) {
 		t.Fatalf("expected 3 docs, got %d", n)
 	}
 
-	results, err := store.Search(ctx, emb, mdl.VectorQuery{
+	results, err := store.Search(ctx, emb, model.VectorQuery{
 		Text:  "golang",
 		Limit: 2,
 	})
@@ -81,7 +81,7 @@ func TestMemoryVectorStore_Delete(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []mdl.VectorDoc{
+	docs := []model.VectorDoc{
 		{ID: "a", Text: "alpha", Embedding: emb.hashToVec("alpha", 4)},
 		{ID: "b", Text: "beta", Embedding: emb.hashToVec("beta", 4)},
 	}
@@ -102,7 +102,7 @@ func TestMemoryVectorStore_Namespace(t *testing.T) {
 	store := NewMemoryVectorStore()
 	emb := &stubEmbedder{}
 
-	docs := []mdl.VectorDoc{
+	docs := []model.VectorDoc{
 		{ID: "x1", Namespace: "ns1", Text: "hello world"},
 		{ID: "x2", Namespace: "ns2", Text: "hello world"},
 	}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/testing"
 	"os"
@@ -44,7 +44,7 @@ func TestResolve_NilSessionStoreRejected(t *testing.T) {
 func TestSetup_UsesDefaultsParity(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := Setup(context.Background(), k, "."); err != nil {
@@ -58,7 +58,7 @@ func TestSetup_UsesDefaultsParity(t *testing.T) {
 func TestSetup_DefaultExecutionPolicyIsRestrictedConfirm(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := Setup(context.Background(), k, "."); err != nil {
@@ -79,7 +79,7 @@ func TestSetup_DefaultExecutionPolicyIsRestrictedConfirm(t *testing.T) {
 func TestSetup_ManagerReportsValidateReady(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	reporter := &captureReporter{}
@@ -110,7 +110,7 @@ func TestSetup_PersistsCapabilitySnapshot(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	if err := Setup(context.Background(), k, "."); err != nil {
@@ -138,7 +138,7 @@ func TestSetup_PersistsCapabilitySnapshot(t *testing.T) {
 func TestSetup_ReportsBuiltinCriticalFailure(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	_ = k.ToolRegistry().Register(toolSpecNoop("read_file"), toolHandlerNoop)
@@ -171,7 +171,7 @@ func TestSetup_ReportsDegradedOnOptionalSkillParseFailure(t *testing.T) {
 
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
-		kernel.WithUserIO(&intr.NoOpIO{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
 	reporter := &captureReporter{}

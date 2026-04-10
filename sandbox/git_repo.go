@@ -3,7 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,12 +22,12 @@ func NewGitRepoStateCapture(root string) *GitRepoStateCapture {
 	}
 }
 
-func (c *GitRepoStateCapture) Capture(ctx context.Context) (*kws.RepoState, error) {
+func (c *GitRepoStateCapture) Capture(ctx context.Context) (*workspace.RepoState, error) {
 	runner := gitRunner{root: c.root, timeout: c.timeout}
 	repoRoot, err := runner.run(ctx, "rev-parse", "--show-toplevel")
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, kws.ErrRepoUnavailable
+			return nil, workspace.ErrRepoUnavailable
 		}
 		return nil, err
 	}
@@ -44,7 +44,7 @@ func (c *GitRepoStateCapture) Capture(ctx context.Context) (*kws.RepoState, erro
 		return nil, fmt.Errorf("capture status: %w", err)
 	}
 
-	state := &kws.RepoState{
+	state := &workspace.RepoState{
 		RepoRoot:   filepath.Clean(strings.TrimSpace(repoRoot)),
 		HeadSHA:    strings.TrimSpace(head),
 		Branch:     strings.TrimSpace(branch),
@@ -56,7 +56,7 @@ func (c *GitRepoStateCapture) Capture(ctx context.Context) (*kws.RepoState, erro
 	return state, nil
 }
 
-func parsePorcelain(state *kws.RepoState, raw string) {
+func parsePorcelain(state *workspace.RepoState, raw string) {
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if len(line) < 3 {
@@ -76,13 +76,13 @@ func parsePorcelain(state *kws.RepoState, raw string) {
 			continue
 		}
 		if code[0] != ' ' {
-			state.Staged = append(state.Staged, kws.RepoFileState{
+			state.Staged = append(state.Staged, workspace.RepoFileState{
 				Path:   path,
 				Status: string(code[0]),
 			})
 		}
 		if code[1] != ' ' {
-			state.Unstaged = append(state.Unstaged, kws.RepoFileState{
+			state.Unstaged = append(state.Unstaged, workspace.RepoFileState{
 				Path:   path,
 				Status: string(code[1]),
 			})

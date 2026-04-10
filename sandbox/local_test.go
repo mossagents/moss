@@ -2,8 +2,8 @@ package sandbox
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"testing"
@@ -80,9 +80,9 @@ func TestLocalSandboxExecute(t *testing.T) {
 	var out Output
 	var err error
 	if isWindows() {
-		out, err = s.Execute(context.Background(), kws.ExecRequest{Command: "cmd", Args: []string{"/C", "echo", "hello"}})
+		out, err = s.Execute(context.Background(), workspace.ExecRequest{Command: "cmd", Args: []string{"/C", "echo", "hello"}})
 	} else {
-		out, err = s.Execute(context.Background(), kws.ExecRequest{Command: "echo", Args: []string{"hello"}})
+		out, err = s.Execute(context.Background(), workspace.ExecRequest{Command: "echo", Args: []string{"hello"}})
 	}
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -172,9 +172,9 @@ func TestLocalSandboxExecuteShellCommand(t *testing.T) {
 	var out Output
 	var err error
 	if isWindows() {
-		out, err = s.Execute(context.Background(), kws.ExecRequest{Command: "echo hello world"})
+		out, err = s.Execute(context.Background(), workspace.ExecRequest{Command: "echo hello world"})
 	} else {
-		out, err = s.Execute(context.Background(), kws.ExecRequest{Command: "echo hello world"})
+		out, err = s.Execute(context.Background(), workspace.ExecRequest{Command: "echo hello world"})
 	}
 	if err != nil {
 		t.Fatalf("Execute shell: %v", err)
@@ -197,7 +197,7 @@ func TestLocalSandboxExecuteWorkingDirMustBeAllowed(t *testing.T) {
 		t.Fatalf("mkdir blocked: %v", err)
 	}
 
-	_, err := s.Execute(context.Background(), kws.ExecRequest{
+	_, err := s.Execute(context.Background(), workspace.ExecRequest{
 		Command:      commandForNoop(),
 		Args:         argsForNoop(),
 		WorkingDir:   "blocked",
@@ -228,16 +228,16 @@ func TestLocalSandboxExecuteClearEnvAndInjectEnv(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
 
-	var req kws.ExecRequest
+	var req workspace.ExecRequest
 	if isWindows() {
-		req = kws.ExecRequest{
+		req = workspace.ExecRequest{
 			Command:  "cmd",
 			Args:     []string{"/C", "echo", "%MOSS_SANDBOX_TEST%"},
 			ClearEnv: true,
 			Env:      map[string]string{"MOSS_SANDBOX_TEST": "sandboxed"},
 		}
 	} else {
-		req = kws.ExecRequest{
+		req = workspace.ExecRequest{
 			Command:  "sh",
 			Args:     []string{"-c", "printf %s \"$MOSS_SANDBOX_TEST\""},
 			ClearEnv: true,
@@ -257,11 +257,11 @@ func TestLocalSandboxExecuteDisabledNetworkFallsBackToSoftLimit(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
 
-	out, err := s.Execute(context.Background(), kws.ExecRequest{
+	out, err := s.Execute(context.Background(), workspace.ExecRequest{
 		Command: commandForNoop(),
 		Args:    argsForNoop(),
-		Network: kws.ExecNetworkPolicy{
-			Mode:            kws.ExecNetworkDisabled,
+		Network: workspace.ExecNetworkPolicy{
+			Mode:            workspace.ExecNetworkDisabled,
 			PreferHardBlock: true,
 			AllowSoftLimit:  true,
 		},
@@ -269,8 +269,8 @@ func TestLocalSandboxExecuteDisabledNetworkFallsBackToSoftLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute disabled network: %v", err)
 	}
-	if out.Enforcement != intr.EnforcementSoftLimit {
-		t.Fatalf("enforcement = %q, want %q", out.Enforcement, intr.EnforcementSoftLimit)
+	if out.Enforcement != io.EnforcementSoftLimit {
+		t.Fatalf("enforcement = %q, want %q", out.Enforcement, io.EnforcementSoftLimit)
 	}
 	if !out.Degraded {
 		t.Fatal("expected degraded soft-limit marker")
@@ -284,11 +284,11 @@ func TestLocalSandboxExecuteDisabledNetworkHardBlockOnlyFails(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
 
-	_, err := s.Execute(context.Background(), kws.ExecRequest{
+	_, err := s.Execute(context.Background(), workspace.ExecRequest{
 		Command: commandForNoop(),
 		Args:    argsForNoop(),
-		Network: kws.ExecNetworkPolicy{
-			Mode:            kws.ExecNetworkDisabled,
+		Network: workspace.ExecNetworkPolicy{
+			Mode:            workspace.ExecNetworkDisabled,
 			PreferHardBlock: true,
 			AllowSoftLimit:  false,
 		},
@@ -304,7 +304,7 @@ func TestLocalSandboxExecuteRejectsPathArgsOutsideAllowedRoots(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "allowed"), 0o755); err != nil {
 		t.Fatalf("mkdir allowed: %v", err)
 	}
-	_, err := s.Execute(context.Background(), kws.ExecRequest{
+	_, err := s.Execute(context.Background(), workspace.ExecRequest{
 		Command:      commandForNoop(),
 		Args:         append(argsForNoop(), filepath.Join("..", "blocked.txt")),
 		WorkingDir:   "allowed",
@@ -318,11 +318,11 @@ func TestLocalSandboxExecuteRejectsPathArgsOutsideAllowedRoots(t *testing.T) {
 func TestLocalSandboxExecuteRejectsAllowHosts(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocal(dir)
-	_, err := s.Execute(context.Background(), kws.ExecRequest{
+	_, err := s.Execute(context.Background(), workspace.ExecRequest{
 		Command: commandForNoop(),
 		Args:    argsForNoop(),
-		Network: kws.ExecNetworkPolicy{
-			Mode:       kws.ExecNetworkEnabled,
+		Network: workspace.ExecNetworkPolicy{
+			Mode:       workspace.ExecNetworkEnabled,
 			AllowHosts: []string{"example.com"},
 		},
 	})

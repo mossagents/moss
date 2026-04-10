@@ -24,7 +24,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			return sessionResultMsg{err: err}
 		}
 		agent := state.buildAgent()
-		state.k.Middleware().Use(agent.permissionOverrideMiddleware())
+		state.k.Hooks().BeforeToolCall.Intercept(agent.permissionOverrideInterceptor())
 		return kernelReadyMsg{agent: agent, notices: state.notices}
 	}
 }

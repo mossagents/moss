@@ -15,7 +15,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"os"
 )
@@ -26,7 +26,7 @@ func main() {
 	ctx, cancel := appkit.ContextWithSignal(context.Background())
 	defer cancel()
 
-	k, err := appkit.BuildKernel(ctx, flags, intr.NewConsoleIO())
+	k, err := appkit.BuildKernel(ctx, flags, io.NewConsoleIO())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

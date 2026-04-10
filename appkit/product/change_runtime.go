@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"strings"
 	"time"
@@ -15,12 +15,12 @@ import (
 
 type ChangeRuntime struct {
 	Workspace        string
-	RepoStateCapture kws.RepoStateCapture
-	PatchApply       kws.PatchApply
-	PatchRevert      kws.PatchRevert
+	RepoStateCapture workspace.RepoStateCapture
+	PatchApply       workspace.PatchApply
+	PatchRevert      workspace.PatchRevert
 	SessionStore     session.SessionStore
 	SessionLookup    func(string) (*session.Session, bool)
-	CreateCheckpoint func(context.Context, *session.Session, ckpt.CheckpointCreateRequest) (*ckpt.CheckpointRecord, error)
+	CreateCheckpoint func(context.Context, *session.Session, checkpoint.CheckpointCreateRequest) (*checkpoint.CheckpointRecord, error)
 }
 
 func ChangeRuntimeFromKernel(workspace string, k *kernel.Kernel) ChangeRuntime {
@@ -42,7 +42,7 @@ func ChangeRuntimeFromKernel(workspace string, k *kernel.Kernel) ChangeRuntime {
 	}
 }
 
-func (rt ChangeRuntime) repoCapturePort() kws.RepoStateCapture {
+func (rt ChangeRuntime) repoCapturePort() workspace.RepoStateCapture {
 	if rt.RepoStateCapture != nil {
 		return rt.RepoStateCapture
 	}
@@ -63,7 +63,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		return nil, err
 	}
 	if capture == nil {
-		return nil, kws.ErrRepoUnavailable
+		return nil, workspace.ErrRepoUnavailable
 	}
 	if capture.IsDirty {
 		return nil, fmt.Errorf("apply requires a clean repository")
@@ -88,7 +88,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		CreatedAt:    time.Now().UTC(),
 	}
 	if req.Source == "" {
-		req.Source = kws.PatchSourceUser
+		req.Source = workspace.PatchSourceUser
 	}
 	if err := attachTurnMetadata(ctx, rt, op); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func ApplyChange(ctx context.Context, rt ChangeRuntime, req ApplyChangeRequest) 
 		return nil, err
 	}
 
-	result, applyErr := rt.PatchApply.Apply(ctx, kws.PatchApplyRequest{
+	result, applyErr := rt.PatchApply.Apply(ctx, workspace.PatchApplyRequest{
 		Patch:  req.Patch,
 		Source: req.Source,
 	})
@@ -144,7 +144,7 @@ func RollbackChange(ctx context.Context, rt ChangeRuntime, req RollbackChangeReq
 		return nil, err
 	}
 	if capture == nil {
-		return nil, kws.ErrRepoUnavailable
+		return nil, workspace.ErrRepoUnavailable
 	}
 	store, err := OpenChangeStore()
 	if err != nil {
@@ -169,7 +169,7 @@ func RollbackChange(ctx context.Context, rt ChangeRuntime, req RollbackChangeReq
 			Message:   manualRecoveryDetails(op, fmt.Sprintf("exact rollback is unavailable for change %q", changeID)),
 		}
 	}
-	result, revertErr := rt.PatchRevert.Revert(ctx, kws.PatchRevertRequest{PatchID: op.PatchID})
+	result, revertErr := rt.PatchRevert.Revert(ctx, workspace.PatchRevertRequest{PatchID: op.PatchID})
 	if revertErr != nil {
 		if result != nil && result.Reverted {
 			op.Status = ChangeStatusRollbackInconsistent
@@ -264,7 +264,7 @@ func attachCheckpointMetadata(ctx context.Context, rt ChangeRuntime, op *ChangeO
 	if sess == nil {
 		return fmt.Errorf("session %q not found", op.SessionID)
 	}
-	record, err := rt.CreateCheckpoint(ctx, sess, ckpt.CheckpointCreateRequest{
+	record, err := rt.CreateCheckpoint(ctx, sess, checkpoint.CheckpointCreateRequest{
 		Note: strings.TrimSpace(op.Summary),
 	})
 	if err != nil {
@@ -314,13 +314,13 @@ func loadRuntimeSession(ctx context.Context, rt ChangeRuntime, id string) (*sess
 	return rt.SessionStore.Load(ctx, id)
 }
 
-func resolveRepoRoot(ctx context.Context, workspace string) (string, error) {
-	capture, err := sandbox.NewGitRepoStateCapture(workspace).Capture(ctx)
+func resolveRepoRoot(ctx context.Context, workspaceDir string) (string, error) {
+	capture, err := sandbox.NewGitRepoStateCapture(workspaceDir).Capture(ctx)
 	if err != nil {
 		return "", err
 	}
 	if capture == nil {
-		return "", kws.ErrRepoUnavailable
+		return "", workspace.ErrRepoUnavailable
 	}
 	return canonicalRepoRoot(capture.RepoRoot), nil
 }

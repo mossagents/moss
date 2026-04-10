@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	mossprom "github.com/mossagents/moss/contrib/telemetry/prometheus"
-	intr "github.com/mossagents/moss/kernel/io"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
@@ -63,7 +63,7 @@ func hasLabelValue(m *dto.Metric, name, value string) bool {
 
 func TestObserverImplementsPortObserver(t *testing.T) {
 	obs, _ := newTestObs(t)
-	var _ kobs.Observer = obs
+	var _ observe.Observer = obs
 }
 
 func TestNew_doubleRegisterReturnsError(t *testing.T) {
@@ -78,11 +78,11 @@ func TestNew_doubleRegisterReturnsError(t *testing.T) {
 
 func TestOnLLMCall(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveLLMCall(context.Background(), obs, kobs.LLMCallEvent{
+	observe.ObserveLLMCall(context.Background(), obs, observe.LLMCallEvent{
 		Model:            "gpt-4o",
 		Duration:         300 * time.Millisecond,
 		StopReason:       "end_turn",
-		Usage:            mdl.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
+		Usage:            model.TokenUsage{PromptTokens: 100, CompletionTokens: 50},
 		EstimatedCostUSD: 0.002,
 	})
 
@@ -103,7 +103,7 @@ func TestOnLLMCall(t *testing.T) {
 
 func TestOnLLMCall_withError(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveLLMCall(context.Background(), obs, kobs.LLMCallEvent{
+	observe.ObserveLLMCall(context.Background(), obs, observe.LLMCallEvent{
 		Model: "claude-3-5-sonnet",
 		Error: errors.New("rate limit"),
 	})
@@ -128,7 +128,7 @@ func TestOnLLMCall_withError(t *testing.T) {
 
 func TestOnToolCall(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveToolCall(context.Background(), obs, kobs.ToolCallEvent{
+	observe.ObserveToolCall(context.Background(), obs, observe.ToolCallEvent{
 		ToolName: "bash",
 		Risk:     "high",
 		Duration: 200 * time.Millisecond,
@@ -142,8 +142,8 @@ func TestOnToolCall(t *testing.T) {
 
 func TestOnSessionEvent(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveSessionEvent(context.Background(), obs, kobs.SessionEvent{Type: "completed"})
-	kobs.ObserveSessionEvent(context.Background(), obs, kobs.SessionEvent{Type: "failed"})
+	observe.ObserveSessionEvent(context.Background(), obs, observe.SessionEvent{Type: "completed"})
+	observe.ObserveSessionEvent(context.Background(), obs, observe.SessionEvent{Type: "failed"})
 
 	if v := sumCounter(t, reg, "moss_sessions_total"); v != 2 {
 		t.Errorf("moss_sessions_total: want 2 got %v", v)
@@ -152,8 +152,8 @@ func TestOnSessionEvent(t *testing.T) {
 
 func TestOnApproval_pending(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveApproval(context.Background(), obs, intr.ApprovalEvent{
-		Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
+	observe.ObserveApproval(context.Background(), obs, io.ApprovalEvent{
+		Request: io.ApprovalRequest{Kind: io.ApprovalKindTool},
 	})
 
 	mfs := mustGather(t, reg)
@@ -175,9 +175,9 @@ func TestOnApproval_pending(t *testing.T) {
 
 func TestOnApproval_approved(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveApproval(context.Background(), obs, intr.ApprovalEvent{
-		Request:  intr.ApprovalRequest{Kind: intr.ApprovalKindTool},
-		Decision: &intr.ApprovalDecision{Approved: true},
+	observe.ObserveApproval(context.Background(), obs, io.ApprovalEvent{
+		Request:  io.ApprovalRequest{Kind: io.ApprovalKindTool},
+		Decision: &io.ApprovalDecision{Approved: true},
 	})
 
 	if v := sumCounter(t, reg, "moss_approvals_total"); v != 1 {
@@ -187,7 +187,7 @@ func TestOnApproval_approved(t *testing.T) {
 
 func TestOnError(t *testing.T) {
 	obs, reg := newTestObs(t)
-	kobs.ObserveError(context.Background(), obs, kobs.ErrorEvent{Phase: "loop"})
+	observe.ObserveError(context.Background(), obs, observe.ErrorEvent{Phase: "loop"})
 
 	if v := sumCounter(t, reg, "moss_errors_total"); v != 1 {
 		t.Errorf("moss_errors_total: want 1 got %v", v)
@@ -199,15 +199,15 @@ func TestMetricDescriptions(t *testing.T) {
 	// Pre-seed one observation per metric family; CounterVec only appears in
 	// Gather() output after at least one label combination has been recorded.
 	ctx := context.Background()
-	kobs.ObserveLLMCall(ctx, obs, kobs.LLMCallEvent{
+	observe.ObserveLLMCall(ctx, obs, observe.LLMCallEvent{
 		Model: "m", StopReason: "end_turn",
-		Usage:            mdl.TokenUsage{PromptTokens: 1, CompletionTokens: 1},
+		Usage:            model.TokenUsage{PromptTokens: 1, CompletionTokens: 1},
 		EstimatedCostUSD: 0.001,
 	})
-	kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{ToolName: "t", Risk: "low"})
-	kobs.ObserveSessionEvent(ctx, obs, kobs.SessionEvent{Type: "created"})
-	kobs.ObserveApproval(ctx, obs, intr.ApprovalEvent{Request: intr.ApprovalRequest{Kind: intr.ApprovalKindTool}})
-	kobs.ObserveError(ctx, obs, kobs.ErrorEvent{Phase: "p"})
+	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "t", Risk: "low"})
+	observe.ObserveSessionEvent(ctx, obs, observe.SessionEvent{Type: "created"})
+	observe.ObserveApproval(ctx, obs, io.ApprovalEvent{Request: io.ApprovalRequest{Kind: io.ApprovalKindTool}})
+	observe.ObserveError(ctx, obs, observe.ErrorEvent{Phase: "p"})
 
 	mfs := mustGather(t, reg)
 	names := make([]string, 0, len(mfs))
@@ -242,10 +242,10 @@ func TestMetricDescriptions(t *testing.T) {
 func TestObserver_NormalizedMetricsMap(t *testing.T) {
 	obs, _ := newTestObs(t)
 	ctx := context.Background()
-	kobs.ObserveLLMCall(ctx, obs, kobs.LLMCallEvent{Duration: 100 * time.Millisecond, EstimatedCostUSD: 0.01})
-	kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{ToolName: "read_file", Duration: 20 * time.Millisecond})
-	kobs.ObserveToolCall(ctx, obs, kobs.ToolCallEvent{ToolName: "run_command", Duration: 30 * time.Millisecond, Error: errors.New("fail")})
-	kobs.ObserveSessionEvent(ctx, obs, kobs.SessionEvent{Type: "completed"})
+	observe.ObserveLLMCall(ctx, obs, observe.LLMCallEvent{Duration: 100 * time.Millisecond, EstimatedCostUSD: 0.01})
+	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "read_file", Duration: 20 * time.Millisecond})
+	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "run_command", Duration: 30 * time.Millisecond, Error: errors.New("fail")})
+	observe.ObserveSessionEvent(ctx, obs, observe.SessionEvent{Type: "completed"})
 
 	m := obs.NormalizedMetricsMap()
 	if m["success.run_total"] != 1 {

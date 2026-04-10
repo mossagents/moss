@@ -8,9 +8,9 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	ckpt "github.com/mossagents/moss/kernel/checkpoint"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -150,7 +150,7 @@ func DefaultConfig() Config {
 }
 
 // BuildKernel builds a deep-agent style kernel preset.
-func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, cfg *Config) (*kernel.Kernel, error) {
+func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg *Config) (*kernel.Kernel, error) {
 	effective := DefaultConfig()
 	if cfg != nil {
 		effective = cfg.ApplyOver(effective)
@@ -199,7 +199,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, cf
 				checkpointDir = filepath.Join(flags.Workspace, "."+effective.AppName, "checkpoints")
 			}
 		}
-		store, err := ckpt.NewFileCheckpointStore(checkpointDir)
+		store, err := checkpoint.NewFileCheckpointStore(checkpointDir)
 		if err != nil {
 			return nil, fmt.Errorf("checkpoint store: %w", err)
 		}
@@ -290,7 +290,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io intr.UserIO, cf
 			return nil, err
 		}
 	}
-	k.Middleware().Use(builtins.PatchToolCalls())
+	k.Hooks().BeforeLLM.On(builtins.PatchToolCalls())
 
 	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(

@@ -3,12 +3,12 @@ package skill
 import (
 	"context"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -53,11 +53,11 @@ type Metadata struct {
 type Deps struct {
 	Kernel       *kernel.Kernel
 	ToolRegistry tool.Registry
-	Middleware   *middleware.Chain
+	Hooks       *hooks.Registry
 	Sandbox      sandbox.Sandbox
-	UserIO       intr.UserIO
-	Workspace    kws.Workspace
-	Executor     kws.Executor
+	UserIO       io.UserIO
+	Workspace    workspace.Workspace
+	Executor     workspace.Executor
 	TaskRuntime  taskrt.TaskRuntime
 	Mailbox      taskrt.Mailbox
 	SessionStore session.SessionStore

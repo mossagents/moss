@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/ssestream"
@@ -15,10 +15,10 @@ import (
 	"strings"
 )
 
-// 确保实现 mdl.LLM 和 mdl.StreamingLLM 接口。
+// 确保实现 model.LLM 和 model.StreamingLLM 接口。
 var (
-	_ mdl.LLM          = (*Client)(nil)
-	_ mdl.StreamingLLM = (*Client)(nil)
+	_ model.LLM          = (*Client)(nil)
+	_ model.StreamingLLM = (*Client)(nil)
 )
 
 const DefaultModel = "gpt-4o"
@@ -98,8 +98,8 @@ func NewWithRequestOptions(reqOpts []option.RequestOption, opts ...Option) *Clie
 	return c
 }
 
-// Complete 实现 mdl.LLM（同步模式）。
-func (c *Client) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.CompletionResponse, error) {
+// Complete 实现 model.LLM（同步模式）。
+func (c *Client) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	params, err := c.buildParams(req)
 	if err != nil {
 		return nil, err
@@ -111,8 +111,8 @@ func (c *Client) Complete(ctx context.Context, req mdl.CompletionRequest) (*mdl.
 	return fromOpenAIResponse(completion), nil
 }
 
-// Stream 实现 mdl.StreamingLLM（流式模式）。
-func (c *Client) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.StreamIterator, error) {
+// Stream 实现 model.StreamingLLM（流式模式）。
+func (c *Client) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
 	params, err := c.buildParams(req)
 	if err != nil {
 		return nil, err
@@ -126,7 +126,7 @@ func (c *Client) Stream(ctx context.Context, req mdl.CompletionRequest) (mdl.Str
 
 // ─── 请求构建 ────────────────────────────────────────
 
-func (c *Client) buildParams(req mdl.CompletionRequest) (openai.ChatCompletionNewParams, error) {
+func (c *Client) buildParams(req model.CompletionRequest) (openai.ChatCompletionNewParams, error) {
 	model := c.model
 	if req.Config.Model != "" {
 		model = req.Config.Model
@@ -192,15 +192,15 @@ func (c *Client) buildParams(req mdl.CompletionRequest) (openai.ChatCompletionNe
 // normalizeMessages merges consecutive messages with the same role, excluding
 // system and tool messages, to prevent API-level validation errors from strict
 // providers such as DeepSeek that forbid consecutive same-role turns.
-func normalizeMessages(msgs []mdl.Message) []mdl.Message {
+func normalizeMessages(msgs []model.Message) []model.Message {
 	if len(msgs) == 0 {
 		return nil
 	}
-	out := make([]mdl.Message, 0, len(msgs))
+	out := make([]model.Message, 0, len(msgs))
 	for _, msg := range msgs {
 		if len(out) > 0 &&
-			msg.Role != mdl.RoleSystem &&
-			msg.Role != mdl.RoleTool &&
+			msg.Role != model.RoleSystem &&
+			msg.Role != model.RoleTool &&
 			out[len(out)-1].Role == msg.Role {
 			last := &out[len(out)-1]
 			last.ContentParts = append(last.ContentParts, msg.ContentParts...)
@@ -212,28 +212,28 @@ func normalizeMessages(msgs []mdl.Message) []mdl.Message {
 	return out
 }
 
-func toOpenAIMessages(msgs []mdl.Message, model string) ([]openai.ChatCompletionMessageParamUnion, error) {
+func toOpenAIMessages(msgs []model.Message, modelName string) ([]openai.ChatCompletionMessageParamUnion, error) {
 	msgs = normalizeMessages(msgs)
 	var result []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range msgs {
 		switch msg.Role {
-		case mdl.RoleSystem:
-			parts, err := toOpenAISystemTextParts(msg.ContentParts, model)
+		case model.RoleSystem:
+			parts, err := toOpenAISystemTextParts(msg.ContentParts, modelName)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, openai.SystemMessage(parts))
 
-		case mdl.RoleUser:
-			parts, err := toOpenAIUserParts(msg.ContentParts, model)
+		case model.RoleUser:
+			parts, err := toOpenAIUserParts(msg.ContentParts, modelName)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, openai.UserMessage(parts))
 
-		case mdl.RoleAssistant:
-			param, err := toAssistantMessage(msg, model)
+		case model.RoleAssistant:
+			param, err := toAssistantMessage(msg, modelName)
 			if err != nil {
 				return nil, err
 			}
@@ -241,9 +241,9 @@ func toOpenAIMessages(msgs []mdl.Message, model string) ([]openai.ChatCompletion
 				result = append(result, openai.ChatCompletionMessageParamUnion{OfAssistant: param})
 			}
 
-		case mdl.RoleTool:
+		case model.RoleTool:
 			for _, tr := range msg.ToolResults {
-				content, err := contentPartsToTextOnlyString(tr.ContentParts, "openai", model, "tool_result")
+				content, err := contentPartsToTextOnlyString(tr.ContentParts, "openai", modelName, "tool_result")
 				if err != nil {
 					return nil, err
 				}
@@ -254,24 +254,24 @@ func toOpenAIMessages(msgs []mdl.Message, model string) ([]openai.ChatCompletion
 	return result, nil
 }
 
-func toOpenAISystemTextParts(parts []mdl.ContentPart, model string) ([]openai.ChatCompletionContentPartTextParam, error) {
+func toOpenAISystemTextParts(parts []model.ContentPart, modelName string) ([]openai.ChatCompletionContentPartTextParam, error) {
 	result := make([]openai.ChatCompletionContentPartTextParam, 0, len(parts))
 	for _, part := range parts {
-		if part.Type != mdl.ContentPartText {
-			return nil, unsupportedPartError("openai", model, "system", part.Type)
+		if part.Type != model.ContentPartText {
+			return nil, unsupportedPartError("openai", modelName, "system", part.Type)
 		}
 		result = append(result, openai.ChatCompletionContentPartTextParam{Text: part.Text})
 	}
 	return result, nil
 }
 
-func toOpenAIUserParts(parts []mdl.ContentPart, model string) ([]openai.ChatCompletionContentPartUnionParam, error) {
+func toOpenAIUserParts(parts []model.ContentPart, modelName string) ([]openai.ChatCompletionContentPartUnionParam, error) {
 	result := make([]openai.ChatCompletionContentPartUnionParam, 0, len(parts))
 	for _, part := range parts {
 		switch part.Type {
-		case mdl.ContentPartText:
+		case model.ContentPartText:
 			result = append(result, openai.TextContentPart(part.Text))
-		case mdl.ContentPartInputImage:
+		case model.ContentPartInputImage:
 			imageURL := part.URL
 			if strings.TrimSpace(imageURL) == "" {
 				imageURL = "data:" + part.MIMEType + ";base64," + part.DataBase64
@@ -279,32 +279,32 @@ func toOpenAIUserParts(parts []mdl.ContentPart, model string) ([]openai.ChatComp
 			result = append(result, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
 				URL: imageURL,
 			}))
-		case mdl.ContentPartInputAudio:
-			audioPart, err := toOpenAIInputAudioPart(part, model)
+		case model.ContentPartInputAudio:
+			audioPart, err := toOpenAIInputAudioPart(part, modelName)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, audioPart)
-		case mdl.ContentPartInputVideo:
-			videoPart, err := toOpenAIInputVideoPart(part, model)
+		case model.ContentPartInputVideo:
+			videoPart, err := toOpenAIInputVideoPart(part, modelName)
 			if err != nil {
 				return nil, err
 			}
 			result = append(result, videoPart)
 		default:
-			return nil, unsupportedPartError("openai", model, "user", part.Type)
+			return nil, unsupportedPartError("openai", modelName, "user", part.Type)
 		}
 	}
 	return result, nil
 }
 
-func toOpenAIInputAudioPart(part mdl.ContentPart, model string) (openai.ChatCompletionContentPartUnionParam, error) {
+func toOpenAIInputAudioPart(part model.ContentPart, modelName string) (openai.ChatCompletionContentPartUnionParam, error) {
 	if strings.TrimSpace(part.URL) != "" {
-		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, "url source is not supported for audio input")
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", modelName, "user", part.Type, "url source is not supported for audio input")
 	}
 	format, err := audioFormatFromMIME(part.MIMEType)
 	if err != nil {
-		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, err.Error())
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", modelName, "user", part.Type, err.Error())
 	}
 	return openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
 		Data:   part.DataBase64,
@@ -312,9 +312,9 @@ func toOpenAIInputAudioPart(part mdl.ContentPart, model string) (openai.ChatComp
 	}), nil
 }
 
-func toOpenAIInputVideoPart(part mdl.ContentPart, model string) (openai.ChatCompletionContentPartUnionParam, error) {
+func toOpenAIInputVideoPart(part model.ContentPart, modelName string) (openai.ChatCompletionContentPartUnionParam, error) {
 	if strings.TrimSpace(part.URL) != "" {
-		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", model, "user", part.Type, "url source is not supported for video input")
+		return openai.ChatCompletionContentPartUnionParam{}, capabilityUnavailableError("openai", modelName, "user", part.Type, "url source is not supported for video input")
 	}
 	filename := strings.TrimSpace(filepath.Base(part.SourcePath))
 	if filename == "" || filename == "." {
@@ -337,8 +337,8 @@ func audioFormatFromMIME(mimeType string) (string, error) {
 	}
 }
 
-func toAssistantMessage(msg mdl.Message, model string) (*openai.ChatCompletionAssistantMessageParam, error) {
-	content, err := contentPartsToTextOnlyString(msg.ContentParts, "openai", model, "assistant")
+func toAssistantMessage(msg model.Message, modelName string) (*openai.ChatCompletionAssistantMessageParam, error) {
+	content, err := contentPartsToTextOnlyString(msg.ContentParts, "openai", modelName, "assistant")
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func toAssistantMessage(msg mdl.Message, model string) (*openai.ChatCompletionAs
 
 // ─── 工具映射 ────────────────────────────────────────
 
-func toOpenAITools(tools []mdl.ToolSpec) []openai.ChatCompletionToolParam {
+func toOpenAITools(tools []model.ToolSpec) []openai.ChatCompletionToolParam {
 	if len(tools) == 0 {
 		return nil
 	}
@@ -392,35 +392,35 @@ func toOpenAITools(tools []mdl.ToolSpec) []openai.ChatCompletionToolParam {
 
 // ─── 响应映射 ────────────────────────────────────────
 
-func fromOpenAIResponse(c *openai.ChatCompletion) *mdl.CompletionResponse {
+func fromOpenAIResponse(c *openai.ChatCompletion) *model.CompletionResponse {
 	if len(c.Choices) == 0 {
-		return &mdl.CompletionResponse{
-			Message: mdl.Message{Role: mdl.RoleAssistant},
+		return &model.CompletionResponse{
+			Message: model.Message{Role: model.RoleAssistant},
 			Usage:   fromUsage(c.Usage),
 		}
 	}
 
 	choice := c.Choices[0]
 	toolCalls := fromToolCalls(choice.Message.ToolCalls)
-	var contentParts []mdl.ContentPart
+	var contentParts []model.ContentPart
 	if reasoning := extractReasoningText(choice.Message.RawJSON()); strings.TrimSpace(reasoning) != "" {
-		contentParts = append(contentParts, mdl.ReasoningPart(reasoning))
+		contentParts = append(contentParts, model.ReasoningPart(reasoning))
 	}
 	if choice.Message.Content != "" {
-		contentParts = append(contentParts, mdl.TextPart(choice.Message.Content))
+		contentParts = append(contentParts, model.TextPart(choice.Message.Content))
 	}
 	if strings.TrimSpace(choice.Message.Audio.Data) != "" {
-		contentParts = append(contentParts, mdl.MediaInlinePart(
-			mdl.ContentPartOutputAudio,
+		contentParts = append(contentParts, model.MediaInlinePart(
+			model.ContentPartOutputAudio,
 			"audio/wav",
 			choice.Message.Audio.Data,
 			"",
 		))
 	}
 
-	return &mdl.CompletionResponse{
-		Message: mdl.Message{
-			Role:         mdl.RoleAssistant,
+	return &model.CompletionResponse{
+		Message: model.Message{
+			Role:         model.RoleAssistant,
 			ContentParts: contentParts,
 			ToolCalls:    toolCalls,
 		},
@@ -441,35 +441,35 @@ func normalizeOpenAIStopReason(reason string) string {
 	}
 }
 
-func contentPartsToTextOnlyString(parts []mdl.ContentPart, provider, model, role string) (string, error) {
+func contentPartsToTextOnlyString(parts []model.ContentPart, provider, modelName, role string) (string, error) {
 	textParts := make([]string, 0, len(parts))
 	for _, part := range parts {
-		if role == "assistant" && part.Type == mdl.ContentPartReasoning {
+		if role == "assistant" && part.Type == model.ContentPartReasoning {
 			continue
 		}
-		if part.Type != mdl.ContentPartText {
-			return "", unsupportedPartError(provider, model, role, part.Type)
+		if part.Type != model.ContentPartText {
+			return "", unsupportedPartError(provider, modelName, role, part.Type)
 		}
 		textParts = append(textParts, part.Text)
 	}
 	return strings.Join(textParts, "\n"), nil
 }
 
-func unsupportedPartError(provider, model, role string, typ mdl.ContentPartType) error {
+func unsupportedPartError(provider, model, role string, typ model.ContentPartType) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s unsupported content part type=%q", provider, model, role, typ)
 }
 
-func capabilityUnavailableError(provider, model, role string, typ mdl.ContentPartType, reason string) error {
+func capabilityUnavailableError(provider, model, role string, typ model.ContentPartType, reason string) error {
 	return fmt.Errorf("%s adapter: model=%q role=%s content part type=%q capability unavailable: %s", provider, model, role, typ, reason)
 }
 
-func fromToolCalls(tcs []openai.ChatCompletionMessageToolCall) []mdl.ToolCall {
+func fromToolCalls(tcs []openai.ChatCompletionMessageToolCall) []model.ToolCall {
 	if len(tcs) == 0 {
 		return nil
 	}
-	result := make([]mdl.ToolCall, len(tcs))
+	result := make([]model.ToolCall, len(tcs))
 	for i, tc := range tcs {
-		result[i] = mdl.ToolCall{
+		result[i] = model.ToolCall{
 			ID:        tc.ID,
 			Name:      tc.Function.Name,
 			Arguments: json.RawMessage(tc.Function.Arguments),
@@ -478,8 +478,8 @@ func fromToolCalls(tcs []openai.ChatCompletionMessageToolCall) []mdl.ToolCall {
 	return result
 }
 
-func fromUsage(u openai.CompletionUsage) mdl.TokenUsage {
-	return mdl.TokenUsage{
+func fromUsage(u openai.CompletionUsage) model.TokenUsage {
+	return model.TokenUsage{
 		PromptTokens:     int(u.PromptTokens),
 		CompletionTokens: int(u.CompletionTokens),
 		TotalTokens:      int(u.TotalTokens),
@@ -496,13 +496,13 @@ type toolCallBuilder struct {
 
 type streamIterator struct {
 	stream       *ssestream.Stream[openai.ChatCompletionChunk]
-	pending      []mdl.StreamChunk
+	pending      []model.StreamChunk
 	done         bool
-	usage        mdl.TokenUsage
+	usage        model.TokenUsage
 	toolBuilders map[int]*toolCallBuilder
 }
 
-func (it *streamIterator) Next() (mdl.StreamChunk, error) {
+func (it *streamIterator) Next() (model.StreamChunk, error) {
 	for {
 		if len(it.pending) > 0 {
 			chunk := it.pending[0]
@@ -510,7 +510,7 @@ func (it *streamIterator) Next() (mdl.StreamChunk, error) {
 			return chunk, nil
 		}
 		if it.done {
-			return mdl.StreamChunk{}, io.EOF
+			return model.StreamChunk{}, io.EOF
 		}
 		if !it.stream.Next() {
 			// 即使 SSE 末尾报错，也先尽量 flush 已累积的工具参数，减少截断影响。
@@ -521,10 +521,10 @@ func (it *streamIterator) Next() (mdl.StreamChunk, error) {
 					it.pending = it.pending[1:]
 					return chunk, nil
 				}
-				return mdl.StreamChunk{}, err
+				return model.StreamChunk{}, err
 			}
 			// 流正常结束，发出完成信号
-			it.pending = append(it.pending, mdl.StreamChunk{
+			it.pending = append(it.pending, model.StreamChunk{
 				Done:  true,
 				Usage: &it.usage,
 			})
@@ -538,7 +538,7 @@ func (it *streamIterator) Next() (mdl.StreamChunk, error) {
 func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 	// 更新 usage（仅最后一个 chunk 非零）
 	if chunk.Usage.TotalTokens > 0 {
-		it.usage = mdl.TokenUsage{
+		it.usage = model.TokenUsage{
 			PromptTokens:     int(chunk.Usage.PromptTokens),
 			CompletionTokens: int(chunk.Usage.CompletionTokens),
 			TotalTokens:      int(chunk.Usage.TotalTokens),
@@ -554,10 +554,10 @@ func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 
 	// 文本增量
 	if delta.Content != "" {
-		it.pending = append(it.pending, mdl.StreamChunk{Delta: delta.Content})
+		it.pending = append(it.pending, model.StreamChunk{Delta: delta.Content})
 	}
 	if reasoning := extractReasoningText(delta.RawJSON()); reasoning != "" {
-		it.pending = append(it.pending, mdl.StreamChunk{ReasoningDelta: reasoning})
+		it.pending = append(it.pending, model.StreamChunk{ReasoningDelta: reasoning})
 	}
 
 	// 工具调用增量
@@ -589,12 +589,12 @@ func (it *streamIterator) flushToolCalls() {
 			args = "{}"
 		}
 		args = normalizeJSONArguments(args)
-		tc := mdl.ToolCall{
+		tc := model.ToolCall{
 			ID:        tb.id,
 			Name:      tb.name,
 			Arguments: json.RawMessage(args),
 		}
-		it.pending = append(it.pending, mdl.StreamChunk{ToolCall: &tc})
+		it.pending = append(it.pending, model.StreamChunk{ToolCall: &tc})
 		delete(it.toolBuilders, idx)
 	}
 }

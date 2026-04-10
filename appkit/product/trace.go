@@ -3,8 +3,8 @@ package product
 import (
 	"context"
 	"fmt"
-	intr "github.com/mossagents/moss/kernel/io"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"sort"
 	"strconv"
 	"strings"
@@ -73,7 +73,7 @@ func (r *RunTraceRecorder) Snapshot() RunTrace {
 	return out
 }
 
-func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
+func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e observe.LLMCallEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.LLMCalls++
@@ -96,7 +96,7 @@ func (r *RunTraceRecorder) OnLLMCall(_ context.Context, e kobs.LLMCallEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
+func (r *RunTraceRecorder) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.ToolCalls++
@@ -110,7 +110,7 @@ func (r *RunTraceRecorder) OnToolCall(_ context.Context, e kobs.ToolCallEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
+func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -134,7 +134,7 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e kobs.ExecutionE
 	})
 }
 
-func (r *RunTraceRecorder) OnApproval(_ context.Context, e intr.ApprovalEvent) {
+func (r *RunTraceRecorder) OnApproval(_ context.Context, e io.ApprovalEvent) {
 	data := map[string]any{
 		"id":          e.Request.ID,
 		"reason":      e.Request.Reason,
@@ -159,7 +159,7 @@ func (r *RunTraceRecorder) OnApproval(_ context.Context, e intr.ApprovalEvent) {
 	})
 }
 
-func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e kobs.SessionEvent) {
+func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e observe.SessionEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -170,7 +170,7 @@ func (r *RunTraceRecorder) OnSessionEvent(_ context.Context, e kobs.SessionEvent
 	})
 }
 
-func (r *RunTraceRecorder) OnError(_ context.Context, e kobs.ErrorEvent) {
+func (r *RunTraceRecorder) OnError(_ context.Context, e observe.ErrorEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.trace.Timeline = append(r.trace.Timeline, TraceEvent{
@@ -184,10 +184,10 @@ func (r *RunTraceRecorder) OnError(_ context.Context, e kobs.ErrorEvent) {
 
 type pricingObserver struct {
 	catalog *PricingCatalog
-	next    kobs.Observer
+	next    observe.Observer
 }
 
-func NewPricingObserver(catalog *PricingCatalog, next kobs.Observer) kobs.Observer {
+func NewPricingObserver(catalog *PricingCatalog, next observe.Observer) observe.Observer {
 	if next == nil {
 		return nil
 	}
@@ -197,30 +197,30 @@ func NewPricingObserver(catalog *PricingCatalog, next kobs.Observer) kobs.Observ
 	return pricingObserver{catalog: catalog, next: next}
 }
 
-func (o pricingObserver) OnLLMCall(ctx context.Context, e kobs.LLMCallEvent) {
+func (o pricingObserver) OnLLMCall(ctx context.Context, e observe.LLMCallEvent) {
 	if cost, ok := o.catalog.Estimate(e.Usage, e.Model); ok {
 		e.EstimatedCostUSD = cost
 	}
 	o.next.OnLLMCall(ctx, e)
 }
 
-func (o pricingObserver) OnToolCall(ctx context.Context, e kobs.ToolCallEvent) {
+func (o pricingObserver) OnToolCall(ctx context.Context, e observe.ToolCallEvent) {
 	o.next.OnToolCall(ctx, e)
 }
 
-func (o pricingObserver) OnExecutionEvent(ctx context.Context, e kobs.ExecutionEvent) {
+func (o pricingObserver) OnExecutionEvent(ctx context.Context, e observe.ExecutionEvent) {
 	o.next.OnExecutionEvent(ctx, e)
 }
 
-func (o pricingObserver) OnApproval(ctx context.Context, e intr.ApprovalEvent) {
+func (o pricingObserver) OnApproval(ctx context.Context, e io.ApprovalEvent) {
 	o.next.OnApproval(ctx, e)
 }
 
-func (o pricingObserver) OnSessionEvent(ctx context.Context, e kobs.SessionEvent) {
+func (o pricingObserver) OnSessionEvent(ctx context.Context, e observe.SessionEvent) {
 	o.next.OnSessionEvent(ctx, e)
 }
 
-func (o pricingObserver) OnError(ctx context.Context, e kobs.ErrorEvent) {
+func (o pricingObserver) OnError(ctx context.Context, e observe.ErrorEvent) {
 	o.next.OnError(ctx, e)
 }
 

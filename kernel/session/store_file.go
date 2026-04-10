@@ -5,7 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/logging"
 	"os"
 	"path/filepath"
@@ -291,16 +291,16 @@ type persistedBudget struct {
 }
 
 type persistedMessage struct {
-	Role         mdl.Role              `json:"role"`
-	ContentParts []mdl.ContentPart     `json:"content_parts,omitempty"`
+	Role         model.Role              `json:"role"`
+	ContentParts []model.ContentPart     `json:"content_parts,omitempty"`
 	Content      json.RawMessage       `json:"content,omitempty"`
-	ToolCalls    []mdl.ToolCall        `json:"tool_calls,omitempty"`
+	ToolCalls    []model.ToolCall        `json:"tool_calls,omitempty"`
 	ToolResults  []persistedToolResult `json:"tool_results,omitempty"`
 }
 
 type persistedToolResult struct {
 	CallID       string            `json:"call_id"`
-	ContentParts []mdl.ContentPart `json:"content_parts,omitempty"`
+	ContentParts []model.ContentPart `json:"content_parts,omitempty"`
 	Content      json.RawMessage   `json:"content,omitempty"`
 	IsError      bool              `json:"is_error,omitempty"`
 }
@@ -367,7 +367,7 @@ func (ps *persistedSession) toSession(id string) (*Session, error) {
 	if len(ps.Messages) == 0 {
 		return sess, nil
 	}
-	sess.Messages = make([]mdl.Message, 0, len(ps.Messages))
+	sess.Messages = make([]model.Message, 0, len(ps.Messages))
 	for i, m := range ps.Messages {
 		converted, migrated, err := migrateMessage(m)
 		if err != nil {
@@ -382,8 +382,8 @@ func (ps *persistedSession) toSession(id string) (*Session, error) {
 	return sess, nil
 }
 
-func migrateMessage(m persistedMessage) (mdl.Message, bool, error) {
-	out := mdl.Message{
+func migrateMessage(m persistedMessage) (model.Message, bool, error) {
+	out := model.Message{
 		Role:      m.Role,
 		ToolCalls: m.ToolCalls,
 	}
@@ -391,21 +391,21 @@ func migrateMessage(m persistedMessage) (mdl.Message, bool, error) {
 	var err error
 	out.ContentParts, migrated, err = migrateContentParts(m.ContentParts, m.Content)
 	if err != nil {
-		return mdl.Message{}, false, err
+		return model.Message{}, false, err
 	}
 	if len(m.ToolResults) == 0 {
 		return out, migrated, nil
 	}
-	out.ToolResults = make([]mdl.ToolResult, 0, len(m.ToolResults))
+	out.ToolResults = make([]model.ToolResult, 0, len(m.ToolResults))
 	for i, tr := range m.ToolResults {
 		contentParts, trMigrated, err := migrateContentParts(tr.ContentParts, tr.Content)
 		if err != nil {
-			return mdl.Message{}, false, fmt.Errorf("tool_results[%d]: %w", i, err)
+			return model.Message{}, false, fmt.Errorf("tool_results[%d]: %w", i, err)
 		}
 		if trMigrated {
 			migrated = true
 		}
-		out.ToolResults = append(out.ToolResults, mdl.ToolResult{
+		out.ToolResults = append(out.ToolResults, model.ToolResult{
 			CallID:       tr.CallID,
 			ContentParts: contentParts,
 			IsError:      tr.IsError,
@@ -414,17 +414,17 @@ func migrateMessage(m persistedMessage) (mdl.Message, bool, error) {
 	return out, migrated, nil
 }
 
-func sanitizePersistedMessages(messages []mdl.Message) []mdl.Message {
+func sanitizePersistedMessages(messages []model.Message) []model.Message {
 	if len(messages) == 0 {
 		return nil
 	}
-	out := make([]mdl.Message, 0, len(messages))
+	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
-		msg.ContentParts = mdl.StripReasoningParts(msg.ContentParts)
+		msg.ContentParts = model.StripReasoningParts(msg.ContentParts)
 		if len(msg.ToolResults) > 0 {
-			results := make([]mdl.ToolResult, 0, len(msg.ToolResults))
+			results := make([]model.ToolResult, 0, len(msg.ToolResults))
 			for _, tr := range msg.ToolResults {
-				tr.ContentParts = mdl.StripReasoningParts(tr.ContentParts)
+				tr.ContentParts = model.StripReasoningParts(tr.ContentParts)
 				results = append(results, tr)
 			}
 			msg.ToolResults = results
@@ -434,13 +434,13 @@ func sanitizePersistedMessages(messages []mdl.Message) []mdl.Message {
 	return out
 }
 
-func reasoningChanged(messages []mdl.Message) bool {
+func reasoningChanged(messages []model.Message) bool {
 	for _, msg := range messages {
-		if len(mdl.StripReasoningParts(msg.ContentParts)) != len(msg.ContentParts) {
+		if len(model.StripReasoningParts(msg.ContentParts)) != len(msg.ContentParts) {
 			return true
 		}
 		for _, tr := range msg.ToolResults {
-			if len(mdl.StripReasoningParts(tr.ContentParts)) != len(tr.ContentParts) {
+			if len(model.StripReasoningParts(tr.ContentParts)) != len(tr.ContentParts) {
 				return true
 			}
 		}
@@ -448,7 +448,7 @@ func reasoningChanged(messages []mdl.Message) bool {
 	return false
 }
 
-func migrateContentParts(parts []mdl.ContentPart, legacy json.RawMessage) ([]mdl.ContentPart, bool, error) {
+func migrateContentParts(parts []model.ContentPart, legacy json.RawMessage) ([]model.ContentPart, bool, error) {
 	if len(parts) > 0 {
 		if len(legacy) > 0 {
 			return parts, true, nil
@@ -462,5 +462,5 @@ func migrateContentParts(parts []mdl.ContentPart, legacy json.RawMessage) ([]mdl
 	if err := json.Unmarshal(legacy, &text); err != nil {
 		return nil, false, fmt.Errorf("legacy content must be string: %w", err)
 	}
-	return []mdl.ContentPart{mdl.TextPart(text)}, true, nil
+	return []model.ContentPart{model.TextPart(text)}, true, nil
 }

@@ -2,8 +2,8 @@ package product
 
 import (
 	appconfig "github.com/mossagents/moss/config"
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/tool"
 	"testing"
 )
@@ -12,8 +12,8 @@ func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 	workspace := t.TempDir()
 	profile := "guarded"
 
-	err := PersistProjectApprovalAmendment(workspace, profile, &intr.ExecPolicyAmendment{
-		HTTPRule: &intr.ExecPolicyHTTPRule{
+	err := PersistProjectApprovalAmendment(workspace, profile, &io.ExecPolicyAmendment{
+		HTTPRule: &io.ExecPolicyHTTPRule{
 			Name:    "allow-api",
 			Match:   "api.example.com",
 			Methods: []string{"GET"},

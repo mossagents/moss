@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	kkws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,7 +49,7 @@ func NewLocalWorkspaceIsolation(root string) (*LocalWorkspaceIsolation, error) {
 	return iso, nil
 }
 
-func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*kkws.WorkspaceLease, error) {
+func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*workspace.WorkspaceLease, error) {
 	if strings.TrimSpace(taskID) == "" {
 		return nil, fmt.Errorf("task_id is required")
 	}
@@ -62,7 +62,7 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*kk
 		if err != nil {
 			return nil, err
 		}
-		return &kkws.WorkspaceLease{
+		return &workspace.WorkspaceLease{
 			WorkspaceID: lease.WorkspaceID,
 			TaskID:      lease.TaskID,
 			AcquiredAt:  lease.AcquiredAt,
@@ -90,7 +90,7 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*kk
 		return nil, err
 	}
 
-	return &kkws.WorkspaceLease{
+	return &workspace.WorkspaceLease{
 		WorkspaceID: wsID,
 		TaskID:      taskID,
 		AcquiredAt:  lease.AcquiredAt,

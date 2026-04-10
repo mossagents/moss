@@ -3,9 +3,9 @@ package runtime
 import (
 	"context"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
-	memstore "github.com/mossagents/moss/kernel/memory"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"testing"
@@ -13,15 +13,15 @@ import (
 )
 
 type spyObserver struct {
-	events []kobs.ExecutionEvent
+	events []observe.ExecutionEvent
 }
 
-func (s *spyObserver) OnLLMCall(context.Context, kobs.LLMCallEvent)      {}
-func (s *spyObserver) OnToolCall(context.Context, kobs.ToolCallEvent)    {}
-func (s *spyObserver) OnApproval(context.Context, intr.ApprovalEvent)   {}
-func (s *spyObserver) OnSessionEvent(context.Context, kobs.SessionEvent) {}
-func (s *spyObserver) OnError(context.Context, kobs.ErrorEvent)          {}
-func (s *spyObserver) OnExecutionEvent(_ context.Context, e kobs.ExecutionEvent) {
+func (s *spyObserver) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
+func (s *spyObserver) OnToolCall(context.Context, observe.ToolCallEvent)    {}
+func (s *spyObserver) OnApproval(context.Context, io.ApprovalEvent)   {}
+func (s *spyObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
+func (s *spyObserver) OnError(context.Context, observe.ErrorEvent)          {}
+func (s *spyObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	s.events = append(s.events, e)
 }
 
@@ -97,9 +97,9 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 	}
 	k := kernel.New(WithStateCatalog(catalog))
 	spy := &spyObserver{}
-	observer := kobs.JoinObservers(spy, ObserverForStateCatalog(k))
-	event := kobs.ExecutionEvent{
-		Type:      kobs.ExecutionToolCompleted,
+	observer := observe.JoinObservers(spy, ObserverForStateCatalog(k))
+	event := observe.ExecutionEvent{
+		Type:      observe.ExecutionToolCompleted,
 		SessionID: "sess-1",
 		ToolName:  "run_command",
 		Timestamp: time.Now().UTC(),
@@ -126,7 +126,7 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 
 func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	now := time.Now().UTC()
-	mem, ok := StateEntryFromMemory(memstore.MemoryRecord{
+	mem, ok := StateEntryFromMemory(memory.MemoryRecord{
 		ID:        "m-1",
 		Path:      "team/decision.md",
 		Content:   "sqlite backend selected",

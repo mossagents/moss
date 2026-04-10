@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,7 +26,7 @@ func NewGitPatchApply(root string) *GitPatchApply {
 	}
 }
 
-func (g *GitPatchApply) Apply(ctx context.Context, req kws.PatchApplyRequest) (*kws.PatchApplyResult, error) {
+func (g *GitPatchApply) Apply(ctx context.Context, req workspace.PatchApplyRequest) (*workspace.PatchApplyResult, error) {
 	patch := req.Patch
 	if strings.TrimSpace(patch) == "" {
 		return nil, fmt.Errorf("patch is required")
@@ -34,7 +34,7 @@ func (g *GitPatchApply) Apply(ctx context.Context, req kws.PatchApplyRequest) (*
 	repoRoot, _, journal, err := resolveGitRepo(ctx, g.root, g.timeout)
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, kws.ErrPatchApplyUnavailable
+			return nil, workspace.ErrPatchApplyUnavailable
 		}
 		return nil, err
 	}
@@ -48,7 +48,7 @@ func (g *GitPatchApply) Apply(ctx context.Context, req kws.PatchApplyRequest) (*
 	}
 	args = append(args, "--whitespace=nowarn")
 
-	result := &kws.PatchApplyResult{
+	result := &workspace.PatchApplyResult{
 		PatchID:     patchID(patch),
 		TargetFiles: patchTargets(patch),
 		Cached:      req.Cached,
@@ -88,11 +88,11 @@ func NewGitPatchRevert(root string) *GitPatchRevert {
 	}
 }
 
-func (g *GitPatchRevert) Revert(ctx context.Context, req kws.PatchRevertRequest) (*kws.PatchRevertResult, error) {
+func (g *GitPatchRevert) Revert(ctx context.Context, req workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error) {
 	repoRoot, _, journal, err := resolveGitRepo(ctx, g.root, g.timeout)
 	if err != nil {
 		if isGitRepoError(err) {
-			return nil, kws.ErrPatchRevertUnavailable
+			return nil, workspace.ErrPatchRevertUnavailable
 		}
 		return nil, err
 	}
@@ -116,7 +116,7 @@ func (g *GitPatchRevert) Revert(ctx context.Context, req kws.PatchRevertRequest)
 		args = append(args, "--cached")
 	}
 	args = append(args, "--whitespace=nowarn")
-	result := &kws.PatchRevertResult{
+	result := &workspace.PatchRevertResult{
 		PatchID:     patchID,
 		Mode:        "patch",
 		TargetFiles: append([]string(nil), entry.TargetFiles...),
@@ -134,18 +134,18 @@ func (g *GitPatchRevert) Revert(ctx context.Context, req kws.PatchRevertRequest)
 	return result, nil
 }
 
-func (g *GitPatchRevert) revertToCapture(ctx context.Context, repoRoot string, capture *kws.RepoState, req kws.PatchRevertRequest) (*kws.PatchRevertResult, error) {
+func (g *GitPatchRevert) revertToCapture(ctx context.Context, repoRoot string, capture *workspace.RepoState, req workspace.PatchRevertRequest) (*workspace.PatchRevertResult, error) {
 	if capture == nil || capture.HeadSHA == "" {
 		return nil, fmt.Errorf("capture with head_sha is required")
 	}
 	runner := gitRunner{root: repoRoot, timeout: g.timeout}
 	current, err := NewGitRepoStateCapture(repoRoot).Capture(ctx)
-	if err != nil && err != kws.ErrRepoUnavailable {
+	if err != nil && err != workspace.ErrRepoUnavailable {
 		return nil, err
 	}
 	restoreTracked := req.RestoreTracked || (!req.RestoreTracked && !req.RestoreUntracked)
 	restoreUntracked := req.RestoreUntracked || (!req.RestoreTracked && !req.RestoreUntracked)
-	result := &kws.PatchRevertResult{
+	result := &workspace.PatchRevertResult{
 		Mode:       "capture",
 		RevertedAt: time.Now().UTC(),
 	}

@@ -3,20 +3,20 @@ package gemini
 import (
 	"encoding/base64"
 	"encoding/json"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"google.golang.org/genai"
 	"strings"
 	"testing"
 )
 
 func TestToGeminiContents_UserMultimodal(t *testing.T) {
-	system, contents, err := toGeminiContents([]mdl.Message{
-		{Role: mdl.RoleSystem, ContentParts: []mdl.ContentPart{mdl.TextPart("sys")}},
+	system, contents, err := toGeminiContents([]model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("sys")}},
 		{
-			Role: mdl.RoleUser,
-			ContentParts: []mdl.ContentPart{
-				mdl.TextPart("describe"),
-				mdl.MediaInlinePart(mdl.ContentPartInputImage, "image/png", base64.StdEncoding.EncodeToString([]byte("img")), "a.png"),
+			Role: model.RoleUser,
+			ContentParts: []model.ContentPart{
+				model.TextPart("describe"),
+				model.MediaInlinePart(model.ContentPartInputImage, "image/png", base64.StdEncoding.EncodeToString([]byte("img")), "a.png"),
 			},
 		},
 	}, DefaultModel)
@@ -44,18 +44,18 @@ func TestToGeminiContents_UserMultimodal(t *testing.T) {
 }
 
 func TestToGeminiContents_ToolRoundTrip(t *testing.T) {
-	system, contents, err := toGeminiContents([]mdl.Message{
-		{Role: mdl.RoleUser, ContentParts: []mdl.ContentPart{mdl.TextPart("weather?")}},
+	system, contents, err := toGeminiContents([]model.Message{
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("weather?")}},
 		{
-			Role: mdl.RoleAssistant,
-			ToolCalls: []mdl.ToolCall{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{
 				{ID: "c1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"beijing"}`)},
 			},
 		},
 		{
-			Role: mdl.RoleTool,
-			ToolResults: []mdl.ToolResult{
-				{CallID: "c1", ContentParts: []mdl.ContentPart{mdl.TextPart("sunny")}},
+			Role: model.RoleTool,
+			ToolResults: []model.ToolResult{
+				{CallID: "c1", ContentParts: []model.ContentPart{model.TextPart("sunny")}},
 			},
 		},
 	}, DefaultModel)
@@ -85,7 +85,7 @@ func TestToGeminiContents_ToolRoundTrip(t *testing.T) {
 }
 
 func TestToGeminiTool(t *testing.T) {
-	tool, err := toGeminiTool([]mdl.ToolSpec{
+	tool, err := toGeminiTool([]model.ToolSpec{
 		{
 			Name:        "read_file",
 			Description: "Read file",
@@ -129,7 +129,7 @@ func TestFromGeminiResponse_WithTextAndToolCall(t *testing.T) {
 			TotalTokenCount:      15,
 		},
 	})
-	if got := mdl.ContentPartsToPlainText(resp.Message.ContentParts); got != "hello" {
+	if got := model.ContentPartsToPlainText(resp.Message.ContentParts); got != "hello" {
 		t.Fatalf("unexpected text: %q", got)
 	}
 	if len(resp.ToolCalls) != 1 {

@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/skill"
@@ -186,9 +186,9 @@ func (s *MCPServer) buildCommand() []string {
 }
 
 // buildEnv 构建环境变量列表（KEY=VALUE 格式）。
-func (s *MCPServer) buildEnv(ctx context.Context, io intr.UserIO) ([]string, error) {
+func (s *MCPServer) buildEnv(ctx context.Context, userIO io.UserIO) ([]string, error) {
 	base := sandbox.SafeInheritedEnvironment()
-	resolved, err := resolveMCPRequiredEnv(ctx, io, s.cfg.Name, s.cfg.Env, s.cfg.RequiredEnv)
+	resolved, err := resolveMCPRequiredEnv(ctx, userIO, s.cfg.Name, s.cfg.Env, s.cfg.RequiredEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +202,7 @@ func (s *MCPServer) buildEnv(ctx context.Context, io intr.UserIO) ([]string, err
 	return env, nil
 }
 
-func resolveMCPRequiredEnv(ctx context.Context, io intr.UserIO, providerName string, configured map[string]string, required []string) (map[string]string, error) {
+func resolveMCPRequiredEnv(ctx context.Context, userIO io.UserIO, providerName string, configured map[string]string, required []string) (map[string]string, error) {
 	resolved := make(map[string]string, len(configured))
 	for key, value := range configured {
 		resolved[key] = value
@@ -225,21 +225,21 @@ func resolveMCPRequiredEnv(ctx context.Context, io intr.UserIO, providerName str
 	if len(missing) == 0 {
 		return resolved, nil
 	}
-	if io == nil {
+	if userIO == nil {
 		return nil, fmt.Errorf("mcp server %q requires env %s", providerName, strings.Join(missing, ", "))
 	}
-	fields := make([]intr.InputField, 0, len(missing))
+	fields := make([]io.InputField, 0, len(missing))
 	for _, key := range missing {
-		fields = append(fields, intr.InputField{
+		fields = append(fields, io.InputField{
 			Name:        key,
-			Type:        intr.InputFieldString,
+			Type:        io.InputFieldString,
 			Title:       key,
 			Description: fmt.Sprintf("Required by MCP server %s", providerName),
 			Required:    true,
 		})
 	}
-	resp, err := io.Ask(ctx, intr.InputRequest{
-		Type:   intr.InputForm,
+	resp, err := userIO.Ask(ctx, io.InputRequest{
+		Type:   io.InputForm,
 		Prompt: fmt.Sprintf("Provide the missing environment values for MCP server %s.", providerName),
 		Fields: fields,
 	})

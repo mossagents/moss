@@ -11,12 +11,12 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/middleware"
-	"github.com/mossagents/moss/kernel/middleware/builtins"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/skill"
 	"github.com/mossagents/moss/userio/prompting"
@@ -50,10 +50,10 @@ type Config struct {
 	InitialSessionID         string
 	BaseURL                  string
 	APIKey                   string
-	BaseObserver             kobs.Observer
-	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error)
-	BuildRunTraceObserver    func() (*product.RunTraceRecorder, kobs.Observer)
-	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error
+	BaseObserver             observe.Observer
+	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
+	BuildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
+	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
 	BuildSystemPrompt        func(workspace, trust string) string
 	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
@@ -81,10 +81,10 @@ type agentState struct {
 	trust                    string
 	profile                  string
 	approvalMode             string
-	baseObserver             kobs.Observer
-	buildRunTraceObserver    func() (*product.RunTraceRecorder, kobs.Observer)
-	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io intr.UserIO) (*kernel.Kernel, error)
-	afterBoot                func(ctx context.Context, k *kernel.Kernel, io intr.UserIO) error
+	baseObserver             observe.Observer
+	buildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
+	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
+	afterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
 	buildSystemPrompt        func(workspace, trust string) string
 	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
@@ -159,7 +159,7 @@ func (a *agentState) sessionSummary() string {
 	}
 	dialogCount := 0
 	for _, msg := range a.sess.Messages {
-		if msg.Role != mdl.RoleSystem {
+		if msg.Role != model.RoleSystem {
 			dialogCount++
 		}
 	}
@@ -400,49 +400,49 @@ func (a *agentState) permissionSummary() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
-	return func(ctx context.Context, mc *middleware.Context, next middleware.Next) error {
-		if mc.Phase == middleware.BeforeToolCall && mc.Tool != nil {
+func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.ToolEvent] {
+	return func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
+		if ev.Tool != nil {
 			a.mu.Lock()
-			mode := a.permissions[mc.Tool.Name]
+			mode := a.permissions[ev.Tool.Name]
 			a.mu.Unlock()
 			switch mode {
 			case "deny":
-				if mc.IO != nil {
-					_ = mc.IO.Send(ctx, intr.OutputMessage{
-						Type: intr.OutputText,
-						Content: intr.FormatDeniedMessage(
-							mc.Tool.Name,
+				if ev.IO != nil {
+					_ = ev.IO.Send(ctx, io.OutputMessage{
+						Type: io.OutputText,
+						Content: io.FormatDeniedMessage(
+							ev.Tool.Name,
 							"permission override denied tool execution",
 							"permission.override.deny",
-							intr.EnforcementHardBlock,
+							io.EnforcementHardBlock,
 						),
 					})
 				}
 				return builtins.ErrDenied
 			case "ask":
-				if mc.IO != nil {
-					approval := &intr.ApprovalRequest{
+				if ev.IO != nil {
+					approval := &io.ApprovalRequest{
 						ID:          fmt.Sprintf("approval-%d", time.Now().UnixNano()),
-						Kind:        intr.ApprovalKindTool,
-						SessionID:   mc.Session.ID,
-						ToolName:    mc.Tool.Name,
-						Risk:        string(mc.Tool.Risk),
-						Prompt:      "Allow tool " + mc.Tool.Name + "?",
+						Kind:        io.ApprovalKindTool,
+						SessionID:   ev.Session.ID,
+						ToolName:    ev.Tool.Name,
+						Risk:        string(ev.Tool.Risk),
+						Prompt:      "Allow tool " + ev.Tool.Name + "?",
 						Reason:      "permission override requires approval",
 						ReasonCode:  "permission.override.ask",
-						Enforcement: intr.EnforcementRequireApproval,
-						Input:       append(json.RawMessage(nil), mc.Input...),
+						Enforcement: io.EnforcementRequireApproval,
+						Input:       append(json.RawMessage(nil), ev.Input...),
 						RequestedAt: time.Now().UTC(),
 					}
-					approval.Prompt = intr.FormatApprovalPrompt(approval)
-					resp, err := mc.IO.Ask(ctx, intr.InputRequest{
-						Type:     intr.InputConfirm,
+					approval.Prompt = io.FormatApprovalPrompt(approval)
+					resp, err := ev.IO.Ask(ctx, io.InputRequest{
+						Type:     io.InputConfirm,
 						Prompt:   approval.Prompt,
 						Approval: approval,
 						Meta: map[string]any{
-							"tool":        mc.Tool.Name,
-							"input":       mc.Input,
+							"tool":        ev.Tool.Name,
+							"input":       ev.Input,
 							"approval_id": approval.ID,
 							"reason":      approval.Reason,
 							"reason_code": approval.ReasonCode,
@@ -456,10 +456,10 @@ func (a *agentState) permissionOverrideMiddleware() middleware.Middleware {
 						resp.Approved = resp.Decision.Approved
 					}
 					if !resp.Approved {
-						_ = mc.IO.Send(ctx, intr.OutputMessage{
-							Type: intr.OutputText,
-							Content: intr.FormatDeniedMessage(
-								mc.Tool.Name,
+						_ = ev.IO.Send(ctx, io.OutputMessage{
+							Type: io.OutputText,
+							Content: io.FormatDeniedMessage(
+								ev.Tool.Name,
 								approval.Reason,
 								approval.ReasonCode,
 								approval.Enforcement,
@@ -628,7 +628,7 @@ func (a *agentState) cancelTask(taskID, reason string) (string, error) {
 }
 
 // appendAndRun 追加用户消息到 session 并重新执行 agent loop。
-func (a *agentState) appendAndRun(text string, parts []mdl.ContentPart) {
+func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
@@ -642,21 +642,21 @@ func (a *agentState) appendAndRun(text string, parts []mdl.ContentPart) {
 	a.mu.Unlock()
 
 	if len(parts) == 0 {
-		parts = []mdl.ContentPart{mdl.TextPart(text)}
+		parts = []model.ContentPart{model.TextPart(text)}
 	}
-	a.sess.AppendMessage(mdl.Message{Role: mdl.RoleUser, ContentParts: parts})
+	a.sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: parts})
 	var traceRecorder *product.RunTraceRecorder
 	progressObserver := newExecutionProgressObserver(a.bridge, a.sess)
 	if traceFactory != nil {
 		recorder, runObserver := traceFactory()
 		traceRecorder = recorder
-		a.k.SetObserver(kobs.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
+		a.k.SetObserver(observe.JoinObservers(baseObserver, runObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	} else {
-		a.k.SetObserver(kobs.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
+		a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	}
 
 	result, err := a.k.Run(runCtx, a.sess)
-	a.k.SetObserver(kobs.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
+	a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 
 	a.mu.Lock()
 	a.running = false
@@ -689,18 +689,18 @@ func (a *agentState) appendAndRun(text string, parts []mdl.ContentPart) {
 	}
 }
 
-func collectOutputMediaParts(sess *session.Session) []mdl.ContentPart {
+func collectOutputMediaParts(sess *session.Session) []model.ContentPart {
 	if sess == nil || len(sess.Messages) == 0 {
 		return nil
 	}
 	for i := len(sess.Messages) - 1; i >= 0; i-- {
 		msg := sess.Messages[i]
-		if msg.Role != mdl.RoleAssistant {
+		if msg.Role != model.RoleAssistant {
 			continue
 		}
-		var out []mdl.ContentPart
+		var out []model.ContentPart
 		for _, p := range msg.ContentParts {
-			if p.Type == mdl.ContentPartOutputImage || p.Type == mdl.ContentPartOutputAudio || p.Type == mdl.ContentPartOutputVideo {
+			if p.Type == model.ContentPartOutputImage || p.Type == model.ContentPartOutputAudio || p.Type == model.ContentPartOutputVideo {
 				out = append(out, p)
 			}
 		}
@@ -757,7 +757,7 @@ func sessionDialogCount(sess *session.Session) int {
 	}
 	count := 0
 	for _, msg := range sess.Messages {
-		if msg.Role != mdl.RoleSystem {
+		if msg.Role != model.RoleSystem {
 			count++
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
 	config "github.com/mossagents/moss/config"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	userattachments "github.com/mossagents/moss/userio/attachments"
 	userlocation "github.com/mossagents/moss/userio/location"
 	"os"
@@ -94,7 +94,7 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			m.refreshViewport()
 			return m, nil
 		}
-		return m.dispatchUserSubmission(input, runText, []mdl.ContentPart{mdl.TextPart(runText)})
+		return m.dispatchUserSubmission(input, runText, []model.ContentPart{model.TextPart(runText)})
 	}
 	if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
 		name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))

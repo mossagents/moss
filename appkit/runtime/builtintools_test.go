@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/mossagents/moss/kernel"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +22,7 @@ import (
 type mockSandbox struct {
 	root        string
 	files       map[string]string // path → content (absolute paths)
-	lastExecReq kws.ExecRequest
+	lastExecReq workspace.ExecRequest
 }
 
 func newMockSandbox(root string, files map[string]string) *mockSandbox {
@@ -78,7 +78,7 @@ func (m *mockSandbox) WriteFile(path string, content []byte) error {
 	return nil
 }
 
-func (m *mockSandbox) Execute(_ context.Context, req kws.ExecRequest) (sandbox.Output, error) {
+func (m *mockSandbox) Execute(_ context.Context, req workspace.ExecRequest) (sandbox.Output, error) {
 	m.lastExecReq = req
 	return sandbox.Output{
 		Stdout:   "mock output for: " + req.Command + " " + strings.Join(req.Args, " "),
@@ -99,22 +99,22 @@ func (e *notFoundError) Error() string { return "file not found: " + e.path }
 type mockUserIO struct {
 	lastQuestion string
 	response     string
-	lastReq      intr.InputRequest
+	lastReq      io.InputRequest
 	formResponse map[string]any
 }
 
-func (m *mockUserIO) Send(_ context.Context, _ intr.OutputMessage) error { return nil }
+func (m *mockUserIO) Send(_ context.Context, _ io.OutputMessage) error { return nil }
 
-func (m *mockUserIO) Ask(_ context.Context, req intr.InputRequest) (intr.InputResponse, error) {
+func (m *mockUserIO) Ask(_ context.Context, req io.InputRequest) (io.InputResponse, error) {
 	m.lastQuestion = req.Prompt
 	m.lastReq = req
-	if req.Type == intr.InputForm {
+	if req.Type == io.InputForm {
 		if m.formResponse != nil {
-			return intr.InputResponse{Form: m.formResponse}, nil
+			return io.InputResponse{Form: m.formResponse}, nil
 		}
-		return intr.InputResponse{Form: map[string]any{}}, nil
+		return io.InputResponse{Form: map[string]any{}}, nil
 	}
-	return intr.InputResponse{Value: m.response}, nil
+	return io.InputResponse{Value: m.response}, nil
 }
 
 // ── mock workspace ───────────────────────────────────
@@ -143,11 +143,11 @@ func (m *mockWorkspace) ListFiles(_ context.Context, _ string) ([]string, error)
 	return result, nil
 }
 
-func (m *mockWorkspace) Stat(_ context.Context, path string) (kws.FileInfo, error) {
+func (m *mockWorkspace) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
 	if _, ok := m.files[path]; ok {
-		return kws.FileInfo{Name: path, Size: int64(len(m.files[path]))}, nil
+		return workspace.FileInfo{Name: path, Size: int64(len(m.files[path]))}, nil
 	}
-	return kws.FileInfo{}, &notFoundError{path: path}
+	return workspace.FileInfo{}, &notFoundError{path: path}
 }
 
 func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
@@ -158,12 +158,12 @@ func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
 // ── mock executor ────────────────────────────────────
 
 type mockExecutor struct {
-	lastReq kws.ExecRequest
+	lastReq workspace.ExecRequest
 }
 
-func (m *mockExecutor) Execute(_ context.Context, req kws.ExecRequest) (kws.ExecOutput, error) {
+func (m *mockExecutor) Execute(_ context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	m.lastReq = req
-	return kws.ExecOutput{
+	return workspace.ExecOutput{
 		Stdout:   "exec: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
@@ -173,8 +173,8 @@ type mockExecutorLarge struct {
 	stdout string
 }
 
-func (m *mockExecutorLarge) Execute(_ context.Context, _ kws.ExecRequest) (kws.ExecOutput, error) {
-	return kws.ExecOutput{
+func (m *mockExecutorLarge) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+	return workspace.ExecOutput{
 		Stdout:   m.stdout,
 		ExitCode: 0,
 	}, nil
@@ -529,8 +529,8 @@ func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
 	if len(sb.lastExecReq.AllowedPaths) != 1 || sb.lastExecReq.AllowedPaths[0] != sb.root {
 		t.Fatalf("allowed paths = %#v, want [%s]", sb.lastExecReq.AllowedPaths, sb.root)
 	}
-	if sb.lastExecReq.Network.Mode != kws.ExecNetworkDisabled {
-		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, kws.ExecNetworkDisabled)
+	if sb.lastExecReq.Network.Mode != workspace.ExecNetworkDisabled {
+		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, workspace.ExecNetworkDisabled)
 	}
 }
 
@@ -573,14 +573,14 @@ func TestAskUserNilIO(t *testing.T) {
 }
 
 func TestAskUserWithRequestedSchema(t *testing.T) {
-	io := &mockUserIO{
+	mockIO := &mockUserIO{
 		formResponse: map[string]any{
 			"database": "PostgreSQL",
 			"cache":    true,
 			"features": []string{"A", "C"},
 		},
 	}
-	handler := askUserHandler(io)
+	handler := askUserHandler(mockIO)
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"question": "Choose options",
 		"requestedSchema": map[string]any{
@@ -608,11 +608,11 @@ func TestAskUserWithRequestedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("askUser with schema: %v", err)
 	}
-	if io.lastReq.Type != intr.InputForm {
-		t.Fatalf("expected InputForm request, got %s", io.lastReq.Type)
+	if mockIO.lastReq.Type != io.InputForm {
+		t.Fatalf("expected InputForm request, got %s", mockIO.lastReq.Type)
 	}
-	if len(io.lastReq.Fields) != 3 {
-		t.Fatalf("expected 3 fields, got %d", len(io.lastReq.Fields))
+	if len(mockIO.lastReq.Fields) != 3 {
+		t.Fatalf("expected 3 fields, got %d", len(mockIO.lastReq.Fields))
 	}
 	var out map[string]any
 	if err := json.Unmarshal(result, &out); err != nil {
@@ -624,12 +624,12 @@ func TestAskUserWithRequestedSchema(t *testing.T) {
 }
 
 func TestAskUserWithRequestedSchemaStringRequired(t *testing.T) {
-	io := &mockUserIO{
+	mockIO := &mockUserIO{
 		formResponse: map[string]any{
 			"database": "PostgreSQL",
 		},
 	}
-	handler := askUserHandler(io)
+	handler := askUserHandler(mockIO)
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
 		"question": "Choose options",
 		"requestedSchema": map[string]any{
@@ -645,24 +645,24 @@ func TestAskUserWithRequestedSchemaStringRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("askUser with string required: %v", err)
 	}
-	if len(io.lastReq.Fields) != 1 {
-		t.Fatalf("expected 1 field, got %d", len(io.lastReq.Fields))
+	if len(mockIO.lastReq.Fields) != 1 {
+		t.Fatalf("expected 1 field, got %d", len(mockIO.lastReq.Fields))
 	}
-	if !io.lastReq.Fields[0].Required {
+	if !mockIO.lastReq.Fields[0].Required {
 		t.Fatal("expected required field")
 	}
 }
 
 func TestAskUserInputRetryUnexpectedEOF(t *testing.T) {
-	io := &mockUserIO{response: "ok"}
-	handler := askUserHandler(io)
+	mockIO := &mockUserIO{response: "ok"}
+	handler := askUserHandler(mockIO)
 	// Missing trailing brace should be auto-repaired for ask_user input.
 	_, err := handler(context.Background(), json.RawMessage(`{"question":"Continue?","requestedSchema":{"properties":{"db":{"type":"string","enum":["a","b"]}},"required":["db"]}`))
 	if err != nil {
 		t.Fatalf("expected retry success, got error: %v", err)
 	}
-	if io.lastReq.Type != intr.InputForm {
-		t.Fatalf("expected InputForm after retry, got %s", io.lastReq.Type)
+	if mockIO.lastReq.Type != io.InputForm {
+		t.Fatalf("expected InputForm after retry, got %s", mockIO.lastReq.Type)
 	}
 }
 
@@ -1055,7 +1055,7 @@ func TestRunCommandExec(t *testing.T) {
 		t.Fatalf("runCommandExec: %v", err)
 	}
 
-	var output kws.ExecOutput
+	var output workspace.ExecOutput
 	if err := json.Unmarshal(result, &output); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
@@ -1083,8 +1083,8 @@ func TestRunCommandExecPolicyForwarding(t *testing.T) {
 	if exec.lastReq.WorkingDir != "." {
 		t.Fatalf("working dir = %q, want .", exec.lastReq.WorkingDir)
 	}
-	if exec.lastReq.Network.Mode != kws.ExecNetworkEnabled {
-		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, kws.ExecNetworkEnabled)
+	if exec.lastReq.Network.Mode != workspace.ExecNetworkEnabled {
+		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, workspace.ExecNetworkEnabled)
 	}
 }
 
@@ -1126,8 +1126,8 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 
 func TestWorkspacePreferredOverSandbox(t *testing.T) {
 	// When both Workspace and Sandbox are provided, Workspace should be used
-	ws := &mockWorkspace{files: map[string]string{"kws.txt": "from workspace"}}
-	sb := newMockSandbox("/ws", map[string]string{"/ws/kws.txt": "from sandbox"})
+	ws := &mockWorkspace{files: map[string]string{"workspace.txt": "from workspace"}}
+	sb := newMockSandbox("/ws", map[string]string{"/ws/workspace.txt": "from sandbox"})
 
 	reg := tool.NewRegistry()
 	if err := RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil); err != nil {
@@ -1139,7 +1139,7 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 		t.Fatal("read_file not registered")
 	}
 
-	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "kws.txt"}))
+	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "workspace.txt"}))
 	if err != nil {
 		t.Fatalf("read_file: %v", err)
 	}

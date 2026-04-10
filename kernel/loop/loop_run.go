@@ -5,10 +5,10 @@ import (
 	"strings"
 	"time"
 
-	intr "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/middleware"
-	mdl "github.com/mossagents/moss/kernel/model"
-	kobs "github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 )
@@ -17,14 +17,14 @@ import (
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
-	// 若配置了 ContextCompression 策略，在运行前注入压缩 middleware。
-	l.injectCompressionMiddleware()
+	// 若配置了 ContextCompression 策略，在运行前注入压缩 hook。
+	l.injectCompressionHooks()
 
 	runStartedAt := time.Now().UTC()
 	l.beginRun(ctx, sess, runStartedAt)
 
 	var lastOutput string
-	var totalUsage mdl.TokenUsage
+	var totalUsage model.TokenUsage
 	maxIter := l.Config.maxIter()
 
 	for i := 0; i < maxIter; i++ {
@@ -53,17 +53,17 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"goal_chars", len(sess.Config.Goal),
 		"max_steps", sess.Budget.MaxSteps,
 	)
-	kobs.ObserveSessionEvent(ctx, l.observer(), kobs.SessionEvent{SessionID: sess.ID, Type: "running"})
-	event := l.executionEventBase(sess, kobs.ExecutionRunStarted, "run", "runtime", "run")
+	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "running"})
+	event := l.executionEventBase(sess, observe.ExecutionRunStarted, "run", "runtime", "run")
 	event.Timestamp = runStartedAt
 	event.Data = map[string]any{
 		"mode":      sess.Config.Mode,
 		"goal":      sess.Config.Goal,
 		"max_steps": sess.Budget.MaxSteps,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.runMiddleware(ctx, middleware.OnSessionStart, sess, nil, nil, nil); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session start middleware failed", "session_id", sess.ID, "error", err)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
+	if err := l.safeChain().OnSessionStart.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session start hook failed", "session_id", sess.ID, "error", err)
 	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
@@ -78,7 +78,7 @@ func (l *AgentLoop) runIteration(
 	iteration int,
 	maxIter int,
 	runStartedAt time.Time,
-	totalUsage *mdl.TokenUsage,
+	totalUsage *model.TokenUsage,
 	lastOutput *string,
 ) (bool, error) {
 	l.currentTurn = buildTurnPlan(sess, l.RunID, iteration, l.Tools)
@@ -100,7 +100,7 @@ func (l *AgentLoop) runIteration(
 		return true, nil
 	}
 
-	if err := l.runMiddleware(ctx, middleware.AfterLLM, sess, nil, nil, nil); err != nil {
+	if err := l.safeChain().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return false, err
 	}
 
@@ -120,9 +120,9 @@ func (l *AgentLoop) runIteration(
 }
 
 type iterationLLMResult struct {
-	resp     *mdl.CompletionResponse
+	resp     *model.CompletionResponse
 	streamed bool
-	metadata mdl.LLMCallMetadata
+	metadata model.LLMCallMetadata
 }
 
 func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Session, iteration, maxIter int, runStartedAt time.Time) time.Time {
@@ -134,7 +134,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 		"max_iterations", maxIter,
 		"elapsed_ms", iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 	)
-	event := l.executionEventBase(sess, kobs.ExecutionIterationStarted, "iteration", "runtime", "iteration")
+	event := l.executionEventBase(sess, observe.ExecutionIterationStarted, "iteration", "runtime", "iteration")
 	event.Timestamp = iterationStartedAt
 	event.Data = map[string]any{
 		"iteration":      iteration,
@@ -142,23 +142,23 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 		"max_steps":      sess.Budget.MaxSteps,
 		"elapsed_ms":     iterationStartedAt.Sub(runStartedAt).Milliseconds(),
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	return iterationStartedAt
 }
 
 func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*iterationLLMResult, error) {
-	if err := l.runMiddleware(ctx, middleware.BeforeLLM, sess, nil, nil, nil); err != nil {
+	if err := l.safeChain().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return nil, err
 	}
 
-	event := l.executionEventBase(sess, kobs.ExecutionLLMStarted, "llm", "runtime", "llm")
+	event := l.executionEventBase(sess, observe.ExecutionLLMStarted, "llm", "runtime", "llm")
 	event.Model = sess.Config.ModelConfig.Model
 	event.Data = map[string]any{
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
 		"prompt_version":      plan.PromptVersion,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	llmStart := time.Now()
 	resp, streamed, err := l.callLLM(ctx, sess, plan)
 	llmDur := time.Since(llmStart)
@@ -172,19 +172,19 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 			"error", err.Error(),
 		)
 		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
-		kobs.ObserveLLMCall(ctx, l.observer(), kobs.LLMCallEvent{
+		observe.ObserveLLMCall(ctx, l.observer(), observe.LLMCallEvent{
 			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
 		})
-		kobs.ObserveError(ctx, l.observer(), kobs.ErrorEvent{
+		observe.ObserveError(ctx, l.observer(), observe.ErrorEvent{
 			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
 		})
-		event := l.executionEventBase(sess, kobs.ExecutionLLMCompleted, "llm", "runtime", "llm")
+		event := l.executionEventBase(sess, observe.ExecutionLLMCompleted, "llm", "runtime", "llm")
 		event.Model = metadata.ActualModel
 		event.Duration = llmDur
 		event.Error = err.Error()
 		appendExecutionErrorMetadata(&event, err)
-		kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-		l.runErrorMiddleware(ctx, sess, err)
+		observe.ObserveExecutionEvent(ctx, l.observer(), event)
+		l.runErrorHook(ctx, sess, err)
 		return nil, err
 	}
 
@@ -199,7 +199,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		"tokens", resp.Usage.TotalTokens,
 	)
 	l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
-	kobs.ObserveLLMCall(ctx, l.observer(), kobs.LLMCallEvent{
+	observe.ObserveLLMCall(ctx, l.observer(), observe.LLMCallEvent{
 		SessionID:  sess.ID,
 		Model:      metadata.ActualModel,
 		StartedAt:  llmStart.UTC(),
@@ -208,7 +208,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		StopReason: resp.StopReason,
 		Streamed:   streamed,
 	})
-	event = l.executionEventBase(sess, kobs.ExecutionLLMCompleted, "llm", "runtime", "llm")
+	event = l.executionEventBase(sess, observe.ExecutionLLMCompleted, "llm", "runtime", "llm")
 	event.Model = metadata.ActualModel
 	event.Duration = llmDur
 	event.Data = map[string]any{
@@ -219,7 +219,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		"instruction_profile": plan.InstructionProfile,
 		"prompt_version":      plan.PromptVersion,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 
 	return &iterationLLMResult{resp: resp, streamed: streamed, metadata: metadata}, nil
 }
@@ -242,7 +242,7 @@ func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
 }
 
 func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Session, plan TurnPlan) {
-	routeEvent := l.executionEventBase(sess, kobs.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
+	routeEvent := l.executionEventBase(sess, observe.ExecutionEventType("tool.route_planned"), "planning", "runtime", "tool_route")
 	visible := visibleToolNames(plan.ToolRoute)
 	hidden := hiddenToolNames(plan.ToolRoute)
 	approval := approvalRequiredToolNames(plan.ToolRoute)
@@ -256,20 +256,20 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 		"route_digest":         toolRouteDigest(plan.ToolRoute),
 		"decisions":            toolRoutePayload(plan.ToolRoute),
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), routeEvent)
+	observe.ObserveExecutionEvent(ctx, l.observer(), routeEvent)
 
-	modelEvent := l.executionEventBase(sess, kobs.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
+	modelEvent := l.executionEventBase(sess, observe.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
 	modelEvent.Model = sess.Config.ModelConfig.Model
 	modelEvent.Data = map[string]any{
 		"lane":          plan.ModelRoute.Lane,
 		"reason_codes":  append([]string(nil), plan.ModelRoute.ReasonCodes...),
-		"capabilities":  append([]mdl.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
+		"capabilities":  append([]model.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
 		"max_cost_tier": plan.ModelRoute.Requirements.MaxCostTier,
 		"prefer_cheap":  plan.ModelRoute.Requirements.PreferCheap,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), modelEvent)
+	observe.ObserveExecutionEvent(ctx, l.observer(), modelEvent)
 
-	turnEvent := l.executionEventBase(sess, kobs.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
+	turnEvent := l.executionEventBase(sess, observe.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
 	turnEvent.Data = map[string]any{
 		"iteration":            plan.Iteration,
 		"instruction_profile":  plan.InstructionProfile,
@@ -280,10 +280,10 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 		"approval_tools_count": len(approval),
 		"model_lane":           plan.ModelRoute.Lane,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), turnEvent)
+	observe.ObserveExecutionEvent(ctx, l.observer(), turnEvent)
 }
 
-func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *mdl.CompletionResponse, streamed bool, lastOutput *string) error {
+func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *model.CompletionResponse, streamed bool, lastOutput *string) error {
 	if len(resp.ToolCalls) > 0 {
 		names := make([]string, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
@@ -294,13 +294,13 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 			"tool_calls", strings.Join(names, ","),
 		)
 		if err := l.executeToolCalls(ctx, sess, resp.ToolCalls); err != nil {
-			l.runErrorMiddleware(ctx, sess, err)
+			l.runErrorHook(ctx, sess, err)
 			return err
 		}
 		return nil
 	}
 
-	*lastOutput = mdl.ContentPartsToPlainText(resp.Message.ContentParts)
+	*lastOutput = model.ContentPartsToPlainText(resp.Message.ContentParts)
 	logging.GetLogger().DebugContext(ctx, "assistant produced final content",
 		"session_id", sess.ID,
 		"streamed", streamed,
@@ -308,18 +308,18 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 	)
 	if l.IO != nil && !streamed {
 		for _, part := range resp.Message.ContentParts {
-			if part.Type != mdl.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
+			if part.Type != model.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
 				continue
 			}
-			if err := l.IO.Send(ctx, intr.OutputMessage{
-				Type:    intr.OutputReasoning,
+			if err := l.IO.Send(ctx, io.OutputMessage{
+				Type:    io.OutputReasoning,
 				Content: part.Text,
 			}); err != nil {
 				logging.GetLogger().DebugContext(ctx, "reasoning output failed", "session_id", sess.ID, "error", err)
 			}
 		}
-		if err := l.IO.Send(ctx, intr.OutputMessage{
-			Type:    intr.OutputText,
+		if err := l.IO.Send(ctx, io.OutputMessage{
+			Type:    io.OutputText,
 			Content: *lastOutput,
 		}); err != nil {
 			logging.GetLogger().DebugContext(ctx, "final output send failed", "session_id", sess.ID, "error", err)
@@ -336,10 +336,10 @@ func (l *AgentLoop) emitIterationProgress(
 	runStartedAt time.Time,
 	model string,
 	streamed bool,
-	resp *mdl.CompletionResponse,
+	resp *model.CompletionResponse,
 ) {
 	progressAt := time.Now().UTC()
-	event := l.executionEventBase(sess, kobs.ExecutionIterationProgress, "iteration", "runtime", "iteration")
+	event := l.executionEventBase(sess, observe.ExecutionIterationProgress, "iteration", "runtime", "iteration")
 	event.Timestamp = progressAt
 	event.Model = model
 	event.Data = map[string]any{
@@ -353,10 +353,10 @@ func (l *AgentLoop) emitIterationProgress(
 		"streamed":       streamed,
 		"tokens":         resp.Usage.TotalTokens,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
-func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage mdl.TokenUsage, lastOutput string) *SessionResult {
+func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage model.TokenUsage, lastOutput string) *SessionResult {
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
 	logging.GetLogger().DebugContext(ctx, "session run completed",
@@ -364,15 +364,15 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"steps", sess.Budget.UsedStepsValue(),
 		"tokens", totalUsage.TotalTokens,
 	)
-	kobs.ObserveSessionEvent(ctx, l.observer(), kobs.SessionEvent{SessionID: sess.ID, Type: "completed"})
-	event := l.executionEventBase(sess, kobs.ExecutionRunCompleted, "run", "runtime", "run")
+	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "completed"})
+	event := l.executionEventBase(sess, observe.ExecutionRunCompleted, "run", "runtime", "run")
 	event.Data = map[string]any{
 		"steps":  sess.Budget.UsedStepsValue(),
 		"tokens": totalUsage.TotalTokens,
 	}
-	kobs.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.runMiddleware(ctx, middleware.OnSessionEnd, sess, nil, nil, nil); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session end middleware failed", "session_id", sess.ID, "error", err)
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
+	if err := l.safeChain().OnSessionEnd.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+		logging.GetLogger().DebugContext(ctx, "session end hook failed", "session_id", sess.ID, "error", err)
 	}
 	result := &SessionResult{
 		SessionID:  sess.ID,

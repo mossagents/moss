@@ -1,9 +1,9 @@
-// Package adapters 提供 mdl.VectorStore 的各种后端实现。
+// Package adapters 提供 model.VectorStore 的各种后端实现。
 package adapters
 
 import (
 	"context"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"math"
 	"sort"
 	"sync"
@@ -18,7 +18,7 @@ type MemoryVectorStore struct {
 }
 
 type vectorEntry struct {
-	doc       mdl.VectorDoc
+	doc       model.VectorDoc
 	embedding []float64
 	expiresAt time.Time // zero = 永不过期
 }
@@ -34,7 +34,7 @@ func NewMemoryVectorStore() *MemoryVectorStore {
 
 // Upsert 添加或更新文档。若文档的 Embedding 为空，则调用 embedder 自动生成。
 // 同一 ID 的文档会被覆盖。
-func (s *MemoryVectorStore) Upsert(ctx context.Context, docs []mdl.VectorDoc) error {
+func (s *MemoryVectorStore) Upsert(ctx context.Context, docs []model.VectorDoc) error {
 	if len(docs) == 0 {
 		return nil
 	}
@@ -66,7 +66,7 @@ func (s *MemoryVectorStore) Upsert(ctx context.Context, docs []mdl.VectorDoc) er
 }
 
 // Search 语义检索。若文档缺少 Embedding，需在 Upsert 时预先嵌入。
-func (s *MemoryVectorStore) Search(ctx context.Context, embedder mdl.Embedder, query mdl.VectorQuery) ([]mdl.VectorResult, error) {
+func (s *MemoryVectorStore) Search(ctx context.Context, embedder model.Embedder, query model.VectorQuery) ([]model.VectorResult, error) {
 	queryVec, err := embedder.Embed(ctx, query.Text)
 	if err != nil {
 		return nil, err
@@ -112,9 +112,9 @@ func (s *MemoryVectorStore) Search(ctx context.Context, embedder mdl.Embedder, q
 		candidates = candidates[:limit]
 	}
 
-	results := make([]mdl.VectorResult, len(candidates))
+	results := make([]model.VectorResult, len(candidates))
 	for i, c := range candidates {
-		results[i] = mdl.VectorResult{
+		results[i] = model.VectorResult{
 			Doc:   c.entry.doc,
 			Score: c.score,
 		}
@@ -163,7 +163,7 @@ func (s *MemoryVectorStore) Count(_ context.Context, namespace string) (int, err
 }
 
 // UpsertWithEmbedder 在 Upsert 前自动为缺少 Embedding 的文档生成向量。
-func (s *MemoryVectorStore) UpsertWithEmbedder(ctx context.Context, embedder mdl.Embedder, docs []mdl.VectorDoc) error {
+func (s *MemoryVectorStore) UpsertWithEmbedder(ctx context.Context, embedder model.Embedder, docs []model.VectorDoc) error {
 	toEmbed := make([]string, 0, len(docs))
 	needEmbed := make([]int, 0, len(docs))
 	for i, d := range docs {

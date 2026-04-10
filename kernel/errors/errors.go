@@ -13,21 +13,46 @@ import (
 type Code string
 
 const (
+	// ── Budget ────────────────────────────────────────
 	ErrBudgetExhausted Code = "BUDGET_EXHAUSTED"
-	ErrToolNotFound    Code = "TOOL_NOT_FOUND"
-	ErrToolExecution   Code = "TOOL_EXECUTION"
-	ErrLLMCall         Code = "LLM_CALL"
-	ErrLLMTimeout      Code = "LLM_TIMEOUT"
-	ErrLLMRejected     Code = "LLM_REJECTED" // 熔断器拒绝
-	ErrSandboxDenied   Code = "SANDBOX_DENIED"
-	ErrSandboxIO       Code = "SANDBOX_IO"
+
+	// ── Tool ─────────────────────────────────────────
+	ErrToolNotFound      Code = "TOOL_NOT_FOUND"
+	ErrToolExecution     Code = "TOOL_EXECUTION"
+	ErrToolTimeout       Code = "TOOL_TIMEOUT"
+	ErrToolSchemaInvalid Code = "TOOL_SCHEMA_INVALID"
+
+	// ── LLM ──────────────────────────────────────────
+	ErrLLMCall     Code = "LLM_CALL"
+	ErrLLMTimeout  Code = "LLM_TIMEOUT"
+	ErrLLMRejected Code = "LLM_REJECTED" // 熔断器拒绝
+
+	// ── Sandbox ──────────────────────────────────────
+	ErrSandboxDenied  Code = "SANDBOX_DENIED"
+	ErrSandboxIO      Code = "SANDBOX_IO"
+	ErrSandboxTimeout Code = "SANDBOX_TIMEOUT"
+
+	// ── Session ──────────────────────────────────────
 	ErrSessionNotFound Code = "SESSION_NOT_FOUND"
 	ErrSessionRunning  Code = "SESSION_RUNNING"
-	ErrPolicyDenied    Code = "POLICY_DENIED"
-	ErrRateLimit       Code = "RATE_LIMIT"
-	ErrValidation      Code = "VALIDATION"
-	ErrShutdown        Code = "SHUTDOWN"
-	ErrInternal        Code = "INTERNAL"
+
+	// ── Policy / Auth ────────────────────────────────
+	ErrPolicyDenied Code = "POLICY_DENIED"
+	ErrRateLimit    Code = "RATE_LIMIT"
+
+	// ── Checkpoint ───────────────────────────────────
+	ErrCheckpointFailed   Code = "CHECKPOINT_FAILED"
+	ErrCheckpointNotFound Code = "CHECKPOINT_NOT_FOUND"
+
+	// ── Agent Delegation ─────────────────────────────
+	ErrDelegationDepth    Code = "DELEGATION_DEPTH"
+	ErrDelegationContract Code = "DELEGATION_CONTRACT"
+	ErrAgentNotFound      Code = "AGENT_NOT_FOUND"
+
+	// ── General ──────────────────────────────────────
+	ErrValidation Code = "VALIDATION"
+	ErrShutdown   Code = "SHUTDOWN"
+	ErrInternal   Code = "INTERNAL"
 )
 
 // Error 是 Moss Kernel 的结构化错误。

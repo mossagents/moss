@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/google/uuid"
-	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/model"
 	"os"
 	"sort"
 	"strings"
@@ -312,7 +312,7 @@ func (r *EvalRunner) RenderSummary(results []EvalResult) string {
 // KernelRunFunc 封装一个简单的 kernel-style 运行函数，以便与 EvalRunner 集成。
 // outputExtractor 从最终消息列表中提取输出文本。
 func KernelRunFunc(
-	run func(ctx context.Context, messages []mdl.Message) ([]mdl.Message, []ToolCallLog, int, error),
+	run func(ctx context.Context, messages []model.Message) ([]model.Message, []ToolCallLog, int, error),
 ) CaseRunner {
 	return func(ctx context.Context, c EvalCase) (EvalRun, error) {
 		msgs := resolveMessages(c)
@@ -322,7 +322,7 @@ func KernelRunFunc(
 		output := ""
 		if len(outMsgs) > 0 {
 			last := outMsgs[len(outMsgs)-1]
-			output = mdl.ContentPartsToPlainText(last.ContentParts)
+			output = model.ContentPartsToPlainText(last.ContentParts)
 		}
 
 		run_ := EvalRun{
@@ -341,15 +341,15 @@ func KernelRunFunc(
 	}
 }
 
-func resolveMessages(c EvalCase) []mdl.Message {
+func resolveMessages(c EvalCase) []model.Message {
 	if len(c.Input.Messages) > 0 {
 		return c.Input.Messages
 	}
-	msgs := make([]mdl.Message, 0, len(c.Input.RawMessages))
+	msgs := make([]model.Message, 0, len(c.Input.RawMessages))
 	for _, rm := range c.Input.RawMessages {
-		msgs = append(msgs, mdl.Message{
-			Role:         mdl.Role(rm.Role),
-			ContentParts: []mdl.ContentPart{mdl.TextPart(rm.Content)},
+		msgs = append(msgs, model.Message{
+			Role:         model.Role(rm.Role),
+			ContentParts: []model.ContentPart{model.TextPart(rm.Content)},
 		})
 	}
 	return msgs

@@ -2,22 +2,22 @@ package product
 
 import (
 	"context"
-	intr "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/io"
 	"strings"
 	"testing"
 )
 
 func TestRunTraceRecorderApprovalResolvedStoresDecision(t *testing.T) {
 	recorder := NewRunTraceRecorder()
-	recorder.OnApproval(context.Background(), intr.ApprovalEvent{
+	recorder.OnApproval(context.Background(), io.ApprovalEvent{
 		SessionID: "sess-1",
 		Type:      "resolved",
-		Request: intr.ApprovalRequest{
+		Request: io.ApprovalRequest{
 			ID:         "approval-1",
 			ToolName:   "run_command",
 			ReasonCode: "network",
 		},
-		Decision: &intr.ApprovalDecision{
+		Decision: &io.ApprovalDecision{
 			RequestID: "approval-1",
 			Approved:  false,
 			Source:    "user",

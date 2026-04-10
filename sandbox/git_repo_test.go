@@ -2,7 +2,7 @@ package sandbox
 
 import (
 	"context"
-	kws "github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -57,7 +57,7 @@ func TestGitRepoStateCapture_Capture(t *testing.T) {
 func TestGitRepoStateCapture_RepoUnavailable(t *testing.T) {
 	capture := NewGitRepoStateCapture(t.TempDir())
 	_, err := capture.Capture(context.Background())
-	if err != kws.ErrRepoUnavailable {
+	if err != workspace.ErrRepoUnavailable {
 		t.Fatalf("expected ErrRepoUnavailable, got %v", err)
 	}
 }
@@ -87,7 +87,7 @@ func containsString(items []string, target string) bool {
 	return false
 }
 
-func containsFileState(items []kws.RepoFileState, path, status string) bool {
+func containsFileState(items []workspace.RepoFileState, path, status string) bool {
 	for _, item := range items {
 		if item.Path == path && item.Status == status {
 			return true
