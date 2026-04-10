@@ -102,7 +102,7 @@ func WithUserIO(io io.UserIO) Option {
 }
 
 // Use 追加一个 BeforeLLM hook（向后兼容便利方法）。
-// 新代码应优先使用 OnBeforeLLM / OnBeforeToolCall / Install 等类型安全方法。
+// Deprecated: 新代码应优先使用 OnBeforeLLM / OnBeforeToolCall / Install 等类型安全方法。
 func Use(hook hooks.Hook[hooks.LLMEvent]) Option {
 	return func(k *Kernel) { k.chain.BeforeLLM.On(hook) }
 }

@@ -1,7 +1,10 @@
 package hooks
 
 // Registry 管理 Agent 运行时所有生命周期阶段的 hook pipeline。
-// 它统一替代了 middleware.Chain 和 ExtensionBridge 的运行时 hook。
+//
+// Registry 处理 Agent Loop 运行中的钩子（LLM 调用前后、工具调用前后、会话开始/结束、错误）。
+// 与 ExtensionBridge 的区别：ExtensionBridge 处理 Kernel 级生命周期（启动、关停、System Prompt 组装），
+// 两者作用域互补，不重叠。
 type Registry struct {
 	BeforeLLM      *Pipeline[LLMEvent]
 	AfterLLM       *Pipeline[LLMEvent]

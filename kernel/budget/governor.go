@@ -58,13 +58,16 @@ type Governor interface {
 type WarnFunc func(snap BudgetSnapshot)
 
 // MemoryGovernor 是 Governor 的内存实现，线程安全。
+//
+// Governor 提供全局预算控制，管理所有 Session 的 token/step 总消耗。
+// 与 BudgetPool 的区别：BudgetPool 管理单个 Session 内各子系统的配额分配，
+// Governor 管理跨所有 Session 的全局预算上限。
 type MemoryGovernor struct {
 	budget GlobalBudget
 	warn   WarnFunc
 
-	usedTokens   int64
-	usedSteps    int64
-	sessionCount int64
+	usedTokens int64
+	usedSteps  int64
 }
 
 // NewGovernor 创建一个内存 Governor。
@@ -119,7 +122,7 @@ func (g *MemoryGovernor) Snapshot() BudgetSnapshot {
 		UsedSteps:    atomic.LoadInt64(&g.usedSteps),
 		MaxTokens:    g.budget.MaxTokens,
 		MaxSteps:     g.budget.MaxSteps,
-		SessionCount: int(atomic.LoadInt64(&g.sessionCount)),
+		SessionCount: 0,
 	}
 }
 
@@ -127,7 +130,6 @@ func (g *MemoryGovernor) Snapshot() BudgetSnapshot {
 func (g *MemoryGovernor) Reset() {
 	atomic.StoreInt64(&g.usedTokens, 0)
 	atomic.StoreInt64(&g.usedSteps, 0)
-	atomic.StoreInt64(&g.sessionCount, 0)
 }
 
 // ErrBudgetExhausted 表示全局预算已耗尽。

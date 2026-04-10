@@ -44,7 +44,7 @@ type Metadata struct {
 	Description string     `json:"description" yaml:"description"`
 	Tools       []string   `json:"tools,omitempty" yaml:"tools,omitempty"`               // 提供的工具名列表
 	Prompts     []string   `json:"prompts,omitempty" yaml:"prompts,omitempty"`           // 注入到 system prompt 的片段
-	DependsOn   []string   `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`     // 依赖的 provider 名称（向后兼容）
+	DependsOn   []string   `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`     // Deprecated: 使用 Requires 进行版本约束依赖声明。
 	Requires    []SkillDep `json:"requires,omitempty" yaml:"requires,omitempty"`         // 版本约束依赖（优先于 DependsOn）
 	RequiredEnv []string   `json:"required_env,omitempty" yaml:"required_env,omitempty"` // 初始化前必须解析的环境变量
 }

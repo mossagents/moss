@@ -179,6 +179,11 @@ type JobItemQuery struct {
 }
 
 // TaskRuntime 提供持久任务图的最小能力。
+//
+// kernel/task 负责任务执行引擎（状态机、调度、依赖图、持久化），
+// 是面向 Agent Loop 的底层运行时基础设施。
+// 与 agent 包的区别：agent 包负责 Agent 委派和协作的上层逻辑（合约、深度控制），
+// 使用 kernel/task 作为底层任务存储和调度引擎。
 type TaskRuntime interface {
 	UpsertTask(ctx context.Context, task TaskRecord) error
 	GetTask(ctx context.Context, id string) (*TaskRecord, error)

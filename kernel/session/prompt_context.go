@@ -114,7 +114,7 @@ func BuildPromptMessages(messages []model.Message, st PromptContextState) []mode
 	}
 	selected := make([]model.Message, 0, len(dialog)+len(pinned))
 	if remaining > 0 {
-		earlier := selectDialogTailWithinBudget(dialog, maxInt(0, remaining-EstimateMessagesTokens(pinned)))
+		earlier := selectDialogTailWithinBudget(dialog, max(0, remaining-EstimateMessagesTokens(pinned)))
 		selected = append(selected, earlier...)
 	}
 	selected = append(selected, pinned...)
@@ -159,7 +159,7 @@ func EstimateTextTokens(text string) int {
 	}
 	runes := utf8.RuneCountInString(text)
 	lines := strings.Count(text, "\n") + 1
-	return maxInt(1, (runes+3)/4+lines)
+	return max(1, (runes+3)/4+lines)
 }
 
 func NewPromptContextFragment(id, kind string, role model.Role, title, text string) PromptContextFragment {
@@ -403,13 +403,6 @@ func selectDialogTailWithinBudget(messages []model.Message, budget int) []model.
 func fragmentHash(text string) string {
 	sum := sha1.Sum([]byte(text))
 	return hex.EncodeToString(sum[:8])
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func FormatPromptContextFragment(prefix, body string) string {

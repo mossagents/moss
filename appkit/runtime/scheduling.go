@@ -75,7 +75,7 @@ func (a SchedulerAdapter) ListText() (string, error) {
 		return "", err
 	}
 	if len(items) == 0 {
-		return "No background scheduled jkobs.", nil
+		return "// No background scheduled jobs.", nil
 	}
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("Schedules (%d):\n", len(items)))

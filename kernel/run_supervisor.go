@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/mossagents/moss/kernel/errors"
 )
@@ -21,8 +20,6 @@ const (
 type runRecord struct {
 	id        string
 	sessionID string
-	kind      runKind
-	startedAt time.Time
 	cancel    context.CancelFunc
 }
 
@@ -56,8 +53,6 @@ func (s *runSupervisor) begin(parent context.Context, sessionID string, kind run
 	s.runs[id] = runRecord{
 		id:        id,
 		sessionID: sessionID,
-		kind:      kind,
-		startedAt: time.Now(),
 		cancel:    cancel,
 	}
 	s.wg.Add(1)

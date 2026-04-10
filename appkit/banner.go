@@ -2,6 +2,7 @@ package appkit
 
 import (
 	"fmt"
+	"strings"
 )
 
 // PrintBanner 打印统一格式的应用启动信息。
@@ -49,11 +50,7 @@ func PrintBannerWithHint(appName string, fields map[string]string, hints ...stri
 }
 
 func repeat(s string, n int) string {
-	result := ""
-	for i := 0; i < n; i++ {
-		result += s
-	}
-	return result
+	return strings.Repeat(s, n)
 }
 
 func spaces(n int) string {

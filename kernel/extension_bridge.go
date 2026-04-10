@@ -10,6 +10,11 @@ import (
 )
 
 // ExtensionStateKey 标识一个扩展状态槽。
+//
+// ExtensionBridge 管理 Kernel 级扩展的生命周期钩子（OnBoot、OnShutdown、OnSystemPrompt、
+// OnSessionStart、OnToolCall）。它与 hooks.Registry 分工明确：
+//   - ExtensionBridge：Kernel 启动/关停、System Prompt 组装等初始化阶段
+//   - hooks.Registry：Agent Loop 运行时的 LLM/Tool 调用钩子
 type ExtensionStateKey string
 
 type extensionState struct {
