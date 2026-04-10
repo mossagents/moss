@@ -30,10 +30,10 @@ func compactShellBrandTitle(title string) string {
 func (m chatModel) renderShellHeader() string {
 	inner := max(1, m.width-topBarStyle.GetHorizontalFrameSize())
 
-	// Right: provider (model)
+	// Right: provider (model) — always show model when available.
 	var rightRaw string
 	if provider := strings.TrimSpace(m.provider); provider != "" {
-		if mdl := strings.TrimSpace(m.model); mdl != "" && !m.modelAuto {
+		if mdl := strings.TrimSpace(m.model); mdl != "" {
 			rightRaw = provider + " (" + mdl + ")"
 		} else {
 			rightRaw = provider

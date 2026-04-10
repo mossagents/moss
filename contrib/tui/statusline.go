@@ -200,6 +200,9 @@ func (m chatModel) composerMetaSummary() (string, string) {
 		if queued := len(m.queuedInputs); queued > 0 {
 			detail += fmt.Sprintf("  •  %d queued", queued)
 		}
+		if m.lastTrace != nil && m.lastTrace.Trace.TotalTokens > 0 {
+			detail += "  •  " + formatTokenCount(m.lastTrace.Trace.TotalTokens) + " tokens"
+		}
 		detail += "  •  Esc Esc cancel"
 		return "Running", detail
 	case len(m.pendingAttachments) > 0:
