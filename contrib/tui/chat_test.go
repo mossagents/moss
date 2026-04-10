@@ -2099,8 +2099,12 @@ func TestRenderHeaderMetaLineIsCompact(t *testing.T) {
 	m.fastMode = true
 
 	line := m.renderHeaderMetaLine()
-	if !strings.Contains(line, "Idle") || !strings.Contains(line, "thread sess_1") || !strings.Contains(line, "planning · trusted · confirm · fast") {
+	if !strings.Contains(line, "planning · trusted · confirm · fast") {
 		t.Fatalf("unexpected compact header meta line: %q", line)
+	}
+	// State and thread have moved out of the header meta bar.
+	if strings.Contains(line, "Idle") || strings.Contains(line, "thread") {
+		t.Fatalf("header meta should not contain state or thread: %q", line)
 	}
 	if strings.Contains(line, "Provider:") || strings.Contains(line, "Personality:") {
 		t.Fatalf("expected compact header without verbose labels, got %q", line)
@@ -2123,25 +2127,31 @@ func TestRenderHeaderMetaLineIncludesDefaultProfile(t *testing.T) {
 
 func TestRenderSlashHintLineUsesStableFallback(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.textarea.SetValue("hello")
-	m.refreshSlashHints()
-	line := m.renderSlashHintLine()
-	if !strings.Contains(line, "/ commands") || !strings.Contains(line, "Tab completes") {
-		t.Fatalf("unexpected fallback hint line: %q", line)
+	// "Ready" state (empty textarea) should show slash hint fallback.
+	ready := m.renderComposerMetaLine(120)
+	if !strings.Contains(ready, "/ commands") {
+		t.Fatalf("expected slash hint in ready state: %q", ready)
 	}
 }
 
 func TestRenderComposerMetaLineHighlightsReadyAndDraftStates(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	ready := m.renderComposerMetaLine(120)
-	if !strings.Contains(ready, "Ready") || !strings.Contains(ready, "gpt-4o") || !strings.Contains(ready, "/ commands, @ files") {
+	if !strings.Contains(ready, "Ready") || !strings.Contains(ready, "/ commands") || !strings.Contains(ready, "@ files") {
 		t.Fatalf("unexpected ready composer meta: %q", ready)
+	}
+	// Model name must not appear in the composer meta bar (it belongs in the header).
+	if strings.Contains(ready, "gpt-4o") {
+		t.Fatalf("model should not appear in ready composer meta: %q", ready)
 	}
 
 	m.textarea.SetValue("hello")
 	draft := m.renderComposerMetaLine(120)
-	if !strings.Contains(draft, "Draft") || !strings.Contains(draft, "gpt-4o") || !strings.Contains(draft, "Enter send, Ctrl+J newline") {
+	if !strings.Contains(draft, "Draft") || !strings.Contains(draft, "Enter send") {
 		t.Fatalf("unexpected draft composer meta: %q", draft)
+	}
+	if strings.Contains(draft, "gpt-4o") {
+		t.Fatalf("model should not appear in draft composer meta: %q", draft)
 	}
 }
 
@@ -2180,41 +2190,6 @@ func TestRenderEditorPaneDoesNotRepeatRunningMetaWithExtraStreamingRow(t *testin
 	}
 	if strings.Contains(rendered, "working") {
 		t.Fatalf("expected extra streaming row to be removed, got %q", rendered)
-	}
-}
-
-func TestRenderFooterHelpLineIncludesStatusInSingleLine(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.width = 220
-	m.currentSessionID = "sess_1"
-	m.fastMode = true
-	line := m.renderFooterHelpLine()
-	if strings.Contains(line, "\n") {
-		t.Fatalf("expected single-line footer, got %q", line)
-	}
-	if !strings.Contains(line, "/help") {
-		t.Fatalf("unexpected footer line: %q", line)
-	}
-	if strings.Contains(line, "Enter send") || strings.Contains(line, "Ctrl+J newline") {
-		t.Fatalf("footer should stay minimal, got %q", line)
-	}
-	if strings.Contains(line, "thread=sess_1") || strings.Contains(line, "fast=on") {
-		t.Fatalf("footer should no longer append status line, got %q", line)
-	}
-}
-
-func TestRenderStatusLineKeepsOnlyPrimaryContext(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.provider = "openai"
-	m.model = "gpt-4o"
-	m.currentSessionID = "sess_123456"
-	m.profile = "planning"
-	line := m.renderStatusLine()
-	if !strings.Contains(line, "Idle") || !strings.Contains(line, "gpt-4o") {
-		t.Fatalf("unexpected compact status line: %q", line)
-	}
-	if strings.Contains(line, "planning") || strings.Contains(line, "thread") {
-		t.Fatalf("status line should keep only primary context, got %q", line)
 	}
 }
 

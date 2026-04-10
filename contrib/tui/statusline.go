@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/appkit/product"
 	"github.com/mossagents/moss/kernel/io"
-	"path/filepath"
 	"strings"
 )
 
@@ -155,17 +154,6 @@ func (m chatModel) experimentalEnabled(name string) bool {
 	return false
 }
 
-func (m chatModel) renderStatusLine() string {
-	values := []string{titleCaseWord(m.runtimeStateLabel())}
-	if summary := strings.TrimSpace(m.statusContextSummary()); summary != "" {
-		values = append(values, summary)
-	}
-	if m.streaming && !m.runStartedAt.IsZero() {
-		values = append(values, formatElapsed(m.runStartedAt, m.now()))
-	}
-	return strings.Join(values, "  •  ")
-}
-
 func (m chatModel) runtimeStateLabel() string {
 	switch {
 	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
@@ -197,42 +185,6 @@ func (m chatModel) progressStatusSummary() string {
 	return ""
 }
 
-func (m chatModel) statusContextSummary() string {
-	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
-		return "confirmation needed"
-	case m.pendAsk != nil:
-		return "waiting on you"
-	case m.streaming:
-		if summary := strings.TrimSpace(m.progressStatusSummary()); summary != "" {
-			return truncateDisplayWidth(summary, 36)
-		}
-		if m.hasRunningToolCalls() {
-			return "tool call active"
-		}
-	case m.slashPopup != nil:
-		return "command menu"
-	case m.mentionPopup != nil:
-		return "file picker"
-	}
-	if strings.TrimSpace(m.model) != "" {
-		return strings.TrimSpace(m.model)
-	}
-	if strings.TrimSpace(m.provider) != "" && !m.modelAuto {
-		return strings.TrimSpace(m.provider)
-	}
-	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
-		return profile
-	}
-	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-		return "thread " + shortThreadID(threadID)
-	}
-	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
-		return filepath.Base(workspace)
-	}
-	return ""
-}
-
 func (m chatModel) composerMetaSummary() (string, string) {
 	switch {
 	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
@@ -259,29 +211,10 @@ func (m chatModel) composerMetaSummary() (string, string) {
 	case strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@"):
 		return "Attach", "file picker  •  Tab attach"
 	case strings.TrimSpace(m.textarea.Value()) != "":
-		return "Draft", fmt.Sprintf("%s  •  Enter send, Ctrl+J newline", m.composerContextLabel())
+		return "Draft", "Enter send  •  Ctrl+J newline"
 	default:
-		return "Ready", fmt.Sprintf("%s  •  / commands, @ files", m.composerContextLabel())
+		return "Ready", "/ commands  •  @ files"
 	}
-}
-
-func (m chatModel) composerContextLabel() string {
-	if strings.TrimSpace(m.model) != "" {
-		return strings.TrimSpace(m.model)
-	}
-	if strings.TrimSpace(m.provider) != "" {
-		return strings.TrimSpace(m.provider)
-	}
-	if profile := strings.TrimSpace(m.profile); profile != "" && !strings.EqualFold(profile, "default") {
-		return profile
-	}
-	if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
-		return "thread " + shortThreadID(threadID)
-	}
-	if workspace := strings.TrimSpace(m.workspace); workspace != "" && workspace != "." {
-		return filepath.Base(workspace)
-	}
-	return "session"
 }
 
 func (m chatModel) composerSlashContext() string {

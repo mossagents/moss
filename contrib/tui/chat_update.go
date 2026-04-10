@@ -216,6 +216,10 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.textarea.Focus()
 		return m, nil
 
+	case gitBranchMsg:
+		m.gitBranch = string(msg)
+		return m, nil
+
 	case threadSwitchResultMsg:
 		m.streaming = false
 		if msg.err != nil {

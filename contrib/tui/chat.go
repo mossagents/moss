@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -69,6 +71,28 @@ type uiTickMsg struct{}
 type threadSwitchResultMsg struct {
 	output string
 	err    error
+}
+
+// gitBranchMsg carries the result of the async git branch lookup.
+type gitBranchMsg string
+
+// gitBranchCmd resolves the current git branch for dir asynchronously.
+// Returns an empty branch on error or detached HEAD.
+func gitBranchCmd(dir string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+		out, err := cmd.Output()
+		if err != nil {
+			return gitBranchMsg("")
+		}
+		branch := strings.TrimSpace(string(out))
+		if branch == "HEAD" { // detached HEAD
+			branch = ""
+		}
+		return gitBranchMsg(branch)
+	}
 }
 
 // chatModel 是对话主界面。
@@ -147,6 +171,7 @@ type chatModel struct {
 	model                string
 	modelAuto            bool
 	workspace            string
+	gitBranch            string
 	trust                string
 	profile              string
 	approvalMode         string
@@ -244,7 +269,7 @@ func (m *chatModel) setProviderIdentity(provider, providerName string) {
 }
 
 func (m chatModel) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, uiTickCmd())
+	return tea.Batch(textarea.Blink, uiTickCmd(), gitBranchCmd(m.workspace))
 }
 
 func (m chatModel) handleSend() (chatModel, tea.Cmd) {

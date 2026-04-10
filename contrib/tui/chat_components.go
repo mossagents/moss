@@ -99,25 +99,58 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 }
 
 func (m chatModel) renderStatusPane(width int) string {
-	var status string
-	if m.pendAsk != nil && m.askForm != nil {
-		if m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil {
-			status = "Approval needed  •  Tab move  •  ↑↓ choose  •  Enter apply"
-		} else {
-			status = "Input needed  •  Tab move  •  Enter confirm"
+	inner := max(1, width-statusBarStyle.GetHorizontalFrameSize())
+
+	// Determine left hint text based on current state.
+	var leftStr, rightStr string
+	switch {
+	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
+		leftStr = "Tab move  •  ↑↓ choose  •  Enter apply"
+		rightStr = "approval"
+	case m.scheduleBrowser != nil:
+		leftStr = "↑↓ choose  •  e run  •  d delete  •  Esc close"
+	case m.pendAsk != nil:
+		leftStr = "Enter confirm  •  Esc Esc cancel"
+	case m.hasActiveOverlay():
+		leftStr = "↑↓ move  •  Enter confirm  •  Esc close"
+	case m.mentionPopup != nil || m.slashPopup != nil:
+		leftStr = "↑↓ move  •  Tab select  •  Esc close"
+	case m.streaming:
+		if !m.runStartedAt.IsZero() {
+			leftStr = formatElapsed(m.runStartedAt, m.now()) + "  •  "
 		}
-	} else if m.scheduleBrowser != nil {
-		status = "Schedule  •  ↑↓ choose  •  e run  •  d delete  •  Esc close"
-	} else if m.pendAsk != nil {
-		status = "Reply needed  •  Enter confirm  •  Esc Esc cancel"
-	} else {
-		status = m.renderStatusLine()
-		if hint := strings.TrimSpace(m.renderFooterHelpLine()); hint != "" {
-			status += "  •  " + hint
+		leftStr += "Esc Esc cancel"
+	default:
+		leftStr = "shift+tab profile  •  ctrl+o tools  •  /help"
+	}
+
+	// Thread ID on the right (unless overridden above).
+	if rightStr == "" {
+		if threadID := strings.TrimSpace(m.currentSessionID); threadID != "" {
+			rightStr = "thread " + shortThreadID(threadID)
 		}
 	}
-	status = truncateDisplayWidth(status, width)
-	return statusBarStyle.Width(width).Render(statusHintStyle.Render(status))
+
+	left := statusHintStyle.Render(leftStr)
+	leftW := lipgloss.Width(left)
+
+	if strings.TrimSpace(rightStr) == "" {
+		if leftW > inner {
+			left = statusHintStyle.Render(truncateDisplayWidth(leftStr, inner))
+		}
+		return statusBarStyle.Width(width).Render(left)
+	}
+
+	right := shellHeaderDetailStyle.Render(rightStr)
+	rightW := lipgloss.Width(right)
+	maxLeft := max(8, inner-rightW-1)
+	if leftW > maxLeft {
+		left = statusHintStyle.Render(truncateDisplayWidth(leftStr, maxLeft))
+		leftW = lipgloss.Width(left)
+	}
+	gapW := max(0, inner-leftW-rightW)
+	gap := strings.Repeat(" ", gapW)
+	return statusBarStyle.Width(width).Render(left + gap + right)
 }
 
 func (m chatModel) renderBody(layout chatUILayout) string {

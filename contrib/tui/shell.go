@@ -28,29 +28,50 @@ func compactShellBrandTitle(title string) string {
 }
 
 func (m chatModel) renderShellHeader() string {
-	brand := shellBrandStyle.Render(m.shellProductTitle())
-	details := []string{}
-	if cwd := strings.TrimSpace(valueOrDefaultString(m.workspace, ".")); cwd != "" {
-		details = append(details, shellHeaderDetailStyle.Render(filepath.Base(cwd)))
-	}
+	inner := max(1, m.width-topBarStyle.GetHorizontalFrameSize())
+
+	// Right: provider (model)
+	var rightRaw string
 	if provider := strings.TrimSpace(m.provider); provider != "" {
-		if model := strings.TrimSpace(m.model); model != "" && !m.modelAuto {
-			details = append(details, shellHeaderDetailStyle.Render(provider+" · "+model))
+		if mdl := strings.TrimSpace(m.model); mdl != "" && !m.modelAuto {
+			rightRaw = provider + " (" + mdl + ")"
 		} else {
-			details = append(details, shellHeaderDetailStyle.Render(provider))
+			rightRaw = provider
 		}
 	}
-	if len(details) == 0 {
-		details = append(details, shellHeaderDetailStyle.Render("not connected"))
+	right := shellHeaderDetailStyle.Render(rightRaw)
+	rightW := lipgloss.Width(right)
+
+	// Left: workspace-basename [branch]
+	wsBase := filepath.Base(valueOrDefaultString(strings.TrimSpace(m.workspace), "."))
+	if wsBase == "." || wsBase == "" {
+		wsBase = "moss"
 	}
-	maxDetailWidth := max(12, m.width-lipgloss.Width(brand)-6)
-	detailText := truncateDisplayWidth(strings.Join(details, shellHeaderSeparatorStyle.Render(" • ")), maxDetailWidth)
-	parts := []string{brand}
-	if strings.TrimSpace(detailText) != "" {
-		parts = append(parts, shellHeaderSeparatorStyle.Render("•"), detailText)
+	branch := strings.TrimSpace(m.gitBranch)
+	// Reserve at least 1 gap between left and right.
+	maxLeftW := max(8, inner-rightW-1)
+	var left string
+	wsStyled := shellBrandStyle.Render(wsBase)
+	if branch != "" {
+		branchStyled := shellHeaderDetailStyle.Render(" [" + branch + "]")
+		combined := wsStyled + branchStyled
+		if lipgloss.Width(combined) <= maxLeftW {
+			left = combined
+		} else {
+			avail := max(4, maxLeftW-lipgloss.Width(branchStyled))
+			left = shellBrandStyle.Render(truncateDisplayWidth(wsBase, avail)) + branchStyled
+		}
+	} else {
+		if lipgloss.Width(wsStyled) > maxLeftW {
+			wsStyled = shellBrandStyle.Render(truncateDisplayWidth(wsBase, maxLeftW))
+		}
+		left = wsStyled
 	}
-	header := lipgloss.JoinHorizontal(lipgloss.Center, parts...)
-	return topBarStyle.Width(max(1, m.width)).Render(header)
+
+	leftW := lipgloss.Width(left)
+	gapW := max(0, inner-leftW-rightW)
+	gap := strings.Repeat(" ", gapW)
+	return topBarStyle.Width(max(1, m.width)).Render(left + gap + right)
 }
 
 func renderDialogFrame(width int, title string, body []string, footer string) string {
