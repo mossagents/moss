@@ -204,7 +204,7 @@ func (m chatModel) composerMetaSummary() (string, string) {
 			detail += "  •  " + formatTokenCount(m.lastTrace.Trace.TotalTokens) + " tokens"
 		}
 		detail += "  •  Esc Esc cancel"
-		return "Running", detail
+		return spinnerFrame(m.now()) + " Running", detail
 	case len(m.pendingAttachments) > 0:
 		return "Attach", fmt.Sprintf("%d ready  •  Ctrl+X remove latest", len(m.pendingAttachments))
 	case len(m.queuedInputs) > 0:
