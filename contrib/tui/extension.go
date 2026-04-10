@@ -118,6 +118,7 @@ var coreKeys = map[string]bool{
 	"ctrl+t":      true,
 	"ctrl+o":      true,
 	"ctrl+x":      true,
+	"ctrl+y":      true,
 	"up":          true,
 	"down":        true,
 	"tab":         true,

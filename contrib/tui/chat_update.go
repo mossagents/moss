@@ -63,6 +63,34 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.toolCollapsed = !m.toolCollapsed
 			m.refreshViewport()
 			return m, nil
+		case "ctrl+y":
+			hasCopyable := false
+			for _, msg := range m.messages {
+				if isCopyableMessage(msg) {
+					hasCopyable = true
+					break
+				}
+			}
+			if !hasCopyable {
+				m.messages = append(m.messages, chatMessage{kind: msgError, content: "No completed output is available to copy yet."})
+				m.refreshViewport()
+				return m, nil
+			}
+			m.copyPicker = newCopyPickerState(m.messages)
+			m.openCopyOverlay()
+			return m, nil
+		case "ctrl+v":
+			text, err := readClipboard()
+			if err == nil && strings.TrimSpace(text) != "" {
+				m.textarea.InsertString(text)
+				m.adjustInputHeight()
+				m.historyCursor = len(m.inputHistory)
+				m.historyDraft = m.textarea.Value()
+				m.refreshSlashHints()
+				m.refreshMentionPopup()
+				m.refreshViewport()
+			}
+			return m, nil
 		case "ctrl+x":
 			if len(m.pendingAttachments) > 0 {
 				m.pendingAttachments = append([]userattachments.ComposerAttachment(nil), m.pendingAttachments[:len(m.pendingAttachments)-1]...)

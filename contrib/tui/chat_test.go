@@ -2663,3 +2663,169 @@ type testOverlay struct{}
 func (o *testOverlay) ID() string                                                   { return "my-overlay" }
 func (o *testOverlay) View(ctx OverlayContext) string                               { return "test overlay" }
 func (o *testOverlay) HandleKey(ctx OverlayContext, key tea.KeyMsg) tea.Cmd         { return nil }
+
+func TestCtrlYOpensCopyPicker(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgAssistant, content: "Hello from the AI."},
+		{kind: msgUser, content: "Hi"},
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayCopy {
+		t.Fatal("expected copy picker overlay to be active after ctrl+y")
+	}
+	if updated.copyPicker == nil || len(updated.copyPicker.items) == 0 {
+		t.Fatal("expected copy picker to have items")
+	}
+}
+
+func TestCtrlYNoMessagesShowsError(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgUser, content: "Hi"},
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected no overlay when there are no copiable messages")
+	}
+	if len(updated.messages) == 0 {
+		t.Fatal("expected an error message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgError {
+		t.Fatalf("expected error message, got kind=%d content=%q", last.kind, last.content)
+	}
+}
+
+func TestCopyPickerEnterCopiesToClipboard(t *testing.T) {
+	var copied string
+	original := writeClipboard
+	writeClipboard = func(s string) error { copied = s; return nil }
+	t.Cleanup(func() { writeClipboard = original })
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgAssistant, content: "The answer is 42."},
+	}
+	// Open picker.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if m.activeOverlay() == nil || m.activeOverlay().ID() != overlayCopy {
+		t.Fatal("expected copy picker to be open")
+	}
+	// Confirm with Enter.
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.activeOverlay() != nil {
+		t.Fatal("expected copy picker to close after Enter")
+	}
+	if copied != "The answer is 42." {
+		t.Fatalf("expected clipboard content %q, got %q", "The answer is 42.", copied)
+	}
+	last := m.messages[len(m.messages)-1]
+	if last.kind != msgSystem {
+		t.Fatalf("expected system message after copy, got kind=%d", last.kind)
+	}
+}
+
+func TestCopyPickerYKeyCopiesToClipboard(t *testing.T) {
+	var copied string
+	original := writeClipboard
+	writeClipboard = func(s string) error { copied = s; return nil }
+	t.Cleanup(func() { writeClipboard = original })
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgAssistant, content: "Copy via y key."},
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	if m.activeOverlay() != nil {
+		t.Fatal("expected copy picker to close after y")
+	}
+	if copied != "Copy via y key." {
+		t.Fatalf("unexpected clipboard content: %q", copied)
+	}
+}
+
+func TestCopyPickerEscCloses(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.messages = []chatMessage{
+		{kind: msgAssistant, content: "Some output."},
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlY})
+	if m.activeOverlay() == nil || m.activeOverlay().ID() != overlayCopy {
+		t.Fatal("expected copy picker to be open")
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.activeOverlay() != nil {
+		t.Fatal("expected copy picker to close after Esc")
+	}
+}
+
+func TestCtrlVPastesFromClipboard(t *testing.T) {
+	original := readClipboard
+	readClipboard = func() (string, error) { return "pasted text", nil }
+	t.Cleanup(func() { readClipboard = original })
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if !strings.Contains(m.textarea.Value(), "pasted text") {
+		t.Fatalf("expected %q in textarea, got %q", "pasted text", m.textarea.Value())
+	}
+}
+
+func TestCtrlVEmptyClipboardIsNoop(t *testing.T) {
+	original := readClipboard
+	readClipboard = func() (string, error) { return "   ", nil }
+	t.Cleanup(func() { readClipboard = original })
+
+	m := newChatModel("openai", "gpt-4o", ".")
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlV})
+	if m.textarea.Value() != "" {
+		t.Fatalf("expected empty textarea after blank paste, got %q", m.textarea.Value())
+	}
+}
+
+func TestIsCopyableMessage(t *testing.T) {
+	for _, tc := range []struct {
+		kind    msgKind
+		content string
+		want    bool
+	}{
+		{msgAssistant, "hello", true},
+		{msgSystem, "system message", true},
+		{msgToolResult, "result", true},
+		{msgToolError, "error", true},
+		{msgUser, "user", false},
+		{msgProgress, "progress", false},
+		{msgAssistant, "   ", false},   // empty after trim
+		{msgSystem, "", false},         // blank
+	} {
+		msg := chatMessage{kind: tc.kind, content: tc.content}
+		got := isCopyableMessage(msg)
+		if got != tc.want {
+			t.Errorf("isCopyableMessage(%d, %q) = %v, want %v", tc.kind, tc.content, got, tc.want)
+		}
+	}
+}
+
+func TestNewCopyPickerStateNewestFirst(t *testing.T) {
+	messages := []chatMessage{
+		{kind: msgAssistant, content: "first"},
+		{kind: msgUser, content: "user"},
+		{kind: msgAssistant, content: "second"},
+		{kind: msgAssistant, content: "third"},
+	}
+	state := newCopyPickerState(messages)
+	if len(state.items) != 3 {
+		t.Fatalf("expected 3 items, got %d", len(state.items))
+	}
+	if state.items[0].content != "third" {
+		t.Errorf("expected newest first (third), got %q", state.items[0].content)
+	}
+	if state.items[2].content != "first" {
+		t.Errorf("expected oldest last (first), got %q", state.items[2].content)
+	}
+}

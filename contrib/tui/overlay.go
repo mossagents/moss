@@ -22,6 +22,7 @@ const (
 	overlayAgent      overlayID = "agent"
 	overlayMention    overlayID = "mention"
 	overlayExt        overlayID = "ext" // custom extension overlay
+	overlayCopy       overlayID = "copy"
 )
 
 type overlayDialog interface {
@@ -436,6 +437,20 @@ func (m chatModel) closeMentionOverlay() chatModel {
 	return m
 }
 
+func (m *chatModel) openCopyOverlay() {
+	m.ensureOverlayStack()
+	m.overlays.Open(overlayCopy)
+}
+
+func (m chatModel) closeCopyOverlay() chatModel {
+	m.copyPicker = nil
+	if m.overlays != nil {
+		m.overlays.Close(overlayCopy)
+	}
+	m.refreshViewport()
+	return m
+}
+
 func (m chatModel) activeOverlay() overlayDialog {
 	if m.overlays != nil {
 		switch m.overlays.Top() {
@@ -495,6 +510,10 @@ func (m chatModel) activeOverlay() overlayDialog {
 			if m.customOverlayImpl != nil {
 				return extOverlayAdapter{impl: m.customOverlayImpl}
 			}
+		case overlayCopy:
+			if m.copyPicker != nil {
+				return copyPickerOverlayDialog{}
+			}
 		}
 	}
 	if m.transcriptOverlay != nil {
@@ -535,6 +554,9 @@ func (m chatModel) activeOverlay() overlayDialog {
 	}
 	if m.mentionPicker != nil {
 		return mentionOverlayDialog{}
+	}
+	if m.copyPicker != nil {
+		return copyPickerOverlayDialog{}
 	}
 	return nil
 }

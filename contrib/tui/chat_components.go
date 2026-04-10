@@ -92,7 +92,7 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 	}
 	vertical := lipgloss.Center
 	switch dialog.ID() {
-	case overlayHelp, overlaySchedule, overlayStatus, overlayModel, overlayTheme, overlayMCP, overlayResume, overlayFork, overlayAgent, overlayMention:
+	case overlayHelp, overlaySchedule, overlayStatus, overlayModel, overlayTheme, overlayMCP, overlayResume, overlayFork, overlayAgent, overlayMention, overlayCopy:
 		vertical = lipgloss.Bottom
 	}
 	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, vertical, overlay)
@@ -121,7 +121,7 @@ func (m chatModel) renderStatusPane(width int) string {
 		}
 		leftStr += "Esc Esc cancel"
 	default:
-		leftStr = "shift+tab profile  •  ctrl+o tools  •  /help"
+		leftStr = "ctrl+y copy  •  shift+tab profile  •  ctrl+o tools  •  /help"
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {
 			for _, widget := range ext.StatusWidgets {

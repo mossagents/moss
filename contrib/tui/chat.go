@@ -29,6 +29,7 @@ const (
 )
 
 var writeClipboard = clipboard.WriteAll
+var readClipboard = clipboard.ReadAll
 
 // sessionResultMsg 表示 agent session 结束。
 type sessionResultMsg struct {
@@ -148,6 +149,7 @@ type chatModel struct {
 	mentionPicker         *mentionPickerState
 	mentionPopup          *mentionPopupState // inline @ 文件补全弹窗（替代 overlay）
 	transcriptOverlay     *transcriptOverlayState
+	copyPicker            *copyPickerState
 	overlays              *overlayStack
 	finished              bool   // session 已结束
 	result                string // 最终结果
@@ -1118,11 +1120,8 @@ func (m chatModel) renderStatusSummary() string {
 
 func (m chatModel) latestCopiableContent() string {
 	for i := len(m.messages) - 1; i >= 0; i-- {
-		switch m.messages[i].kind {
-		case msgAssistant, msgSystem, msgToolResult, msgToolError:
-			if text := strings.TrimSpace(m.messages[i].content); text != "" {
-				return text
-			}
+		if isCopyableMessage(m.messages[i]) {
+			return strings.TrimSpace(m.messages[i].content)
 		}
 	}
 	return ""
