@@ -245,7 +245,7 @@ func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 	}
 	k := a.k
 	ctx := a.ctx
-	workspace := a.workspace
+	wsPath := a.workspace
 	a.mu.Unlock()
 	if k == nil {
 		return "", fmt.Errorf("runtime is unavailable")
@@ -255,7 +255,7 @@ func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 		return "", fmt.Errorf("patch file is required")
 	}
 	if !filepath.IsAbs(patchFile) {
-		patchFile = filepath.Join(workspace, patchFile)
+		patchFile = filepath.Join(wsPath, patchFile)
 	}
 	data, err := os.ReadFile(patchFile)
 	if err != nil {
@@ -263,7 +263,7 @@ func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	item, err := product.ApplyChange(reqCtx, product.ChangeRuntimeFromKernel(workspace, k), product.ApplyChangeRequest{
+	item, err := product.ApplyChange(reqCtx, product.ChangeRuntimeFromKernel(wsPath, k), product.ApplyChangeRequest{
 		Patch:   string(data),
 		Summary: strings.TrimSpace(summary),
 		Source:  workspace.PatchSourceUser,

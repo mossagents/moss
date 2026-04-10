@@ -111,7 +111,7 @@ func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Mode
 	return true, nextModel, nextCmd
 }
 
-func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, model tea.Model, cmd tea.Cmd) {
+func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model, cmd tea.Cmd) {
 	ready, ok := msg.(kernelReadyMsg)
 	if !ok {
 		return false, nil, nil
