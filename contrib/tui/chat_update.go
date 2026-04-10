@@ -323,6 +323,18 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		m.textarea.Focus()
 		return m, nil
+
+	case bangResultMsg:
+		m.streaming = false
+		m.runStartedAt = time.Time{}
+		m.cancelRunFn = nil
+		if msg.output != "" {
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: msg.output})
+		} else if msg.err != nil {
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		}
+		m.refreshViewport()
+		return m, nil
 	}
 
 	// 更新子组件

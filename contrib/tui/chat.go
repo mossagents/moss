@@ -351,6 +351,11 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	m.historyCursor = len(m.inputHistory)
 	m.historyDraft = ""
 
+	// Bang 命令：!<shell command>
+	if strings.HasPrefix(text, "!") {
+		return m.handleBangCommand(text)
+	}
+
 	// 斜杠命令
 	if strings.HasPrefix(text, "/") {
 		return m.handleSlashCommand(text)
