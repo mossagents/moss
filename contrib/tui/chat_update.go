@@ -120,9 +120,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			// up/down arrows via alternate scroll mode (CSI ?1007h), so this
 			// handles both the scroll wheel and keyboard arrow keys.
 			if delta == -1 {
+				m.pinnedToBottom = false
 				m.viewport.ScrollUp(3)
 			} else {
 				m.viewport.ScrollDown(3)
+				if m.viewport.AtBottom() {
+					m.pinnedToBottom = true
+				}
 			}
 			m.refreshViewport()
 			return m, nil
@@ -133,11 +137,15 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return m.handleHistoryNavigation(dir)
 		case "pgup":
+			m.pinnedToBottom = false
 			m.viewport.ScrollUp(m.viewport.Height)
 			m.refreshViewport()
 			return m, nil
 		case "pgdown":
 			m.viewport.ScrollDown(m.viewport.Height)
+			if m.viewport.AtBottom() {
+				m.pinnedToBottom = true
+			}
 			m.refreshViewport()
 			return m, nil
 		case "tab":

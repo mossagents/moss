@@ -165,6 +165,11 @@ type chatModel struct {
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
+	// Viewport scroll pin: when true, refreshViewport auto-scrolls to the
+	// bottom. Set to false when the user manually scrolls up; re-pinned when
+	// the user sends a message or scrolls back to the bottom.
+	pinnedToBottom bool
+
 	// 配置显示
 	provider             string
 	providerID           string
@@ -258,6 +263,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		statusLineItems:      statusLineItems,
 		experimentalFeatures: experimentalFeatures,
 		toolCollapsed:        true,
+		pinnedToBottom:       true,
 		approvalRules:        map[string][]userapproval.MemoryRule{},
 		projectApprovalRules: projectApprovalRules,
 		overlays:             newOverlayStack(),
@@ -357,6 +363,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		}
 		ask := m.pendAsk
 		m.pendAsk = nil
+		m.pinnedToBottom = true
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgUser,
 			content: text,
@@ -377,6 +384,7 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
+	m.pinnedToBottom = true
 	displayText, runText, parts, err := userattachments.BuildComposerSubmission(text, m.workspace, m.pendingAttachments)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to build attachments: %v", err)})
@@ -516,7 +524,9 @@ func (m *chatModel) refreshViewport() {
 		content = banner + "\n\n" + content
 	}
 	m.viewport.SetContent(content)
-	m.viewport.GotoBottom()
+	if m.pinnedToBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m chatModel) renderStartupBanner() string {
