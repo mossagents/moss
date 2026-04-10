@@ -88,7 +88,15 @@ func (askOverlayDialog) View(m chatModel, width, _ int) string {
 func (askOverlayDialog) HandleKey(m chatModel, msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
-		return m.handleEsc()
+		// Single Esc cancels the pending ask and the entire run (the agent is
+		// blocked waiting for input, so there's nothing meaningful to resume).
+		if m.cancelRunFn != nil && m.cancelRunFn() {
+			m.streaming = false
+			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Input cancelled."})
+		}
+		m.resetAskFormState()
+		m.refreshViewport()
+		return m, nil
 	default:
 		return m.handleAskKey(msg)
 	}

@@ -1638,6 +1638,58 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 	}
 }
 
+func TestAskFormEscCancelsRunAndClearsForm(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	cancelled := false
+	m.cancelRunFn = func() bool {
+		cancelled = true
+		return true
+	}
+	m.streaming = true
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:   io.InputForm,
+			Prompt: "Choose one",
+			Fields: []io.InputField{
+				{Name: "opt", Type: io.InputFieldSingleSelect, Options: []string{"A", "B"}, Required: true},
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayAsk {
+		t.Fatal("expected ask overlay to be active")
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if !cancelled {
+		t.Fatal("expected cancelRunFn to be called on single Esc in ask dialog")
+	}
+	if updated.pendAsk != nil || updated.askForm != nil {
+		t.Fatal("expected ask form to be cleared after Esc")
+	}
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected overlay to be closed after Esc")
+	}
+	if updated.streaming {
+		t.Fatal("expected streaming to be false after Esc cancel")
+	}
+
+	select {
+	case <-replyCh:
+		t.Fatal("unexpected reply on replyCh — channel should not be sent after Esc cancel")
+	default:
+	}
+}
+
 func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
