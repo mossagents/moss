@@ -226,7 +226,6 @@ func (s *ChatService) SendMessage(content string) error {
 		}
 	}
 
-	_ = sessID
 	return s.sendMessageToSession(sess, content)
 }
 
@@ -592,7 +591,6 @@ func (s *ChatService) DeleteSessions(ids []string) error {
 		return fmt.Errorf("session store is not configured")
 	}
 	var errs []string
-	clearedCurrent := false
 	for _, id := range ids {
 		if err := s.store.Delete(context.Background(), id); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", id, err))
@@ -601,11 +599,9 @@ func (s *ChatService) DeleteSessions(ids []string) error {
 		s.mu.Lock()
 		if s.sess != nil && s.sess.ID == id {
 			s.sess = nil
-			clearedCurrent = true
 		}
 		s.mu.Unlock()
 	}
-	_ = clearedCurrent
 	s.emitDashboard()
 	if len(errs) > 0 {
 		return fmt.Errorf("delete sessions: %s", strings.Join(errs, "; "))
@@ -760,7 +756,7 @@ func (s *ChatService) newScheduler(appDir string) *scheduler.Scheduler {
 	if appDir == "" {
 		return scheduler.New()
 	}
-	jobsPath := filepath.Join(appDir, "schedules", "jkobs.json")
+	jobsPath := filepath.Join(appDir, "schedules", "jobs.json")
 	store, err := scheduler.NewFileJobStore(jobsPath)
 	if err != nil {
 		slog.Warn("scheduler persistence disabled", slog.Any("error", err))
@@ -1321,6 +1317,10 @@ func (s *ChatService) restoreOrCreateStartupSession(ctx context.Context) (*sessi
 		if err != nil {
 			return nil, fmt.Errorf("list sessions: %w", err)
 		}
+		// Restore the most recently created session.
+		sort.Slice(summaries, func(i, j int) bool {
+			return summaries[i].CreatedAt > summaries[j].CreatedAt
+		})
 		for _, summary := range summaries {
 			sess, err := s.store.Load(ctx, summary.ID)
 			if err != nil {

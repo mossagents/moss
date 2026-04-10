@@ -10,7 +10,6 @@ package main
 import (
 	"context"
 	"embed"
-	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -36,11 +35,6 @@ var defaultManagerPromptTemplate string
 var defaultWorkerPromptTemplate string
 
 func main() {
-	if err := appkit.InitializeApp("mosswork", nil); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
 	cfg := parseFlags()
 
 	app := application.New(application.Options{
