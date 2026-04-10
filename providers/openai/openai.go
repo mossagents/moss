@@ -154,7 +154,9 @@ func (c *Client) buildParams(req model.CompletionRequest) (openai.ChatCompletion
 		params.Temperature = openai.Float(req.Config.Temperature)
 	}
 
-	if tools := toOpenAITools(req.Tools); len(tools) > 0 {
+	if tools, err := toOpenAITools(req.Tools); err != nil {
+		return openai.ChatCompletionNewParams{}, err
+	} else if len(tools) > 0 {
 		params.Tools = tools
 	}
 
@@ -169,7 +171,9 @@ func (c *Client) buildParams(req model.CompletionRequest) (openai.ChatCompletion
 			if req.ResponseFormat.JSONSchema != nil {
 				var schema interface{}
 				if req.ResponseFormat.JSONSchema.Schema != nil {
-					_ = json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema)
+					if err := json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema); err != nil {
+						return openai.ChatCompletionNewParams{}, fmt.Errorf("unmarshal json_schema: %w", err)
+					}
 				}
 				params.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
 					OfJSONSchema: &openai.ResponseFormatJSONSchemaParam{
@@ -366,15 +370,17 @@ func toAssistantMessage(msg model.Message, modelName string) (*openai.ChatComple
 
 // ─── 工具映射 ────────────────────────────────────────
 
-func toOpenAITools(tools []model.ToolSpec) []openai.ChatCompletionToolParam {
+func toOpenAITools(tools []model.ToolSpec) ([]openai.ChatCompletionToolParam, error) {
 	if len(tools) == 0 {
-		return nil
+		return nil, nil
 	}
 	result := make([]openai.ChatCompletionToolParam, len(tools))
 	for i, t := range tools {
 		var params shared.FunctionParameters
 		if len(t.InputSchema) > 0 {
-			_ = json.Unmarshal(t.InputSchema, &params)
+			if err := json.Unmarshal(t.InputSchema, &params); err != nil {
+				return nil, fmt.Errorf("unmarshal tool schema for %s: %w", t.Name, err)
+			}
 		}
 		def := shared.FunctionDefinitionParam{
 			Name:       t.Name,
@@ -387,7 +393,7 @@ func toOpenAITools(tools []model.ToolSpec) []openai.ChatCompletionToolParam {
 			Function: def,
 		}
 	}
-	return result
+	return result, nil
 }
 
 // ─── 响应映射 ────────────────────────────────────────

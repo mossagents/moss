@@ -224,8 +224,10 @@ func TestToOpenAITools(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
 	}
-	result := toOpenAITools(tools)
-
+	result, err := toOpenAITools(tools)
+	if err != nil {
+		t.Fatalf("toOpenAITools error: %v", err)
+	}
 	if len(result) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(result))
 	}
@@ -235,7 +237,10 @@ func TestToOpenAITools(t *testing.T) {
 }
 
 func TestToOpenAITools_Empty(t *testing.T) {
-	result := toOpenAITools(nil)
+	result, err := toOpenAITools(nil)
+	if err != nil {
+		t.Fatalf("toOpenAITools error: %v", err)
+	}
 	if result != nil {
 		t.Errorf("expected nil for empty tools, got %v", result)
 	}

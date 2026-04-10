@@ -250,8 +250,10 @@ func TestToAnthropicTools(t *testing.T) {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		},
 	}
-	result := toAnthropicTools(tools)
-
+	result, err := toAnthropicTools(tools)
+	if err != nil {
+		t.Fatalf("toAnthropicTools error: %v", err)
+	}
 	if len(result) != 2 {
 		t.Fatalf("expected 2 tools, got %d", len(result))
 	}

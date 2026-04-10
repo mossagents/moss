@@ -139,7 +139,10 @@ func (c *Client) buildParams(req model.CompletionRequest) (anthropic.MessageNewP
 	if err != nil {
 		return anthropic.MessageNewParams{}, err
 	}
-	tools := toAnthropicTools(req.Tools)
+	tools, err := toAnthropicTools(req.Tools)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
 
 	params := anthropic.MessageNewParams{
 		Model:     model,
@@ -166,7 +169,9 @@ func (c *Client) buildParams(req model.CompletionRequest) (anthropic.MessageNewP
 		case "json_schema":
 			var schema map[string]any
 			if req.ResponseFormat.JSONSchema != nil && len(req.ResponseFormat.JSONSchema.Schema) > 0 {
-				_ = json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema)
+				if err := json.Unmarshal(req.ResponseFormat.JSONSchema.Schema, &schema); err != nil {
+					return anthropic.MessageNewParams{}, fmt.Errorf("unmarshal json_schema: %w", err)
+				}
 			}
 			if len(schema) == 0 {
 				schema = map[string]any{"type": "object"}
@@ -234,7 +239,9 @@ func toAnthropicMessages(msgs []model.Message, modelName string) ([]anthropic.Te
 			}
 			for _, tc := range msg.ToolCalls {
 				var input any
-				_ = json.Unmarshal(tc.Arguments, &input)
+				if err := json.Unmarshal(tc.Arguments, &input); err != nil {
+					return nil, nil, fmt.Errorf("unmarshal tool call arguments for %s: %w", tc.Name, err)
+				}
 				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
 			}
 			if len(blocks) > 0 {
@@ -263,11 +270,13 @@ func toAnthropicMessages(msgs []model.Message, modelName string) ([]anthropic.Te
 	return system, messages, nil
 }
 
-func toAnthropicTools(tools []model.ToolSpec) []anthropic.ToolUnionParam {
+func toAnthropicTools(tools []model.ToolSpec) ([]anthropic.ToolUnionParam, error) {
 	result := make([]anthropic.ToolUnionParam, len(tools))
 	for i, t := range tools {
 		var schema anthropic.ToolInputSchemaParam
-		_ = json.Unmarshal(t.InputSchema, &schema)
+		if err := json.Unmarshal(t.InputSchema, &schema); err != nil {
+			return nil, fmt.Errorf("unmarshal tool schema for %s: %w", t.Name, err)
+		}
 
 		tp := anthropic.ToolParam{
 			Name:        t.Name,
@@ -278,7 +287,7 @@ func toAnthropicTools(tools []model.ToolSpec) []anthropic.ToolUnionParam {
 		}
 		result[i] = anthropic.ToolUnionParam{OfTool: &tp}
 	}
-	return result
+	return result, nil
 }
 
 // ─── 响应映射 ────────────────────────────────────────
