@@ -121,7 +121,7 @@ func (m chatModel) renderStatusPane(width int) string {
 		}
 		leftStr += "Esc Esc cancel"
 	default:
-		leftStr = "ctrl+y copy  •  alt+↑/↓ history  •  shift+tab profile  •  ctrl+o tools  •  /help"
+		leftStr = "ctrl+y copy  •  ↑↓ scroll  •  ctrl+p/n history  •  shift+tab profile  •  /help"
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {
 			for _, widget := range ext.StatusWidgets {

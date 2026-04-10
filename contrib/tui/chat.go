@@ -1037,7 +1037,8 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "ctrl+o", Summary: "Toggle tool output visibility", Section: "Keyboard shortcuts"},
 	{Name: "ctrl+c", Summary: "Interrupt running response; double-press to quit", Section: "Keyboard shortcuts"},
 	{Name: "Esc Esc", Summary: "Cancel a streaming response", Section: "Keyboard shortcuts"},
-	{Name: "alt+↑/↓", Summary: "Navigate command history (previous/next prompt)", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+p / ctrl+n", Summary: "Navigate command history (previous/next prompt)", Section: "Keyboard shortcuts"},
+	{Name: "PgUp / PgDn", Summary: "Scroll the chat viewport by a full page", Section: "Keyboard shortcuts"},
 }
 
 func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string) []string {

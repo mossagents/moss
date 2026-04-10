@@ -126,9 +126,20 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			m.refreshViewport()
 			return m, nil
-		case "alt+up", "alt+down":
-			dir := strings.TrimPrefix(msg.String(), "alt+")
+		case "ctrl+p", "ctrl+n":
+			dir := "up"
+			if msg.String() == "ctrl+n" {
+				dir = "down"
+			}
 			return m.handleHistoryNavigation(dir)
+		case "pgup":
+			m.viewport.ScrollUp(m.viewport.Height)
+			m.refreshViewport()
+			return m, nil
+		case "pgdown":
+			m.viewport.ScrollDown(m.viewport.Height)
+			m.refreshViewport()
+			return m, nil
 		case "tab":
 			if m.applySlashCompletion() {
 				m.adjustInputHeight()

@@ -833,6 +833,10 @@ func Run(cfg Config) error {
 		m.welcome = newWelcomeModel(defaultProviderID, defaultProviderName, cfg.Model, cfg.Workspace, cfg.WelcomeBanner)
 	}
 
+	// Belt: write the alternate scroll escape sequence before entering the
+	// program loop. On Windows Terminal, VT output is always active, so
+	// this takes effect immediately even before Bubble Tea starts.
+	fmt.Print("\x1b[?1007h")
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	bridge.SetProgram(p)
 
@@ -841,9 +845,9 @@ func Run(cfg Config) error {
 }
 
 func (m appModel) Init() tea.Cmd {
-	// Enable alternate scroll mode. By sending this from within a Cmd (rather
-	// than before p.Run()), we ensure Bubble Tea has already enabled VT
-	// processing on Windows before the sequence is written.
+	// Suspenders: re-send alternate scroll mode after Bubble Tea has
+	// initialized VT processing. This catches older ConHost environments
+	// where the pre-Run() write may not be processed.
 	altScrollCmd := func() tea.Msg {
 		os.Stdout.WriteString("\x1b[?1007h")
 		return nil
