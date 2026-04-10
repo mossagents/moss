@@ -240,8 +240,8 @@ func newHelpPickerState(customCommands []product.CustomCommand) *helpPickerState
 	return &helpPickerState{
 		entries: entries,
 		list: &selectionListState{
-			Title:        "Commands",
-			Footer:       "↑↓ choose • Enter insert • Esc close",
+			Title:        "Commands & Shortcuts",
+			Footer:       "↑↓ choose • Enter insert/confirm • Esc close",
 			EmptyMessage: "No commands available.",
 			Message:      "Press Enter to place the selected command into the composer.",
 			Items:        items,
@@ -268,8 +268,11 @@ func (m chatModel) handleHelpPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	case "enter":
 		idx := m.helpPicker.list.SelectedIndex()
 		if idx >= 0 {
-			m.textarea.SetValue(m.helpPicker.entries[idx].command + " ")
-			m.refreshSlashHints()
+			cmd := m.helpPicker.entries[idx].command
+			if strings.HasPrefix(cmd, "/") {
+				m.textarea.SetValue(cmd + " ")
+				m.refreshSlashHints()
+			}
 			return m.closeHelpOverlay(), nil
 		}
 	}
@@ -285,7 +288,12 @@ func (m chatModel) renderHelpPicker(width int) string {
 		return ""
 	}
 	if idx := m.helpPicker.list.SelectedIndex(); idx >= 0 && idx < len(m.helpPicker.entries) {
-		m.helpPicker.list.Message = m.helpPicker.entries[idx].detail + "\n\nPress Enter to insert the command into the composer."
+		entry := m.helpPicker.entries[idx]
+		if strings.HasPrefix(entry.command, "/") {
+			m.helpPicker.list.Message = entry.detail + "\n\nPress Enter to insert the command into the composer."
+		} else {
+			m.helpPicker.list.Message = entry.detail
+		}
 	}
 	return renderSelectionListDialog(width, m.helpPicker.list)
 }

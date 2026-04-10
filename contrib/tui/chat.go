@@ -1030,6 +1030,14 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Tools and integrations"},
 	{Name: "/exit", Summary: "Exit mosscode", Section: "Threads and core"},
 	{Name: "/quit", Summary: "Exit mosscode", Section: "Threads and core", HiddenInNav: true},
+	// Keyboard shortcuts (info-only; Enter closes the overlay without inserting)
+	{Name: "ctrl+y", Summary: "Open copy picker to select and copy a message", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+v", Summary: "Paste clipboard content at cursor in the composer", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+t", Summary: "Toggle the full transcript overlay", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+o", Summary: "Toggle tool output visibility", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+c", Summary: "Interrupt running response; double-press to quit", Section: "Keyboard shortcuts"},
+	{Name: "Esc Esc", Summary: "Cancel a streaming response", Section: "Keyboard shortcuts"},
+	{Name: "shift+drag", Summary: "Native terminal text selection (bypasses TUI mouse capture)", Section: "Keyboard shortcuts"},
 }
 
 func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string) []string {
