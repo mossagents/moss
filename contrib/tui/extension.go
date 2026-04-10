@@ -1,3 +1,45 @@
+// Package tui provides the Bubble Tea–based terminal chat interface for MOSS
+// applications. It renders a multi-pane TUI (header, body, composer, footer)
+// and drives the full conversation lifecycle: streaming LLM responses, slash
+// commands, tool-approval overlays, session management, and more.
+//
+// # Extension System
+//
+// The Extension type lets third-party code add capabilities to the TUI without
+// forking or modifying the core. Pass one or more extensions in Config.Extensions
+// when calling Run():
+//
+//	mosstui.Run(mosstui.Config{
+//	    ...
+//	    Extensions: []*mosstui.Extension{myExt},
+//	})
+//
+// An Extension bundles five independent customization points:
+//
+//   - SlashCommands – register /command handlers evaluated before workspace
+//     custom commands and the generic /<skill> fallback, but after all
+//     built-in slash commands (built-ins always take precedence).
+//
+//   - KeyBindings – handle key presses before the built-in dispatch loop.
+//     Core keys (ctrl+c, esc, enter, tab, up/down, shift+tab, shift+enter,
+//     alt+enter, ctrl+t, ctrl+o, ctrl+x) cannot be overridden.
+//
+//   - StatusWidgets – contribute text segments appended to the left side of
+//     the footer status bar. Only rendered in idle (non-streaming) state.
+//
+//   - HeaderMetaWidgets – contribute text segments appended to the header
+//     meta line (the row that shows agent posture / context mode).
+//
+//   - Overlays – register factory functions keyed by a string ID. Each call
+//     to OpenOverlayCmd(id) invokes the factory, producing a fresh
+//     CustomOverlay instance. Only one custom overlay may be active at a
+//     time; opening a new one replaces any existing one.
+//
+// The Extension is validated at startup (installExtensions): duplicate slash
+// command names or reserved key bindings cause an error before the TUI opens.
+//
+// See _examples/snippets/main.go for a self-contained example that exercises
+// all five extension points.
 package tui
 
 import tea "github.com/charmbracelet/bubbletea"
