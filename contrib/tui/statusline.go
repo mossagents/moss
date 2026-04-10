@@ -213,7 +213,16 @@ func (m chatModel) composerMetaSummary() (string, string) {
 	case strings.TrimSpace(m.textarea.Value()) != "":
 		return "Draft", "Enter send  •  Shift+Enter newline"
 	default:
-		return "Ready", "/ commands  •  @ files"
+		// Ready state: show posture context + last-run token count + input hints.
+		var parts []string
+		if posture := m.compactPostureSummary(); posture != "" {
+			parts = append(parts, posture)
+		}
+		if m.lastTrace != nil && m.lastTrace.Trace.TotalTokens > 0 {
+			parts = append(parts, formatTokenCount(m.lastTrace.Trace.TotalTokens)+" tokens")
+		}
+		parts = append(parts, "/ commands  •  @ files")
+		return "Ready", strings.Join(parts, "  •  ")
 	}
 }
 

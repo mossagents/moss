@@ -22,7 +22,11 @@ func (m chatModel) generateLayout() chatUILayout {
 		MainWidth:    m.mainWidth(),
 	}
 
-	layout.MetaHeight = 1
+	if m.hasHeaderMetaContent() {
+		layout.MetaHeight = 1
+	} else {
+		layout.MetaHeight = 0
+	}
 	layout.BodyHeight = layout.Height - layout.HeaderHeight - layout.StatusHeight
 	if layout.BodyHeight < layout.MetaHeight+3 {
 		layout.BodyHeight = layout.MetaHeight + 3

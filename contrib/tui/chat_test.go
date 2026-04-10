@@ -2089,39 +2089,47 @@ func TestVisibleInputHeightDoesNotChangeWithSlashHints(t *testing.T) {
 	}
 }
 
-func TestRenderHeaderMetaLineIsCompact(t *testing.T) {
+func TestRenderHeaderMetaLineIsEmptyWithoutExtensions(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.streaming = false
-	m.currentSessionID = "sess_1"
 	m.profile = "planning"
 	m.trust = "trusted"
 	m.approvalMode = "confirm"
 	m.fastMode = true
 
+	// Posture info (profile/trust/approval) moved to composer meta line;
+	// header meta line is empty when no extensions provide HeaderMetaWidgets.
 	line := m.renderHeaderMetaLine()
-	if !strings.Contains(line, "planning · trusted · confirm · fast") {
-		t.Fatalf("unexpected compact header meta line: %q", line)
-	}
-	// State and thread have moved out of the header meta bar.
-	if strings.Contains(line, "Idle") || strings.Contains(line, "thread") {
-		t.Fatalf("header meta should not contain state or thread: %q", line)
-	}
-	if strings.Contains(line, "Provider:") || strings.Contains(line, "Personality:") {
-		t.Fatalf("expected compact header without verbose labels, got %q", line)
+	if strings.Contains(line, "planning") || strings.Contains(line, "trusted") {
+		t.Fatalf("posture should not appear in header meta without extensions: %q", line)
 	}
 }
 
-func TestRenderHeaderMetaLineIncludesDefaultProfile(t *testing.T) {
+func TestComposerMetaLineShowsPostureInReadyState(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.streaming = false
-	m.currentSessionID = "sess_1"
+	m.profile = "planning"
+	m.trust = "trusted"
+	m.approvalMode = "confirm"
+	m.fastMode = true
+
+	line := m.renderComposerMetaLine(120)
+	if !strings.Contains(line, "planning · trusted · confirm · fast") {
+		t.Fatalf("expected posture in composer meta ready state, got: %q", line)
+	}
+	// State and thread should not appear here.
+	if strings.Contains(line, "Idle") || strings.Contains(line, "thread") {
+		t.Fatalf("composer meta should not contain state or thread: %q", line)
+	}
+}
+
+func TestComposerMetaLineDefaultProfile(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
 	m.profile = ""
 	m.trust = "trusted"
 	m.approvalMode = "confirm"
 
-	line := m.renderHeaderMetaLine()
+	line := m.renderComposerMetaLine(120)
 	if !strings.Contains(line, "default · trusted · confirm") {
-		t.Fatalf("expected default profile in header, got %q", line)
+		t.Fatalf("expected default profile in composer meta, got %q", line)
 	}
 }
 

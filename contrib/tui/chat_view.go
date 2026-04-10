@@ -8,11 +8,8 @@ import (
 )
 
 func (m chatModel) renderHeaderMetaLine() string {
-	var parts []string
-	if posture := m.compactPostureSummary(); posture != "" {
-		parts = append(parts, posture)
-	}
 	ctx := m.tuiContext()
+	var parts []string
 	for _, ext := range m.extensions {
 		for _, widget := range ext.HeaderMetaWidgets {
 			if seg := strings.TrimSpace(widget(ctx)); seg != "" {
@@ -24,6 +21,18 @@ func (m chatModel) renderHeaderMetaLine() string {
 		return shellMetaBarStyle.Render("")
 	}
 	return shellMetaBarStyle.Render(shellHeaderDetailStyle.Render(strings.Join(parts, "  •  ")))
+}
+
+func (m chatModel) hasHeaderMetaContent() bool {
+	ctx := m.tuiContext()
+	for _, ext := range m.extensions {
+		for _, widget := range ext.HeaderMetaWidgets {
+			if strings.TrimSpace(widget(ctx)) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (m chatModel) renderComposerMetaLine(width int) string {
@@ -118,4 +127,15 @@ func shortThreadID(id string) string {
 		return id
 	}
 	return id[:8] + "…"
+}
+
+func formatTokenCount(n int) string {
+	switch {
+	case n >= 1_000_000:
+		return fmt.Sprintf("%.1fM", float64(n)/1_000_000)
+	case n >= 1_000:
+		return fmt.Sprintf("%.1fk", float64(n)/1_000)
+	default:
+		return fmt.Sprintf("%d", n)
+	}
 }

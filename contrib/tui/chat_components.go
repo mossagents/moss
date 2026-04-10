@@ -9,8 +9,9 @@ import (
 )
 
 func (m chatModel) renderMainPane(layout chatUILayout) string {
-	sections := []string{
-		m.renderHeaderMetaLine(),
+	var sections []string
+	if layout.MetaHeight > 0 {
+		sections = append(sections, m.renderHeaderMetaLine())
 	}
 	sections = append(sections, lipgloss.NewStyle().Height(layout.ViewportHeight).Render(m.viewport.View()))
 	return lipgloss.NewStyle().
