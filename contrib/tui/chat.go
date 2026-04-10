@@ -200,6 +200,8 @@ type chatModel struct {
 	extensions       []*Extension
 	customOverlayImpl CustomOverlay
 
+	mousePassthrough bool // true while in selection mode (mouse capture disabled)
+
 	now          func() time.Time
 	lastEscAt    time.Time
 	lastCtrlC    time.Time
@@ -1037,7 +1039,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "ctrl+o", Summary: "Toggle tool output visibility", Section: "Keyboard shortcuts"},
 	{Name: "ctrl+c", Summary: "Interrupt running response; double-press to quit", Section: "Keyboard shortcuts"},
 	{Name: "Esc Esc", Summary: "Cancel a streaming response", Section: "Keyboard shortcuts"},
-	{Name: "shift+drag", Summary: "Native terminal text selection (bypasses TUI mouse capture)", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+s", Summary: "Toggle selection mode: disable mouse capture so you can drag-select text", Section: "Keyboard shortcuts"},
 }
 
 func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string) []string {

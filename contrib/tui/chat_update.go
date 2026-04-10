@@ -79,6 +79,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.copyPicker = newCopyPickerState(m.messages)
 			m.openCopyOverlay()
 			return m, nil
+		case "ctrl+s":
+			m.mousePassthrough = !m.mousePassthrough
+			if m.mousePassthrough {
+				return m, func() tea.Msg { return tea.DisableMouse() }
+			}
+			return m, func() tea.Msg { return tea.EnableMouseCellMotion() }
 		case "ctrl+v":
 			text, err := readClipboard()
 			if err == nil && strings.TrimSpace(text) != "" {

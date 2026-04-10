@@ -22,7 +22,7 @@
 //
 //   - KeyBindings – handle key presses before the built-in dispatch loop.
 //     Core keys (ctrl+c, esc, enter, tab, up/down, shift+tab, shift+enter,
-//     alt+enter, ctrl+t, ctrl+o, ctrl+x) cannot be overridden.
+//     alt+enter, ctrl+t, ctrl+o, ctrl+x, ctrl+y, ctrl+s) cannot be overridden.
 //
 //   - StatusWidgets – contribute text segments appended to the left side of
 //     the footer status bar. Only rendered in idle (non-streaming) state.
@@ -118,6 +118,7 @@ var coreKeys = map[string]bool{
 	"ctrl+t":      true,
 	"ctrl+o":      true,
 	"ctrl+x":      true,
+	"ctrl+s":      true,
 	"ctrl+y":      true,
 	"up":          true,
 	"down":        true,
