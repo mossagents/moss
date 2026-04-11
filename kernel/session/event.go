@@ -54,6 +54,12 @@ type EventActions struct {
 	// StateDelta contains session state changes to apply.
 	StateDelta map[string]any `json:"state_delta,omitempty"`
 
+	// MaterializedIn identifies the materialization domain where the event's
+	// shared effects were last committed. This allows the same event to be
+	// committed once per outward session domain (e.g. child branch -> parent ->
+	// root) without relying on a single global boolean.
+	MaterializedIn string `json:"materialized_in,omitempty"`
+
 	// TransferToAgent requests transferring execution to another agent.
 	TransferToAgent string `json:"transfer_to_agent,omitempty"`
 

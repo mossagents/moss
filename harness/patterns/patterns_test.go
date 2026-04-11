@@ -3,6 +3,9 @@ package patterns
 import (
 	"fmt"
 	"iter"
+	"sort"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,11 +21,15 @@ type stubAgent struct {
 	events []*session.Event
 	err    error
 	delay  time.Duration
+	onRun  func(*kernel.InvocationContext)
 }
 
 func (s *stubAgent) Name() string { return s.name }
-func (s *stubAgent) Run(_ *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+func (s *stubAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		if s.onRun != nil {
+			s.onRun(ctx)
+		}
 		if s.delay > 0 {
 			time.Sleep(s.delay)
 		}
@@ -35,6 +42,16 @@ func (s *stubAgent) Run(_ *kernel.InvocationContext) iter.Seq2[*session.Event, e
 			yield(nil, s.err)
 		}
 	}
+}
+
+type scriptedAgent struct {
+	name string
+	run  func(*kernel.InvocationContext) iter.Seq2[*session.Event, error]
+}
+
+func (s *scriptedAgent) Name() string { return s.name }
+func (s *scriptedAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+	return s.run(ctx)
 }
 
 func makeEvent(author, text string) *session.Event {
@@ -52,13 +69,39 @@ func makeEvent(author, text string) *session.Event {
 }
 
 func testCtx() *kernel.InvocationContext {
-	return kernel.NewInvocationContext(nil, kernel.InvocationContextParams{
-		Branch: "test",
-		Session: &session.Session{
-			ID:    "test-session",
-			State: make(map[string]any),
-		},
+	return testCtxWithSession(&session.Session{
+		ID:    "test-session",
+		State: make(map[string]any),
 	})
+}
+
+func testCtxWithSession(sess *session.Session) *kernel.InvocationContext {
+	return kernel.NewInvocationContext(nil, kernel.InvocationContextParams{
+		Branch:  "test",
+		Session: sess,
+	})
+}
+
+func sessionMessageTexts(sess *session.Session) []string {
+	msgs := sess.CopyMessages()
+	out := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		out = append(out, strings.TrimSpace(model.ContentPartsToPlainText(msg.ContentParts)))
+	}
+	return out
+}
+
+func supervisorDecisionFromSession(t *testing.T, sess *session.Session, key string) SupervisorDecision {
+	t.Helper()
+	actual, ok := sess.GetState(key)
+	if !ok {
+		t.Fatalf("expected supervisor decision state %q to be recorded", key)
+	}
+	decision, ok := actual.(SupervisorDecision)
+	if !ok {
+		t.Fatalf("decision type = %T, want SupervisorDecision", actual)
+	}
+	return decision
 }
 
 // --- Sequential ---
@@ -110,6 +153,52 @@ func TestSequentialAgent_SubAgents(t *testing.T) {
 	seq := &SequentialAgent{AgentName: "seq", Agents: []kernel.Agent{a1, a2}}
 	if len(seq.SubAgents()) != 2 {
 		t.Fatalf("expected 2 sub-agents, got %d", len(seq.SubAgents()))
+	}
+}
+
+func TestSequentialAgent_MaterializesEventsIntoParentSession(t *testing.T) {
+	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	first := makeEvent("a1", "first")
+	first.Actions.StateDelta = map[string]any{"phase": "first"}
+	a1 := &stubAgent{name: "a1", events: []*session.Event{first}}
+	var (
+		seenState any
+		seenText  string
+	)
+	a2 := &scriptedAgent{
+		name: "a2",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				seenState, _ = ctx.Session().GetState("phase")
+				msgs := ctx.Session().CopyMessages()
+				if len(msgs) > 0 {
+					seenText = model.ContentPartsToPlainText(msgs[len(msgs)-1].ContentParts)
+				}
+				yield(makeEvent("a2", "second"), nil)
+			}
+		},
+	}
+
+	seq := &SequentialAgent{
+		AgentName: "seq",
+		Agents:    []kernel.Agent{a1, a2},
+	}
+
+	for _, err := range seq.Run(testCtxWithSession(parent)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	if seenState != "first" {
+		t.Fatalf("second agent saw phase = %v, want first", seenState)
+	}
+	if seenText != "first" {
+		t.Fatalf("second agent saw last message = %q, want first", seenText)
+	}
+	texts := sessionMessageTexts(parent)
+	if len(texts) != 2 || texts[0] != "first" || texts[1] != "second" {
+		t.Fatalf("parent session messages = %v, want [first second]", texts)
 	}
 }
 
@@ -265,11 +354,47 @@ func TestLoopAgent_SubAgents(t *testing.T) {
 	}
 }
 
+func TestLoopAgent_MaterializesIterationEvents(t *testing.T) {
+	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	var seenCounts []int
+	worker := &scriptedAgent{
+		name: "worker",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				seenCounts = append(seenCounts, len(ctx.Session().CopyMessages()))
+				yield(makeEvent("worker", fmt.Sprintf("tick-%d", len(seenCounts))), nil)
+			}
+		},
+	}
+	loop := &LoopAgent{
+		AgentName:     "loop",
+		Agent:         worker,
+		MaxIterations: 3,
+	}
+
+	for _, err := range loop.Run(testCtxWithSession(parent)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	if got := fmt.Sprint(seenCounts); got != "[0 1 2]" {
+		t.Fatalf("iteration sessions saw message counts %v, want [0 1 2]", seenCounts)
+	}
+	texts := sessionMessageTexts(parent)
+	if len(texts) != 3 || texts[0] != "tick-1" || texts[1] != "tick-2" || texts[2] != "tick-3" {
+		t.Fatalf("parent session messages = %v, want [tick-1 tick-2 tick-3]", texts)
+	}
+}
+
 // --- Supervisor ---
 
 func TestSupervisorAgent_RoutesToWorker(t *testing.T) {
-	w1 := &stubAgent{name: "w1", events: []*session.Event{makeEvent("w1", "result")}}
+	result := makeEvent("w1", "result")
+	result.Actions.StateDelta = map[string]any{"handled_by": "w1"}
+	w1 := &stubAgent{name: "w1", events: []*session.Event{result}}
 	w2 := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "other")}}
+	parent := &session.Session{ID: "parent", State: map[string]any{}}
 
 	sup := &SupervisorAgent{
 		AgentName: "sup",
@@ -280,7 +405,7 @@ func TestSupervisorAgent_RoutesToWorker(t *testing.T) {
 	}
 
 	var authors []string
-	for event, err := range sup.Run(testCtx()) {
+	for event, err := range sup.Run(testCtxWithSession(parent)) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -289,6 +414,13 @@ func TestSupervisorAgent_RoutesToWorker(t *testing.T) {
 
 	if len(authors) != 1 || authors[0] != "w1" {
 		t.Fatalf("expected [w1], got %v", authors)
+	}
+	if handledBy, _ := parent.GetState("handled_by"); handledBy != "w1" {
+		t.Fatalf("parent state handled_by = %v, want w1", handledBy)
+	}
+	texts := sessionMessageTexts(parent)
+	if len(texts) != 1 || texts[0] != "result" {
+		t.Fatalf("parent session messages = %v, want [result]", texts)
 	}
 }
 
@@ -312,6 +444,319 @@ func TestSupervisorAgent_NoMatchReturnsEmpty(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expected 0 events when no worker selected, got %d", count)
+	}
+}
+
+func TestSupervisorAgent_FailoverRecordsDecisionState(t *testing.T) {
+	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	w1 := &stubAgent{name: "w1", err: fmt.Errorf("boom")}
+	w2 := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "ok")}}
+
+	sup := &SupervisorAgent{
+		AgentName:       "sup",
+		Workers:         []kernel.Agent{w1, w2},
+		FailoverOnError: true,
+		Router: func(_ *kernel.InvocationContext, workers []kernel.Agent) kernel.Agent {
+			if len(workers) == 0 {
+				return nil
+			}
+			return workers[0]
+		},
+	}
+
+	var authors []string
+	for event, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event != nil {
+			authors = append(authors, event.Author)
+		}
+	}
+
+	if len(authors) != 1 || authors[0] != "w2" {
+		t.Fatalf("expected fallback to w2, got %v", authors)
+	}
+	actual, ok := sess.GetState("patterns.supervisor.sup")
+	if !ok {
+		t.Fatal("expected supervisor decision state to be recorded")
+	}
+	decision, ok := actual.(SupervisorDecision)
+	if !ok {
+		t.Fatalf("decision type = %T, want SupervisorDecision", actual)
+	}
+	if decision.Status != SupervisorStatusCompleted {
+		t.Fatalf("status = %q, want %q", decision.Status, SupervisorStatusCompleted)
+	}
+	if decision.SelectedWorker != "w2" {
+		t.Fatalf("selected worker = %q, want %q", decision.SelectedWorker, "w2")
+	}
+	if decision.AttemptCount != 2 {
+		t.Fatalf("attempt count = %d, want 2", decision.AttemptCount)
+	}
+	if got := strings.Join(decision.AttemptedWorkers, ","); got != "w1,w2" {
+		t.Fatalf("attempted workers = %v, want [w1 w2]", decision.AttemptedWorkers)
+	}
+	if got := strings.Join(decision.FailedWorkers, ","); got != "w1" {
+		t.Fatalf("failed workers = %v, want [w1]", decision.FailedWorkers)
+	}
+	if decision.LastError != "boom" {
+		t.Fatalf("last error = %q, want %q", decision.LastError, "boom")
+	}
+}
+
+func TestSupervisorAgent_TimeoutEscalatesWhenConfigured(t *testing.T) {
+	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	timeoutWorker := &scriptedAgent{
+		name: "w1",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				<-ctx.Done()
+				yield(nil, ctx.Err())
+			}
+		},
+	}
+	sup := &SupervisorAgent{
+		AgentName:         "sup",
+		Workers:           []kernel.Agent{timeoutWorker},
+		WorkerTimeout:     10 * time.Millisecond,
+		EscalateOnTimeout: true,
+		Router: func(_ *kernel.InvocationContext, workers []kernel.Agent) kernel.Agent {
+			if len(workers) == 0 {
+				return nil
+			}
+			return workers[0]
+		},
+	}
+
+	var events []*session.Event
+	for event, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		events = append(events, event)
+	}
+
+	if len(events) != 1 || events[0] == nil || !events[0].Actions.Escalate {
+		t.Fatalf("expected one escalation event, got %#v", events)
+	}
+	decision := supervisorDecisionFromSession(t, sess, "patterns.supervisor.sup")
+	if decision.Status != SupervisorStatusTimedOut {
+		t.Fatalf("status = %q, want %q", decision.Status, SupervisorStatusTimedOut)
+	}
+	if !decision.Escalated || decision.EscalationReason != "timeout" {
+		t.Fatalf("expected timeout escalation, got escalated=%v reason=%q", decision.Escalated, decision.EscalationReason)
+	}
+	if got := strings.Join(decision.TimedOutWorkers, ","); got != "w1" {
+		t.Fatalf("timed out workers = %v, want [w1]", decision.TimedOutWorkers)
+	}
+}
+
+func TestSupervisorAgent_TimeoutFailoverTracksHealth(t *testing.T) {
+	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	timeoutWorker := &scriptedAgent{
+		name: "w1",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				<-ctx.Done()
+				yield(nil, ctx.Err())
+			}
+		},
+	}
+	okWorker := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "ok")}}
+	sup := &SupervisorAgent{
+		AgentName:       "sup",
+		Workers:         []kernel.Agent{timeoutWorker, okWorker},
+		WorkerTimeout:   10 * time.Millisecond,
+		FailoverOnError: true,
+		Router: func(_ *kernel.InvocationContext, workers []kernel.Agent) kernel.Agent {
+			if len(workers) == 0 {
+				return nil
+			}
+			return workers[0]
+		},
+	}
+
+	var authors []string
+	for event, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event != nil {
+			authors = append(authors, event.Author)
+		}
+	}
+
+	if got := strings.Join(authors, ","); got != "w2" {
+		t.Fatalf("authors = %v, want [w2]", authors)
+	}
+	decision := supervisorDecisionFromSession(t, sess, "patterns.supervisor.sup")
+	if decision.Status != SupervisorStatusCompleted {
+		t.Fatalf("status = %q, want %q", decision.Status, SupervisorStatusCompleted)
+	}
+	if got := strings.Join(decision.TimedOutWorkers, ","); got != "w1" {
+		t.Fatalf("timed out workers = %v, want [w1]", decision.TimedOutWorkers)
+	}
+	timeoutHealth := decision.WorkerHealth["w1"]
+	if timeoutHealth.TimeoutCount != 1 || timeoutHealth.LastStatus != SupervisorStatusTimedOut {
+		t.Fatalf("timeout worker health = %+v, want timeout_count=1 last_status=timed_out", timeoutHealth)
+	}
+	okHealth := decision.WorkerHealth["w2"]
+	if okHealth.SuccessCount != 1 || okHealth.LastStatus != SupervisorStatusCompleted {
+		t.Fatalf("ok worker health = %+v, want success_count=1 last_status=completed", okHealth)
+	}
+}
+
+func TestSupervisorAgent_SkipsSuppressedWorkerAcrossInvocations(t *testing.T) {
+	now := time.Date(2026, 4, 11, 13, 30, 0, 0, time.UTC)
+	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	failing := &stubAgent{name: "w1", err: fmt.Errorf("boom")}
+	okWorker := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "ok")}}
+	sup := &SupervisorAgent{
+		AgentName:              "sup",
+		Workers:                []kernel.Agent{failing, okWorker},
+		FailoverOnError:        true,
+		MaxConsecutiveFailures: 1,
+		HealthCooldown:         time.Hour,
+		Router: func(_ *kernel.InvocationContext, workers []kernel.Agent) kernel.Agent {
+			if len(workers) == 0 {
+				return nil
+			}
+			return workers[0]
+		},
+		clock: func() time.Time { return now },
+	}
+
+	for _, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error on first run: %v", err)
+		}
+	}
+	first := supervisorDecisionFromSession(t, sess, "patterns.supervisor.sup")
+	if first.WorkerHealth["w1"].SuppressedUntil != now.Add(time.Hour) {
+		t.Fatalf("suppressed_until = %v, want %v", first.WorkerHealth["w1"].SuppressedUntil, now.Add(time.Hour))
+	}
+
+	var authors []string
+	for event, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error on second run: %v", err)
+		}
+		if event != nil {
+			authors = append(authors, event.Author)
+		}
+	}
+
+	if got := strings.Join(authors, ","); got != "w2" {
+		t.Fatalf("authors = %v, want [w2]", authors)
+	}
+	second := supervisorDecisionFromSession(t, sess, "patterns.supervisor.sup")
+	if got := strings.Join(second.AttemptedWorkers, ","); got != "w2" {
+		t.Fatalf("attempted workers = %v, want [w2]", second.AttemptedWorkers)
+	}
+}
+
+func TestSupervisorAgent_FiltersWorkersByBudget(t *testing.T) {
+	sess := &session.Session{
+		ID:    "s1",
+		State: map[string]any{},
+		Budget: session.Budget{
+			MaxTokens:  100,
+			MaxSteps:   10,
+			UsedTokens: 95,
+			UsedSteps:  8,
+		},
+	}
+	expensive := &stubAgent{name: "expensive", events: []*session.Event{makeEvent("expensive", "too-expensive")}}
+	cheap := &stubAgent{name: "cheap", events: []*session.Event{makeEvent("cheap", "ok")}}
+	sup := &SupervisorAgent{
+		AgentName: "sup",
+		Workers:   []kernel.Agent{expensive, cheap},
+		Router: func(_ *kernel.InvocationContext, workers []kernel.Agent) kernel.Agent {
+			if len(workers) == 0 {
+				return nil
+			}
+			return workers[0]
+		},
+		WorkerBudgets: map[string]SupervisorWorkerBudget{
+			"expensive": {MinRemainingTokens: 10, MinRemainingSteps: 3},
+			"cheap":     {MinRemainingTokens: 1, MinRemainingSteps: 1},
+		},
+	}
+
+	var authors []string
+	for event, err := range sup.Run(testCtxWithSession(sess)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if event != nil {
+			authors = append(authors, event.Author)
+		}
+	}
+
+	if got := strings.Join(authors, ","); got != "cheap" {
+		t.Fatalf("authors = %v, want [cheap]", authors)
+	}
+	decision := supervisorDecisionFromSession(t, sess, "patterns.supervisor.sup")
+	if decision.SelectedWorker != "cheap" {
+		t.Fatalf("selected worker = %q, want cheap", decision.SelectedWorker)
+	}
+	if got := strings.Join(decision.BudgetFilteredWorkers, ","); got != "expensive" {
+		t.Fatalf("budget filtered workers = %v, want [expensive]", decision.BudgetFilteredWorkers)
+	}
+}
+
+func TestParallelAgent_IsolatesChildSessionsAndMaterializesMergedEvents(t *testing.T) {
+	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	var (
+		mu       sync.Mutex
+		branches []*session.Session
+	)
+	a1 := &stubAgent{
+		name: "a1",
+		onRun: func(ctx *kernel.InvocationContext) {
+			ctx.Session().SetState("worker", "a1")
+			ctx.Session().AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("a1")}})
+			mu.Lock()
+			branches = append(branches, ctx.Session())
+			mu.Unlock()
+		},
+		events: []*session.Event{makeEvent("a1", "r1")},
+	}
+	a2 := &stubAgent{
+		name: "a2",
+		onRun: func(ctx *kernel.InvocationContext) {
+			ctx.Session().SetState("worker", "a2")
+			ctx.Session().AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("a2")}})
+			mu.Lock()
+			branches = append(branches, ctx.Session())
+			mu.Unlock()
+		},
+		events: []*session.Event{makeEvent("a2", "r2")},
+	}
+
+	par := &ParallelAgent{AgentName: "par", Agents: []kernel.Agent{a1, a2}}
+	for _, err := range par.Run(testCtxWithSession(parent)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	if len(branches) != 2 {
+		t.Fatalf("expected 2 child sessions, got %d", len(branches))
+	}
+	if branches[0] == parent || branches[1] == parent {
+		t.Fatal("expected child sessions to be isolated from parent session")
+	}
+	if branches[0] == branches[1] {
+		t.Fatal("expected parallel workers to receive distinct session clones")
+	}
+	if _, ok := parent.GetState("worker"); ok {
+		t.Fatal("expected parent session state to remain untouched")
+	}
+	texts := sessionMessageTexts(parent)
+	if len(texts) != 2 || texts[0] != "r1" || texts[1] != "r2" {
+		t.Fatalf("expected merged events to materialize into parent session, got %v", texts)
 	}
 }
 
@@ -419,6 +864,130 @@ func TestResearchAgent_MultiIteration(t *testing.T) {
 	// 2 iterations × (query + search + synth = 3) = 6
 	if count != 6 {
 		t.Fatalf("expected 6 events (2 iterations), got %d", count)
+	}
+}
+
+func TestResearchAgent_PropagatesQueriesAndFindings(t *testing.T) {
+	queryAgent := &stubAgent{
+		name:   "query",
+		events: []*session.Event{makeEvent("query", "query1\nquery2\nquery3")},
+	}
+
+	var (
+		mu           sync.Mutex
+		searchInputs []string
+		synthInput   string
+	)
+	searchAgent := &scriptedAgent{
+		name: "search",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				query := ""
+				if ctx.UserContent() != nil {
+					query = strings.TrimSpace(model.ContentPartsToPlainText(ctx.UserContent().ContentParts))
+				}
+				mu.Lock()
+				searchInputs = append(searchInputs, query)
+				mu.Unlock()
+				yield(makeEvent("search", "finding for "+query), nil)
+			}
+		},
+	}
+	synthAgent := &scriptedAgent{
+		name: "synth",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				if ctx.UserContent() != nil {
+					synthInput = model.ContentPartsToPlainText(ctx.UserContent().ContentParts)
+				}
+				yield(makeEvent("synth", "answer"), nil)
+			}
+		},
+	}
+
+	research := NewResearchAgent(ResearchConfig{
+		Name:                "research",
+		QueryAgent:          queryAgent,
+		SearchAgent:         searchAgent,
+		SynthesisAgent:      synthAgent,
+		MaxIterations:       1,
+		MaxParallelSearches: 2,
+	})
+
+	for _, err := range research.Run(testCtx()) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	sort.Strings(searchInputs)
+	if got := strings.Join(searchInputs, ","); got != "query1,query2,query3" {
+		t.Fatalf("search inputs = %v, want [query1 query2 query3]", searchInputs)
+	}
+	for _, fragment := range []string{"query1", "query2", "query3", "finding for query1", "finding for query2", "finding for query3"} {
+		if !strings.Contains(synthInput, fragment) {
+			t.Fatalf("expected synthesis input to contain %q, got %q", fragment, synthInput)
+		}
+	}
+}
+
+func TestResearchAgent_MaterializesEventsIntoParentSession(t *testing.T) {
+	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	queryAgent := &stubAgent{
+		name:   "query",
+		events: []*session.Event{makeEvent("query", "query1\nquery2")},
+	}
+	searchAgent := &scriptedAgent{
+		name: "search",
+		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				query := strings.TrimSpace(model.ContentPartsToPlainText(ctx.UserContent().ContentParts))
+				event := makeEvent("search", "finding for "+query)
+				event.Actions.StateDelta = map[string]any{"search." + query: "done"}
+				yield(event, nil)
+			}
+		},
+	}
+	synthAgent := &scriptedAgent{
+		name: "synth",
+		run: func(_ *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				event := makeEvent("synth", "answer")
+				event.Actions.StateDelta = map[string]any{"research.answer": "ready"}
+				yield(event, nil)
+			}
+		},
+	}
+
+	research := NewResearchAgent(ResearchConfig{
+		Name:                "research",
+		QueryAgent:          queryAgent,
+		SearchAgent:         searchAgent,
+		SynthesisAgent:      synthAgent,
+		MaxIterations:       1,
+		MaxParallelSearches: 2,
+	})
+
+	for _, err := range research.Run(testCtxWithSession(parent)) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	texts := sessionMessageTexts(parent)
+	if len(texts) != 4 || texts[0] != "query1\nquery2" || texts[1] != "finding for query1" || texts[2] != "finding for query2" || texts[3] != "answer" {
+		t.Fatalf("parent session messages = %v, want [query1\\nquery2 finding for query1 finding for query2 answer]", texts)
+	}
+	expectedState := map[string]string{
+		"search.query1":   "done",
+		"search.query2":   "done",
+		"research.answer": "ready",
+	}
+	for key, want := range expectedState {
+		got, ok := parent.GetState(key)
+		if !ok || got != want {
+			t.Fatalf("parent state %q = %v, want %q", key, got, want)
+		}
 	}
 }
 

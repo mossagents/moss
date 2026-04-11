@@ -2,6 +2,9 @@ package kernel
 
 import (
 	"context"
+	"fmt"
+	"iter"
+	"strings"
 
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -38,6 +41,21 @@ type InvocationContextParams struct {
 	UserContent  *model.Message
 	IO           io.UserIO
 	Observer     observe.Observer
+}
+
+// ChildRunConfig controls how a custom agent or orchestration primitive invokes
+// a child agent.
+type ChildRunConfig struct {
+	// Branch overrides the derived branch path for the child invocation.
+	Branch string
+	// UserContent replaces the inherited user content for the child invocation.
+	UserContent *model.Message
+	// PrepareSession mutates the branch-local child session before the agent runs.
+	PrepareSession func(*session.Session)
+	// DisableMaterialization skips committing yielded child events back into the
+	// parent session. This is primarily useful for parallel fan-out branches that
+	// aggregate results before committing them.
+	DisableMaterialization bool
 }
 
 // NewInvocationContext creates a new InvocationContext from the given parameters.
@@ -105,6 +123,20 @@ func (c *InvocationContext) WithBranch(branch string) *InvocationContext {
 	return &cp
 }
 
+// WithSession returns a new InvocationContext with a different session.
+func (c *InvocationContext) WithSession(sess *session.Session) *InvocationContext {
+	cp := *c
+	cp.session = sess
+	return &cp
+}
+
+// WithUserContent returns a new InvocationContext with different input content.
+func (c *InvocationContext) WithUserContent(msg *model.Message) *InvocationContext {
+	cp := *c
+	cp.userContent = msg
+	return &cp
+}
+
 // WithContext returns a new InvocationContext with a different base context.
 func (c *InvocationContext) WithContext(ctx context.Context) *InvocationContext {
 	cp := *c
@@ -117,4 +149,62 @@ func (c *InvocationContext) WithIO(userIO io.UserIO) *InvocationContext {
 	cp := *c
 	cp.io = userIO
 	return &cp
+}
+
+// RunChild executes a child agent on a branch-local session clone. By default,
+// yielded non-partial events are materialized back into the parent session
+// before they are yielded to the caller. Events retain structured
+// materialization-domain markers, so nested child runs no longer need to reset
+// a global boolean to allow outer domains to commit them.
+func (c *InvocationContext) RunChild(agent Agent, cfg ChildRunConfig) iter.Seq2[*session.Event, error] {
+	return func(yield func(*session.Event, error) bool) {
+		if c == nil {
+			yield(nil, fmt.Errorf("invocation context is nil"))
+			return
+		}
+		if agent == nil {
+			yield(nil, fmt.Errorf("child agent is nil"))
+			return
+		}
+
+		childCtx := c.WithAgent(agent).WithBranch(childBranch(c.Branch(), agent.Name(), cfg.Branch))
+		if cfg.UserContent != nil {
+			childCtx = childCtx.WithUserContent(cfg.UserContent)
+		}
+		if childSession := c.Session().Clone(); childSession != nil {
+			if cfg.PrepareSession != nil {
+				cfg.PrepareSession(childSession)
+			}
+			if cfg.UserContent != nil {
+				childSession.AppendMessage(session.CloneMessage(*cfg.UserContent))
+			}
+			childCtx = childCtx.WithSession(childSession)
+		}
+
+		for event, err := range agent.Run(childCtx) {
+			if err != nil {
+				yield(nil, err)
+				return
+			}
+			if !cfg.DisableMaterialization {
+				session.MaterializeEvent(c.Session(), event)
+			}
+			if !yield(event, nil) {
+				return
+			}
+		}
+	}
+}
+
+func childBranch(parent, agentName, override string) string {
+	if branch := strings.TrimSpace(override); branch != "" {
+		return branch
+	}
+	if parent = strings.TrimSpace(parent); parent == "" {
+		return agentName
+	}
+	if agentName = strings.TrimSpace(agentName); agentName == "" {
+		return parent
+	}
+	return parent + "." + agentName
 }

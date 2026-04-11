@@ -1,4 +1,4 @@
-﻿package kernel
+package kernel
 
 import (
 	"context"
@@ -249,10 +249,14 @@ func (k *Kernel) propagateObserver(observer observe.Observer) {
 	if observer == nil {
 		observer = observe.NoOpObserver{}
 	}
-	if aware, ok := k.snapshots.(interface{ SetObserver(observe.ExecutionObserver) }); ok {
+	if aware, ok := k.snapshots.(interface {
+		SetObserver(observe.ExecutionObserver)
+	}); ok {
 		aware.SetObserver(observer)
 	}
-	if aware, ok := k.checkpoints.(interface{ SetObserver(observe.ExecutionObserver) }); ok {
+	if aware, ok := k.checkpoints.(interface {
+		SetObserver(observe.ExecutionObserver)
+	}); ok {
 		aware.SetObserver(observer)
 	}
 }
@@ -384,10 +388,10 @@ func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 // This is the bridge between the Kernel's resource injection model and the new Agent interface.
 func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 	return NewLLMAgent(LLMAgentConfig{
-		Name:  name,
-		LLM:   k.llm,
-		Tools: k.tools,
-		Hooks: k.chain,
+		Name:   name,
+		LLM:    k.llm,
+		Tools:  k.tools,
+		Hooks:  k.chain,
 		Config: k.loopCfg,
 		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
 			k.emitSessionLifecycle(ctx, event)
@@ -433,14 +437,6 @@ func (k *Kernel) RunAgent(ctx context.Context, sess *session.Session, agent Agen
 			IO:       k.io,
 			Observer: k.observerOrNoOp(),
 		})
-
-		for event, err := range agent.Run(invCtx) {
-			if !yield(event, err) {
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
+		streamAgentEvents(agent, invCtx, yield)
 	}
 }

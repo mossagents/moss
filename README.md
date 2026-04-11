@@ -10,10 +10,10 @@ For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 
 - A three-layer runtime for building Go-based AI agents:
   - **Kernel** — core runtime primitives (Agent interface, Runner, Session, Event, Tool, Plugin).
-  - **Harness** — composable orchestration layer (Feature/Backend/Middleware) that wires capabilities onto a Kernel.
+  - **Harness** — composable orchestration layer (Feature/Backend/Harness) that wires capabilities onto a Kernel.
   - **Applications** — end-user products (`apps\mosscode`, `apps\mosswork`) and reference examples.
 - An `appkit` assembly layer for building complete kernels from `AppFlags`.
-- A `presets\deepagent` preset for coding/research/writer-style products.
+- An `appkit.BuildDeepAgent(...)` preset path for coding/research/writer-style products.
 - Core applications in `apps\`, with `apps\mosscode` as the primary interactive app surface and the packaged `moss` CLI entrypoint targeting `mosscode`.
 - Reference examples in `examples\` for smaller integrations and product patterns.
 
@@ -97,7 +97,7 @@ func main() {
 }
 ```
 
-For feature-first assembly, use `appkit.BuildKernelWithFeatures(...)`. For a fuller product preset, use `presets\deepagent.BuildKernel(...)`.
+For feature-first assembly, use `appkit.BuildKernelWithFeatures(...)`. For a fuller product preset, use `appkit.BuildDeepAgent(...)`.
 
 ### 3. Use the Harness layer
 
@@ -157,15 +157,16 @@ func main() {
 }
 ```
 
+For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, harness.NewLocalBackendFactory(workspace))`; that is the path used by `appkit.BuildKernel(...)` and `appkit.BuildDeepAgent(...)`.
+
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
 | `kernel\` | Core runtime primitives (Agent, Runner, Session, Event, Tool, Plugin) |
 | `harness\` | Composable orchestration layer (Feature, Backend, Harness) |
-| `appkit\` | Recommended builders and extension composition |
+| `appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
 | `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
-| `presets\deepagent\` | Product preset for deep-agent style apps |
 | `skill\` / `mcp\` / `agent\` | Capability providers, MCP bridge, delegated agents |
 | `bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
 | `knowledge\`, `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |

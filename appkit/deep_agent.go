@@ -2,24 +2,15 @@ package appkit
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
-	"time"
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/session"
-	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 // DeepAgentConfig describes the configuration for a deep-agent style
@@ -150,166 +141,18 @@ func DeepAgentDefaults() DeepAgentConfig {
 	}
 }
 
-// BuildDeepAgent builds a deep-agent style kernel with the given configuration.
+// BuildDeepAgent builds a deep-agent style kernel by composing declarative
+// preset packs and delegating final assembly to BuildKernelWithFeatures.
 func BuildDeepAgent(ctx context.Context, flags *AppFlags, uio io.UserIO, cfg *DeepAgentConfig) (*kernel.Kernel, error) {
 	effective := DeepAgentDefaults()
 	if cfg != nil {
 		effective = cfg.ApplyOver(effective)
 	}
-
-	var features []harness.Feature
-	features = append(features, effective.AdditionalFeatures...)
-
-	var stateCatalog *runtime.StateCatalog
-	if appDir := appconfig.AppDir(); appDir != "" {
-		catalog, err := runtime.NewStateCatalog(filepath.Join(appDir, "state"), filepath.Join(appDir, "state", "events"), runtime.StateCatalogEnabledFromEnv())
-		if err != nil {
-			return nil, fmt.Errorf("state catalog: %w", err)
-		}
-		stateCatalog = catalog
-		features = append(features, harness.KernelOptions(runtime.WithStateCatalog(stateCatalog)))
-	}
-
-	if deepAgentValueOrDefault(effective.EnableSessionStore, true) {
-		storeDir := effective.SessionStoreDir
-		if storeDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
-				storeDir = filepath.Join(appDir, "sessions")
-			} else {
-				storeDir = filepath.Join(flags.Workspace, "."+effective.AppName, "sessions")
-			}
-		}
-		rawStore, err := session.NewFileStore(storeDir)
-		if err != nil {
-			return nil, fmt.Errorf("session store: %w", err)
-		}
-		var store session.SessionStore = rawStore
-		store = runtime.WrapSessionStore(store, stateCatalog)
-		features = append(features, WithSessionStore(store))
-		if deepAgentValueOrDefault(effective.EnableContextOffload, true) {
-			features = append(features, WithContextOffload(store))
-			features = append(features, WithContextManagement(store))
-		}
-	}
-	if deepAgentValueOrDefault(effective.EnableCheckpointStore, true) {
-		checkpointDir := effective.CheckpointStoreDir
-		if checkpointDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
-				checkpointDir = filepath.Join(appDir, "checkpoints")
-			} else {
-				checkpointDir = filepath.Join(flags.Workspace, "."+effective.AppName, "checkpoints")
-			}
-		}
-		store, err := checkpoint.NewFileCheckpointStore(checkpointDir)
-		if err != nil {
-			return nil, fmt.Errorf("checkpoint store: %w", err)
-		}
-		checkpointStore := runtime.WrapCheckpointStore(store, stateCatalog)
-		features = append(features, harness.Checkpointing(checkpointStore))
-	}
-	if deepAgentValueOrDefault(effective.EnableTaskRuntime, true) {
-		taskDir := effective.TaskRuntimeDir
-		if taskDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
-				taskDir = filepath.Join(appDir, "tasks")
-			} else {
-				taskDir = filepath.Join(flags.Workspace, "."+effective.AppName, "tasks")
-			}
-		}
-		taskRuntime, err := taskrt.NewFileTaskRuntime(taskDir)
-		if err != nil {
-			return nil, fmt.Errorf("task runtime: %w", err)
-		}
-		features = append(features, harness.TaskDelegation(runtime.WrapTaskRuntime(taskRuntime, stateCatalog)))
-	}
-
-	if deepAgentValueOrDefault(effective.EnablePersistentMemories, true) {
-		memDir := effective.MemoryDir
-		if memDir == "" {
-			if appDir := appconfig.AppDir(); appDir != "" {
-				memDir = filepath.Join(appDir, "memories")
-			} else {
-				memDir = filepath.Join(flags.Workspace, "."+effective.AppName, "memories")
-			}
-		}
-		features = append(features, WithPersistentMemories(memDir))
-	}
-	isolationEnabled := deepAgentValueOrDefault(effective.EnableWorkspaceIsolation, true)
-	isolationRoot := effective.IsolationRootDir
-	if isolationRoot == "" {
-		if appDir := appconfig.AppDir(); appDir != "" {
-			isolationRoot = filepath.Join(appDir, "workspaces")
-		} else {
-			isolationRoot = filepath.Join(flags.Workspace, "."+effective.AppName, "workspaces")
-		}
-	}
-	if isolationEnabled {
-		if err := os.MkdirAll(isolationRoot, 0o755); err != nil {
-			return nil, fmt.Errorf("workspace isolation root: %w", err)
-		}
-	}
-	executionSurface := runtime.NewExecutionSurface(flags.Workspace, isolationRoot, isolationEnabled)
-	if err := executionSurface.Error(runtime.CapabilityExecutionIsolation); err != nil {
-		return nil, fmt.Errorf("workspace isolation: %w", err)
-	}
-	features = append(features, harness.KernelOptions(executionSurface.KernelOptions()...))
-	if strings.EqualFold(strings.TrimSpace(flags.Profile), "planning") {
-		features = append(features, WithPlanning())
-	}
-
-	if deepAgentValueOrDefault(effective.EnableBootstrapContext, true) {
-		features = append(features, WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
-	}
-
-	if deepAgentValueOrDefault(effective.EnableDefaultLLMRetry, true) {
-		llmRetryCfg := effective.LLMRetryConfig
-		if llmRetryCfg == nil {
-			llmRetryCfg = &retry.Config{
-				MaxRetries:   2,
-				InitialDelay: 300 * time.Millisecond,
-				MaxDelay:     2 * time.Second,
-				Multiplier:   2.0,
-			}
-		}
-		features = append(features, harness.KernelOptions(kernel.WithLLMRetry(*llmRetryCfg)))
-	}
-	if effective.LLMBreakerConfig != nil {
-		features = append(features, harness.KernelOptions(kernel.WithLLMBreaker(*effective.LLMBreakerConfig)))
-	}
-
-	features = append(features, RuntimeSetup(flags.Workspace, flags.Trust, effective.DefaultSetupOptions...))
-
-	k, err := BuildKernelWithFeatures(ctx, flags, uio, features...)
+	features, err := buildDeepAgentFeatures(flags, effective)
 	if err != nil {
 		return nil, err
 	}
-	runtime.ReportExecutionSurface(ctx, runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil), runtime.ExecutionSurfaceFromKernel(k, flags.Workspace, isolationRoot, isolationEnabled))
-
-	if deepAgentValueOrDefault(effective.EnsureGeneralPurpose, true) {
-		if err := ensureGeneralPurposeAgent(k, flags, effective); err != nil {
-			return nil, err
-		}
-	}
-	k.InstallPlugin(kernel.Plugin{
-		Name:      "patch-tool-calls",
-		BeforeLLM: builtins.PatchToolCalls(),
-	})
-
-	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && deepAgentValueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
-		k.WithPolicy(
-			builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
-			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
-			builtins.RequireApprovalFor(
-				"write_file", "edit_file", "run_command", "spawn_agent", "task",
-				"cancel_task", "update_task",
-				"write_memory", "delete_memory", "offload_context",
-				"acquire_workspace", "release_workspace",
-			),
-			builtins.DefaultAllow(),
-		)
-	}
-
-	return k, nil
+	return BuildKernelWithFeatures(ctx, flags, uio, features...)
 }
 
 func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentConfig) error {

@@ -9,9 +9,9 @@ import (
 )
 
 // SequentialAgent executes a list of sub-agents one after another in a
-// deterministic order. The output of each agent is appended to the shared
-// session before the next agent runs, so later agents can build on earlier
-// results.
+// deterministic order. Each child invocation receives a branch-local clone of
+// the current session, and yielded child events are materialized back into the
+// parent session in order so later agents can observe committed results.
 //
 // If any sub-agent returns an error, the sequence aborts and the error
 // propagates to the caller.
@@ -25,8 +25,8 @@ var _ kernel.Agent = (*SequentialAgent)(nil)
 var _ kernel.AgentWithDescription = (*SequentialAgent)(nil)
 var _ kernel.AgentWithSubAgents = (*SequentialAgent)(nil)
 
-func (s *SequentialAgent) Name() string        { return s.AgentName }
-func (s *SequentialAgent) Description() string { return s.Desc }
+func (s *SequentialAgent) Name() string              { return s.AgentName }
+func (s *SequentialAgent) Description() string       { return s.Desc }
 func (s *SequentialAgent) SubAgents() []kernel.Agent { return s.Agents }
 
 func (s *SequentialAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -35,14 +35,14 @@ func (s *SequentialAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.
 			if ctx.Context != nil && ctx.Err() != nil || ctx.Ended() {
 				return
 			}
-			childCtx := ctx.WithAgent(agent).
-				WithBranch(fmt.Sprintf("%s.%s[%d]", ctx.Branch(), agent.Name(), i))
-
-			for event, err := range agent.Run(childCtx) {
-				if !yield(event, err) {
+			for event, err := range ctx.RunChild(agent, kernel.ChildRunConfig{
+				Branch: fmt.Sprintf("%s.%s[%d]", ctx.Branch(), agent.Name(), i),
+			}) {
+				if err != nil {
+					yield(nil, err)
 					return
 				}
-				if err != nil {
+				if !yield(event, nil) {
 					return
 				}
 				if event != nil && (event.Actions.TransferToAgent != "" || event.Actions.Escalate) {

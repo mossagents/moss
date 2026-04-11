@@ -11,19 +11,15 @@ Agent 是最小执行单元，定义为 Go 接口：
 ```go
 type Agent interface {
     Name() string
-    Run(ctx *RunContext) iter.Seq2[*Event, error]
+    Run(ctx *InvocationContext) iter.Seq2[*Event, error]
 }
 ```
 
-内置 Agent 组合器（`kernel\agents\`）：
-- `SequentialAgent`：顺序执行子 Agent
-- `ParallelAgent`：并行执行子 Agent
-- `LoopAgent`：循环执行（条件退出）
-- `CustomAgent`：自定义回调逻辑
+`CustomAgent` 是把用户自定义回调包装成 Agent 的轻量入口；当 custom agent 需要调用子 Agent 时，推荐通过 `InvocationContext.RunChild(...)` 获取统一的 branch-local child-run + event materialization 语义，而不是直接手写 session clone / event commit 逻辑。
 
 ### Runner
 
-Runner 管理 Agent 的执行：Session 路由、Plugin 生命周期、Event 流转发。`Kernel.Run()` 内部使用 Runner。
+Runner 管理 Agent 的执行：Session 路由、Plugin 生命周期、Event 流转发，以及 root 级 generic event 的 session materialization。对已经由底层执行器写入 session 的事件（例如 `AgentLoop` 产出的 LLM / tool event），Runner 会根据 `event.Actions.MaterializedIn` 与当前 session domain 是否一致来避免重复提交；如果事件继续向更外层 domain 传播，仍可再次提交。`Kernel.RunAgent(...)` 复用了同一套语义。
 
 ### Event
 

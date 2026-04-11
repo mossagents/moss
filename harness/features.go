@@ -49,6 +49,10 @@ func InstallerFeature(name string, installer Installer) Feature {
 func BootstrapContext(workspace, appName, trust string) Feature {
 	return FeatureFunc{
 		FeatureName: "bootstrap-context",
+		MetadataValue: FeatureMetadata{
+			Key:   "bootstrap-context",
+			Phase: FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			bctx := bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust)
 			bridge := kernel.Extensions(h.Kernel())
@@ -64,6 +68,10 @@ func BootstrapContext(workspace, appName, trust string) Feature {
 func SessionPersistence(store session.SessionStore) Feature {
 	return FeatureFunc{
 		FeatureName: "session-persistence",
+		MetadataValue: FeatureMetadata{
+			Key:   "session-store",
+			Phase: FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			if store == nil {
 				return fmt.Errorf("session store must not be nil")
@@ -79,6 +87,10 @@ func SessionPersistence(store session.SessionStore) Feature {
 func Checkpointing(store checkpoint.CheckpointStore) Feature {
 	return FeatureFunc{
 		FeatureName: "checkpointing",
+		MetadataValue: FeatureMetadata{
+			Key:   "checkpoint-store",
+			Phase: FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			if store == nil {
 				return fmt.Errorf("checkpoint store must not be nil")
@@ -94,6 +106,10 @@ func Checkpointing(store checkpoint.CheckpointStore) Feature {
 func TaskDelegation(rt taskrt.TaskRuntime) Feature {
 	return FeatureFunc{
 		FeatureName: "task-delegation",
+		MetadataValue: FeatureMetadata{
+			Key:   "task-runtime",
+			Phase: FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			if rt == nil {
 				return fmt.Errorf("task runtime must not be nil")
@@ -109,6 +125,10 @@ func TaskDelegation(rt taskrt.TaskRuntime) Feature {
 func LLMResilience(retryCfg *retry.Config, breakerCfg *retry.BreakerConfig) Feature {
 	return FeatureFunc{
 		FeatureName: "llm-resilience",
+		MetadataValue: FeatureMetadata{
+			Key:   "llm-resilience",
+			Phase: FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			var opts []kernel.Option
 			if retryCfg != nil {
@@ -128,6 +148,10 @@ func LLMResilience(retryCfg *retry.Config, breakerCfg *retry.BreakerConfig) Feat
 func ExecutionPolicy(rules ...builtins.PolicyRule) Feature {
 	return FeatureFunc{
 		FeatureName: "execution-policy",
+		MetadataValue: FeatureMetadata{
+			Key:   "execution-policy",
+			Phase: FeaturePhasePostRuntime,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			h.Kernel().WithPolicy(rules...)
 			return nil
@@ -140,6 +164,10 @@ func ExecutionPolicy(rules ...builtins.PolicyRule) Feature {
 func PatchToolCalls() Feature {
 	return FeatureFunc{
 		FeatureName: "patch-tool-calls",
+		MetadataValue: FeatureMetadata{
+			Key:   "patch-tool-calls",
+			Phase: FeaturePhasePostRuntime,
+		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			h.Kernel().InstallPlugin(kernel.Plugin{
 				Name:      "patch-tool-calls",

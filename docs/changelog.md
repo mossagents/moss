@@ -8,14 +8,19 @@
 
 新增 `harness/patterns/` 包，提供可组合的 Agent 编排原语：
 
-- **SequentialAgent** — 顺序执行多个子 Agent，共享 Session 状态
+- **SequentialAgent** — 顺序执行多个子 Agent，按事件顺序物化结果到父 session
 - **ParallelAgent** — 并发执行多个子 Agent，支持自定义聚合函数
 - **LoopAgent** — 迭代执行，支持最大迭代次数和退出条件
 - **SupervisorAgent** — 动态路由，支持 RoundRobin 和 FirstMatch 策略
 - **ResearchAgent** — 研究型编排模式（Query → Parallel Search → Synthesis 循环）
-- **DeepAgentConfig / BuildDeepAgent** — deep-agent 预设迁移至 patterns 包
-
-`harness/patterns` 包已简化为 `harness/patterns` 的薄包装层。
+- `harness/patterns` 保持为轻量 workflow primitive 层；deep-agent 产品预设装配入口位于 `appkit.BuildDeepAgent(...)`
+- `SupervisorAgent` 现在会记录路由决策状态，并支持在 worker 失败时 failover 到剩余 worker
+- `ParallelAgent` 现在会为每个并发分支复制 child session，避免共享 session 竞态，并只把聚合后的事件提交回父 session
+- `SequentialAgent`、`LoopAgent`、`SupervisorAgent` 与 `ResearchAgent` 现在统一采用 event-to-session materialization 语义：child session 内部副作用不会直接泄漏，只有 yielded `event.Content` / `event.Actions.StateDelta` 会提交回父 session
+- `ResearchAgent` 现在会把 query 显式传入 SearchAgent，并把聚合 findings 显式传入 SynthesisAgent
+- 这套 contract 已进一步上提到 kernel 层：`InvocationContext.RunChild(...)` 为 custom agent 提供统一的 branch-local child-run 语义，`Runner.Run(...)` / `Kernel.RunAgent(...)` 会对 root 级 generic event 做同样的 materialization
+- `session.EventActions` 的单布尔 `Materialized` 已进一步结构化为 `MaterializedIn` domain；同一 event 现在可以按 child -> parent -> root 逐级提交，但在同一 session domain 内绝不重复提交
+- `SupervisorAgent` 进一步强化为真正的策略控制面：支持 per-worker timeout、worker health 记账与冷却、基于剩余 budget 的 worker 过滤，以及在 no-match / budget-exhausted / timeout / failure 场景下可选地向父级 `Escalate`
 
 ### appkit → harness Feature 迁移
 
@@ -23,6 +28,9 @@
 - 新增 `BuildKernelWithFeatures` 作为主要 API
 - `BuildKernelWithExtensions` 标记为 deprecated
 - `RuntimeSetup` Feature 替代了旧的 `WithRuntimeOptions`
+- Harness Feature 新增 phase / dependency 元数据，`Harness.Install()` 会在安装前做受控排序与依赖校验
+- `BuildDeepAgent` 中的 `patch-tool-calls` 与默认 restricted policy 已收回到 Feature 安装链
+- `BuildDeepAgent` 已进一步拆成声明式 preset packs：state catalog、session/context、checkpoint、task runtime、persistent memories、execution surface、runtime setup、post-runtime governance
 
 ### Release gates 与健康面
 

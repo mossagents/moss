@@ -1,6 +1,6 @@
 # 快速开始
 
-这份仓库当前是 **library-first runtime + apps 核心应用 + examples 参考示例** 的结构：最直接的体验方式是运行 `apps\mosscode`，要嵌入到自己的 Go 应用里则使用 `appkit` 或 `presets\deepagent`。
+这份仓库当前是 **library-first runtime + apps 核心应用 + examples 参考示例** 的结构：最直接的体验方式是运行 `apps\mosscode`，要嵌入到自己的 Go 应用里则使用 `appkit`（包括 `appkit.BuildDeepAgent(...)` 这条完整预设路径）。
 
 ## 先决条件
 
@@ -160,6 +160,10 @@ k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 )
 ```
 
+官方 Feature 会按 phase / dependency 元数据做受控安装；未标注元数据的自定义 Feature 则保持 configure 阶段语义，并在同阶段内按传入顺序安装。
+
+`appkit` 的默认 builder 现在也会通过 managed backend factory 注入本地执行后端；如果你显式提供了 `Workspace/Executor`，builder 会尊重这些端口，而不是再额外覆盖一层默认 local backend。
+
 ### Deep Agent 预设：`appkit`
 
 如果你需要更完整的“coding / research / writer”式产品能力，直接使用：
@@ -178,6 +182,8 @@ k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 - 通用委派代理 `general-purpose`
 - planning、task、mailbox 等协作能力
 
+这条路径现在由声明式 preset packs 组合而成：`BuildDeepAgent(...)` 负责按 `DeepAgentConfig` 选择 pack，再交给 `BuildKernelWithFeatures(...)` 做受控安装。
+
 ## 4. 你应该选哪条路径
 
 | 场景 | 推荐入口 |
@@ -185,7 +191,7 @@ k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 | 想马上体验当前仓库能力 | `apps\mosscode` |
 | 想构建最小可运行应用 | `appkit.BuildKernel` |
 | 想按官方 Feature 方式组合能力 | `appkit.BuildKernelWithFeatures` |
-| 想做 deep-agent 风格应用 | `presets\deepagent.BuildKernel` |
+| 想做 deep-agent 风格应用 | `appkit.BuildDeepAgent` |
 
 ## 5. 应用与示例一览
 

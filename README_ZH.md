@@ -10,10 +10,10 @@ Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当
 
 - 三层运行时架构，用于构建 Go AI Agent：
   - **Kernel** — 核心运行时原语（Agent 接口、Runner、Session、Event、Tool、Plugin）。
-  - **Harness** — 可组合编排层（Feature/Backend/Middleware），将能力装配到 Kernel。
+  - **Harness** — 可组合编排层（Feature/Backend/Harness），将能力装配到 Kernel。
   - **Applications** — 面向终端用户的产品（`apps\mosscode`、`apps\mosswork`）及参考示例。
 - `appkit`：按 `AppFlags` 构建完整 Kernel 的推荐入口。
-- `presets\deepagent`：适合 coding / research / writer 产品面的预设。
+- `appkit.BuildDeepAgent(...)`：适合 coding / research / writer 产品面的完整预设路径。
 - `apps\`：当前仓库里的核心应用入口，其中 `apps\mosscode` 是主交互产品面，打包后的 `moss` CLI 入口指向 `mosscode`。
 - `examples\`：普通参考示例目录。
 
@@ -97,7 +97,7 @@ func main() {
 }
 ```
 
-如果要按 Feature 优先方式装配，使用 `appkit.BuildKernelWithFeatures(...)`；如果要做更完整的 deep-agent 产品，使用 `presets\deepagent.BuildKernel(...)`。
+如果要按 Feature 优先方式装配，使用 `appkit.BuildKernelWithFeatures(...)`；如果要做更完整的 deep-agent 产品，使用 `appkit.BuildDeepAgent(...)`。
 
 ### 3. 使用 Harness 层
 
@@ -157,15 +157,16 @@ func main() {
 }
 ```
 
+如果希望由 harness 托管 backend 的构建与生命周期，优先使用 `harness.NewWithBackendFactory(ctx, k, harness.NewLocalBackendFactory(workspace))`；`appkit.BuildKernel(...)` 和 `appkit.BuildDeepAgent(...)` 现在默认走这条路径。
+
 ## 仓库结构
 
 | 路径 | 作用 |
 |---|---|
 | `kernel\` | 核心运行时原语（Agent、Runner、Session、Event、Tool、Plugin） |
 | `harness\` | 可组合编排层（Feature、Backend、Harness） |
-| `appkit\` | 推荐构建器与扩展组合 API |
+| `appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
 | `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
-| `presets\deepagent\` | deep-agent 风格产品预设 |
 | `skill\` / `mcp\` / `agent\` | 能力 provider、MCP 桥接、委派代理 |
 | `bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
 | `knowledge\`、`scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |

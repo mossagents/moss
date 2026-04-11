@@ -39,6 +39,10 @@ type ToolLifecycleRegistration struct {
 func RuntimeSetup(workspaceDir, trust string, opts ...runtime.Option) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "runtime-setup",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "runtime-setup",
+			Phase: harness.FeaturePhaseRuntime,
+		},
 		InstallFunc: func(ctx context.Context, h *harness.Harness) error {
 			allOpts := make([]runtime.Option, 0, len(opts)+1)
 			allOpts = append(allOpts, runtime.WithWorkspaceTrust(trust))
@@ -55,13 +59,27 @@ func WithKernelOptions(opts ...kernel.Option) Extension {
 
 // AfterBuild wraps a post-construction installer function into a Feature.
 func AfterBuild(installer harness.Installer) Extension {
-	return harness.InstallerFeature("after-build", installer)
+	return harness.FeatureFunc{
+		FeatureName: "after-build",
+		MetadataValue: harness.FeatureMetadata{
+			Phase: harness.FeaturePhasePostRuntime,
+		},
+		InstallFunc: func(ctx context.Context, h *harness.Harness) error {
+			if installer == nil {
+				return nil
+			}
+			return installer(ctx, h.Kernel())
+		},
+	}
 }
 
 // WithSessionLifecycleHooks returns a Feature that registers Session lifecycle hooks.
 func WithSessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "session-lifecycle-hooks",
+		MetadataValue: harness.FeatureMetadata{
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			bridge := kernel.Extensions(h.Kernel())
 			for _, hook := range hooks {
@@ -79,6 +97,9 @@ func WithSessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Extension 
 func WithToolLifecycleHooks(hooks ...ToolLifecycleRegistration) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "tool-lifecycle-hooks",
+		MetadataValue: harness.FeatureMetadata{
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			bridge := kernel.Extensions(h.Kernel())
 			for _, hook := range hooks {
@@ -96,6 +117,10 @@ func WithToolLifecycleHooks(hooks ...ToolLifecycleRegistration) Extension {
 func WithSessionStore(store session.SessionStore) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "session-store",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "session-store",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			h.Kernel().Apply(runtime.WithKernelSessionStore(store))
 			return nil
@@ -107,6 +132,10 @@ func WithSessionStore(store session.SessionStore) Extension {
 func WithPlanning() Extension {
 	return harness.FeatureFunc{
 		FeatureName: "planning",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "planning",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			h.Kernel().Apply(runtime.WithPlanningDefaults())
 			return nil
@@ -118,6 +147,10 @@ func WithPlanning() Extension {
 func WithContextOffload(store session.SessionStore) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "context-offload",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "context-offload",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			h.Kernel().Apply(runtime.WithOffloadSessionStore(store))
 			return runtime.RegisterOffloadTools(h.Kernel().ToolRegistry(), store, h.Kernel().SessionManager())
@@ -130,6 +163,10 @@ func WithContextOffload(store session.SessionStore) Extension {
 func WithContextManagement(store session.SessionStore, opts ...runtime.ContextOption) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "context-management",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "context-management",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			kopts := []kernel.Option{runtime.WithContextSessionStore(store)}
 			if len(opts) > 0 {
@@ -143,24 +180,58 @@ func WithContextManagement(store session.SessionStore, opts ...runtime.ContextOp
 
 // WithBootstrapContext returns a Feature that installs a pre-loaded bootstrap context.
 func WithBootstrapContext(ctx *bootstrap.Context) Extension {
-	return harness.KernelOptions(runtime.WithBootstrapContext(ctx))
+	return harness.FeatureFunc{
+		FeatureName: "bootstrap-context",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "bootstrap-context",
+			Phase: harness.FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			h.Kernel().Apply(runtime.WithBootstrapContext(ctx))
+			return nil
+		},
+	}
 }
 
 // WithLoadedBootstrapContext returns a Feature that loads bootstrap context from workspace.
 func WithLoadedBootstrapContext(workspace, appName string) Extension {
-	return harness.KernelOptions(runtime.WithLoadedBootstrapContext(workspace, appName))
+	return harness.FeatureFunc{
+		FeatureName: "bootstrap-context",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "bootstrap-context",
+			Phase: harness.FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			h.Kernel().Apply(runtime.WithLoadedBootstrapContext(workspace, appName))
+			return nil
+		},
+	}
 }
 
 // WithLoadedBootstrapContextWithTrust returns a Feature that loads bootstrap context
 // with the given trust level.
 func WithLoadedBootstrapContextWithTrust(workspace, appName, trust string) Extension {
-	return harness.KernelOptions(runtime.WithLoadedBootstrapContextWithTrust(workspace, appName, trust))
+	return harness.FeatureFunc{
+		FeatureName: "bootstrap-context",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "bootstrap-context",
+			Phase: harness.FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			h.Kernel().Apply(runtime.WithLoadedBootstrapContextWithTrust(workspace, appName, trust))
+			return nil
+		},
+	}
 }
 
 // WithScheduling returns a Feature that installs a scheduler and registers scheduler tools.
 func WithScheduling(s *scheduler.Scheduler) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "scheduling",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "scheduling",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			h.Kernel().Apply(runtime.WithScheduler(s))
 			return runtime.RegisterSchedulerTools(h.Kernel(), s)
@@ -172,6 +243,10 @@ func WithScheduling(s *scheduler.Scheduler) Extension {
 func WithKnowledge(store knowledge.Store, embedder model.Embedder) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "knowledge",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "knowledge",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			return runtime.RegisterKnowledgeTools(h.Kernel(), store, embedder)
 		},
@@ -182,6 +257,10 @@ func WithKnowledge(store knowledge.Store, embedder model.Embedder) Extension {
 func WithPersistentMemories(memoriesDir string) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "persistent-memories",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "persistent-memories",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			if memoriesDir == "" {
 				return fmt.Errorf("memories dir is empty")
@@ -214,6 +293,10 @@ func WithPersistentMemories(memoriesDir string) Extension {
 func WithPersistentMemoriesSQLite(memoriesDir string, sqlitePath string) Extension {
 	return harness.FeatureFunc{
 		FeatureName: "persistent-memories-sqlite",
+		MetadataValue: harness.FeatureMetadata{
+			Key:   "persistent-memories",
+			Phase: harness.FeaturePhaseConfigure,
+		},
 		InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			if strings.TrimSpace(memoriesDir) == "" {
 				return fmt.Errorf("memories dir is empty")

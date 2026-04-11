@@ -3,12 +3,14 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -260,6 +262,135 @@ func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
 	}
 }
 
+func TestBuildDeepAgent_AdditionalFeaturesHonorGovernedPhases(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "restricted",
+	}
+	runtimeSeen := false
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
+		AdditionalFeatures: []harness.Feature{
+			harness.FeatureFunc{
+				FeatureName: "late-check",
+				MetadataValue: harness.FeatureMetadata{
+					Phase: harness.FeaturePhasePostRuntime,
+				},
+				InstallFunc: func(_ context.Context, h *harness.Harness) error {
+					_, runtimeSeen = h.Kernel().ToolRegistry().Get("read_file")
+					if !runtimeSeen {
+						return fmt.Errorf("expected runtime tools before post-runtime deep-agent feature")
+					}
+					return nil
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgent: %v", err)
+	}
+	if k == nil {
+		t.Fatal("expected kernel")
+	}
+	if !runtimeSeen {
+		t.Fatal("expected governed post-runtime additional feature to observe runtime setup")
+	}
+}
+
+func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "restricted",
+		Profile:   "planning",
+	}
+	features, err := buildDeepAgentFeatures(flags, DeepAgentDefaults())
+	if err != nil {
+		t.Fatalf("buildDeepAgentFeatures: %v", err)
+	}
+
+	want := []string{
+		"state-catalog",
+		"session-store",
+		"context-offload",
+		"context-management",
+		"checkpointing",
+		"task-delegation",
+		"persistent-memories",
+		"execution-surface",
+		"planning",
+		"bootstrap-context",
+		"llm-resilience",
+		"runtime-setup",
+		"patch-tool-calls",
+		"execution-policy",
+		"execution-capability-report",
+		"general-purpose-agent",
+	}
+	if got := deepAgentFeatureNames(features); !reflect.DeepEqual(got, want) {
+		t.Fatalf("feature sequence mismatch:\n got=%v\nwant=%v", got, want)
+	}
+
+	capabilityMeta := deepAgentFeatureMetadata(t, features[len(features)-2])
+	if capabilityMeta.Phase != harness.FeaturePhasePostRuntime {
+		t.Fatalf("execution-capability-report phase=%q, want %q", capabilityMeta.Phase, harness.FeaturePhasePostRuntime)
+	}
+	if !reflect.DeepEqual(capabilityMeta.Requires, []string{"execution-surface"}) {
+		t.Fatalf("execution-capability-report requires=%v, want [execution-surface]", capabilityMeta.Requires)
+	}
+
+	generalPurposeMeta := deepAgentFeatureMetadata(t, features[len(features)-1])
+	if generalPurposeMeta.Phase != harness.FeaturePhasePostRuntime {
+		t.Fatalf("general-purpose-agent phase=%q, want %q", generalPurposeMeta.Phase, harness.FeaturePhasePostRuntime)
+	}
+	if !reflect.DeepEqual(generalPurposeMeta.Requires, []string{"runtime-setup"}) {
+		t.Fatalf("general-purpose-agent requires=%v, want [runtime-setup]", generalPurposeMeta.Requires)
+	}
+}
+
+func TestBuildDeepAgentFeatures_DisableOptionalPacks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	disable := false
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "trusted",
+	}
+	features, err := buildDeepAgentFeatures(flags, DeepAgentConfig{
+		AppName:                       "moss",
+		EnableSessionStore:            &disable,
+		EnableCheckpointStore:         &disable,
+		EnableTaskRuntime:             &disable,
+		EnablePersistentMemories:      &disable,
+		EnableContextOffload:          &disable,
+		EnableBootstrapContext:        &disable,
+		EnsureGeneralPurpose:          &disable,
+		EnableDefaultRestrictedPolicy: &disable,
+		EnableDefaultLLMRetry:         &disable,
+	})
+	if err != nil {
+		t.Fatalf("buildDeepAgentFeatures: %v", err)
+	}
+
+	want := []string{
+		"state-catalog",
+		"execution-surface",
+		"runtime-setup",
+		"patch-tool-calls",
+		"execution-capability-report",
+	}
+	if got := deepAgentFeatureNames(features); !reflect.DeepEqual(got, want) {
+		t.Fatalf("feature sequence mismatch:\n got=%v\nwant=%v", got, want)
+	}
+}
+
 func TestBuildDeepAgent_DefaultLLMRetryInjected(t *testing.T) {
 	flags := &AppFlags{
 		Provider:  "openai",
@@ -453,4 +584,21 @@ func TestDeepAgentApplyOver_pureFunction_doesNotMutateBase(t *testing.T) {
 	if base.AppName != origName {
 		t.Errorf("base.AppName was mutated: want %q got %q", origName, base.AppName)
 	}
+}
+
+func deepAgentFeatureNames(features []harness.Feature) []string {
+	names := make([]string, 0, len(features))
+	for _, feature := range features {
+		names = append(names, feature.Name())
+	}
+	return names
+}
+
+func deepAgentFeatureMetadata(t *testing.T, feature harness.Feature) harness.FeatureMetadata {
+	t.Helper()
+	withMetadata, ok := feature.(harness.FeatureWithMetadata)
+	if !ok {
+		t.Fatalf("feature %q does not expose metadata", feature.Name())
+	}
+	return withMetadata.Metadata()
 }

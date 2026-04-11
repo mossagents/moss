@@ -3,6 +3,7 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,12 +13,30 @@ import (
 
 	rt "github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/scheduler"
 )
+
+type appkitTestWorkspace struct{}
+
+func (appkitTestWorkspace) ReadFile(_ context.Context, _ string) ([]byte, error)    { return nil, nil }
+func (appkitTestWorkspace) WriteFile(_ context.Context, _ string, _ []byte) error   { return nil }
+func (appkitTestWorkspace) ListFiles(_ context.Context, _ string) ([]string, error) { return nil, nil }
+func (appkitTestWorkspace) Stat(_ context.Context, _ string) (workspace.FileInfo, error) {
+	return workspace.FileInfo{}, nil
+}
+func (appkitTestWorkspace) DeleteFile(_ context.Context, _ string) error { return nil }
+
+type appkitTestExecutor struct{}
+
+func (appkitTestExecutor) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+	return workspace.ExecOutput{}, nil
+}
 
 func TestDefaultTemplateContext(t *testing.T) {
 	ctx := config.DefaultTemplateContext("/workspace")
@@ -269,6 +288,74 @@ func TestBuildKernelWithFeatures_RuntimeOptionsAffectSetup(t *testing.T) {
 	}
 	if _, ok := k.ToolRegistry().Get("read_file"); ok {
 		t.Fatal("expected builtin tools to be disabled by runtime option extension")
+	}
+}
+
+func TestBuildKernelWithFeatures_GovernsFeaturePhases(t *testing.T) {
+	flags := isolatedBuildFlags(t)
+	runtimeSeen := false
+	k, err := BuildKernelWithFeatures(context.Background(), flags, &io.NoOpIO{},
+		harness.FeatureFunc{
+			FeatureName: "late-check",
+			MetadataValue: harness.FeatureMetadata{
+				Phase: harness.FeaturePhasePostRuntime,
+			},
+			InstallFunc: func(_ context.Context, h *harness.Harness) error {
+				_, runtimeSeen = h.Kernel().ToolRegistry().Get("read_file")
+				if !runtimeSeen {
+					return fmt.Errorf("expected runtime tools to be registered before post-runtime feature")
+				}
+				return nil
+			},
+		},
+		RuntimeSetup(flags.Workspace, flags.Trust),
+	)
+	if err != nil {
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
+	}
+	if k == nil {
+		t.Fatal("expected kernel")
+	}
+	if !runtimeSeen {
+		t.Fatal("expected post-runtime feature to observe runtime setup side effects")
+	}
+}
+
+func TestBuildKernel_DefaultManagedBackendProvidesPorts(t *testing.T) {
+	flags := isolatedBuildFlags(t)
+
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{})
+	if err != nil {
+		t.Fatalf("BuildKernel: %v", err)
+	}
+	if k.Sandbox() == nil {
+		t.Fatal("expected default builder to provision a sandbox-backed backend")
+	}
+	if k.Workspace() == nil || k.Executor() == nil {
+		t.Fatal("expected default builder to provision workspace and executor ports")
+	}
+}
+
+func TestBuildKernel_ExplicitPortsBypassDefaultLocalBackend(t *testing.T) {
+	flags := isolatedBuildFlags(t)
+	ws := appkitTestWorkspace{}
+	exec := appkitTestExecutor{}
+
+	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{},
+		kernel.WithWorkspace(ws),
+		kernel.WithExecutor(exec),
+	)
+	if err != nil {
+		t.Fatalf("BuildKernel: %v", err)
+	}
+	if got := k.Workspace(); got != ws {
+		t.Fatalf("workspace = %#v, want %#v", got, ws)
+	}
+	if got := k.Executor(); got != exec {
+		t.Fatalf("executor = %#v, want %#v", got, exec)
+	}
+	if k.Sandbox() != nil {
+		t.Fatal("expected explicit workspace/executor injection to bypass default local sandbox backend")
 	}
 }
 

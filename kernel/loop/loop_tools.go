@@ -70,13 +70,15 @@ func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Se
 		msg := model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}}
 		sess.AppendMessage(msg)
 		// Yield tool result event in real-time.
-		l.emitAgentEvent(&session.Event{
+		event := &session.Event{
 			Type:      session.EventTypeToolResult,
 			Author:    l.AgentName,
 			Content:   &msg,
 			TurnID:    l.currentTurn.TurnID,
 			Timestamp: time.Now().UTC(),
-		})
+		}
+		session.MarkEventMaterialized(event, sess)
+		l.emitAgentEvent(event)
 	}
 	return nil
 }
@@ -291,13 +293,15 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 		sess.AppendMessage(model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}})
 	}
 	// Yield all parallel tool results as a single aggregate event.
-	l.emitAgentEvent(&session.Event{
+	event := &session.Event{
 		Type:      session.EventTypeToolResult,
 		Author:    l.AgentName,
 		Content:   &model.Message{Role: model.RoleTool, ToolResults: results},
 		TurnID:    l.currentTurn.TurnID,
 		Timestamp: time.Now().UTC(),
-	})
+	}
+	session.MarkEventMaterialized(event, sess)
+	l.emitAgentEvent(event)
 	return nil
 }
 

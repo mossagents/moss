@@ -60,6 +60,15 @@ func eventText(e *session.Event) string {
 	return model.ContentPartsToPlainText(e.Content.ContentParts)
 }
 
+func sessionTexts(sess *session.Session) []string {
+	msgs := sess.CopyMessages()
+	out := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		out = append(out, model.ContentPartsToPlainText(msg.ContentParts))
+	}
+	return out
+}
+
 // --- Agent interface ---
 
 func TestCustomAgent_Name(t *testing.T) {
@@ -373,6 +382,112 @@ func TestInvocationContext_WithAgent(t *testing.T) {
 	}
 }
 
+func TestInvocationContext_WithSessionAndUserContent(t *testing.T) {
+	originalSession := &session.Session{ID: "s1"}
+	derivedSession := &session.Session{ID: "s2"}
+	originalMsg := &model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("original")}}
+	derivedMsg := &model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("derived")}}
+
+	original := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:       echoAgent("original"),
+		Session:     originalSession,
+		UserContent: originalMsg,
+	})
+
+	derived := original.WithSession(derivedSession).WithUserContent(derivedMsg)
+
+	if derived.Session() != derivedSession {
+		t.Fatal("expected derived context to use replacement session")
+	}
+	if got := model.ContentPartsToPlainText(derived.UserContent().ContentParts); got != "derived" {
+		t.Fatalf("derived user content = %q, want %q", got, "derived")
+	}
+	if original.Session() != originalSession {
+		t.Fatal("expected original context session to remain unchanged")
+	}
+	if got := model.ContentPartsToPlainText(original.UserContent().ContentParts); got != "original" {
+		t.Fatalf("original user content = %q, want %q", got, "original")
+	}
+}
+
+func TestInvocationContext_RunChild_MaterializesIntoParentSession(t *testing.T) {
+	parent := &session.Session{ID: "s1", State: map[string]any{}}
+	child := kernel.NewCustomAgent(kernel.CustomAgentConfig{
+		Name: "child",
+		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				ctx.Session().SetState("local", "child-only")
+				ctx.Session().AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("local-only")}})
+				event := textEvent("child", "shared-result")
+				event.Actions.StateDelta = map[string]any{"shared": "yes"}
+				yield(event, nil)
+			}
+		},
+	})
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   echoAgent("parent"),
+		Session: parent,
+	})
+
+	events, err := collectEvents(ctx.RunChild(child, kernel.ChildRunConfig{Branch: "parent.child"}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if got, want := events[0].Actions.MaterializedIn, parent.MaterializationDomain(); got != want {
+		t.Fatalf("child event materialized_in = %q, want %q", got, want)
+	}
+	if _, ok := parent.GetState("local"); ok {
+		t.Fatal("expected branch-local state mutation to stay local")
+	}
+	if shared, _ := parent.GetState("shared"); shared != "yes" {
+		t.Fatalf("parent shared state = %v, want yes", shared)
+	}
+	if texts := sessionTexts(parent); len(texts) != 1 || texts[0] != "shared-result" {
+		t.Fatalf("parent session messages = %v, want [shared-result]", texts)
+	}
+}
+
+func TestInvocationContext_RunChild_CanDisableMaterialization(t *testing.T) {
+	parent := &session.Session{ID: "s1", State: map[string]any{}}
+	child := kernel.NewCustomAgent(kernel.CustomAgentConfig{
+		Name: "child",
+		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				event := textEvent("child", "shared-result")
+				event.Actions.StateDelta = map[string]any{"shared": "yes"}
+				yield(event, nil)
+			}
+		},
+	})
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   echoAgent("parent"),
+		Session: parent,
+	})
+
+	events, err := collectEvents(ctx.RunChild(child, kernel.ChildRunConfig{
+		Branch:                 "parent.child",
+		DisableMaterialization: true,
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if got := events[0].Actions.MaterializedIn; got != "" {
+		t.Fatalf("expected child event to remain non-materialized, got %q", got)
+	}
+	if _, ok := parent.GetState("shared"); ok {
+		t.Fatal("expected parent state to remain untouched")
+	}
+	if texts := sessionTexts(parent); len(texts) != 0 {
+		t.Fatalf("parent session messages = %v, want []", texts)
+	}
+}
+
 func TestInvocationContext_EndInvocation(t *testing.T) {
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   echoAgent("test"),
@@ -428,6 +543,41 @@ func TestRunner_RunYieldsEvents(t *testing.T) {
 	}
 }
 
+func TestRunner_MaterializesCustomAgentEventsIntoSession(t *testing.T) {
+	agent := kernel.NewCustomAgent(kernel.CustomAgentConfig{
+		Name: "runner-materialize",
+		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				event := textEvent("runner-materialize", "done")
+				event.Actions.StateDelta = map[string]any{"runner.done": true}
+				yield(event, nil)
+			}
+		},
+	})
+	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
+	if err != nil {
+		t.Fatalf("unexpected error creating runner: %v", err)
+	}
+
+	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	events, err := collectEvents(r.Run(context.Background(), sess, nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if got, want := events[0].Actions.MaterializedIn, sess.MaterializationDomain(); got != want {
+		t.Fatalf("runner event materialized_in = %q, want %q", got, want)
+	}
+	if got, _ := sess.GetState("runner.done"); got != true {
+		t.Fatalf("runner.done state = %v, want true", got)
+	}
+	if texts := sessionTexts(sess); len(texts) != 1 || texts[0] != "done" {
+		t.Fatalf("session messages = %v, want [done]", texts)
+	}
+}
+
 func TestRunner_AppendsUserMessage(t *testing.T) {
 	agent := echoAgent("test")
 	r, _ := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
@@ -445,6 +595,85 @@ func TestRunner_AppendsUserMessage(t *testing.T) {
 	}
 	if msgs[0].Role != model.RoleUser {
 		t.Fatalf("expected first message role 'user', got %q", msgs[0].Role)
+	}
+}
+
+func TestRunner_DoesNotDoubleMaterializeLLMAgentEvents(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Hello!")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 42},
+			},
+		},
+	}
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "test-llm",
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+	})
+	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
+	if err != nil {
+		t.Fatalf("unexpected error creating runner: %v", err)
+	}
+
+	sess := &session.Session{
+		ID:     "s1",
+		Status: session.StatusCreated,
+		Budget: session.Budget{MaxSteps: 10},
+	}
+	userMsg := &model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}
+
+	events, err := collectEvents(r.Run(context.Background(), sess, userMsg))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+	if got, want := events[0].Actions.MaterializedIn, sess.MaterializationDomain(); got != want {
+		t.Fatalf("llm event materialized_in = %q, want %q", got, want)
+	}
+	msgs := sess.CopyMessages()
+	if len(msgs) != 2 {
+		t.Fatalf("expected exactly [user assistant] messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != model.RoleUser || msgs[1].Role != model.RoleAssistant {
+		t.Fatalf("unexpected message roles: %q, %q", msgs[0].Role, msgs[1].Role)
+	}
+	if got := model.ContentPartsToPlainText(msgs[1].ContentParts); got != "Hello!" {
+		t.Fatalf("assistant message = %q, want Hello!", got)
+	}
+}
+
+func TestRunner_IgnoresUnknownTransferTarget(t *testing.T) {
+	agent := kernel.NewCustomAgent(kernel.CustomAgentConfig{
+		Name: "root",
+		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				first := textEvent("root", "first")
+				first.Actions.TransferToAgent = "missing"
+				yield(first, nil)
+				yield(textEvent("root", "second"), nil)
+			}
+		},
+	})
+	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
+	if err != nil {
+		t.Fatalf("unexpected error creating runner: %v", err)
+	}
+
+	sess := &session.Session{ID: "s1"}
+	events, err := collectEvents(r.Run(context.Background(), sess, nil))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected runner to continue after unknown transfer target, got %d events", len(events))
+	}
+	if texts := sessionTexts(sess); len(texts) != 2 || texts[0] != "first" || texts[1] != "second" {
+		t.Fatalf("session messages = %v, want [first second]", texts)
 	}
 }
 
@@ -540,9 +769,8 @@ func TestLLMAgent_YieldsToolCallAndResult(t *testing.T) {
 	sess := &session.Session{
 		ID:       "s2",
 		Status:   session.StatusCreated,
-		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Greet")}},
-		},
-		Budget: session.Budget{MaxSteps: 10},
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Greet")}}},
+		Budget:   session.Budget{MaxSteps: 10},
 	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   agent,

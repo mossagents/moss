@@ -21,17 +21,17 @@ const (
 
 // SessionConfig 配置 Session 的运行参数。
 type SessionConfig struct {
-	Goal         string          `json:"goal"`
-	Mode         string          `json:"mode,omitempty"`
-	Profile      string          `json:"profile,omitempty"`
-	TrustLevel   string          `json:"trust_level,omitempty"`
-	MaxSteps     int             `json:"max_steps,omitempty"`
-	MaxTokens    int             `json:"max_tokens,omitempty"`
-	BudgetPolicy string          `json:"budget_policy,omitempty"`
-	Timeout      time.Duration   `json:"timeout,omitempty"`
-	SystemPrompt string          `json:"system_prompt,omitempty"`
+	Goal         string            `json:"goal"`
+	Mode         string            `json:"mode,omitempty"`
+	Profile      string            `json:"profile,omitempty"`
+	TrustLevel   string            `json:"trust_level,omitempty"`
+	MaxSteps     int               `json:"max_steps,omitempty"`
+	MaxTokens    int               `json:"max_tokens,omitempty"`
+	BudgetPolicy string            `json:"budget_policy,omitempty"`
+	Timeout      time.Duration     `json:"timeout,omitempty"`
+	SystemPrompt string            `json:"system_prompt,omitempty"`
 	ModelConfig  model.ModelConfig `json:"model_config,omitempty"`
-	Metadata     map[string]any  `json:"metadata,omitempty"`
+	Metadata     map[string]any    `json:"metadata,omitempty"`
 }
 
 // Budget 追踪 Session 的资源预算使用情况。
@@ -108,16 +108,18 @@ func (b *Budget) Clone() Budget {
 
 // Session 是 Agent 的执行上下文，包含对话历史、状态和预算。
 type Session struct {
-	ID        string         `json:"id"`
-	Status    SessionStatus  `json:"status"`
-	Config    SessionConfig  `json:"config"`
-	Title     string         `json:"title,omitempty"` // user-facing display title
-	Messages  []model.Message  `json:"messages"`
-	State     map[string]any `json:"state,omitempty"`
-	Budget    Budget         `json:"budget"`
-	CreatedAt time.Time      `json:"created_at"`
-	EndedAt   time.Time      `json:"ended_at,omitempty"`
-	mu        sync.RWMutex   `json:"-"` // protects Messages, Title, Config.Metadata, and State for concurrent access
+	ID        string          `json:"id"`
+	Status    SessionStatus   `json:"status"`
+	Config    SessionConfig   `json:"config"`
+	Title     string          `json:"title,omitempty"` // user-facing display title
+	Messages  []model.Message `json:"messages"`
+	State     map[string]any  `json:"state,omitempty"`
+	Budget    Budget          `json:"budget"`
+	CreatedAt time.Time       `json:"created_at"`
+	EndedAt   time.Time       `json:"ended_at,omitempty"`
+	mu        sync.RWMutex    `json:"-"` // protects Messages, Title, Config.Metadata, State, and materializationDomain
+
+	materializationDomain string `json:"-"`
 }
 
 // AppendMessage 追加一条消息到对话历史。

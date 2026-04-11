@@ -20,7 +20,9 @@ type AggregateFunc func(agentResults [][]session.Event) []*session.Event
 //
 // Each sub-agent receives a copy of the current session state but operates
 // in isolation. Their events are collected and then passed to the Aggregator
-// for merging. If no Aggregator is set, events are concatenated in agent order.
+// for merging. The merged event stream is then materialized back into the
+// parent session in merged order. If no Aggregator is set, events are
+// concatenated in agent order.
 //
 // If any sub-agent returns an error, all other goroutines are allowed to
 // finish but the first error is propagated to the caller.
@@ -35,8 +37,8 @@ var _ kernel.Agent = (*ParallelAgent)(nil)
 var _ kernel.AgentWithDescription = (*ParallelAgent)(nil)
 var _ kernel.AgentWithSubAgents = (*ParallelAgent)(nil)
 
-func (p *ParallelAgent) Name() string        { return p.AgentName }
-func (p *ParallelAgent) Description() string { return p.Desc }
+func (p *ParallelAgent) Name() string              { return p.AgentName }
+func (p *ParallelAgent) Description() string       { return p.Desc }
 func (p *ParallelAgent) SubAgents() []kernel.Agent { return p.Agents }
 
 type agentResult struct {
@@ -59,12 +61,12 @@ func (p *ParallelAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Ev
 		for i, agent := range p.Agents {
 			go func(idx int, a kernel.Agent) {
 				defer wg.Done()
-				childCtx := ctx.WithAgent(a).
-					WithBranch(fmt.Sprintf("%s.%s[%d]", ctx.Branch(), a.Name(), idx))
-
 				var events []session.Event
 				var firstErr error
-				for event, err := range a.Run(childCtx) {
+				for event, err := range ctx.RunChild(a, kernel.ChildRunConfig{
+					Branch:                 fmt.Sprintf("%s.%s[%d]", ctx.Branch(), a.Name(), idx),
+					DisableMaterialization: true,
+				}) {
 					if err != nil {
 						firstErr = err
 						break
@@ -93,6 +95,7 @@ func (p *ParallelAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Ev
 				agentEvents[i] = r.events
 			}
 			for _, event := range p.Aggregator(agentEvents) {
+				session.MaterializeEvent(ctx.Session(), event)
 				if !yield(event, nil) {
 					return
 				}
@@ -103,6 +106,7 @@ func (p *ParallelAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Ev
 		// Default: concatenate in agent order.
 		for _, r := range results {
 			for i := range r.events {
+				session.MaterializeEvent(ctx.Session(), &r.events[i])
 				if !yield(&r.events[i], nil) {
 					return
 				}

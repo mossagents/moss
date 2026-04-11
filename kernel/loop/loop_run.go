@@ -124,14 +124,16 @@ func (l *AgentLoop) runIteration(
 	sess.AppendMessage(resp.Message)
 
 	// Yield LLM response event in real-time.
-	if !l.emitAgentEvent(&session.Event{
+	event := &session.Event{
 		Type:      session.EventTypeLLMResponse,
 		Author:    l.AgentName,
 		Content:   &resp.Message,
 		Usage:     resp.Usage,
 		TurnID:    l.currentTurn.TurnID,
 		Timestamp: time.Now().UTC(),
-	}) {
+	}
+	session.MarkEventMaterialized(event, sess)
+	if !l.emitAgentEvent(event) {
 		return true, nil // consumer stopped iteration
 	}
 

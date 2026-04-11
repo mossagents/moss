@@ -44,12 +44,14 @@ func NewRunner(cfg RunnerConfig) (*Runner, error) {
 }
 
 // Run executes the root agent with the given session and user input.
-// Returns an iterator that yields events produced during execution.
+// Returns an iterator that yields events produced during execution. Generic
+// yielded events are materialized back into sess unless they have already been
+// committed in the same materialization domain by an inner execution layer.
 func (r *Runner) Run(ctx context.Context, sess *session.Session, input *model.Message) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
 		// Append user message to session.
 		if input != nil {
-			sess.AppendMessage(*input)
+			sess.AppendMessage(session.CloneMessage(*input))
 		}
 
 		// Ensure IO is goroutine-safe.
@@ -72,39 +74,7 @@ func (r *Runner) Run(ctx context.Context, sess *session.Session, input *model.Me
 			IO:          userIO,
 			Observer:    r.observer,
 		})
-
-		// Run the agent and forward events.
-		for event, err := range agentToRun.Run(invCtx) {
-			if err != nil {
-				yield(nil, err)
-				return
-			}
-
-			// Check for agent transfer.
-			if event.Actions.TransferToAgent != "" {
-				target := FindAgentInTree(r.agent, event.Actions.TransferToAgent)
-				if target != nil {
-					// Yield this event, then switch to the target agent.
-					if !yield(event, nil) {
-						return
-					}
-					invCtx = invCtx.WithAgent(target).WithBranch(target.Name())
-					for te, terr := range target.Run(invCtx) {
-						if !yield(te, terr) {
-							return
-						}
-						if terr != nil {
-							return
-						}
-					}
-					return
-				}
-			}
-
-			if !yield(event, nil) {
-				return
-			}
-		}
+		streamAgentEvents(r.agent, invCtx, yield)
 	}
 }
 

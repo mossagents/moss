@@ -3,20 +3,23 @@ package harness
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/workspace"
+	kt "github.com/mossagents/moss/testing"
 )
 
 // --- test helpers ---
 
 type stubWorkspace struct{ workspace.Workspace }
 
-func (stubWorkspace) ReadFile(_ context.Context, _ string) ([]byte, error)     { return nil, nil }
-func (stubWorkspace) WriteFile(_ context.Context, _ string, _ []byte) error    { return nil }
-func (stubWorkspace) ListFiles(_ context.Context, _ string) ([]string, error)  { return nil, nil }
+func (stubWorkspace) ReadFile(_ context.Context, _ string) ([]byte, error)    { return nil, nil }
+func (stubWorkspace) WriteFile(_ context.Context, _ string, _ []byte) error   { return nil }
+func (stubWorkspace) ListFiles(_ context.Context, _ string) ([]string, error) { return nil, nil }
 func (stubWorkspace) Stat(_ context.Context, _ string) (workspace.FileInfo, error) {
 	return workspace.FileInfo{}, nil
 }
@@ -26,6 +29,40 @@ type stubExecutor struct{ workspace.Executor }
 
 func (stubExecutor) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return workspace.ExecOutput{}, nil
+}
+
+type stubManagedBackend struct {
+	workspace.Workspace
+	workspace.Executor
+	installed int
+	booted    int
+	shutdowns int
+}
+
+func newStubManagedBackend() *stubManagedBackend {
+	return &stubManagedBackend{
+		Workspace: stubWorkspace{},
+		Executor:  stubExecutor{},
+	}
+}
+
+func (b *stubManagedBackend) Install(_ context.Context, k *kernel.Kernel) error {
+	b.installed++
+	k.Apply(
+		kernel.WithWorkspace(b.Workspace),
+		kernel.WithExecutor(b.Executor),
+	)
+	return nil
+}
+
+func (b *stubManagedBackend) Boot(_ context.Context, _ *kernel.Kernel) error {
+	b.booted++
+	return nil
+}
+
+func (b *stubManagedBackend) Shutdown(_ context.Context, _ *kernel.Kernel) error {
+	b.shutdowns++
+	return nil
 }
 
 func newTestHarness() *Harness {
@@ -97,6 +134,70 @@ func TestInstall_MultipleFeatures_InOrder(t *testing.T) {
 	}
 }
 
+func TestInstall_GovernsByPhaseAndDependency(t *testing.T) {
+	h := newTestHarness()
+	var order []string
+	mk := func(name string, meta FeatureMetadata) Feature {
+		return FeatureFunc{
+			FeatureName:   name,
+			MetadataValue: meta,
+			InstallFunc: func(_ context.Context, _ *Harness) error {
+				order = append(order, name)
+				return nil
+			},
+		}
+	}
+	err := h.Install(context.Background(),
+		mk("late", FeatureMetadata{Phase: FeaturePhasePostRuntime}),
+		mk("context", FeatureMetadata{Key: "context", Requires: []string{"session-store"}}),
+		mk("runtime", FeatureMetadata{Key: "runtime-setup", Phase: FeaturePhaseRuntime}),
+		mk("session-store", FeatureMetadata{Key: "session-store"}),
+	)
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	want := []string{"session-store", "context", "runtime", "late"}
+	if len(order) != len(want) {
+		t.Fatalf("expected %v, got %v", want, order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, order)
+		}
+	}
+	got := h.InstalledFeatures()
+	for i := range want {
+		if got[i].Name() != want[i] {
+			t.Fatalf("installed features order = %v, want %v", []string{got[0].Name(), got[1].Name(), got[2].Name(), got[3].Name()}, want)
+		}
+	}
+}
+
+func TestInstall_MissingFeatureDependencyFailsBeforeInstall(t *testing.T) {
+	h := newTestHarness()
+	called := false
+	err := h.Install(context.Background(), FeatureFunc{
+		FeatureName:   "context",
+		MetadataValue: FeatureMetadata{Key: "context", Requires: []string{"session-store"}},
+		InstallFunc: func(_ context.Context, _ *Harness) error {
+			called = true
+			return nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "session-store") {
+		t.Fatalf("expected missing dependency in error, got %v", err)
+	}
+	if called {
+		t.Fatal("feature should not be installed when planning fails")
+	}
+	if len(h.InstalledFeatures()) != 0 {
+		t.Fatal("expected no installed features after planning failure")
+	}
+}
+
 func TestInstall_NilFeatureSkipped(t *testing.T) {
 	h := newTestHarness()
 	called := false
@@ -145,6 +246,118 @@ func TestInstall_ErrorStopsChain(t *testing.T) {
 
 func TestLocalBackend_ImplementsBackend(t *testing.T) {
 	var _ Backend = &LocalBackend{}
+}
+
+func TestNewWithBackendFactory_ActivatesLifecycle(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+	)
+	backend := newStubManagedBackend()
+	builds := 0
+
+	h, err := NewWithBackendFactory(context.Background(), k, BackendFactoryFunc(func(context.Context, *kernel.Kernel) (Backend, error) {
+		builds++
+		return backend, nil
+	}))
+	if err != nil {
+		t.Fatalf("NewWithBackendFactory: %v", err)
+	}
+	if h.Backend() != backend {
+		t.Fatal("expected factory backend to be attached to harness")
+	}
+	if builds != 1 {
+		t.Fatalf("build count = %d, want 1", builds)
+	}
+	if backend.installed != 1 {
+		t.Fatalf("install count = %d, want 1", backend.installed)
+	}
+	if k.Workspace() == nil || k.Executor() == nil {
+		t.Fatal("expected managed backend to wire kernel workspace and executor")
+	}
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if backend.booted != 1 {
+		t.Fatalf("boot count = %d, want 1", backend.booted)
+	}
+	if err := k.Shutdown(context.Background()); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	if backend.shutdowns != 1 {
+		t.Fatalf("shutdown count = %d, want 1", backend.shutdowns)
+	}
+}
+
+func TestInstall_ActivatesManagedBackendBeforeFeatureInstall(t *testing.T) {
+	k := kernel.New()
+	backend := newStubManagedBackend()
+	h := New(k, backend)
+	sawInstalledBackend := false
+
+	err := h.Install(context.Background(), FeatureFunc{
+		FeatureName: "check-backend",
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			sawInstalledBackend = backend.installed == 1 &&
+				h.Kernel().Workspace() != nil &&
+				h.Kernel().Executor() != nil &&
+				h.Backend() == backend
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !sawInstalledBackend {
+		t.Fatal("expected managed backend to activate before feature install")
+	}
+}
+
+func TestLocalBackendFactory_InstallsPortsWhenMissing(t *testing.T) {
+	k := kernel.New()
+	h, err := NewWithBackendFactory(context.Background(), k, NewLocalBackendFactory(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewWithBackendFactory: %v", err)
+	}
+	backend, ok := h.Backend().(*LocalBackend)
+	if !ok {
+		t.Fatalf("backend type = %T, want *LocalBackend", h.Backend())
+	}
+	if k.Sandbox() == nil {
+		t.Fatal("expected local backend factory to install sandbox")
+	}
+	if k.Workspace() == nil || k.Executor() == nil {
+		t.Fatal("expected local backend factory to install workspace and executor")
+	}
+	if backend.Sandbox == nil || backend.Workspace == nil || backend.Executor == nil {
+		t.Fatal("expected activated local backend to adopt effective kernel ports")
+	}
+}
+
+func TestLocalBackendFactory_PreservesExistingKernelPorts(t *testing.T) {
+	ws := stubWorkspace{}
+	exec := stubExecutor{}
+	k := kernel.New(
+		kernel.WithWorkspace(ws),
+		kernel.WithExecutor(exec),
+	)
+	h, err := NewWithBackendFactory(context.Background(), k, NewLocalBackendFactory(t.TempDir()))
+	if err != nil {
+		t.Fatalf("NewWithBackendFactory: %v", err)
+	}
+	backend, ok := h.Backend().(*LocalBackend)
+	if !ok {
+		t.Fatalf("backend type = %T, want *LocalBackend", h.Backend())
+	}
+	if got := k.Workspace(); got != ws {
+		t.Fatalf("workspace = %#v, want %#v", got, ws)
+	}
+	if got := k.Executor(); got != exec {
+		t.Fatalf("executor = %#v, want %#v", got, exec)
+	}
+	if backend.Workspace != ws || backend.Executor != exec {
+		t.Fatal("expected local backend to adopt existing kernel ports")
+	}
 }
 
 func TestFeature_BootstrapContext(t *testing.T) {

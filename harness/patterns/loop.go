@@ -16,7 +16,9 @@ type ExitFunc func(events []session.Event, iteration int) bool
 // LoopAgent repeatedly executes a sub-agent until an exit condition is met
 // or MaxIterations is reached.
 //
-// Events from every iteration are yielded to the caller. The loop exits when:
+// Each iteration runs on a branch-local session clone. Yielded events from an
+// iteration are materialized back into the parent session before the next
+// iteration begins. The loop exits when:
 //   - ShouldExit returns true for the latest batch of events, OR
 //   - MaxIterations > 0 and the iteration count reaches it, OR
 //   - the sub-agent signals EndInvocation, OR
@@ -49,11 +51,10 @@ func (l *LoopAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event,
 				return
 			}
 
-			childCtx := ctx.WithAgent(l.Agent).
-				WithBranch(fmt.Sprintf("%s.%s[iter=%d]", ctx.Branch(), l.Agent.Name(), iteration))
-
 			var iterEvents []session.Event
-			for event, err := range l.Agent.Run(childCtx) {
+			for event, err := range ctx.RunChild(l.Agent, kernel.ChildRunConfig{
+				Branch: fmt.Sprintf("%s.%s[iter=%d]", ctx.Branch(), l.Agent.Name(), iteration),
+			}) {
 				if err != nil {
 					yield(nil, err)
 					return

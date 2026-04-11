@@ -24,9 +24,10 @@ import (
 
 // Harness orchestrates a Kernel with a Backend and composable Features.
 type Harness struct {
-	kernel   *kernel.Kernel
-	backend  Backend
-	features []Feature
+	kernel       *kernel.Kernel
+	backend      Backend
+	backendReady bool
+	features     []Feature
 }
 
 // New creates a Harness around an existing Kernel and Backend.
@@ -37,26 +38,88 @@ func New(k *kernel.Kernel, backend Backend) *Harness {
 	}
 }
 
+const (
+	backendBootOrder     = -100
+	backendShutdownOrder = 1000
+)
+
+// NewWithBackendFactory builds a backend via factory, activates it against the
+// Kernel, and returns a ready Harness.
+func NewWithBackendFactory(ctx context.Context, k *kernel.Kernel, factory BackendFactory) (*Harness, error) {
+	if factory == nil {
+		return nil, fmt.Errorf("backend factory is nil")
+	}
+	backend, err := factory.Build(ctx, k)
+	if err != nil {
+		return nil, fmt.Errorf("build backend: %w", err)
+	}
+	if backend == nil {
+		return nil, fmt.Errorf("backend factory returned nil backend")
+	}
+	h := New(k, backend)
+	if err := h.ActivateBackend(ctx); err != nil {
+		return nil, err
+	}
+	return h, nil
+}
+
 // Kernel returns the underlying Kernel.
 func (h *Harness) Kernel() *kernel.Kernel { return h.kernel }
 
 // Backend returns the underlying Backend.
 func (h *Harness) Backend() Backend { return h.backend }
 
+// ActivateBackend wires any managed backend hooks and kernel ports exactly once.
+func (h *Harness) ActivateBackend(ctx context.Context) error {
+	if h == nil {
+		return fmt.Errorf("harness is nil")
+	}
+	return h.ensureBackend(ctx)
+}
+
 // Install applies Features to the Harness in order. Each feature may
 // register tools, hooks, system-prompt extensions, or kernel options.
+// Official features are installed under phase/dependency governance.
 func (h *Harness) Install(ctx context.Context, features ...Feature) error {
-	for _, f := range features {
-		if f == nil {
-			continue
+	if err := h.ensureBackend(ctx); err != nil {
+		return err
+	}
+	planned, err := h.planFeatures(features...)
+	if err != nil {
+		return err
+	}
+	for _, item := range planned {
+		if err := item.feature.Install(ctx, h); err != nil {
+			return fmt.Errorf("feature %q: %w", item.feature.Name(), err)
 		}
-		if err := f.Install(ctx, h); err != nil {
-			return fmt.Errorf("feature %q: %w", f.Name(), err)
-		}
-		h.features = append(h.features, f)
+		h.features = append(h.features, item.feature)
 	}
 	return nil
 }
 
 // InstalledFeatures returns the list of successfully installed features.
-func (h *Harness) InstalledFeatures() []Feature { return h.features }
+func (h *Harness) InstalledFeatures() []Feature { return append([]Feature(nil), h.features...) }
+
+func (h *Harness) ensureBackend(ctx context.Context) error {
+	if h.backendReady || h.backend == nil {
+		return nil
+	}
+	if installer, ok := h.backend.(BackendInstaller); ok {
+		if err := installer.Install(ctx, h.kernel); err != nil {
+			return fmt.Errorf("activate backend: %w", err)
+		}
+	}
+	bridge := kernel.Extensions(h.kernel)
+	if booter, ok := h.backend.(BackendBooter); ok {
+		bridge.OnBoot(backendBootOrder, func(ctx context.Context, k *kernel.Kernel) error {
+			return booter.Boot(ctx, k)
+		})
+	}
+	if shutdowner, ok := h.backend.(BackendShutdowner); ok {
+		bridge.OnShutdown(backendShutdownOrder, func(ctx context.Context, k *kernel.Kernel) error {
+			return shutdowner.Shutdown(ctx, k)
+		})
+	}
+	h.backendReady = true
+	return nil
+}

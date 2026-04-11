@@ -2,7 +2,6 @@ package appkit
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
@@ -10,7 +9,6 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
 	providers "github.com/mossagents/moss/providers"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // BuildKernel 根据 AppFlags 构建标准 Kernel，并装配官方默认运行时能力。
@@ -30,8 +28,9 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts .
 
 // BuildKernelWithFeatures 根据 AppFlags 构建 Kernel，并按顺序安装 harness Feature。
 //
-// 这是官方推荐的 Feature 优先装配入口。Feature 按传入顺序依次安装。
-// 调用者应将 RuntimeSetup Feature 放在适当的位置；如果未包含，
+// 这是官方推荐的 Feature 优先装配入口。官方 Feature 会按 phase/依赖
+// 元数据做受控安装；未标注元数据的自定义 Feature 则保持 configure 阶段
+// 语义，并在同阶段内按传入顺序安装。如果未包含 RuntimeSetup Feature，
 // 则不会自动调用 runtime.Setup()。
 func BuildKernelWithFeatures(ctx context.Context, flags *AppFlags, io io.UserIO, features ...harness.Feature) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, features)
@@ -53,24 +52,17 @@ func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []
 		return nil, err
 	}
 
-	sb, err := sandbox.NewLocal(flags.Workspace)
-	if err != nil {
-		return nil, fmt.Errorf("sandbox: %w", err)
-	}
-
 	opts := []kernel.Option{
 		kernel.WithLLM(llm),
-		kernel.WithSandbox(sb),
 		kernel.WithUserIO(io),
 	}
 	opts = append(opts, extraOpts...)
 	k := kernel.New(opts...)
 
-	backend := &harness.LocalBackend{
-		Workspace: k.Workspace(),
-		Executor:  k.Executor(),
+	h, err := harness.NewWithBackendFactory(ctx, k, harness.NewLocalBackendFactory(flags.Workspace))
+	if err != nil {
+		return nil, err
 	}
-	h := harness.New(k, backend)
 	if err := h.Install(ctx, features...); err != nil {
 		return nil, err
 	}
