@@ -13,6 +13,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -108,7 +109,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		EnableDefaultLLMRetry:         retryEnabled,
 		LLMRetryConfig:                retryCfg,
 		LLMBreakerConfig:              breakerCfg,
-		AdditionalAppExtensions:       []appkit.Extension{},
+		AdditionalFeatures:            []harness.Feature{},
 	})
 	if err != nil {
 		return nil, appruntime.ResolvedProfile{}, err

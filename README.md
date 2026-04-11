@@ -97,7 +97,7 @@ func main() {
 }
 ```
 
-For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`. For a fuller product preset, use `presets\deepagent.BuildKernel(...)`.
+For feature-first assembly, use `appkit.BuildKernelWithFeatures(...)`. For a fuller product preset, use `presets\deepagent.BuildKernel(...)`.
 
 ### 3. Use the Harness layer
 

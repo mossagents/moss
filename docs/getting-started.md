@@ -143,12 +143,12 @@ func main() {
 - `runtime.Setup(...)` 默认能力装配
 - 内置工具、MCP、`SKILL.md`、subagent 注册
 
-### 扩展优先路径：`appkit.BuildKernelWithExtensions`
+### Feature 优先路径：`appkit.BuildKernelWithFeatures`
 
 当你需要持久会话、调度、知识库、记忆或额外安装逻辑时，使用：
 
 ```go
-k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 	appkit.WithSessionStore(store),
 	appkit.WithPersistentMemories(".\\.moss\\memories"),
 	appkit.WithContextOffload(store),
@@ -156,6 +156,7 @@ k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
 	appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 		return registerMyTools(k.ToolRegistry())
 	}),
+	appkit.RuntimeSetup(flags.Workspace, flags.Trust),
 )
 ```
 
@@ -183,7 +184,7 @@ k, err := deepagent.BuildKernel(ctx, flags, io, nil)
 |---|---|
 | 想马上体验当前仓库能力 | `apps\mosscode` |
 | 想构建最小可运行应用 | `appkit.BuildKernel` |
-| 想按官方扩展方式组合能力 | `appkit.BuildKernelWithExtensions` |
+| 想按官方 Feature 方式组合能力 | `appkit.BuildKernelWithFeatures` |
 | 想做 deep-agent 风格应用 | `presets\deepagent.BuildKernel` |
 
 ## 5. 应用与示例一览

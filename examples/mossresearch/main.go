@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -199,7 +200,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 	deepCfg.GeneralPurposeName = "research-generalist"
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for research-adjacent tasks."
-	deepCfg.AdditionalAppExtensions = []appkit.Extension{
+	deepCfg.AdditionalFeatures = []harness.Feature{
 		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerResearchTools(k.ToolRegistry()); err != nil {
 				return err

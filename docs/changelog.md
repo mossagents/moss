@@ -56,7 +56,7 @@
 仓库逐步完成了从旧兼容入口到当前装配路径的收敛：
 
 - `appkit.BuildKernel`
-- `appkit.BuildKernelWithExtensions`
+- `appkit.BuildKernelWithFeatures`（取代 `BuildKernelWithExtensions`）
 - `appkit\runtime.Setup`
 
 这也意味着文档和示例不再应围绕旧的兼容入口叙述。

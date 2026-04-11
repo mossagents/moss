@@ -97,7 +97,7 @@ func main() {
 }
 ```
 
-如果要按扩展优先方式装配，使用 `appkit.BuildKernelWithExtensions(...)`；如果要做更完整的 deep-agent 产品，使用 `presets\deepagent.BuildKernel(...)`。
+如果要按 Feature 优先方式装配，使用 `appkit.BuildKernelWithFeatures(...)`；如果要做更完整的 deep-agent 产品，使用 `presets\deepagent.BuildKernel(...)`。
 
 ### 3. 使用 Harness 层
 

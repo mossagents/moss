@@ -191,7 +191,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
 	knStore := runtime.NewMemoryKnowledgeStore()
 
-	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io,
+	k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 		appkit.WithSessionStore(store),
 		appkit.WithScheduling(sched),
 		appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, "mossclaw", flags.Trust),

@@ -3,22 +3,24 @@ package deepagent
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/agent"
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
-	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/session"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/agent"
+	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 // Config 描述 deep-agent 风格装配的配置项。
@@ -47,7 +49,7 @@ type Config struct {
 	LLMRetryConfig                *retry.Config
 	LLMBreakerConfig              *retry.BreakerConfig
 	DefaultSetupOptions           []runtime.Option
-	AdditionalAppExtensions       []appkit.Extension
+	AdditionalFeatures            []harness.Feature
 }
 
 // ApplyOver returns a new Config where every non-zero field in c overrides the
@@ -122,8 +124,8 @@ func (c Config) ApplyOver(base Config) Config {
 	if len(c.DefaultSetupOptions) > 0 {
 		base.DefaultSetupOptions = c.DefaultSetupOptions
 	}
-	if len(c.AdditionalAppExtensions) > 0 {
-		base.AdditionalAppExtensions = c.AdditionalAppExtensions
+	if len(c.AdditionalFeatures) > 0 {
+		base.AdditionalFeatures = c.AdditionalFeatures
 	}
 	return base
 }
@@ -156,8 +158,8 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 		effective = cfg.ApplyOver(effective)
 	}
 
-	var exts []appkit.Extension
-	exts = append(exts, effective.AdditionalAppExtensions...)
+	var features []harness.Feature
+	features = append(features, effective.AdditionalFeatures...)
 
 	var stateCatalog *runtime.StateCatalog
 	if appDir := appconfig.AppDir(); appDir != "" {
@@ -166,7 +168,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 			return nil, fmt.Errorf("state catalog: %w", err)
 		}
 		stateCatalog = catalog
-		exts = append(exts, appkit.WithKernelOptions(runtime.WithStateCatalog(stateCatalog)))
+		features = append(features, harness.KernelOptions(runtime.WithStateCatalog(stateCatalog)))
 	}
 
 	if valueOrDefault(effective.EnableSessionStore, true) {
@@ -184,10 +186,10 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 		}
 		var store session.SessionStore = rawStore
 		store = runtime.WrapSessionStore(store, stateCatalog)
-		exts = append(exts, appkit.WithSessionStore(store))
+		features = append(features, appkit.WithSessionStore(store))
 		if valueOrDefault(effective.EnableContextOffload, true) {
-			exts = append(exts, appkit.WithContextOffload(store))
-			exts = append(exts, appkit.WithContextManagement(store))
+			features = append(features, appkit.WithContextOffload(store))
+			features = append(features, appkit.WithContextManagement(store))
 		}
 	}
 	if valueOrDefault(effective.EnableCheckpointStore, true) {
@@ -204,7 +206,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 			return nil, fmt.Errorf("checkpoint store: %w", err)
 		}
 		checkpointStore := runtime.WrapCheckpointStore(store, stateCatalog)
-		exts = append(exts, appkit.WithKernelOptions(kernel.WithCheckpoints(checkpointStore)))
+		features = append(features, harness.Checkpointing(checkpointStore))
 	}
 	if valueOrDefault(effective.EnableTaskRuntime, true) {
 		taskDir := effective.TaskRuntimeDir
@@ -219,7 +221,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 		if err != nil {
 			return nil, fmt.Errorf("task runtime: %w", err)
 		}
-		exts = append(exts, appkit.WithKernelOptions(kernel.WithTaskRuntime(runtime.WrapTaskRuntime(taskRuntime, stateCatalog))))
+		features = append(features, harness.TaskDelegation(runtime.WrapTaskRuntime(taskRuntime, stateCatalog)))
 	}
 
 	if valueOrDefault(effective.EnablePersistentMemories, true) {
@@ -231,7 +233,7 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 				memDir = filepath.Join(flags.Workspace, "."+effective.AppName, "memories")
 			}
 		}
-		exts = append(exts, appkit.WithPersistentMemories(memDir))
+		features = append(features, appkit.WithPersistentMemories(memDir))
 	}
 	isolationEnabled := valueOrDefault(effective.EnableWorkspaceIsolation, true)
 	isolationRoot := effective.IsolationRootDir
@@ -251,13 +253,13 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 	if err := executionSurface.Error(runtime.CapabilityExecutionIsolation); err != nil {
 		return nil, fmt.Errorf("workspace isolation: %w", err)
 	}
-	exts = append(exts, appkit.WithKernelOptions(executionSurface.KernelOptions()...))
+	features = append(features, harness.KernelOptions(executionSurface.KernelOptions()...))
 	if strings.EqualFold(strings.TrimSpace(flags.Profile), "planning") {
-		exts = append(exts, appkit.WithPlanning())
+		features = append(features, appkit.WithPlanning())
 	}
 
 	if valueOrDefault(effective.EnableBootstrapContext, true) {
-		exts = append(exts, appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
+		features = append(features, appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
 	}
 
 	if valueOrDefault(effective.EnableDefaultLLMRetry, true) {
@@ -270,16 +272,16 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 				Multiplier:   2.0,
 			}
 		}
-		exts = append(exts, appkit.WithKernelOptions(kernel.WithLLMRetry(*llmRetryCfg)))
+		features = append(features, harness.KernelOptions(kernel.WithLLMRetry(*llmRetryCfg)))
 	}
 	if effective.LLMBreakerConfig != nil {
-		exts = append(exts, appkit.WithKernelOptions(kernel.WithLLMBreaker(*effective.LLMBreakerConfig)))
-	}
-	if len(effective.DefaultSetupOptions) > 0 {
-		exts = append(exts, appkit.WithRuntimeOptions(effective.DefaultSetupOptions...))
+		features = append(features, harness.KernelOptions(kernel.WithLLMBreaker(*effective.LLMBreakerConfig)))
 	}
 
-	k, err := appkit.BuildKernelWithExtensions(ctx, flags, io, exts...)
+	// RuntimeSetup: load builtin tools, MCP servers, skills, agents
+	features = append(features, appkit.RuntimeSetup(flags.Workspace, flags.Trust, effective.DefaultSetupOptions...))
+
+	k, err := appkit.BuildKernelWithFeatures(ctx, flags, io, features...)
 	if err != nil {
 		return nil, err
 	}

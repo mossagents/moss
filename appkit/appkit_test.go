@@ -258,14 +258,14 @@ func TestBuildKernelWithExtensions_NoExtensionsMatchesBuildKernel(t *testing.T) 
 	}
 }
 
-func TestBuildKernelWithExtensions_RuntimeOptionsAffectSetup(t *testing.T) {
+func TestBuildKernelWithFeatures_RuntimeOptionsAffectSetup(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
-	k, err := BuildKernelWithExtensions(context.Background(), flags, &io.NoOpIO{},
-		WithRuntimeOptions(rt.WithBuiltinTools(false)),
+	k, err := BuildKernelWithFeatures(context.Background(), flags, &io.NoOpIO{},
+		RuntimeSetup(flags.Workspace, flags.Trust, rt.WithBuiltinTools(false)),
 	)
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 	if _, ok := k.ToolRegistry().Get("read_file"); ok {
 		t.Fatal("expected builtin tools to be disabled by runtime option extension")

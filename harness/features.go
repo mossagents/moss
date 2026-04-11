@@ -8,10 +8,41 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/kernel/retry"
 )
+
+// KernelOptions returns a Feature that applies raw kernel.Option values to
+// the Kernel during installation. This is the escape hatch for options that
+// don't have a dedicated Feature constructor.
+func KernelOptions(opts ...kernel.Option) Feature {
+	return FeatureFunc{
+		FeatureName: "kernel-options",
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			h.Kernel().Apply(opts...)
+			return nil
+		},
+	}
+}
+
+// Installer is a function called after a Kernel is constructed.
+// It provides post-construction setup, such as registering tools or hooks.
+type Installer func(context.Context, *kernel.Kernel) error
+
+// InstallerFeature returns a Feature that runs the given Installer during
+// installation. This bridges legacy Installer functions into the Feature model.
+func InstallerFeature(name string, installer Installer) Feature {
+	return FeatureFunc{
+		FeatureName: name,
+		InstallFunc: func(ctx context.Context, h *Harness) error {
+			if installer == nil {
+				return nil
+			}
+			return installer(ctx, h.Kernel())
+		},
+	}
+}
 
 // BootstrapContext returns a Feature that loads AGENTS.md / SOUL.md /
 // workspace-level instructions and injects them into the system prompt.

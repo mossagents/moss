@@ -170,7 +170,7 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io io.UserIO) (*kern
 	memoriesDir := filepath.Join(appconfig.AppDir(), "memories")
 	profile := r.profile
 
-	k, err := appkit.BuildKernelWithExtensions(ctx, r.flags, io,
+	k, err := appkit.BuildKernelWithFeatures(ctx, r.flags, io,
 		appkit.WithSessionStore(r.store),
 		appkit.WithScheduling(r.sched),
 		appkit.WithPersistentMemories(memoriesDir),

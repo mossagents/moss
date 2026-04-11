@@ -3,16 +3,17 @@ package appkit
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/appkit/runtime"
+
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
 	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
 )
 
-// BuildKernel 根据 AppFlags 构建标准 Kernel，并装配官方默认扩展。
+// BuildKernel 根据 AppFlags 构建标准 Kernel，并装配官方默认运行时能力。
 //
 // 这是推荐的快速构建方式，自动完成：
 //   - 构建 LLM adapter
@@ -20,20 +21,33 @@ import (
 //   - 装配内置工具 + MCP servers + Skills
 //
 // 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 appkit
-// 层扩展，请使用 BuildKernelWithExtensions。
+// 层 Feature，请使用 BuildKernelWithFeatures。
 func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
-	return buildKernel(ctx, flags, io, nil, extraOpts...)
+	return buildKernel(ctx, flags, io, []harness.Feature{
+		RuntimeSetup(flags.Workspace, flags.Trust),
+	}, extraOpts...)
 }
 
-// BuildKernelWithExtensions 根据 AppFlags 构建 Kernel，并按顺序装配 appkit 扩展。
+// BuildKernelWithFeatures 根据 AppFlags 构建 Kernel，并按顺序安装 harness Feature。
 //
-// 这是官方推荐的扩展优先装配入口：优先通过 Extension 追加能力，而不是
-// 暴露额外的构建分支给应用层。
-func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io io.UserIO, exts ...Extension) (*kernel.Kernel, error) {
-	return buildKernel(ctx, flags, io, exts)
+// 这是官方推荐的 Feature 优先装配入口。Feature 按传入顺序依次安装。
+// 调用者应将 RuntimeSetup Feature 放在适当的位置；如果未包含，
+// 则不会自动调用 runtime.Setup()。
+func BuildKernelWithFeatures(ctx context.Context, flags *AppFlags, io io.UserIO, features ...harness.Feature) (*kernel.Kernel, error) {
+	return buildKernel(ctx, flags, io, features)
 }
 
-func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, exts []Extension, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+// BuildKernelWithExtensions is a backward-compatible wrapper that auto-includes
+// RuntimeSetup. New code should use BuildKernelWithFeatures instead.
+// Deprecated: use BuildKernelWithFeatures.
+func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io io.UserIO, exts ...Extension) (*kernel.Kernel, error) {
+	features := make([]harness.Feature, 0, len(exts)+1)
+	features = append(features, exts...)
+	features = append(features, RuntimeSetup(flags.Workspace, flags.Trust))
+	return buildKernel(ctx, flags, io, features)
+}
+
+func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []harness.Feature, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	llm, err := providers.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err
@@ -50,28 +64,17 @@ func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, exts []Exte
 		kernel.WithUserIO(io),
 	}
 	opts = append(opts, extraOpts...)
-	plan := extensionPlan{}
-	for _, ext := range exts {
-		if ext != nil {
-			ext.apply(&plan)
-		}
-	}
-	opts = append(opts, plan.options...)
-
 	k := kernel.New(opts...)
 
-	setupOpts := append([]runtime.Option{runtime.WithWorkspaceTrust(flags.Trust)}, plan.runtimeOptions...)
-	if err := runtime.Setup(ctx, k, flags.Workspace, setupOpts...); err != nil {
+	backend := &harness.LocalBackend{
+		Workspace: k.Workspace(),
+		Executor:  k.Executor(),
+	}
+	h := harness.New(k, backend)
+	if err := h.Install(ctx, features...); err != nil {
 		return nil, err
 	}
-	for _, installer := range plan.installers {
-		if installer == nil {
-			continue
-		}
-		if err := installer(ctx, k); err != nil {
-			return nil, err
-		}
-	}
+
 	if logging.DebugEnabled() {
 		k.InstallHooks(builtins.InstallLogger)
 		logging.GetLogger().DebugContext(ctx, "kernel built",

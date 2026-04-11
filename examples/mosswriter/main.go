@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -191,7 +192,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 	deepCfg.GeneralPurposeName = "content-generalist"
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for content workflokws."
-	deepCfg.AdditionalAppExtensions = []appkit.Extension{
+	deepCfg.AdditionalFeatures = []harness.Feature{
 		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerWriterTools(k.ToolRegistry()); err != nil {
 				return err

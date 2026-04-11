@@ -19,6 +19,7 @@ import (
 	"github.com/mossagents/moss/appkit"
 	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -741,7 +742,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	deepCfg.EnableBootstrapContext = boolRef(true)
 	deepCfg.SessionStoreDir = sessionDir
 	deepCfg.MemoryDir = filepath.Join(appDir, "memories")
-	deepCfg.AdditionalAppExtensions = []appkit.Extension{
+	deepCfg.AdditionalFeatures = []harness.Feature{
 		appkit.WithScheduling(sched),
 	}
 
