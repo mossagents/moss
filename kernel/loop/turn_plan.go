@@ -124,7 +124,8 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
 	specs := reg.List()
 	decisions := make([]ToolRouteDecision, 0, len(specs))
-	for _, spec := range specs {
+	for _, t := range specs {
+		spec := t.Spec()
 		effects := spec.EffectiveEffects()
 		decision := ToolRouteDecision{
 			Name:               spec.Name,

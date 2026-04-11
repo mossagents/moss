@@ -315,14 +315,14 @@ func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *appkit.AppFlags, cfg Con
 		return nil
 	}
 
-	toolSpecs := k.ToolRegistry().List()
-	toolNames := make([]string, 0, len(toolSpecs))
-	for _, spec := range toolSpecs {
-		switch spec.Name {
+	toolList := k.ToolRegistry().List()
+	toolNames := make([]string, 0, len(toolList))
+	for _, t := range toolList {
+		switch t.Name() {
 		case "delegate_agent", "spawn_agent", "query_agent", "task", "list_tasks", "cancel_task", "update_task":
 			continue
 		default:
-			toolNames = append(toolNames, spec.Name)
+			toolNames = append(toolNames, t.Name())
 		}
 	}
 	sort.Strings(toolNames)

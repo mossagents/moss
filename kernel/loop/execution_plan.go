@@ -39,7 +39,8 @@ func buildExecutionPlan(calls []model.ToolCall, reg tool.Registry) (ExecutionPla
 			DependsOn:       []string{},
 		}
 		if reg != nil {
-			if spec, _, ok := reg.Get(call.Name); ok {
+			if t, ok := reg.Get(call.Name); ok {
+				spec := t.Spec()
 				planCall.DeclaredEffects = append([]tool.Effect(nil), spec.EffectiveEffects()...)
 				planCall.ResourceScope = append([]string(nil), spec.ResourceScope...)
 				planCall.LockScope = append([]string(nil), spec.LockScope...)

@@ -106,19 +106,19 @@ func ListChatTopics() []ChatTopicInfo {
 // ── 工具定义 ─────────────────────────────────────────
 
 func registerGameTools(reg tool.Registry, room *Room) {
-	_ = reg.Register(getPlayersSpec, getPlayersHandler(room))
-	_ = reg.Register(whisperSpec, whisperHandler(room))
-	_ = reg.Register(announceSpec, announceHandler(room))
-	_ = reg.Register(setGameStateSpec, setGameStateHandler(room))
-	_ = reg.Register(addVirtualPlayerSpec, addVirtualPlayerHandler(room))
-	_ = reg.Register(chatAsSpec, chatAsHandler(room))
-	_ = reg.Register(askChoiceSpec, askChoiceHandler(room))
-	_ = reg.Register(getTimeSpec, getTimeHandler())
+	_ = reg.Register(tool.NewRawTool(getPlayersSpec, getPlayersHandler(room)))
+	_ = reg.Register(tool.NewRawTool(whisperSpec, whisperHandler(room)))
+	_ = reg.Register(tool.NewRawTool(announceSpec, announceHandler(room)))
+	_ = reg.Register(tool.NewRawTool(setGameStateSpec, setGameStateHandler(room)))
+	_ = reg.Register(tool.NewRawTool(addVirtualPlayerSpec, addVirtualPlayerHandler(room)))
+	_ = reg.Register(tool.NewRawTool(chatAsSpec, chatAsHandler(room)))
+	_ = reg.Register(tool.NewRawTool(askChoiceSpec, askChoiceHandler(room)))
+	_ = reg.Register(tool.NewRawTool(getTimeSpec, getTimeHandler()))
 	tools.RegisterWeather(reg)
-	_ = reg.Register(setReminderSpec, setReminderHandler(room))
-	_ = reg.Register(randomPickSpec, randomPickHandler())
-	_ = reg.Register(updateGameContextSpec, updateGameContextHandler(room))
-	_ = reg.Register(getGameContextSpec, getGameContextHandler(room))
+	_ = reg.Register(tool.NewRawTool(setReminderSpec, setReminderHandler(room)))
+	_ = reg.Register(tool.NewRawTool(randomPickSpec, randomPickHandler()))
+	_ = reg.Register(tool.NewRawTool(updateGameContextSpec, updateGameContextHandler(room)))
+	_ = reg.Register(tool.NewRawTool(getGameContextSpec, getGameContextHandler(room)))
 }
 
 // ── get_players ─────────────────────────────────────

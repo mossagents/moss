@@ -92,7 +92,7 @@ func RegisterBuiltinToolsForKernel(k *kernel.Kernel, reg tool.Registry, sb sandb
 	tools = append(tools, entry{builtinToolSpec(askUserSpec, "runtime", false, false, false), askUserHandler(io)})
 
 	for _, t := range tools {
-		if err := reg.Register(t.spec, t.handler); err != nil {
+		if err := reg.Register(tool.NewRawTool(t.spec, t.handler)); err != nil {
 			return err
 		}
 	}

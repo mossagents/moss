@@ -28,22 +28,26 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, writeHandler, ok := reg.Get("write_memory")
+	writeTool, ok := reg.Get("write_memory")
 	if !ok {
 		t.Fatal("write_memory not registered")
 	}
-	_, readHandler, ok := reg.Get("read_memory")
+	writeHandler := writeTool.Execute
+	readTool, ok := reg.Get("read_memory")
 	if !ok {
 		t.Fatal("read_memory not registered")
 	}
-	_, listHandler, ok := reg.Get("list_memories")
+	readHandler := readTool.Execute
+	listTool, ok := reg.Get("list_memories")
 	if !ok {
 		t.Fatal("list_memories not registered")
 	}
-	_, deleteHandler, ok := reg.Get("delete_memory")
+	listHandler := listTool.Execute
+	deleteTool, ok := reg.Get("delete_memory")
 	if !ok {
 		t.Fatal("delete_memory not registered")
 	}
+	deleteHandler := deleteTool.Execute
 
 	writeInput, _ := json.Marshal(map[string]string{
 		"path":    "team/context.txt",
@@ -104,10 +108,11 @@ func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 		{"ingest_memory_trace", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassPolicyGuarded},
 	}
 	for _, tc := range cases {
-		spec, _, ok := reg.Get(tc.name)
+		tl, ok := reg.Get(tc.name)
 		if !ok {
 			t.Fatalf("tool %q not registered", tc.name)
 		}
+		spec := tl.Spec()
 		if effects := spec.EffectiveEffects(); len(effects) != 1 || effects[0] != tc.effect {
 			t.Fatalf("%s effects = %v", tc.name, effects)
 		}
@@ -131,11 +136,11 @@ func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	if err := RegisterMemoryTools(reg, ws, store); err != nil {
 		t.Fatalf("RegisterMemoryTools: %v", err)
 	}
-	_, readHandler, ok := reg.Get("read_memory")
+	readTool, ok := reg.Get("read_memory")
 	if !ok {
 		t.Fatal("read_memory not registered")
 	}
-	raw, err := readHandler(ctx, json.RawMessage(`{"path":"team/legacy.txt"}`))
+	raw, err := readTool.Execute(ctx, json.RawMessage(`{"path":"team/legacy.txt"}`))
 	if err != nil {
 		t.Fatalf("read_memory: %v", err)
 	}
@@ -172,7 +177,7 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 		t.Fatalf("Boot: %v", err)
 	}
 
-	if _, _, ok := k.ToolRegistry().Get("read_memory"); !ok {
+	if _, ok := k.ToolRegistry().Get("read_memory"); !ok {
 		t.Fatal("read_memory should be registered after boot")
 	}
 
@@ -195,18 +200,21 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 	ctx := context.Background()
-	_, writeRecord, ok := reg.Get("write_memory_record")
+	wrTool, ok := reg.Get("write_memory_record")
 	if !ok {
 		t.Fatal("write_memory_record not registered")
 	}
-	_, readRecord, ok := reg.Get("read_memory_record")
+	writeRecord := wrTool.Execute
+	rrTool, ok := reg.Get("read_memory_record")
 	if !ok {
 		t.Fatal("read_memory_record not registered")
 	}
-	_, searchMemories, ok := reg.Get("search_memories")
+	readRecord := rrTool.Execute
+	smTool, ok := reg.Get("search_memories")
 	if !ok {
 		t.Fatal("search_memories not registered")
 	}
+	searchMemories := smTool.Execute
 
 	writeInput, _ := json.Marshal(map[string]any{
 		"path":    "team/decision.md",
@@ -270,14 +278,16 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 	ctx := context.Background()
-	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
 		t.Fatal("ingest_memory_trace not registered")
 	}
-	_, readRecord, ok := reg.Get("read_memory_record")
+	ingestTrace := itTool.Execute
+	rrTool, ok := reg.Get("read_memory_record")
 	if !ok {
 		t.Fatal("read_memory_record not registered")
 	}
+	readRecord := rrTool.Execute
 
 	trace := `{"type":"message","role":"user","content":"Need sqlite backend"}
 {"type":"message","role":"assistant","content":"Will implement sqlite store"}`
@@ -327,14 +337,16 @@ func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 	ctx := context.Background()
-	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
 		t.Fatal("ingest_memory_trace not registered")
 	}
-	_, readRecord, ok := reg.Get("read_memory_record")
+	ingestTrace := itTool.Execute
+	rrTool, ok := reg.Get("read_memory_record")
 	if !ok {
 		t.Fatal("read_memory_record not registered")
 	}
+	readRecord := rrTool.Execute
 	targetPath := "team/memory/promoted-fact.md"
 	for idx, trace := range []string{
 		`{"type":"message","role":"user","content":"Use sqlite for runtime state"}`,
@@ -374,10 +386,11 @@ func TestWriteMemory_SyncsDerivedArtifacts(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 	ctx := context.Background()
-	_, writeMemory, ok := reg.Get("write_memory")
+	wmTool, ok := reg.Get("write_memory")
 	if !ok {
 		t.Fatal("write_memory not registered")
 	}
+	writeMemory := wmTool.Execute
 	if _, err := writeMemory(ctx, mustJSON(t, map[string]any{
 		"path":    "team/manual-decision.md",
 		"content": "Use sqlite for state queries.",
@@ -503,10 +516,11 @@ func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 	ctx := context.Background()
-	_, ingestTrace, ok := reg.Get("ingest_memory_trace")
+	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
 		t.Fatal("ingest_memory_trace not registered")
 	}
+	ingestTrace := itTool.Execute
 	trace := `[{"type":"message","role":"user","content":"save this"}]`
 	input, _ := json.Marshal(map[string]any{
 		"source_path": "trace/atomic.json",

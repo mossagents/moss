@@ -199,7 +199,7 @@ func TestRegisterBuiltinTools(t *testing.T) {
 
 	names := make(map[string]bool)
 	for _, s := range specs {
-		names[s.Name] = true
+		names[s.Name()] = true
 	}
 	for _, e := range expected {
 		if !names[e] {
@@ -690,11 +690,12 @@ func TestToolRiskLevels(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		spec, _, ok := reg.Get(c.name)
+		tl, ok := reg.Get(c.name)
 		if !ok {
 			t.Errorf("tool %q not found", c.name)
 			continue
 		}
+		spec := tl.Spec()
 		if spec.Risk != c.risk {
 			t.Errorf("tool %q: expected risk %v, got %v", c.name, c.risk, spec.Risk)
 		}
@@ -720,10 +721,11 @@ func TestBuiltinToolExecutionMetadata(t *testing.T) {
 		{"http_request", tool.EffectExternalSideEffect, tool.SideEffectNetwork, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
 	}
 	for _, tc := range cases {
-		spec, _, ok := reg.Get(tc.name)
+		tl, ok := reg.Get(tc.name)
 		if !ok {
 			t.Fatalf("tool %q not found", tc.name)
 		}
+		spec := tl.Spec()
 		if effects := spec.EffectiveEffects(); len(effects) != 1 || effects[0] != tc.effect {
 			t.Fatalf("%s effects = %v", tc.name, effects)
 		}
@@ -1134,12 +1136,12 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 		t.Fatalf("RegisterBuiltinTools: %v", err)
 	}
 
-	_, handler, ok := reg.Get("read_file")
+	readTool, ok := reg.Get("read_file")
 	if !ok {
 		t.Fatal("read_file not registered")
 	}
 
-	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "workspace.txt"}))
+	result, err := readTool.Execute(context.Background(), toJSON(t, map[string]string{"path": "workspace.txt"}))
 	if err != nil {
 		t.Fatalf("read_file: %v", err)
 	}
@@ -1160,11 +1162,11 @@ func TestDatetimeTool(t *testing.T) {
 	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
 		t.Fatalf("RegisterBuiltinTools: %v", err)
 	}
-	_, handler, ok := reg.Get("datetime")
+	dtTool, ok := reg.Get("datetime")
 	if !ok {
 		t.Fatal("datetime not registered")
 	}
-	raw, err := handler(context.Background(), json.RawMessage(`{}`))
+	raw, err := dtTool.Execute(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("datetime: %v", err)
 	}

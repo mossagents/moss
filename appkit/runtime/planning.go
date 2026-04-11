@@ -36,7 +36,7 @@ func RegisterPlanningTools(reg tool.Registry, manager session.Manager) error {
 	if manager == nil {
 		return fmt.Errorf("session manager is nil")
 	}
-	if _, _, ok := reg.Get("write_todos"); ok {
+	if _, ok := reg.Get("write_todos"); ok {
 		return nil
 	}
 	spec := tool.ToolSpec{
@@ -101,7 +101,7 @@ func RegisterPlanningTools(reg tool.Registry, manager session.Manager) error {
 			"todos":      next,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func WithPlanningDefaults() kernel.Option {

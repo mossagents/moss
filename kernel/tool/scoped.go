@@ -19,37 +19,37 @@ func Scoped(parent Registry, allowedTools []string) Registry {
 	return &ScopedRegistry{parent: parent, allowed: allowed}
 }
 
-func (s *ScopedRegistry) Register(spec ToolSpec, handler ToolHandler) error {
-	return fmt.Errorf("scoped registry is read-only: cannot register tool %q", spec.Name)
+func (s *ScopedRegistry) Register(t Tool) error {
+	return fmt.Errorf("scoped registry is read-only: cannot register tool %q", t.Name())
 }
 
 func (s *ScopedRegistry) Unregister(name string) error {
 	return fmt.Errorf("scoped registry is read-only: cannot unregister tool %q", name)
 }
 
-func (s *ScopedRegistry) Get(name string) (ToolSpec, ToolHandler, bool) {
+func (s *ScopedRegistry) Get(name string) (Tool, bool) {
 	if _, ok := s.allowed[name]; !ok {
-		return ToolSpec{}, nil, false
+		return nil, false
 	}
 	return s.parent.Get(name)
 }
 
-func (s *ScopedRegistry) List() []ToolSpec {
-	var specs []ToolSpec
-	for _, spec := range s.parent.List() {
-		if _, ok := s.allowed[spec.Name]; ok {
-			specs = append(specs, spec)
+func (s *ScopedRegistry) List() []Tool {
+	var tools []Tool
+	for _, t := range s.parent.List() {
+		if _, ok := s.allowed[t.Name()]; ok {
+			tools = append(tools, t)
 		}
 	}
-	return specs
+	return tools
 }
 
-func (s *ScopedRegistry) ListByCapability(cap string) []ToolSpec {
-	var specs []ToolSpec
-	for _, spec := range s.parent.ListByCapability(cap) {
-		if _, ok := s.allowed[spec.Name]; ok {
-			specs = append(specs, spec)
+func (s *ScopedRegistry) ListByCapability(cap string) []Tool {
+	var tools []Tool
+	for _, t := range s.parent.ListByCapability(cap) {
+		if _, ok := s.allowed[t.Name()]; ok {
+			tools = append(tools, t)
 		}
 	}
-	return specs
+	return tools
 }

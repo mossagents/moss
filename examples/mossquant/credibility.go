@@ -81,7 +81,7 @@ func registerCredibilityTools(reg tool.Registry) error {
 		}
 		return json.Marshal(payload)
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func assessSourceCredibility(source credibilitySource) credibilityResult {

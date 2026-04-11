@@ -160,10 +160,10 @@ func randomNumberHandler(_ context.Context, input json.RawMessage) (json.RawMess
 // ── 注册 ────────────────────────────────────────────
 
 func registerCustomTools(reg tool.Registry) {
-	if err := reg.Register(calculatorSpec, calculatorHandler); err != nil {
+	if err := reg.Register(tool.NewRawTool(calculatorSpec, calculatorHandler)); err != nil {
 		fmt.Fprintf(os.Stderr, "register calculator: %v\n", err)
 	}
-	if err := reg.Register(randomNumberSpec, randomNumberHandler); err != nil {
+	if err := reg.Register(tool.NewRawTool(randomNumberSpec, randomNumberHandler)); err != nil {
 		fmt.Fprintf(os.Stderr, "register random_number: %v\n", err)
 	}
 }

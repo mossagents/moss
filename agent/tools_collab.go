@@ -71,7 +71,7 @@ func registerPlanTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 			"task":   record,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type claimTaskInput struct {
@@ -118,7 +118,7 @@ func registerClaimTask(reg tool.Registry, runtime taskrt.TaskRuntime) error {
 			"task":   task,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type sendMailInput struct {
@@ -180,7 +180,7 @@ func registerSendMail(reg tool.Registry, mailbox taskrt.Mailbox) error {
 			"to":     to,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type readMailboxInput struct {
@@ -223,7 +223,7 @@ func registerReadMailbox(reg tool.Registry, mailbox taskrt.Mailbox) error {
 			"mail":  msgs,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type acquireWorkspaceInput struct {
@@ -271,7 +271,7 @@ func registerAcquireWorkspace(reg tool.Registry, isolation workspace.WorkspaceIs
 			"status":       "acquired",
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type releaseWorkspaceInput struct {
@@ -310,7 +310,7 @@ func registerReleaseWorkspace(reg tool.Registry, isolation workspace.WorkspaceIs
 			"status":       "released",
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func sanitizeDepends(in []string) []string {

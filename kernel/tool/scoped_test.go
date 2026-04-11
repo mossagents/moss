@@ -8,19 +8,19 @@ import (
 
 func TestScopedRegistry(t *testing.T) {
 	parent := NewRegistry()
-	if err := parent.Register(ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parent.Register(NewRawTool(ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register read_file: %v", err)
 	}
-	if err := parent.Register(ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parent.Register(NewRawTool(ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register write_file: %v", err)
 	}
-	if err := parent.Register(ToolSpec{Name: "run_command"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parent.Register(NewRawTool(ToolSpec{Name: "run_command"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register run_command: %v", err)
 	}
 
@@ -33,21 +33,21 @@ func TestScopedRegistry(t *testing.T) {
 	}
 
 	// Get allowed tool works
-	_, _, ok := scoped.Get("read_file")
+	_, ok := scoped.Get("read_file")
 	if !ok {
 		t.Error("read_file should be accessible")
 	}
 
 	// Get disallowed tool fails
-	_, _, ok = scoped.Get("run_command")
+	_, ok = scoped.Get("run_command")
 	if ok {
 		t.Error("run_command should not be accessible in scoped registry")
 	}
 
 	// Register should be blocked for read-only scoped view.
-	err := scoped.Register(ToolSpec{Name: "new_tool"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	err := scoped.Register(NewRawTool(ToolSpec{Name: "new_tool"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	})
+	}))
 	if err == nil {
 		t.Fatal("expected Register to fail on scoped registry")
 	}
@@ -59,7 +59,7 @@ func TestScopedRegistry(t *testing.T) {
 	}
 
 	// Parent registry should remain unchanged.
-	if _, _, ok := parent.Get("read_file"); !ok {
+	if _, ok := parent.Get("read_file"); !ok {
 		t.Fatal("parent registry was unexpectedly modified")
 	}
 }

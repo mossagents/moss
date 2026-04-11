@@ -33,10 +33,11 @@ func (l *AgentLoop) toolSpecs(plan TurnPlan) []model.ToolSpec {
 	tools := tool.Scoped(l.Tools, allowed).List()
 	specs := make([]model.ToolSpec, len(tools))
 	for i, t := range tools {
+		s := t.Spec()
 		specs[i] = model.ToolSpec{
-			Name:        t.Name,
-			Description: t.Description,
-			InputSchema: t.InputSchema,
+			Name:        s.Name,
+			Description: s.Description,
+			InputSchema: s.InputSchema,
 		}
 	}
 	return specs

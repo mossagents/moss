@@ -88,8 +88,22 @@ type ToolSpec struct {
 	RequiresSandbox    bool               `json:"requires_sandbox,omitempty"`
 }
 
-// ToolHandler 是工具的执行函数。
-type ToolHandler func(ctx context.Context, input json.RawMessage) (json.RawMessage, error)
+// Tool 是可被 Agent 调用的工具接口。
+// 每个 Tool 同时携带元信息（ToolSpec）和执行逻辑（Execute）。
+type Tool interface {
+	// Name 返回工具的唯一名称。
+	Name() string
+	// Description 返回工具的人类可读描述。
+	Description() string
+	// Spec 返回完整的工具元信息。
+	Spec() ToolSpec
+	// Execute 执行工具。args 是 LLM 生成的 JSON 参数。
+	Execute(ctx context.Context, args json.RawMessage) (json.RawMessage, error)
+}
+
+// ToolHandler 是原始工具执行函数的类型别名。
+// 新代码应使用 NewFunctionTool 或 NewRawTool 构建 Tool 接口实例。
+type ToolHandler = func(ctx context.Context, input json.RawMessage) (json.RawMessage, error)
 
 // EffectiveEffects returns the configured effects or a deterministic fallback.
 func (s ToolSpec) EffectiveEffects() []Effect {

@@ -137,10 +137,10 @@ func RegisterSchedulerToolRegistry(reg tool.Registry, sched *scheduler.Scheduler
 		{cancelScheduleSpec, cancelScheduleHandler(sched)},
 	}
 	for _, t := range tools {
-		if _, _, exists := reg.Get(t.spec.Name); exists {
+		if _, exists := reg.Get(t.spec.Name); exists {
 			continue
 		}
-		if err := reg.Register(t.spec, t.handler); err != nil {
+		if err := reg.Register(tool.NewRawTool(t.spec, t.handler)); err != nil {
 			return err
 		}
 	}

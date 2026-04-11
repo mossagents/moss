@@ -104,7 +104,7 @@ func NewThinkToolHandler(toolName string) tool.ToolHandler {
 
 func RegisterThinkTool(reg tool.Registry, opts ...ThinkToolOption) error {
 	spec := NewThinkToolSpec(opts...)
-	if err := reg.Register(spec, NewThinkToolHandler(spec.Name)); err != nil {
+	if err := reg.Register(tool.NewRawTool(spec, NewThinkToolHandler(spec.Name))); err != nil {
 		return fmt.Errorf("register %s: %w", spec.Name, err)
 	}
 	return nil

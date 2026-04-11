@@ -121,7 +121,7 @@ func WithOffloadSessionStore(store session.SessionStore) kernel.Option {
 }
 
 func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager session.Manager) error {
-	if _, _, exists := reg.Get("offload_context"); exists {
+	if _, exists := reg.Get("offload_context"); exists {
 		return nil
 	}
 	if store == nil {
@@ -176,7 +176,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 		return json.Marshal(out)
 	}
 
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func ensureOffloadState(k *kernel.Kernel) *offloadState {
@@ -254,7 +254,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mo
 	if st.compactToolRegistered {
 		return nil
 	}
-	if _, _, exists := reg.Get("compact_conversation"); exists {
+	if _, exists := reg.Get("compact_conversation"); exists {
 		st.compactToolRegistered = true
 		return nil
 	}
@@ -306,7 +306,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mo
 		}
 		return json.Marshal(out)
 	}
-	if err := reg.Register(spec, handler); err != nil {
+	if err := reg.Register(tool.NewRawTool(spec, handler)); err != nil {
 		return err
 	}
 	st.compactToolRegistered = true

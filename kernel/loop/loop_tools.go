@@ -126,7 +126,11 @@ func (l *AgentLoop) admitToolCallBatches(calls []model.ToolCall) [][]model.ToolC
 }
 
 func (l *AgentLoop) describeToolCallForAdmission(call model.ToolCall) toolAdmissionCandidate {
-	spec, _, ok := l.Tools.Get(call.Name)
+	t, ok := l.Tools.Get(call.Name)
+	var spec tool.ToolSpec
+	if ok {
+		spec = t.Spec()
+	}
 	return toolAdmissionCandidate{
 		call: call,
 		spec: spec,
@@ -310,10 +314,11 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	if !l.toolAllowed(call.Name) {
 		return l.handleMissingTool(ctx, sess, call, repairedArgs)
 	}
-	spec, handler, ok := l.Tools.Get(call.Name)
+	t, ok := l.Tools.Get(call.Name)
 	if !ok {
 		return l.handleMissingTool(ctx, sess, call, repairedArgs)
 	}
+	spec := t.Spec()
 
 	// Validate required fields declared in the tool's input schema.
 	// This is a best-effort guard against malformed or prompt-injected args.
@@ -336,7 +341,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	})
 	// 执行工具
 	toolStart := time.Now()
-	output, err := handler(toolCtx, repairedArgs)
+	output, err := t.Execute(toolCtx, repairedArgs)
 	toolDur := time.Since(toolStart)
 	result := buildToolResult(call.ID, output, err)
 	l.observeToolCompletion(ctx, sess, call, spec, toolStart, toolDur, result, output, err)

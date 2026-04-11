@@ -125,7 +125,7 @@ func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
 		}
 
 		handler := s.makeHandler(mcpTool.Name)
-		if err := deps.ToolRegistry.Register(spec, handler); err != nil {
+		if err := deps.ToolRegistry.Register(tool.NewRawTool(spec, handler)); err != nil {
 			return fmt.Errorf("register mcp tool %s: %w", toolName, err)
 		}
 

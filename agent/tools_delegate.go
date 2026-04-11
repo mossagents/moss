@@ -67,7 +67,7 @@ func registerDelegate(reg tool.Registry, agents *Registry, delegator Delegator) 
 		})
 	}
 
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 // ── spawn_agent (异步) ────────────────────────────────
@@ -120,5 +120,5 @@ func registerSpawn(reg tool.Registry, agents *Registry, tracker *TaskTracker, de
 		})
 	}
 
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }

@@ -62,11 +62,11 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 		strings.Repeat("third user ", 10),
 	)
 	before := len(sess.Messages)
-	_, handler, ok := k.ToolRegistry().Get("compact_conversation")
+	compactTool, ok := k.ToolRegistry().Get("compact_conversation")
 	if !ok {
 		t.Fatal("compact_conversation not registered")
 	}
-	raw, err := handler(ctx, mustJSON(t, map[string]any{
+	raw, err := compactTool.Execute(ctx, mustJSON(t, map[string]any{
 		"session_id":  sess.ID,
 		"keep_recent": 2,
 		"note":        "manual compact",

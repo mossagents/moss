@@ -7,37 +7,33 @@ import (
 
 // Registry 管理工具的注册与查找。
 type Registry interface {
-	Register(spec ToolSpec, handler ToolHandler) error
+	Register(t Tool) error
 	Unregister(name string) error
-	Get(name string) (ToolSpec, ToolHandler, bool)
-	List() []ToolSpec
-	ListByCapability(cap string) []ToolSpec
-}
-
-type entry struct {
-	spec    ToolSpec
-	handler ToolHandler
+	Get(name string) (Tool, bool)
+	List() []Tool
+	ListByCapability(cap string) []Tool
 }
 
 type mapRegistry struct {
 	mu      sync.RWMutex
-	entries map[string]entry
+	entries map[string]Tool
 	order   []string // insertion order for deterministic List()
 }
 
 // NewRegistry 创建基于 map 的默认 Registry 实现。
 func NewRegistry() Registry {
-	return &mapRegistry{entries: make(map[string]entry)}
+	return &mapRegistry{entries: make(map[string]Tool)}
 }
 
-func (r *mapRegistry) Register(spec ToolSpec, handler ToolHandler) error {
+func (r *mapRegistry) Register(t Tool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.entries[spec.Name]; ok {
-		return fmt.Errorf("tool %q already registered", spec.Name)
+	name := t.Name()
+	if _, ok := r.entries[name]; ok {
+		return fmt.Errorf("tool %q already registered", name)
 	}
-	r.entries[spec.Name] = entry{spec: spec, handler: handler}
-	r.order = append(r.order, spec.Name)
+	r.entries[name] = t
+	r.order = append(r.order, name)
 	return nil
 }
 
@@ -57,43 +53,40 @@ func (r *mapRegistry) Unregister(name string) error {
 	return nil
 }
 
-func (r *mapRegistry) Get(name string) (ToolSpec, ToolHandler, bool) {
+func (r *mapRegistry) Get(name string) (Tool, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	e, ok := r.entries[name]
-	if !ok {
-		return ToolSpec{}, nil, false
-	}
-	return e.spec, e.handler, true
+	t, ok := r.entries[name]
+	return t, ok
 }
 
-func (r *mapRegistry) List() []ToolSpec {
+func (r *mapRegistry) List() []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	specs := make([]ToolSpec, 0, len(r.order))
+	tools := make([]Tool, 0, len(r.order))
 	for _, name := range r.order {
-		if e, ok := r.entries[name]; ok {
-			specs = append(specs, e.spec)
+		if t, ok := r.entries[name]; ok {
+			tools = append(tools, t)
 		}
 	}
-	return specs
+	return tools
 }
 
-func (r *mapRegistry) ListByCapability(cap string) []ToolSpec {
+func (r *mapRegistry) ListByCapability(cap string) []Tool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	var specs []ToolSpec
+	var tools []Tool
 	for _, name := range r.order {
-		e, ok := r.entries[name]
+		t, ok := r.entries[name]
 		if !ok {
 			continue
 		}
-		for _, c := range e.spec.Capabilities {
+		for _, c := range t.Spec().Capabilities {
 			if c == cap {
-				specs = append(specs, e.spec)
+				tools = append(tools, t)
 				break
 			}
 		}
 	}
-	return specs
+	return tools
 }

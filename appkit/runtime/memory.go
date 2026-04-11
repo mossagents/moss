@@ -137,10 +137,10 @@ func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, 
 	}
 	for _, t := range tools {
 		spec := runtimeMemoryToolSpec(t.spec)
-		if _, _, exists := reg.Get(spec.Name); exists {
+		if _, exists := reg.Get(spec.Name); exists {
 			continue
 		}
-		if err := reg.Register(spec, t.handler); err != nil {
+		if err := reg.Register(tool.NewRawTool(spec, t.handler)); err != nil {
 			return err
 		}
 	}

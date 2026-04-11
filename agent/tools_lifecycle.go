@@ -60,7 +60,7 @@ func registerUpdateTask(reg tool.Registry, agents *Registry, tracker *TaskTracke
 			"job_item_id": updated.JobItemID,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type writeAgentInput struct {
@@ -175,7 +175,7 @@ func registerWriteAgentTool(reg tool.Registry, agents *Registry, tracker *TaskTr
 			"remaining_count": metrics.RemainingCount,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type waitAgentInput struct {
@@ -283,7 +283,7 @@ func registerWaitAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 			}
 		}
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type closeAgentInput struct {
@@ -347,7 +347,7 @@ func registerCloseAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 			"note":      note,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type resumeAgentInput struct {
@@ -410,7 +410,7 @@ func registerResumeAgentTool(reg tool.Registry, agents *Registry, tracker *TaskT
 		}
 		return json.Marshal(resp)
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 // ── task（统一入口） ───────────────────────────────────
@@ -586,7 +586,7 @@ func registerTask(reg tool.Registry, agents *Registry, tracker *TaskTracker, del
 		}
 	}
 
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 // ── 工具公共 helpers ─────────────────────────────────

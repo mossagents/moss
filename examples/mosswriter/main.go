@@ -222,7 +222,7 @@ func registerWriterTools(reg tool.Registry) error {
 		{makeSlugSpec, makeSlugHandler()},
 		{generateImageBriefSpec, generateImageBriefHandler()},
 	} {
-		if err := reg.Register(entry.spec, entry.handler); err != nil {
+		if err := reg.Register(tool.NewRawTool(entry.spec, entry.handler)); err != nil {
 			return err
 		}
 	}

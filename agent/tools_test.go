@@ -55,9 +55,9 @@ func TestDelegateAgent(t *testing.T) {
 
 	tracker := NewTaskTracker()
 	parentReg := tool.NewRegistry()
-	if err := parentReg.Register(tool.ToolSpec{Name: "grep"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{Name: "grep"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"search result"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,14 +69,14 @@ func TestDelegateAgent(t *testing.T) {
 	}
 
 	// Verify delegate_agent is registered
-	_, handler, ok := reg.Get("delegate_agent")
+	tl, ok := reg.Get("delegate_agent")
 	if !ok {
 		t.Fatal("delegate_agent not registered")
 	}
 
 	// Call delegate_agent
 	input, _ := json.Marshal(delegateInput{Agent: "researcher", Task: "find Go news"})
-	result, err := handler(context.Background(), input)
+	result, err := tl.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,8 @@ func TestDelegateAgent_NotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, handler, _ := reg.Get("delegate_agent")
+	handlerTool, _ := reg.Get("delegate_agent")
+	handler := handlerTool.Execute
 	input, _ := json.Marshal(delegateInput{Agent: "nonexistent", Task: "x"})
 	_, err := handler(context.Background(), input)
 	if err == nil {
@@ -132,7 +133,8 @@ func TestDelegateAgent_DepthLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, handler, _ := reg.Get("delegate_agent")
+	handlerTool, _ := reg.Get("delegate_agent")
+	handler := handlerTool.Execute
 	input, _ := json.Marshal(delegateInput{Agent: "deep", Task: "x"})
 
 	// Set depth to max
@@ -175,7 +177,8 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	}
 
 	// Spawn
-	_, spawnHandler, _ := reg.Get("spawn_agent")
+	spawnHandlerTool, _ := reg.Get("spawn_agent")
+	spawnHandler := spawnHandlerTool.Execute
 	input, _ := json.Marshal(spawnInput{Agent: "worker", Task: "background work"})
 	result, err := spawnHandler(context.Background(), input)
 	if err != nil {
@@ -198,7 +201,8 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	<-done
 
 	// Query
-	_, queryHandler, _ := reg.Get("query_agent")
+	queryHandlerTool, _ := reg.Get("query_agent")
+	queryHandler := queryHandlerTool.Execute
 	qInput, _ := json.Marshal(queryInput{TaskID: taskID})
 	qResult, err := queryHandler(context.Background(), qInput)
 	if err != nil {
@@ -248,10 +252,11 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, taskHandler, ok := reg.Get("task")
+	taskHandlerTool, ok := reg.Get("task")
 	if !ok {
 		t.Fatal("task tool not registered")
 	}
+	taskHandler := taskHandlerTool.Execute
 
 	// sync mode
 	syncInput, _ := json.Marshal(taskInput{Mode: "sync", Agent: "worker", Task: "do sync"})
@@ -313,10 +318,11 @@ func TestTaskToolModeValidation(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, taskHandler, ok := reg.Get("task")
+	taskHandlerTool, ok := reg.Get("task")
 	if !ok {
 		t.Fatal("task tool not registered")
 	}
+	taskHandler := taskHandlerTool.Execute
 
 	cases := []taskInput{
 		{Mode: "sync", Task: "missing agent"},
@@ -347,16 +353,16 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 	}
 	tracker := NewTaskTracker()
 	parentReg := tool.NewRegistry()
-	if err := parentReg.Register(tool.ToolSpec{
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:         "read_file",
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"filesystem"},
 	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"read ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
-	if err := parentReg.Register(tool.ToolSpec{
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:          "write_file",
 		Risk:          tool.RiskHigh,
 		Capabilities:  []string{"filesystem"},
@@ -364,7 +370,7 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 		ApprovalClass: tool.ApprovalClassExplicitUser,
 	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`{"status":"ok"}`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
@@ -378,14 +384,14 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 			if !strings.Contains(sess.Config.SystemPrompt, "<child_task_contract>") {
 				t.Fatalf("expected contract prompt in system prompt, got %q", sess.Config.SystemPrompt)
 			}
-			if len(tools.List()) != 1 || tools.List()[0].Name != "read_file" {
+			if len(tools.List()) != 1 || tools.List()[0].Name() != "read_file" {
 				t.Fatalf("unexpected scoped tools: %+v", tools.List())
 			}
-			_, writeHandler, ok := tools.Get("write_file")
+			writeTool, ok := tools.Get("write_file")
 			if !ok {
 				t.Fatal("expected write_file to be addressable for contract violation")
 			}
-			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "violates child task contract") {
+			if _, err := writeTool.Execute(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "violates child task contract") {
 				t.Fatalf("expected contract violation, got %v", err)
 			}
 			return &loop.SessionResult{
@@ -400,10 +406,11 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, taskHandler, ok := reg.Get("task")
+	taskHandlerTool, ok := reg.Get("task")
 	if !ok {
 		t.Fatal("task tool not registered")
 	}
+	taskHandler := taskHandlerTool.Execute
 	raw, err := taskHandler(context.Background(), mustJSON(t, taskInput{
 		Mode:  "background",
 		Agent: "worker",
@@ -457,7 +464,7 @@ func TestDelegateAgentContractWritableScope(t *testing.T) {
 	}
 	tracker := NewTaskTracker()
 	parentReg := tool.NewRegistry()
-	if err := parentReg.Register(tool.ToolSpec{
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:          "write_file",
 		Risk:          tool.RiskHigh,
 		Capabilities:  []string{"filesystem"},
@@ -465,16 +472,17 @@ func TestDelegateAgentContractWritableScope(t *testing.T) {
 		ApprovalClass: tool.ApprovalClassExplicitUser,
 	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`{"status":"ok"}`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 	delegator := &mockDelegator{
 		registry: parentReg,
 		runFn: func(_ context.Context, _ *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
-			_, writeHandler, ok := tools.Get("write_file")
+			writeHandlerTool, ok := tools.Get("write_file")
 			if !ok {
 				t.Fatal("write_file not available")
 			}
+			writeHandler := writeHandlerTool.Execute
 			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "outside writable scopes") {
 				t.Fatalf("expected writable scope violation, got %v", err)
 			}
@@ -488,11 +496,11 @@ func TestDelegateAgentContractWritableScope(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, handler, ok := reg.Get("delegate_agent")
+	tl, ok := reg.Get("delegate_agent")
 	if !ok {
 		t.Fatal("delegate_agent not registered")
 	}
-	_, err := handler(context.Background(), mustJSON(t, delegateInput{
+	_, err := tl.Execute(context.Background(), mustJSON(t, delegateInput{
 		Agent: "worker",
 		Task:  "write docs",
 		Contract: taskrt.TaskContract{
@@ -547,14 +555,16 @@ func TestUpdateTaskRestartsSameID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, spawnHandler, ok := reg.Get("spawn_agent")
+	spawnHandlerTool, ok := reg.Get("spawn_agent")
 	if !ok {
 		t.Fatal("spawn_agent not registered")
 	}
-	_, updateHandler, ok := reg.Get("update_task")
+	spawnHandler := spawnHandlerTool.Execute
+	updateHandlerTool, ok := reg.Get("update_task")
 	if !ok {
 		t.Fatal("update_task not registered")
 	}
+	updateHandler := updateHandlerTool.Execute
 
 	spawnInputRaw, _ := json.Marshal(spawnInput{
 		Agent: "worker",
@@ -643,18 +653,21 @@ func TestListAndCancelTaskTools(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, spawnHandler, ok := reg.Get("spawn_agent")
+	spawnHandlerTool, ok := reg.Get("spawn_agent")
 	if !ok {
 		t.Fatal("spawn_agent not registered")
 	}
-	_, listHandler, ok := reg.Get("list_tasks")
+	spawnHandler := spawnHandlerTool.Execute
+	listHandlerTool, ok := reg.Get("list_tasks")
 	if !ok {
 		t.Fatal("list_tasks not registered")
 	}
-	_, cancelHandler, ok := reg.Get("cancel_task")
+	listHandler := listHandlerTool.Execute
+	cancelHandlerTool, ok := reg.Get("cancel_task")
 	if !ok {
 		t.Fatal("cancel_task not registered")
 	}
+	cancelHandler := cancelHandlerTool.Execute
 
 	spawnInput, _ := json.Marshal(spawnInput{Agent: "worker", Task: "blocking work"})
 	raw, err := spawnHandler(context.Background(), spawnInput)
@@ -714,14 +727,14 @@ func TestScopedToolIsolation(t *testing.T) {
 	tracker := NewTaskTracker()
 
 	parentReg := tool.NewRegistry()
-	if err := parentReg.Register(tool.ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{Name: "read_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
-	if err := parentReg.Register(tool.ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := parentReg.Register(tool.NewRawTool(tool.ToolSpec{Name: "write_file"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatal(err)
 	}
 
@@ -739,9 +752,9 @@ func TestScopedToolIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, handler, _ := reg.Get("delegate_agent")
+	tl, _ := reg.Get("delegate_agent")
 	input, _ := json.Marshal(delegateInput{Agent: "limited", Task: "test isolation"})
-	if _, err := handler(context.Background(), input); err != nil {
+	if _, err := tl.Execute(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
 
@@ -753,12 +766,12 @@ func TestScopedToolIsolation(t *testing.T) {
 	if len(list) != 1 {
 		t.Fatalf("scoped tools = %d, want 1", len(list))
 	}
-	if list[0].Name != "read_file" {
-		t.Errorf("tool name = %q, want read_file", list[0].Name)
+	if list[0].Name() != "read_file" {
+		t.Errorf("tool name = %q, want read_file", list[0].Name())
 	}
 
 	// write_file should not be accessible
-	_, _, ok := capturedTools.Get("write_file")
+	_, ok := capturedTools.Get("write_file")
 	if ok {
 		t.Error("write_file should not be accessible in scoped registry")
 	}
@@ -788,10 +801,11 @@ func TestSpawnAgent_CancelledContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, spawnHandler, ok := reg.Get("spawn_agent")
+	spawnHandlerTool, ok := reg.Get("spawn_agent")
 	if !ok {
 		t.Fatal("spawn_agent not registered")
 	}
+	spawnHandler := spawnHandlerTool.Execute
 
 	ctx, cancel := context.WithCancel(context.Background())
 	input, _ := json.Marshal(spawnInput{Agent: "worker", Task: "background work"})
@@ -811,10 +825,11 @@ func TestSpawnAgent_CancelledContext(t *testing.T) {
 
 	cancel()
 
-	_, queryHandler, ok := reg.Get("query_agent")
+	queryHandlerTool, ok := reg.Get("query_agent")
 	if !ok {
 		t.Fatal("query_agent not registered")
 	}
+	queryHandler := queryHandlerTool.Execute
 
 	deadline := time.After(1 * time.Second)
 	for {
@@ -875,7 +890,7 @@ func TestRegisterToolsWithDeps_AddsCollaborationTools(t *testing.T) {
 		t.Fatalf("RegisterToolsWithDeps: %v", err)
 	}
 	for _, name := range []string{"plan_task", "claim_task", "send_mail", "read_mailbox", "acquire_workspace", "release_workspace"} {
-		if _, _, ok := reg.Get(name); !ok {
+		if _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected tool %q", name)
 		}
 	}
@@ -902,10 +917,11 @@ func TestRegisterTools_ExecutionMetadata(t *testing.T) {
 		{"task", tool.EffectGraphMutation, tool.SideEffectTaskGraph, tool.ApprovalClassPolicyGuarded},
 	}
 	for _, tc := range cases {
-		spec, _, ok := reg.Get(tc.name)
+		specTool, ok := reg.Get(tc.name)
 		if !ok {
 			t.Fatalf("tool %q not found", tc.name)
 		}
+		spec := specTool.Spec()
 		if effects := spec.EffectiveEffects(); len(effects) == 0 || effects[0] != tc.effect {
 			t.Fatalf("%s effects = %v", tc.name, effects)
 		}
@@ -939,12 +955,18 @@ func TestPlanClaimMailAndWorkspaceFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, plan, _ := reg.Get("plan_task")
-	_, claim, _ := reg.Get("claim_task")
-	_, sendMail, _ := reg.Get("send_mail")
-	_, readMailbox, _ := reg.Get("read_mailbox")
-	_, acquire, _ := reg.Get("acquire_workspace")
-	_, release, _ := reg.Get("release_workspace")
+	planTool, _ := reg.Get("plan_task")
+	plan := planTool.Execute
+	claimTool, _ := reg.Get("claim_task")
+	claim := claimTool.Execute
+	sendMailTool, _ := reg.Get("send_mail")
+	sendMail := sendMailTool.Execute
+	readMailboxTool, _ := reg.Get("read_mailbox")
+	readMailbox := readMailboxTool.Execute
+	acquireTool, _ := reg.Get("acquire_workspace")
+	acquire := acquireTool.Execute
+	releaseTool, _ := reg.Get("release_workspace")
+	release := releaseTool.Execute
 
 	if _, err := plan(context.Background(), json.RawMessage(`{"id":"t-dep","goal":"dep done"}`)); err != nil {
 		t.Fatal(err)
@@ -1053,7 +1075,8 @@ func TestWaitAgent_ReturnsRecoverableForHydratedRunningTask(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, waitHandler, _ := reg.Get("wait_agent")
+	waitHandlerTool, _ := reg.Get("wait_agent")
+	waitHandler := waitHandlerTool.Execute
 	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"persisted-task","timeout_seconds":1}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1094,7 +1117,8 @@ func TestResumeAgent_RestartsHydratedRunningTask(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, resumeHandler, _ := reg.Get("resume_agent")
+	resumeHandlerTool, _ := reg.Get("resume_agent")
+	resumeHandler := resumeHandlerTool.Execute
 	raw, err := resumeHandler(context.Background(), json.RawMessage(`{"target":"persisted-task","message":"continue"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1131,7 +1155,7 @@ func TestRegisterToolsWithDeps_AddsP1ControlPlaneTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"list_agents", "read_agent", "write_agent", "wait_agent", "close_agent", "resume_agent"} {
-		if _, _, ok := reg.Get(name); !ok {
+		if _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected tool %q", name)
 		}
 	}
@@ -1168,9 +1192,12 @@ func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, delegator); err != nil {
 		t.Fatal(err)
 	}
-	_, spawnHandler, _ := reg.Get("spawn_agent")
-	_, readHandler, _ := reg.Get("read_agent")
-	_, writeHandler, _ := reg.Get("write_agent")
+	spawnHandlerTool, _ := reg.Get("spawn_agent")
+	spawnHandler := spawnHandlerTool.Execute
+	readHandlerTool, _ := reg.Get("read_agent")
+	readHandler := readHandlerTool.Execute
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 
 	spawnInputRaw, _ := json.Marshal(spawnInput{Agent: "worker", Task: "initial"})
 	spawnRaw, err := spawnHandler(context.Background(), spawnInputRaw)
@@ -1217,7 +1244,8 @@ func TestWriteAgent_AmbiguousAgentTargetRequiresTaskID(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 	_, err := writeHandler(context.Background(), json.RawMessage(`{"target":"worker","message":"follow up"}`))
 	if err == nil || !strings.Contains(err.Error(), "please specify task_id") {
 		t.Fatalf("expected ambiguous target error, got %v", err)
@@ -1242,7 +1270,8 @@ func TestWriteAgent_QueueOnlyReturnsQueued(t *testing.T) {
 	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{TaskRuntime: rt}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue","message":"queued note","trigger_turn":false}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1276,7 +1305,8 @@ func TestWriteAgent_QueueOnlyRequiresPersistentRuntime(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 	_, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-queue-no-runtime","message":"queued note","trigger_turn":false}`))
 	if err == nil || !strings.Contains(err.Error(), "task message persistence") {
 		t.Fatalf("expected persistence requirement error, got %v", err)
@@ -1301,7 +1331,8 @@ func TestWriteAgent_InterruptFalseOnRunningReturnsQueued(t *testing.T) {
 	if err := RegisterToolsWithDeps(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}, RuntimeDeps{TaskRuntime: rt}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-running","message":"do later","interrupt":false}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1347,7 +1378,8 @@ func TestWriteAgent_TriggerTurnConsumesQueuedMessages(t *testing.T) {
 	if err := RegisterToolsWithDeps(reg, agents, tracker, delegator, RuntimeDeps{TaskRuntime: rt}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 
 	if _, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-consume","message":"queued first","trigger_turn":false}`)); err != nil {
 		t.Fatal(err)
@@ -1405,7 +1437,8 @@ func TestWriteAgent_TriggerTurnOnCompletedRestartsTask(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, writeHandler, _ := reg.Get("write_agent")
+	writeHandlerTool, _ := reg.Get("write_agent")
+	writeHandler := writeHandlerTool.Execute
 	raw, err := writeHandler(context.Background(), json.RawMessage(`{"target":"t-completed","message":"run again"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1432,7 +1465,8 @@ func TestWaitAgent_ReturnsOnStateChange(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, waitHandler, _ := reg.Get("wait_agent")
+	waitHandlerTool, _ := reg.Get("wait_agent")
+	waitHandler := waitHandlerTool.Execute
 	go func() {
 		time.Sleep(80 * time.Millisecond)
 		tracker.CompleteIf("t-wait", revision, "ok", model.TokenUsage{})
@@ -1463,7 +1497,8 @@ func TestWaitAgent_TimesOut(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, waitHandler, _ := reg.Get("wait_agent")
+	waitHandlerTool, _ := reg.Get("wait_agent")
+	waitHandler := waitHandlerTool.Execute
 	raw, err := waitHandler(context.Background(), json.RawMessage(`{"target":"t-timeout","timeout_seconds":1,"poll_millis":50}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1490,7 +1525,8 @@ func TestCloseAgent_CancelsRunningTask(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, closeHandler, _ := reg.Get("close_agent")
+	closeHandlerTool, _ := reg.Get("close_agent")
+	closeHandler := closeHandlerTool.Execute
 	raw, err := closeHandler(context.Background(), json.RawMessage(`{"target":"t-close","reason":"stop now"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -1521,7 +1557,8 @@ func TestResumeAgent_RestartsCompletedTask(t *testing.T) {
 	if err := RegisterTools(reg, agents, tracker, &mockDelegator{registry: tool.NewRegistry()}); err != nil {
 		t.Fatal(err)
 	}
-	_, resumeHandler, _ := reg.Get("resume_agent")
+	resumeHandlerTool, _ := reg.Get("resume_agent")
+	resumeHandler := resumeHandlerTool.Execute
 	raw, err := resumeHandler(context.Background(), json.RawMessage(`{"target":"t-resume","message":"run again"}`))
 	if err != nil {
 		t.Fatal(err)

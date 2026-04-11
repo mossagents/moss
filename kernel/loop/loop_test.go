@@ -129,9 +129,9 @@ func TestLoopToolCall(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"Hello world"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register greet: %v", err)
 	}
 
@@ -187,9 +187,9 @@ func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 		},
 	}
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "list_files", Description: "List files"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "list_files", Description: "List files"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`[]`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register tool: %v", err)
 	}
 	l := &AgentLoop{
@@ -233,14 +233,14 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 		},
 	}
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "read_file", Risk: tool.RiskLow, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "read_file", Risk: tool.RiskLow, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register read_file: %v", err)
 	}
-	if err := reg.Register(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register write_file: %v", err)
 	}
 	observer := &recordingObserver{}
@@ -326,9 +326,9 @@ func TestLoopHiddenToolCallReturnsNotAllowedError(t *testing.T) {
 		},
 	}
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "write_file", Risk: tool.RiskHigh, Capabilities: []string{"filesystem"}}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"should-not-run"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register write_file: %v", err)
 	}
 	l := &AgentLoop{
@@ -471,10 +471,10 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("should not be called")
 		return nil, nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 
@@ -647,10 +647,10 @@ func TestLoopParallelToolCalls(t *testing.T) {
 			return json.RawMessage(`"` + name + `"`), nil
 		}
 	}
-	if err := reg.Register(tool.ToolSpec{Name: "slow_one"}, handler("one")); err != nil {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_one"}, handler("one"))); err != nil {
 		t.Fatalf("register slow_one: %v", err)
 	}
-	if err := reg.Register(tool.ToolSpec{Name: "slow_two"}, handler("two")); err != nil {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_two"}, handler("two"))); err != nil {
 		t.Fatalf("register slow_two: %v", err)
 	}
 
@@ -698,22 +698,22 @@ func TestAdmitToolCallBatches_SerializesConflictingWorkspaceWrites(t *testing.T)
 	handler := func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
 	}
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:            "write_one",
 		Risk:            tool.RiskHigh,
 		Effects:         []tool.Effect{tool.EffectWritesWorkspace},
 		SideEffectClass: tool.SideEffectWorkspace,
 		ResourceScope:   []string{"workspace:docs/spec.md"},
-	}, handler); err != nil {
+	}, handler)); err != nil {
 		t.Fatalf("register write_one: %v", err)
 	}
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:            "write_two",
 		Risk:            tool.RiskHigh,
 		Effects:         []tool.Effect{tool.EffectWritesWorkspace},
 		SideEffectClass: tool.SideEffectWorkspace,
 		ResourceScope:   []string{"workspace:docs/spec.md"},
-	}, handler); err != nil {
+	}, handler)); err != nil {
 		t.Fatalf("register write_two: %v", err)
 	}
 
@@ -792,13 +792,13 @@ func TestLoopCancellationMarksSessionCancelledAndEnded(t *testing.T) {
 
 func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "echo_json"}, func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "echo_json"}, func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in map[string]any
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, err
 		}
 		return json.Marshal(in)
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 
@@ -825,10 +825,10 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 
 func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *testing.T) {
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not execute")
 		return nil, nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 	chain := hooks.NewRegistry()
@@ -1243,10 +1243,10 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	var events []session.ToolLifecycleEvent
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not be executed")
 		return nil, nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 	l := &AgentLoop{
@@ -1454,9 +1454,9 @@ func TestLoopStreamingAfterVisibleOutputDoesNotSyncFallback(t *testing.T) {
 
 func TestLoopStreamingTailJSONErrorWithToolCall_ShouldProceed(t *testing.T) {
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "noop"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "noop"}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register noop: %v", err)
 	}
 	l := &AgentLoop{

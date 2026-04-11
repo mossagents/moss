@@ -209,13 +209,13 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	}, &io.NoOpIO{},
 		WithKernelOptions(kernel.WithParallelToolCalls()),
 		AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
-			return k.ToolRegistry().Register(tool.ToolSpec{
+			return k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 				Name:        "test_extension_tool",
 				Description: "test tool",
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 			}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 				return json.RawMessage(`{"ok":true}`), nil
-			})
+			}))
 		}),
 	)
 	if err != nil {
@@ -231,7 +231,7 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	tools := k.ToolRegistry().List()
 	found := false
 	for _, spec := range tools {
-		if spec.Name == "test_extension_tool" {
+		if spec.Name() == "test_extension_tool" {
 			found = true
 			break
 		}
@@ -267,7 +267,7 @@ func TestBuildKernelWithExtensions_RuntimeOptionsAffectSetup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
-	if _, _, ok := k.ToolRegistry().Get("read_file"); ok {
+	if _, ok := k.ToolRegistry().Get("read_file"); ok {
 		t.Fatal("expected builtin tools to be disabled by runtime option extension")
 	}
 }
@@ -288,7 +288,7 @@ func isolatedBuildFlags(t *testing.T) *AppFlags {
 func toolNames(k *kernel.Kernel) []string {
 	names := make([]string, 0, len(k.ToolRegistry().List()))
 	for _, spec := range k.ToolRegistry().List() {
-		names = append(names, spec.Name)
+		names = append(names, spec.Name())
 	}
 	sort.Strings(names)
 	return names
@@ -306,7 +306,7 @@ func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
 	tools := k.ToolRegistry().List()
 	toolNames := make(map[string]bool, len(tools))
 	for _, spec := range tools {
-		toolNames[spec.Name] = true
+		toolNames[spec.Name()] = true
 	}
 	for _, name := range []string{"schedule_task", "list_schedules", "cancel_schedule"} {
 		if !toolNames[name] {
@@ -331,7 +331,7 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 	tools := k.ToolRegistry().List()
 	toolNames := make(map[string]bool, len(tools))
 	for _, spec := range tools {
-		toolNames[spec.Name] = true
+		toolNames[spec.Name()] = true
 	}
 	for _, name := range []string{"read_memory", "write_memory", "list_memories", "delete_memory"} {
 		if !toolNames[name] {
@@ -353,7 +353,7 @@ func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
 		t.Fatalf("BuildKernelWithExtensions: %v", err)
 	}
 
-	if _, _, ok := k.ToolRegistry().Get("offload_context"); !ok {
+	if _, ok := k.ToolRegistry().Get("offload_context"); !ok {
 		t.Fatal("expected offload_context tool to be registered")
 	}
 }

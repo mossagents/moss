@@ -304,10 +304,10 @@ Useful for discovering pages to crawl, finding navigation structure, or building
 		Capabilities: []string{"network"},
 	}
 
-	if err := k.ToolRegistry().Register(fetchSpec, fetchURLHandler); err != nil {
+	if err := k.ToolRegistry().Register(tool.NewRawTool(fetchSpec, fetchURLHandler)); err != nil {
 		return err
 	}
-	return k.ToolRegistry().Register(linksSpec, extractLinksHandler)
+	return k.ToolRegistry().Register(tool.NewRawTool(linksSpec, extractLinksHandler))
 }
 
 // HTTP client with timeout

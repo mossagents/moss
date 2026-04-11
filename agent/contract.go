@@ -22,54 +22,56 @@ func withTaskContract(parent tool.Registry, contract taskrt.TaskContract) tool.R
 	return &contractRegistry{parent: parent, contract: contract}
 }
 
-func (r *contractRegistry) Register(spec tool.ToolSpec, handler tool.ToolHandler) error {
-	return fmt.Errorf("contract registry is read-only: cannot register tool %q", spec.Name)
+func (r *contractRegistry) Register(t tool.Tool) error {
+	return fmt.Errorf("contract registry is read-only: cannot register tool %q", t.Name())
 }
 
 func (r *contractRegistry) Unregister(name string) error {
 	return fmt.Errorf("contract registry is read-only: cannot unregister tool %q", name)
 }
 
-func (r *contractRegistry) Get(name string) (tool.ToolSpec, tool.ToolHandler, bool) {
-	spec, handler, ok := r.parent.Get(name)
+func (r *contractRegistry) Get(name string) (tool.Tool, bool) {
+	t, ok := r.parent.Get(name)
 	if !ok {
-		return tool.ToolSpec{}, nil, false
+		return nil, false
 	}
+	spec := t.Spec()
 	if err := validateContractSpec(spec, r.contract); err != nil {
-		return spec, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return tool.NewRawTool(spec, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 			return nil, err
-		}, true
+		}), true
 	}
-	return spec, r.wrapHandler(spec, handler), true
+	return r.wrapTool(t), true
 }
 
-func (r *contractRegistry) List() []tool.ToolSpec {
-	out := make([]tool.ToolSpec, 0)
-	for _, spec := range r.parent.List() {
-		if validateContractSpec(spec, r.contract) == nil {
-			out = append(out, spec)
+func (r *contractRegistry) List() []tool.Tool {
+	out := make([]tool.Tool, 0)
+	for _, t := range r.parent.List() {
+		if validateContractSpec(t.Spec(), r.contract) == nil {
+			out = append(out, t)
 		}
 	}
 	return out
 }
 
-func (r *contractRegistry) ListByCapability(cap string) []tool.ToolSpec {
-	out := make([]tool.ToolSpec, 0)
-	for _, spec := range r.parent.ListByCapability(cap) {
-		if validateContractSpec(spec, r.contract) == nil {
-			out = append(out, spec)
+func (r *contractRegistry) ListByCapability(cap string) []tool.Tool {
+	out := make([]tool.Tool, 0)
+	for _, t := range r.parent.ListByCapability(cap) {
+		if validateContractSpec(t.Spec(), r.contract) == nil {
+			out = append(out, t)
 		}
 	}
 	return out
 }
 
-func (r *contractRegistry) wrapHandler(spec tool.ToolSpec, next tool.ToolHandler) tool.ToolHandler {
-	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+func (r *contractRegistry) wrapTool(t tool.Tool) tool.Tool {
+	spec := t.Spec()
+	return tool.NewRawTool(spec, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		if err := validateContractInput(spec, r.contract, input); err != nil {
 			return nil, err
 		}
-		return next(ctx, input)
-	}
+		return t.Execute(ctx, input)
+	})
 }
 
 func normalizeTaskContract(contract taskrt.TaskContract, taskID string, goal string, scoped tool.Registry, cfg AgentConfig) taskrt.TaskContract {
@@ -189,7 +191,8 @@ func renderTaskContractPrompt(contract taskrt.TaskContract) string {
 func maxApprovalForRegistry(reg tool.Registry) tool.ApprovalClass {
 	maxRank := approvalRank(tool.ApprovalClassNone)
 	maxApproval := tool.ApprovalClassNone
-	for _, spec := range reg.List() {
+	for _, t := range reg.List() {
+		spec := t.Spec()
 		if rank := approvalRank(spec.EffectiveApprovalClass()); rank > maxRank {
 			maxRank = rank
 			maxApproval = spec.EffectiveApprovalClass()
@@ -201,8 +204,8 @@ func maxApprovalForRegistry(reg tool.Registry) tool.ApprovalClass {
 func deriveEffectsForRegistry(reg tool.Registry) []tool.Effect {
 	seen := make(map[tool.Effect]struct{})
 	out := make([]tool.Effect, 0)
-	for _, spec := range reg.List() {
-		for _, effect := range spec.EffectiveEffects() {
+	for _, t := range reg.List() {
+		for _, effect := range t.Spec().EffectiveEffects() {
 			if _, ok := seen[effect]; ok {
 				continue
 			}

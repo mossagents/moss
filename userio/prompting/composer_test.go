@@ -41,11 +41,11 @@ func TestCompose_PriorityConfigOverSessionOverModel(t *testing.T) {
 
 func TestCompose_DynamicSectionOrder(t *testing.T) {
 	k := kernel.New(kernel.WithToolRegistry(tool.NewRegistry()))
-	if err := k.ToolRegistry().Register(tool.ToolSpec{
+	if err := k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 		Name:        "z_tool",
 		Description: "z tool",
 		Risk:        tool.RiskLow,
-	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) { return nil, nil }); err != nil {
+	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) { return nil, nil })); err != nil {
 		t.Fatalf("register tool: %v", err)
 	}
 	out, err := Compose(ComposeInput{

@@ -14,13 +14,13 @@ import (
 
 func BenchmarkToolCallDispatch(b *testing.B) {
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:        "echo",
 		Description: "Echo input back",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"msg":{"type":"string"}}}`),
 	}, func(_ context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return input, nil
-	}); err != nil {
+	})); err != nil {
 		b.Fatalf("register: %v", err)
 	}
 
@@ -52,12 +52,12 @@ func BenchmarkHooksPipeline(b *testing.B) {
 	}
 
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:        "noop",
 		Description: "No-op tool",
 	}, func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`{}`), nil
-	}); err != nil {
+	})); err != nil {
 		b.Fatalf("register: %v", err)
 	}
 

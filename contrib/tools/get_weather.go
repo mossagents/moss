@@ -74,7 +74,7 @@ func WeatherHandler() tool.ToolHandler {
 
 // RegisterWeather 便捷注册方法。
 func RegisterWeather(reg tool.Registry) {
-	_ = reg.Register(WeatherSpec, WeatherHandler())
+	_ = reg.Register(tool.NewRawTool(WeatherSpec, WeatherHandler()))
 }
 
 // ── wttr.in JSON 响应结构 ────────────────────────────

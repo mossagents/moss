@@ -11,7 +11,7 @@ import (
 
 func TestBuildExecutionPlanPopulatesToolSemantics(t *testing.T) {
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:              "write_file",
 		Effects:           []tool.Effect{tool.EffectWritesWorkspace},
 		ResourceScope:     []string{"workspace:*"},
@@ -21,7 +21,7 @@ func TestBuildExecutionPlanPopulatesToolSemantics(t *testing.T) {
 		PlannerVisibility: tool.PlannerVisibilityVisibleWithConstraints,
 	}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 

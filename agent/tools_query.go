@@ -44,7 +44,7 @@ func registerQuery(reg tool.Registry, tracker *TaskTracker) error {
 		return json.Marshal(buildTaskResponse(task))
 	}
 
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type readAgentInput struct {
@@ -79,7 +79,7 @@ func registerReadAgentTool(reg tool.Registry, tracker *TaskTracker) error {
 			"task":   task,
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 // listInput is shared by list_agents and list_tasks (identical fields).
@@ -149,7 +149,7 @@ func registerListAgentsTool(reg tool.Registry, tracker *TaskTracker) error {
 			"count":  len(agents),
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
@@ -190,7 +190,7 @@ func registerListTasks(reg tool.Registry, tracker *TaskTracker) error {
 			"count": len(tasks),
 		})
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 type cancelTaskInput struct {
@@ -244,5 +244,5 @@ func registerCancelTask(reg tool.Registry, tracker *TaskTracker) error {
 		updated, _ := tracker.Get(taskID)
 		return json.Marshal(updated)
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }

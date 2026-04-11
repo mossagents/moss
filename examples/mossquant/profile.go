@@ -332,7 +332,7 @@ func registerProfileTools(reg tool.Registry, workspace string, fallback *Investo
 		}
 		return json.Marshal(profile)
 	}
-	return reg.Register(spec, handler)
+	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
 func mergeProfile(dst, src *InvestorProfile) {

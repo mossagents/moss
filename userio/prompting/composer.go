@@ -384,14 +384,15 @@ func renderCapabilitiesSection(k *kernel.Kernel) string {
 	if k == nil {
 		return ""
 	}
-	specs := k.ToolRegistry().List()
-	if len(specs) == 0 {
+	tools := k.ToolRegistry().List()
+	if len(tools) == 0 {
 		return ""
 	}
-	sort.Slice(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 	var b strings.Builder
 	b.WriteString("## Runtime Capabilities\n")
-	for _, spec := range specs {
+	for _, t := range tools {
+		spec := t.Spec()
 		desc := strings.TrimSpace(spec.Description)
 		if desc == "" {
 			desc = "No description."

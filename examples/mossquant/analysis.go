@@ -12,7 +12,7 @@ import (
 // ─── Technical Analysis ─────────────────────────────
 
 func registerAnalysisTools(reg tool.Registry, mkt *market) error {
-	return reg.Register(analyzeMarketSpec, analyzeMarketHandler(mkt))
+	return reg.Register(tool.NewRawTool(analyzeMarketSpec, analyzeMarketHandler(mkt)))
 }
 
 var analyzeMarketSpec = tool.ToolSpec{

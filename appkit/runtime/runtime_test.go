@@ -141,7 +141,7 @@ func TestSetup_ReportsBuiltinCriticalFailure(t *testing.T) {
 		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
-	_ = k.ToolRegistry().Register(toolSpecNoop("read_file"), toolHandlerNoop)
+	_ = k.ToolRegistry().Register(tool.NewRawTool(toolSpecNoop("read_file"), toolHandlerNoop))
 	reporter := &captureReporter{}
 	err := Setup(context.Background(), k, ".", WithCapabilityReporter(reporter))
 	if err == nil {

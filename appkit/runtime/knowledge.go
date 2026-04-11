@@ -30,7 +30,7 @@ func register(reg tool.Registry, store knowledge.Store, embedder model.Embedder)
 		{knowledgeListSpec, knowledgeListHandler(store)},
 	}
 	for _, t := range tools {
-		if err := reg.Register(t.spec, t.handler); err != nil {
+		if err := reg.Register(tool.NewRawTool(t.spec, t.handler)); err != nil {
 			return err
 		}
 	}

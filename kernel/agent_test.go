@@ -514,9 +514,9 @@ func TestLLMAgent_YieldsToolCallAndResult(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"Hello world"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register greet: %v", err)
 	}
 
@@ -593,9 +593,9 @@ func TestLLMAgent_ConsumerCanBreakEarly(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	if err := reg.Register(tool.ToolSpec{Name: "noop"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "noop"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		return json.RawMessage(`"ok"`), nil
-	}); err != nil {
+	})); err != nil {
 		t.Fatalf("register noop: %v", err)
 	}
 
@@ -702,9 +702,9 @@ func TestLLMAgent_MultipleToolCalls(t *testing.T) {
 	reg := tool.NewRegistry()
 	for _, name := range []string{"tool_a", "tool_b"} {
 		n := name
-		if err := reg.Register(tool.ToolSpec{Name: n}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: n}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 			return json.RawMessage(`"` + n + ` result"`), nil
-		}); err != nil {
+		})); err != nil {
 			t.Fatalf("register %s: %v", n, err)
 		}
 	}

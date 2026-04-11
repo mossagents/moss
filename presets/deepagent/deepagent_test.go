@@ -34,7 +34,7 @@ func TestBuildKernel_DefaultPreset(t *testing.T) {
 	tools := k.ToolRegistry().List()
 	toolNames := map[string]bool{}
 	for _, spec := range tools {
-		toolNames[spec.Name] = true
+		toolNames[spec.Name()] = true
 	}
 	for _, name := range []string{
 		"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "ask_user",
@@ -140,7 +140,7 @@ func TestBuildKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
-	if _, _, ok := k.ToolRegistry().Get("write_todos"); !ok {
+	if _, ok := k.ToolRegistry().Get("write_todos"); !ok {
 		t.Fatal("expected write_todos tool in planning profile")
 	}
 }

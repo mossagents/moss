@@ -32,18 +32,18 @@ func TestBuildTurnPlan_IncludesPromptVersionFromSessionMetadata(t *testing.T) {
 func TestBuildToolRoute_UsesExecutionSemantics(t *testing.T) {
 	reg := tool.NewRegistry()
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:         "write_file",
 		Risk:         tool.RiskHigh,
 		Capabilities: []string{"filesystem"},
-	}, handler); err != nil {
+	}, handler)); err != nil {
 		t.Fatalf("Register write_file: %v", err)
 	}
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:         "read_file",
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"filesystem"},
-	}, handler); err != nil {
+	}, handler)); err != nil {
 		t.Fatalf("Register read_file: %v", err)
 	}
 
@@ -91,11 +91,11 @@ func TestBuildToolRoute_UsesExecutionSemantics(t *testing.T) {
 func TestBuildToolRoute_HidesPlannerHiddenTools(t *testing.T) {
 	reg := tool.NewRegistry()
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
-	if err := reg.Register(tool.ToolSpec{
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
 		Name:              "internal_checkpoint",
 		Risk:              tool.RiskLow,
 		PlannerVisibility: tool.PlannerVisibilityHidden,
-	}, handler); err != nil {
+	}, handler)); err != nil {
 		t.Fatalf("Register internal_checkpoint: %v", err)
 	}
 

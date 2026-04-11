@@ -378,7 +378,7 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 	if st.progressiveToolsLoaded {
 		return nil
 	}
-	if err := k.ToolRegistry().Register(tool.ToolSpec{
+	if err := k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 		Name:        "list_skills",
 		Description: "List discovered SKILL.md skills and whether each one has been activated.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
@@ -398,10 +398,10 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 			})
 		}
 		return json.Marshal(resp)
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
-	if err := k.ToolRegistry().Register(tool.ToolSpec{
+	if err := k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 		Name:        "activate_skill",
 		Description: "Load one discovered SKILL.md into the active prompt context by skill name.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string","description":"Skill name to activate"}},"required":["name"]}`),
@@ -434,7 +434,7 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 			return nil, fmt.Errorf("activate skill %q: %w", name, err)
 		}
 		return json.Marshal(map[string]string{"status": "loaded", "name": name})
-	}); err != nil {
+	})); err != nil {
 		return err
 	}
 	st.progressiveToolsLoaded = true
