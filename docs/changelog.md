@@ -4,6 +4,26 @@
 
 ## 2026-04
 
+### Harness Patterns 包
+
+新增 `harness/patterns/` 包，提供可组合的 Agent 编排原语：
+
+- **SequentialAgent** — 顺序执行多个子 Agent，共享 Session 状态
+- **ParallelAgent** — 并发执行多个子 Agent，支持自定义聚合函数
+- **LoopAgent** — 迭代执行，支持最大迭代次数和退出条件
+- **SupervisorAgent** — 动态路由，支持 RoundRobin 和 FirstMatch 策略
+- **ResearchAgent** — 研究型编排模式（Query → Parallel Search → Synthesis 循环）
+- **DeepAgentConfig / BuildDeepAgent** — deep-agent 预设迁移至 patterns 包
+
+`presets/deepagent` 包已简化为 `harness/patterns` 的薄包装层。
+
+### appkit → harness Feature 迁移
+
+- `appkit.Extension` 变为 `harness.Feature` 类型别名
+- 新增 `BuildKernelWithFeatures` 作为主要 API
+- `BuildKernelWithExtensions` 标记为 deprecated
+- `RuntimeSetup` Feature 替代了旧的 `WithRuntimeOptions`
+
 ### Release gates 与健康面
 
 主线新增了可直接用于发布守门和运行态自检的两组能力：
