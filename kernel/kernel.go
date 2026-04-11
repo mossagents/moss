@@ -70,6 +70,15 @@ func New(opts ...Option) *Kernel {
 	return k
 }
 
+// Apply applies additional Options to the Kernel after construction.
+// This enables the harness Feature pattern where capabilities are
+// installed progressively rather than all at construction time.
+func (k *Kernel) Apply(opts ...Option) {
+	for _, opt := range opts {
+		opt(k)
+	}
+}
+
 // Boot 验证 Kernel 配置完整性。
 // 检查必要组件是否已设置，并给出具体的修复建议。
 // 同时初始化已接入的扩展桥接逻辑（如果已配置）。
