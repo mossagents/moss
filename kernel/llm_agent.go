@@ -2,7 +2,6 @@ package kernel
 
 import (
 	"iter"
-	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/loop"
@@ -79,11 +78,25 @@ func (a *LLMAgent) Tools() tool.Registry { return a.tools }
 // Hooks returns the agent's hook registry.
 func (a *LLMAgent) Hooks() *hooks.Registry { return a.hooks }
 
-// Run executes the LLM agent loop and yields events.
-// Currently wraps the existing AgentLoop; Phase 2 will add real-time event streaming.
+// Run executes the LLM agent loop and yields events in real-time.
+// Events are streamed as they occur: LLM responses and tool results
+// are yielded immediately rather than as a single post-hoc event.
 func (a *LLMAgent) Run(ctx *InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		stopped := false
+		safeYield := func(event *session.Event, err error) bool {
+			if stopped {
+				return false
+			}
+			if !yield(event, err) {
+				stopped = true
+				return false
+			}
+			return true
+		}
+
 		l := &loop.AgentLoop{
+			AgentName:         a.name,
 			LLM:               a.llm,
 			Tools:              a.tools,
 			Hooks:              a.hooks,
@@ -95,24 +108,9 @@ func (a *LLMAgent) Run(ctx *InvocationContext) iter.Seq2[*session.Event, error] 
 			ToolLifecycleHook:  a.toolLifecycleHook,
 		}
 
-		result, err := l.Run(ctx, ctx.Session())
-		if err != nil {
+		_, err := l.RunYield(ctx, ctx.Session(), safeYield)
+		if err != nil && !stopped {
 			yield(nil, err)
-			return
 		}
-
-		// Yield a single completion event wrapping the SessionResult.
-		// Phase 2 will refactor this to yield events in real-time during the loop.
-		event := &session.Event{
-			ID:     generateEventID(),
-			Author: a.name,
-			Content: &model.Message{
-				Role:         model.RoleAssistant,
-				ContentParts: []model.ContentPart{model.TextPart(result.Output)},
-			},
-			Usage:     result.TokensUsed,
-			Timestamp: time.Now().UTC(),
-		}
-		yield(event, nil)
 	}
 }

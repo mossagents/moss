@@ -6,9 +6,24 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 )
 
+// EventType indicates the kind of event produced during agent execution.
+type EventType string
+
+const (
+	// EventTypeLLMResponse indicates an LLM response event (assistant message).
+	EventTypeLLMResponse EventType = "llm_response"
+	// EventTypeToolResult indicates a tool execution result event.
+	EventTypeToolResult EventType = "tool_result"
+	// EventTypeCustom indicates a custom agent event.
+	EventTypeCustom EventType = "custom"
+)
+
 // Event represents a unit of change produced by an agent during execution.
 // Events are yielded by Agent.Run() and form the primary output of agent execution.
 type Event struct {
+	// Type indicates the kind of event (llm_response, tool_result, custom).
+	Type EventType `json:"type,omitempty"`
+
 	// ID uniquely identifies this event within a session.
 	ID string `json:"id"`
 

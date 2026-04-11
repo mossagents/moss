@@ -67,7 +67,16 @@ func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session
 func (l *AgentLoop) executeToolCallsSerial(ctx context.Context, sess *session.Session, calls []model.ToolCall) error {
 	for _, call := range calls {
 		result := l.executeSingleToolCall(ctx, sess, call)
-		sess.AppendMessage(model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}})
+		msg := model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}}
+		sess.AppendMessage(msg)
+		// Yield tool result event in real-time.
+		l.emitAgentEvent(&session.Event{
+			Type:      session.EventTypeToolResult,
+			Author:    l.AgentName,
+			Content:   &msg,
+			TurnID:    l.currentTurn.TurnID,
+			Timestamp: time.Now().UTC(),
+		})
 	}
 	return nil
 }
@@ -277,6 +286,14 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 	for _, result := range results {
 		sess.AppendMessage(model.Message{Role: model.RoleTool, ToolResults: []model.ToolResult{result}})
 	}
+	// Yield all parallel tool results as a single aggregate event.
+	l.emitAgentEvent(&session.Event{
+		Type:      session.EventTypeToolResult,
+		Author:    l.AgentName,
+		Content:   &model.Message{Role: model.RoleTool, ToolResults: results},
+		TurnID:    l.currentTurn.TurnID,
+		Timestamp: time.Now().UTC(),
+	})
 	return nil
 }
 

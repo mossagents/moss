@@ -2,6 +2,7 @@ package kernel_test
 
 import (
 	"context"
+	"encoding/json"
 	"iter"
 	"strings"
 	"sync/atomic"
@@ -11,6 +12,8 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	kt "github.com/mossagents/moss/testing"
 )
 
 // --- helpers ---
@@ -431,5 +434,314 @@ func TestRunner_AppendsUserMessage(t *testing.T) {
 	}
 	if msgs[0].Role != model.RoleUser {
 		t.Fatalf("expected first message role 'user', got %q", msgs[0].Role)
+	}
+}
+
+// --- Phase 2: Real-time event streaming from LLMAgent ---
+
+func TestLLMAgent_YieldsRealtimeLLMResponse(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Hello!")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 42},
+			},
+		},
+	}
+
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "test-llm",
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+	})
+
+	sess := &session.Session{
+		ID:       "s1",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   agent,
+		Session: sess,
+	})
+
+	events, err := collectEvents(agent.Run(ctx))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(events))
+	}
+
+	evt := events[0]
+	if evt.Type != session.EventTypeLLMResponse {
+		t.Fatalf("expected EventType %q, got %q", session.EventTypeLLMResponse, evt.Type)
+	}
+	if evt.Author != "test-llm" {
+		t.Fatalf("expected author 'test-llm', got %q", evt.Author)
+	}
+	if evt.Content == nil || evt.Content.Role != model.RoleAssistant {
+		t.Fatal("expected assistant message content")
+	}
+	if got := model.ContentPartsToPlainText(evt.Content.ContentParts); got != "Hello!" {
+		t.Fatalf("expected 'Hello!', got %q", got)
+	}
+	if evt.Usage.TotalTokens != 42 {
+		t.Fatalf("expected 42 total tokens, got %d", evt.Usage.TotalTokens)
+	}
+}
+
+func TestLLMAgent_YieldsToolCallAndResult(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message: model.Message{
+					Role:      model.RoleAssistant,
+					ToolCalls: []model.ToolCall{{ID: "call-1", Name: "greet", Arguments: json.RawMessage(`{}`)}},
+				},
+				ToolCalls:  []model.ToolCall{{ID: "call-1", Name: "greet", Arguments: json.RawMessage(`{}`)}},
+				StopReason: "tool_use",
+				Usage:      model.TokenUsage{TotalTokens: 20},
+			},
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Done")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 10},
+			},
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "greet", Description: "Greet someone"}, func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"Hello world"`), nil
+	}); err != nil {
+		t.Fatalf("register greet: %v", err)
+	}
+
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "tool-agent",
+		LLM:   mock,
+		Tools: reg,
+	})
+
+	sess := &session.Session{
+		ID:       "s2",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Greet")}},
+		},
+		Budget: session.Budget{MaxSteps: 10},
+	}
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   agent,
+		Session: sess,
+	})
+
+	events, err := collectEvents(agent.Run(ctx))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Expected: LLM response (tool call) → tool result → LLM response (final)
+	if len(events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(events))
+	}
+
+	// Event 0: LLM response with tool calls
+	if events[0].Type != session.EventTypeLLMResponse {
+		t.Fatalf("event[0] type: expected %q, got %q", session.EventTypeLLMResponse, events[0].Type)
+	}
+	if events[0].Content == nil || len(events[0].Content.ToolCalls) == 0 {
+		t.Fatal("event[0] should contain tool calls")
+	}
+
+	// Event 1: Tool result
+	if events[1].Type != session.EventTypeToolResult {
+		t.Fatalf("event[1] type: expected %q, got %q", session.EventTypeToolResult, events[1].Type)
+	}
+	if events[1].Content == nil || events[1].Content.Role != model.RoleTool {
+		t.Fatal("event[1] should be a tool result message")
+	}
+
+	// Event 2: Final LLM response
+	if events[2].Type != session.EventTypeLLMResponse {
+		t.Fatalf("event[2] type: expected %q, got %q", session.EventTypeLLMResponse, events[2].Type)
+	}
+	if got := model.ContentPartsToPlainText(events[2].Content.ContentParts); got != "Done" {
+		t.Fatalf("event[2] content: expected 'Done', got %q", got)
+	}
+}
+
+func TestLLMAgent_ConsumerCanBreakEarly(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message: model.Message{
+					Role:      model.RoleAssistant,
+					ToolCalls: []model.ToolCall{{ID: "c1", Name: "noop", Arguments: json.RawMessage(`{}`)}},
+				},
+				ToolCalls:  []model.ToolCall{{ID: "c1", Name: "noop", Arguments: json.RawMessage(`{}`)}},
+				StopReason: "tool_use",
+				Usage:      model.TokenUsage{TotalTokens: 5},
+			},
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("should not reach")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 5},
+			},
+		},
+	}
+
+	reg := tool.NewRegistry()
+	if err := reg.Register(tool.ToolSpec{Name: "noop"}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`"ok"`), nil
+	}); err != nil {
+		t.Fatalf("register noop: %v", err)
+	}
+
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "breakable",
+		LLM:   mock,
+		Tools: reg,
+	})
+
+	sess := &session.Session{
+		ID:       "s3",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Go")}}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   agent,
+		Session: sess,
+	})
+
+	// Consume only the first event, then break.
+	var firstEvent *session.Event
+	for event, err := range agent.Run(ctx) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		firstEvent = event
+		break
+	}
+
+	if firstEvent == nil {
+		t.Fatal("expected at least one event")
+	}
+	if firstEvent.Type != session.EventTypeLLMResponse {
+		t.Fatalf("expected first event type %q, got %q", session.EventTypeLLMResponse, firstEvent.Type)
+	}
+}
+
+func TestLLMAgent_EventsHaveIDs(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("Done")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 5},
+			},
+		},
+	}
+
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "id-test",
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+	})
+
+	sess := &session.Session{
+		ID:       "s4",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   agent,
+		Session: sess,
+	})
+
+	events, err := collectEvents(agent.Run(ctx))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for i, e := range events {
+		if e.ID == "" {
+			t.Fatalf("event[%d] has empty ID", i)
+		}
+	}
+}
+
+func TestLLMAgent_MultipleToolCalls(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message: model.Message{
+					Role: model.RoleAssistant,
+					ToolCalls: []model.ToolCall{
+						{ID: "c1", Name: "tool_a", Arguments: json.RawMessage(`{}`)},
+						{ID: "c2", Name: "tool_b", Arguments: json.RawMessage(`{}`)},
+					},
+				},
+				ToolCalls: []model.ToolCall{
+					{ID: "c1", Name: "tool_a", Arguments: json.RawMessage(`{}`)},
+					{ID: "c2", Name: "tool_b", Arguments: json.RawMessage(`{}`)},
+				},
+				StopReason: "tool_use",
+				Usage:      model.TokenUsage{TotalTokens: 15},
+			},
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("All done")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 10},
+			},
+		},
+	}
+
+	reg := tool.NewRegistry()
+	for _, name := range []string{"tool_a", "tool_b"} {
+		n := name
+		if err := reg.Register(tool.ToolSpec{Name: n}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`"` + n + ` result"`), nil
+		}); err != nil {
+			t.Fatalf("register %s: %v", n, err)
+		}
+	}
+
+	agent := kernel.NewLLMAgent(kernel.LLMAgentConfig{
+		Name:  "multi-tool",
+		LLM:   mock,
+		Tools: reg,
+	})
+
+	sess := &session.Session{
+		ID:       "s5",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Go")}}},
+		Budget:   session.Budget{MaxSteps: 10},
+	}
+	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
+		Agent:   agent,
+		Session: sess,
+	})
+
+	events, err := collectEvents(agent.Run(ctx))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// LLM response (2 tool calls) → 2 tool results → final LLM response = 4 events
+	if len(events) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(events))
+	}
+
+	toolResultCount := 0
+	for _, e := range events {
+		if e.Type == session.EventTypeToolResult {
+			toolResultCount++
+		}
+	}
+	if toolResultCount != 2 {
+		t.Fatalf("expected 2 tool_result events, got %d", toolResultCount)
 	}
 }

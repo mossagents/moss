@@ -98,10 +98,32 @@ type AgentLoop struct {
 	LifecycleHook       session.LifecycleHook
 	ToolLifecycleHook   session.ToolLifecycleHook
 	RunID               string
+	AgentName           string // name of the agent driving this loop (used in yielded events)
 	sidefxMu            sync.Mutex
 	eventSeq            uint64
 	currentTurn         TurnPlan
 	compressionInjected bool // 防止 Run() 重复注入压缩 hook
+	eventYield          func(*session.Event, error) bool // internal: set by RunYield
+	yieldStopped        bool                             // internal: set when eventYield returns false
+}
+
+// emitAgentEvent yields an agent-level event (LLM response, tool result) to the EventYield callback.
+// Returns true if the loop should continue, false if the consumer requested stop.
+func (l *AgentLoop) emitAgentEvent(event *session.Event) bool {
+	if l.eventYield == nil {
+		return true
+	}
+	if l.yieldStopped {
+		return false
+	}
+	if event.ID == "" {
+		event.ID = l.nextEventID("agent")
+	}
+	if !l.eventYield(event, nil) {
+		l.yieldStopped = true
+		return false
+	}
+	return true
 }
 
 // SessionResult 是一次 Session 执行的结果。

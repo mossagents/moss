@@ -15,6 +15,22 @@ import (
 
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
 func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionResult, error) {
+	return l.runCore(ctx, sess)
+}
+
+// RunYield executes the Agent Loop and yields events in real-time via the yield callback.
+// Events are yielded at two key points in each iteration:
+//   - After the LLM response (EventTypeLLMResponse): includes assistant message and token usage
+//   - After tool execution (EventTypeToolResult): includes tool results
+//
+// If yield returns false, the loop stops gracefully.
+// Errors are returned (not yielded); the caller should yield errors separately if needed.
+func (l *AgentLoop) RunYield(ctx context.Context, sess *session.Session, yield func(*session.Event, error) bool) (*SessionResult, error) {
+	l.eventYield = yield
+	return l.runCore(ctx, sess)
+}
+
+func (l *AgentLoop) runCore(ctx context.Context, sess *session.Session) (*SessionResult, error) {
 	sess.Status = session.StatusRunning
 
 	// 若配置了 ContextCompression 策略，在运行前注入压缩 hook。
@@ -28,6 +44,9 @@ func (l *AgentLoop) Run(ctx context.Context, sess *session.Session) (*SessionRes
 	maxIter := l.Config.maxIter()
 
 	for i := 0; i < maxIter; i++ {
+		if l.yieldStopped {
+			break
+		}
 		if sess.Budget.Exhausted() {
 			break
 		}
@@ -105,6 +124,18 @@ func (l *AgentLoop) runIteration(
 	}
 
 	sess.AppendMessage(resp.Message)
+
+	// Yield LLM response event in real-time.
+	if !l.emitAgentEvent(&session.Event{
+		Type:      session.EventTypeLLMResponse,
+		Author:    l.AgentName,
+		Content:   &resp.Message,
+		Usage:     resp.Usage,
+		TurnID:    l.currentTurn.TurnID,
+		Timestamp: time.Now().UTC(),
+	}) {
+		return true, nil // consumer stopped iteration
+	}
 
 	if err := l.processIterationResponse(ctx, sess, resp, streamed, lastOutput); err != nil {
 		return false, err
