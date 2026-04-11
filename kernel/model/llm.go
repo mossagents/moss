@@ -129,9 +129,6 @@ type StreamChunk struct {
 	Metadata       *LLMCallMetadata `json:"metadata,omitempty"`
 }
 
-// 确保 io.EOF 可用于 StreamIterator.Next 的终止判断。
-var _ error = io.EOF
-
 // ──────────────────────────────────────────────────────────────
 // 便利函数：将统一的 iter.Seq2 接口适配为同步或旧式迭代器消费。
 // ──────────────────────────────────────────────────────────────
@@ -192,33 +189,6 @@ func Complete(ctx context.Context, llm LLM, req CompletionRequest) (*CompletionR
 		StopReason: stopReason,
 		Metadata:   metadata,
 	}, nil
-}
-
-// IteratorToSeq 将 StreamIterator（pull 模式）转换为 iter.Seq2（push 模式）。
-// 若迭代器实现了 MetadataStreamIterator，元数据会附加到最后一个 Done chunk。
-func IteratorToSeq(si StreamIterator) iter.Seq2[StreamChunk, error] {
-	return func(yield func(StreamChunk, error) bool) {
-		defer si.Close()
-		metaProvider, _ := si.(MetadataStreamIterator)
-
-		for {
-			chunk, err := si.Next()
-			if err == io.EOF {
-				return
-			}
-			if err != nil {
-				yield(StreamChunk{}, err)
-				return
-			}
-			if chunk.Done && metaProvider != nil {
-				meta := metaProvider.Metadata()
-				chunk.Metadata = &meta
-			}
-			if !yield(chunk, nil) {
-				return
-			}
-		}
-	}
 }
 
 // ResponseToSeq 将 CompletionResponse 转换为 iter.Seq2（单 chunk 流）。

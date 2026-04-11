@@ -75,7 +75,6 @@ type RetryConfig = retry.Config
 
 type callAttemptResult struct {
 	resp      *model.CompletionResponse
-	streamed  bool
 	retryable bool
 	err       error
 }

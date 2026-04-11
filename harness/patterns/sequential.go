@@ -32,6 +32,9 @@ func (s *SequentialAgent) SubAgents() []kernel.Agent { return s.Agents }
 func (s *SequentialAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
 		for i, agent := range s.Agents {
+			if ctx.Context != nil && ctx.Err() != nil || ctx.Ended() {
+				return
+			}
 			childCtx := ctx.WithAgent(agent).
 				WithBranch(fmt.Sprintf("%s.%s[%d]", ctx.Branch(), agent.Name(), i))
 
@@ -42,10 +45,9 @@ func (s *SequentialAgent) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.
 				if err != nil {
 					return
 				}
-			}
-
-			if ctx.Ended() {
-				return
+				if event != nil && (event.Actions.TransferToAgent != "" || event.Actions.Escalate) {
+					return
+				}
 			}
 		}
 	}

@@ -188,7 +188,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	llmStart := time.Now()
-	resp, _, err := l.callLLM(ctx, sess, plan)
+	resp, err := l.callLLM(ctx, sess, plan)
 	llmDur := time.Since(llmStart)
 	if err != nil {
 		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)

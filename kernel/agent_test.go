@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mossagents/moss/harness/patterns"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -106,10 +107,11 @@ func TestCustomAgent_Description(t *testing.T) {
 // --- SequentialAgent ---
 
 func TestSequentialAgent_RunsInOrder(t *testing.T) {
-	seq := kernel.NewSequentialAgent("pipeline", "runs A then B",
-		echoAgent("A"),
-		echoAgent("B"),
-	)
+	seq := &patterns.SequentialAgent{
+		AgentName: "pipeline",
+		Desc:      "runs A then B",
+		Agents:    []kernel.Agent{echoAgent("A"), echoAgent("B")},
+	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   seq,
 		Session: &session.Session{ID: "s1"},
@@ -141,10 +143,10 @@ func TestSequentialAgent_StopsOnEscalate(t *testing.T) {
 			}
 		},
 	})
-	seq := kernel.NewSequentialAgent("pipe", "",
-		escalating,
-		echoAgent("should-not-run"),
-	)
+	seq := &patterns.SequentialAgent{
+		AgentName: "pipe",
+		Agents:    []kernel.Agent{escalating, echoAgent("should-not-run")},
+	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   seq,
 		Session: &session.Session{ID: "s1"},
@@ -163,7 +165,7 @@ func TestSequentialAgent_StopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	seq := kernel.NewSequentialAgent("pipe", "", echoAgent("A"))
+	seq := &patterns.SequentialAgent{AgentName: "pipe", Agents: []kernel.Agent{echoAgent("A")}}
 	invCtx := kernel.NewInvocationContext(ctx, kernel.InvocationContextParams{
 		Agent:   seq,
 		Session: &session.Session{ID: "s1"},
@@ -197,10 +199,14 @@ func TestParallelAgent_RunsConcurrently(t *testing.T) {
 		})
 	}
 
-	par := kernel.NewParallelAgent("parallel", "concurrent",
-		slowAgent("slow", 50*time.Millisecond),
-		slowAgent("fast", 10*time.Millisecond),
-	)
+	par := &patterns.ParallelAgent{
+		AgentName: "parallel",
+		Desc:      "concurrent",
+		Agents: []kernel.Agent{
+			slowAgent("slow", 50*time.Millisecond),
+			slowAgent("fast", 10*time.Millisecond),
+		},
+	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   par,
 		Session: &session.Session{ID: "s1"},
@@ -244,14 +250,19 @@ func TestLoopAgent_RepeatsUntilStop(t *testing.T) {
 		},
 	})
 
-	loopAg := kernel.NewLoopAgent(kernel.LoopAgentConfig{
-		Name:     "looper",
-		SubAgent: counter,
-		MaxIter:  10,
-		ShouldStop: func(e *session.Event) bool {
-			return eventText(e) == "stop"
+	loopAg := &patterns.LoopAgent{
+		AgentName:     "looper",
+		Agent:         counter,
+		MaxIterations: 10,
+		ShouldExit: func(events []session.Event, _ int) bool {
+			for _, e := range events {
+				if e.Content != nil && len(e.Content.ContentParts) > 0 && e.Content.ContentParts[0].Text == "stop" {
+					return true
+				}
+			}
+			return false
 		},
-	})
+	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   loopAg,
 		Session: &session.Session{ID: "s1"},
@@ -267,11 +278,11 @@ func TestLoopAgent_RepeatsUntilStop(t *testing.T) {
 }
 
 func TestLoopAgent_RespectsMaxIter(t *testing.T) {
-	loopAg := kernel.NewLoopAgent(kernel.LoopAgentConfig{
-		Name:     "bounded",
-		SubAgent: echoAgent("echo"),
-		MaxIter:  5,
-	})
+	loopAg := &patterns.LoopAgent{
+		AgentName:     "bounded",
+		Agent:         echoAgent("echo"),
+		MaxIterations: 5,
+	}
 	ctx := kernel.NewInvocationContext(context.Background(), kernel.InvocationContextParams{
 		Agent:   loopAg,
 		Session: &session.Session{ID: "s1"},
@@ -290,8 +301,8 @@ func TestLoopAgent_RespectsMaxIter(t *testing.T) {
 
 func TestFindAgentInTree(t *testing.T) {
 	leaf := echoAgent("leaf")
-	mid := kernel.NewSequentialAgent("mid", "", leaf)
-	root := kernel.NewSequentialAgent("root", "", mid, echoAgent("other"))
+	mid := &patterns.SequentialAgent{AgentName: "mid", Agents: []kernel.Agent{leaf}}
+	root := &patterns.SequentialAgent{AgentName: "root", Agents: []kernel.Agent{mid, echoAgent("other")}}
 
 	found := kernel.FindAgentInTree(root, "leaf")
 	if found == nil {

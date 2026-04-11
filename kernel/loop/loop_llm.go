@@ -18,7 +18,7 @@ import (
 	"github.com/mossagents/moss/logging"
 )
 
-func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*model.CompletionResponse, bool, error) {
+func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*model.CompletionResponse, error) {
 	specs := l.toolSpecs(plan)
 	promptMessages := session.PromptMessages(sess)
 	logging.GetLogger().DebugContext(ctx, "llm request prepared",
@@ -40,7 +40,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	cfg := l.Config.LLMRetry
 	if !cfg.Enabled() {
 		attempt := l.callLLMOnce(ctx, req)
-		return attempt.resp, attempt.streamed, attempt.err
+		return attempt.resp, attempt.err
 	}
 
 	maxRetries := cfg.MaxRetriesOrDefault()
@@ -50,12 +50,12 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	for attemptIndex := 0; attemptIndex <= maxRetries; attemptIndex++ {
 		attempt := l.callLLMOnce(ctx, req)
 		if attempt.err == nil {
-			return attempt.resp, attempt.streamed, nil
+			return attempt.resp, nil
 		}
 
 		lastErr = attempt.err
 		if !attempt.retryable || !cfg.ShouldRetryOrDefault(ctx, attempt.err) || attemptIndex == maxRetries {
-			return nil, false, attempt.err
+			return nil, attempt.err
 		}
 
 		jitter := time.Duration(rand.Int63n(int64(delay) / 2))
@@ -66,7 +66,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 
 		select {
 		case <-ctx.Done():
-			return nil, false, ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(sleepDuration):
 		}
 
@@ -76,7 +76,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 		}
 	}
 
-	return nil, false, lastErr
+	return nil, lastErr
 }
 
 func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest) callAttemptResult {
@@ -111,7 +111,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 			safePreEmission := !state.emittedContent && len(state.toolCalls) == 0
 			llmErr := ensureLLMCallError(err, safePreEmission, safePreEmission, derefMetadata(metadata))
 			l.recordBreakerFailure()
-			return callAttemptResult{streamed: true, retryable: llmErrorRetryable(llmErr), err: llmErr}
+			return callAttemptResult{retryable: llmErrorRetryable(llmErr), err: llmErr}
 		}
 
 		// Extract metadata from chunks (typically on the Done chunk).
@@ -144,7 +144,6 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 			StopReason: state.stopReason,
 			Metadata:   metadata,
 		},
-		streamed: true,
 	}
 }
 

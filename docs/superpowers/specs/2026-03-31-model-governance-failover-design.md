@@ -118,7 +118,7 @@ Layer responsibilities:
   - rank and return ordered candidates for a request
   - remain ignorant of runtime retries, breaker state, and fallback switching
 - `adapters/failover.go` or equivalent
-  - implement `port.LLM` and `port.StreamingLLM`
+  - implement `model.LLM` (unified `GenerateContent` interface)
   - iterate through candidates
   - own per-candidate retry and breaker handling when failover is enabled
   - emit failover execution events
