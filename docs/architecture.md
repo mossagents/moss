@@ -1,43 +1,67 @@
 # 架构概览
 
-Moss 当前采用 **最小内核 + runtime 装配层 + appkit 扩展层 + apps 核心应用 + examples 参考示例** 的结构。核心原则是：**把稳定的运行时原语留在 `kernel\`，把可组合能力放在顶层包和预设里。**
+Moss 采用 **三层架构**：Kernel（核心运行时）→ Harness（编排层）→ Applications（应用层）。
 
-## 分层
+核心原则：**把稳定的运行时原语留在 `kernel\`，把可组合编排能力放在 `harness\`，把产品预设和应用逻辑放在最上层。**
+
+## 三层架构
 
 ```text
-Applications / Products
-  apps\mosscode, apps\mosswork
-  examples\mossresearch, mosswriter, mossclaw, ...
-
-Assembly / Presets
-  appkit
-  presets\deepagent
-
-Runtime capability loading
-  appkit\runtime
-  skill
-  mcp
-  agent
-
-Core runtime
-  kernel
-
-Infrastructure / support packages
-  bootstrap  config  providers  logging
-  knowledge  scheduler  gateway  distributed  sandbox
+┌────────────────────────────────────────────────────┐
+│ Layer 3: Applications                              │
+│   apps\mosscode, apps\mosswork                     │
+│   examples\mossresearch, mosswriter, mossclaw, ... │
+│   → 面向终端用户，组合 Kernel + Harness            │
+└────────────────────────────────────────────────────┘
+                         ↕
+┌────────────────────────────────────────────────────┐
+│ Layer 2: Harness + Presets                         │
+│   harness (Feature/Backend/Harness)                │
+│   appkit + appkit\runtime                          │
+│   presets\deepagent                                │
+│   → 可复用的 Agent 编排模式                         │
+└────────────────────────────────────────────────────┘
+                         ↕
+┌────────────────────────────────────────────────────┐
+│ Layer 1: Kernel                                    │
+│   Agent 接口 + Runner + Session + Event            │
+│   LLM 抽象 + Tool 系统 + Plugin 系统               │
+│   → 最小核心运行时原语                              │
+└────────────────────────────────────────────────────┘
 ```
 
 ## 关键职责边界
 
 | 层 | 主要职责 |
 |---|---|
-| `kernel\` | `Kernel`、Session、Tool、Middleware、Model、UserIO、Workspace/Executor、Task、Observe、Checkpoint |
+| `kernel\` | Agent 接口、Runner、Session、Event、Tool、Plugin、Model、UserIO、Workspace/Executor、Task、Observe、Checkpoint |
+| `harness\` | Feature 接口、Backend 接口、Harness 组合器 — 将能力可组合地安装到 Kernel |
 | `appkit\runtime\` | 默认能力装配：builtin tools、MCP、`SKILL.md`、subagent、context、memory、knowledge、scheduling |
 | `appkit\` | 面向应用的构建入口与扩展组合 API |
 | `presets\deepagent\` | 深代理预设，组合持久化、上下文压缩、委派与工作区隔离 |
 | `skill\` / `mcp\` / `agent\` | 能力提供者、外部工具桥接、委派代理注册 |
 | `apps\` | 核心应用入口 |
 | `examples\` | 参考实现与集成示例 |
+
+## Harness 层
+
+`harness\` 包引入了 **Feature / Backend / Harness** 三个核心概念：
+
+- **Feature**：一个可组合的能力单元，实现 `Name() string` + `Install(ctx, *Harness) error`。Feature 通过 `Harness.Install()` 安装，将 Plugin、工具、系统提示词等注入 Kernel。
+- **Backend**：统一的后端抽象，组合 `workspace.Workspace` + `workspace.Executor`。`LocalBackend` 是默认实现。
+- **Harness**：组合器，持有 Kernel + Backend + 已安装 Feature 列表。
+
+内置 Feature 包括：
+
+| Feature | 作用 |
+|---|---|
+| `BootstrapContext` | 加载工作区上下文（AGENTS.md/SOUL.md）到系统提示词 |
+| `SessionPersistence` | 注入 session 持久化存储 |
+| `Checkpointing` | 启用 session 快照与恢复 |
+| `TaskDelegation` | 启用异步 sub-agent 委派（Mailbox 通信） |
+| `LLMResilience` | 注入 LLM 重试与熔断策略 |
+| `ExecutionPolicy` | 注入工具级访问控制 Policy |
+| `PatchToolCalls` | 启用工具调用修补（invalid JSON/name 纠正） |
 
 ## 推荐装配路径
 
@@ -141,7 +165,8 @@ Infrastructure / support packages
 
 | 目录 | 说明 |
 |---|---|
-| `kernel\` | 核心运行时原语 |
+| `kernel\` | 核心运行时原语（Agent、Runner、Session、Event、Tool、Plugin） |
+| `harness\` | 可组合编排层（Feature、Backend、Harness） |
 | `appkit\` | 构建器与扩展 API |
 | `bootstrap\` | 启动上下文加载 |
 | `config\` | 配置、profile、模板上下文 |
@@ -157,4 +182,4 @@ Infrastructure / support packages
 
 ## 一句话总结
 
-**Kernel 保持最小，runtime 负责默认能力装配，appkit 负责应用拼装，deepagent 负责产品级预设，apps 提供核心入口，examples 提供参考实现。**
+**Kernel 保持最小运行时原语，Harness 提供可组合编排能力，appkit/deepagent 负责应用拼装与产品预设，apps 提供核心入口，examples 提供参考实现。**

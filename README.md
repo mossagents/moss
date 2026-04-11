@@ -8,7 +8,10 @@ For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 
 ## What Moss is today
 
-- A reusable `kernel` for running agent sessions with tools, middleware, policy, and observation.
+- A three-layer runtime for building Go-based AI agents:
+  - **Kernel** — core runtime primitives (Agent interface, Runner, Session, Event, Tool, Plugin).
+  - **Harness** — composable orchestration layer (Feature/Backend/Middleware) that wires capabilities onto a Kernel.
+  - **Applications** — end-user products (`apps\mosscode`, `apps\mosswork`) and reference examples.
 - An `appkit` assembly layer for building complete kernels from `AppFlags`.
 - A `presets\deepagent` preset for coding/research/writer-style products.
 - Core applications in `apps\`, with `apps\mosscode` as the primary interactive app surface and the packaged `moss` CLI entrypoint targeting `mosscode`.
@@ -96,11 +99,70 @@ func main() {
 
 For extension-first assembly, use `appkit.BuildKernelWithExtensions(...)`. For a fuller product preset, use `presets\deepagent.BuildKernel(...)`.
 
+### 3. Use the Harness layer
+
+The `harness` package provides composable Features that install tools, hooks, and system-prompt extensions onto a Kernel:
+
+```go
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/retry"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/sandbox"
+)
+
+func main() {
+	ctx := context.Background()
+
+	sb, _ := sandbox.NewLocal(".")
+	k := kernel.New(
+		kernel.WithLLM(myLLM),
+		kernel.WithSandbox(sb),
+		kernel.WithUserIO(myIO),
+	)
+
+	backend := &harness.LocalBackend{
+		Workspace: k.Workspace(),
+		Executor:  k.Executor(),
+	}
+	h := harness.New(k, backend)
+	_ = h.Install(ctx,
+		harness.BootstrapContext(".", "myapp", "trusted"),
+		harness.LLMResilience(&retry.Config{
+			MaxRetries:   3,
+			InitialDelay: 500 * time.Millisecond,
+		}, nil),
+		harness.PatchToolCalls(),
+	)
+
+	_ = k.Boot(ctx)
+	defer k.Shutdown(ctx)
+
+	sess, _ := k.NewSession(ctx, session.SessionConfig{
+		Goal: "help me", MaxSteps: 50,
+	})
+	sess.AppendMessage(mdl.Message{
+		Role: mdl.RoleUser,
+		ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")},
+	})
+	result, _ := k.Run(ctx, sess)
+	println(result.Output)
+}
+```
+
 ## Repository layout
 
 | Path | Purpose |
 |---|---|
-| `kernel\` | Core runtime primitives |
+| `kernel\` | Core runtime primitives (Agent, Runner, Session, Event, Tool, Plugin) |
+| `harness\` | Composable orchestration layer (Feature, Backend, Harness) |
 | `appkit\` | Recommended builders and extension composition |
 | `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
 | `presets\deepagent\` | Product preset for deep-agent style apps |

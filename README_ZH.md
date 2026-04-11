@@ -8,7 +8,10 @@ Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当
 
 ## 当前仓库提供什么
 
-- 可嵌入的 `kernel`：负责 session、tool、middleware、policy、observation 等运行时原语。
+- 三层运行时架构，用于构建 Go AI Agent：
+  - **Kernel** — 核心运行时原语（Agent 接口、Runner、Session、Event、Tool、Plugin）。
+  - **Harness** — 可组合编排层（Feature/Backend/Middleware），将能力装配到 Kernel。
+  - **Applications** — 面向终端用户的产品（`apps\mosscode`、`apps\mosswork`）及参考示例。
 - `appkit`：按 `AppFlags` 构建完整 Kernel 的推荐入口。
 - `presets\deepagent`：适合 coding / research / writer 产品面的预设。
 - `apps\`：当前仓库里的核心应用入口，其中 `apps\mosscode` 是主交互产品面，打包后的 `moss` CLI 入口指向 `mosscode`。
@@ -96,11 +99,70 @@ func main() {
 
 如果要按扩展优先方式装配，使用 `appkit.BuildKernelWithExtensions(...)`；如果要做更完整的 deep-agent 产品，使用 `presets\deepagent.BuildKernel(...)`。
 
+### 3. 使用 Harness 层
+
+`harness` 包提供可组合的 Feature，将工具、Hook 和系统提示词扩展安装到 Kernel：
+
+```go
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/retry"
+	mdl "github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/sandbox"
+)
+
+func main() {
+	ctx := context.Background()
+
+	sb, _ := sandbox.NewLocal(".")
+	k := kernel.New(
+		kernel.WithLLM(myLLM),
+		kernel.WithSandbox(sb),
+		kernel.WithUserIO(myIO),
+	)
+
+	backend := &harness.LocalBackend{
+		Workspace: k.Workspace(),
+		Executor:  k.Executor(),
+	}
+	h := harness.New(k, backend)
+	_ = h.Install(ctx,
+		harness.BootstrapContext(".", "myapp", "trusted"),
+		harness.LLMResilience(&retry.Config{
+			MaxRetries:   3,
+			InitialDelay: 500 * time.Millisecond,
+		}, nil),
+		harness.PatchToolCalls(),
+	)
+
+	_ = k.Boot(ctx)
+	defer k.Shutdown(ctx)
+
+	sess, _ := k.NewSession(ctx, session.SessionConfig{
+		Goal: "help me", MaxSteps: 50,
+	})
+	sess.AppendMessage(mdl.Message{
+		Role: mdl.RoleUser,
+		ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")},
+	})
+	result, _ := k.Run(ctx, sess)
+	println(result.Output)
+}
+```
+
 ## 仓库结构
 
 | 路径 | 作用 |
 |---|---|
-| `kernel\` | 核心运行时原语 |
+| `kernel\` | 核心运行时原语（Agent、Runner、Session、Event、Tool、Plugin） |
+| `harness\` | 可组合编排层（Feature、Backend、Harness） |
 | `appkit\` | 推荐构建器与扩展组合 API |
 | `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
 | `presets\deepagent\` | deep-agent 风格产品预设 |

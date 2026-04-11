@@ -1,16 +1,77 @@
 # Kernel 设计
 
-`kernel\` 的目标不是承载完整产品，而是提供 **稳定、可组合、可观测的 Agent Runtime 原语**。当前内核已经不再只围绕“Loop + Tool + Session”展开，而是同时把执行、任务协作、观测和扩展桥接纳入最小稳定边界。
+`kernel\` 的目标不是承载完整产品，而是提供 **稳定、可组合、可观测的 Agent Runtime 原语**。Kernel 围绕 Agent 接口、Runner、Session、Event、Tool、Plugin 六个核心概念展开。
 
-## Kernel 负责什么
+## Kernel 核心概念
+
+### Agent 接口
+
+Agent 是最小执行单元，定义为 Go 接口：
+
+```go
+type Agent interface {
+    Name() string
+    Run(ctx *RunContext) iter.Seq2[*Event, error]
+}
+```
+
+内置 Agent 组合器（`kernel\agents\`）：
+- `SequentialAgent`：顺序执行子 Agent
+- `ParallelAgent`：并行执行子 Agent
+- `LoopAgent`：循环执行（条件退出）
+- `CustomAgent`：自定义回调逻辑
+
+### Runner
+
+Runner 管理 Agent 的执行：Session 路由、Plugin 生命周期、Event 流转发。`Kernel.Run()` 内部使用 Runner。
+
+### Event
+
+统一的事件类型，由 Agent 的 `Run()` 方法通过 `iter.Seq2[*Event, error]` 迭代器产生。AgentLoop 通过 `EventYield` 回调实时推送事件到上层。
+
+### Tool
+
+类型安全的工具系统：
+
+```go
+type Tool interface {
+    Name() string
+    Description() string
+    Schema() *jsonschema.Schema
+    Execute(ctx *ToolContext, args json.RawMessage) (json.RawMessage, error)
+}
+
+// 泛型构造
+tool := kernel.NewFunctionTool("greet", "Say hello",
+    func(ctx *kernel.ToolContext, args struct{ Name string }) (string, error) {
+        return "Hello, " + args.Name, nil
+    })
+```
+
+### Plugin
+
+Plugin 聚合多个生命周期 Hook 到一个单元，替换原有的 `hooks.Registry` 和单独的 Hook Option：
+
+```go
+type Plugin struct {
+    Name        string
+    BeforeModel func(ctx *RunContext, req *LLMRequest) error
+    AfterModel  func(ctx *RunContext, resp *LLMResponse) error
+    BeforeTool  func(ctx *ToolContext, tool Tool, args json.RawMessage) error
+    AfterTool   func(ctx *ToolContext, tool Tool, result json.RawMessage) error
+    // ...
+}
+```
+
+## Kernel 组合的能力
 
 `kernel.Kernel` 当前组合的核心能力包括：
 
 - `model.LLM`
 - `io.UserIO`
-- `tool.Registry`
+- `tool.Registry`（注册 `Tool` 接口）
 - `session.Manager`
-- `middleware.Chain`
+- `Plugin` 系统
 - `workspace.Workspace`
 - `workspace.Executor`
 - `task.TaskRuntime`
@@ -21,7 +82,7 @@
 - observer
 - extension bridge
 
-也就是说，今天的 Kernel 不只是“调用模型 + 调工具”，而是 **围绕一次完整 agent run 的状态、执行面、协作面和生命周期管理** 组织起来的。
+Kernel 围绕 **一次完整 agent run 的状态、执行面、协作面和生命周期管理** 组织。
 
 ## 核心运行流
 
@@ -55,7 +116,7 @@ Shutdown
 | `kernel\io` | `UserIO`、审批与结构化策略上下文 |
 | `kernel\tool` | 工具规范、注册表与风险级别 |
 | `kernel\session` | 会话、状态、预算、持久化接口 |
-| `kernel\middleware` | 拦截链与 builtins policy / logger 等 |
+| `kernel\middleware` | 拦截链与 builtins policy / logger 等（通过 Plugin 安装） |
 | `kernel\loop` | Agent 执行循环 |
 | `kernel\workspace` | `Workspace` / `Executor` / isolation / snapshot 边界 |
 | `kernel\task` | task runtime、mailbox 等协作抽象 |
@@ -145,10 +206,12 @@ Kernel 现在支持：
 
 以下内容已经足够基础，适合留在 `kernel\`：
 
-- 运行循环
+- Agent 接口与组合器
+- Runner 执行引擎
+- Event 流
+- Plugin 系统
 - 会话生命周期
-- 中间件
-- 工具注册
+- 工具注册（Tool 接口 + FunctionTool）
 - 结构化执行面
 - 任务与邮箱抽象
 - 检查点与观测接口
@@ -167,4 +230,4 @@ Kernel 现在支持：
 
 可以把今天的 Kernel 理解成：
 
-> 一个可嵌入的 agent runtime substrate，负责稳定地运行、约束、观测和扩展 agent 会话，但不直接定义具体产品形态。
+> 一个可嵌入的 agent runtime substrate，负责稳定地运行、约束、观测和扩展 agent 会话，但不直接定义具体产品形态。上层通过 `harness\` 的 Feature/Backend 组合模式将能力装配到 Kernel，应用层只需选择所需的 Feature。
