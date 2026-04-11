@@ -202,7 +202,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model
 
 // injectCompressionHooks 根据 LoopConfig.ContextCompression 配置自动注入压缩 hook。
 // 幂等：无论 Run() 被调用多少次，每个 AgentLoop 实例只注入一次。
-// 若已通过 kernel.OnBeforeLLM() 手动注册压缩 hook，不建议同时设置 Strategy，以避免双重压缩。
+// 若已通过 kernel.WithPlugin() 手动注册压缩 hook，不建议同时设置 Strategy，以避免双重压缩。
 func (l *AgentLoop) injectCompressionHooks() {
 	cfg := l.Config.ContextCompression
 	if cfg.Strategy == "" || cfg.MaxContextTokens <= 0 {

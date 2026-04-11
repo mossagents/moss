@@ -344,14 +344,29 @@ func (k *Kernel) IsShuttingDown() bool {
 	}
 }
 
+// InstallPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
+// 可在 Kernel 构建后调用，用于运行时动态安装插件。
+func (k *Kernel) InstallPlugin(p Plugin) {
+	installPlugin(k.chain, p)
+}
+
+// InstallHooks 使用自定义安装函数直接操作 hooks.Registry。
+// 适用于需要拦截器（Interceptor）或其他高级 hook 模式的场景。
+func (k *Kernel) InstallHooks(installer func(*hooks.Registry)) {
+	installer(k.chain)
+}
+
 // OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
 func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
-	builtins.InstallEventEmitter(pattern, handler)(k.chain)
+	k.InstallHooks(builtins.InstallEventEmitter(pattern, handler))
 }
 
 // WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
-	k.chain.BeforeToolCall.On(builtins.PolicyCheck(rules...))
+	k.InstallPlugin(Plugin{
+		Name:           "policy",
+		BeforeToolCall: builtins.PolicyCheck(rules...),
+	})
 }
 
 // ── Agent / Runner API ──────────────────────────────────────────

@@ -101,49 +101,15 @@ func WithUserIO(io io.UserIO) Option {
 	return func(k *Kernel) { k.io = io }
 }
 
-// Use 追加一个 BeforeLLM hook（向后兼容便利方法）。
-// Deprecated: 新代码应优先使用 OnBeforeLLM / OnBeforeToolCall / Install 等类型安全方法。
-func Use(hook hooks.Hook[hooks.LLMEvent]) Option {
-	return func(k *Kernel) { k.chain.BeforeLLM.On(hook) }
+// WithPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
+// Plugin 是注册生命周期 hook 的推荐方式。
+func WithPlugin(p Plugin) Option {
+	return func(k *Kernel) { installPlugin(k.chain, p) }
 }
 
-// OnBeforeLLM 注册 BeforeLLM hook。
-func OnBeforeLLM(hook hooks.Hook[hooks.LLMEvent]) Option {
-	return func(k *Kernel) { k.chain.BeforeLLM.On(hook) }
-}
-
-// OnAfterLLM 注册 AfterLLM hook。
-func OnAfterLLM(hook hooks.Hook[hooks.LLMEvent]) Option {
-	return func(k *Kernel) { k.chain.AfterLLM.On(hook) }
-}
-
-// OnBeforeToolCall 注册 BeforeToolCall hook。
-func OnBeforeToolCall(hook hooks.Hook[hooks.ToolEvent]) Option {
-	return func(k *Kernel) { k.chain.BeforeToolCall.On(hook) }
-}
-
-// OnAfterToolCall 注册 AfterToolCall hook。
-func OnAfterToolCall(hook hooks.Hook[hooks.ToolEvent]) Option {
-	return func(k *Kernel) { k.chain.AfterToolCall.On(hook) }
-}
-
-// OnSessionStart 注册 OnSessionStart hook。
-func OnSessionStart(hook hooks.Hook[hooks.SessionEvent]) Option {
-	return func(k *Kernel) { k.chain.OnSessionStart.On(hook) }
-}
-
-// OnSessionEnd 注册 OnSessionEnd hook。
-func OnSessionEnd(hook hooks.Hook[hooks.SessionEvent]) Option {
-	return func(k *Kernel) { k.chain.OnSessionEnd.On(hook) }
-}
-
-// OnError 注册 OnError hook。
-func OnError(hook hooks.Hook[hooks.ErrorEvent]) Option {
-	return func(k *Kernel) { k.chain.OnError.On(hook) }
-}
-
-// Install 安装跨 pipeline 的 hook 安装器（如 Logger、EventEmitter）。
-func Install(installer func(*hooks.Registry)) Option {
+// WithPluginInstaller 注册一个自定义插件安装器，可直接操作 hooks.Registry。
+// 适用于需要拦截器（Interceptor / 洋葱模式）或跨多个 pipeline 安装的复杂场景。
+func WithPluginInstaller(name string, installer func(*hooks.Registry)) Option {
 	return func(k *Kernel) { installer(k.chain) }
 }
 

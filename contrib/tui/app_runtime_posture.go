@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
 	"reflect"
 	"strings"
@@ -223,7 +224,9 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if oldCancel != nil {
 		oldCancel()
 	}
-	k.Hooks().BeforeToolCall.Intercept(a.permissionOverrideInterceptor())
+	k.InstallHooks(func(reg *hooks.Registry) {
+		reg.BeforeToolCall.Intercept(a.permissionOverrideInterceptor())
+	})
 	a.mu.Lock()
 	a.k = k
 	a.ctx = ctx

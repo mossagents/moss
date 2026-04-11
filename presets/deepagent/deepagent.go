@@ -290,7 +290,10 @@ func BuildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, cfg 
 			return nil, err
 		}
 	}
-	k.Hooks().BeforeLLM.On(builtins.PatchToolCalls())
+	k.InstallPlugin(kernel.Plugin{
+		Name:      "patch-tool-calls",
+		BeforeLLM: builtins.PatchToolCalls(),
+	})
 
 	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(

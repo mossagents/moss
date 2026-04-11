@@ -482,7 +482,7 @@ func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.Too
 }
 
 func (a *agentState) invokeTool(ctx context.Context, name string, input any) (json.RawMessage, error) {
-	_, handler, ok := a.k.ToolRegistry().Get(name)
+	t, ok := a.k.ToolRegistry().Get(name)
 	if !ok {
 		return nil, fmt.Errorf("tool %q not available in current runtime", name)
 	}
@@ -490,7 +490,7 @@ func (a *agentState) invokeTool(ctx context.Context, name string, input any) (js
 	if err != nil {
 		return nil, fmt.Errorf("marshal tool input: %w", err)
 	}
-	return handler(ctx, raw)
+	return t.Execute(ctx, raw)
 }
 
 func formatJSON(raw json.RawMessage) string {

@@ -28,7 +28,7 @@ const (
 
 // ContextCompressionConfig 配置 AgentLoop 的上下文压缩行为。
 // 当设置了 Strategy 时，AgentLoop 会自动注册对应的压缩 hook。
-// 若已手动通过 kernel.OnBeforeLLM() 注册压缩 hook，无需设置此字段。
+// 若已手动通过 kernel.WithPlugin() 注册压缩 hook，无需设置此字段。
 type ContextCompressionConfig struct {
 	// Strategy 压缩策略，默认空（不自动注入，依赖已注册的 hook）。
 	// 显式设置后，AgentLoop 会自动注入压缩 hook。
