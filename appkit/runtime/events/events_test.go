@@ -33,7 +33,7 @@ func TestFromExecutionEvent(t *testing.T) {
 	if ev.SessionID != "s1" {
 		t.Fatalf("unexpected session id: %q", ev.SessionID)
 	}
-	if ev.Meta["tool_name"] != "read_file" {
+	if ev.Metadata["tool_name"] != "read_file" {
 		t.Fatalf("missing tool_name meta")
 	}
 }

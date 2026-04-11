@@ -1,4 +1,4 @@
-package patterns
+package appkit
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/agent"
-	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
@@ -134,26 +133,25 @@ func (c DeepAgentConfig) ApplyOver(base DeepAgentConfig) DeepAgentConfig {
 func DeepAgentDefaults() DeepAgentConfig {
 	return DeepAgentConfig{
 		AppName:                       appconfig.AppName(),
-		EnableSessionStore:            boolPtr(true),
-		EnableCheckpointStore:         boolPtr(true),
-		EnableTaskRuntime:             boolPtr(true),
-		EnablePersistentMemories:      boolPtr(true),
-		EnableContextOffload:          boolPtr(true),
-		EnableBootstrapContext:        boolPtr(true),
-		EnsureGeneralPurpose:          boolPtr(true),
+		EnableSessionStore:            deepAgentBoolPtr(true),
+		EnableCheckpointStore:         deepAgentBoolPtr(true),
+		EnableTaskRuntime:             deepAgentBoolPtr(true),
+		EnablePersistentMemories:      deepAgentBoolPtr(true),
+		EnableContextOffload:          deepAgentBoolPtr(true),
+		EnableBootstrapContext:        deepAgentBoolPtr(true),
+		EnsureGeneralPurpose:          deepAgentBoolPtr(true),
 		GeneralPurposeName:            "general-purpose",
 		GeneralPurposePrompt:          "You are a general-purpose delegated assistant. Complete delegated tasks thoroughly and return concise results.",
 		GeneralPurposeDesc:            "General-purpose agent for delegated tasks that need context isolation.",
 		GeneralPurposeMaxSteps:        50,
-		EnableWorkspaceIsolation:      boolPtr(true),
-		EnableDefaultRestrictedPolicy: boolPtr(true),
-		EnableDefaultLLMRetry:         boolPtr(true),
+		EnableWorkspaceIsolation:      deepAgentBoolPtr(true),
+		EnableDefaultRestrictedPolicy: deepAgentBoolPtr(true),
+		EnableDefaultLLMRetry:         deepAgentBoolPtr(true),
 	}
 }
 
 // BuildDeepAgent builds a deep-agent style kernel with the given configuration.
-// This is the canonical entry point that replaces presets/deepagent.BuildKernel.
-func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, cfg *DeepAgentConfig) (*kernel.Kernel, error) {
+func BuildDeepAgent(ctx context.Context, flags *AppFlags, uio io.UserIO, cfg *DeepAgentConfig) (*kernel.Kernel, error) {
 	effective := DeepAgentDefaults()
 	if cfg != nil {
 		effective = cfg.ApplyOver(effective)
@@ -172,7 +170,7 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		features = append(features, harness.KernelOptions(runtime.WithStateCatalog(stateCatalog)))
 	}
 
-	if valueOrDefault(effective.EnableSessionStore, true) {
+	if deepAgentValueOrDefault(effective.EnableSessionStore, true) {
 		storeDir := effective.SessionStoreDir
 		if storeDir == "" {
 			if appDir := appconfig.AppDir(); appDir != "" {
@@ -187,13 +185,13 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		}
 		var store session.SessionStore = rawStore
 		store = runtime.WrapSessionStore(store, stateCatalog)
-		features = append(features, appkit.WithSessionStore(store))
-		if valueOrDefault(effective.EnableContextOffload, true) {
-			features = append(features, appkit.WithContextOffload(store))
-			features = append(features, appkit.WithContextManagement(store))
+		features = append(features, WithSessionStore(store))
+		if deepAgentValueOrDefault(effective.EnableContextOffload, true) {
+			features = append(features, WithContextOffload(store))
+			features = append(features, WithContextManagement(store))
 		}
 	}
-	if valueOrDefault(effective.EnableCheckpointStore, true) {
+	if deepAgentValueOrDefault(effective.EnableCheckpointStore, true) {
 		checkpointDir := effective.CheckpointStoreDir
 		if checkpointDir == "" {
 			if appDir := appconfig.AppDir(); appDir != "" {
@@ -209,7 +207,7 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		checkpointStore := runtime.WrapCheckpointStore(store, stateCatalog)
 		features = append(features, harness.Checkpointing(checkpointStore))
 	}
-	if valueOrDefault(effective.EnableTaskRuntime, true) {
+	if deepAgentValueOrDefault(effective.EnableTaskRuntime, true) {
 		taskDir := effective.TaskRuntimeDir
 		if taskDir == "" {
 			if appDir := appconfig.AppDir(); appDir != "" {
@@ -225,7 +223,7 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		features = append(features, harness.TaskDelegation(runtime.WrapTaskRuntime(taskRuntime, stateCatalog)))
 	}
 
-	if valueOrDefault(effective.EnablePersistentMemories, true) {
+	if deepAgentValueOrDefault(effective.EnablePersistentMemories, true) {
 		memDir := effective.MemoryDir
 		if memDir == "" {
 			if appDir := appconfig.AppDir(); appDir != "" {
@@ -234,9 +232,9 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 				memDir = filepath.Join(flags.Workspace, "."+effective.AppName, "memories")
 			}
 		}
-		features = append(features, appkit.WithPersistentMemories(memDir))
+		features = append(features, WithPersistentMemories(memDir))
 	}
-	isolationEnabled := valueOrDefault(effective.EnableWorkspaceIsolation, true)
+	isolationEnabled := deepAgentValueOrDefault(effective.EnableWorkspaceIsolation, true)
 	isolationRoot := effective.IsolationRootDir
 	if isolationRoot == "" {
 		if appDir := appconfig.AppDir(); appDir != "" {
@@ -256,14 +254,14 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 	}
 	features = append(features, harness.KernelOptions(executionSurface.KernelOptions()...))
 	if strings.EqualFold(strings.TrimSpace(flags.Profile), "planning") {
-		features = append(features, appkit.WithPlanning())
+		features = append(features, WithPlanning())
 	}
 
-	if valueOrDefault(effective.EnableBootstrapContext, true) {
-		features = append(features, appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
+	if deepAgentValueOrDefault(effective.EnableBootstrapContext, true) {
+		features = append(features, WithLoadedBootstrapContextWithTrust(flags.Workspace, effective.AppName, flags.Trust))
 	}
 
-	if valueOrDefault(effective.EnableDefaultLLMRetry, true) {
+	if deepAgentValueOrDefault(effective.EnableDefaultLLMRetry, true) {
 		llmRetryCfg := effective.LLMRetryConfig
 		if llmRetryCfg == nil {
 			llmRetryCfg = &retry.Config{
@@ -279,15 +277,15 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		features = append(features, harness.KernelOptions(kernel.WithLLMBreaker(*effective.LLMBreakerConfig)))
 	}
 
-	features = append(features, appkit.RuntimeSetup(flags.Workspace, flags.Trust, effective.DefaultSetupOptions...))
+	features = append(features, RuntimeSetup(flags.Workspace, flags.Trust, effective.DefaultSetupOptions...))
 
-	k, err := appkit.BuildKernelWithFeatures(ctx, flags, uio, features...)
+	k, err := BuildKernelWithFeatures(ctx, flags, uio, features...)
 	if err != nil {
 		return nil, err
 	}
 	runtime.ReportExecutionSurface(ctx, runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil), runtime.ExecutionSurfaceFromKernel(k, flags.Workspace, isolationRoot, isolationEnabled))
 
-	if valueOrDefault(effective.EnsureGeneralPurpose, true) {
+	if deepAgentValueOrDefault(effective.EnsureGeneralPurpose, true) {
 		if err := ensureGeneralPurposeAgent(k, flags, effective); err != nil {
 			return nil, err
 		}
@@ -297,7 +295,7 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 		BeforeLLM: builtins.PatchToolCalls(),
 	})
 
-	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && valueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
+	if appconfig.NormalizeTrustLevel(flags.Trust) == appconfig.TrustRestricted && deepAgentValueOrDefault(effective.EnableDefaultRestrictedPolicy, true) {
 		k.WithPolicy(
 			builtins.DenyCommandContaining("rm -rf /", "format c:", "del /f /q c:\\"),
 			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
@@ -314,7 +312,7 @@ func BuildDeepAgent(ctx context.Context, flags *appkit.AppFlags, uio io.UserIO, 
 	return k, nil
 }
 
-func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *appkit.AppFlags, cfg DeepAgentConfig) error {
+func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentConfig) error {
 	agReg := runtime.AgentRegistry(k)
 	name := cfg.GeneralPurposeName
 	if _, exists := agReg.Get(name); exists {
@@ -354,9 +352,9 @@ func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *appkit.AppFlags, cfg Dee
 	})
 }
 
-func boolPtr(v bool) *bool { return &v }
+func deepAgentBoolPtr(v bool) *bool { return &v }
 
-func valueOrDefault(p *bool, def bool) bool {
+func deepAgentValueOrDefault(p *bool, def bool) bool {
 	if p != nil {
 		return *p
 	}

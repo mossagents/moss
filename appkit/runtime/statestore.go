@@ -828,7 +828,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 			"reason_code":   event.ReasonCode,
 			"enforcement":   event.Enforcement,
 			"duration_ms":   event.Duration.Milliseconds(),
-			"data":          event.Data,
+			"data":          event.Metadata,
 		}),
 	}
 }
@@ -854,7 +854,7 @@ func executionEventJournalRecord(event observe.ExecutionEvent) map[string]any {
 		"model":         event.Model,
 		"duration_ms":   event.Duration.Milliseconds(),
 		"error":         event.Error,
-		"data":          event.Data,
+		"data":          event.Metadata,
 	}
 }
 

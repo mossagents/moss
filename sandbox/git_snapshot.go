@@ -72,7 +72,7 @@ func (s *GitWorktreeSnapshotStore) Create(ctx context.Context, req workspace.Wor
 		Type:      observe.ExecutionSnapshotCreated,
 		SessionID: snapshot.SessionID,
 		Timestamp: snapshot.CreatedAt,
-		Data: map[string]any{
+		Metadata: map[string]any{
 			"snapshot_id": snapshot.ID,
 			"mode":        snapshot.Mode,
 			"repo_root":   snapshot.RepoRoot,

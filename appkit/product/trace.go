@@ -33,7 +33,7 @@ type TraceEvent struct {
 	TotalTokens      int            `json:"total_tokens,omitempty"`
 	EstimatedCostUSD float64        `json:"estimated_cost_usd,omitempty"`
 	Error            string         `json:"error,omitempty"`
-	Data             map[string]any `json:"data,omitempty"`
+	Metadata         map[string]any `json:"data,omitempty"`
 }
 
 type RunTrace struct {
@@ -130,7 +130,7 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e observe.Executi
 		ToolName:     e.ToolName,
 		DurationMS:   e.Duration.Milliseconds(),
 		Error:        e.Error,
-		Data:         cloneTraceData(e.Data),
+		Metadata:         cloneTraceMetadata(e.Metadata),
 	})
 }
 
@@ -155,7 +155,7 @@ func (r *RunTraceRecorder) OnApproval(_ context.Context, e io.ApprovalEvent) {
 		SessionID: e.SessionID,
 		Type:      e.Type,
 		ToolName:  e.Request.ToolName,
-		Data:      data,
+		Metadata:      data,
 	})
 }
 
@@ -231,7 +231,7 @@ func errorString(err error) string {
 	return err.Error()
 }
 
-func cloneTraceData(in map[string]any) map[string]any {
+func cloneTraceMetadata(in map[string]any) map[string]any {
 	if len(in) == 0 {
 		return nil
 	}
@@ -372,22 +372,22 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 			return traceEventSummary{}, false
 		}
 		priority := 20
-		if approved, ok := boolData(event.Data, "approved"); ok && !approved {
+		if approved, ok := boolData(event.Metadata, "approved"); ok && !approved {
 			priority = 2
 		}
 		return traceEventSummary{priority: priority, index: index, message: msg}, true
 	case "execution_event":
 		switch event.Type {
 		case "turn.plan_prepared":
-			lane := valueOrUnknown(stringData(event.Data, "model_lane"), "default")
-			profile := valueOrUnknown(stringData(event.Data, "instruction_profile"), "default")
+			lane := valueOrUnknown(stringData(event.Metadata, "model_lane"), "default")
+			profile := valueOrUnknown(stringData(event.Metadata, "instruction_profile"), "default")
 			return traceEventSummary{
 				priority: 15,
 				index:    index,
 				message:  fmt.Sprintf("Turn plan prepared: profile=%s lane=%s", profile, lane),
 			}, true
 		case "model.route_planned":
-			lane := valueOrUnknown(stringData(event.Data, "lane"), "default")
+			lane := valueOrUnknown(stringData(event.Metadata, "lane"), "default")
 			return traceEventSummary{
 				priority: 16,
 				index:    index,
@@ -399,21 +399,21 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 				index:    index,
 				message: fmt.Sprintf(
 					"Tool route planned: visible=%d hidden=%d approval=%d",
-					intValue(event.Data, "visible_tools_count"),
-					intValue(event.Data, "hidden_tools_count"),
-					intValue(event.Data, "approval_tools_count"),
+					intValue(event.Metadata, "visible_tools_count"),
+					intValue(event.Metadata, "hidden_tools_count"),
+					intValue(event.Metadata, "approval_tools_count"),
 				),
 			}, true
 		case "llm_failover_exhausted":
 			return traceEventSummary{priority: 1, index: index, message: "LLM failover exhausted all available candidates"}, true
 		case "llm_failover_switch":
-			from := valueOrUnknown(stringData(event.Data, "candidate_model"), event.Model)
-			to := valueOrUnknown(stringData(event.Data, "failover_to"), "next candidate")
+			from := valueOrUnknown(stringData(event.Metadata, "candidate_model"), event.Model)
+			to := valueOrUnknown(stringData(event.Metadata, "failover_to"), "next candidate")
 			return traceEventSummary{priority: 3, index: index, message: fmt.Sprintf("Failover switched from %s to %s", from, to)}, true
 		case "tool.completed":
-			if degraded, ok := boolData(event.Data, "degraded"); ok && degraded {
+			if degraded, ok := boolData(event.Metadata, "degraded"); ok && degraded {
 				toolName := valueOrUnknown(event.ToolName, "tool")
-				enforcement := valueOrUnknown(stringData(event.Data, "enforcement"), "degraded")
+				enforcement := valueOrUnknown(stringData(event.Metadata, "enforcement"), "degraded")
 				return traceEventSummary{priority: 6, index: index, message: fmt.Sprintf("Tool %s completed with %s enforcement", toolName, enforcement)}, true
 			}
 		}
@@ -443,7 +443,7 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 
 func summarizeApprovalEvent(event TraceEvent) string {
 	toolName := valueOrUnknown(event.ToolName, "tool")
-	reasonCode := strings.TrimSpace(stringData(event.Data, "reason_code"))
+	reasonCode := strings.TrimSpace(stringData(event.Metadata, "reason_code"))
 	switch strings.TrimSpace(event.Type) {
 	case "requested":
 		if reasonCode != "" {
@@ -451,7 +451,7 @@ func summarizeApprovalEvent(event TraceEvent) string {
 		}
 		return fmt.Sprintf("Approval required for %s", toolName)
 	case "resolved":
-		if approved, ok := boolData(event.Data, "approved"); ok {
+		if approved, ok := boolData(event.Metadata, "approved"); ok {
 			if approved {
 				return fmt.Sprintf("Approval granted for %s", toolName)
 			}
@@ -509,13 +509,13 @@ func formatTraceEventDetail(event TraceEvent) string {
 	case "approval":
 		details = append(details, "[approval]", valueOrUnknown(event.Type, "event"))
 		details = append(details, "tool="+valueOrUnknown(event.ToolName, "tool"))
-		if reasonCode := stringData(event.Data, "reason_code"); reasonCode != "" {
+		if reasonCode := stringData(event.Metadata, "reason_code"); reasonCode != "" {
 			details = append(details, "reason_code="+reasonCode)
 		}
-		if approved, ok := boolData(event.Data, "approved"); ok {
+		if approved, ok := boolData(event.Metadata, "approved"); ok {
 			details = append(details, fmt.Sprintf("approved=%t", approved))
 		}
-		if source := stringData(event.Data, "source"); source != "" {
+		if source := stringData(event.Metadata, "source"); source != "" {
 			details = append(details, "source="+source)
 		}
 	case "llm_call":
@@ -542,7 +542,7 @@ func formatTraceEventDetail(event TraceEvent) string {
 			details = append(details, "tool="+event.ToolName)
 		}
 		details = appendTraceCommonDetails(details, event)
-		details = append(details, formatTraceDataPairs(event.Data)...)
+		details = append(details, formatTraceMetadataPairs(event.Metadata)...)
 	case "error":
 		details = append(details, "[error]", valueOrUnknown(event.Type, "runtime"))
 		if strings.TrimSpace(event.Error) != "" {
@@ -551,7 +551,7 @@ func formatTraceEventDetail(event TraceEvent) string {
 	default:
 		details = append(details, "["+valueOrUnknown(event.Kind, "event")+"]")
 		details = appendTraceCommonDetails(details, event)
-		details = append(details, formatTraceDataPairs(event.Data)...)
+		details = append(details, formatTraceMetadataPairs(event.Metadata)...)
 	}
 	return strings.Join(details, " ")
 }
@@ -566,7 +566,7 @@ func appendTraceCommonDetails(details []string, event TraceEvent) []string {
 	return details
 }
 
-func formatTraceDataPairs(data map[string]any) []string {
+func formatTraceMetadataPairs(data map[string]any) []string {
 	if len(data) == 0 {
 		return nil
 	}
@@ -611,14 +611,14 @@ func formatTraceDataPairs(data map[string]any) []string {
 		if !ok {
 			continue
 		}
-		if value := formatTraceDataValue(v); value != "" {
+		if value := formatTraceMetadataValue(v); value != "" {
 			out = append(out, key+"="+value)
 		}
 	}
 	return out
 }
 
-func formatTraceDataValue(v any) string {
+func formatTraceMetadataValue(v any) string {
 	switch value := v.(type) {
 	case string:
 		return strings.TrimSpace(value)

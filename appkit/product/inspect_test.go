@@ -52,7 +52,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			Phase:        "planning",
 			Actor:        "runtime",
 			PayloadKind:  "turn_plan",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"iteration":            1,
 				"instruction_profile":  "planning",
 				"model_lane":           "reasoning",
@@ -72,7 +72,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			Phase:        "planning",
 			Actor:        "runtime",
 			PayloadKind:  "tool_route",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"visible_tools":  []string{"read_file", "view"},
 				"hidden_tools":   []string{"write_file"},
 				"approval_tools": []string{"run_command"},
@@ -95,7 +95,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			Actor:        "runtime",
 			PayloadKind:  "model_route",
 			Model:        "gpt-5",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"lane":          "reasoning",
 				"reason_codes":  []string{"planning_mode"},
 				"capabilities":  []model.ModelCapability{model.CapReasoning},
@@ -115,7 +115,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			Actor:        "runtime",
 			PayloadKind:  "llm_attempt",
 			Model:        "gpt-5",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"candidate_model": "gpt-5",
 				"attempt_index":   1,
 				"candidate_retry": 0,
@@ -419,7 +419,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			Actor:        "runtime",
 			PayloadKind:  "model_route",
 			Model:        "gpt-5",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"lane": "reasoning",
 			},
 		},
@@ -434,7 +434,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			Phase:        "llm",
 			Actor:        "runtime",
 			PayloadKind:  "llm_attempt",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"candidate_model": "gpt-5",
 				"failover_to":     "claude-sonnet",
 			},
@@ -450,7 +450,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			Phase:        "approval",
 			Actor:        "runtime",
 			PayloadKind:  "approval",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"reason_code": "network",
 			},
 		},
@@ -465,7 +465,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			Phase:        "approval",
 			Actor:        "runtime",
 			PayloadKind:  "approval",
-			Data: map[string]any{
+			Metadata: map[string]any{
 				"approved": false,
 			},
 		},

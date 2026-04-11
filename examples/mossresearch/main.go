@@ -15,7 +15,6 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/patterns"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"io"
 	"os"
@@ -195,7 +194,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 }
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) (*kernel.Kernel, error) {
-	deepCfg := patterns.DeepAgentDefaults()
+	deepCfg := appkit.DeepAgentDefaults()
 	deepCfg.AppName = appName
 	deepCfg.GeneralPurposeName = "research-generalist"
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
@@ -208,7 +207,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 			return registerResearchAgents(k, flags)
 		}),
 	}
-	return patterns.BuildDeepAgent(ctx, flags, io, &deepCfg)
+	return appkit.BuildDeepAgent(ctx, flags, io, &deepCfg)
 }
 
 func buildSystemPrompt(workspace, trust string) string {

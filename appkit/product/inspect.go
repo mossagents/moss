@@ -115,7 +115,7 @@ type inspectExecutionMetadata struct {
 	ReasonCode   string         `json:"reason_code,omitempty"`
 	Enforcement  string         `json:"enforcement,omitempty"`
 	DurationMS   int64          `json:"duration_ms,omitempty"`
-	Data         map[string]any `json:"data,omitempty"`
+	Metadata     map[string]any `json:"data,omitempty"`
 }
 
 func BuildInspectReport(ctx context.Context, workspace string, args []string) (InspectReport, error) {
@@ -536,45 +536,45 @@ func buildInspectRun(entries []appruntime.StateEntry, sessionID string) InspectR
 		case "turn.plan_prepared":
 			if report.TurnPlan == nil {
 				report.TurnPlan = &InspectTurnPlan{
-					Iteration:          intValue(event.Data, "iteration"),
-					InstructionProfile: stringData(event.Data, "instruction_profile"),
-					LightweightChat:    boolValue(event.Data, "lightweight_chat"),
-					ModelLane:          stringData(event.Data, "model_lane"),
-					VisibleToolsCount:  intValue(event.Data, "visible_tools_count"),
-					HiddenToolsCount:   intValue(event.Data, "hidden_tools_count"),
-					ApprovalToolsCount: intValue(event.Data, "approval_tools_count"),
+					Iteration:          intValue(event.Metadata, "iteration"),
+					InstructionProfile: stringData(event.Metadata, "instruction_profile"),
+					LightweightChat:    boolValue(event.Metadata, "lightweight_chat"),
+					ModelLane:          stringData(event.Metadata, "model_lane"),
+					VisibleToolsCount:  intValue(event.Metadata, "visible_tools_count"),
+					HiddenToolsCount:   intValue(event.Metadata, "hidden_tools_count"),
+					ApprovalToolsCount: intValue(event.Metadata, "approval_tools_count"),
 				}
 			}
 		case "tool.route_planned":
 			if report.ToolRoute == nil {
 				report.ToolRoute = &InspectToolRoute{
-					VisibleTools:  stringSliceFromData(event.Data, "visible_tools"),
-					HiddenTools:   stringSliceFromData(event.Data, "hidden_tools"),
-					ApprovalTools: stringSliceFromData(event.Data, "approval_tools"),
-					RouteDigest:   stringData(event.Data, "route_digest"),
-					Decisions:     toolDecisionsFromData(event.Data["decisions"]),
+					VisibleTools:  stringSliceFromData(event.Metadata, "visible_tools"),
+					HiddenTools:   stringSliceFromData(event.Metadata, "hidden_tools"),
+					ApprovalTools: stringSliceFromData(event.Metadata, "approval_tools"),
+					RouteDigest:   stringData(event.Metadata, "route_digest"),
+					Decisions:     toolDecisionsFromData(event.Metadata["decisions"]),
 				}
 			}
 		case "model.route_planned":
 			if report.ModelRoute == nil {
 				report.ModelRoute = &InspectModelRoute{
 					ConfiguredModel: event.Model,
-					Lane:            stringData(event.Data, "lane"),
-					ReasonCodes:     stringSliceFromData(event.Data, "reason_codes"),
-					Capabilities:    stringSliceFromData(event.Data, "capabilities"),
-					MaxCostTier:     intValue(event.Data, "max_cost_tier"),
-					PreferCheap:     boolValue(event.Data, "prefer_cheap"),
+					Lane:            stringData(event.Metadata, "lane"),
+					ReasonCodes:     stringSliceFromData(event.Metadata, "reason_codes"),
+					Capabilities:    stringSliceFromData(event.Metadata, "capabilities"),
+					MaxCostTier:     intValue(event.Metadata, "max_cost_tier"),
+					PreferCheap:     boolValue(event.Metadata, "prefer_cheap"),
 				}
 			}
 		case "llm_failover_attempt":
 			report.Failovers = append(report.Failovers, InspectFailover{
-				CandidateModel: stringData(event.Data, "candidate_model"),
-				AttemptIndex:   intValue(event.Data, "attempt_index"),
-				CandidateRetry: intValue(event.Data, "candidate_retry"),
-				BreakerState:   stringData(event.Data, "breaker_state"),
-				FailoverTo:     stringData(event.Data, "failover_to"),
-				Outcome:        stringData(event.Data, "outcome"),
-				FailureReason:  stringData(event.Data, "failure_reason"),
+				CandidateModel: stringData(event.Metadata, "candidate_model"),
+				AttemptIndex:   intValue(event.Metadata, "attempt_index"),
+				CandidateRetry: intValue(event.Metadata, "candidate_retry"),
+				BreakerState:   stringData(event.Metadata, "breaker_state"),
+				FailoverTo:     stringData(event.Metadata, "failover_to"),
+				Outcome:        stringData(event.Metadata, "outcome"),
+				FailureReason:  stringData(event.Metadata, "failure_reason"),
 			})
 		}
 	}
@@ -614,7 +614,7 @@ func decodeInspectTraceEvent(entry appruntime.StateEntry) (TraceEvent, bool) {
 		ToolName:     meta.ToolName,
 		DurationMS:   meta.DurationMS,
 		Error:        entry.Status,
-		Data:         cloneTraceData(meta.Data),
+		Metadata:         cloneTraceMetadata(meta.Metadata),
 	}, true
 }
 

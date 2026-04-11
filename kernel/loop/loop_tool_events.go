@@ -101,7 +101,7 @@ func (l *AgentLoop) handleBeforeToolCallError(
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"is_error": true,
 	}
 	event.Error = normalizedErr.Error()
@@ -136,7 +136,7 @@ func (l *AgentLoop) observeToolCompletion(
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
 	event.Duration = toolDur
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"is_error": result.IsError,
 	}
 	if err != nil {
@@ -236,12 +236,12 @@ func appendToolExecutionMetadata(event *observe.ExecutionEvent, output json.RawM
 	if err := json.Unmarshal(output, &payload); err != nil {
 		return
 	}
-	if event.Data == nil {
-		event.Data = map[string]any{}
+	if event.Metadata == nil {
+		event.Metadata = map[string]any{}
 	}
 	for _, key := range []string{"enforcement", "degraded", "details", "url", "method", "status_code", "follow_redirects"} {
 		if value, ok := payload[key]; ok {
-			event.Data[key] = value
+			event.Metadata[key] = value
 		}
 	}
 }
@@ -250,17 +250,17 @@ func appendExecutionErrorMetadata(event *observe.ExecutionEvent, err error) {
 	if event == nil || err == nil {
 		return
 	}
-	if event.Data == nil {
-		event.Data = map[string]any{}
+	if event.Metadata == nil {
+		event.Metadata = map[string]any{}
 	}
 	code := string(kerrors.GetCode(err))
 	if code != "" {
-		event.Data["error_code"] = code
+		event.Metadata["error_code"] = code
 	}
 	var kernelErr *kerrors.Error
 	if errors.As(err, &kernelErr) && len(kernelErr.Meta) > 0 {
 		for k, v := range kernelErr.Meta {
-			event.Data[k] = v
+			event.Metadata[k] = v
 		}
 	}
 }

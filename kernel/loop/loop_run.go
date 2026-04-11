@@ -74,7 +74,7 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "running"})
 	event := l.executionEventBase(sess, observe.ExecutionRunStarted, "run", "runtime", "run")
 	event.Timestamp = runStartedAt
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"mode":      sess.Config.Mode,
 		"goal":      sess.Config.Goal,
 		"max_steps": sess.Budget.MaxSteps,
@@ -164,7 +164,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 	)
 	event := l.executionEventBase(sess, observe.ExecutionIterationStarted, "iteration", "runtime", "iteration")
 	event.Timestamp = iterationStartedAt
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"iteration":      iteration,
 		"max_iterations": maxIter,
 		"max_steps":      sess.Budget.MaxSteps,
@@ -181,7 +181,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 
 	event := l.executionEventBase(sess, observe.ExecutionLLMStarted, "llm", "runtime", "llm")
 	event.Model = sess.Config.ModelConfig.Model
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
 		"prompt_version":      plan.PromptVersion,
@@ -237,7 +237,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	event = l.executionEventBase(sess, observe.ExecutionLLMCompleted, "llm", "runtime", "llm")
 	event.Model = metadata.ActualModel
 	event.Duration = llmDur
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"stop_reason":         resp.StopReason,
 		"tokens":              resp.Usage.TotalTokens,
 		"model_lane":          plan.ModelRoute.Lane,
@@ -270,7 +270,7 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 	visible := visibleToolNames(plan.ToolRoute)
 	hidden := hiddenToolNames(plan.ToolRoute)
 	approval := approvalRequiredToolNames(plan.ToolRoute)
-	routeEvent.Data = map[string]any{
+	routeEvent.Metadata = map[string]any{
 		"visible_tools":        visible,
 		"hidden_tools":         hidden,
 		"approval_tools":       approval,
@@ -284,7 +284,7 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 
 	modelEvent := l.executionEventBase(sess, observe.ExecutionEventType("model.route_planned"), "planning", "runtime", "model_route")
 	modelEvent.Model = sess.Config.ModelConfig.Model
-	modelEvent.Data = map[string]any{
+	modelEvent.Metadata = map[string]any{
 		"lane":          plan.ModelRoute.Lane,
 		"reason_codes":  append([]string(nil), plan.ModelRoute.ReasonCodes...),
 		"capabilities":  append([]model.ModelCapability(nil), plan.ModelRoute.Requirements.Capabilities...),
@@ -294,7 +294,7 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 	observe.ObserveExecutionEvent(ctx, l.observer(), modelEvent)
 
 	turnEvent := l.executionEventBase(sess, observe.ExecutionEventType("turn.plan_prepared"), "planning", "runtime", "turn_plan")
-	turnEvent.Data = map[string]any{
+	turnEvent.Metadata = map[string]any{
 		"iteration":            plan.Iteration,
 		"instruction_profile":  plan.InstructionProfile,
 		"prompt_version":       plan.PromptVersion,
@@ -345,7 +345,7 @@ func (l *AgentLoop) emitIterationProgress(
 	event := l.executionEventBase(sess, observe.ExecutionIterationProgress, "iteration", "runtime", "iteration")
 	event.Timestamp = progressAt
 	event.Model = modelName
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"iteration":      iteration,
 		"max_iterations": maxIter,
 		"max_steps":      sess.Budget.MaxSteps,
@@ -368,7 +368,7 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 	)
 	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "completed"})
 	event := l.executionEventBase(sess, observe.ExecutionRunCompleted, "run", "runtime", "run")
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"steps":  sess.Budget.UsedStepsValue(),
 		"tokens": totalUsage.TotalTokens,
 	}

@@ -42,7 +42,7 @@ func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session,
 
 func (l *AgentLoop) emitExecutionPlanValidated(ctx context.Context, sess *session.Session, plan ExecutionPlan) {
 	event := l.executionEventBase(sess, observe.ExecutionEventType("execution.plan_validated"), "planning", "runtime", "execution_plan")
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"call_count": len(plan.Calls),
 		"call_ids":   executionPlanCallIDs(plan),
 		"calls":      executionPlanPayload(plan),
@@ -57,7 +57,7 @@ func (l *AgentLoop) emitExecutionPlanRejected(ctx context.Context, sess *session
 		names = append(names, call.Name)
 	}
 	event.Error = err.Error()
-	event.Data = map[string]any{
+	event.Metadata = map[string]any{
 		"call_count": len(calls),
 		"tool_names": names,
 	}

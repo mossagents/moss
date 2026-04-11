@@ -172,7 +172,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model
 	sess.EndedAt = time.Now()
 	runEvent := l.executionEventBase(sess, eventType, "run", "runtime", "run")
 	runEvent.Error = err.Error()
-	runEvent.Data = map[string]any{
+	runEvent.Metadata = map[string]any{
 		"steps":  sess.Budget.UsedStepsValue(),
 		"tokens": usage.TotalTokens,
 	}

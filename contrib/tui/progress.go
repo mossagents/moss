@@ -502,7 +502,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.StartedAt = ts
 	}
 	next.UpdatedAt = ts
-	if v, ok := intData(event.Data, "max_steps"); ok && v > 0 {
+	if v, ok := intData(event.Metadata, "max_steps"); ok && v > 0 {
 		next.MaxSteps = v
 	}
 	switch event.Type {
@@ -517,7 +517,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
-		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
+		if v, ok := intData(event.Metadata, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
 		next.ActivityKey = fmt.Sprintf("iteration:%d", max(next.Iteration, 1))
@@ -549,7 +549,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.ActivityKey = "approval:" + strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
 		if next.ToolName != "" {
 			next.Message = "approval required for " + next.ToolName
-		} else if reason := strings.TrimSpace(stringData(event.Data, "reason")); reason != "" {
+		} else if reason := strings.TrimSpace(stringData(event.Metadata, "reason")); reason != "" {
 			next.Message = reason
 		} else {
 			next.Message = "approval required"
@@ -559,7 +559,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
 		next.ActivityKey = "approval:" + strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
-		if approved, ok := boolData(event.Data, "approved"); ok && !approved {
+		if approved, ok := boolData(event.Metadata, "approved"); ok && !approved {
 			next.Message = "approval denied"
 		} else if next.ToolName != "" {
 			next.Message = "approval granted for " + next.ToolName
@@ -570,13 +570,13 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "thinking"
 		next.ToolName = ""
-		if v, ok := intData(event.Data, "iteration"); ok && v > 0 {
+		if v, ok := intData(event.Metadata, "iteration"); ok && v > 0 {
 			next.Iteration = v
 		}
 		next.ActivityKey = fmt.Sprintf("iteration:%d", max(next.Iteration, 1))
-		toolCalls, _ := intData(event.Data, "tool_calls")
-		stopReason := strings.TrimSpace(stringData(event.Data, "stop_reason"))
-		tokens, _ := intData(event.Data, "tokens")
+		toolCalls, _ := intData(event.Metadata, "tool_calls")
+		stopReason := strings.TrimSpace(stringData(event.Metadata, "stop_reason"))
+		tokens, _ := intData(event.Metadata, "tokens")
 		switch {
 		case toolCalls > 0:
 			next.Phase = "tools"
@@ -597,8 +597,8 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Phase = "completed"
 		next.ToolName = ""
 		next.ActivityKey = "run:completed"
-		steps, _ := intData(event.Data, "steps")
-		tokens, _ := intData(event.Data, "tokens")
+		steps, _ := intData(event.Metadata, "steps")
+		tokens, _ := intData(event.Metadata, "tokens")
 		switch {
 		case steps > 0 && tokens > 0:
 			next.Message = fmt.Sprintf("completed in %d steps (%d tokens)", steps, tokens)
@@ -683,7 +683,7 @@ type stateEntryExecutionMetadata struct {
 	ReasonCode  string         `json:"reason_code"`
 	Enforcement string         `json:"enforcement"`
 	DurationMS  int64          `json:"duration_ms"`
-	Data        map[string]any `json:"data"`
+	Metadata    map[string]any `json:"data"`
 }
 
 func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEvent, bool) {
@@ -716,7 +716,7 @@ func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEv
 		Enforcement: io.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
 		Duration:    time.Duration(meta.DurationMS) * time.Millisecond,
 		Error:       strings.TrimSpace(entry.Status),
-		Data:        meta.Data,
+		Data:        meta.Metadata,
 	}, true
 }
 

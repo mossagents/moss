@@ -123,7 +123,7 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, ev *hooks.ToolEvent, result
 		Risk:        string(ev.Tool.Risk),
 		ReasonCode:  result.Reason.Code,
 		Enforcement: result.Enforcement,
-		Data:        data,
+		Metadata:        data,
 	})
 }
 
@@ -168,7 +168,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Data:        approvalRequestData(approval, ev.Input, result.Meta),
+		Metadata:        approvalRequestData(approval, ev.Input, result.Meta),
 	})
 	if auto := autoApprovalDecision(ev, approval); auto != nil {
 		resolved := io.NormalizeApprovalDecisionForRequest(approval, auto)
@@ -186,7 +186,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 			Risk:        approval.Risk,
 			ReasonCode:  approval.ReasonCode,
 			Enforcement: approval.Enforcement,
-			Data:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
+			Metadata:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 		})
 		applyApprovalDecision(ev, approval, resolved)
 		return nil
@@ -222,7 +222,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Data:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
+		Metadata:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 	})
 	if !resolved.Approved {
 		return policyDeniedError(ev, result)

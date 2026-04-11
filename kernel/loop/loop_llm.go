@@ -304,7 +304,7 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 	for _, attempt := range metadata.Attempts {
 		event := l.executionEventBase(&session.Session{ID: sessionID}, observe.ExecutionEventType("llm_failover_attempt"), "llm", "runtime", "llm_attempt")
 		event.Model = attempt.CandidateModel
-		event.Data = map[string]any{
+		event.Metadata = map[string]any{
 			"candidate_model": attempt.CandidateModel,
 			"attempt_index":   attempt.AttemptIndex,
 			"candidate_retry": attempt.CandidateRetry,
@@ -318,7 +318,7 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 		if strings.TrimSpace(attempt.FailoverTo) != "" {
 			switchEvent := l.executionEventBase(&session.Session{ID: sessionID}, observe.ExecutionEventType("llm_failover_switch"), "llm", "runtime", "llm_attempt")
 			switchEvent.Model = attempt.CandidateModel
-			switchEvent.Data = map[string]any{
+			switchEvent.Metadata = map[string]any{
 				"candidate_model": attempt.CandidateModel,
 				"failover_to":     attempt.FailoverTo,
 				"model_lane":      l.currentTurn.ModelRoute.Lane,
