@@ -1,31 +1,32 @@
-package deepagent
+package patterns
 
 import (
 	"context"
 	"encoding/json"
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/kernel/session"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
 )
 
-func TestBuildKernel_DefaultPreset(t *testing.T) {
+func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
 	}
 
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -84,7 +85,7 @@ func TestBuildKernel_DefaultPreset(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_PersistsExecutionCapabilities(t *testing.T) {
+func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	flags := &appkit.AppFlags{
@@ -93,9 +94,9 @@ func TestBuildKernel_PersistsExecutionCapabilities(t *testing.T) {
 		Trust:     "trusted",
 	}
 
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if k.WorkspaceIsolation() == nil {
 		t.Fatal("expected workspace isolation to be configured")
@@ -126,16 +127,16 @@ func TestBuildKernel_PersistsExecutionCapabilities(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
+func TestBuildDeepAgent_PlanningProfileEnablesWriteTodos(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
 		Profile:   "planning",
 	}
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -145,7 +146,7 @@ func TestBuildKernel_PlanningProfileEnablesWriteTodos(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_DisableGeneralPurpose(t *testing.T) {
+func TestBuildDeepAgent_DisableGeneralPurpose(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
@@ -153,7 +154,7 @@ func TestBuildKernel_DisableGeneralPurpose(t *testing.T) {
 	}
 
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnsureGeneralPurpose:     &disable,
 		EnableSessionStore:       &disable,
 		EnablePersistentMemories: &disable,
@@ -161,7 +162,7 @@ func TestBuildKernel_DisableGeneralPurpose(t *testing.T) {
 		EnableBootstrapContext:   &disable,
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 
 	if _, ok := runtime.AgentRegistry(k).Get("general-purpose"); ok {
@@ -169,69 +170,69 @@ func TestBuildKernel_DisableGeneralPurpose(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_DisableWorkspaceIsolation(t *testing.T) {
+func TestBuildDeepAgent_DisableWorkspaceIsolation(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnableWorkspaceIsolation: &disable,
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if k.WorkspaceIsolation() != nil {
 		t.Fatal("workspace isolation should be disabled")
 	}
 }
 
-func TestBuildKernel_DisableTaskRuntime(t *testing.T) {
+func TestBuildDeepAgent_DisableTaskRuntime(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnableTaskRuntime: &disable,
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if k.TaskRuntime() != nil {
 		t.Fatal("task runtime should be disabled")
 	}
 }
 
-func TestBuildKernel_DisableCheckpointStore(t *testing.T) {
+func TestBuildDeepAgent_DisableCheckpointStore(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
 	}
 	disable := false
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnableCheckpointStore: &disable,
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	if k.Checkpoints() != nil {
 		t.Fatal("checkpoint store should be disabled")
 	}
 }
 
-func TestBuildKernel_PatchesOrphanToolCalls(t *testing.T) {
+func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
 	}
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "x"})
 	if err != nil {
@@ -260,15 +261,15 @@ func TestBuildKernel_PatchesOrphanToolCalls(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_DefaultLLMRetryInjected(t *testing.T) {
+func TestBuildDeepAgent_DefaultLLMRetryInjected(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
 	}
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, nil)
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	kv := reflect.ValueOf(k).Elem()
 	loopCfg := kv.FieldByName("loopCfg")
@@ -281,14 +282,14 @@ func TestBuildKernel_DefaultLLMRetryInjected(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_CustomLLMGovernanceApplied(t *testing.T) {
+func TestBuildDeepAgent_CustomLLMGovernanceApplied(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
 	}
 	enableRetry := true
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnableDefaultLLMRetry: &enableRetry,
 		LLMRetryConfig: &retry.Config{
 			MaxRetries:   4,
@@ -302,7 +303,7 @@ func TestBuildKernel_CustomLLMGovernanceApplied(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	kv := reflect.ValueOf(k).Elem()
 	loopCfg := kv.FieldByName("loopCfg")
@@ -318,18 +319,18 @@ func TestBuildKernel_CustomLLMGovernanceApplied(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_DisableDefaultLLMRetry(t *testing.T) {
+func TestBuildDeepAgent_DisableDefaultLLMRetry(t *testing.T) {
 	flags := &appkit.AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
 	}
 	disableRetry := false
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{}, &Config{
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
 		EnableDefaultLLMRetry: &disableRetry,
 	})
 	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
+		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 	kv := reflect.ValueOf(k).Elem()
 	loopCfg := kv.FieldByName("loopCfg")
@@ -339,9 +340,9 @@ func TestBuildKernel_DisableDefaultLLMRetry(t *testing.T) {
 	}
 }
 
-func TestApplyOver_zeroValueDoesNotOverrideBase(t *testing.T) {
-	base := DefaultConfig()
-	overlay := Config{}
+func TestDeepAgentApplyOver_zeroValueDoesNotOverrideBase(t *testing.T) {
+	base := DeepAgentDefaults()
+	overlay := DeepAgentConfig{}
 
 	result := overlay.ApplyOver(base)
 
@@ -356,9 +357,9 @@ func TestApplyOver_zeroValueDoesNotOverrideBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_nonZeroStringOverridesBase(t *testing.T) {
-	base := DefaultConfig()
-	overlay := Config{AppName: "my-app"}
+func TestDeepAgentApplyOver_nonZeroStringOverridesBase(t *testing.T) {
+	base := DeepAgentDefaults()
+	overlay := DeepAgentConfig{AppName: "my-app"}
 
 	result := overlay.ApplyOver(base)
 
@@ -370,9 +371,9 @@ func TestApplyOver_nonZeroStringOverridesBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_nilPtrDoesNotOverrideBase(t *testing.T) {
-	base := DefaultConfig()
-	overlay := Config{EnableSessionStore: nil}
+func TestDeepAgentApplyOver_nilPtrDoesNotOverrideBase(t *testing.T) {
+	base := DeepAgentDefaults()
+	overlay := DeepAgentConfig{EnableSessionStore: nil}
 
 	result := overlay.ApplyOver(base)
 
@@ -384,10 +385,10 @@ func TestApplyOver_nilPtrDoesNotOverrideBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_nonNilPtrOverridesBase(t *testing.T) {
-	base := DefaultConfig()
+func TestDeepAgentApplyOver_nonNilPtrOverridesBase(t *testing.T) {
+	base := DeepAgentDefaults()
 	f := false
-	overlay := Config{EnableSessionStore: &f}
+	overlay := DeepAgentConfig{EnableSessionStore: &f}
 
 	result := overlay.ApplyOver(base)
 
@@ -396,9 +397,9 @@ func TestApplyOver_nonNilPtrOverridesBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_maxStepsZeroPreservesBase(t *testing.T) {
-	base := DefaultConfig()
-	overlay := Config{GeneralPurposeMaxSteps: 0}
+func TestDeepAgentApplyOver_maxStepsZeroPreservesBase(t *testing.T) {
+	base := DeepAgentDefaults()
+	overlay := DeepAgentConfig{GeneralPurposeMaxSteps: 0}
 
 	result := overlay.ApplyOver(base)
 
@@ -407,9 +408,9 @@ func TestApplyOver_maxStepsZeroPreservesBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_maxStepsPositiveOverridesBase(t *testing.T) {
-	base := DefaultConfig()
-	overlay := Config{GeneralPurposeMaxSteps: 100}
+func TestDeepAgentApplyOver_maxStepsPositiveOverridesBase(t *testing.T) {
+	base := DeepAgentDefaults()
+	overlay := DeepAgentConfig{GeneralPurposeMaxSteps: 100}
 
 	result := overlay.ApplyOver(base)
 
@@ -418,10 +419,10 @@ func TestApplyOver_maxStepsPositiveOverridesBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
+func TestDeepAgentApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
 	opt := runtime.WithBuiltinTools(false)
-	base := Config{DefaultSetupOptions: []runtime.Option{opt}}
-	overlay := Config{DefaultSetupOptions: nil}
+	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt}}
+	overlay := DeepAgentConfig{DefaultSetupOptions: nil}
 
 	result := overlay.ApplyOver(base)
 
@@ -430,11 +431,11 @@ func TestApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_nonEmptySliceOverridesBase(t *testing.T) {
+func TestDeepAgentApplyOver_nonEmptySliceOverridesBase(t *testing.T) {
 	opt1 := runtime.WithBuiltinTools(false)
 	opt2 := runtime.WithAgents(false)
-	base := Config{DefaultSetupOptions: []runtime.Option{opt1}}
-	overlay := Config{DefaultSetupOptions: []runtime.Option{opt1, opt2}}
+	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1}}
+	overlay := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1, opt2}}
 
 	result := overlay.ApplyOver(base)
 
@@ -443,10 +444,10 @@ func TestApplyOver_nonEmptySliceOverridesBase(t *testing.T) {
 	}
 }
 
-func TestApplyOver_pureFunction_doesNotMutateBase(t *testing.T) {
-	base := DefaultConfig()
+func TestDeepAgentApplyOver_pureFunction_doesNotMutateBase(t *testing.T) {
+	base := DeepAgentDefaults()
 	origName := base.AppName
-	overlay := Config{AppName: "changed"}
+	overlay := DeepAgentConfig{AppName: "changed"}
 
 	_ = overlay.ApplyOver(base)
 

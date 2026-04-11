@@ -1,6 +1,6 @@
 # mosswriter
 
-`mosswriter` 是一个基于 `presets/deepagent` 的 content builder / writing agent 示例。
+`mosswriter` 是一个基于 `harness/patterns` 的 content builder / writing agent 示例。
 
 它参考了 deepagents 的 `content-builder-agent`，并在 Moss 中用三类文件系统原语实现：
 

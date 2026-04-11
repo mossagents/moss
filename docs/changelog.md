@@ -15,7 +15,7 @@
 - **ResearchAgent** — 研究型编排模式（Query → Parallel Search → Synthesis 循环）
 - **DeepAgentConfig / BuildDeepAgent** — deep-agent 预设迁移至 patterns 包
 
-`presets/deepagent` 包已简化为 `harness/patterns` 的薄包装层。
+`harness/patterns` 包已简化为 `harness/patterns` 的薄包装层。
 
 ### appkit → harness Feature 迁移
 

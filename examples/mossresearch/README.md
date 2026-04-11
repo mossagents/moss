@@ -1,6 +1,6 @@
 # mossresearch
 
-`mossresearch` 是一个基于 `presets/deepagent` 的 deep research 示例。
+`mossresearch` 是一个基于 `harness/patterns` 的 deep research 示例。
 
 它演示如何在 Moss 里组合：
 

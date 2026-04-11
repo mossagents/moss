@@ -4,7 +4,7 @@
 
 ## 功能
 
-- 基于 `presets/deepagent.BuildKernel` 的增强装配（轻量入口 + 生产向默认能力）
+- 基于 `harness/patterns.BuildDeepAgent` 的增强装配（轻量入口 + 生产向默认能力）
 - 内置 8 个核心工具 + 持久 memories + context offload + 异步任务生命周期工具
 - TUI 支持增强斜杠命令（`/session`、`/offload`、`/tasks`、`/task`）
 - 支持 one-shot 模式：`--prompt "..."`
