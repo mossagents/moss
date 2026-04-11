@@ -3,6 +3,7 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	"iter"
 	"strings"
 	"testing"
 
@@ -15,8 +16,8 @@ import (
 // stubLLM satisfies kernel.WithLLM for test kernels.
 type stubLLM struct{}
 
-func (stubLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	return &model.CompletionResponse{}, nil
+func (stubLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return model.ResponseToSeq(&model.CompletionResponse{})
 }
 
 func newHealthTestKernel(t *testing.T) *kernel.Kernel {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/kernel/model"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,26 +18,12 @@ type fakeLLM struct {
 	name string
 }
 
-func (f *fakeLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	return &model.CompletionResponse{
+func (f *fakeLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return model.ResponseToSeq(&model.CompletionResponse{
 		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("response from " + f.name)}},
 		StopReason: "end_turn",
-	}, nil
+	})
 }
-
-// fakeStreamingLLM 同时实现 LLM 和 StreamingLLM。
-type fakeStreamingLLM struct {
-	fakeLLM
-}
-
-func (f *fakeStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
-	return &emptyIterator{}, nil
-}
-
-type emptyIterator struct{}
-
-func (emptyIterator) Next() (model.StreamChunk, error) { return model.StreamChunk{}, io.EOF }
-func (emptyIterator) Close() error                   { return nil }
 
 // newTestRouter 创建测试用 ModelRouter，直接注入 fakeLLM。
 func newTestRouter(models []routedModel, defaultIdx int) *ModelRouter {
@@ -337,7 +324,7 @@ func TestSelectModel_PreferStrongest_WhenNotCheap(t *testing.T) {
 	}
 }
 
-func TestComplete_UsesSelectedModel(t *testing.T) {
+func TestGenerateContent_UsesSelectedModel(t *testing.T) {
 	models := []routedModel{
 		{
 			profile: ModelProfile{
@@ -357,7 +344,7 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	r := newTestRouter(models, 0)
 
 	// 不指定需求 → 默认模型
-	resp, err := r.Complete(context.Background(), model.CompletionRequest{})
+	resp, err := model.Complete(context.Background(), r, model.CompletionRequest{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -369,7 +356,7 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	}
 
 	// 指定需求 → 选择 vision 模型
-	resp, err = r.Complete(context.Background(), model.CompletionRequest{
+	resp, err = model.Complete(context.Background(), r, model.CompletionRequest{
 		Config: model.ModelConfig{
 			Requirements: &model.TaskRequirement{
 				Capabilities: []model.ModelCapability{model.CapImageUnderstanding},
@@ -387,45 +374,28 @@ func TestComplete_UsesSelectedModel(t *testing.T) {
 	}
 }
 
-func TestStream_NonStreamingModel_ReturnsError(t *testing.T) {
-	models := []routedModel{
-		{
-			profile: ModelProfile{
-				Name: "no-stream", CostTier: 1, IsDefault: true,
-				Capabilities: []model.ModelCapability{model.CapTextGeneration},
-			},
-			llm: &fakeLLM{name: "no-stream"},
-		},
-	}
-	r := newTestRouter(models, 0)
-
-	_, err := r.Stream(context.Background(), model.CompletionRequest{})
-	if err == nil {
-		t.Fatal("expected error for non-streaming model")
-	}
-}
-
-func TestStream_StreamingModel_Works(t *testing.T) {
+func TestGenerateContent_StreamsMetadata(t *testing.T) {
 	models := []routedModel{
 		{
 			profile: ModelProfile{
 				Name: "streamer", CostTier: 1, IsDefault: true,
 				Capabilities: []model.ModelCapability{model.CapTextGeneration},
 			},
-			llm: &fakeStreamingLLM{fakeLLM{name: "streamer"}},
+			llm: &fakeLLM{name: "streamer"},
 		},
 	}
 	r := newTestRouter(models, 0)
 
-	iter, err := r.Stream(context.Background(), model.CompletionRequest{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	var meta *model.LLMCallMetadata
+	for chunk, err := range r.GenerateContent(context.Background(), model.CompletionRequest{}) {
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if chunk.Metadata != nil {
+			meta = chunk.Metadata
+		}
 	}
-	provider, ok := iter.(model.MetadataStreamIterator)
-	if !ok {
-		t.Fatal("expected metadata stream iterator")
-	}
-	if meta := provider.Metadata(); meta.ActualModel != "streamer" {
+	if meta == nil || meta.ActualModel != "streamer" {
 		t.Fatalf("expected actual model metadata 'streamer', got %+v", meta)
 	}
 }

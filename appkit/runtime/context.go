@@ -342,7 +342,7 @@ func buildSummary(ctx context.Context, llm model.LLM, msgs []model.Message) stri
 		}
 		reqMsgs = append(reqMsgs, m)
 	}
-	resp, err := llm.Complete(ctx, model.CompletionRequest{
+	resp, err := model.Complete(ctx, llm, model.CompletionRequest{
 		Messages: reqMsgs,
 		Config:   model.ModelConfig{Temperature: 0},
 	})

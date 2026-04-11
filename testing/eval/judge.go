@@ -145,7 +145,7 @@ func (j *LLMJudge) Score(ctx context.Context, run EvalRun, expect EvalExpect) (J
 		ResponseFormat: &model.ResponseFormat{Type: "json_object"},
 	}
 
-	resp, err := j.LLM.Complete(ctx, req)
+	resp, err := model.Complete(ctx, j.LLM, req)
 	if err != nil {
 		return JudgeScore{}, fmt.Errorf("LLMJudge: %w", err)
 	}

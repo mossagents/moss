@@ -219,7 +219,7 @@ func generateSummary(ctx context.Context, cfg SummarizeConfig, msgs []model.Mess
 		Config: modelCfg,
 	}
 
-	resp, err := cfg.LLM.Complete(ctx, req)
+	resp, err := model.Complete(ctx, cfg.LLM, req)
 	if err != nil {
 		return "", err
 	}

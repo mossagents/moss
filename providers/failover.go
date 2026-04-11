@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"io"
+	"iter"
 	"strings"
 	"sync"
 	"time"
@@ -42,83 +43,40 @@ func NewFailoverLLM(router *ModelRouter, cfg FailoverConfig) (*FailoverLLM, erro
 	}, nil
 }
 
-func (f *FailoverLLM) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
-	candidates, err := f.candidates(req.Config.Requirements)
-	if err != nil {
-		return nil, err
-	}
-
-	attempts := make([]model.LLMCallAttempt, 0, len(candidates))
-	maxRetries := f.maxRetries()
-	lastModel := ""
-
-	for idx, candidate := range candidates {
-		lastModel = candidate.profile.Name
-		skip, err := f.handleBreakerOpen(candidate.profile.Name, idx, candidates, &attempts)
+func (f *FailoverLLM) GenerateContent(ctx context.Context, req model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		candidates, err := f.candidates(req.Config.Requirements)
 		if err != nil {
-			return nil, err
+			yield(model.StreamChunk{}, err)
+			return
 		}
-		if skip {
-			continue
+		it := &failoverStreamIterator{
+			parent:     f,
+			ctx:        ctx,
+			req:        req,
+			candidates: candidates,
 		}
+		defer it.Close()
 
-		for candidateRetry := 0; candidateRetry <= maxRetries; candidateRetry++ {
-			resp, err := candidate.llm.Complete(ctx, req)
-			if err == nil {
-				f.recordBreakerSuccess(candidate.profile.Name)
-				attempts = append(attempts, model.LLMCallAttempt{
-					CandidateModel: candidate.profile.Name,
-					AttemptIndex:   idx + 1,
-					CandidateRetry: candidateRetry,
-					Outcome:        "selected",
-				})
-				return ensureResponseMetadata(resp, candidate.profile.Name, attempts), nil
+		for {
+			chunk, err := it.Next()
+			if err == io.EOF {
+				return
 			}
-
-			f.recordBreakerFailure(candidate.profile.Name)
-			failoverEligible := f.shouldFailover(err)
-			attempt := model.LLMCallAttempt{
-				CandidateModel: candidate.profile.Name,
-				AttemptIndex:   idx + 1,
-				CandidateRetry: candidateRetry,
-				FailureReason:  err.Error(),
-				Outcome:        "failed",
+			if err != nil {
+				yield(model.StreamChunk{}, err)
+				return
 			}
-
-			if f.canRetryCandidate(err) && candidateRetry < maxRetries {
-				attempts = append(attempts, attempt)
-				if sleepErr := f.sleepRetry(ctx, candidateRetry); sleepErr != nil {
-					return nil, withMetadata(sleepErr, false, false, candidate.profile.Name, attempts)
-				}
-				continue
+			// Attach metadata to final chunk.
+			if chunk.Done {
+				meta := it.Metadata()
+				chunk.Metadata = &meta
 			}
-
-			attempts = append(attempts, attempt)
-			if failoverEligible && idx+1 < len(candidates) {
-				attempts[len(attempts)-1].FailoverTo = candidates[idx+1].profile.Name
-				break
+			if !yield(chunk, nil) {
+				return
 			}
-			if failoverEligible {
-				return nil, exhaustedFailoverError(err, candidate.profile.Name, attempts)
-			}
-			return nil, withMetadata(err, llmErrorRetryable(err), false, candidate.profile.Name, attempts)
 		}
 	}
-
-	return nil, exhaustedFailoverError(fmt.Errorf("llm failover exhausted"), lastModel, attempts)
-}
-
-func (f *FailoverLLM) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
-	candidates, err := f.candidates(req.Config.Requirements)
-	if err != nil {
-		return nil, err
-	}
-	return &failoverStreamIterator{
-		parent:     f,
-		ctx:        ctx,
-		req:        req,
-		candidates: candidates,
-	}, nil
 }
 
 func (f *FailoverLLM) candidates(req *model.TaskRequirement) ([]routedModel, error) {
@@ -340,34 +298,20 @@ func (it *failoverStreamIterator) openCurrent() error {
 			return withMetadata(err, false, false, candidate.profile.Name, it.attempts)
 		}
 
-		sllm, ok := candidate.llm.(model.StreamingLLM)
-		if !ok {
-			fallbackErr := &model.LLMCallError{
-				Err:          fmt.Errorf("model %q does not support streaming", candidate.profile.Name),
-				Retryable:    false,
-				FallbackSafe: true,
-				Metadata:     model.LLMCallMetadata{ActualModel: candidate.profile.Name},
-			}
-			if it.trySyncFallback(candidate, fallbackErr) {
-				return nil
-			}
-			if finalErr := it.handlePreEmissionError(fallbackErr); finalErr != nil {
+		// Use unified GenerateContent and convert to pull-based iterator.
+		streamIter := model.SeqToIterator(candidate.llm.GenerateContent(it.ctx, it.req))
+		// Probe the first chunk to detect startup errors before committing.
+		firstChunk, firstErr := streamIter.Next()
+		if firstErr != nil && firstErr != io.EOF {
+			_ = streamIter.Close()
+			it.parent.recordBreakerFailure(candidate.profile.Name)
+			if finalErr := it.handlePreEmissionError(firstErr); finalErr != nil {
 				return finalErr
 			}
 			continue
 		}
-
-		streamIter, err := sllm.Stream(it.ctx, it.req)
-		if err != nil {
-			if it.trySyncFallback(candidate, err) {
-				return nil
-			}
-			if finalErr := it.handlePreEmissionError(err); finalErr != nil {
-				return finalErr
-			}
-			continue
-		}
-		it.currentIter = streamIter
+		// Wrap with a prefetched iterator that replays the first result.
+		it.currentIter = &prefetchedIterator{first: firstChunk, firstErr: firstErr, inner: streamIter}
 		it.completedStream = false
 		return nil
 	}
@@ -405,19 +349,25 @@ func (it *failoverStreamIterator) handlePreEmissionError(err error) error {
 	return withMetadata(err, llmErrorRetryable(err), false, it.currentModel, it.attempts)
 }
 
-func (it *failoverStreamIterator) trySyncFallback(candidate routedModel, cause error) bool {
-	if !llmErrorFallbackSafe(cause) {
-		return false
+// prefetchedIterator wraps a StreamIterator and replays the first chunk that was
+// already consumed during probe (in openCurrent) before delegating to the inner iterator.
+type prefetchedIterator struct {
+	first    model.StreamChunk
+	firstErr error
+	consumed bool
+	inner    model.StreamIterator
+}
+
+func (p *prefetchedIterator) Next() (model.StreamChunk, error) {
+	if !p.consumed {
+		p.consumed = true
+		return p.first, p.firstErr
 	}
-	resp, err := candidate.llm.Complete(it.ctx, it.req)
-	if err != nil {
-		return false
-	}
-	resp = ensureResponseMetadata(resp, candidate.profile.Name, it.attempts)
-	it.currentIter = newCompletionIterator(resp)
-	it.currentModel = candidate.profile.Name
-	it.completedStream = false
-	return true
+	return p.inner.Next()
+}
+
+func (p *prefetchedIterator) Close() error {
+	return p.inner.Close()
 }
 
 func (it *failoverStreamIterator) recordSelectedAttempt() {
@@ -538,48 +488,4 @@ func llmErrorFallbackSafe(err error) bool {
 	return false
 }
 
-type completionIterator struct {
-	resp          *model.CompletionResponse
-	metadata      model.LLMCallMetadata
-	index         int
-	sentReasoning bool
-	sentDone      bool
-}
 
-func newCompletionIterator(resp *model.CompletionResponse) model.StreamIterator {
-	meta := model.LLMCallMetadata{}
-	if resp != nil && resp.Metadata != nil {
-		meta = *resp.Metadata
-	}
-	return &completionIterator{resp: resp, metadata: meta}
-}
-
-func (it *completionIterator) Next() (model.StreamChunk, error) {
-	if it.resp == nil {
-		return model.StreamChunk{}, io.EOF
-	}
-	if !it.sentReasoning {
-		it.sentReasoning = true
-		if reasoning := model.ContentPartsToReasoningText(it.resp.Message.ContentParts); reasoning != "" {
-			return model.StreamChunk{ReasoningDelta: reasoning}, nil
-		}
-	}
-	if it.index < len(it.resp.ToolCalls) {
-		call := it.resp.ToolCalls[it.index]
-		it.index++
-		return model.StreamChunk{ToolCall: &call}, nil
-	}
-	if !it.sentDone {
-		it.sentDone = true
-		content := model.ContentPartsToPlainText(it.resp.Message.ContentParts)
-		if len(it.resp.ToolCalls) == 0 && content != "" {
-			return model.StreamChunk{Delta: content, Done: true, Usage: &it.resp.Usage}, nil
-		}
-		return model.StreamChunk{Done: true, Usage: &it.resp.Usage}, nil
-	}
-	return model.StreamChunk{}, io.EOF
-}
-
-func (it *completionIterator) Close() error { return nil }
-
-func (it *completionIterator) Metadata() model.LLMCallMetadata { return it.metadata }

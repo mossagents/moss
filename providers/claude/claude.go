@@ -9,15 +9,13 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/ssestream"
 	"github.com/mossagents/moss/kernel/model"
 	"io"
+	"iter"
 	"net/http"
 	"strings"
 )
 
-// 确保实现 model.LLM 和 model.StreamingLLM 接口。
-var (
-	_ model.LLM          = (*Client)(nil)
-	_ model.StreamingLLM = (*Client)(nil)
-)
+// 确保实现 model.LLM 接口。
+var _ model.LLM = (*Client)(nil)
 
 const DefaultModel = "claude-sonnet-4-20250514"
 
@@ -98,30 +96,34 @@ func NewWithBaseURL(apiKey, baseURL string, opts ...Option) *Client {
 	return c
 }
 
-// Complete 实现 model.LLM（同步模式）。
-func (c *Client) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
-	params, err := c.buildParams(req)
-	if err != nil {
-		return nil, err
-	}
-	msg, err := c.client.Messages.New(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	return fromAnthropicResponse(msg), nil
-}
+// GenerateContent 实现 model.LLM（统一流式接口）。
+func (c *Client) GenerateContent(ctx context.Context, req model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		params, err := c.buildParams(req)
+		if err != nil {
+			yield(model.StreamChunk{}, err)
+			return
+		}
+		stream := c.client.Messages.NewStreaming(ctx, params)
+		si := &streamIterator{
+			stream:          stream,
+			toolUseBuilders: make(map[int]*toolUseBuilder),
+		}
+		defer si.Close()
 
-// Stream 实现 model.StreamingLLM（流式模式）。
-func (c *Client) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
-	params, err := c.buildParams(req)
-	if err != nil {
-		return nil, err
+		for {
+			chunk, err := si.Next()
+			if err == io.EOF {
+				return
+			}
+			if !yield(chunk, err) {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
 	}
-	stream := c.client.Messages.NewStreaming(ctx, params)
-	return &streamIterator{
-		stream:          stream,
-		toolUseBuilders: make(map[int]*toolUseBuilder),
-	}, nil
 }
 
 // buildParams 构建 Anthropic API 请求参数。

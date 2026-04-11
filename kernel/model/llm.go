@@ -4,16 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"iter"
+	"strings"
 )
 
-// LLM 是模型调用的核心接口（同步模式）。
+// LLM 是统一的模型生成接口。
+// GenerateContent 返回一个流式迭代器，依次产出 StreamChunk。
+// 非流式实现产出单个 Done=true 的 chunk；流式实现逐 chunk 产出。
 type LLM interface {
-	Complete(ctx context.Context, req CompletionRequest) (*CompletionResponse, error)
-}
-
-// StreamingLLM 是流式模型调用接口（可选实现）。
-type StreamingLLM interface {
-	Stream(ctx context.Context, req CompletionRequest) (StreamIterator, error)
+	GenerateContent(ctx context.Context, req CompletionRequest) iter.Seq2[StreamChunk, error]
 }
 
 // CompletionRequest 是发送给 LLM 的请求。
@@ -122,12 +121,162 @@ type MetadataStreamIterator interface {
 
 // StreamChunk 是流式响应的一个片段。
 type StreamChunk struct {
-	Delta          string      `json:"delta,omitempty"`
-	ReasoningDelta string      `json:"reasoning_delta,omitempty"`
-	ToolCall       *ToolCall   `json:"tool_call,omitempty"`
-	Done           bool        `json:"done,omitempty"`
-	Usage          *TokenUsage `json:"usage,omitempty"`
+	Delta          string           `json:"delta,omitempty"`
+	ReasoningDelta string           `json:"reasoning_delta,omitempty"`
+	ToolCall       *ToolCall        `json:"tool_call,omitempty"`
+	Done           bool             `json:"done,omitempty"`
+	Usage          *TokenUsage      `json:"usage,omitempty"`
+	Metadata       *LLMCallMetadata `json:"metadata,omitempty"`
 }
 
 // 确保 io.EOF 可用于 StreamIterator.Next 的终止判断。
 var _ error = io.EOF
+
+// ──────────────────────────────────────────────────────────────
+// 便利函数：将统一的 iter.Seq2 接口适配为同步或旧式迭代器消费。
+// ──────────────────────────────────────────────────────────────
+
+// Complete 调用 GenerateContent 并将流式 chunk 累积为单个 CompletionResponse。
+// 适用于不需要流式处理的消费方（摘要、评估、上下文压缩等）。
+func Complete(ctx context.Context, llm LLM, req CompletionRequest) (*CompletionResponse, error) {
+	var (
+		content   strings.Builder
+		reasoning strings.Builder
+		toolCalls []ToolCall
+		usage     TokenUsage
+		stopReason string
+		metadata  *LLMCallMetadata
+	)
+	for chunk, err := range llm.GenerateContent(ctx, req) {
+		if err != nil {
+			return nil, err
+		}
+		if chunk.Delta != "" {
+			content.WriteString(chunk.Delta)
+		}
+		if chunk.ReasoningDelta != "" {
+			reasoning.WriteString(chunk.ReasoningDelta)
+		}
+		if chunk.ToolCall != nil {
+			toolCalls = append(toolCalls, *chunk.ToolCall)
+		}
+		if chunk.Metadata != nil {
+			metadata = chunk.Metadata
+		}
+		if chunk.Done {
+			if chunk.Usage != nil {
+				usage = *chunk.Usage
+			}
+			stopReason = "end_turn"
+			if len(toolCalls) > 0 {
+				stopReason = "tool_use"
+			}
+		}
+	}
+
+	msg := Message{Role: RoleAssistant, ToolCalls: toolCalls}
+	if reasoning.Len() > 0 {
+		msg.ContentParts = append(msg.ContentParts, ReasoningPart(reasoning.String()))
+	}
+	if content.Len() > 0 {
+		msg.ContentParts = append(msg.ContentParts, TextPart(content.String()))
+	}
+	if stopReason == "" {
+		stopReason = "end_turn"
+	}
+
+	return &CompletionResponse{
+		Message:    msg,
+		ToolCalls:  toolCalls,
+		Usage:      usage,
+		StopReason: stopReason,
+		Metadata:   metadata,
+	}, nil
+}
+
+// IteratorToSeq 将 StreamIterator（pull 模式）转换为 iter.Seq2（push 模式）。
+// 若迭代器实现了 MetadataStreamIterator，元数据会附加到最后一个 Done chunk。
+func IteratorToSeq(si StreamIterator) iter.Seq2[StreamChunk, error] {
+	return func(yield func(StreamChunk, error) bool) {
+		defer si.Close()
+		metaProvider, _ := si.(MetadataStreamIterator)
+
+		for {
+			chunk, err := si.Next()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				yield(StreamChunk{}, err)
+				return
+			}
+			if chunk.Done && metaProvider != nil {
+				meta := metaProvider.Metadata()
+				chunk.Metadata = &meta
+			}
+			if !yield(chunk, nil) {
+				return
+			}
+		}
+	}
+}
+
+// ResponseToSeq 将 CompletionResponse 转换为 iter.Seq2（单 chunk 流）。
+func ResponseToSeq(resp *CompletionResponse) iter.Seq2[StreamChunk, error] {
+	return func(yield func(StreamChunk, error) bool) {
+		if resp == nil {
+			return
+		}
+		// Yield reasoning part if present.
+		if reasoning := ContentPartsToReasoningText(resp.Message.ContentParts); reasoning != "" {
+			if !yield(StreamChunk{ReasoningDelta: reasoning}, nil) {
+				return
+			}
+		}
+		// Yield tool calls.
+		for i := range resp.ToolCalls {
+			call := resp.ToolCalls[i]
+			if !yield(StreamChunk{ToolCall: &call}, nil) {
+				return
+			}
+		}
+		// Yield content + done.
+		content := ContentPartsToPlainText(resp.Message.ContentParts)
+		var meta *LLMCallMetadata
+		if resp.Metadata != nil {
+			copied := *resp.Metadata
+			meta = &copied
+		}
+		yield(StreamChunk{
+			Delta:    content,
+			Done:     true,
+			Usage:    &resp.Usage,
+			Metadata: meta,
+		}, nil)
+	}
+}
+
+// SeqToIterator 将 iter.Seq2（push 模式）转换为 StreamIterator（pull 模式）。
+// 内部使用 iter.Pull2 桥接。调用方必须调用返回的 StreamIterator.Close() 释放资源。
+func SeqToIterator(seq iter.Seq2[StreamChunk, error]) StreamIterator {
+	next, stop := iter.Pull2(seq)
+	return &seqIterator{next: next, stop: stop}
+}
+
+type seqIterator struct {
+	next func() (StreamChunk, error, bool)
+	stop func()
+}
+
+func (it *seqIterator) Next() (StreamChunk, error) {
+	chunk, err, ok := it.next()
+	if !ok {
+		return StreamChunk{}, io.EOF
+	}
+	return chunk, err
+}
+
+func (it *seqIterator) Close() error {
+	it.stop()
+	return nil
+}

@@ -1513,7 +1513,7 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	resp, err := llm.Complete(ctx, model.CompletionRequest{
+	resp, err := model.Complete(ctx, llm, model.CompletionRequest{
 		Messages: []model.Message{
 			{
 				Role: model.RoleSystem,

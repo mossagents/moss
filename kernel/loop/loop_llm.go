@@ -93,60 +93,37 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 		}
 	}
 
-	// 优先使用 Streaming
-	if sllm, ok := l.LLM.(model.StreamingLLM); ok {
-		resp, err := l.streamLLM(ctx, sllm, req)
-		if err == nil {
-			l.recordBreakerSuccess()
-			return callAttemptResult{resp: resp, streamed: true}
-		}
-		if llmErrorFallbackSafe(err) {
-			if fallbackResp, fallbackErr := l.LLM.Complete(ctx, req); fallbackErr == nil {
-				l.recordBreakerSuccess()
-				return callAttemptResult{resp: fallbackResp, streamed: false}
-			} else {
-				err = fallbackErr
-			}
-		}
-
-		l.recordBreakerFailure()
-		return callAttemptResult{streamed: true, retryable: llmErrorRetryable(err), err: err}
-	}
-
-	resp, err := l.LLM.Complete(ctx, req)
-	if err != nil {
-		l.recordBreakerFailure()
-	} else {
-		l.recordBreakerSuccess()
-	}
-	return callAttemptResult{resp: resp, streamed: false, retryable: llmErrorRetryable(err), err: err}
-}
-
-func (l *AgentLoop) streamLLM(ctx context.Context, sllm model.StreamingLLM, req model.CompletionRequest) (*model.CompletionResponse, error) {
-	iter, err := sllm.Stream(ctx, req)
-	if err != nil {
-		return nil, ensureLLMCallError(err, true, true, model.LLMCallMetadata{})
-	}
-	defer func() { _ = iter.Close() }()
-	metadataProvider := metadataStreamProvider(iter)
 	state := streamAccumulator{}
+	var metadata *model.LLMCallMetadata
 
-	for {
-		chunk, err := iter.Next()
-		if err == io.EOF {
-			break
-		}
+	for chunk, err := range l.LLM.GenerateContent(ctx, req) {
 		if err != nil {
-			shouldContinue, handledErr := l.handleStreamChunkError(ctx, err, metadataProvider, &state)
-			if shouldContinue {
+			// Check recoverable tail errors when we have partial content + tool calls.
+			if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
+				state.stopReason = "tool_use"
+				if l.IO != nil {
+					if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {
+						logging.GetLogger().DebugContext(ctx, "stream end send failed", "error", sendErr)
+					}
+				}
 				break
 			}
-			return nil, handledErr
+			safePreEmission := !state.emittedContent && len(state.toolCalls) == 0
+			llmErr := ensureLLMCallError(err, safePreEmission, safePreEmission, derefMetadata(metadata))
+			l.recordBreakerFailure()
+			return callAttemptResult{streamed: true, retryable: llmErrorRetryable(llmErr), err: llmErr}
+		}
+
+		// Extract metadata from chunks (typically on the Done chunk).
+		if chunk.Metadata != nil {
+			metadata = chunk.Metadata
 		}
 		if done := l.applyStreamChunk(ctx, chunk, &state); done {
 			break
 		}
 	}
+
+	l.recordBreakerSuccess()
 
 	msg := model.Message{
 		Role:      model.RoleAssistant,
@@ -159,13 +136,16 @@ func (l *AgentLoop) streamLLM(ctx context.Context, sllm model.StreamingLLM, req 
 		msg.ContentParts = append(msg.ContentParts, model.TextPart(state.fullContent))
 	}
 
-	return &model.CompletionResponse{
-		Message:    msg,
-		ToolCalls:  state.toolCalls,
-		Usage:      state.usage,
-		StopReason: state.stopReason,
-		Metadata:   metadataPtr(streamMetadata(metadataProvider)),
-	}, nil
+	return callAttemptResult{
+		resp: &model.CompletionResponse{
+			Message:    msg,
+			ToolCalls:  state.toolCalls,
+			Usage:      state.usage,
+			StopReason: state.stopReason,
+			Metadata:   metadata,
+		},
+		streamed: true,
+	}
 }
 
 type streamAccumulator struct {
@@ -177,30 +157,11 @@ type streamAccumulator struct {
 	emittedContent bool
 }
 
-func metadataStreamProvider(iter model.StreamIterator) model.MetadataStreamIterator {
-	if provider, ok := iter.(model.MetadataStreamIterator); ok {
-		return provider
+func derefMetadata(m *model.LLMCallMetadata) model.LLMCallMetadata {
+	if m == nil {
+		return model.LLMCallMetadata{}
 	}
-	return nil
-}
-
-func (l *AgentLoop) handleStreamChunkError(
-	ctx context.Context,
-	err error,
-	metadataProvider model.MetadataStreamIterator,
-	state *streamAccumulator,
-) (bool, error) {
-	if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
-		state.stopReason = "tool_use"
-		if l.IO != nil {
-			if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {
-				logging.GetLogger().DebugContext(ctx, "stream end send failed", "error", sendErr)
-			}
-		}
-		return true, nil
-	}
-	safePreEmission := !state.emittedContent && len(state.toolCalls) == 0
-	return false, ensureLLMCallError(err, safePreEmission, safePreEmission, streamMetadata(metadataProvider))
+	return *m
 }
 
 func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChunk, state *streamAccumulator) bool {
@@ -268,21 +229,6 @@ func isRecoverableStreamTailError(err error) bool {
 		return strings.Contains(strings.ToLower(jsonErr.Error()), "unexpected end of json input")
 	}
 	return false
-}
-
-func streamMetadata(provider model.MetadataStreamIterator) model.LLMCallMetadata {
-	if provider == nil {
-		return model.LLMCallMetadata{}
-	}
-	return provider.Metadata()
-}
-
-func metadataPtr(meta model.LLMCallMetadata) *model.LLMCallMetadata {
-	if strings.TrimSpace(meta.ActualModel) == "" && len(meta.Attempts) == 0 {
-		return nil
-	}
-	copyMeta := meta
-	return &copyMeta
 }
 
 func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata model.LLMCallMetadata) error {

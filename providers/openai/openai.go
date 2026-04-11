@@ -10,16 +10,14 @@ import (
 	"github.com/openai/openai-go/packages/ssestream"
 	"github.com/openai/openai-go/shared"
 	"io"
+	"iter"
 	"net/http"
 	"path/filepath"
 	"strings"
 )
 
-// 确保实现 model.LLM 和 model.StreamingLLM 接口。
-var (
-	_ model.LLM          = (*Client)(nil)
-	_ model.StreamingLLM = (*Client)(nil)
-)
+// 确保实现 model.LLM 接口。
+var _ model.LLM = (*Client)(nil)
 
 const DefaultModel = "gpt-4o"
 
@@ -98,30 +96,34 @@ func NewWithRequestOptions(reqOpts []option.RequestOption, opts ...Option) *Clie
 	return c
 }
 
-// Complete 实现 model.LLM（同步模式）。
-func (c *Client) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
-	params, err := c.buildParams(req)
-	if err != nil {
-		return nil, err
-	}
-	completion, err := c.client.Chat.Completions.New(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-	return fromOpenAIResponse(completion), nil
-}
+// GenerateContent 实现 model.LLM（统一流式接口）。
+func (c *Client) GenerateContent(ctx context.Context, req model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		params, err := c.buildParams(req)
+		if err != nil {
+			yield(model.StreamChunk{}, err)
+			return
+		}
+		stream := c.client.Chat.Completions.NewStreaming(ctx, params)
+		si := &streamIterator{
+			stream:       stream,
+			toolBuilders: make(map[int]*toolCallBuilder),
+		}
+		defer si.Close()
 
-// Stream 实现 model.StreamingLLM（流式模式）。
-func (c *Client) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
-	params, err := c.buildParams(req)
-	if err != nil {
-		return nil, err
+		for {
+			chunk, err := si.Next()
+			if err == io.EOF {
+				return
+			}
+			if !yield(chunk, err) {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
 	}
-	stream := c.client.Chat.Completions.NewStreaming(ctx, params)
-	return &streamIterator{
-		stream:       stream,
-		toolBuilders: make(map[int]*toolCallBuilder),
-	}, nil
 }
 
 // ─── 请求构建 ────────────────────────────────────────

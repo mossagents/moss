@@ -7,6 +7,7 @@ import (
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/model"
 	"gopkg.in/yaml.v3"
+	"iter"
 	"os"
 	"sort"
 	"strings"
@@ -73,7 +74,7 @@ type routedModel struct {
 }
 
 // ModelRouter 根据任务需求动态选择最优模型。
-// 实现 model.LLM 和 model.StreamingLLM 接口，可直接传入 kernel.WithLLM()。
+// 实现 model.LLM 接口，可直接传入 kernel.WithLLM()。
 type ModelRouter struct {
 	models       []routedModel
 	defaultModel *routedModel
@@ -149,52 +150,34 @@ func NewModelRouterFromFile(path string) (*ModelRouter, error) {
 	return NewModelRouter(cfg.Models)
 }
 
-// Complete 根据请求中的 TaskRequirement 选择最优模型并调用。
+// GenerateContent 根据请求中的 TaskRequirement 选择最优模型并调用。
 // 若未指定需求，使用默认模型。
-func (r *ModelRouter) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
+func (r *ModelRouter) GenerateContent(ctx context.Context, req model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
 	rm, err := r.selectModel(req.Config.Requirements)
 	if err != nil {
-		return nil, err
-	}
-	resp, err := rm.llm.Complete(ctx, req)
-	if err != nil {
-		return nil, attachModelMetadata(err, rm.profile.Name)
-	}
-	if resp.Metadata == nil {
-		resp.Metadata = &model.LLMCallMetadata{}
-	}
-	if strings.TrimSpace(resp.Metadata.ActualModel) == "" {
-		resp.Metadata.ActualModel = rm.profile.Name
-	}
-	return resp, nil
-}
-
-// Stream 根据请求中的 TaskRequirement 选择最优模型并以流式调用。
-// 若选中的模型不支持 StreamingLLM，返回错误。
-func (r *ModelRouter) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
-	rm, err := r.selectModel(req.Config.Requirements)
-	if err != nil {
-		return nil, err
-	}
-	sllm, ok := rm.llm.(model.StreamingLLM)
-	if !ok {
-		return nil, &model.LLMCallError{
-			Err:          fmt.Errorf("model router: selected model %q does not support streaming", rm.profile.Name),
-			Retryable:    true,
-			FallbackSafe: true,
-			Metadata:     model.LLMCallMetadata{ActualModel: rm.profile.Name},
+		return func(yield func(model.StreamChunk, error) bool) {
+			yield(model.StreamChunk{}, err)
 		}
 	}
-	iter, err := sllm.Stream(ctx, req)
-	if err != nil {
-		return nil, attachModelMetadata(err, rm.profile.Name)
+	return func(yield func(model.StreamChunk, error) bool) {
+		for chunk, err := range rm.llm.GenerateContent(ctx, req) {
+			if err != nil {
+				yield(model.StreamChunk{}, attachModelMetadata(err, rm.profile.Name))
+				return
+			}
+			// Attach model metadata to final chunk.
+			if chunk.Done {
+				if chunk.Metadata == nil {
+					chunk.Metadata = &model.LLMCallMetadata{ActualModel: rm.profile.Name}
+				} else if strings.TrimSpace(chunk.Metadata.ActualModel) == "" {
+					chunk.Metadata.ActualModel = rm.profile.Name
+				}
+			}
+			if !yield(chunk, nil) {
+				return
+			}
+		}
 	}
-	return &routerStreamIterator{
-		inner: iter,
-		metadata: model.LLMCallMetadata{
-			ActualModel: rm.profile.Name,
-		},
-	}, nil
 }
 
 // Models 返回已注册的所有模型画像（只读副本）。
@@ -344,30 +327,6 @@ func (r *ModelRouter) noModelError(req *model.TaskRequirement) error {
 	msg += "  已注册模型:\n" + strings.Join(available, "\n")
 
 	return fmt.Errorf("%s", msg)
-}
-
-type routerStreamIterator struct {
-	inner    model.StreamIterator
-	metadata model.LLMCallMetadata
-}
-
-func (it *routerStreamIterator) Next() (model.StreamChunk, error) {
-	return it.inner.Next()
-}
-
-func (it *routerStreamIterator) Close() error {
-	return it.inner.Close()
-}
-
-func (it *routerStreamIterator) Metadata() model.LLMCallMetadata {
-	if provider, ok := it.inner.(model.MetadataStreamIterator); ok {
-		meta := provider.Metadata()
-		if strings.TrimSpace(meta.ActualModel) == "" {
-			meta.ActualModel = it.metadata.ActualModel
-		}
-		return meta
-	}
-	return it.metadata
 }
 
 func attachModelMetadata(err error, modelName string) error {

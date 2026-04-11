@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"iter"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
@@ -100,10 +101,12 @@ type blockingLLM struct {
 	calls int32
 }
 
-func (b *blockingLLM) Complete(ctx context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	atomic.AddInt32(&b.calls, 1)
-	<-ctx.Done()
-	return nil, ctx.Err()
+func (b *blockingLLM) GenerateContent(ctx context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		atomic.AddInt32(&b.calls, 1)
+		<-ctx.Done()
+		yield(model.StreamChunk{}, ctx.Err())
+	}
 }
 
 type nonHookSessionManager struct {
@@ -387,11 +390,19 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	if len(defaultIO.Sent) != 0 {
 		t.Fatalf("default IO should be unused, got %d messages", len(defaultIO.Sent))
 	}
-	if len(overrideIO.Sent) != 1 {
-		t.Fatalf("override IO messages = %d, want 1", len(overrideIO.Sent))
+	if len(overrideIO.Sent) < 1 {
+		t.Fatalf("override IO messages = %d, want >= 1", len(overrideIO.Sent))
 	}
-	if overrideIO.Sent[0].Content != "hello from override" {
-		t.Fatalf("override IO content = %q", overrideIO.Sent[0].Content)
+	// Find the stream content message.
+	var found bool
+	for _, msg := range overrideIO.Sent {
+		if msg.Content == "hello from override" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("override IO missing expected content; got %v", overrideIO.Sent)
 	}
 }
 

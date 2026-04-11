@@ -14,10 +14,7 @@ import (
 	"strings"
 )
 
-var (
-	_ model.LLM          = (*Client)(nil)
-	_ model.StreamingLLM = (*Client)(nil)
-)
+var _ model.LLM = (*Client)(nil)
 
 const DefaultModel = "gemini-2.5-flash"
 
@@ -75,45 +72,44 @@ func newClient(apiKey, baseURL string, httpClient *http.Client, opts ...Option) 
 	return c
 }
 
-func (c *Client) Complete(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
-	if c.initErr != nil {
-		return nil, c.initErr
-	}
-	system, contents, err := toGeminiContents(req.Messages, c.model)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := c.buildConfig(req, system)
-	if err != nil {
-		return nil, err
-	}
-	model := c.effectiveModel(req)
-	resp, err := c.client.Models.GenerateContent(ctx, model, contents, cfg)
-	if err != nil {
-		return nil, err
-	}
-	return fromGeminiResponse(resp), nil
-}
+func (c *Client) GenerateContent(ctx context.Context, req model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		if c.initErr != nil {
+			yield(model.StreamChunk{}, c.initErr)
+			return
+		}
+		system, contents, err := toGeminiContents(req.Messages, c.model)
+		if err != nil {
+			yield(model.StreamChunk{}, err)
+			return
+		}
+		cfg, err := c.buildConfig(req, system)
+		if err != nil {
+			yield(model.StreamChunk{}, err)
+			return
+		}
+		modelName := c.effectiveModel(req)
+		next, stop := iter.Pull2(c.client.Models.GenerateContentStream(ctx, modelName, contents, cfg))
+		si := &streamIterator{
+			next:          next,
+			stop:          stop,
+			seenToolCalls: make(map[string]struct{}),
+		}
+		defer si.Close()
 
-func (c *Client) Stream(ctx context.Context, req model.CompletionRequest) (model.StreamIterator, error) {
-	if c.initErr != nil {
-		return nil, c.initErr
+		for {
+			chunk, err := si.Next()
+			if err == io.EOF {
+				return
+			}
+			if !yield(chunk, err) {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
 	}
-	system, contents, err := toGeminiContents(req.Messages, c.model)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := c.buildConfig(req, system)
-	if err != nil {
-		return nil, err
-	}
-	model := c.effectiveModel(req)
-	next, stop := iter.Pull2(c.client.Models.GenerateContentStream(ctx, model, contents, cfg))
-	return &streamIterator{
-		next:          next,
-		stop:          stop,
-		seenToolCalls: make(map[string]struct{}),
-	}, nil
 }
 
 func (c *Client) effectiveModel(req model.CompletionRequest) string {

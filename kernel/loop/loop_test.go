@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"io"
+	"iter"
 	"reflect"
 	"slices"
 	"strings"
@@ -939,10 +940,12 @@ type blockingLLM struct {
 	calls int32
 }
 
-func (b *blockingLLM) Complete(ctx context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	atomic.AddInt32(&b.calls, 1)
-	<-ctx.Done()
-	return nil, ctx.Err()
+func (b *blockingLLM) GenerateContent(ctx context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		atomic.AddInt32(&b.calls, 1)
+		<-ctx.Done()
+		yield(model.StreamChunk{}, ctx.Err())
+	}
 }
 
 type flakyLLM struct {
@@ -955,154 +958,91 @@ type errorLLM struct {
 	err error
 }
 
-func (e *errorLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	return nil, e.err
+func (e *errorLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		yield(model.StreamChunk{}, e.err)
+	}
 }
 
-func (f *flakyLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	call := atomic.AddInt32(&f.calls, 1)
-	if call <= f.failures {
-		return nil, context.DeadlineExceeded
+func (f *flakyLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		call := atomic.AddInt32(&f.calls, 1)
+		if call <= f.failures {
+			yield(model.StreamChunk{}, context.DeadlineExceeded)
+			return
+		}
+		resp := f.resp
+		for chunk, err := range model.ResponseToSeq(&resp) {
+			if !yield(chunk, err) {
+				return
+			}
+		}
 	}
-	resp := f.resp
-	return &resp, nil
 }
 
 type flakyStreamingLLM struct {
 	failures int32
 	calls    int32
 	chunks   []model.StreamChunk
-	resp     *model.CompletionResponse
 }
 
-func (f *flakyStreamingLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	if f.resp != nil {
-		return f.resp, nil
+func (f *flakyStreamingLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		call := atomic.AddInt32(&f.calls, 1)
+		if call <= f.failures {
+			yield(model.StreamChunk{}, context.DeadlineExceeded)
+			return
+		}
+		for _, chunk := range f.chunks {
+			if !yield(chunk, nil) {
+				return
+			}
+		}
 	}
-	return nil, context.DeadlineExceeded
 }
-
-func (f *flakyStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
-	call := atomic.AddInt32(&f.calls, 1)
-	if call <= f.failures {
-		return &errIterator{err: context.DeadlineExceeded}, nil
-	}
-	return &sliceIterator{chunks: f.chunks}, nil
-}
-
-type sliceIterator struct {
-	chunks []model.StreamChunk
-	index  int
-}
-
-func (it *sliceIterator) Next() (model.StreamChunk, error) {
-	if it.index >= len(it.chunks) {
-		return model.StreamChunk{}, io.EOF
-	}
-	chunk := it.chunks[it.index]
-	it.index++
-	return chunk, nil
-}
-
-func (it *sliceIterator) Close() error { return nil }
-
-type errIterator struct {
-	err    error
-	called bool
-}
-
-func (it *errIterator) Next() (model.StreamChunk, error) {
-	if it.called {
-		return model.StreamChunk{}, io.EOF
-	}
-	it.called = true
-	return model.StreamChunk{}, it.err
-}
-
-func (it *errIterator) Close() error { return nil }
 
 type metadataStreamingLLM struct {
 	chunks   []model.StreamChunk
 	metadata model.LLMCallMetadata
 }
 
-func (m *metadataStreamingLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	return nil, context.DeadlineExceeded
-}
-
-func (m *metadataStreamingLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
-	return &metadataIterator{chunks: m.chunks, metadata: m.metadata}, nil
-}
-
-type metadataIterator struct {
-	chunks   []model.StreamChunk
-	index    int
-	metadata model.LLMCallMetadata
-}
-
-func (it *metadataIterator) Next() (model.StreamChunk, error) {
-	if it.index >= len(it.chunks) {
-		return model.StreamChunk{}, io.EOF
-	}
-	chunk := it.chunks[it.index]
-	it.index++
-	return chunk, nil
-}
-
-func (it *metadataIterator) Close() error { return nil }
-
-func (it *metadataIterator) Metadata() model.LLMCallMetadata { return it.metadata }
-
-type postEmissionErrorLLM struct {
-	completeCalls int32
-}
-
-func (p *postEmissionErrorLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	atomic.AddInt32(&p.completeCalls, 1)
-	return &model.CompletionResponse{
-		Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("fallback")}},
-		StopReason: "end_turn",
-	}, nil
-}
-
-func (p *postEmissionErrorLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
-	return &postEmissionIterator{}, nil
-}
-
-type postEmissionIterator struct {
-	calls int
-}
-
-func (it *postEmissionIterator) Next() (model.StreamChunk, error) {
-	it.calls++
-	switch it.calls {
-	case 1:
-		return model.StreamChunk{Delta: "partial"}, nil
-	default:
-		return model.StreamChunk{}, context.DeadlineExceeded
+func (m *metadataStreamingLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		for i, chunk := range m.chunks {
+			// Attach metadata to the last (Done) chunk.
+			if i == len(m.chunks)-1 && chunk.Done {
+				meta := m.metadata
+				chunk.Metadata = &meta
+			}
+			if !yield(chunk, nil) {
+				return
+			}
+		}
 	}
 }
 
-func (it *postEmissionIterator) Close() error { return nil }
+type postEmissionErrorLLM struct{}
 
-type toolThenErrIterator struct {
-	calls int
+func (p *postEmissionErrorLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		if !yield(model.StreamChunk{Delta: "partial"}, nil) {
+			return
+		}
+		yield(model.StreamChunk{}, context.DeadlineExceeded)
+	}
 }
 
-func (it *toolThenErrIterator) Next() (model.StreamChunk, error) {
-	it.calls++
-	switch it.calls {
-	case 1:
+type toolThenErrLLM struct{}
+
+func (t *toolThenErrLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
 		tc := model.ToolCall{ID: "call_t", Name: "noop", Arguments: json.RawMessage(`{"x":1}`)}
-		return model.StreamChunk{ToolCall: &tc}, nil
-	case 2:
-		return model.StreamChunk{}, io.ErrUnexpectedEOF
-	default:
-		return model.StreamChunk{}, io.EOF
+		if !yield(model.StreamChunk{ToolCall: &tc}, nil) {
+			return
+		}
+		yield(model.StreamChunk{}, io.ErrUnexpectedEOF)
 	}
 }
-
-func (it *toolThenErrIterator) Close() error { return nil }
 
 type recordingObserver struct {
 	llmCalls  []observe.LLMCallEvent
@@ -1133,16 +1073,6 @@ func (o *recordingObserver) lastCompletedModel() string {
 		}
 	}
 	return ""
-}
-
-type toolThenErrLLM struct{}
-
-func (t *toolThenErrLLM) Complete(_ context.Context, _ model.CompletionRequest) (*model.CompletionResponse, error) {
-	return nil, nil
-}
-
-func (t *toolThenErrLLM) Stream(_ context.Context, _ model.CompletionRequest) (model.StreamIterator, error) {
-	return &toolThenErrIterator{}, nil
 }
 
 func TestLoopLLMRetry_Sync(t *testing.T) {
@@ -1314,11 +1244,6 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 			{Delta: "ok"},
 			{Done: true, Usage: &model.TokenUsage{TotalTokens: 3}},
 		},
-		resp: &model.CompletionResponse{
-			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("fallback")}},
-			StopReason: "end_turn",
-			Usage:      model.TokenUsage{TotalTokens: 2},
-		},
 	}
 	l := &AgentLoop{
 		LLM:   streamLLM,
@@ -1344,11 +1269,11 @@ func TestLoopLLMRetry_StreamingBeforeEmission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if result.Output != "fallback" && result.Output != "ok" {
-		t.Fatalf("Output = %q, want fallback|ok", result.Output)
+	if result.Output != "ok" {
+		t.Fatalf("Output = %q, want ok", result.Output)
 	}
-	if got := atomic.LoadInt32(&streamLLM.calls); got != 1 {
-		t.Fatalf("expected 1 stream attempt with sync fallback, got %d", got)
+	if got := atomic.LoadInt32(&streamLLM.calls); got != 2 {
+		t.Fatalf("expected 2 stream attempts (1 fail + 1 success), got %d", got)
 	}
 }
 
@@ -1446,9 +1371,6 @@ func TestLoopStreamingAfterVisibleOutputDoesNotSyncFallback(t *testing.T) {
 
 	if _, err := l.Run(context.Background(), sess); err == nil {
 		t.Fatal("expected streaming error")
-	}
-	if got := atomic.LoadInt32(&streamLLM.completeCalls); got != 0 {
-		t.Fatalf("expected no sync fallback after visible output, got %d complete calls", got)
 	}
 }
 

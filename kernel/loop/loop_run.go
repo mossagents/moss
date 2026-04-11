@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
@@ -109,7 +108,6 @@ func (l *AgentLoop) runIteration(
 		return false, err
 	}
 	resp := llmResult.resp
-	streamed := llmResult.streamed
 	metadata := llmResult.metadata
 
 	totalUsage.PromptTokens += resp.Usage.PromptTokens
@@ -137,11 +135,11 @@ func (l *AgentLoop) runIteration(
 		return true, nil // consumer stopped iteration
 	}
 
-	if err := l.processIterationResponse(ctx, sess, resp, streamed, lastOutput); err != nil {
+	if err := l.processIterationResponse(ctx, sess, resp, lastOutput); err != nil {
 		return false, err
 	}
 
-	l.emitIterationProgress(ctx, sess, iteration, maxIter, runStartedAt, metadata.ActualModel, streamed, resp)
+	l.emitIterationProgress(ctx, sess, iteration, maxIter, runStartedAt, metadata.ActualModel, resp)
 
 	if l.Config.StopWhen != nil && l.Config.StopWhen(resp.Message) {
 		return true, nil
@@ -152,7 +150,6 @@ func (l *AgentLoop) runIteration(
 
 type iterationLLMResult struct {
 	resp     *model.CompletionResponse
-	streamed bool
 	metadata model.LLMCallMetadata
 }
 
@@ -191,20 +188,19 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	llmStart := time.Now()
-	resp, streamed, err := l.callLLM(ctx, sess, plan)
+	resp, _, err := l.callLLM(ctx, sess, plan)
 	llmDur := time.Since(llmStart)
 	if err != nil {
 		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
 		logging.GetLogger().DebugContext(ctx, "llm response failed",
 			"session_id", sess.ID,
 			"model", metadata.ActualModel,
-			"streamed", streamed,
 			"duration_ms", llmDur.Milliseconds(),
 			"error", err.Error(),
 		)
 		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 		observe.ObserveLLMCall(ctx, l.observer(), observe.LLMCallEvent{
-			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: streamed, Model: metadata.ActualModel,
+			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: true, Model: metadata.ActualModel,
 		})
 		observe.ObserveError(ctx, l.observer(), observe.ErrorEvent{
 			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
@@ -223,7 +219,6 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	logging.GetLogger().DebugContext(ctx, "llm response received",
 		"session_id", sess.ID,
 		"model", metadata.ActualModel,
-		"streamed", streamed,
 		"duration_ms", llmDur.Milliseconds(),
 		"stop_reason", resp.StopReason,
 		"tool_calls", len(resp.ToolCalls),
@@ -237,14 +232,13 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		Duration:   llmDur,
 		Usage:      resp.Usage,
 		StopReason: resp.StopReason,
-		Streamed:   streamed,
+		Streamed:   true,
 	})
 	event = l.executionEventBase(sess, observe.ExecutionLLMCompleted, "llm", "runtime", "llm")
 	event.Model = metadata.ActualModel
 	event.Duration = llmDur
 	event.Data = map[string]any{
 		"stop_reason":         resp.StopReason,
-		"streamed":            streamed,
 		"tokens":              resp.Usage.TotalTokens,
 		"model_lane":          plan.ModelRoute.Lane,
 		"instruction_profile": plan.InstructionProfile,
@@ -252,7 +246,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 
-	return &iterationLLMResult{resp: resp, streamed: streamed, metadata: metadata}, nil
+	return &iterationLLMResult{resp: resp, metadata: metadata}, nil
 }
 
 func (l *AgentLoop) persistTurnMetadata(sess *session.Session, plan TurnPlan) {
@@ -313,7 +307,7 @@ func (l *AgentLoop) emitTurnPlanEvents(ctx context.Context, sess *session.Sessio
 	observe.ObserveExecutionEvent(ctx, l.observer(), turnEvent)
 }
 
-func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *model.CompletionResponse, streamed bool, lastOutput *string) error {
+func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.Session, resp *model.CompletionResponse, lastOutput *string) error {
 	if len(resp.ToolCalls) > 0 {
 		names := make([]string, 0, len(resp.ToolCalls))
 		for _, call := range resp.ToolCalls {
@@ -333,28 +327,8 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 	*lastOutput = model.ContentPartsToPlainText(resp.Message.ContentParts)
 	logging.GetLogger().DebugContext(ctx, "assistant produced final content",
 		"session_id", sess.ID,
-		"streamed", streamed,
 		"chars", len(*lastOutput),
 	)
-	if l.IO != nil && !streamed {
-		for _, part := range resp.Message.ContentParts {
-			if part.Type != model.ContentPartReasoning || strings.TrimSpace(part.Text) == "" {
-				continue
-			}
-			if err := l.IO.Send(ctx, io.OutputMessage{
-				Type:    io.OutputReasoning,
-				Content: part.Text,
-			}); err != nil {
-				logging.GetLogger().DebugContext(ctx, "reasoning output failed", "session_id", sess.ID, "error", err)
-			}
-		}
-		if err := l.IO.Send(ctx, io.OutputMessage{
-			Type:    io.OutputText,
-			Content: *lastOutput,
-		}); err != nil {
-			logging.GetLogger().DebugContext(ctx, "final output send failed", "session_id", sess.ID, "error", err)
-		}
-	}
 	return nil
 }
 
@@ -364,14 +338,13 @@ func (l *AgentLoop) emitIterationProgress(
 	iteration int,
 	maxIter int,
 	runStartedAt time.Time,
-	model string,
-	streamed bool,
+	modelName string,
 	resp *model.CompletionResponse,
 ) {
 	progressAt := time.Now().UTC()
 	event := l.executionEventBase(sess, observe.ExecutionIterationProgress, "iteration", "runtime", "iteration")
 	event.Timestamp = progressAt
-	event.Model = model
+	event.Model = modelName
 	event.Data = map[string]any{
 		"iteration":      iteration,
 		"max_iterations": maxIter,
@@ -380,7 +353,6 @@ func (l *AgentLoop) emitIterationProgress(
 		"llm_calls":      1,
 		"tool_calls":     len(resp.ToolCalls),
 		"stop_reason":    resp.StopReason,
-		"streamed":       streamed,
 		"tokens":         resp.Usage.TotalTokens,
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
