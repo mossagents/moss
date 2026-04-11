@@ -3,6 +3,7 @@
 import (
 	"context"
 	"fmt"
+	"iter"
 	"strings"
 	"sync"
 	"time"
@@ -351,4 +352,71 @@ func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
 // WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 	k.chain.BeforeToolCall.On(builtins.PolicyCheck(rules...))
+}
+
+// ── Agent / Runner API ──────────────────────────────────────────
+
+// BuildLLMAgent creates an LLMAgent configured with the Kernel's resources.
+// This is the bridge between the Kernel's resource injection model and the new Agent interface.
+func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
+	return NewLLMAgent(LLMAgentConfig{
+		Name:  name,
+		LLM:   k.llm,
+		Tools: k.tools,
+		Hooks: k.chain,
+		Config: k.loopCfg,
+		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
+			k.emitSessionLifecycle(ctx, event)
+		},
+		ToolLifecycleHook: func(ctx context.Context, event session.ToolLifecycleEvent) {
+			k.emitToolLifecycle(ctx, event)
+		},
+	})
+}
+
+// NewRunnerFromKernel creates a Runner configured with the Kernel's resources
+// and the specified root agent.
+func (k *Kernel) NewRunnerFromKernel(agent Agent) (*Runner, error) {
+	return NewRunner(RunnerConfig{
+		Agent:    agent,
+		IO:       k.io,
+		Observer: k.observer,
+	})
+}
+
+// RunAgent runs an Agent on the given session and yields events.
+// This is the new primary execution API. Existing Run() is preserved for compatibility
+// and will be removed once all callers are migrated.
+func (k *Kernel) RunAgent(ctx context.Context, sess *session.Session, agent Agent) iter.Seq2[*session.Event, error] {
+	return func(yield func(*session.Event, error) bool) {
+		if err := k.checkShutdown(); err != nil {
+			yield(nil, err)
+			return
+		}
+		runCtx, runID, cancel, err := k.beginRunContext(ctx, sess.ID, sess.Config.Timeout, runKindForeground)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		defer cancel()
+		defer k.runs.end(runID)
+
+		invCtx := NewInvocationContext(runCtx, InvocationContextParams{
+			RunID:    runID,
+			Branch:   agent.Name(),
+			Agent:    agent,
+			Session:  sess,
+			IO:       k.io,
+			Observer: k.observerOrNoOp(),
+		})
+
+		for event, err := range agent.Run(invCtx) {
+			if !yield(event, err) {
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
 }
