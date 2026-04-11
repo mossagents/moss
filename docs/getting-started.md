@@ -160,14 +160,14 @@ k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 )
 ```
 
-### Deep Agent 预设：`harness/patterns`
+### Deep Agent 预设：`appkit`
 
 如果你需要更完整的“coding / research / writer”式产品能力，直接使用：
 
 ```go
-import "github.com/mossagents/moss/harness/patterns"
+import "github.com/mossagents/moss/appkit"
 
-k, err := patterns.BuildDeepAgent(ctx, flags, io, nil)
+k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 ```
 
 默认会接入：

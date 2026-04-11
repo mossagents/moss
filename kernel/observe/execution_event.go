@@ -49,5 +49,5 @@ type ExecutionEvent struct {
 	Model        string               `json:"model,omitempty"`
 	Duration     time.Duration        `json:"duration,omitempty"`
 	Error        string               `json:"error,omitempty"`
-	Data         map[string]any       `json:"data,omitempty"`
+	Metadata     map[string]any       `json:"metadata,omitempty"`
 }

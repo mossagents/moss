@@ -28,7 +28,7 @@ type StreamEvent struct {
 	Timestamp time.Time       `json:"timestamp"`
 	SessionID string          `json:"session_id,omitempty"`
 	Content   string          `json:"content,omitempty"`
-	Meta      map[string]any  `json:"meta,omitempty"`
+	Metadata  map[string]any  `json:"metadata,omitempty"`
 }
 
 // FromOutputMessage maps kernel output messages to a normalized stream event.
@@ -37,7 +37,7 @@ func FromOutputMessage(msg io.OutputMessage, now time.Time) StreamEvent {
 		Type:      EventUnknown,
 		Timestamp: now,
 		Content:   msg.Content,
-		Meta:      cloneMap(msg.Meta),
+		Metadata:  cloneMap(msg.Meta),
 	}
 	switch msg.Type {
 	case io.OutputText:
@@ -63,7 +63,7 @@ func FromExecutionEvent(e observe.ExecutionEvent) StreamEvent {
 		Timestamp: e.Timestamp,
 		SessionID: e.SessionID,
 		Content:   e.Error,
-		Meta:      cloneMap(e.Data),
+		Metadata:  cloneMap(e.Metadata),
 	}
 	switch e.Type {
 	case observe.ExecutionRunStarted:
@@ -79,17 +79,17 @@ func FromExecutionEvent(e observe.ExecutionEvent) StreamEvent {
 	case observe.ExecutionIterationProgress:
 		event.Type = EventProgress
 	}
-	if event.Meta == nil {
-		event.Meta = map[string]any{}
+	if event.Metadata == nil {
+		event.Metadata = map[string]any{}
 	}
 	if e.ToolName != "" {
-		event.Meta["tool_name"] = e.ToolName
+		event.Metadata["tool_name"] = e.ToolName
 	}
 	if e.CallID != "" {
-		event.Meta["call_id"] = e.CallID
+		event.Metadata["call_id"] = e.CallID
 	}
 	if e.Model != "" {
-		event.Meta["model"] = e.Model
+		event.Metadata["model"] = e.Model
 	}
 	return event
 }

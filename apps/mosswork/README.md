@@ -4,7 +4,7 @@
 
 ## What it includes
 
-- Deep harness runtime (`harness/patterns.BuildDeepAgent`)
+- Deep harness runtime (`appkit.BuildDeepAgent`)
 - Persistent sessions (`~/.mosswork/sessions`)
 - Persistent memories (`~/.mosswork/memories`)
 - Context offload (`offload_context`)

@@ -71,7 +71,7 @@ func (fs *FileCheckpointStore) Create(ctx context.Context, req CheckpointCreateR
 		Type:      observe.ExecutionCheckpointCreated,
 		SessionID: record.SessionID,
 		Timestamp: record.CreatedAt,
-		Data: map[string]any{
+		Metadata: map[string]any{
 			"checkpoint_id":        record.ID,
 			"checkpoint_note":      record.Note,
 			"worktree_snapshot_id": record.WorktreeSnapshotID,

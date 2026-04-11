@@ -19,7 +19,6 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/harness/patterns"
 	providers "github.com/mossagents/moss/providers"
 	"github.com/mossagents/moss/sandbox"
 )
@@ -103,7 +102,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		retryCfg = nil
 		breakerCfg = nil
 	}
-	k, err := patterns.BuildDeepAgent(ctx, flags, io, &patterns.DeepAgentConfig{
+	k, err := appkit.BuildDeepAgent(ctx, flags, io, &appkit.DeepAgentConfig{
 		AppName:                       appName,
 		EnableDefaultRestrictedPolicy: &disableDefaultPolicy,
 		EnableDefaultLLMRetry:         retryEnabled,

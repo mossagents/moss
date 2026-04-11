@@ -283,11 +283,11 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 		}
 		switch event.Type {
 		case "model.route_planned":
-			turn.lane = strutil.FirstNonEmpty(stringData(event.Data, "lane"), "default")
+			turn.lane = strutil.FirstNonEmpty(stringData(event.Metadata, "lane"), "default")
 		case "llm_failover_attempt":
 			report.Failover.Attempts++
 			turn.failover = true
-			if strings.TrimSpace(stringData(event.Data, "failover_to")) != "" {
+			if strings.TrimSpace(stringData(event.Metadata, "failover_to")) != "" {
 				report.Failover.Switches++
 			}
 		case "llm_failover_exhausted":
@@ -295,12 +295,12 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 			turn.exhausted = true
 		case string(observe.ExecutionApprovalRequest):
 			report.Approvals.Requested++
-			if reason := strings.TrimSpace(stringData(event.Data, "reason_code")); reason != "" {
+			if reason := strings.TrimSpace(stringData(event.Metadata, "reason_code")); reason != "" {
 				reasons[reason]++
 			}
 		case string(observe.ExecutionApprovalResolved):
 			report.Approvals.Resolved++
-			if boolValue(event.Data, "approved") {
+			if boolValue(event.Metadata, "approved") {
 				report.Approvals.Approved++
 			} else {
 				report.Approvals.Denied++

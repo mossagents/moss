@@ -29,11 +29,11 @@ func TestRunTraceRecorderApprovalResolvedStoresDecision(t *testing.T) {
 	if len(trace.Timeline) != 1 {
 		t.Fatalf("timeline length=%d, want 1", len(trace.Timeline))
 	}
-	approved, ok := trace.Timeline[0].Data["approved"].(bool)
+	approved, ok := trace.Timeline[0].Metadata["approved"].(bool)
 	if !ok || approved {
-		t.Fatalf("expected approval decision to be captured, got %+v", trace.Timeline[0].Data)
+		t.Fatalf("expected approval decision to be captured, got %+v", trace.Timeline[0].Metadata)
 	}
-	if got := trace.Timeline[0].Data["decision_reason"]; got != "no network" {
+	if got := trace.Timeline[0].Metadata["decision_reason"]; got != "no network" {
 		t.Fatalf("decision_reason=%v, want no network", got)
 	}
 }
@@ -51,8 +51,8 @@ func TestRenderRunTraceSummaryIncludesTotalsAndKeyEvents(t *testing.T) {
 			LLMCalls:         2,
 			ToolCalls:        1,
 			Timeline: []TraceEvent{
-				{Kind: "approval", Type: "resolved", ToolName: "run_command", Data: map[string]any{"approved": false, "reason_code": "network"}},
-				{Kind: "execution_event", Type: "llm_failover_switch", Model: "gpt-4o", Data: map[string]any{"candidate_model": "gpt-4o", "failover_to": "claude-sonnet"}},
+				{Kind: "approval", Type: "resolved", ToolName: "run_command", Metadata: map[string]any{"approved": false, "reason_code": "network"}},
+				{Kind: "execution_event", Type: "llm_failover_switch", Model: "gpt-4o", Metadata: map[string]any{"candidate_model": "gpt-4o", "failover_to": "claude-sonnet"}},
 				{Kind: "tool_call", ToolName: "run_command", DurationMS: 900},
 			},
 		},
@@ -106,7 +106,7 @@ func TestRenderRunTraceDetailIncludesTimelineAndLimit(t *testing.T) {
 			ToolCalls:        1,
 			Timeline: []TraceEvent{
 				{Kind: "session", Type: "running"},
-				{Kind: "approval", Type: "resolved", ToolName: "run_command", Data: map[string]any{"approved": true, "source": "user"}},
+				{Kind: "approval", Type: "resolved", ToolName: "run_command", Metadata: map[string]any{"approved": true, "source": "user"}},
 				{Kind: "llm_call", Model: "gpt-5", Type: "tool_use", DurationMS: 120, TotalTokens: 15},
 				{Kind: "tool_call", ToolName: "run_command", DurationMS: 900},
 			},
@@ -137,7 +137,7 @@ func TestRenderRunTraceDetailIncludesPlanningEvents(t *testing.T) {
 				{
 					Kind: "execution_event",
 					Type: "turn.plan_prepared",
-					Data: map[string]any{
+					Metadata: map[string]any{
 						"iteration":            1,
 						"instruction_profile":  "planning",
 						"model_lane":           "reasoning",
@@ -149,7 +149,7 @@ func TestRenderRunTraceDetailIncludesPlanningEvents(t *testing.T) {
 				{
 					Kind: "execution_event",
 					Type: "tool.route_planned",
-					Data: map[string]any{
+					Metadata: map[string]any{
 						"visible_tools":  []string{"read_file", "view"},
 						"hidden_tools":   []string{"write_file"},
 						"approval_tools": []string{"run_command"},
@@ -159,7 +159,7 @@ func TestRenderRunTraceDetailIncludesPlanningEvents(t *testing.T) {
 					Kind:  "execution_event",
 					Type:  "model.route_planned",
 					Model: "gpt-5",
-					Data: map[string]any{
+					Metadata: map[string]any{
 						"lane":         "reasoning",
 						"reason_codes": []string{"planning_mode"},
 						"capabilities": []string{"reasoning"},

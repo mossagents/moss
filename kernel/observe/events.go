@@ -41,7 +41,7 @@ type TurnEvent struct {
 	Model     string         `json:"model,omitempty"`
 	Timestamp time.Time      `json:"timestamp,omitempty"`
 	Error     string         `json:"error,omitempty"`
-	Data      map[string]any `json:"data,omitempty"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
 // TaskEventType 表示任务图事件。
@@ -171,7 +171,7 @@ func TurnEventFromExecutionEvent(e ExecutionEvent) *TurnEvent {
 		Model:     e.Model,
 		Timestamp: eventTimeOrNow(e.Timestamp),
 		Error:     e.Error,
-		Data:      cloneEventData(e.Data),
+		Metadata:  cloneEventMetadata(e.Metadata),
 	}
 }
 
@@ -192,7 +192,7 @@ func mapTurnEventType(typ ExecutionEventType) TurnEventType {
 	}
 }
 
-func cloneEventData(data map[string]any) map[string]any {
+func cloneEventMetadata(data map[string]any) map[string]any {
 	if len(data) == 0 {
 		return nil
 	}

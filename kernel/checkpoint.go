@@ -503,6 +503,6 @@ func (k *Kernel) emitExecutionEvent(ctx context.Context, typ observe.ExecutionEv
 		Type:      typ,
 		SessionID: sessionID,
 		Timestamp: time.Now().UTC(),
-		Data:      data,
+		Metadata:      data,
 	})
 }

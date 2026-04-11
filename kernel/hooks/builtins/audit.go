@@ -122,7 +122,7 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
 	if e.Error != "" {
 		data["error"] = e.Error
 	}
-	for k, v := range e.Data {
+	for k, v := range e.Metadata {
 		data[k] = v
 	}
 	a.write(auditEntry{

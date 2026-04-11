@@ -1,4 +1,4 @@
-﻿package loop
+package loop
 
 import (
 	"context"
@@ -292,13 +292,13 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 			if event.EventID == "" || event.RunID != "run-phase2" || event.TurnID == "" {
 				t.Fatalf("unexpected route event envelope: %+v", event)
 			}
-			decisions, ok := event.Data["decisions"].([]map[string]any)
+			decisions, ok := event.Metadata["decisions"].([]map[string]any)
 			if ok {
 				if len(decisions) == 0 {
-					t.Fatalf("expected route decisions in event data: %+v", event.Data)
+					t.Fatalf("expected route decisions in event data: %+v", event.Metadata)
 				}
-			} else if decisionsAny, ok := event.Data["decisions"].([]any); !ok || len(decisionsAny) == 0 {
-				t.Fatalf("expected route decisions in event data: %+v", event.Data)
+			} else if decisionsAny, ok := event.Metadata["decisions"].([]any); !ok || len(decisionsAny) == 0 {
+				t.Fatalf("expected route decisions in event data: %+v", event.Metadata)
 			}
 		}
 	}
@@ -425,10 +425,10 @@ func TestLoopExecutionProgressEvents(t *testing.T) {
 	if !found {
 		t.Fatal("expected iteration.progress event")
 	}
-	if got := progress.Data["iteration"]; got != 1 {
+	if got := progress.Metadata["iteration"]; got != 1 {
 		t.Fatalf("progress iteration = %v, want 1", got)
 	}
-	if got := progress.Data["stop_reason"]; got != "end_turn" {
+	if got := progress.Metadata["stop_reason"]; got != "end_turn" {
 		t.Fatalf("progress stop_reason = %v, want end_turn", got)
 	}
 	if progress.EventID == "" || progress.EventVersion != 1 || progress.Phase != "iteration" || progress.PayloadKind != "iteration" {
@@ -860,10 +860,10 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 	if toolCompleted == nil {
 		t.Fatal("expected tool.completed event")
 	}
-	if got := toolCompleted.Data["error_code"]; got != string(errors.ErrPolicyDenied) {
+	if got := toolCompleted.Metadata["error_code"]; got != string(errors.ErrPolicyDenied) {
 		t.Fatalf("expected error_code %s, got %v", errors.ErrPolicyDenied, got)
 	}
-	if got := toolCompleted.Data["reason_code"]; got != "tool.denied" {
+	if got := toolCompleted.Metadata["reason_code"]; got != "tool.denied" {
 		t.Fatalf("expected reason_code tool.denied, got %v", got)
 	}
 }
@@ -897,7 +897,7 @@ func TestLoopLLMErrorEventIncludesErrorCode(t *testing.T) {
 	if llmCompleted == nil {
 		t.Fatal("expected llm.completed error event")
 	}
-	if got := llmCompleted.Data["error_code"]; got != string(errors.ErrLLMCall) {
+	if got := llmCompleted.Metadata["error_code"]; got != string(errors.ErrLLMCall) {
 		t.Fatalf("expected error_code %s, got %v", errors.ErrLLMCall, got)
 	}
 }
@@ -931,7 +931,7 @@ func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	if runFailed == nil {
 		t.Fatal("expected run.failed event")
 	}
-	if got := runFailed.Data["error_code"]; got != string(errors.ErrLLMCall) {
+	if got := runFailed.Metadata["error_code"]; got != string(errors.ErrLLMCall) {
 		t.Fatalf("expected error_code %s, got %v", errors.ErrLLMCall, got)
 	}
 }

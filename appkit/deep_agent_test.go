@@ -1,4 +1,4 @@
-package patterns
+package appkit
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
@@ -88,7 +87,7 @@ func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
 func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: t.TempDir(),
 		Trust:     "trusted",
@@ -128,7 +127,7 @@ func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 }
 
 func TestBuildDeepAgent_PlanningProfileEnablesWriteTodos(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
@@ -147,7 +146,7 @@ func TestBuildDeepAgent_PlanningProfileEnablesWriteTodos(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DisableGeneralPurpose(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
@@ -171,7 +170,7 @@ func TestBuildDeepAgent_DisableGeneralPurpose(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DisableWorkspaceIsolation(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
@@ -189,7 +188,7 @@ func TestBuildDeepAgent_DisableWorkspaceIsolation(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DisableTaskRuntime(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
@@ -207,7 +206,7 @@ func TestBuildDeepAgent_DisableTaskRuntime(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DisableCheckpointStore(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
@@ -225,7 +224,7 @@ func TestBuildDeepAgent_DisableCheckpointStore(t *testing.T) {
 }
 
 func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
@@ -262,7 +261,7 @@ func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DefaultLLMRetryInjected(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
@@ -283,7 +282,7 @@ func TestBuildDeepAgent_DefaultLLMRetryInjected(t *testing.T) {
 }
 
 func TestBuildDeepAgent_CustomLLMGovernanceApplied(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",
@@ -320,7 +319,7 @@ func TestBuildDeepAgent_CustomLLMGovernanceApplied(t *testing.T) {
 }
 
 func TestBuildDeepAgent_DisableDefaultLLMRetry(t *testing.T) {
-	flags := &appkit.AppFlags{
+	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "restricted",

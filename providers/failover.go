@@ -198,7 +198,10 @@ type failoverStreamIterator struct {
 	attempts        []model.LLMCallAttempt
 	currentIndex    int
 	currentRetry    int
-	currentIter     model.StreamIterator
+	pullNext        func() (model.StreamChunk, error, bool)
+	pullStop        func()
+	pendingFirst    *model.StreamChunk
+	pendingFirstErr error
 	currentModel    string
 	emitted         bool
 	selectedModel   string
@@ -207,13 +210,36 @@ type failoverStreamIterator struct {
 
 func (it *failoverStreamIterator) Next() (model.StreamChunk, error) {
 	for {
-		if it.currentIter == nil {
+		if it.pullNext == nil {
 			if err := it.openCurrent(); err != nil {
 				return model.StreamChunk{}, err
 			}
+			// Empty stream: openCurrent succeeded but no data available.
+			if it.pullNext == nil {
+				it.selectedModel = it.currentModel
+				it.recordSelectedAttempt()
+				return model.StreamChunk{}, io.EOF
+			}
 		}
 
-		chunk, err := it.currentIter.Next()
+		var chunk model.StreamChunk
+		var err error
+
+		if it.pendingFirst != nil {
+			chunk, err = *it.pendingFirst, it.pendingFirstErr
+			it.pendingFirst = nil
+		} else {
+			var ok bool
+			chunk, err, ok = it.pullNext()
+			if !ok {
+				it.selectedModel = it.currentModel
+				if !it.completedStream {
+					it.recordSelectedAttempt()
+				}
+				return model.StreamChunk{}, io.EOF
+			}
+		}
+
 		if err == nil {
 			if chunk.Delta != "" || chunk.ToolCall != nil {
 				it.emitted = true
@@ -226,21 +252,13 @@ func (it *failoverStreamIterator) Next() (model.StreamChunk, error) {
 			}
 			return chunk, nil
 		}
-		if err == io.EOF {
-			it.parent.recordBreakerSuccess(it.currentModel)
-			it.selectedModel = it.currentModel
-			if !it.completedStream {
-				it.recordSelectedAttempt()
-			}
-			return model.StreamChunk{}, io.EOF
-		}
+
 		if it.emitted {
 			it.parent.recordBreakerFailure(it.currentModel)
 			return model.StreamChunk{}, withMetadata(err, false, false, it.currentModel, it.Metadata().Attempts)
 		}
 
-		_ = it.currentIter.Close()
-		it.currentIter = nil
+		it.closePull()
 		it.parent.recordBreakerFailure(it.currentModel)
 		if finalErr := it.handlePreEmissionError(err); finalErr != nil {
 			return model.StreamChunk{}, finalErr
@@ -248,11 +266,17 @@ func (it *failoverStreamIterator) Next() (model.StreamChunk, error) {
 	}
 }
 
-func (it *failoverStreamIterator) Close() error {
-	if it.currentIter == nil {
-		return nil
+func (it *failoverStreamIterator) closePull() {
+	if it.pullStop != nil {
+		it.pullStop()
+		it.pullNext = nil
+		it.pullStop = nil
 	}
-	return it.currentIter.Close()
+}
+
+func (it *failoverStreamIterator) Close() error {
+	it.closePull()
+	return nil
 }
 
 func (it *failoverStreamIterator) Metadata() model.LLMCallMetadata {
@@ -262,9 +286,6 @@ func (it *failoverStreamIterator) Metadata() model.LLMCallMetadata {
 	}
 	if strings.TrimSpace(meta.ActualModel) == "" {
 		meta.ActualModel = it.currentModel
-	}
-	if provider, ok := it.currentIter.(model.MetadataStreamIterator); ok {
-		meta = mergeResponseMetadata(meta, provider.Metadata())
 	}
 	return meta
 }
@@ -298,20 +319,33 @@ func (it *failoverStreamIterator) openCurrent() error {
 			return withMetadata(err, false, false, candidate.profile.Name, it.attempts)
 		}
 
-		// Use unified GenerateContent and convert to pull-based iterator.
-		streamIter := model.SeqToIterator(candidate.llm.GenerateContent(it.ctx, it.req))
+		// Use iter.Pull2 to get a pull-based interface for probing.
+		next, stop := iter.Pull2(candidate.llm.GenerateContent(it.ctx, it.req))
+
 		// Probe the first chunk to detect startup errors before committing.
-		firstChunk, firstErr := streamIter.Next()
-		if firstErr != nil && firstErr != io.EOF {
-			_ = streamIter.Close()
+		firstChunk, firstErr, ok := next()
+		if !ok {
+			// Empty stream — treat as EOF, iterator is done.
+			stop()
+			it.pullNext = nil
+			it.pullStop = nil
+			it.pendingFirst = nil
+			it.completedStream = false
+			return nil
+		}
+		if firstErr != nil {
+			stop()
 			it.parent.recordBreakerFailure(candidate.profile.Name)
 			if finalErr := it.handlePreEmissionError(firstErr); finalErr != nil {
 				return finalErr
 			}
 			continue
 		}
-		// Wrap with a prefetched iterator that replays the first result.
-		it.currentIter = &prefetchedIterator{first: firstChunk, firstErr: firstErr, inner: streamIter}
+
+		it.pullNext = next
+		it.pullStop = stop
+		it.pendingFirst = &firstChunk
+		it.pendingFirstErr = nil
 		it.completedStream = false
 		return nil
 	}
@@ -347,27 +381,6 @@ func (it *failoverStreamIterator) handlePreEmissionError(err error) error {
 		return exhaustedFailoverError(err, it.currentModel, it.attempts)
 	}
 	return withMetadata(err, llmErrorRetryable(err), false, it.currentModel, it.attempts)
-}
-
-// prefetchedIterator wraps a StreamIterator and replays the first chunk that was
-// already consumed during probe (in openCurrent) before delegating to the inner iterator.
-type prefetchedIterator struct {
-	first    model.StreamChunk
-	firstErr error
-	consumed bool
-	inner    model.StreamIterator
-}
-
-func (p *prefetchedIterator) Next() (model.StreamChunk, error) {
-	if !p.consumed {
-		p.consumed = true
-		return p.first, p.firstErr
-	}
-	return p.inner.Next()
-}
-
-func (p *prefetchedIterator) Close() error {
-	return p.inner.Close()
 }
 
 func (it *failoverStreamIterator) recordSelectedAttempt() {

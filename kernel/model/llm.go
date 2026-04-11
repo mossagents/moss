@@ -114,11 +114,6 @@ type StreamIterator interface {
 	Close() error
 }
 
-// MetadataStreamIterator 是可选接口，供流式 LLM 暴露实际命中模型和 failover 尝试元数据。
-type MetadataStreamIterator interface {
-	Metadata() LLMCallMetadata
-}
-
 // StreamChunk 是流式响应的一个片段。
 type StreamChunk struct {
 	Delta          string           `json:"delta,omitempty"`
