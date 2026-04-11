@@ -121,7 +121,7 @@ tasks:
     cmds:
       - cmd: |
           set +e
-          npx vite --host 127.0.0.1 --port {{.VITE_PORT}} --strictPort
+          npx vite --host localhost --port {{.VITE_PORT}} --strictPort
           code=$?
           # 130: SIGINT (Unix), 3221225786 / -1073741510: STATUS_CONTROL_C_EXIT (Windows)
           if [ "$code" = "130" ] || [ "$code" = "3221225786" ] || [ "$code" = "-1073741510" ]; then
@@ -130,13 +130,22 @@ tasks:
           exit $code
         platforms: [linux, darwin]
       - cmd: |
-          powershell -NoProfile -ExecutionPolicy Bypass -Command "& {
-            npx vite --host 127.0.0.1 --port {{.VITE_PORT}} --strictPort
-            $code = $LASTEXITCODE
-            # 130: SIGINT, -1073741510 / 3221225786: STATUS_CONTROL_C_EXIT
-            if ($code -eq 130 -or $code -eq -1073741510 -or $code -eq 3221225786) { exit 0 }
-            exit $code
-          }"
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "npx vite --host localhost --port {{.VITE_PORT}} --strictPort; exit 0"
+        platforms: [windows]
+
+  wait:frontend:
+    summary: Wait for the Vite dev server to be ready before starting the app
+    cmds:
+      - cmd: |
+          for i in $(seq 1 60); do
+            nc -z 127.0.0.1 {{.VITE_PORT}} 2>/dev/null && echo "Frontend dev server ready on port {{.VITE_PORT}}" && exit 0
+            sleep 1
+          done
+          echo "ERROR: Frontend dev server did not start within 60 seconds" >&2
+          exit 1
+        platforms: [linux, darwin]
+      - cmd: |
+          powershell -NoProfile -ExecutionPolicy Bypass -Command "1..60 | ForEach-Object { try { [System.Net.Sockets.TcpClient]::new('localhost', {{.VITE_PORT}}).Close(); Write-Host 'Frontend dev server ready on port {{.VITE_PORT}}'; exit 0 } catch {}; try { [System.Net.Sockets.TcpClient]::new('127.0.0.1', {{.VITE_PORT}}).Close(); Write-Host 'Frontend dev server ready on port {{.VITE_PORT}}'; exit 0 } catch {}; Start-Sleep -Seconds 1 }; Write-Error 'Frontend dev server did not start within 60 seconds'; exit 1"
         platforms: [windows]
 
   update:build-assets:
