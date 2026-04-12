@@ -7,6 +7,12 @@ import (
 	"time"
 )
 
+var ansiEscapePattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSICodes(s string) string {
+	return ansiEscapePattern.ReplaceAllString(s, "")
+}
+
 func TestRenderMessage_ToolStartIncludesArgsAndRisk(t *testing.T) {
 	out := renderMessage(chatMessage{
 		kind:    msgToolStart,
@@ -51,6 +57,37 @@ func TestRenderMessage_AssistantUsesLeadingDotWithoutLegacyLabel(t *testing.T) {
 	}
 	if strings.Contains(out, "moss") {
 		t.Fatalf("assistant message should not show legacy label: %q", out)
+	}
+}
+
+func TestRenderMessage_PlainChineseDialogueAlignsWithEventSummary(t *testing.T) {
+	user := stripANSICodes(renderMessage(chatMessage{
+		kind:    msgUser,
+		content: "你好",
+	}, 80))
+	assistant := stripANSICodes(renderMessage(chatMessage{
+		kind:    msgAssistant,
+		content: "你好，我来帮你。",
+	}, 80))
+	reasoning := stripANSICodes(renderMessage(chatMessage{
+		kind:    msgReasoning,
+		content: "先看一下当前上下文。",
+	}, 80))
+
+	if strings.Contains(user, "●  你好") {
+		t.Fatalf("user dialogue should not include extra paragraph indent: %q", user)
+	}
+	if strings.Contains(assistant, "●  你好") {
+		t.Fatalf("assistant dialogue should not include extra paragraph indent: %q", assistant)
+	}
+	userColumn := strings.Index(user, "你好")
+	assistantColumn := strings.Index(assistant, "你好")
+	reasoningColumn := strings.Index(reasoning, "thinking")
+	if userColumn != reasoningColumn {
+		t.Fatalf("user content column = %d, want %d; user=%q reasoning=%q", userColumn, reasoningColumn, user, reasoning)
+	}
+	if assistantColumn != reasoningColumn {
+		t.Fatalf("assistant content column = %d, want %d; assistant=%q reasoning=%q", assistantColumn, reasoningColumn, assistant, reasoning)
 	}
 }
 

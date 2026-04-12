@@ -178,6 +178,55 @@ func TestFileStoreOverwrite(t *testing.T) {
 	}
 }
 
+func TestFileStoreSave_NormalizesInvalidToolCallArguments(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	sess := &Session{
+		ID:     "invalid-tool-args",
+		Status: StatusCompleted,
+		Config: SessionConfig{Goal: "persist malformed tool call"},
+		Messages: []model.Message{
+			{
+				Role: model.RoleAssistant,
+				ToolCalls: []model.ToolCall{
+					{
+						ID:        "call-1",
+						Name:      "read_file",
+						Arguments: json.RawMessage(`D:/Codes/qiulin/moss/apps/mosscode/README.md`),
+					},
+				},
+			},
+		},
+	}
+
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := store.Load(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil || len(loaded.Messages) != 1 || len(loaded.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("unexpected loaded session: %+v", loaded)
+	}
+	args := loaded.Messages[0].ToolCalls[0].Arguments
+	if !json.Valid(args) {
+		t.Fatalf("expected persisted args to be valid json, got %s", args)
+	}
+	var decoded string
+	if err := json.Unmarshal(args, &decoded); err != nil {
+		t.Fatalf("unmarshal persisted args: %v", err)
+	}
+	if decoded != `D:/Codes/qiulin/moss/apps/mosscode/README.md` {
+		t.Fatalf("decoded = %q", decoded)
+	}
+}
+
 func TestFileStore_PersistsBudgetPolicy(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sessions")
 	store, err := NewFileStore(dir)

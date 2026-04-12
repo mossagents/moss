@@ -1,11 +1,11 @@
 package session
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/logging"
 	"os"
@@ -148,8 +148,6 @@ func formatSessionTime(ts time.Time) string {
 	return ts.UTC().Format("2006-01-02 15:04:05")
 }
 
-
-
 func (fs *FileStore) Delete(_ context.Context, id string) error {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -284,18 +282,18 @@ type persistedBudget struct {
 }
 
 type persistedMessage struct {
-	Role         model.Role              `json:"role"`
-	ContentParts []model.ContentPart     `json:"content_parts,omitempty"`
+	Role         model.Role            `json:"role"`
+	ContentParts []model.ContentPart   `json:"content_parts,omitempty"`
 	Content      json.RawMessage       `json:"content,omitempty"`
-	ToolCalls    []model.ToolCall        `json:"tool_calls,omitempty"`
+	ToolCalls    []model.ToolCall      `json:"tool_calls,omitempty"`
 	ToolResults  []persistedToolResult `json:"tool_results,omitempty"`
 }
 
 type persistedToolResult struct {
-	CallID       string            `json:"call_id"`
+	CallID       string              `json:"call_id"`
 	ContentParts []model.ContentPart `json:"content_parts,omitempty"`
-	Content      json.RawMessage   `json:"content,omitempty"`
-	IsError      bool              `json:"is_error,omitempty"`
+	Content      json.RawMessage     `json:"content,omitempty"`
+	IsError      bool                `json:"is_error,omitempty"`
 }
 
 func persistedSessionFromSession(sess *Session) persistedSession {
@@ -422,6 +420,9 @@ func sanitizePersistedMessages(messages []model.Message) []model.Message {
 	out := make([]model.Message, 0, len(messages))
 	for _, msg := range messages {
 		msg.ContentParts = model.StripReasoningParts(msg.ContentParts)
+		if len(msg.ToolCalls) > 0 {
+			msg.ToolCalls = model.NormalizeToolCalls(msg.ToolCalls)
+		}
 		if len(msg.ToolResults) > 0 {
 			results := make([]model.ToolResult, 0, len(msg.ToolResults))
 			for _, tr := range msg.ToolResults {

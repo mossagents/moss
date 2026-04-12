@@ -244,7 +244,11 @@ func compactRunSummary(s string) string {
 }
 
 func shouldWrapAsPlainText(content string) bool {
-	if !strings.Contains(content, "\n") {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return true
+	}
+	if containsInlineMarkdown(content) {
 		return false
 	}
 	for _, raw := range strings.Split(content, "\n") {
@@ -264,6 +268,19 @@ func shouldWrapAsPlainText(content string) bool {
 		}
 	}
 	return true
+}
+
+func containsInlineMarkdown(content string) bool {
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return false
+	}
+	for _, needle := range []string{"`", "**", "__", "~~", "![", "]("} {
+		if strings.Contains(content, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func isOrderedMarkdownLine(line string) bool {

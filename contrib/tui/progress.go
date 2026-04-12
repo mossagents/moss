@@ -716,7 +716,7 @@ func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEv
 		Enforcement: io.EnforcementMode(strings.TrimSpace(meta.Enforcement)),
 		Duration:    time.Duration(meta.DurationMS) * time.Millisecond,
 		Error:       strings.TrimSpace(entry.Status),
-		Data:        meta.Metadata,
+		Metadata:    meta.Metadata,
 	}, true
 }
 
