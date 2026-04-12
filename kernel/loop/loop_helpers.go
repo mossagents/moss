@@ -110,7 +110,7 @@ func (l *AgentLoop) recordBreakerFailure() {
 // safeChain returns a non-nil Registry, using the loop's Chain or a shared empty fallback.
 var emptyRegistry = hooks.NewRegistry()
 
-func (l *AgentLoop) safeChain() *hooks.Registry {
+func (l *AgentLoop) safeHooks() *hooks.Registry {
 	if l.Hooks != nil {
 		return l.Hooks
 	}

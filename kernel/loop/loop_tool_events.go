@@ -10,8 +10,8 @@ import (
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -54,7 +54,7 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 func (l *AgentLoop) runBeforeToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, input []byte) error {
 	var err error
 	l.withSideEffectsLock(func() {
-		err = l.safeChain().BeforeToolCall.Run(ctx, &hooks.ToolEvent{
+		err = l.safeHooks().BeforeToolCall.Run(ctx, &hooks.ToolEvent{
 			Session:  sess,
 			Tool:     &spec,
 			Input:    input,
@@ -67,7 +67,7 @@ func (l *AgentLoop) runBeforeToolCallHook(ctx context.Context, sess *session.Ses
 
 func (l *AgentLoop) runAfterToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
 	l.withSideEffectsLock(func() {
-		if err := l.safeChain().AfterToolCall.Run(ctx, &hooks.ToolEvent{
+		if err := l.safeHooks().AfterToolCall.Run(ctx, &hooks.ToolEvent{
 			Session:  sess,
 			Tool:     &spec,
 			Result:   output,

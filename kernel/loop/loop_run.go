@@ -80,7 +80,7 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"max_steps": sess.Budget.MaxSteps,
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.safeChain().OnSessionStart.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+	if err := l.safeHooks().OnSessionStart.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		logging.GetLogger().DebugContext(ctx, "session start hook failed", "session_id", sess.ID, "error", err)
 	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
@@ -117,7 +117,7 @@ func (l *AgentLoop) runIteration(
 		return true, nil
 	}
 
-	if err := l.safeChain().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+	if err := l.safeHooks().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return false, err
 	}
 
@@ -177,7 +177,7 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 }
 
 func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*iterationLLMResult, error) {
-	if err := l.safeChain().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+	if err := l.safeHooks().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		return nil, err
 	}
 
@@ -375,7 +375,7 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"tokens": totalUsage.TotalTokens,
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.safeChain().OnSessionEnd.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+	if err := l.safeHooks().OnSessionEnd.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
 		logging.GetLogger().DebugContext(ctx, "session end hook failed", "session_id", sess.ID, "error", err)
 	}
 	result := &SessionResult{
