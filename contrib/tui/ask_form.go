@@ -177,6 +177,9 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	if m.isApprovalAskActive() {
 		return m.handleApprovalAskKey(msg)
 	}
+	if m.isSimpleConfirmAskActive() {
+		return m.handleSimpleConfirmAskKey(msg)
+	}
 	form := m.askForm
 	if msg.String() == "tab" {
 		form.focusIndex = (form.focusIndex + 1) % (len(form.fields) + 1)
@@ -261,6 +264,15 @@ func (m chatModel) isApprovalAskActive() bool {
 	return m.askForm != nil && m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil
 }
 
+func (m chatModel) isSimpleConfirmAskActive() bool {
+	return m.askForm != nil &&
+		m.pendAsk != nil &&
+		m.pendAsk.request.Type == io.InputConfirm &&
+		m.pendAsk.request.Approval == nil &&
+		len(m.askForm.fields) == 1 &&
+		m.askForm.fields[0].def.Type == io.InputFieldBoolean
+}
+
 func (m chatModel) handleApprovalAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	if !m.isApprovalAskActive() || len(m.askForm.fields) == 0 {
 		return m, nil
@@ -296,6 +308,36 @@ func (m chatModel) handleApprovalAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 		selectIndex(indexOfApprovalOption(field.def.Options, userapproval.ChoiceDeny))
 	case "enter":
 		return m.submitAskForm()
+	default:
+		if idx, ok := confirmOptionKeyIndex(msg.String(), len(field.def.Options)); ok {
+			selectIndex(idx)
+		}
+	}
+	return m, nil
+}
+
+func (m chatModel) handleSimpleConfirmAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
+	if !m.isSimpleConfirmAskActive() {
+		return m, nil
+	}
+	field := &m.askForm.fields[0]
+	setApproved := func(approved bool) {
+		field.boolValue = approved
+		m.refreshViewport()
+	}
+	switch msg.String() {
+	case "up", "left", "y":
+		setApproved(true)
+	case "down", "right", "n":
+		setApproved(false)
+	case "tab", "shift+tab", " ":
+		setApproved(!field.boolValue)
+	case "enter":
+		return m.submitAskForm()
+	default:
+		if idx, ok := confirmOptionKeyIndex(msg.String(), 2); ok {
+			setApproved(idx == 0)
+		}
 	}
 	return m, nil
 }
@@ -567,6 +609,9 @@ func (m chatModel) renderAskForm(width int) string {
 	if m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil {
 		return m.renderApprovalAskForm(width)
 	}
+	if m.isSimpleConfirmAskActive() {
+		return m.renderSimpleConfirmAskForm(width)
+	}
 	sb.WriteString(wrapText(m.askForm.prompt, width-4))
 	if strings.TrimSpace(m.askForm.errorText) != "" {
 		sb.WriteString("\n\n")
@@ -676,73 +721,250 @@ func (m chatModel) renderApprovalAskForm(width int) string {
 			selected = decisionField.def.Options[idx]
 		}
 	}
-	var sb strings.Builder
-	sectionLabel := func(title, value string) {
-		if strings.TrimSpace(value) == "" {
-			return
-		}
-		sb.WriteString(dialogAccentStyle.Render(title))
-		sb.WriteString("\n")
-		sb.WriteString(dialogItemStyle.Render(wrapText(value, width-10)))
-		sb.WriteString("\n\n")
+	sections := []string{
+		mutedStyle.Render(wrapText("Review the action below before continuing. You can approve once, cache for this session, or amend project policy when available.", confirmSheetWrapWidth(width))),
+		renderConfirmMetaRows([][2]string{
+			{"Tool", valueOrDefaultString(display.ToolName, "(unknown)")},
+			{"Risk", valueOrDefaultString(display.Risk, "(unspecified)")},
+		}),
 	}
-
-	sb.WriteString(dialogAccentStyle.Render(display.Title))
-	sb.WriteString("\n")
-	sb.WriteString(mutedStyle.Render("Review the action below before continuing. You can approve once, cache for this session, or amend project policy when available."))
+	if action := renderConfirmBoxSection(width, display.ActionLabel, display.ActionValue); strings.TrimSpace(action) != "" {
+		sections = append(sections, action)
+	}
 	if strings.TrimSpace(m.askForm.errorText) != "" {
-		sb.WriteString("\n\n")
-		sb.WriteString(errorStyle.Render(wrapText(m.askForm.errorText, width-8)))
+		sections = append(sections, errorStyle.Render(wrapText(m.askForm.errorText, confirmSheetWrapWidth(width))))
 	}
-	sb.WriteString("\n\n")
-	metaItems := []string{
-		dialogItemStyle.Render("tool  " + valueOrDefaultString(display.ToolName, "(unknown)")),
-		dialogItemStyle.Render("risk  " + valueOrDefaultString(display.Risk, "(unspecified)")),
+	if reason := renderConfirmTextSection(width, "Reason", display.Reason); strings.TrimSpace(reason) != "" {
+		sections = append(sections, reason)
 	}
-	sb.WriteString(renderApprovalButtonRows(metaItems, width-8))
-	sb.WriteString("\n\n")
-	sectionLabel("Reason", display.Reason)
-	sectionLabel(display.ActionLabel, display.ActionValue)
-	// diff 预览：仅对 write_file / edit_file 等文件写入工具显示
-	if strings.TrimSpace(display.DiffPreview) != "" {
-		sb.WriteString(dialogAccentStyle.Render("Changes"))
-		sb.WriteString("\n")
-		for _, line := range strings.Split(strings.TrimRight(display.DiffPreview, "\n"), "\n") {
-			if strings.HasPrefix(line, "+") {
-				sb.WriteString(toolResultStyle.Render(line))
-			} else if strings.HasPrefix(line, "-") {
-				sb.WriteString(toolErrorStyle.Render(line))
-			} else {
-				sb.WriteString(mutedStyle.Render(line))
-			}
-			sb.WriteString("\n")
-		}
-		sb.WriteString("\n")
+	if diff := renderConfirmDiffSection("Changes", display.DiffPreview); strings.TrimSpace(diff) != "" {
+		sections = append(sections, diff)
 	}
-	sectionLabel(display.ScopeLabel, display.ScopeValue)
-	sb.WriteString(dialogAccentStyle.Render("Decision"))
-	sb.WriteString("\n")
-	sb.WriteString(renderApprovalButtonRows(renderApprovalDecisionButtons(decisionField), width-8))
-	sb.WriteString("\n")
+	if scope := renderConfirmTextSection(width, display.ScopeLabel, display.ScopeValue); strings.TrimSpace(scope) != "" {
+		sections = append(sections, scope)
+	}
+	sections = append(sections, renderConfirmChoiceSection("Choose how to proceed", approvalDecisionLabels(decisionField), decisionField.singleSel))
 	if note := approvalDecisionNote(selected, display); strings.TrimSpace(note) != "" {
-		sb.WriteString("\n")
-		sb.WriteString(mutedStyle.Render(wrapText(note, width-8)))
-		sb.WriteString("\n\n")
+		sections = append(sections, mutedStyle.Render(wrapText(note, confirmSheetWrapWidth(width))))
 	}
-	return renderDialogFrame(width, "Approval", []string{strings.TrimSpace(sb.String())}, approvalDecisionHelp(decisionField.def.Options))
+	return renderConfirmSheetFrame(width, display.Title, sections, approvalDecisionHelp(decisionField.def.Options))
 }
 
-func renderApprovalDecisionButtons(field askFieldState) []string {
-	buttons := make([]string, 0, len(field.def.Options))
-	for idx, opt := range field.def.Options {
-		label := "[ " + approvalDecisionButtonLabel(opt) + " ]"
-		if idx == field.singleSel {
-			buttons = append(buttons, dialogSelectedItemStyle.Render(label))
+func (m chatModel) renderSimpleConfirmAskForm(width int) string {
+	if !m.isSimpleConfirmAskActive() {
+		return ""
+	}
+	field := m.askForm.fields[0]
+	selected := 1
+	if field.boolValue {
+		selected = 0
+	}
+	sections := make([]string, 0, 4)
+	if summary := renderSimpleConfirmSummary(width, m.pendAsk.request); strings.TrimSpace(summary) != "" {
+		sections = append(sections, summary)
+	}
+	if prompt := strings.TrimSpace(m.pendAsk.request.Prompt); prompt != "" {
+		sections = append(sections, mutedStyle.Render(wrapText(prompt, confirmSheetWrapWidth(width))))
+	}
+	if strings.TrimSpace(m.askForm.errorText) != "" {
+		sections = append(sections, errorStyle.Render(wrapText(m.askForm.errorText, confirmSheetWrapWidth(width))))
+	}
+	sections = append(sections, renderConfirmChoiceSection("", []string{"Yes", "No"}, selected))
+	return renderConfirmSheetFrame(width, confirmDialogTitle(m.pendAsk.request), sections, simpleConfirmHelp())
+}
+
+func confirmOptionKeyIndex(key string, optionCount int) (int, bool) {
+	idx, err := strconv.Atoi(strings.TrimSpace(key))
+	if err != nil || idx < 1 || idx > optionCount {
+		return 0, false
+	}
+	return idx - 1, true
+}
+
+func confirmDialogTitle(req io.InputRequest) string {
+	if title := strings.TrimSpace(req.ConfirmLabel); title != "" {
+		return title
+	}
+	return "Confirm"
+}
+
+func renderSimpleConfirmSummary(width int, req io.InputRequest) string {
+	label, value := confirmRequestSummary(req)
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return renderConfirmBoxSection(width, label, value)
+}
+
+func confirmRequestSummary(req io.InputRequest) (string, string) {
+	candidates := []struct {
+		key   string
+		label string
+	}{
+		{key: "workspace", label: "Folder"},
+		{key: "source", label: "Source"},
+		{key: "target", label: "Target"},
+	}
+	for _, candidate := range candidates {
+		raw, ok := req.Meta[candidate.key]
+		if !ok {
 			continue
 		}
-		buttons = append(buttons, dialogItemStyle.Render(label))
+		value := strings.TrimSpace(fmt.Sprint(raw))
+		if value != "" {
+			return candidate.label, value
+		}
 	}
-	return buttons
+	return "", ""
+}
+
+func confirmSheetFrameStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(colorBorder).
+		Padding(0, 1)
+}
+
+func confirmSheetBoxStyle() lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(colorBorder).
+		Padding(0, 1)
+}
+
+func confirmSheetContentWidth(width int) int {
+	if width < 56 {
+		width = 56
+	}
+	contentWidth := width - confirmSheetFrameStyle().GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	return contentWidth
+}
+
+func confirmSheetWrapWidth(width int) int {
+	return max(20, confirmSheetContentWidth(width)-2)
+}
+
+func renderConfirmSheetFrame(width int, title string, sections []string, footer string) string {
+	contentWidth := confirmSheetContentWidth(width)
+	rule := shellRuleStyle.Width(contentWidth).Render(strings.Repeat("─", max(1, contentWidth-1)))
+	parts := []string{
+		baseStyle.Copy().Bold(true).Render(valueOrDefaultString(strings.TrimSpace(title), "Confirm")),
+		rule,
+	}
+	for _, section := range sections {
+		section = strings.TrimSpace(section)
+		if section != "" {
+			parts = append(parts, section)
+		}
+	}
+	if strings.TrimSpace(footer) != "" {
+		parts = append(parts, dialogHelpStyle.Render(footer))
+	}
+	return confirmSheetFrameStyle().Width(contentWidth).Render(strings.Join(parts, "\n\n"))
+}
+
+func renderConfirmBoxSection(width int, title, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(title) != "" {
+		parts = append(parts, dialogAccentStyle.Render(strings.TrimSpace(title)))
+	}
+	boxStyle := confirmSheetBoxStyle()
+	boxContentWidth := confirmSheetContentWidth(width) - boxStyle.GetHorizontalFrameSize()
+	if boxContentWidth < 1 {
+		boxContentWidth = 1
+	}
+	parts = append(parts, boxStyle.Width(boxContentWidth).Render(wrapText(value, boxContentWidth)))
+	return strings.Join(parts, "\n")
+}
+
+func renderConfirmTextSection(width int, title, value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	parts := make([]string, 0, 2)
+	if strings.TrimSpace(title) != "" {
+		parts = append(parts, dialogAccentStyle.Render(strings.TrimSpace(title)))
+	}
+	parts = append(parts, wrapText(value, confirmSheetWrapWidth(width)))
+	return strings.Join(parts, "\n")
+}
+
+func renderConfirmDiffSection(title, diff string) string {
+	diff = strings.TrimSpace(diff)
+	if diff == "" {
+		return ""
+	}
+	var sb strings.Builder
+	if strings.TrimSpace(title) != "" {
+		sb.WriteString(dialogAccentStyle.Render(strings.TrimSpace(title)))
+		sb.WriteString("\n")
+	}
+	for _, line := range strings.Split(strings.TrimRight(diff, "\n"), "\n") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			sb.WriteString(toolResultStyle.Render(line))
+		case strings.HasPrefix(line, "-"):
+			sb.WriteString(toolErrorStyle.Render(line))
+		default:
+			sb.WriteString(mutedStyle.Render(line))
+		}
+		sb.WriteString("\n")
+	}
+	return strings.TrimRight(sb.String(), "\n")
+}
+
+func renderConfirmMetaRows(items [][2]string) string {
+	rows := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(item[1])
+		if value == "" {
+			continue
+		}
+		rows = append(rows, fmt.Sprintf("%s  %s", strings.ToLower(strings.TrimSpace(item[0])), value))
+	}
+	return strings.Join(rows, "\n")
+}
+
+func renderConfirmChoiceSection(title string, options []string, selected int) string {
+	if len(options) == 0 {
+		return ""
+	}
+	if selected < 0 || selected >= len(options) {
+		selected = 0
+	}
+	var sb strings.Builder
+	if strings.TrimSpace(title) != "" {
+		sb.WriteString(dialogAccentStyle.Render(strings.TrimSpace(title)))
+		sb.WriteString("\n")
+	}
+	for idx, option := range options {
+		line := fmt.Sprintf("%d. %s", idx+1, option)
+		if idx == selected {
+			sb.WriteString(dialogAccentStyle.Render("› " + line))
+		} else {
+			sb.WriteString(dialogItemStyle.Render("  " + line))
+		}
+		if idx < len(options)-1 {
+			sb.WriteString("\n")
+		}
+	}
+	return sb.String()
+}
+
+func approvalDecisionLabels(field askFieldState) []string {
+	labels := make([]string, 0, len(field.def.Options))
+	for _, opt := range field.def.Options {
+		labels = append(labels, approvalDecisionButtonLabel(opt))
+	}
+	return labels
 }
 
 func approvalDecisionButtonLabel(option string) string {
@@ -760,33 +982,6 @@ func approvalDecisionButtonLabel(option string) string {
 	}
 }
 
-func renderApprovalButtonRows(items []string, maxWidth int) string {
-	if maxWidth < 20 {
-		maxWidth = 20
-	}
-	rows := make([]string, 0, len(items))
-	current := make([]string, 0, len(items))
-	currentWidth := 0
-	for _, item := range items {
-		itemWidth := lipgloss.Width(item)
-		if len(current) > 0 && currentWidth+2+itemWidth > maxWidth {
-			rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Left, current...))
-			current = current[:0]
-			currentWidth = 0
-		}
-		if len(current) > 0 {
-			current = append(current, "  ")
-			currentWidth += 2
-		}
-		current = append(current, item)
-		currentWidth += itemWidth
-	}
-	if len(current) > 0 {
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Left, current...))
-	}
-	return strings.Join(rows, "\n")
-}
-
 func approvalDecisionNote(selected string, display userapproval.Display) string {
 	switch selected {
 	case userapproval.ChoiceAllowSession:
@@ -801,15 +996,20 @@ func approvalDecisionNote(selected string, display userapproval.Display) string 
 }
 
 func approvalDecisionHelp(options []string) string {
-	parts := []string{"←/→ choose", "Enter apply", "A allow once"}
-	if indexOfApprovalOption(options, userapproval.ChoiceAllowSession) >= 0 {
-		parts = append(parts, "S session")
+	parts := []string{"↑↓ navigate", "Enter apply"}
+	switch len(options) {
+	case 1:
+		parts = append(parts, "1 choose")
+	case 0:
+	default:
+		parts = append(parts, fmt.Sprintf("1-%d choose", len(options)))
 	}
-	if indexOfApprovalOption(options, userapproval.ChoiceAllowProject) >= 0 {
-		parts = append(parts, "P project")
-	}
-	parts = append(parts, "D deny", "Esc cancel")
+	parts = append(parts, "Esc cancel")
 	return strings.Join(parts, " • ")
+}
+
+func simpleConfirmHelp() string {
+	return "↑↓ navigate • Enter select • 1/2 choose • Esc cancel"
 }
 
 func approvalSessionPermissions(req *io.ApprovalRequest) *io.PermissionProfile {

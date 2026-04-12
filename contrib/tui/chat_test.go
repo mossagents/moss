@@ -1726,6 +1726,74 @@ func TestAskFormEscCancelsRunAndClearsForm(t *testing.T) {
 	}
 }
 
+func TestConfirmAskFormUsesBottomSheetStyle(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:         io.InputConfirm,
+			Prompt:       "Do you trust the files in this folder?",
+			ConfirmLabel: "Confirm folder trust",
+			Meta: map[string]any{
+				"workspace": `D:\Codes\qiulin\moss`,
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	rendered := updated.renderAskForm(110)
+	for _, want := range []string{
+		"Confirm folder trust",
+		`D:\Codes\qiulin\moss`,
+		"Do you trust the files in this folder?",
+		"1. Yes",
+		"2. No",
+		"↑↓ navigate",
+		"Enter select",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf("rendered confirm form missing %q:\n%s", want, rendered)
+		}
+	}
+	if !strings.Contains(rendered, "› 2. No") {
+		t.Fatalf("expected confirm dialog to preserve default deny selection:\n%s", rendered)
+	}
+}
+
+func TestSimpleConfirmAskArrowSelectionAndSubmit(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:   io.InputConfirm,
+			Prompt: "Continue?",
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		if !resp.Approved {
+			t.Fatal("expected simple confirm to approve after selecting yes")
+		}
+	default:
+		t.Fatal("expected confirm response")
+	}
+}
+
 func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
@@ -1763,14 +1831,80 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 		"Command",
 		"git push origin main",
 		"Matching rule",
-		"Allow once",
-		"Session",
-		"Project",
-		"Deny",
+		"1. Allow once",
+		"2. Session",
+		"3. Project",
+		"4. Deny",
+		"↑↓ navigate",
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("rendered form missing %q:\n%s", want, rendered)
 		}
+	}
+}
+
+func TestConfirmOverlayPlacementUsesBottomSheet(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:   io.InputConfirm,
+			Prompt: "Continue?",
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	dialog := updated.activeOverlay()
+	if dialog == nil || dialog.ID() != overlayAsk {
+		t.Fatal("expected confirm overlay to be active")
+	}
+	layout := updated.generateLayout()
+	width, vertical := updated.overlayPlacement(dialog, layout)
+	wantWidth := min(layout.MainWidth, max(56, layout.MainWidth-2))
+	if width != wantWidth {
+		t.Fatalf("confirm overlay width = %d, want %d", width, wantWidth)
+	}
+	if vertical != lipgloss.Bottom {
+		t.Fatalf("confirm overlay vertical placement = %v, want %v", vertical, lipgloss.Bottom)
+	}
+}
+
+func TestFormOverlayPlacementRemainsCentered(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:   io.InputForm,
+			Prompt: "Choose one",
+			Fields: []io.InputField{
+				{Name: "database", Type: io.InputFieldSingleSelect, Options: []string{"PostgreSQL", "MySQL"}, Required: true},
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	dialog := updated.activeOverlay()
+	if dialog == nil || dialog.ID() != overlayAsk {
+		t.Fatal("expected form overlay to be active")
+	}
+	layout := updated.generateLayout()
+	width, vertical := updated.overlayPlacement(dialog, layout)
+	wantWidth := min(84, max(48, layout.MainWidth-12))
+	if width != wantWidth {
+		t.Fatalf("form overlay width = %d, want %d", width, wantWidth)
+	}
+	if vertical != lipgloss.Center {
+		t.Fatalf("form overlay vertical placement = %v, want %v", vertical, lipgloss.Center)
 	}
 }
 
@@ -2756,9 +2890,9 @@ func TestExtensionCustomOverlayOpenClose(t *testing.T) {
 
 type testOverlay struct{}
 
-func (o *testOverlay) ID() string                                                   { return "my-overlay" }
-func (o *testOverlay) View(ctx OverlayContext) string                               { return "test overlay" }
-func (o *testOverlay) HandleKey(ctx OverlayContext, key tea.KeyMsg) tea.Cmd         { return nil }
+func (o *testOverlay) ID() string                                           { return "my-overlay" }
+func (o *testOverlay) View(ctx OverlayContext) string                       { return "test overlay" }
+func (o *testOverlay) HandleKey(ctx OverlayContext, key tea.KeyMsg) tea.Cmd { return nil }
 
 func TestCtrlYOpensCopyPicker(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
@@ -2896,8 +3030,8 @@ func TestIsCopyableMessage(t *testing.T) {
 		{msgToolError, "error", true},
 		{msgUser, "user", false},
 		{msgProgress, "progress", false},
-		{msgAssistant, "   ", false},   // empty after trim
-		{msgSystem, "", false},         // blank
+		{msgAssistant, "   ", false}, // empty after trim
+		{msgSystem, "", false},       // blank
 	} {
 		msg := chatMessage{kind: tc.kind, content: tc.content}
 		got := isCopyableMessage(msg)

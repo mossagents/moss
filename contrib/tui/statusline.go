@@ -190,8 +190,10 @@ func (m chatModel) progressStatusSummary() string {
 
 func (m chatModel) composerMetaSummary() (string, string) {
 	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
-		return "Approval", "confirmation needed  •  Tab move, Enter apply"
+	case m.isApprovalAskActive():
+		return "Approval", "confirmation needed  •  " + approvalDecisionHelp(m.askForm.fields[0].def.Options)
+	case m.isSimpleConfirmAskActive():
+		return "Confirm", "confirmation needed  •  " + simpleConfirmHelp()
 	case m.pendAsk != nil:
 		return "Input", "answer required  •  Enter confirm"
 	case m.mentionPopup != nil:

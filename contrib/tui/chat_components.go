@@ -86,17 +86,30 @@ func (m chatModel) renderOverlayPane(layout chatUILayout) string {
 	if dialog.ID() == overlayTranscript {
 		return dialog.View(m, layout.MainWidth, layout.BodyHeight)
 	}
-	width := min(84, max(48, layout.MainWidth-12))
+	width, vertical := m.overlayPlacement(dialog, layout)
 	overlay := dialog.View(m, width, layout.BodyHeight)
 	if strings.TrimSpace(overlay) == "" {
 		return ""
 	}
+	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, vertical, overlay)
+}
+
+func (m chatModel) overlayPlacement(dialog overlayDialog, layout chatUILayout) (int, lipgloss.Position) {
+	width := min(84, max(48, layout.MainWidth-12))
 	vertical := lipgloss.Center
 	switch dialog.ID() {
+	case overlayAsk:
+		if m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm {
+			width = min(layout.MainWidth, max(56, layout.MainWidth-2))
+			vertical = lipgloss.Bottom
+		}
 	case overlayHelp, overlaySchedule, overlayStatus, overlayModel, overlayTheme, overlayMCP, overlayResume, overlayFork, overlayAgent, overlayMention, overlayCopy:
 		vertical = lipgloss.Bottom
 	}
-	return lipgloss.Place(layout.MainWidth, layout.BodyHeight, lipgloss.Center, vertical, overlay)
+	if width < 1 {
+		width = 1
+	}
+	return width, vertical
 }
 
 func (m chatModel) renderStatusPane(width int) string {
@@ -105,9 +118,12 @@ func (m chatModel) renderStatusPane(width int) string {
 	// Determine left hint text based on current state.
 	var leftStr, rightStr string
 	switch {
-	case m.pendAsk != nil && m.askForm != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil:
-		leftStr = "Tab move  •  ↑↓ choose  •  Enter apply"
+	case m.isApprovalAskActive():
+		leftStr = approvalDecisionHelp(m.askForm.fields[0].def.Options)
 		rightStr = "approval"
+	case m.isSimpleConfirmAskActive():
+		leftStr = simpleConfirmHelp()
+		rightStr = "confirm"
 	case m.scheduleBrowser != nil:
 		leftStr = "↑↓ choose  •  e run  •  d delete  •  Esc close"
 	case m.pendAsk != nil:

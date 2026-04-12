@@ -108,8 +108,8 @@ type chatModel struct {
 
 	// agent 交互
 	sendFn                func(string, []model.ContentPart) // 发送用户消息给 agent
-	cancelRunFn           func() bool                     // 取消当前运行中的任务
-	skillListFn           func() string                   // 查询已加载 skills
+	cancelRunFn           func() bool                       // 取消当前运行中的任务
+	skillListFn           func() string                     // 查询已加载 skills
 	sessionInfoFn         func() string
 	offloadFn             func(keepRecent int, note string) (string, error)
 	taskListFn            func(status string, limit int) (string, error)
@@ -202,7 +202,7 @@ type chatModel struct {
 	slashPopup    *slashPopupState
 
 	// Extension system
-	extensions       []*Extension
+	extensions        []*Extension
 	customOverlayImpl CustomOverlay
 
 	now          func() time.Time
@@ -480,6 +480,9 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		m.askForm = newAskFormState(msg.ask.request, m.workspace)
 		m.openAskOverlay()
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
+		if msg.ask.request.Type == io.InputConfirm {
+			notice = "Confirmation required. Review the request and choose how to proceed."
+		}
 		if msg.ask.request.Type == io.InputConfirm && msg.ask.request.Approval != nil {
 			notice = "Approval required. Review the requested action and choose how to proceed."
 			m.recordProgressDetail("waiting", "approval", summarizeTimelineApproval(msg.ask.request.Approval), m.now().UTC())
