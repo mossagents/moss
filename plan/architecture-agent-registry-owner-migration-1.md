@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-04-13
 last_updated: 2026-04-13
 owner: Core Runtime Team
-status: Planned
+status: In progress
 tags: [architecture, refactor, migration, agents, harness, runtime]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: In progress](https://img.shields.io/badge/status-In_progress-yellow)
 
 This implementation plan executes the approved design in `docs/superpowers/specs/2026-04-13-agent-registry-owner-migration-design.md`. The goal is to move the kernel-scoped subagent registry and delegation control-plane substrate out of `runtime` and into `agent`, preserve `harness` as the canonical public surface, and reduce `runtime` to discovery/reporting behavior only.
 
@@ -36,10 +36,10 @@ This implementation plan executes the approved design in `docs/superpowers/specs
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | Create `agent/kernel_service.go` implementing the kernel-scoped collaboration substrate: define the `kernel.ServiceKey`, service state (`Registry`, `TaskTracker`, installation state), accessor/ensure helper, and the installation path that resolves `k.TaskRuntime()`, `k.Mailbox()`, and `k.WorkspaceIsolation()` plus existing memory fallbacks. |  |  |
-| TASK-002 | In `agent/kernel_service.go`, implement explicit same-boot installation behavior: if the substrate is initialized before boot, install one boot hook; if it is initialized after boot has started, register delegation tools synchronously so file-discovered agents are delegatable in that same booted kernel. |  |  |
-| TASK-003 | Create `agent/kernel_service_test.go` covering singleton-per-kernel behavior, idempotent installation, same-boot installation when first touched during boot, registry replacement pre-boot vs post-install rejection, and memory-backed fallback behavior when kernel task/mailbox/isolation dependencies are absent. |  |  |
-| TASK-004 | Update `agent/tools_test.go` only where necessary so low-level delegation-tool assertions continue to pass when the control plane is installed through the new kernel-scoped substrate rather than runtime-owned state. |  |  |
+| TASK-001 | Create `agent/kernel_service.go` implementing the kernel-scoped collaboration substrate: define the `kernel.ServiceKey`, service state (`Registry`, `TaskTracker`, installation state), accessor/ensure helper, and the installation path that resolves `k.TaskRuntime()`, `k.Mailbox()`, and `k.WorkspaceIsolation()` plus existing memory fallbacks. | ✅ | 2026-04-13 |
+| TASK-002 | In `agent/kernel_service.go`, implement explicit same-boot installation behavior: if the substrate is initialized before boot, install one boot hook; if it is initialized after boot has started, register delegation tools synchronously so file-discovered agents are delegatable in that same booted kernel. | ✅ | 2026-04-13 |
+| TASK-003 | Create `agent/kernel_service_test.go` covering singleton-per-kernel behavior, idempotent installation, same-boot installation when first touched during boot, registry replacement pre-boot vs post-install rejection, and memory-backed fallback behavior when kernel task/mailbox/isolation dependencies are absent. | ✅ | 2026-04-13 |
+| TASK-004 | Update `agent/tools_test.go` only where necessary so low-level delegation-tool assertions continue to pass when the control plane is installed through the new kernel-scoped substrate rather than runtime-owned state. | ✅ | 2026-04-13 |
 
 ### Implementation Phase 2
 
