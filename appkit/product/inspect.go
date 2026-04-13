@@ -6,7 +6,6 @@ import (
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
 	"sort"
 	"strconv"
@@ -127,7 +126,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		mode = strings.ToLower(strings.TrimSpace(args[0]))
 	}
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
+	catalog, err := OpenStateCatalog()
 	if err != nil {
 		return InspectReport{}, err
 	}
@@ -478,7 +477,7 @@ func inspectLimitAndText(args []string, fallback int) (int, string) {
 func resolveInspectSessionID(ctx context.Context, catalog *appruntime.StateCatalog, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" || strings.EqualFold(target, "latest") {
-		store, err := session.NewFileStore(SessionStoreDir())
+		store, err := OpenSessionStore()
 		if err == nil {
 			summaries, err := store.List(ctx)
 			if err == nil && len(summaries) > 0 {

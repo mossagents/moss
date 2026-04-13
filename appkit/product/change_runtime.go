@@ -209,6 +209,10 @@ func ListChangeOperations(ctx context.Context, workspace string, limit int) ([]C
 	if err != nil {
 		return nil, err
 	}
+	return ListChangeOperationsByRepoRoot(ctx, repoRoot, limit)
+}
+
+func ListChangeOperationsByRepoRoot(ctx context.Context, repoRoot string, limit int) ([]ChangeSummary, error) {
 	store, err := OpenChangeStore()
 	if err != nil {
 		return nil, err

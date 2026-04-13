@@ -121,7 +121,7 @@ type inspectGovernanceTurn struct {
 }
 
 func buildInspectReplay(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectReplayReport, error) {
-	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := OpenCheckpointStore()
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 		MetadataKeys: append([]string(nil), detail.MetadataKeys...),
 		Ready:        true,
 	}
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := OpenSessionStore()
 	if err == nil {
 		if summaries, listErr := store.List(ctx); listErr == nil && strings.TrimSpace(detail.SessionID) != "" {
 			changeCounts := changeCountsBySession(ctx, changeStore)
@@ -193,7 +193,7 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 }
 
 func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, 
 	if err != nil {
 		return nil, err
 	}
-	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	checkpoints, err := OpenCheckpointStore()
 	if err != nil {
 		return nil, err
 	}

@@ -15,18 +15,6 @@ type ThreadBrowseSummary struct {
 	SnapshotCount int               `json:"snapshot_count,omitempty"`
 }
 
-func OpenSessionCatalog() (*session.Catalog, error) {
-	store, err := session.NewFileStore(SessionStoreDir())
-	if err != nil {
-		return nil, fmt.Errorf("session store: %w", err)
-	}
-	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
-	if err != nil {
-		return nil, fmt.Errorf("checkpoint store: %w", err)
-	}
-	return &session.Catalog{Store: store, Checkpoints: checkpoints}, nil
-}
-
 func ListThreadBrowseSummaries(ctx context.Context, workspace string, query session.ThreadQuery) ([]ThreadBrowseSummary, error) {
 	catalog, err := OpenSessionCatalog()
 	if err != nil {
@@ -90,9 +78,9 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 }
 
 func ListTaskBrowseSummaries(ctx context.Context, query taskrt.TaskQuery) ([]taskrt.TaskSummary, error) {
-	rt, err := taskrt.NewFileTaskRuntime(TaskRuntimeDir())
+	rt, err := OpenTaskRuntime()
 	if err != nil {
-		return nil, fmt.Errorf("task runtime: %w", err)
+		return nil, err
 	}
 	summaries, err := rt.ListTaskSummaries(ctx, query)
 	if err != nil {

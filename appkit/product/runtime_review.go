@@ -97,7 +97,7 @@ func BuildReviewReport(ctx context.Context, workspace string, args []string) (Re
 		if !report.Repo.Available {
 			return report, nil
 		}
-		items, err := listChangeOperationsByRepoRoot(ctx, report.Repo.Root, 20)
+		items, err := ListChangeOperationsByRepoRoot(ctx, report.Repo.Root, 20)
 		if err != nil {
 			return ReviewReport{}, err
 		}

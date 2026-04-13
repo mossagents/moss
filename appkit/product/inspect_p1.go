@@ -6,7 +6,6 @@ import (
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/skill"
@@ -83,7 +82,7 @@ type InspectCapabilityItem struct {
 }
 
 func buildInspectThreads(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, limit int) ([]InspectThreadSummary, error) {
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +107,7 @@ func buildInspectThreads(ctx context.Context, workspace string, catalog *apprunt
 }
 
 func buildInspectThread(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectThreadReport, error) {
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +136,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 		report.Children = append(report.Children, child)
 	}
 	sort.Slice(report.Children, func(i, j int) bool { return report.Children[i].UpdatedAt > report.Children[j].UpdatedAt })
-	cpStore, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := OpenCheckpointStore()
 	if err == nil {
 		if items, err := cpStore.FindBySession(ctx, selected.ID); err == nil {
 			report.Checkpoints = SummarizeCheckpoints(items)
@@ -158,7 +157,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 }
 
 func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptReport, error) {
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -497,7 +496,7 @@ func collectInspectableAgentDirs(workspace, trust string) []string {
 }
 
 func checkpointCountsBySession(ctx context.Context) map[string]int {
-	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := OpenCheckpointStore()
 	if err != nil {
 		return map[string]int{}
 	}
