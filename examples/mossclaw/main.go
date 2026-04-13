@@ -197,9 +197,9 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 		harness.Scheduling(sched),
 		harness.BootstrapContext(flags.Workspace, "mossclaw", flags.Trust),
 		harness.Knowledge(knStore, embedder),
-		harness.InstallerFeature("web-tools", func(_ context.Context, built *kernel.Kernel) error {
-			return registerWebTools(built)
-		}),
+		harness.FeatureFunc{FeatureName: "web-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			return registerWebTools(h.Kernel())
+		}},
 	)
 	if err != nil {
 		return nil, nil, err

@@ -199,12 +199,12 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for research-adjacent tasks."
 	deepCfg.AdditionalFeatures = []harness.Feature{
-		harness.InstallerFeature("research-tools", func(_ context.Context, k *kernel.Kernel) error {
-			if err := registerResearchTools(k.ToolRegistry()); err != nil {
+		harness.FeatureFunc{FeatureName: "research-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			if err := registerResearchTools(h.Kernel().ToolRegistry()); err != nil {
 				return err
 			}
-			return registerResearchAgents(k, flags)
-		}),
+			return registerResearchAgents(h.Kernel(), flags)
+		}},
 	}
 	return appkit.BuildDeepAgent(ctx, flags, io, &deepCfg)
 }

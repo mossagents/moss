@@ -12,12 +12,87 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// SubagentConfig aliases the runtime leaf-agent catalog config so callers can
-// stay on the canonical harness surface.
-type SubagentConfig = agent.AgentConfig
+// SubagentConfig is the harness-owned public config for a leaf subagent.
+type SubagentConfig struct {
+	Name         string   `yaml:"name"`
+	Description  string   `yaml:"description"`
+	SystemPrompt string   `yaml:"system_prompt"`
+	Tools        []string `yaml:"tools"`
+	MaxSteps     int      `yaml:"max_steps"`
+	TrustLevel   string   `yaml:"trust_level"`
+}
 
-// SubagentCatalog aliases the runtime-backed leaf-agent catalog type.
-type SubagentCatalog = agent.Registry
+func (c SubagentConfig) agentConfig() agent.AgentConfig {
+	return agent.AgentConfig{
+		Name:         c.Name,
+		Description:  c.Description,
+		SystemPrompt: c.SystemPrompt,
+		Tools:        append([]string(nil), c.Tools...),
+		MaxSteps:     c.MaxSteps,
+		TrustLevel:   c.TrustLevel,
+	}
+}
+
+func subagentConfigFromAgent(cfg agent.AgentConfig) SubagentConfig {
+	return SubagentConfig{
+		Name:         cfg.Name,
+		Description:  cfg.Description,
+		SystemPrompt: cfg.SystemPrompt,
+		Tools:        append([]string(nil), cfg.Tools...),
+		MaxSteps:     cfg.MaxSteps,
+		TrustLevel:   cfg.TrustLevel,
+	}
+}
+
+// SubagentCatalog is the harness-owned public facade over the runtime-backed
+// leaf-agent registry.
+type SubagentCatalog struct {
+	inner *agent.Registry
+}
+
+func wrapSubagentCatalog(reg *agent.Registry) *SubagentCatalog {
+	if reg == nil {
+		return nil
+	}
+	return &SubagentCatalog{inner: reg}
+}
+
+func (c *SubagentCatalog) runtimeRegistry() *agent.Registry {
+	if c == nil {
+		return nil
+	}
+	return c.inner
+}
+
+func (c *SubagentCatalog) Register(cfg SubagentConfig) error {
+	if c == nil || c.inner == nil {
+		return fmt.Errorf("subagent catalog must not be nil")
+	}
+	return c.inner.Register(cfg.agentConfig())
+}
+
+func (c *SubagentCatalog) Get(name string) (SubagentConfig, bool) {
+	if c == nil || c.inner == nil {
+		return SubagentConfig{}, false
+	}
+	cfg, ok := c.inner.Get(name)
+	if !ok {
+		return SubagentConfig{}, false
+	}
+	return subagentConfigFromAgent(cfg), true
+}
+
+func (c *SubagentCatalog) List() []SubagentConfig {
+	if c == nil || c.inner == nil {
+		return nil
+	}
+	items := c.inner.List()
+	out := make([]SubagentConfig, 0, len(items))
+	for _, item := range items {
+		out = append(out, subagentConfigFromAgent(item))
+	}
+	return out
+}
 
 type subagentFileConfig struct {
 	Description  string   `yaml:"description"`
@@ -29,7 +104,7 @@ type subagentFileConfig struct {
 
 // NewSubagentCatalog returns an empty leaf-agent catalog.
 func NewSubagentCatalog() *SubagentCatalog {
-	return agent.NewRegistry()
+	return wrapSubagentCatalog(agent.NewRegistry())
 }
 
 // SubagentCatalogValue returns a Feature that installs a pre-built subagent
@@ -42,10 +117,10 @@ func SubagentCatalogValue(reg *SubagentCatalog) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			if reg == nil {
+			if reg == nil || reg.runtimeRegistry() == nil {
 				return fmt.Errorf("subagent catalog must not be nil")
 			}
-			h.Kernel().Apply(runtime.WithAgentRegistry(reg))
+			h.Kernel().Apply(runtime.WithAgentRegistry(reg.runtimeRegistry()))
 			return nil
 		},
 	}
@@ -54,7 +129,7 @@ func SubagentCatalogValue(reg *SubagentCatalog) Feature {
 // SubagentCatalogOf returns the runtime-backed leaf-agent catalog attached to
 // the kernel. This is the canonical public accessor for configured subagents.
 func SubagentCatalogOf(k *kernel.Kernel) *SubagentCatalog {
-	return runtime.AgentRegistry(k)
+	return wrapSubagentCatalog(runtime.AgentRegistry(k))
 }
 
 // RegisterSubagent registers a configured leaf subagent into the kernel's
@@ -62,6 +137,9 @@ func SubagentCatalogOf(k *kernel.Kernel) *SubagentCatalog {
 // kernel.Agent plus harness/patterns.
 func RegisterSubagent(k *kernel.Kernel, cfg SubagentConfig) error {
 	reg := SubagentCatalogOf(k)
+	if reg == nil {
+		return fmt.Errorf("subagent catalog is unavailable")
+	}
 	if _, exists := reg.Get(cfg.Name); exists {
 		return nil
 	}

@@ -192,12 +192,12 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for content workflokws."
 	deepCfg.AdditionalFeatures = []harness.Feature{
-		harness.InstallerFeature("writer-tools", func(_ context.Context, k *kernel.Kernel) error {
-			if err := registerWriterTools(k.ToolRegistry()); err != nil {
+		harness.FeatureFunc{FeatureName: "writer-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			if err := registerWriterTools(h.Kernel().ToolRegistry()); err != nil {
 				return err
 			}
-			return harness.LoadSubagentsFromYAML(k, filepath.Join(flags.Workspace, "subagents.yaml"))
-		}),
+			return harness.LoadSubagentsFromYAML(h.Kernel(), filepath.Join(flags.Workspace, "subagents.yaml"))
+		}},
 	}
 	return appkit.BuildDeepAgent(ctx, flags, io, &deepCfg)
 }

@@ -34,9 +34,49 @@ func RuntimeSetup(workspaceDir, trust string, opts ...runtime.Option) Feature {
 	}
 }
 
-// ContextOption aliases runtime.ContextOption so context-management features can
-// be configured from the canonical harness surface.
-type ContextOption = runtime.ContextOption
+// ContextOption configures harness-owned context-management feature behavior.
+type ContextOption interface {
+	runtimeOption() runtime.ContextOption
+}
+
+type contextOption struct {
+	option runtime.ContextOption
+}
+
+func (o contextOption) runtimeOption() runtime.ContextOption {
+	return o.option
+}
+
+func WithTriggerDialogCount(n int) ContextOption {
+	return contextOption{option: runtime.WithTriggerDialogCount(n)}
+}
+
+func WithKeepRecent(n int) ContextOption {
+	return contextOption{option: runtime.WithKeepRecent(n)}
+}
+
+func WithContextTriggerTokens(n int) ContextOption {
+	return contextOption{option: runtime.WithContextTriggerTokens(n)}
+}
+
+func WithContextPromptBudget(n int) ContextOption {
+	return contextOption{option: runtime.WithContextPromptBudget(n)}
+}
+
+func WithContextStartupBudget(n int) ContextOption {
+	return contextOption{option: runtime.WithContextStartupBudget(n)}
+}
+
+func runtimeContextOptions(opts []ContextOption) []runtime.ContextOption {
+	out := make([]runtime.ContextOption, 0, len(opts))
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		out = append(out, opt.runtimeOption())
+	}
+	return out
+}
 
 // Planning returns a Feature that installs the write_todos planning tool.
 func Planning() Feature {
@@ -79,8 +119,8 @@ func ContextManagement(store session.SessionStore, opts ...ContextOption) Featur
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			kopts := []kernel.Option{runtime.WithContextSessionStore(store)}
-			if len(opts) > 0 {
-				kopts = append(kopts, runtime.ConfigureContext(opts...))
+			if rtOpts := runtimeContextOptions(opts); len(rtOpts) > 0 {
+				kopts = append(kopts, runtime.ConfigureContext(rtOpts...))
 			}
 			h.Kernel().Apply(kopts...)
 			return nil

@@ -220,15 +220,15 @@ func TestBuildKernelWithFeatures_AppliesOptionsAndInstallers(t *testing.T) {
 		Workspace: ".",
 	}, &io.NoOpIO{},
 		harness.KernelOptions(kernel.WithParallelToolCalls()),
-		harness.InstallerFeature("test-extension-tool", func(_ context.Context, k *kernel.Kernel) error {
-			return k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
+		harness.FeatureFunc{FeatureName: "test-extension-tool", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			return h.Kernel().ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 				Name:        "test_extension_tool",
 				Description: "test tool",
 				InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 			}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 				return json.RawMessage(`{"ok":true}`), nil
 			}))
-		}),
+		}},
 	)
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures: %v", err)

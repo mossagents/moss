@@ -176,24 +176,24 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io io.UserIO) (*kern
 		harness.Scheduling(r.sched),
 		harness.PersistentMemories(memoriesDir),
 		harness.LoadedBootstrapContext(r.flags.Workspace, "mossquant"),
-		harness.InstallerFeature("market-tools", func(_ context.Context, built *kernel.Kernel) error {
-			if err := registerTradeTools(built.ToolRegistry(), r.market); err != nil {
+		harness.FeatureFunc{FeatureName: "market-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+			if err := registerTradeTools(h.Kernel().ToolRegistry(), r.market); err != nil {
 				return fmt.Errorf("register trade tools: %w", err)
 			}
-			if err := registerAnalysisTools(built.ToolRegistry(), r.market); err != nil {
+			if err := registerAnalysisTools(h.Kernel().ToolRegistry(), r.market); err != nil {
 				return fmt.Errorf("register analysis tools: %w", err)
 			}
-			if err := registerProfileTools(built.ToolRegistry(), r.flags.Workspace, profile); err != nil {
+			if err := registerProfileTools(h.Kernel().ToolRegistry(), r.flags.Workspace, profile); err != nil {
 				return fmt.Errorf("register profile tools: %w", err)
 			}
-			if err := registerCredibilityTools(built.ToolRegistry()); err != nil {
+			if err := registerCredibilityTools(h.Kernel().ToolRegistry()); err != nil {
 				return fmt.Errorf("register credibility tools: %w", err)
 			}
-			if err := registerResearchAgents(built, r.flags); err != nil {
+			if err := registerResearchAgents(h.Kernel(), r.flags); err != nil {
 				return fmt.Errorf("register research agents: %w", err)
 			}
 			return nil
-		}),
+		}},
 	)
 	if err != nil {
 		return nil, err

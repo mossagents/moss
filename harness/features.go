@@ -27,24 +27,6 @@ func KernelOptions(opts ...kernel.Option) Feature {
 	}
 }
 
-// Installer is a function called after a Kernel is constructed.
-// It provides post-construction setup, such as registering tools or hooks.
-type Installer func(context.Context, *kernel.Kernel) error
-
-// InstallerFeature returns a Feature that runs the given Installer during
-// installation. This bridges legacy Installer functions into the Feature model.
-func InstallerFeature(name string, installer Installer) Feature {
-	return FeatureFunc{
-		FeatureName: name,
-		InstallFunc: func(ctx context.Context, h *Harness) error {
-			if installer == nil {
-				return nil
-			}
-			return installer(ctx, h.Kernel())
-		},
-	}
-}
-
 // BootstrapContext returns a Feature that loads AGENTS.md / SOUL.md /
 // workspace-level instructions and injects them into the system prompt.
 func BootstrapContext(workspace, appName, trust string) Feature {
