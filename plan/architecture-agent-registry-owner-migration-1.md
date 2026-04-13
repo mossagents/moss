@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-04-13
 last_updated: 2026-04-13
 owner: Core Runtime Team
-status: In progress
+status: Completed
 tags: [architecture, refactor, migration, agents, harness, runtime]
 ---
 
 # Introduction
 
-![Status: In progress](https://img.shields.io/badge/status-In_progress-yellow)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This implementation plan executes the approved design in `docs/superpowers/specs/2026-04-13-agent-registry-owner-migration-design.md`. The goal is to move the kernel-scoped subagent registry and delegation control-plane substrate out of `runtime` and into `agent`, preserve `harness` as the canonical public surface, and reduce `runtime` to discovery/reporting behavior only.
 
@@ -58,9 +58,9 @@ This implementation plan executes the approved design in `docs/superpowers/specs
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-009 | Create `runtime/runtime_agents_service_test.go` covering trusted vs restricted directory discovery, capability reporting for discovered subagents, and end-to-end proof that a subagent loaded from a runtime-managed directory is delegatable in the same booted kernel. |  |  |
-| TASK-010 | Run focused package validation for `agent`, `harness`, `runtime`, and `appkit`, fix all compile/test breakages from the substrate migration, and ensure no remaining production code references the deleted runtime hooks. |  |  |
-| TASK-011 | Run repository validation exactly with `go test ./...`, `go build ./...`, and `Push-Location contrib\tui; go test .; Pop-Location`; fix all regressions before closing the migration. |  |  |
+| TASK-009 | Create `runtime/runtime_agents_service_test.go` covering trusted vs restricted directory discovery, capability reporting for discovered subagents, and end-to-end proof that a subagent loaded from a runtime-managed directory is delegatable in the same booted kernel. | ✅ | 2026-04-13 |
+| TASK-010 | Run focused package validation for `agent`, `harness`, `runtime`, and `appkit`, fix all compile/test breakages from the substrate migration, and ensure no remaining production code references the deleted runtime hooks. | ✅ | 2026-04-13 |
+| TASK-011 | Run repository validation exactly with `go test ./...`, `go build ./...`, and `Push-Location contrib\tui; go test .; Pop-Location`; fix all regressions before closing the migration. | ✅ | 2026-04-13 |
 
 ## 3. Alternatives
 
