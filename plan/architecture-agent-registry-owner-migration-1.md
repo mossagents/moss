@@ -47,10 +47,10 @@ This implementation plan executes the approved design in `docs/superpowers/specs
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-005 | Update `harness/subagents.go` so `SubagentCatalogOf(...)` wraps the registry exposed by the new `agent` substrate and `SubagentCatalogValue(...)` injects/replaces the registry through the new substrate instead of `runtime.WithAgentRegistry(...)`. Keep nil-catalog rejection and the existing public API shape unchanged. |  |  |
-| TASK-006 | Update `harness/subagents_test.go` to validate that `RegisterSubagent(...)` and `LoadSubagentsFromYAML(...)` now use the `agent` substrate while preserving current behavior and duplicate-name semantics. |  |  |
-| TASK-007 | Refactor `runtime/runtime_agents_service.go` to remove `agentsState`, `ensureAgentsState(...)`, `AgentRegistry(...)`, `WithAgentRegistry(...)`, `WithTaskRuntime(...)`, `WithMailbox(...)`, and `WithWorkspaceIsolation(...)`. Keep only directory discovery/reporting concerns and consume the new `agent` substrate as a plain registry reader/writer. |  |  |
-| TASK-008 | Update compile/test callers affected by the hook removal, including `appkit/deep_agent.go`, `appkit/deep_agent_test.go`, `appkit/appkit_test.go`, and any remaining runtime-facing call sites discovered by `rg "AgentRegistry|WithAgentRegistry|WithTaskRuntime|WithMailbox|WithWorkspaceIsolation"`. Remove or rewrite tests that only assert the deleted runtime compatibility surface. |  |  |
+| TASK-005 | Update `harness/subagents.go` so `SubagentCatalogOf(...)` wraps the registry exposed by the new `agent` substrate and `SubagentCatalogValue(...)` injects/replaces the registry through the new substrate instead of `runtime.WithAgentRegistry(...)`. Keep nil-catalog rejection and the existing public API shape unchanged. | ✅ | 2026-04-13 |
+| TASK-006 | Update `harness/subagents_test.go` to validate that `RegisterSubagent(...)` and `LoadSubagentsFromYAML(...)` now use the `agent` substrate while preserving current behavior and duplicate-name semantics. | ✅ | 2026-04-13 |
+| TASK-007 | Refactor `runtime/runtime_agents_service.go` to remove `agentsState`, `ensureAgentsState(...)`, `AgentRegistry(...)`, `WithAgentRegistry(...)`, `WithTaskRuntime(...)`, `WithMailbox(...)`, and `WithWorkspaceIsolation(...)`. Keep only directory discovery/reporting concerns and consume the new `agent` substrate as a plain registry reader/writer. | ✅ | 2026-04-13 |
+| TASK-008 | Update compile/test callers affected by the hook removal, including `appkit/deep_agent.go`, `appkit/deep_agent_test.go`, `appkit/appkit_test.go`, and any remaining runtime-facing call sites discovered by `rg "AgentRegistry|WithAgentRegistry|WithTaskRuntime|WithMailbox|WithWorkspaceIsolation"`. Remove or rewrite tests that only assert the deleted runtime compatibility surface. | ✅ | 2026-04-13 |
 
 ### Implementation Phase 3
 

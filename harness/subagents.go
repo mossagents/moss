@@ -8,7 +8,6 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/runtime"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,7 +43,7 @@ func subagentConfigFromAgent(cfg agent.AgentConfig) SubagentConfig {
 	}
 }
 
-// SubagentCatalog is the harness-owned public facade over the runtime-backed
+// SubagentCatalog is the harness-owned public facade over the agent-backed
 // leaf-agent registry.
 type SubagentCatalog struct {
 	inner *agent.Registry
@@ -57,7 +56,7 @@ func wrapSubagentCatalog(reg *agent.Registry) *SubagentCatalog {
 	return &SubagentCatalog{inner: reg}
 }
 
-func (c *SubagentCatalog) runtimeRegistry() *agent.Registry {
+func (c *SubagentCatalog) agentRegistry() *agent.Registry {
 	if c == nil {
 		return nil
 	}
@@ -108,7 +107,7 @@ func NewSubagentCatalog() *SubagentCatalog {
 }
 
 // SubagentCatalogValue returns a Feature that installs a pre-built subagent
-// catalog into the runtime-backed delegation layer.
+// catalog into the agent-owned delegation substrate.
 func SubagentCatalogValue(reg *SubagentCatalog) Feature {
 	return FeatureFunc{
 		FeatureName: "subagent-catalog",
@@ -117,19 +116,21 @@ func SubagentCatalogValue(reg *SubagentCatalog) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			if reg == nil || reg.runtimeRegistry() == nil {
+			if reg == nil || reg.agentRegistry() == nil {
 				return fmt.Errorf("subagent catalog must not be nil")
 			}
-			h.Kernel().Apply(runtime.WithAgentRegistry(reg.runtimeRegistry()))
-			return nil
+			if err := agent.SetKernelRegistry(h.Kernel(), reg.agentRegistry()); err != nil {
+				return err
+			}
+			return agent.EnsureKernelDelegation(h.Kernel())
 		},
 	}
 }
 
-// SubagentCatalogOf returns the runtime-backed leaf-agent catalog attached to
+// SubagentCatalogOf returns the agent-backed leaf-agent catalog attached to
 // the kernel. This is the canonical public accessor for configured subagents.
 func SubagentCatalogOf(k *kernel.Kernel) *SubagentCatalog {
-	return wrapSubagentCatalog(runtime.AgentRegistry(k))
+	return wrapSubagentCatalog(agent.KernelRegistry(k))
 }
 
 // RegisterSubagent registers a configured leaf subagent into the kernel's
@@ -146,7 +147,7 @@ func RegisterSubagent(k *kernel.Kernel, cfg SubagentConfig) error {
 	if err := reg.Register(cfg); err != nil {
 		return fmt.Errorf("register subagent %s: %w", cfg.Name, err)
 	}
-	return nil
+	return agent.EnsureKernelDelegation(k)
 }
 
 // LoadSubagentsFromYAML loads leaf subagents from a YAML file into the
