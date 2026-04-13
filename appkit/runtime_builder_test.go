@@ -12,9 +12,6 @@ func TestResolveRuntimeFeatureFlags_DefaultDisabled(t *testing.T) {
 	if got.EnableRAG {
 		t.Fatal("expected rag disabled by default")
 	}
-	if got.PromptAssembly != "unified" {
-		t.Fatalf("expected unified prompt assembly by default, got %q", got.PromptAssembly)
-	}
 	if got.BudgetGovernance != "observe-only" {
 		t.Fatalf("expected observe-only budget governance by default, got %q", got.BudgetGovernance)
 	}
@@ -24,7 +21,6 @@ func TestResolveRuntimeFeatureFlags_UsesFlags(t *testing.T) {
 	got := resolveRuntimeFeatureFlags(&AppFlags{
 		EnableSummarize:  true,
 		EnableRAG:        true,
-		PromptAssembly:   "legacy",
 		PromptVersion:    "p1-unified-v1",
 		BudgetGovernance: "enforce",
 		GlobalMaxTokens:  9000,
@@ -36,9 +32,6 @@ func TestResolveRuntimeFeatureFlags_UsesFlags(t *testing.T) {
 	}
 	if !got.EnableRAG {
 		t.Fatal("expected rag enabled")
-	}
-	if got.PromptAssembly != "legacy" {
-		t.Fatalf("expected legacy prompt assembly, got %q", got.PromptAssembly)
 	}
 	if got.PromptVersion != "p1-unified-v1" {
 		t.Fatalf("expected prompt version override, got %q", got.PromptVersion)

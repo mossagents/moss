@@ -117,11 +117,7 @@ func postureFromRuntime(profile, trust, approval string, policy runtime.Executio
 }
 
 func postureWarningForSession(sess *session.Session) string {
-	posture := runtime.SessionPostureFromSession(sess)
-	if !posture.Legacy {
-		return ""
-	}
-	return fmt.Sprintf("Warning: session %s predates profile persistence; trust was inferred as %s and the current runtime approval/profile will be used.", sess.ID, posture.EffectiveTrust)
+	return ""
 }
 
 func planPostureRebuild(sessionID string, current, target runtime.SessionPosture) (postureRebuildPlan, error) {
@@ -129,13 +125,6 @@ func planPostureRebuild(sessionID string, current, target runtime.SessionPosture
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
 	targetApproval := product.NormalizeApprovalMode(target.EffectiveApproval)
 	currentApproval := product.NormalizeApprovalMode(current.EffectiveApproval)
-
-	if target.Legacy {
-		if currentTrust != targetTrust {
-			return postureRebuildPlan{}, fmt.Errorf("session %s predates profile persistence and requires trust=%s, but current runtime trust=%s; switch to a matching trust/profile before continuing", sessionID, targetTrust, currentTrust)
-		}
-		return postureRebuildPlan{Notice: postureWarningForRuntime(sessionID, targetTrust)}, nil
-	}
 
 	if currentTrust == targetTrust && currentApproval == targetApproval {
 		if !target.HasExecution || reflect.DeepEqual(target.ExecutionPolicy, current.ExecutionPolicy) {
@@ -153,10 +142,6 @@ func planPostureRebuild(sessionID string, current, target runtime.SessionPosture
 	}, nil
 }
 
-func postureWarningForRuntime(sessionID, trust string) string {
-	return fmt.Sprintf("Warning: session %s predates profile persistence; trust was inferred as %s and the current runtime approval/profile will be used.", sessionID, trust)
-}
-
 func formatPosture(posture runtime.SessionPosture) string {
 	parts := []string{}
 	if strings.TrimSpace(posture.Profile) != "" {
@@ -172,7 +157,7 @@ func formatPosture(posture runtime.SessionPosture) string {
 		parts = append(parts, "task="+strings.TrimSpace(posture.TaskMode))
 	}
 	if len(parts) == 0 {
-		return "profile=legacy"
+		return "profile=default"
 	}
 	return strings.Join(parts, ", ")
 }

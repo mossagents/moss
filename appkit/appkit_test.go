@@ -164,25 +164,18 @@ func TestCommonFlags_ApplyDefaults(t *testing.T) {
 	if f.Trust != config.TrustRestricted {
 		t.Fatalf("Trust = %q, want %s", f.Trust, config.TrustRestricted)
 	}
-	if f.PromptAssembly != "unified" {
-		t.Fatalf("PromptAssembly = %q, want unified", f.PromptAssembly)
-	}
 	if f.BudgetGovernance != "observe-only" {
 		t.Fatalf("BudgetGovernance = %q, want observe-only", f.BudgetGovernance)
 	}
 }
 
 func TestCommonFlags_MergeEnv_PromptSettings(t *testing.T) {
-	t.Setenv("MOSS_PROMPT_ASSEMBLY", "legacy")
 	t.Setenv("MOSS_PROMPT_VERSION", "p1-unified-v1")
 
 	f := &AppFlags{}
 	f.MergeEnv("MOSS")
 	f.ApplyDefaults()
 
-	if f.PromptAssembly != "legacy" {
-		t.Fatalf("PromptAssembly = %q, want legacy", f.PromptAssembly)
-	}
 	if f.PromptVersion != "p1-unified-v1" {
 		t.Fatalf("PromptVersion = %q, want p1-unified-v1", f.PromptVersion)
 	}

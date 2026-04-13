@@ -25,7 +25,6 @@ type AppFlags struct {
 
 	EnableSummarize bool
 	EnableRAG       bool
-	PromptAssembly  string
 	PromptVersion   string
 
 	BudgetGovernance string
@@ -58,7 +57,6 @@ func BindAppFlags(fs *flag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
-	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
 	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
 	fs.StringVar(&f.BudgetGovernance, "budget-governance", "", "Global budget governance mode: off|observe-only|enforce")
 	fs.IntVar(&f.GlobalMaxTokens, "global-max-tokens", 0, "Global token budget cap (0 = unlimited)")
@@ -78,7 +76,6 @@ func BindAppPFlags(fs *pflag.FlagSet, f *AppFlags) {
 	fs.StringVar(&f.BaseURL, "base-url", "", "API base URL")
 	fs.BoolVar(&f.EnableSummarize, "enable-summarize", false, "Enable summarize middleware")
 	fs.BoolVar(&f.EnableRAG, "enable-rag", false, "Enable RAG middleware")
-	fs.StringVar(&f.PromptAssembly, "prompt-assembly", "", "Prompt assembly mode: unified|legacy")
 	fs.StringVar(&f.PromptVersion, "prompt-version", "", "Prompt version tag override")
 	fs.StringVar(&f.BudgetGovernance, "budget-governance", "", "Global budget governance mode: off|observe-only|enforce")
 	fs.IntVar(&f.GlobalMaxTokens, "global-max-tokens", 0, "Global token budget cap (0 = unlimited)")
@@ -107,7 +104,6 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		f.Profile = strutil.FirstNonEmpty(f.Profile, os.Getenv(prefix+"_PROFILE"))
 		f.APIKey = strutil.FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
 		f.BaseURL = strutil.FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
-		f.PromptAssembly = strutil.FirstNonEmpty(f.PromptAssembly, os.Getenv(prefix+"_PROMPT_ASSEMBLY"))
 		f.PromptVersion = strutil.FirstNonEmpty(f.PromptVersion, os.Getenv(prefix+"_PROMPT_VERSION"))
 		f.BudgetGovernance = strutil.FirstNonEmpty(f.BudgetGovernance, os.Getenv(prefix+"_BUDGET_GOVERNANCE"))
 		if raw := strings.TrimSpace(os.Getenv(prefix + "_GLOBAL_MAX_TOKENS")); raw != "" {
@@ -135,7 +131,6 @@ func (f *AppFlags) ApplyDefaults() {
 	f.Name = strutil.FirstNonEmpty(f.Name, f.Provider)
 	f.Workspace = strutil.FirstNonEmpty(f.Workspace, ".")
 	f.Trust = strutil.FirstNonEmpty(f.Trust, config.TrustRestricted)
-	f.PromptAssembly = strutil.FirstNonEmpty(f.PromptAssembly, "unified")
 	f.BudgetGovernance = normalizeBudgetGovernance(strutil.FirstNonEmpty(f.BudgetGovernance, "observe-only"))
 	if f.GlobalWarnAt < 0 {
 		f.GlobalWarnAt = 0

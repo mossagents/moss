@@ -118,7 +118,7 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	}
 }
 
-func TestPlanPostureRebuildLegacyWarns(t *testing.T) {
+func TestPlanPostureRebuildDefaultPostureRebuilds(t *testing.T) {
 	current := postureFromRuntime("coding", "restricted", "full-auto", runtime.ResolveExecutionPolicyForWorkspace("", "restricted", "full-auto"))
 	target := runtime.SessionPostureFromSession(&session.Session{
 		ID: "legacy-1",
@@ -131,11 +131,14 @@ func TestPlanPostureRebuildLegacyWarns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("planPostureRebuild: %v", err)
 	}
-	if plan.Rebuild {
-		t.Fatal("legacy session should not trigger rebuild")
+	if !plan.Rebuild {
+		t.Fatal("session without persisted posture should trigger rebuild to canonical defaults")
 	}
-	if !strings.Contains(plan.Notice, "predates profile persistence") {
-		t.Fatalf("expected legacy warning, got %q", plan.Notice)
+	if plan.Resolved.Name != "default" {
+		t.Fatalf("Resolved.Name = %q, want default", plan.Resolved.Name)
+	}
+	if !strings.Contains(plan.Notice, "Runtime auto-rebuilt") {
+		t.Fatalf("expected rebuild notice, got %q", plan.Notice)
 	}
 }
 

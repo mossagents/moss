@@ -6,13 +6,10 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/session"
-	"os"
 	"sort"
 	"strings"
 	"time"
 )
-
-const DisableProfilesEnv = "MOSSCODE_DISABLE_PROFILES"
 
 type ProfileResolveOptions struct {
 	Workspace        string
@@ -39,12 +36,6 @@ type SessionPosture struct {
 	TaskMode          string
 	ExecutionPolicy   ExecutionPolicy
 	HasExecution      bool
-	Legacy            bool
-}
-
-func ProfilesEnabled() bool {
-	value := strings.TrimSpace(strings.ToLower(strings.TrimSpace(getenv(DisableProfilesEnv))))
-	return value == "" || (value != "1" && value != "true" && value != "yes" && value != "on")
 }
 
 func ProfileNamesForWorkspace(workspace, trust string) ([]string, error) {
@@ -83,17 +74,7 @@ func ProfileNamesForWorkspace(workspace, trust string) ([]string, error) {
 	return names, nil
 }
 
-var getenv = func(key string) string {
-	return os.Getenv(key)
-}
-
 func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, error) {
-	if !ProfilesEnabled() {
-		if strings.TrimSpace(opts.RequestedProfile) != "" {
-			return ResolvedProfile{}, fmt.Errorf("profiles are disabled by %s", DisableProfilesEnv)
-		}
-		return resolveLegacyProfile(opts), nil
-	}
 	globalCfg, err := appconfig.LoadGlobalConfig()
 	if err != nil {
 		return ResolvedProfile{}, err
@@ -147,8 +128,8 @@ func ResolveProfileFromPosture(profileName string, posture SessionPosture) (Reso
 	}
 	return ResolvedProfile{
 		RequestedName:   strings.TrimSpace(profileName),
-		Name:            strutil.FirstNonEmpty(strings.TrimSpace(profileName), "legacy"),
-		Label:           strutil.FirstNonEmpty(strings.TrimSpace(profileName), "legacy"),
+		Name:            strutil.FirstNonEmpty(strings.TrimSpace(profileName), "default"),
+		Label:           strutil.FirstNonEmpty(strings.TrimSpace(profileName), "Default"),
 		TaskMode:        strutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
 		Trust:           trust,
 		ApprovalMode:    approval,
@@ -196,7 +177,6 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 			posture.EffectiveTrust = appconfig.NormalizeTrustLevel(policy.Trust)
 		}
 	}
-	posture.Legacy = posture.Profile == "" && metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust) == "" && metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval) == ""
 	if posture.EffectiveApproval == "" {
 		posture.EffectiveApproval = "confirm"
 	}
@@ -256,20 +236,6 @@ func ApplyProfileExecution(policy ExecutionPolicy, override appconfig.ExecutionP
 		policy.HTTP.Rules = rules
 	}
 	return policy, nil
-}
-
-func resolveLegacyProfile(opts ProfileResolveOptions) ResolvedProfile {
-	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(opts.Trust, appconfig.TrustTrusted))
-	approval := normalizeExecutionApprovalMode(strutil.FirstNonEmpty(opts.ApprovalMode, "confirm"))
-	return ResolvedProfile{
-		RequestedName:   "",
-		Name:            "default",
-		Label:           "Default",
-		TaskMode:        "coding",
-		Trust:           trust,
-		ApprovalMode:    approval,
-		ExecutionPolicy: ResolveExecutionPolicyForWorkspace(opts.Workspace, trust, approval),
-	}
 }
 
 func resolveProfileConfig(name string, globalCfg, projectCfg *appconfig.Config) (appconfig.ProfileConfig, bool) {
