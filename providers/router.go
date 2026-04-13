@@ -19,9 +19,6 @@ type ModelProfile struct {
 	// Name 模型配置的唯一标识名，用于日志和调试。
 	Name string `yaml:"name"`
 
-	// LegacyAPIType 兼容旧配置中的 api_type 字段。
-	LegacyAPIType string `yaml:"api_type,omitempty" json:"-"`
-
 	// Provider LLM 协议类型: "openai-completions" / "openai-responses" / "claude" / "gemini"。
 	Provider string `yaml:"provider"`
 
@@ -95,8 +92,7 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 
 	r := &ModelRouter{}
 	for _, p := range profiles {
-		identity := config.NormalizeProviderIdentity(p.LegacyAPIType, p.Provider, p.Name)
-		p.LegacyAPIType = ""
+		identity := config.NormalizeProviderIdentity(p.Provider, p.Name)
 		p.Provider = identity.Provider
 		p.Name = identity.Name
 		llm, err := BuildLLM(identity.EffectiveAPIType(), p.Model, p.APIKey, p.BaseURL)

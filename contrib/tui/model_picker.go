@@ -132,7 +132,7 @@ func buildModelPickerOptions(cfg *configpkg.Config) []modelPickerOption {
 
 	seen := map[string]int{}
 	for _, candidate := range cfg.Models {
-		id := configpkg.NormalizeProviderIdentity("", candidate.Provider, candidate.Name)
+		id := configpkg.NormalizeProviderIdentity(candidate.Provider, candidate.Name)
 		model := strings.TrimSpace(candidate.Model)
 		title := model
 		if title == "" {

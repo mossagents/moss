@@ -7,7 +7,7 @@ import (
 )
 
 func TestNormalizeProviderIdentity(t *testing.T) {
-	identity := NormalizeProviderIdentity("openai", "", "deepseek")
+	identity := NormalizeProviderIdentity("openai", "deepseek")
 	if identity.APIType != APITypeOpenAICompletions {
 		t.Fatalf("APIType = %q, want %s", identity.APIType, APITypeOpenAICompletions)
 	}
@@ -29,7 +29,7 @@ func TestNormalizeProviderIdentity(t *testing.T) {
 }
 
 func TestNormalizeProviderIdentity_OpenAIResponses(t *testing.T) {
-	identity := NormalizeProviderIdentity("openai-responses", "", "")
+	identity := NormalizeProviderIdentity("openai-responses", "")
 	if identity.APIType != APITypeOpenAIResponses {
 		t.Fatalf("APIType = %q, want %s", identity.APIType, APITypeOpenAIResponses)
 	}
@@ -41,7 +41,7 @@ func TestNormalizeProviderIdentity_OpenAIResponses(t *testing.T) {
 	}
 }
 
-func TestConfigProviderIdentityKeepsLegacyProviderCompatibility(t *testing.T) {
+func TestConfigProviderIdentitySynthesizesDefaultModelFromTopLevelFields(t *testing.T) {
 	cfg := &Config{Provider: "claude"}
 	cfg.normalizeProviderFields()
 	if cfg.Provider != "claude" {
@@ -51,7 +51,7 @@ func TestConfigProviderIdentityKeepsLegacyProviderCompatibility(t *testing.T) {
 		t.Fatalf("Name = %q, want claude", cfg.Name)
 	}
 	if len(cfg.Models) != 1 || !cfg.Models[0].Default {
-		t.Fatalf("expected legacy provider fields to synthesize one default model, got %+v", cfg.Models)
+		t.Fatalf("expected top-level provider fields to synthesize one default model, got %+v", cfg.Models)
 	}
 }
 

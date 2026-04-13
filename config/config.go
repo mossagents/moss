@@ -1,9 +1,9 @@
 package config
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"bytes"
 	"fmt"
+	"github.com/mossagents/moss/internal/strutil"
 	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
@@ -77,7 +77,6 @@ func EnsureAppDir() error {
 }
 
 type Config struct {
-	LegacyAPIType     string                   `yaml:"api_type,omitempty" json:"-"`
 	Name              string                   `yaml:"name,omitempty"`
 	Provider          string                   `yaml:"provider,omitempty"`
 	Model             string                   `yaml:"model,omitempty"`
@@ -93,13 +92,12 @@ type Config struct {
 }
 
 type ModelConfig struct {
-	LegacyAPIType string `yaml:"api_type,omitempty" json:"-"`
-	Name          string `yaml:"name,omitempty"`
-	Provider      string `yaml:"provider,omitempty"`
-	Model         string `yaml:"model,omitempty"`
-	BaseURL       string `yaml:"base_url,omitempty"`
-	APIKey        string `yaml:"api_key,omitempty"`
-	Default       bool   `yaml:"default,omitempty"`
+	Name     string `yaml:"name,omitempty"`
+	Provider string `yaml:"provider,omitempty"`
+	Model    string `yaml:"model,omitempty"`
+	BaseURL  string `yaml:"base_url,omitempty"`
+	APIKey   string `yaml:"api_key,omitempty"`
+	Default  bool   `yaml:"default,omitempty"`
 }
 
 type TUIConfig struct {
@@ -200,17 +198,14 @@ func (sc SkillConfig) IsRequired() bool {
 	return *sc.Required
 }
 
-func NormalizeProviderIdentity(apiType, provider, name string) ProviderIdentity {
-	apiType = normalizeLLMAPIType(apiType)
+func NormalizeProviderIdentity(provider, name string) ProviderIdentity {
 	provider = normalizeLLMAPIType(provider)
 	name = strings.TrimSpace(name)
 
-	apiType = strutil.FirstNonEmpty(provider, apiType)
-	provider = strutil.FirstNonEmpty(provider, apiType)
-	name = strutil.FirstNonEmpty(name, apiType, provider)
+	name = strutil.FirstNonEmpty(name, provider)
 
 	return ProviderIdentity{
-		APIType:  apiType,
+		APIType:  provider,
 		Provider: provider,
 		Name:     name,
 	}
@@ -283,17 +278,12 @@ func SaveConfig(path string, cfg *Config) error {
 	if len(cfg.Models) > 0 {
 		copyCfg.Models = append([]ModelConfig(nil), cfg.Models...)
 	}
-	copyCfg.projectLegacyFieldsToModels()
 	copyCfg.normalizeProviderFields()
 	copyCfg.Provider = ""
-	copyCfg.LegacyAPIType = ""
 	copyCfg.Name = ""
 	copyCfg.Model = ""
 	copyCfg.BaseURL = ""
 	copyCfg.APIKey = ""
-	for i := range copyCfg.Models {
-		copyCfg.Models[i].LegacyAPIType = ""
-	}
 	data, err := yaml.Marshal(&copyCfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -333,11 +323,9 @@ func (c *Config) normalizeProviderFields() {
 	}
 	c.normalizeModels()
 	if selected := c.selectedModel(); selected != nil {
-		identity := NormalizeProviderIdentity(selected.LegacyAPIType, selected.Provider, selected.Name)
-		selected.LegacyAPIType = ""
+		identity := NormalizeProviderIdentity(selected.Provider, selected.Name)
 		selected.Provider = identity.Provider
 		selected.Name = identity.Name
-		c.LegacyAPIType = ""
 		c.Provider = selected.Provider
 		c.Name = selected.Name
 		c.Model = strings.TrimSpace(selected.Model)
@@ -345,8 +333,7 @@ func (c *Config) normalizeProviderFields() {
 		c.APIKey = strings.TrimSpace(selected.APIKey)
 		return
 	}
-	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
-	c.LegacyAPIType = ""
+	identity := NormalizeProviderIdentity(c.Provider, c.Name)
 	c.Provider = identity.Provider
 	c.Name = identity.Name
 	c.Model = strings.TrimSpace(c.Model)
@@ -359,9 +346,9 @@ func (c *Config) ProviderIdentity() ProviderIdentity {
 		return ProviderIdentity{}
 	}
 	if selected := c.selectedModel(); selected != nil {
-		return NormalizeProviderIdentity(selected.LegacyAPIType, selected.Provider, selected.Name)
+		return NormalizeProviderIdentity(selected.Provider, selected.Name)
 	}
-	return NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+	return NormalizeProviderIdentity(c.Provider, c.Name)
 }
 
 func (c *Config) EffectiveAPIType() string {
@@ -377,8 +364,7 @@ func (c *Config) normalizeModels() {
 		return
 	}
 	for i := range c.Models {
-		identity := NormalizeProviderIdentity(c.Models[i].LegacyAPIType, c.Models[i].Provider, c.Models[i].Name)
-		c.Models[i].LegacyAPIType = ""
+		identity := NormalizeProviderIdentity(c.Models[i].Provider, c.Models[i].Name)
 		c.Models[i].Provider = identity.Provider
 		c.Models[i].Name = identity.Name
 		c.Models[i].Model = strings.TrimSpace(c.Models[i].Model)
@@ -393,10 +379,10 @@ func (c *Config) normalizeModels() {
 		}
 	}
 	if len(c.Models) == 0 {
-		if !c.hasLegacyModelFields() {
+		if !c.hasTopLevelModelFields() {
 			return
 		}
-		identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
+		identity := NormalizeProviderIdentity(c.Provider, c.Name)
 		c.Models = []ModelConfig{{
 			Provider: identity.Provider,
 			Name:     identity.Name,
@@ -435,62 +421,15 @@ func (c *Config) selectedModelIndex() int {
 	return 0
 }
 
-func (c *Config) hasLegacyModelFields() bool {
+func (c *Config) hasTopLevelModelFields() bool {
 	if c == nil {
 		return false
 	}
-	return strings.TrimSpace(c.LegacyAPIType) != "" ||
-		strings.TrimSpace(c.Provider) != "" ||
+	return strings.TrimSpace(c.Provider) != "" ||
 		strings.TrimSpace(c.Name) != "" ||
 		strings.TrimSpace(c.Model) != "" ||
 		strings.TrimSpace(c.BaseURL) != "" ||
 		strings.TrimSpace(c.APIKey) != ""
-}
-
-func (c *Config) legacyFieldsDifferFrom(model ModelConfig) bool {
-	if c == nil || !c.hasLegacyModelFields() {
-		return false
-	}
-	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
-	modelIdentity := NormalizeProviderIdentity(model.LegacyAPIType, model.Provider, model.Name)
-	return identity.Provider != modelIdentity.Provider ||
-		identity.Name != modelIdentity.Name ||
-		strings.TrimSpace(c.Model) != strings.TrimSpace(model.Model) ||
-		strings.TrimSpace(c.BaseURL) != strings.TrimSpace(model.BaseURL) ||
-		strings.TrimSpace(c.APIKey) != strings.TrimSpace(model.APIKey)
-}
-
-func (c *Config) projectLegacyFieldsToModels() {
-	if c == nil || !c.hasLegacyModelFields() {
-		return
-	}
-	identity := NormalizeProviderIdentity(c.LegacyAPIType, c.Provider, c.Name)
-	if len(c.Models) == 0 {
-		c.Models = []ModelConfig{{
-			Provider: identity.Provider,
-			Name:     identity.Name,
-			Model:    strings.TrimSpace(c.Model),
-			BaseURL:  strings.TrimSpace(c.BaseURL),
-			APIKey:   strings.TrimSpace(c.APIKey),
-			Default:  true,
-		}}
-		return
-	}
-	idx := c.selectedModelIndex()
-	if idx < 0 {
-		idx = 0
-	}
-	selected := c.Models[idx]
-	if !c.legacyFieldsDifferFrom(selected) {
-		return
-	}
-	c.Models[idx].LegacyAPIType = ""
-	c.Models[idx].Provider = identity.Provider
-	c.Models[idx].Name = identity.Name
-	c.Models[idx].Model = strings.TrimSpace(c.Model)
-	c.Models[idx].BaseURL = strings.TrimSpace(c.BaseURL)
-	c.Models[idx].APIKey = strings.TrimSpace(c.APIKey)
-	c.Models[idx].Default = true
 }
 
 func DefaultGlobalConfigPath() string {
@@ -679,5 +618,3 @@ skills:
   #   transport: sse
   #   url: http://localhost:3000/sse
 `
-
-

@@ -91,7 +91,7 @@ func TestCommonFlags_MergeGlobalConfig(t *testing.T) {
 	}
 }
 
-func TestCommonFlags_MergeGlobalConfig_LegacyAPITypeAndName(t *testing.T) {
+func TestCommonFlags_MergeGlobalConfig_ProviderAndName(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
@@ -100,7 +100,7 @@ func TestCommonFlags_MergeGlobalConfig_LegacyAPITypeAndName(t *testing.T) {
 	if err := os.MkdirAll(config.AppDir(), 0700); err != nil {
 		t.Fatalf("prepare config dir: %v", err)
 	}
-	if err := os.WriteFile(config.DefaultGlobalConfigPath(), []byte("api_type: openai\nname: deepseek\nmodel: deepseek-chat\n"), 0600); err != nil {
+	if err := os.WriteFile(config.DefaultGlobalConfigPath(), []byte("provider: openai\nname: deepseek\nmodel: deepseek-chat\n"), 0600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 
@@ -135,8 +135,8 @@ func TestCommonFlags_MergeEnv(t *testing.T) {
 	}
 }
 
-func TestCommonFlags_MergeEnv_LegacyAPITypeAndName(t *testing.T) {
-	t.Setenv("MOSS_API_TYPE", "openai")
+func TestCommonFlags_MergeEnv_ProviderAndName(t *testing.T) {
+	t.Setenv("MOSS_PROVIDER", "openai")
 	t.Setenv("MOSS_NAME", "deepseek")
 	t.Setenv("MOSS_MODEL", "deepseek-chat")
 

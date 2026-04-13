@@ -227,7 +227,7 @@ func (m welcomeModel) View() string {
 }
 
 func (m welcomeModel) config() WelcomeConfig {
-	identity := config.NormalizeProviderIdentity("", m.provider, m.providerName)
+	identity := config.NormalizeProviderIdentity(m.provider, m.providerName)
 	return WelcomeConfig{
 		ProviderName: identity.Name,
 		Provider:     identity.Provider,
@@ -244,7 +244,7 @@ func saveWelcomeConfig(wCfg WelcomeConfig) {
 		return
 	}
 	existing, _ := config.LoadConfig(cfgPath)
-	identity := config.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName)
+	identity := config.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName)
 	existing.Name = identity.Name
 	existing.Provider = identity.Provider
 	existing.Model = wCfg.Model

@@ -9,7 +9,7 @@ import (
 )
 
 func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernel.Kernel, context.Context, context.CancelFunc, error) {
-	provider := strings.ToLower(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
+	provider := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 	k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, provider, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to initialize kernel: %w", err)

@@ -267,7 +267,7 @@ func applyConfigSet(cfg *appconfig.Config, key, value string, allowSensitive boo
 	}
 	switch key {
 	case "api_type", "apitype", "provider":
-		identity := appconfig.NormalizeProviderIdentity(value, value, cfg.Name)
+		identity := appconfig.NormalizeProviderIdentity(value, cfg.Name)
 		cfg.Provider = identity.Provider
 		if strings.TrimSpace(cfg.Name) == "" {
 			cfg.Name = identity.Name

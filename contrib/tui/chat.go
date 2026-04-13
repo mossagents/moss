@@ -274,7 +274,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 }
 
 func (m *chatModel) setProviderIdentity(provider, providerName string) {
-	identity := config.NormalizeProviderIdentity("", provider, providerName)
+	identity := config.NormalizeProviderIdentity(provider, providerName)
 	m.providerID = identity.Provider
 	m.providerName = identity.Name
 	m.provider = identity.Label()

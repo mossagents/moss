@@ -1716,36 +1716,7 @@ func (s *ChatService) loadUserSettings() appSettings {
 	if err := json.Unmarshal(data, &st); err != nil {
 		return appSettings{}
 	}
-	// Migrate legacy provider values to canonical API types.
-	st.Provider, st.BaseURL = migrateProviderSettings(st.Provider, st.BaseURL)
 	return st
-}
-
-// migrateProviderSettings converts legacy provider names to canonical API types.
-// Returns the normalized provider and (possibly updated) base URL.
-func migrateProviderSettings(provider, baseURL string) (string, string) {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "openai":
-		return "openai-completions", baseURL
-	case "anthropic":
-		return "claude", baseURL
-	case "deepseek":
-		if baseURL == "" {
-			baseURL = "https://api.deepseek.com/v1"
-		}
-		return "openai-completions", baseURL
-	case "ollama":
-		if baseURL == "" {
-			baseURL = "http://localhost:11434/v1"
-		}
-		return "openai-completions", baseURL
-	case "google":
-		return "gemini", baseURL
-	case "custom":
-		return "openai-completions", baseURL
-	default:
-		return provider, baseURL
-	}
 }
 
 func (s *ChatService) saveUserSettings() error {

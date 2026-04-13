@@ -48,7 +48,7 @@ type kernelInitState struct {
 }
 
 func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernelInitState, error) {
-	provider := strings.ToLower(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
+	provider := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 	k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
 	if err != nil {
 		return nil, err

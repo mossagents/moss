@@ -83,7 +83,7 @@ func launchTUI(cfg *config) error {
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
 		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error) {
-			identity := appconfig.NormalizeProviderIdentity("", provider, flags.DisplayProviderName())
+			identity := appconfig.NormalizeProviderIdentity(provider, flags.DisplayProviderName())
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  identity.Provider,
 				Name:      identity.Name,

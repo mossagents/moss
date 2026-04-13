@@ -97,7 +97,7 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 			continue
 		}
 		f.Name = strutil.FirstNonEmpty(f.Name, os.Getenv(prefix+"_NAME"))
-		f.Provider = strutil.FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"), os.Getenv(prefix+"_API_TYPE"))
+		f.Provider = strutil.FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"))
 		f.Model = strutil.FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
 		f.Workspace = strutil.FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
 		f.Trust = strutil.FirstNonEmpty(f.Trust, os.Getenv(prefix+"_TRUST"))
@@ -174,7 +174,7 @@ func (f *AppFlags) ProviderIdentity() config.ProviderIdentity {
 	if f == nil {
 		return config.ProviderIdentity{}
 	}
-	return config.NormalizeProviderIdentity("", f.Provider, f.Name)
+	return config.NormalizeProviderIdentity(f.Provider, f.Name)
 }
 
 func (f *AppFlags) EffectiveAPIType() string {

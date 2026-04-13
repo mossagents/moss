@@ -807,7 +807,7 @@ func Run(cfg Config) error {
 	}
 
 	// 如果 CLI 已提供足够配置，跳过 Welcome 直接进入 Chat
-	defaultProvider := configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName)
+	defaultProvider := configpkg.NormalizeProviderIdentity(cfg.Provider, cfg.ProviderName)
 	defaultProviderID := defaultProvider.EffectiveAPIType()
 	defaultProviderName := defaultProvider.DisplayName()
 	if defaultProviderID != "" && cfg.Workspace != "" {
@@ -819,7 +819,7 @@ func Run(cfg Config) error {
 		}
 		m.state = stateChat
 		theme := m.theme
-		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName).Label(), wCfg.Model, wCfg.Workspace)
 		if err := m.chat.installExtensions(cfg.Extensions); err != nil {
 			return err
 		}
@@ -896,7 +896,7 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Model = cfg.Model
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
-		m.chat = newChatModel(configpkg.NormalizeProviderIdentity("", cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
+		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
 		// Ignore installExtensions error here — welcome flow can't surface it cleanly.
 		// Extensions provided via Config are already validated on first boot.
 		_ = m.chat.installExtensions(m.config.Extensions)
@@ -933,7 +933,7 @@ func (m appModel) stopAgentForKernelRebuild() appModel {
 }
 
 func (m appModel) welcomeConfigForModelSelection(provider, providerName, model string) (WelcomeConfig, string) {
-	identity := configpkg.NormalizeProviderIdentity("", provider, providerName)
+	identity := configpkg.NormalizeProviderIdentity(provider, providerName)
 	return WelcomeConfig{
 		ProviderName: identity.Name,
 		Provider:     identity.Provider,
