@@ -1,5 +1,7 @@
 # Sandbox and Network Policy Strengthening Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 Phase 1 made workspace trust affect whether project-owned assets are allowed to load.

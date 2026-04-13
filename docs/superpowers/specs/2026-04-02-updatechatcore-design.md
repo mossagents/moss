@@ -1,5 +1,7 @@
 # updateChatCore Refactor Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem Statement
 
 `userio/tui/app_update_chat.go` currently contains a long `updateChatCore` method that mixes:

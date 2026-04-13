@@ -1,5 +1,7 @@
 # Model Governance / Failover v1 Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` and `mosscode` already have the first layer of model governance needed for production use:

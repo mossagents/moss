@@ -8,6 +8,8 @@ status: 'In progress'
 tags: [feature, multimodal, image, protocol, adapters, tui, migration]
 ---
 
+> **Archived historical implementation plan.** This file is retained for reference only and is not the canonical source for the current architecture or execution state.
+
 # Introduction
 
 ![Status: In progress](https://img.shields.io/badge/status-In%20progress-yellow)

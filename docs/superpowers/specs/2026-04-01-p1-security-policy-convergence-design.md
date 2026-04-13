@@ -1,5 +1,7 @@
 # P1 Security & Policy Convergence Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem Statement
 
 P0 and early P1 landed multiple security controls (policy middleware, MCP hardening, budget governance), but denial semantics and observability were not fully unified across all enforcement paths.

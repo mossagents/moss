@@ -1,5 +1,7 @@
 # Trusted Project Governance Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` and `mosscode` already expose a `trust` concept, but today that signal is used mainly for approval posture. Project-scoped capability loading still happens too eagerly.

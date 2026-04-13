@@ -1,5 +1,7 @@
 # Unified State Store and Indexed History Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` and `mosscode` already persist several important kinds of runtime state, but they do so through separate stores with separate query models:

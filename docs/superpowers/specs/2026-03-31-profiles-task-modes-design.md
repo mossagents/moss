@@ -1,5 +1,7 @@
 # Profiles and Task Modes Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` now has several production-relevant control knobs, but they are still exposed as separate low-level switches instead of one coherent product concept:

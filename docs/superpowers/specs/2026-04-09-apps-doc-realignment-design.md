@@ -1,5 +1,7 @@
 # Apps Doc Realignment Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 The repository structure changed in two important ways:

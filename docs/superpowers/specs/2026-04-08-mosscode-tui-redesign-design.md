@@ -1,5 +1,7 @@
 # mosscode TUI Redesign Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `mosscode` already has the runtime features needed for a strong operator-facing TUI, but the current shell still feels visually busy and interaction-heavy in the wrong places:

@@ -1,5 +1,7 @@
 # Runtime Capability Pack P0 Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem Statement
 
 Current runtime assembly and execution paths in `moss` expose four P0 risks:

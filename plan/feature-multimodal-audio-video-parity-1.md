@@ -8,6 +8,8 @@ status: 'Completed'
 tags: [feature, multimodal, audio, video, adapters, tui, protocol]
 ---
 
+> **Archived historical implementation plan.** This file is retained for reference only and is not the canonical source for the current architecture or execution state.
+
 # Introduction
 
 ![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)

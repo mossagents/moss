@@ -1,5 +1,7 @@
 # Multimodal Image Recognition + Generation Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem Statement
 
 `moss` has model capability tags for image/audio/video in `kernel/port`, but runtime message transport is still text-centric (`Message.Content string`). In current TUI flow, image mentions are converted to path references and appended as plain text, so image understanding/generation cannot be represented as first-class model I/O.

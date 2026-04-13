@@ -1,5 +1,7 @@
 # mossclaw 对标 claw0 分阶段设计
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## 背景与目标
 
 `examples/mossclaw` 目前已具备基础助理能力（文件工具、知识库、调度、bootstrap 上下文），但相较 `claw0` 的生产化能力仍有明显差距：并发车道、可靠投递、5 级路由、多通道、韧性重试与认证轮换。

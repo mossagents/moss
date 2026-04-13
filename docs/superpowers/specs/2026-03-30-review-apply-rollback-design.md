@@ -1,5 +1,7 @@
 # Review / Apply / Rollback v1 Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` and `mosscode` already have most of the raw primitives needed for production-safe code change control:

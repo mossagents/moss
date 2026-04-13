@@ -1,5 +1,7 @@
 # Agent Harness Redesign
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 Moss already has a strong agent harness foundation, but four core surfaces are still too loosely coupled for a production-grade execution model:

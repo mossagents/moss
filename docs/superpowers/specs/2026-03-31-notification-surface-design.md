@@ -1,5 +1,7 @@
 # Notification Surface for Long-Running Work Design
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem
 
 `moss` now has the core primitives needed for long-running work visibility:

@@ -1,5 +1,7 @@
 # Multimodal Audio/Video Parity Design (OpenAI + Claude)
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 Date: 2026-04-03  
 Status: Draft (design approved in-chat, pending spec review loop)
 

@@ -1,5 +1,7 @@
 # Extensions Consolidation Design (Option C)
 
+> **Archived historical design note.** This file records a past design iteration and is not the canonical source for the current architecture.
+
 ## Problem Statement
 
 The current `extensions/*` subtree mostly acts as composition glue. This creates package sprawl, duplicate wiring surfaces, and extra cognitive load when tracing runtime behavior (skills, agents, MCP, context, planning, session store).  
