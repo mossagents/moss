@@ -16,7 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/workspace"
 )
 
-const memoryStateKey kernel.ExtensionStateKey = "memory.state"
+const memoryStateKey kernel.ServiceKey = "memory.state"
 
 type state struct {
 	workspace workspace.Workspace
@@ -48,13 +48,12 @@ func RegisterMemoryToolsCompat(reg tool.Registry, ws workspace.Workspace) error 
 }
 
 func ensureMemoryState(k *kernel.Kernel) *state {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(memoryStateKey, &state{})
+	actual, loaded := k.Services().LoadOrStore(memoryStateKey, &state{})
 	st := actual.(*state)
 	if loaded {
 		return st
 	}
-	bridge.OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
+	k.Stages().OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
 		if st.workspace == nil {
 			return nil
 		}
@@ -67,14 +66,14 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		if st.runtime == nil {
 			st.runtime = taskrt.NewMemoryTaskRuntime()
 		}
-		st.store = newIndexedMemoryStore(st.store, StateCatalogOf(k))
 		if st.pipeline == nil {
+			st.store = newIndexedMemoryStore(st.store, StateCatalogOf(k))
 			st.pipeline = newMemoryPipelineManager(st.workspace, st.store, st.runtime)
 			st.pipeline.Start()
 		}
 		return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline)
 	})
-	bridge.OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
+	k.Stages().OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
 		if st.pipeline != nil {
 			st.pipeline.Stop()
 		}
@@ -84,13 +83,46 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		}
 		return closer.Close()
 	})
-	bridge.OnSystemPrompt(220, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(220, func(_ *kernel.Kernel) string {
 		if st.workspace == nil {
 			return ""
 		}
 		return "You have staged persistent memory tools backed by /memories. Prefer memory_summary.md and MEMORY.md for quick context, then inspect rollout_summaries/ or individual memory records when needed."
 	})
 	return st
+}
+
+// RegisterMemoryToolsOnKernel wires persistent memory state onto the kernel and
+// registers memory tools against the kernel-owned pipeline so later Boot/Shutdown
+// reuses the same owner.
+func RegisterMemoryToolsOnKernel(k *kernel.Kernel, ws workspace.Workspace, store memory.MemoryStore, runtime taskrt.TaskRuntime) error {
+	if k == nil {
+		return fmt.Errorf("kernel is nil")
+	}
+	if ws == nil {
+		return fmt.Errorf("memory workspace is nil")
+	}
+	if store == nil {
+		return fmt.Errorf("memory store is nil")
+	}
+	st := ensureMemoryState(k)
+	if st.pipeline == nil {
+		st.workspace = ws
+		st.store = newIndexedMemoryStore(store, StateCatalogOf(k))
+		st.runtime = runtime
+		if st.runtime == nil {
+			st.runtime = k.TaskRuntime()
+		}
+		if st.runtime == nil {
+			st.runtime = taskrt.NewMemoryTaskRuntime()
+		}
+		st.pipeline = newMemoryPipelineManager(st.workspace, st.store, st.runtime)
+		st.pipeline.Start()
+	}
+	if err := st.pipeline.syncArtifacts(context.Background()); err != nil {
+		return err
+	}
+	return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline)
 }
 
 func RegisterMemoryTools(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore) error {
@@ -439,21 +471,21 @@ func readMemoryRecordHandler(store memory.MemoryStore) tool.ToolHandler {
 func writeMemoryRecordHandler(ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
-			Path            string                  `json:"path"`
-			Content         string                  `json:"content"`
-			Summary         string                  `json:"summary"`
-			Tags            []string                `json:"tags"`
+			Path            string                `json:"path"`
+			Content         string                `json:"content"`
+			Summary         string                `json:"summary"`
+			Tags            []string              `json:"tags"`
 			Citation        memory.MemoryCitation `json:"citation"`
 			Stage           memory.MemoryStage    `json:"stage"`
 			Status          memory.MemoryStatus   `json:"status"`
-			Group           string                  `json:"group"`
-			Workspace       string                  `json:"workspace"`
-			CWD             string                  `json:"cwd"`
-			GitBranch       string                  `json:"git_branch"`
-			SourceKind      string                  `json:"source_kind"`
-			SourceID        string                  `json:"source_id"`
-			SourcePath      string                  `json:"source_path"`
-			SourceUpdatedAt string                  `json:"source_updated_at"`
+			Group           string                `json:"group"`
+			Workspace       string                `json:"workspace"`
+			CWD             string                `json:"cwd"`
+			GitBranch       string                `json:"git_branch"`
+			SourceKind      string                `json:"source_kind"`
+			SourceID        string                `json:"source_id"`
+			SourcePath      string                `json:"source_path"`
+			SourceUpdatedAt string                `json:"source_updated_at"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
@@ -494,13 +526,13 @@ func writeMemoryRecordHandler(ws workspace.Workspace, store memory.MemoryStore, 
 func searchMemoriesHandler(store memory.MemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
-			Query     string                  `json:"query"`
-			Tags      []string                `json:"tags"`
+			Query     string                `json:"query"`
+			Tags      []string              `json:"tags"`
 			Stages    []memory.MemoryStage  `json:"stages"`
 			Statuses  []memory.MemoryStatus `json:"statuses"`
-			Group     string                  `json:"group"`
-			Workspace string                  `json:"workspace"`
-			Limit     int                     `json:"limit"`
+			Group     string                `json:"group"`
+			Workspace string                `json:"workspace"`
+			Limit     int                   `json:"limit"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)

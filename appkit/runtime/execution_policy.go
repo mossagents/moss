@@ -3,8 +3,8 @@ package runtime
 import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const executionPolicyStateKey kernel.ExtensionStateKey = "execution-policy.state"
+const executionPolicyStateKey kernel.ServiceKey = "execution-policy.state"
 
 type ExecutionAccess string
 
@@ -25,14 +25,14 @@ const (
 )
 
 type CommandExecutionPolicy struct {
-	Access         ExecutionAccess      `json:"access"`
-	DefaultTimeout time.Duration        `json:"default_timeout"`
-	MaxTimeout     time.Duration        `json:"max_timeout"`
-	AllowedPaths   []string             `json:"allowed_paths,omitempty"`
-	ClearEnv       bool                 `json:"clear_env,omitempty"`
-	Env            map[string]string    `json:"env,omitempty"`
+	Access         ExecutionAccess             `json:"access"`
+	DefaultTimeout time.Duration               `json:"default_timeout"`
+	MaxTimeout     time.Duration               `json:"max_timeout"`
+	AllowedPaths   []string                    `json:"allowed_paths,omitempty"`
+	ClearEnv       bool                        `json:"clear_env,omitempty"`
+	Env            map[string]string           `json:"env,omitempty"`
 	Network        workspace.ExecNetworkPolicy `json:"network"`
-	Rules          []CommandRule        `json:"rules,omitempty"`
+	Rules          []CommandRule               `json:"rules,omitempty"`
 }
 
 type HTTPExecutionPolicy struct {
@@ -154,8 +154,7 @@ func commandRuleDecision(access ExecutionAccess) builtins.PolicyDecision {
 }
 
 func ensureExecutionPolicyState(k *kernel.Kernel) *executionPolicyState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(executionPolicyStateKey, &executionPolicyState{})
+	actual, loaded := k.Services().LoadOrStore(executionPolicyStateKey, &executionPolicyState{})
 	st := actual.(*executionPolicyState)
 	if loaded {
 		return st

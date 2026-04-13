@@ -42,9 +42,11 @@ type Kernel struct {
 	tools       tool.Registry
 	sessions    session.Manager
 	chain       *hooks.Registry
+	stages      *StageRegistry
+	prompts     *PromptAssembler
+	services    *ServiceRegistry
 	loopCfg     loop.LoopConfig
 	observer    observe.Observer
-	ext         *extensionState
 
 	shutdownCh   chan struct{}
 	shutdownOnce sync.Once
@@ -57,7 +59,9 @@ func New(opts ...Option) *Kernel {
 		tools:      tool.NewRegistry(),
 		sessions:   session.NewManager(),
 		chain:      hooks.NewRegistry(),
-		ext:        newExtensionState(),
+		stages:     newStageRegistry(),
+		prompts:    newPromptAssembler(),
+		services:   newServiceRegistry(),
 		shutdownCh: make(chan struct{}),
 		runs:       newRunSupervisor(),
 	}
@@ -96,7 +100,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 		return errors.New(errors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
 	k.propagateObserver(k.observer)
-	return k.bootExtensions(ctx)
+	return k.Stages().runBoot(ctx, k)
 }
 
 // NewSession 创建新 Session。
@@ -107,7 +111,7 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 		return nil, err
 	}
 
-	sysPrompt := k.extendSystemPrompt(cfg.SystemPrompt)
+	sysPrompt := k.Prompts().Extend(k, cfg.SystemPrompt)
 	if sysPrompt != "" {
 		existing := sess.CopyMessages()
 		sess.ReplaceMessages(append([]model.Message{{
@@ -197,7 +201,7 @@ func (k *Kernel) Shutdown(ctx context.Context) error {
 	// 等待活跃运行结束
 	k.runs.wait(ctx)
 
-	return k.shutdownExtensions(ctx)
+	return k.Stages().runShutdown(ctx, k)
 }
 
 func (k *Kernel) checkShutdown() error {
@@ -222,6 +226,21 @@ func (k *Kernel) SessionManager() session.Manager {
 // Hooks 返回 hook 注册表。
 func (k *Kernel) Hooks() *hooks.Registry {
 	return k.chain
+}
+
+// Stages returns the kernel stage registry.
+func (k *Kernel) Stages() *StageRegistry {
+	return k.stages
+}
+
+// Prompts returns the system prompt assembler.
+func (k *Kernel) Prompts() *PromptAssembler {
+	return k.prompts
+}
+
+// Services returns the kernel-scoped shared service registry.
+func (k *Kernel) Services() *ServiceRegistry {
+	return k.services
 }
 
 // UserIO 返回默认交互端口（可能为 nil）。

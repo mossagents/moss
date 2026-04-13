@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-const schedulingStateKey kernel.ExtensionStateKey = "scheduling.state"
+const schedulingStateKey kernel.ServiceKey = "scheduling.state"
 
 type schedulingState struct {
 	scheduler *scheduler.Scheduler
@@ -148,13 +148,12 @@ func RegisterSchedulerToolRegistry(reg tool.Registry, sched *scheduler.Scheduler
 }
 
 func ensureSchedulingState(k *kernel.Kernel) *schedulingState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(schedulingStateKey, &schedulingState{})
+	actual, loaded := k.Services().LoadOrStore(schedulingStateKey, &schedulingState{})
 	st := actual.(*schedulingState)
 	if loaded {
 		return st
 	}
-	bridge.OnShutdown(200, func(_ context.Context, _ *kernel.Kernel) error {
+	k.Stages().OnShutdown(200, func(_ context.Context, _ *kernel.Kernel) error {
 		if st.scheduler != nil {
 			st.scheduler.Stop()
 		}

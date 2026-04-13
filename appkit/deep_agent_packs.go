@@ -104,7 +104,7 @@ func buildDeepAgentSessionContextPack(state *deepAgentPresetState) ([]harness.Fe
 	var store session.SessionStore = runtime.WrapSessionStore(rawStore, state.stateCatalog)
 	features := []harness.Feature{WithSessionStore(store)}
 	if deepAgentValueOrDefault(state.config.EnableContextOffload, true) {
-		features = append(features, WithContextOffload(store), WithContextManagement(store))
+		features = append(features, harness.ContextOffload(store), harness.ContextManagement(store))
 	}
 	return features, nil
 }
@@ -155,7 +155,7 @@ func buildDeepAgentPersistentMemoryPack(state *deepAgentPresetState) ([]harness.
 		memDir = state.defaultDataDir("memories")
 	}
 	return []harness.Feature{
-		WithPersistentMemories(memDir),
+		harness.PersistentMemories(memDir),
 	}, nil
 }
 
@@ -185,7 +185,7 @@ func buildDeepAgentPlanningPack(state *deepAgentPresetState) ([]harness.Feature,
 		return nil, nil
 	}
 	return []harness.Feature{
-		WithPlanning(),
+		harness.Planning(),
 	}, nil
 }
 

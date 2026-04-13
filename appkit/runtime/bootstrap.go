@@ -5,7 +5,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 )
 
-const bootstrapStateKey kernel.ExtensionStateKey = "bootstrap.state"
+const bootstrapStateKey kernel.ServiceKey = "bootstrap.state"
 
 type bootstrapState struct {
 	ctx *bootstrap.Context
@@ -34,13 +34,12 @@ func LoadBootstrapContextWithTrust(workspace, appName, trust string) *bootstrap.
 }
 
 func ensureBootstrapState(k *kernel.Kernel) *bootstrapState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(bootstrapStateKey, &bootstrapState{})
+	actual, loaded := k.Services().LoadOrStore(bootstrapStateKey, &bootstrapState{})
 	st := actual.(*bootstrapState)
 	if loaded {
 		return st
 	}
-	bridge.OnSystemPrompt(100, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(100, func(_ *kernel.Kernel) string {
 		if st.ctx == nil {
 			return ""
 		}

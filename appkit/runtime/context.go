@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -14,8 +14,8 @@ import (
 	"strings"
 )
 
-const contextStateKey kernel.ExtensionStateKey = "context.state"
-const offloadStateKey kernel.ExtensionStateKey = "compact.state"
+const contextStateKey kernel.ServiceKey = "context.state"
+const offloadStateKey kernel.ServiceKey = "compact.state"
 
 type contextFragmentKind string
 
@@ -31,17 +31,17 @@ const (
 )
 
 type contextState struct {
-	store                    session.SessionStore
-	manager                  session.Manager
-	memoryStore              memory.MemoryStore
-	memoryPipeline           *memoryPipelineManager
-	triggerDialog            int
-	keepRecent               int
-	triggerTokens            int
-	maxPromptTokens          int
-	startupTokens            int
-	compactToolRegistered    bool
-	autoHookRegistered bool
+	store                 session.SessionStore
+	manager               session.Manager
+	memoryStore           memory.MemoryStore
+	memoryPipeline        *memoryPipelineManager
+	triggerDialog         int
+	keepRecent            int
+	triggerTokens         int
+	maxPromptTokens       int
+	startupTokens         int
+	compactToolRegistered bool
+	autoHookRegistered    bool
 }
 
 type offloadState struct {
@@ -180,13 +180,12 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 }
 
 func ensureOffloadState(k *kernel.Kernel) *offloadState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(offloadStateKey, &offloadState{})
+	actual, loaded := k.Services().LoadOrStore(offloadStateKey, &offloadState{})
 	st := actual.(*offloadState)
 	if loaded {
 		return st
 	}
-	bridge.OnSystemPrompt(230, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(230, func(_ *kernel.Kernel) string {
 		if st.store == nil {
 			return ""
 		}
@@ -196,8 +195,7 @@ func ensureOffloadState(k *kernel.Kernel) *offloadState {
 }
 
 func ensureContextState(k *kernel.Kernel) *contextState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(contextStateKey, &contextState{
+	actual, loaded := k.Services().LoadOrStore(contextStateKey, &contextState{
 		keepRecent:      20,
 		triggerTokens:   3000,
 		maxPromptTokens: 4000,
@@ -207,7 +205,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 	if loaded {
 		return st
 	}
-	bridge.OnBoot(130, func(_ context.Context, k *kernel.Kernel) error {
+	k.Stages().OnBoot(130, func(_ context.Context, k *kernel.Kernel) error {
 		memState := ensureMemoryState(k)
 		if st.manager == nil {
 			st.manager = k.SessionManager()
@@ -233,7 +231,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		}
 		return nil
 	})
-	bridge.OnSystemPrompt(235, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(235, func(_ *kernel.Kernel) string {
 		if st.store == nil {
 			return ""
 		}

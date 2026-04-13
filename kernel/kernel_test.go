@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
-	"iter"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -18,6 +17,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
 	kt "github.com/mossagents/moss/testing"
+	"iter"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -39,7 +39,7 @@ type observerAwareCheckpointStore struct {
 
 func (o *recordingObserver) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
 func (o *recordingObserver) OnToolCall(context.Context, observe.ToolCallEvent)    {}
-func (o *recordingObserver) OnApproval(context.Context, io.ApprovalEvent)    {}
+func (o *recordingObserver) OnApproval(context.Context, io.ApprovalEvent)         {}
 func (o *recordingObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
 func (o *recordingObserver) OnError(context.Context, observe.ErrorEvent)          {}
 
@@ -701,32 +701,31 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	}
 }
 
-func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
+func TestKernelStagesAndPromptsRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{}),
 		WithUserIO(&io.NoOpIO{}),
 	)
-	bridge := Extensions(k)
 
 	var order []string
-	bridge.OnBoot(20, func(context.Context, *Kernel) error {
+	k.Stages().OnBoot(20, func(context.Context, *Kernel) error {
 		order = append(order, "boot-20")
 		return nil
 	})
-	bridge.OnBoot(10, func(context.Context, *Kernel) error {
+	k.Stages().OnBoot(10, func(context.Context, *Kernel) error {
 		order = append(order, "boot-10")
 		return nil
 	})
-	bridge.OnShutdown(20, func(context.Context, *Kernel) error {
+	k.Stages().OnShutdown(20, func(context.Context, *Kernel) error {
 		order = append(order, "shutdown-20")
 		return nil
 	})
-	bridge.OnShutdown(10, func(context.Context, *Kernel) error {
+	k.Stages().OnShutdown(10, func(context.Context, *Kernel) error {
 		order = append(order, "shutdown-10")
 		return nil
 	})
-	bridge.OnSystemPrompt(20, func(*Kernel) string { return "prompt-20" })
-	bridge.OnSystemPrompt(10, func(*Kernel) string { return "prompt-10" })
+	k.Prompts().Add(20, func(*Kernel) string { return "prompt-20" })
+	k.Prompts().Add(10, func(*Kernel) string { return "prompt-10" })
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -762,7 +761,7 @@ func TestExtensionBridgeHooksRunInOrder(t *testing.T) {
 	}
 }
 
-func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
+func TestKernelSessionLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
 			Responses: []model.CompletionResponse{{
@@ -773,15 +772,20 @@ func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
 		}),
 		WithUserIO(&io.NoOpIO{}),
 	)
-	bridge := Extensions(k)
 
 	var order []string
-	bridge.OnSessionLifecycle(20, func(_ context.Context, event session.LifecycleEvent) {
-		order = append(order, fmt.Sprintf("%s-20", event.Stage))
-	})
-	bridge.OnSessionLifecycle(10, func(_ context.Context, event session.LifecycleEvent) {
-		order = append(order, fmt.Sprintf("%s-10", event.Stage))
-	})
+	k.Hooks().OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
+		if event != nil {
+			order = append(order, fmt.Sprintf("%s-20", event.Stage))
+		}
+		return nil
+	}, 20)
+	k.Hooks().OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
+		if event != nil {
+			order = append(order, fmt.Sprintf("%s-10", event.Stage))
+		}
+		return nil
+	}, 10)
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -813,7 +817,7 @@ func TestExtensionBridgeSessionLifecycleHooksRunInOrder(t *testing.T) {
 	}
 }
 
-func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
+func TestKernelToolLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
 			Responses: []model.CompletionResponse{
@@ -841,15 +845,20 @@ func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("register greet: %v", err)
 	}
-	bridge := Extensions(k)
 
 	var order []string
-	bridge.OnToolLifecycle(20, func(_ context.Context, event session.ToolLifecycleEvent) {
-		order = append(order, fmt.Sprintf("%s-20", event.Stage))
-	})
-	bridge.OnToolLifecycle(10, func(_ context.Context, event session.ToolLifecycleEvent) {
-		order = append(order, fmt.Sprintf("%s-10", event.Stage))
-	})
+	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *session.ToolLifecycleEvent) error {
+		if event != nil {
+			order = append(order, fmt.Sprintf("%s-20", event.Stage))
+		}
+		return nil
+	}, 20)
+	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *session.ToolLifecycleEvent) error {
+		if event != nil {
+			order = append(order, fmt.Sprintf("%s-10", event.Stage))
+		}
+		return nil
+	}, 10)
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -877,15 +886,14 @@ func TestExtensionBridgeToolLifecycleHooksRunInOrder(t *testing.T) {
 	}
 }
 
-func TestExtensionBridgeStateSlots(t *testing.T) {
+func TestKernelServiceRegistrySlots(t *testing.T) {
 	k := New()
-	bridge := Extensions(k)
 
-	if _, ok := bridge.State("missing"); ok {
+	if _, ok := k.Services().Load("missing"); ok {
 		t.Fatal("missing state should not exist")
 	}
 
-	actual, loaded := bridge.LoadOrStoreState("slot", "first")
+	actual, loaded := k.Services().LoadOrStore("slot", "first")
 	if loaded {
 		t.Fatal("first LoadOrStoreState should store new value")
 	}
@@ -893,7 +901,7 @@ func TestExtensionBridgeStateSlots(t *testing.T) {
 		t.Fatalf("stored value = %q, want %q", got, "first")
 	}
 
-	actual, loaded = bridge.LoadOrStoreState("slot", "second")
+	actual, loaded = k.Services().LoadOrStore("slot", "second")
 	if !loaded {
 		t.Fatal("second LoadOrStoreState should load existing value")
 	}
@@ -901,8 +909,8 @@ func TestExtensionBridgeStateSlots(t *testing.T) {
 		t.Fatalf("loaded value = %q, want %q", got, "first")
 	}
 
-	bridge.SetState("slot", "updated")
-	value, ok := bridge.State("slot")
+	k.Services().Store("slot", "updated")
+	value, ok := k.Services().Load("slot")
 	if !ok {
 		t.Fatal("expected slot state to exist")
 	}

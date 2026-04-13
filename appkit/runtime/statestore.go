@@ -1,11 +1,11 @@
 package runtime
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/memory"
@@ -22,7 +22,7 @@ import (
 
 const (
 	stateCatalogSchemaVersion = 1
-	stateCatalogStateKey      = kernel.ExtensionStateKey("statecatalog.state")
+	stateCatalogStateKey      = kernel.ServiceKey("statecatalog.state")
 	DisableStateCatalogEnv    = "MOSSCODE_DISABLE_STATE_CATALOG"
 )
 
@@ -1118,7 +1118,7 @@ func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
 	if k == nil {
 		return nil
 	}
-	actual, ok := kernel.Extensions(k).State(stateCatalogStateKey)
+	actual, ok := k.Services().Load(stateCatalogStateKey)
 	if !ok {
 		return nil
 	}
@@ -1134,13 +1134,10 @@ func ObserverForStateCatalog(k *kernel.Kernel) observe.Observer {
 }
 
 func ensureStateCatalogState(k *kernel.Kernel) *stateCatalogState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(stateCatalogStateKey, &stateCatalogState{})
+	actual, loaded := k.Services().LoadOrStore(stateCatalogStateKey, &stateCatalogState{})
 	state := actual.(*stateCatalogState)
 	if loaded {
 		return state
 	}
 	return state
 }
-
-

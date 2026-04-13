@@ -40,6 +40,14 @@ func TestPlugin_InstallHooks(t *testing.T) {
 			called = append(called, "session-end")
 			return nil
 		},
+		OnSessionLifecycle: func(ctx context.Context, ev *session.LifecycleEvent) error {
+			called = append(called, "session-lifecycle")
+			return nil
+		},
+		OnToolLifecycle: func(ctx context.Context, ev *session.ToolLifecycleEvent) error {
+			called = append(called, "tool-lifecycle")
+			return nil
+		},
 		OnError: func(ctx context.Context, ev *hooks.ErrorEvent) error {
 			called = append(called, "error")
 			return nil
@@ -54,12 +62,15 @@ func TestPlugin_InstallHooks(t *testing.T) {
 	reg.AfterToolCall.Run(ctx, &hooks.ToolEvent{})
 	reg.OnSessionStart.Run(ctx, &hooks.SessionEvent{})
 	reg.OnSessionEnd.Run(ctx, &hooks.SessionEvent{})
+	reg.OnSessionLifecycle.Run(ctx, &session.LifecycleEvent{})
+	reg.OnToolLifecycle.Run(ctx, &session.ToolLifecycleEvent{})
 	reg.OnError.Run(ctx, &hooks.ErrorEvent{})
 
 	want := []string{
 		"before-llm", "after-llm",
 		"before-tool", "after-tool",
 		"session-start", "session-end",
+		"session-lifecycle", "tool-lifecycle",
 		"error",
 	}
 	if len(called) != len(want) {
@@ -95,6 +106,12 @@ func TestPlugin_NilFieldsIgnored(t *testing.T) {
 	}
 	if !reg.OnError.Empty() {
 		t.Fatal("OnError should be empty")
+	}
+	if !reg.OnSessionLifecycle.Empty() {
+		t.Fatal("OnSessionLifecycle should be empty")
+	}
+	if !reg.OnToolLifecycle.Empty() {
+		t.Fatal("OnToolLifecycle should be empty")
 	}
 }
 

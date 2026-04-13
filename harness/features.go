@@ -55,8 +55,7 @@ func BootstrapContext(workspace, appName, trust string) Feature {
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			bctx := bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust)
-			bridge := kernel.Extensions(h.Kernel())
-			bridge.OnSystemPrompt(100, func(_ *kernel.Kernel) string {
+			h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
 				return bctx.SystemPromptSection()
 			})
 			return nil
@@ -64,10 +63,101 @@ func BootstrapContext(workspace, appName, trust string) Feature {
 	}
 }
 
-// SessionPersistence returns a Feature that enables persistent session storage.
+// BootstrapContextValue returns a Feature that injects a pre-loaded bootstrap context.
+func BootstrapContextValue(ctx *bootstrap.Context) Feature {
+	return FeatureFunc{
+		FeatureName: "bootstrap-context",
+		MetadataValue: FeatureMetadata{
+			Key:   "bootstrap-context",
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			if ctx == nil {
+				return nil
+			}
+			h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
+				return ctx.SystemPromptSection()
+			})
+			return nil
+		},
+	}
+}
+
+// LoadedBootstrapContext returns a Feature that loads bootstrap context using
+// bootstrap.LoadWithAppName trusted semantics.
+func LoadedBootstrapContext(workspace, appName string) Feature {
+	return BootstrapContextValue(bootstrap.LoadWithAppName(workspace, appName))
+}
+
+// SessionLifecycleRegistration describes a session lifecycle hook registration.
+type SessionLifecycleRegistration struct {
+	Order int
+	Hook  session.LifecycleHook
+}
+
+// ToolLifecycleRegistration describes a tool lifecycle hook registration.
+type ToolLifecycleRegistration struct {
+	Order int
+	Hook  session.ToolLifecycleHook
+}
+
+// SessionLifecycleHooks returns a Feature that registers session lifecycle hooks.
+func SessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Feature {
+	return FeatureFunc{
+		FeatureName: "session-lifecycle-hooks",
+		MetadataValue: FeatureMetadata{
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			for _, registration := range hooks {
+				registration := registration
+				if registration.Hook == nil {
+					continue
+				}
+				h.Kernel().Hooks().OnSessionLifecycle.AddHook("", func(ctx context.Context, ev *session.LifecycleEvent) error {
+					if ev == nil {
+						return nil
+					}
+					registration.Hook(ctx, *ev)
+					return nil
+				}, registration.Order)
+			}
+			return nil
+		},
+	}
+}
+
+// ToolLifecycleHooks returns a Feature that registers tool lifecycle hooks.
+func ToolLifecycleHooks(hooks ...ToolLifecycleRegistration) Feature {
+	return FeatureFunc{
+		FeatureName: "tool-lifecycle-hooks",
+		MetadataValue: FeatureMetadata{
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			for _, registration := range hooks {
+				registration := registration
+				if registration.Hook == nil {
+					continue
+				}
+				h.Kernel().Hooks().OnToolLifecycle.AddHook("", func(ctx context.Context, ev *session.ToolLifecycleEvent) error {
+					if ev == nil {
+						return nil
+					}
+					registration.Hook(ctx, *ev)
+					return nil
+				}, registration.Order)
+			}
+			return nil
+		},
+	}
+}
+
+// SessionPersistence returns a Feature that enables persistent session storage
+// and kernel-managed lifecycle persistence.
 func SessionPersistence(store session.SessionStore) Feature {
 	return FeatureFunc{
-		FeatureName: "session-persistence",
+		FeatureName: "session-store",
 		MetadataValue: FeatureMetadata{
 			Key:   "session-store",
 			Phase: FeaturePhaseConfigure,
@@ -76,7 +166,7 @@ func SessionPersistence(store session.SessionStore) Feature {
 			if store == nil {
 				return fmt.Errorf("session store must not be nil")
 			}
-			h.Kernel().Apply(kernel.WithSessionStore(store))
+			h.Kernel().Apply(kernel.WithPersistentSessionStore(store))
 			return nil
 		},
 	}

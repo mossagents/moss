@@ -1,4 +1,4 @@
-﻿package runtime
+package runtime
 
 import (
 	"context"
@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	skillsStateKey kernel.ExtensionStateKey = "skills.state"
-	agentsStateKey kernel.ExtensionStateKey = "agents.state"
+	skillsStateKey kernel.ServiceKey = "skills.state"
+	agentsStateKey kernel.ServiceKey = "agents.state"
 )
 
 type config struct {
@@ -308,21 +308,20 @@ type skillsState struct {
 }
 
 func ensureSkillsState(k *kernel.Kernel) *skillsState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(skillsStateKey, &skillsState{
+	actual, loaded := k.Services().LoadOrStore(skillsStateKey, &skillsState{
 		manager: skill.NewManager(),
 	})
 	st := actual.(*skillsState)
 	if loaded {
 		return st
 	}
-	bridge.OnShutdown(300, func(ctx context.Context, _ *kernel.Kernel) error {
+	k.Stages().OnShutdown(300, func(ctx context.Context, _ *kernel.Kernel) error {
 		if st.manager == nil {
 			return nil
 		}
 		return st.manager.ShutdownAll(ctx)
 	})
-	bridge.OnSystemPrompt(200, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(200, func(_ *kernel.Kernel) string {
 		if st.manager == nil {
 			return ""
 		}
@@ -590,15 +589,14 @@ type agentsState struct {
 }
 
 func ensureAgentsState(k *kernel.Kernel) *agentsState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(agentsStateKey, &agentsState{
+	actual, loaded := k.Services().LoadOrStore(agentsStateKey, &agentsState{
 		registry: agent.NewRegistry(),
 	})
 	st := actual.(*agentsState)
 	if loaded {
 		return st
 	}
-	bridge.OnBoot(100, func(_ context.Context, k *kernel.Kernel) error {
+	k.Stages().OnBoot(100, func(_ context.Context, k *kernel.Kernel) error {
 		if st.registry == nil || len(st.registry.List()) == 0 {
 			return nil
 		}

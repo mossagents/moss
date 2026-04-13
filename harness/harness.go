@@ -109,14 +109,14 @@ func (h *Harness) ensureBackend(ctx context.Context) error {
 			return fmt.Errorf("activate backend: %w", err)
 		}
 	}
-	bridge := kernel.Extensions(h.kernel)
+	stages := h.kernel.Stages()
 	if booter, ok := h.backend.(BackendBooter); ok {
-		bridge.OnBoot(backendBootOrder, func(ctx context.Context, k *kernel.Kernel) error {
+		stages.OnBoot(backendBootOrder, func(ctx context.Context, k *kernel.Kernel) error {
 			return booter.Boot(ctx, k)
 		})
 	}
 	if shutdowner, ok := h.backend.(BackendShutdowner); ok {
-		bridge.OnShutdown(backendShutdownOrder, func(ctx context.Context, k *kernel.Kernel) error {
+		stages.OnShutdown(backendShutdownOrder, func(ctx context.Context, k *kernel.Kernel) error {
 			return shutdowner.Shutdown(ctx, k)
 		})
 	}

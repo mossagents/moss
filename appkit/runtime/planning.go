@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-const planningStateKey kernel.ExtensionStateKey = "planning.state"
+const planningStateKey kernel.ServiceKey = "planning.state"
 const planningTodosStateKey = "planning.todos"
 
 type planningState struct {
@@ -108,15 +108,13 @@ func WithPlanningDefaults() kernel.Option {
 	return WithPlanningSessionManager(nil)
 }
 
-
 func ensurePlanningState(k *kernel.Kernel) *planningState {
-	bridge := kernel.Extensions(k)
-	actual, loaded := bridge.LoadOrStoreState(planningStateKey, &planningState{})
+	actual, loaded := k.Services().LoadOrStore(planningStateKey, &planningState{})
 	st := actual.(*planningState)
 	if loaded {
 		return st
 	}
-	bridge.OnBoot(125, func(_ context.Context, k *kernel.Kernel) error {
+	k.Stages().OnBoot(125, func(_ context.Context, k *kernel.Kernel) error {
 		if st.manager == nil {
 			st.manager = k.SessionManager()
 		}
@@ -125,7 +123,7 @@ func ensurePlanningState(k *kernel.Kernel) *planningState {
 		}
 		return RegisterPlanningTools(k.ToolRegistry(), st.manager)
 	})
-	bridge.OnSystemPrompt(225, func(_ *kernel.Kernel) string {
+	k.Prompts().Add(225, func(_ *kernel.Kernel) string {
 		if st.manager == nil {
 			return ""
 		}

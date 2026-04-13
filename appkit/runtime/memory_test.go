@@ -193,6 +193,37 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	}
 }
 
+func TestRegisterMemoryToolsOnKernel_ReusesPipelineAcrossBoot(t *testing.T) {
+	ctx := context.Background()
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+	)
+	ws := sandbox.NewMemoryWorkspace()
+	if err := RegisterMemoryToolsOnKernel(k, ws, NewWorkspaceMemoryStore(ws), nil); err != nil {
+		t.Fatalf("RegisterMemoryToolsOnKernel: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = k.Shutdown(ctx)
+	})
+
+	st := ensureMemoryState(k)
+	if st.pipeline == nil {
+		t.Fatal("expected memory pipeline to be initialized")
+	}
+	pipeline := st.pipeline
+
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	if ensureMemoryState(k).pipeline != pipeline {
+		t.Fatal("expected boot to reuse the existing memory pipeline")
+	}
+	if _, ok := k.ToolRegistry().Get("read_memory"); !ok {
+		t.Fatal("expected read_memory to remain registered")
+	}
+}
+
 func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
@@ -257,7 +288,7 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 		t.Fatalf("search_memories failed: %v", err)
 	}
 	var searchResp struct {
-		Count int                     `json:"count"`
+		Count int                   `json:"count"`
 		Items []memory.MemoryRecord `json:"items"`
 	}
 	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
