@@ -6,6 +6,7 @@ import (
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -63,7 +64,7 @@ func GetIdentity(state map[string]any) *io.Identity {
 // 配置规则后默认拒绝：缺失身份或无匹配规则都会被拦截。
 func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent) error {
-		if ev.Tool == nil {
+		if ev == nil || ev.Stage != hooks.ToolLifecycleBefore || ev.Tool == nil {
 			return nil
 		}
 		if len(rules) == 0 {
@@ -107,11 +108,14 @@ func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
 	}
 }
 
-// AuthMiddleware 在 OnSessionStart 阶段执行认证。
+// AuthMiddleware 在 Session started 生命周期阶段执行认证。
 // 从 Session.Config.Metadata["auth_token"] 取出 token 进行认证，
 // 认证成功后将 Identity 存入 Session.State。
-func AuthMiddleware(auth io.Authenticator) hooks.Hook[hooks.SessionEvent] {
-	return func(ctx context.Context, ev *hooks.SessionEvent) error {
+func AuthMiddleware(auth io.Authenticator) hooks.Hook[session.LifecycleEvent] {
+	return func(ctx context.Context, ev *session.LifecycleEvent) error {
+		if ev == nil || ev.Stage != session.LifecycleStarted {
+			return nil
+		}
 		v, _ := ev.Session.GetMetadata("auth_token")
 		token, _ := v.(string)
 		if token == "" {

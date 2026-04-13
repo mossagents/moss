@@ -9,13 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 )
 
 func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
@@ -70,7 +70,7 @@ func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
 		t.Fatal("expected checkpoints to be configured")
 	}
 
-	reg := runtime.AgentRegistry(k)
+	reg := harness.SubagentCatalogOf(k)
 	gp, ok := reg.Get("general-purpose")
 	if !ok {
 		t.Fatal("expected general-purpose agent preset")
@@ -166,7 +166,7 @@ func TestBuildDeepAgent_DisableGeneralPurpose(t *testing.T) {
 		t.Fatalf("BuildDeepAgent: %v", err)
 	}
 
-	if _, ok := runtime.AgentRegistry(k).Get("general-purpose"); ok {
+	if _, ok := harness.SubagentCatalogOf(k).Get("general-purpose"); ok {
 		t.Fatal("general-purpose should not be auto-created when disabled")
 	}
 }

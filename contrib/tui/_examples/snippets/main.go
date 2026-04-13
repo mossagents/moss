@@ -23,11 +23,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	appkit "github.com/mossagents/moss/appkit"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/spf13/pflag"
 )
 

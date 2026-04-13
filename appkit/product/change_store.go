@@ -1,11 +1,11 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/internal/strutil"
+	appruntime "github.com/mossagents/moss/runtime"
 	"os"
 	"path/filepath"
 	"sort"

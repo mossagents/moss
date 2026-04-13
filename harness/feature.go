@@ -11,7 +11,7 @@ const (
 	// capability wiring that should happen before runtime setup.
 	FeaturePhaseConfigure FeaturePhase = "configure"
 	// FeaturePhaseRuntime is reserved for runtime assembly features such as
-	// appkit.RuntimeSetup.
+	// harness.RuntimeSetup.
 	FeaturePhaseRuntime FeaturePhase = "runtime"
 	// FeaturePhasePostRuntime runs after runtime setup and is intended for
 	// post-runtime augmentations such as policy or patch hooks.

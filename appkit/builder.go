@@ -18,11 +18,11 @@ import (
 //   - 创建本地 Sandbox
 //   - 装配内置工具 + MCP servers + Skills
 //
-// 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 appkit
+// 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 harness
 // 层 Feature，请使用 BuildKernelWithFeatures。
 func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, []harness.Feature{
-		RuntimeSetup(flags.Workspace, flags.Trust),
+		harness.RuntimeSetup(flags.Workspace, flags.Trust),
 	}, extraOpts...)
 }
 
@@ -33,16 +33,6 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts .
 // 语义，并在同阶段内按传入顺序安装。如果未包含 RuntimeSetup Feature，
 // 则不会自动调用 runtime.Setup()。
 func BuildKernelWithFeatures(ctx context.Context, flags *AppFlags, io io.UserIO, features ...harness.Feature) (*kernel.Kernel, error) {
-	return buildKernel(ctx, flags, io, features)
-}
-
-// BuildKernelWithExtensions is a backward-compatible wrapper that auto-includes
-// RuntimeSetup. New code should use BuildKernelWithFeatures instead.
-// Deprecated: use BuildKernelWithFeatures.
-func BuildKernelWithExtensions(ctx context.Context, flags *AppFlags, io io.UserIO, exts ...Extension) (*kernel.Kernel, error) {
-	features := make([]harness.Feature, 0, len(exts)+1)
-	features = append(features, exts...)
-	features = append(features, RuntimeSetup(flags.Workspace, flags.Trust))
 	return buildKernel(ctx, flags, io, features)
 }
 

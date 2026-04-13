@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 )
 
 // ServeConfig 配置 Gateway Serve 模式。
@@ -54,7 +54,7 @@ func Serve(ctx context.Context, cfg ServeConfig, k *kernel.Kernel) error {
 type HealthStatus string
 
 const (
-	HealthStatusOK          HealthStatus = "ok"
+	HealthStatusOK           HealthStatus = "ok"
 	HealthStatusShuttingDown HealthStatus = "shutting_down"
 )
 
@@ -131,4 +131,3 @@ func HealthText(k *kernel.Kernel, metrics ...observe.NormalizedMetricsSnapshot) 
 		h.TotalRuns,
 	)
 }
-

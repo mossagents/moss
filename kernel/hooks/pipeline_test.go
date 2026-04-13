@@ -168,8 +168,7 @@ func TestPipelineConcurrentRegistration(t *testing.T) {
 
 func TestRegistryCreation(t *testing.T) {
 	r := NewRegistry()
-	if r.BeforeLLM == nil || r.AfterLLM == nil || r.BeforeToolCall == nil ||
-		r.AfterToolCall == nil || r.OnSessionStart == nil || r.OnSessionEnd == nil ||
+	if r.BeforeLLM == nil || r.AfterLLM == nil ||
 		r.OnSessionLifecycle == nil || r.OnToolLifecycle == nil || r.OnError == nil {
 		t.Fatal("all pipelines should be initialized")
 	}

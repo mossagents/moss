@@ -11,7 +11,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appruntime "github.com/mossagents/moss/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"

@@ -22,10 +22,10 @@ func TestResolveRuntimeFeatureFlags_DefaultDisabled(t *testing.T) {
 
 func TestResolveRuntimeFeatureFlags_UsesFlags(t *testing.T) {
 	got := resolveRuntimeFeatureFlags(&AppFlags{
-		EnableSummarize: true,
-		EnableRAG:       true,
-		PromptAssembly:  "legacy",
-		PromptVersion:   "p1-unified-v1",
+		EnableSummarize:  true,
+		EnableRAG:        true,
+		PromptAssembly:   "legacy",
+		PromptVersion:    "p1-unified-v1",
 		BudgetGovernance: "enforce",
 		GlobalMaxTokens:  9000,
 		GlobalMaxSteps:   90,
@@ -50,4 +50,3 @@ func TestResolveRuntimeFeatureFlags_UsesFlags(t *testing.T) {
 		t.Fatalf("unexpected global limits: tokens=%d steps=%d", got.GlobalMaxTokens, got.GlobalMaxSteps)
 	}
 }
-

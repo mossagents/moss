@@ -2,6 +2,7 @@ package skill
 
 import (
 	"context"
+	"github.com/mossagents/moss/capability"
 	config "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"
@@ -94,7 +95,7 @@ func TestSkill_Metadata(t *testing.T) {
 func TestSkill_InitShutdown(t *testing.T) {
 	s := &Skill{name: "noop"}
 	ctx := context.Background()
-	if err := s.Init(ctx, Deps{}); err != nil {
+	if err := s.Init(ctx, capability.Deps{}); err != nil {
 		t.Errorf("Init: %v", err)
 	}
 	if err := s.Shutdown(ctx); err != nil {
@@ -605,13 +606,13 @@ Skill body.
 
 	// Env var not set → Init must return an error.
 	os.Unsetenv("MOSS_TEST_REQUIRED_VAR")
-	if err := s.Init(context.Background(), Deps{}); err == nil {
+	if err := s.Init(context.Background(), capability.Deps{}); err == nil {
 		t.Error("expected error when required env var is missing, got nil")
 	}
 
 	// Env var set → Init must succeed.
 	t.Setenv("MOSS_TEST_REQUIRED_VAR", "somevalue")
-	if err := s.Init(context.Background(), Deps{}); err != nil {
+	if err := s.Init(context.Background(), capability.Deps{}); err != nil {
 		t.Errorf("expected no error when required env var is set, got: %v", err)
 	}
 }

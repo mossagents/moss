@@ -1,8 +1,8 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"fmt"
+	"github.com/mossagents/moss/internal/strutil"
 	"strings"
 )
 

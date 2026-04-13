@@ -7,14 +7,15 @@ import (
 	"flag"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	mosstui "github.com/mossagents/moss/contrib/tui"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
 	"os"
 	"path/filepath"
@@ -171,11 +172,11 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io io.UserIO) (*kern
 	profile := r.profile
 
 	k, err := appkit.BuildKernelWithFeatures(ctx, r.flags, io,
-		appkit.WithSessionStore(r.store),
-		appkit.WithScheduling(r.sched),
-		appkit.WithPersistentMemories(memoriesDir),
-		appkit.WithLoadedBootstrapContext(r.flags.Workspace, "mossquant"),
-		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+		harness.SessionPersistence(r.store),
+		harness.Scheduling(r.sched),
+		harness.PersistentMemories(memoriesDir),
+		harness.LoadedBootstrapContext(r.flags.Workspace, "mossquant"),
+		harness.InstallerFeature("market-tools", func(_ context.Context, built *kernel.Kernel) error {
 			if err := registerTradeTools(built.ToolRegistry(), r.market); err != nil {
 				return fmt.Errorf("register trade tools: %w", err)
 			}

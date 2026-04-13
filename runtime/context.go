@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -33,8 +32,7 @@ const (
 type contextState struct {
 	store                 session.SessionStore
 	manager               session.Manager
-	memoryStore           memory.MemoryStore
-	memoryPipeline        *memoryPipelineManager
+	memory                contextMemoryService
 	triggerDialog         int
 	keepRecent            int
 	triggerTokens         int
@@ -210,12 +208,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		if st.manager == nil {
 			st.manager = k.SessionManager()
 		}
-		if st.memoryStore == nil {
-			st.memoryStore = memState.store
-		}
-		if st.memoryPipeline == nil {
-			st.memoryPipeline = memState.pipeline
-		}
+		st.memory = newContextMemoryService(memState)
 		if st.store == nil || st.manager == nil {
 			return nil
 		}
@@ -301,7 +294,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mo
 		if keep <= 0 {
 			keep = 20
 		}
-		out, err := compactWithSummary(ctx, st.store, st.memoryStore, st.memoryPipeline, st.manager, in.SessionID, keep, in.Note, llm)
+		out, err := compactWithSummary(ctx, st.store, st.memory, st.manager, in.SessionID, keep, in.Note, llm)
 		if err != nil {
 			return nil, err
 		}
@@ -386,8 +379,7 @@ func classifyContextFragment(msg model.Message) contextFragmentKind {
 func compactWithSummary(
 	ctx context.Context,
 	store session.SessionStore,
-	memoryStore memory.MemoryStore,
-	memoryPipeline *memoryPipelineManager,
+	memory contextMemoryService,
 	manager session.Manager,
 	sessionID string,
 	keepRecent int,
@@ -398,7 +390,7 @@ func compactWithSummary(
 	if !ok || sess == nil {
 		return nil, fmt.Errorf("session %q not found", sessionID)
 	}
-	return compactSessionContext(ctx, store, memoryStore, memoryPipeline, sess, keepRecent, note, llm, true)
+	return memory.CompactSessionContext(ctx, store, sess, keepRecent, note, llm, true)
 }
 
 // AutoCompactHook 在 BeforeLLM 阶段按 token 预算刷新 prompt 上下文。

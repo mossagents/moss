@@ -9,8 +9,8 @@ import (
 
 type ExecOutputEvent struct {
 	Type    io.OutputType `json:"type"`
-	Content string          `json:"content"`
-	IsError bool            `json:"is_error,omitempty"`
+	Content string        `json:"content"`
+	IsError bool          `json:"is_error,omitempty"`
 }
 
 type ExecReport struct {

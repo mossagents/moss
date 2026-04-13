@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/skill"
+	"github.com/mossagents/moss/capability"
 	"io"
 	"net/http"
 	"os"
@@ -149,15 +149,15 @@ func (c *LocalCache) Remove(name, version string) error {
 	return c.writeInstalled(remaining)
 }
 
-// LoadMetadata reads skill.Metadata from an installed skill's directory.
+// LoadMetadata reads capability.Metadata from an installed skill's directory.
 // It looks for a skill.json file at the root of the installed directory.
-func (c *LocalCache) LoadMetadata(rec InstalledRecord) (*skill.Metadata, error) {
+func (c *LocalCache) LoadMetadata(rec InstalledRecord) (*capability.Metadata, error) {
 	path := filepath.Join(rec.Dir, "skill.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("registry: read skill.json from %q: %w", rec.Dir, err)
 	}
-	var meta skill.Metadata
+	var meta capability.Metadata
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return nil, fmt.Errorf("registry: parse skill.json: %w", err)
 	}

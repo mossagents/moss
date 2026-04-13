@@ -6,21 +6,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/skill"
 	"github.com/mossagents/moss/userio/prompting"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -116,7 +116,7 @@ func renderSkillsSummary(agent *agentState, workspace string) string {
 		sb.WriteString("Discovered user skills:\n")
 		for _, mf := range manifests {
 			statusIcon := "[ ]"
-			if _, ok := runtime.SkillsManager(agent.k).Get(mf.Name); ok {
+			if _, ok := runtime.CapabilityManager(agent.k).Get(mf.Name); ok {
 				statusIcon = "[x]"
 			}
 			if strings.TrimSpace(mf.Description) == "" {
@@ -406,6 +406,9 @@ func (a *agentState) permissionSummary() string {
 
 func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
+		if ev == nil || ev.Stage != hooks.ToolLifecycleBefore {
+			return next(ctx)
+		}
 		if ev.Tool != nil {
 			a.mu.Lock()
 			mode := a.permissions[ev.Tool.Name]

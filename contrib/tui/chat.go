@@ -16,10 +16,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/runtime"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	userattachments "github.com/mossagents/moss/userio/attachments"
 )

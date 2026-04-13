@@ -1,15 +1,15 @@
 package tui
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -801,8 +801,6 @@ func firstTime(values ...time.Time) time.Time {
 	}
 	return time.Time{}
 }
-
-
 
 func max(a, b int) int {
 	if a > b {

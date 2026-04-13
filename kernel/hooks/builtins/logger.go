@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // InstallLogger 安装日志 hooks，在每个 pipeline 上记录 start/done/error。
@@ -27,11 +28,8 @@ func InstallLogger(reg *hooks.Registry) {
 		return ""
 	}), 1000)
 
-	reg.BeforeToolCall.AddInterceptor("logger", logToolInterceptor(logger, "before_tool_call"), 1000)
-	reg.AfterToolCall.AddInterceptor("logger", logToolInterceptor(logger, "after_tool_call"), 1000)
-
-	reg.OnSessionStart.AddInterceptor("logger", logSessionInterceptor(logger, "session_start"), 1000)
-	reg.OnSessionEnd.AddInterceptor("logger", logSessionInterceptor(logger, "session_end"), 1000)
+	reg.OnToolLifecycle.AddInterceptor("logger", logToolInterceptor(logger), 1000)
+	reg.OnSessionLifecycle.AddInterceptor("logger", logSessionInterceptor(logger), 1000)
 
 	reg.OnError.AddHook("logger", func(ctx context.Context, ev *hooks.ErrorEvent) error {
 		logger.ErrorContext(ctx, "hook error",
@@ -70,15 +68,20 @@ func logInterceptor[T any](logger *slog.Logger, phase string, sessionID func(*T)
 	}
 }
 
-func logToolInterceptor(logger *slog.Logger, phase string) hooks.Interceptor[hooks.ToolEvent] {
+func logToolInterceptor(logger *slog.Logger) hooks.Interceptor[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
 		start := time.Now()
-		label := phase
-		if ev.Tool != nil {
-			label += ":" + ev.Tool.Name
+		label := "tool_lifecycle"
+		if ev != nil {
+			label += ":" + string(ev.Stage)
+			if ev.Tool != nil && ev.Tool.Name != "" {
+				label += ":" + ev.Tool.Name
+			} else if ev.ToolName != "" {
+				label += ":" + ev.ToolName
+			}
 		}
 		sid := ""
-		if ev.Session != nil {
+		if ev != nil && ev.Session != nil {
 			sid = ev.Session.ID
 		}
 		logger.InfoContext(ctx, "hook start",
@@ -105,11 +108,15 @@ func logToolInterceptor(logger *slog.Logger, phase string) hooks.Interceptor[hoo
 	}
 }
 
-func logSessionInterceptor(logger *slog.Logger, phase string) hooks.Interceptor[hooks.SessionEvent] {
-	return func(ctx context.Context, ev *hooks.SessionEvent, next func(context.Context) error) error {
+func logSessionInterceptor(logger *slog.Logger) hooks.Interceptor[session.LifecycleEvent] {
+	return func(ctx context.Context, ev *session.LifecycleEvent, next func(context.Context) error) error {
 		start := time.Now()
+		phase := "session_lifecycle"
+		if ev != nil {
+			phase += ":" + string(ev.Stage)
+		}
 		sid := ""
-		if ev.Session != nil {
+		if ev != nil && ev.Session != nil {
 			sid = ev.Session.ID
 		}
 		logger.InfoContext(ctx, "hook start",

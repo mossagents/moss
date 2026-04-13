@@ -1,9 +1,9 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	"sort"
@@ -22,16 +22,16 @@ type ReviewReport struct {
 }
 
 type ReviewRepoState struct {
-	Available bool               `json:"available"`
-	Root      string             `json:"root,omitempty"`
-	Head      string             `json:"head,omitempty"`
-	Branch    string             `json:"branch,omitempty"`
-	Dirty     bool               `json:"dirty"`
+	Available bool                      `json:"available"`
+	Root      string                    `json:"root,omitempty"`
+	Head      string                    `json:"head,omitempty"`
+	Branch    string                    `json:"branch,omitempty"`
+	Dirty     bool                      `json:"dirty"`
 	Staged    []workspace.RepoFileState `json:"staged,omitempty"`
 	Unstaged  []workspace.RepoFileState `json:"unstaged,omitempty"`
-	Untracked []string           `json:"untracked,omitempty"`
-	Ignored   []string           `json:"ignored,omitempty"`
-	Error     string             `json:"error,omitempty"`
+	Untracked []string                  `json:"untracked,omitempty"`
+	Ignored   []string                  `json:"ignored,omitempty"`
+	Error     string                    `json:"error,omitempty"`
 }
 
 type ReviewSnapshotSummary struct {

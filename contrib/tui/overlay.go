@@ -2,7 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/runtime"
 )
 
 type overlayID string

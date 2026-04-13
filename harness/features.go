@@ -7,6 +7,7 @@ import (
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
@@ -98,18 +99,18 @@ type SessionLifecycleRegistration struct {
 // ToolLifecycleRegistration describes a tool lifecycle hook registration.
 type ToolLifecycleRegistration struct {
 	Order int
-	Hook  session.ToolLifecycleHook
+	Hook  hooks.ToolHook
 }
 
 // SessionLifecycleHooks returns a Feature that registers session lifecycle hooks.
-func SessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Feature {
+func SessionLifecycleHooks(registrations ...SessionLifecycleRegistration) Feature {
 	return FeatureFunc{
 		FeatureName: "session-lifecycle-hooks",
 		MetadataValue: FeatureMetadata{
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			for _, registration := range hooks {
+			for _, registration := range registrations {
 				registration := registration
 				if registration.Hook == nil {
 					continue
@@ -128,19 +129,19 @@ func SessionLifecycleHooks(hooks ...SessionLifecycleRegistration) Feature {
 }
 
 // ToolLifecycleHooks returns a Feature that registers tool lifecycle hooks.
-func ToolLifecycleHooks(hooks ...ToolLifecycleRegistration) Feature {
+func ToolLifecycleHooks(registrations ...ToolLifecycleRegistration) Feature {
 	return FeatureFunc{
 		FeatureName: "tool-lifecycle-hooks",
 		MetadataValue: FeatureMetadata{
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			for _, registration := range hooks {
+			for _, registration := range registrations {
 				registration := registration
 				if registration.Hook == nil {
 					continue
 				}
-				h.Kernel().Hooks().OnToolLifecycle.AddHook("", func(ctx context.Context, ev *session.ToolLifecycleEvent) error {
+				h.Kernel().Hooks().OnToolLifecycle.AddHook("", func(ctx context.Context, ev *hooks.ToolEvent) error {
 					if ev == nil {
 						return nil
 					}

@@ -1,9 +1,9 @@
 package product
 
 import (
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/runtime"
 )
 
 // ComposeStateObserver 将 state catalog observer 与现有 observer 组合。

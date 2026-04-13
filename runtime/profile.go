@@ -1,10 +1,10 @@
 package runtime
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"encoding/json"
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/session"
 	"os"
 	"sort"
@@ -497,5 +497,3 @@ func metadataExecutionPolicy(meta map[string]any) (ExecutionPolicy, bool) {
 	}
 	return policy, true
 }
-
-

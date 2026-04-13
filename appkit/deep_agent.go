@@ -4,13 +4,12 @@ import (
 	"context"
 	"sort"
 
-	"github.com/mossagents/moss/agent"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/runtime"
 )
 
 // DeepAgentConfig describes the configuration for a deep-agent style
@@ -156,7 +155,7 @@ func BuildDeepAgent(ctx context.Context, flags *AppFlags, uio io.UserIO, cfg *De
 }
 
 func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentConfig) error {
-	agReg := runtime.AgentRegistry(k)
+	agReg := harness.SubagentCatalogOf(k)
 	name := cfg.GeneralPurposeName
 	if _, exists := agReg.Get(name); exists {
 		return nil
@@ -185,7 +184,7 @@ func ensureGeneralPurposeAgent(k *kernel.Kernel, flags *AppFlags, cfg DeepAgentC
 
 	prompt := cfg.GeneralPurposePrompt
 	prompt = appconfig.RenderSystemPromptForTrust(flags.Workspace, flags.Trust, prompt, appconfig.DefaultTemplateContext(flags.Workspace))
-	return agReg.Register(agent.AgentConfig{
+	return agReg.Register(harness.SubagentConfig{
 		Name:         name,
 		Description:  cfg.GeneralPurposeDesc,
 		SystemPrompt: prompt,

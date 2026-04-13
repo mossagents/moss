@@ -11,7 +11,6 @@ import (
 	"sort"
 	"testing"
 
-	rt "github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
@@ -19,6 +18,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
+	rt "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
 )
 
@@ -221,13 +221,13 @@ func TestRenderSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
-	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+func TestBuildKernelWithFeatures_AppliesOptionsAndInstallers(t *testing.T) {
+	k, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
 	}, &io.NoOpIO{},
-		WithKernelOptions(kernel.WithParallelToolCalls()),
-		AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		harness.KernelOptions(kernel.WithParallelToolCalls()),
+		harness.InstallerFeature("test-extension-tool", func(_ context.Context, k *kernel.Kernel) error {
 			return k.ToolRegistry().Register(tool.NewRawTool(tool.ToolSpec{
 				Name:        "test_extension_tool",
 				Description: "test tool",
@@ -238,7 +238,7 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 		}),
 	)
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 
 	kv := reflect.ValueOf(k).Elem()
@@ -260,20 +260,22 @@ func TestBuildKernelWithExtensions_AppliesOptionsAndInstallers(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithExtensions_NoExtensionsMatchesBuildKernel(t *testing.T) {
+func TestBuildKernelWithFeatures_NoFeaturesMatchesBuildKernel(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
 	base, err := BuildKernel(context.Background(), flags, &io.NoOpIO{})
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
-	withExts, err := BuildKernelWithExtensions(context.Background(), flags, &io.NoOpIO{})
+	withFeatures, err := BuildKernelWithFeatures(context.Background(), flags, &io.NoOpIO{},
+		harness.RuntimeSetup(flags.Workspace, flags.Trust),
+	)
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 
-	if !reflect.DeepEqual(toolNames(base), toolNames(withExts)) {
-		t.Fatalf("tool sets diverged:\nbase=%v\nwithExtensions=%v", toolNames(base), toolNames(withExts))
+	if !reflect.DeepEqual(toolNames(base), toolNames(withFeatures)) {
+		t.Fatalf("tool sets diverged:\nbase=%v\nwithFeatures=%v", toolNames(base), toolNames(withFeatures))
 	}
 }
 
@@ -281,7 +283,7 @@ func TestBuildKernelWithFeatures_RuntimeOptionsAffectSetup(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
 	k, err := BuildKernelWithFeatures(context.Background(), flags, &io.NoOpIO{},
-		RuntimeSetup(flags.Workspace, flags.Trust, rt.WithBuiltinTools(false)),
+		harness.RuntimeSetup(flags.Workspace, flags.Trust, rt.WithBuiltinTools(false)),
 	)
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures: %v", err)
@@ -308,7 +310,7 @@ func TestBuildKernelWithFeatures_GovernsFeaturePhases(t *testing.T) {
 				return nil
 			},
 		},
-		RuntimeSetup(flags.Workspace, flags.Trust),
+		harness.RuntimeSetup(flags.Workspace, flags.Trust),
 	)
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures: %v", err)
@@ -381,13 +383,13 @@ func toolNames(k *kernel.Kernel) []string {
 	return names
 }
 
-func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
-	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+func TestBuildKernelWithFeatures_WithScheduling(t *testing.T) {
+	k, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &io.NoOpIO{}, WithScheduling(scheduler.New()))
+	}, &io.NoOpIO{}, harness.RuntimeSetup(".", ""), harness.Scheduling(scheduler.New()))
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 
 	tools := k.ToolRegistry().List()
@@ -402,14 +404,14 @@ func TestBuildKernelWithExtensions_WithScheduling(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
+func TestBuildKernelWithFeatures_WithPersistentMemories(t *testing.T) {
 	memDir := filepath.Join(t.TempDir(), "memories")
-	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+	k, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &io.NoOpIO{}, WithPersistentMemories(memDir))
+	}, &io.NoOpIO{}, harness.RuntimeSetup(".", ""), harness.PersistentMemories(memDir))
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = k.Shutdown(context.Background())
@@ -427,17 +429,17 @@ func TestBuildKernelWithExtensions_WithPersistentMemories(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
+func TestBuildKernelWithFeatures_WithContextOffload(t *testing.T) {
 	store, err := session.NewFileStore(t.TempDir())
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
-	k, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+	k, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
-	}, &io.NoOpIO{}, WithContextOffload(store))
+	}, &io.NoOpIO{}, harness.RuntimeSetup(".", ""), harness.ContextOffload(store))
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions: %v", err)
+		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
 
 	if _, ok := k.ToolRegistry().Get("offload_context"); !ok {
@@ -445,7 +447,7 @@ func TestBuildKernelWithExtensions_WithContextOffload(t *testing.T) {
 	}
 }
 
-func TestBuildKernelWithExtensions_TrustGatesProjectSkillsAndAgents(t *testing.T) {
+func TestBuildKernelWithFeatures_TrustGatesProjectSkillsAndAgents(t *testing.T) {
 	workspace := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -477,33 +479,33 @@ trust_level: restricted
 		t.Fatalf("write agent: %v", err)
 	}
 
-	restricted, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+	restricted, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: workspace,
 		Trust:     "restricted",
-	}, &io.NoOpIO{})
+	}, &io.NoOpIO{}, harness.RuntimeSetup(workspace, "restricted"))
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions restricted: %v", err)
+		t.Fatalf("BuildKernelWithFeatures restricted: %v", err)
 	}
-	if _, ok := rt.SkillsManager(restricted).Get("project-skill"); ok {
+	if _, ok := rt.CapabilityManager(restricted).Get("project-skill"); ok {
 		t.Fatal("restricted trust should not load project skill")
 	}
-	if _, ok := rt.AgentRegistry(restricted).Get("project-agent"); ok {
+	if _, ok := harness.SubagentCatalogOf(restricted).Get("project-agent"); ok {
 		t.Fatal("restricted trust should not load project agent")
 	}
 
-	trusted, err := BuildKernelWithExtensions(context.Background(), &AppFlags{
+	trusted, err := BuildKernelWithFeatures(context.Background(), &AppFlags{
 		Provider:  "openai",
 		Workspace: workspace,
 		Trust:     "trusted",
-	}, &io.NoOpIO{})
+	}, &io.NoOpIO{}, harness.RuntimeSetup(workspace, "trusted"))
 	if err != nil {
-		t.Fatalf("BuildKernelWithExtensions trusted: %v", err)
+		t.Fatalf("BuildKernelWithFeatures trusted: %v", err)
 	}
-	if _, ok := rt.SkillsManager(trusted).Get("project-skill"); !ok {
+	if _, ok := rt.CapabilityManager(trusted).Get("project-skill"); !ok {
 		t.Fatal("trusted workspace should load project skill")
 	}
-	if _, ok := rt.AgentRegistry(trusted).Get("project-agent"); !ok {
+	if _, ok := harness.SubagentCatalogOf(trusted).Get("project-agent"); !ok {
 		t.Fatal("trusted workspace should load project agent")
 	}
 }

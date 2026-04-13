@@ -69,10 +69,10 @@ func (e *PolicyDeniedError) AsKernelError() *kerrors.Error {
 // PolicyRule 评估单个工具调用的权限。
 type PolicyRule func(ctx PolicyContext) PolicyResult
 
-// PolicyCheck 构造 policy hook，遍历 rules 取最严格决策（Deny > RequireApproval > Allow）。
+// PolicyCheck 构造 policy hook，仅在工具调用 before 阶段执行权限决策。
 func PolicyCheck(rules ...PolicyRule) hooks.Hook[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent) error {
-		if ev.Tool == nil {
+		if ev == nil || ev.Stage != hooks.ToolLifecycleBefore || ev.Tool == nil {
 			return nil
 		}
 
@@ -123,7 +123,7 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, ev *hooks.ToolEvent, result
 		Risk:        string(ev.Tool.Risk),
 		ReasonCode:  result.Reason.Code,
 		Enforcement: result.Enforcement,
-		Metadata:        data,
+		Metadata:    data,
 	})
 }
 
@@ -168,7 +168,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Metadata:        approvalRequestData(approval, ev.Input, result.Meta),
+		Metadata:    approvalRequestData(approval, ev.Input, result.Meta),
 	})
 	if auto := autoApprovalDecision(ev, approval); auto != nil {
 		resolved := io.NormalizeApprovalDecisionForRequest(approval, auto)
@@ -186,7 +186,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 			Risk:        approval.Risk,
 			ReasonCode:  approval.ReasonCode,
 			Enforcement: approval.Enforcement,
-			Metadata:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
+			Metadata:    approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 		})
 		applyApprovalDecision(ev, approval, resolved)
 		return nil
@@ -222,7 +222,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Risk:        approval.Risk,
 		ReasonCode:  approval.ReasonCode,
 		Enforcement: approval.Enforcement,
-		Metadata:        approvalResolvedData(approval, resolved, ev.Input, result.Meta),
+		Metadata:    approvalResolvedData(approval, resolved, ev.Input, result.Meta),
 	})
 	if !resolved.Approved {
 		return policyDeniedError(ev, result)

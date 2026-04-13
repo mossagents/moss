@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel/checkpoint"
@@ -16,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/runtime"
 )
 
 type deepAgentPresetState struct {
@@ -102,7 +102,7 @@ func buildDeepAgentSessionContextPack(state *deepAgentPresetState) ([]harness.Fe
 	}
 
 	var store session.SessionStore = runtime.WrapSessionStore(rawStore, state.stateCatalog)
-	features := []harness.Feature{WithSessionStore(store)}
+	features := []harness.Feature{harness.SessionPersistence(store)}
 	if deepAgentValueOrDefault(state.config.EnableContextOffload, true) {
 		features = append(features, harness.ContextOffload(store), harness.ContextManagement(store))
 	}
@@ -194,7 +194,7 @@ func buildDeepAgentBootstrapPack(state *deepAgentPresetState) ([]harness.Feature
 		return nil, nil
 	}
 	return []harness.Feature{
-		WithLoadedBootstrapContextWithTrust(state.flags.Workspace, state.config.AppName, state.flags.Trust),
+		harness.BootstrapContext(state.flags.Workspace, state.config.AppName, state.flags.Trust),
 	}, nil
 }
 
@@ -216,7 +216,7 @@ func buildDeepAgentLLMGovernancePack(state *deepAgentPresetState) ([]harness.Fea
 
 func buildDeepAgentRuntimePack(state *deepAgentPresetState) ([]harness.Feature, error) {
 	return []harness.Feature{
-		RuntimeSetup(state.flags.Workspace, state.flags.Trust, state.config.DefaultSetupOptions...),
+		harness.RuntimeSetup(state.flags.Workspace, state.flags.Trust, state.config.DefaultSetupOptions...),
 	}, nil
 }
 

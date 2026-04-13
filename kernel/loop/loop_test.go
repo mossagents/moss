@@ -480,7 +480,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 
 	chain := hooks.NewRegistry()
-	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 
 	io := kt.NewRecorderIO()
 	l := &AgentLoop{
@@ -833,7 +833,7 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 	chain := hooks.NewRegistry()
-	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		Tools:    reg,
@@ -1060,7 +1060,7 @@ func (o *recordingObserver) OnExecutionEvent(_ context.Context, e observe.Execut
 	o.execution = append(o.execution, e)
 }
 
-func (o *recordingObserver) OnApproval(context.Context, kernio.ApprovalEvent)    {}
+func (o *recordingObserver) OnApproval(context.Context, kernio.ApprovalEvent)     {}
 func (o *recordingObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
 func (o *recordingObserver) OnError(_ context.Context, e observe.ErrorEvent) {
 	o.errors = append(o.errors, e)
@@ -1127,15 +1127,20 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 			}},
 		},
 		Tools:    tool.NewRegistry(),
+		Hooks:    hooks.NewRegistry(),
 		IO:       kt.NewRecorderIO(),
 		Observer: observer,
-		LifecycleHook: func(_ context.Context, event session.LifecycleEvent) {
-			stages = append(stages, event.Stage)
-			if event.Stage == session.LifecycleStarted {
-				panic("boom")
-			}
-		},
 	}
+	l.Hooks.OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
+		if event == nil {
+			return nil
+		}
+		stages = append(stages, event.Stage)
+		if event.Stage == session.LifecycleStarted {
+			panic("boom")
+		}
+		return nil
+	}, 0)
 
 	sess := &session.Session{
 		ID:       "test-lifecycle-panic",
@@ -1170,8 +1175,14 @@ func TestLoopLifecycleHookPanicEmitsErrorAndContinues(t *testing.T) {
 func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	observer := &recordingObserver{}
 	chain := hooks.NewRegistry()
-	chain.BeforeToolCall.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
-	var events []session.ToolLifecycleEvent
+	var events []hooks.ToolEvent
+	chain.OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
+		if event != nil {
+			events = append(events, *event)
+		}
+		return nil
+	}, -10)
+	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
 	reg := tool.NewRegistry()
 	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not be executed")
@@ -1202,9 +1213,6 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 		Hooks:    chain,
 		IO:       kt.NewRecorderIO(),
 		Observer: observer,
-		ToolLifecycleHook: func(_ context.Context, event session.ToolLifecycleEvent) {
-			events = append(events, event)
-		},
 	}
 
 	sess := &session.Session{
@@ -1223,16 +1231,16 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 	if got, want := len(events), 2; got != want {
 		t.Fatalf("tool lifecycle events = %d, want %d", got, want)
 	}
-	if events[0].Stage != session.ToolLifecycleBefore {
+	if events[0].Stage != hooks.ToolLifecycleBefore {
 		t.Fatalf("first tool lifecycle stage = %q, want before", events[0].Stage)
 	}
-	if events[1].Stage != session.ToolLifecycleAfter {
+	if events[1].Stage != hooks.ToolLifecycleAfter {
 		t.Fatalf("second tool lifecycle stage = %q, want after", events[1].Stage)
 	}
 	if events[1].Error == nil {
 		t.Fatal("expected denied tool call to surface error in after hook")
 	}
-	if events[1].Result == nil || !events[1].Result.IsError {
+	if events[1].ToolResult == nil || !events[1].ToolResult.IsError {
 		t.Fatal("expected denied tool call to surface error result in after hook")
 	}
 }

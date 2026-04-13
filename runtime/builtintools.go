@@ -27,7 +27,7 @@ const maxInlineCommandOutput = 8000
 const maxHTTPResponseBodyBytes = 256 * 1024
 
 // RegisteredBuiltinToolNames 返回 runtime 一方自带的 builtin tools 名称列表。
-// 这些工具由 appkit/runtime 直接提供，不是 prompt skills，也不是通过 MCP 桥接的外部工具。
+// 这些工具由 runtime 包直接提供，不是 prompt skills，也不是通过 MCP 桥接的外部工具。
 // 当 Workspace 或 Sandbox 至少有一个可用时，注册文件系统工具。
 // 当 Executor 或 Sandbox 至少有一个可用时，注册 run_command。
 func RegisteredBuiltinToolNames(sb sandbox.Sandbox, ws workspace.Workspace, exec workspace.Executor) []string {

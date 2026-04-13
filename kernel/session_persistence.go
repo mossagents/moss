@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
 )
@@ -52,8 +53,8 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
 		return nil
 	}, 100)
-	k.Hooks().OnToolLifecycle.AddHook("persistent-session-store-tool", func(ctx context.Context, event *session.ToolLifecycleEvent) error {
-		if event == nil || event.Stage != session.ToolLifecycleAfter {
+	k.Hooks().OnToolLifecycle.AddHook("persistent-session-store-tool", func(ctx context.Context, event *hooks.ToolEvent) error {
+		if event == nil || event.Stage != hooks.ToolLifecycleAfter {
 			return nil
 		}
 		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))

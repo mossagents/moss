@@ -20,18 +20,19 @@ import (
 	"flag"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/gateway"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/providers/embedding"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
-	mosstui "github.com/mossagents/moss/contrib/tui"
 	"io"
 	"net/http"
 	"os"
@@ -192,11 +193,11 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 	knStore := runtime.NewMemoryKnowledgeStore()
 
 	k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
-		appkit.WithSessionStore(store),
-		appkit.WithScheduling(sched),
-		appkit.WithLoadedBootstrapContextWithTrust(flags.Workspace, "mossclaw", flags.Trust),
-		appkit.WithKnowledge(knStore, embedder),
-		appkit.AfterBuild(func(_ context.Context, built *kernel.Kernel) error {
+		harness.SessionPersistence(store),
+		harness.Scheduling(sched),
+		harness.BootstrapContext(flags.Workspace, "mossclaw", flags.Trust),
+		harness.Knowledge(knStore, embedder),
+		harness.InstallerFeature("web-tools", func(_ context.Context, built *kernel.Kernel) error {
 			return registerWebTools(built)
 		}),
 	)

@@ -7,12 +7,12 @@ import (
 	"fmt"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mossagents/moss/capability"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/sandbox"
-	"github.com/mossagents/moss/skill"
 	"os"
 	"strings"
 )
@@ -24,8 +24,8 @@ const (
 )
 
 // MCPServer 通过 MCP 协议连接外部工具服务器，并将远端工具桥接到本地 ToolRegistry。
-// 它实现了 skill.Provider，以便纳入统一生命周期管理，但它不是 prompt skill，
-// 也不是 appkit/runtime 内建的 builtin tools。
+// 它实现了 capability.Provider，以便纳入统一生命周期管理，但它不是 prompt skill，
+// 也不是 runtime 包内建的 builtin tools。
 type MCPServer struct {
 	cfg       config.SkillConfig
 	client    mcpclient.MCPClient
@@ -33,7 +33,7 @@ type MCPServer struct {
 	guard     ToolGuard
 }
 
-var _ skill.Provider = (*MCPServer)(nil)
+var _ capability.Provider = (*MCPServer)(nil)
 
 // ToolGuard 负责 MCP 工具调用的输入/输出守卫。
 // Policy middleware 负责访问决策与审计，ToolGuard 仅负责 I/O 校验与约束。
@@ -65,8 +65,8 @@ func NewMCPServerWithGuard(cfg config.SkillConfig, guard ToolGuard) *MCPServer {
 	return &MCPServer{cfg: cfg, guard: guard}
 }
 
-func (s *MCPServer) Metadata() skill.Metadata {
-	return skill.Metadata{
+func (s *MCPServer) Metadata() capability.Metadata {
+	return capability.Metadata{
 		Name:        s.cfg.Name,
 		Version:     "0.0.0",
 		Description: fmt.Sprintf("MCP server: %s (transport: %s)", s.cfg.Name, s.cfg.Transport),
@@ -76,7 +76,7 @@ func (s *MCPServer) Metadata() skill.Metadata {
 	}
 }
 
-func (s *MCPServer) Init(ctx context.Context, deps skill.Deps) error {
+func (s *MCPServer) Init(ctx context.Context, deps capability.Deps) error {
 	// 1. 建立连接
 	client, err := s.connect(ctx, deps)
 	if err != nil {
@@ -143,7 +143,7 @@ func (s *MCPServer) Shutdown(ctx context.Context) error {
 }
 
 // connect 根据 transport 类型创建 MCP client 连接。
-func (s *MCPServer) connect(ctx context.Context, deps skill.Deps) (mcpclient.MCPClient, error) {
+func (s *MCPServer) connect(ctx context.Context, deps capability.Deps) (mcpclient.MCPClient, error) {
 	env, err := s.buildEnv(ctx, deps.UserIO)
 	if err != nil {
 		return nil, err

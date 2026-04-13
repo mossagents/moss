@@ -16,12 +16,8 @@ type Plugin struct {
 
 	BeforeLLM          hooks.Hook[hooks.LLMEvent]
 	AfterLLM           hooks.Hook[hooks.LLMEvent]
-	BeforeToolCall     hooks.Hook[hooks.ToolEvent]
-	AfterToolCall      hooks.Hook[hooks.ToolEvent]
-	OnSessionStart     hooks.Hook[hooks.SessionEvent]
-	OnSessionEnd       hooks.Hook[hooks.SessionEvent]
 	OnSessionLifecycle hooks.Hook[session.LifecycleEvent]
-	OnToolLifecycle    hooks.Hook[session.ToolLifecycleEvent]
+	OnToolLifecycle    hooks.Hook[hooks.ToolEvent]
 	OnError            hooks.Hook[hooks.ErrorEvent]
 }
 
@@ -32,18 +28,6 @@ func installPlugin(reg *hooks.Registry, p Plugin) {
 	}
 	if p.AfterLLM != nil {
 		reg.AfterLLM.AddHook(p.Name, p.AfterLLM, p.Order)
-	}
-	if p.BeforeToolCall != nil {
-		reg.BeforeToolCall.AddHook(p.Name, p.BeforeToolCall, p.Order)
-	}
-	if p.AfterToolCall != nil {
-		reg.AfterToolCall.AddHook(p.Name, p.AfterToolCall, p.Order)
-	}
-	if p.OnSessionStart != nil {
-		reg.OnSessionStart.AddHook(p.Name, p.OnSessionStart, p.Order)
-	}
-	if p.OnSessionEnd != nil {
-		reg.OnSessionEnd.AddHook(p.Name, p.OnSessionEnd, p.Order)
 	}
 	if p.OnSessionLifecycle != nil {
 		reg.OnSessionLifecycle.AddHook(p.Name, p.OnSessionLifecycle, p.Order)

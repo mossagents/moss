@@ -1,8 +1,8 @@
 package appkit
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"flag"
+	"github.com/mossagents/moss/internal/strutil"
 	"os"
 	"strconv"
 	"strings"

@@ -20,7 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime/events"
+	"github.com/mossagents/moss/runtime/events"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"

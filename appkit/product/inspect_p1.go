@@ -1,14 +1,14 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"fmt"
 	"github.com/mossagents/moss/agent"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/skill"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"

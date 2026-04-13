@@ -4,9 +4,9 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/runtime"
 	"strconv"
 	"strings"
 )

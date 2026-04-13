@@ -1,10 +1,10 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/strutil"
 	"sort"
 	"strings"
 )
@@ -332,8 +332,6 @@ func maskKey(key string) string {
 	}
 	return key[:4] + strings.Repeat("*", len(key)-8) + key[len(key)-4:]
 }
-
-
 
 func buildMCPServerViews(workspace, trust string, globalCfg, projectCfg *appconfig.Config) []MCPServerConfigView {
 	trust = appconfig.NormalizeTrustLevel(trust)

@@ -1,9 +1,12 @@
 package hooks
 
 import (
+	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -16,22 +19,34 @@ type LLMEvent struct {
 	Observer observe.Observer
 }
 
-// ToolEvent 携带 BeforeToolCall / AfterToolCall 阶段的上下文。
+// ToolStage 表示工具调用生命周期 hook 的阶段。
+type ToolStage string
+
+const (
+	ToolLifecycleBefore ToolStage = "before"
+	ToolLifecycleAfter  ToolStage = "after"
+)
+
+// ToolEvent 携带工具调用生命周期阶段的上下文。
 type ToolEvent struct {
-	Session  *session.Session
-	Tool     *tool.ToolSpec
-	Input    json.RawMessage // BeforeToolCall 时有值
-	Result   json.RawMessage // AfterToolCall 时有值
-	IO       io.UserIO
-	Observer observe.Observer
+	Stage      ToolStage
+	Session    *session.Session
+	Tool       *tool.ToolSpec
+	ToolName   string
+	CallID     string
+	Input      json.RawMessage // 执行前将要传入工具的参数
+	Output     json.RawMessage // 执行后工具返回的原始输出
+	ToolResult *model.ToolResult
+	Risk       string
+	Duration   time.Duration
+	Error      error
+	Timestamp  time.Time
+	IO         io.UserIO
+	Observer   observe.Observer
 }
 
-// SessionEvent 携带 OnSessionStart / OnSessionEnd 阶段的上下文。
-type SessionEvent struct {
-	Session  *session.Session
-	IO       io.UserIO
-	Observer observe.Observer
-}
+// ToolHook 在工具调用生命周期阶段被调用。
+type ToolHook func(context.Context, ToolEvent)
 
 // ErrorEvent 携带 OnError 阶段的上下文。
 type ErrorEvent struct {

@@ -20,9 +20,6 @@ type LLMAgent struct {
 	hooks       *hooks.Registry
 	config      loop.LoopConfig
 	subAgents   []Agent
-
-	lifecycleHook     session.LifecycleHook
-	toolLifecycleHook session.ToolLifecycleHook
 }
 
 // LLMAgentConfig configures an LLMAgent.
@@ -34,9 +31,6 @@ type LLMAgentConfig struct {
 	Hooks       *hooks.Registry
 	Config      loop.LoopConfig
 	SubAgents   []Agent
-
-	LifecycleHook     session.LifecycleHook
-	ToolLifecycleHook session.ToolLifecycleHook
 }
 
 // NewLLMAgent creates a new LLM-driven agent.
@@ -48,15 +42,13 @@ func NewLLMAgent(cfg LLMAgentConfig) *LLMAgent {
 		cfg.Hooks = hooks.NewRegistry()
 	}
 	return &LLMAgent{
-		name:              cfg.Name,
-		description:       cfg.Description,
-		llm:               cfg.LLM,
-		tools:             cfg.Tools,
-		hooks:             cfg.Hooks,
-		config:            cfg.Config,
-		subAgents:         cfg.SubAgents,
-		lifecycleHook:     cfg.LifecycleHook,
-		toolLifecycleHook: cfg.ToolLifecycleHook,
+		name:        cfg.Name,
+		description: cfg.Description,
+		llm:         cfg.LLM,
+		tools:       cfg.Tools,
+		hooks:       cfg.Hooks,
+		config:      cfg.Config,
+		subAgents:   cfg.SubAgents,
 	}
 }
 
@@ -96,16 +88,14 @@ func (a *LLMAgent) Run(ctx *InvocationContext) iter.Seq2[*session.Event, error] 
 		}
 
 		l := &loop.AgentLoop{
-			AgentName:         a.name,
-			LLM:               a.llm,
-			Tools:              a.tools,
-			Hooks:              a.hooks,
-			IO:                 ctx.IO(),
-			Config:             a.config,
-			Observer:           ctx.Observer(),
-			RunID:              ctx.RunID(),
-			LifecycleHook:      a.lifecycleHook,
-			ToolLifecycleHook:  a.toolLifecycleHook,
+			AgentName: a.name,
+			LLM:       a.llm,
+			Tools:     a.tools,
+			Hooks:     a.hooks,
+			IO:        ctx.IO(),
+			Config:    a.config,
+			Observer:  ctx.Observer(),
+			RunID:     ctx.RunID(),
 		}
 
 		_, err := l.RunYield(ctx, ctx.Session(), safeYield)

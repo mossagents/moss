@@ -3,10 +3,10 @@ package appkit
 import (
 	"context"
 
-	"github.com/mossagents/moss/appkit/runtime"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/runtime"
 )
 
 // RuntimeResolution captures resolved runtime inputs shared by CLI/TUI entrypoints.
@@ -19,10 +19,10 @@ type RuntimeResolution struct {
 
 // RuntimeFeatureFlags captures runtime middleware capability switches.
 type RuntimeFeatureFlags struct {
-	EnableSummarize bool
-	EnableRAG       bool
-	PromptAssembly  string
-	PromptVersion   string
+	EnableSummarize  bool
+	EnableRAG        bool
+	PromptAssembly   string
+	PromptVersion    string
 	BudgetGovernance string
 	GlobalMaxTokens  int
 	GlobalMaxSteps   int
@@ -34,10 +34,10 @@ func resolveRuntimeFeatureFlags(flags *AppFlags) RuntimeFeatureFlags {
 		return RuntimeFeatureFlags{}
 	}
 	return RuntimeFeatureFlags{
-		EnableSummarize: flags.EnableSummarize,
-		EnableRAG:       flags.EnableRAG,
-		PromptAssembly:  flags.PromptAssembly,
-		PromptVersion:   flags.PromptVersion,
+		EnableSummarize:  flags.EnableSummarize,
+		EnableRAG:        flags.EnableRAG,
+		PromptAssembly:   flags.PromptAssembly,
+		PromptVersion:    flags.PromptVersion,
 		BudgetGovernance: flags.BudgetGovernance,
 		GlobalMaxTokens:  flags.GlobalMaxTokens,
 		GlobalMaxSteps:   flags.GlobalMaxSteps,

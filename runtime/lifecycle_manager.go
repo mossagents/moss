@@ -24,7 +24,7 @@ func newRuntimeLifecycleManager() runtimeLifecycleManager {
 		capabilities: []runtimeCapability{
 			builtinToolsCapability{},
 			mcpCapability{},
-			skillsCapability{},
+			promptSkillsCapability{},
 			agentsCapability{},
 		},
 	}
@@ -81,7 +81,7 @@ func (builtinToolsCapability) Register(ctx context.Context, k *kernel.Kernel, _ 
 	return setupBuiltinTools(ctx, k, cfg)
 }
 func (builtinToolsCapability) Validate(_ context.Context, k *kernel.Kernel, _ string, cfg config) error {
-	if _, ok := SkillsManager(k).Get("builtin-tools"); !ok {
+	if _, ok := CapabilityManager(k).Get("builtin-tools"); !ok {
 		return fmt.Errorf("runtime validation failed: builtin-tools provider missing")
 	}
 	return nil
@@ -101,16 +101,20 @@ func (mcpCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDi
 func (mcpCapability) Validate(context.Context, *kernel.Kernel, string, config) error { return nil }
 func (mcpCapability) Activate(context.Context, *kernel.Kernel, string, config) error { return nil }
 
-type skillsCapability struct{}
+type promptSkillsCapability struct{}
 
-func (skillsCapability) Name() string            { return "skills" }
-func (skillsCapability) Critical() bool          { return true }
-func (skillsCapability) Enabled(cfg config) bool { return cfg.skills }
-func (skillsCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
-	return setupSkills(ctx, k, workspaceDir, cfg)
+func (promptSkillsCapability) Name() string            { return "skills" }
+func (promptSkillsCapability) Critical() bool          { return true }
+func (promptSkillsCapability) Enabled(cfg config) bool { return cfg.skills }
+func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
+	return setupPromptSkills(ctx, k, workspaceDir, cfg)
 }
-func (skillsCapability) Validate(context.Context, *kernel.Kernel, string, config) error { return nil }
-func (skillsCapability) Activate(context.Context, *kernel.Kernel, string, config) error { return nil }
+func (promptSkillsCapability) Validate(context.Context, *kernel.Kernel, string, config) error {
+	return nil
+}
+func (promptSkillsCapability) Activate(context.Context, *kernel.Kernel, string, config) error {
+	return nil
+}
 
 type agentsCapability struct{}
 
@@ -126,5 +130,5 @@ func (agentsCapability) Activate(context.Context, *kernel.Kernel, string, config
 
 var _ runtimeCapability = builtinToolsCapability{}
 var _ runtimeCapability = mcpCapability{}
-var _ runtimeCapability = skillsCapability{}
+var _ runtimeCapability = promptSkillsCapability{}
 var _ runtimeCapability = agentsCapability{}

@@ -5,11 +5,11 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/runtime"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/userio/prompting"
 	"strings"
 )
@@ -26,7 +26,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 		}
 		agent := state.buildAgent()
 		state.k.InstallHooks(func(reg *hooks.Registry) {
-			reg.BeforeToolCall.Intercept(agent.permissionOverrideInterceptor())
+			reg.OnToolLifecycle.Intercept(agent.permissionOverrideInterceptor())
 		})
 		return kernelReadyMsg{agent: agent, notices: state.notices}
 	}

@@ -415,7 +415,7 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 			"args_preview": `{
 				"description":"Commit and push C4 integration updates",
 				"command":"git --no-pager status --short",
-				"args":["&&","git","add","appkit/runtime/memory.go","&&","git","push","origin","main"]
+				"args":["&&","git","add","runtime/memory.go","&&","git","push","origin","main"]
 			}`,
 		},
 	}, 100)
@@ -424,7 +424,7 @@ func TestRenderMessage_ShellToolStartUsesCompactLayout(t *testing.T) {
 		"task",
 		"Commit and push C4 integration updates",
 		"command",
-		"git --no-pager status --short && git add appkit/runtime/memory.go",
+		"git --no-pager status --short && git add runtime/memory.go",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("compact shell start missing %q in %q", want, out)

@@ -1,17 +1,17 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
+	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/skill"
 	"os"
@@ -588,17 +588,17 @@ type CheckpointSummary struct {
 }
 
 type CheckpointDetail struct {
-	ID           string                      `json:"id"`
-	SessionID    string                      `json:"session_id,omitempty"`
-	SnapshotID   string                      `json:"snapshot_id,omitempty"`
-	Note         string                      `json:"note,omitempty"`
-	PatchIDs     []string                    `json:"patch_ids,omitempty"`
-	PatchCount   int                         `json:"patch_count"`
+	ID           string                            `json:"id"`
+	SessionID    string                            `json:"session_id,omitempty"`
+	SnapshotID   string                            `json:"snapshot_id,omitempty"`
+	Note         string                            `json:"note,omitempty"`
+	PatchIDs     []string                          `json:"patch_ids,omitempty"`
+	PatchCount   int                               `json:"patch_count"`
 	Lineage      []checkpoint.CheckpointLineageRef `json:"lineage,omitempty"`
-	LineageDepth int                         `json:"lineage_depth"`
-	Metadata     map[string]any              `json:"metadata,omitempty"`
-	MetadataKeys []string                    `json:"metadata_keys,omitempty"`
-	CreatedAt    time.Time                   `json:"created_at"`
+	LineageDepth int                               `json:"lineage_depth"`
+	Metadata     map[string]any                    `json:"metadata,omitempty"`
+	MetadataKeys []string                          `json:"metadata_keys,omitempty"`
+	CreatedAt    time.Time                         `json:"created_at"`
 }
 
 func SummarizeCheckpoint(item checkpoint.CheckpointRecord) CheckpointSummary {

@@ -18,7 +18,7 @@ type spyObserver struct {
 
 func (s *spyObserver) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
 func (s *spyObserver) OnToolCall(context.Context, observe.ToolCallEvent)    {}
-func (s *spyObserver) OnApproval(context.Context, io.ApprovalEvent)   {}
+func (s *spyObserver) OnApproval(context.Context, io.ApprovalEvent)         {}
 func (s *spyObserver) OnSessionEvent(context.Context, observe.SessionEvent) {}
 func (s *spyObserver) OnError(context.Context, observe.ErrorEvent)          {}
 func (s *spyObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {

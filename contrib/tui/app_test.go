@@ -2,11 +2,11 @@ package tui
 
 import (
 	"context"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	kt "github.com/mossagents/moss/testing"
 	"os"
 	"path/filepath"

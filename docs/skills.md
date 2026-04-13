@@ -1,13 +1,13 @@
-# Skills、Builtin Tools、MCP 与 Subagents
+# Capabilities、Prompt Skills、MCP 与 Subagents
 
 当前仓库里最容易混淆的，不是“有没有 skill”，而是 **不同能力是通过什么机制进入运行时**。在 Moss 里，至少要区分四件事：
 
-1. **Builtin tools**：`appkit\runtime` 直接注册的官方工具
+1. **Builtin tools**：由 `runtime.Setup(...)` 注册的官方工具
 2. **Prompt skills**：从 `SKILL.md` 发现并注入系统提示词
 3. **MCP servers**：通过 `mcp\` 桥接进来的外部工具服务
-4. **Subagents**：注册到 agent registry 的委派代理
+4. **Subagents**：通过 `harness` 公开入口注册到 runtime-backed catalog 的委派代理
 
-## 统一抽象：`skill.Provider`
+## 统一抽象：`capability.Provider`
 
 虽然来源不同，这三类 provider（builtin / prompt skill / MCP）共享统一生命周期接口：
 
@@ -23,7 +23,7 @@ type Provider interface {
 
 - `Kernel`
 - `ToolRegistry`
-- `Middleware`
+- `Hooks`
 - `Sandbox`
 - `UserIO`
 - `Workspace`
@@ -32,7 +32,7 @@ type Provider interface {
 - `Mailbox`
 - `SessionStore`
 
-这也是为什么现在的能力文档应围绕 **provider + runtime.Setup** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
+这里的 generic lifecycle 已经不再属于 `skill` 包，而是放在顶层 `capability\` 下；`skill\` 现在只负责 prompt skill (`SKILL.md`) 的发现、解析与实现。因此当前的能力文档应该围绕 **capability.Provider + runtime.Setup(...)** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
 
 ## 1. Builtin tools
 
@@ -122,12 +122,12 @@ skills:
 
 ## 4. Subagents
 
-Subagent 不是 `SKILL.md`，也不是 MCP。它是注册到 agent registry 的受控委派代理。
+Subagent 不是 `SKILL.md`，也不是 MCP。它是注册到 runtime-backed catalog 的受控委派代理，但**公开 owner 在 `harness`**，不是 `runtime`。
 
 来源有两类：
 
-- 代码里直接 `runtime.RegisterSubagent(...)`
-- 工作区中的 `subagents.yaml`
+- 代码里直接 `harness.RegisterSubagent(...)`
+- 代码中通过 `harness.LoadSubagentsFromYAML(...)` 加载工作区中的 `subagents.yaml`
 
 `subagents.yaml` 结构：
 
@@ -140,7 +140,7 @@ researcher:
   trust_level: restricted
 ```
 
-这类能力被 `examples\mosswriter`、`mossresearch` 等产品面直接使用。
+若需要读取当前配置好的 subagent catalog，也应优先走 `harness.SubagentCatalogOf(...)`。
 
 ## 5. 默认加载行为
 
@@ -163,11 +163,11 @@ runtime.Setup(ctx, k, workspace,
 
 ## 6. 应该如何理解“skills”
 
-在当前仓库语境里，**skills 不是单一技术点，而是一组 capability loading 机制的一部分**：
+在当前仓库语境里，**skills 不是单一技术点，而是一组 capability loading 机制中的 prompt-skill 子域**：
 
 - 想要官方工具：看 builtin tools
-- 想要 prompt augmentation：看 `SKILL.md`
+- 想要 prompt augmentation：看 `SKILL.md` 与 `skill\`
 - 想要外部能力：看 MCP
-- 想要可控委派：看 subagents
+- 想要可控委派：看 `harness` 下的 subagent surface
 
-真正把它们粘起来的是 `runtime.Setup(...)` 和 `skill.Provider` 抽象。
+真正把 builtin / prompt skill / MCP 粘起来的是 `runtime.Setup(...)` 和 `capability.Provider` 抽象；真正把 subagents 粘到运行时的是 `harness` 公开 surface 与底层 runtime-backed catalog。

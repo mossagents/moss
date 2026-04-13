@@ -2,8 +2,8 @@ package product
 
 import (
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"testing"
 )

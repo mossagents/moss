@@ -17,13 +17,13 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
 	"github.com/mossagents/moss/skill"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -665,7 +665,7 @@ func (s *ChatService) GetSkills() []SkillInfo {
 	if s.k == nil {
 		return nil
 	}
-	manager := appruntime.SkillsManager(s.k)
+	manager := appruntime.CapabilityManager(s.k)
 	workspaceDir := s.cfg.workspace
 	if strings.TrimSpace(workspaceDir) == "" {
 		workspaceDir = "."
@@ -742,7 +742,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	deepCfg.SessionStoreDir = sessionDir
 	deepCfg.MemoryDir = filepath.Join(appDir, "memories")
 	deepCfg.AdditionalFeatures = []harness.Feature{
-		appkit.WithScheduling(sched),
+		harness.Scheduling(sched),
 	}
 
 	k, err := appkit.BuildDeepAgent(ctx, flags, s.wailsIO, &deepCfg)
@@ -1067,7 +1067,7 @@ func (s *ChatService) hasSkillLikeTarget(name string) bool {
 	if _, _, ok := s.k.ToolRegistry().Get(name); ok {
 		return true
 	}
-	if manager := appruntime.SkillsManager(s.k); manager != nil {
+	if manager := appruntime.CapabilityManager(s.k); manager != nil {
 		if _, ok := manager.Get(name); ok {
 			return true
 		}

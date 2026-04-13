@@ -10,13 +10,13 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mossagents/moss/skill"
+	"github.com/mossagents/moss/capability"
 )
 
 // RegistryEntry describes a skill available in a remote registry.
 type RegistryEntry struct {
-	// Metadata mirrors skill.Metadata but is extended with registry-specific fields.
-	skill.Metadata
+	// Metadata mirrors capability.Metadata but is extended with registry-specific fields.
+	capability.Metadata
 	Author      string    `json:"author,omitempty"`
 	License     string    `json:"license,omitempty"`
 	Downloads   int       `json:"downloads,omitempty"`

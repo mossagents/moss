@@ -59,12 +59,12 @@ type ContextCompressionConfig struct {
 
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
-	MaxIterations      int                    // 最大循环次数（默认 50）
+	MaxIterations      int                      // 最大循环次数（默认 50）
 	StopWhen           func(model.Message) bool // 自定义停止条件
-	ParallelToolCall   bool                   // 启用并行工具调用（默认 false，串行执行）
-	MaxConcurrentTools int                    // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
-	LLMRetry           RetryConfig            // LLM 调用重试配置
-	LLMBreaker         *retry.Breaker         // LLM 调用熔断器（可选）
+	ParallelToolCall   bool                     // 启用并行工具调用（默认 false，串行执行）
+	MaxConcurrentTools int                      // 并行工具调用的最大并发数（默认 8，0 表示使用默认值）
+	LLMRetry           RetryConfig              // LLM 调用重试配置
+	LLMBreaker         *retry.Breaker           // LLM 调用熔断器（可选）
 	// ContextCompression 配置自动上下文压缩（可选）。
 	// 设置后 AgentLoop 会在启动时自动将压缩 hook 添加到 BeforeLLM pipeline。
 	ContextCompression ContextCompressionConfig
@@ -94,14 +94,12 @@ type AgentLoop struct {
 	IO                  io.UserIO
 	Config              LoopConfig
 	Observer            observe.Observer // 可观测性观察者（可选，默认 NoOpObserver）
-	LifecycleHook       session.LifecycleHook
-	ToolLifecycleHook   session.ToolLifecycleHook
 	RunID               string
 	AgentName           string // name of the agent driving this loop (used in yielded events)
 	sidefxMu            sync.Mutex
 	eventSeq            uint64
 	currentTurn         TurnPlan
-	compressionInjected bool // 防止 Run() 重复注入压缩 hook
+	compressionInjected bool                             // 防止 Run() 重复注入压缩 hook
 	eventYield          func(*session.Event, error) bool // internal: set by RunYield
 	yieldStopped        bool                             // internal: set when eventYield returns false
 }
@@ -127,12 +125,12 @@ func (l *AgentLoop) emitAgentEvent(event *session.Event) bool {
 
 // SessionResult 是一次 Session 执行的结果。
 type SessionResult struct {
-	SessionID  string         `json:"session_id"`
-	Success    bool           `json:"success"`
-	Output     string         `json:"output"`
-	Steps      int            `json:"steps"`
+	SessionID  string           `json:"session_id"`
+	Success    bool             `json:"success"`
+	Output     string           `json:"output"`
+	Steps      int              `json:"steps"`
 	TokensUsed model.TokenUsage `json:"tokens_used"`
-	Error      string         `json:"error,omitempty"`
+	Error      string           `json:"error,omitempty"`
 }
 
 func (l *AgentLoop) observer() observe.Observer {

@@ -240,4 +240,3 @@ func almostEqual(a, b, eps float64) bool {
 	}
 	return d < eps
 }
-

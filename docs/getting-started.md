@@ -149,14 +149,14 @@ func main() {
 
 ```go
 k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
-	appkit.WithSessionStore(store),
-	appkit.WithPersistentMemories(".\\.moss\\memories"),
-	appkit.WithContextOffload(store),
-	appkit.WithScheduling(sched),
-	appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+	harness.SessionPersistence(store),
+	harness.PersistentMemories(".\\.moss\\memories"),
+	harness.ContextOffload(store),
+	harness.Scheduling(sched),
+	harness.InstallerFeature("my-tools", func(_ context.Context, k *kernel.Kernel) error {
 		return registerMyTools(k.ToolRegistry())
 	}),
-	appkit.RuntimeSetup(flags.Workspace, flags.Trust),
+	harness.RuntimeSetup(flags.Workspace, flags.Trust),
 )
 ```
 

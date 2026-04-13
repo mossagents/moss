@@ -1,4 +1,4 @@
-package skill
+package capability
 
 import (
 	"fmt"
@@ -7,7 +7,6 @@ import (
 )
 
 // ParseVersion parses a version string like "v1.2.3" or "1.2.3" into a [3]int.
-// Missing segments default to 0. Empty string parses as [0,0,0].
 func ParseVersion(v string) ([3]int, error) {
 	v = strings.TrimPrefix(v, "v")
 	if v == "" {
@@ -29,7 +28,6 @@ func ParseVersion(v string) ([3]int, error) {
 }
 
 // CompareVersion returns -1, 0, or 1 if a < b, a == b, or a > b.
-// Empty versions are treated as "0.0.0".
 func CompareVersion(a, b string) int {
 	av, _ := ParseVersion(a)
 	bv, _ := ParseVersion(b)
@@ -45,7 +43,6 @@ func CompareVersion(a, b string) int {
 }
 
 // IsVersionInRange reports whether v satisfies min <= v <= max.
-// Empty min or max means no bound on that side.
 func IsVersionInRange(v, min, max string) bool {
 	if min != "" && CompareVersion(v, min) < 0 {
 		return false

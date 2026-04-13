@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
@@ -847,13 +849,13 @@ func TestKernelToolLifecycleHooksRunInOrder(t *testing.T) {
 	}
 
 	var order []string
-	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *session.ToolLifecycleEvent) error {
+	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-20", event.Stage))
 		}
 		return nil
 	}, 20)
-	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *session.ToolLifecycleEvent) error {
+	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-10", event.Stage))
 		}

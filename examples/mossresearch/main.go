@@ -5,17 +5,16 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	mosstui "github.com/mossagents/moss/contrib/tui"
+	"github.com/mossagents/moss/runtime"
 	"io"
 	"os"
 	"path/filepath"
@@ -200,7 +199,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) 
 	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
 	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for research-adjacent tasks."
 	deepCfg.AdditionalFeatures = []harness.Feature{
-		appkit.AfterBuild(func(_ context.Context, k *kernel.Kernel) error {
+		harness.InstallerFeature("research-tools", func(_ context.Context, k *kernel.Kernel) error {
 			if err := registerResearchTools(k.ToolRegistry()); err != nil {
 				return err
 			}
@@ -288,7 +287,7 @@ Suggested budgets:
 - Avoid redundant searches that repeat the same evidence.
 `, time.Now().Format("2006-01-02")))
 
-	return runtime.RegisterSubagent(k, agent.AgentConfig{
+	return harness.RegisterSubagent(k, harness.SubagentConfig{
 		Name:         "researcher",
 		Description:  "Focused research agent for gathering cited findings from available tools and project context.",
 		SystemPrompt: researcherPrompt,

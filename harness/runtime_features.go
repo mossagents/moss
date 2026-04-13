@@ -7,14 +7,32 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/knowledge"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/scheduler"
 )
+
+// RuntimeSetup returns a Feature that runs the standard runtime capability
+// loading (builtin tools, MCP servers, skills, agents).
+func RuntimeSetup(workspaceDir, trust string, opts ...runtime.Option) Feature {
+	return FeatureFunc{
+		FeatureName: "runtime-setup",
+		MetadataValue: FeatureMetadata{
+			Key:   "runtime-setup",
+			Phase: FeaturePhaseRuntime,
+		},
+		InstallFunc: func(ctx context.Context, h *Harness) error {
+			allOpts := make([]runtime.Option, 0, len(opts)+1)
+			allOpts = append(allOpts, runtime.WithWorkspaceTrust(trust))
+			allOpts = append(allOpts, opts...)
+			return runtime.Setup(ctx, h.Kernel(), workspaceDir, allOpts...)
+		},
+	}
+}
 
 // ContextOption aliases runtime.ContextOption so context-management features can
 // be configured from the canonical harness surface.

@@ -133,30 +133,35 @@ func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err
 }
 
 func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEvent) {
-	if l.LifecycleHook == nil {
-		return
+	callCtx := ctx
+	if callCtx == nil {
+		callCtx = context.Background()
+	}
+	reportErr := func(err error) {
+		sessionID := ""
+		if event.Session != nil {
+			sessionID = event.Session.ID
+		}
+		slog.Default().ErrorContext(callCtx, "session lifecycle hook error",
+			slog.String("stage", string(event.Stage)),
+			slog.String("session_id", sessionID),
+			slog.Any("error", err),
+		)
+		observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
+			SessionID: sessionID,
+			Phase:     "session_lifecycle_hook",
+			Error:     err,
+			Message:   err.Error(),
+		})
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			sessionID := ""
-			if event.Session != nil {
-				sessionID = event.Session.ID
-			}
-			err := fmt.Errorf("session lifecycle hook panic: %v", r)
-			slog.Default().ErrorContext(ctx, "session lifecycle hook panic",
-				slog.String("stage", string(event.Stage)),
-				slog.String("session_id", sessionID),
-				slog.Any("panic", r),
-			)
-			observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
-				SessionID: sessionID,
-				Phase:     "session_lifecycle_hook",
-				Error:     err,
-				Message:   err.Error(),
-			})
+			reportErr(fmt.Errorf("session lifecycle hook panic: %v", r))
 		}
 	}()
-	l.LifecycleHook(ctx, event)
+	if err := l.safeHooks().OnSessionLifecycle.Run(callCtx, &event); err != nil {
+		reportErr(err)
+	}
 }
 
 func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model.TokenUsage, err error) *SessionResult {

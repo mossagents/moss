@@ -80,9 +80,6 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"max_steps": sess.Budget.MaxSteps,
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.safeHooks().OnSessionStart.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session start hook failed", "session_id", sess.ID, "error", err)
-	}
 	l.emitLifecycle(ctx, session.LifecycleEvent{
 		Stage:     session.LifecycleStarted,
 		Session:   sess,
@@ -375,9 +372,6 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"tokens": totalUsage.TotalTokens,
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
-	if err := l.safeHooks().OnSessionEnd.Run(ctx, &hooks.SessionEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
-		logging.GetLogger().DebugContext(ctx, "session end hook failed", "session_id", sess.ID, "error", err)
-	}
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    true,

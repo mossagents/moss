@@ -3,12 +3,12 @@ package product
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/runtime"
 	"strings"
 )
 

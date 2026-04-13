@@ -2,9 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"strings"
 	"time"
@@ -33,7 +32,7 @@ Rules:
 8. If evidence is mixed or weak, say so clearly.
 `, time.Now().Format("2006-01-02")))
 
-	if err := runtime.RegisterSubagent(k, agent.AgentConfig{
+	if err := harness.RegisterSubagent(k, harness.SubagentConfig{
 		Name:         "market-researcher",
 		Description:  "Focused web researcher for asset news, policy updates, and macro/geopolitical drivers.",
 		SystemPrompt: researchPrompt,
@@ -74,7 +73,7 @@ Return:
 - a corrected concise recommendation if needed
 `, time.Now().Format("2006-01-02")))
 
-	return runtime.RegisterSubagent(k, agent.AgentConfig{
+	return harness.RegisterSubagent(k, harness.SubagentConfig{
 		Name:         "investment-reviewer",
 		Description:  "Risk and evidence reviewer for draft investment recommendations.",
 		SystemPrompt: reviewerPrompt,

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"gopkg.in/yaml.v3"
 	"io/fs"
@@ -21,7 +22,7 @@ type Skill struct {
 	version     string
 	description string
 	dependsOn   []string
-	requires    []SkillDep
+	requires    []capability.Dependency
 	requiredEnv []string
 	body        string // markdown 正文（去除 frontmatter 后的内容）
 	source      string // 文件来源路径
@@ -30,25 +31,25 @@ type Skill struct {
 // Manifest 描述一个可发现的 SKILL.md（不包含正文内容）。
 // 用于按需激活场景，避免在发现阶段注入全部提示词。
 type Manifest struct {
-	Name        string     `json:"name"`
-	Version     string     `json:"version,omitempty"`
-	Description string     `json:"description"`
-	DependsOn   []string   `json:"depends_on,omitempty"`
-	Requires    []SkillDep `json:"requires,omitempty"`
-	RequiredEnv []string   `json:"required_env,omitempty"`
-	Source      string     `json:"source"`
+	Name        string                  `json:"name"`
+	Version     string                  `json:"version,omitempty"`
+	Description string                  `json:"description"`
+	DependsOn   []string                `json:"depends_on,omitempty"`
+	Requires    []capability.Dependency `json:"requires,omitempty"`
+	RequiredEnv []string                `json:"required_env,omitempty"`
+	Source      string                  `json:"source"`
 }
 
-var _ Provider = (*Skill)(nil)
+var _ capability.Provider = (*Skill)(nil)
 
 // skillFrontmatter 是 SKILL.md 的 YAML frontmatter 结构。
 type skillFrontmatter struct {
-	Name        string     `yaml:"name"`
-	Version     string     `yaml:"version"`
-	Description string     `yaml:"description"`
-	DependsOn   []string   `yaml:"depends_on"`
-	Requires    []SkillDep `yaml:"requires"`
-	RequiredEnv []string   `yaml:"required_env"`
+	Name        string                  `yaml:"name"`
+	Version     string                  `yaml:"version"`
+	Description string                  `yaml:"description"`
+	DependsOn   []string                `yaml:"depends_on"`
+	Requires    []capability.Dependency `yaml:"requires"`
+	RequiredEnv []string                `yaml:"required_env"`
 }
 
 // ParseSkillMD 从指定路径解析 SKILL.md 文件。
@@ -81,30 +82,30 @@ func ParseSkillMDContent(content, source string) (*Skill, error) {
 		version:     meta.Version,
 		description: meta.Description,
 		dependsOn:   append([]string(nil), meta.DependsOn...),
-		requires:    append([]SkillDep(nil), meta.Requires...),
+		requires:    append([]capability.Dependency(nil), meta.Requires...),
 		requiredEnv: append([]string(nil), meta.RequiredEnv...),
 		body:        strings.TrimSpace(body),
 		source:      source,
 	}, nil
 }
 
-func (s *Skill) Metadata() Metadata {
+func (s *Skill) Metadata() capability.Metadata {
 	version := s.version
 	if version == "" {
 		version = "0.0.0"
 	}
-	return Metadata{
+	return capability.Metadata{
 		Name:        s.name,
 		Version:     version,
 		Description: s.description,
 		Prompts:     []string{s.body},
 		DependsOn:   append([]string(nil), s.dependsOn...),
-		Requires:    append([]SkillDep(nil), s.requires...),
+		Requires:    append([]capability.Dependency(nil), s.requires...),
 		RequiredEnv: append([]string(nil), s.requiredEnv...),
 	}
 }
 
-func (s *Skill) Init(_ context.Context, _ Deps) error {
+func (s *Skill) Init(_ context.Context, _ capability.Deps) error {
 	// 校验 SKILL.md frontmatter 中声明的必要环境变量。
 	for _, env := range s.requiredEnv {
 		if strings.TrimSpace(os.Getenv(env)) == "" {
@@ -314,7 +315,6 @@ func scanInstalledPluginSkillManifestDirs(root string) []Manifest {
 	return manifests
 }
 
-
 // scanSkillManifestDir 扫描目录中的 SKILL.md 文件。
 // 支持两种结构：
 //
@@ -369,7 +369,7 @@ func parseSkillManifestFile(path string) (Manifest, error) {
 		Version:     strings.TrimSpace(meta.Version),
 		Description: strings.TrimSpace(meta.Description),
 		DependsOn:   append([]string(nil), meta.DependsOn...),
-		Requires:    append([]SkillDep(nil), meta.Requires...),
+		Requires:    append([]capability.Dependency(nil), meta.Requires...),
 		RequiredEnv: append([]string(nil), meta.RequiredEnv...),
 		Source:      path,
 	}, nil

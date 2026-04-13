@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/agent"
+	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/errors"
@@ -23,8 +24,8 @@ import (
 )
 
 const (
-	skillsStateKey kernel.ServiceKey = "skills.state"
-	agentsStateKey kernel.ServiceKey = "agents.state"
+	capabilitiesStateKey kernel.ServiceKey = "capabilities.state"
+	agentsStateKey       kernel.ServiceKey = "agents.state"
 )
 
 type config struct {
@@ -118,7 +119,7 @@ func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...O
 }
 
 func setupBuiltinTools(ctx context.Context, k *kernel.Kernel, _ config) error {
-	return SkillsManager(k).Register(ctx, &builtinToolsProvider{}, Deps(k))
+	return CapabilityManager(k).Register(ctx, &builtinToolsProvider{}, CapabilityDeps(k))
 }
 
 func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
@@ -128,7 +129,7 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 		cfg.capabilityReport.Report(ctx, "mcp:global-config", true, "failed", err)
 		return fmt.Errorf("load global config: %w", err)
 	}
-	deps := Deps(k)
+	deps := CapabilityDeps(k)
 	allSkills := append([]appconfig.SkillConfig(nil), globalCfg.Skills...)
 	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspaceDir, cfg.trust)
 	if err != nil {
@@ -170,7 +171,7 @@ func setupMCPServers(ctx context.Context, k *kernel.Kernel, workspaceDir string,
 	return registerMCPServers(ctx, cfg, deps, merged.Skills)
 }
 
-func registerMCPServers(ctx context.Context, cfg config, deps skill.Deps, skills []appconfig.SkillConfig) error {
+func registerMCPServers(ctx context.Context, cfg config, deps capability.Deps, skills []appconfig.SkillConfig) error {
 	logger := logging.GetLogger()
 	ordered, err := orderSkillConfigs(skills)
 	if err != nil {
@@ -180,7 +181,7 @@ func registerMCPServers(ctx context.Context, cfg config, deps skill.Deps, skills
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
-		if err := SkillsManager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+		if err := CapabilityManager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
 			cfg.capabilityReport.Report(ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
 			if sc.IsRequired() {
 				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)
@@ -221,7 +222,7 @@ func approveProjectMCPServer(ctx context.Context, userIO io.UserIO, workspaceDir
 	return resp.Approved, nil
 }
 
-func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
+func setupPromptSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) error {
 	logger := logging.GetLogger()
 	manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, cfg.trust)
 	ordered, err := orderSkillManifests(manifests)
@@ -236,7 +237,7 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 		}
 		return RegisterProgressiveSkillTools(k)
 	}
-	deps := Deps(k)
+	deps := CapabilityDeps(k)
 	for _, mf := range ordered {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
@@ -247,7 +248,7 @@ func setupSkills(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg
 			)
 			continue
 		}
-		if err := SkillsManager(k).Register(ctx, ps, deps); err != nil {
+		if err := CapabilityManager(k).Register(ctx, ps, deps); err != nil {
 			cfg.capabilityReport.Report(ctx, "skill:"+ps.Metadata().Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load skill",
 				slog.String("skill", ps.Metadata().Name),
@@ -300,18 +301,18 @@ func collectAgentDirs(workspaceDir string, cfg config) []string {
 	return dirs
 }
 
-type skillsState struct {
-	manager                *skill.Manager
+type capabilitiesState struct {
+	manager                *capability.Manager
 	manifests              []skill.Manifest
 	progressive            bool
 	progressiveToolsLoaded bool
 }
 
-func ensureSkillsState(k *kernel.Kernel) *skillsState {
-	actual, loaded := k.Services().LoadOrStore(skillsStateKey, &skillsState{
-		manager: skill.NewManager(),
+func ensureCapabilitiesState(k *kernel.Kernel) *capabilitiesState {
+	actual, loaded := k.Services().LoadOrStore(capabilitiesStateKey, &capabilitiesState{
+		manager: capability.NewManager(),
 	})
-	st := actual.(*skillsState)
+	st := actual.(*capabilitiesState)
 	if loaded {
 		return st
 	}
@@ -348,32 +349,32 @@ func ensureSkillsState(k *kernel.Kernel) *skillsState {
 	return st
 }
 
-func SkillsManager(k *kernel.Kernel) *skill.Manager {
-	return ensureSkillsState(k).manager
+func CapabilityManager(k *kernel.Kernel) *capability.Manager {
+	return ensureCapabilitiesState(k).manager
 }
 
-func WithSkillManager(m *skill.Manager) kernel.Option {
+func WithCapabilityManager(m *capability.Manager) kernel.Option {
 	return func(k *kernel.Kernel) {
-		ensureSkillsState(k).manager = m
+		ensureCapabilitiesState(k).manager = m
 	}
 }
 
 func SkillManifests(k *kernel.Kernel) []skill.Manifest {
-	st := ensureSkillsState(k)
+	st := ensureCapabilitiesState(k)
 	return append([]skill.Manifest(nil), st.manifests...)
 }
 
 func SetSkillManifests(k *kernel.Kernel, manifests []skill.Manifest) {
-	st := ensureSkillsState(k)
+	st := ensureCapabilitiesState(k)
 	st.manifests = append([]skill.Manifest(nil), manifests...)
 }
 
 func EnableProgressiveSkills(k *kernel.Kernel) {
-	ensureSkillsState(k).progressive = true
+	ensureCapabilitiesState(k).progressive = true
 }
 
 func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
-	st := ensureSkillsState(k)
+	st := ensureCapabilitiesState(k)
 	if st.progressiveToolsLoaded {
 		return nil
 	}
@@ -429,7 +430,7 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 		if found == nil {
 			return nil, fmt.Errorf("skill %q not found in discovered manifests", name)
 		}
-		if err := activateManifestRecursive(ctx, st.manager, st.manifests, name, Deps(k), nil); err != nil {
+		if err := activateManifestRecursive(ctx, st.manager, st.manifests, name, CapabilityDeps(k), nil); err != nil {
 			return nil, fmt.Errorf("activate skill %q: %w", name, err)
 		}
 		return json.Marshal(map[string]string{"status": "loaded", "name": name})
@@ -440,8 +441,8 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 	return nil
 }
 
-func Deps(k *kernel.Kernel) skill.Deps {
-	return skill.Deps{
+func CapabilityDeps(k *kernel.Kernel) capability.Deps {
+	return capability.Deps{
 		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
 		Hooks:        k.Hooks(),
@@ -535,7 +536,7 @@ func topoOrderNames[T any](items map[string]T, deps func(T) []string) ([]string,
 	return ordered, nil
 }
 
-func activateManifestRecursive(ctx context.Context, manager *skill.Manager, manifests []skill.Manifest, target string, deps skill.Deps, stack map[string]bool) error {
+func activateManifestRecursive(ctx context.Context, manager *capability.Manager, manifests []skill.Manifest, target string, deps capability.Deps, stack map[string]bool) error {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("skill name is required")
@@ -630,6 +631,8 @@ func ensureAgentsState(k *kernel.Kernel) *agentsState {
 	return st
 }
 
+// AgentRegistry returns the low-level runtime-backed subagent catalog.
+// Canonical public call sites should prefer harness.SubagentCatalogOf.
 func AgentRegistry(k *kernel.Kernel) *agent.Registry {
 	return ensureAgentsState(k).registry
 }
@@ -638,6 +641,8 @@ func AgentTaskTracker(k *kernel.Kernel) *agent.TaskTracker {
 	return ensureAgentsState(k).tasks
 }
 
+// WithAgentRegistry injects the runtime-backed subagent catalog.
+// Canonical feature composition should prefer harness.SubagentCatalogValue.
 func WithAgentRegistry(r *agent.Registry) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureAgentsState(k).registry = r
@@ -662,18 +667,18 @@ func WithWorkspaceIsolation(isolation workspace.WorkspaceIsolation) kernel.Optio
 	}
 }
 
-// builtinToolsProvider adapts runtime-owned builtin tools into the shared skill lifecycle.
+// builtinToolsProvider adapts runtime-owned builtin tools into the shared capability lifecycle.
 // It exists so runtime can manage builtin tools, prompt skills, and MCP-backed providers uniformly,
 // while keeping their ownership and behavior distinct:
-//   - builtin tools: first-party tools implemented in appkit/runtime
-//   - skills: provider abstraction and prompt injection model in package skill
-//   - MCP: external tool servers bridged by package mcp
+//   - builtin tools: first-party tools implemented in package runtime
+//   - prompt skills: SKILL.md prompt additions implemented in package skill
+//   - MCP providers: external tool servers bridged by package mcp
 type builtinToolsProvider struct {
 	toolNames []string
 }
 
-func (s *builtinToolsProvider) Metadata() skill.Metadata {
-	return skill.Metadata{
+func (s *builtinToolsProvider) Metadata() capability.Metadata {
+	return capability.Metadata{
 		Name:        "builtin-tools",
 		Version:     "0.3.0",
 		Description: "Runtime-owned builtin tools for filesystem, command execution, HTTP requests, and user interaction",
@@ -684,7 +689,7 @@ func (s *builtinToolsProvider) Metadata() skill.Metadata {
 	}
 }
 
-func (s *builtinToolsProvider) Init(ctx context.Context, deps skill.Deps) error {
+func (s *builtinToolsProvider) Init(ctx context.Context, deps capability.Deps) error {
 	s.toolNames = RegisteredBuiltinToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
 	return RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
 }

@@ -130,7 +130,7 @@ func (r *RunTraceRecorder) OnExecutionEvent(_ context.Context, e observe.Executi
 		ToolName:     e.ToolName,
 		DurationMS:   e.Duration.Milliseconds(),
 		Error:        e.Error,
-		Metadata:         cloneTraceMetadata(e.Metadata),
+		Metadata:     cloneTraceMetadata(e.Metadata),
 	})
 }
 
@@ -155,7 +155,7 @@ func (r *RunTraceRecorder) OnApproval(_ context.Context, e io.ApprovalEvent) {
 		SessionID: e.SessionID,
 		Type:      e.Type,
 		ToolName:  e.Request.ToolName,
-		Metadata:      data,
+		Metadata:  data,
 	})
 }
 

@@ -24,27 +24,11 @@ func TestPlugin_InstallHooks(t *testing.T) {
 			called = append(called, "after-llm")
 			return nil
 		},
-		BeforeToolCall: func(ctx context.Context, ev *hooks.ToolEvent) error {
-			called = append(called, "before-tool")
-			return nil
-		},
-		AfterToolCall: func(ctx context.Context, ev *hooks.ToolEvent) error {
-			called = append(called, "after-tool")
-			return nil
-		},
-		OnSessionStart: func(ctx context.Context, ev *hooks.SessionEvent) error {
-			called = append(called, "session-start")
-			return nil
-		},
-		OnSessionEnd: func(ctx context.Context, ev *hooks.SessionEvent) error {
-			called = append(called, "session-end")
-			return nil
-		},
 		OnSessionLifecycle: func(ctx context.Context, ev *session.LifecycleEvent) error {
 			called = append(called, "session-lifecycle")
 			return nil
 		},
-		OnToolLifecycle: func(ctx context.Context, ev *session.ToolLifecycleEvent) error {
+		OnToolLifecycle: func(ctx context.Context, ev *hooks.ToolEvent) error {
 			called = append(called, "tool-lifecycle")
 			return nil
 		},
@@ -58,18 +42,12 @@ func TestPlugin_InstallHooks(t *testing.T) {
 	ctx := context.Background()
 	reg.BeforeLLM.Run(ctx, &hooks.LLMEvent{})
 	reg.AfterLLM.Run(ctx, &hooks.LLMEvent{})
-	reg.BeforeToolCall.Run(ctx, &hooks.ToolEvent{})
-	reg.AfterToolCall.Run(ctx, &hooks.ToolEvent{})
-	reg.OnSessionStart.Run(ctx, &hooks.SessionEvent{})
-	reg.OnSessionEnd.Run(ctx, &hooks.SessionEvent{})
-	reg.OnSessionLifecycle.Run(ctx, &session.LifecycleEvent{})
-	reg.OnToolLifecycle.Run(ctx, &session.ToolLifecycleEvent{})
+	reg.OnSessionLifecycle.Run(ctx, &session.LifecycleEvent{Stage: session.LifecycleStarted})
+	reg.OnToolLifecycle.Run(ctx, &hooks.ToolEvent{Stage: hooks.ToolLifecycleBefore})
 	reg.OnError.Run(ctx, &hooks.ErrorEvent{})
 
 	want := []string{
 		"before-llm", "after-llm",
-		"before-tool", "after-tool",
-		"session-start", "session-end",
 		"session-lifecycle", "tool-lifecycle",
 		"error",
 	}
@@ -100,9 +78,6 @@ func TestPlugin_NilFieldsIgnored(t *testing.T) {
 	}
 	if !reg.AfterLLM.Empty() {
 		t.Fatal("AfterLLM should be empty")
-	}
-	if !reg.BeforeToolCall.Empty() {
-		t.Fatal("BeforeToolCall should be empty")
 	}
 	if !reg.OnError.Empty() {
 		t.Fatal("OnError should be empty")
@@ -165,14 +140,14 @@ func TestWithPluginInstaller_KernelOption(t *testing.T) {
 	var interceptorCalled bool
 	k := New(
 		WithPluginInstaller("test-interceptor", func(reg *hooks.Registry) {
-			reg.BeforeToolCall.Intercept(func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
+			reg.OnToolLifecycle.Intercept(func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
 				interceptorCalled = true
 				return next(ctx)
 			})
 		}),
 	)
 
-	k.Hooks().BeforeToolCall.Run(context.Background(), &hooks.ToolEvent{})
+	k.Hooks().OnToolLifecycle.Run(context.Background(), &hooks.ToolEvent{Stage: hooks.ToolLifecycleBefore})
 	if !interceptorCalled {
 		t.Fatal("interceptor not called")
 	}
@@ -213,11 +188,11 @@ func TestKernel_InstallHooks(t *testing.T) {
 
 func TestKernel_WithPolicy_UsesPlugin(t *testing.T) {
 	k := New()
-	// WithPolicy should install a BeforeToolCall hook via Plugin.
+	// WithPolicy should install an OnToolLifecycle hook via Plugin.
 	// Just verify the pipeline is non-empty.
 	k.WithPolicy()
-	if k.Hooks().BeforeToolCall.Empty() {
-		t.Fatal("WithPolicy should install BeforeToolCall hook")
+	if k.Hooks().OnToolLifecycle.Empty() {
+		t.Fatal("WithPolicy should install OnToolLifecycle hook")
 	}
 }
 
@@ -227,9 +202,9 @@ func TestKernel_OnEvent_UsesInstallHooks(t *testing.T) {
 	k.OnEvent("*", func(ev builtins.Event) {
 		received = true
 	})
-	// Run a session start to trigger event emission.
+	// Run a session lifecycle event to trigger event emission.
 	sess := &session.Session{ID: "test"}
-	k.Hooks().OnSessionStart.Run(context.Background(), &hooks.SessionEvent{Session: sess})
+	k.Hooks().OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{Stage: session.LifecycleStarted, Session: sess})
 	if !received {
 		t.Fatal("OnEvent handler not triggered")
 	}

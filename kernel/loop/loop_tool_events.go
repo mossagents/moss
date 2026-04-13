@@ -51,48 +51,24 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 	})
 }
 
-func (l *AgentLoop) runBeforeToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, input []byte) error {
-	var err error
-	l.withSideEffectsLock(func() {
-		err = l.safeHooks().BeforeToolCall.Run(ctx, &hooks.ToolEvent{
-			Session:  sess,
-			Tool:     &spec,
-			Input:    input,
-			IO:       l.IO,
-			Observer: l.observer(),
-		})
-	})
-	return err
-}
-
-func (l *AgentLoop) runAfterToolCallHook(ctx context.Context, sess *session.Session, spec tool.ToolSpec, output []byte) {
-	l.withSideEffectsLock(func() {
-		if err := l.safeHooks().AfterToolCall.Run(ctx, &hooks.ToolEvent{
-			Session:  sess,
-			Tool:     &spec,
-			Result:   output,
-			IO:       l.IO,
-			Observer: l.observer(),
-		}); err != nil {
-			logging.GetLogger().DebugContext(ctx, "after tool hook failed", "session_id", sess.ID, "tool", spec.Name, "error", err)
-		}
-	})
-}
-
-func (l *AgentLoop) handleBeforeToolCallError(
+func (l *AgentLoop) rejectToolCall(
 	ctx context.Context,
 	sess *session.Session,
 	call model.ToolCall,
-	spec tool.ToolSpec,
+	spec *tool.ToolSpec,
 	repairedArgs json.RawMessage,
-	beforeErr error,
+	rejectErr error,
 ) model.ToolResult {
-	normalizedErr := normalizeToolError(beforeErr)
-	result := buildToolResult(call.ID, nil, beforeErr)
+	normalizedErr := normalizeToolError(rejectErr)
+	result := buildToolResult(call.ID, nil, rejectErr)
+	risk := ""
+	if spec != nil {
+		risk = string(spec.Risk)
+	}
 	observe.ObserveToolCall(ctx, l.observer(), observe.ToolCallEvent{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
-		Risk:      string(spec.Risk),
+		Risk:      risk,
 		StartedAt: time.Now().UTC(),
 		Duration:  0,
 		Error:     normalizedErr,
@@ -100,15 +76,15 @@ func (l *AgentLoop) handleBeforeToolCallError(
 	event := l.executionEventBase(sess, observe.ExecutionToolCompleted, "tool", "runtime", "tool")
 	event.ToolName = call.Name
 	event.CallID = call.ID
-	event.Risk = string(spec.Risk)
+	event.Risk = risk
 	event.Metadata = map[string]any{
 		"is_error": true,
 	}
 	event.Error = normalizedErr.Error()
 	appendToolErrorMetadata(&event, normalizedErr)
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
+	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, nil, result, 0, normalizedErr)
 	l.sendToolResultIO(ctx, call, result, 0, normalizedErr)
-	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, 0, normalizedErr)
 	return result
 }
 
@@ -152,23 +128,13 @@ func (l *AgentLoop) emitToolLifecycleAfter(
 	sess *session.Session,
 	call model.ToolCall,
 	repairedArgs json.RawMessage,
-	spec tool.ToolSpec,
+	spec *tool.ToolSpec,
+	output []byte,
 	result model.ToolResult,
 	toolDur time.Duration,
 	err error,
 ) {
-	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
-		Stage:     session.ToolLifecycleAfter,
-		Session:   sess,
-		ToolName:  call.Name,
-		CallID:    call.ID,
-		Arguments: repairedArgs,
-		Result:    &result,
-		Risk:      string(spec.Risk),
-		Duration:  toolDur,
-		Error:     err,
-		Timestamp: time.Now().UTC(),
-	})
+	_ = l.emitToolLifecycle(ctx, makeToolEvent(hooks.ToolLifecycleAfter, sess, call, repairedArgs, spec, output, &result, toolDur, err, l.IO, l.observer()))
 }
 
 func (l *AgentLoop) sendToolResultIO(ctx context.Context, call model.ToolCall, result model.ToolResult, toolDur time.Duration, err error) {
@@ -191,41 +157,91 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call model.ToolCall, r
 	}
 }
 
-func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event session.ToolLifecycleEvent) {
-	if l.ToolLifecycleHook == nil {
-		return
-	}
+func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event hooks.ToolEvent) error {
 	callCtx := ctx
 	if callCtx == nil {
 		callCtx = context.Background()
+	}
+	var runErr error
+	reportErr := func(err error) {
+		sessionID := ""
+		if event.Session != nil {
+			sessionID = event.Session.ID
+		}
+		slog.Default().ErrorContext(callCtx, "tool lifecycle hook error",
+			slog.String("stage", string(event.Stage)),
+			slog.String("session_id", sessionID),
+			slog.String("tool", toolEventName(event)),
+			slog.String("call_id", event.CallID),
+			slog.Any("error", err),
+		)
+		observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
+			SessionID: sessionID,
+			Phase:     "tool_lifecycle_hook",
+			Error:     err,
+			Message:   err.Error(),
+		})
 	}
 	// Serialize lifecycle hooks to prevent concurrent mutation of session
 	// state (e.g. Config.Metadata writes in session-store persistence hook).
 	l.withSideEffectsLock(func() {
 		defer func() {
 			if r := recover(); r != nil {
-				sessionID := ""
-				if event.Session != nil {
-					sessionID = event.Session.ID
-				}
-				err := fmt.Errorf("tool lifecycle hook panic: %v", r)
-				slog.Default().ErrorContext(callCtx, "tool lifecycle hook panic",
-					slog.String("stage", string(event.Stage)),
-					slog.String("session_id", sessionID),
-					slog.String("tool", event.ToolName),
-					slog.String("call_id", event.CallID),
-					slog.Any("panic", r),
-				)
-				observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
-					SessionID: sessionID,
-					Phase:     "tool_lifecycle_hook",
-					Error:     err,
-					Message:   err.Error(),
-				})
+				runErr = fmt.Errorf("tool lifecycle hook panic: %v", r)
 			}
 		}()
-		l.ToolLifecycleHook(callCtx, event)
+		runErr = l.safeHooks().OnToolLifecycle.Run(callCtx, &event)
 	})
+	if runErr != nil {
+		reportErr(runErr)
+	}
+	return runErr
+}
+
+func makeToolEvent(
+	stage hooks.ToolStage,
+	sess *session.Session,
+	call model.ToolCall,
+	repairedArgs json.RawMessage,
+	spec *tool.ToolSpec,
+	output []byte,
+	result *model.ToolResult,
+	toolDur time.Duration,
+	err error,
+	userIO io.UserIO,
+	observer observe.Observer,
+) hooks.ToolEvent {
+	risk := ""
+	toolName := strings.TrimSpace(call.Name)
+	if spec != nil {
+		risk = string(spec.Risk)
+		if strings.TrimSpace(spec.Name) != "" {
+			toolName = spec.Name
+		}
+	}
+	return hooks.ToolEvent{
+		Stage:      stage,
+		Session:    sess,
+		Tool:       spec,
+		ToolName:   toolName,
+		CallID:     strings.TrimSpace(call.ID),
+		Input:      append(json.RawMessage(nil), repairedArgs...),
+		Output:     append(json.RawMessage(nil), output...),
+		ToolResult: result,
+		Risk:       risk,
+		Duration:   toolDur,
+		Error:      err,
+		Timestamp:  time.Now().UTC(),
+		IO:         userIO,
+		Observer:   observer,
+	}
+}
+
+func toolEventName(event hooks.ToolEvent) string {
+	if event.Tool != nil && strings.TrimSpace(event.Tool.Name) != "" {
+		return event.Tool.Name
+	}
+	return strings.TrimSpace(event.ToolName)
 }
 
 func appendToolExecutionMetadata(event *observe.ExecutionEvent, output json.RawMessage) {

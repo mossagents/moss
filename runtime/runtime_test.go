@@ -50,8 +50,8 @@ func TestSetup_UsesDefaultsParity(t *testing.T) {
 	if err := Setup(context.Background(), k, "."); err != nil {
 		t.Fatalf("Setup: %v", err)
 	}
-	if SkillsManager(k) == nil {
-		t.Fatal("expected skills manager")
+	if CapabilityManager(k) == nil {
+		t.Fatal("expected capability manager")
 	}
 }
 

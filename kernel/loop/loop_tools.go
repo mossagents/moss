@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -307,36 +308,24 @@ func (l *AgentLoop) executeToolCallsParallel(ctx context.Context, sess *session.
 
 func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Session, call model.ToolCall) model.ToolResult {
 	repairedArgs := repairToolArguments(call.Arguments)
-	l.emitToolLifecycle(ctx, session.ToolLifecycleEvent{
-		Stage:     session.ToolLifecycleBefore,
-		Session:   sess,
-		ToolName:  call.Name,
-		CallID:    call.ID,
-		Arguments: repairedArgs,
-		Timestamp: time.Now().UTC(),
-	})
-	if !l.toolAllowed(call.Name) {
-		return l.handleMissingTool(ctx, sess, call, repairedArgs)
-	}
 	t, ok := l.Tools.Get(call.Name)
-	if !ok {
-		return l.handleMissingTool(ctx, sess, call, repairedArgs)
-	}
-	spec := t.Spec()
-
-	// Validate required fields declared in the tool's input schema.
-	// This is a best-effort guard against malformed or prompt-injected args.
-	if err := validateRequiredToolArgs(spec, repairedArgs); err != nil {
-		schemaErr := fmt.Errorf("tool %q argument validation failed: %w", call.Name, err)
-		return buildToolResult(call.ID, nil, schemaErr)
+	var spec *tool.ToolSpec
+	if ok {
+		resolved := t.Spec()
+		spec = &resolved
+		if err := validateRequiredToolArgs(*spec, repairedArgs); err != nil {
+			schemaErr := fmt.Errorf("tool %q argument validation failed: %w", call.Name, err)
+			return l.rejectToolCall(ctx, sess, call, spec, repairedArgs, schemaErr)
+		}
 	}
 
-	l.emitToolStarted(ctx, sess, call, spec, repairedArgs)
-
-	beforeErr := l.runBeforeToolCallHook(ctx, sess, spec, call.Arguments)
-	if beforeErr != nil {
-		return l.handleBeforeToolCallError(ctx, sess, call, spec, repairedArgs, beforeErr)
+	if err := l.emitToolLifecycle(ctx, makeToolEvent(hooks.ToolLifecycleBefore, sess, call, repairedArgs, spec, nil, nil, 0, nil, l.IO, l.observer())); err != nil {
+		return l.rejectToolCall(ctx, sess, call, spec, repairedArgs, err)
 	}
+	if !l.toolAllowed(call.Name) || spec == nil {
+		return l.handleMissingTool(ctx, sess, call, spec, repairedArgs)
+	}
+	l.emitToolStarted(ctx, sess, call, *spec, repairedArgs)
 
 	toolCtx := toolctx.WithToolCallContext(ctx, toolctx.ToolCallContext{
 		SessionID: sess.ID,
@@ -348,9 +337,8 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	output, err := t.Execute(toolCtx, repairedArgs)
 	toolDur := time.Since(toolStart)
 	result := buildToolResult(call.ID, output, err)
-	l.observeToolCompletion(ctx, sess, call, spec, toolStart, toolDur, result, output, err)
-	l.runAfterToolCallHook(ctx, sess, spec, output)
-	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, result, toolDur, err)
+	l.observeToolCompletion(ctx, sess, call, *spec, toolStart, toolDur, result, output, err)
+	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, spec, output, result, toolDur, err)
 	l.sendToolResultIO(ctx, call, result, toolDur, err)
 	return result
 }
@@ -394,9 +382,7 @@ func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
 	return nil
 }
 
-func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call model.ToolCall, repairedArgs json.RawMessage) model.ToolResult {
+func (l *AgentLoop) handleMissingTool(ctx context.Context, sess *session.Session, call model.ToolCall, spec *tool.ToolSpec, repairedArgs json.RawMessage) model.ToolResult {
 	err := fmt.Errorf("tool %q not found or not allowed in current turn", call.Name)
-	result := buildToolResult(call.ID, nil, err)
-	l.emitToolLifecycleAfter(ctx, sess, call, repairedArgs, tool.ToolSpec{}, result, 0, err)
-	return result
+	return l.rejectToolCall(ctx, sess, call, spec, repairedArgs, err)
 }

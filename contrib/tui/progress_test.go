@@ -1,9 +1,9 @@
 package tui
 
 import (
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
 	"path/filepath"
 	"strings"
 	"testing"

@@ -168,12 +168,6 @@ func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind run
 		Config:   k.loopCfg,
 		Observer: k.observer,
 		RunID:    runID,
-		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
-			k.emitSessionLifecycle(ctx, event)
-		},
-		ToolLifecycleHook: func(ctx context.Context, event session.ToolLifecycleEvent) {
-			k.emitToolLifecycle(ctx, event)
-		},
 	}
 	return l.Run(runCtx, sess)
 }
@@ -396,8 +390,8 @@ func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
 // WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 	k.InstallPlugin(Plugin{
-		Name:           "policy",
-		BeforeToolCall: builtins.PolicyCheck(rules...),
+		Name:            "policy",
+		OnToolLifecycle: builtins.PolicyCheck(rules...),
 	})
 }
 
@@ -412,12 +406,6 @@ func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 		Tools:  k.tools,
 		Hooks:  k.chain,
 		Config: k.loopCfg,
-		LifecycleHook: func(ctx context.Context, event session.LifecycleEvent) {
-			k.emitSessionLifecycle(ctx, event)
-		},
-		ToolLifecycleHook: func(ctx context.Context, event session.ToolLifecycleEvent) {
-			k.emitToolLifecycle(ctx, event)
-		},
 	})
 }
 

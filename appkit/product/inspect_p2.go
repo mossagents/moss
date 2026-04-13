@@ -1,13 +1,13 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"fmt"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"sort"
 	"strconv"
 	"strings"

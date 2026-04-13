@@ -1,13 +1,13 @@
 package product
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -614,7 +614,7 @@ func decodeInspectTraceEvent(entry appruntime.StateEntry) (TraceEvent, bool) {
 		ToolName:     meta.ToolName,
 		DurationMS:   meta.DurationMS,
 		Error:        entry.Status,
-		Metadata:         cloneTraceMetadata(meta.Metadata),
+		Metadata:     cloneTraceMetadata(meta.Metadata),
 	}, true
 }
 

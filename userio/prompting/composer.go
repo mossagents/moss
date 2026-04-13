@@ -3,12 +3,12 @@ package prompting
 import (
 	_ "embed"
 	"fmt"
-	"hash/fnv"
-	"github.com/mossagents/moss/appkit/runtime"
 	"github.com/mossagents/moss/bootstrap"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/runtime"
+	"hash/fnv"
 	"sort"
 	"strings"
 )
@@ -249,7 +249,7 @@ func buildDynamicLayers(in ComposeInput, baseText string) []InstructionLayer {
 			Scope:      "dynamic",
 			Priority:   170,
 			Activation: "if_skill_prompts_present",
-			Content:    renderSkillsSection(in.Kernel, in.SkillPrompts),
+			Content:    renderCapabilityGuidanceSection(in.Kernel, in.SkillPrompts),
 		},
 		{
 			ID:         "runtime_notices",
@@ -402,7 +402,7 @@ func renderCapabilitiesSection(k *kernel.Kernel) string {
 	return strings.TrimSpace(b.String())
 }
 
-func renderSkillsSection(k *kernel.Kernel, skillPrompts []string) string {
+func renderCapabilityGuidanceSection(k *kernel.Kernel, skillPrompts []string) string {
 	var parts []string
 	for _, p := range skillPrompts {
 		if t := strings.TrimSpace(p); t != "" {
@@ -410,14 +410,14 @@ func renderSkillsSection(k *kernel.Kernel, skillPrompts []string) string {
 		}
 	}
 	if k != nil {
-		if add := strings.TrimSpace(runtime.SkillsManager(k).SystemPromptAdditions()); add != "" {
+		if add := strings.TrimSpace(runtime.CapabilityManager(k).SystemPromptAdditions()); add != "" {
 			parts = append(parts, add)
 		}
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return "## Skills\n" + strings.Join(parts, "\n\n")
+	return "## Capability Guidance\n" + strings.Join(parts, "\n\n")
 }
 
 func renderRuntimeNoticesSection(notices []string) string {

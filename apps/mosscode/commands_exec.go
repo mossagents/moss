@@ -9,7 +9,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
+	appruntime "github.com/mossagents/moss/runtime"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"

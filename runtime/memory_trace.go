@@ -13,7 +13,6 @@ type normalizedTrace struct {
 	MessageCount int
 }
 
-
 func normalizeTrace(raw string) (*normalizedTrace, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

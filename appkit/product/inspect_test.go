@@ -3,12 +3,12 @@ package product
 import (
 	"context"
 	"encoding/json"
-	appruntime "github.com/mossagents/moss/appkit/runtime"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
