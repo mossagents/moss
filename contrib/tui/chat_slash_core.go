@@ -20,16 +20,13 @@ type slashCommandHandler func(chatModel, []string, string, string) (chatModel, t
 
 var slashCommandRegistry = map[string]slashCommandHandler{
 	"/exit":         handleExitSlashCommand,
-	"/quit":         handleExitSlashCommand,
 	"/model":        handleModelSlashCommand,
-	"/models":       handleModelSlashCommand,
 	"/fast":         handleFastSlashCommand,
 	"/personality":  handlePersonalitySlashCommand,
 	"/clear":        handleClearSlashCommand,
 	"/copy":         handleCopySlashCommand,
 	"/skills":       handleSkillsSlashCommand,
 	"/skill":        handleSkillSlashCommand,
-	"/session":      handleSessionLegacySlashCommand,
 	"/status":       handleStatusSlashCommand,
 	"/resume":       handleResumeSlashCommand,
 	"/trace":        handleTraceSlashCommand,
@@ -42,18 +39,13 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/diff":         handleDiffSlashCommand,
 	"/review":       handleReviewSlashCommand,
 	"/inspect":      handleInspectSlashCommand,
-	"/sessions":     handleSessionsLegacySlashCommand,
 	"/mcp":          handleMCPSlashCommand,
 	"/compact":      handleCompactSlashCommand,
-	"/offload":      handleOffloadLegacySlashCommand,
 	"/agent":        handleAgentSlashCommand,
 	"/ps":           handlePSSlashCommand,
-	"/tasks":        handleTasksLegacySlashCommand,
-	"/task":         handleTaskLegacySlashCommand,
 	"/config":       handleConfigSlashCommand,
 	"/schedules":    handleSchedulesSlashCommand,
 	"/git":          handleGitSlashCommand,
-	"/budget":       handleBudgetLegacySlashCommand,
 	"/permissions":  handlePermissionsSlashCommand,
 	"/trust":        handleTrustSlashCommand,
 	"/approval":     handleApprovalSlashCommand,
@@ -71,6 +63,17 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/media":        handleMediaSlashCommand,
 	"/mention":      handleMentionSlashCommand,
 	"/init":         handleInitSlashCommand,
+}
+
+var retiredSlashCommandMessages = map[string]string{
+	"/budget":   "Budget summary moved into /status.",
+	"/models":   "Model picker moved to /model.",
+	"/offload":  "Transcript compaction moved to /compact. Use /compact [keep_recent] [note].",
+	"/quit":     "Exit moved to /exit.",
+	"/session":  "Current thread summary moved to /status. Use /resume to continue saved threads.",
+	"/sessions": "Saved-session browsing moved to /resume. Use /resume to list recent sessions or /resume <session_id> to continue one.",
+	"/task":     "Background agent controls moved to /agent. Use /agent <id> or /agent cancel <id> [reason].",
+	"/tasks":    "Background agent controls moved to /agent. Use /agent [list], /agent current, /agent <id>, or /agent cancel <id>.",
 }
 
 // handleSlashCommand 处理 / 开头的斜杠命令。
@@ -102,6 +105,11 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 		return m.dispatchUserSubmission(input, runText, []model.ContentPart{model.TextPart(runText)})
+	}
+	if message, ok := retiredSlashCommandMessages[cmd]; ok {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: message})
+		m.refreshViewport()
+		return m, nil
 	}
 	if strings.HasPrefix(cmd, "/") && len(cmd) > 1 {
 		name := strings.TrimSpace(strings.TrimPrefix(cmd, "/"))
@@ -260,12 +268,6 @@ func handleSkillSlashCommand(m chatModel, args []string, input string, _ string)
 	name := strings.TrimSpace(args[0])
 	task := strings.TrimSpace(strings.Join(args[1:], " "))
 	return m.invokeSkillLikeCommand(name, task, input)
-}
-
-func handleSessionLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Current thread summary moved to /status. Use /resume to continue saved threads."})
-	m.refreshViewport()
-	return m, nil
 }
 
 func handleStatusSlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
@@ -487,12 +489,6 @@ func handleInspectSlashCommand(m chatModel, args []string, _ string, _ string) (
 	return m, nil
 }
 
-func handleSessionsLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Saved-session browsing moved to /resume. Use /resume to list recent sessions or /resume <session_id> to continue one."})
-	m.refreshViewport()
-	return m, nil
-}
-
 func handleMCPSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 || strings.EqualFold(args[0], "list") {
 		return m.openMCPPicker()
@@ -542,12 +538,6 @@ func handleCompactSlashCommand(m chatModel, args []string, _ string, _ string) (
 	return m, nil
 }
 
-func handleOffloadLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Transcript compaction moved to /compact. Use /compact [keep_recent] [note]."})
-	m.refreshViewport()
-	return m, nil
-}
-
 func handlePSSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if !m.experimentalEnabled(product.ExperimentalBackgroundPS) {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background activity view is disabled. Use /experimental enable background-ps to turn it back on."})
@@ -593,18 +583,6 @@ func handlePSSlashCommand(m chatModel, args []string, _ string, _ string) (chatM
 	return m, nil
 }
 
-func handleTasksLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background agent controls moved to /agent. Use /agent [list], /agent current, /agent <id>, or /agent cancel <id>."})
-	m.refreshViewport()
-	return m, nil
-}
-
-func handleTaskLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background agent controls moved to /agent. Use /agent <id> or /agent cancel <id> [reason]."})
-	m.refreshViewport()
-	return m, nil
-}
-
 func handleConfigSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	return m.handleConfigCommand(args)
 }
@@ -632,12 +610,6 @@ func handleSchedulesSlashCommand(m chatModel, _ []string, _ string, _ string) (c
 	} else {
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
 	}
-	m.refreshViewport()
-	return m, nil
-}
-
-func handleBudgetLegacySlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	m.messages = append(m.messages, chatMessage{kind: msgError, content: "Budget summary moved into /status."})
 	m.refreshViewport()
 	return m, nil
 }

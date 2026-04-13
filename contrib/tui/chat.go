@@ -1014,7 +1014,6 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Threads and core"},
 	{Name: "/plan", Summary: "Switch to planning mode", Section: "Runtime posture"},
 	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime posture"},
-	{Name: "/models", Summary: "Open the configured model picker", Section: "Runtime posture"},
 	{Name: "/fast", Summary: "Toggle fast interaction mode", Section: "Runtime posture"},
 	{Name: "/personality", Summary: "Set the response personality", Section: "Runtime posture"},
 	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime posture"},
@@ -1047,7 +1046,6 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/skill", Summary: "Invoke a named skill", Section: "Tools and integrations"},
 	{Name: "/http_request", Summary: "Invoke a tool shortcut directly", Section: "Tools and integrations"},
 	{Name: "/exit", Summary: "Exit mosscode", Section: "Threads and core"},
-	{Name: "/quit", Summary: "Exit mosscode", Section: "Threads and core", HiddenInNav: true},
 	// Keyboard shortcuts (info-only; Enter closes the overlay without inserting)
 	{Name: "ctrl+y", Summary: "Open copy picker to select and copy a message", Section: "Keyboard shortcuts"},
 	{Name: "ctrl+v", Summary: "Paste clipboard content at cursor in the composer", Section: "Keyboard shortcuts"},

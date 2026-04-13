@@ -289,7 +289,7 @@ func TestModelPickerSelectionReturnsSwitchModelMsg(t *testing.T) {
 	m.trust = configpkg.TrustTrusted
 	m.modelAuto = true
 
-	updated, _ := m.handleSlashCommand("/models")
+	updated, _ := m.handleSlashCommand("/model")
 	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
 	updated, cmd := updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -904,6 +904,27 @@ func TestLegacyOffloadCommandShowsGuidance(t *testing.T) {
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError || !strings.Contains(last.content, "/compact") {
 		t.Fatalf("unexpected legacy offload guidance: %+v", last)
+	}
+}
+
+func TestRetiredSlashCommandsShowGuidance(t *testing.T) {
+	tests := []struct {
+		command string
+		want    string
+	}{
+		{command: "/budget", want: "/status"},
+		{command: "/models", want: "/model"},
+		{command: "/quit", want: "/exit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			m := newChatModel("openai", "gpt-4o", ".")
+			updated, _ := m.handleSlashCommand(tt.command)
+			last := updated.messages[len(updated.messages)-1]
+			if last.kind != msgError || !strings.Contains(last.content, tt.want) {
+				t.Fatalf("unexpected retired command guidance for %s: %+v", tt.command, last)
+			}
+		})
 	}
 }
 
