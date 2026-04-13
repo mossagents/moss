@@ -42,11 +42,6 @@ func WithMemoryStore(store memory.MemoryStore) kernel.Option {
 	}
 }
 
-// RegisterMemoryToolsCompat 为 memory 命名空间注册标准工具集。
-func RegisterMemoryToolsCompat(reg tool.Registry, ws workspace.Workspace) error {
-	return RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), taskrt.NewMemoryTaskRuntime())
-}
-
 func ensureMemoryState(k *kernel.Kernel) *state {
 	actual, loaded := k.Services().LoadOrStore(memoryStateKey, &state{})
 	st := actual.(*state)
@@ -55,6 +50,9 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	}
 	k.Stages().OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
 		if st.workspace == nil {
+			if st.store != nil || st.runtime != nil {
+				return fmt.Errorf("memory workspace is nil")
+			}
 			return nil
 		}
 		if st.store == nil {
@@ -90,61 +88,6 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 		return "You have staged persistent memory tools backed by /memories. Prefer memory_summary.md and MEMORY.md for quick context, then inspect rollout_summaries/ or individual memory records when needed."
 	})
 	return st
-}
-
-// RegisterMemoryToolsOnKernel wires persistent memory state onto the kernel and
-// registers memory tools against the kernel-owned pipeline so later Boot/Shutdown
-// reuses the same owner.
-func RegisterMemoryToolsOnKernel(k *kernel.Kernel, ws workspace.Workspace, store memory.MemoryStore, runtime taskrt.TaskRuntime) error {
-	if k == nil {
-		return fmt.Errorf("kernel is nil")
-	}
-	if ws == nil {
-		return fmt.Errorf("memory workspace is nil")
-	}
-	if store == nil {
-		return fmt.Errorf("memory store is nil")
-	}
-	st := ensureMemoryState(k)
-	if st.pipeline == nil {
-		st.workspace = ws
-		st.store = newIndexedMemoryStore(store, StateCatalogOf(k))
-		st.runtime = runtime
-		if st.runtime == nil {
-			st.runtime = k.TaskRuntime()
-		}
-		if st.runtime == nil {
-			st.runtime = taskrt.NewMemoryTaskRuntime()
-		}
-		st.pipeline = newMemoryPipelineManager(st.workspace, st.store, st.runtime)
-		st.pipeline.Start()
-	}
-	if err := st.pipeline.syncArtifacts(context.Background()); err != nil {
-		return err
-	}
-	return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline)
-}
-
-func RegisterMemoryTools(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore) error {
-	return RegisterMemoryToolsWithRuntime(reg, ws, store, taskrt.NewMemoryTaskRuntime())
-}
-
-func RegisterMemoryToolsWithRuntime(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, runtime taskrt.TaskRuntime) error {
-	if ws == nil {
-		return fmt.Errorf("memory workspace is nil")
-	}
-	if store == nil {
-		return fmt.Errorf("memory store is nil")
-	}
-	if runtime == nil {
-		runtime = taskrt.NewMemoryTaskRuntime()
-	}
-	pipeline := newMemoryPipelineManager(ws, store, runtime)
-	pipeline.Start()
-	if err := pipeline.syncArtifacts(context.Background()); err != nil {
-		return err
-	}
-	return registerMemoryToolsWithPipeline(reg, ws, store, pipeline)
 }
 
 func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) error {

@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 	"path/filepath"
@@ -19,13 +20,40 @@ import (
 	"time"
 )
 
-func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
-	reg := tool.NewRegistry()
-	ws := sandbox.NewMemoryWorkspace()
-
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
+func bootMemoryTestKernel(t *testing.T, ws workspace.Workspace, store memory.MemoryStore, taskRuntime taskrt.TaskRuntime) *kernel.Kernel {
+	t.Helper()
+	opts := []kernel.Option{
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
 	}
+	if taskRuntime != nil {
+		opts = append(opts, kernel.WithTaskRuntime(taskRuntime))
+	}
+	if ws != nil {
+		opts = append(opts, WithMemoryWorkspace(ws))
+	}
+	if store != nil {
+		opts = append(opts, WithMemoryStore(store))
+	}
+	k := kernel.New(opts...)
+	ctx := context.Background()
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = k.Shutdown(ctx)
+	})
+	return k
+}
+
+func bootMemoryTestRegistry(t *testing.T, ws workspace.Workspace, store memory.MemoryStore, taskRuntime taskrt.TaskRuntime) tool.Registry {
+	t.Helper()
+	return bootMemoryTestKernel(t, ws, store, taskRuntime).ToolRegistry()
+}
+
+func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
+	ws := sandbox.NewMemoryWorkspace()
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 
 	ctx := context.Background()
 	writeTool, ok := reg.Get("write_memory")
@@ -92,11 +120,8 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 }
 
 func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterMemoryToolsCompat: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 	cases := []struct {
 		name       string
 		effect     tool.Effect
@@ -127,15 +152,12 @@ func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 
 func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	ctx := context.Background()
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
 	store := NewWorkspaceMemoryStore(ws)
 	if err := ws.WriteFile(ctx, "team/legacy.txt", []byte("legacy memory")); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	if err := RegisterMemoryTools(reg, ws, store); err != nil {
-		t.Fatalf("RegisterMemoryTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, store, nil)
 	readTool, ok := reg.Get("read_memory")
 	if !ok {
 		t.Fatal("read_memory not registered")
@@ -160,10 +182,15 @@ func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryTools_NilWorkspace(t *testing.T) {
-	reg := tool.NewRegistry()
-	if err := RegisterMemoryToolsCompat(reg, nil); err == nil {
-		t.Fatal("expected nil workspace error")
+func TestWithMemoryStoreWithoutWorkspace_BootFails(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		WithMemoryStore(NewWorkspaceMemoryStore(sandbox.NewMemoryWorkspace())),
+	)
+	err := k.Boot(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "memory workspace is nil") {
+		t.Fatalf("expected memory workspace error, got %v", err)
 	}
 }
 
@@ -193,31 +220,26 @@ func TestWithWorkspace_BootAndPrompt(t *testing.T) {
 	}
 }
 
-func TestRegisterMemoryToolsOnKernel_ReusesPipelineAcrossBoot(t *testing.T) {
-	ctx := context.Background()
+func TestWithMemoryWorkspace_BootInitializesPipeline(t *testing.T) {
+	ws := sandbox.NewMemoryWorkspace()
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
+		WithMemoryWorkspace(ws),
+		WithMemoryStore(NewWorkspaceMemoryStore(ws)),
 	)
-	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsOnKernel(k, ws, NewWorkspaceMemoryStore(ws), nil); err != nil {
-		t.Fatalf("RegisterMemoryToolsOnKernel: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = k.Shutdown(ctx)
-	})
-
 	st := ensureMemoryState(k)
-	if st.pipeline == nil {
-		t.Fatal("expected memory pipeline to be initialized")
+	if st.pipeline != nil {
+		t.Fatal("expected memory pipeline to be nil before boot")
 	}
-	pipeline := st.pipeline
-
-	if err := k.Boot(ctx); err != nil {
+	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
-	if ensureMemoryState(k).pipeline != pipeline {
-		t.Fatal("expected boot to reuse the existing memory pipeline")
+	t.Cleanup(func() {
+		_ = k.Shutdown(context.Background())
+	})
+	if ensureMemoryState(k).pipeline == nil {
+		t.Fatal("expected memory pipeline to be initialized on boot")
 	}
 	if _, ok := k.ToolRegistry().Get("read_memory"); !ok {
 		t.Fatal("expected read_memory to remain registered")
@@ -225,11 +247,8 @@ func TestRegisterMemoryToolsOnKernel_ReusesPipelineAcrossBoot(t *testing.T) {
 }
 
 func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 	ctx := context.Background()
 	wrTool, ok := reg.Get("write_memory_record")
 	if !ok {
@@ -303,11 +322,8 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 }
 
 func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 	ctx := context.Background()
 	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
@@ -362,11 +378,8 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 }
 
 func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 	ctx := context.Background()
 	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
@@ -411,11 +424,8 @@ func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
 }
 
 func TestWriteMemory_SyncsDerivedArtifacts(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
-	if err := RegisterMemoryToolsCompat(reg, ws); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, nil, nil)
 	ctx := context.Background()
 	wmTool, ok := reg.Get("write_memory")
 	if !ok {
@@ -529,7 +539,6 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 }
 
 func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
-	reg := tool.NewRegistry()
 	ws := sandbox.NewMemoryWorkspace()
 	taskRuntime := taskrt.NewMemoryTaskRuntime()
 	if err := taskRuntime.UpsertJob(context.Background(), taskrt.AgentJob{
@@ -543,9 +552,7 @@ func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 	if _, err := taskRuntime.MarkJobItemRunning(context.Background(), "job-mem", "item-1", "exec-a"); err != nil {
 		t.Fatalf("MarkJobItemRunning: %v", err)
 	}
-	if err := RegisterMemoryToolsWithRuntime(reg, ws, NewWorkspaceMemoryStore(ws), taskRuntime); err != nil {
-		t.Fatalf("RegisterTools: %v", err)
-	}
+	reg := bootMemoryTestRegistry(t, ws, NewWorkspaceMemoryStore(ws), taskRuntime)
 	ctx := context.Background()
 	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {

@@ -165,5 +165,6 @@ func installPersistentMemories(k *kernel.Kernel, memoriesDir, sqlitePath string)
 	if err != nil {
 		return fmt.Errorf("memory sqlite store: %w", err)
 	}
-	return runtime.RegisterMemoryToolsOnKernel(k, ws, store, k.TaskRuntime())
+	k.Apply(runtime.WithMemoryWorkspace(ws), runtime.WithMemoryStore(store))
+	return nil
 }

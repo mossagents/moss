@@ -406,6 +406,9 @@ func TestBuildKernelWithFeatures_WithPersistentMemories(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures: %v", err)
 	}
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
 	t.Cleanup(func() {
 		_ = k.Shutdown(context.Background())
 	})
