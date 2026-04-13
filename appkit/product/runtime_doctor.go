@@ -246,7 +246,7 @@ func buildDoctorStateHealth() DoctorStateCatalogHealth {
 	stateCatalog, stateErr := OpenStateCatalog()
 	if stateErr != nil {
 		return DoctorStateCatalogHealth{
-			Enabled:   StateCatalogEnabled(),
+			Enabled:   true,
 			Ready:     false,
 			Degraded:  true,
 			LastError: stateErr.Error(),

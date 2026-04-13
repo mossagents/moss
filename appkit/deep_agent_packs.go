@@ -77,7 +77,7 @@ func buildDeepAgentStateCatalogPack(state *deepAgentPresetState) ([]harness.Feat
 		return nil, nil
 	}
 	stateDir := filepath.Join(state.appDir, "state")
-	catalog, err := runtime.NewStateCatalog(stateDir, filepath.Join(stateDir, "events"), runtime.StateCatalogEnabledFromEnv())
+	catalog, err := runtime.NewStateCatalog(stateDir, filepath.Join(stateDir, "events"), true)
 	if err != nil {
 		return nil, fmt.Errorf("state catalog: %w", err)
 	}

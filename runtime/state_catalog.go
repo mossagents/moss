@@ -12,10 +12,7 @@ import (
 	"time"
 )
 
-const (
-	stateCatalogSchemaVersion = 1
-	DisableStateCatalogEnv    = "MOSSCODE_DISABLE_STATE_CATALOG"
-)
+const stateCatalogSchemaVersion = 1
 
 type StateKind string
 
@@ -100,15 +97,6 @@ type stateCatalogMeta struct {
 	Entries       int       `json:"entries"`
 	LastError     string    `json:"last_error,omitempty"`
 	Degraded      bool      `json:"degraded"`
-}
-
-func StateCatalogEnabledFromEnv() bool {
-	value := strings.TrimSpace(os.Getenv(DisableStateCatalogEnv))
-	if value == "" {
-		return true
-	}
-	value = strings.ToLower(value)
-	return value != "1" && value != "true" && value != "yes" && value != "on"
 }
 
 func NewStateCatalog(catalogDir, eventDir string, enabled bool) (*StateCatalog, error) {

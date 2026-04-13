@@ -38,7 +38,7 @@ func OpenTaskRuntime() (*taskrt.FileTaskRuntime, error) {
 }
 
 func OpenStateCatalog() (*appruntime.StateCatalog, error) {
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
+	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
 	if err != nil {
 		return nil, err
 	}

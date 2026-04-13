@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-const disableStateCatalogEnv = "MOSSCODE_DISABLE_STATE_CATALOG"
-
 func SessionStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "sessions")
 }
@@ -20,15 +18,6 @@ func StateStoreDir() string {
 
 func StateEventDir() string {
 	return filepath.Join(StateStoreDir(), "events")
-}
-
-func StateCatalogEnabled() bool {
-	value := strings.TrimSpace(os.Getenv(disableStateCatalogEnv))
-	if value == "" {
-		return true
-	}
-	value = strings.ToLower(value)
-	return value != "1" && value != "true" && value != "yes" && value != "on"
 }
 
 func CheckpointStoreDir() string {
