@@ -131,6 +131,10 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 	if err != nil {
 		return InspectReport{}, err
 	}
+	changeStore, err := OpenChangeStore()
+	if err != nil {
+		return InspectReport{}, err
+	}
 	report := InspectReport{
 		Mode:      mode,
 		Workspace: workspace,
@@ -176,18 +180,11 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 			return InspectReport{}, err
 		}
 		run := buildInspectRun(page.Items, sessionID)
-		changePage, err := catalog.Query(appruntime.StateQuery{
-			Kinds:     []appruntime.StateKind{appruntime.StateKindChange},
-			SessionID: sessionID,
-			Limit:     10,
-		})
-		if err == nil {
-			run.Changes = inspectStateItems(changePage.Items)
-		}
+		run.Changes = inspectChangesForSession(ctx, changeStore, sessionID, 10)
 		report.Run = &run
 		return report, nil
 	case "threads":
-		threads, err := buildInspectThreads(ctx, workspace, inspectLimit(args, 1, 20))
+		threads, err := buildInspectThreads(ctx, workspace, catalog, changeStore, inspectLimit(args, 1, 20))
 		if err != nil {
 			return InspectReport{}, err
 		}
@@ -198,7 +195,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
 			target = strings.TrimSpace(args[1])
 		}
-		thread, err := buildInspectThread(ctx, workspace, catalog, target)
+		thread, err := buildInspectThread(ctx, workspace, catalog, changeStore, target)
 		if err != nil {
 			return InspectReport{}, err
 		}
@@ -229,7 +226,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
 			target = strings.TrimSpace(args[1])
 		}
-		replay, err := buildInspectReplay(ctx, workspace, catalog, target)
+		replay, err := buildInspectReplay(ctx, workspace, catalog, changeStore, target)
 		if err != nil {
 			return InspectReport{}, err
 		}
@@ -240,7 +237,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		if len(args) < 3 {
 			return InspectReport{}, fmt.Errorf("inspect compare requires two selectors")
 		}
-		compare, err := buildInspectCompare(ctx, catalog, strings.TrimSpace(args[1]), strings.TrimSpace(args[2]))
+		compare, err := buildInspectCompare(ctx, catalog, changeStore, strings.TrimSpace(args[1]), strings.TrimSpace(args[2]))
 		if err != nil {
 			return InspectReport{}, err
 		}
@@ -516,6 +513,44 @@ func inspectStateItems(entries []appruntime.StateEntry) []InspectStateItem {
 		})
 	}
 	return items
+}
+
+func inspectChangesForSession(ctx context.Context, store *FileChangeStore, sessionID string, limit int) []InspectStateItem {
+	if store == nil || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	items, err := store.ListBySession(ctx, sessionID, limit)
+	if err != nil {
+		return nil
+	}
+	return inspectChangeItems(items)
+}
+
+func inspectChangeItems(items []ChangeOperation) []InspectStateItem {
+	out := make([]InspectStateItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, InspectStateItem{
+			Kind:      "change",
+			RecordID:  item.ID,
+			SessionID: strings.TrimSpace(item.SessionID),
+			Status:    string(item.Status),
+			Title:     strutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
+			Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
+			SortTime:  changeSortTime(item),
+		})
+	}
+	return out
+}
+
+func changeCountsBySession(ctx context.Context, store *FileChangeStore) map[string]int {
+	if store == nil {
+		return map[string]int{}
+	}
+	counts, err := store.CountsBySession(ctx)
+	if err != nil {
+		return map[string]int{}
+	}
+	return counts
 }
 
 func buildInspectRun(entries []appruntime.StateEntry, sessionID string) InspectRunReport {

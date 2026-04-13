@@ -82,7 +82,7 @@ type InspectCapabilityItem struct {
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
-func buildInspectThreads(ctx context.Context, workspace string, limit int) ([]InspectThreadSummary, error) {
+func buildInspectThreads(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, limit int) ([]InspectThreadSummary, error) {
 	store, err := session.NewFileStore(SessionStoreDir())
 	if err != nil {
 		return nil, err
@@ -92,12 +92,12 @@ func buildInspectThreads(ctx context.Context, workspace string, limit int) ([]In
 		return nil, err
 	}
 	checkpointCounts := checkpointCountsBySession(ctx)
-	catalog, _ := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
+	changeCounts := changeCountsBySession(ctx, changeStore)
 	out := make([]InspectThreadSummary, 0, len(summaries))
 	for _, summary := range summaries {
 		item := inspectThreadSummaryFromSession(summary)
 		item.CheckpointCount = checkpointCounts[summary.ID]
-		item.ChangeCount = countStateEntries(catalog, appruntime.StateKindChange, summary.ID)
+		item.ChangeCount = changeCounts[summary.ID]
 		item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
 		out = append(out, item)
 	}
@@ -107,7 +107,7 @@ func buildInspectThreads(ctx context.Context, workspace string, limit int) ([]In
 	return out, nil
 }
 
-func buildInspectThread(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, target string) (*InspectThreadReport, error) {
+func buildInspectThread(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectThreadReport, error) {
 	store, err := session.NewFileStore(SessionStoreDir())
 	if err != nil {
 		return nil, err
@@ -122,8 +122,9 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 	}
 	report := &InspectThreadReport{Summary: inspectThreadSummaryFromSession(*selected)}
 	checkpointCounts := checkpointCountsBySession(ctx)
+	changeCounts := changeCountsBySession(ctx, changeStore)
 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
-	report.Summary.ChangeCount = countStateEntries(catalog, appruntime.StateKindChange, selected.ID)
+	report.Summary.ChangeCount = changeCounts[selected.ID]
 	report.Summary.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, selected.ID)
 	for _, summary := range summaries {
 		if summary.ParentID != selected.ID {
@@ -131,7 +132,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 		}
 		child := inspectThreadSummaryFromSession(summary)
 		child.CheckpointCount = checkpointCounts[summary.ID]
-		child.ChangeCount = countStateEntries(catalog, appruntime.StateKindChange, summary.ID)
+		child.ChangeCount = changeCounts[summary.ID]
 		child.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
 		report.Children = append(report.Children, child)
 	}
@@ -145,10 +146,10 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 			}
 		}
 	}
+	if changeStore != nil {
+		report.Changes = inspectChangesForSession(ctx, changeStore, selected.ID, 10)
+	}
 	if catalog != nil {
-		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindChange}, SessionID: selected.ID, Limit: 10}); err == nil {
-			report.Changes = inspectStateItems(page.Items)
-		}
 		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindTask}, SessionID: selected.ID, Limit: 10}); err == nil {
 			report.Tasks = inspectStateItems(page.Items)
 		}

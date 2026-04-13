@@ -131,18 +131,20 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			t.Fatalf("AppendExecutionEvent(%s): %v", event.Type, err)
 		}
 	}
-	if err := catalog.Upsert(appruntime.StateEntry{
-		Kind:      appruntime.StateKindChange,
-		RecordID:  "change-1",
-		SessionID: "sess-inspect",
-		Status:    "applied",
-		Title:     "update tracked.txt",
-		Summary:   "tracked.txt",
-		SortTime:  now.Add(4 * time.Millisecond),
-		CreatedAt: now.Add(4 * time.Millisecond),
-		UpdatedAt: now.Add(4 * time.Millisecond),
+	changeStore, err := OpenChangeStore()
+	if err != nil {
+		t.Fatalf("OpenChangeStore: %v", err)
+	}
+	if err := changeStore.Save(ctx, &ChangeOperation{
+		ID:          "change-1",
+		RepoRoot:    workspace,
+		SessionID:   "sess-inspect",
+		Summary:     "update tracked.txt",
+		TargetFiles: []string{"tracked.txt"},
+		Status:      ChangeStatusApplied,
+		CreatedAt:   now.Add(4 * time.Millisecond),
 	}); err != nil {
-		t.Fatalf("Upsert change entry: %v", err)
+		t.Fatalf("Save change operation: %v", err)
 	}
 
 	report, err := BuildInspectReport(ctx, workspace, []string{"run", "latest", "10"})
@@ -254,8 +256,22 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
+	changeStore, err := OpenChangeStore()
+	if err != nil {
+		t.Fatalf("OpenChangeStore: %v", err)
+	}
+	if err := changeStore.Save(ctx, &ChangeOperation{
+		ID:          "change-1",
+		RepoRoot:    workspace,
+		SessionID:   "sess-root",
+		Summary:     "edit a.txt",
+		TargetFiles: []string{"a.txt"},
+		Status:      ChangeStatusApplied,
+		CreatedAt:   time.Now(),
+	}); err != nil {
+		t.Fatalf("Save change operation: %v", err)
+	}
 	for _, entry := range []appruntime.StateEntry{
-		{Kind: appruntime.StateKindChange, RecordID: "change-1", SessionID: "sess-root", Status: "applied", Title: "edit a.txt", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
 		{Kind: appruntime.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	} {
 		if err := catalog.Upsert(entry); err != nil {

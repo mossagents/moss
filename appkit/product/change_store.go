@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
-	appruntime "github.com/mossagents/moss/runtime"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,20 +13,15 @@ import (
 )
 
 type FileChangeStore struct {
-	dir     string
-	mu      sync.Mutex
-	catalog *appruntime.StateCatalog
+	dir string
+	mu  sync.Mutex
 }
 
 func NewFileChangeStore(dir string) (*FileChangeStore, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, fmt.Errorf("create change store dir: %w", err)
 	}
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), StateCatalogEnabled())
-	if err != nil && StateCatalogEnabled() {
-		return nil, fmt.Errorf("state catalog: %w", err)
-	}
-	return &FileChangeStore{dir: dir, catalog: catalog}, nil
+	return &FileChangeStore{dir: dir}, nil
 }
 
 func OpenChangeStore() (*FileChangeStore, error) {
@@ -53,9 +46,6 @@ func (fs *FileChangeStore) Save(_ context.Context, item *ChangeOperation) error 
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("replace change operation: %w", err)
-	}
-	if fs.catalog != nil {
-		fs.catalog.BestEffortUpsert(stateEntryFromChange(item))
 	}
 	return nil
 }
@@ -86,9 +76,6 @@ func (fs *FileChangeStore) Delete(_ context.Context, id string) error {
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete change operation %s: %w", id, err)
 	}
-	if fs.catalog != nil {
-		fs.catalog.BestEffortDelete(appruntime.StateKindChange, id)
-	}
 	return nil
 }
 
@@ -115,13 +102,54 @@ func (fs *FileChangeStore) List(_ context.Context) ([]ChangeOperation, error) {
 		}
 		items = append(items, *cloneChangeOperation(&item))
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].CreatedAt.Equal(items[j].CreatedAt) {
-			return items[i].ID > items[j].ID
-		}
-		return items[i].CreatedAt.After(items[j].CreatedAt)
-	})
+	sortChangesNewestFirst(items)
 	return items, nil
+}
+
+func (fs *FileChangeStore) ListBySession(ctx context.Context, sessionID string, limit int) ([]ChangeOperation, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return nil, nil
+	}
+	items, err := fs.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]ChangeOperation, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.SessionID) != sessionID {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+	return filtered, nil
+}
+
+func (fs *FileChangeStore) CountBySession(ctx context.Context, sessionID string) (int, error) {
+	items, err := fs.ListBySession(ctx, sessionID, 0)
+	if err != nil {
+		return 0, err
+	}
+	return len(items), nil
+}
+
+func (fs *FileChangeStore) CountsBySession(ctx context.Context) (map[string]int, error) {
+	items, err := fs.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int)
+	for _, item := range items {
+		sessionID := strings.TrimSpace(item.SessionID)
+		if sessionID == "" {
+			continue
+		}
+		counts[sessionID]++
+	}
+	return counts, nil
 }
 
 func (fs *FileChangeStore) ListByRepoRoot(ctx context.Context, repoRoot string) ([]ChangeOperation, error) {
@@ -158,64 +186,20 @@ func newChangeID(repoRoot string) string {
 	return fmt.Sprintf("change-%s-%d", base, time.Now().UnixNano())
 }
 
-func stateEntryFromChange(item *ChangeOperation) appruntime.StateEntry {
-	if item == nil {
-		return appruntime.StateEntry{}
-	}
-	sortTime := item.CreatedAt
+func changeSortTime(item ChangeOperation) time.Time {
 	if !item.RolledBackAt.IsZero() {
-		sortTime = item.RolledBackAt
+		return item.RolledBackAt.UTC()
 	}
-	return appruntime.StateEntry{
-		Kind:      appruntime.StateKindChange,
-		RecordID:  item.ID,
-		SessionID: strings.TrimSpace(item.SessionID),
-		RepoRoot:  canonicalRepoRoot(item.RepoRoot),
-		Status:    string(item.Status),
-		Title:     strutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
-		Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
-		SearchText: strings.ToLower(strings.TrimSpace(strings.Join(compactStrings([]string{
-			item.ID,
-			item.SessionID,
-			item.RunID,
-			item.TurnID,
-			item.InstructionProfile,
-			item.ModelLane,
-			item.RepoRoot,
-			item.Summary,
-			item.RecoveryDetails,
-			item.RollbackDetails,
-			strings.Join(item.TargetFiles, " "),
-			strings.Join(item.VisibleTools, " "),
-		}), " "))),
-		SortTime:  sortTime.UTC(),
-		CreatedAt: item.CreatedAt.UTC(),
-		UpdatedAt: sortTime.UTC(),
-		Metadata:  marshalChangeStateMetadata(item),
-	}
+	return item.CreatedAt.UTC()
 }
 
-func marshalChangeStateMetadata(item *ChangeOperation) json.RawMessage {
-	if item == nil {
-		return nil
-	}
-	data, err := json.Marshal(map[string]any{
-		"run_id":              item.RunID,
-		"turn_id":             item.TurnID,
-		"instruction_profile": item.InstructionProfile,
-		"model_lane":          item.ModelLane,
-		"visible_tools":       append([]string(nil), item.VisibleTools...),
-		"hidden_tools":        append([]string(nil), item.HiddenTools...),
-		"patch_id":            item.PatchID,
-		"checkpoint_id":       item.CheckpointID,
-		"target_files":        append([]string(nil), item.TargetFiles...),
-		"recovery_mode":       item.RecoveryMode,
-		"recovery_details":    item.RecoveryDetails,
-		"rollback_mode":       item.RollbackMode,
-		"rollback_details":    item.RollbackDetails,
+func sortChangesNewestFirst(items []ChangeOperation) {
+	sort.Slice(items, func(i, j int) bool {
+		left := changeSortTime(items[i])
+		right := changeSortTime(items[j])
+		if left.Equal(right) {
+			return items[i].ID > items[j].ID
+		}
+		return left.After(right)
 	})
-	if err != nil {
-		return nil
-	}
-	return data
 }

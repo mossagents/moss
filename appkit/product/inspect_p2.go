@@ -120,7 +120,7 @@ type inspectGovernanceTurn struct {
 	exhausted bool
 }
 
-func buildInspectReplay(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, target string) (*InspectReplayReport, error) {
+func buildInspectReplay(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectReplayReport, error) {
 	checkpoints, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
 	if err != nil {
 		return nil, err
@@ -146,13 +146,14 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 	store, err := session.NewFileStore(SessionStoreDir())
 	if err == nil {
 		if summaries, listErr := store.List(ctx); listErr == nil && strings.TrimSpace(detail.SessionID) != "" {
+			changeCounts := changeCountsBySession(ctx, changeStore)
 			for _, summary := range summaries {
 				if summary.ID != detail.SessionID {
 					continue
 				}
 				item := inspectThreadSummaryFromSession(summary)
 				item.CheckpointCount = checkpointCountsBySession(ctx)[summary.ID]
-				item.ChangeCount = countStateEntries(catalog, appruntime.StateKindChange, summary.ID)
+				item.ChangeCount = changeCounts[summary.ID]
 				item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
 				report.Thread = &item
 				break
@@ -180,10 +181,10 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 	if strings.TrimSpace(report.SnapshotID) == "" {
 		report.Notes = append(report.Notes, "checkpoint has no worktree snapshot; restore will rely on patch lineage only")
 	}
+	if changeStore != nil && strings.TrimSpace(detail.SessionID) != "" {
+		report.Changes = inspectChangesForSession(ctx, changeStore, detail.SessionID, 10)
+	}
 	if catalog != nil && strings.TrimSpace(detail.SessionID) != "" {
-		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindChange}, SessionID: detail.SessionID, Limit: 10}); err == nil {
-			report.Changes = inspectStateItems(page.Items)
-		}
 		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindTask}, SessionID: detail.SessionID, Limit: 10}); err == nil {
 			report.Tasks = inspectStateItems(page.Items)
 		}
@@ -191,7 +192,7 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 	return report, nil
 }
 
-func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, leftSelector, rightSelector string) (*InspectCompareReport, error) {
+func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
 	store, err := session.NewFileStore(SessionStoreDir())
 	if err != nil {
 		return nil, err
@@ -204,11 +205,11 @@ func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, 
 	if err != nil {
 		return nil, err
 	}
-	left, err := resolveInspectCompareTarget(ctx, catalog, summaries, checkpoints, leftSelector)
+	left, err := resolveInspectCompareTarget(ctx, catalog, changeStore, summaries, checkpoints, leftSelector)
 	if err != nil {
 		return nil, err
 	}
-	right, err := resolveInspectCompareTarget(ctx, catalog, summaries, checkpoints, rightSelector)
+	right, err := resolveInspectCompareTarget(ctx, catalog, changeStore, summaries, checkpoints, rightSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -477,22 +478,23 @@ func renderInspectGovernanceReport(b *strings.Builder, report InspectGovernanceR
 	}
 }
 
-func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
+func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
 	kind, raw := splitInspectCompareSelector(selector)
 	switch kind {
 	case "checkpoint":
-		return buildInspectCheckpointTarget(ctx, catalog, summaries, checkpoints, raw)
+		return buildInspectCheckpointTarget(ctx, catalog, changeStore, summaries, checkpoints, raw)
 	default:
-		return buildInspectThreadTarget(ctx, catalog, summaries, raw)
+		return buildInspectThreadTarget(ctx, catalog, changeStore, summaries, raw)
 	}
 }
 
-func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
+func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
 	selected, err := resolveInspectSessionSummary(summaries, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
 	}
 	item := inspectThreadSummaryFromSession(*selected)
+	changeCounts := changeCountsBySession(ctx, changeStore)
 	return InspectCompareTarget{
 		Kind:            "thread",
 		ID:              item.ID,
@@ -503,7 +505,7 @@ func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCata
 		ParentID:        item.ParentID,
 		TaskID:          item.TaskID,
 		CheckpointCount: checkpointCountsBySession(ctx)[item.ID],
-		ChangeCount:     countStateEntries(catalog, appruntime.StateKindChange, item.ID),
+		ChangeCount:     changeCounts[item.ID],
 		TaskCount:       countStateEntries(catalog, appruntime.StateKindTask, item.ID),
 		Recoverable:     item.Recoverable,
 		Archived:        item.Archived,
@@ -512,7 +514,7 @@ func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCata
 	}, nil
 }
 
-func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.StateCatalog, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
+func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
 	record, err := ResolveCheckpointRecord(ctx, checkpoints, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
@@ -530,6 +532,7 @@ func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.State
 		PatchCount: detail.PatchCount,
 		UpdatedAt:  detail.CreatedAt.UTC().Format(time.RFC3339),
 	}
+	changeCounts := changeCountsBySession(ctx, changeStore)
 	for _, summary := range summaries {
 		if summary.ID != detail.SessionID {
 			continue
@@ -543,7 +546,7 @@ func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.State
 		item.Archived = thread.Archived
 		item.Preview = thread.Preview
 		item.CheckpointCount = checkpointCountsBySession(ctx)[thread.ID]
-		item.ChangeCount = countStateEntries(catalog, appruntime.StateKindChange, thread.ID)
+		item.ChangeCount = changeCounts[thread.ID]
 		item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, thread.ID)
 		break
 	}
