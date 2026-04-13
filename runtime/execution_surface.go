@@ -163,6 +163,19 @@ func (s *ExecutionSurface) HasExecutor() bool {
 	return s != nil && (s.Executor != nil || s.sandbox != nil)
 }
 
+func (s *ExecutionSurface) ExecutorPort() workspace.Executor {
+	if s == nil {
+		return nil
+	}
+	if s.Executor != nil {
+		return s.Executor
+	}
+	if s.sandbox == nil {
+		return nil
+	}
+	return &kernelExecutorAdapter{sb: s.sandbox}
+}
+
 func (s *ExecutionSurface) Error(capability string) error {
 	if s == nil {
 		return nil
@@ -228,6 +241,25 @@ func (s *ExecutionSurface) capabilityStatus(capability, name string, ready bool,
 
 type kernelWorkspaceAdapter struct {
 	sb sandbox.Sandbox
+}
+
+type kernelExecutorAdapter struct {
+	sb sandbox.Sandbox
+}
+
+func (a *kernelExecutorAdapter) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
+	out, err := a.sb.Execute(ctx, req)
+	if err != nil {
+		return workspace.ExecOutput{}, err
+	}
+	return workspace.ExecOutput{
+		Stdout:      out.Stdout,
+		Stderr:      out.Stderr,
+		ExitCode:    out.ExitCode,
+		Enforcement: out.Enforcement,
+		Degraded:    out.Degraded,
+		Details:     out.Details,
+	}, nil
 }
 
 func (a *kernelWorkspaceAdapter) ReadFile(_ context.Context, path string) ([]byte, error) {
