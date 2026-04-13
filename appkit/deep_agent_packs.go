@@ -46,7 +46,7 @@ func buildDeepAgentFeatures(flags *AppFlags, cfg DeepAgentConfig) ([]harness.Fea
 		{name: "checkpoint-store", build: buildDeepAgentCheckpointPack},
 		{name: "task-runtime", build: buildDeepAgentTaskRuntimePack},
 		{name: "persistent-memories", build: buildDeepAgentPersistentMemoryPack},
-		{name: "execution-surface", build: buildDeepAgentExecutionPack},
+		{name: "execution-services", build: buildDeepAgentExecutionPack},
 		{name: "planning-profile", build: buildDeepAgentPlanningPack},
 		{name: "bootstrap-context", build: buildDeepAgentBootstrapPack},
 		{name: "llm-governance", build: buildDeepAgentLLMGovernancePack},
@@ -171,12 +171,12 @@ func buildDeepAgentExecutionPack(state *deepAgentPresetState) ([]harness.Feature
 		}
 	}
 
-	surface := runtime.NewExecutionSurface(state.flags.Workspace, state.isolationRoot, state.isolationEnabled)
-	if err := surface.Error(runtime.CapabilityExecutionIsolation); err != nil {
+	probe := runtime.NewExecutionProbe(state.flags.Workspace, state.isolationRoot, state.isolationEnabled)
+	if err := probe.Error(runtime.CapabilityExecutionIsolation); err != nil {
 		return nil, fmt.Errorf("workspace isolation: %w", err)
 	}
 	return []harness.Feature{
-		harness.ExecutionSurface(surface),
+		harness.ExecutionServices(state.flags.Workspace, state.isolationRoot, state.isolationEnabled),
 	}, nil
 }
 

@@ -321,7 +321,7 @@ func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
 		"checkpointing",
 		"task-delegation",
 		"persistent-memories",
-		"execution-surface",
+		"execution-services",
 		"planning",
 		"bootstrap-context",
 		"llm-resilience",
@@ -339,8 +339,8 @@ func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
 	if capabilityMeta.Phase != harness.FeaturePhasePostRuntime {
 		t.Fatalf("execution-capability-report phase=%q, want %q", capabilityMeta.Phase, harness.FeaturePhasePostRuntime)
 	}
-	if !reflect.DeepEqual(capabilityMeta.Requires, []string{"execution-surface"}) {
-		t.Fatalf("execution-capability-report requires=%v, want [execution-surface]", capabilityMeta.Requires)
+	if !reflect.DeepEqual(capabilityMeta.Requires, []string{"execution-services"}) {
+		t.Fatalf("execution-capability-report requires=%v, want [execution-services]", capabilityMeta.Requires)
 	}
 
 	generalPurposeMeta := deepAgentFeatureMetadata(t, features[len(features)-1])
@@ -381,7 +381,7 @@ func TestBuildDeepAgentFeatures_DisableOptionalPacks(t *testing.T) {
 
 	want := []string{
 		"state-catalog",
-		"execution-surface",
+		"execution-services",
 		"runtime-setup",
 		"patch-tool-calls",
 		"execution-capability-report",

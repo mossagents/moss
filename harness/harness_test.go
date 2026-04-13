@@ -10,7 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 )
 
@@ -73,6 +73,15 @@ func newTestHarness() *Harness {
 		Executor:  stubExecutor{},
 	}
 	return New(k, backend)
+}
+
+func newSandboxHarness(t *testing.T, root string) *Harness {
+	t.Helper()
+	sb, err := sandbox.NewLocal(root)
+	if err != nil {
+		t.Fatalf("NewLocal: %v", err)
+	}
+	return New(kernel.New(), &LocalBackend{Sandbox: sb})
 }
 
 type recordingCapabilityReporter struct {
@@ -414,21 +423,66 @@ func TestFeature_StateCatalog_NilCatalog(t *testing.T) {
 	}
 }
 
-func TestFeature_ExecutionSurface_NilSurface(t *testing.T) {
+func TestFeature_ExecutionServices_EmptyWorkspaceRoot(t *testing.T) {
 	h := newTestHarness()
-	err := h.Install(context.Background(), ExecutionSurface(nil))
+	err := h.Install(context.Background(), ExecutionServices("", "", false))
 	if err == nil {
-		t.Fatal("expected error for nil execution surface")
+		t.Fatal("expected error for empty execution workspace root")
+	}
+}
+
+func TestFeature_ExecutionServices_RequiresPorts(t *testing.T) {
+	h := New(kernel.New(), nil)
+	err := h.Install(context.Background(), ExecutionServices(t.TempDir(), "", false))
+	if err == nil {
+		t.Fatal("expected error when backend ports are missing")
+	}
+	if !strings.Contains(err.Error(), "workspace port") {
+		t.Fatalf("expected workspace-port error, got %v", err)
+	}
+}
+
+func TestFeature_ExecutionServices_WorkspaceRootMismatch(t *testing.T) {
+	h := newSandboxHarness(t, t.TempDir())
+	err := h.Install(context.Background(), ExecutionServices(t.TempDir(), "", false))
+	if err == nil {
+		t.Fatal("expected error for workspace root mismatch")
+	}
+	if !strings.Contains(err.Error(), "does not match backend root") {
+		t.Fatalf("expected root mismatch error, got %v", err)
+	}
+}
+
+func TestFeature_ExecutionServices_InstallsAuxiliaryPorts(t *testing.T) {
+	workspaceDir := t.TempDir()
+	isolationRoot := t.TempDir()
+	h := newSandboxHarness(t, workspaceDir)
+	if err := h.Install(context.Background(), ExecutionServices(workspaceDir, isolationRoot, true)); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if h.Kernel().WorkspaceIsolation() == nil {
+		t.Fatal("expected workspace isolation to be installed")
+	}
+	if h.Kernel().RepoStateCapture() == nil {
+		t.Fatal("expected repo state capture to be installed")
+	}
+	if h.Kernel().PatchApply() == nil {
+		t.Fatal("expected patch apply to be installed")
+	}
+	if h.Kernel().PatchRevert() == nil {
+		t.Fatal("expected patch revert to be installed")
+	}
+	if h.Kernel().WorktreeSnapshots() == nil {
+		t.Fatal("expected worktree snapshots to be installed")
 	}
 }
 
 func TestFeature_ExecutionCapabilityReport_CustomReporter(t *testing.T) {
-	h := newTestHarness()
-	reporter := &recordingCapabilityReporter{}
 	workspaceDir := t.TempDir()
-	surface := runtime.NewExecutionSurface(workspaceDir, "", false)
+	h := newSandboxHarness(t, workspaceDir)
+	reporter := &recordingCapabilityReporter{}
 	if err := h.Install(context.Background(),
-		ExecutionSurface(surface),
+		ExecutionServices(workspaceDir, "", false),
 		ExecutionCapabilityReport(workspaceDir, "", false, reporter),
 	); err != nil {
 		t.Fatalf("Install: %v", err)

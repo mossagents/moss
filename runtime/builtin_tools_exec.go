@@ -16,7 +16,6 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/sandbox"
 )
 
 const maxInlineCommandOutput = 8000
@@ -114,7 +113,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if rawURL == "" {
 			return nil, fmt.Errorf("url is required")
 		}
-		policy := effectiveExecutionPolicy(ctx, k, nil, nil)
+		policy := effectiveExecutionPolicy(ctx, k, nil, "")
 		if policy.HTTP.Access == ExecutionAccessDeny {
 			return nil, fmt.Errorf("http_request is disabled by execution policy")
 		}
@@ -202,24 +201,15 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 	}
 }
 
-func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	return runCommandHandlerWithPolicy(nil, sb)
-}
-
-func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return runCommandHandlerWithExecutor(k, surface.ExecutorPort(), sb, surface.WorkspacePort())
-}
-
 func runCommandHandlerExec(exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
 	return runCommandHandlerExecWithPolicy(nil, exec, ws)
 }
 
 func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
-	return runCommandHandlerWithExecutor(k, exec, nil, ws)
+	return runCommandHandlerWithExecutor(k, exec, ws, "")
 }
 
-func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, sb sandbox.Sandbox, ws workspace.Workspace) tool.ToolHandler {
+func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, ws workspace.Workspace, workspaceRoot string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -228,7 +218,7 @@ func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, sb
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		policy := effectiveExecutionPolicy(ctx, k, sb, ws)
+		policy := effectiveExecutionPolicy(ctx, k, ws, workspaceRoot)
 		if policy.Command.Access == ExecutionAccessDeny {
 			return nil, fmt.Errorf("run_command is disabled by execution policy")
 		}
@@ -238,14 +228,9 @@ func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, sb
 		}
 
 		var writeFile func(path string, data []byte) error
-		switch {
-		case ws != nil:
+		if ws != nil {
 			writeFile = func(path string, data []byte) error {
 				return ws.WriteFile(ctx, path, data)
-			}
-		case sb != nil:
-			writeFile = func(path string, data []byte) error {
-				return sb.WriteFile(path, data)
 			}
 		}
 		return marshalCommandOutput(ctx, output, writeFile)
@@ -283,7 +268,7 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 	return raw, nil
 }
 
-func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.Sandbox, ws workspace.Workspace) ExecutionPolicy {
+func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) ExecutionPolicy {
 	if k != nil {
 		policy := ExecutionPolicyOf(k)
 		if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
@@ -291,13 +276,7 @@ func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, sb sandbox.
 		}
 		return policy
 	}
-	workspaceRoot := ""
-	if sb != nil {
-		if root, err := sb.ResolvePath("."); err == nil {
-			workspaceRoot = root
-		}
-	}
-	return resolveExecutionPolicy(appconfig.TrustTrusted, "full-auto", commandPolicyDefaults(sb, workspaceRoot, ws))
+	return resolveExecutionPolicy(appconfig.TrustTrusted, "full-auto", commandPolicyDefaults(nil, workspaceRoot, ws))
 }
 
 func buildExecRequest(command string, args []string, policy ExecutionPolicy) workspace.ExecRequest {

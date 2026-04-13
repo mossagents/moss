@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/bootstrap"
+	"github.com/mossagents/moss/internal/runtimeexecution"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks"
@@ -212,25 +213,22 @@ func StateCatalog(catalog *runtime.StateCatalog) Feature {
 	}
 }
 
-// ExecutionSurface returns a Feature that installs execution-surface ports.
-func ExecutionSurface(surface *runtime.ExecutionSurface) Feature {
+// ExecutionServices returns a Feature that installs auxiliary execution
+// services around the active backend-owned workspace/executor ports.
+func ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled bool) Feature {
 	return FeatureFunc{
-		FeatureName: "execution-surface",
+		FeatureName: "execution-services",
 		MetadataValue: FeatureMetadata{
-			Key:   "execution-surface",
+			Key:   "execution-services",
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			if surface == nil {
-				return fmt.Errorf("execution surface must not be nil")
-			}
-			h.Kernel().Apply(surface.KernelOptions()...)
-			return nil
+			return runtimeexecution.Install(h.Kernel(), workspaceRoot, isolationRoot, isolationEnabled)
 		},
 	}
 }
 
-// ExecutionCapabilityReport returns a Feature that reports execution-surface
+// ExecutionCapabilityReport returns a Feature that reports execution capability
 // readiness after runtime assembly.
 func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled bool, reporters ...runtime.CapabilityReporter) Feature {
 	return FeatureFunc{
@@ -238,17 +236,17 @@ func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled
 		MetadataValue: FeatureMetadata{
 			Key:      "execution-capability-report",
 			Phase:    FeaturePhasePostRuntime,
-			Requires: []string{"execution-surface"},
+			Requires: []string{"execution-services"},
 		},
 		InstallFunc: func(ctx context.Context, h *Harness) error {
 			reporter := runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil)
 			if len(reporters) > 0 && reporters[0] != nil {
 				reporter = reporters[0]
 			}
-			runtime.ReportExecutionSurface(
+			runtime.ReportExecutionProbe(
 				ctx,
 				reporter,
-				runtime.ExecutionSurfaceFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
+				runtime.ExecutionProbeFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
 			)
 			return nil
 		},

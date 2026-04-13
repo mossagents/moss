@@ -346,8 +346,8 @@ func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bo
 	if err == nil {
 		health.CapabilityStatus = snapshot.Items
 	}
-	if surface := appruntime.ProbeExecutionSurface(workspace, WorkspaceIsolationDir(), true); surface != nil {
-		health.CapabilityStatus = mergeCapabilityStatuses(health.CapabilityStatus, surface.CapabilityStatuses())
+	if probe := appruntime.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+		health.CapabilityStatus = mergeCapabilityStatuses(health.CapabilityStatus, probe.CapabilityStatuses())
 	}
 	return health
 }

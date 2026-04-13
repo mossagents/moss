@@ -226,8 +226,8 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			}
 		}
 	}
-	if surface := appruntime.ProbeExecutionSurface(workspace, WorkspaceIsolationDir(), true); surface != nil {
-		for _, status := range surface.CapabilityStatuses() {
+	if probe := appruntime.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+		for _, status := range probe.CapabilityStatuses() {
 			item := indexed[status.Capability]
 			item.Capability = status.Capability
 			item.Kind = status.Kind
@@ -239,9 +239,9 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			}
 			switch status.Capability {
 			case appruntime.CapabilityExecutionIsolation:
-				item.Source = surface.IsolationRoot
+				item.Source = probe.IsolationRoot
 			default:
-				item.Source = surface.WorkspaceRoot
+				item.Source = probe.WorkspaceRoot
 			}
 			if item.Details == "" {
 				switch status.Capability {

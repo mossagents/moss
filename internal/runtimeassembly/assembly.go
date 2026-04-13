@@ -451,8 +451,8 @@ func (s *builtinToolsProvider) Metadata() capability.Metadata {
 }
 
 func (s *builtinToolsProvider) Init(ctx context.Context, deps capability.Deps) error {
-	s.toolNames = appruntime.RegisteredBuiltinToolNames(deps.Sandbox, deps.Workspace, deps.Executor)
-	return appruntime.RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry, deps.Sandbox, deps.UserIO, deps.Workspace, deps.Executor)
+	s.toolNames = appruntime.RegisteredBuiltinToolNamesForKernel(deps.Kernel)
+	return appruntime.RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry)
 }
 
 func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }

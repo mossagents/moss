@@ -4,13 +4,13 @@ version: 1.0
 date_created: 2026-04-13
 last_updated: 2026-04-13
 owner: Core Runtime Team
-status: Planned
+status: Completed
 tags: [architecture, refactor, migration, harness, runtime, execution]
 ---
 
 # Introduction
 
-![Status: Planned](https://img.shields.io/badge/status-Planned-blue)
+![Status: Completed](https://img.shields.io/badge/status-Completed-brightgreen)
 
 This implementation plan executes `docs/superpowers/specs/2026-04-13-execution-substrate-owner-convergence-design.md`. The goal is to remove `runtime.ExecutionSurface` from the public harness assembly path, converge builtin execution tooling on kernel-owned ports, retain standalone runtime diagnostics/probe behavior for doctor/inspect flows, and eliminate the remaining execution substrate owner split across `harness`, `kernel`, and `runtime`.
 
@@ -43,10 +43,10 @@ This implementation plan executes `docs/superpowers/specs/2026-04-13-execution-s
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-001 | In `harness/features.go`, delete `ExecutionSurface(surface *runtime.ExecutionSurface)` and add `ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled bool) Feature`. Give the feature explicit metadata with `Key: "execution-services"` and `Phase: FeaturePhaseConfigure`. The new feature must validate `workspaceRoot`, install only auxiliary execution services, and never install `Workspace` or `Executor` ports. |  |  |
-| TASK-002 | Create `internal/runtimeexecution` with an assembly entrypoint that builds `workspace.WorkspaceIsolation`, `workspace.RepoStateCapture`, `workspace.PatchApply`, `workspace.PatchRevert`, and `workspace.WorktreeSnapshotStore` from `workspaceRoot`, `isolationRoot`, and `isolationEnabled`. This package must expose a harness-internal install path and must not export a public runtime-facing assembly type. |  |  |
-| TASK-003 | In the new `internal/runtimeexecution` package, implement explicit validation rules: empty or invalid local path inputs fail; local backend root mismatch against `workspaceRoot` fails; unsupported backends for local path-scoped execution services fail. Wire these failures into `harness.ExecutionServices(...)` as install-time errors. |  |  |
-| TASK-004 | Rename or reshape `runtime/execution_surface.go` into a diagnostics-only model such as `runtime/execution_probe.go`. Keep capability constants, status calculation, probe helpers, and reporting helpers in `runtime`; remove assembly-oriented methods and any private helper whose sole purpose is builtin-tool bridge creation. Update `runtime/execution_surface_test.go` into diagnostics-oriented tests that no longer reference assembly methods. |  |  |
+| TASK-001 | In `harness/features.go`, delete `ExecutionSurface(surface *runtime.ExecutionSurface)` and add `ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled bool) Feature`. Give the feature explicit metadata with `Key: "execution-services"` and `Phase: FeaturePhaseConfigure`. The new feature must validate `workspaceRoot`, install only auxiliary execution services, and never install `Workspace` or `Executor` ports. | ✅ | 2026-04-13 |
+| TASK-002 | Create `internal/runtimeexecution` with an assembly entrypoint that builds `workspace.WorkspaceIsolation`, `workspace.RepoStateCapture`, `workspace.PatchApply`, `workspace.PatchRevert`, and `workspace.WorktreeSnapshotStore` from `workspaceRoot`, `isolationRoot`, and `isolationEnabled`. This package must expose a harness-internal install path and must not export a public runtime-facing assembly type. | ✅ | 2026-04-13 |
+| TASK-003 | In the new `internal/runtimeexecution` package, implement explicit validation rules: empty or invalid local path inputs fail; local backend root mismatch against `workspaceRoot` fails; unsupported backends for local path-scoped execution services fail. Wire these failures into `harness.ExecutionServices(...)` as install-time errors. | ✅ | 2026-04-13 |
+| TASK-004 | Rename or reshape `runtime/execution_surface.go` into a diagnostics-only model such as `runtime/execution_probe.go`. Keep capability constants, status calculation, probe helpers, and reporting helpers in `runtime`; remove assembly-oriented methods and any private helper whose sole purpose is builtin-tool bridge creation. Update `runtime/execution_surface_test.go` into diagnostics-oriented tests that no longer reference assembly methods. | ✅ | 2026-04-13 |
 
 ### Implementation Phase 2
 
@@ -54,11 +54,11 @@ This implementation plan executes `docs/superpowers/specs/2026-04-13-execution-s
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-005 | Refactor `runtime/builtin_tools_registry.go` so builtin registration is driven by kernel/explicit ports, not by `newExecutionSurface(...)` or a runtime assembly object. Preserve family-scoped gating: register filesystem tools only when `workspace.Workspace` is available, register `run_command` only when `workspace.Executor` is available, and always register `http_request`, `datetime`, and `ask_user` independently. |  |  |
-| TASK-006 | Refactor `runtime/builtin_tools_filesystem.go` so `readFileHandler*`, `writeFileHandler*`, `editFileHandler*`, `globHandler*`, `listFilesHandler*`, and `grepHandler*` use explicit `workspace.Workspace` inputs only. Delete the sandbox bridge path that rebuilds a runtime surface. Any family-specific registration path that lacks a required port must return an explicit error. |  |  |
-| TASK-007 | Refactor `runtime/builtin_tools_exec.go` so `runCommandHandler*` uses explicit `workspace.Executor` and optional `workspace.Workspace` inputs, never a reconstructed runtime surface. Preserve existing execution-policy enforcement behavior while removing the surface bridge. Keep output offload behavior unchanged. |  |  |
-| TASK-008 | Update `internal/runtimeassembly/assembly.go` builtin tools provider so it calls the converged runtime registration entrypoint and computes advertised tool names from the same family-scoped gating rules. The runtime assembly package must not reintroduce `sb/ws/exec` substrate ownership through a second abstraction. |  |  |
-| TASK-009 | Update `harness/features.go` and any new `internal/runtimeexecution` helpers so `ExecutionCapabilityReport(...)` obtains statuses from the retained runtime diagnostics owner using live kernel state, without recreating a runtime assembly object. Keep `runtime.NewCapabilityReporter(...)`, `runtime.CapabilityStatusPath()`, and snapshot/report file semantics unchanged. |  |  |
+| TASK-005 | Refactor `runtime/builtin_tools_registry.go` so builtin registration is driven by kernel/explicit ports, not by `newExecutionSurface(...)` or a runtime assembly object. Preserve family-scoped gating: register filesystem tools only when `workspace.Workspace` is available, register `run_command` only when `workspace.Executor` is available, and always register `http_request`, `datetime`, and `ask_user` independently. | ✅ | 2026-04-13 |
+| TASK-006 | Refactor `runtime/builtin_tools_filesystem.go` so `readFileHandler*`, `writeFileHandler*`, `editFileHandler*`, `globHandler*`, `listFilesHandler*`, and `grepHandler*` use explicit `workspace.Workspace` inputs only. Delete the sandbox bridge path that rebuilds a runtime surface. Any family-specific registration path that lacks a required port must return an explicit error. | ✅ | 2026-04-13 |
+| TASK-007 | Refactor `runtime/builtin_tools_exec.go` so `runCommandHandler*` uses explicit `workspace.Executor` and optional `workspace.Workspace` inputs, never a reconstructed runtime surface. Preserve existing execution-policy enforcement behavior while removing the surface bridge. Keep output offload behavior unchanged. | ✅ | 2026-04-13 |
+| TASK-008 | Update `internal/runtimeassembly/assembly.go` builtin tools provider so it calls the converged runtime registration entrypoint and computes advertised tool names from the same family-scoped gating rules. The runtime assembly package must not reintroduce `sb/ws/exec` substrate ownership through a second abstraction. | ✅ | 2026-04-13 |
+| TASK-009 | Update `harness/features.go` and any new `internal/runtimeexecution` helpers so `ExecutionCapabilityReport(...)` obtains statuses from the retained runtime diagnostics owner using live kernel state, without recreating a runtime assembly object. Keep `runtime.NewCapabilityReporter(...)`, `runtime.CapabilityStatusPath()`, and snapshot/report file semantics unchanged. | ✅ | 2026-04-13 |
 
 ### Implementation Phase 3
 
@@ -66,10 +66,10 @@ This implementation plan executes `docs/superpowers/specs/2026-04-13-execution-s
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-010 | In `appkit/deep_agent_packs.go`, replace `runtime.NewExecutionSurface(...)` + `harness.ExecutionSurface(...)` with the new `harness.ExecutionServices(...)` feature. Preserve existing isolation-root directory creation and the current default `EnableWorkspaceIsolation` behavior. |  |  |
-| TASK-011 | In `appkit/product/runtime_doctor.go` and `appkit/product/inspect_threads.go`, migrate `runtime.ProbeExecutionSurface(...)` and any `ExecutionSurface` type references to the retained diagnostics-only runtime API. Preserve capability item population, capability source strings, and detail strings. |  |  |
-| TASK-012 | Update `harness/harness_test.go` to cover the new `ExecutionServices(...)` contract, including nil/invalid config failures, local-root mismatch failure, and successful installation of auxiliary execution services. Remove tests that only exist for the deleted `harness.ExecutionSurface(...)` input surface. |  |  |
-| TASK-013 | Update runtime tests in `runtime/builtintools_test.go` and the renamed diagnostics test file so they assert: no hidden fallback bridge exists, family-scoped gating behaves correctly, runtime diagnostics still work without a kernel, and capability reporting still works from a live kernel. |  |  |
+| TASK-010 | In `appkit/deep_agent_packs.go`, replace `runtime.NewExecutionSurface(...)` + `harness.ExecutionSurface(...)` with the new `harness.ExecutionServices(...)` feature. Preserve existing isolation-root directory creation and the current default `EnableWorkspaceIsolation` behavior. | ✅ | 2026-04-13 |
+| TASK-011 | In `appkit/product/runtime_doctor.go` and `appkit/product/inspect_threads.go`, migrate `runtime.ProbeExecutionSurface(...)` and any `ExecutionSurface` type references to the retained diagnostics-only runtime API. Preserve capability item population, capability source strings, and detail strings. | ✅ | 2026-04-13 |
+| TASK-012 | Update `harness/harness_test.go` to cover the new `ExecutionServices(...)` contract, including nil/invalid config failures, local-root mismatch failure, and successful installation of auxiliary execution services. Remove tests that only exist for the deleted `harness.ExecutionSurface(...)` input surface. | ✅ | 2026-04-13 |
+| TASK-013 | Update runtime tests in `runtime/builtintools_test.go` and the renamed diagnostics test file so they assert: no hidden fallback bridge exists, family-scoped gating behaves correctly, runtime diagnostics still work without a kernel, and capability reporting still works from a live kernel. | ✅ | 2026-04-13 |
 
 ### Implementation Phase 4
 
@@ -77,9 +77,9 @@ This implementation plan executes `docs/superpowers/specs/2026-04-13-execution-s
 
 | Task | Description | Completed | Date |
 |------|-------------|-----------|------|
-| TASK-014 | Run search-based cleanup for stale references to `harness.ExecutionSurface`, `runtime.ExecutionSurface`, `runtime.NewExecutionSurface`, `runtime.ProbeExecutionSurface`, `runtime.ExecutionSurfaceFromKernel`, `KernelOptions()`, `WorkspacePort()`, `ExecutorPort()`, and `newExecutionSurface(...)`. Update code comments and docs that still describe runtime as a public execution assembly owner. |  |  |
-| TASK-015 | Update active docs that explain execution assembly or diagnostics, including `docs/architecture.md` and any other current-facing docs that mention execution surface ownership, so they reflect the final split: harness assembly, kernel ports, runtime diagnostics. Do not rewrite archived historical specs/plans. |  |  |
-| TASK-016 | Run `go test ./...`, `go build ./...`, and `Push-Location contrib\tui; go test .; Pop-Location`. Fix all regressions, then update this plan file with completion marks and dates for finished tasks. |  |  |
+| TASK-014 | Run search-based cleanup for stale references to `harness.ExecutionSurface`, `runtime.ExecutionSurface`, `runtime.NewExecutionSurface`, `runtime.ProbeExecutionSurface`, `runtime.ExecutionSurfaceFromKernel`, `KernelOptions()`, `WorkspacePort()`, `ExecutorPort()`, and `newExecutionSurface(...)`. Update code comments and docs that still describe runtime as a public execution assembly owner. | ✅ | 2026-04-13 |
+| TASK-015 | Update active docs that explain execution assembly or diagnostics, including `docs/architecture.md` and any other current-facing docs that mention execution surface ownership, so they reflect the final split: harness assembly, kernel ports, runtime diagnostics. Do not rewrite archived historical specs/plans. | ✅ | 2026-04-13 |
+| TASK-016 | Run `go test ./...`, `go build ./...`, and `Push-Location contrib\tui; go test .; Pop-Location`. Fix all regressions, then update this plan file with completion marks and dates for finished tasks. | ✅ | 2026-04-13 |
 
 ## 3. Alternatives
 

@@ -4,12 +4,12 @@ import (
 	"testing"
 )
 
-func TestProbeExecutionSurfaceReady(t *testing.T) {
+func TestProbeExecutionCapabilitiesReady(t *testing.T) {
 	workspace := t.TempDir()
 	isolationRoot := t.TempDir()
 
-	surface := ProbeExecutionSurface(workspace, isolationRoot, true)
-	statuses := surface.CapabilityStatuses()
+	probe := ProbeExecutionCapabilities(workspace, isolationRoot, true)
+	statuses := probe.CapabilityStatuses()
 
 	want := map[string]string{
 		CapabilityExecutionWorkspace:      "ready",
@@ -33,9 +33,9 @@ func TestProbeExecutionSurfaceReady(t *testing.T) {
 	}
 }
 
-func TestNewExecutionSurfaceDisablesIsolation(t *testing.T) {
-	surface := NewExecutionSurface(t.TempDir(), "", false)
-	for _, status := range surface.CapabilityStatuses() {
+func TestNewExecutionProbeDisablesIsolation(t *testing.T) {
+	probe := NewExecutionProbe(t.TempDir(), "", false)
+	for _, status := range probe.CapabilityStatuses() {
 		if status.Capability == CapabilityExecutionIsolation {
 			if status.State != "disabled" {
 				t.Fatalf("workspace isolation state=%q, want disabled", status.State)

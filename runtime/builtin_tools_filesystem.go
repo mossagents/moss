@@ -30,11 +30,6 @@ var readFileSpec = tool.ToolSpec{
 	Capabilities: []string{"filesystem"},
 }
 
-func readFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return readFileHandlerPort(surface.WorkspacePort())
-}
-
 func readFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 	return readFileHandlerPort(ws)
 }
@@ -70,11 +65,6 @@ var writeFileSpec = tool.ToolSpec{
 	}`),
 	Risk:         tool.RiskHigh,
 	Capabilities: []string{"filesystem"},
-}
-
-func writeFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return writeFileHandlerPort(surface.WorkspacePort())
 }
 
 func writeFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
@@ -114,11 +104,6 @@ var editFileSpec = tool.ToolSpec{
 	}`),
 	Risk:         tool.RiskHigh,
 	Capabilities: []string{"filesystem"},
-}
-
-func editFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return editFileHandlerPort(surface.WorkspacePort())
 }
 
 func editFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
@@ -189,15 +174,6 @@ var globSpec = tool.ToolSpec{
 	Capabilities: []string{"filesystem"},
 }
 
-func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return globHandlerPort(surface.WorkspacePort(), sandboxRoot(sb))
-}
-
-func globHandlerWS(ws workspace.Workspace) tool.ToolHandler {
-	return globHandlerPort(ws, "")
-}
-
 func globHandlerPort(ws workspace.Workspace, root string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
@@ -232,15 +208,6 @@ var listFilesSpec = tool.ToolSpec{
 	}`),
 	Risk:         tool.RiskLow,
 	Capabilities: []string{"filesystem"},
-}
-
-func listFilesHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return listFilesHandlerPort(surface.WorkspacePort(), sandboxRoot(sb))
-}
-
-func listFilesHandlerWS(ws workspace.Workspace) tool.ToolHandler {
-	return listFilesHandlerPort(ws, "")
 }
 
 func listFilesHandlerPort(ws workspace.Workspace, root string) tool.ToolHandler {
@@ -291,15 +258,6 @@ type searchMatch struct {
 	File string `json:"file"`
 	Line int    `json:"line"`
 	Text string `json:"text"`
-}
-
-func grepHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	surface := newExecutionSurface(sb, nil, nil)
-	return grepHandlerPort(surface.WorkspacePort(), sandboxRoot(sb))
-}
-
-func grepHandlerWS(ws workspace.Workspace) tool.ToolHandler {
-	return grepHandlerPort(ws, "")
 }
 
 func grepHandlerPort(ws workspace.Workspace, root string) tool.ToolHandler {

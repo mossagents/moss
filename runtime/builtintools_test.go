@@ -208,6 +208,79 @@ func TestRegisterBuiltinTools(t *testing.T) {
 	}
 }
 
+func newBuiltinToolsKernel(sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Workspace, exec workspace.Executor) *kernel.Kernel {
+	opts := make([]kernel.Option, 0, 4)
+	if userIO != nil {
+		opts = append(opts, kernel.WithUserIO(userIO))
+	}
+	if sb != nil {
+		opts = append(opts, kernel.WithSandbox(sb))
+	}
+	if ws != nil {
+		opts = append(opts, kernel.WithWorkspace(ws))
+	}
+	if exec != nil {
+		opts = append(opts, kernel.WithExecutor(exec))
+	}
+	return kernel.New(opts...)
+}
+
+func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Workspace, exec workspace.Executor) error {
+	return RegisterBuiltinToolsForKernel(newBuiltinToolsKernel(sb, userIO, ws, exec), reg)
+}
+
+func readFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return readFileHandlerPort(k.Workspace())
+}
+
+func writeFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return writeFileHandlerPort(k.Workspace())
+}
+
+func editFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return editFileHandlerPort(k.Workspace())
+}
+
+func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return globHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+}
+
+func listFilesHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return listFilesHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+}
+
+func grepHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return grepHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+}
+
+func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
+	k := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return runCommandHandlerWithExecutor(k, k.Executor(), k.Workspace(), sandboxRoot(k.Sandbox()))
+}
+
+func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.ToolHandler {
+	sandboxKernel := newBuiltinToolsKernel(sb, nil, nil, nil)
+	return runCommandHandlerWithExecutor(k, sandboxKernel.Executor(), sandboxKernel.Workspace(), sandboxRoot(sandboxKernel.Sandbox()))
+}
+
+func globHandlerWS(ws workspace.Workspace) tool.ToolHandler {
+	return globHandlerPort(ws, "")
+}
+
+func listFilesHandlerWS(ws workspace.Workspace) tool.ToolHandler {
+	return listFilesHandlerPort(ws, "")
+}
+
+func grepHandlerWS(ws workspace.Workspace) tool.ToolHandler {
+	return grepHandlerPort(ws, "")
+}
+
 func TestReadFile(t *testing.T) {
 	sb := newMockSandbox("/ws", map[string]string{
 		"/ws/hello.txt": "Hello, World!",
