@@ -4,119 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/agent"
+	"log/slog"
+	"strings"
+
 	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/session"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/logging"
 	"github.com/mossagents/moss/mcp"
 	"github.com/mossagents/moss/skill"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
-const (
-	capabilitiesStateKey kernel.ServiceKey = "capabilities.state"
-	agentsStateKey       kernel.ServiceKey = "agents.state"
-)
-
-type config struct {
-	builtin          bool
-	mcpServers       bool
-	skills           bool
-	progressive      bool
-	agents           bool
-	trust            string
-	sessionStore     session.SessionStore
-	sessionStoreSet  bool
-	planning         bool
-	capabilityReport CapabilityReporter
-}
-
-type Option func(*config)
-
-func defaultConfig() config {
-	return config{
-		builtin:          true,
-		mcpServers:       true,
-		skills:           true,
-		progressive:      false,
-		agents:           true,
-		trust:            appconfig.TrustRestricted,
-		planning:         true,
-		capabilityReport: noopCapabilityReporter{},
-	}
-}
-
-func WithBuiltinTools(enabled bool) Option { return func(c *config) { c.builtin = enabled } }
-func WithMCPServers(enabled bool) Option   { return func(c *config) { c.mcpServers = enabled } }
-func WithSkills(enabled bool) Option       { return func(c *config) { c.skills = enabled } }
-func WithProgressiveSkills(enabled bool) Option {
-	return func(c *config) { c.progressive = enabled }
-}
-func WithAgents(enabled bool) Option   { return func(c *config) { c.agents = enabled } }
-func WithPlanning(enabled bool) Option { return func(c *config) { c.planning = enabled } }
-func WithWorkspaceTrust(trust string) Option {
-	return func(c *config) { c.trust = trust }
-}
-func WithSessionStore(store session.SessionStore) Option {
-	return func(c *config) {
-		c.sessionStore = store
-		c.sessionStoreSet = true
-	}
-}
-
-func WithCapabilityReporter(r CapabilityReporter) Option {
-	return func(c *config) {
-		if r == nil {
-			c.capabilityReport = noopCapabilityReporter{}
-			return
-		}
-		c.capabilityReport = r
-	}
-}
-
-type CapabilityReporter interface {
-	Report(ctx context.Context, capability string, critical bool, state string, err error)
-}
-
-type noopCapabilityReporter struct{}
-
-func (noopCapabilityReporter) Report(context.Context, string, bool, string, error) {}
-
-func resolve(opts ...Option) (config, error) {
-	cfg := defaultConfig()
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&cfg)
-		}
-	}
-	if !cfg.skills && cfg.progressive {
-		return cfg, fmt.Errorf("invalid runtime options: progressive skills require skills to be enabled")
-	}
-	if cfg.sessionStoreSet && cfg.sessionStore == nil {
-		return cfg, fmt.Errorf("invalid runtime options: session store cannot be nil")
-	}
-	return cfg, nil
-}
-
-func Setup(ctx context.Context, k *kernel.Kernel, workspaceDir string, opts ...Option) error {
-	cfg, err := resolve(opts...)
-	if err != nil {
-		return err
-	}
-	cfg.capabilityReport = NewCapabilityReporter(CapabilityStatusPath(), cfg.capabilityReport)
-	SetExecutionPolicy(k, ResolveExecutionPolicyForKernel(k, cfg.trust, "confirm"))
-	return newRuntimeLifecycleManager().Run(ctx, k, workspaceDir, cfg)
-}
+const capabilitiesStateKey kernel.ServiceKey = "capabilities.state"
 
 func setupBuiltinTools(ctx context.Context, k *kernel.Kernel, _ config) error {
 	return CapabilityManager(k).Register(ctx, &builtinToolsProvider{}, CapabilityDeps(k))
@@ -259,46 +160,6 @@ func setupPromptSkills(ctx context.Context, k *kernel.Kernel, workspaceDir strin
 		cfg.capabilityReport.Report(ctx, "skill:"+ps.Metadata().Name, false, "ready", nil)
 	}
 	return nil
-}
-
-func setupAgents(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg config) {
-	logger := logging.GetLogger()
-	registry := AgentRegistry(k)
-	for _, dir := range collectAgentDirs(workspaceDir, cfg) {
-		before := registry.List()
-		if err := registry.LoadDir(dir); err != nil {
-			cfg.capabilityReport.Report(ctx, "agents:"+dir, false, "degraded", err)
-			logger.WarnContext(ctx, "failed to load agents",
-				slog.String("dir", dir),
-				slog.Any("error", err),
-			)
-			continue
-		}
-		cfg.capabilityReport.Report(ctx, "agents:"+dir, false, "ready", nil)
-		known := make(map[string]struct{}, len(before))
-		for _, item := range before {
-			known[item.Name] = struct{}{}
-		}
-		for _, item := range registry.List() {
-			if _, ok := known[item.Name]; ok {
-				continue
-			}
-			cfg.capabilityReport.Report(ctx, "subagent:"+item.Name, false, "ready", nil)
-		}
-	}
-}
-
-// collectAgentDirs returns the ordered list of directories to scan for agent
-// definitions based on trust level and user home directory.
-func collectAgentDirs(workspaceDir string, cfg config) []string {
-	var dirs []string
-	if appconfig.ProjectAssetsAllowed(cfg.trust) {
-		dirs = append(dirs, filepath.Join(workspaceDir, ".agents", "agents"))
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		dirs = append(dirs, filepath.Join(home, ".moss", "agents"))
-	}
-	return dirs
 }
 
 type capabilitiesState struct {
@@ -581,92 +442,6 @@ func activateManifestRecursive(ctx context.Context, manager *capability.Manager,
 	return manager.Register(ctx, ps, deps)
 }
 
-type agentsState struct {
-	registry  *agent.Registry
-	tasks     *agent.TaskTracker
-	runtime   taskrt.TaskRuntime
-	mailbox   taskrt.Mailbox
-	isolation workspace.WorkspaceIsolation
-}
-
-func ensureAgentsState(k *kernel.Kernel) *agentsState {
-	actual, loaded := k.Services().LoadOrStore(agentsStateKey, &agentsState{
-		registry: agent.NewRegistry(),
-	})
-	st := actual.(*agentsState)
-	if loaded {
-		return st
-	}
-	k.Stages().OnBoot(100, func(_ context.Context, k *kernel.Kernel) error {
-		if st.registry == nil || len(st.registry.List()) == 0 {
-			return nil
-		}
-		if st.runtime == nil {
-			st.runtime = k.TaskRuntime()
-		}
-		if st.runtime == nil {
-			st.runtime = taskrt.NewMemoryTaskRuntime()
-		}
-		if st.mailbox == nil {
-			st.mailbox = k.Mailbox()
-		}
-		if st.mailbox == nil {
-			st.mailbox = taskrt.NewMemoryMailbox()
-		}
-		if st.isolation == nil {
-			st.isolation = k.WorkspaceIsolation()
-		}
-		if st.tasks == nil {
-			st.tasks = agent.NewTaskTrackerWithRuntime(st.runtime)
-		}
-		if err := agent.RegisterToolsWithDeps(k.ToolRegistry(), st.registry, st.tasks, k, agent.RuntimeDeps{
-			TaskRuntime: st.runtime,
-			Mailbox:     st.mailbox,
-			Isolation:   st.isolation,
-		}); err != nil {
-			return errors.Wrap(errors.ErrInternal, "register agent delegation tools", err)
-		}
-		return nil
-	})
-	return st
-}
-
-// AgentRegistry returns the low-level runtime-backed subagent catalog.
-// Canonical public call sites should prefer harness.SubagentCatalogOf.
-func AgentRegistry(k *kernel.Kernel) *agent.Registry {
-	return ensureAgentsState(k).registry
-}
-
-func AgentTaskTracker(k *kernel.Kernel) *agent.TaskTracker {
-	return ensureAgentsState(k).tasks
-}
-
-// WithAgentRegistry injects the runtime-backed subagent catalog.
-// Canonical feature composition should prefer harness.SubagentCatalogValue.
-func WithAgentRegistry(r *agent.Registry) kernel.Option {
-	return func(k *kernel.Kernel) {
-		ensureAgentsState(k).registry = r
-	}
-}
-
-func WithTaskRuntime(rt taskrt.TaskRuntime) kernel.Option {
-	return func(k *kernel.Kernel) {
-		ensureAgentsState(k).runtime = rt
-	}
-}
-
-func WithMailbox(mb taskrt.Mailbox) kernel.Option {
-	return func(k *kernel.Kernel) {
-		ensureAgentsState(k).mailbox = mb
-	}
-}
-
-func WithWorkspaceIsolation(isolation workspace.WorkspaceIsolation) kernel.Option {
-	return func(k *kernel.Kernel) {
-		ensureAgentsState(k).isolation = isolation
-	}
-}
-
 // builtinToolsProvider adapts runtime-owned builtin tools into the shared capability lifecycle.
 // It exists so runtime can manage builtin tools, prompt skills, and MCP-backed providers uniformly,
 // while keeping their ownership and behavior distinct:
@@ -695,3 +470,5 @@ func (s *builtinToolsProvider) Init(ctx context.Context, deps capability.Deps) e
 }
 
 func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }
+
+var _ capability.Provider = (*builtinToolsProvider)(nil)
