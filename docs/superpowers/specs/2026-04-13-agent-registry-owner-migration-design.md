@@ -63,6 +63,8 @@ Add a new low-level substrate in `agent` (for example `agent/kernel_service.go` 
 
 The substrate should be created through `k.Services().LoadOrStore(...)` so the kernel still remains the lifetime owner of the shared service slot, while `agent` owns the domain semantics of what lives in that slot.
 
+The substrate must also track its own installation state explicitly. Creation and installation are related but not identical steps.
+
 ### 2. Boot-time dependency resolution
 
 The new `agent` substrate should resolve runtime dependencies from the kernel directly during boot:
@@ -87,6 +89,17 @@ Instead of `runtime` creating agent state and then calling `agent.RegisterToolsW
 
 That keeps the registry owner and the tool installer in one place instead of splitting them across `agent` and `runtime`.
 
+### 3a. Same-boot initialization rule
+
+The substrate must guarantee that delegation tools become available in the same kernel lifecycle in which the substrate is first needed.
+
+That means:
+
+- if the substrate is initialized before boot starts, it may register one boot hook
+- if the substrate is first initialized after boot has already started, it must install delegation tools synchronously instead of relying on a missed future boot pass
+
+`runtime.setupAgents(...)` is therefore allowed to consume the substrate, but it must not be able to populate the registry during boot while delegation tools are still absent for that same booted kernel.
+
 ### 4. Harness facade
 
 `harness` stays the only canonical public facade for subagent configuration.
@@ -98,6 +111,8 @@ That means:
 - `harness.RegisterSubagent(...)` and `harness.LoadSubagentsFromYAML(...)` keep their current surface and behavior.
 
 The public model remains `harness`-owned even though the low-level service is now `agent`-owned.
+
+Registry replacement is explicitly a **configure-phase, pre-boot operation**. Once delegation tools have been installed for a kernel, replacing the registry is invalid and must fail fast with an explicit error rather than silently swapping the backing registry out from under already-installed tools.
 
 ### 5. Runtime as discovery/reporting consumer
 
@@ -115,9 +130,9 @@ It should no longer define or expose the registry substrate itself.
 The boot/data flow after the migration is:
 
 1. Kernel starts and creates its service registry.
-2. The `agent` collaboration substrate is initialized lazily the first time a caller asks for subagent/delegation state.
-3. That substrate installs one boot hook.
-4. At boot, it resolves task runtime, mailbox, and workspace isolation from the kernel, creates the task tracker if needed, and registers delegation tools.
+2. The `agent` collaboration substrate is initialized the first time a caller asks for subagent/delegation state or explicitly installs a subagent catalog.
+3. The substrate either installs one boot hook before boot or performs same-boot synchronous installation if boot is already in progress.
+4. During installation, it resolves task runtime, mailbox, and workspace isolation from the kernel, creates the task tracker if needed, and registers delegation tools.
 5. `harness` reads and writes subagent definitions through the `agent` substrate.
 6. `runtime.setupAgents(...)` loads file-based agent definitions into the same registry and emits capability reports.
 
@@ -131,7 +146,8 @@ Add new `agent`-level helpers for the kernel-scoped collaboration substrate. The
 
 - an accessor for the kernel-scoped collaboration service
 - a way to read the registry from that service
-- a way for `harness.SubagentCatalogValue(...)` to inject/replace the registry
+- a way for `harness.SubagentCatalogValue(...)` to inject/replace the registry before boot
+- a way to determine whether delegation tools have already been installed so post-boot replacement can be rejected explicitly
 
 The service itself may remain low-level and not be treated as a primary public API; `harness` remains the preferred public facade.
 
@@ -169,12 +185,23 @@ The migration must preserve these invariants:
 - no duplicate registry instances are created for one kernel.
 - lack of task runtime/mailbox/isolation does not crash setup; it preserves the current memory-backed fallback behavior.
 - capability reporting semantics for newly discovered subagents remain unchanged.
+- registry replacement is only valid before delegation tool installation.
+- duplicate-name behavior remains explicit rather than being silently changed in this round.
 
 Failure cases should stay explicit:
 
 - invalid YAML in subagent definition files still returns or reports an error through the existing runtime setup/reporting path
 - registry injection through `harness.SubagentCatalogValue(...)` still rejects nil catalogs
+- registry injection after installation has started fails explicitly
 - delegation tool registration errors still fail boot rather than being silently ignored
+- duplicate file-loaded or directory-loaded agent names still fail through the underlying registry registration path
+
+Duplicate-name semantics are intentionally unchanged in this round:
+
+- `harness.RegisterSubagent(...)` remains idempotent for an already-registered code-defined name
+- file-driven loading through `Registry.LoadDir(...)` remains strict and fails on duplicate names
+
+This preserves current behavior while moving owner boundaries; harmonizing duplicate handling is a separate design question.
 
 ## Testing
 
@@ -184,6 +211,7 @@ Required coverage:
 
 - kernel-scoped substrate is singleton-per-kernel
 - boot hook is idempotent
+- same-boot initialization works when the substrate is first touched during boot
 - delegation tools register successfully with kernel-provided dependencies
 - in-memory fallback path works when kernel dependencies are absent
 
@@ -198,6 +226,7 @@ Required coverage:
 - trusted vs restricted directory discovery behavior is unchanged
 - discovered subagents still appear in capability reporting
 - runtime no longer needs to own registry state to perform scanning
+- agents discovered from runtime-managed directories are delegatable in the same booted kernel
 
 ### Repository validation
 
