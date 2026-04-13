@@ -111,7 +111,7 @@ Remove:
 
 Introduce a harness-owned public feature:
 
-- `harness.ExecutionServices(workspace, isolationRoot string, isolationEnabled bool) Feature`
+- `harness.ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled bool) Feature`
 
 Responsibilities:
 
@@ -125,6 +125,18 @@ Responsibilities:
 - validate the requested execution-service configuration before runtime capability assembly proceeds
 
 This feature does **not** own `workspace.Workspace` or `workspace.Executor`; those remain backend responsibilities.
+
+`workspaceRoot` is the canonical **local path input** for auxiliary local execution services such as git repo capture, patch apply/revert, worktree snapshots, and local workspace isolation. It is **not** a second `workspace.Workspace` port.
+
+The source-of-truth split is:
+
+- `Backend` owns the live `workspace.Workspace` / `workspace.Executor` ports
+- `ExecutionServices(...)` owns the local path-scoped support services built from `workspaceRoot`
+
+Mismatch handling is explicit:
+
+- when the activated backend is a local sandbox-backed backend and its root can be determined, a root mismatch against `workspaceRoot` is an install-time error
+- when a backend cannot support the local path-scoped services described by this feature, `ExecutionServices(...)` fails explicitly instead of silently inventing a fallback
 
 ### 2. Backend stays narrow and does not absorb auxiliary execution services
 
@@ -151,7 +163,7 @@ Responsibilities:
 
 - construct execution-support services from `workspace` root, isolation root, and isolation-enabled flag
 - return/install the resulting kernel options for harness execution assembly
-- provide kernel-based capability status/report inputs for `harness.ExecutionCapabilityReport(...)`
+- provide only the harness-side assembly adapter around the retained runtime diagnostics/reporting model
 
 This package is intentionally internal because it is assembly logic, not public substrate.
 
@@ -185,6 +197,15 @@ Allowed retained runtime diagnostics responsibilities:
 
 The retained runtime diagnostics API is intentionally read-only and report-oriented. It must not be reusable as a public assembly input.
 
+`runtime` is the canonical owner of:
+
+- execution capability constants
+- execution capability status calculation
+- diagnostics/probe models
+- reporting helpers
+
+`internal/runtimeexecution` may call into that diagnostics model, but must not fork or duplicate the status-calculation rules.
+
 ### 5. Builtin tools become port consumers, not adapter owners
 
 `runtime/builtin_tools_registry.go`, `runtime/builtin_tools_filesystem.go`, and `runtime/builtin_tools_exec.go` should be converged around one rule:
@@ -202,7 +223,7 @@ Preferred direction:
 
 - runtime builtin tool registration keeps a kernel-driven API for runtime assembly
 - handler helpers operate on explicit `workspace.Workspace` / `workspace.Executor` inputs
-- if a required port is missing at registration time, registration returns an explicit error
+- if a required port is missing for a specific tool family that is about to be registered, that family-specific registration path returns an explicit error
 
 This removes the current “late silent fallback” behavior where runtime recreates a bridge after assembly should already be complete.
 
@@ -212,8 +233,8 @@ This removes the current “late silent fallback” behavior where runtime recre
 
 Instead:
 
-- it should ask the internal execution assembly/reporting owner for capability statuses derived from the live kernel ports
-- runtime diagnostics may still expose a report helper for offline or post-assembly inspection, but not an assembly object
+- it should obtain capability statuses through the retained runtime diagnostics owner, using live kernel state as input
+- `internal/runtimeexecution` may provide a thin harness-side adapter for this call, but must not own a separate capability-status model
 
 This keeps runtime reporting as reporting, while preventing the reporting model from remaining the de facto assembly contract.
 
@@ -236,8 +257,8 @@ This preserves offline diagnostics while removing runtime from public assembly c
 ### Normal assembly flow
 
 1. Backend activation materializes `Workspace` / `Executor`
-2. `harness.ExecutionServices(...)` installs auxiliary execution services
-3. runtime builtin tool registration reads the kernel ports already present
+2. `harness.ExecutionServices(workspaceRoot, ...)` installs auxiliary execution services derived from the canonical local workspace path
+3. runtime builtin tool registration reads the kernel ports already present and gates registration per tool family
 4. execution capability reporting reads live kernel state
 
 ### Offline diagnostics flow
@@ -249,7 +270,13 @@ This preserves offline diagnostics while removing runtime from public assembly c
 ## Error Handling
 
 - Missing or invalid execution-service config in `harness.ExecutionServices(...)` is an install-time error.
-- Missing required ports during builtin tool registration is a registration-time error.
+- Root mismatch between a local backend and `workspaceRoot` is an install-time error.
+- Unsupported backends for local path-scoped execution services are an install-time error.
+- Builtin tool registration is **family-scoped**, not whole-runtime-scoped:
+  - filesystem tools register only when `workspace.Workspace` is available
+  - `run_command` registers only when `workspace.Executor` is available
+  - non-execution tools such as `http_request`, `datetime`, and `ask_user` continue to register independently
+- Missing required ports inside a family-specific registration/helper path is a registration-time error for that family, not a reason to fail unrelated tool families.
 - Runtime diagnostics may report degraded/failed capability states, but must not silently create new assembly bridges.
 - Sandbox fallback is allowed only in:
   - `kernel.WithSandbox(...)`
