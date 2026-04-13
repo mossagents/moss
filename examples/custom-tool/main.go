@@ -13,24 +13,31 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel"
+	kernio "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	"io"
 	"math/rand/v2"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 )
 
 func main() {
 	flags := appkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	k, err := appkit.BuildKernel(ctx, flags, io.NewConsoleIO())
+	k, err := appkit.BuildKernel(ctx, flags, kernio.NewConsoleIO())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -65,13 +72,101 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := appkit.REPL(ctx, appkit.REPLConfig{
-		Prompt:  "you> ",
-		AppName: "custom-tool",
-	}, k, sess); err != nil {
+	if err := runREPL(ctx, "you> ", "custom-tool", 8, k, sess); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func runREPL(ctx context.Context, prompt, appName string, compactKeep int, k *kernel.Kernel, sess *session.Session) error {
+	reader := bufio.NewReader(os.Stdin)
+	if prompt == "" {
+		prompt = "> "
+	}
+	if appName == "" {
+		appName = "agent"
+	}
+	if compactKeep <= 0 {
+		compactKeep = 8
+	}
+
+	for {
+		fmt.Print(prompt)
+		line, err := reader.ReadString('\n')
+		if err == io.EOF {
+			fmt.Println()
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		input := strings.TrimSpace(line)
+		if input == "" {
+			continue
+		}
+		if strings.HasPrefix(input, "/") {
+			if handleREPLCommand(input, sess, appName, compactKeep) {
+				return nil
+			}
+			continue
+		}
+
+		sess.AppendMessage(model.Message{
+			Role:         model.RoleUser,
+			ContentParts: []model.ContentPart{model.TextPart(input)},
+		})
+		if _, err := k.Run(ctx, sess); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			fmt.Fprintf(os.Stderr, "\nError: %v\n\n", err)
+			continue
+		}
+		fmt.Println()
+	}
+}
+
+func handleREPLCommand(input string, sess *session.Session, appName string, compactKeep int) bool {
+	cmd := strings.ToLower(strings.Fields(input)[0])
+	switch cmd {
+	case "/exit", "/quit":
+		fmt.Println("Bye!")
+		return true
+	case "/clear":
+		var systemMsgs []model.Message
+		for _, msg := range sess.Messages {
+			if msg.Role == model.RoleSystem {
+				systemMsgs = append(systemMsgs, msg)
+			}
+		}
+		sess.Messages = systemMsgs
+		sess.Budget.UsedSteps = 0
+		sess.Budget.UsedTokens = 0
+		fmt.Println("Conversation cleared.")
+	case "/compact":
+		var systemMsgs, dialogMsgs []model.Message
+		for _, msg := range sess.Messages {
+			if msg.Role == model.RoleSystem {
+				systemMsgs = append(systemMsgs, msg)
+				continue
+			}
+			dialogMsgs = append(dialogMsgs, msg)
+		}
+		if len(dialogMsgs) > compactKeep {
+			dialogMsgs = dialogMsgs[len(dialogMsgs)-compactKeep:]
+		}
+		sess.Messages = append(systemMsgs, dialogMsgs...)
+		fmt.Printf("Compacted to %d messages.\n", len(sess.Messages))
+	case "/help":
+		fmt.Println("Commands:")
+		fmt.Println("  /help     Show this help")
+		fmt.Println("  /clear    Clear conversation history")
+		fmt.Println("  /compact  Keep only recent messages")
+		fmt.Printf("  /exit     Exit %s\n", appName)
+	default:
+		fmt.Printf("Unknown command: %s (type /help)\n", cmd)
+	}
+	return false
 }
 
 // ── Calculator Tool ─────────────────────────────────

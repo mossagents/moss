@@ -31,7 +31,7 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts .
 // 这是官方推荐的 Feature 优先装配入口。官方 Feature 会按 phase/依赖
 // 元数据做受控安装；未标注元数据的自定义 Feature 则保持 configure 阶段
 // 语义，并在同阶段内按传入顺序安装。如果未包含 RuntimeSetup Feature，
-// 则不会自动调用 runtime.Setup()。
+// 则不会自动安装官方 runtime capability surface。
 func BuildKernelWithFeatures(ctx context.Context, flags *AppFlags, io io.UserIO, features ...harness.Feature) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, features)
 }

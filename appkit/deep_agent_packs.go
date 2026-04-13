@@ -83,7 +83,7 @@ func buildDeepAgentStateCatalogPack(state *deepAgentPresetState) ([]harness.Feat
 	}
 	state.stateCatalog = catalog
 	return []harness.Feature{
-		deepAgentStateCatalogFeature(catalog),
+		harness.StateCatalog(catalog),
 	}, nil
 }
 
@@ -176,7 +176,7 @@ func buildDeepAgentExecutionPack(state *deepAgentPresetState) ([]harness.Feature
 		return nil, fmt.Errorf("workspace isolation: %w", err)
 	}
 	return []harness.Feature{
-		deepAgentExecutionSurfaceFeature(surface),
+		harness.ExecutionSurface(surface),
 	}, nil
 }
 
@@ -243,7 +243,7 @@ func buildDeepAgentPostRuntimePack(state *deepAgentPresetState) ([]harness.Featu
 		)
 		features = append(features, harness.ExecutionPolicy(rules...))
 	}
-	features = append(features, deepAgentExecutionCapabilityReportFeature(state.flags.Workspace, state.isolationRoot, state.isolationEnabled))
+	features = append(features, harness.ExecutionCapabilityReport(state.flags.Workspace, state.isolationRoot, state.isolationEnabled))
 	if deepAgentValueOrDefault(state.config.EnsureGeneralPurpose, true) {
 		features = append(features, deepAgentGeneralPurposeFeature(state.flags, state.config))
 	}
@@ -263,59 +263,6 @@ func deepAgentDefaultRetryConfig() *retry.Config {
 		InitialDelay: 300 * time.Millisecond,
 		MaxDelay:     2 * time.Second,
 		Multiplier:   2.0,
-	}
-}
-
-func deepAgentStateCatalogFeature(catalog *runtime.StateCatalog) harness.Feature {
-	return harness.FeatureFunc{
-		FeatureName: "state-catalog",
-		MetadataValue: harness.FeatureMetadata{
-			Key:   "state-catalog",
-			Phase: harness.FeaturePhaseConfigure,
-		},
-		InstallFunc: func(_ context.Context, h *harness.Harness) error {
-			if catalog == nil {
-				return fmt.Errorf("state catalog must not be nil")
-			}
-			h.Kernel().Apply(runtime.WithStateCatalog(catalog))
-			return nil
-		},
-	}
-}
-
-func deepAgentExecutionSurfaceFeature(surface *runtime.ExecutionSurface) harness.Feature {
-	return harness.FeatureFunc{
-		FeatureName: "execution-surface",
-		MetadataValue: harness.FeatureMetadata{
-			Key:   "execution-surface",
-			Phase: harness.FeaturePhaseConfigure,
-		},
-		InstallFunc: func(_ context.Context, h *harness.Harness) error {
-			if surface == nil {
-				return fmt.Errorf("execution surface must not be nil")
-			}
-			h.Kernel().Apply(surface.KernelOptions()...)
-			return nil
-		},
-	}
-}
-
-func deepAgentExecutionCapabilityReportFeature(workspace, isolationRoot string, isolationEnabled bool) harness.Feature {
-	return harness.FeatureFunc{
-		FeatureName: "execution-capability-report",
-		MetadataValue: harness.FeatureMetadata{
-			Key:      "execution-capability-report",
-			Phase:    harness.FeaturePhasePostRuntime,
-			Requires: []string{"execution-surface"},
-		},
-		InstallFunc: func(ctx context.Context, h *harness.Harness) error {
-			runtime.ReportExecutionSurface(
-				ctx,
-				runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil),
-				runtime.ExecutionSurfaceFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
-			)
-			return nil
-		},
 	}
 }
 

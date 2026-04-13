@@ -23,6 +23,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/gateway"
+	"github.com/mossagents/moss/gateway/channel"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -36,9 +37,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -54,7 +57,7 @@ func main() {
 	flag.StringVar(&mode, "mode", "tui", "Run mode: tui | gateway (channel-based)")
 	flags := appkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	if err := run(ctx, flags, mode); err != nil {
@@ -172,13 +175,38 @@ func runGateway(ctx context.Context, flags *appkit.AppFlags) error {
 		"Ask me anything — I can search the web, manage files, schedule tasks, and more.",
 	)
 
-	return appkit.Serve(ctx, appkit.ServeConfig{
-		Prompt:       "🐾 > ",
-		SessionStore: rt.store,
-		SystemPrompt: buildSystemPrompt(flags.Workspace, flags.Trust),
-		DeliveryDir:  filepath.Join(appconfig.AppDir(), "delivery"),
-		RouteScope:   "per-peer",
-	}, k)
+	return serveGatewayCLI(
+		ctx,
+		"🐾 > ",
+		buildSystemPrompt(flags.Workspace, flags.Trust),
+		filepath.Join(appconfig.AppDir(), "delivery"),
+		rt.store,
+		k,
+	)
+}
+
+func serveGatewayCLI(ctx context.Context, prompt, systemPrompt, deliveryDir string, store session.SessionStore, k *kernel.Kernel) error {
+	router := session.NewRouter(session.RouterConfig{
+		DMScope: session.DMScopePerPeer,
+		DefaultConfig: session.SessionConfig{
+			SystemPrompt: systemPrompt,
+		},
+	}, k.SessionManager(), store)
+
+	if prompt == "" {
+		prompt = "> "
+	}
+	cli := channel.NewCLI(channel.WithPrompt(prompt))
+	opts := []gateway.Option{
+		gateway.WithSystemPrompt(systemPrompt),
+		gateway.WithOnError(func(err error) { fmt.Fprintf(os.Stderr, "\nError: %v\n\n", err) }),
+	}
+	if deliveryDir != "" {
+		opts = append(opts, gateway.WithDeliveryDir(deliveryDir))
+	}
+	gw := gateway.New(k, router, opts...)
+	gw.AddChannel(cli)
+	return gw.Serve(ctx)
 }
 
 func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) (*kernel.Kernel, *mossclawRuntime, error) {

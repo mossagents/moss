@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/runtime"
 	kt "github.com/mossagents/moss/testing"
 )
 
@@ -72,6 +73,14 @@ func newTestHarness() *Harness {
 		Executor:  stubExecutor{},
 	}
 	return New(k, backend)
+}
+
+type recordingCapabilityReporter struct {
+	calls []string
+}
+
+func (r *recordingCapabilityReporter) Report(_ context.Context, capability string, _ bool, state string, _ error) {
+	r.calls = append(r.calls, capability+":"+state)
 }
 
 // --- tests ---
@@ -394,6 +403,38 @@ func TestFeature_TaskDelegation_NilRuntime(t *testing.T) {
 	err := h.Install(context.Background(), TaskDelegation(nil))
 	if err == nil {
 		t.Fatal("expected error for nil task runtime")
+	}
+}
+
+func TestFeature_StateCatalog_NilCatalog(t *testing.T) {
+	h := newTestHarness()
+	err := h.Install(context.Background(), StateCatalog(nil))
+	if err == nil {
+		t.Fatal("expected error for nil state catalog")
+	}
+}
+
+func TestFeature_ExecutionSurface_NilSurface(t *testing.T) {
+	h := newTestHarness()
+	err := h.Install(context.Background(), ExecutionSurface(nil))
+	if err == nil {
+		t.Fatal("expected error for nil execution surface")
+	}
+}
+
+func TestFeature_ExecutionCapabilityReport_CustomReporter(t *testing.T) {
+	h := newTestHarness()
+	reporter := &recordingCapabilityReporter{}
+	workspaceDir := t.TempDir()
+	surface := runtime.NewExecutionSurface(workspaceDir, "", false)
+	if err := h.Install(context.Background(),
+		ExecutionSurface(surface),
+		ExecutionCapabilityReport(workspaceDir, "", false, reporter),
+	); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if len(reporter.calls) == 0 {
+		t.Fatal("expected execution capability report calls")
 	}
 }
 

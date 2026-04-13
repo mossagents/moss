@@ -32,8 +32,8 @@ flags := appkit.ParseAppFlags()
 // intr 来自: github.com/mossagents/moss/kernel/io
 k, err := appkit.BuildKernel(ctx, flags, intr.NewConsoleIO())
 
-// 3. 启动 REPL 交互
-appkit.REPL(ctx, appkit.REPLConfig{...}, k, sess)
+// 3. 在示例内本地实现一个简单 stdin REPL 循环
+runREPL(ctx, "you> ", "basic", 8, k, sess)
 ```
 
 总共约 60 行代码，展示了 moss kernel 作为库的最小集成方式。

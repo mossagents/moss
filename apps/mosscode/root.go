@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/logging"
 	"github.com/spf13/cobra"
@@ -268,7 +271,7 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
 		return err
 	}
-	cfg.approvalMode = appkit.FirstNonEmpty(
+	cfg.approvalMode = strutil.FirstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
 		os.Getenv("MOSS_APPROVAL_MODE"),
@@ -314,7 +317,7 @@ func executePreparedCommand(cfg *config, opts commandExecutionOptions, run func(
 	ctx := context.Background()
 	cancel := func() {}
 	if opts.withSignal {
-		ctx, cancel = appkit.ContextWithSignal(context.Background())
+		ctx, cancel = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	}
 	defer cancel()
 	return run(ctx, cfg)

@@ -17,8 +17,10 @@ import (
 	"github.com/mossagents/moss/runtime"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -39,7 +41,7 @@ func main() {
 		os.Exit(1)
 	}
 	cfg := parseFlags()
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	if strings.TrimSpace(cfg.prompt) != "" {

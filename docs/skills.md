@@ -2,7 +2,7 @@
 
 当前仓库里最容易混淆的，不是“有没有 skill”，而是 **不同能力是通过什么机制进入运行时**。在 Moss 里，至少要区分四件事：
 
-1. **Builtin tools**：由 `runtime.Setup(...)` 注册的官方工具
+1. **Builtin tools**：由 `harness.RuntimeSetup(...)`（或 `appkit.BuildKernel(...)` 的默认装配）注册的官方工具
 2. **Prompt skills**：从 `SKILL.md` 发现并注入系统提示词
 3. **MCP servers**：通过 `mcp\` 桥接进来的外部工具服务
 4. **Subagents**：通过 `harness` 公开入口注册到 runtime-backed catalog 的委派代理
@@ -32,11 +32,11 @@ type Provider interface {
 - `Mailbox`
 - `SessionStore`
 
-这里的 generic lifecycle 已经不再属于 `skill` 包，而是放在顶层 `capability\` 下；`skill\` 现在只负责 prompt skill (`SKILL.md`) 的发现、解析与实现。因此当前的能力文档应该围绕 **capability.Provider + runtime.Setup(...)** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
+这里的 generic lifecycle 已经不再属于 `skill` 包，而是放在顶层 `capability\` 下；`skill\` 现在只负责 prompt skill (`SKILL.md`) 的发现、解析与实现。因此当前的能力文档应该围绕 **capability.Provider + harness.RuntimeSetup(...)** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
 
 ## 1. Builtin tools
 
-`runtime.Setup(...)` 默认会注册官方 builtin tools。当前基础工具包括：
+`harness.RuntimeSetup(...)` 默认会注册官方 builtin tools。当前基础工具包括：
 
 | 工具 | 作用 |
 |---|---|
@@ -91,8 +91,10 @@ project skill 是否可见，取决于当前 trust：
 若启用：
 
 ```go
-runtime.Setup(ctx, k, workspace,
-	runtime.WithProgressiveSkills(true),
+err := h.Install(ctx,
+	harness.RuntimeSetup(workspace, trust,
+		harness.WithProgressiveSkills(true),
+	),
 )
 ```
 
@@ -110,7 +112,7 @@ skills:
     args: ["-y", "@modelcontextprotocol/server-github"]
 ```
 
-加载流程由 `runtime.Setup(...)` 完成：
+加载流程由 `harness.RuntimeSetup(...)` 驱动的底层 capability assembly 完成：
 
 1. 读取全局配置
 2. 读取项目配置（受 trust 约束）
@@ -144,7 +146,7 @@ researcher:
 
 ## 5. 默认加载行为
 
-`runtime.Setup(...)` 默认会同时打开：
+`harness.RuntimeSetup(...)` 默认会同时打开：
 
 - builtin tools
 - MCP servers
@@ -154,10 +156,12 @@ researcher:
 可以按需关闭：
 
 ```go
-runtime.Setup(ctx, k, workspace,
-	runtime.WithMCPServers(false),
-	runtime.WithSkills(false),
-	runtime.WithAgents(false),
+err := h.Install(ctx,
+	harness.RuntimeSetup(workspace, trust,
+		harness.WithMCPServers(false),
+		harness.WithSkills(false),
+		harness.WithAgents(false),
+	),
 )
 ```
 
@@ -170,4 +174,4 @@ runtime.Setup(ctx, k, workspace,
 - 想要外部能力：看 MCP
 - 想要可控委派：看 `harness` 下的 subagent surface
 
-真正把 builtin / prompt skill / MCP 粘起来的是 `runtime.Setup(...)` 和 `capability.Provider` 抽象；真正把 subagents 粘到运行时的是 `harness` 公开 surface 与底层 runtime-backed catalog。
+真正把 builtin / prompt skill / MCP 粘起来的是 `harness.RuntimeSetup(...)`、底层 capability assembly 与 `capability.Provider` 抽象；真正把 subagents 粘到运行时的是 `harness` 公开 surface 与底层 runtime-backed catalog。

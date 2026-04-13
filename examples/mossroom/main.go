@@ -19,6 +19,9 @@ import (
 	"golang.org/x/net/websocket"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 //go:embed index.html
@@ -32,7 +35,7 @@ func main() {
 
 	flags := appkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
 	appkit.PrintBannerWithHint("mossroom", map[string]string{

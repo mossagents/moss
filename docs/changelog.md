@@ -32,13 +32,12 @@
 - `BuildDeepAgent` 中的 `patch-tool-calls` 与默认 restricted policy 已收回到 Feature 安装链
 - `BuildDeepAgent` 已进一步拆成声明式 preset packs：state catalog、session/context、checkpoint、task runtime、persistent memories、execution surface、runtime setup、post-runtime governance
 
-### Release gates 与健康面
+### Release gates 与观测面
 
 主线新增了可直接用于发布守门和运行态自检的两组能力：
 
 - `kernel\observe\ReleaseGateMeter`
 - `kernel\observe\NormalizedMetricsSnapshot`
-- `appkit.Health(...)` / `HealthJSON(...)` / `HealthText(...)`
 - `testing\arch_guard.ps1` 的环境参数、override 审计与 gate 校验流程
 
 默认 gate：
@@ -79,13 +78,13 @@
 - workspace isolation
 - repo state / patch apply / patch revert / snapshot
 
-### 运行时装配收敛到 `appkit` + `runtime`
+### 运行时装配收敛到 `harness.Feature` + `appkit` builders
 
 仓库逐步完成了从旧兼容入口到当前装配路径的收敛：
 
 - `appkit.BuildKernel`
 - `appkit.BuildKernelWithFeatures`（取代 `BuildKernelWithExtensions`）
-- `appkit\runtime.Setup`
+- `harness.RuntimeSetup`
 
 这也意味着文档和示例不再应围绕旧的兼容入口叙述。
 

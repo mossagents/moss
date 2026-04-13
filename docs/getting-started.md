@@ -140,7 +140,7 @@ func main() {
 
 - LLM adapter 构建
 - 本地 `Sandbox` / `Workspace` / `Executor`
-- `runtime.Setup(...)` 默认能力装配
+- `harness.RuntimeSetup(...)` 默认能力装配
 - 内置工具、MCP、`SKILL.md`、subagent 注册
 
 ### Feature 优先路径：`appkit.BuildKernelWithFeatures`
@@ -153,9 +153,9 @@ k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 	harness.PersistentMemories(".\\.moss\\memories"),
 	harness.ContextOffload(store),
 	harness.Scheduling(sched),
-	harness.InstallerFeature("my-tools", func(_ context.Context, k *kernel.Kernel) error {
-		return registerMyTools(k.ToolRegistry())
-	}),
+	harness.FeatureFunc{FeatureName: "my-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+		return registerMyTools(h.Kernel().ToolRegistry())
+	}},
 	harness.RuntimeSetup(flags.Workspace, flags.Trust),
 )
 ```

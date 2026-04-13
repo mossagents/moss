@@ -12,6 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/runtime"
 )
 
 // KernelOptions returns a Feature that applies raw kernel.Option values to
@@ -188,6 +189,67 @@ func TaskDelegation(rt taskrt.TaskRuntime) Feature {
 				return fmt.Errorf("task runtime must not be nil")
 			}
 			h.Kernel().Apply(kernel.WithTaskRuntime(rt))
+			return nil
+		},
+	}
+}
+
+// StateCatalog returns a Feature that installs a runtime state catalog.
+func StateCatalog(catalog *runtime.StateCatalog) Feature {
+	return FeatureFunc{
+		FeatureName: "state-catalog",
+		MetadataValue: FeatureMetadata{
+			Key:   "state-catalog",
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			if catalog == nil {
+				return fmt.Errorf("state catalog must not be nil")
+			}
+			h.Kernel().Apply(runtime.WithStateCatalog(catalog))
+			return nil
+		},
+	}
+}
+
+// ExecutionSurface returns a Feature that installs execution-surface ports.
+func ExecutionSurface(surface *runtime.ExecutionSurface) Feature {
+	return FeatureFunc{
+		FeatureName: "execution-surface",
+		MetadataValue: FeatureMetadata{
+			Key:   "execution-surface",
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			if surface == nil {
+				return fmt.Errorf("execution surface must not be nil")
+			}
+			h.Kernel().Apply(surface.KernelOptions()...)
+			return nil
+		},
+	}
+}
+
+// ExecutionCapabilityReport returns a Feature that reports execution-surface
+// readiness after runtime assembly.
+func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled bool, reporters ...runtime.CapabilityReporter) Feature {
+	return FeatureFunc{
+		FeatureName: "execution-capability-report",
+		MetadataValue: FeatureMetadata{
+			Key:      "execution-capability-report",
+			Phase:    FeaturePhasePostRuntime,
+			Requires: []string{"execution-surface"},
+		},
+		InstallFunc: func(ctx context.Context, h *Harness) error {
+			reporter := runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil)
+			if len(reporters) > 0 && reporters[0] != nil {
+				reporter = reporters[0]
+			}
+			runtime.ReportExecutionSurface(
+				ctx,
+				reporter,
+				runtime.ExecutionSurfaceFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
+			)
 			return nil
 		},
 	}

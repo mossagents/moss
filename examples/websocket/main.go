@@ -20,18 +20,20 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/runtime/events"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/runtime/events"
 	"golang.org/x/net/websocket"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -41,7 +43,7 @@ var staticFS embed.FS
 func main() {
 	flags := appkit.ParseAppFlags()
 
-	ctx, cancel := appkit.ContextWithSignal(context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	token, err := websocketAccessToken()
 	if err != nil {
@@ -193,11 +195,11 @@ func validateWebSocketOrigin(req *http.Request) error {
 // ── WebSocket 消息协议 ──────────────────────────────
 
 type wsMsg struct {
-	Type     string                `json:"type"`               // user, assistant, system, error, stream, stream_end, tool_start, tool_result, ask
-	Content  string                `json:"content"`            // 消息内容
-	AskType  string                `json:"ask_type,omitempty"` // confirm, select, free_text
-	Options  []string              `json:"options,omitempty"`  // select 选项
-	Meta     map[string]any        `json:"meta,omitempty"`
+	Type     string              `json:"type"`               // user, assistant, system, error, stream, stream_end, tool_start, tool_result, ask
+	Content  string              `json:"content"`            // 消息内容
+	AskType  string              `json:"ask_type,omitempty"` // confirm, select, free_text
+	Options  []string            `json:"options,omitempty"`  // select 选项
+	Meta     map[string]any      `json:"meta,omitempty"`
 	Approval *io.ApprovalRequest `json:"approval,omitempty"`
 }
 
