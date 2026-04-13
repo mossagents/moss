@@ -34,13 +34,6 @@ func TestResolve_ConflictSkillsAndProgressive(t *testing.T) {
 	}
 }
 
-func TestResolve_NilSessionStoreRejected(t *testing.T) {
-	_, err := resolve(WithSessionStore(nil))
-	if err == nil {
-		t.Fatal("expected nil session store error")
-	}
-}
-
 func TestSetup_UsesDefaultsParity(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),

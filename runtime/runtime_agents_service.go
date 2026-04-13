@@ -113,10 +113,6 @@ func AgentRegistry(k *kernel.Kernel) *agent.Registry {
 	return ensureAgentsState(k).registry
 }
 
-func AgentTaskTracker(k *kernel.Kernel) *agent.TaskTracker {
-	return ensureAgentsState(k).tasks
-}
-
 // WithAgentRegistry injects the runtime-backed subagent catalog.
 // Canonical feature composition should prefer harness.SubagentCatalogValue.
 func WithAgentRegistry(r *agent.Registry) kernel.Option {

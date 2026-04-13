@@ -6,7 +6,6 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/session"
 )
 
 type config struct {
@@ -16,8 +15,6 @@ type config struct {
 	progressive      bool
 	agents           bool
 	trust            string
-	sessionStore     session.SessionStore
-	sessionStoreSet  bool
 	planning         bool
 	capabilityReport CapabilityReporter
 }
@@ -48,12 +45,6 @@ func WithPlanning(enabled bool) Option { return func(c *config) { c.planning = e
 func WithWorkspaceTrust(trust string) Option {
 	return func(c *config) { c.trust = trust }
 }
-func WithSessionStore(store session.SessionStore) Option {
-	return func(c *config) {
-		c.sessionStore = store
-		c.sessionStoreSet = true
-	}
-}
 
 func WithCapabilityReporter(r CapabilityReporter) Option {
 	return func(c *config) {
@@ -82,9 +73,6 @@ func resolve(opts ...Option) (config, error) {
 	}
 	if !cfg.skills && cfg.progressive {
 		return cfg, fmt.Errorf("invalid runtime options: progressive skills require skills to be enabled")
-	}
-	if cfg.sessionStoreSet && cfg.sessionStore == nil {
-		return cfg, fmt.Errorf("invalid runtime options: session store cannot be nil")
 	}
 	return cfg, nil
 }
