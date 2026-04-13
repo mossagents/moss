@@ -90,6 +90,13 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	return st
 }
 
+func MemoryStoreOf(k *kernel.Kernel) memory.MemoryStore {
+	if k == nil {
+		return nil
+	}
+	return ensureMemoryState(k).store
+}
+
 func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")

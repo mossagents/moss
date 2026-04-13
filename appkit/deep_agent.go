@@ -9,7 +9,6 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
-	"github.com/mossagents/moss/runtime"
 )
 
 // DeepAgentConfig describes the configuration for a deep-agent style
@@ -37,7 +36,7 @@ type DeepAgentConfig struct {
 	EnableDefaultLLMRetry         *bool
 	LLMRetryConfig                *retry.Config
 	LLMBreakerConfig              *retry.BreakerConfig
-	DefaultSetupOptions           []runtime.Option
+	DefaultSetupOptions           []harness.RuntimeSetupOption
 	AdditionalFeatures            []harness.Feature
 }
 

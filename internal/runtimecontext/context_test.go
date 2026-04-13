@@ -1,4 +1,4 @@
-package runtime
+package runtimecontext
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
+	rt "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 	"strings"
@@ -38,7 +39,7 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 			StopReason: "end_turn",
 		}}}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		WithMemoryWorkspace(ws),
+		rt.WithMemoryWorkspace(ws),
 		WithContextSessionStore(store),
 		ConfigureContext(
 			WithKeepRecent(2),
@@ -102,7 +103,7 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	if strings.TrimSpace(recordPath) == "" {
 		t.Fatalf("expected memory_record_path in tool output: %+v", out)
 	}
-	record, err := ensureMemoryState(k).store.GetByPath(ctx, recordPath)
+	record, err := rt.MemoryStoreOf(k).GetByPath(ctx, recordPath)
 	if err != nil {
 		t.Fatalf("GetByPath: %v", err)
 	}
@@ -151,7 +152,7 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
-	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rt.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 			IsDirty:   true,
 			Untracked: []string{"notes.txt"},
 		}}),
-		WithStateCatalog(catalog),
+		rt.WithStateCatalog(catalog),
 		WithContextSessionStore(store),
 		ConfigureContext(
 			WithKeepRecent(2),
@@ -192,8 +193,8 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if err := catalog.Upsert(StateEntry{
-		Kind:      StateKindMemory,
+	if err := catalog.Upsert(rt.StateEntry{
+		Kind:      rt.StateKindMemory,
 		RecordID:  "memory/project",
 		SessionID: sess.ID,
 		Status:    "active",

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -14,14 +15,23 @@ import (
 	"testing"
 )
 
+func installTestRuntime(t *testing.T, k *kernel.Kernel) {
+	t.Helper()
+	h, err := harness.NewWithBackendFactory(context.Background(), k, harness.NewLocalBackendFactory("."))
+	if err != nil {
+		t.Fatalf("NewWithBackendFactory: %v", err)
+	}
+	if err := h.Install(context.Background(), harness.RuntimeSetup(".", appconfig.TrustRestricted, harness.WithSkills(false), harness.WithMCPServers(false))); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+}
+
 func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 	k := kernel.New(
 		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
-	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
+	installTestRuntime(t, k)
 
 	out := renderSkillsSummary(&agentState{k: k}, ".")
 	if strings.Contains(out, "Runtime builtin tools:") {
@@ -37,9 +47,7 @@ func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 		kernel.WithUserIO(&io.NoOpIO{}),
 		kernel.WithSandbox(kt.NewMemorySandbox()),
 	)
-	if err := runtime.Setup(context.Background(), k, ".", runtime.WithSkills(false), runtime.WithMCPServers(false)); err != nil {
-		t.Fatalf("Setup: %v", err)
-	}
+	installTestRuntime(t, k)
 
 	out := renderSkillsSummary(&agentState{k: k}, ".")
 	if strings.Contains(out, "[active]") || strings.Contains(out, "[inactive]") {

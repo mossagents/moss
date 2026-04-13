@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mossagents/moss/internal/runtimeassembly"
+	"github.com/mossagents/moss/internal/runtimecontext"
+	"github.com/mossagents/moss/internal/runtimeplanning"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -16,9 +19,65 @@ import (
 	"github.com/mossagents/moss/scheduler"
 )
 
+type runtimeSetupConfig struct {
+	builtinTools      bool
+	mcpServers        bool
+	skills            bool
+	progressiveSkills bool
+	agents            bool
+	reporter          runtime.CapabilityReporter
+}
+
+// RuntimeSetupOption configures harness-owned runtime capability assembly.
+type RuntimeSetupOption func(*runtimeSetupConfig)
+
+func defaultRuntimeSetupConfig() runtimeSetupConfig {
+	return runtimeSetupConfig{
+		builtinTools:      true,
+		mcpServers:        true,
+		skills:            true,
+		progressiveSkills: false,
+		agents:            true,
+	}
+}
+
+func resolveRuntimeSetupConfig(opts []RuntimeSetupOption) runtimeSetupConfig {
+	cfg := defaultRuntimeSetupConfig()
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&cfg)
+		}
+	}
+	return cfg
+}
+
+func WithBuiltinTools(enabled bool) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.builtinTools = enabled }
+}
+
+func WithMCPServers(enabled bool) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.mcpServers = enabled }
+}
+
+func WithSkills(enabled bool) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.skills = enabled }
+}
+
+func WithProgressiveSkills(enabled bool) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.progressiveSkills = enabled }
+}
+
+func WithAgents(enabled bool) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.agents = enabled }
+}
+
+func WithCapabilityReporter(r runtime.CapabilityReporter) RuntimeSetupOption {
+	return func(cfg *runtimeSetupConfig) { cfg.reporter = r }
+}
+
 // RuntimeSetup returns a Feature that runs the standard runtime capability
 // loading (builtin tools, MCP servers, skills, agents).
-func RuntimeSetup(workspaceDir, trust string, opts ...runtime.Option) Feature {
+func RuntimeSetup(workspaceDir, trust string, opts ...RuntimeSetupOption) Feature {
 	return FeatureFunc{
 		FeatureName: "runtime-setup",
 		MetadataValue: FeatureMetadata{
@@ -26,54 +85,94 @@ func RuntimeSetup(workspaceDir, trust string, opts ...runtime.Option) Feature {
 			Phase: FeaturePhaseRuntime,
 		},
 		InstallFunc: func(ctx context.Context, h *Harness) error {
-			allOpts := make([]runtime.Option, 0, len(opts)+1)
-			allOpts = append(allOpts, runtime.WithWorkspaceTrust(trust))
-			allOpts = append(allOpts, opts...)
-			return runtime.Setup(ctx, h.Kernel(), workspaceDir, allOpts...)
+			cfg := resolveRuntimeSetupConfig(opts)
+			return runtimeassembly.Install(ctx, h.Kernel(), workspaceDir, runtimeassembly.Config{
+				BuiltinTools:       cfg.builtinTools,
+				MCPServers:         cfg.mcpServers,
+				Skills:             cfg.skills,
+				ProgressiveSkills:  cfg.progressiveSkills,
+				Agents:             cfg.agents,
+				Trust:              trust,
+				CapabilityReporter: cfg.reporter,
+			})
 		},
 	}
 }
 
 // ContextOption configures harness-owned context-management feature behavior.
-type ContextOption interface {
-	runtimeOption() runtime.ContextOption
-}
+type ContextOption func(*contextFeatureConfig)
 
-type contextOption struct {
-	option runtime.ContextOption
-}
-
-func (o contextOption) runtimeOption() runtime.ContextOption {
-	return o.option
+type contextFeatureConfig struct {
+	triggerDialog *int
+	keepRecent    *int
+	triggerTokens *int
+	promptBudget  *int
+	startupBudget *int
 }
 
 func WithTriggerDialogCount(n int) ContextOption {
-	return contextOption{option: runtime.WithTriggerDialogCount(n)}
+	return func(cfg *contextFeatureConfig) {
+		if n > 0 {
+			cfg.triggerDialog = &n
+		}
+	}
 }
 
 func WithKeepRecent(n int) ContextOption {
-	return contextOption{option: runtime.WithKeepRecent(n)}
+	return func(cfg *contextFeatureConfig) {
+		if n > 0 {
+			cfg.keepRecent = &n
+		}
+	}
 }
 
 func WithContextTriggerTokens(n int) ContextOption {
-	return contextOption{option: runtime.WithContextTriggerTokens(n)}
+	return func(cfg *contextFeatureConfig) {
+		if n > 0 {
+			cfg.triggerTokens = &n
+		}
+	}
 }
 
 func WithContextPromptBudget(n int) ContextOption {
-	return contextOption{option: runtime.WithContextPromptBudget(n)}
+	return func(cfg *contextFeatureConfig) {
+		if n > 0 {
+			cfg.promptBudget = &n
+		}
+	}
 }
 
 func WithContextStartupBudget(n int) ContextOption {
-	return contextOption{option: runtime.WithContextStartupBudget(n)}
+	return func(cfg *contextFeatureConfig) {
+		if n >= 0 {
+			cfg.startupBudget = &n
+		}
+	}
 }
 
-func runtimeContextOptions(opts []ContextOption) []runtime.ContextOption {
-	out := make([]runtime.ContextOption, 0, len(opts))
+func runtimeContextOptions(opts []ContextOption) []runtimecontext.ContextOption {
+	var cfg contextFeatureConfig
 	for _, opt := range opts {
 		if opt == nil {
 			continue
 		}
-		out = append(out, opt.runtimeOption())
+		opt(&cfg)
+	}
+	out := make([]runtimecontext.ContextOption, 0, 5)
+	if cfg.triggerDialog != nil {
+		out = append(out, runtimecontext.WithTriggerDialogCount(*cfg.triggerDialog))
+	}
+	if cfg.keepRecent != nil {
+		out = append(out, runtimecontext.WithKeepRecent(*cfg.keepRecent))
+	}
+	if cfg.triggerTokens != nil {
+		out = append(out, runtimecontext.WithContextTriggerTokens(*cfg.triggerTokens))
+	}
+	if cfg.promptBudget != nil {
+		out = append(out, runtimecontext.WithContextPromptBudget(*cfg.promptBudget))
+	}
+	if cfg.startupBudget != nil {
+		out = append(out, runtimecontext.WithContextStartupBudget(*cfg.startupBudget))
 	}
 	return out
 }
@@ -87,7 +186,7 @@ func Planning() Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().Apply(runtime.WithPlanningDefaults())
+			h.Kernel().Apply(runtimeplanning.WithPlanningDefaults())
 			return nil
 		},
 	}
@@ -102,8 +201,13 @@ func ContextOffload(store session.SessionStore) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().Apply(runtime.WithOffloadSessionStore(store))
-			return runtime.RegisterOffloadTools(h.Kernel().ToolRegistry(), store, h.Kernel().SessionManager())
+			h.Kernel().Apply(runtimecontext.WithOffloadSessionStore(store))
+			return runtimecontext.RegisterOffloadTools(
+				h.Kernel().ToolRegistry(),
+				store,
+				h.Kernel().SessionManager(),
+				runtime.NewContextMemoryService(h.Kernel()),
+			)
 		},
 	}
 }
@@ -118,9 +222,9 @@ func ContextManagement(store session.SessionStore, opts ...ContextOption) Featur
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			kopts := []kernel.Option{runtime.WithContextSessionStore(store)}
+			kopts := []kernel.Option{runtimecontext.WithContextSessionStore(store)}
 			if rtOpts := runtimeContextOptions(opts); len(rtOpts) > 0 {
-				kopts = append(kopts, runtime.ConfigureContext(rtOpts...))
+				kopts = append(kopts, runtimecontext.ConfigureContext(rtOpts...))
 			}
 			h.Kernel().Apply(kopts...)
 			return nil

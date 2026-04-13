@@ -550,8 +550,8 @@ func TestDeepAgentApplyOver_maxStepsPositiveOverridesBase(t *testing.T) {
 }
 
 func TestDeepAgentApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
-	opt := runtime.WithBuiltinTools(false)
-	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt}}
+	opt := harness.WithBuiltinTools(false)
+	base := DeepAgentConfig{DefaultSetupOptions: []harness.RuntimeSetupOption{opt}}
 	overlay := DeepAgentConfig{DefaultSetupOptions: nil}
 
 	result := overlay.ApplyOver(base)
@@ -562,10 +562,10 @@ func TestDeepAgentApplyOver_emptySliceDoesNotOverrideBase(t *testing.T) {
 }
 
 func TestDeepAgentApplyOver_nonEmptySliceOverridesBase(t *testing.T) {
-	opt1 := runtime.WithBuiltinTools(false)
-	opt2 := runtime.WithAgents(false)
-	base := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1}}
-	overlay := DeepAgentConfig{DefaultSetupOptions: []runtime.Option{opt1, opt2}}
+	opt1 := harness.WithBuiltinTools(false)
+	opt2 := harness.WithAgents(false)
+	base := DeepAgentConfig{DefaultSetupOptions: []harness.RuntimeSetupOption{opt1}}
+	overlay := DeepAgentConfig{DefaultSetupOptions: []harness.RuntimeSetupOption{opt1, opt2}}
 
 	result := overlay.ApplyOver(base)
 

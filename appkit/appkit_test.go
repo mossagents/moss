@@ -276,7 +276,7 @@ func TestBuildKernelWithFeatures_RuntimeOptionsAffectSetup(t *testing.T) {
 	flags := isolatedBuildFlags(t)
 
 	k, err := BuildKernelWithFeatures(context.Background(), flags, &io.NoOpIO{},
-		harness.RuntimeSetup(flags.Workspace, flags.Trust, rt.WithBuiltinTools(false)),
+		harness.RuntimeSetup(flags.Workspace, flags.Trust, harness.WithBuiltinTools(false)),
 	)
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures: %v", err)

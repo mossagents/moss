@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -15,6 +16,26 @@ import (
 type contextMemoryService struct {
 	store    memory.MemoryStore
 	pipeline *memoryPipelineManager
+}
+
+// ContextMemoryService exposes context compaction as a runtime-owned service.
+type ContextMemoryService interface {
+	CompactSessionContext(
+		ctx context.Context,
+		sessionStore session.SessionStore,
+		sess *session.Session,
+		keepRecent int,
+		note string,
+		llm model.LLM,
+		withSummary bool,
+	) (map[string]any, error)
+}
+
+func NewContextMemoryService(k *kernel.Kernel) ContextMemoryService {
+	if k == nil {
+		return contextMemoryService{}
+	}
+	return newContextMemoryService(ensureMemoryState(k))
 }
 
 func newContextMemoryService(st *state) contextMemoryService {
@@ -103,7 +124,7 @@ func compactSessionContext(
 		}
 	}
 	memoryRecordPath := ""
-	if memoryStore != nil {
+	if withSummary && memoryStore != nil {
 		record, err := persistContextSummaryMemory(ctx, memoryStore, sess, snapshotID, summaryText, withSummary)
 		if err != nil {
 			return nil, err
@@ -162,6 +183,8 @@ func compactSessionContext(
 		"last_prompt_fragment_ids": append([]string(nil), state.LastFragmentDiff...),
 	}, nil
 }
+
+var _ ContextMemoryService = contextMemoryService{}
 
 func persistContextSummaryMemory(
 	ctx context.Context,
