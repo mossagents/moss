@@ -181,6 +181,7 @@ func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager
 	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
+// ensureOffloadState owns the context-offload substrate slot on the kernel service registry.
 func ensureOffloadState(k *kernel.Kernel) *offloadState {
 	actual, loaded := k.Services().LoadOrStore(offloadStateKey, &offloadState{})
 	st := actual.(*offloadState)
@@ -196,6 +197,7 @@ func ensureOffloadState(k *kernel.Kernel) *offloadState {
 	return st
 }
 
+// ensureContextState owns the context-management substrate slot on the kernel service registry.
 func ensureContextState(k *kernel.Kernel) *contextState {
 	actual, loaded := k.Services().LoadOrStore(contextStateKey, &contextState{
 		keepRecent:      20,

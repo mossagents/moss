@@ -118,7 +118,7 @@ That means:
 - `BuildKernelWithFeatures(...)` remains the canonical public builder
 - `BuildKernel(...)` becomes a convenience wrapper that only supplies the official default feature list
 - `BuildDeepAgent(...)` remains a preset builder that produces feature packs and then delegates to `BuildKernelWithFeatures(...)`
-- low-level `kernel.Option` injection remains available only as an explicit escape hatch via `harness.KernelOptions(...)` or direct `kernel.New(...)`, not as an appkit builder variadic
+- low-level `kernel.Option` injection remains available only as an explicit escape hatch: post-backend configure-phase options may flow through `harness.KernelOptions(...)`, while pre-backend port injection must use direct `kernel.New(...)` + `harness.NewWithBackendFactory(...)`, not an appkit builder variadic
 
 ### 2. Appkit surface compression
 
@@ -137,7 +137,7 @@ Final ownership after this round:
 Concrete changes:
 
 - remove `extraOpts ...kernel.Option` from `BuildKernel(...)`
-- keep low-level option assembly available through `harness.KernelOptions(...)`
+- keep post-backend configure-phase option assembly available through `harness.KernelOptions(...)`, while directing pre-backend port injection to direct `kernel.New(...)` + `harness.NewWithBackendFactory(...)`
 - move builder-owned debug logger installation from direct `k.InstallPlugin(...)` mutation to feature composition (for example `harness.Plugins(builtins.LoggerPlugin())` in the assembled feature set when debug logging is enabled)
 - keep `buildKernel(...)` private helper only if it is still a pure implementation detail; it must not preserve a second conceptual assembly layer
 

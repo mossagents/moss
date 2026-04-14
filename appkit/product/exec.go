@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/runtime"
 	"strings"
 	"sync"
 )
@@ -41,7 +42,7 @@ type RecordingIO struct {
 }
 
 func NewRecordingIO(mode string) *RecordingIO {
-	return &RecordingIO{mode: NormalizeApprovalMode(mode)}
+	return &RecordingIO{mode: runtime.NormalizeApprovalMode(mode)}
 }
 
 func (r *RecordingIO) Send(_ context.Context, msg io.OutputMessage) error {

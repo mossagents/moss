@@ -102,11 +102,12 @@ type agentState struct {
 }
 
 func renderSkillsSummary(agent *agentState, workspace string) string {
-	manifests := runtime.SkillManifests(agent.k)
+	manifests := runtime.LookupSkillManifests(agent.k)
 	if len(manifests) == 0 {
 		manifests = skill.DiscoverSkillManifestsForTrust(workspace, agent.trust)
 	}
 	sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
+	manager, _ := runtime.LookupCapabilityManager(agent.k)
 
 	var sb strings.Builder
 	if len(manifests) == 0 {
@@ -115,8 +116,10 @@ func renderSkillsSummary(agent *agentState, workspace string) string {
 		sb.WriteString("Discovered user skills:\n")
 		for _, mf := range manifests {
 			statusIcon := "[ ]"
-			if _, ok := runtime.CapabilityManager(agent.k).Get(mf.Name); ok {
-				statusIcon = "[x]"
+			if manager != nil {
+				if _, ok := manager.Get(mf.Name); ok {
+					statusIcon = "[x]"
+				}
 			}
 			if strings.TrimSpace(mf.Description) == "" {
 				sb.WriteString(fmt.Sprintf("  • %s %s\n", statusIcon, mf.Name))
@@ -133,7 +136,7 @@ func renderSkillsSummary(agent *agentState, workspace string) string {
 }
 
 func discoveredSkillNames(agent *agentState, workspace string) []string {
-	manifests := runtime.SkillManifests(agent.k)
+	manifests := runtime.LookupSkillManifests(agent.k)
 	if len(manifests) == 0 {
 		manifests = skill.DiscoverSkillManifestsForTrust(workspace, agent.trust)
 	}
@@ -187,7 +190,10 @@ func (a *agentState) sessionSummary() string {
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
-	policy := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode).ToolPolicy
+	policy := runtime.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
+	if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
+		policy = posture.ToolPolicy
+	}
 	if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
 		b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
 	}
@@ -359,7 +365,10 @@ func (a *agentState) permissionSummary() string {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
 	}
 	if k != nil {
-		policy := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode).ToolPolicy
+		policy := runtime.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
+		if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
+			policy = posture.ToolPolicy
+		}
 		if len(policy.Command.Rules) > 0 {
 			b.WriteString("Command rules:\n")
 			for _, rule := range policy.Command.Rules {

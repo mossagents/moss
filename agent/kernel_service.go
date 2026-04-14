@@ -24,6 +24,7 @@ type kernelService struct {
 	installed          bool
 }
 
+// ensureKernelService owns the agent substrate slot on the kernel service registry.
 func ensureKernelService(k *kernel.Kernel) *kernelService {
 	actual, _ := k.Services().LoadOrStore(kernelServiceKey, &kernelService{
 		registry: NewRegistry(),

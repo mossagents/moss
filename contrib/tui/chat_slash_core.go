@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/runtime"
 	userattachments "github.com/mossagents/moss/userio/attachments"
 	userlocation "github.com/mossagents/moss/userio/location"
 	"os"
@@ -638,8 +639,8 @@ func handleApprovalSlashCommand(m chatModel, args []string, _ string, _ string) 
 		m.refreshViewport()
 		return m, nil
 	}
-	nextMode := product.NormalizeApprovalMode(args[0])
-	if err := product.ValidateApprovalMode(nextMode); err != nil {
+	nextMode := runtime.NormalizeApprovalMode(args[0])
+	if err := runtime.ValidateApprovalMode(nextMode); err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 		m.refreshViewport()
 		return m, nil

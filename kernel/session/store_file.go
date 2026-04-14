@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/internal/strutil"
 	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/logging"
 	"os"
 	"path/filepath"
 	"sort"
@@ -368,41 +367,33 @@ func (ps *persistedSession) toSession(id string) (*Session, error) {
 	}
 	sess.Messages = make([]model.Message, 0, len(ps.Messages))
 	for i, m := range ps.Messages {
-		converted, migrated, err := migrateMessage(m)
+		converted, err := decodeMessage(m)
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal session %s: message %d: %w", id, i, err)
-		}
-		if migrated {
-			logging.GetLogger().Warn("session store migrated legacy message content field",
-				"session_id", ps.ID, "message_index", i)
 		}
 		sess.Messages = append(sess.Messages, converted)
 	}
 	return sess, nil
 }
 
-func migrateMessage(m persistedMessage) (model.Message, bool, error) {
+func decodeMessage(m persistedMessage) (model.Message, error) {
 	out := model.Message{
 		Role:      m.Role,
 		ToolCalls: m.ToolCalls,
 	}
-	var migrated bool
 	var err error
-	out.ContentParts, migrated, err = migrateContentParts(m.ContentParts, m.Content)
+	out.ContentParts, err = decodeContentParts(m.ContentParts, m.Content)
 	if err != nil {
-		return model.Message{}, false, err
+		return model.Message{}, err
 	}
 	if len(m.ToolResults) == 0 {
-		return out, migrated, nil
+		return out, nil
 	}
 	out.ToolResults = make([]model.ToolResult, 0, len(m.ToolResults))
 	for i, tr := range m.ToolResults {
-		contentParts, trMigrated, err := migrateContentParts(tr.ContentParts, tr.Content)
+		contentParts, err := decodeContentParts(tr.ContentParts, tr.Content)
 		if err != nil {
-			return model.Message{}, false, fmt.Errorf("tool_results[%d]: %w", i, err)
-		}
-		if trMigrated {
-			migrated = true
+			return model.Message{}, fmt.Errorf("tool_results[%d]: %w", i, err)
 		}
 		out.ToolResults = append(out.ToolResults, model.ToolResult{
 			CallID:       tr.CallID,
@@ -410,7 +401,7 @@ func migrateMessage(m persistedMessage) (model.Message, bool, error) {
 			IsError:      tr.IsError,
 		})
 	}
-	return out, migrated, nil
+	return out, nil
 }
 
 func sanitizePersistedMessages(messages []model.Message) []model.Message {
@@ -450,19 +441,15 @@ func reasoningChanged(messages []model.Message) bool {
 	return false
 }
 
-func migrateContentParts(parts []model.ContentPart, legacy json.RawMessage) ([]model.ContentPart, bool, error) {
+func decodeContentParts(parts []model.ContentPart, legacy json.RawMessage) ([]model.ContentPart, error) {
 	if len(parts) > 0 {
 		if len(legacy) > 0 {
-			return parts, true, nil
+			return nil, fmt.Errorf("legacy content field is no longer supported")
 		}
-		return parts, false, nil
+		return parts, nil
 	}
 	if len(legacy) == 0 {
-		return nil, false, nil
+		return nil, nil
 	}
-	var text string
-	if err := json.Unmarshal(legacy, &text); err != nil {
-		return nil, false, fmt.Errorf("legacy content must be string: %w", err)
-	}
-	return []model.ContentPart{model.TextPart(text)}, true, nil
+	return nil, fmt.Errorf("legacy content field is no longer supported")
 }

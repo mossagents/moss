@@ -54,7 +54,7 @@ func TestInstall_UsesDefaultsParity(t *testing.T) {
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	if appruntime.CapabilityManager(k) == nil {
+	if manager, ok := appruntime.LookupCapabilityManager(k); !ok || manager == nil {
 		t.Fatal("expected capability manager")
 	}
 }

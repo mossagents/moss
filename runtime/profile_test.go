@@ -173,3 +173,28 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 	}
 }
 
+func TestResolveSessionPostureForWorkspaceUsesResolvedProfile(t *testing.T) {
+	posture, resolved, err := ResolveSessionPostureForWorkspace(ProfileResolveOptions{
+		RequestedProfile: "coding",
+		Trust:            appconfig.TrustRestricted,
+		ApprovalMode:     "full",
+	})
+	if err != nil {
+		t.Fatalf("ResolveSessionPostureForWorkspace: %v", err)
+	}
+	if posture.Profile != resolved.Name {
+		t.Fatalf("posture.Profile = %q, want %q", posture.Profile, resolved.Name)
+	}
+	if posture.EffectiveTrust != resolved.Trust {
+		t.Fatalf("posture.EffectiveTrust = %q, want %q", posture.EffectiveTrust, resolved.Trust)
+	}
+	if posture.EffectiveApproval != resolved.ApprovalMode {
+		t.Fatalf("posture.EffectiveApproval = %q, want %q", posture.EffectiveApproval, resolved.ApprovalMode)
+	}
+	if !posture.HasToolPolicy {
+		t.Fatal("expected resolved posture to include tool policy")
+	}
+	if posture.ToolPolicy.ApprovalMode != "full-auto" {
+		t.Fatalf("posture.ToolPolicy.ApprovalMode = %q, want full-auto", posture.ToolPolicy.ApprovalMode)
+	}
+}

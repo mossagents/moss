@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/mossagents/moss/capability"
+	appconfig "github.com/mossagents/moss/config"
 	"io"
 	"net/http"
 	"os"
@@ -23,20 +24,20 @@ type InstalledRecord struct {
 	Dir         string    `json:"dir"` // absolute path to extracted skill dir
 }
 
-// LocalCache manages skills installed to ~/.moss/skills/.
+// LocalCache manages skills installed to ~/.<app>/skills/.
 type LocalCache struct {
-	root string // e.g. ~/.moss/skills
+	root string // e.g. ~/.moss/skills or ~/.mosscode/skills
 }
 
 // NewLocalCache creates (or opens) the cache rooted at dir.
-// If dir is empty, it defaults to ~/.moss/skills.
+// If dir is empty, it defaults to ~/.<app>/skills.
 func NewLocalCache(dir string) (*LocalCache, error) {
 	if dir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("registry: cannot find home dir: %w", err)
 		}
-		dir = filepath.Join(home, ".moss", "skills")
+		dir = filepath.Join(home, "."+appconfig.AppName(), "skills")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("registry: cannot create cache dir %q: %w", dir, err)

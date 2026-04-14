@@ -90,8 +90,11 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 
 func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.SessionPosture) (string, error) {
 	a.mu.Lock()
-	current := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode)
+	current, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode)
 	a.mu.Unlock()
+	if err != nil {
+		return "", err
+	}
 	plan, err := planPostureRebuild(sessionID, current, target)
 	if err != nil {
 		return "", err
@@ -105,24 +108,14 @@ func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.Sessi
 	return plan.Notice, nil
 }
 
-func postureFromRuntime(workspace, profile, trust, approval string) runtime.SessionPosture {
-	policy := runtime.ResolveToolPolicyForWorkspace(workspace, trust, approval)
-	resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+func postureFromRuntime(workspace, profile, trust, approval string) (runtime.SessionPosture, error) {
+	posture, _, err := runtime.ResolveSessionPostureForWorkspace(runtime.ProfileResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: profile,
 		Trust:            trust,
 		ApprovalMode:     approval,
 	})
-	if err == nil {
-		policy = resolved.ToolPolicy
-	}
-	return runtime.SessionPosture{
-		Profile:           strings.TrimSpace(profile),
-		EffectiveTrust:    configpkg.NormalizeTrustLevel(trust),
-		EffectiveApproval: product.NormalizeApprovalMode(approval),
-		ToolPolicy:        policy,
-		HasToolPolicy:     true,
-	}
+	return posture, err
 }
 
 func postureWarningForSession(sess *session.Session) string {
@@ -132,8 +125,8 @@ func postureWarningForSession(sess *session.Session) string {
 func planPostureRebuild(sessionID string, current, target runtime.SessionPosture) (postureRebuildPlan, error) {
 	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
-	targetApproval := product.NormalizeApprovalMode(target.EffectiveApproval)
-	currentApproval := product.NormalizeApprovalMode(current.EffectiveApproval)
+	targetApproval := runtime.NormalizeApprovalMode(target.EffectiveApproval)
+	currentApproval := runtime.NormalizeApprovalMode(current.EffectiveApproval)
 
 	if currentTrust == targetTrust && currentApproval == targetApproval {
 		if !target.HasToolPolicy || reflect.DeepEqual(target.ToolPolicy, current.ToolPolicy) {
@@ -160,7 +153,7 @@ func formatPosture(posture runtime.SessionPosture) string {
 		parts = append(parts, "trust="+configpkg.NormalizeTrustLevel(posture.EffectiveTrust))
 	}
 	if strings.TrimSpace(posture.EffectiveApproval) != "" {
-		parts = append(parts, "approval="+product.NormalizeApprovalMode(posture.EffectiveApproval))
+		parts = append(parts, "approval="+runtime.NormalizeApprovalMode(posture.EffectiveApproval))
 	}
 	if strings.TrimSpace(posture.TaskMode) != "" {
 		parts = append(parts, "task="+strings.TrimSpace(posture.TaskMode))

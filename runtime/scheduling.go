@@ -147,6 +147,7 @@ func RegisterSchedulerToolRegistry(reg tool.Registry, sched *scheduler.Scheduler
 	return nil
 }
 
+// ensureSchedulingState owns the scheduling substrate slot on the kernel service registry.
 func ensureSchedulingState(k *kernel.Kernel) *schedulingState {
 	actual, loaded := k.Services().LoadOrStore(schedulingStateKey, &schedulingState{})
 	st := actual.(*schedulingState)

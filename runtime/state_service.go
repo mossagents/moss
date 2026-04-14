@@ -11,12 +11,16 @@ type stateCatalogState struct {
 	catalog *StateCatalog
 }
 
+// WithStateCatalog stores the runtime-owned state catalog substrate. Public
+// assembly should prefer harness-owned features over direct Services() access.
 func WithStateCatalog(catalog *StateCatalog) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureStateCatalogState(k).catalog = catalog
 	}
 }
 
+// StateCatalogOf looks up the runtime-owned state catalog without creating the
+// underlying kernel substrate slot on first access.
 func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
 	if k == nil {
 		return nil
@@ -36,6 +40,7 @@ func ObserverForStateCatalog(k *kernel.Kernel) observe.Observer {
 	return NewStateCatalogObserver(StateCatalogOf(k))
 }
 
+// ensureStateCatalogState owns the runtime state-catalog substrate slot.
 func ensureStateCatalogState(k *kernel.Kernel) *stateCatalogState {
 	actual, loaded := k.Services().LoadOrStore(stateCatalogStateKey, &stateCatalogState{})
 	state := actual.(*stateCatalogState)

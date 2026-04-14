@@ -18,14 +18,14 @@ import (
 
 const memoryStateKey kernel.ServiceKey = "memory.state"
 
-type state struct {
+type memoryState struct {
 	workspace workspace.Workspace
 	store     memory.MemoryStore
 	runtime   taskrt.TaskRuntime
 	pipeline  *memoryPipelineManager
 }
 
-// WithMemoryWorkspace 将持久化 memory 工作区接入 Kernel。
+// WithMemoryWorkspace configures the runtime-owned memory substrate on the kernel.
 func WithMemoryWorkspace(ws workspace.Workspace) kernel.Option {
 	return func(k *kernel.Kernel) {
 		st := ensureMemoryState(k)
@@ -42,9 +42,10 @@ func WithMemoryStore(store memory.MemoryStore) kernel.Option {
 	}
 }
 
-func ensureMemoryState(k *kernel.Kernel) *state {
-	actual, loaded := k.Services().LoadOrStore(memoryStateKey, &state{})
-	st := actual.(*state)
+// ensureMemoryState owns the memory substrate slot on the kernel service registry.
+func ensureMemoryState(k *kernel.Kernel) *memoryState {
+	actual, loaded := k.Services().LoadOrStore(memoryStateKey, &memoryState{})
+	st := actual.(*memoryState)
 	if loaded {
 		return st
 	}
@@ -90,7 +91,7 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	return st
 }
 
-func memoryStateOf(k *kernel.Kernel) *state {
+func memoryStateOf(k *kernel.Kernel) *memoryState {
 	if k == nil {
 		return nil
 	}
@@ -98,10 +99,12 @@ func memoryStateOf(k *kernel.Kernel) *state {
 	if !ok {
 		return nil
 	}
-	st, _ := actual.(*state)
+	st, _ := actual.(*memoryState)
 	return st
 }
 
+// MemoryStoreOf looks up the runtime-owned memory store without creating memory
+// substrate state on first access.
 func MemoryStoreOf(k *kernel.Kernel) memory.MemoryStore {
 	if st := memoryStateOf(k); st != nil {
 		return st.store

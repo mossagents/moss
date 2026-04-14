@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/runtimecapability"
 	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
@@ -142,10 +143,14 @@ func (builtinToolsCapability) Name() string            { return "builtin-tools" 
 func (builtinToolsCapability) Critical() bool          { return true }
 func (builtinToolsCapability) Enabled(cfg Config) bool { return cfg.BuiltinTools }
 func (builtinToolsCapability) Register(ctx context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	return appruntime.CapabilityManager(k).Register(ctx, &builtinToolsProvider{}, appruntime.CapabilityDeps(k))
+	return runtimecapability.Manager(k).Register(ctx, &builtinToolsProvider{}, runtimecapability.CapabilityDeps(k))
 }
 func (builtinToolsCapability) Validate(_ context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	if _, ok := appruntime.CapabilityManager(k).Get("builtin-tools"); !ok {
+	manager, ok := runtimecapability.LookupManager(k)
+	if !ok || manager == nil {
+		return fmt.Errorf("runtime validation failed: capability manager missing")
+	}
+	if _, ok := manager.Get("builtin-tools"); !ok {
 		return fmt.Errorf("runtime validation failed: builtin-tools provider missing")
 	}
 	return nil
@@ -166,7 +171,7 @@ func (mcpCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDi
 		report(cfg.CapabilityReporter, ctx, "mcp:global-config", true, "failed", err)
 		return fmt.Errorf("load global config: %w", err)
 	}
-	deps := appruntime.CapabilityDeps(k)
+	deps := runtimecapability.CapabilityDeps(k)
 	allSkills := append([]appconfig.SkillConfig(nil), globalCfg.Skills...)
 	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspaceDir, cfg.Trust)
 	if err != nil {
@@ -223,14 +228,14 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 		return err
 	}
 	if cfg.ProgressiveSkills {
-		appruntime.SetSkillManifests(k, ordered)
-		appruntime.EnableProgressiveSkills(k)
+		runtimecapability.SetSkillManifests(k, ordered)
+		runtimecapability.EnableProgressiveSkills(k)
 		for _, mf := range ordered {
 			report(cfg.CapabilityReporter, ctx, "skill-manifest:"+mf.Name, false, "discoverable", nil)
 		}
-		return appruntime.RegisterProgressiveSkillTools(k)
+		return runtimecapability.RegisterProgressiveSkillTools(k)
 	}
-	deps := appruntime.CapabilityDeps(k)
+	deps := runtimecapability.CapabilityDeps(k)
 	for _, mf := range ordered {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
@@ -241,7 +246,7 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 			)
 			continue
 		}
-		if err := appruntime.CapabilityManager(k).Register(ctx, ps, deps); err != nil {
+		if err := runtimecapability.Manager(k).Register(ctx, ps, deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "skill:"+ps.Metadata().Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load skill",
 				slog.String("skill", ps.Metadata().Name),
@@ -316,7 +321,7 @@ func registerMCPServers(ctx context.Context, cfg Config, deps capability.Deps, s
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
-		if err := appruntime.CapabilityManager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+		if err := runtimecapability.Manager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
 			if sc.IsRequired() {
 				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)

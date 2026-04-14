@@ -27,25 +27,25 @@ const (
 )
 
 type CommandPolicy struct {
-	Access         ToolAccess                 `json:"access"`
-	DefaultTimeout time.Duration              `json:"default_timeout"`
-	MaxTimeout     time.Duration              `json:"max_timeout"`
-	AllowedPaths   []string                   `json:"allowed_paths,omitempty"`
-	ClearEnv       bool                       `json:"clear_env,omitempty"`
-	Env            map[string]string          `json:"env,omitempty"`
+	Access         ToolAccess                  `json:"access"`
+	DefaultTimeout time.Duration               `json:"default_timeout"`
+	MaxTimeout     time.Duration               `json:"max_timeout"`
+	AllowedPaths   []string                    `json:"allowed_paths,omitempty"`
+	ClearEnv       bool                        `json:"clear_env,omitempty"`
+	Env            map[string]string           `json:"env,omitempty"`
 	Network        workspace.ExecNetworkPolicy `json:"network"`
-	Rules          []CommandRule              `json:"rules,omitempty"`
+	Rules          []CommandRule               `json:"rules,omitempty"`
 }
 
 type HTTPPolicy struct {
-	Access          ToolAccess `json:"access"`
-	AllowedMethods  []string   `json:"allowed_methods,omitempty"`
-	AllowedSchemes  []string   `json:"allowed_schemes,omitempty"`
-	AllowedHosts    []string   `json:"allowed_hosts,omitempty"`
+	Access          ToolAccess    `json:"access"`
+	AllowedMethods  []string      `json:"allowed_methods,omitempty"`
+	AllowedSchemes  []string      `json:"allowed_schemes,omitempty"`
+	AllowedHosts    []string      `json:"allowed_hosts,omitempty"`
 	DefaultTimeout  time.Duration `json:"default_timeout"`
 	MaxTimeout      time.Duration `json:"max_timeout"`
-	FollowRedirects bool       `json:"follow_redirects"`
-	Rules           []HTTPRule `json:"rules,omitempty"`
+	FollowRedirects bool          `json:"follow_redirects"`
+	Rules           []HTTPRule    `json:"rules,omitempty"`
 }
 
 type CommandRule struct {
@@ -62,16 +62,16 @@ type HTTPRule struct {
 }
 
 type ToolPolicy struct {
-	Trust                  string               `json:"trust"`
-	ApprovalMode           string               `json:"approval_mode"`
-	Command                CommandPolicy        `json:"command"`
-	HTTP                   HTTPPolicy           `json:"http"`
-	WorkspaceWriteAccess   ToolAccess           `json:"workspace_write_access"`
-	MemoryWriteAccess      ToolAccess           `json:"memory_write_access"`
-	GraphMutationAccess    ToolAccess           `json:"graph_mutation_access"`
-	ProtectedPathPrefixes  []string             `json:"protected_path_prefixes,omitempty"`
+	Trust                   string               `json:"trust"`
+	ApprovalMode            string               `json:"approval_mode"`
+	Command                 CommandPolicy        `json:"command"`
+	HTTP                    HTTPPolicy           `json:"http"`
+	WorkspaceWriteAccess    ToolAccess           `json:"workspace_write_access"`
+	MemoryWriteAccess       ToolAccess           `json:"memory_write_access"`
+	GraphMutationAccess     ToolAccess           `json:"graph_mutation_access"`
+	ProtectedPathPrefixes   []string             `json:"protected_path_prefixes,omitempty"`
 	ApprovalRequiredClasses []tool.ApprovalClass `json:"approval_required_classes,omitempty"`
-	DeniedClasses          []tool.ApprovalClass `json:"denied_classes,omitempty"`
+	DeniedClasses           []tool.ApprovalClass `json:"denied_classes,omitempty"`
 }
 
 type toolPolicyMetadataEnvelope struct {
@@ -406,6 +406,22 @@ func normalizeToolApprovalMode(mode string) string {
 		return "full-auto"
 	default:
 		return strings.ToLower(strings.TrimSpace(mode))
+	}
+}
+
+// NormalizeApprovalMode canonicalizes approval mode aliases onto the runtime
+// policy vocabulary.
+func NormalizeApprovalMode(mode string) string {
+	return normalizeToolApprovalMode(mode)
+}
+
+// ValidateApprovalMode validates the canonical runtime approval-mode set.
+func ValidateApprovalMode(mode string) error {
+	switch NormalizeApprovalMode(mode) {
+	case "read-only", "confirm", "full-auto":
+		return nil
+	default:
+		return fmt.Errorf("unknown approval mode %q (supported: read-only, confirm, full-auto)", strings.TrimSpace(mode))
 	}
 }
 

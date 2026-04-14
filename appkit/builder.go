@@ -18,12 +18,14 @@ import (
 //   - 创建本地 Sandbox
 //   - 装配内置工具 + MCP servers + Skills
 //
-// 调用者仍可通过 extraOpts 追加底层 kernel.Option。若要安装 harness
-// 层 Feature，请使用 BuildKernelWithFeatures。
-func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+// 如果调用者需要自定义 pre-backend kernel ports 或直接控制底层 kernel.Option
+// 组装，请改用 kernel.New(...) + harness.NewWithBackendFactory(...)。
+// 若要继续走 appkit 的 feature-first 入口，请使用 BuildKernelWithFeatures(...)
+// 并通过 harness.KernelOptions(...) 传入 configure-phase kernel.Option。
+func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, []harness.Feature{
 		harness.RuntimeSetup(flags.Workspace, flags.Trust),
-	}, extraOpts...)
+	})
 }
 
 // BuildKernelWithFeatures 根据 AppFlags 构建 Kernel，并按顺序安装 harness Feature。
@@ -31,34 +33,37 @@ func BuildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, extraOpts .
 // 这是官方推荐的 Feature 优先装配入口。官方 Feature 会按 phase/依赖
 // 元数据做受控安装；未标注元数据的自定义 Feature 则保持 configure 阶段
 // 语义，并在同阶段内按传入顺序安装。如果未包含 RuntimeSetup Feature，
-// 则不会自动安装官方 runtime capability surface。
+// 则不会自动安装官方 runtime capability surface。需要 pre-backend port
+// 注入的调用方应直接组合 kernel.New(...) 与 harness.NewWithBackendFactory(...)。
 func BuildKernelWithFeatures(ctx context.Context, flags *AppFlags, io io.UserIO, features ...harness.Feature) (*kernel.Kernel, error) {
 	return buildKernel(ctx, flags, io, features)
 }
 
-func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []harness.Feature, extraOpts ...kernel.Option) (*kernel.Kernel, error) {
+func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []harness.Feature) (*kernel.Kernel, error) {
 	llm, err := providers.BuildLLM(flags.EffectiveAPIType(), flags.Model, flags.APIKey, flags.BaseURL)
 	if err != nil {
 		return nil, err
 	}
 
-	opts := []kernel.Option{
+	k := kernel.New(
 		kernel.WithLLM(llm),
 		kernel.WithUserIO(io),
+	)
+
+	installFeatures := append([]harness.Feature(nil), features...)
+	if logging.DebugEnabled() {
+		installFeatures = append(installFeatures, harness.Plugins(builtins.LoggerPlugin()))
 	}
-	opts = append(opts, extraOpts...)
-	k := kernel.New(opts...)
 
 	h, err := harness.NewWithBackendFactory(ctx, k, harness.NewLocalBackendFactory(flags.Workspace))
 	if err != nil {
 		return nil, err
 	}
-	if err := h.Install(ctx, features...); err != nil {
+	if err := h.Install(ctx, installFeatures...); err != nil {
 		return nil, err
 	}
 
 	if logging.DebugEnabled() {
-		k.InstallPlugin(builtins.LoggerPlugin())
 		logging.GetLogger().DebugContext(ctx, "kernel built",
 			"workspace", flags.Workspace,
 			"trust", flags.Trust,

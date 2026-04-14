@@ -2,10 +2,12 @@ package kernel
 
 import "sync"
 
-// ServiceKey identifies a kernel-scoped shared service or state slot.
+// ServiceKey identifies a kernel-scoped substrate slot owned by a typed package.
 type ServiceKey string
 
-// ServiceRegistry manages kernel-scoped shared state with load-or-store semantics.
+// ServiceRegistry stores typed kernel substrate state for owner packages such as
+// runtime, agent, and internal runtime assembly helpers. It is not a public
+// extension/composition registry.
 type ServiceRegistry struct {
 	mu     sync.RWMutex
 	values map[ServiceKey]any

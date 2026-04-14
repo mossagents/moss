@@ -18,14 +18,14 @@ import (
 )
 
 type DoctorReport struct {
-	App        string                      `json:"app"`
-	Timestamp  string                      `json:"timestamp"`
-	Workspace  string                      `json:"workspace"`
-	Config     DoctorConfigReport          `json:"config"`
-	Execution  DoctorToolPolicyReport      `json:"execution"`
-	Governance DoctorGovernanceReport      `json:"governance"`
-	Paths      DoctorPathsReport           `json:"paths"`
-	Health     DoctorHealthReport          `json:"health"`
+	App        string                 `json:"app"`
+	Timestamp  string                 `json:"timestamp"`
+	Workspace  string                 `json:"workspace"`
+	Config     DoctorConfigReport     `json:"config"`
+	Execution  DoctorToolPolicyReport `json:"execution"`
+	Governance DoctorGovernanceReport `json:"governance"`
+	Paths      DoctorPathsReport      `json:"paths"`
+	Health     DoctorHealthReport     `json:"health"`
 }
 
 type DoctorConfigReport struct {
@@ -157,7 +157,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspaceDir)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
-	normalizedApprovalMode := NormalizeApprovalMode(approvalMode)
+	normalizedApprovalMode := appruntime.NormalizeApprovalMode(approvalMode)
 	toolPolicy := resolveDoctorToolPolicy(workspaceDir, flags, explicitFlags, trust, normalizedApprovalMode)
 	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
 	commandNetworkEnforcement := "none"

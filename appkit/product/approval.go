@@ -19,35 +19,9 @@ const (
 	ApprovalModeFullAuto = "full-auto"
 )
 
-func NormalizeApprovalMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", "confirm", "ask", "safe":
-		return ApprovalModeConfirm
-	case "read-only", "readonly", "ro":
-		return ApprovalModeReadOnly
-	case "full-auto", "full", "auto":
-		return ApprovalModeFullAuto
-	default:
-		return strings.ToLower(strings.TrimSpace(mode))
-	}
-}
-
-func ValidateApprovalMode(mode string) error {
-	switch NormalizeApprovalMode(mode) {
-	case ApprovalModeReadOnly, ApprovalModeConfirm, ApprovalModeFullAuto:
-		return nil
-	default:
-		return fmt.Errorf("unknown approval mode %q (supported: read-only, confirm, full-auto)", strings.TrimSpace(mode))
-	}
-}
-
-func ApprovalModeToolPolicy(mode string) (runtime.ToolPolicy, error) {
-	return ApprovalModeToolPolicyForTrust(appconfig.TrustTrusted, mode)
-}
-
-func ApprovalModeToolPolicyForTrust(trust, mode string) (runtime.ToolPolicy, error) {
-	mode = NormalizeApprovalMode(mode)
-	if err := ValidateApprovalMode(mode); err != nil {
+func approvalModeToolPolicyForTrust(trust, mode string) (runtime.ToolPolicy, error) {
+	mode = runtime.NormalizeApprovalMode(mode)
+	if err := runtime.ValidateApprovalMode(mode); err != nil {
 		return runtime.ToolPolicy{}, err
 	}
 	return runtime.ResolveToolPolicyForWorkspace("", trust, mode), nil
@@ -58,11 +32,11 @@ func ApplyApprovalMode(k *kernel.Kernel, mode string) (string, error) {
 }
 
 func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, error) {
-	mode = NormalizeApprovalMode(mode)
-	if err := ValidateApprovalMode(mode); err != nil {
+	mode = runtime.NormalizeApprovalMode(mode)
+	if err := runtime.ValidateApprovalMode(mode); err != nil {
 		return "", err
 	}
-	policy, err := ApprovalModeToolPolicyForTrust(trust, mode)
+	policy, err := approvalModeToolPolicyForTrust(trust, mode)
 	if err != nil {
 		return "", err
 	}
@@ -73,8 +47,8 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) err
 	if k == nil {
 		return fmt.Errorf("kernel is nil")
 	}
-	mode := NormalizeApprovalMode(profile.ApprovalMode)
-	if err := ValidateApprovalMode(mode); err != nil {
+	mode := runtime.NormalizeApprovalMode(profile.ApprovalMode)
+	if err := runtime.ValidateApprovalMode(mode); err != nil {
 		return err
 	}
 	return runtimepolicy.Apply(k, profile.ToolPolicy)

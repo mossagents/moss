@@ -653,14 +653,15 @@ func (s *ChatService) GetTools() []ToolInfo {
 	if s.k == nil {
 		return nil
 	}
-	specs := s.k.ToolRegistry().List()
-	infos := make([]ToolInfo, 0, len(specs))
-	for _, sp := range specs {
+	tools := s.k.ToolRegistry().List()
+	infos := make([]ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		spec := t.Spec()
 		infos = append(infos, ToolInfo{
-			Name:        sp.Name,
-			Description: sp.Description,
-			Risk:        string(sp.Risk),
-			Source:      sp.Source,
+			Name:        spec.Name,
+			Description: spec.Description,
+			Risk:        string(spec.Risk),
+			Source:      spec.Source,
 		})
 	}
 	return infos
@@ -671,7 +672,7 @@ func (s *ChatService) GetSkills() []SkillInfo {
 	if s.k == nil {
 		return nil
 	}
-	manager := appruntime.CapabilityManager(s.k)
+	manager, _ := appruntime.LookupCapabilityManager(s.k)
 	workspaceDir := s.cfg.workspace
 	if strings.TrimSpace(workspaceDir) == "" {
 		workspaceDir = "."
@@ -679,7 +680,10 @@ func (s *ChatService) GetSkills() []SkillInfo {
 	manifests := skill.DiscoverSkillManifestsForTrust(workspaceDir, s.cfg.trust)
 	infos := make([]SkillInfo, 0, len(manifests))
 	for _, manifest := range manifests {
-		_, active := manager.Get(manifest.Name)
+		active := false
+		if manager != nil {
+			_, active = manager.Get(manifest.Name)
+		}
 		infos = append(infos, SkillInfo{
 			Name:        manifest.Name,
 			Description: manifest.Description,
@@ -983,7 +987,7 @@ func (s *ChatService) invokeTool(ctx context.Context, name string, input any) (j
 	if s.k == nil {
 		return nil, fmt.Errorf("kernel not initialized")
 	}
-	_, handler, ok := s.k.ToolRegistry().Get(name)
+	toolImpl, ok := s.k.ToolRegistry().Get(name)
 	if !ok {
 		return nil, fmt.Errorf("tool %q not available", name)
 	}
@@ -991,7 +995,7 @@ func (s *ChatService) invokeTool(ctx context.Context, name string, input any) (j
 	if err != nil {
 		return nil, fmt.Errorf("marshal tool input: %w", err)
 	}
-	return handler(ctx, raw)
+	return toolImpl.Execute(ctx, raw)
 }
 
 type desktopSlashCommandHandler func(*ChatService, context.Context, []string) (string, error)
@@ -1070,10 +1074,10 @@ func (s *ChatService) hasSkillLikeTarget(name string) bool {
 	if name == "" || s.k == nil {
 		return false
 	}
-	if _, _, ok := s.k.ToolRegistry().Get(name); ok {
+	if _, ok := s.k.ToolRegistry().Get(name); ok {
 		return true
 	}
-	if manager := appruntime.CapabilityManager(s.k); manager != nil {
+	if manager, ok := appruntime.LookupCapabilityManager(s.k); ok && manager != nil {
 		if _, ok := manager.Get(name); ok {
 			return true
 		}

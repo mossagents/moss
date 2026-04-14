@@ -87,9 +87,14 @@ func (s *kernelInitState) loadInitialSession() error {
 		return fmt.Errorf("session %q not found", s.cfg.InitialSessionID)
 	}
 	s.sess = sess
+	currentPosture, err := postureFromRuntime(s.wCfg.Workspace, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode)
+	if err != nil {
+		s.cancel()
+		return err
+	}
 	plan, err := planPostureRebuild(
 		s.cfg.InitialSessionID,
-		postureFromRuntime(s.wCfg.Workspace, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode),
+		currentPosture,
 		runtime.SessionPostureFromSession(s.sess),
 	)
 	if err != nil {

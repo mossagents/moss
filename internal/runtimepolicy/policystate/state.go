@@ -20,6 +20,7 @@ type State struct {
 	sessionHookInstalled bool
 }
 
+// Ensure returns the tool-policy substrate state owned by internal runtime policy.
 func Ensure(k *kernel.Kernel) *State {
 	if k == nil {
 		return nil
@@ -28,6 +29,7 @@ func Ensure(k *kernel.Kernel) *State {
 	return actual.(*State)
 }
 
+// Lookup returns the current tool-policy substrate state without creating it.
 func Lookup(k *kernel.Kernel) (*State, bool) {
 	if k == nil {
 		return nil, false

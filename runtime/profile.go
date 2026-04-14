@@ -99,7 +99,7 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 		return ResolvedProfile{}, fmt.Errorf("unknown profile %q", requested)
 	}
 	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
-	approval := normalizeToolApprovalMode(strutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
+	approval := NormalizeApprovalMode(strutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
 	policy := ResolveToolPolicyForWorkspace(opts.Workspace, trust, approval)
 	var overrideErr error
 	policy, overrideErr = ApplyProfileToolPolicy(policy, resolvedCfg.Execution)
@@ -120,20 +120,39 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 
 func ResolveProfileFromPosture(profileName string, posture SessionPosture) (ResolvedProfile, error) {
 	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(posture.EffectiveTrust, appconfig.TrustTrusted))
-	approval := normalizeToolApprovalMode(strutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
+	approval := NormalizeApprovalMode(strutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
 	policy := posture.ToolPolicy
 	if !posture.HasToolPolicy {
 		policy = ResolveToolPolicyForWorkspace("", trust, approval)
 	}
 	return ResolvedProfile{
-		RequestedName:   strings.TrimSpace(profileName),
-		Name:            strutil.FirstNonEmpty(strings.TrimSpace(profileName), "default"),
-		Label:           strutil.FirstNonEmpty(strings.TrimSpace(profileName), "Default"),
-		TaskMode:        strutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
-		Trust:           trust,
-		ApprovalMode:    approval,
-		ToolPolicy:      policy,
+		RequestedName: strings.TrimSpace(profileName),
+		Name:          strutil.FirstNonEmpty(strings.TrimSpace(profileName), "default"),
+		Label:         strutil.FirstNonEmpty(strings.TrimSpace(profileName), "Default"),
+		TaskMode:      strutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
+		Trust:         trust,
+		ApprovalMode:  approval,
+		ToolPolicy:    policy,
 	}, nil
+}
+
+func SessionPostureFromResolvedProfile(resolved ResolvedProfile) SessionPosture {
+	return SessionPosture{
+		Profile:           strings.TrimSpace(resolved.Name),
+		EffectiveTrust:    appconfig.NormalizeTrustLevel(resolved.Trust),
+		EffectiveApproval: NormalizeApprovalMode(resolved.ApprovalMode),
+		TaskMode:          strutil.FirstNonEmpty(strings.TrimSpace(resolved.TaskMode), strings.TrimSpace(resolved.Name), "coding"),
+		ToolPolicy:        cloneToolPolicy(resolved.ToolPolicy),
+		HasToolPolicy:     true,
+	}
+}
+
+func ResolveSessionPostureForWorkspace(opts ProfileResolveOptions) (SessionPosture, ResolvedProfile, error) {
+	resolved, err := ResolveProfileForWorkspace(opts)
+	if err != nil {
+		return SessionPosture{}, ResolvedProfile{}, err
+	}
+	return SessionPostureFromResolvedProfile(resolved), resolved, nil
 }
 
 func ApplyResolvedProfileToSessionConfig(cfg session.SessionConfig, resolved ResolvedProfile) session.SessionConfig {
@@ -169,13 +188,13 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 	}
 	posture.Profile = strings.TrimSpace(sess.Config.Profile)
 	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
-	posture.EffectiveApproval = normalizeToolApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
+	posture.EffectiveApproval = NormalizeApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
 	posture.TaskMode = strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
 	if policy, ok := metadataToolPolicy(sess.Config.Metadata); ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true
 		if posture.EffectiveApproval == "" {
-			posture.EffectiveApproval = normalizeToolApprovalMode(policy.ApprovalMode)
+			posture.EffectiveApproval = NormalizeApprovalMode(policy.ApprovalMode)
 		}
 		if posture.EffectiveTrust == "" {
 			posture.EffectiveTrust = appconfig.NormalizeTrustLevel(policy.Trust)

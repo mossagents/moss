@@ -390,7 +390,7 @@ Body content.
 	}
 }
 
-func TestDiscoverSkillManifests_AppDirIncludesLegacyMoss(t *testing.T) {
+func TestDiscoverSkillManifests_AppDirUsesCurrentAppNameOnly(t *testing.T) {
 	workspace := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -398,6 +398,19 @@ func TestDiscoverSkillManifests_AppDirIncludesLegacyMoss(t *testing.T) {
 
 	config.SetAppName("mosscode")
 	t.Cleanup(func() { config.SetAppName("moss") })
+
+	projectAppDir := filepath.Join(workspace, ".mosscode", "skills", "current-project")
+	if err := os.MkdirAll(projectAppDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectAppDir, "SKILL.md"), []byte(`---
+name: current-project
+description: current project path
+---
+current project body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	projectLegacyDir := filepath.Join(workspace, ".moss", "skills", "legacy-project")
 	if err := os.MkdirAll(projectLegacyDir, 0755); err != nil {
@@ -408,6 +421,19 @@ name: legacy-project
 description: legacy project path
 ---
 legacy project body
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	globalAppDir := filepath.Join(home, ".mosscode", "skills", "current-global")
+	if err := os.MkdirAll(globalAppDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(globalAppDir, "SKILL.md"), []byte(`---
+name: current-global
+description: current global path
+---
+current global body
 `), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -431,11 +457,17 @@ legacy global body
 		byName[mf.Name] = mf
 	}
 
-	if _, ok := byName["legacy-project"]; !ok {
-		t.Fatal("missing legacy-project from .moss/skills")
+	if _, ok := byName["current-project"]; !ok {
+		t.Fatal("missing current-project from .mosscode/skills")
 	}
-	if _, ok := byName["legacy-global"]; !ok {
-		t.Fatal("missing legacy-global from ~/.moss/skills")
+	if _, ok := byName["current-global"]; !ok {
+		t.Fatal("missing current-global from ~/.mosscode/skills")
+	}
+	if _, ok := byName["legacy-project"]; ok {
+		t.Fatal("unexpected legacy-project from .moss/skills")
+	}
+	if _, ok := byName["legacy-global"]; ok {
+		t.Fatal("unexpected legacy-global from ~/.moss/skills")
 	}
 }
 

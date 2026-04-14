@@ -108,6 +108,7 @@ func WithPlanningDefaults() kernel.Option {
 	return WithPlanningSessionManager(nil)
 }
 
+// ensurePlanningState owns the planning substrate slot on the kernel service registry.
 func ensurePlanningState(k *kernel.Kernel) *planningState {
 	actual, loaded := k.Services().LoadOrStore(planningStateKey, &planningState{})
 	st := actual.(*planningState)

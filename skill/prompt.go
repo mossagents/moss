@@ -164,8 +164,8 @@ func splitFrontmatter(content string) (frontmatter, body string, err error) {
 // DiscoverSkills 扫描标准目录并加载 SKILL.md 内容。
 // 按以下优先级扫描（project → global）：
 //
-//	Project: .agents/skills/, .agent/skills/, .moss/skills/
-//	Global:  ~/.copilot/skills/, ~/.copilot/installed-plugins/**/skills/, ~/.agents/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.moss/skills/
+//	Project: .agents/skills/, .agent/skills/, .<app>/skills/
+//	Global:  ~/.copilot/skills/, ~/.copilot/installed-plugins/**/skills/, ~/.agents/skills/, ~/.agent/skills/, ~/.config/agents/skills/, ~/.<app>/skills/
 func DiscoverSkills(workspace string) []*Skill {
 	manifests := DiscoverSkillManifests(workspace)
 	return discoverSkillsFromManifests(manifests)
@@ -215,16 +215,11 @@ func DiscoverSkillManifestsWithOptions(workspace string, opts DiscoverOptions) [
 	var manifests []Manifest
 
 	appDir := "." + appconfig.AppName()
-	legacyAppDir := ".moss"
-
 	// Project-level 目录
 	projectDirs := []string{
 		filepath.Join(workspace, ".agents", "skills"),
 		filepath.Join(workspace, ".agent", "skills"),
 		filepath.Join(workspace, appDir, "skills"),
-	}
-	if appDir != legacyAppDir {
-		projectDirs = append(projectDirs, filepath.Join(workspace, legacyAppDir, "skills"))
 	}
 
 	// Global-level 目录
@@ -237,9 +232,6 @@ func DiscoverSkillManifestsWithOptions(workspace string, opts DiscoverOptions) [
 			filepath.Join(home, ".agent", "skills"),
 			filepath.Join(home, appDir, "skills"),
 		)
-		if appDir != legacyAppDir {
-			globalDirs = append(globalDirs, filepath.Join(home, legacyAppDir, "skills"))
-		}
 		globalDirs = append(globalDirs, filepath.Join(home, ".config", "agents", "skills"))
 	}
 

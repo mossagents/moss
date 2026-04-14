@@ -206,7 +206,9 @@ func (k *Kernel) Prompts() *PromptAssembler {
 	return k.prompts
 }
 
-// Services returns the kernel-scoped shared service registry.
+// Services returns the kernel substrate registry used by typed owner packages.
+// Public composition should prefer features/options instead of treating this as
+// an extension surface.
 func (k *Kernel) Services() *ServiceRegistry {
 	return k.services
 }

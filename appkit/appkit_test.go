@@ -17,26 +17,9 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/kernel/workspace"
 	rt "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
 )
-
-type appkitTestWorkspace struct{}
-
-func (appkitTestWorkspace) ReadFile(_ context.Context, _ string) ([]byte, error)    { return nil, nil }
-func (appkitTestWorkspace) WriteFile(_ context.Context, _ string, _ []byte) error   { return nil }
-func (appkitTestWorkspace) ListFiles(_ context.Context, _ string) ([]string, error) { return nil, nil }
-func (appkitTestWorkspace) Stat(_ context.Context, _ string) (workspace.FileInfo, error) {
-	return workspace.FileInfo{}, nil
-}
-func (appkitTestWorkspace) DeleteFile(_ context.Context, _ string) error { return nil }
-
-type appkitTestExecutor struct{}
-
-func (appkitTestExecutor) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
-	return workspace.ExecOutput{}, nil
-}
 
 func TestDefaultTemplateContext(t *testing.T) {
 	ctx := config.DefaultTemplateContext("/workspace")
@@ -331,29 +314,6 @@ func TestBuildKernel_DefaultManagedBackendProvidesPorts(t *testing.T) {
 	}
 }
 
-func TestBuildKernel_ExplicitPortsBypassDefaultLocalBackend(t *testing.T) {
-	flags := isolatedBuildFlags(t)
-	ws := appkitTestWorkspace{}
-	exec := appkitTestExecutor{}
-
-	k, err := BuildKernel(context.Background(), flags, &io.NoOpIO{},
-		kernel.WithWorkspace(ws),
-		kernel.WithExecutor(exec),
-	)
-	if err != nil {
-		t.Fatalf("BuildKernel: %v", err)
-	}
-	if got := k.Workspace(); got != ws {
-		t.Fatalf("workspace = %#v, want %#v", got, ws)
-	}
-	if got := k.Executor(); got != exec {
-		t.Fatalf("executor = %#v, want %#v", got, exec)
-	}
-	if k.Sandbox() != nil {
-		t.Fatal("expected explicit workspace/executor injection to bypass default local sandbox backend")
-	}
-}
-
 func isolatedBuildFlags(t *testing.T) *AppFlags {
 	t.Helper()
 	home := t.TempDir()
@@ -483,8 +443,10 @@ trust_level: restricted
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures restricted: %v", err)
 	}
-	if _, ok := rt.CapabilityManager(restricted).Get("project-skill"); ok {
-		t.Fatal("restricted trust should not load project skill")
+	if manager, ok := rt.LookupCapabilityManager(restricted); ok && manager != nil {
+		if _, ok := manager.Get("project-skill"); ok {
+			t.Fatal("restricted trust should not load project skill")
+		}
 	}
 	if _, ok := harness.SubagentCatalogOf(restricted).Get("project-agent"); ok {
 		t.Fatal("restricted trust should not load project agent")
@@ -498,7 +460,11 @@ trust_level: restricted
 	if err != nil {
 		t.Fatalf("BuildKernelWithFeatures trusted: %v", err)
 	}
-	if _, ok := rt.CapabilityManager(trusted).Get("project-skill"); !ok {
+	manager, ok := rt.LookupCapabilityManager(trusted)
+	if !ok || manager == nil {
+		t.Fatal("trusted workspace should expose capability manager")
+	}
+	if _, ok := manager.Get("project-skill"); !ok {
 		t.Fatal("trusted workspace should load project skill")
 	}
 	if _, ok := harness.SubagentCatalogOf(trusted).Get("project-agent"); !ok {

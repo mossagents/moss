@@ -26,6 +26,7 @@ func WithPersistentSessionStore(store session.SessionStore) Option {
 	}
 }
 
+// ensurePersistentSessionStoreState owns the persistent-session substrate slot.
 func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 	actual, loaded := k.Services().LoadOrStore(persistentSessionStoreStateKey, &persistentSessionStoreState{})
 	st := actual.(*persistentSessionStoreState)
