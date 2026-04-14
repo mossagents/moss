@@ -135,6 +135,7 @@ Recommended shape:
 - `type RunAgentRequest struct`
   - `Session *session.Session` (required)
   - `Agent Agent` (required)
+  - `UserContent *model.Message` (optional invocation trigger content)
   - `IO io.UserIO` (optional override; defaults to kernel IO)
   - `Tools tool.Registry` (optional override; defaults to kernel registry)
 
@@ -143,6 +144,7 @@ Responsibilities:
 - validate required request fields
 - normalize optional IO/tool overrides onto one canonical execution path
 - normalize the effective IO through the same goroutine-safe wrapping currently provided by the legacy wrappers
+- populate `InvocationContext.UserContent()` from the explicit request field when present
 - create the invocation context once
 - execute the supplied agent through the one shared event-stream path
 
@@ -209,7 +211,9 @@ That hidden behavior should be deleted.
 After P3:
 
 - callers append the user message to the session explicitly before execution
+- callers that need top-level invocation trigger context also pass that same message through `RunAgentRequest.UserContent`
 - `RunAgent(...)` executes the session it is given
+- `RunAgentRequest.UserContent` populates `InvocationContext.UserContent()` only; it does **not** append or mutate session history
 - there is no shadow input path inside a runner shell
 
 This keeps session state ownership deterministic across:
@@ -286,6 +290,7 @@ This is important because P3 is not complete if callers merely switch from `Run(
 - Missing required request fields in `RunAgentRequest` are explicit errors.
 - Missing tool registry or IO overrides fall back only to the canonical kernel-owned defaults; no wrapper-specific behavior is preserved.
 - The canonical `RunAgent(...)` path must preserve goroutine-safe IO normalization for both default IO and request-scoped IO overrides.
+- `InvocationContext.UserContent()` is populated only from `RunAgentRequest.UserContent`; `RunAgent(...)` must not infer it by peeking at or mutating session history.
 - Supplying `RunAgentRequest.Tools` for an agent that cannot honor request-scoped tool rebinding is an explicit error.
 - If a sync caller requests a collected result and the run fails, the caller receives the run error explicitly.
 - If a sync caller requests a collected result for an agent that does not produce an authoritative terminal result, the collector returns an explicit error.
@@ -307,6 +312,7 @@ Focused coverage should include:
 
 1. **kernel execution API tests**
    - request validation
+   - explicit `UserContent` propagation into `InvocationContext`
    - IO override path
    - IO sync-wrapping on the canonical path
    - tool-registry override path
