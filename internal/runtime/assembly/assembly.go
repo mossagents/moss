@@ -1,4 +1,4 @@
-package runtimeassembly
+package assembly
 
 import (
 	"context"
@@ -11,8 +11,8 @@ import (
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/runtimecapability"
-	"github.com/mossagents/moss/internal/runtimepolicy"
+	runtimecapa "github.com/mossagents/moss/internal/runtime/capability"
+	"github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
@@ -65,7 +65,7 @@ func Install(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Con
 		return err
 	}
 	cfg.CapabilityReporter = appruntime.NewCapabilityReporter(appruntime.CapabilityStatusPath(), cfg.CapabilityReporter)
-	if err := runtimepolicy.Apply(k, appruntime.ResolveToolPolicyForWorkspace(workspaceDir, cfg.Trust, "confirm")); err != nil {
+	if err := policy.Apply(k, appruntime.ResolveToolPolicyForWorkspace(workspaceDir, cfg.Trust, "confirm")); err != nil {
 		return err
 	}
 	return newLifecycleManager().Run(ctx, k, workspaceDir, cfg)
@@ -143,10 +143,10 @@ func (builtinToolsCapability) Name() string            { return "builtin-tools" 
 func (builtinToolsCapability) Critical() bool          { return true }
 func (builtinToolsCapability) Enabled(cfg Config) bool { return cfg.BuiltinTools }
 func (builtinToolsCapability) Register(ctx context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	return runtimecapability.Manager(k).Register(ctx, &builtinToolsProvider{}, runtimecapability.CapabilityDeps(k))
+	return runtimecapa.Manager(k).Register(ctx, &builtinToolsProvider{}, runtimecapa.CapabilityDeps(k))
 }
 func (builtinToolsCapability) Validate(_ context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	manager, ok := runtimecapability.LookupManager(k)
+	manager, ok := runtimecapa.LookupManager(k)
 	if !ok || manager == nil {
 		return fmt.Errorf("runtime validation failed: capability manager missing")
 	}
@@ -171,7 +171,7 @@ func (mcpCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDi
 		report(cfg.CapabilityReporter, ctx, "mcp:global-config", true, "failed", err)
 		return fmt.Errorf("load global config: %w", err)
 	}
-	deps := runtimecapability.CapabilityDeps(k)
+	deps := runtimecapa.CapabilityDeps(k)
 	allSkills := append([]appconfig.SkillConfig(nil), globalCfg.Skills...)
 	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspaceDir, cfg.Trust)
 	if err != nil {
@@ -228,14 +228,14 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 		return err
 	}
 	if cfg.ProgressiveSkills {
-		runtimecapability.SetSkillManifests(k, ordered)
-		runtimecapability.EnableProgressiveSkills(k)
+		runtimecapa.SetSkillManifests(k, ordered)
+		runtimecapa.EnableProgressiveSkills(k)
 		for _, mf := range ordered {
 			report(cfg.CapabilityReporter, ctx, "skill-manifest:"+mf.Name, false, "discoverable", nil)
 		}
-		return runtimecapability.RegisterProgressiveSkillTools(k)
+		return runtimecapa.RegisterProgressiveSkillTools(k)
 	}
-	deps := runtimecapability.CapabilityDeps(k)
+	deps := runtimecapa.CapabilityDeps(k)
 	for _, mf := range ordered {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
@@ -246,7 +246,7 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 			)
 			continue
 		}
-		if err := runtimecapability.Manager(k).Register(ctx, ps, deps); err != nil {
+		if err := runtimecapa.Manager(k).Register(ctx, ps, deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "skill:"+ps.Metadata().Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load skill",
 				slog.String("skill", ps.Metadata().Name),
@@ -321,7 +321,7 @@ func registerMCPServers(ctx context.Context, cfg Config, deps capability.Deps, s
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
-		if err := runtimecapability.Manager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+		if err := runtimecapa.Manager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
 			if sc.IsRequired() {
 				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)

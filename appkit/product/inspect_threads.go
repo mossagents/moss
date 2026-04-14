@@ -3,18 +3,19 @@ package product
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/agent"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
-	"github.com/mossagents/moss/skill"
-	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/agent"
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/skill"
+	"github.com/mossagents/moss/userio/prompting"
 )
 
 type InspectThreadSummary struct {
@@ -273,7 +274,7 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			item.Kind = "mcp"
 			item.Name = server.Name
 			item.Source = string(server.Source)
-			item.Details = strutil.FirstNonEmpty(server.Target, server.Transport)
+			item.Details = stringutil.FirstNonEmpty(server.Target, server.Transport)
 			if item.State == "" {
 				item.State = server.Status
 			}
@@ -344,37 +345,37 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 	fmt.Fprintf(b, "Thread:      %s\n", report.Summary.ID)
 	fmt.Fprintf(b, "Status:      %s recoverable=%t archived=%t\n", report.Summary.Status, report.Summary.Recoverable, report.Summary.Archived)
 	fmt.Fprintf(b, "Lineage:     source=%s parent=%s task=%s activity=%s\n",
-		strutil.FirstNonEmpty(report.Summary.Source, "(none)"),
-		strutil.FirstNonEmpty(report.Summary.ParentID, "(none)"),
-		strutil.FirstNonEmpty(report.Summary.TaskID, "(none)"),
-		strutil.FirstNonEmpty(report.Summary.ActivityKind, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.Source, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.ParentID, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.TaskID, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.ActivityKind, "(none)"),
 	)
-	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", strutil.FirstNonEmpty(report.Summary.Profile, "(none)"), strutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
+	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
-	fmt.Fprintf(b, "Preview:     %s\n", strutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
+	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
 	if len(report.Children) > 0 {
 		b.WriteString("Children:\n")
 		for _, child := range report.Children {
 			fmt.Fprintf(b, "- %s | status=%s | source=%s | task=%s | updated=%s\n",
-				child.ID, child.Status, strutil.FirstNonEmpty(child.Source, "(none)"), strutil.FirstNonEmpty(child.TaskID, "(none)"), strutil.FirstNonEmpty(child.UpdatedAt, "(none)"))
+				child.ID, child.Status, stringutil.FirstNonEmpty(child.Source, "(none)"), stringutil.FirstNonEmpty(child.TaskID, "(none)"), stringutil.FirstNonEmpty(child.UpdatedAt, "(none)"))
 		}
 	}
 	if len(report.Checkpoints) > 0 {
 		b.WriteString("Recent checkpoints:\n")
 		for _, item := range report.Checkpoints {
-			fmt.Fprintf(b, "- %s | snapshot=%s | patches=%d | note=%s\n", item.ID, strutil.FirstNonEmpty(item.SnapshotID, "(none)"), item.PatchCount, strutil.FirstNonEmpty(item.Note, "(none)"))
+			fmt.Fprintf(b, "- %s | snapshot=%s | patches=%d | note=%s\n", item.ID, stringutil.FirstNonEmpty(item.SnapshotID, "(none)"), item.PatchCount, stringutil.FirstNonEmpty(item.Note, "(none)"))
 		}
 	}
 	if len(report.Changes) > 0 {
 		b.WriteString("Recent changes:\n")
 		for _, item := range report.Changes {
-			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, strutil.FirstNonEmpty(item.Status, "(none)"), strutil.FirstNonEmpty(item.Title, "(none)"))
+			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, stringutil.FirstNonEmpty(item.Status, "(none)"), stringutil.FirstNonEmpty(item.Title, "(none)"))
 		}
 	}
 	if len(report.Tasks) > 0 {
 		b.WriteString("Related tasks:\n")
 		for _, item := range report.Tasks {
-			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, strutil.FirstNonEmpty(item.Status, "(none)"), strutil.FirstNonEmpty(item.Title, "(none)"))
+			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, stringutil.FirstNonEmpty(item.Status, "(none)"), stringutil.FirstNonEmpty(item.Title, "(none)"))
 		}
 	}
 }
@@ -382,18 +383,18 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 func renderInspectPromptReport(b *strings.Builder, report InspectPromptReport) {
 	fmt.Fprintf(b, "Prompt session: %s\n", report.SessionID)
 	fmt.Fprintf(b, "Profile:        profile=%s task_mode=%s instruction_profile=%s\n",
-		strutil.FirstNonEmpty(report.ProfileName, "(none)"),
-		strutil.FirstNonEmpty(report.TaskMode, "(none)"),
-		strutil.FirstNonEmpty(report.InstructionProfile, "(none)"),
+		stringutil.FirstNonEmpty(report.ProfileName, "(none)"),
+		stringutil.FirstNonEmpty(report.TaskMode, "(none)"),
+		stringutil.FirstNonEmpty(report.InstructionProfile, "(none)"),
 	)
 	fmt.Fprintf(b, "Base source:    %s | session_instructions=%t | system_prompt_chars=%d | enabled_tokens=%d\n",
-		strutil.FirstNonEmpty(report.BaseSource, "(none)"),
+		stringutil.FirstNonEmpty(report.BaseSource, "(none)"),
 		report.SessionInstructions,
 		report.SystemPromptChars,
 		report.EnabledTokenEstimate,
 	)
-	fmt.Fprintf(b, "Enabled layers: %s\n", strutil.FirstNonEmpty(strings.Join(report.EnabledLayers, ","), "(none)"))
-	fmt.Fprintf(b, "Suppressed:     %s\n", strutil.FirstNonEmpty(strings.Join(report.SuppressedLayers, ","), "(none)"))
+	fmt.Fprintf(b, "Enabled layers: %s\n", stringutil.FirstNonEmpty(strings.Join(report.EnabledLayers, ","), "(none)"))
+	fmt.Fprintf(b, "Suppressed:     %s\n", stringutil.FirstNonEmpty(strings.Join(report.SuppressedLayers, ","), "(none)"))
 	if len(report.SuppressionReasons) > 0 {
 		keys := make([]string, 0, len(report.SuppressionReasons))
 		for key := range report.SuppressionReasons {
@@ -405,8 +406,8 @@ func renderInspectPromptReport(b *strings.Builder, report InspectPromptReport) {
 			fmt.Fprintf(b, "- %s=%s\n", key, report.SuppressionReasons[key])
 		}
 	}
-	fmt.Fprintf(b, "Dynamic sections: %s\n", strutil.FirstNonEmpty(strings.Join(report.DynamicSections, ","), "(none)"))
-	fmt.Fprintf(b, "Source chain:    %s\n", strutil.FirstNonEmpty(strings.Join(report.SourceChain, " -> "), "(none)"))
+	fmt.Fprintf(b, "Dynamic sections: %s\n", stringutil.FirstNonEmpty(strings.Join(report.DynamicSections, ","), "(none)"))
+	fmt.Fprintf(b, "Source chain:    %s\n", stringutil.FirstNonEmpty(strings.Join(report.SourceChain, " -> "), "(none)"))
 }
 
 func renderInspectCapabilityReport(b *strings.Builder, report InspectCapabilityReport) {
@@ -420,11 +421,11 @@ func renderInspectCapabilityReport(b *strings.Builder, report InspectCapabilityR
 	b.WriteString("Capabilities:\n")
 	for _, item := range report.Items {
 		fmt.Fprintf(b, "- %s | kind=%s | state=%s | critical=%t | source=%s",
-			strutil.FirstNonEmpty(item.Name, item.Capability),
-			strutil.FirstNonEmpty(item.Kind, "(none)"),
-			strutil.FirstNonEmpty(item.State, "(unknown)"),
+			stringutil.FirstNonEmpty(item.Name, item.Capability),
+			stringutil.FirstNonEmpty(item.Kind, "(none)"),
+			stringutil.FirstNonEmpty(item.State, "(unknown)"),
 			item.Critical,
-			strutil.FirstNonEmpty(item.Source, "(none)"),
+			stringutil.FirstNonEmpty(item.Source, "(none)"),
 		)
 		if item.Details != "" {
 			fmt.Fprintf(b, " | details=%s", item.Details)

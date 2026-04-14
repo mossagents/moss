@@ -1,4 +1,4 @@
-package runtimecapability
+package capability
 
 import (
 	"context"

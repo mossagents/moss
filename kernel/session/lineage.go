@@ -1,11 +1,12 @@
 package session
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
-	"github.com/mossagents/moss/kernel/checkpoint"
 	"sort"
 	"strings"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
 // LineageKind 表示线程/检查点目录里的统一引用类型。
@@ -62,11 +63,11 @@ type CheckpointRef struct {
 // ForkSource 统一表示从 session/checkpoint fork 的来源。
 type ForkSource struct {
 	Kind         checkpoint.ForkSourceKind `json:"kind"`
-	SourceID     string              `json:"source_id"`
-	SessionID    string              `json:"session_id,omitempty"`
-	CheckpointID string              `json:"checkpoint_id,omitempty"`
-	Label        string              `json:"label,omitempty"`
-	Lineage      []LineageRef        `json:"lineage,omitempty"`
+	SourceID     string                    `json:"source_id"`
+	SessionID    string                    `json:"session_id,omitempty"`
+	CheckpointID string                    `json:"checkpoint_id,omitempty"`
+	Label        string                    `json:"label,omitempty"`
+	Lineage      []LineageRef              `json:"lineage,omitempty"`
 }
 
 // ThreadQuery 用于筛选线程目录。
@@ -190,7 +191,7 @@ func (c Catalog) ResolveForkSource(ctx context.Context, kind checkpoint.ForkSour
 			Kind:      checkpoint.ForkSourceSession,
 			SourceID:  thread.SessionID,
 			SessionID: thread.SessionID,
-			Label:     strutil.FirstNonEmpty(thread.Preview, thread.Goal, thread.SessionID),
+			Label:     stringutil.FirstNonEmpty(thread.Preview, thread.Goal, thread.SessionID),
 			Lineage:   append([]LineageRef(nil), thread.Lineage...),
 		}, nil
 	case checkpoint.ForkSourceCheckpoint:
@@ -207,7 +208,7 @@ func (c Catalog) ResolveForkSource(ctx context.Context, kind checkpoint.ForkSour
 			SourceID:     ref.ID,
 			SessionID:    ref.SessionID,
 			CheckpointID: ref.ID,
-			Label:        strutil.FirstNonEmpty(ref.Note, ref.ID),
+			Label:        stringutil.FirstNonEmpty(ref.Note, ref.ID),
 			Lineage:      append([]LineageRef(nil), ref.Lineage...),
 		}, nil
 	default:
@@ -220,7 +221,7 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 		Kind:      LineageKindSession,
 		ID:        summary.ID,
 		SessionID: summary.ID,
-		Label:     strutil.FirstNonEmpty(summary.Preview, summary.Goal, summary.ID),
+		Label:     stringutil.FirstNonEmpty(summary.Preview, summary.Goal, summary.ID),
 	}}
 	if summary.ParentID != "" {
 		lineage = append(lineage, LineageRef{
@@ -297,7 +298,7 @@ func CheckpointRefFromRecord(record checkpoint.CheckpointRecord) CheckpointRef {
 		Kind:      LineageKindCheckpoint,
 		ID:        record.ID,
 		SessionID: record.SessionID,
-		Label:     strutil.FirstNonEmpty(record.Note, record.ID),
+		Label:     stringutil.FirstNonEmpty(record.Note, record.ID),
 	})
 	return CheckpointRef{
 		ID:                 record.ID,

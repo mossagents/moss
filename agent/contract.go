@@ -1,13 +1,14 @@
 package agent
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
 
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -75,8 +76,8 @@ func (r *contractRegistry) wrapTool(t tool.Tool) tool.Tool {
 }
 
 func normalizeTaskContract(contract taskrt.TaskContract, taskID string, goal string, scoped tool.Registry, cfg AgentConfig) taskrt.TaskContract {
-	contract.TaskID = strings.TrimSpace(strutil.FirstNonEmpty(contract.TaskID, taskID))
-	contract.Goal = strings.TrimSpace(strutil.FirstNonEmpty(contract.Goal, goal))
+	contract.TaskID = strings.TrimSpace(stringutil.FirstNonEmpty(contract.TaskID, taskID))
+	contract.Goal = strings.TrimSpace(stringutil.FirstNonEmpty(contract.Goal, goal))
 	contract.InputContext = strings.TrimSpace(contract.InputContext)
 	contract.MemoryScope = strings.TrimSpace(contract.MemoryScope)
 	contract.WritableScopes = normalizeScopeList(contract.WritableScopes)
@@ -344,5 +345,3 @@ func applyContractTimeout(ctx context.Context, contract taskrt.TaskContract) (co
 	}
 	return context.WithTimeout(ctx, time.Duration(contract.Budget.TimeoutSec)*time.Second)
 }
-
-

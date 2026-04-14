@@ -1,10 +1,10 @@
-package runtimepolicy
+package policy
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/mossagents/moss/internal/runtimepolicy/policystate"
+	"github.com/mossagents/moss/internal/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"

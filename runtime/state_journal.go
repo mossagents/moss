@@ -3,11 +3,12 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/observe"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
@@ -16,7 +17,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 		recordID = strings.TrimSpace(event.CallID)
 	}
 	if recordID == "" {
-		recordID = fmt.Sprintf("%d-%s-%s", event.Timestamp.UTC().UnixNano(), event.Type, strutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), strings.TrimSpace(event.Model)))
+		recordID = fmt.Sprintf("%d-%s-%s", event.Timestamp.UTC().UnixNano(), event.Type, stringutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), strings.TrimSpace(event.Model)))
 	}
 	title := string(event.Type)
 	if strings.TrimSpace(event.ToolName) != "" {
@@ -28,7 +29,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 		SessionID: strings.TrimSpace(event.SessionID),
 		Status:    strings.TrimSpace(event.Error),
 		Title:     title,
-		Summary:   strutil.FirstNonEmpty(strings.TrimSpace(event.ReasonCode), strings.TrimSpace(event.Risk)),
+		Summary:   stringutil.FirstNonEmpty(strings.TrimSpace(event.ReasonCode), strings.TrimSpace(event.Risk)),
 		SearchText: normalizeStateText(
 			string(event.Type),
 			event.SessionID,

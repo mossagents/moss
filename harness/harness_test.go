@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagents/moss/internal/runtimepolicy"
+	runtimepolicy "github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"

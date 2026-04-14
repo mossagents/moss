@@ -1,5 +1,5 @@
-// Package strutil provides lightweight string helpers shared across the module.
-package strutil
+// Package stringutil provides lightweight string helpers shared across the module.
+package stringutil
 
 import "strings"
 

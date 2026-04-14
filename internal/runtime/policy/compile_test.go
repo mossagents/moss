@@ -1,4 +1,4 @@
-package runtimepolicy
+package policy
 
 import (
 	"encoding/json"

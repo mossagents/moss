@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/internal/runtimeassembly"
-	"github.com/mossagents/moss/internal/runtimecontext"
-	"github.com/mossagents/moss/internal/runtimeplanning"
+	"github.com/mossagents/moss/internal/runtime/assembly"
+	runtimectx "github.com/mossagents/moss/internal/runtime/context"
+	"github.com/mossagents/moss/internal/runtime/planning"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -86,7 +86,7 @@ func RuntimeSetup(workspaceDir, trust string, opts ...RuntimeSetupOption) Featur
 		},
 		InstallFunc: func(ctx context.Context, h *Harness) error {
 			cfg := resolveRuntimeSetupConfig(opts)
-			return runtimeassembly.Install(ctx, h.Kernel(), workspaceDir, runtimeassembly.Config{
+			return assembly.Install(ctx, h.Kernel(), workspaceDir, assembly.Config{
 				BuiltinTools:       cfg.builtinTools,
 				MCPServers:         cfg.mcpServers,
 				Skills:             cfg.skills,
@@ -150,7 +150,7 @@ func WithContextStartupBudget(n int) ContextOption {
 	}
 }
 
-func runtimeContextOptions(opts []ContextOption) []runtimecontext.ContextOption {
+func runtimeContextOptions(opts []ContextOption) []runtimectx.ContextOption {
 	var cfg contextFeatureConfig
 	for _, opt := range opts {
 		if opt == nil {
@@ -158,21 +158,21 @@ func runtimeContextOptions(opts []ContextOption) []runtimecontext.ContextOption 
 		}
 		opt(&cfg)
 	}
-	out := make([]runtimecontext.ContextOption, 0, 5)
+	out := make([]runtimectx.ContextOption, 0, 5)
 	if cfg.triggerDialog != nil {
-		out = append(out, runtimecontext.WithTriggerDialogCount(*cfg.triggerDialog))
+		out = append(out, runtimectx.WithTriggerDialogCount(*cfg.triggerDialog))
 	}
 	if cfg.keepRecent != nil {
-		out = append(out, runtimecontext.WithKeepRecent(*cfg.keepRecent))
+		out = append(out, runtimectx.WithKeepRecent(*cfg.keepRecent))
 	}
 	if cfg.triggerTokens != nil {
-		out = append(out, runtimecontext.WithContextTriggerTokens(*cfg.triggerTokens))
+		out = append(out, runtimectx.WithContextTriggerTokens(*cfg.triggerTokens))
 	}
 	if cfg.promptBudget != nil {
-		out = append(out, runtimecontext.WithContextPromptBudget(*cfg.promptBudget))
+		out = append(out, runtimectx.WithContextPromptBudget(*cfg.promptBudget))
 	}
 	if cfg.startupBudget != nil {
-		out = append(out, runtimecontext.WithContextStartupBudget(*cfg.startupBudget))
+		out = append(out, runtimectx.WithContextStartupBudget(*cfg.startupBudget))
 	}
 	return out
 }
@@ -186,7 +186,7 @@ func Planning() Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().Apply(runtimeplanning.WithPlanningDefaults())
+			h.Kernel().Apply(planning.WithPlanningDefaults())
 			return nil
 		},
 	}
@@ -201,8 +201,8 @@ func ContextOffload(store session.SessionStore) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().Apply(runtimecontext.WithOffloadSessionStore(store))
-			return runtimecontext.RegisterOffloadTools(
+			h.Kernel().Apply(runtimectx.WithOffloadSessionStore(store))
+			return runtimectx.RegisterOffloadTools(
 				h.Kernel().ToolRegistry(),
 				store,
 				h.Kernel().SessionManager(),
@@ -222,9 +222,9 @@ func ContextManagement(store session.SessionStore, opts ...ContextOption) Featur
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			kopts := []kernel.Option{runtimecontext.WithContextSessionStore(store)}
+			kopts := []kernel.Option{runtimectx.WithContextSessionStore(store)}
 			if rtOpts := runtimeContextOptions(opts); len(rtOpts) > 0 {
-				kopts = append(kopts, runtimecontext.ConfigureContext(rtOpts...))
+				kopts = append(kopts, runtimectx.ConfigureContext(rtOpts...))
 			}
 			h.Kernel().Apply(kopts...)
 			return nil

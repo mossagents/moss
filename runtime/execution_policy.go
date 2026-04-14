@@ -8,7 +8,7 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/runtimepolicy/policystate"
+	"github.com/mossagents/moss/internal/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"

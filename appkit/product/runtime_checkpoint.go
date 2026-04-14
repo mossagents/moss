@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/internal/strutil"
+	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
@@ -169,11 +169,11 @@ func RenderCheckpointSummaries(items []CheckpointSummary) string {
 		fmt.Fprintf(&b, "- %s | created=%s | session=%s | snapshot=%s | patches=%d | lineage=%d | note=%s\n",
 			item.ID,
 			item.CreatedAt.UTC().Format(time.RFC3339),
-			strutil.FirstNonEmpty(item.SessionID, "(none)"),
-			strutil.FirstNonEmpty(item.SnapshotID, "(none)"),
+			stringutil.FirstNonEmpty(item.SessionID, "(none)"),
+			stringutil.FirstNonEmpty(item.SnapshotID, "(none)"),
 			item.PatchCount,
 			item.LineageDepth,
-			strutil.FirstNonEmpty(item.Note, "(none)"),
+			stringutil.FirstNonEmpty(item.Note, "(none)"),
 		)
 	}
 	return strings.TrimRight(b.String(), "\n")
@@ -186,15 +186,15 @@ func RenderCheckpointDetail(item *CheckpointDetail) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Checkpoint: %s\n", item.ID)
 	fmt.Fprintf(&b, "  created:  %s\n", item.CreatedAt.UTC().Format(time.RFC3339))
-	fmt.Fprintf(&b, "  session:  %s\n", strutil.FirstNonEmpty(item.SessionID, "(none)"))
-	fmt.Fprintf(&b, "  snapshot: %s\n", strutil.FirstNonEmpty(item.SnapshotID, "(none)"))
+	fmt.Fprintf(&b, "  session:  %s\n", stringutil.FirstNonEmpty(item.SessionID, "(none)"))
+	fmt.Fprintf(&b, "  snapshot: %s\n", stringutil.FirstNonEmpty(item.SnapshotID, "(none)"))
 	fmt.Fprintf(&b, "  patches:  %d", item.PatchCount)
 	if len(item.PatchIDs) > 0 {
 		fmt.Fprintf(&b, " (%s)", renderCheckpointPatchOverview(item.PatchIDs, 5))
 	}
 	b.WriteString("\n")
 	fmt.Fprintf(&b, "  lineage:  %d\n", item.LineageDepth)
-	fmt.Fprintf(&b, "  note:     %s\n", strutil.FirstNonEmpty(item.Note, "(none)"))
+	fmt.Fprintf(&b, "  note:     %s\n", stringutil.FirstNonEmpty(item.Note, "(none)"))
 	if len(item.MetadataKeys) == 0 {
 		b.WriteString("  metadata: (none)\n")
 	} else {
@@ -205,7 +205,7 @@ func RenderCheckpointDetail(item *CheckpointDetail) string {
 		b.WriteString("    - (none)\n")
 	} else {
 		for _, ref := range item.Lineage {
-			fmt.Fprintf(&b, "    - %s %s\n", ref.Kind, strutil.FirstNonEmpty(strings.TrimSpace(ref.ID), "(none)"))
+			fmt.Fprintf(&b, "    - %s %s\n", ref.Kind, stringutil.FirstNonEmpty(strings.TrimSpace(ref.ID), "(none)"))
 		}
 	}
 	b.WriteString("Next:\n")

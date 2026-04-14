@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/bootstrap"
-	"github.com/mossagents/moss/internal/runtimeexecution"
-	"github.com/mossagents/moss/internal/runtimepolicy"
+	"github.com/mossagents/moss/internal/runtime/execution"
+	runtimepolicy "github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -175,7 +175,7 @@ func ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled boo
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			return runtimeexecution.Install(h.Kernel(), workspaceRoot, isolationRoot, isolationEnabled)
+			return execution.Install(h.Kernel(), workspaceRoot, isolationRoot, isolationEnabled)
 		},
 	}
 }

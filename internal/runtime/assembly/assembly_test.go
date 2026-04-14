@@ -1,4 +1,4 @@
-package runtimeassembly
+package assembly
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/runtimepolicy"
+	"github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
@@ -68,7 +68,7 @@ func TestInstall_DefaultToolPolicyIsRestrictedConfirm(t *testing.T) {
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	policy, ok := runtimepolicy.Current(k)
+	policy, ok := policy.Current(k)
 	if !ok {
 		t.Fatal("expected installed tool policy")
 	}

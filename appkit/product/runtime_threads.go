@@ -3,11 +3,12 @@ package product
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
+	"sort"
+
+	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"sort"
 )
 
 type ThreadBrowseSummary struct {
@@ -60,7 +61,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 			Kind:      checkpoint.ForkSourceSession,
 			SourceID:  thread.Thread.SessionID,
 			SessionID: thread.Thread.SessionID,
-			Label:     strutil.FirstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
+			Label:     stringutil.FirstNonEmpty(thread.Thread.Preview, thread.Thread.Goal, thread.Thread.SessionID),
 			Lineage:   append([]session.LineageRef(nil), thread.Thread.Lineage...),
 		})
 	}
@@ -70,7 +71,7 @@ func ListForkSources(ctx context.Context, workspace string, threadLimit, checkpo
 			SourceID:     ckpt.ID,
 			SessionID:    ckpt.SessionID,
 			CheckpointID: ckpt.ID,
-			Label:        strutil.FirstNonEmpty(ckpt.Note, ckpt.ID),
+			Label:        stringutil.FirstNonEmpty(ckpt.Note, ckpt.ID),
 			Lineage:      append([]session.LineageRef(nil), ckpt.Lineage...),
 		})
 	}

@@ -3,14 +3,15 @@ package product
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/runtimepolicy"
+	runtimepolicy2 "github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/runtime"
-	"strings"
 )
 
 const (
@@ -40,7 +41,7 @@ func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return mode, runtimepolicy.Apply(k, policy)
+	return mode, runtimepolicy2.Apply(k, policy)
 }
 
 func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) error {
@@ -51,11 +52,11 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) err
 	if err := runtime.ValidateApprovalMode(mode); err != nil {
 		return err
 	}
-	return runtimepolicy.Apply(k, profile.ToolPolicy)
+	return runtimepolicy2.Apply(k, profile.ToolPolicy)
 }
 
 func EvaluateToolPolicy(policy runtime.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
-	return runtimepolicy.Evaluate(policy, spec, input)
+	return runtimepolicy2.Evaluate(policy, spec, input)
 }
 
 func PersistProjectApprovalAmendment(workspace, profile string, amendment *io.ExecPolicyAmendment) error {

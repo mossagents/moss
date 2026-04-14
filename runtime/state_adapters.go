@@ -3,13 +3,14 @@ package runtime
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
+	"strings"
+	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"strings"
-	"time"
 )
 
 func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
@@ -31,7 +32,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 		SessionID:  sess.ID,
 		Status:     string(sess.Status),
 		Title:      title,
-		Summary:    strutil.FirstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
+		Summary:    stringutil.FirstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
 		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, taskID, preview, activityKind),
 		SortTime:   sortTime,
 		CreatedAt:  sess.CreatedAt,
@@ -87,7 +88,7 @@ func StateEntryFromCheckpoint(item *checkpoint.CheckpointRecord) (StateEntry, bo
 		RecordID:   item.ID,
 		SessionID:  sessionID,
 		Status:     "created",
-		Title:      strutil.FirstNonEmpty(strings.TrimSpace(item.Note), item.ID),
+		Title:      stringutil.FirstNonEmpty(strings.TrimSpace(item.Note), item.ID),
 		Summary:    fmt.Sprintf("patches=%d lineage=%d", len(item.PatchIDs), len(item.Lineage)),
 		SearchText: normalizeStateText(item.ID, sessionID, item.Note),
 		SortTime:   item.CreatedAt.UTC(),
@@ -182,7 +183,7 @@ func StateEntryFromJobItem(item taskrt.AgentJobItem) (StateEntry, bool) {
 		Kind:       StateKindJobItem,
 		RecordID:   recordID,
 		Status:     string(item.Status),
-		Title:      strutil.FirstNonEmpty(item.ItemID, recordID),
+		Title:      stringutil.FirstNonEmpty(item.ItemID, recordID),
 		Summary:    strings.TrimSpace(item.Executor),
 		SearchText: normalizeStateText(item.JobID, item.ItemID, item.Executor, item.Result, item.Error, string(item.Status)),
 		SortTime:   sortTime.UTC(),
@@ -211,8 +212,8 @@ func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
 		RecordID:   strings.TrimSpace(record.Path),
 		Workspace:  strings.TrimSpace(record.Workspace),
 		RepoRoot:   strings.TrimSpace(record.CWD),
-		Status:     strutil.FirstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
-		Title:      strutil.FirstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
+		Status:     stringutil.FirstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
+		Title:      stringutil.FirstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
 		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
 		SortTime:   sortTime.UTC(),

@@ -1,8 +1,12 @@
-package runtimecontext
+package context
 
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/memory"
@@ -13,9 +17,6 @@ import (
 	rt "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
-	"strings"
-	"testing"
-	"time"
 )
 
 type stubRepoStateCapture struct {
@@ -214,7 +215,7 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(strings.Repeat("new user request ", 12))}}
 	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("runtimecontext"),
+		Agent:       k.BuildLLMAgent("context"),
 		UserContent: &userMsg,
 	}); err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -283,7 +284,7 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	sess.AppendMessage(firstMsg)
 	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("runtimecontext"),
+		Agent:       k.BuildLLMAgent("context"),
 		UserContent: &firstMsg,
 	}); err != nil {
 		t.Fatalf("Run first: %v", err)
@@ -297,7 +298,7 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	sess.AppendMessage(secondMsg)
 	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("runtimecontext"),
+		Agent:       k.BuildLLMAgent("context"),
 		UserContent: &secondMsg,
 	}); err != nil {
 		t.Fatalf("Run second: %v", err)
@@ -345,7 +346,7 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 	sess.AppendMessage(latest)
 	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("runtimecontext"),
+		Agent:       k.BuildLLMAgent("context"),
 		UserContent: &latest,
 	}); err != nil {
 		t.Fatalf("RunAgent: %v", err)

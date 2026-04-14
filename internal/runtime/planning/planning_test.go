@@ -1,22 +1,22 @@
-package runtimeplanning_test
+package planning_test
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
-	"github.com/mossagents/moss/internal/runtimeplanning"
-	kernio "github.com/mossagents/moss/kernel/io"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	"github.com/mossagents/moss/internal/runtime/planning"
 	"github.com/mossagents/moss/kernel"
+	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	kt "github.com/mossagents/moss/testing"
 )
 
 func TestRegisterPlanningTools_NilManager(t *testing.T) {
 	reg := tool.NewRegistry()
-	err := runtimeplanning.RegisterPlanningTools(reg, nil)
+	err := planning.RegisterPlanningTools(reg, nil)
 	if err == nil {
 		t.Fatal("expected error for nil session manager")
 	}
@@ -26,7 +26,7 @@ func TestRegisterPlanningTools_Success(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 
-	err := runtimeplanning.RegisterPlanningTools(reg, mgr)
+	err := planning.RegisterPlanningTools(reg, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,11 +41,11 @@ func TestRegisterPlanningTools_Idempotent(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
 	// Second call should be a no-op (already registered)
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatalf("expected no error on re-registration: %v", err)
 	}
 }
@@ -53,7 +53,7 @@ func TestRegisterPlanningTools_Idempotent(t *testing.T) {
 func TestWithPlanningDefaults(t *testing.T) {
 	// WithPlanningDefaults is WithPlanningSessionManager(nil); should not panic on apply
 	k := kernel.New()
-	k.Apply(runtimeplanning.WithPlanningDefaults())
+	k.Apply(planning.WithPlanningDefaults())
 }
 
 func TestWithPlanningSessionManager(t *testing.T) {
@@ -61,7 +61,7 @@ func TestWithPlanningSessionManager(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&kernio.NoOpIO{}),
-		runtimeplanning.WithPlanningSessionManager(mgr),
+		planning.WithPlanningSessionManager(mgr),
 	)
 	ctx := context.Background()
 	if err := k.Boot(ctx); err != nil {
@@ -76,7 +76,7 @@ func TestWithPlanningSessionManager(t *testing.T) {
 func TestWriteTodosTool_NoSessionContext(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
 	entry, ok := reg.Get("write_todos")
@@ -96,7 +96,7 @@ func TestWriteTodosTool_NoSessionContext(t *testing.T) {
 func TestWriteTodosTool_WithSessionContext(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
 	entry, ok := reg.Get("write_todos")
@@ -142,7 +142,7 @@ func TestWriteTodosTool_WithSessionContext(t *testing.T) {
 func TestWriteTodosTool_EmptyTodos(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := reg.Get("write_todos")
@@ -162,7 +162,7 @@ func TestWriteTodosTool_EmptyTodos(t *testing.T) {
 func TestWriteTodosTool_MergeMode(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
-	if err := runtimeplanning.RegisterPlanningTools(reg, mgr); err != nil {
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := reg.Get("write_todos")

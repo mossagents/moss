@@ -1,9 +1,11 @@
-package runtimecontext
+package context
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
@@ -11,7 +13,6 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	rt "github.com/mossagents/moss/runtime"
-	"strings"
 )
 
 const contextStateKey kernel.ServiceKey = "context.state"

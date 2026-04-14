@@ -12,7 +12,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/internal/strutil"
+	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/logging"
 	appruntime "github.com/mossagents/moss/runtime"
@@ -272,7 +272,7 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
 		return err
 	}
-	cfg.approvalMode = strutil.FirstNonEmpty(
+	cfg.approvalMode = stringutil.FirstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
 		os.Getenv("MOSS_APPROVAL_MODE"),

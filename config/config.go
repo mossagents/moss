@@ -3,13 +3,14 @@ package config
 import (
 	"bytes"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
-	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"text/template"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"gopkg.in/yaml.v3"
 )
 
 var appName = "moss"
@@ -202,7 +203,7 @@ func NormalizeProviderIdentity(provider, name string) ProviderIdentity {
 	provider = normalizeLLMAPIType(provider)
 	name = strings.TrimSpace(name)
 
-	name = strutil.FirstNonEmpty(name, provider)
+	name = stringutil.FirstNonEmpty(name, provider)
 
 	return ProviderIdentity{
 		APIType:  provider,
@@ -212,11 +213,11 @@ func NormalizeProviderIdentity(provider, name string) ProviderIdentity {
 }
 
 func (p ProviderIdentity) EffectiveAPIType() string {
-	return normalizeLLMAPIType(strutil.FirstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider)))
+	return normalizeLLMAPIType(stringutil.FirstNonEmpty(strings.TrimSpace(p.APIType), strings.TrimSpace(p.Provider)))
 }
 
 func (p ProviderIdentity) DisplayName() string {
-	return strutil.FirstNonEmpty(strings.TrimSpace(p.Name), p.EffectiveAPIType())
+	return stringutil.FirstNonEmpty(strings.TrimSpace(p.Name), p.EffectiveAPIType())
 }
 
 func (p ProviderIdentity) Label() string {
@@ -494,8 +495,8 @@ func ResolvePromptInstructionLayers(workspace, trust string) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
-	configInstructions := strutil.FirstNonEmpty(projectCfg.BaseInstructions, globalCfg.BaseInstructions)
-	modelInstructions := strutil.FirstNonEmpty(projectCfg.ModelInstructions, globalCfg.ModelInstructions)
+	configInstructions := stringutil.FirstNonEmpty(projectCfg.BaseInstructions, globalCfg.BaseInstructions)
+	modelInstructions := stringutil.FirstNonEmpty(projectCfg.ModelInstructions, globalCfg.ModelInstructions)
 	return configInstructions, modelInstructions, nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mossagents/moss/internal/strutil"
+	"github.com/mossagents/moss/internal/stringutil"
 	appruntime "github.com/mossagents/moss/runtime"
 )
 
@@ -148,7 +148,7 @@ func inspectChangeItems(items []ChangeOperation) []InspectStateItem {
 			RecordID:  item.ID,
 			SessionID: strings.TrimSpace(item.SessionID),
 			Status:    string(item.Status),
-			Title:     strutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
+			Title:     stringutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
 			Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
 			SortTime:  changeSortTime(item),
 		})

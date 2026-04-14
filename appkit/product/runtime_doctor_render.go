@@ -2,8 +2,9 @@ package product
 
 import (
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
 	"strings"
+
+	"github.com/mossagents/moss/internal/stringutil"
 )
 
 func RenderDoctorReport(report DoctorReport) string {
@@ -11,7 +12,7 @@ func RenderDoctorReport(report DoctorReport) string {
 	fmt.Fprintf(&b, "mosscode doctor\n")
 	fmt.Fprintf(&b, "Workspace: %s\n", report.Workspace)
 	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s\n",
-		report.Config.Name, strutil.FirstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
+		report.Config.Name, stringutil.FirstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
 	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t project_allowed=%t project_active=%t\n",
 		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists, report.Config.ProjectAssetsAllowed, report.Config.ProjectConfigActive)
 	fmt.Fprintf(&b, "Execution policy: command=%s http=%s cmd_network=%s enforcement=%s degraded=%t timeout=%ds allowed_roots=%d http_methods=%s redirects=%t hosts=%s\n",
@@ -31,20 +32,20 @@ func RenderDoctorReport(report DoctorReport) string {
 	fmt.Fprintf(&b, "Model governance: retry=%t retries=%d initial=%s max=%s breaker=%t failures=%d reset=%s failover=%t available=%t candidates=%d per_candidate_retries=%d breaker_open_failover=%t router=%s",
 		report.Governance.Model.RetryEnabled,
 		report.Governance.Model.RetryMaxRetries,
-		strutil.FirstNonEmpty(report.Governance.Model.RetryInitialDelay, "-"),
-		strutil.FirstNonEmpty(report.Governance.Model.RetryMaxDelay, "-"),
+		stringutil.FirstNonEmpty(report.Governance.Model.RetryInitialDelay, "-"),
+		stringutil.FirstNonEmpty(report.Governance.Model.RetryMaxDelay, "-"),
 		report.Governance.Model.BreakerEnabled,
 		report.Governance.Model.BreakerMaxFailures,
-		strutil.FirstNonEmpty(report.Governance.Model.BreakerResetAfter, "-"),
+		stringutil.FirstNonEmpty(report.Governance.Model.BreakerResetAfter, "-"),
 		report.Governance.Model.FailoverEnabled,
 		report.Governance.Model.FailoverAvailable,
 		report.Governance.Model.FailoverMaxCandidates,
 		report.Governance.Model.FailoverPerCandidateRetries,
 		report.Governance.Model.FailoverOnBreakerOpen,
-		strutil.FirstNonEmpty(report.Governance.Model.RouterConfig, "(disabled)"))
+		stringutil.FirstNonEmpty(report.Governance.Model.RouterConfig, "(disabled)"))
 	if report.Governance.Model.RouterEnabled {
 		fmt.Fprintf(&b, " default=%s models=%d",
-			strutil.FirstNonEmpty(report.Governance.Model.RouterDefaultModel, "(unspecified)"),
+			stringutil.FirstNonEmpty(report.Governance.Model.RouterDefaultModel, "(unspecified)"),
 			report.Governance.Model.RouterModels)
 	}
 	if report.Governance.Model.PricingCatalog != "" {
@@ -111,7 +112,7 @@ func RenderDoctorReport(report DoctorReport) string {
 	b.WriteString("\n")
 	for _, server := range report.Health.Extensions.MCPServerStatus {
 		fmt.Fprintf(&b, "  MCP %s [%s]: transport=%s enabled=%t effective=%t status=%s",
-			server.Name, server.Source, strutil.FirstNonEmpty(server.Transport, "-"), server.Enabled, server.Effective, server.Status)
+			server.Name, server.Source, stringutil.FirstNonEmpty(server.Transport, "-"), server.Enabled, server.Effective, server.Status)
 		if server.Target != "" {
 			fmt.Fprintf(&b, " target=%s", server.Target)
 		}
@@ -122,14 +123,14 @@ func RenderDoctorReport(report DoctorReport) string {
 	}
 	for _, item := range report.Health.Extensions.CapabilityStatus {
 		fmt.Fprintf(&b, "  Capability %s [%s]: state=%s critical=%t",
-			strutil.FirstNonEmpty(item.Name, item.Capability), strutil.FirstNonEmpty(item.Kind, "runtime"), item.State, item.Critical)
+			stringutil.FirstNonEmpty(item.Name, item.Capability), stringutil.FirstNonEmpty(item.Kind, "runtime"), item.State, item.Critical)
 		if item.Error != "" {
 			fmt.Fprintf(&b, " err=%s", item.Error)
 		}
 		b.WriteString("\n")
 	}
 	if report.Health.Repo.Available {
-		fmt.Fprintf(&b, "Repo: available=true root=%s branch=%s dirty=%t\n", report.Health.Repo.Root, strutil.FirstNonEmpty(report.Health.Repo.Branch, "(detached)"), report.Health.Repo.Dirty)
+		fmt.Fprintf(&b, "Repo: available=true root=%s branch=%s dirty=%t\n", report.Health.Repo.Root, stringutil.FirstNonEmpty(report.Health.Repo.Branch, "(detached)"), report.Health.Repo.Dirty)
 	} else {
 		fmt.Fprintf(&b, "Repo: available=false err=%s\n", report.Health.Repo.Error)
 	}

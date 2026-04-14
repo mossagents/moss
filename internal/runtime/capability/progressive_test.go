@@ -1,4 +1,4 @@
-package runtimecapability_test
+package capability_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagents/moss/internal/runtimecapability"
+	"github.com/mossagents/moss/internal/runtime/capability"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/skill"
 )
@@ -14,7 +14,7 @@ import (
 // ── RegisterProgressiveSkillTools ────────────────────────────────────────────
 
 func TestRegisterProgressiveSkillTools_NilKernel(t *testing.T) {
-	err := runtimecapability.RegisterProgressiveSkillTools(nil)
+	err := capability.RegisterProgressiveSkillTools(nil)
 	if err == nil {
 		t.Fatal("expected error for nil kernel")
 	}
@@ -22,7 +22,7 @@ func TestRegisterProgressiveSkillTools_NilKernel(t *testing.T) {
 
 func TestRegisterProgressiveSkillTools_Success(t *testing.T) {
 	k := kernel.New()
-	err := runtimecapability.RegisterProgressiveSkillTools(k)
+	err := capability.RegisterProgressiveSkillTools(k)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -36,10 +36,10 @@ func TestRegisterProgressiveSkillTools_Success(t *testing.T) {
 
 func TestRegisterProgressiveSkillTools_Idempotent(t *testing.T) {
 	k := kernel.New()
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatalf("second call should be no-op: %v", err)
 	}
 }
@@ -48,7 +48,7 @@ func TestRegisterProgressiveSkillTools_Idempotent(t *testing.T) {
 
 func TestListSkillsTool_EmptyManifests(t *testing.T) {
 	k := kernel.New()
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, ok := k.ToolRegistry().Get("list_skills")
@@ -70,11 +70,11 @@ func TestListSkillsTool_EmptyManifests(t *testing.T) {
 
 func TestListSkillsTool_WithManifests(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.SetSkillManifests(k, []skill.Manifest{
+	capability.SetSkillManifests(k, []skill.Manifest{
 		{Name: "skill-a", Description: "Skill A"},
 		{Name: "skill-b", Description: "Skill B"},
 	})
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("list_skills")
@@ -102,7 +102,7 @@ func TestListSkillsTool_WithManifests(t *testing.T) {
 
 func TestActivateSkillTool_EmptyName(t *testing.T) {
 	k := kernel.New()
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("activate_skill")
@@ -114,7 +114,7 @@ func TestActivateSkillTool_EmptyName(t *testing.T) {
 
 func TestActivateSkillTool_MissingName(t *testing.T) {
 	k := kernel.New()
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("activate_skill")
@@ -126,10 +126,10 @@ func TestActivateSkillTool_MissingName(t *testing.T) {
 
 func TestActivateSkillTool_NotFoundInManifests(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.SetSkillManifests(k, []skill.Manifest{
+	capability.SetSkillManifests(k, []skill.Manifest{
 		{Name: "existing-skill"},
 	})
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("activate_skill")
@@ -145,11 +145,11 @@ func TestActivateSkillTool_NotFoundInManifests(t *testing.T) {
 func TestActivateSkillTool_CycleDetection(t *testing.T) {
 	k := kernel.New()
 	// skill-a → skill-b → skill-a (cycle)
-	runtimecapability.SetSkillManifests(k, []skill.Manifest{
+	capability.SetSkillManifests(k, []skill.Manifest{
 		{Name: "skill-a", DependsOn: []string{"skill-b"}, Source: "/nonexistent/skill-a/SKILL.md"},
 		{Name: "skill-b", DependsOn: []string{"skill-a"}, Source: "/nonexistent/skill-b/SKILL.md"},
 	})
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("activate_skill")
@@ -164,10 +164,10 @@ func TestActivateSkillTool_CycleDetection(t *testing.T) {
 
 func TestActivateSkillTool_DependencyNotFound(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.SetSkillManifests(k, []skill.Manifest{
+	capability.SetSkillManifests(k, []skill.Manifest{
 		{Name: "skill-a", DependsOn: []string{"missing-dep"}, Source: "/nonexistent/SKILL.md"},
 	})
-	if err := runtimecapability.RegisterProgressiveSkillTools(k); err != nil {
+	if err := capability.RegisterProgressiveSkillTools(k); err != nil {
 		t.Fatal(err)
 	}
 	entry, _ := k.ToolRegistry().Get("activate_skill")
@@ -181,7 +181,7 @@ func TestActivateSkillTool_DependencyNotFound(t *testing.T) {
 
 func TestCapabilityDeps_DoesNotPanic(t *testing.T) {
 	k := kernel.New()
-	deps := runtimecapability.CapabilityDeps(k)
+	deps := capability.CapabilityDeps(k)
 	if deps.Kernel == nil {
 		t.Error("expected Kernel in deps")
 	}
@@ -194,7 +194,7 @@ func TestCapabilityDeps_DoesNotPanic(t *testing.T) {
 
 func TestPromptGeneration_NoManager(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.Ensure(k)
+	capability.Ensure(k)
 	// Manager is set but progressive is false; with empty manifests, prompt additions should be empty
 	prompt := k.Prompts().Extend(k, "base")
 	// No panic; prompt may just contain "base"
@@ -203,7 +203,7 @@ func TestPromptGeneration_NoManager(t *testing.T) {
 
 func TestPromptGeneration_NonProgressive_NoManifests(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.Ensure(k)
+	capability.Ensure(k)
 	prompt := k.Prompts().Extend(k, "")
 	// manager exists, progressive=false, no manifests → SystemPromptAdditions() returns ""
 	_ = prompt
@@ -211,11 +211,11 @@ func TestPromptGeneration_NonProgressive_NoManifests(t *testing.T) {
 
 func TestPromptGeneration_ProgressiveWithUnloadedManifests(t *testing.T) {
 	k := kernel.New()
-	runtimecapability.SetSkillManifests(k, []skill.Manifest{
+	capability.SetSkillManifests(k, []skill.Manifest{
 		{Name: "skill-alpha", Description: "Alpha skill"},
 		{Name: "skill-beta", Description: "Beta skill"},
 	})
-	runtimecapability.EnableProgressiveSkills(k)
+	capability.EnableProgressiveSkills(k)
 
 	prompt := k.Prompts().Extend(k, "")
 	if !strings.Contains(prompt, "skill-alpha") {
@@ -229,7 +229,7 @@ func TestPromptGeneration_ProgressiveWithUnloadedManifests(t *testing.T) {
 func TestPromptGeneration_ProgressiveNoManifests(t *testing.T) {
 	k := kernel.New()
 	// progressive=true but no manifests → hint omitted
-	runtimecapability.EnableProgressiveSkills(k)
+	capability.EnableProgressiveSkills(k)
 	prompt := k.Prompts().Extend(k, "")
 	if strings.Contains(prompt, "activate_skill") {
 		t.Errorf("expected no activate_skill hint when no manifests, got: %s", prompt)

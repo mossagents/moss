@@ -3,15 +3,16 @@ package product
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 )
 
 type InspectReplayReport struct {
@@ -218,9 +219,9 @@ func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, 
 		Right: right,
 		Metrics: []InspectCompareMetric{
 			{Name: "kind", Left: left.Kind, Right: right.Kind},
-			{Name: "session", Left: strutil.FirstNonEmpty(left.SessionID, "(none)"), Right: strutil.FirstNonEmpty(right.SessionID, "(none)")},
-			{Name: "status", Left: strutil.FirstNonEmpty(left.Status, "(none)"), Right: strutil.FirstNonEmpty(right.Status, "(none)")},
-			{Name: "run", Left: strutil.FirstNonEmpty(left.RunID, "(none)"), Right: strutil.FirstNonEmpty(right.RunID, "(none)")},
+			{Name: "session", Left: stringutil.FirstNonEmpty(left.SessionID, "(none)"), Right: stringutil.FirstNonEmpty(right.SessionID, "(none)")},
+			{Name: "status", Left: stringutil.FirstNonEmpty(left.Status, "(none)"), Right: stringutil.FirstNonEmpty(right.Status, "(none)")},
+			{Name: "run", Left: stringutil.FirstNonEmpty(left.RunID, "(none)"), Right: stringutil.FirstNonEmpty(right.RunID, "(none)")},
 			{Name: "checkpoints", Left: strconv.Itoa(left.CheckpointCount), Right: strconv.Itoa(right.CheckpointCount), Delta: diffInt(left.CheckpointCount, right.CheckpointCount)},
 			{Name: "changes", Left: strconv.Itoa(left.ChangeCount), Right: strconv.Itoa(right.ChangeCount), Delta: diffInt(left.ChangeCount, right.ChangeCount)},
 			{Name: "tasks", Left: strconv.Itoa(left.TaskCount), Right: strconv.Itoa(right.TaskCount), Delta: diffInt(left.TaskCount, right.TaskCount)},
@@ -284,7 +285,7 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 		}
 		switch event.Type {
 		case "model.route_planned":
-			turn.lane = strutil.FirstNonEmpty(stringData(event.Metadata, "lane"), "default")
+			turn.lane = stringutil.FirstNonEmpty(stringData(event.Metadata, "lane"), "default")
 		case "llm_failover_attempt":
 			report.Failover.Attempts++
 			turn.failover = true
@@ -311,7 +312,7 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 	report.Sessions = len(sessions)
 	report.Runs = len(runs)
 	for _, turn := range turns {
-		lane := strutil.FirstNonEmpty(turn.lane, "default")
+		lane := stringutil.FirstNonEmpty(turn.lane, "default")
 		item := laneCounts[lane]
 		if item == nil {
 			item = &InspectGovernanceLane{Lane: lane}
@@ -377,24 +378,24 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *appr
 
 func renderInspectReplayReport(b *strings.Builder, report InspectReplayReport) {
 	fmt.Fprintf(b, "Replay checkpoint: %s\n", report.CheckpointID)
-	fmt.Fprintf(b, "Source session:    %s\n", strutil.FirstNonEmpty(report.SessionID, "(none)"))
+	fmt.Fprintf(b, "Source session:    %s\n", stringutil.FirstNonEmpty(report.SessionID, "(none)"))
 	fmt.Fprintf(b, "Snapshot:          %s | patches=%d | mode=%s | ready=%t\n",
-		strutil.FirstNonEmpty(report.SnapshotID, "(none)"),
+		stringutil.FirstNonEmpty(report.SnapshotID, "(none)"),
 		report.PatchCount,
-		strutil.FirstNonEmpty(report.RecommendedMode, "(none)"),
+		stringutil.FirstNonEmpty(report.RecommendedMode, "(none)"),
 		report.Ready,
 	)
 	if report.Note != "" {
 		fmt.Fprintf(b, "Note:              %s\n", report.Note)
 	}
-	fmt.Fprintf(b, "Suggested replay:  %s\n", strutil.FirstNonEmpty(report.RecommendedAction, "(none)"))
+	fmt.Fprintf(b, "Suggested replay:  %s\n", stringutil.FirstNonEmpty(report.RecommendedAction, "(none)"))
 	if report.Thread != nil {
 		fmt.Fprintf(b, "Thread posture:    status=%s recoverable=%t archived=%t task=%s source=%s\n",
-			strutil.FirstNonEmpty(report.Thread.Status, "(none)"),
+			stringutil.FirstNonEmpty(report.Thread.Status, "(none)"),
 			report.Thread.Recoverable,
 			report.Thread.Archived,
-			strutil.FirstNonEmpty(report.Thread.TaskID, "(none)"),
-			strutil.FirstNonEmpty(report.Thread.Source, "(none)"),
+			stringutil.FirstNonEmpty(report.Thread.TaskID, "(none)"),
+			stringutil.FirstNonEmpty(report.Thread.Source, "(none)"),
 		)
 	}
 	if len(report.Notes) > 0 {
@@ -406,13 +407,13 @@ func renderInspectReplayReport(b *strings.Builder, report InspectReplayReport) {
 	if len(report.Changes) > 0 {
 		b.WriteString("Recent changes:\n")
 		for _, item := range report.Changes {
-			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, strutil.FirstNonEmpty(item.Status, "(none)"), strutil.FirstNonEmpty(item.Title, "(none)"))
+			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, stringutil.FirstNonEmpty(item.Status, "(none)"), stringutil.FirstNonEmpty(item.Title, "(none)"))
 		}
 	}
 	if len(report.Tasks) > 0 {
 		b.WriteString("Related tasks:\n")
 		for _, item := range report.Tasks {
-			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, strutil.FirstNonEmpty(item.Status, "(none)"), strutil.FirstNonEmpty(item.Title, "(none)"))
+			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, stringutil.FirstNonEmpty(item.Status, "(none)"), stringutil.FirstNonEmpty(item.Title, "(none)"))
 		}
 	}
 }
@@ -425,7 +426,7 @@ func renderInspectCompareReport(b *strings.Builder, report InspectCompareReport)
 	}
 	b.WriteString("Metrics:\n")
 	for _, metric := range report.Metrics {
-		fmt.Fprintf(b, "- %s | left=%s | right=%s", metric.Name, strutil.FirstNonEmpty(metric.Left, "(none)"), strutil.FirstNonEmpty(metric.Right, "(none)"))
+		fmt.Fprintf(b, "- %s | left=%s | right=%s", metric.Name, stringutil.FirstNonEmpty(metric.Left, "(none)"), stringutil.FirstNonEmpty(metric.Right, "(none)"))
 		if metric.Delta != "" {
 			fmt.Fprintf(b, " | delta=%s", metric.Delta)
 		}
@@ -442,7 +443,7 @@ func renderInspectGovernanceReport(b *strings.Builder, report InspectGovernanceR
 		b.WriteString("Lane stability:\n")
 		for _, lane := range report.Lanes {
 			fmt.Fprintf(b, "- %s | turns=%d failover=%d exhausted=%d stable_rate=%.0f%%\n",
-				strutil.FirstNonEmpty(lane.Lane, "default"),
+				stringutil.FirstNonEmpty(lane.Lane, "default"),
 				lane.Turns,
 				lane.FailoverTurns,
 				lane.Exhausted,
@@ -590,9 +591,9 @@ func latestRunIDForSession(catalog *appruntime.StateCatalog, sessionID string) s
 
 func inspectGovernanceTurnKey(event TraceEvent) string {
 	return strings.TrimSpace(strings.Join([]string{
-		strutil.FirstNonEmpty(event.SessionID, "-"),
-		strutil.FirstNonEmpty(event.RunID, "-"),
-		strutil.FirstNonEmpty(event.TurnID, "-"),
+		stringutil.FirstNonEmpty(event.SessionID, "-"),
+		stringutil.FirstNonEmpty(event.RunID, "-"),
+		stringutil.FirstNonEmpty(event.TurnID, "-"),
 	}, "|"))
 }
 

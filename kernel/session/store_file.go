@@ -5,14 +5,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/model"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // FileStore 是基于文件系统的 SessionStore 实现。
@@ -130,8 +131,8 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		})
 	}
 	sort.Slice(summaries, func(i, j int) bool {
-		left := strutil.FirstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
-		right := strutil.FirstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
+		left := stringutil.FirstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
+		right := stringutil.FirstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
 		if left == right {
 			return summaries[i].ID < summaries[j].ID
 		}

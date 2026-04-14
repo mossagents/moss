@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/internal/strutil"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
 
 	"github.com/google/uuid"
 	"github.com/mossagents/moss/kernel/memory"
@@ -141,7 +142,7 @@ func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]memory
 		records = make(map[string]memory.MemoryRecord)
 	}
 	for key, record := range records {
-		record.Path = normalizeMemoryPath(strutil.FirstNonEmpty(record.Path, key))
+		record.Path = normalizeMemoryPath(stringutil.FirstNonEmpty(record.Path, key))
 		record.Tags = normalizeMemoryTags(record.Tags)
 		record.Citation = normalizeMemoryCitation(record.Citation)
 		if record.Stage == "" {

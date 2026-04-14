@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mossagents/moss/internal/strutil"
+	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -222,7 +222,7 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 	)
 
 	baseTools := tool.Scoped(delegator.ToolRegistry(), cfg.Tools)
-	contract := normalizeTaskContract(requestedContract, strutil.FirstNonEmpty(taskID, requestedContract.TaskID), task, baseTools, cfg)
+	contract := normalizeTaskContract(requestedContract, stringutil.FirstNonEmpty(taskID, requestedContract.TaskID), task, baseTools, cfg)
 	scopedTools := withTaskContract(baseTools, contract)
 
 	sessionPrompt := strings.TrimSpace(cfg.SystemPrompt)

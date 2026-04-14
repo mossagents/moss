@@ -2,10 +2,11 @@ package appkit
 
 import (
 	"flag"
-	"github.com/mossagents/moss/internal/strutil"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/mossagents/moss/internal/stringutil"
 
 	config "github.com/mossagents/moss/config"
 	"github.com/spf13/pflag"
@@ -96,16 +97,16 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 		if prefix == "" {
 			continue
 		}
-		f.Name = strutil.FirstNonEmpty(f.Name, os.Getenv(prefix+"_NAME"))
-		f.Provider = strutil.FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"))
-		f.Model = strutil.FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
-		f.Workspace = strutil.FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
-		f.Trust = strutil.FirstNonEmpty(f.Trust, os.Getenv(prefix+"_TRUST"))
-		f.Profile = strutil.FirstNonEmpty(f.Profile, os.Getenv(prefix+"_PROFILE"))
-		f.APIKey = strutil.FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
-		f.BaseURL = strutil.FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
-		f.PromptVersion = strutil.FirstNonEmpty(f.PromptVersion, os.Getenv(prefix+"_PROMPT_VERSION"))
-		f.BudgetGovernance = strutil.FirstNonEmpty(f.BudgetGovernance, os.Getenv(prefix+"_BUDGET_GOVERNANCE"))
+		f.Name = stringutil.FirstNonEmpty(f.Name, os.Getenv(prefix+"_NAME"))
+		f.Provider = stringutil.FirstNonEmpty(f.Provider, os.Getenv(prefix+"_PROVIDER"))
+		f.Model = stringutil.FirstNonEmpty(f.Model, os.Getenv(prefix+"_MODEL"))
+		f.Workspace = stringutil.FirstNonEmpty(f.Workspace, os.Getenv(prefix+"_WORKSPACE"))
+		f.Trust = stringutil.FirstNonEmpty(f.Trust, os.Getenv(prefix+"_TRUST"))
+		f.Profile = stringutil.FirstNonEmpty(f.Profile, os.Getenv(prefix+"_PROFILE"))
+		f.APIKey = stringutil.FirstNonEmpty(f.APIKey, os.Getenv(prefix+"_API_KEY"))
+		f.BaseURL = stringutil.FirstNonEmpty(f.BaseURL, os.Getenv(prefix+"_BASE_URL"))
+		f.PromptVersion = stringutil.FirstNonEmpty(f.PromptVersion, os.Getenv(prefix+"_PROMPT_VERSION"))
+		f.BudgetGovernance = stringutil.FirstNonEmpty(f.BudgetGovernance, os.Getenv(prefix+"_BUDGET_GOVERNANCE"))
 		if raw := strings.TrimSpace(os.Getenv(prefix + "_GLOBAL_MAX_TOKENS")); raw != "" {
 			if v, err := strconv.Atoi(raw); err == nil {
 				f.GlobalMaxTokens = v
@@ -127,11 +128,11 @@ func (f *AppFlags) MergeEnv(prefixes ...string) {
 // ApplyDefaults 在 CLI、配置文件、环境变量合并完成后补齐默认值。
 func (f *AppFlags) ApplyDefaults() {
 	f.normalizeProviderFields()
-	f.Provider = strutil.FirstNonEmpty(f.Provider, config.APITypeOpenAICompletions)
-	f.Name = strutil.FirstNonEmpty(f.Name, f.Provider)
-	f.Workspace = strutil.FirstNonEmpty(f.Workspace, ".")
-	f.Trust = strutil.FirstNonEmpty(f.Trust, config.TrustRestricted)
-	f.BudgetGovernance = normalizeBudgetGovernance(strutil.FirstNonEmpty(f.BudgetGovernance, "observe-only"))
+	f.Provider = stringutil.FirstNonEmpty(f.Provider, config.APITypeOpenAICompletions)
+	f.Name = stringutil.FirstNonEmpty(f.Name, f.Provider)
+	f.Workspace = stringutil.FirstNonEmpty(f.Workspace, ".")
+	f.Trust = stringutil.FirstNonEmpty(f.Trust, config.TrustRestricted)
+	f.BudgetGovernance = normalizeBudgetGovernance(stringutil.FirstNonEmpty(f.BudgetGovernance, "observe-only"))
 	if f.GlobalWarnAt < 0 {
 		f.GlobalWarnAt = 0
 	}
@@ -153,11 +154,11 @@ func (f *AppFlags) mergeGlobalConfig() {
 	}
 
 	identity := globalCfg.ProviderIdentity()
-	f.Name = strutil.FirstNonEmpty(f.Name, identity.Name)
-	f.Provider = strutil.FirstNonEmpty(f.Provider, identity.Provider, config.APITypeOpenAICompletions)
-	f.Model = strutil.FirstNonEmpty(f.Model, globalCfg.Model)
-	f.APIKey = strutil.FirstNonEmpty(f.APIKey, globalCfg.APIKey)
-	f.BaseURL = strutil.FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
+	f.Name = stringutil.FirstNonEmpty(f.Name, identity.Name)
+	f.Provider = stringutil.FirstNonEmpty(f.Provider, identity.Provider, config.APITypeOpenAICompletions)
+	f.Model = stringutil.FirstNonEmpty(f.Model, globalCfg.Model)
+	f.APIKey = stringutil.FirstNonEmpty(f.APIKey, globalCfg.APIKey)
+	f.BaseURL = stringutil.FirstNonEmpty(f.BaseURL, globalCfg.BaseURL)
 	f.normalizeProviderFields()
 }
 

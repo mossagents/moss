@@ -2,12 +2,13 @@ package runtime
 
 import (
 	"fmt"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/session"
 	"sort"
 	"strings"
 	"time"
+
+	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 type ProfileResolveOptions struct {
@@ -88,7 +89,7 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	}
 	requested := strings.TrimSpace(opts.RequestedProfile)
 	if requested == "" {
-		requested = strutil.FirstNonEmpty(
+		requested = stringutil.FirstNonEmpty(
 			strings.TrimSpace(projectCfg.DefaultProfile),
 			strings.TrimSpace(globalCfg.DefaultProfile),
 			"default",
@@ -98,8 +99,8 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	if !ok {
 		return ResolvedProfile{}, fmt.Errorf("unknown profile %q", requested)
 	}
-	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
-	approval := NormalizeApprovalMode(strutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
+	trust := appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
+	approval := NormalizeApprovalMode(stringutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
 	policy := ResolveToolPolicyForWorkspace(opts.Workspace, trust, approval)
 	var overrideErr error
 	policy, overrideErr = ApplyProfileToolPolicy(policy, resolvedCfg.Execution)
@@ -109,8 +110,8 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 	return ResolvedProfile{
 		RequestedName:   requested,
 		Name:            requested,
-		Label:           strutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.Label), requested),
-		TaskMode:        strutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.TaskMode), requested),
+		Label:           stringutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.Label), requested),
+		TaskMode:        stringutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.TaskMode), requested),
 		Trust:           trust,
 		ApprovalMode:    approval,
 		ToolPolicy:      policy,
@@ -119,17 +120,17 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 }
 
 func ResolveProfileFromPosture(profileName string, posture SessionPosture) (ResolvedProfile, error) {
-	trust := appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(posture.EffectiveTrust, appconfig.TrustTrusted))
-	approval := NormalizeApprovalMode(strutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
+	trust := appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(posture.EffectiveTrust, appconfig.TrustTrusted))
+	approval := NormalizeApprovalMode(stringutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
 	policy := posture.ToolPolicy
 	if !posture.HasToolPolicy {
 		policy = ResolveToolPolicyForWorkspace("", trust, approval)
 	}
 	return ResolvedProfile{
 		RequestedName: strings.TrimSpace(profileName),
-		Name:          strutil.FirstNonEmpty(strings.TrimSpace(profileName), "default"),
-		Label:         strutil.FirstNonEmpty(strings.TrimSpace(profileName), "Default"),
-		TaskMode:      strutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
+		Name:          stringutil.FirstNonEmpty(strings.TrimSpace(profileName), "default"),
+		Label:         stringutil.FirstNonEmpty(strings.TrimSpace(profileName), "Default"),
+		TaskMode:      stringutil.FirstNonEmpty(posture.TaskMode, strings.TrimSpace(profileName), "coding"),
 		Trust:         trust,
 		ApprovalMode:  approval,
 		ToolPolicy:    policy,
@@ -141,7 +142,7 @@ func SessionPostureFromResolvedProfile(resolved ResolvedProfile) SessionPosture 
 		Profile:           strings.TrimSpace(resolved.Name),
 		EffectiveTrust:    appconfig.NormalizeTrustLevel(resolved.Trust),
 		EffectiveApproval: NormalizeApprovalMode(resolved.ApprovalMode),
-		TaskMode:          strutil.FirstNonEmpty(strings.TrimSpace(resolved.TaskMode), strings.TrimSpace(resolved.Name), "coding"),
+		TaskMode:          stringutil.FirstNonEmpty(strings.TrimSpace(resolved.TaskMode), strings.TrimSpace(resolved.Name), "coding"),
 		ToolPolicy:        cloneToolPolicy(resolved.ToolPolicy),
 		HasToolPolicy:     true,
 	}
@@ -187,9 +188,9 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 		return posture
 	}
 	posture.Profile = strings.TrimSpace(sess.Config.Profile)
-	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
+	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
 	posture.EffectiveApproval = NormalizeApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
-	posture.TaskMode = strutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
+	posture.TaskMode = stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
 	if policy, ok := metadataToolPolicy(sess.Config.Metadata); ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true

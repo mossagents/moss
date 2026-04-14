@@ -1,11 +1,12 @@
 package io
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
 )
 
 // ApprovalKind 表示审批对象类型。
@@ -205,7 +206,7 @@ func NormalizeApprovalRequest(req *ApprovalRequest) *ApprovalRequest {
 		req.RuleBinding = &RuleBinding{
 			Category:    req.Category,
 			ToolName:    req.ToolName,
-			Label:       strutil.FirstNonEmpty(req.ScopeLabel, req.CacheLabel),
+			Label:       stringutil.FirstNonEmpty(req.ScopeLabel, req.CacheLabel),
 			Match:       req.ScopeValue,
 			CacheKey:    req.CacheKey,
 			Persistence: req.DefaultPersistence,
@@ -323,5 +324,3 @@ func defaultPersistenceForScope(scope DecisionScope) DecisionPersistence {
 		return DecisionPersistenceRequest
 	}
 }
-
-

@@ -1,14 +1,15 @@
-package runtimeplanning
+package planning
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	"strings"
 )
 
 const planningStateKey kernel.ServiceKey = "planning.state"

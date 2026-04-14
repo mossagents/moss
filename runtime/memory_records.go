@@ -1,12 +1,13 @@
 package runtime
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
-	"github.com/mossagents/moss/kernel/memory"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/memory"
 )
 
 func normalizeMemoryPath(path string) string {
@@ -115,12 +116,12 @@ func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRe
 		record.Summary = summarizeMemoryContent(record.Content)
 	}
 	if existing != nil {
-		record.ID = strutil.FirstNonEmpty(record.ID, existing.ID)
+		record.ID = stringutil.FirstNonEmpty(record.ID, existing.ID)
 		if record.CreatedAt.IsZero() {
 			record.CreatedAt = existing.CreatedAt
 		}
-		record.Stage = memory.MemoryStage(strutil.FirstNonEmpty(string(record.Stage), string(existing.Stage)))
-		record.Status = memory.MemoryStatus(strutil.FirstNonEmpty(string(record.Status), string(existing.Status)))
+		record.Stage = memory.MemoryStage(stringutil.FirstNonEmpty(string(record.Stage), string(existing.Stage)))
+		record.Status = memory.MemoryStatus(stringutil.FirstNonEmpty(string(record.Status), string(existing.Status)))
 		if record.Group == "" {
 			record.Group = existing.Group
 		}

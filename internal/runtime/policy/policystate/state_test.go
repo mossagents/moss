@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mossagents/moss/internal/runtimepolicy/policystate"
+	"github.com/mossagents/moss/internal/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 )

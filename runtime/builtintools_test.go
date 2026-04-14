@@ -3,7 +3,14 @@ package runtime
 import (
 	"context"
 	"encoding/json"
-	"github.com/mossagents/moss/internal/runtimepolicy/policystate"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/mossagents/moss/internal/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -11,12 +18,6 @@ import (
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 )
 
 // ── mock sandbox ─────────────────────────────────────
