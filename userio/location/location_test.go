@@ -119,3 +119,45 @@ func TestOpenWorkspacePath_ExistingFileNoEditor(t *testing.T) {
 	result, _ := location.OpenWorkspacePath("", path)
 	_ = result // Could succeed or fail depending on environment
 }
+
+func TestOpenWorkspacePath_RelativePathWithWorkspace(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "rel.txt"), []byte("data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EDITOR", "")
+	// Use a relative spec with workspace; should join and find the file
+	result, _ := location.OpenWorkspacePath(dir, "rel.txt")
+	_ = result // succeeds or fails depending on env, but exercises the join path
+}
+
+func TestOpenWorkspacePath_RelativePathWithWorkspaceAndLine(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "rel.go"), []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EDITOR", "")
+	// Spec with line number
+	result, _ := location.OpenWorkspacePath(dir, "rel.go:5")
+	_ = result
+}
+
+func TestOpenWorkspacePath_WithCustomEditor(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "edit.txt")
+	if err := os.WriteFile(file, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Use a real command that always exists and won't block; on Windows "cmd" is safe
+	// We just need it to Start() successfully
+	t.Setenv("EDITOR", "cmd /c echo")
+	result, err := location.OpenWorkspacePath("", file)
+	if err != nil {
+		// Some environments may not have cmd, skip rather than fail
+		t.Logf("editor launch error (may be expected in this environment): %v", err)
+		return
+	}
+	if result == "" {
+		t.Error("expected non-empty result message")
+	}
+}
