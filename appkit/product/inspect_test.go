@@ -590,3 +590,37 @@ func TestBuildInspectReportForTrustSuppressesProjectCapabilities(t *testing.T) {
 		t.Fatalf("trusted inspect missing project capability: skill=%t mcp=%t items=%+v", foundSkill, foundMCP, trusted.Capabilities.Items)
 	}
 }
+
+// ── inspectLimitAndText ───────────────────────────────────────────────────────
+
+func TestInspectLimitAndText(t *testing.T) {
+	// no args → fallback limit, empty text
+	limit, text := inspectLimitAndText(nil, 20)
+	if limit != 20 || text != "" {
+		t.Fatalf("nil args: limit=%d text=%q, want 20 ''", limit, text)
+	}
+
+	// first arg is a valid positive number
+	limit, text = inspectLimitAndText([]string{"5", "search terms here"}, 20)
+	if limit != 5 || text != "search terms here" {
+		t.Fatalf("numeric first arg: limit=%d text=%q", limit, text)
+	}
+
+	// first arg is NOT a number → use fallback, join all args as text
+	limit, text = inspectLimitAndText([]string{"find", "something"}, 10)
+	if limit != 10 || text != "find something" {
+		t.Fatalf("non-numeric first arg: limit=%d text=%q", limit, text)
+	}
+
+	// first arg is zero → not positive, use fallback
+	limit, text = inspectLimitAndText([]string{"0", "term"}, 15)
+	if limit != 15 || text != "0 term" {
+		t.Fatalf("zero first arg: limit=%d text=%q", limit, text)
+	}
+
+	// first arg is negative → use fallback
+	limit, text = inspectLimitAndText([]string{"-3"}, 8)
+	if limit != 8 {
+		t.Fatalf("negative first arg: limit=%d, want 8", limit)
+	}
+}
