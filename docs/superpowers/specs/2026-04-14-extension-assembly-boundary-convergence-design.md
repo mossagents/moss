@@ -16,6 +16,7 @@ After public assembly convergence, plugin convergence, kernel phase/freeze conve
 
 3. **Runtime capability assembly still leaks through the public `runtime` package.**
    - `runtime.CapabilityManager(k)`
+   - `runtime.CapabilityDeps(k)`
    - `runtime.SkillManifests(k)`
    - `runtime.SetSkillManifests(k)`
    - `runtime.EnableProgressiveSkills(k)`
@@ -190,6 +191,7 @@ Concrete caller migration rule:
 Public mutation helpers to remove from `runtime`:
 
 - `runtime.WithCapabilityManager(...)`
+- `runtime.CapabilityDeps(k)`
 - `runtime.SetSkillManifests(...)`
 - `runtime.EnableProgressiveSkills(...)`
 - `runtime.RegisterProgressiveSkillTools(...)`
