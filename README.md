@@ -178,9 +178,9 @@ For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, har
 | `harness\` | Composable orchestration layer (Feature, Backend, Harness) |
 | `appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
 | `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
-| `skill\` / `mcp\` / `agent\` | Capability providers, MCP bridge, delegated agents |
+| `extensions\` | Extension-oriented capability modules (`skill\`, `mcp\`, `agent\`, `knowledge\`) |
 | `bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
-| `knowledge\`, `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
+| `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
 | `apps\` | Core application surfaces (`mosscode`, `mosswork`) |
 | `examples\` | Runnable reference and integration examples |
 

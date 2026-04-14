@@ -2,7 +2,7 @@ package knowledge_test
 
 import (
 	"context"
-	"github.com/mossagents/moss/knowledge"
+	"github.com/mossagents/moss/extensions/knowledge"
 	"testing"
 	"time"
 )

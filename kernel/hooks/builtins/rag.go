@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/knowledge"
 )
 
 // RAGConfig 配置 RAG（检索增强生成）注入行为。

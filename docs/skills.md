@@ -4,7 +4,7 @@
 
 1. **Builtin tools**：由 `harness.RuntimeSetup(...)`（或 `appkit.BuildKernel(...)` 的默认装配）注册的官方工具
 2. **Prompt skills**：从 `SKILL.md` 发现并注入系统提示词
-3. **MCP servers**：通过 `mcp\` 桥接进来的外部工具服务
+3. **MCP servers**：通过 `extensions\mcp\` 桥接进来的外部工具服务
 4. **Subagents**：通过 `harness` 公开入口注册到 runtime-backed catalog 的委派代理
 
 ## 统一抽象：`capability.Provider`
@@ -32,7 +32,7 @@ type Provider interface {
 - `Mailbox`
 - `SessionStore`
 
-这里的 generic lifecycle 已经不再属于 `skill` 包，而是放在顶层 `capability\` 下；`skill\` 现在只负责 prompt skill (`SKILL.md`) 的发现、解析与实现。因此当前的能力文档应该围绕 **capability.Provider + harness.RuntimeSetup(...)** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
+这里的 generic lifecycle 已经不再属于 prompt-skill 实现包，而是放在顶层 `capability\` 下；`extensions\skill\` 现在只负责 prompt skill (`SKILL.md`) 的发现、解析与实现。因此当前的能力文档应该围绕 **capability.Provider + harness.RuntimeSetup(...)** 叙述，而不是围绕旧的“单一 skill 系统”叙述。
 
 ## 1. Builtin tools
 
@@ -102,7 +102,7 @@ err := h.Install(ctx,
 
 ## 3. MCP servers
 
-MCP 通过配置文件声明，由 `mcp\` 包桥接到本地运行时。示例：
+MCP 通过配置文件声明，由 `extensions\mcp\` 包桥接到本地运行时。示例：
 
 ```yaml
 skills:
@@ -170,8 +170,8 @@ err := h.Install(ctx,
 在当前仓库语境里，**skills 不是单一技术点，而是一组 capability loading 机制中的 prompt-skill 子域**：
 
 - 想要官方工具：看 builtin tools
-- 想要 prompt augmentation：看 `SKILL.md` 与 `skill\`
-- 想要外部能力：看 MCP
+- 想要 prompt augmentation：看 `SKILL.md` 与 `extensions\skill\`
+- 想要外部能力：看 `extensions\mcp\`
 - 想要可控委派：看 `harness` 下的 subagent surface
 
 真正把 builtin / prompt skill / MCP 粘起来的是 `harness.RuntimeSetup(...)`、底层 capability assembly 与 `capability.Provider` 抽象；真正把 subagents 粘到运行时的是 `harness` 公开 surface 与底层 runtime-backed catalog。

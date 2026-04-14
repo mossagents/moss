@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/extensions/agent"
 	"github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"

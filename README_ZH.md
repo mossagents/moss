@@ -178,9 +178,9 @@ func main() {
 | `harness\` | 可组合编排层（Feature、Backend、Harness） |
 | `appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
 | `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
-| `skill\` / `mcp\` / `agent\` | 能力 provider、MCP 桥接、委派代理 |
+| `extensions\` | 面向扩展的能力模块命名空间（`skill\`、`mcp\`、`agent\`、`knowledge\`） |
 | `bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
-| `knowledge\`、`scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
+| `scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
 | `apps\` | 核心应用入口（`mosscode`、`mosswork`） |
 | `examples\` | 可运行参考示例与集成样例 |
 

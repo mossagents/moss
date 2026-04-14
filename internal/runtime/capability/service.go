@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/skill"
 )
 
 const capabilitiesStateKey kernel.ServiceKey = "capabilities.state"

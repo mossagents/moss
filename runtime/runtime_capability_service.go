@@ -2,9 +2,9 @@ package runtime
 
 import (
 	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/skill"
 	runtimecapa "github.com/mossagents/moss/internal/runtime/capability"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/skill"
 )
 
 // LookupCapabilityManager returns the current capability manager if runtime

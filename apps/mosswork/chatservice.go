@@ -15,9 +15,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/extensions/agent"
+	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
@@ -25,7 +26,6 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
-	"github.com/mossagents/moss/skill"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/internal/runtime/capability"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/skill"
 )
 
 // ── RegisterProgressiveSkillTools ────────────────────────────────────────────

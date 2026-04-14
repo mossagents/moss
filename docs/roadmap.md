@@ -55,7 +55,7 @@
 
 ### Knowledge 与 scheduling 的产品化接线
 
-当前 `knowledge\` 和 `scheduler\` 已可用，但还更多停留在“由 apps / examples 证明可组合”的阶段。中期目标是把它们变成：
+当前 `extensions\knowledge\` 和 `scheduler\` 已可用，但还更多停留在“由 apps / examples 证明可组合”的阶段。把 knowledge 归入 `extensions\` 之后，中期目标是把它们变成：
 
 - 更稳定的 appkit 扩展组合
 - 更清晰的 operator 配置面

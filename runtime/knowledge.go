@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/knowledge"
 )
 
 // NewMemoryStore 返回官方提供的内存知识库实现。

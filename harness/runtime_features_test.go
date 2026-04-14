@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/knowledge"
 	"github.com/mossagents/moss/scheduler"
 	kt "github.com/mossagents/moss/testing"
 )

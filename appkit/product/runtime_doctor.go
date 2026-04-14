@@ -10,11 +10,11 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
 	appruntime "github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
-	"github.com/mossagents/moss/skill"
 )
 
 type DoctorReport struct {

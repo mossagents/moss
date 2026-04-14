@@ -8,17 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/extensions/agent"
+	"github.com/mossagents/moss/extensions/mcp"
+	"github.com/mossagents/moss/extensions/skill"
 	runtimecapa "github.com/mossagents/moss/internal/runtime/capability"
 	"github.com/mossagents/moss/internal/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/mcp"
 	appruntime "github.com/mossagents/moss/runtime"
-	"github.com/mossagents/moss/skill"
 )
 
 // Config controls runtime capability assembly through the non-public setup
