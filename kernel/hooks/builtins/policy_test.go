@@ -333,3 +333,59 @@ func mustJSON(v map[string]any) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }
+
+// makeToolEventWithIO 构建带 IO 的 ToolEvent，用于测试审批流程。
+func makeToolEventWithIO(spec tool.ToolSpec, userIO io.UserIO) *hooks.ToolEvent {
+	ev := makeToolEvent(spec)
+	ev.IO = userIO
+	return ev
+}
+
+// TestPolicyCheckApprovalGranted 验证 IO 在场且用户批准时，RequireApproval 返回 nil。
+func TestPolicyCheckApprovalGranted(t *testing.T) {
+	hook := builtins.PolicyCheck(builtins.RequireApprovalForPathPrefix("/etc/"))
+	ctx := context.Background()
+
+	recorder := &approvalRecorderIO{approved: true}
+	spec := tool.ToolSpec{Name: "read_file"}
+	ev := makeToolEventWithIO(spec, recorder)
+	ev.Input = mustJSON(map[string]any{"path": "/etc/passwd"})
+	// 手动 patch event input since makeToolEvent doesn't set Input
+	ev.Input = mustJSON(map[string]any{"path": "/etc/passwd"})
+
+	err := hook(ctx, ev)
+	if err != nil {
+		t.Fatalf("expected nil when user approves, got %v", err)
+	}
+	if !recorder.asked {
+		t.Fatal("expected Ask to be called for approval")
+	}
+}
+
+// TestPolicyCheckApprovalDenied 验证 IO 在场且用户拒绝时，RequireApproval 返回 ErrDenied。
+func TestPolicyCheckApprovalDenied(t *testing.T) {
+	hook := builtins.PolicyCheck(builtins.RequireApprovalForPathPrefix("/etc/"))
+	ctx := context.Background()
+
+	recorder := &approvalRecorderIO{approved: false}
+	spec := tool.ToolSpec{Name: "read_file"}
+	ev := makeToolEventWithIO(spec, recorder)
+	ev.Input = mustJSON(map[string]any{"path": "/etc/passwd"})
+
+	err := hook(ctx, ev)
+	if !errors.Is(err, builtins.ErrDenied) {
+		t.Fatalf("expected ErrDenied when user denies, got %v", err)
+	}
+}
+
+// approvalRecorderIO 是一个记录审批调用的最小 IO mock。
+type approvalRecorderIO struct {
+	approved bool
+	asked    bool
+}
+
+func (a *approvalRecorderIO) Send(_ context.Context, _ io.OutputMessage) error { return nil }
+func (a *approvalRecorderIO) Ask(_ context.Context, _ io.InputRequest) (io.InputResponse, error) {
+	a.asked = true
+	return io.InputResponse{Approved: a.approved}, nil
+}
