@@ -58,3 +58,17 @@ func TestSyncIO_ConcurrentSend(t *testing.T) {
 		t.Fatalf("expected 50 messages, got %d", len(buf.SentTexts()))
 	}
 }
+
+func TestSyncIO_Ask(t *testing.T) {
+	buf := NewBufferIO()
+	s := NewSyncIO(buf)
+	ctx := context.Background()
+	resp, err := s.Ask(ctx, InputRequest{Type: InputConfirm})
+	if err != nil {
+		t.Fatalf("Ask: %v", err)
+	}
+	// BufferIO defaults to Approved=true
+	if !resp.Approved {
+		t.Error("expected default BufferIO Ask to approve")
+	}
+}

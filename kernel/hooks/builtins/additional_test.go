@@ -386,3 +386,172 @@ func TestRiskBasedPolicy_AtThreshold_RequiresApproval(t *testing.T) {
 		t.Fatalf("medium risk at medium threshold should require approval, got %v", result.Decision)
 	}
 }
+
+// ─── RequireApprovalFor ───────────────────────────────────────────────────
+
+func TestRequireApprovalFor_MatchingTool(t *testing.T) {
+	rule := builtins.RequireApprovalFor("bash", "run_code")
+	ctx := builtins.PolicyContext{Tool: tool.ToolSpec{Name: "bash"}}
+	result := rule(ctx)
+	if result.Decision != builtins.RequireApproval {
+		t.Fatalf("expected RequireApproval, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalFor_NonMatchingTool(t *testing.T) {
+	rule := builtins.RequireApprovalFor("bash")
+	ctx := builtins.PolicyContext{Tool: tool.ToolSpec{Name: "read_file"}}
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow for non-matching tool, got %v", result.Decision)
+	}
+}
+
+// ─── DenyEffects ─────────────────────────────────────────────────────────
+
+func TestDenyEffects_MatchingEffect(t *testing.T) {
+	rule := builtins.DenyEffects(tool.EffectExternalSideEffect)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "http", Effects: []tool.Effect{tool.EffectExternalSideEffect}},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.Deny {
+		t.Fatalf("expected Deny for matching effect, got %v", result.Decision)
+	}
+}
+
+func TestDenyEffects_NoMatch(t *testing.T) {
+	rule := builtins.DenyEffects(tool.EffectExternalSideEffect)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "read", Effects: []tool.Effect{tool.EffectReadOnly}},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow when effect not in set, got %v", result.Decision)
+	}
+}
+
+// ─── RequireApprovalForEffects ────────────────────────────────────────────
+
+func TestRequireApprovalForEffects_MatchingEffect(t *testing.T) {
+	rule := builtins.RequireApprovalForEffects(tool.EffectWritesWorkspace)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "write_file", Effects: []tool.Effect{tool.EffectWritesWorkspace}},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.RequireApproval {
+		t.Fatalf("expected RequireApproval for workspace effect, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalForEffects_NoMatch(t *testing.T) {
+	rule := builtins.RequireApprovalForEffects(tool.EffectWritesWorkspace)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "read", Effects: []tool.Effect{tool.EffectReadOnly}},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow when effect not in set, got %v", result.Decision)
+	}
+}
+
+// ─── RequireApprovalForApprovalClasses ───────────────────────────────────
+
+func TestRequireApprovalForApprovalClasses_Match(t *testing.T) {
+	rule := builtins.RequireApprovalForApprovalClasses(tool.ApprovalClassExplicitUser)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "dangerous", ApprovalClass: tool.ApprovalClassExplicitUser},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.RequireApproval {
+		t.Fatalf("expected RequireApproval for explicit_user class, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalForApprovalClasses_NoMatch(t *testing.T) {
+	rule := builtins.RequireApprovalForApprovalClasses(tool.ApprovalClassExplicitUser)
+	ctx := builtins.PolicyContext{
+		Tool: tool.ToolSpec{Name: "read", ApprovalClass: tool.ApprovalClassNone},
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow for non-matching class, got %v", result.Decision)
+	}
+}
+
+// ─── RequireApprovalForURLHost ────────────────────────────────────────────
+
+func makeHTTPCtx(urlJSON string) builtins.PolicyContext {
+	return builtins.PolicyContext{
+		Tool:  tool.ToolSpec{Name: "http_request"},
+		Input: json.RawMessage(urlJSON),
+	}
+}
+
+func TestRequireApprovalForURLHost_AllowedHost(t *testing.T) {
+	rule := builtins.RequireApprovalForURLHost("api.example.com")
+	ctx := makeHTTPCtx(`{"url":"https://api.example.com/v1/resource"}`)
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow for allowed host, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalForURLHost_UnknownHost(t *testing.T) {
+	rule := builtins.RequireApprovalForURLHost("api.example.com")
+	ctx := makeHTTPCtx(`{"url":"https://evil.example.org/data"}`)
+	result := rule(ctx)
+	if result.Decision != builtins.RequireApproval {
+		t.Fatalf("expected RequireApproval for unknown host, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalForURLHost_EmptyHosts(t *testing.T) {
+	rule := builtins.RequireApprovalForURLHost()
+	ctx := makeHTTPCtx(`{"url":"https://anything.com"}`)
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow when no hosts configured, got %v", result.Decision)
+	}
+}
+
+func TestRequireApprovalForURLHost_NonHTTPTool(t *testing.T) {
+	rule := builtins.RequireApprovalForURLHost("api.example.com")
+	ctx := builtins.PolicyContext{
+		Tool:  tool.ToolSpec{Name: "bash"},
+		Input: json.RawMessage(`{"url":"https://evil.org"}`),
+	}
+	result := rule(ctx)
+	if result.Decision != builtins.Allow {
+		t.Fatalf("expected Allow for non-http tool, got %v", result.Decision)
+	}
+}
+
+// ─── LoggerPlugin interceptors ────────────────────────────────────────────
+
+func TestLoggerPlugin_AfterLLM(t *testing.T) {
+	p := builtins.LoggerPlugin()
+	if p.AfterLLMInterceptor == nil {
+		t.Fatal("AfterLLMInterceptor should not be nil")
+	}
+	called := false
+	ev := &hooks.LLMEvent{Session: &session.Session{ID: "after-test"}}
+	err := p.AfterLLMInterceptor(context.Background(), ev, func(_ context.Context) error {
+		called = true
+		return nil
+	})
+	if err != nil || !called {
+		t.Fatalf("AfterLLMInterceptor failed: err=%v called=%v", err, called)
+	}
+}
+
+func TestLoggerPlugin_OnError(t *testing.T) {
+	p := builtins.LoggerPlugin()
+	if p.OnError == nil {
+		t.Fatal("OnError should not be nil")
+	}
+	ev := &hooks.ErrorEvent{Error: errors.New("test error")}
+	if err := p.OnError(context.Background(), ev); err != nil {
+		t.Fatalf("OnError should not propagate error, got %v", err)
+	}
+}

@@ -2,6 +2,8 @@ package distributed_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -254,4 +256,88 @@ func TestInProcessLock(t *testing.T) {
 		t.Fatalf("re-Acquire: %v", err)
 	}
 	_ = lock.Release(ctx, "res", tok2)
+}
+
+func TestRemoteTaskRuntime_WithToken(t *testing.T) {
+	// server that requires Authorization: Bearer secret
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// serve a fake task record
+		_ = json.NewEncoder(w).Encode(taskrt.TaskRecord{ID: "t1", Goal: "ok"})
+	}))
+	defer ts.Close()
+
+	remote := distributed.NewRemoteTaskRuntime(ts.URL, distributed.WithToken("secret"))
+	got, err := remote.GetTask(context.Background(), "t1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.ID != "t1" {
+		t.Errorf("got id %q, want t1", got.ID)
+	}
+}
+
+func TestRemoteTaskRuntime_WithHTTPClient(t *testing.T) {
+	ts, _ := setupServer()
+	defer ts.Close()
+
+	custom := &http.Client{Timeout: 5 * time.Second}
+	remote := distributed.NewRemoteTaskRuntime(ts.URL, distributed.WithHTTPClient(custom))
+	ctx := context.Background()
+	if err := remote.UpsertTask(ctx, taskrt.TaskRecord{ID: "custom-client", Goal: "test", Status: taskrt.TaskPending}); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	got, err := remote.GetTask(ctx, "custom-client")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.Goal != "test" {
+		t.Errorf("got goal %q, want test", got.Goal)
+	}
+}
+
+func TestRemoteTaskRuntime_ListJobs(t *testing.T) {
+	ts, remote := setupServer()
+	defer ts.Close()
+
+	ctx := context.Background()
+	for _, id := range []string{"j1", "j2", "j3"} {
+		if err := remote.UpsertJob(ctx, taskrt.AgentJob{
+			ID:        id,
+			AgentName: "batch-worker",
+			Goal:      "goal-" + id,
+			Status:    taskrt.JobPending,
+		}); err != nil {
+			t.Fatalf("UpsertJob %s: %v", id, err)
+		}
+	}
+
+	jobs, err := remote.ListJobs(ctx, taskrt.JobQuery{AgentName: "batch-worker"})
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(jobs) != 3 {
+		t.Errorf("got %d jobs, want 3", len(jobs))
+	}
+
+	// filter by status
+	jobs2, err := remote.ListJobs(ctx, taskrt.JobQuery{Status: taskrt.JobPending})
+	if err != nil {
+		t.Fatalf("ListJobs by status: %v", err)
+	}
+	if len(jobs2) != 3 {
+		t.Errorf("got %d pending jobs, want 3", len(jobs2))
+	}
+
+	// filter with limit
+	jobs3, err := remote.ListJobs(ctx, taskrt.JobQuery{Limit: 2})
+	if err != nil {
+		t.Fatalf("ListJobs with limit: %v", err)
+	}
+	if len(jobs3) != 2 {
+		t.Errorf("got %d jobs with limit=2, want 2", len(jobs3))
+	}
 }

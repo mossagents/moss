@@ -132,3 +132,77 @@ func TestFormatDeniedMessage(t *testing.T) {
 	})
 }
 
+// ── NormalizeApprovalDecisionForRequest missing branches ─────────────────────
+
+func TestNormalizeApprovalDecisionForRequest_NilDecision(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{CacheKey: "k"})
+	if got := NormalizeApprovalDecisionForRequest(req, nil); got != nil {
+		t.Fatalf("nil decision should return nil, got %+v", got)
+	}
+}
+
+func TestNormalizeApprovalDecisionForRequest_DenyType(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{CacheKey: "k"})
+	d := NormalizeApprovalDecisionForRequest(req, &ApprovalDecision{Type: ApprovalDecisionDeny})
+	if d.Approved {
+		t.Fatal("Deny should normalize to approved=false")
+	}
+	if d.Scope != DecisionScopeOnce {
+		t.Fatalf("Deny should default to once scope, got %s", d.Scope)
+	}
+}
+
+func TestNormalizeApprovalDecisionForRequest_GrantPermission(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{})
+	d := NormalizeApprovalDecisionForRequest(req, &ApprovalDecision{Type: ApprovalDecisionGrantPermission})
+	if !d.Approved {
+		t.Fatal("GrantPermission should be approved")
+	}
+	if d.Scope != DecisionScopeSession {
+		t.Fatalf("GrantPermission scope should be session, got %s", d.Scope)
+	}
+}
+
+func TestNormalizeApprovalDecisionForRequest_ApproveWithDefaultScope(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{
+		CacheKey: "cmd:foo",
+		SessionDecisionNote: "remember",
+	})
+	// Approve type uses req.DefaultScope
+	d := NormalizeApprovalDecisionForRequest(req, &ApprovalDecision{Type: ApprovalDecisionApprove})
+	if !d.Approved {
+		t.Fatal("Approve should be approved")
+	}
+}
+
+func TestNormalizeApprovalDecisionForRequest_InferApprovedFromBool(t *testing.T) {
+	// empty Type + Approved=true → infers ApprovalDecisionApprove
+	req := NormalizeApprovalRequest(&ApprovalRequest{})
+	d := NormalizeApprovalDecisionForRequest(req, &ApprovalDecision{Approved: true})
+	if d.Type != ApprovalDecisionApprove {
+		t.Fatalf("expected type %s, got %s", ApprovalDecisionApprove, d.Type)
+	}
+}
+
+// ── normalizeDecisionScopes ──────────────────────────────────────────────────
+
+func TestNormalizeDecisionScopes_DedupAndFilter(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{
+		AllowedScopes: []DecisionScope{
+			DecisionScopeSession, DecisionScopeSession, "invalid-scope", DecisionScopeProject,
+		},
+	})
+	// Should deduplicate and filter out invalid
+	if len(req.AllowedScopes) != 2 {
+		t.Fatalf("expected 2 unique valid scopes, got %v", req.AllowedScopes)
+	}
+}
+
+func TestNormalizeDecisionScopes_Empty(t *testing.T) {
+	req := NormalizeApprovalRequest(&ApprovalRequest{})
+	// empty → defaults to [once]
+	if len(req.AllowedScopes) < 1 || req.AllowedScopes[0] != DecisionScopeOnce {
+		t.Fatalf("expected [once], got %v", req.AllowedScopes)
+	}
+}
+
