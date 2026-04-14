@@ -7,7 +7,6 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/userio/prompting"
@@ -25,9 +24,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 			return sessionResultMsg{err: err}
 		}
 		agent := state.buildAgent()
-		state.k.InstallHooks(func(reg *hooks.Registry) {
-			reg.OnToolLifecycle.Intercept(agent.permissionOverrideInterceptor())
-		})
+		state.k.InstallPlugin(agent.permissionOverridePlugin())
 		return kernelReadyMsg{agent: agent, notices: state.notices}
 	}
 }

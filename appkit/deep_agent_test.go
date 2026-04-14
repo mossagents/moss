@@ -10,12 +10,13 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/kernel/hooks"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	kt "github.com/mossagents/moss/testing"
 )
 
 func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
@@ -235,6 +236,16 @@ func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildDeepAgent: %v", err)
 	}
+	k.SetLLM(&kt.MockLLM{
+		Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
+			StopReason: "end_turn",
+			Usage:      model.TokenUsage{TotalTokens: 1},
+		}},
+	})
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
 	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "x"})
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
@@ -245,18 +256,32 @@ func TestBuildDeepAgent_PatchesOrphanToolCalls(t *testing.T) {
 			{ID: "orphan-1", Name: "run_command", Arguments: json.RawMessage(`{"command":"echo"}`)},
 		},
 	})
-	ev := &hooks.LLMEvent{Session: sess}
-	if err := k.Hooks().BeforeLLM.Run(context.Background(), ev); err != nil {
-		t.Fatalf("hooks run: %v", err)
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("continue")}}
+	sess.AppendMessage(userMsg)
+	if _, err := kernel.CollectRunAgentResult(context.Background(), k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
+	}); err != nil {
+		t.Fatalf("CollectRunAgentResult: %v", err)
 	}
-	last := sess.Messages[len(sess.Messages)-1]
-	if last.Role != model.RoleTool || len(last.ToolResults) != 1 {
-		t.Fatalf("expected patched tool message, got %+v", last)
+	var patched *model.ToolResult
+	for i := range sess.Messages {
+		for j := range sess.Messages[i].ToolResults {
+			tr := &sess.Messages[i].ToolResults[j]
+			if tr.CallID == "orphan-1" {
+				patched = tr
+				break
+			}
+		}
 	}
-	if last.ToolResults[0].CallID != "orphan-1" || !last.ToolResults[0].IsError {
-		t.Fatalf("unexpected patched result %+v", last.ToolResults[0])
+	if patched == nil {
+		t.Fatal("expected patched tool result for orphan-1")
 	}
-	patchText := model.ContentPartsToPlainText(last.ToolResults[0].ContentParts)
+	if !patched.IsError {
+		t.Fatalf("unexpected patched result %+v", *patched)
+	}
+	patchText := model.ContentPartsToPlainText(patched.ContentParts)
 	if !strings.Contains(patchText, "missing tool result patched") {
 		t.Fatalf("unexpected patch content %q", patchText)
 	}

@@ -58,7 +58,7 @@ func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []
 	}
 
 	if logging.DebugEnabled() {
-		k.InstallHooks(builtins.InstallLogger)
+		k.InstallPlugin(builtins.LoggerPlugin())
 		logging.GetLogger().DebugContext(ctx, "kernel built",
 			"workspace", flags.Workspace,
 			"trust", flags.Trust,

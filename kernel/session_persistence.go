@@ -46,20 +46,24 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 		}
 		return nil
 	})
-	k.Hooks().OnSessionLifecycle.AddHook("persistent-session-store", func(ctx context.Context, event *session.LifecycleEvent) error {
-		if event == nil {
+	k.installPlugin(Plugin{
+		Name:  "persistent-session-store",
+		Order: 100,
+		OnSessionLifecycle: func(ctx context.Context, event *session.LifecycleEvent) error {
+			if event == nil {
+				return nil
+			}
+			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
 			return nil
-		}
-		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
-		return nil
-	}, 100)
-	k.Hooks().OnToolLifecycle.AddHook("persistent-session-store-tool", func(ctx context.Context, event *hooks.ToolEvent) error {
-		if event == nil || event.Stage != hooks.ToolLifecycleAfter {
+		},
+		OnToolLifecycle: func(ctx context.Context, event *hooks.ToolEvent) error {
+			if event == nil || event.Stage != hooks.ToolLifecycleAfter {
+				return nil
+			}
+			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
 			return nil
-		}
-		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
-		return nil
-	}, 100)
+		},
+	})
 	return st
 }
 

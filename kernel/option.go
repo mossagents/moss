@@ -5,7 +5,6 @@ import (
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
-	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
@@ -104,13 +103,7 @@ func WithUserIO(io io.UserIO) Option {
 // WithPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
 // Plugin 是注册生命周期 hook 的推荐方式。
 func WithPlugin(p Plugin) Option {
-	return func(k *Kernel) { installPlugin(k.chain, p) }
-}
-
-// WithPluginInstaller 注册一个自定义插件安装器，可直接操作 hooks.Registry。
-// 适用于需要拦截器（Interceptor / 洋葱模式）或跨多个 pipeline 安装的复杂场景。
-func WithPluginInstaller(name string, installer func(*hooks.Registry)) Option {
-	return func(k *Kernel) { installer(k.chain) }
+	return func(k *Kernel) { k.installPlugin(p) }
 }
 
 // WithToolRegistry 替换默认的 Tool Registry。

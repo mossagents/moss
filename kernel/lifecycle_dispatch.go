@@ -9,7 +9,7 @@ import (
 )
 
 func (k *Kernel) emitSessionLifecycle(ctx context.Context, event session.LifecycleEvent) {
-	if err := k.Hooks().OnSessionLifecycle.Run(contextOrBackground(ctx), &event); err != nil {
+	if err := k.chain.OnSessionLifecycle.Run(contextOrBackground(ctx), &event); err != nil {
 		sessionID := ""
 		if event.Session != nil {
 			sessionID = event.Session.ID

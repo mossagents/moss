@@ -18,6 +18,7 @@ type runRecord struct {
 type runSupervisor struct {
 	mu      sync.Mutex
 	closing bool
+	started bool
 	runs    map[string]runRecord
 	wg      sync.WaitGroup
 	nextID  uint64
@@ -42,6 +43,7 @@ func (s *runSupervisor) begin(parent context.Context, sessionID string) (context
 
 	id := fmt.Sprintf("run_%d", atomic.AddUint64(&s.nextID, 1))
 	runCtx, cancel := context.WithCancel(parent)
+	s.started = true
 	s.runs[id] = runRecord{
 		id:        id,
 		sessionID: sessionID,
@@ -85,6 +87,12 @@ func (s *runSupervisor) activeCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.runs)
+}
+
+func (s *runSupervisor) hasStarted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.started
 }
 
 func (s *runSupervisor) wait(ctx context.Context) {

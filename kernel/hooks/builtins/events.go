@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -19,31 +20,29 @@ type Event struct {
 // EventHandler 处理事件的回调函数。
 type EventHandler func(Event)
 
-// InstallEventEmitter 安装事件发射 hooks，当事件类型匹配 pattern 时触发 handler。
+// EventEmitterPlugin returns the canonical event-emitter plugin.
 // pattern 使用 path.Match 语法（如 "tool.*"、"session.*"、"*"）。
-func InstallEventEmitter(pattern string, handler EventHandler) func(*hooks.Registry) {
-	return func(reg *hooks.Registry) {
-		reg.BeforeLLM.AddHook("event-emitter", func(ctx context.Context, ev *hooks.LLMEvent) error {
+func EventEmitterPlugin(pattern string, handler EventHandler) kplugin.Plugin {
+	return kplugin.Plugin{
+		Name:  "event-emitter",
+		Order: 900,
+		BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error {
 			emitLLMIfMatched(pattern, "llm.started", ev, handler)
 			return nil
-		}, 900)
-
-		reg.AfterLLM.AddHook("event-emitter", func(ctx context.Context, ev *hooks.LLMEvent) error {
+		},
+		AfterLLM: func(ctx context.Context, ev *hooks.LLMEvent) error {
 			emitLLMIfMatched(pattern, "llm.completed", ev, handler)
 			return nil
-		}, 900)
-
-		reg.OnToolLifecycle.AddHook("event-emitter", func(ctx context.Context, ev *hooks.ToolEvent) error {
+		},
+		OnToolLifecycle: func(ctx context.Context, ev *hooks.ToolEvent) error {
 			emitToolIfMatched(pattern, ev, handler)
 			return nil
-		}, 900)
-
-		reg.OnSessionLifecycle.AddHook("event-emitter", func(ctx context.Context, ev *session.LifecycleEvent) error {
+		},
+		OnSessionLifecycle: func(ctx context.Context, ev *session.LifecycleEvent) error {
 			emitSessionIfMatched(pattern, ev, handler)
 			return nil
-		}, 900)
-
-		reg.OnError.AddHook("event-emitter", func(ctx context.Context, ev *hooks.ErrorEvent) error {
+		},
+		OnError: func(ctx context.Context, ev *hooks.ErrorEvent) error {
 			if matched, _ := path.Match(pattern, "error"); matched {
 				data := map[string]any{}
 				if ev.Session != nil {
@@ -59,7 +58,7 @@ func InstallEventEmitter(pattern string, handler EventHandler) func(*hooks.Regis
 				})
 			}
 			return nil
-		}, 900)
+		},
 	}
 }
 

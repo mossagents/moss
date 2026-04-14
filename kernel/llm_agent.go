@@ -28,9 +28,11 @@ type LLMAgentConfig struct {
 	Description string
 	LLM         model.LLM
 	Tools       tool.Registry
-	Hooks       *hooks.Registry
+	Plugins     []Plugin
 	Config      loop.LoopConfig
 	SubAgents   []Agent
+
+	hookRegistry *hooks.Registry
 }
 
 // NewLLMAgent creates a new LLM-driven agent.
@@ -38,15 +40,19 @@ func NewLLMAgent(cfg LLMAgentConfig) *LLMAgent {
 	if cfg.Tools == nil {
 		cfg.Tools = tool.NewRegistry()
 	}
-	if cfg.Hooks == nil {
-		cfg.Hooks = hooks.NewRegistry()
+	registry := cfg.hookRegistry
+	if registry == nil {
+		registry = hooks.NewRegistry()
+	}
+	for _, plugin := range cfg.Plugins {
+		installPlugin(registry, plugin)
 	}
 	return &LLMAgent{
 		name:        cfg.Name,
 		description: cfg.Description,
 		llm:         cfg.LLM,
 		tools:       cfg.Tools,
-		hooks:       cfg.Hooks,
+		hooks:       registry,
 		config:      cfg.Config,
 		subAgents:   cfg.SubAgents,
 	}
@@ -66,9 +72,6 @@ func (a *LLMAgent) LLM() model.LLM { return a.llm }
 
 // Tools returns the agent's tool registry.
 func (a *LLMAgent) Tools() tool.Registry { return a.tools }
-
-// Hooks returns the agent's hook registry.
-func (a *LLMAgent) Hooks() *hooks.Registry { return a.hooks }
 
 // Run executes the LLM agent loop and yields events in real-time.
 // Events are streamed as they occur: LLM responses and tool results

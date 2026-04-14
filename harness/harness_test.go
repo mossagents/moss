@@ -8,8 +8,11 @@ import (
 
 	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
@@ -261,6 +264,107 @@ func TestInstall_ErrorStopsChain(t *testing.T) {
 	}
 	if len(h.InstalledFeatures()) != 0 {
 		t.Fatal("no features should be recorded after error")
+	}
+}
+
+func TestFeature_Plugins_InstallInOrder(t *testing.T) {
+	h := newTestHarness()
+	var order []string
+
+	err := h.Install(context.Background(), Plugins(
+		kernel.Plugin{
+			Name:  "late",
+			Order: 10,
+			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
+				order = append(order, "late")
+				return nil
+			},
+		},
+		kernel.Plugin{
+			Name:  "early",
+			Order: 1,
+			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
+				order = append(order, "early")
+				return nil
+			},
+		},
+	))
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	runHarnessBeforeLLM(t, h)
+	want := []string{"early", "late"}
+	if len(order) != len(want) {
+		t.Fatalf("expected %v, got %v", want, order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, order)
+		}
+	}
+}
+
+func TestFeature_Plugins_AllowsMultipleFeatureValues(t *testing.T) {
+	h := newTestHarness()
+	var order []string
+
+	err := h.Install(context.Background(),
+		Plugins(kernel.Plugin{
+			Name: "one",
+			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
+				order = append(order, "one")
+				return nil
+			},
+		}),
+		Plugins(kernel.Plugin{
+			Name: "two",
+			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
+				order = append(order, "two")
+				return nil
+			},
+		}),
+	)
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	runHarnessBeforeLLM(t, h)
+	want := []string{"one", "two"}
+	if len(order) != len(want) {
+		t.Fatalf("expected %v, got %v", want, order)
+	}
+	for i := range want {
+		if order[i] != want[i] {
+			t.Fatalf("expected %v, got %v", want, order)
+		}
+	}
+}
+
+func runHarnessBeforeLLM(t *testing.T, h *Harness) {
+	t.Helper()
+	k := h.Kernel()
+	k.SetLLM(&kt.MockLLM{
+		Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("done")}},
+			StopReason: "end_turn",
+			Usage:      model.TokenUsage{TotalTokens: 1},
+		}},
+	})
+	k.Apply(kernel.WithUserIO(&io.NoOpIO{}))
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "trigger before llm"})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("run")}}
+	sess.AppendMessage(userMsg)
+	if _, err := kernel.CollectRunAgentResult(context.Background(), k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("test"),
+		UserContent: &userMsg,
+	}); err != nil {
+		t.Fatalf("CollectRunAgentResult: %v", err)
 	}
 }
 

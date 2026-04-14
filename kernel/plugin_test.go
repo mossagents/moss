@@ -6,10 +6,11 @@ import (
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 )
 
-func TestPlugin_InstallHooks(t *testing.T) {
+func TestPlugin_InstallLifecycleHandlers(t *testing.T) {
 	reg := hooks.NewRegistry()
 
 	var called []string
@@ -118,6 +119,59 @@ func TestPlugin_OrderRespected(t *testing.T) {
 	}
 }
 
+func TestPlugin_InterceptorWrapsHook(t *testing.T) {
+	reg := hooks.NewRegistry()
+	var order []string
+
+	installPlugin(reg, Plugin{
+		Name:  "logger-like",
+		Order: 10,
+		BeforeLLMInterceptor: func(ctx context.Context, ev *hooks.LLMEvent, next func(context.Context) error) error {
+			order = append(order, "interceptor-before")
+			if err := next(ctx); err != nil {
+				return err
+			}
+			order = append(order, "interceptor-after")
+			return nil
+		},
+		BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error {
+			order = append(order, "hook")
+			return nil
+		},
+	})
+
+	reg.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
+
+	want := []string{"interceptor-before", "hook", "interceptor-after"}
+	for i, item := range want {
+		if len(order) <= i || order[i] != item {
+			t.Fatalf("execution order = %v, want %v", order, want)
+		}
+	}
+}
+
+func TestPlugin_RequiresName(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for unnamed plugin")
+		}
+	}()
+
+	installPlugin(hooks.NewRegistry(), Plugin{
+		BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error { return nil },
+	})
+}
+
+func TestWithPlugin_InvalidPluginPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for invalid plugin")
+		}
+	}()
+
+	New(WithPlugin(Plugin{Name: "invalid"}))
+}
+
 func TestWithPlugin_KernelOption(t *testing.T) {
 	var called bool
 	k := New(
@@ -130,26 +184,9 @@ func TestWithPlugin_KernelOption(t *testing.T) {
 		}),
 	)
 
-	k.Hooks().BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
+	k.chain.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if !called {
 		t.Fatal("plugin hook not called")
-	}
-}
-
-func TestWithPluginInstaller_KernelOption(t *testing.T) {
-	var interceptorCalled bool
-	k := New(
-		WithPluginInstaller("test-interceptor", func(reg *hooks.Registry) {
-			reg.OnToolLifecycle.Intercept(func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
-				interceptorCalled = true
-				return next(ctx)
-			})
-		}),
-	)
-
-	k.Hooks().OnToolLifecycle.Run(context.Background(), &hooks.ToolEvent{Stage: hooks.ToolLifecycleBefore})
-	if !interceptorCalled {
-		t.Fatal("interceptor not called")
 	}
 }
 
@@ -164,25 +201,50 @@ func TestKernel_InstallPlugin(t *testing.T) {
 		},
 	})
 
-	k.Hooks().BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
+	k.chain.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if !called {
 		t.Fatal("dynamically installed plugin hook not called")
 	}
 }
 
-func TestKernel_InstallHooks(t *testing.T) {
+func TestKernel_InstallPluginPanicsAfterRunStarted(t *testing.T) {
 	k := New()
-	var called bool
-	k.InstallHooks(func(reg *hooks.Registry) {
-		reg.AfterLLM.Intercept(func(ctx context.Context, ev *hooks.LLMEvent, next func(context.Context) error) error {
-			called = true
-			return next(ctx)
-		})
+	_, runID, err := k.runs.begin(context.Background(), "sess")
+	if err != nil {
+		t.Fatalf("begin run: %v", err)
+	}
+	defer k.runs.end(runID)
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic when installing plugin after run start")
+		}
+	}()
+
+	k.InstallPlugin(Plugin{
+		Name:      "late",
+		BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error { return nil },
+	})
+}
+
+func TestNewLLMAgent_InstallsPlugins(t *testing.T) {
+	agent := NewLLMAgent(LLMAgentConfig{
+		Name: "plugin-agent",
+		Plugins: []Plugin{{
+			Name: "before",
+			BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error {
+				ev.Session.ReplaceMessages([]model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("installed")}}})
+				return nil
+			},
+		}},
 	})
 
-	k.Hooks().AfterLLM.Run(context.Background(), &hooks.LLMEvent{})
-	if !called {
-		t.Fatal("interceptor installed via InstallHooks not called")
+	sess := &session.Session{ID: "test"}
+	if err := agent.hooks.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{Session: sess}); err != nil {
+		t.Fatalf("run hook: %v", err)
+	}
+	if got := model.ContentPartsToPlainText(sess.CopyMessages()[0].ContentParts); got != "installed" {
+		t.Fatalf("message content = %q, want installed", got)
 	}
 }
 
@@ -191,12 +253,12 @@ func TestKernel_WithPolicy_UsesPlugin(t *testing.T) {
 	// WithPolicy should install an OnToolLifecycle hook via Plugin.
 	// Just verify the pipeline is non-empty.
 	k.WithPolicy()
-	if k.Hooks().OnToolLifecycle.Empty() {
+	if k.chain.OnToolLifecycle.Empty() {
 		t.Fatal("WithPolicy should install OnToolLifecycle hook")
 	}
 }
 
-func TestKernel_OnEvent_UsesInstallHooks(t *testing.T) {
+func TestKernel_OnEvent_UsesPlugin(t *testing.T) {
 	k := New()
 	var received bool
 	k.OnEvent("*", func(ev builtins.Event) {
@@ -204,7 +266,7 @@ func TestKernel_OnEvent_UsesInstallHooks(t *testing.T) {
 	})
 	// Run a session lifecycle event to trigger event emission.
 	sess := &session.Session{ID: "test"}
-	k.Hooks().OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{Stage: session.LifecycleStarted, Session: sess})
+	k.chain.OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{Stage: session.LifecycleStarted, Session: sess})
 	if !received {
 		t.Fatal("OnEvent handler not triggered")
 	}

@@ -6,38 +6,35 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 )
 
-// InstallLogger 安装日志 hooks，在每个 pipeline 上记录 start/done/error。
-// Logger 是跨 pipeline 的安装器，而非单个 hook。
-func InstallLogger(reg *hooks.Registry) {
+// LoggerPlugin returns the canonical logger lifecycle plugin.
+func LoggerPlugin() kplugin.Plugin {
 	logger := slog.Default()
+	return kplugin.Plugin{
+		Name:                          "logger",
+		Order:                         1000,
+		BeforeLLMInterceptor:          logInterceptor(logger, "before_llm", llmSessionID),
+		AfterLLMInterceptor:           logInterceptor(logger, "after_llm", llmSessionID),
+		OnToolLifecycleInterceptor:    logToolInterceptor(logger),
+		OnSessionLifecycleInterceptor: logSessionInterceptor(logger),
+		OnError: func(ctx context.Context, ev *hooks.ErrorEvent) error {
+			logger.ErrorContext(ctx, "hook error",
+				slog.String("phase", "on_error"),
+				slog.Any("error", ev.Error),
+			)
+			return nil
+		},
+	}
+}
 
-	reg.BeforeLLM.AddInterceptor("logger", logInterceptor(logger, "before_llm", func(ev *hooks.LLMEvent) string {
-		if ev.Session != nil {
-			return ev.Session.ID
-		}
-		return ""
-	}), 1000) // 高 order 值确保 logger 在最外层
-
-	reg.AfterLLM.AddInterceptor("logger", logInterceptor(logger, "after_llm", func(ev *hooks.LLMEvent) string {
-		if ev.Session != nil {
-			return ev.Session.ID
-		}
-		return ""
-	}), 1000)
-
-	reg.OnToolLifecycle.AddInterceptor("logger", logToolInterceptor(logger), 1000)
-	reg.OnSessionLifecycle.AddInterceptor("logger", logSessionInterceptor(logger), 1000)
-
-	reg.OnError.AddHook("logger", func(ctx context.Context, ev *hooks.ErrorEvent) error {
-		logger.ErrorContext(ctx, "hook error",
-			slog.String("phase", "on_error"),
-			slog.Any("error", ev.Error),
-		)
-		return nil
-	}, 1000)
+func llmSessionID(ev *hooks.LLMEvent) string {
+	if ev.Session != nil {
+		return ev.Session.ID
+	}
+	return ""
 }
 
 func logInterceptor[T any](logger *slog.Logger, phase string, sessionID func(*T) string) hooks.Interceptor[T] {

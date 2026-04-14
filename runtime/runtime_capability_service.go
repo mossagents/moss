@@ -158,7 +158,6 @@ func CapabilityDeps(k *kernel.Kernel) capability.Deps {
 	return capability.Deps{
 		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
-		Hooks:        k.Hooks(),
 		Sandbox:      k.Sandbox(),
 		UserIO:       k.UserIO(),
 		Workspace:    k.Workspace(),

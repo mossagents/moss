@@ -809,13 +809,13 @@ func TestKernelSessionLifecycleHooksRunInOrder(t *testing.T) {
 	)
 
 	var order []string
-	k.Hooks().OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
+	k.chain.OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-20", event.Stage))
 		}
 		return nil
 	}, 20)
-	k.Hooks().OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
+	k.chain.OnSessionLifecycle.AddHook("", func(_ context.Context, event *session.LifecycleEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-10", event.Stage))
 		}
@@ -882,13 +882,13 @@ func TestKernelToolLifecycleHooksRunInOrder(t *testing.T) {
 	}
 
 	var order []string
-	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
+	k.chain.OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-20", event.Stage))
 		}
 		return nil
 	}, 20)
-	k.Hooks().OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
+	k.chain.OnToolLifecycle.AddHook("", func(_ context.Context, event *hooks.ToolEvent) error {
 		if event != nil {
 			order = append(order, fmt.Sprintf("%s-10", event.Stage))
 		}

@@ -9,7 +9,6 @@ import (
 	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
@@ -75,64 +74,16 @@ func LoadedBootstrapContext(workspace, appName string) Feature {
 	return BootstrapContextValue(bootstrap.LoadWithAppName(workspace, appName))
 }
 
-// SessionLifecycleRegistration describes a session lifecycle hook registration.
-type SessionLifecycleRegistration struct {
-	Order int
-	Hook  session.LifecycleHook
-}
-
-// ToolLifecycleRegistration describes a tool lifecycle hook registration.
-type ToolLifecycleRegistration struct {
-	Order int
-	Hook  hooks.ToolHook
-}
-
-// SessionLifecycleHooks returns a Feature that registers session lifecycle hooks.
-func SessionLifecycleHooks(registrations ...SessionLifecycleRegistration) Feature {
+// Plugins returns a Feature that installs one or more lifecycle plugins.
+func Plugins(plugins ...kernel.Plugin) Feature {
 	return FeatureFunc{
-		FeatureName: "session-lifecycle-hooks",
+		FeatureName: "plugins",
 		MetadataValue: FeatureMetadata{
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			for _, registration := range registrations {
-				registration := registration
-				if registration.Hook == nil {
-					continue
-				}
-				h.Kernel().Hooks().OnSessionLifecycle.AddHook("", func(ctx context.Context, ev *session.LifecycleEvent) error {
-					if ev == nil {
-						return nil
-					}
-					registration.Hook(ctx, *ev)
-					return nil
-				}, registration.Order)
-			}
-			return nil
-		},
-	}
-}
-
-// ToolLifecycleHooks returns a Feature that registers tool lifecycle hooks.
-func ToolLifecycleHooks(registrations ...ToolLifecycleRegistration) Feature {
-	return FeatureFunc{
-		FeatureName: "tool-lifecycle-hooks",
-		MetadataValue: FeatureMetadata{
-			Phase: FeaturePhaseConfigure,
-		},
-		InstallFunc: func(_ context.Context, h *Harness) error {
-			for _, registration := range registrations {
-				registration := registration
-				if registration.Hook == nil {
-					continue
-				}
-				h.Kernel().Hooks().OnToolLifecycle.AddHook("", func(ctx context.Context, ev *hooks.ToolEvent) error {
-					if ev == nil {
-						return nil
-					}
-					registration.Hook(ctx, *ev)
-					return nil
-				}, registration.Order)
+			for _, plugin := range plugins {
+				h.Kernel().InstallPlugin(plugin)
 			}
 			return nil
 		},

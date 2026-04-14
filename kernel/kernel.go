@@ -174,11 +174,6 @@ func (k *Kernel) SessionManager() session.Manager {
 	return k.sessions
 }
 
-// Hooks 返回 hook 注册表。
-func (k *Kernel) Hooks() *hooks.Registry {
-	return k.chain
-}
-
 // Stages returns the kernel stage registry.
 func (k *Kernel) Stages() *StageRegistry {
 	return k.stages
@@ -330,18 +325,19 @@ func (k *Kernel) IsShuttingDown() bool {
 // InstallPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
 // 可在 Kernel 构建后调用，用于运行时动态安装插件。
 func (k *Kernel) InstallPlugin(p Plugin) {
-	installPlugin(k.chain, p)
+	k.installPlugin(p)
 }
 
-// InstallHooks 使用自定义安装函数直接操作 hooks.Registry。
-// 适用于需要拦截器（Interceptor）或其他高级 hook 模式的场景。
-func (k *Kernel) InstallHooks(installer func(*hooks.Registry)) {
-	installer(k.chain)
+func (k *Kernel) installPlugin(p Plugin) {
+	if k.runs.hasStarted() {
+		panic(fmt.Errorf("install plugin %q after kernel started serving work", p.Name))
+	}
+	installPlugin(k.chain, p)
 }
 
 // OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
 func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
-	k.InstallHooks(builtins.InstallEventEmitter(pattern, handler))
+	k.InstallPlugin(builtins.EventEmitterPlugin(pattern, handler))
 }
 
 // WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
@@ -358,11 +354,11 @@ func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 // This is the bridge between the Kernel's resource injection model and the new Agent interface.
 func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 	return NewLLMAgent(LLMAgentConfig{
-		Name:   name,
-		LLM:    k.llm,
-		Tools:  k.tools,
-		Hooks:  k.chain,
-		Config: k.loopCfg,
+		Name:         name,
+		LLM:          k.llm,
+		Tools:        k.tools,
+		hookRegistry: k.chain,
+		Config:       k.loopCfg,
 	})
 }
 

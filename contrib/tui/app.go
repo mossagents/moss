@@ -481,6 +481,14 @@ func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.Too
 	}
 }
 
+func (a *agentState) permissionOverridePlugin() kernel.Plugin {
+	return kernel.Plugin{
+		Name:                       "tui-permission-override",
+		Order:                      0,
+		OnToolLifecycleInterceptor: a.permissionOverrideInterceptor(),
+	}
+}
+
 func (a *agentState) invokeTool(ctx context.Context, name string, input any) (json.RawMessage, error) {
 	t, ok := a.k.ToolRegistry().Get(name)
 	if !ok {
