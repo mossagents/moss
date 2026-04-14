@@ -35,7 +35,7 @@ func NewContextMemoryService(k *kernel.Kernel) ContextMemoryService {
 	if k == nil {
 		return contextMemoryService{}
 	}
-	return newContextMemoryService(ensureMemoryState(k))
+	return newContextMemoryService(memoryStateOf(k))
 }
 
 func newContextMemoryService(st *state) contextMemoryService {

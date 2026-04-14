@@ -90,11 +90,23 @@ func ensureMemoryState(k *kernel.Kernel) *state {
 	return st
 }
 
-func MemoryStoreOf(k *kernel.Kernel) memory.MemoryStore {
+func memoryStateOf(k *kernel.Kernel) *state {
 	if k == nil {
 		return nil
 	}
-	return ensureMemoryState(k).store
+	actual, ok := k.Services().Load(memoryStateKey)
+	if !ok {
+		return nil
+	}
+	st, _ := actual.(*state)
+	return st
+}
+
+func MemoryStoreOf(k *kernel.Kernel) memory.MemoryStore {
+	if st := memoryStateOf(k); st != nil {
+		return st.store
+	}
+	return nil
 }
 
 func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memory.MemoryStore, pipeline *memoryPipelineManager) error {

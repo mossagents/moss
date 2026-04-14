@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -12,8 +13,9 @@ type orderedPromptHook struct {
 
 // PromptAssembler manages ordered system-prompt fragment builders.
 type PromptAssembler struct {
-	mu    sync.RWMutex
-	hooks []orderedPromptHook
+	mu     sync.RWMutex
+	hooks  []orderedPromptHook
+	frozen bool
 }
 
 func newPromptAssembler() *PromptAssembler { return &PromptAssembler{} }
@@ -24,6 +26,9 @@ func (a *PromptAssembler) Add(order int, hook func(*Kernel) string) {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.frozen {
+		panic(fmt.Errorf("register prompt hook after kernel install phase closed"))
+	}
 	a.hooks = append(a.hooks, orderedPromptHook{order: order, run: hook})
 }
 
@@ -50,4 +55,13 @@ func (a *PromptAssembler) Extend(k *Kernel, base string) string {
 		}
 	}
 	return sysPrompt
+}
+
+func (a *PromptAssembler) freeze() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.frozen = true
 }

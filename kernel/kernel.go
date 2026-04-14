@@ -48,9 +48,11 @@ type Kernel struct {
 	loopCfg     loop.LoopConfig
 	observer    observe.Observer
 
-	shutdownCh   chan struct{}
-	shutdownOnce sync.Once
-	runs         *runSupervisor
+	assemblyMu     sync.Mutex
+	assemblyFrozen bool
+	shutdownCh     chan struct{}
+	shutdownOnce   sync.Once
+	runs           *runSupervisor
 }
 
 // New 使用函数式选项创建 Kernel。
@@ -74,10 +76,17 @@ func New(opts ...Option) *Kernel {
 	return k
 }
 
-// Apply applies additional Options to the Kernel after construction.
-// This enables the harness Feature pattern where capabilities are
-// installed progressively rather than all at construction time.
+// Apply applies additional Options during the kernel install phase.
+// Once booting, serving, or shutdown begins, further option application panics.
 func (k *Kernel) Apply(opts ...Option) {
+	if len(opts) == 0 {
+		return
+	}
+	k.assemblyMu.Lock()
+	defer k.assemblyMu.Unlock()
+	if k.assemblyFrozen {
+		panic(fmt.Errorf("apply kernel options after kernel install phase closed"))
+	}
 	for _, opt := range opts {
 		opt(k)
 	}
@@ -87,6 +96,16 @@ func (k *Kernel) Apply(opts ...Option) {
 // 检查必要组件是否已设置，并给出具体的修复建议。
 // 同时初始化已接入的扩展桥接逻辑（如果已配置）。
 func (k *Kernel) Boot(ctx context.Context) error {
+	if k.IsShuttingDown() {
+		return errors.New(errors.ErrShutdown, "kernel is shutting down")
+	}
+	if k.runs.hasStarted() {
+		return errors.New(errors.ErrValidation, "kernel boot must complete before serving work starts")
+	}
+	if k.stages.BootStarted() {
+		return errors.New(errors.ErrValidation, "kernel boot can only run once")
+	}
+
 	var errs []string
 
 	if k.llm == nil {
@@ -99,6 +118,7 @@ func (k *Kernel) Boot(ctx context.Context) error {
 	if len(errs) > 0 {
 		return errors.New(errors.ErrValidation, "kernel boot failed:\n  - "+strings.Join(errs, "\n  - "))
 	}
+	k.freezeAssembly()
 	k.propagateObserver(k.observer)
 	return k.Stages().runBoot(ctx, k)
 }
@@ -130,6 +150,7 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 }
 
 func (k *Kernel) beginRunContext(parent context.Context, sessionID string, timeout time.Duration) (context.Context, string, context.CancelFunc, error) {
+	k.freezeAssembly()
 	runCtx, runID, err := k.runs.begin(parent, sessionID)
 	if err != nil {
 		return nil, "", nil, err
@@ -146,6 +167,7 @@ func (k *Kernel) beginRunContext(parent context.Context, sessionID string, timeo
 // 2. 等待进行中的 Session 完成（或 ctx 超时后取消）
 // 3. 关闭扩展侧资源
 func (k *Kernel) Shutdown(ctx context.Context) error {
+	k.freezeAssembly()
 	k.shutdownOnce.Do(func() { close(k.shutdownCh) })
 	k.runs.beginShutdown()
 
@@ -231,6 +253,17 @@ func (k *Kernel) observerOrNoOp() observe.Observer {
 		return k.observer
 	}
 	return observe.NoOpObserver{}
+}
+
+func (k *Kernel) freezeAssembly() {
+	k.assemblyMu.Lock()
+	defer k.assemblyMu.Unlock()
+	if k.assemblyFrozen {
+		return
+	}
+	k.assemblyFrozen = true
+	k.stages.freeze()
+	k.prompts.freeze()
 }
 
 func contextOrBackground(ctx context.Context) context.Context {

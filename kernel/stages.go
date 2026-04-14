@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"sync"
 )
@@ -22,6 +23,7 @@ type StageRegistry struct {
 
 	bootHooks     []orderedBootHook
 	shutdownHooks []orderedShutdownHook
+	frozen        bool
 	bootStarted   bool
 	bootCompleted bool
 }
@@ -34,6 +36,9 @@ func (r *StageRegistry) OnBoot(order int, hook func(context.Context, *Kernel) er
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.frozen {
+		panic(fmt.Errorf("register boot hook after kernel install phase closed"))
+	}
 	r.bootHooks = append(r.bootHooks, orderedBootHook{order: order, run: hook})
 }
 
@@ -43,6 +48,9 @@ func (r *StageRegistry) OnShutdown(order int, hook func(context.Context, *Kernel
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.frozen {
+		panic(fmt.Errorf("register shutdown hook after kernel install phase closed"))
+	}
 	r.shutdownHooks = append(r.shutdownHooks, orderedShutdownHook{order: order, run: hook})
 }
 
@@ -62,6 +70,15 @@ func (r *StageRegistry) BootCompleted() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.bootCompleted
+}
+
+func (r *StageRegistry) freeze() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.frozen = true
 }
 
 func (r *StageRegistry) runBoot(ctx context.Context, k *Kernel) error {

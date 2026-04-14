@@ -796,6 +796,46 @@ func TestKernelStagesAndPromptsRunInOrder(t *testing.T) {
 	}
 }
 
+func TestKernelAssemblyMutationPanicsAfterBoot(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&io.NoOpIO{}),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+
+	expectKernelPanic(t, func() {
+		k.Apply(WithLLM(&kt.MockLLM{}))
+	})
+	expectKernelPanic(t, func() {
+		k.Stages().OnBoot(10, func(context.Context, *Kernel) error { return nil })
+	})
+	expectKernelPanic(t, func() {
+		k.Stages().OnShutdown(10, func(context.Context, *Kernel) error { return nil })
+	})
+	expectKernelPanic(t, func() {
+		k.Prompts().Add(10, func(*Kernel) string { return "late" })
+	})
+}
+
+func TestKernelApplyPanicsAfterRunStart(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&io.NoOpIO{}),
+	)
+	_, runID, cancel, err := k.beginRunContext(context.Background(), "sess-1", 0)
+	if err != nil {
+		t.Fatalf("beginRunContext: %v", err)
+	}
+	defer cancel()
+	defer k.runs.end(runID)
+
+	expectKernelPanic(t, func() {
+		k.Apply(WithLLM(&kt.MockLLM{}))
+	})
+}
+
 func TestKernelSessionLifecycleHooksRunInOrder(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{
@@ -964,4 +1004,14 @@ func TestKernelPortAccessors(t *testing.T) {
 	if k.TaskRuntime() == nil || k.Mailbox() == nil {
 		t.Fatal("expected task runtime and mailbox accessors to return configured ports")
 	}
+}
+
+func expectKernelPanic(t *testing.T, fn func()) {
+	t.Helper()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+	fn()
 }

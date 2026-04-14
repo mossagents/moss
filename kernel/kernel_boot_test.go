@@ -49,3 +49,56 @@ func TestBoot_RequiresLLMAndUserIO(t *testing.T) {
 		})
 	}
 }
+
+func TestBoot_AllowsRepairAfterValidationFailure(t *testing.T) {
+	k := New()
+	if err := k.Boot(context.Background()); err == nil {
+		t.Fatal("expected validation error")
+	}
+
+	k.Apply(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&io.NoOpIO{}),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot after repair: %v", err)
+	}
+}
+
+func TestBoot_RejectsSecondBoot(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&io.NoOpIO{}),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	err := k.Boot(context.Background())
+	if err == nil {
+		t.Fatal("expected repeated boot to fail")
+	}
+	if !strings.Contains(err.Error(), "can only run once") {
+		t.Fatalf("error %q should mention repeated boot", err.Error())
+	}
+}
+
+func TestBoot_RejectsServingBeforeBoot(t *testing.T) {
+	k := New(
+		WithLLM(&kt.MockLLM{}),
+		WithUserIO(&io.NoOpIO{}),
+	)
+	_, runID, cancel, err := k.beginRunContext(context.Background(), "sess-boot-order", 0)
+	if err != nil {
+		t.Fatalf("beginRunContext: %v", err)
+	}
+	defer cancel()
+	defer k.runs.end(runID)
+
+	err = k.Boot(context.Background())
+	if err == nil {
+		t.Fatal("expected boot after serving start to fail")
+	}
+	if !strings.Contains(err.Error(), "before serving work starts") {
+		t.Fatalf("error %q should mention serving order", err.Error())
+	}
+}
