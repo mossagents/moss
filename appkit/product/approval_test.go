@@ -69,3 +69,39 @@ func TestEvaluatePolicy_ReadOnlyModeDeniesGraphMutation(t *testing.T) {
 		t.Fatalf("decision = %s, want %s", decision, builtins.Deny)
 	}
 }
+
+func TestHasProjectCommandRule(t *testing.T) {
+	rules := []appconfig.CommandRuleConfig{
+		{Match: "git commit", Access: "allow"},
+		{Match: "npm run *", Access: "allow"},
+	}
+
+	// Empty rules
+	target := appconfig.CommandRuleConfig{Match: "git commit", Access: "allow"}
+	if hasProjectCommandRule(nil, target) {
+		t.Error("empty rules: expected false")
+	}
+
+	// Found — exact match
+	if !hasProjectCommandRule(rules, target) {
+		t.Error("expected true for existing rule")
+	}
+
+	// Found — case-insensitive match
+	upper := appconfig.CommandRuleConfig{Match: "GIT COMMIT", Access: "ALLOW"}
+	if !hasProjectCommandRule(rules, upper) {
+		t.Error("expected true for case-insensitive match")
+	}
+
+	// Not found — different match
+	diff := appconfig.CommandRuleConfig{Match: "make build", Access: "allow"}
+	if hasProjectCommandRule(rules, diff) {
+		t.Error("expected false for non-matching rule")
+	}
+
+	// Not found — same match but different access
+	deny := appconfig.CommandRuleConfig{Match: "git commit", Access: "deny"}
+	if hasProjectCommandRule(rules, deny) {
+		t.Error("expected false when access differs")
+	}
+}
