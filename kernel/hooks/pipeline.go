@@ -36,13 +36,6 @@ func NewPipeline[T any]() *Pipeline[T] {
 	return &Pipeline[T]{names: make(map[string]bool)}
 }
 
-// On 注册一个简单 hook。
-func (p *Pipeline[T]) On(hook Hook[T]) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.entries = append(p.entries, entry[T]{hook: hook})
-}
-
 // OnNamed 注册一个命名 hook，支持显式排序和依赖声明。
 func (p *Pipeline[T]) OnNamed(name string, order int, hook Hook[T], dependsOn ...string) error {
 	p.mu.Lock()

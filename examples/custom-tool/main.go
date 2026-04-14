@@ -145,8 +145,7 @@ func handleREPLCommand(input string, sess *session.Session, appName string, comp
 			}
 		}
 		sess.Messages = systemMsgs
-		sess.Budget.UsedSteps = 0
-		sess.Budget.UsedTokens = 0
+		sess.Budget.ResetUsage()
 		fmt.Println("Conversation cleared.")
 	case "/compact":
 		var systemMsgs, dialogMsgs []model.Message

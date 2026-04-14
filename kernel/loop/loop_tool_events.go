@@ -190,7 +190,14 @@ func (l *AgentLoop) emitToolLifecycle(ctx context.Context, event hooks.ToolEvent
 				runErr = fmt.Errorf("tool lifecycle hook panic: %v", r)
 			}
 		}()
-		runErr = l.safeHooks().OnToolLifecycle.Run(callCtx, &event)
+		// 非可绕过权限门控：在 pipeline 之前执行，拦截器无法绕过。
+		if runErr = l.safeHooks().RunToolPolicyGate(callCtx, &event); runErr != nil {
+			return
+		}
+		// 仅在受信任时运行 pipeline hook（防止不受信任的 workspace hook 执行）。
+		if l.safeHooks().IsTrusted() {
+			runErr = l.safeHooks().OnToolLifecycle.Run(callCtx, &event)
+		}
 	})
 	if runErr != nil {
 		reportErr(runErr)

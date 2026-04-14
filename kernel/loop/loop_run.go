@@ -114,8 +114,10 @@ func (l *AgentLoop) runIteration(
 		return true, nil
 	}
 
-	if err := l.safeHooks().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
-		return false, err
+	if l.safeHooks().IsTrusted() {
+		if err := l.safeHooks().AfterLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+			return false, err
+		}
 	}
 
 	sess.AppendMessage(resp.Message)
@@ -174,8 +176,10 @@ func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Sessio
 }
 
 func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*iterationLLMResult, error) {
-	if err := l.safeHooks().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
-		return nil, err
+	if l.safeHooks().IsTrusted() {
+		if err := l.safeHooks().BeforeLLM.Run(ctx, &hooks.LLMEvent{Session: sess, IO: l.IO, Observer: l.observer()}); err != nil {
+			return nil, err
+		}
 	}
 
 	event := l.executionEventBase(sess, observe.ExecutionLLMStarted, "llm", "runtime", "llm")

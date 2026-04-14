@@ -14,14 +14,14 @@ type testEvent struct {
 
 func TestPipelineSimpleHooks(t *testing.T) {
 	p := NewPipeline[testEvent]()
-	p.On(func(_ context.Context, ev *testEvent) error {
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "a")
 		return nil
-	})
-	p.On(func(_ context.Context, ev *testEvent) error {
+	}, 0)
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "b")
 		return nil
-	})
+	}, 0)
 
 	ev := &testEvent{}
 	if err := p.Run(context.Background(), ev); err != nil {
@@ -35,14 +35,14 @@ func TestPipelineSimpleHooks(t *testing.T) {
 func TestPipelineHookError(t *testing.T) {
 	p := NewPipeline[testEvent]()
 	expectedErr := errors.New("fail")
-	p.On(func(_ context.Context, ev *testEvent) error {
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "a")
 		return expectedErr
-	})
-	p.On(func(_ context.Context, ev *testEvent) error {
+	}, 0)
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "should not run")
 		return nil
-	})
+	}, 0)
 
 	ev := &testEvent{}
 	if err := p.Run(context.Background(), ev); err != expectedErr {
@@ -63,10 +63,10 @@ func TestPipelineInterceptor(t *testing.T) {
 		ev.Log = append(ev.Log, "after")
 		return nil
 	})
-	p.On(func(_ context.Context, ev *testEvent) error {
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "inner")
 		return nil
-	})
+	}, 0)
 
 	ev := &testEvent{}
 	if err := p.Run(context.Background(), ev); err != nil {
@@ -84,10 +84,10 @@ func TestPipelineInterceptorShortCircuit(t *testing.T) {
 		ev.Log = append(ev.Log, "blocked")
 		return nil // skip next
 	})
-	p.On(func(_ context.Context, ev *testEvent) error {
+	p.AddHook("", func(_ context.Context, ev *testEvent) error {
 		ev.Log = append(ev.Log, "should not run")
 		return nil
-	})
+	}, 0)
 
 	ev := &testEvent{}
 	if err := p.Run(context.Background(), ev); err != nil {
@@ -145,7 +145,7 @@ func TestPipelineEmpty(t *testing.T) {
 	if !p.Empty() {
 		t.Fatal("expected empty")
 	}
-	p.On(func(_ context.Context, _ *testEvent) error { return nil })
+	p.AddHook("", func(_ context.Context, _ *testEvent) error { return nil }, 0)
 	if p.Empty() {
 		t.Fatal("expected not empty")
 	}
@@ -158,9 +158,9 @@ func TestPipelineConcurrentRegistration(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			p.On(func(_ context.Context, ev *testEvent) error {
+			p.AddHook("", func(_ context.Context, ev *testEvent) error {
 				return nil
-			})
+			}, 0)
 		}()
 	}
 	wg.Wait()
@@ -177,7 +177,7 @@ func TestRegistryCreation(t *testing.T) {
 func BenchmarkPipelineRun(b *testing.B) {
 	p := NewPipeline[testEvent]()
 	for i := 0; i < 10; i++ {
-		p.On(func(ctx context.Context, ev *testEvent) error { return nil })
+		p.AddHook("", func(ctx context.Context, ev *testEvent) error { return nil }, 0)
 	}
 	ev := &testEvent{}
 	ctx := context.Background()

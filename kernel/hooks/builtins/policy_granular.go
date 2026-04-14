@@ -5,7 +5,23 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/tool"
 )
+
+// AutoEnforceApprovalClass 返回一个 PolicyRule，自动执行工具声明的审批类。
+// 声明了 ApprovalClassExplicitUser 的工具始终需要用户审批。
+// 这确保工具作者声明的审批类在政策评估中有实际意义。
+func AutoEnforceApprovalClass() PolicyRule {
+	return func(ctx PolicyContext) PolicyResult {
+		switch ctx.Tool.EffectiveApprovalClass() {
+		case tool.ApprovalClassExplicitUser:
+			return requireApprovalResult("approval_class.explicit_user", "tool declares explicit user approval required")
+		default:
+			return allowResult()
+		}
+	}
+}
 
 // RequireApprovalForPathPrefix 对路径参数命中指定前缀的调用触发审批。
 func RequireApprovalForPathPrefix(prefixes ...string) PolicyRule {

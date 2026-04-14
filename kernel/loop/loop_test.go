@@ -480,7 +480,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 
 	chain := hooks.NewRegistry()
-	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
 
 	io := kt.NewRecorderIO()
 	l := &AgentLoop{
@@ -648,10 +648,10 @@ func TestLoopParallelToolCalls(t *testing.T) {
 			return json.RawMessage(`"` + name + `"`), nil
 		}
 	}
-	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_one"}, handler("one"))); err != nil {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_one", Effects: []tool.Effect{tool.EffectReadOnly}}, handler("one"))); err != nil {
 		t.Fatalf("register slow_one: %v", err)
 	}
-	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_two"}, handler("two"))); err != nil {
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "slow_two", Effects: []tool.Effect{tool.EffectReadOnly}}, handler("two"))); err != nil {
 		t.Fatalf("register slow_two: %v", err)
 	}
 
@@ -833,7 +833,7 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 	chain := hooks.NewRegistry()
-	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		Tools:    reg,
@@ -1182,7 +1182,7 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 		}
 		return nil
 	}, -10)
-	chain.OnToolLifecycle.On(builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")))
+	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
 	reg := tool.NewRegistry()
 	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not be executed")

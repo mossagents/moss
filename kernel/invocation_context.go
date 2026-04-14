@@ -161,6 +161,18 @@ func (c *InvocationContext) WithIO(userIO io.UserIO) *InvocationContext {
 	return &cp
 }
 
+// maxForkDepth is the maximum allowed nesting depth for child agent invocations.
+// Deeper nesting causes exponential resource consumption.
+const maxForkDepth = 5
+
+// forkDepth calculates the current fork nesting depth from a branch path.
+func forkDepth(branch string) int {
+	if branch == "" {
+		return 0
+	}
+	return 1 + strings.Count(branch, ".")
+}
+
 // RunChild executes a child agent on a branch-local session clone. By default,
 // yielded non-partial events are materialized back into the parent session
 // before they are yielded to the caller. Events retain structured
@@ -174,6 +186,10 @@ func (c *InvocationContext) RunChild(agent Agent, cfg ChildRunConfig) iter.Seq2[
 		}
 		if agent == nil {
 			yield(nil, fmt.Errorf("child agent is nil"))
+			return
+		}
+		if forkDepth(c.Branch()) >= maxForkDepth {
+			yield(nil, fmt.Errorf("fork depth limit reached (%d): cannot spawn child agent %q", maxForkDepth, agent.Name()))
 			return
 		}
 

@@ -223,36 +223,36 @@ func (l *AgentLoop) injectCompressionHooks() {
 	}
 	switch cfg.Strategy {
 	case CompressionTruncate:
-		l.Hooks.BeforeLLM.On(builtins.AutoTruncate(builtins.TruncateConfig{
+		l.Hooks.BeforeLLM.AddHook("compress-truncate", builtins.AutoTruncate(builtins.TruncateConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			Tokenizer:        cfg.Tokenizer,
-		}))
+		}), 0)
 	case CompressionSummary:
-		l.Hooks.BeforeLLM.On(builtins.AutoSummarize(builtins.SummarizeConfig{
+		l.Hooks.BeforeLLM.AddHook("compress-summary", builtins.AutoSummarize(builtins.SummarizeConfig{
 			LLM:              l.LLM,
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			SummaryPrompt:    cfg.SummaryPrompt,
 			MaxSummaryTokens: cfg.MaxSummaryTokens,
 			Tokenizer:        cfg.Tokenizer,
-		}))
+		}), 0)
 	case CompressionSliding:
 		winSize := cfg.WindowSize
 		if winSize <= 0 {
 			winSize = 30
 		}
-		l.Hooks.BeforeLLM.On(builtins.SlidingWindow(builtins.SlidingWindowConfig{
+		l.Hooks.BeforeLLM.AddHook("compress-sliding", builtins.SlidingWindow(builtins.SlidingWindowConfig{
 			WindowSize:       winSize,
 			MaxContextTokens: cfg.MaxContextTokens,
 			Tokenizer:        cfg.Tokenizer,
-		}))
+		}), 0)
 	case CompressionPriority:
-		l.Hooks.BeforeLLM.On(builtins.PriorityCompress(builtins.PriorityConfig{
+		l.Hooks.BeforeLLM.AddHook("compress-priority", builtins.PriorityCompress(builtins.PriorityConfig{
 			MaxContextTokens: cfg.MaxContextTokens,
 			KeepRecent:       cfg.KeepRecent,
 			MinScore:         cfg.MinScore,
 			Tokenizer:        cfg.Tokenizer,
-		}))
+		}), 0)
 	}
 }

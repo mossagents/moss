@@ -357,6 +357,13 @@ func (k *Kernel) IsShuttingDown() bool {
 	}
 }
 
+// SetToolPolicyGate 设置不可绕过的工具权限门控函数。
+// 门控在 OnToolLifecycle pipeline 之前执行，拦截器无法绕过。
+// 可在 Kernel 构建后调用。
+func (k *Kernel) SetToolPolicyGate(fn func(context.Context, *hooks.ToolEvent) error) {
+	k.chain.SetToolPolicyGate(fn)
+}
+
 // InstallPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
 // 可在 Kernel 构建后调用，用于运行时动态安装插件。
 func (k *Kernel) InstallPlugin(p Plugin) {

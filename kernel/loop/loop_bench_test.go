@@ -46,9 +46,9 @@ func BenchmarkToolCallDispatch(b *testing.B) {
 func BenchmarkHooksPipeline(b *testing.B) {
 	chain := hooks.NewRegistry()
 	for range 5 {
-		chain.BeforeLLM.On(func(ctx context.Context, ev *hooks.LLMEvent) error {
+		chain.BeforeLLM.AddHook("", func(ctx context.Context, ev *hooks.LLMEvent) error {
 			return nil
-		})
+		}, 0)
 	}
 
 	reg := tool.NewRegistry()

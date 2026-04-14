@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	toolPolicyHookName    = "runtime-tool-policy"
 	toolPolicySessionName = "runtime-tool-policy-session-sync"
 )
 
@@ -52,19 +51,17 @@ func installPolicyHook(k *kernel.Kernel, st *policystate.State) {
 	if st == nil || st.MarkToolHookInstalled() {
 		return
 	}
-	k.InstallPlugin(kernel.Plugin{
-		Name: toolPolicyHookName,
-		OnToolLifecycle: func(ctx context.Context, ev *hooks.ToolEvent) error {
-			current, ok := policystate.Lookup(k)
-			if !ok {
-				return nil
-			}
-			rules := current.CompiledRules()
-			if len(rules) == 0 {
-				return nil
-			}
-			return builtins.PolicyCheck(rules...)(ctx, ev)
-		},
+	// 设置不可绕过的权限门控（拦截器无法绕过此门控）。
+	k.SetToolPolicyGate(func(ctx context.Context, ev *hooks.ToolEvent) error {
+		current, ok := policystate.Lookup(k)
+		if !ok {
+			return nil
+		}
+		rules := current.CompiledRules()
+		if len(rules) == 0 {
+			return nil
+		}
+		return builtins.PolicyCheck(rules...)(ctx, ev)
 	})
 }
 

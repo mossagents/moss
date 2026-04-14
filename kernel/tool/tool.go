@@ -197,6 +197,13 @@ func (s ToolSpec) IsReadOnly() bool {
 	return len(effects) == 1 && effects[0] == EffectReadOnly
 }
 
+// IsExplicitlyReadOnly returns true only when read-only is explicitly declared
+// via the Effects field. Tools without explicit effect declarations are
+// conservatively treated as non-read-only for concurrency safety (fail-closed).
+func (s ToolSpec) IsExplicitlyReadOnly() bool {
+	return len(s.Effects) > 0 && s.IsReadOnly()
+}
+
 func normalizeEffects(in []Effect) []Effect {
 	out := make([]Effect, 0, len(in))
 	seen := make(map[Effect]struct{}, len(in))

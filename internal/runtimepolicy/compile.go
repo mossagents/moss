@@ -36,6 +36,8 @@ func CompileRules(policy runtime.ToolPolicy) []builtins.PolicyRule {
 	if len(policy.DeniedClasses) > 0 {
 		rules = append(rules, builtins.DenyApprovalClasses(policy.DeniedClasses...))
 	}
+	// 自动执行工具声明的审批类（如 ApprovalClassExplicitUser 要求用户审批）。
+	rules = append(rules, builtins.AutoEnforceApprovalClass())
 	rules = append(rules, builtins.DefaultAllow())
 	return rules
 }

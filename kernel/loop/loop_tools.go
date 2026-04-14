@@ -154,7 +154,7 @@ func toolCallsConflict(a, b toolAdmissionCandidate) bool {
 	if !a.ok || !b.ok {
 		return true
 	}
-	if a.spec.IsReadOnly() && b.spec.IsReadOnly() {
+	if a.spec.IsExplicitlyReadOnly() && b.spec.IsExplicitlyReadOnly() {
 		return false
 	}
 	scopesA := normalizedAdmissionScopes(a.spec)
