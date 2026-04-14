@@ -149,10 +149,9 @@ func runRootAgentWithIO(ctx context.Context, k *Kernel, sess *session.Session, u
 func runDelegatedAgent(ctx context.Context, k *Kernel, sess *session.Session, userMsg *model.Message, tools tool.Registry) (*session.LifecycleResult, error) {
 	return CollectRunAgentResult(ctx, k, RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("delegated"),
+		Agent:       k.BuildLLMAgent("delegated").WithTools(tools),
 		UserContent: userMsg,
 		IO:          &io.NoOpIO{},
-		Tools:       tools,
 	})
 }
 

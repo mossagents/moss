@@ -280,10 +280,9 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 
 	result, err := kernel.CollectRunAgentResult(WithSessionID(runCtx, sess.ID), delegator, kernel.RunAgentRequest{
 		Session:     sess,
-		Agent:       delegator.BuildLLMAgent(agentName),
+		Agent:       delegator.BuildLLMAgent(agentName).WithTools(scopedTools),
 		UserContent: &userMsg,
 		IO:          &kernio.NoOpIO{},
-		Tools:       scopedTools,
 	})
 	if err != nil {
 		logging.GetLogger().DebugContext(ctx, "delegated agent failed",

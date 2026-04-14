@@ -39,7 +39,11 @@ func (m *mockDelegator) RunAgent(ctx context.Context, req kernel.RunAgentRequest
 			err    error
 		)
 		if m.runFn != nil {
-			result, err = m.runFn(ctx, req.Session, req.Tools)
+			var scopedTools tool.Registry
+			if llmAgent, ok := req.Agent.(*kernel.LLMAgent); ok {
+				scopedTools = llmAgent.Tools()
+			}
+			result, err = m.runFn(ctx, req.Session, scopedTools)
 		} else {
 			result = &session.LifecycleResult{
 				Success: true,

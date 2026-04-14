@@ -55,31 +55,26 @@ func TestRunAgent_PopulatesUserContentAndSyncWrapsIO(t *testing.T) {
 	}
 }
 
-func TestRunAgent_RejectsToolOverrideForCustomAgent(t *testing.T) {
-	agent := NewCustomAgent(CustomAgentConfig{
-		Name: "custom",
-		Run: func(ctx *InvocationContext) iter.Seq2[*session.Event, error] {
-			return func(yield func(*session.Event, error) bool) {}
-		},
+func TestLLMAgentWithToolsReturnsScopedCopy(t *testing.T) {
+	baseTools := tool.NewRegistry()
+	scopedTools := tool.NewRegistry()
+	agent := NewLLMAgent(LLMAgentConfig{
+		Name:  "scoped",
+		Tools: baseTools,
 	})
-	k := New()
-	sess, err := k.NewSession(context.Background(), session.SessionConfig{Goal: "tool override"})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
+
+	scoped := agent.WithTools(scopedTools)
+	if scoped == nil {
+		t.Fatal("expected scoped agent")
 	}
-	var runErr error
-	for _, err := range k.RunAgent(context.Background(), RunAgentRequest{
-		Session: sess,
-		Agent:   agent,
-		Tools:   tool.NewRegistry(),
-	}) {
-		runErr = err
+	if scoped == agent {
+		t.Fatal("expected WithTools to return a copied agent")
 	}
-	if runErr == nil {
-		t.Fatal("expected RunAgent to reject unsupported tool override")
+	if scoped.Tools() != scopedTools {
+		t.Fatal("expected scoped agent to use scoped tools")
 	}
-	if !strings.Contains(runErr.Error(), "request-scoped tool override") {
-		t.Fatalf("unexpected error: %v", runErr)
+	if agent.Tools() != baseTools {
+		t.Fatal("expected original agent to keep base tools")
 	}
 }
 
@@ -209,9 +204,8 @@ func TestCollectRunAgentResult_RebindsScopedToolsForLLMAgent(t *testing.T) {
 
 	result, err := CollectRunAgentResult(context.Background(), k, RunAgentRequest{
 		Session:     sess,
-		Agent:       k.BuildLLMAgent("root"),
+		Agent:       k.BuildLLMAgent("root").WithTools(scoped),
 		UserContent: &msg,
-		Tools:       scoped,
 	})
 	if err != nil {
 		t.Fatalf("CollectRunAgentResult: %v", err)

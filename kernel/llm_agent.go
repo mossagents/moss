@@ -73,6 +73,18 @@ func (a *LLMAgent) LLM() model.LLM { return a.llm }
 // Tools returns the agent's tool registry.
 func (a *LLMAgent) Tools() tool.Registry { return a.tools }
 
+// WithTools returns a shallow copy of the agent with a request-scoped tool registry.
+// Nil keeps the existing tool registry unchanged.
+func (a *LLMAgent) WithTools(tools tool.Registry) *LLMAgent {
+	if a == nil {
+		return nil
+	}
+	if tools == nil {
+		return a
+	}
+	return a.withTools(tools)
+}
+
 // Run executes the LLM agent loop and yields events in real-time.
 // Events are streamed as they occur: LLM responses and tool results
 // are yielded immediately rather than as a single post-hoc event.
