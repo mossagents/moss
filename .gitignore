@@ -21,3 +21,11 @@ wails_out.txt
 .mosscode/
 
 *.syso
+
+# Temp coverage files
+/cov
+/cov_io
+/coverage
+/coverage_skill
+/tmp_cover
+/$tmp
