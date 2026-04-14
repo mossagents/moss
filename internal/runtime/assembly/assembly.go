@@ -30,7 +30,7 @@ type Config struct {
 	ProgressiveSkills  bool
 	Agents             bool
 	Trust              string
-	CapabilityReporter appruntime.CapabilityReporter
+	CapabilityReporter capability.CapabilityReporter
 }
 
 // DefaultConfig returns the canonical runtime capability defaults.
@@ -64,8 +64,8 @@ func Install(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Con
 	if err != nil {
 		return err
 	}
-	cfg.CapabilityReporter = appruntime.NewCapabilityReporter(appruntime.CapabilityStatusPath(), cfg.CapabilityReporter)
-	if err := policy.Apply(k, appruntime.ResolveToolPolicyForWorkspace(workspaceDir, cfg.Trust, "confirm")); err != nil {
+	cfg.CapabilityReporter = capability.NewCapabilityReporter(capability.CapabilityStatusPath(), cfg.CapabilityReporter)
+	if err := policy.ApplyResolved(k, workspaceDir, cfg.Trust, "confirm"); err != nil {
 		return err
 	}
 	return newLifecycleManager().Run(ctx, k, workspaceDir, cfg)
@@ -305,7 +305,7 @@ func (agentsCapability) Register(ctx context.Context, k *kernel.Kernel, workspac
 func (agentsCapability) Validate(context.Context, *kernel.Kernel, string, Config) error { return nil }
 func (agentsCapability) Activate(context.Context, *kernel.Kernel, string, Config) error { return nil }
 
-func report(reporter appruntime.CapabilityReporter, ctx context.Context, capability string, critical bool, state string, err error) {
+func report(reporter capability.CapabilityReporter, ctx context.Context, capability string, critical bool, state string, err error) {
 	if reporter != nil {
 		reporter.Report(ctx, capability, critical, state, err)
 	}

@@ -6,16 +6,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagents/moss/capability"
+	rootcap "github.com/mossagents/moss/capability"
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const capabilitiesStateKey kernel.ServiceKey = "capabilities.state"
-
 type State struct {
-	manager                *capability.Manager
+	manager                *rootcap.Manager
 	manifests              []skill.Manifest
 	progressive            bool
 	progressiveToolsLoaded bool
@@ -25,8 +23,8 @@ func Ensure(k *kernel.Kernel) *State {
 	if k == nil {
 		return nil
 	}
-	actual, loaded := k.Services().LoadOrStore(capabilitiesStateKey, &State{
-		manager: capability.NewManager(),
+	actual, loaded := k.Services().LoadOrStore(rootcap.KernelStateServiceKey, &State{
+		manager: rootcap.NewManager(),
 	})
 	st := actual.(*State)
 	if loaded {
@@ -69,7 +67,7 @@ func Lookup(k *kernel.Kernel) (*State, bool) {
 	if k == nil {
 		return nil, false
 	}
-	actual, ok := k.Services().Load(capabilitiesStateKey)
+	actual, ok := k.Services().Load(rootcap.KernelStateServiceKey)
 	if !ok || actual == nil {
 		return nil, false
 	}
@@ -80,18 +78,25 @@ func Lookup(k *kernel.Kernel) (*State, bool) {
 	return st, true
 }
 
-func Manager(k *kernel.Kernel) *capability.Manager {
+func Manager(k *kernel.Kernel) *rootcap.Manager {
 	st := Ensure(k)
 	if st == nil {
 		return nil
 	}
 	if st.manager == nil {
-		st.manager = capability.NewManager()
+		st.manager = rootcap.NewManager()
 	}
 	return st.manager
 }
 
-func LookupManager(k *kernel.Kernel) (*capability.Manager, bool) {
+func (st *State) CapabilityManager() *rootcap.Manager {
+	if st == nil {
+		return nil
+	}
+	return st.manager
+}
+
+func LookupManager(k *kernel.Kernel) (*rootcap.Manager, bool) {
 	st, ok := Lookup(k)
 	if !ok || st.manager == nil {
 		return nil, false
@@ -107,7 +112,7 @@ func LookupSkillManifests(k *kernel.Kernel) []skill.Manifest {
 	return append([]skill.Manifest(nil), st.manifests...)
 }
 
-func SetManager(k *kernel.Kernel, m *capability.Manager) {
+func SetManager(k *kernel.Kernel, m *rootcap.Manager) {
 	if st := Ensure(k); st != nil {
 		st.manager = m
 	}
@@ -187,8 +192,8 @@ func RegisterProgressiveSkillTools(k *kernel.Kernel) error {
 	return nil
 }
 
-func CapabilityDeps(k *kernel.Kernel) capability.Deps {
-	return capability.Deps{
+func CapabilityDeps(k *kernel.Kernel) rootcap.Deps {
+	return rootcap.Deps{
 		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
 		Sandbox:      k.Sandbox(),
@@ -201,7 +206,7 @@ func CapabilityDeps(k *kernel.Kernel) capability.Deps {
 	}
 }
 
-func activateManifestRecursive(ctx context.Context, manager *capability.Manager, manifests []skill.Manifest, target string, deps capability.Deps, stack map[string]bool) error {
+func activateManifestRecursive(ctx context.Context, manager *rootcap.Manager, manifests []skill.Manifest, target string, deps rootcap.Deps, stack map[string]bool) error {
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("skill name is required")

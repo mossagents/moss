@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kernio "github.com/mossagents/moss/kernel/io"
+	kernelmemory "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -32,6 +33,17 @@ func sessWithMessages(msgs ...model.Message) *session.Session {
 
 func textMsg(role model.Role, text string) model.Message {
 	return model.Message{Role: role, ContentParts: []model.ContentPart{model.TextPart(text)}}
+}
+
+type stubContextInjector struct {
+	injected   string
+	err        error
+	lastConfig kernelmemory.ContextInjectConfig
+}
+
+func (s *stubContextInjector) InjectContext(_ context.Context, cfg kernelmemory.ContextInjectConfig) (string, error) {
+	s.lastConfig = cfg
+	return s.injected, s.err
 }
 
 // ─── EventEmitterPlugin ───────────────────────────────────────────────────────
@@ -89,11 +101,11 @@ func TestEventEmitter_ToolLifecycle(t *testing.T) {
 	p := builtins.EventEmitterPlugin("tool.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.ToolEvent{
-		Stage:    hooks.ToolLifecycleBefore,
-		Tool:     &tool.ToolSpec{Name: "read_file"},
-		Session:  &session.Session{ID: "s2", State: map[string]any{}},
-		CallID:   "c1",
-		Risk:     "low",
+		Stage:     hooks.ToolLifecycleBefore,
+		Tool:      &tool.ToolSpec{Name: "read_file"},
+		Session:   &session.Session{ID: "s2", State: map[string]any{}},
+		CallID:    "c1",
+		Risk:      "low",
 		Timestamp: time.Now(),
 	}
 	if err := p.OnToolLifecycle(context.Background(), ev); err != nil {
@@ -458,7 +470,7 @@ func TestPriorityCompress_DropsByScore(t *testing.T) {
 		MaxContextTokens: 30,
 		KeepRecent:       1,
 		TokenCounter:     func(m model.Message) int { return 10 },
-		Scorer: builtins.MessageScorerFunc(func(m model.Message) float64 { return 0.5 }),
+		Scorer:           builtins.MessageScorerFunc(func(m model.Message) float64 { return 0.5 }),
 	})
 	sess := sessWithMessages(mkMessages(5)...)
 	err := hook(context.Background(), &hooks.LLMEvent{Session: sess})
@@ -598,7 +610,7 @@ func TestSlidingWindow_EvictsOldMessages(t *testing.T) {
 func TestSlidingWindow_CustomSummarizer(t *testing.T) {
 	called := false
 	hook := builtins.SlidingWindow(builtins.SlidingWindowConfig{
-		MaxContextTokens: 4,  // 5 messages × 1 token = 5 > 4 → triggers compression
+		MaxContextTokens: 4, // 5 messages × 1 token = 5 > 4 → triggers compression
 		WindowSize:       2,
 		TokenCounter:     func(m model.Message) int { return 1 },
 		Summarizer: func(ctx context.Context, msgs []model.Message) (string, error) {
@@ -1015,5 +1027,48 @@ func TestRAG_NilSessionSkips(t *testing.T) {
 	err := hook(context.Background(), &hooks.LLMEvent{Session: nil})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRAG_TypedNilManagerSkips(t *testing.T) {
+	var injector *stubContextInjector
+	hook := builtins.RAG(builtins.RAGConfig{Manager: injector})
+	sess := sessWithMessages(textMsg(model.RoleUser, "what is moss?"))
+	if err := hook(context.Background(), &hooks.LLMEvent{Session: sess}); err != nil {
+		t.Fatal(err)
+	}
+	if len(sess.Messages) != 1 {
+		t.Fatalf("expected session messages to remain unchanged, got %d", len(sess.Messages))
+	}
+}
+
+func TestRAG_AppendsInjectedContext(t *testing.T) {
+	injector := &stubContextInjector{injected: "<memory_context>\nremember this\n</memory_context>"}
+	hook := builtins.RAG(builtins.RAGConfig{
+		Manager:   injector,
+		MaxChars:  1200,
+		EpisodicN: 7,
+		SemanticK: 3,
+		Threshold: 0.8,
+	})
+	sess := sessWithMessages(
+		textMsg(model.RoleSystem, "base system prompt"),
+		textMsg(model.RoleUser, "what is moss?"),
+	)
+	if err := hook(context.Background(), &hooks.LLMEvent{Session: sess}); err != nil {
+		t.Fatal(err)
+	}
+	if injector.lastConfig.SessionID != "s1" {
+		t.Fatalf("expected SessionID s1, got %q", injector.lastConfig.SessionID)
+	}
+	if injector.lastConfig.Query != "what is moss?" {
+		t.Fatalf("expected query from latest user turn, got %q", injector.lastConfig.Query)
+	}
+	if injector.lastConfig.EpisodicN != 7 || injector.lastConfig.SemanticK != 3 || injector.lastConfig.Threshold != 0.8 || injector.lastConfig.MaxChars != 1200 {
+		t.Fatalf("unexpected injector config: %+v", injector.lastConfig)
+	}
+	got := model.ContentPartsToPlainText(sess.Messages[0].ContentParts)
+	if !strings.Contains(got, "base system prompt") || !strings.Contains(got, "remember this") {
+		t.Fatalf("expected merged system prompt, got %q", got)
 	}
 }

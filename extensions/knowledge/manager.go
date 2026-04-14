@@ -12,6 +12,7 @@ package knowledge
 import (
 	"context"
 	"fmt"
+	kernelmemory "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
@@ -27,6 +28,8 @@ type MemoryManager struct {
 	pruneConfig   *PruneConfig
 	decayHalfLife time.Duration
 }
+
+var _ kernelmemory.ContextInjector = (*MemoryManager)(nil)
 
 // MemoryManagerConfig 配置 MemoryManager。
 type MemoryManagerConfig struct {
@@ -98,6 +101,22 @@ func (c *InjectConfig) maxChars() int {
 		return 4000
 	}
 	return c.MaxChars
+}
+
+// InjectContext adapts MemoryManager to the kernel-level context injector
+// contract used by RAG hooks and other prompt-time consumers.
+func (m *MemoryManager) InjectContext(ctx context.Context, cfg kernelmemory.ContextInjectConfig) (string, error) {
+	if m == nil {
+		return "", nil
+	}
+	return m.Inject(ctx, InjectConfig{
+		SessionID: cfg.SessionID,
+		Query:     cfg.Query,
+		EpisodicN: cfg.EpisodicN,
+		SemanticK: cfg.SemanticK,
+		Threshold: cfg.Threshold,
+		MaxChars:  cfg.MaxChars,
+	})
 }
 
 // Inject 生成注入到 LLM context 的记忆块文本。

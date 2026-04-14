@@ -39,6 +39,10 @@ func Apply(k *kernel.Kernel, policy runtime.ToolPolicy) error {
 	return nil
 }
 
+func ApplyResolved(k *kernel.Kernel, workspace, trust, approvalMode string) error {
+	return Apply(k, runtime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode))
+}
+
 func Current(k *kernel.Kernel) (runtime.ToolPolicy, bool) {
 	st, ok := policystate.Lookup(k)
 	if !ok {

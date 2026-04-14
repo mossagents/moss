@@ -2,17 +2,18 @@ package builtins
 
 import (
 	"context"
+	"reflect"
 	"strings"
 
-	"github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/kernel/hooks"
+	kernelmemory "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 )
 
 // RAGConfig 配置 RAG（检索增强生成）注入行为。
 type RAGConfig struct {
 	Enabled        *bool
-	Manager        *knowledge.MemoryManager
+	Manager        kernelmemory.ContextInjector
 	MaxChars       int
 	EpisodicN      int
 	SemanticK      int
@@ -41,7 +42,7 @@ func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 		if !cfg.enabled() {
 			return nil
 		}
-		if cfg.Manager == nil || ev.Session == nil {
+		if !hasContextInjector(cfg.Manager) || ev.Session == nil {
 			return nil
 		}
 
@@ -50,7 +51,7 @@ func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 
 		query := extractQuery(msgs, cfg.QueryExtractor)
 
-		injected, err := cfg.Manager.Inject(ctx, knowledge.InjectConfig{
+		injected, err := cfg.Manager.InjectContext(ctx, kernelmemory.ContextInjectConfig{
 			SessionID: sess.ID,
 			Query:     query,
 			EpisodicN: cfg.EpisodicN,
@@ -65,6 +66,19 @@ func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 		appendMemoryContext(sess, msgs, injected)
 
 		return nil
+	}
+}
+
+func hasContextInjector(injector kernelmemory.ContextInjector) bool {
+	if injector == nil {
+		return false
+	}
+	value := reflect.ValueOf(injector)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !value.IsNil()
+	default:
+		return true
 	}
 }
 

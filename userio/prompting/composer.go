@@ -4,10 +4,10 @@ import (
 	_ "embed"
 	"fmt"
 	"github.com/mossagents/moss/bootstrap"
+	"github.com/mossagents/moss/capability"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
 	"hash/fnv"
 	"sort"
 	"strings"
@@ -410,7 +410,7 @@ func renderCapabilityGuidanceSection(k *kernel.Kernel, skillPrompts []string) st
 		}
 	}
 	if k != nil {
-		if manager, ok := runtime.LookupCapabilityManager(k); ok && manager != nil {
+		if manager, ok := capability.LookupManager(k); ok && manager != nil {
 			if add := strings.TrimSpace(manager.SystemPromptAdditions()); add != "" {
 				parts = append(parts, add)
 			}

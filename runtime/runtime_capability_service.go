@@ -10,7 +10,7 @@ import (
 // LookupCapabilityManager returns the current capability manager if runtime
 // capability state has already been assembled on the kernel.
 func LookupCapabilityManager(k *kernel.Kernel) (*capability.Manager, bool) {
-	return runtimecapa.LookupManager(k)
+	return capability.LookupManager(k)
 }
 
 // LookupSkillManifests returns the currently remembered discovered skill

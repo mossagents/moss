@@ -1,9 +1,5 @@
 package runtime
 
-import "context"
+import "github.com/mossagents/moss/capability"
 
-// CapabilityReporter receives capability state changes during runtime assembly
-// and capability status reporting.
-type CapabilityReporter interface {
-	Report(ctx context.Context, capability string, critical bool, state string, err error)
-}
+type CapabilityReporter = capability.CapabilityReporter
