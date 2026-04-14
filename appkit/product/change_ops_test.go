@@ -358,3 +358,136 @@ func TestSummarizeChange(t *testing.T) {
 func timeNowTest() (out time.Time) {
 	return time.Unix(10, 0).UTC()
 }
+
+// ── pure rendering functions ──────────────────────────────────────────────────
+
+func TestRenderChangeSummaries_Empty(t *testing.T) {
+	got := RenderChangeSummaries(nil)
+	if got != "Changes: none" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestRenderChangeSummaries_Items(t *testing.T) {
+	items := []ChangeSummary{
+		{
+			ID:          "chg-1",
+			Status:      ChangeStatusApplied,
+			PatchID:     "p1",
+			TargetFiles: []string{"a.go", "b.go"},
+			Summary:     "fix bug",
+			CreatedAt:   timeNowTest(),
+		},
+		{
+			ID:        "chg-2",
+			Status:    ChangeStatusPreparing,
+			CreatedAt: timeNowTest(),
+		},
+	}
+	got := RenderChangeSummaries(items)
+	if !strings.Contains(got, "chg-1") {
+		t.Error("missing chg-1")
+	}
+	if !strings.Contains(got, "files=2") {
+		t.Error("missing files count")
+	}
+	if !strings.Contains(got, "fix bug") {
+		t.Error("missing summary")
+	}
+	if !strings.Contains(got, "chg-2") {
+		t.Error("missing chg-2")
+	}
+	if !strings.Contains(got, "(none)") {
+		t.Error("missing (none) fallback for missing summary")
+	}
+	if !strings.Contains(got, "(pending)") {
+		t.Error("missing (pending) fallback for missing patch")
+	}
+}
+
+func TestRenderChangeDetail_Nil(t *testing.T) {
+	got := RenderChangeDetail(nil)
+	if got != "Change: not found" {
+		t.Fatalf("unexpected: %q", got)
+	}
+}
+
+func TestRenderChangeDetail_Full(t *testing.T) {
+	item := &ChangeOperation{
+		ID:                 "chg-full",
+		RepoRoot:           "/repo",
+		BaseHeadSHA:        "abc123",
+		SessionID:          "sess-1",
+		RunID:              "run-1",
+		TurnID:             "turn-1",
+		InstructionProfile: "default",
+		ModelLane:          "fast",
+		PatchID:            "patch-1",
+		CheckpointID:       "cp-1",
+		Summary:            "test change",
+		TargetFiles:        []string{"main.go", "go.mod"},
+		VisibleTools:       []string{"read_file", "write_file"},
+		Status:             ChangeStatusApplied,
+		RecoveryMode:       "",
+		RollbackMode:       RollbackModeExact,
+		RollbackDetails:    "rollback detail",
+		CreatedAt:          timeNowTest(),
+	}
+	got := RenderChangeDetail(item)
+	for _, want := range []string{
+		"chg-full", "/repo", "abc123", "sess-1", "run-1", "turn-1", "default",
+		"fast", "patch-1", "cp-1", "main.go", "go.mod", "read_file", "write_file",
+		string(RollbackModeExact), "rollback detail", "applied",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in output:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderChangeDetail_NoFiles(t *testing.T) {
+	item := &ChangeOperation{ID: "chg-empty", Status: ChangeStatusPreparing, CreatedAt: timeNowTest()}
+	got := RenderChangeDetail(item)
+	if !strings.Contains(got, "files:     (none)") {
+		t.Errorf("expected no-files message, got:\n%s", got)
+	}
+	// No rollback details → should not appear
+	if strings.Contains(got, "rollback details") {
+		t.Error("should not include rollback details when empty")
+	}
+}
+
+func TestRenderChangeDetail_WithCapture(t *testing.T) {
+	item := &ChangeOperation{
+		ID:        "chg-cap",
+		Status:    ChangeStatusApplied,
+		CreatedAt: timeNowTest(),
+	}
+	// No capture → no capture line
+	got := RenderChangeDetail(item)
+	if strings.Contains(got, "capture:") {
+		t.Error("should not include capture line when nil")
+	}
+}
+
+func TestRenderChangeDetail_RecoveryDetails(t *testing.T) {
+	item := &ChangeOperation{
+		ID:              "chg-rec",
+		Status:          ChangeStatusApplyInconsistent,
+		RecoveryDetails: "manual step needed",
+		CreatedAt:       timeNowTest(),
+	}
+	got := RenderChangeDetail(item)
+	if !strings.Contains(got, "manual step needed") {
+		t.Errorf("missing recovery details in output:\n%s", got)
+	}
+}
+
+func TestPadField(t *testing.T) {
+	if got := padField(""); got != "" {
+		t.Fatalf("empty string: want empty, got %q", got)
+	}
+	if got := padField("val"); got != " val" {
+		t.Fatalf("non-empty: want \" val\", got %q", got)
+	}
+}
