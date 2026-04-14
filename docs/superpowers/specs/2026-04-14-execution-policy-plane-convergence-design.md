@@ -84,10 +84,11 @@ Rejected because it would still leave a concept mismatch: the canonical model wo
 
 After this migration, policy ownership is:
 
-- **`runtime`** — canonical structured tool-policy model and profile/posture resolution
+- **`runtime`** — canonical structured tool-policy model and profile/posture resolution only
 - **`harness`** — canonical public policy assembly surface
-- **`internal/runtimepolicy`** — compiler/adapter from canonical policy to enforcement + session summary views
+- **`internal/runtimepolicy`** — the only policy apply/compiler path
 - **`kernel/session`** — policy summary metadata contract consumed by turn planning
+- **`kernel/loop`** — deterministic route derivation from policy summary + tool metadata
 - **`kernel`** — generic hook substrate only
 
 ### 1. Canonical policy model is renamed and expanded
@@ -110,16 +111,28 @@ The model expands beyond command/http execution to include:
 This round should also rename the corresponding runtime APIs so the canonical concept stays internally consistent:
 
 - `ExecutionPolicy` -> `ToolPolicy`
-- `WithExecutionPolicy(...)` -> `WithToolPolicy(...)`
-- `SetExecutionPolicy(...)` -> `SetToolPolicy(...)`
-- `ExecutionPolicyOf(...)` -> `ToolPolicyOf(...)`
 - `ResolveExecutionPolicyForWorkspace(...)` -> `ResolveToolPolicyForWorkspace(...)`
-- `ResolveExecutionPolicyForKernel(...)` -> `ResolveToolPolicyForKernel(...)`
 
 `runtime/profile.go`, `runtime/profile_test.go`, and any posture/profile types that currently expose `ExecutionPolicy` should be renamed accordingly:
 
 - `ResolvedProfile.ExecutionPolicy` -> `ResolvedProfile.ToolPolicy`
 - `SessionPosture.ExecutionPolicy` -> `SessionPosture.ToolPolicy`
+
+Runtime should **not** retain a second public installation path such as `WithToolPolicy(...)` or `SetToolPolicy(...)`. Public callers should not be able to bypass the canonical harness surface when assembling policy behavior.
+
+Runtime should also **not** retain public kernel-aware lookup/resolution APIs such as:
+
+- `ToolPolicyOf(...)`
+- `ResolveToolPolicyForKernel(...)`
+- `ToolPolicyRules(...)`
+- `ToolPolicyForToolContext(...)`
+
+Kernel-scoped state access remains an internal implementation detail behind the one canonical apply path.
+
+The current exported rule-compilation and tool-context merge helpers move behind the internal apply/compiler boundary:
+
+- rule compilation becomes an `internal/runtimepolicy` responsibility
+- tool-context policy merging becomes an internal runtime/runtimepolicy responsibility, not a public API
 
 ### 2. Harness becomes the only public policy assembly surface
 
@@ -133,9 +146,8 @@ Introduce:
 
 Responsibilities:
 
-- install the canonical structured policy into kernel-scoped runtime state
-- install the internal enforcement adapter compiled from that policy
-- install the session-lifecycle synchronization needed for turn planning to observe the same policy semantics
+- call the one shared internal apply boundary
+- avoid exposing any raw-rule or alternate public install path
 
 This makes structured policy the only canonical public assembly surface. Raw hook rules stop being public execution/tool-policy inputs.
 
@@ -147,7 +159,7 @@ Instead:
 
 - approval-mode helpers resolve or mutate canonical `runtime.ToolPolicy`
 - project approval amendments persist structured policy deltas/config, not raw hook bundles
-- `ApplyApprovalModeWithTrust(...)` and `ApplyResolvedProfile(...)` install the canonical structured policy path, not `k.WithPolicy(...)`
+- `ApplyApprovalModeWithTrust(...)` and `ApplyResolvedProfile(...)` call the same internal apply boundary used by `harness.ToolPolicy(...)`
 
 If low-level raw rule helpers remain at all, they must become internal implementation details behind the canonical structured path rather than product-visible policy logic.
 
@@ -159,11 +171,21 @@ Add:
 
 Responsibilities:
 
+- provide **the only** `Apply(...)` / install path for canonical policy
+- write canonical policy state into kernel-scoped runtime state
 - compile canonical `runtime.ToolPolicy` into the hook-enforcement rules consumed by kernel policy hooks
 - derive a **summary** of canonical policy semantics suitable for turn planning
-- provide deterministic mapping from canonical policy to route reason codes and approval/visibility outcomes
+- synchronize that summary onto sessions through one deterministic path
 
-This package is an adapter only. It does **not** own the canonical model or the public API.
+This package is an adapter/apply boundary only. It does **not** own the canonical model or the public API, and it does **not** own final turn-plan reason-code generation.
+
+`internal/runtimepolicy.Apply(...)` must be **idempotent and replace-based**, not append-based:
+
+- repeated apply on the same kernel replaces prior canonical policy state
+- repeated apply replaces the previously compiled rule bundle instead of appending another copy
+- repeated apply replaces or updates the previously installed session-summary synchronization hook instead of stacking duplicate hooks
+
+The implementation should use stable service/plugin/hook identities so policy changes do not accumulate stale enforcement or stale metadata synchronization behavior.
 
 ### 5. Add a lower-layer session metadata summary for turn planning
 
@@ -171,22 +193,44 @@ This package is an adapter only. It does **not** own the canonical model or the 
 
 Therefore, this migration should add a lower-layer session metadata contract in `kernel/session`, for example:
 
-- `MetadataToolPolicy`
-- `MetadataToolPolicySummary`
+- `MetadataToolPolicy = "tool_policy"`
+- `MetadataToolPolicySummary = "tool_policy_summary"`
 
 And a summary type such as:
 
 - `session.ToolPolicySummary`
 
+The contract should be exact, not illustrative. `session.ToolPolicySummary` should include:
+
+- `Version int`
+- `Trust string`
+- `ApprovalMode string`
+- `CommandAccess string`
+- `HTTPAccess string`
+- `WorkspaceWriteAccess string`
+- `MemoryWriteAccess string`
+- `GraphMutationAccess string`
+- `ProtectedPathPrefixes []string`
+- `ApprovalRequiredClasses []string`
+- `DeniedClasses []string`
+
 The full canonical `runtime.ToolPolicy` remains stored for runtime/profile/posture use, while the summary is stored for kernel-side consumers that must remain runtime-independent.
 
-The summary should capture the planner-relevant policy semantics, including at minimum:
+`MetadataToolPolicy` must also be exact, not illustrative. It stores a **versioned serialized canonical policy payload**, not a live Go value. The contract is:
 
-- trust
-- approval mode
-- per-domain default access (command, HTTP, workspace-write, memory-write, graph mutation)
-- protected path-prefix requirements
-- approval-class behavior relevant to tool routing
+- key: `MetadataToolPolicy = "tool_policy"`
+- payload kind: structured metadata object written by runtime-owned encode/decode helpers
+- payload fields:
+  - `version int`
+  - `policy map[string]any` containing the serialized canonical `runtime.ToolPolicy`
+
+Runtime owns the serialization contract for that full payload. Kernel-side code does not interpret it directly; it exists so runtime/profile/posture code can restore the canonical policy and so summary repair can deterministically re-derive `ToolPolicySummary`.
+
+Update semantics are explicit:
+
+1. `runtime.ApplyResolvedProfileToSessionConfig(...)` writes both `MetadataToolPolicy` and `MetadataToolPolicySummary` for newly created sessions.
+2. `internal/runtimepolicy.Apply(...)` installs a session-lifecycle synchronization hook so sessions created through canonical policy assembly also receive the same metadata contract.
+3. Existing or restored sessions with missing/older summaries are repaired by deterministic resynchronization from the versioned `MetadataToolPolicy` payload when possible; if that payload is missing, unknown-version, or malformed, turn planning enters the explicit safe-degradation path.
 
 ### 6. Turn planning derives from canonical policy summary, not heuristics
 
@@ -199,7 +243,7 @@ The summary should capture the planner-relevant policy semantics, including at m
 Instead:
 
 - `buildToolRoute(...)` should read `session.ToolPolicySummary`
-- route status should be derived deterministically from:
+- route status and reason codes should be derived deterministically in `kernel/loop/turn_plan.go` from:
   - canonical policy summary
   - tool spec metadata (`Effects`, `ApprovalClass`, `PlannerVisibility`, `Capabilities`, `ResourceScope`, etc.)
   - task/profile mode rules that are still intentionally planner-owned (for example planning-mode visibility)
@@ -226,11 +270,11 @@ must no longer treat it as the canonical execution/tool-policy surface.
 ### Canonical policy resolution flow
 
 1. profile/trust/approval/project config resolve into canonical `runtime.ToolPolicy`
-2. harness/product installation applies that canonical policy to kernel/runtime state
-3. `internal/runtimepolicy` compiles:
+2. `harness.ToolPolicy(...)` and product approval flows both call `internal/runtimepolicy.Apply(...)`
+3. `internal/runtimepolicy.Apply(...)` writes canonical kernel/runtime state and compiles:
    - enforcement rules
    - session policy summary
-4. session creation or policy application sync writes the summary into session metadata
+4. session creation or policy application sync writes the summary into session metadata under the exact contract above
 5. builtin tools and turn planning consume the same canonical policy semantics through their dedicated derived views
 
 ### Enforcement flow
@@ -249,7 +293,8 @@ must no longer treat it as the canonical execution/tool-policy surface.
 
 - Invalid policy configuration or invalid persisted amendment is a resolve/merge-time error.
 - `harness.ToolPolicy(...)` must reject zero/invalid canonical policies at install time.
-- Policy compilation failure is an install-time error; do not partially apply structured state without its derived enforcement/summary views.
+- `internal/runtimepolicy.Apply(...)` is the one canonical installer and must fail atomically if any derived artifact cannot be produced.
+- Re-applying policy to the same kernel/session replaces prior compiled artifacts; duplicate rule bundles or duplicate sync hooks are a correctness bug.
 - Missing `ToolPolicySummary` must not fall back to the old heuristics.
   - It should produce a deterministic safe degradation path with explicit reason codes such as `policy_summary_missing`.
   - Non-read-only high-side-effect tools should degrade to approval-required or hidden according to fixed safe defaults.
@@ -267,13 +312,13 @@ must no longer treat it as the canonical execution/tool-policy surface.
 
 - `harness.ToolPolicy(...)` becomes the only canonical public policy feature
 - `appkit/product/approval.go` no longer constructs extra raw hook-rule bundles in the canonical path
-- policy installation synchronizes both kernel state and session summary metadata
+- both harness and product approval flows call the same internal `Apply(...)` boundary and produce identical state/summaries for identical policies
 
 ### Kernel / turn planning
 
 - `turn_plan` approval-required / hidden / visible decisions are derived from `ToolPolicySummary`
 - legacy heuristic helpers are deleted
-- reason codes reflect canonical policy-derived outcomes
+- reason codes are generated only in `kernel/loop/turn_plan.go`, not in the internal adapter
 
 ### Runtime enforcement
 
