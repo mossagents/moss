@@ -142,6 +142,7 @@ Responsibilities:
 
 - validate required request fields
 - normalize optional IO/tool overrides onto one canonical execution path
+- normalize the effective IO through the same goroutine-safe wrapping currently provided by the legacy wrappers
 - create the invocation context once
 - execute the supplied agent through the one shared event-stream path
 
@@ -149,6 +150,19 @@ This request shape absorbs the only real reasons the legacy wrappers existed:
 
 - `RunWithUserIO(...)` becomes `RunAgent(..., RunAgentRequest{IO: ...})`
 - `RunWithTools(...)` becomes `RunAgent(..., RunAgentRequest{Tools: ...})`
+
+The tool-override rule must be exact, because `RunWithTools(...)` today is not merely a different registry input; it is the delegated execution path used by `agent.Delegator`, and it also runs non-interactively with `NoOpIO`.
+
+P3 therefore requires request-scoped tool rebinding rather than a passive unused field:
+
+- when `RunAgentRequest.Tools` is nil, the supplied agent runs with its normal tool set
+- when `RunAgentRequest.Tools` is non-nil, the canonical implementation must execute a request-scoped agent instance that actually uses that registry
+- for the canonical root `*LLMAgent` path, this means cloning or rebinding the agent for the duration of the request rather than mutating shared kernel state
+- if a caller supplies `Tools` for an agent type that cannot honor a request-scoped tool override, `RunAgent(...)` returns an explicit error instead of silently ignoring the override
+
+Delegated agent runs also preserve the current non-interactive behavior explicitly:
+
+- `agent.Delegator` migration uses `RunAgentRequest{Tools: scopedTools, IO: &io.NoOpIO{}}`
 
 The wrapper-specific run kinds should not survive as public concepts. If `runSupervisor` still needs an internal distinction for delegated runs, it may derive it from the request shape; otherwise the dead run-kind split should be removed entirely.
 
@@ -158,7 +172,8 @@ P3 should not keep a second kernel execution entry just to preserve sync callers
 
 1. executes `RunAgent(...)`
 2. consumes the event stream to completion
-3. folds the final run into `session.LifecycleResult`
+3. reads the authoritative terminal run result from the canonical run path
+4. returns `session.LifecycleResult`
 
 The collector returns `session.LifecycleResult`, not `*loop.SessionResult`.
 
@@ -168,11 +183,19 @@ That is the canonical sync summary because:
 - it removes outer-layer dependency on `kernel/loop`
 - the only field lost from `loop.SessionResult` is duplicate `SessionID`, which the caller already has from `session.Session`
 
-Collector semantics:
+Collector semantics are **not** a best-effort guess over arbitrary agent events.
 
-- `Output` is the final assistant output observed for the run
-- `Steps` comes from the session budget / final run state
-- `TokensUsed` is aggregated from the streamed response usage
+Instead:
+
+- the canonical run path must expose an authoritative terminal result for loop-backed execution
+- `LLMAgent` / loop-backed runs remain the primary supported sync-collector path because they already produce `session.LifecycleResult`
+- if a caller asks to collect a sync result for an agent that does not produce an authoritative terminal result, the collector returns an explicit error instead of synthesizing one from partial stream heuristics
+
+Collector result semantics for the supported loop-backed path:
+
+- `Output` is the final assistant output from the terminal run result
+- `Steps` comes from the final run result
+- `TokensUsed` comes from the final run result
 - failures still return `error` through the normal error channel rather than being silently converted into success-shaped summaries
 
 This collector is the only sanctioned sync bridge for callers that do not want to iterate events themselves.
@@ -262,7 +285,10 @@ This is important because P3 is not complete if callers merely switch from `Run(
 
 - Missing required request fields in `RunAgentRequest` are explicit errors.
 - Missing tool registry or IO overrides fall back only to the canonical kernel-owned defaults; no wrapper-specific behavior is preserved.
+- The canonical `RunAgent(...)` path must preserve goroutine-safe IO normalization for both default IO and request-scoped IO overrides.
+- Supplying `RunAgentRequest.Tools` for an agent that cannot honor request-scoped tool rebinding is an explicit error.
 - If a sync caller requests a collected result and the run fails, the caller receives the run error explicitly.
+- If a sync caller requests a collected result for an agent that does not produce an authoritative terminal result, the collector returns an explicit error.
 - P3 must not introduce broad compatibility fallbacks such as silently recreating `Run(...)` behavior behind helper aliases.
 
 ## Migration Order
@@ -282,9 +308,12 @@ Focused coverage should include:
 1. **kernel execution API tests**
    - request validation
    - IO override path
+   - IO sync-wrapping on the canonical path
    - tool-registry override path
+   - explicit error on unsupported tool override
    - run supervisor / timeout behavior through the new request path
    - shared collector result folding
+   - explicit error on collector use with non-result-producing agents
 
 2. **migration call-site tests**
    - at least one migrated test each for:
