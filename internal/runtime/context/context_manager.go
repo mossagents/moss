@@ -13,7 +13,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
-	rt "github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/statecatalog"
 )
 
 const (
@@ -267,19 +267,19 @@ func buildMemoryStartupFragment(ctx context.Context, k *kernel.Kernel) session.P
 }
 
 func buildStateCatalogStartupFragment(k *kernel.Kernel, sess *session.Session) session.PromptContextFragment {
-	catalog := rt.StateCatalogOf(k)
+	catalog := statecatalog.Lookup(k)
 	if catalog == nil || !catalog.Enabled() || sess == nil {
 		return session.PromptContextFragment{}
 	}
-	page, err := catalog.Query(rt.StateQuery{
+	page, err := catalog.Query(statecatalog.Query{
 		SessionID: sess.ID,
-		Kinds: []rt.StateKind{
-			rt.StateKindMemory,
-			rt.StateKindTask,
-			rt.StateKindJob,
-			rt.StateKindJobItem,
-			rt.StateKindCheckpoint,
-			rt.StateKindExecutionEvent,
+		Kinds: []statecatalog.Kind{
+			statecatalog.KindMemory,
+			statecatalog.KindTask,
+			statecatalog.KindJob,
+			statecatalog.KindJobItem,
+			statecatalog.KindCheckpoint,
+			statecatalog.KindExecutionEvent,
 		},
 		Limit: 6,
 	})

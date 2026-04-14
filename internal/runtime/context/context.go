@@ -12,11 +12,22 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
-	rt "github.com/mossagents/moss/runtime"
 )
 
 const contextStateKey kernel.ServiceKey = "context.state"
 const offloadStateKey kernel.ServiceKey = "compact.state"
+
+type ContextMemoryService interface {
+	CompactSessionContext(
+		ctx context.Context,
+		sessionStore session.SessionStore,
+		sess *session.Session,
+		keepRecent int,
+		note string,
+		llm model.LLM,
+		withSummary bool,
+	) (map[string]any, error)
+}
 
 type contextFragmentKind string
 
@@ -34,7 +45,7 @@ const (
 type contextState struct {
 	store                 session.SessionStore
 	manager               session.Manager
-	memory                rt.ContextMemoryService
+	memory                ContextMemoryService
 	triggerDialog         int
 	keepRecent            int
 	triggerTokens         int
@@ -103,6 +114,12 @@ func WithContextSessionManager(manager session.Manager) kernel.Option {
 	}
 }
 
+func WithContextMemoryService(memory ContextMemoryService) kernel.Option {
+	return func(k *kernel.Kernel) {
+		ensureContextState(k).memory = memory
+	}
+}
+
 func ConfigureContext(opts ...ContextOption) kernel.Option {
 	return func(k *kernel.Kernel) {
 		st := ensureContextState(k)
@@ -120,7 +137,7 @@ func WithOffloadSessionStore(store session.SessionStore) kernel.Option {
 	}
 }
 
-func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager session.Manager, memory rt.ContextMemoryService) error {
+func RegisterOffloadTools(reg tool.Registry, store session.SessionStore, manager session.Manager, memory ContextMemoryService) error {
 	if _, exists := reg.Get("offload_context"); exists {
 		return nil
 	}
@@ -214,9 +231,11 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 		if st.manager == nil {
 			st.manager = k.SessionManager()
 		}
-		st.memory = rt.NewContextMemoryService(k)
 		if st.store == nil || st.manager == nil {
 			return nil
+		}
+		if st.memory == nil {
+			return fmt.Errorf("context memory service is required when context store is enabled")
 		}
 		if err := registerCompactConversationTool(k.ToolRegistry(), st, k.LLM()); err != nil {
 			return err
@@ -385,7 +404,7 @@ func classifyContextFragment(msg model.Message) contextFragmentKind {
 func compactWithSummary(
 	ctx context.Context,
 	store session.SessionStore,
-	memory rt.ContextMemoryService,
+	memory ContextMemoryService,
 	manager session.Manager,
 	sessionID string,
 	keepRecent int,
@@ -395,6 +414,9 @@ func compactWithSummary(
 	sess, ok := manager.Get(sessionID)
 	if !ok || sess == nil {
 		return nil, fmt.Errorf("session %q not found", sessionID)
+	}
+	if memory == nil {
+		return nil, fmt.Errorf("context memory service is required")
 	}
 	return memory.CompactSessionContext(ctx, store, sess, keepRecent, note, llm, true)
 }

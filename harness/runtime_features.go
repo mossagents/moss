@@ -222,7 +222,10 @@ func ContextManagement(store session.SessionStore, opts ...ContextOption) Featur
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			kopts := []kernel.Option{runtimectx.WithContextSessionStore(store)}
+			kopts := []kernel.Option{
+				runtimectx.WithContextSessionStore(store),
+				runtimectx.WithContextMemoryService(runtime.NewContextMemoryService(h.Kernel())),
+			}
 			if rtOpts := runtimeContextOptions(opts); len(rtOpts) > 0 {
 				kopts = append(kopts, runtimectx.ConfigureContext(rtOpts...))
 			}

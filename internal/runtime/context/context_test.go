@@ -27,6 +27,27 @@ func (s stubRepoStateCapture) Capture(context.Context) (*workspace.RepoState, er
 	return s.state, nil
 }
 
+func applyContextMemoryService(k *kernel.Kernel) {
+	k.Apply(WithContextMemoryService(rt.NewContextMemoryService(k)))
+}
+
+func TestConfigureContextWithoutStoreDoesNotRequireMemoryService(t *testing.T) {
+	ctx := context.Background()
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		ConfigureContext(
+			WithKeepRecent(2),
+			WithContextPromptBudget(200),
+			WithContextTriggerTokens(120),
+			WithContextStartupBudget(0),
+		),
+	)
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+}
+
 func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	ctx := context.Background()
 	store, err := session.NewFileStore(t.TempDir())
@@ -49,6 +70,7 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 			WithContextStartupBudget(0),
 		),
 	)
+	applyContextMemoryService(k)
 	if err := k.Boot(ctx); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -187,6 +209,7 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 			WithContextStartupBudget(180),
 		),
 	)
+	applyContextMemoryService(k)
 	if err := k.Boot(ctx); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -273,6 +296,7 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 			WithContextStartupBudget(160),
 		),
 	)
+	applyContextMemoryService(k)
 	if err := k.Boot(ctx); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
@@ -330,6 +354,7 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 			WithContextStartupBudget(160),
 		),
 	)
+	applyContextMemoryService(k)
 	if err := k.Boot(ctx); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}

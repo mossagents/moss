@@ -14,8 +14,7 @@ import (
 )
 
 type contextMemoryService struct {
-	store    memory.MemoryStore
-	pipeline *memoryPipelineManager
+	kernel *kernel.Kernel
 }
 
 // ContextMemoryService exposes context compaction as a runtime-owned service.
@@ -32,20 +31,7 @@ type ContextMemoryService interface {
 }
 
 func NewContextMemoryService(k *kernel.Kernel) ContextMemoryService {
-	if k == nil {
-		return contextMemoryService{}
-	}
-	return newContextMemoryService(memoryStateOf(k))
-}
-
-func newContextMemoryService(st *memoryState) contextMemoryService {
-	if st == nil {
-		return contextMemoryService{}
-	}
-	return contextMemoryService{
-		store:    st.store,
-		pipeline: st.pipeline,
-	}
+	return contextMemoryService{kernel: k}
 }
 
 func (s contextMemoryService) CompactSessionContext(
@@ -57,7 +43,13 @@ func (s contextMemoryService) CompactSessionContext(
 	llm model.LLM,
 	withSummary bool,
 ) (map[string]any, error) {
-	return compactSessionContext(ctx, sessionStore, s.store, s.pipeline, sess, keepRecent, note, llm, withSummary)
+	var memoryStore memory.MemoryStore
+	var memoryPipeline *memoryPipelineManager
+	if st := memoryStateOf(s.kernel); st != nil {
+		memoryStore = st.store
+		memoryPipeline = st.pipeline
+	}
+	return compactSessionContext(ctx, sessionStore, memoryStore, memoryPipeline, sess, keepRecent, note, llm, withSummary)
 }
 
 func compactSessionContext(
