@@ -169,3 +169,88 @@ func TestContentPartsToReasoningText(t *testing.T) {
 		t.Fatalf("reasoning text = %q, want %q", out, "a\nb")
 	}
 }
+
+// ─── factory constructors ────────────────────────────────────────────────────
+
+func TestReasoningPart(t *testing.T) {
+	p := ReasoningPart("chain of thought")
+	if p.Type != ContentPartReasoning {
+		t.Fatalf("expected ContentPartReasoning, got %s", p.Type)
+	}
+	if p.Text != "chain of thought" {
+		t.Fatalf("unexpected text: %q", p.Text)
+	}
+}
+
+func TestImageInlinePart(t *testing.T) {
+	p := ImageInlinePart(ContentPartInputImage, "image/png", "abc123", "/path/img.png")
+	if p.Type != ContentPartInputImage {
+		t.Fatalf("unexpected type: %s", p.Type)
+	}
+	if p.MIMEType != "image/png" || p.DataBase64 != "abc123" || p.SourcePath != "/path/img.png" {
+		t.Fatalf("unexpected fields: %+v", p)
+	}
+}
+
+func TestMediaInlinePart_TrimsWhitespace(t *testing.T) {
+	p := MediaInlinePart(ContentPartInputImage, "  image/jpeg  ", "  data  ", "  /src  ")
+	if p.MIMEType != "image/jpeg" {
+		t.Fatalf("mime not trimmed: %q", p.MIMEType)
+	}
+	if p.DataBase64 != "data" {
+		t.Fatalf("data not trimmed: %q", p.DataBase64)
+	}
+	if p.SourcePath != "/src" {
+		t.Fatalf("source path not trimmed: %q", p.SourcePath)
+	}
+}
+
+func TestImageURLPart(t *testing.T) {
+	p := ImageURLPart(ContentPartOutputImage, "https://example.com/img.png", "/local.png")
+	if p.Type != ContentPartOutputImage {
+		t.Fatalf("unexpected type: %s", p.Type)
+	}
+	if p.URL != "https://example.com/img.png" || p.SourcePath != "/local.png" {
+		t.Fatalf("unexpected fields: %+v", p)
+	}
+}
+
+func TestMediaURLPart_TrimsWhitespace(t *testing.T) {
+	p := MediaURLPart(ContentPartOutputImage, "  http://host/img  ", "  /src  ")
+	if p.URL != "http://host/img" {
+		t.Fatalf("URL not trimmed: %q", p.URL)
+	}
+	if p.SourcePath != "/src" {
+		t.Fatalf("source path not trimmed: %q", p.SourcePath)
+	}
+}
+
+func TestStripReasoningParts(t *testing.T) {
+	parts := []ContentPart{
+		ReasoningPart("internal thought"),
+		TextPart("visible answer"),
+		ReasoningPart("more internal"),
+	}
+	stripped := StripReasoningParts(parts)
+	for _, p := range stripped {
+		if p.Type == ContentPartReasoning {
+			t.Fatal("StripReasoningParts should remove all reasoning parts")
+		}
+	}
+	if len(stripped) != 1 || stripped[0].Text != "visible answer" {
+		t.Fatalf("unexpected stripped: %+v", stripped)
+	}
+}
+
+func TestStripReasoningParts_Empty(t *testing.T) {
+	if result := StripReasoningParts(nil); result != nil {
+		t.Fatal("nil input should return nil")
+	}
+}
+
+func TestStripReasoningParts_NoReasoning(t *testing.T) {
+	parts := []ContentPart{TextPart("a"), TextPart("b")}
+	if result := StripReasoningParts(parts); len(result) != 2 {
+		t.Fatalf("non-reasoning parts should be preserved; got %d", len(result))
+	}
+}
