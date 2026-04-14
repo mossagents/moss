@@ -41,11 +41,11 @@ func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 }
 
 func TestEvaluatePolicy_ConfirmModeUsesEffectSemantics(t *testing.T) {
-	rules, err := ApprovalModePolicyRules(ApprovalModeConfirm)
+	policy, err := ApprovalModeToolPolicy(ApprovalModeConfirm)
 	if err != nil {
-		t.Fatalf("ApprovalModePolicyRules: %v", err)
+		t.Fatalf("ApprovalModeToolPolicy: %v", err)
 	}
-	decision := EvaluatePolicy(rules, tool.ToolSpec{
+	decision := EvaluateToolPolicy(policy, tool.ToolSpec{
 		Name:         "write_memory",
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"memory"},
@@ -56,11 +56,11 @@ func TestEvaluatePolicy_ConfirmModeUsesEffectSemantics(t *testing.T) {
 }
 
 func TestEvaluatePolicy_ReadOnlyModeDeniesGraphMutation(t *testing.T) {
-	rules, err := ApprovalModePolicyRules(ApprovalModeReadOnly)
+	policy, err := ApprovalModeToolPolicy(ApprovalModeReadOnly)
 	if err != nil {
-		t.Fatalf("ApprovalModePolicyRules: %v", err)
+		t.Fatalf("ApprovalModeToolPolicy: %v", err)
 	}
-	decision := EvaluatePolicy(rules, tool.ToolSpec{
+	decision := EvaluateToolPolicy(policy, tool.ToolSpec{
 		Name:         "offload_context",
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"context"},

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/scheduler"
@@ -23,7 +22,7 @@ type ScheduledRunnerConfig struct {
 	OnCreateError      func(context.Context, scheduler.Job, error)
 	OnRunError         func(context.Context, scheduler.Job, *session.Session, error, io.UserIO)
 	OnSaveError        func(context.Context, scheduler.Job, *session.Session, error)
-	OnComplete         func(context.Context, scheduler.Job, *session.Session, *loop.SessionResult, io.UserIO)
+	OnComplete         func(context.Context, scheduler.Job, *session.Session, *session.LifecycleResult, io.UserIO)
 }
 
 func StartScheduledRunner(ctx context.Context, cfg ScheduledRunnerConfig) error {
@@ -42,7 +41,7 @@ func StartScheduledRunner(ctx context.Context, cfg ScheduledRunnerConfig) error 
 	return nil
 }
 
-func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job scheduler.Job) (*session.Session, *loop.SessionResult, error) {
+func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job scheduler.Job) (*session.Session, *session.LifecycleResult, error) {
 	if cfg.BeforeRun != nil {
 		cfg.BeforeRun(ctx, job)
 	}
@@ -69,7 +68,8 @@ func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job schedul
 		return nil, nil, err
 	}
 
-	jobSess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(job.Goal)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(job.Goal)}}
+	jobSess.AppendMessage(userMsg)
 
 	runIO := cfg.DefaultIO
 	if cfg.RunIO != nil {
@@ -78,12 +78,12 @@ func RunScheduledJob(ctx context.Context, cfg ScheduledRunnerConfig, job schedul
 		}
 	}
 
-	var result *loop.SessionResult
-	if runIO != nil {
-		result, err = cfg.Kernel.RunWithUserIO(ctx, jobSess, runIO)
-	} else {
-		result, err = cfg.Kernel.Run(ctx, jobSess)
-	}
+	result, err := kernel.CollectRunAgentResult(ctx, cfg.Kernel, kernel.RunAgentRequest{
+		Session:     jobSess,
+		Agent:       cfg.Kernel.BuildLLMAgent("scheduled"),
+		UserContent: &userMsg,
+		IO:          runIO,
+	})
 	if err != nil {
 		if cfg.OnRunError != nil {
 			cfg.OnRunError(ctx, job, jobSess, err, runIO)

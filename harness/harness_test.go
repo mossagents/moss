@@ -6,10 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 )
@@ -520,11 +522,29 @@ func TestFeature_PatchToolCalls(t *testing.T) {
 	}
 }
 
-func TestFeature_ExecutionPolicy(t *testing.T) {
+func TestFeature_ToolPolicy(t *testing.T) {
 	h := newTestHarness()
-	err := h.Install(context.Background(), ExecutionPolicy())
-	if err != nil {
-		t.Fatalf("ExecutionPolicy Install failed: %v", err)
+	policy := runtime.ResolveToolPolicyForWorkspace(t.TempDir(), "trusted", "confirm")
+	if err := h.Install(context.Background(), ToolPolicy(policy)); err != nil {
+		t.Fatalf("ToolPolicy Install failed: %v", err)
+	}
+	current, ok := runtimepolicy.Current(h.Kernel())
+	if !ok {
+		t.Fatal("expected tool policy to be installed")
+	}
+	if current.ApprovalMode != "confirm" {
+		t.Fatalf("approval mode = %q, want confirm", current.ApprovalMode)
+	}
+}
+
+func TestFeature_ToolPolicyRejectsEmptyPolicy(t *testing.T) {
+	h := newTestHarness()
+	err := h.Install(context.Background(), ToolPolicy(runtime.ToolPolicy{}))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "tool policy") {
+		t.Fatalf("expected tool policy error, got %v", err)
 	}
 }
 

@@ -1,4 +1,4 @@
-﻿package kernel
+package kernel
 
 import (
 	"context"
@@ -12,7 +12,7 @@ func TestRunSupervisorBeginRejectsAfterShutdown(t *testing.T) {
 	s := newRunSupervisor()
 	s.beginShutdown()
 
-	_, _, err := s.begin(context.Background(), "s-1", runKindForeground)
+	_, _, err := s.begin(context.Background(), "s-1")
 	if err == nil {
 		t.Fatal("expected begin to fail while shutting down")
 	}
@@ -26,7 +26,7 @@ func TestRunSupervisorBeginRejectsAfterShutdown(t *testing.T) {
 func TestRunSupervisorShutdownCancelsRunContext(t *testing.T) {
 	s := newRunSupervisor()
 
-	runCtx, runID, err := s.begin(context.Background(), "s-2", runKindForeground)
+	runCtx, runID, err := s.begin(context.Background(), "s-2")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestRunSupervisorShutdownCancelsRunContext(t *testing.T) {
 func TestRunSupervisorWaitReturnsOnContextDone(t *testing.T) {
 	s := newRunSupervisor()
 
-	_, runID, err := s.begin(context.Background(), "s-3", runKindForeground)
+	_, runID, err := s.begin(context.Background(), "s-3")
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
@@ -75,13 +75,13 @@ func TestRunSupervisorWaitReturnsOnContextDone(t *testing.T) {
 func TestRunSupervisorBeginRejectsConcurrentSameSession(t *testing.T) {
 	s := newRunSupervisor()
 
-	_, runID, err := s.begin(context.Background(), "same-session", runKindForeground)
+	_, runID, err := s.begin(context.Background(), "same-session")
 	if err != nil {
 		t.Fatalf("first begin: %v", err)
 	}
 	defer s.end(runID)
 
-	_, _, err = s.begin(context.Background(), "same-session", runKindForeground)
+	_, _, err = s.begin(context.Background(), "same-session")
 	if err == nil {
 		t.Fatal("expected second begin to fail for same session")
 	}
@@ -95,13 +95,13 @@ func TestRunSupervisorBeginRejectsConcurrentSameSession(t *testing.T) {
 func TestRunSupervisorBeginAllowsDifferentSessions(t *testing.T) {
 	s := newRunSupervisor()
 
-	_, runID1, err := s.begin(context.Background(), "s-1", runKindForeground)
+	_, runID1, err := s.begin(context.Background(), "s-1")
 	if err != nil {
 		t.Fatalf("first begin: %v", err)
 	}
 	defer s.end(runID1)
 
-	_, runID2, err := s.begin(context.Background(), "s-2", runKindForeground)
+	_, runID2, err := s.begin(context.Background(), "s-2")
 	if err != nil {
 		t.Fatalf("second begin for different session should succeed: %v", err)
 	}

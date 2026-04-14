@@ -327,7 +327,7 @@ func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
 		"llm-resilience",
 		"runtime-setup",
 		"patch-tool-calls",
-		"execution-policy",
+		"tool-policy",
 		"execution-capability-report",
 		"general-purpose-agent",
 	}

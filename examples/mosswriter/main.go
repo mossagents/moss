@@ -171,15 +171,20 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent(appName),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
 
 	fmt.Println()
-	fmt.Printf("✅ Content created (session: %s, steps: %d, tokens: %d)\n", result.SessionID, result.Steps, result.TokensUsed.TotalTokens)
+	fmt.Printf("✅ Content created (session: %s, steps: %d, tokens: %d)\n", sess.ID, result.Steps, result.TokensUsed.TotalTokens)
 	fmt.Printf("📁 Output root: %s\n", filepath.Join(cfg.flags.Workspace, ".mosswriter"))
 	if strings.TrimSpace(result.Output) != "" {
 		fmt.Printf("\n%s\n", result.Output)

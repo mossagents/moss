@@ -13,7 +13,6 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/scheduler"
@@ -167,11 +166,11 @@ func newMossquantRuntime(flags *appkit.AppFlags, capital float64, reviewInterval
 	}, nil
 }
 
-func (r *mossquantRuntime) buildKernel(ctx context.Context, io io.UserIO) (*kernel.Kernel, error) {
+func (r *mossquantRuntime) buildKernel(ctx context.Context, userIO io.UserIO) (*kernel.Kernel, error) {
 	memoriesDir := filepath.Join(appconfig.AppDir(), "memories")
 	profile := r.profile
 
-	k, err := appkit.BuildKernelWithFeatures(ctx, r.flags, io,
+	k, err := appkit.BuildKernelWithFeatures(ctx, r.flags, userIO,
 		harness.SessionPersistence(r.store),
 		harness.Scheduling(r.sched),
 		harness.PersistentMemories(memoriesDir),
@@ -206,14 +205,14 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, io io.UserIO) (*kern
 	k.OnEvent("tool.completed", func(e builtins.Event) {
 		if data, ok := e.Data.(map[string]any); ok {
 			if name, _ := data["tool"].(string); name == "place_order" {
-				sendOutput(context.Background(), io, io.OutputProgress, fmt.Sprintf("📊 Simulated trade executed at %s", e.Timestamp.Format("15:04:05")))
+				sendOutput(context.Background(), userIO, io.OutputProgress, fmt.Sprintf("📊 Simulated trade executed at %s", e.Timestamp.Format("15:04:05")))
 			}
 		}
 	})
 	return k, nil
 }
 
-func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io io.UserIO) error {
+func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, userIO io.UserIO) error {
 	r.profile, _ = loadInvestorProfile(r.flags.Workspace)
 	if r.profile == nil {
 		r.profile = &InvestorProfile{}
@@ -223,11 +222,11 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io i
 		Kernel:       k,
 		Scheduler:    r.sched,
 		SessionStore: r.store,
-		DefaultIO:    io,
+		DefaultIO:    userIO,
 		BuildSessionConfig: func(jobCtx context.Context, job scheduler.Job) (session.SessionConfig, error) {
 			currentProfile, err := loadInvestorProfile(r.flags.Workspace)
 			if err != nil {
-				sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to load profile: %v", job.ID, err))
+				sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to load profile: %v", job.ID, err))
 				currentProfile = r.profile
 			}
 			interval := effectiveReviewInterval(currentProfile, r.reviewInterval)
@@ -252,10 +251,10 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io i
 			return jobCfg, nil
 		},
 		BeforeRun: func(jobCtx context.Context, job scheduler.Job) {
-			sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] started", job.ID))
+			sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] started", job.ID))
 		},
 		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
-			sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err))
+			sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err))
 		},
 		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ io.UserIO) {
 			currentProfile, loadErr := loadInvestorProfile(r.flags.Workspace)
@@ -264,32 +263,32 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io i
 			}
 			reportPath, reportErr := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, fmt.Sprintf("Scheduled advisory run failed.\n\nError: %v\n\nWhen external research tools are unavailable, rerun after configuring JINA_API_KEY or reduce the scope to manual/local analysis.", err))
 			if reportErr == nil {
-				sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] fallback report: %s", job.ID, reportPath))
+				sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] fallback report: %s", job.ID, reportPath))
 			}
-			sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
+			sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err))
 		},
 		OnSaveError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error) {
-			sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save session: %v", job.ID, err))
+			sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save session: %v", job.ID, err))
 		},
-		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, _ io.UserIO) {
+		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *session.LifecycleResult, _ io.UserIO) {
 			currentProfile, loadErr := loadInvestorProfile(r.flags.Workspace)
 			if loadErr != nil || currentProfile == nil {
 				currentProfile = r.profile
 			}
 			reportPath, err := saveAdvisoryReport(r.flags.Workspace, job.ID, currentProfile, result.Output)
 			if err != nil {
-				sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save report: %v", job.ID, err))
+				sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] failed to save report: %v", job.ID, err))
 			}
 
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
 				summary = fmt.Sprintf("Advisory run completed. Report saved to %s", reportPath)
 			}
-			sendOutput(jobCtx, io, io.OutputText, fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary))
+			sendOutput(jobCtx, userIO, io.OutputText, fmt.Sprintf("⏰ Scheduled task [%s]\n%s", job.ID, summary))
 			if reportPath != "" {
-				sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] report: %s", job.ID, reportPath))
+				sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] report: %s", job.ID, reportPath))
 			}
-			sendOutput(jobCtx, io, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps))
+			sendOutput(jobCtx, userIO, io.OutputProgress, fmt.Sprintf("Scheduled task [%s] done (%d steps)", job.ID, result.Steps))
 		},
 	}); err != nil {
 		return err
@@ -301,7 +300,7 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io i
 			return fmt.Errorf("default review schedule: %w", err)
 		}
 		if changed {
-			sendOutput(ctx, io, io.OutputProgress, fmt.Sprintf("Investment review schedule synced: %s", schedule))
+			sendOutput(ctx, userIO, io.OutputProgress, fmt.Sprintf("Investment review schedule synced: %s", schedule))
 		}
 	}
 
@@ -318,7 +317,7 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, io i
 		}
 	}()
 
-	sendOutput(ctx, io, io.OutputProgress, fmt.Sprintf("mossquant TUI ready — tracking %d assets, risk tolerance: %s", len(r.profile.TrackedAssets()), r.profile.DisplayRiskTolerance()))
+	sendOutput(ctx, userIO, io.OutputProgress, fmt.Sprintf("mossquant TUI ready — tracking %d assets, risk tolerance: %s", len(r.profile.TrackedAssets()), r.profile.DisplayRiskTolerance()))
 	return nil
 }
 
@@ -332,11 +331,11 @@ func buildSystemPrompt(workspace string, capital float64, reviewInterval string,
 	return appconfig.RenderSystemPrompt(workspace, tradingPromptTemplate, ctx)
 }
 
-func sendOutput(ctx context.Context, io io.UserIO, outputType io.OutputType, content string) {
-	if io == nil || strings.TrimSpace(content) == "" {
+func sendOutput(ctx context.Context, userIO io.UserIO, outputType io.OutputType, content string) {
+	if userIO == nil || strings.TrimSpace(content) == "" {
 		return
 	}
-	_ = io.Send(ctx, io.OutputMessage{
+	_ = userIO.Send(ctx, io.OutputMessage{
 		Type:    outputType,
 		Content: content,
 	})

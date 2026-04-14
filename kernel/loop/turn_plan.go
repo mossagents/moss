@@ -118,9 +118,8 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 	if reg == nil {
 		return nil
 	}
-	_, trust, approval, taskMode := session.ProfileMetadataValues(sess)
-	trust = normalizeTurnTrust(trust, sess)
-	approval = normalizeTurnApproval(approval)
+	summary, hasSummary := session.ToolPolicySummaryFromSession(sess)
+	_, _, _, taskMode := session.ProfileMetadataValues(sess)
 	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
 	specs := reg.List()
 	decisions := make([]ToolRouteDecision, 0, len(specs))
@@ -150,22 +149,16 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 		case plan.LightweightChat:
 			decision.Status = ToolRouteHidden
 			decision.ReasonCodes = append(decision.ReasonCodes, "lightweight_chat")
-		case taskMode == "readonly" && !spec.IsReadOnly():
-			decision.Status = ToolRouteHidden
-			decision.ReasonCodes = append(decision.ReasonCodes, "readonly_mode")
 		case (taskMode == "planning" || taskMode == "research") && shouldHideForPlanning(spec):
 			decision.Status = ToolRouteHidden
 			decision.ReasonCodes = append(decision.ReasonCodes, "planning_mode")
-		case trust == "restricted" && shouldRequireApprovalForRestricted(spec):
-			decision.Status = ToolRouteApprovalRequired
-			decision.ReasonCodes = append(decision.ReasonCodes, "restricted_trust")
-		case approval != "full-auto" && shouldRequireApprovalForTurn(spec):
-			decision.Status = ToolRouteApprovalRequired
-			decision.ReasonCodes = append(decision.ReasonCodes, "approval_class_requires_approval")
+		default:
+			decision.Status, decision.ReasonCodes = routeStatusFromPolicySummary(spec, summary, hasSummary)
 		}
 		if decision.Status == ToolRouteVisible {
 			decision.ReasonCodes = append(decision.ReasonCodes, "visible")
 		}
+		decision.ReasonCodes = compactStrings(decision.ReasonCodes)
 		decisions = append(decisions, decision)
 	}
 	slices.SortFunc(decisions, func(a, b ToolRouteDecision) int {
@@ -360,41 +353,121 @@ func shouldHideForPlanning(spec tool.ToolSpec) bool {
 	return false
 }
 
-func shouldRequireApprovalForRestricted(spec tool.ToolSpec) bool {
-	if !spec.IsReadOnly() {
-		return true
+func routeStatusFromPolicySummary(spec tool.ToolSpec, summary session.ToolPolicySummary, hasSummary bool) (ToolRouteStatus, []string) {
+	if !hasSummary {
+		return safeRouteStatus(spec)
 	}
-	return spec.EffectiveApprovalClass() != tool.ApprovalClassNone
-}
-
-func shouldRequireApprovalForTurn(spec tool.ToolSpec) bool {
-	switch spec.EffectiveApprovalClass() {
-	case tool.ApprovalClassExplicitUser, tool.ApprovalClassSupervisorOnly:
-		return true
+	hiddenReasons := []string{}
+	approvalReasons := []string{}
+	if approvalClassInSummary(spec.EffectiveApprovalClass(), summary.DeniedClasses) {
+		hiddenReasons = append(hiddenReasons, "tool.approval_class_denied")
+	}
+	if approvalClassInSummary(spec.EffectiveApprovalClass(), summary.ApprovalRequiredClasses) {
+		approvalReasons = append(approvalReasons, "tool.approval_class_requires_approval")
+	}
+	if appliesCommandAccess(spec) {
+		applySummaryAccess(summary.CommandAccess, "command.default_requires_approval", "command.default_denied", &approvalReasons, &hiddenReasons)
+	}
+	if appliesHTTPAccess(spec) {
+		applySummaryAccess(summary.HTTPAccess, "http.default_requires_approval", "http.default_denied", &approvalReasons, &hiddenReasons)
+	}
+	for _, effect := range spec.EffectiveEffects() {
+		access := summaryAccessForEffect(summary, effect)
+		if access == "" {
+			continue
+		}
+		applySummaryAccess(access, "tool.effect_requires_approval", "tool.effect_denied", &approvalReasons, &hiddenReasons)
+	}
+	switch {
+	case len(hiddenReasons) > 0:
+		return ToolRouteHidden, compactStrings(hiddenReasons)
+	case len(approvalReasons) > 0:
+		return ToolRouteApprovalRequired, compactStrings(approvalReasons)
 	default:
-		return spec.Risk == tool.RiskHigh
+		return ToolRouteVisible, nil
 	}
 }
 
-func normalizeTurnApproval(mode string) string {
-	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "" {
-		return "confirm"
+func safeRouteStatus(spec tool.ToolSpec) (ToolRouteStatus, []string) {
+	reasons := []string{"policy_summary_missing"}
+	if spec.EffectiveApprovalClass() == tool.ApprovalClassSupervisorOnly {
+		return ToolRouteHidden, append(reasons, "tool.approval_class_denied")
 	}
-	return mode
+	if spec.IsReadOnly() && spec.EffectiveApprovalClass() == tool.ApprovalClassNone && spec.EffectiveSideEffectClass() == tool.SideEffectNone && spec.Risk == tool.RiskLow {
+		return ToolRouteVisible, reasons
+	}
+	return ToolRouteApprovalRequired, append(reasons, "safe_default_requires_approval")
 }
 
-func normalizeTurnTrust(trust string, sess *session.Session) string {
-	trust = strings.ToLower(strings.TrimSpace(trust))
-	if trust != "" {
-		return trust
+func applySummaryAccess(access, approvalReason, denyReason string, approvalReasons, hiddenReasons *[]string) {
+	switch normalizeSummaryAccess(access) {
+	case "deny":
+		*hiddenReasons = append(*hiddenReasons, denyReason)
+	case "require-approval":
+		*approvalReasons = append(*approvalReasons, approvalReason)
 	}
-	if sess != nil {
-		if value := strings.ToLower(strings.TrimSpace(sess.Config.TrustLevel)); value != "" {
-			return value
+}
+
+func summaryAccessForEffect(summary session.ToolPolicySummary, effect tool.Effect) string {
+	switch effect {
+	case tool.EffectWritesWorkspace:
+		return summary.WorkspaceWriteAccess
+	case tool.EffectWritesMemory:
+		return summary.MemoryWriteAccess
+	case tool.EffectGraphMutation:
+		return summary.GraphMutationAccess
+	default:
+		return ""
+	}
+}
+
+func approvalClassInSummary(class tool.ApprovalClass, classes []string) bool {
+	value := strings.TrimSpace(string(class))
+	if value == "" {
+		return false
+	}
+	for _, candidate := range classes {
+		if strings.EqualFold(strings.TrimSpace(candidate), value) {
+			return true
 		}
 	}
-	return "trusted"
+	return false
+}
+
+func appliesCommandAccess(spec tool.ToolSpec) bool {
+	if spec.Name == "run_command" {
+		return true
+	}
+	return toolHasCapability(spec, "execution")
+}
+
+func appliesHTTPAccess(spec tool.ToolSpec) bool {
+	if spec.Name == "http_request" {
+		return true
+	}
+	return toolHasCapability(spec, "network")
+}
+
+func toolHasCapability(spec tool.ToolSpec, want string) bool {
+	for _, capability := range spec.Capabilities {
+		if strings.EqualFold(strings.TrimSpace(capability), want) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeSummaryAccess(access string) string {
+	switch strings.ToLower(strings.TrimSpace(access)) {
+	case "allow":
+		return "allow"
+	case "deny":
+		return "deny"
+	case "require-approval":
+		return "require-approval"
+	default:
+		return ""
+	}
 }
 
 func compactStrings(items []string) []string {

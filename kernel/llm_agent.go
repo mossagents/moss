@@ -98,9 +98,16 @@ func (a *LLMAgent) Run(ctx *InvocationContext) iter.Seq2[*session.Event, error] 
 			RunID:     ctx.RunID(),
 		}
 
-		_, err := l.RunYield(ctx, ctx.Session(), safeYield)
+		result, err := l.RunYield(ctx, ctx.Session(), safeYield)
+		ctx.setLifecycleResult(lifecycleResultFromLoop(result))
 		if err != nil && !stopped {
 			yield(nil, err)
 		}
 	}
+}
+
+func (a *LLMAgent) withTools(tools tool.Registry) *LLMAgent {
+	cp := *a
+	cp.tools = tools
+	return &cp
 }

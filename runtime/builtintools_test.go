@@ -3,8 +3,10 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/internal/runtimepolicy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -223,6 +225,17 @@ func newBuiltinToolsKernel(sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Wo
 		opts = append(opts, kernel.WithExecutor(exec))
 	}
 	return kernel.New(opts...)
+}
+
+func newKernelWithToolPolicy(t *testing.T, policy ToolPolicy) *kernel.Kernel {
+	t.Helper()
+	k := kernel.New()
+	payload, err := EncodeToolPolicyMetadata(policy)
+	if err != nil {
+		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
+	}
+	policystate.Ensure(k).Set(payload, session.EncodeToolPolicySummary(SummarizeToolPolicy(policy)), nil)
+	return k
 }
 
 func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Workspace, exec workspace.Executor) error {
@@ -583,7 +596,7 @@ func TestRunCommand(t *testing.T) {
 
 func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
 	sb := newMockSandbox("/ws", nil)
-	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "restricted", "confirm")))
+	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "restricted", "confirm"))
 	handler := runCommandHandlerWithPolicy(k, sb)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
@@ -876,7 +889,7 @@ func TestHTTPRequestTool(t *testing.T) {
 }
 
 func TestHTTPRequestPolicyRejectsDisallowedMethod(t *testing.T) {
-	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "trusted", "full-auto")))
+	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
 	handler := httpRequestHandlerWithPolicy(k)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
@@ -886,7 +899,7 @@ func TestHTTPRequestPolicyRejectsDisallowedMethod(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected method policy error")
 	}
-	if !strings.Contains(err.Error(), "not allowed by execution policy") {
+	if !strings.Contains(err.Error(), "not allowed by tool policy") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -902,7 +915,7 @@ func TestHTTPRequestPolicyDisablesRedirectsByDefault(t *testing.T) {
 	}))
 	defer redirect.Close()
 
-	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace("/ws", "trusted", "full-auto")))
+	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
 	handler := httpRequestHandlerWithPolicy(k)
 	out, err := handler(context.Background(), toJSON(t, map[string]any{
 		"url": redirect.URL,
@@ -1142,7 +1155,7 @@ func TestRunCommandExec(t *testing.T) {
 func TestRunCommandExecPolicyForwarding(t *testing.T) {
 	exec := &mockExecutor{}
 	ws := &mockWorkspace{files: map[string]string{}}
-	k := kernel.New(WithExecutionPolicy(ResolveExecutionPolicyForWorkspace(".", "trusted", "confirm")))
+	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace(".", "trusted", "confirm"))
 	handler := runCommandHandlerExecWithPolicy(k, exec, ws)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{

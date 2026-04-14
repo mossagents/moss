@@ -9,7 +9,7 @@ For Chinese documentation, see [`README_ZH.md`](README_ZH.md).
 ## What Moss is today
 
 - A three-layer runtime for building Go-based AI agents:
-  - **Kernel** — core runtime primitives (Agent interface, Runner, Session, Event, Tool, Plugin).
+  - **Kernel** — core runtime primitives (Agent interface, request-shaped `RunAgent`, Session, Event, Tool, Plugin).
   - **Harness** — composable orchestration layer (Feature/Backend/Harness) that wires capabilities onto a Kernel.
   - **Applications** — end-user products (`apps\mosscode`, `apps\mosswork`) and reference examples.
 - An `appkit` assembly layer for building complete kernels from `AppFlags`.
@@ -51,6 +51,7 @@ import (
 	"os"
 
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -82,14 +83,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(mdl.Message{
+	userMsg := mdl.Message{
 		Role: mdl.RoleUser,
 		ContentParts: []mdl.ContentPart{
 			mdl.TextPart("Read README.md and summarize it"),
 		},
-	})
+	}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -148,11 +154,16 @@ func main() {
 	sess, _ := k.NewSession(ctx, session.SessionConfig{
 		Goal: "help me", MaxSteps: 50,
 	})
-	sess.AppendMessage(mdl.Message{
+	userMsg := mdl.Message{
 		Role: mdl.RoleUser,
 		ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")},
+	}
+	sess.AppendMessage(userMsg)
+	result, _ := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
 	})
-	result, _ := k.Run(ctx, sess)
 	println(result.Output)
 }
 ```
@@ -163,7 +174,7 @@ For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, har
 
 | Path | Purpose |
 |---|---|
-| `kernel\` | Core runtime primitives (Agent, Runner, Session, Event, Tool, Plugin) |
+| `kernel\` | Core runtime primitives (Agent, `RunAgent`, Session, Event, Tool, Plugin) |
 | `harness\` | Composable orchestration layer (Feature, Backend, Harness) |
 | `appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
 | `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |

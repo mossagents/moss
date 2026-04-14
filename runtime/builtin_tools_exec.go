@@ -113,9 +113,9 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if rawURL == "" {
 			return nil, fmt.Errorf("url is required")
 		}
-		policy := effectiveExecutionPolicy(ctx, k, nil, "")
-		if policy.HTTP.Access == ExecutionAccessDeny {
-			return nil, fmt.Errorf("http_request is disabled by execution policy")
+		policy := effectiveToolPolicy(ctx, k, nil, "")
+		if policy.HTTP.Access == ToolAccessDeny {
+			return nil, fmt.Errorf("http_request is disabled by tool policy")
 		}
 		parsed, err := url.Parse(rawURL)
 		if err != nil {
@@ -218,9 +218,9 @@ func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, ws
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		policy := effectiveExecutionPolicy(ctx, k, ws, workspaceRoot)
-		if policy.Command.Access == ExecutionAccessDeny {
-			return nil, fmt.Errorf("run_command is disabled by execution policy")
+		policy := effectiveToolPolicy(ctx, k, ws, workspaceRoot)
+		if policy.Command.Access == ToolAccessDeny {
+			return nil, fmt.Errorf("run_command is disabled by tool policy")
 		}
 		output, err := exec.Execute(ctx, buildExecRequest(params.Command, params.Args, policy))
 		if err != nil {
@@ -268,18 +268,18 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 	return raw, nil
 }
 
-func effectiveExecutionPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) ExecutionPolicy {
+func effectiveToolPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) ToolPolicy {
 	if k != nil {
-		policy := ExecutionPolicyOf(k)
+		policy := toolPolicyOf(k)
 		if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
-			return ExecutionPolicyForToolContext(meta, k, policy)
+			return toolPolicyForToolContext(meta, k, policy)
 		}
 		return policy
 	}
-	return resolveExecutionPolicy(appconfig.TrustTrusted, "full-auto", commandPolicyDefaults(nil, workspaceRoot, ws))
+	return ResolveToolPolicyForWorkspace(workspaceRoot, appconfig.TrustTrusted, "full-auto")
 }
 
-func buildExecRequest(command string, args []string, policy ExecutionPolicy) workspace.ExecRequest {
+func buildExecRequest(command string, args []string, policy ToolPolicy) workspace.ExecRequest {
 	req := workspace.ExecRequest{
 		Command:  command,
 		Args:     append([]string(nil), args...),
@@ -298,19 +298,19 @@ func buildExecRequest(command string, args []string, policy ExecutionPolicy) wor
 	return req
 }
 
-func validateHTTPRequestPolicy(parsed *url.URL, method string, policy HTTPExecutionPolicy) error {
+func validateHTTPRequestPolicy(parsed *url.URL, method string, policy HTTPPolicy) error {
 	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
 	if !containsFolded(policy.AllowedSchemes, scheme) {
-		return fmt.Errorf("url scheme %q is not allowed by execution policy", scheme)
+		return fmt.Errorf("url scheme %q is not allowed by tool policy", scheme)
 	}
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if !containsFolded(policy.AllowedMethods, method) {
-		return fmt.Errorf("http method %q is not allowed by execution policy", method)
+		return fmt.Errorf("http method %q is not allowed by tool policy", method)
 	}
 	if len(policy.AllowedHosts) > 0 {
 		host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
 		if !containsFolded(policy.AllowedHosts, host) {
-			return fmt.Errorf("url host %q is not allowed by execution policy", host)
+			return fmt.Errorf("url host %q is not allowed by tool policy", host)
 		}
 	}
 	return nil

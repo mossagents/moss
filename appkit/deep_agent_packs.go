@@ -11,7 +11,6 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -226,22 +225,9 @@ func buildDeepAgentPostRuntimePack(state *deepAgentPresetState) ([]harness.Featu
 	}
 	if appconfig.NormalizeTrustLevel(state.flags.Trust) == appconfig.TrustRestricted &&
 		deepAgentValueOrDefault(state.config.EnableDefaultRestrictedPolicy, true) {
-		rules := append([]builtins.PolicyRule(nil),
-			runtime.ExecutionPolicyRules(runtime.ResolveExecutionPolicyForWorkspace(state.flags.Workspace, state.flags.Trust, "confirm"))...,
-		)
-		// Deep-agent defaults add extra path- and tool-level guardrails on top of
-		// the runtime's execution-policy defaults.
-		rules = append(rules,
-			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
-			builtins.RequireApprovalFor(
-				"write_file", "edit_file", "run_command", "spawn_agent", "task",
-				"cancel_task", "update_task",
-				"write_memory", "delete_memory", "offload_context",
-				"acquire_workspace", "release_workspace",
-			),
-			builtins.DefaultAllow(),
-		)
-		features = append(features, harness.ExecutionPolicy(rules...))
+		features = append(features, harness.ToolPolicy(
+			runtime.ResolveToolPolicyForWorkspace(state.flags.Workspace, state.flags.Trust, "confirm"),
+		))
 	}
 	features = append(features, harness.ExecutionCapabilityReport(state.flags.Workspace, state.isolationRoot, state.isolationEnabled))
 	if deepAgentValueOrDefault(state.config.EnsureGeneralPurpose, true) {

@@ -18,7 +18,7 @@
 - `ParallelAgent` 现在会为每个并发分支复制 child session，避免共享 session 竞态，并只把聚合后的事件提交回父 session
 - `SequentialAgent`、`LoopAgent`、`SupervisorAgent` 与 `ResearchAgent` 现在统一采用 event-to-session materialization 语义：child session 内部副作用不会直接泄漏，只有 yielded `event.Content` / `event.Actions.StateDelta` 会提交回父 session
 - `ResearchAgent` 现在会把 query 显式传入 SearchAgent，并把聚合 findings 显式传入 SynthesisAgent
-- 这套 contract 已进一步上提到 kernel 层：`InvocationContext.RunChild(...)` 为 custom agent 提供统一的 branch-local child-run 语义，`Runner.Run(...)` / `Kernel.RunAgent(...)` 会对 root 级 generic event 做同样的 materialization
+- 这套 contract 已进一步上提到 kernel 层：`InvocationContext.RunChild(...)` 为 custom agent 提供统一的 branch-local child-run 语义，`Kernel.RunAgent(...)` 作为唯一顶层执行入口会对 root 级 generic event 做同样的 materialization
 - `session.EventActions` 的单布尔 `Materialized` 已进一步结构化为 `MaterializedIn` domain；同一 event 现在可以按 child -> parent -> root 逐级提交，但在同一 session domain 内绝不重复提交
 - `SupervisorAgent` 进一步强化为真正的策略控制面：支持 per-worker timeout、worker health 记账与冷却、基于剩余 budget 的 worker 过滤，以及在 no-match / budget-exhausted / timeout / failure 场景下可选地向父级 `Escalate`
 

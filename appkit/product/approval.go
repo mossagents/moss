@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
@@ -40,44 +41,16 @@ func ValidateApprovalMode(mode string) error {
 	}
 }
 
-func ApprovalModePolicyRules(mode string) ([]builtins.PolicyRule, error) {
-	return ApprovalModePolicyRulesForTrust("trusted", mode)
+func ApprovalModeToolPolicy(mode string) (runtime.ToolPolicy, error) {
+	return ApprovalModeToolPolicyForTrust(appconfig.TrustTrusted, mode)
 }
 
-func ApprovalModePolicyRulesForTrust(trust, mode string) ([]builtins.PolicyRule, error) {
+func ApprovalModeToolPolicyForTrust(trust, mode string) (runtime.ToolPolicy, error) {
 	mode = NormalizeApprovalMode(mode)
 	if err := ValidateApprovalMode(mode); err != nil {
-		return nil, err
+		return runtime.ToolPolicy{}, err
 	}
-	policy := runtime.ResolveExecutionPolicyForWorkspace("", trust, mode)
-	rules := approvalModePolicyRulesForPolicy(mode, policy)
-	return rules, nil
-}
-
-func approvalModePolicyRulesForPolicy(mode string, policy runtime.ExecutionPolicy) []builtins.PolicyRule {
-	rules := append([]builtins.PolicyRule{}, runtime.ExecutionPolicyRules(policy)...)
-	switch mode {
-	case ApprovalModeReadOnly:
-		rules = append(rules,
-			builtins.DenyEffects(tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectGraphMutation),
-			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
-			builtins.DefaultAllow(),
-		)
-	case ApprovalModeConfirm:
-		rules = append(rules,
-			builtins.RequireApprovalForPathPrefix(".git", ".moss"),
-			builtins.RequireApprovalForEffects(tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectGraphMutation),
-			builtins.RequireApprovalForApprovalClasses(tool.ApprovalClassExplicitUser),
-			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
-			builtins.DefaultAllow(),
-		)
-	case ApprovalModeFullAuto:
-		rules = append(rules,
-			builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly),
-			builtins.DefaultAllow(),
-		)
-	}
-	return rules
+	return runtime.ResolveToolPolicyForWorkspace("", trust, mode), nil
 }
 
 func ApplyApprovalMode(k *kernel.Kernel, mode string) (string, error) {
@@ -89,14 +62,11 @@ func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, e
 	if err := ValidateApprovalMode(mode); err != nil {
 		return "", err
 	}
-	policy := runtime.ResolveExecutionPolicyForKernel(k, trust, mode)
-	runtime.SetExecutionPolicy(k, policy)
-	rules := approvalModePolicyRulesForPolicy(mode, policy)
-	if len(rules) == 0 {
-		return mode, nil
+	policy, err := ApprovalModeToolPolicyForTrust(trust, mode)
+	if err != nil {
+		return "", err
 	}
-	k.WithPolicy(rules...)
-	return mode, nil
+	return mode, runtimepolicy.Apply(k, policy)
 }
 
 func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) error {
@@ -107,29 +77,11 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) err
 	if err := ValidateApprovalMode(mode); err != nil {
 		return err
 	}
-	runtime.SetExecutionPolicy(k, profile.ExecutionPolicy)
-	rules := approvalModePolicyRulesForPolicy(mode, profile.ExecutionPolicy)
-	if len(rules) > 0 {
-		k.WithPolicy(rules...)
-	}
-	return nil
+	return runtimepolicy.Apply(k, profile.ToolPolicy)
 }
 
-func EvaluatePolicy(rules []builtins.PolicyRule, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
-	decision := builtins.Allow
-	for _, rule := range rules {
-		next := rule(builtins.PolicyContext{
-			Tool:  spec,
-			Input: append([]byte(nil), input...),
-		})
-		if next.Decision == builtins.Deny {
-			return builtins.Deny
-		}
-		if next.Decision == builtins.RequireApproval {
-			decision = builtins.RequireApproval
-		}
-	}
-	return decision
+func EvaluateToolPolicy(policy runtime.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
+	return runtimepolicy.Evaluate(policy, spec, input)
 }
 
 func PersistProjectApprovalAmendment(workspace, profile string, amendment *io.ExecPolicyAmendment) error {

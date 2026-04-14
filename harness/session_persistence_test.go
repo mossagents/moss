@@ -98,8 +98,14 @@ func TestFeature_SessionPersistence_PersistsLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if _, err := h.Kernel().Run(context.Background(), sess); err != nil {
-		t.Fatalf("Run: %v", err)
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("persist lifecycle")}}
+	sess.AppendMessage(userMsg)
+	if _, err := kernel.CollectRunAgentResult(context.Background(), h.Kernel(), kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       h.Kernel().BuildLLMAgent("harness"),
+		UserContent: &userMsg,
+	}); err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
 
 	want := []string{"created", "started", "tool:greet", "completed"}

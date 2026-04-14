@@ -92,7 +92,7 @@ func (s *kernelInitState) loadInitialSession() error {
 	s.sess = sess
 	plan, err := planPostureRebuild(
 		s.cfg.InitialSessionID,
-		postureFromRuntime(s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode, runtime.ExecutionPolicyOf(s.k)),
+		postureFromRuntime(s.wCfg.Workspace, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode),
 		runtime.SessionPostureFromSession(s.sess),
 	)
 	if err != nil {

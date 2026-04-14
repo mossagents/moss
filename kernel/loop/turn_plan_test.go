@@ -29,7 +29,7 @@ func TestBuildTurnPlan_IncludesPromptVersionFromSessionMetadata(t *testing.T) {
 	}
 }
 
-func TestBuildToolRoute_UsesExecutionSemantics(t *testing.T) {
+func TestBuildToolRoute_UsesToolPolicySummary(t *testing.T) {
 	reg := tool.NewRegistry()
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
 	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
@@ -50,7 +50,15 @@ func TestBuildToolRoute_UsesExecutionSemantics(t *testing.T) {
 	sess := &session.Session{
 		Config: session.SessionConfig{
 			Metadata: map[string]any{
-				session.MetadataTaskMode: "readonly",
+				session.MetadataToolPolicySummary: session.EncodeToolPolicySummary(session.ToolPolicySummary{
+					Version:              session.ToolPolicyMetadataVersion,
+					CommandAccess:        "deny",
+					HTTPAccess:           "deny",
+					WorkspaceWriteAccess: "deny",
+					MemoryWriteAccess:    "deny",
+					GraphMutationAccess:  "deny",
+					DeniedClasses:        []string{string(tool.ApprovalClassSupervisorOnly)},
+				}),
 			},
 		},
 	}
@@ -83,7 +91,7 @@ func TestBuildToolRoute_UsesExecutionSemantics(t *testing.T) {
 	if writeDecision.ApprovalClass != tool.ApprovalClassExplicitUser {
 		t.Fatalf("write_file approval class = %q", writeDecision.ApprovalClass)
 	}
-	if len(writeDecision.ReasonCodes) == 0 || writeDecision.ReasonCodes[0] != "readonly_mode" {
+	if !hasReasonCode(writeDecision.ReasonCodes, "tool.effect_denied") {
 		t.Fatalf("write_file reason codes = %v", writeDecision.ReasonCodes)
 	}
 }
@@ -109,4 +117,82 @@ func TestBuildToolRoute_HidesPlannerHiddenTools(t *testing.T) {
 	if len(route[0].ReasonCodes) == 0 || route[0].ReasonCodes[0] != "planner_hidden" {
 		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
 	}
+}
+
+func TestBuildToolRoute_RequiresApprovalFromSummary(t *testing.T) {
+	reg := tool.NewRegistry()
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
+		Name:         "run_command",
+		Risk:         tool.RiskHigh,
+		Capabilities: []string{"execution"},
+	}, handler)); err != nil {
+		t.Fatalf("Register run_command: %v", err)
+	}
+
+	sess := &session.Session{
+		Config: session.SessionConfig{
+			Metadata: map[string]any{
+				session.MetadataToolPolicySummary: session.EncodeToolPolicySummary(session.ToolPolicySummary{
+					Version:                 session.ToolPolicyMetadataVersion,
+					CommandAccess:           "require-approval",
+					HTTPAccess:              "allow",
+					WorkspaceWriteAccess:    "allow",
+					MemoryWriteAccess:       "allow",
+					GraphMutationAccess:     "allow",
+					ApprovalRequiredClasses: []string{string(tool.ApprovalClassExplicitUser)},
+					DeniedClasses:           []string{string(tool.ApprovalClassSupervisorOnly)},
+				}),
+			},
+		},
+	}
+
+	route := buildToolRoute(sess, reg, TurnPlan{})
+	if len(route) != 1 {
+		t.Fatalf("route len = %d, want 1", len(route))
+	}
+	if route[0].Status != ToolRouteApprovalRequired {
+		t.Fatalf("status = %q", route[0].Status)
+	}
+	if !hasReasonCode(route[0].ReasonCodes, "command.default_requires_approval") {
+		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
+	}
+	if !hasReasonCode(route[0].ReasonCodes, "tool.approval_class_requires_approval") {
+		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
+	}
+}
+
+func TestBuildToolRoute_MissingSummaryUsesSafeDefaults(t *testing.T) {
+	reg := tool.NewRegistry()
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
+		Name:         "write_file",
+		Risk:         tool.RiskHigh,
+		Capabilities: []string{"filesystem"},
+	}, handler)); err != nil {
+		t.Fatalf("Register write_file: %v", err)
+	}
+
+	route := buildToolRoute(&session.Session{}, reg, TurnPlan{})
+	if len(route) != 1 {
+		t.Fatalf("route len = %d, want 1", len(route))
+	}
+	if route[0].Status != ToolRouteApprovalRequired {
+		t.Fatalf("status = %q", route[0].Status)
+	}
+	if !hasReasonCode(route[0].ReasonCodes, "policy_summary_missing") {
+		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
+	}
+	if !hasReasonCode(route[0].ReasonCodes, "safe_default_requires_approval") {
+		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
+	}
+}
+
+func hasReasonCode(reasons []string, want string) bool {
+	for _, reason := range reasons {
+		if reason == want {
+			return true
+		}
+	}
+	return false
 }

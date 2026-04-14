@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -135,8 +136,13 @@ func handleConnection(ctx context.Context, flags *appkit.AppFlags, conn *websock
 		}
 
 		if msg.Type == "user" && msg.Content != "" {
-			sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}})
-			result, err := k.Run(connCtx, sess)
+			userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}}
+			sess.AppendMessage(userMsg)
+			result, err := kernel.CollectRunAgentResult(connCtx, k, kernel.RunAgentRequest{
+				Session:     sess,
+				Agent:       k.BuildLLMAgent("websocket"),
+				UserContent: &userMsg,
+			})
 			if err != nil {
 				if connCtx.Err() != nil {
 					return

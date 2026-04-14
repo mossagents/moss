@@ -28,7 +28,6 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kernio "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/providers/embedding"
@@ -273,7 +272,7 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 		OnRunError: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, err error, _ kernio.UserIO) {
 			_ = io.Send(jobCtx, kernio.OutputMessage{Type: kernio.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed: %v", job.ID, err)})
 		},
-		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *loop.SessionResult, runIO kernio.UserIO) {
+		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *session.LifecycleResult, runIO kernio.UserIO) {
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
 				if capture, ok := runIO.(*runtime.ScheduledCaptureIO); ok {

@@ -211,8 +211,13 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 		strings.Repeat("assistant reasoning ", 12),
 	)
 	before := len(sess.Messages)
-	if _, err := k.Run(ctx, sess); err != nil {
-		t.Fatalf("Run: %v", err)
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(strings.Repeat("new user request ", 12))}}
+	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("runtimecontext"),
+		UserContent: &userMsg,
+	}); err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
 	if len(llm.Calls) == 0 {
 		t.Fatal("expected llm call")
@@ -274,8 +279,13 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("first turn")}})
-	if _, err := k.Run(ctx, sess); err != nil {
+	firstMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("first turn")}}
+	sess.AppendMessage(firstMsg)
+	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("runtimecontext"),
+		UserContent: &firstMsg,
+	}); err != nil {
 		t.Fatalf("Run first: %v", err)
 	}
 	repo.IsDirty = true
@@ -283,8 +293,13 @@ func TestPromptContextIncludesRealtimeEnvironmentChanges(t *testing.T) {
 	if err := ws.WriteFile(ctx, "NEW.txt", []byte("changed")); err != nil {
 		t.Fatalf("WriteFile NEW.txt: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("second turn")}})
-	if _, err := k.Run(ctx, sess); err != nil {
+	secondMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("second turn")}}
+	sess.AppendMessage(secondMsg)
+	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("runtimecontext"),
+		UserContent: &secondMsg,
+	}); err != nil {
 		t.Fatalf("Run second: %v", err)
 	}
 	joined := flattenMessageText(llm.Calls[len(llm.Calls)-1].Messages)
@@ -326,9 +341,14 @@ func TestLightweightChatPromptSkipsStartupContext(t *testing.T) {
 	}
 	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("帮我分析 README")}})
 	sess.AppendMessage(model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("我先看看项目结构")}})
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("你好")}})
-	if _, err := k.Run(ctx, sess); err != nil {
-		t.Fatalf("Run: %v", err)
+	latest := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("你好")}}
+	sess.AppendMessage(latest)
+	if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("runtimecontext"),
+		UserContent: &latest,
+	}); err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
 	call := llm.Calls[len(llm.Calls)-1]
 	joined := flattenMessageText(call.Messages)

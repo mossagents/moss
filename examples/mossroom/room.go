@@ -301,7 +301,8 @@ func (r *Room) triggerChatStart(p *Player) {
 	r.lastUserMsg = time.Now()
 	r.mu.Unlock()
 
-	if !r.runSession("chat auto-start error", "自动启动失败", true) {
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(initMsg)}}
+	if !r.runSession("chat auto-start error", "自动启动失败", true, &userMsg) {
 		return
 	}
 
@@ -327,10 +328,11 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 
 	// 3. 拼接为 "[玩家名]: 内容" 作为用户消息交给 Agent
 	userMsg := fmt.Sprintf("[%s]: %s", pm.player.Name, pm.content)
-	r.sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(userMsg)}})
+	msg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(userMsg)}}
+	r.sess.AppendMessage(msg)
 
 	// 4. 运行 Agent Loop（串行，当前消息处理完才处理下一条）
-	if !r.runSession("agent error", "Agent 出错", true) {
+	if !r.runSession("agent error", "Agent 出错", true, &msg) {
 		return
 	}
 
@@ -341,8 +343,12 @@ func (r *Room) handlePlayerMessage(pm playerMessage) {
 }
 
 // runSession 运行一次 Agent 会话，并按需要记录/广播错误。
-func (r *Room) runSession(logMsg, userErrPrefix string, notifyUsers bool) bool {
-	_, err := r.k.Run(r.ctx, r.sess)
+func (r *Room) runSession(logMsg, userErrPrefix string, notifyUsers bool, userMsg *model.Message) bool {
+	_, err := kernel.CollectRunAgentResult(r.ctx, r.k, kernel.RunAgentRequest{
+		Session:     r.sess,
+		Agent:       r.k.BuildLLMAgent("room"),
+		UserContent: userMsg,
+	})
 	if err == nil {
 		return true
 	}
@@ -413,9 +419,10 @@ func (r *Room) fireAutoTurn() {
 	prompt := fmt.Sprintf(`[系统-自主对话]: 距离上次用户发言已过 %d 秒，虚拟角色可以自主闲聊或互动。请自然地让1-2个角色说点什么（闲聊、接之前的话题、互相调侃等），但控制篇幅简短。如果觉得没什么好说的，回复"skip"即可。`,
 		int(elapsed.Seconds()))
 
-	r.sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}}
+	r.sess.AppendMessage(userMsg)
 
-	if !r.runSession("auto-turn error", "", false) {
+	if !r.runSession("auto-turn error", "", false, &userMsg) {
 		return
 	}
 

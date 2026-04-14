@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"github.com/mossagents/moss/internal/strutil"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/internal/strutil"
+	"github.com/mossagents/moss/kernel"
+	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -196,7 +197,7 @@ func countQueuedMessages(ctx context.Context, runtime taskrt.TaskRuntime, taskID
 	return len(items), true, nil
 }
 
-func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string, requestedContract taskrt.TaskContract) (*loop.SessionResult, error) {
+func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskID string, revision int64, delegator Delegator, agentName, task string, requestedContract taskrt.TaskContract) (*session.LifecycleResult, error) {
 	cfg, ok := agents.Get(agentName)
 	if !ok {
 		var availableNames []string
@@ -271,12 +272,19 @@ func runAgent(ctx context.Context, agents *Registry, tracker *TaskTracker, taskI
 		"parent_session_id", parentSessionID,
 	)
 
-	sess.AppendMessage(model.Message{
+	userMsg := model.Message{
 		Role:         model.RoleUser,
 		ContentParts: []model.ContentPart{model.TextPart(task)},
-	})
+	}
+	sess.AppendMessage(userMsg)
 
-	result, err := delegator.RunWithTools(WithSessionID(runCtx, sess.ID), sess, scopedTools)
+	result, err := kernel.CollectRunAgentResult(WithSessionID(runCtx, sess.ID), delegator, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       delegator.BuildLLMAgent(agentName),
+		UserContent: &userMsg,
+		IO:          &kernio.NoOpIO{},
+		Tools:       scopedTools,
+	})
 	if err != nil {
 		logging.GetLogger().DebugContext(ctx, "delegated agent failed",
 			"agent", agentName,

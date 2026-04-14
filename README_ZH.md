@@ -9,7 +9,7 @@ Moss 是一个以库优先（library-first）为核心的 Go Agent Runtime。当
 ## 当前仓库提供什么
 
 - 三层运行时架构，用于构建 Go AI Agent：
-  - **Kernel** — 核心运行时原语（Agent 接口、Runner、Session、Event、Tool、Plugin）。
+  - **Kernel** — 核心运行时原语（Agent 接口、request-shaped `RunAgent`、Session、Event、Tool、Plugin）。
   - **Harness** — 可组合编排层（Feature/Backend/Harness），将能力装配到 Kernel。
   - **Applications** — 面向终端用户的产品（`apps\mosscode`、`apps\mosswork`）及参考示例。
 - `appkit`：按 `AppFlags` 构建完整 Kernel 的推荐入口。
@@ -51,6 +51,7 @@ import (
 	"os"
 
 	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -82,14 +83,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(mdl.Message{
+	userMsg := mdl.Message{
 		Role: mdl.RoleUser,
 		ContentParts: []mdl.ContentPart{
 			mdl.TextPart("Read README.md and summarize it"),
 		},
-	})
+	}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -148,11 +154,16 @@ func main() {
 	sess, _ := k.NewSession(ctx, session.SessionConfig{
 		Goal: "help me", MaxSteps: 50,
 	})
-	sess.AppendMessage(mdl.Message{
+	userMsg := mdl.Message{
 		Role: mdl.RoleUser,
 		ContentParts: []mdl.ContentPart{mdl.TextPart("Hello")},
+	}
+	sess.AppendMessage(userMsg)
+	result, _ := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
 	})
-	result, _ := k.Run(ctx, sess)
 	println(result.Output)
 }
 ```
@@ -163,7 +174,7 @@ func main() {
 
 | 路径 | 作用 |
 |---|---|
-| `kernel\` | 核心运行时原语（Agent、Runner、Session、Event、Tool、Plugin） |
+| `kernel\` | 核心运行时原语（Agent、`RunAgent`、Session、Event、Tool、Plugin） |
 | `harness\` | 可组合编排层（Feature、Backend、Harness） |
 | `appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
 | `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |

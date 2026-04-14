@@ -514,53 +514,46 @@ func TestInvocationContext_AutoGeneratesID(t *testing.T) {
 	}
 }
 
-// --- Runner ---
+// --- RunAgent ---
 
-func TestRunner_RequiresAgent(t *testing.T) {
-	_, err := kernel.NewRunner(kernel.RunnerConfig{})
-	if err == nil {
-		t.Fatal("expected error when agent is nil")
-	}
-}
-
-func TestRunner_RunYieldsEvents(t *testing.T) {
-	agent := echoAgent("runner-test")
-	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
-	if err != nil {
-		t.Fatalf("unexpected error creating runner: %v", err)
-	}
-
+func TestRunAgent_YieldsEvents(t *testing.T) {
+	agent := echoAgent("run-agent")
+	k := kernel.New()
 	sess := &session.Session{ID: "s1"}
-	events, err := collectEvents(r.Run(context.Background(), sess, nil))
+
+	events, err := collectEvents(k.RunAgent(context.Background(), kernel.RunAgentRequest{
+		Session: sess,
+		Agent:   agent,
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if got := eventText(events[0]); got != "hello from runner-test" {
-		t.Fatalf("expected 'hello from runner-test', got %q", got)
+	if got := eventText(events[0]); got != "hello from run-agent" {
+		t.Fatalf("expected 'hello from run-agent', got %q", got)
 	}
 }
 
-func TestRunner_MaterializesCustomAgentEventsIntoSession(t *testing.T) {
+func TestRunAgent_MaterializesCustomAgentEventsIntoSession(t *testing.T) {
 	agent := kernel.NewCustomAgent(kernel.CustomAgentConfig{
-		Name: "runner-materialize",
+		Name: "run-agent-materialize",
 		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
 			return func(yield func(*session.Event, error) bool) {
-				event := textEvent("runner-materialize", "done")
-				event.Actions.StateDelta = map[string]any{"runner.done": true}
+				event := textEvent("run-agent-materialize", "done")
+				event.Actions.StateDelta = map[string]any{"run.done": true}
 				yield(event, nil)
 			}
 		},
 	})
-	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
-	if err != nil {
-		t.Fatalf("unexpected error creating runner: %v", err)
-	}
-
+	k := kernel.New()
 	sess := &session.Session{ID: "s1", State: map[string]any{}}
-	events, err := collectEvents(r.Run(context.Background(), sess, nil))
+
+	events, err := collectEvents(k.RunAgent(context.Background(), kernel.RunAgentRequest{
+		Session: sess,
+		Agent:   agent,
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -568,37 +561,51 @@ func TestRunner_MaterializesCustomAgentEventsIntoSession(t *testing.T) {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
 	if got, want := events[0].Actions.MaterializedIn, sess.MaterializationDomain(); got != want {
-		t.Fatalf("runner event materialized_in = %q, want %q", got, want)
+		t.Fatalf("run-agent event materialized_in = %q, want %q", got, want)
 	}
-	if got, _ := sess.GetState("runner.done"); got != true {
-		t.Fatalf("runner.done state = %v, want true", got)
+	if got, _ := sess.GetState("run.done"); got != true {
+		t.Fatalf("run.done state = %v, want true", got)
 	}
 	if texts := sessionTexts(sess); len(texts) != 1 || texts[0] != "done" {
 		t.Fatalf("session messages = %v, want [done]", texts)
 	}
 }
 
-func TestRunner_AppendsUserMessage(t *testing.T) {
-	agent := echoAgent("test")
-	r, _ := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
+func TestRunAgent_UserContentDoesNotAppendToSession(t *testing.T) {
+	var gotUser string
+	agent := kernel.NewCustomAgent(kernel.CustomAgentConfig{
+		Name: "probe",
+		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
+			return func(yield func(*session.Event, error) bool) {
+				if ctx.UserContent() != nil {
+					gotUser = model.ContentPartsToPlainText(ctx.UserContent().ContentParts)
+				}
+			}
+		},
+	})
+	k := kernel.New()
 	sess := &session.Session{ID: "s1"}
 	userMsg := &model.Message{
 		Role:         model.RoleUser,
 		ContentParts: []model.ContentPart{model.TextPart("user input")},
 	}
 
-	_, _ = collectEvents(r.Run(context.Background(), sess, userMsg))
-
-	msgs := sess.CopyMessages()
-	if len(msgs) == 0 {
-		t.Fatal("expected user message to be appended to session")
+	if _, err := collectEvents(k.RunAgent(context.Background(), kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       agent,
+		UserContent: userMsg,
+	})); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if msgs[0].Role != model.RoleUser {
-		t.Fatalf("expected first message role 'user', got %q", msgs[0].Role)
+	if gotUser != "user input" {
+		t.Fatalf("expected user content 'user input', got %q", gotUser)
+	}
+	if msgs := sess.CopyMessages(); len(msgs) != 0 {
+		t.Fatalf("expected RunAgent not to append user content automatically, got %v", sessionTexts(sess))
 	}
 }
 
-func TestRunner_DoesNotDoubleMaterializeLLMAgentEvents(t *testing.T) {
+func TestRunAgent_DoesNotDoubleMaterializeLLMAgentEvents(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []model.CompletionResponse{
 			{
@@ -613,19 +620,20 @@ func TestRunner_DoesNotDoubleMaterializeLLMAgentEvents(t *testing.T) {
 		LLM:   mock,
 		Tools: tool.NewRegistry(),
 	})
-	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
-	if err != nil {
-		t.Fatalf("unexpected error creating runner: %v", err)
-	}
-
+	k := kernel.New()
 	sess := &session.Session{
 		ID:     "s1",
 		Status: session.StatusCreated,
 		Budget: session.Budget{MaxSteps: 10},
 	}
-	userMsg := &model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}
+	sess.AppendMessage(userMsg)
 
-	events, err := collectEvents(r.Run(context.Background(), sess, userMsg))
+	events, err := collectEvents(k.RunAgent(context.Background(), kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       agent,
+		UserContent: &userMsg,
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -647,7 +655,7 @@ func TestRunner_DoesNotDoubleMaterializeLLMAgentEvents(t *testing.T) {
 	}
 }
 
-func TestRunner_IgnoresUnknownTransferTarget(t *testing.T) {
+func TestRunAgent_IgnoresUnknownTransferTarget(t *testing.T) {
 	agent := kernel.NewCustomAgent(kernel.CustomAgentConfig{
 		Name: "root",
 		Run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -659,18 +667,18 @@ func TestRunner_IgnoresUnknownTransferTarget(t *testing.T) {
 			}
 		},
 	})
-	r, err := kernel.NewRunner(kernel.RunnerConfig{Agent: agent})
-	if err != nil {
-		t.Fatalf("unexpected error creating runner: %v", err)
-	}
-
+	k := kernel.New()
 	sess := &session.Session{ID: "s1"}
-	events, err := collectEvents(r.Run(context.Background(), sess, nil))
+
+	events, err := collectEvents(k.RunAgent(context.Background(), kernel.RunAgentRequest{
+		Session: sess,
+		Agent:   agent,
+	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(events) != 2 {
-		t.Fatalf("expected runner to continue after unknown transfer target, got %d events", len(events))
+		t.Fatalf("expected run agent to continue after unknown transfer target, got %d events", len(events))
 	}
 	if texts := sessionTexts(sess); len(texts) != 2 || texts[0] != "first" || texts[1] != "second" {
 		t.Fatalf("session messages = %v, want [first second]", texts)

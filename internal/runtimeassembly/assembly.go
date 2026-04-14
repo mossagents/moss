@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/agent"
 	"github.com/mossagents/moss/capability"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
@@ -63,7 +64,9 @@ func Install(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Con
 		return err
 	}
 	cfg.CapabilityReporter = appruntime.NewCapabilityReporter(appruntime.CapabilityStatusPath(), cfg.CapabilityReporter)
-	appruntime.SetExecutionPolicy(k, appruntime.ResolveExecutionPolicyForKernel(k, cfg.Trust, "confirm"))
+	if err := runtimepolicy.Apply(k, appruntime.ResolveToolPolicyForWorkspace(workspaceDir, cfg.Trust, "confirm")); err != nil {
+		return err
+	}
 	return newLifecycleManager().Run(ctx, k, workspaceDir, cfg)
 }
 

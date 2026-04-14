@@ -8,7 +8,6 @@ const (
 	MetadataEffectiveTrust    = "effective_trust"
 	MetadataEffectiveApproval = "effective_approval"
 	MetadataTaskMode          = "task_mode"
-	MetadataExecutionPolicy   = "execution_policy"
 )
 
 func metadataString(meta map[string]any, key string) string {

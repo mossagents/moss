@@ -9,13 +9,13 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	appruntime "github.com/mossagents/moss/runtime"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	appruntime "github.com/mossagents/moss/runtime"
 )
 
 func launchTUI(cfg *config) error {
@@ -67,11 +67,11 @@ func launchTUI(cfg *config) error {
 			})
 			if err != nil {
 				resolvedProfile = appruntime.ResolvedProfile{
-					Name:            profile,
-					TaskMode:        profile,
-					Trust:           trust,
-					ApprovalMode:    approvalMode,
-					ExecutionPolicy: appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode),
+					Name:         profile,
+					TaskMode:     profile,
+					Trust:        trust,
+					ApprovalMode: approvalMode,
+					ToolPolicy:   appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
 				}
 			}
 			return appruntime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
@@ -199,9 +199,14 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		return report, fmt.Errorf("create session: %w", err)
 	}
 	report.SessionID = sess.ID
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("mosscode"),
+		UserContent: &userMsg,
+	})
 	if recorder != nil {
 		report.Events = recorder.Events()
 	}
@@ -216,7 +221,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		return report, fmt.Errorf("run: %w", err)
 	}
 	report.Status = "completed"
-	report.SessionID = result.SessionID
+	report.SessionID = sess.ID
 	report.Steps = result.Steps
 	if report.Tokens == 0 {
 		report.Tokens = result.TokensUsed.TotalTokens
@@ -225,7 +230,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 
 	if !cfg.execJSON {
 		fmt.Println()
-		fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", result.SessionID, result.Steps, report.Tokens)
+		fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", sess.ID, result.Steps, report.Tokens)
 		if report.EstimatedCostUSD > 0 {
 			fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
 		}

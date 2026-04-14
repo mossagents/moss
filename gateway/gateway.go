@@ -1,7 +1,7 @@
 // Package gateway 实现嵌入式消息网关。
 //
 // Gateway 将多个 Channel 的入站消息汇聚（fan-in），通过 Router 路由到
-// 正确的 Session，驱动 Kernel.Run()，最后将回复发回原始 Channel。
+// 正确的 Session，驱动 Kernel.RunAgent()，最后将回复发回原始 Channel。
 //
 // 用法:
 //
@@ -13,10 +13,11 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"github.com/mossagents/moss/kernel"
 	kchannel "github.com/mossagents/moss/kernel/channel"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	"iter"
 	"sync"
 	"time"
 )
@@ -25,7 +26,8 @@ import (
 // 使用接口而非直接依赖 *kernel.Kernel，便于测试。
 type Kernel interface {
 	NewSession(ctx context.Context, cfg session.SessionConfig) (*session.Session, error)
-	Run(ctx context.Context, sess *session.Session) (*loop.SessionResult, error)
+	BuildLLMAgent(name string) *kernel.LLMAgent
+	RunAgent(ctx context.Context, req kernel.RunAgentRequest) iter.Seq2[*session.Event, error]
 }
 
 // Config 配置 Gateway 行为。
@@ -46,7 +48,7 @@ type Config struct {
 	DeliveryDir string
 
 	// TraceExtractor extracts distributed trace context from InboundMessage.Metadata
-	// and returns an enriched context that is passed to kernel.Run.
+	// and returns an enriched context that is passed to kernel.RunAgent.
 	// When nil, the original context is used unchanged.
 	// Use mossotel.MetadataExtractor() from contrib/telemetry/otel to enable
 	// W3C TraceContext (traceparent / tracestate) propagation.
@@ -82,7 +84,7 @@ func WithDeliveryDir(dir string) Option {
 }
 
 // WithTraceExtractor sets a function that extracts distributed trace context from
-// InboundMessage.Metadata into the context before kernel.Run is called.
+// InboundMessage.Metadata into the context before kernel.RunAgent is called.
 // Use mossotel.MetadataExtractor() from contrib/telemetry/otel to enable W3C
 // TraceContext propagation without adding OTEL as a direct gateway dependency.
 func WithTraceExtractor(fn func(ctx context.Context, metadata map[string]any) context.Context) Option {
@@ -211,7 +213,7 @@ func (gw *Gateway) fanIn(ctx context.Context) <-chan inboundWithChannel {
 	return merged
 }
 
-// handleMessage 处理单条入站消息：路由 → Session → Run → 回复。
+// handleMessage 处理单条入站消息：路由 → Session → RunAgent → 回复。
 func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	msg := m.msg
 
@@ -228,10 +230,15 @@ func (gw *Gateway) handleMessage(ctx context.Context, m inboundWithChannel) {
 	}
 
 	// 2. 追加用户消息
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(msg.Content)}}
+	sess.AppendMessage(userMsg)
 
 	// 3. 运行 Agent Loop
-	result, err := gw.kernel.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, gw.kernel, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       gw.kernel.BuildLLMAgent("gateway"),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		gw.onError(fmt.Errorf("run session %s: %w", sess.ID, err))
 		return

@@ -2,8 +2,9 @@ package agent
 
 import (
 	"context"
+	"iter"
 
-	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -14,7 +15,8 @@ import (
 // 由 Kernel 实现。
 type Delegator interface {
 	NewSession(ctx context.Context, cfg session.SessionConfig) (*session.Session, error)
-	RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error)
+	BuildLLMAgent(name string) *kernel.LLMAgent
+	RunAgent(ctx context.Context, req kernel.RunAgentRequest) iter.Seq2[*session.Event, error]
 	ToolRegistry() tool.Registry
 }
 
@@ -144,4 +146,3 @@ type queueMetrics struct {
 	ConsumedCount  int
 	RemainingCount int
 }
-

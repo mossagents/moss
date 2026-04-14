@@ -6,6 +6,7 @@ import (
 
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/internal/runtimeexecution"
+	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks"
@@ -276,18 +277,16 @@ func LLMResilience(retryCfg *retry.Config, breakerCfg *retry.BreakerConfig) Feat
 	}
 }
 
-// ExecutionPolicy returns a Feature that configures tool-level access
-// control policies (deny, require-approval, allow).
-func ExecutionPolicy(rules ...builtins.PolicyRule) Feature {
+// ToolPolicy returns a Feature that installs the canonical structured tool policy.
+func ToolPolicy(policy runtime.ToolPolicy) Feature {
 	return FeatureFunc{
-		FeatureName: "execution-policy",
+		FeatureName: "tool-policy",
 		MetadataValue: FeatureMetadata{
-			Key:   "execution-policy",
+			Key:   "tool-policy",
 			Phase: FeaturePhasePostRuntime,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().WithPolicy(rules...)
-			return nil
+			return runtimepolicy.Apply(h.Kernel(), policy)
 		},
 	}
 }

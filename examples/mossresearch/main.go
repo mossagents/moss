@@ -174,9 +174,14 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return fmt.Errorf("create session: %w", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent(appName),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		return fmt.Errorf("run: %w", err)
 	}
@@ -185,7 +190,7 @@ func runOneShot(ctx context.Context, cfg *config) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("✅ Research completed (session: %s, steps: %d, tokens: %d)\n", result.SessionID, result.Steps, result.TokensUsed.TotalTokens)
+	fmt.Printf("✅ Research completed (session: %s, steps: %d, tokens: %d)\n", sess.ID, result.Steps, result.TokensUsed.TotalTokens)
 	reportPath := finalReportPath(cfg.flags.Workspace)
 	fmt.Printf("📄 Report path: %s\n", reportPath)
 	if strings.TrimSpace(result.Output) != "" {

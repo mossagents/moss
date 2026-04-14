@@ -21,9 +21,10 @@ type InvocationContext struct {
 	branch       string // agent hierarchy path: "root.sub1.sub2"
 	runID        string
 
-	agent       Agent
-	session     *session.Session
-	userContent *model.Message
+	agent        Agent
+	session      *session.Session
+	userContent  *model.Message
+	resultWriter func(*session.LifecycleResult)
 
 	io       io.UserIO
 	observer observe.Observer
@@ -41,6 +42,7 @@ type InvocationContextParams struct {
 	UserContent  *model.Message
 	IO           io.UserIO
 	Observer     observe.Observer
+	resultWriter func(*session.LifecycleResult)
 }
 
 // ChildRunConfig controls how a custom agent or orchestration primitive invokes
@@ -74,6 +76,7 @@ func NewInvocationContext(ctx context.Context, params InvocationContextParams) *
 		agent:        params.Agent,
 		session:      params.Session,
 		userContent:  params.UserContent,
+		resultWriter: params.resultWriter,
 		io:           params.IO,
 		observer:     params.Observer,
 	}
@@ -96,6 +99,13 @@ func (c *InvocationContext) Session() *session.Session { return c.session }
 
 // UserContent returns the user's input message that triggered this invocation.
 func (c *InvocationContext) UserContent() *model.Message { return c.userContent }
+
+func (c *InvocationContext) setLifecycleResult(result *session.LifecycleResult) {
+	if c == nil || c.resultWriter == nil {
+		return
+	}
+	c.resultWriter(result)
+}
 
 // IO returns the user interaction port.
 func (c *InvocationContext) IO() io.UserIO { return c.io }

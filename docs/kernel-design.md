@@ -1,6 +1,6 @@
 # Kernel 设计
 
-`kernel\` 的目标不是承载完整产品，而是提供 **稳定、可组合、可观测的 Agent Runtime 原语**。Kernel 围绕 Agent 接口、Runner、Session、Event、Tool、Plugin 六个核心概念展开。
+`kernel\` 的目标不是承载完整产品，而是提供 **稳定、可组合、可观测的 Agent Runtime 原语**。Kernel 围绕 Agent 接口、request-shaped `RunAgent(...)`、Session、Event、Tool、Plugin 六个核心概念展开。
 
 ## Kernel 核心概念
 
@@ -17,9 +17,9 @@ type Agent interface {
 
 `CustomAgent` 是把用户自定义回调包装成 Agent 的轻量入口；当 custom agent 需要调用子 Agent 时，推荐通过 `InvocationContext.RunChild(...)` 获取统一的 branch-local child-run + event materialization 语义，而不是直接手写 session clone / event commit 逻辑。
 
-### Runner
+### RunAgent
 
-Runner 管理 Agent 的执行：Session 路由、Plugin 生命周期、Event 流转发，以及 root 级 generic event 的 session materialization。对已经由底层执行器写入 session 的事件（例如 `AgentLoop` 产出的 LLM / tool event），Runner 会根据 `event.Actions.MaterializedIn` 与当前 session domain 是否一致来避免重复提交；如果事件继续向更外层 domain 传播，仍可再次提交。`Kernel.RunAgent(...)` 复用了同一套语义。
+`Kernel.RunAgent(...)` 是顶层 canonical 执行入口，负责 request-scoped `Session` / `Agent` / `UserContent` / `IO` / `Tools` 绑定，以及 root 级 generic event 的 session materialization。对已经由底层执行器写入 session 的事件（例如 `AgentLoop` 产出的 LLM / tool event），canonical run path 会根据 `event.Actions.MaterializedIn` 与当前 session domain 是否一致来避免重复提交；如果事件继续向更外层 domain 传播，仍可再次提交。
 
 ### Event
 
@@ -92,10 +92,11 @@ NewSession
   -> extend system prompt
   -> emit lifecycle(created)
 
-Run
+RunAgent
   -> begin run supervisor context
   -> apply optional timeout
-  -> loop.AgentLoop.Run(...)
+  -> bind RunAgentRequest
+  -> current Agent.Run(...)
   -> emit session/tool lifecycle events
 
 Shutdown
@@ -203,7 +204,7 @@ Kernel 现在支持：
 以下内容已经足够基础，适合留在 `kernel\`：
 
 - Agent 接口与组合器
-- Runner 执行引擎
+- `RunAgent(...)` 执行入口与运行监督
 - Event 流
 - Plugin 系统
 - 会话生命周期

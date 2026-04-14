@@ -3,12 +3,13 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"iter"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -19,7 +20,7 @@ import (
 // mockDelegator 模拟 Kernel 的委派能力。
 type mockDelegator struct {
 	registry tool.Registry
-	runFn    func(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error)
+	runFn    func(ctx context.Context, sess *session.Session, tools tool.Registry) (*session.LifecycleResult, error)
 }
 
 func (m *mockDelegator) NewSession(ctx context.Context, cfg session.SessionConfig) (*session.Session, error) {
@@ -27,15 +28,31 @@ func (m *mockDelegator) NewSession(ctx context.Context, cfg session.SessionConfi
 	return mgr.Create(ctx, cfg)
 }
 
-func (m *mockDelegator) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
-	if m.runFn != nil {
-		return m.runFn(ctx, sess, tools)
+func (m *mockDelegator) BuildLLMAgent(name string) *kernel.LLMAgent {
+	return kernel.NewLLMAgent(kernel.LLMAgentConfig{Name: name, Tools: m.registry})
+}
+
+func (m *mockDelegator) RunAgent(ctx context.Context, req kernel.RunAgentRequest) iter.Seq2[*session.Event, error] {
+	return func(yield func(*session.Event, error) bool) {
+		var (
+			result *session.LifecycleResult
+			err    error
+		)
+		if m.runFn != nil {
+			result, err = m.runFn(ctx, req.Session, req.Tools)
+		} else {
+			result = &session.LifecycleResult{
+				Success: true,
+				Output:  "mock result for: " + req.Session.Config.Goal,
+			}
+		}
+		if result != nil && req.OnResult != nil {
+			req.OnResult(result)
+		}
+		if err != nil {
+			yield(nil, err)
+		}
 	}
-	return &loop.SessionResult{
-		SessionID: sess.ID,
-		Success:   true,
-		Output:    "mock result for: " + sess.Config.Goal,
-	}, nil
 }
 
 func (m *mockDelegator) ToolRegistry() tool.Registry {
@@ -160,10 +177,9 @@ func TestSpawnAndQueryAgent(t *testing.T) {
 	done := make(chan struct{})
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			defer close(done)
-			return &loop.SessionResult{
-				SessionID:  sess.ID,
+			return &session.LifecycleResult{
 				Success:    true,
 				Output:     "async done",
 				TokensUsed: model.TokenUsage{TotalTokens: 42},
@@ -235,12 +251,11 @@ func TestTaskToolSyncBackgroundQuery(t *testing.T) {
 	done := make(chan struct{})
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			if sess.Config.Goal == "background work" {
 				defer close(done)
 			}
-			return &loop.SessionResult{
-				SessionID:  sess.ID,
+			return &session.LifecycleResult{
 				Success:    true,
 				Output:     "ok: " + sess.Config.Goal,
 				TokensUsed: model.TokenUsage{TotalTokens: 10},
@@ -376,7 +391,7 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 	done := make(chan struct{})
 	delegator := &mockDelegator{
 		registry: parentReg,
-		runFn: func(_ context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, sess *session.Session, tools tool.Registry) (*session.LifecycleResult, error) {
 			defer close(done)
 			if sess.Config.MaxSteps != 3 || sess.Config.MaxTokens != 111 {
 				t.Fatalf("unexpected budget in session config: %+v", sess.Config)
@@ -394,8 +409,7 @@ func TestTaskToolBackgroundPersistsContractAndScopesTools(t *testing.T) {
 			if _, err := writeTool.Execute(context.Background(), mustJSON(t, map[string]any{"path": "notes/out.txt"})); err == nil || !strings.Contains(err.Error(), "violates child task contract") {
 				t.Fatalf("expected contract violation, got %v", err)
 			}
-			return &loop.SessionResult{
-				SessionID:  sess.ID,
+			return &session.LifecycleResult{
 				Success:    true,
 				Output:     "contract ok",
 				TokensUsed: model.TokenUsage{TotalTokens: 9},
@@ -477,7 +491,7 @@ func TestDelegateAgentContractWritableScope(t *testing.T) {
 	}
 	delegator := &mockDelegator{
 		registry: parentReg,
-		runFn: func(_ context.Context, _ *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, _ *session.Session, tools tool.Registry) (*session.LifecycleResult, error) {
 			writeHandlerTool, ok := tools.Get("write_file")
 			if !ok {
 				t.Fatal("write_file not available")
@@ -489,7 +503,7 @@ func TestDelegateAgentContractWritableScope(t *testing.T) {
 			if _, err := writeHandler(context.Background(), mustJSON(t, map[string]any{"path": "docs/ok.txt"})); err != nil {
 				t.Fatalf("expected in-scope write to succeed, got %v", err)
 			}
-			return &loop.SessionResult{Success: true, Output: "scoped"}, nil
+			return &session.LifecycleResult{Success: true, Output: "scoped"}, nil
 		},
 	}
 	reg := tool.NewRegistry()
@@ -534,15 +548,14 @@ func TestUpdateTaskRestartsSameID(t *testing.T) {
 	var calls int32
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			n := atomic.AddInt32(&calls, 1)
 			if n == 1 {
 				firstStarted <- struct{}{}
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}
-			return &loop.SessionResult{
-				SessionID:  sess.ID,
+			return &session.LifecycleResult{
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
 				TokensUsed: model.TokenUsage{TotalTokens: 5},
@@ -637,13 +650,13 @@ func TestListAndCancelTaskTools(t *testing.T) {
 	released := make(chan struct{}, 1)
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			started <- struct{}{}
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			case <-released:
-				return &loop.SessionResult{Success: true, Output: "done"}, nil
+				return &session.LifecycleResult{Success: true, Output: "done"}, nil
 			}
 		},
 	}
@@ -741,9 +754,9 @@ func TestScopedToolIsolation(t *testing.T) {
 	var capturedTools tool.Registry
 	delegator := &mockDelegator{
 		registry: parentReg,
-		runFn: func(_ context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, sess *session.Session, tools tool.Registry) (*session.LifecycleResult, error) {
 			capturedTools = tools
-			return &loop.SessionResult{Success: true, Output: "ok"}, nil
+			return &session.LifecycleResult{Success: true, Output: "ok"}, nil
 		},
 	}
 
@@ -790,7 +803,7 @@ func TestSpawnAgent_CancelledContext(t *testing.T) {
 	tracker := NewTaskTracker()
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(ctx context.Context, _ *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			<-ctx.Done()
 			return nil, ctx.Err()
 		},
@@ -1106,7 +1119,7 @@ func TestResumeAgent_RestartsHydratedRunningTask(t *testing.T) {
 	started := make(chan struct{}, 1)
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			started <- struct{}{}
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -1172,15 +1185,14 @@ func TestReadAndWriteAgentTools_ByTaskID(t *testing.T) {
 	var calls int32
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(ctx context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			n := atomic.AddInt32(&calls, 1)
 			if n == 1 {
 				firstStarted <- struct{}{}
 				<-ctx.Done()
 				return nil, ctx.Err()
 			}
-			return &loop.SessionResult{
-				SessionID:  sess.ID,
+			return &session.LifecycleResult{
 				Success:    true,
 				Output:     "updated: " + sess.Config.Goal,
 				TokensUsed: model.TokenUsage{TotalTokens: 3},
@@ -1367,10 +1379,10 @@ func TestWriteAgent_TriggerTurnConsumesQueuedMessages(t *testing.T) {
 	var capturedGoal string
 	delegator := &mockDelegator{
 		registry: tool.NewRegistry(),
-		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*loop.SessionResult, error) {
+		runFn: func(_ context.Context, sess *session.Session, _ tool.Registry) (*session.LifecycleResult, error) {
 			capturedGoal = sess.Config.Goal
 			done <- struct{}{}
-			return &loop.SessionResult{Success: true, Output: "ok"}, nil
+			return &session.LifecycleResult{Success: true, Output: "ok"}, nil
 		},
 	}
 

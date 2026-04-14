@@ -129,51 +129,8 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 	return sess, nil
 }
 
-// Run 在指定 Session 上运行 Agent Loop。
-func (k *Kernel) Run(ctx context.Context, sess *session.Session) (*loop.SessionResult, error) {
-	return k.runSession(ctx, sess, runKindForeground, k.tools, k.io)
-}
-
-// RunWithUserIO 在指定 Session 上运行 Agent Loop，并临时覆盖本次运行的 UserIO。
-func (k *Kernel) RunWithUserIO(ctx context.Context, sess *session.Session, io io.UserIO) (*loop.SessionResult, error) {
-	return k.runSession(ctx, sess, runKindWithUserIO, k.tools, io)
-}
-
-// RunWithTools 使用指定的工具注册表运行 Agent Loop。
-// 用于 Agent 委派场景，子 Agent 使用隔离的工具集。
-func (k *Kernel) RunWithTools(ctx context.Context, sess *session.Session, tools tool.Registry) (*loop.SessionResult, error) {
-	return k.runSession(ctx, sess, runKindDelegated, tools, &io.NoOpIO{})
-}
-
-func (k *Kernel) runSession(ctx context.Context, sess *session.Session, kind runKind, tools tool.Registry, userIO io.UserIO) (*loop.SessionResult, error) {
-	if err := k.checkShutdown(); err != nil {
-		return nil, err
-	}
-	runCtx, runID, cancel, err := k.beginRunContext(ctx, sess.ID, sess.Config.Timeout, kind)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-	defer k.runs.end(runID)
-
-	// Ensure IO is goroutine-safe for parallel tool execution.
-	if _, ok := userIO.(*io.SyncIO); !ok {
-		userIO = io.NewSyncIO(userIO)
-	}
-
-	l := &loop.AgentLoop{
-		LLM:   k.llm,
-		Tools: tools,
-		Hooks: k.chain, IO: userIO,
-		Config:   k.loopCfg,
-		Observer: k.observer,
-		RunID:    runID,
-	}
-	return l.Run(runCtx, sess)
-}
-
-func (k *Kernel) beginRunContext(parent context.Context, sessionID string, timeout time.Duration, kind runKind) (context.Context, string, context.CancelFunc, error) {
-	runCtx, runID, err := k.runs.begin(parent, sessionID, kind)
+func (k *Kernel) beginRunContext(parent context.Context, sessionID string, timeout time.Duration) (context.Context, string, context.CancelFunc, error) {
+	runCtx, runID, err := k.runs.begin(parent, sessionID)
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -395,7 +352,7 @@ func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
 	})
 }
 
-// ── Agent / Runner API ──────────────────────────────────────────
+// ── Agent API ───────────────────────────────────────────────────
 
 // BuildLLMAgent creates an LLMAgent configured with the Kernel's resources.
 // This is the bridge between the Kernel's resource injection model and the new Agent interface.
@@ -409,26 +366,21 @@ func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 	})
 }
 
-// NewRunnerFromKernel creates a Runner configured with the Kernel's resources
-// and the specified root agent.
-func (k *Kernel) NewRunnerFromKernel(agent Agent) (*Runner, error) {
-	return NewRunner(RunnerConfig{
-		Agent:    agent,
-		IO:       k.io,
-		Observer: k.observer,
-	})
-}
-
-// RunAgent runs an Agent on the given session and yields events.
-// This is the new primary execution API. Existing Run() is preserved for compatibility
-// and will be removed once all callers are migrated.
-func (k *Kernel) RunAgent(ctx context.Context, sess *session.Session, agent Agent) iter.Seq2[*session.Event, error] {
+// RunAgent runs an Agent on the given request and yields events.
+// This is the canonical execution API. Legacy Run* wrappers currently forward
+// into this path and will be removed once all callers are migrated.
+func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		req, err := k.normalizeRunAgentRequest(req)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 		if err := k.checkShutdown(); err != nil {
 			yield(nil, err)
 			return
 		}
-		runCtx, runID, cancel, err := k.beginRunContext(ctx, sess.ID, sess.Config.Timeout, runKindForeground)
+		runCtx, runID, cancel, err := k.beginRunContext(ctx, req.Session.ID, req.Session.Config.Timeout)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -437,13 +389,15 @@ func (k *Kernel) RunAgent(ctx context.Context, sess *session.Session, agent Agen
 		defer k.runs.end(runID)
 
 		invCtx := NewInvocationContext(runCtx, InvocationContextParams{
-			RunID:    runID,
-			Branch:   agent.Name(),
-			Agent:    agent,
-			Session:  sess,
-			IO:       k.io,
-			Observer: k.observerOrNoOp(),
+			RunID:        runID,
+			Branch:       req.Agent.Name(),
+			Agent:        req.Agent,
+			Session:      req.Session,
+			UserContent:  req.UserContent,
+			IO:           req.IO,
+			Observer:     k.observerOrNoOp(),
+			resultWriter: req.OnResult,
 		})
-		streamAgentEvents(agent, invCtx, yield)
+		streamAgentEvents(req.Agent, invCtx, yield)
 	}
 }

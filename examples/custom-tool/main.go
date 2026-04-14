@@ -111,11 +111,16 @@ func runREPL(ctx context.Context, prompt, appName string, compactKeep int, k *ke
 			continue
 		}
 
-		sess.AppendMessage(model.Message{
+		userMsg := model.Message{
 			Role:         model.RoleUser,
 			ContentParts: []model.ContentPart{model.TextPart(input)},
-		})
-		if _, err := k.Run(ctx, sess); err != nil {
+		}
+		sess.AppendMessage(userMsg)
+		if _, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+			Session:     sess,
+			Agent:       k.BuildLLMAgent("custom-tool"),
+			UserContent: &userMsg,
+		}); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}

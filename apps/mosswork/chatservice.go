@@ -415,7 +415,8 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 	sessID := sess.ID
 	s.mu.Unlock()
 
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}}
+	sess.AppendMessage(userMsg)
 
 	go func() {
 		defer func() {
@@ -438,7 +439,12 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 		s.mu.Unlock()
 		defer cancel()
 
-		result, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO)
+		result, err := kernel.CollectRunAgentResult(ctx, s.k, kernel.RunAgentRequest{
+			Session:     sess,
+			Agent:       s.k.BuildLLMAgent("desktop"),
+			UserContent: &userMsg,
+			IO:          s.wailsIO,
+		})
 		if err != nil {
 			if ctx.Err() != nil {
 				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": sessID})
@@ -451,7 +457,7 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 		go s.maybeGenerateTitle(sess)
 
 		emitEvent("chat:done", map[string]any{
-			"session_id":  result.SessionID,
+			"session_id":  sessID,
 			"steps":       result.Steps,
 			"tokens_used": result.TokensUsed.TotalTokens,
 			"output":      result.Output,
@@ -1627,11 +1633,17 @@ func (s *ChatService) RunAutomationNow(id string) error {
 					slog.Warn("RunAutomationNow: create session failed", slog.Any("error", err))
 					return
 				}
-				sess.AppendMessage(model.Message{
+				userMsg := model.Message{
 					Role:         model.RoleUser,
 					ContentParts: []model.ContentPart{model.TextPart(job.Goal)},
-				})
-				if _, err := s.k.RunWithUserIO(ctx, sess, s.wailsIO); err != nil {
+				}
+				sess.AppendMessage(userMsg)
+				if _, err := kernel.CollectRunAgentResult(ctx, s.k, kernel.RunAgentRequest{
+					Session:     sess,
+					Agent:       s.k.BuildLLMAgent("desktop"),
+					UserContent: &userMsg,
+					IO:          s.wailsIO,
+				}); err != nil {
 					slog.Warn("RunAutomationNow: run failed", slog.Any("error", err))
 				}
 				if err := s.persistSession(sess); err != nil {

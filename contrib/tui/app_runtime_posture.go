@@ -91,7 +91,7 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 
 func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.SessionPosture) (string, error) {
 	a.mu.Lock()
-	current := postureFromRuntime(a.profile, a.trust, a.approvalMode, runtime.ExecutionPolicyOf(a.k))
+	current := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode)
 	a.mu.Unlock()
 	plan, err := planPostureRebuild(sessionID, current, target)
 	if err != nil {
@@ -106,13 +106,23 @@ func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.Sessi
 	return plan.Notice, nil
 }
 
-func postureFromRuntime(profile, trust, approval string, policy runtime.ExecutionPolicy) runtime.SessionPosture {
+func postureFromRuntime(workspace, profile, trust, approval string) runtime.SessionPosture {
+	policy := runtime.ResolveToolPolicyForWorkspace(workspace, trust, approval)
+	resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+		Workspace:        workspace,
+		RequestedProfile: profile,
+		Trust:            trust,
+		ApprovalMode:     approval,
+	})
+	if err == nil {
+		policy = resolved.ToolPolicy
+	}
 	return runtime.SessionPosture{
 		Profile:           strings.TrimSpace(profile),
 		EffectiveTrust:    configpkg.NormalizeTrustLevel(trust),
 		EffectiveApproval: product.NormalizeApprovalMode(approval),
-		ExecutionPolicy:   policy,
-		HasExecution:      true,
+		ToolPolicy:        policy,
+		HasToolPolicy:     true,
 	}
 }
 
@@ -127,7 +137,7 @@ func planPostureRebuild(sessionID string, current, target runtime.SessionPosture
 	currentApproval := product.NormalizeApprovalMode(current.EffectiveApproval)
 
 	if currentTrust == targetTrust && currentApproval == targetApproval {
-		if !target.HasExecution || reflect.DeepEqual(target.ExecutionPolicy, current.ExecutionPolicy) {
+		if !target.HasToolPolicy || reflect.DeepEqual(target.ToolPolicy, current.ToolPolicy) {
 			return postureRebuildPlan{}, nil
 		}
 	}

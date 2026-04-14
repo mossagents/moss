@@ -22,7 +22,7 @@ type DoctorReport struct {
 	Timestamp  string                      `json:"timestamp"`
 	Workspace  string                      `json:"workspace"`
 	Config     DoctorConfigReport          `json:"config"`
-	Execution  DoctorExecutionPolicyReport `json:"execution"`
+	Execution  DoctorToolPolicyReport      `json:"execution"`
 	Governance DoctorGovernanceReport      `json:"governance"`
 	Paths      DoctorPathsReport           `json:"paths"`
 	Health     DoctorHealthReport          `json:"health"`
@@ -46,7 +46,7 @@ type DoctorConfigReport struct {
 	ApprovalMode         string   `json:"approval_mode"`
 }
 
-type DoctorExecutionPolicyReport struct {
+type DoctorToolPolicyReport struct {
 	CommandAccess             string   `json:"command_access"`
 	HTTPAccess                string   `json:"http_access"`
 	CommandRuleCount          int      `json:"command_rule_count"`
@@ -158,19 +158,19 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspaceDir)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
 	normalizedApprovalMode := NormalizeApprovalMode(approvalMode)
-	executionPolicy := resolveDoctorExecutionPolicy(workspaceDir, flags, explicitFlags, trust, normalizedApprovalMode)
+	toolPolicy := resolveDoctorToolPolicy(workspaceDir, flags, explicitFlags, trust, normalizedApprovalMode)
 	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
 	commandNetworkEnforcement := "none"
 	commandNetworkDegraded := false
-	if executionPolicy.Command.Access == appruntime.ExecutionAccessDeny {
+	if toolPolicy.Command.Access == appruntime.ToolAccessDeny {
 		commandNetworkEnforcement = "disabled"
-	} else if executionPolicy.Command.Network.Mode == workspace.ExecNetworkDisabled {
+	} else if toolPolicy.Command.Network.Mode == workspace.ExecNetworkDisabled {
 		commandNetworkEnforcement = "soft-limit"
 		commandNetworkDegraded = true
 	}
 	httpHostPolicy := "open"
-	if len(executionPolicy.HTTP.AllowedHosts) > 0 {
-		httpHostPolicy = fmt.Sprintf("allowlist(%d)", len(executionPolicy.HTTP.AllowedHosts))
+	if len(toolPolicy.HTTP.AllowedHosts) > 0 {
+		httpHostPolicy = fmt.Sprintf("allowlist(%d)", len(toolPolicy.HTTP.AllowedHosts))
 	}
 	report := DoctorReport{
 		App:       appName,
@@ -193,21 +193,21 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 			Trust:                trust,
 			ApprovalMode:         normalizedApprovalMode,
 		},
-		Execution: DoctorExecutionPolicyReport{
-			CommandAccess:             string(executionPolicy.Command.Access),
-			HTTPAccess:                string(executionPolicy.HTTP.Access),
-			CommandRuleCount:          len(executionPolicy.Command.Rules),
-			HTTPRuleCount:             len(executionPolicy.HTTP.Rules),
-			CommandNetworkMode:        string(executionPolicy.Command.Network.Mode),
+		Execution: DoctorToolPolicyReport{
+			CommandAccess:             string(toolPolicy.Command.Access),
+			HTTPAccess:                string(toolPolicy.HTTP.Access),
+			CommandRuleCount:          len(toolPolicy.Command.Rules),
+			HTTPRuleCount:             len(toolPolicy.HTTP.Rules),
+			CommandNetworkMode:        string(toolPolicy.Command.Network.Mode),
 			CommandNetworkEnforcement: commandNetworkEnforcement,
 			CommandNetworkDegraded:    commandNetworkDegraded,
-			CommandTimeoutSeconds:     int(executionPolicy.Command.DefaultTimeout / time.Second),
-			CommandAllowedPaths:       len(executionPolicy.Command.AllowedPaths),
-			HTTPMethods:               append([]string(nil), executionPolicy.HTTP.AllowedMethods...),
-			HTTPSchemes:               append([]string(nil), executionPolicy.HTTP.AllowedSchemes...),
+			CommandTimeoutSeconds:     int(toolPolicy.Command.DefaultTimeout / time.Second),
+			CommandAllowedPaths:       len(toolPolicy.Command.AllowedPaths),
+			HTTPMethods:               append([]string(nil), toolPolicy.HTTP.AllowedMethods...),
+			HTTPSchemes:               append([]string(nil), toolPolicy.HTTP.AllowedSchemes...),
 			HTTPHostPolicy:            httpHostPolicy,
-			HTTPMaxTimeoutSeconds:     int(executionPolicy.HTTP.MaxTimeout / time.Second),
-			HTTPFollowRedirects:       executionPolicy.HTTP.FollowRedirects,
+			HTTPMaxTimeoutSeconds:     int(toolPolicy.HTTP.MaxTimeout / time.Second),
+			HTTPFollowRedirects:       toolPolicy.HTTP.FollowRedirects,
 		},
 		Governance: DoctorGovernanceReport{
 			Model: BuildGovernanceReport(workspaceDir, governanceCfg),
@@ -428,9 +428,9 @@ func mergeCapabilityStatuses(base []appruntime.CapabilityStatus, extra []apprunt
 	return out
 }
 
-func resolveDoctorExecutionPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) appruntime.ExecutionPolicy {
+func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) appruntime.ToolPolicy {
 	if flags == nil {
-		return appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode)
+		return appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 	}
 	trustOverride := ""
 	if containsString(explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
@@ -447,9 +447,9 @@ func resolveDoctorExecutionPolicy(workspace string, flags *appkit.AppFlags, expl
 		ApprovalMode:     approvalOverride,
 	})
 	if err == nil {
-		return resolved.ExecutionPolicy
+		return resolved.ToolPolicy
 	}
-	return appruntime.ResolveExecutionPolicyForWorkspace(workspace, trust, approvalMode)
+	return appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 }
 
 func containsString(items []string, want string) bool {

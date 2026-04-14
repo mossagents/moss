@@ -99,7 +99,11 @@ func TestSwitchProfileRejectsActiveRun(t *testing.T) {
 }
 
 func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
-	current := postureFromRuntime("default", "trusted", "confirm", runtime.ResolveExecutionPolicyForWorkspace("", "trusted", "confirm"))
+	current := postureFromRuntime("", "default", "trusted", "confirm")
+	toolPolicyMeta, err := runtime.EncodeToolPolicyMetadata(runtime.ResolveToolPolicyForWorkspace("", "restricted", "read-only"))
+	if err != nil {
+		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
+	}
 	target := runtime.SessionPostureFromSession(&session.Session{
 		ID: "sess-1",
 		Config: session.SessionConfig{
@@ -109,7 +113,7 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 				session.MetadataEffectiveTrust:    "restricted",
 				session.MetadataEffectiveApproval: "read-only",
 				session.MetadataTaskMode:          "readonly",
-				session.MetadataExecutionPolicy:   runtime.ResolveExecutionPolicyForWorkspace("", "restricted", "read-only"),
+				session.MetadataToolPolicy:        toolPolicyMeta,
 			},
 		},
 	})
@@ -127,7 +131,7 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 }
 
 func TestPlanPostureRebuildDefaultPostureRebuilds(t *testing.T) {
-	current := postureFromRuntime("coding", "restricted", "full-auto", runtime.ResolveExecutionPolicyForWorkspace("", "restricted", "full-auto"))
+	current := postureFromRuntime("", "coding", "restricted", "full-auto")
 	target := runtime.SessionPostureFromSession(&session.Session{
 		ID: "legacy-1",
 		Config: session.SessionConfig{

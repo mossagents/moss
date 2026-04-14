@@ -13,7 +13,6 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -188,11 +187,9 @@ func (a *agentState) sessionSummary() string {
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
-	if a.k != nil {
-		policy := runtime.ExecutionPolicyOf(a.k)
-		if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
-			b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
-		}
+	policy := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode).ToolPolicy
+	if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
+		b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
 	}
 	return b.String()
 }
@@ -362,7 +359,7 @@ func (a *agentState) permissionSummary() string {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
 	}
 	if k != nil {
-		policy := runtime.ExecutionPolicyOf(k)
+		policy := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode).ToolPolicy
 		if len(policy.Command.Rules) > 0 {
 			b.WriteString("Command rules:\n")
 			for _, rule := range policy.Command.Rules {
@@ -651,7 +648,8 @@ func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 	if len(parts) == 0 {
 		parts = []model.ContentPart{model.TextPart(text)}
 	}
-	a.sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: parts})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: parts}
+	a.sess.AppendMessage(userMsg)
 	var traceRecorder *product.RunTraceRecorder
 	progressObserver := newExecutionProgressObserver(a.bridge, a.sess)
 	if traceFactory != nil {
@@ -662,7 +660,11 @@ func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 		a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	}
 
-	result, err := a.k.Run(runCtx, a.sess)
+	result, err := kernel.CollectRunAgentResult(runCtx, a.k, kernel.RunAgentRequest{
+		Session:     a.sess,
+		Agent:       a.k.BuildLLMAgent("tui"),
+		UserContent: &userMsg,
+	})
 	a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 
 	a.mu.Lock()
@@ -725,7 +727,7 @@ func (a *agentState) publishProgressReplay() {
 	publishProgressReplay(bridge, k, sess)
 }
 
-func runTraceStatus(result *loop.SessionResult, err error) string {
+func runTraceStatus(result *session.LifecycleResult, err error) string {
 	if errors.Is(err, context.Canceled) {
 		return "cancelled"
 	}
@@ -738,7 +740,7 @@ func runTraceStatus(result *loop.SessionResult, err error) string {
 	return "failed"
 }
 
-func runTraceError(result *loop.SessionResult, err error) string {
+func runTraceError(result *session.LifecycleResult, err error) string {
 	if err != nil {
 		return err.Error()
 	}

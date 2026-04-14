@@ -11,6 +11,7 @@ import (
 
 	"github.com/mossagents/moss/agent"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/runtimepolicy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
@@ -58,7 +59,7 @@ func TestInstall_UsesDefaultsParity(t *testing.T) {
 	}
 }
 
-func TestInstall_DefaultExecutionPolicyIsRestrictedConfirm(t *testing.T) {
+func TestInstall_DefaultToolPolicyIsRestrictedConfirm(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
@@ -67,7 +68,10 @@ func TestInstall_DefaultExecutionPolicyIsRestrictedConfirm(t *testing.T) {
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	policy := appruntime.ExecutionPolicyOf(k)
+	policy, ok := runtimepolicy.Current(k)
+	if !ok {
+		t.Fatal("expected installed tool policy")
+	}
 	if policy.Trust != appconfig.TrustRestricted {
 		t.Fatalf("policy trust = %q, want %q", policy.Trust, appconfig.TrustRestricted)
 	}

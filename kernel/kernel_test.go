@@ -11,7 +11,6 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
@@ -130,6 +129,33 @@ func (m *nonHookSessionManager) Notify(id string, msg model.Message) error {
 	return m.base.Notify(id, msg)
 }
 
+func runRootAgent(ctx context.Context, k *Kernel, sess *session.Session, userMsg *model.Message) (*session.LifecycleResult, error) {
+	return CollectRunAgentResult(ctx, k, RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: userMsg,
+	})
+}
+
+func runRootAgentWithIO(ctx context.Context, k *Kernel, sess *session.Session, userMsg *model.Message, runIO io.UserIO) (*session.LifecycleResult, error) {
+	return CollectRunAgentResult(ctx, k, RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: userMsg,
+		IO:          runIO,
+	})
+}
+
+func runDelegatedAgent(ctx context.Context, k *Kernel, sess *session.Session, userMsg *model.Message, tools tool.Registry) (*session.LifecycleResult, error) {
+	return CollectRunAgentResult(ctx, k, RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("delegated"),
+		UserContent: userMsg,
+		IO:          &io.NoOpIO{},
+		Tools:       tools,
+	})
+}
+
 func TestKernelIntegration(t *testing.T) {
 	// MockLLM: 先请求 tool call，然后 text 回复
 	mock := &kt.MockLLM{
@@ -218,12 +244,13 @@ func TestKernelIntegration(t *testing.T) {
 	}
 
 	// 注入初始用户消息
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Fix the null pointer in main.go")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Fix the null pointer in main.go")}}
+	sess.AppendMessage(userMsg)
 
 	// 运行
-	result, err := k.Run(context.Background(), sess)
+	result, err := runRootAgent(context.Background(), k, sess, &userMsg)
 	if err != nil {
-		t.Fatalf("Run: %v", err)
+		t.Fatalf("RunAgent: %v", err)
 	}
 
 	if len(recIO.Asked) == 0 {
@@ -357,7 +384,7 @@ func TestKernelBootWiresObserverIntoCheckpointStore(t *testing.T) {
 	}
 }
 
-func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
+func TestKernelRunAgentRequestIOOverridesDefaultIO(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []model.CompletionResponse{{
 			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("hello from override")}},
@@ -380,11 +407,12 @@ func TestKernelRunWithUserIO_OverridesDefaultIO(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("hi")}}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.RunWithUserIO(context.Background(), sess, overrideIO)
+	result, err := runRootAgentWithIO(context.Background(), k, sess, &userMsg, overrideIO)
 	if err != nil {
-		t.Fatalf("RunWithUserIO: %v", err)
+		t.Fatalf("RunAgent: %v", err)
 	}
 	if result.Output != "hello from override" {
 		t.Fatalf("Output = %q, want hello from override", result.Output)
@@ -427,7 +455,7 @@ func TestKernelRunRejectedWhenShuttingDown(t *testing.T) {
 		t.Fatalf("NewSession: %v", err)
 	}
 
-	_, err = k.Run(context.Background(), sess)
+	_, err = runRootAgent(context.Background(), k, sess, nil)
 	if err == nil {
 		t.Fatal("expected shutdown rejection error")
 	}
@@ -453,11 +481,12 @@ func TestKernelShutdownCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}
+	sess.AppendMessage(userMsg)
 
 	runErrCh := make(chan error, 1)
 	go func() {
-		_, runErr := k.Run(context.Background(), sess)
+		_, runErr := runRootAgent(context.Background(), k, sess, &userMsg)
 		runErrCh <- runErr
 	}()
 
@@ -502,11 +531,12 @@ func TestSessionManagerCancelCancelsInFlightRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}
+	sess.AppendMessage(userMsg)
 
 	runErrCh := make(chan error, 1)
 	go func() {
-		_, runErr := k.Run(context.Background(), sess)
+		_, runErr := runRootAgent(context.Background(), k, sess, &userMsg)
 		runErrCh <- runErr
 	}()
 
@@ -553,11 +583,12 @@ func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) 
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}
+	sess.AppendMessage(userMsg)
 
 	runErrCh := make(chan error, 1)
 	go func() {
-		_, runErr := k.Run(context.Background(), sess)
+		_, runErr := runRootAgent(context.Background(), k, sess, &userMsg)
 		runErrCh <- runErr
 	}()
 
@@ -587,27 +618,27 @@ func TestWithSessionManager_NonHookManagerStillCancelsInFlightRun(t *testing.T) 
 	}
 }
 
-func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
+func TestKernelRunAgentRequestsShareTimeoutSemantics(t *testing.T) {
 	tests := []struct {
 		name string
-		run  func(*Kernel, *session.Session) (*loop.SessionResult, error)
+		run  func(*Kernel, *session.Session, *model.Message) (*session.LifecycleResult, error)
 	}{
 		{
-			name: "Run",
-			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
-				return k.Run(context.Background(), sess)
+			name: "default",
+			run: func(k *Kernel, sess *session.Session, userMsg *model.Message) (*session.LifecycleResult, error) {
+				return runRootAgent(context.Background(), k, sess, userMsg)
 			},
 		},
 		{
-			name: "RunWithUserIO",
-			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
-				return k.RunWithUserIO(context.Background(), sess, kt.NewRecorderIO())
+			name: "io-override",
+			run: func(k *Kernel, sess *session.Session, userMsg *model.Message) (*session.LifecycleResult, error) {
+				return runRootAgentWithIO(context.Background(), k, sess, userMsg, kt.NewRecorderIO())
 			},
 		},
 		{
-			name: "RunWithTools",
-			run: func(k *Kernel, sess *session.Session) (*loop.SessionResult, error) {
-				return k.RunWithTools(context.Background(), sess, k.ToolRegistry())
+			name: "tools-override",
+			run: func(k *Kernel, sess *session.Session, userMsg *model.Message) (*session.LifecycleResult, error) {
+				return runDelegatedAgent(context.Background(), k, sess, userMsg, k.ToolRegistry())
 			},
 		},
 	}
@@ -632,10 +663,11 @@ func TestKernelRunEntryPointsShareTimeoutSemantics(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewSession: %v", err)
 			}
-			sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
+			userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}
+			sess.AppendMessage(userMsg)
 
 			start := time.Now()
-			_, err = tt.run(k, sess)
+			_, err = tt.run(k, sess, &userMsg)
 			if err == nil {
 				t.Fatal("expected timeout error")
 			}
@@ -664,11 +696,12 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	sess.AppendMessage(model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}})
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("wait")}}
+	sess.AppendMessage(userMsg)
 
 	firstRunErrCh := make(chan error, 1)
 	go func() {
-		_, runErr := k.Run(context.Background(), sess)
+		_, runErr := runRootAgent(context.Background(), k, sess, &userMsg)
 		firstRunErrCh <- runErr
 	}()
 
@@ -681,7 +714,7 @@ func TestKernelRunRejectsConcurrentSameSession(t *testing.T) {
 		}
 	}
 
-	_, err = k.Run(context.Background(), sess)
+	_, err = runRootAgent(context.Background(), k, sess, &userMsg)
 	if err == nil {
 		t.Fatal("expected second run to be rejected for same session")
 	}
@@ -800,8 +833,8 @@ func TestKernelSessionLifecycleHooksRunInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if _, err := k.Run(context.Background(), sess); err != nil {
-		t.Fatalf("Run: %v", err)
+	if _, err := runRootAgent(context.Background(), k, sess, nil); err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
 
 	wantOrder := []string{
@@ -873,8 +906,8 @@ func TestKernelToolLifecycleHooksRunInOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if _, err := k.Run(context.Background(), sess); err != nil {
-		t.Fatalf("Run: %v", err)
+	if _, err := runRootAgent(context.Background(), k, sess, nil); err != nil {
+		t.Fatalf("RunAgent: %v", err)
 	}
 
 	wantOrder := []string{"before-10", "before-20", "after-10", "after-20"}

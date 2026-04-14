@@ -1,4 +1,4 @@
-﻿package kernel
+package kernel
 
 import (
 	"context"
@@ -7,14 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/mossagents/moss/kernel/errors"
-)
-
-type runKind string
-
-const (
-	runKindForeground runKind = "foreground"
-	runKindWithUserIO runKind = "with_userio"
-	runKindDelegated  runKind = "delegated"
 )
 
 type runRecord struct {
@@ -35,7 +27,7 @@ func newRunSupervisor() *runSupervisor {
 	return &runSupervisor{runs: make(map[string]runRecord)}
 }
 
-func (s *runSupervisor) begin(parent context.Context, sessionID string, kind runKind) (context.Context, string, error) {
+func (s *runSupervisor) begin(parent context.Context, sessionID string) (context.Context, string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

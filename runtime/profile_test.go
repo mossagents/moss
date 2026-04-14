@@ -1,11 +1,8 @@
 package runtime
 
 import (
-	"encoding/json"
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 	"os"
 	"path/filepath"
 	"slices"
@@ -90,7 +87,7 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 			MaxSteps:  42,
 			MaxTokens: 99,
 		},
-		ExecutionPolicy: ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "confirm"),
+		ToolPolicy: ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "confirm"),
 	}
 
 	cfg := ApplyResolvedProfileToSessionConfig(session.SessionConfig{}, resolved)
@@ -105,6 +102,12 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 	}
 	if got := cfg.Metadata[session.MetadataEffectiveApproval]; got != "confirm" {
 		t.Fatalf("approval metadata = %v", got)
+	}
+	if _, ok := cfg.Metadata[session.MetadataToolPolicy]; !ok {
+		t.Fatal("expected tool policy metadata")
+	}
+	if _, ok := cfg.Metadata[session.MetadataToolPolicySummary]; !ok {
+		t.Fatal("expected tool policy summary metadata")
 	}
 }
 
@@ -130,11 +133,11 @@ func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProfileForWorkspace: %v", err)
 	}
-	if len(resolved.ExecutionPolicy.Command.Rules) != 1 {
-		t.Fatalf("expected 1 command rule, got %d", len(resolved.ExecutionPolicy.Command.Rules))
+	if len(resolved.ToolPolicy.Command.Rules) != 1 {
+		t.Fatalf("expected 1 command rule, got %d", len(resolved.ToolPolicy.Command.Rules))
 	}
-	rule := resolved.ExecutionPolicy.Command.Rules[0]
-	if rule.Name != "git-push" || rule.Match != "git push*" || rule.Access != ExecutionAccessRequireApproval {
+	rule := resolved.ToolPolicy.Command.Rules[0]
+	if rule.Name != "git-push" || rule.Match != "git push*" || rule.Access != ToolAccessRequireApproval {
 		t.Fatalf("unexpected command rule: %+v", rule)
 	}
 }
@@ -161,75 +164,12 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveProfileForWorkspace: %v", err)
 	}
-	if len(resolved.ExecutionPolicy.HTTP.Rules) != 1 {
-		t.Fatalf("expected 1 http rule, got %d", len(resolved.ExecutionPolicy.HTTP.Rules))
+	if len(resolved.ToolPolicy.HTTP.Rules) != 1 {
+		t.Fatalf("expected 1 http rule, got %d", len(resolved.ToolPolicy.HTTP.Rules))
 	}
-	rule := resolved.ExecutionPolicy.HTTP.Rules[0]
-	if rule.Name != "api-host" || rule.Match != "api.example.com" || rule.Access != ExecutionAccessRequireApproval || len(rule.Methods) != 1 || rule.Methods[0] != "GET" {
+	rule := resolved.ToolPolicy.HTTP.Rules[0]
+	if rule.Name != "api-host" || rule.Match != "api.example.com" || rule.Access != ToolAccessRequireApproval || len(rule.Methods) != 1 || rule.Methods[0] != "GET" {
 		t.Fatalf("unexpected http rule: %+v", rule)
 	}
 }
 
-func TestExecutionPolicyRulesApplyCommandRules(t *testing.T) {
-	policy := ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
-	policy.Command.Rules = []CommandRule{{
-		Name:   "git-push",
-		Match:  "git push*",
-		Access: ExecutionAccessRequireApproval,
-	}}
-
-	rules := ExecutionPolicyRules(policy)
-	input, _ := json.Marshal(map[string]any{
-		"command": "git",
-		"args":    []string{"push", "origin", "main"},
-	})
-	result := builtins.Allow
-	for _, rule := range rules {
-		next := rule(builtins.PolicyContext{
-			Tool:  tool.ToolSpec{Name: "run_command"},
-			Input: input,
-		})
-		if next.Decision == builtins.Deny {
-			result = builtins.Deny
-			break
-		}
-		if next.Decision == builtins.RequireApproval {
-			result = builtins.RequireApproval
-		}
-	}
-	if result != builtins.RequireApproval {
-		t.Fatalf("decision = %s, want %s", result, builtins.RequireApproval)
-	}
-}
-
-func TestExecutionPolicyRulesAllowRuleOverridesDefaultConfirm(t *testing.T) {
-	policy := ResolveExecutionPolicyForWorkspace("", appconfig.TrustTrusted, "confirm")
-	policy.Command.Rules = []CommandRule{{
-		Name:   "git-status",
-		Match:  "git status*",
-		Access: ExecutionAccessAllow,
-	}}
-
-	rules := ExecutionPolicyRules(policy)
-	input, _ := json.Marshal(map[string]any{
-		"command": "git",
-		"args":    []string{"status"},
-	})
-	result := builtins.Allow
-	for _, rule := range rules {
-		next := rule(builtins.PolicyContext{
-			Tool:  tool.ToolSpec{Name: "run_command"},
-			Input: input,
-		})
-		if next.Decision == builtins.Deny {
-			result = builtins.Deny
-			break
-		}
-		if next.Decision == builtins.RequireApproval {
-			result = builtins.RequireApproval
-		}
-	}
-	if result != builtins.Allow {
-		t.Fatalf("decision = %s, want %s", result, builtins.Allow)
-	}
-}
