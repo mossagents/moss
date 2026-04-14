@@ -182,6 +182,11 @@ Public read-side target shape:
 - `runtime.LookupCapabilityManager(k) (*capability.Manager, bool)`
 - `runtime.LookupSkillManifests(k) []skill.Manifest`
 
+Concrete caller migration rule:
+
+- current read-side/UI callers such as `userio/prompting`, `contrib/tui`, and `apps/mosswork` migrate to the lookup helpers
+- current setup-side callers such as `internal/runtimeassembly/assembly.go` stop calling public runtime helpers for registration/activation and instead use internal setup ownership directly
+
 Public mutation helpers to remove from `runtime`:
 
 - `runtime.WithCapabilityManager(...)`
@@ -226,6 +231,10 @@ Target rule:
 - public documentation and app-facing APIs stop presenting it as something consumers should compose against directly
 - if a later round wants to remove `Kernel.Services()` entirely, that follow-up must first move the remaining state owners behind narrower package boundaries
 
+Future ADR note:
+
+- a later round may replace `ServiceRegistry` with narrower typed ownership, but that is explicitly out of scope for this convergence
+
 ### 6. Runtime helper split must eliminate side-effectful "read" accessors
 
 The recent phase/freeze work already exposed why this matters:
@@ -240,6 +249,10 @@ This spec therefore adopts a strict naming/behavior rule:
 That rule applies especially to capability-related helpers and any similar exported runtime accessors that currently mutate install-time state on first call.
 
 ## Migration Plan
+
+Phase dependency chain:
+
+- `Phase 1 (appkit)` -> `Phase 2 (runtime capability split)` -> `Phase 3 (ServiceRegistry posture tightening)` -> `Phase 4 (docs/validation)`
 
 ### Phase 1 — Appkit builder convergence
 
@@ -287,6 +300,7 @@ That rule applies especially to capability-related helpers and any similar expor
   - lookup helpers are side-effect free
   - internal setup helpers still register capabilities, manifests, and progressive-skill tools correctly
   - UI/product callers can inspect capabilities/manifests without triggering setup-time mutation
+  - `internal/runtimeassembly` can assemble capabilities without calling public runtime mutation helpers
 - Search-based cleanup should confirm no remaining public guidance or production code uses removed runtime mutation helpers or appkit raw-option builder escape hatches.
 
 ## Open Follow-Ups Explicitly Left Out
