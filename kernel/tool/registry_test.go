@@ -202,6 +202,50 @@ func TestEffectiveEffects_RiskTakesPriorityOverName(t *testing.T) {
 		})
 	}
 }
+
+// TestIsExplicitlyReadOnly 验证 IsExplicitlyReadOnly 仅在显式声明 EffectReadOnly 时返回 true。
+// 这是并行执行的"失败关闭"保护：未声明 EffectReadOnly 的工具不默认允许并行。
+func TestIsExplicitlyReadOnly(t *testing.T) {
+	cases := []struct {
+		name     string
+		spec     ToolSpec
+		wantTrue bool
+	}{
+		{
+			name:     "explicitly declared read-only",
+			spec:     ToolSpec{Name: "list_files", Effects: []Effect{EffectReadOnly}},
+			wantTrue: true,
+		},
+		{
+			name:     "no effects set → not explicitly read-only",
+			spec:     ToolSpec{Name: "list_files"},
+			wantTrue: false,
+		},
+		{
+			name:     "write effect → not read-only",
+			spec:     ToolSpec{Name: "write_file", Effects: []Effect{EffectWritesWorkspace}},
+			wantTrue: false,
+		},
+		{
+			name:     "name looks read-like but no explicit effects → fail-closed",
+			spec:     ToolSpec{Name: "get_data"},
+			wantTrue: false,
+		},
+		{
+			name:     "low risk + filesystem cap but no Effects field → fail-closed",
+			spec:     ToolSpec{Name: "read_file", Risk: RiskLow, Capabilities: []string{"filesystem"}},
+			wantTrue: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.spec.IsExplicitlyReadOnly(); got != tc.wantTrue {
+				t.Fatalf("IsExplicitlyReadOnly() = %v, want %v", got, tc.wantTrue)
+			}
+		})
+	}
+}
+
 func TestRegistryList_DeterministicOrder(t *testing.T) {
 r := NewRegistry()
 handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
