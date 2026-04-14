@@ -1001,3 +1001,141 @@ func TestConcatAggregate(t *testing.T) {
 		t.Fatalf("expected 3 events, got %d", len(merged))
 	}
 }
+
+// ─── Accessor tests ─────────────────────────────────────────────────────────
+
+func TestSequentialAgent_Accessors(t *testing.T) {
+child1 := &stubAgent{name: "c1"}
+child2 := &stubAgent{name: "c2"}
+a := &SequentialAgent{AgentName: "seq", Desc: "sequential agent", Agents: []kernel.Agent{child1, child2}}
+if a.Name() != "seq" {
+t.Fatalf("Name = %q, want seq", a.Name())
+}
+if a.Description() != "sequential agent" {
+t.Fatalf("Description = %q", a.Description())
+}
+if len(a.SubAgents()) != 2 {
+t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
+}
+}
+
+func TestParallelAgent_Accessors(t *testing.T) {
+child := &stubAgent{name: "p1"}
+a := &ParallelAgent{AgentName: "par", Desc: "parallel agent", Agents: []kernel.Agent{child}}
+if a.Name() != "par" {
+t.Fatalf("Name = %q, want par", a.Name())
+}
+if a.Description() != "parallel agent" {
+t.Fatalf("Description = %q", a.Description())
+}
+if len(a.SubAgents()) != 1 {
+t.Fatalf("SubAgents len = %d, want 1", len(a.SubAgents()))
+}
+}
+
+func TestLoopAgent_Accessors(t *testing.T) {
+child := &stubAgent{name: "inner"}
+a := &LoopAgent{AgentName: "loop", Desc: "loop agent", Agent: child}
+if a.Name() != "loop" {
+t.Fatalf("Name = %q, want loop", a.Name())
+}
+if a.Description() != "loop agent" {
+t.Fatalf("Description = %q", a.Description())
+}
+subs := a.SubAgents()
+if len(subs) != 1 || subs[0].Name() != "inner" {
+t.Fatalf("SubAgents = %v, want [inner]", subs)
+}
+}
+
+func TestLoopAgent_SubAgentsNilInner(t *testing.T) {
+a := &LoopAgent{AgentName: "loop"}
+if a.SubAgents() != nil {
+t.Fatal("SubAgents should be nil when Agent is nil")
+}
+}
+
+func TestSupervisorAgent_Accessors(t *testing.T) {
+w1 := &stubAgent{name: "worker1"}
+w2 := &stubAgent{name: "worker2"}
+a := &SupervisorAgent{AgentName: "sup", Desc: "supervisor", Workers: []kernel.Agent{w1, w2}}
+if a.Name() != "sup" {
+t.Fatalf("Name = %q, want sup", a.Name())
+}
+if a.Description() != "supervisor" {
+t.Fatalf("Description = %q", a.Description())
+}
+if len(a.SubAgents()) != 2 {
+t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
+}
+}
+
+func TestResearchAgent_Accessors(t *testing.T) {
+q := &stubAgent{name: "query"}
+s := &stubAgent{name: "search"}
+synth := &stubAgent{name: "synth"}
+a := NewResearchAgent(ResearchConfig{
+Name:           "research",
+Description:    "research agent",
+QueryAgent:     q,
+SearchAgent:    s,
+SynthesisAgent: synth,
+})
+if a.Name() != "research" {
+t.Fatalf("Name = %q, want research", a.Name())
+}
+if a.Description() != "research agent" {
+t.Fatalf("Description = %q", a.Description())
+}
+subs := a.SubAgents()
+if len(subs) != 3 {
+t.Fatalf("SubAgents len = %d, want 3", len(subs))
+}
+}
+
+func TestRoundRobinRouter_CyclesWorkers(t *testing.T) {
+	ctx := testCtx()
+	workers := []kernel.Agent{&stubAgent{name: "w0"}, &stubAgent{name: "w1"}, &stubAgent{name: "w2"}}
+	router := RoundRobinRouter("rr-state")
+
+	selections := make([]string, 6)
+	for i := range selections {
+		w := router(ctx, workers)
+		if w == nil {
+			t.Fatalf("iteration %d: got nil worker", i)
+		}
+		selections[i] = w.Name()
+	}
+	// Should cycle: w0,w1,w2,w0,w1,w2
+	expected := []string{"w0", "w1", "w2", "w0", "w1", "w2"}
+	for i, e := range expected {
+		if selections[i] != e {
+			t.Fatalf("iteration %d: got %q, want %q", i, selections[i], e)
+		}
+	}
+}
+
+func TestFirstMatchRouter_SelectsMatch(t *testing.T) {
+	ctx := testCtx()
+	workers := []kernel.Agent{&stubAgent{name: "alpha"}, &stubAgent{name: "beta"}, &stubAgent{name: "gamma"}}
+
+	router := FirstMatchRouter(func(_ *kernel.InvocationContext, w kernel.Agent) bool {
+		return w.Name() == "beta"
+	})
+	got := router(ctx, workers)
+	if got == nil || got.Name() != "beta" {
+		t.Fatalf("expected beta, got %v", got)
+	}
+}
+
+func TestFirstMatchRouter_NoMatch(t *testing.T) {
+	ctx := testCtx()
+	workers := []kernel.Agent{&stubAgent{name: "alpha"}}
+
+	router := FirstMatchRouter(func(_ *kernel.InvocationContext, w kernel.Agent) bool {
+		return false
+	})
+	if got := router(ctx, workers); got != nil {
+		t.Fatalf("expected nil for no match, got %v", got)
+	}
+}

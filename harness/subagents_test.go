@@ -95,3 +95,56 @@ func TestSubagentCatalogValueInstallsAgentDelegationSubstrate(t *testing.T) {
 		t.Fatal("expected delegation tools after boot")
 	}
 }
+
+func TestSubagentCatalog_List(t *testing.T) {
+	cat := NewSubagentCatalog()
+	_ = cat.Register(SubagentConfig{Name: "agent-a", Description: "A", SystemPrompt: "Do A"})
+	_ = cat.Register(SubagentConfig{Name: "agent-b", Description: "B", SystemPrompt: "Do B"})
+
+	list := cat.List()
+	if len(list) != 2 {
+		t.Fatalf("expected 2 subagents, got %d", len(list))
+	}
+	names := map[string]bool{}
+	for _, c := range list {
+		names[c.Name] = true
+	}
+	if !names["agent-a"] || !names["agent-b"] {
+		t.Fatalf("unexpected names: %v", names)
+	}
+}
+
+func TestSubagentCatalog_NilHandling(t *testing.T) {
+	var cat *SubagentCatalog
+	if cat.List() != nil {
+		t.Fatal("nil catalog List should return nil")
+	}
+	if _, ok := cat.Get("x"); ok {
+		t.Fatal("nil catalog Get should return false")
+	}
+	if err := cat.Register(SubagentConfig{Name: "x"}); err == nil {
+		t.Fatal("nil catalog Register should return error")
+	}
+}
+
+func TestRegisterSubagent_Idempotent(t *testing.T) {
+	k := kernel.New()
+	cfg := SubagentConfig{Name: "deduped", Description: "test", SystemPrompt: "sp"}
+	if err := RegisterSubagent(k, cfg); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	// Second registration of same name should be a no-op
+	if err := RegisterSubagent(k, cfg); err != nil {
+		t.Fatalf("second register should be idempotent: %v", err)
+	}
+	list := SubagentCatalogOf(k).List()
+	count := 0
+	for _, c := range list {
+		if c.Name == "deduped" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 deduped subagent, got %d", count)
+	}
+}
