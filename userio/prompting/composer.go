@@ -410,8 +410,10 @@ func renderCapabilityGuidanceSection(k *kernel.Kernel, skillPrompts []string) st
 		}
 	}
 	if k != nil {
-		if add := strings.TrimSpace(runtime.CapabilityManager(k).SystemPromptAdditions()); add != "" {
-			parts = append(parts, add)
+		if manager, ok := runtime.LookupCapabilityManager(k); ok && manager != nil {
+			if add := strings.TrimSpace(manager.SystemPromptAdditions()); add != "" {
+				parts = append(parts, add)
+			}
 		}
 	}
 	if len(parts) == 0 {
