@@ -2,6 +2,7 @@ package builtins_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -184,4 +185,151 @@ func TestAutoEnforceApprovalClassInPolicyCheck(t *testing.T) {
 			t.Fatalf("expected nil for normal tool, got %v", err)
 		}
 	})
+}
+
+// TestRequireApprovalForPathPrefix 验证路径前缀保护规则。
+func TestRequireApprovalForPathPrefix(t *testing.T) {
+	rule := builtins.RequireApprovalForPathPrefix("/etc/", "/root/")
+
+	t.Run("protected path requires approval", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "read_file"},
+			Input: mustJSON(map[string]any{"path": "/etc/passwd"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyRequireApproval {
+			t.Fatalf("expected RequireApproval for /etc/passwd, got %v", result.Decision)
+		}
+	})
+
+	t.Run("unprotected path passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "read_file"},
+			Input: mustJSON(map[string]any{"path": "/home/user/file.txt"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("expected Allow for /home/user/file.txt, got %v", result.Decision)
+		}
+	})
+
+	t.Run("no path field passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "list_files"},
+			Input: mustJSON(map[string]any{"dir": "/tmp"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("expected Allow when path field absent, got %v", result.Decision)
+		}
+	})
+}
+
+// TestDenyCommandContaining 验证危险命令片段被拒绝。
+func TestDenyCommandContaining(t *testing.T) {
+	rule := builtins.DenyCommandContaining("rm -rf /", "format c:")
+
+	t.Run("dangerous fragment denied", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "run_command"},
+			Input: mustJSON(map[string]any{"command": "rm -rf /"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyDeny {
+			t.Fatalf("expected Deny for rm -rf /, got %v", result.Decision)
+		}
+	})
+
+	t.Run("safe command passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "run_command"},
+			Input: mustJSON(map[string]any{"command": "git status"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("expected Allow for git status, got %v", result.Decision)
+		}
+	})
+
+	t.Run("non-command tool passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "read_file"},
+			Input: mustJSON(map[string]any{"command": "rm -rf /"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("DenyCommandContaining should only apply to run_command, got %v", result.Decision)
+		}
+	})
+}
+
+// TestRequireApprovalForHTTPMethod 验证 HTTP method 审批规则。
+func TestRequireApprovalForHTTPMethod(t *testing.T) {
+	rule := builtins.RequireApprovalForHTTPMethod("GET", "HEAD")
+
+	t.Run("allowed method passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "http_request"},
+			Input: mustJSON(map[string]any{"url": "https://example.com", "method": "GET"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("expected Allow for GET, got %v", result.Decision)
+		}
+	})
+
+	t.Run("disallowed method requires approval", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "http_request"},
+			Input: mustJSON(map[string]any{"url": "https://example.com", "method": "POST"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyRequireApproval {
+			t.Fatalf("expected RequireApproval for POST, got %v", result.Decision)
+		}
+	})
+
+	t.Run("non-http tool passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "run_command"},
+			Input: mustJSON(map[string]any{"method": "DELETE"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("RequireApprovalForHTTPMethod should only apply to http_request, got %v", result.Decision)
+		}
+	})
+}
+
+// TestDenyURLHost 验证 URL host 拒绝规则。
+func TestDenyURLHost(t *testing.T) {
+	rule := builtins.DenyURLHost("evil.example.com", "malicious.io")
+
+	t.Run("denied host is blocked", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "http_request"},
+			Input: mustJSON(map[string]any{"url": "https://evil.example.com/api"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyDeny {
+			t.Fatalf("expected Deny for evil.example.com, got %v", result.Decision)
+		}
+	})
+
+	t.Run("safe host passes", func(t *testing.T) {
+		pctx := io.PolicyContext{
+			Tool:  tool.ToolSpec{Name: "http_request"},
+			Input: mustJSON(map[string]any{"url": "https://api.github.com/repos"}),
+		}
+		result := rule(pctx)
+		if result.Decision != io.PolicyAllow {
+			t.Fatalf("expected Allow for api.github.com, got %v", result.Decision)
+		}
+	})
+}
+
+// mustJSON 将 map 序列化为 json.RawMessage，用于测试辅助。
+func mustJSON(v map[string]any) []byte {
+	b, _ := json.Marshal(v)
+	return b
 }
