@@ -50,7 +50,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
@@ -121,7 +121,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/harness/sandbox"
 )
 
 func main() {
@@ -174,13 +174,13 @@ For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, har
 
 | Path | Purpose |
 |---|---|
-| `kernel\` | Core runtime primitives (Agent, `RunAgent`, Session, Event, Tool, Plugin) |
-| `harness\` | Composable orchestration layer (Feature, Backend, Harness) |
-| `appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
-| `appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
-| `extensions\` | Extension-oriented capability modules (`skill\`, `mcp\`, `agent\`, `knowledge\`) |
-| `bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
-| `scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
+| `kernel\` | Core runtime primitives (Agent, `RunAgent`, Session, Event, Tool, Plugin) — independent Go module |
+| `harness\` | Composable orchestration layer (Feature, Backend, Harness) — independent Go module, depends on kernel |
+| `harness\appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
+| `harness\appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
+| `harness\extensions\` | Extension-oriented capability modules (`skill\`, `mcp\`, `agent\`, `knowledge\`) |
+| `harness\bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
+| `harness\scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
 | `apps\` | Core application surfaces (`mosscode`, `mosswork`) |
 | `examples\` | Runnable reference and integration examples |
 
@@ -247,14 +247,22 @@ Reference apps in `examples\`:
 ## Development checks
 
 ```powershell
-go test ./...
-go build ./...
+# Build and test kernel module
+Set-Location kernel; go build ./...; go test ./...
+
+# Build and test harness module
+Set-Location harness; go build ./...; go test ./...
+
+# Or use go workspace from repo root
+go build ./kernel/... ./harness/...
 ```
 
 ## Compatibility
 
-- Module path: `github.com/mossagents/moss`
-- `go.mod` target: Go `1.25.0`
+- Kernel module: `github.com/mossagents/moss/kernel`
+- Harness module: `github.com/mossagents/moss/harness`
+- Go version: `1.25.0`
+- Local development via `go.work` workspace
 
 ## License
 

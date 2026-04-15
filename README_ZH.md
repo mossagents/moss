@@ -50,7 +50,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
@@ -121,7 +121,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/harness/sandbox"
 )
 
 func main() {
@@ -174,13 +174,13 @@ func main() {
 
 | 路径 | 作用 |
 |---|---|
-| `kernel\` | 核心运行时原语（Agent、`RunAgent`、Session、Event、Tool、Plugin） |
-| `harness\` | 可组合编排层（Feature、Backend、Harness） |
-| `appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
-| `appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
-| `extensions\` | 面向扩展的能力模块命名空间（`skill\`、`mcp\`、`agent\`、`knowledge\`） |
-| `bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
-| `scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
+| `kernel\` | 核心运行时原语（Agent、`RunAgent`、Session、Event、Tool、Plugin）— 独立 Go 模块 |
+| `harness\` | 可组合编排层（Feature、Backend、Harness）— 独立 Go 模块，依赖 kernel |
+| `harness\appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
+| `harness\appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
+| `harness\extensions\` | 面向扩展的能力模块命名空间（`skill\`、`mcp\`、`agent\`、`knowledge\`） |
+| `harness\bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
+| `harness\scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
 | `apps\` | 核心应用入口（`mosscode`、`mosswork`） |
 | `examples\` | 可运行参考示例与集成样例 |
 
@@ -247,14 +247,22 @@ skills:
 ## 开发校验
 
 ```powershell
-go test ./...
-go build ./...
+# 构建和测试 kernel 模块
+Set-Location kernel; go build ./...; go test ./...
+
+# 构建和测试 harness 模块
+Set-Location harness; go build ./...; go test ./...
+
+# 或使用 go workspace 从仓库根目录
+go build ./kernel/... ./harness/...
 ```
 
 ## 兼容性
 
-- 模块路径：`github.com/mossagents/moss`
-- `go.mod` 目标版本：Go `1.25.0`
+- Kernel 模块路径：`github.com/mossagents/moss/kernel`
+- Harness 模块路径：`github.com/mossagents/moss/harness`
+- Go 版本：`1.25.0`
+- 本地开发通过 `go.work` 工作区管理
 
 ## 许可证
 
