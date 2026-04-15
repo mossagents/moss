@@ -199,7 +199,7 @@ docs\release-overrides.log
 1. 明确 `trusted` / `restricted` 与 approval mode 默认值
 2. 配置 session / checkpoint / task / memory 持久化目录
 3. 打开审计日志和价格/治理观察器
-4. 在部署脚本中加入 `go test ./...`、`go build ./...` 与 `testing\arch_guard.ps1`
+4. 在部署脚本中加入各模块的 `go test ./...`、`go build ./...` 与 `testing\arch_guard.ps1`
 5. 为 operator 提供 checkpoint、review、rollback 的操作路径
 
 做到这些后，当前仓库已经能支撑“谨慎上线、可回滚、可审计”的 agent 产品。

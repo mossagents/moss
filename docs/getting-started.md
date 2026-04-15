@@ -89,7 +89,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -169,7 +169,7 @@ k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 如果你需要更完整的“coding / research / writer”式产品能力，直接使用：
 
 ```go
-import "github.com/mossagents/moss/appkit"
+import "github.com/mossagents/moss/harness/appkit"
 
 k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 ```
@@ -217,9 +217,12 @@ k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 
 ## 6. 开发检查
 
-仓库根目录常用校验命令：
+项目由多个独立 Go 模块组成，使用 `go.work` 工作区管理：
 
 ```powershell
-go test ./...
-go build ./...
+# 构建和测试 kernel 模块
+Set-Location kernel; go build ./...; go test ./...
+
+# 构建和测试 harness 模块
+Set-Location harness; go build ./...; go test ./...
 ```
