@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/harness/internal/runtime/planning"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 func TestRegisterPlanningTools_NilManager(t *testing.T) {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagents/moss/harness/runtime/policy/policystate"
 	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -144,4 +144,3 @@ func syncSessionMetadata(sess *session.Session, st *policystate.State) {
 		session.MetadataToolPolicySummary: summary,
 	})
 }
-

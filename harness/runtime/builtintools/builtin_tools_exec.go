@@ -12,10 +12,10 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/harness/config"
+	policy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	policy "github.com/mossagents/moss/harness/runtime/policy"
 )
 
 const maxInlineCommandOutput = 8000
@@ -325,6 +325,3 @@ func containsFolded(items []string, target string) bool {
 	}
 	return false
 }
-
-
-
