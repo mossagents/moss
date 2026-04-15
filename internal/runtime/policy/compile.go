@@ -5,11 +5,11 @@ import (
 
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/toolpolicy"
 )
 
-func CompileRules(policy runtime.ToolPolicy) []builtins.PolicyRule {
-	policy = runtime.NormalizeToolPolicy(policy)
+func CompileRules(policy toolpolicy.ToolPolicy) []builtins.PolicyRule {
+	policy = toolpolicy.NormalizeToolPolicy(policy)
 	rules := make([]builtins.PolicyRule, 0, 10)
 	if rule := compileCommandRules(policy); rule != nil {
 		rules = append(rules, rule)
@@ -42,7 +42,7 @@ func CompileRules(policy runtime.ToolPolicy) []builtins.PolicyRule {
 	return rules
 }
 
-func Evaluate(policy runtime.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
+func Evaluate(policy toolpolicy.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
 	decision := builtins.Allow
 	for _, rule := range CompileRules(policy) {
 		next := rule(builtins.PolicyContext{
@@ -59,8 +59,8 @@ func Evaluate(policy runtime.ToolPolicy, spec tool.ToolSpec, input json.RawMessa
 	return decision
 }
 
-func compileCommandRules(policy runtime.ToolPolicy) builtins.PolicyRule {
-	if len(policy.Command.Rules) == 0 && policy.Command.Access == runtime.ToolAccessAllow {
+func compileCommandRules(policy toolpolicy.ToolPolicy) builtins.PolicyRule {
+	if len(policy.Command.Rules) == 0 && policy.Command.Access == toolpolicy.ToolAccessAllow {
 		return nil
 	}
 	converted := make([]builtins.CommandPatternRule, 0, len(policy.Command.Rules))
@@ -74,8 +74,8 @@ func compileCommandRules(policy runtime.ToolPolicy) builtins.PolicyRule {
 	return builtins.CommandRulesWithDefault(toolAccessDecision(policy.Command.Access), converted...)
 }
 
-func compileHTTPRules(policy runtime.ToolPolicy) builtins.PolicyRule {
-	if len(policy.HTTP.Rules) == 0 && policy.HTTP.Access == runtime.ToolAccessAllow {
+func compileHTTPRules(policy toolpolicy.ToolPolicy) builtins.PolicyRule {
+	if len(policy.HTTP.Rules) == 0 && policy.HTTP.Access == toolpolicy.ToolAccessAllow {
 		return nil
 	}
 	converted := make([]builtins.HTTPPatternRule, 0, len(policy.HTTP.Rules))
@@ -90,22 +90,22 @@ func compileHTTPRules(policy runtime.ToolPolicy) builtins.PolicyRule {
 	return builtins.HTTPRulesWithDefault(toolAccessDecision(policy.HTTP.Access), converted...)
 }
 
-func compileEffectRule(access runtime.ToolAccess, effect tool.Effect) builtins.PolicyRule {
+func compileEffectRule(access toolpolicy.ToolAccess, effect tool.Effect) builtins.PolicyRule {
 	switch access {
-	case runtime.ToolAccessDeny:
+	case toolpolicy.ToolAccessDeny:
 		return builtins.DenyEffects(effect)
-	case runtime.ToolAccessRequireApproval:
+	case toolpolicy.ToolAccessRequireApproval:
 		return builtins.RequireApprovalForEffects(effect)
 	default:
 		return nil
 	}
 }
 
-func toolAccessDecision(access runtime.ToolAccess) builtins.PolicyDecision {
+func toolAccessDecision(access toolpolicy.ToolAccess) builtins.PolicyDecision {
 	switch access {
-	case runtime.ToolAccessDeny:
+	case toolpolicy.ToolAccessDeny:
 		return builtins.Deny
-	case runtime.ToolAccessRequireApproval:
+	case toolpolicy.ToolAccessRequireApproval:
 		return builtins.RequireApproval
 	default:
 		return builtins.Allow

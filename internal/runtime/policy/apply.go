@@ -9,26 +9,26 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/toolpolicy"
 )
 
 const (
 	toolPolicySessionName = "runtime-tool-policy-session-sync"
 )
 
-func Apply(k *kernel.Kernel, policy runtime.ToolPolicy) error {
+func Apply(k *kernel.Kernel, policy toolpolicy.ToolPolicy) error {
 	if k == nil {
 		return fmt.Errorf("kernel is nil")
 	}
-	if err := runtime.ValidateToolPolicy(policy); err != nil {
+	if err := toolpolicy.ValidateToolPolicy(policy); err != nil {
 		return err
 	}
-	policy = runtime.NormalizeToolPolicy(policy)
-	payload, err := runtime.EncodeToolPolicyMetadata(policy)
+	policy = toolpolicy.NormalizeToolPolicy(policy)
+	payload, err := toolpolicy.EncodeToolPolicyMetadata(policy)
 	if err != nil {
 		return fmt.Errorf("encode tool policy metadata: %w", err)
 	}
-	summary := session.EncodeToolPolicySummary(runtime.SummarizeToolPolicy(policy))
+	summary := session.EncodeToolPolicySummary(toolpolicy.SummarizeToolPolicy(policy))
 	rules := CompileRules(policy)
 
 	st := policystate.Ensure(k)
@@ -40,15 +40,15 @@ func Apply(k *kernel.Kernel, policy runtime.ToolPolicy) error {
 }
 
 func ApplyResolved(k *kernel.Kernel, workspace, trust, approvalMode string) error {
-	return Apply(k, runtime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode))
+	return Apply(k, toolpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode))
 }
 
-func Current(k *kernel.Kernel) (runtime.ToolPolicy, bool) {
+func Current(k *kernel.Kernel) (toolpolicy.ToolPolicy, bool) {
 	st, ok := policystate.Lookup(k)
 	if !ok {
-		return runtime.ToolPolicy{}, false
+		return toolpolicy.ToolPolicy{}, false
 	}
-	return runtime.DecodeToolPolicyMetadata(st.Payload())
+	return toolpolicy.DecodeToolPolicyMetadata(st.Payload())
 }
 
 func installPolicyHook(k *kernel.Kernel, st *policystate.State) {
