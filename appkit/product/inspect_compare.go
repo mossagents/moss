@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/observe"
@@ -121,16 +123,16 @@ type inspectGovernanceTurn struct {
 	exhausted bool
 }
 
-func buildInspectReplay(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, target string) (*InspectReplayReport, error) {
-	checkpoints, err := OpenCheckpointStore()
+func buildInspectReplay(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, target string) (*InspectReplayReport, error) {
+	checkpoints, err := runtimeenv.OpenCheckpointStore()
 	if err != nil {
 		return nil, err
 	}
-	record, err := ResolveCheckpointRecord(ctx, checkpoints, target)
+	record, err := runtimeenv.ResolveCheckpointRecord(ctx, checkpoints, target)
 	if err != nil {
 		return nil, err
 	}
-	detail, err := LoadCheckpointWithStore(ctx, checkpoints, record.ID)
+	detail, err := runtimeenv.LoadCheckpointWithStore(ctx, checkpoints, record.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +146,7 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *rstate.S
 		MetadataKeys: append([]string(nil), detail.MetadataKeys...),
 		Ready:        true,
 	}
-	store, err := OpenSessionStore()
+	store, err := runtimeenv.OpenSessionStore()
 	if err == nil {
 		if summaries, listErr := store.List(ctx); listErr == nil && strings.TrimSpace(detail.SessionID) != "" {
 			changeCounts := changeCountsBySession(ctx, changeStore)
@@ -193,8 +195,8 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *rstate.S
 	return report, nil
 }
 
-func buildInspectCompare(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
-	store, err := OpenSessionStore()
+func buildInspectCompare(ctx context.Context, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
+	store, err := runtimeenv.OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +204,7 @@ func buildInspectCompare(ctx context.Context, catalog *rstate.StateCatalog, chan
 	if err != nil {
 		return nil, err
 	}
-	checkpoints, err := OpenCheckpointStore()
+	checkpoints, err := runtimeenv.OpenCheckpointStore()
 	if err != nil {
 		return nil, err
 	}
@@ -348,18 +350,18 @@ func buildInspectGovernance(ctx context.Context, workspace string, catalog *rsta
 	}
 	report.ApprovalReasons = topGovernanceReasons(reasons, 5)
 
-	changeStore, err := OpenChangeStore()
+	changeStore, err := changes.OpenChangeStore()
 	if err == nil {
 		items, err := changeStore.List(ctx)
 		if err == nil {
 			report.ChangeWindow = len(items)
 			for _, item := range items {
 				switch item.Status {
-				case ChangeStatusApplied:
+				case changes.ChangeStatusApplied:
 					report.Changes.Applied++
-				case ChangeStatusRolledBack:
+				case changes.ChangeStatusRolledBack:
 					report.Changes.RolledBack++
-				case ChangeStatusApplyInconsistent, ChangeStatusRollbackInconsistent:
+				case changes.ChangeStatusApplyInconsistent, changes.ChangeStatusRollbackInconsistent:
 					report.Changes.Inconsistent++
 				}
 			}
@@ -479,7 +481,7 @@ func renderInspectGovernanceReport(b *strings.Builder, report InspectGovernanceR
 	}
 }
 
-func resolveInspectCompareTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
+func resolveInspectCompareTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
 	kind, raw := splitInspectCompareSelector(selector)
 	switch kind {
 	case "checkpoint":
@@ -489,7 +491,7 @@ func resolveInspectCompareTarget(ctx context.Context, catalog *rstate.StateCatal
 	}
 }
 
-func buildInspectThreadTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
+func buildInspectThreadTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
 	selected, err := resolveInspectSessionSummary(summaries, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
@@ -515,12 +517,12 @@ func buildInspectThreadTarget(ctx context.Context, catalog *rstate.StateCatalog,
 	}, nil
 }
 
-func buildInspectCheckpointTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
-	record, err := ResolveCheckpointRecord(ctx, checkpoints, target)
+func buildInspectCheckpointTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
+	record, err := runtimeenv.ResolveCheckpointRecord(ctx, checkpoints, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
 	}
-	detail, err := LoadCheckpointWithStore(ctx, checkpoints, record.ID)
+	detail, err := runtimeenv.LoadCheckpointWithStore(ctx, checkpoints, record.ID)
 	if err != nil {
 		return InspectCompareTarget{}, err
 	}

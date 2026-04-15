@@ -24,7 +24,7 @@ func ResolvePricingCatalogPath(workspace, explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	for _, candidate := range pricingCatalogCandidates(workspace) {
+	for _, candidate := range PricingCatalogCandidates(workspace) {
 		if pathExists(candidate) {
 			return candidate
 		}
@@ -64,7 +64,7 @@ func (c *PricingCatalog) Estimate(usage model.TokenUsage, model string) (float64
 	return cost, true
 }
 
-func pricingCatalogCandidates(workspace string) []string {
+func PricingCatalogCandidates(workspace string) []string {
 	candidates := make([]string, 0, 3)
 	workspace = strings.TrimSpace(workspace)
 	if workspace != "" {

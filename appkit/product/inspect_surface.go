@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/stringutil"
 	rstate "github.com/mossagents/moss/runtime/state"
@@ -47,11 +49,11 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		mode = strings.ToLower(strings.TrimSpace(args[0]))
 	}
-	catalog, err := OpenStateCatalog()
+	catalog, err := runtimeenv.OpenStateCatalog()
 	if err != nil {
 		return InspectReport{}, err
 	}
-	changeStore, err := OpenChangeStore()
+	changeStore, err := changes.OpenChangeStore()
 	if err != nil {
 		return InspectReport{}, err
 	}
@@ -309,7 +311,7 @@ func RenderInspectReport(report InspectReport) string {
 		} else {
 			b.WriteString("Recent events:\n")
 			for idx, event := range run.Events {
-				fmt.Fprintf(&b, "%02d. %s\n", idx+1, formatTraceEventDetail(event))
+				fmt.Fprintf(&b, "%02d. %s\n", idx+1, FormatTraceEventDetail(event))
 			}
 		}
 	case "threads":

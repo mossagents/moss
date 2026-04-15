@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
@@ -469,7 +470,7 @@ func TestSlashCommandResumeOpensPicker(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	store, err := session.NewFileStore(product.SessionStoreDir())
+	store, err := session.NewFileStore(runtimeenv.SessionStoreDir())
 	if err != nil {
 		t.Fatalf("new session store: %v", err)
 	}
@@ -580,7 +581,7 @@ func TestSlashCommandAgentOpensPicker(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	rt, err := taskrt.NewFileTaskRuntime(product.TaskRuntimeDir())
+	rt, err := taskrt.NewFileTaskRuntime(runtimeenv.TaskRuntimeDir())
 	if err != nil {
 		t.Fatalf("new task runtime: %v", err)
 	}
@@ -665,7 +666,7 @@ func TestSlashCommandForkOpensPicker(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 
-	store, err := session.NewFileStore(product.SessionStoreDir())
+	store, err := session.NewFileStore(runtimeenv.SessionStoreDir())
 	if err != nil {
 		t.Fatalf("new session store: %v", err)
 	}

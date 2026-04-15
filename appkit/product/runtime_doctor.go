@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/appkit"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	extcapability "github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/extensions/skill"
@@ -217,12 +218,12 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 		},
 		Paths: DoctorPathsReport{
 			AppDir:             checkWritableDir(appconfig.AppDir()),
-			StateStoreDir:      checkWritableDir(StateStoreDir()),
-			StateEventDir:      checkWritableDir(StateEventDir()),
-			SessionStoreDir:    checkWritableDir(SessionStoreDir()),
-			MemoryDir:          checkWritableDir(MemoryDir()),
-			TaskRuntimeDir:     checkWritableDir(TaskRuntimeDir()),
-			WorkspaceIsolation: checkWritableDir(WorkspaceIsolationDir()),
+			StateStoreDir:      checkWritableDir(runtimeenv.StateStoreDir()),
+			StateEventDir:      checkWritableDir(runtimeenv.StateEventDir()),
+			SessionStoreDir:    checkWritableDir(runtimeenv.SessionStoreDir()),
+			MemoryDir:          checkWritableDir(runtimeenv.MemoryDir()),
+			TaskRuntimeDir:     checkWritableDir(runtimeenv.TaskRuntimeDir()),
+			WorkspaceIsolation: checkWritableDir(runtimeenv.WorkspaceIsolationDir()),
 			PricingCatalog:     checkWritableFile(defaultPricingCatalogPath(workspaceDir, governanceCfg.PricingCatalogPath)),
 			AuditLog:           checkWritableFile(AuditLogPath()),
 			DebugLog:           checkWritableFile(DebugLogPath()),
@@ -230,7 +231,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 	}
 
 	report.Health.State = buildDoctorStateHealth()
-	if catalog, err := OpenStateCatalog(); err == nil {
+	if catalog, err := runtimeenv.OpenStateCatalog(); err == nil {
 		if adaptive, err := buildInspectGovernance(ctx, workspaceDir, catalog, 200); err == nil {
 			report.Governance.Adaptive = adaptive
 		}
@@ -246,7 +247,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 }
 
 func buildDoctorStateHealth() DoctorStateCatalogHealth {
-	stateCatalog, stateErr := OpenStateCatalog()
+	stateCatalog, stateErr := runtimeenv.OpenStateCatalog()
 	if stateErr != nil {
 		return DoctorStateCatalogHealth{
 			Enabled:   true,
@@ -272,7 +273,7 @@ func populateDoctorSessionsHealth(ctx context.Context, report *DoctorReport) (se
 	if report == nil {
 		return nil, nil
 	}
-	sessionStore, err := OpenSessionStore()
+	sessionStore, err := runtimeenv.OpenSessionStore()
 	if err != nil {
 		report.Health.Sessions.Error = err.Error()
 		return nil, nil
@@ -292,14 +293,14 @@ func populateDoctorSessionsHealth(ctx context.Context, report *DoctorReport) (se
 }
 
 func buildDoctorTaskHealth() DoctorTaskHealth {
-	if _, err := OpenTaskRuntime(); err != nil {
+	if _, err := runtimeenv.OpenTaskRuntime(); err != nil {
 		return DoctorTaskHealth{Type: "file", Ready: false, Error: err.Error()}
 	}
 	return DoctorTaskHealth{Type: "file", Ready: true}
 }
 
 func buildDoctorWorkspaceHealth() DoctorWorkspaceHealth {
-	if _, err := OpenWorkspaceIsolation(); err != nil {
+	if _, err := runtimeenv.OpenWorkspaceIsolation(); err != nil {
 		return DoctorWorkspaceHealth{Type: "local", Ready: false, Error: err.Error()}
 	}
 	return DoctorWorkspaceHealth{Type: "local", Ready: true}
@@ -349,7 +350,7 @@ func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bo
 	if err == nil {
 		health.CapabilityStatus = snapshot.Items
 	}
-	if probe := rprobe.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+	if probe := rprobe.ProbeExecutionCapabilities(workspace, runtimeenv.WorkspaceIsolationDir(), true); probe != nil {
 		health.CapabilityStatus = mergeCapabilityStatuses(health.CapabilityStatus, probe.CapabilityStatuses())
 	}
 	return health
@@ -370,7 +371,7 @@ func buildDoctorRepoHealth(ctx context.Context, workspace string) DoctorRepoHeal
 }
 
 func buildDoctorSnapshotHealth(ctx context.Context, workspace string, sessionStore session.SessionStore, summaries []session.SessionSummary) DoctorSnapshotHealth {
-	snapshots, err := listSnapshots(ctx, workspace)
+	snapshots, err := runtimeenv.ListSnapshots(ctx, workspace)
 	if err != nil {
 		return DoctorSnapshotHealth{Available: false, Error: err.Error()}
 	}

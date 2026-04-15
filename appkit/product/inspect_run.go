@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/internal/stringutil"
 	rstate "github.com/mossagents/moss/runtime/state"
 )
@@ -92,7 +94,7 @@ type inspectExecutionMetadata struct {
 func resolveInspectSessionID(ctx context.Context, catalog *rstate.StateCatalog, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" || strings.EqualFold(target, "latest") {
-		store, err := OpenSessionStore()
+		store, err := runtimeenv.OpenSessionStore()
 		if err == nil {
 			summaries, err := store.List(ctx)
 			if err == nil && len(summaries) > 0 {
@@ -129,7 +131,7 @@ func inspectStateItems(entries []rstate.StateEntry) []InspectStateItem {
 	return items
 }
 
-func inspectChangesForSession(ctx context.Context, store *FileChangeStore, sessionID string, limit int) []InspectStateItem {
+func inspectChangesForSession(ctx context.Context, store *changes.FileChangeStore, sessionID string, limit int) []InspectStateItem {
 	if store == nil || strings.TrimSpace(sessionID) == "" {
 		return nil
 	}
@@ -140,7 +142,7 @@ func inspectChangesForSession(ctx context.Context, store *FileChangeStore, sessi
 	return inspectChangeItems(items)
 }
 
-func inspectChangeItems(items []ChangeOperation) []InspectStateItem {
+func inspectChangeItems(items []changes.ChangeOperation) []InspectStateItem {
 	out := make([]InspectStateItem, 0, len(items))
 	for _, item := range items {
 		out = append(out, InspectStateItem{
@@ -149,14 +151,14 @@ func inspectChangeItems(items []ChangeOperation) []InspectStateItem {
 			SessionID: strings.TrimSpace(item.SessionID),
 			Status:    string(item.Status),
 			Title:     stringutil.FirstNonEmpty(strings.TrimSpace(item.Summary), item.ID),
-			Summary:   strings.Join(compactStrings(item.TargetFiles), ", "),
-			SortTime:  changeSortTime(item),
+			Summary:   strings.Join(changes.CompactStrings(item.TargetFiles), ", "),
+			SortTime:  changes.ChangeSortTime(item),
 		})
 	}
 	return out
 }
 
-func changeCountsBySession(ctx context.Context, store *FileChangeStore) map[string]int {
+func changeCountsBySession(ctx context.Context, store *changes.FileChangeStore) map[string]int {
 	if store == nil {
 		return map[string]int{}
 	}

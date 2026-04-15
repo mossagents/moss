@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agent"
 	extcapability "github.com/mossagents/moss/extensions/capability"
@@ -45,7 +47,7 @@ type InspectThreadSummary struct {
 type InspectThreadReport struct {
 	Summary     InspectThreadSummary   `json:"summary"`
 	Children    []InspectThreadSummary `json:"children,omitempty"`
-	Checkpoints []CheckpointSummary    `json:"checkpoints,omitempty"`
+	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
 	Changes     []InspectStateItem     `json:"changes,omitempty"`
 	Tasks       []InspectStateItem     `json:"tasks,omitempty"`
 }
@@ -84,8 +86,8 @@ type InspectCapabilityItem struct {
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
-func buildInspectThreads(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, limit int) ([]InspectThreadSummary, error) {
-	store, err := OpenSessionStore()
+func buildInspectThreads(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, limit int) ([]InspectThreadSummary, error) {
+	store, err := runtimeenv.OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +111,8 @@ func buildInspectThreads(ctx context.Context, workspace string, catalog *rstate.
 	return out, nil
 }
 
-func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, target string) (*InspectThreadReport, error) {
-	store, err := OpenSessionStore()
+func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *changes.FileChangeStore, target string) (*InspectThreadReport, error) {
+	store, err := runtimeenv.OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -139,10 +141,10 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 		report.Children = append(report.Children, child)
 	}
 	sort.Slice(report.Children, func(i, j int) bool { return report.Children[i].UpdatedAt > report.Children[j].UpdatedAt })
-	cpStore, err := OpenCheckpointStore()
+	cpStore, err := runtimeenv.OpenCheckpointStore()
 	if err == nil {
 		if items, err := cpStore.FindBySession(ctx, selected.ID); err == nil {
-			report.Checkpoints = SummarizeCheckpoints(items)
+			report.Checkpoints = runtimeenv.SummarizeCheckpoints(items)
 			if len(report.Checkpoints) > 5 {
 				report.Checkpoints = report.Checkpoints[:5]
 			}
@@ -160,7 +162,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 }
 
 func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptReport, error) {
-	store, err := OpenSessionStore()
+	store, err := runtimeenv.OpenSessionStore()
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +231,7 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			}
 		}
 	}
-	if probe := rprobe.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+	if probe := rprobe.ProbeExecutionCapabilities(workspace, runtimeenv.WorkspaceIsolationDir(), true); probe != nil {
 		for _, status := range probe.CapabilityStatuses() {
 			item := indexed[status.Capability]
 			item.Capability = status.Capability
@@ -499,7 +501,7 @@ func collectInspectableAgentDirs(workspace, trust string) []string {
 }
 
 func checkpointCountsBySession(ctx context.Context) map[string]int {
-	store, err := OpenCheckpointStore()
+	store, err := runtimeenv.OpenCheckpointStore()
 	if err != nil {
 		return map[string]int{}
 	}
@@ -509,7 +511,7 @@ func checkpointCountsBySession(ctx context.Context) map[string]int {
 	}
 	counts := make(map[string]int, len(items))
 	for _, item := range items {
-		sessionID := checkpointSessionID(item)
+		sessionID := runtimeenv.CheckpointSessionID(item)
 		if strings.TrimSpace(sessionID) == "" {
 			continue
 		}

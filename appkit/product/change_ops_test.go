@@ -2,6 +2,8 @@ package product
 
 import (
 	"context"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/sandbox"
@@ -19,21 +21,21 @@ func TestApplyChangeAndReviewAndRollback(t *testing.T) {
 	repo := initTestRepo(t)
 	patch := makeTrackedPatch(t, repo, "tracked.txt", "one\n", "two\n")
 
-	rt := ChangeRuntime{
+	rt := changes.ChangeRuntime{
 		Workspace:        repo,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
 		PatchApply:       sandbox.NewGitPatchApply(repo),
 		PatchRevert:      sandbox.NewGitPatchRevert(repo),
 	}
 
-	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+	applied, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:   patch,
 		Summary: "update tracked.txt",
 	})
 	if err != nil {
-		t.Fatalf("ApplyChange: %v", err)
+		t.Fatalf("changes.ApplyChange: %v", err)
 	}
-	if applied.Status != ChangeStatusApplied {
+	if applied.Status != changes.ChangeStatusApplied {
 		t.Fatalf("unexpected apply status %q", applied.Status)
 	}
 	if applied.PatchID == "" {
@@ -43,29 +45,29 @@ func TestApplyChangeAndReviewAndRollback(t *testing.T) {
 		t.Fatalf("unexpected applied file content %q", got)
 	}
 
-	report, err := BuildReviewReport(ctx, repo, []string{"changes"})
+	report, err := runtimeenv.BuildReviewReport(ctx, repo, []string{"changes"})
 	if err != nil {
-		t.Fatalf("BuildReviewReport changes: %v", err)
+		t.Fatalf("runtimeenv.BuildReviewReport changes: %v", err)
 	}
 	if len(report.Changes) != 1 || report.Changes[0].ID != applied.ID {
 		t.Fatalf("unexpected review changes output %+v", report.Changes)
 	}
-	detail, err := BuildReviewReport(ctx, repo, []string{"change", applied.ID})
+	detail, err := runtimeenv.BuildReviewReport(ctx, repo, []string{"change", applied.ID})
 	if err != nil {
-		t.Fatalf("BuildReviewReport change: %v", err)
+		t.Fatalf("runtimeenv.BuildReviewReport change: %v", err)
 	}
 	if detail.Change == nil || detail.Change.ID != applied.ID {
 		t.Fatalf("unexpected review change detail %+v", detail.Change)
 	}
 
-	rolledBack, err := RollbackChange(ctx, rt, RollbackChangeRequest{ChangeID: applied.ID})
+	rolledBack, err := changes.RollbackChange(ctx, rt, changes.RollbackChangeRequest{ChangeID: applied.ID})
 	if err != nil {
-		t.Fatalf("RollbackChange: %v", err)
+		t.Fatalf("changes.RollbackChange: %v", err)
 	}
-	if rolledBack.Status != ChangeStatusRolledBack {
+	if rolledBack.Status != changes.ChangeStatusRolledBack {
 		t.Fatalf("unexpected rollback status %q", rolledBack.Status)
 	}
-	if rolledBack.RollbackMode != RollbackModeExact {
+	if rolledBack.RollbackMode != changes.RollbackModeExact {
 		t.Fatalf("unexpected rollback mode %q", rolledBack.RollbackMode)
 	}
 	if got := readTestFile(t, filepath.Join(repo, "tracked.txt")); got != "one\n" {
@@ -79,14 +81,14 @@ func TestApplyChangeRejectsDirtyRepo(t *testing.T) {
 	repo := initTestRepo(t)
 	writeTestFile(t, filepath.Join(repo, "tracked.txt"), "dirty\n")
 
-	rt := ChangeRuntime{
+	rt := changes.ChangeRuntime{
 		Workspace:        repo,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
 		PatchApply:       sandbox.NewGitPatchApply(repo),
 		PatchRevert:      sandbox.NewGitPatchRevert(repo),
 	}
 
-	_, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+	_, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:   "diff --git a/tracked.txt b/tracked.txt\n",
 		Summary: "bad",
 	})
@@ -101,19 +103,19 @@ func TestRollbackChangeManualRecoveryWhenExactUnavailable(t *testing.T) {
 	repo := initTestRepo(t)
 	patch := makeTrackedPatch(t, repo, "tracked.txt", "one\n", "two\n")
 
-	rt := ChangeRuntime{
+	rt := changes.ChangeRuntime{
 		Workspace:        repo,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
 		PatchApply:       sandbox.NewGitPatchApply(repo),
 		PatchRevert:      sandbox.NewGitPatchRevert(repo),
 	}
 
-	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+	applied, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:   patch,
 		Summary: "update tracked.txt",
 	})
 	if err != nil {
-		t.Fatalf("ApplyChange: %v", err)
+		t.Fatalf("changes.ApplyChange: %v", err)
 	}
 
 	journalPath := filepath.Join(repo, ".git", "moss-patches.json")
@@ -121,11 +123,11 @@ func TestRollbackChangeManualRecoveryWhenExactUnavailable(t *testing.T) {
 		t.Fatalf("remove patch journal: %v", err)
 	}
 
-	item, err := RollbackChange(ctx, rt, RollbackChangeRequest{ChangeID: applied.ID})
+	item, err := changes.RollbackChange(ctx, rt, changes.RollbackChangeRequest{ChangeID: applied.ID})
 	if err == nil {
 		t.Fatal("expected rollback failure")
 	}
-	var opErr *ChangeOperationError
+	var opErr *changes.ChangeOperationError
 	if !strings.Contains(err.Error(), "exact rollback") {
 		t.Fatalf("unexpected rollback error %v", err)
 	}
@@ -133,9 +135,9 @@ func TestRollbackChangeManualRecoveryWhenExactUnavailable(t *testing.T) {
 		t.Fatalf("expected manual recovery details in error, got %v", err)
 	}
 	if !asChangeOperationError(err, &opErr) {
-		t.Fatalf("expected ChangeOperationError, got %T", err)
+		t.Fatalf("expected changes.ChangeOperationError, got %T", err)
 	}
-	if item == nil || item.Status != ChangeStatusApplied {
+	if item == nil || item.Status != changes.ChangeStatusApplied {
 		t.Fatalf("expected original applied operation, got %+v", item)
 	}
 }
@@ -166,7 +168,7 @@ func TestApplyChangeCapturesTurnMetadata(t *testing.T) {
 		t.Fatalf("save session: %v", err)
 	}
 
-	rt := ChangeRuntime{
+	rt := changes.ChangeRuntime{
 		Workspace:        repo,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
 		PatchApply:       sandbox.NewGitPatchApply(repo),
@@ -174,13 +176,13 @@ func TestApplyChangeCapturesTurnMetadata(t *testing.T) {
 		SessionStore:     store,
 	}
 
-	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+	applied, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:     patch,
 		Summary:   "update tracked.txt",
 		SessionID: sess.ID,
 	})
 	if err != nil {
-		t.Fatalf("ApplyChange: %v", err)
+		t.Fatalf("changes.ApplyChange: %v", err)
 	}
 	if applied.RunID != "run-123" || applied.TurnID != "run-123-turn-001" {
 		t.Fatalf("unexpected run/turn metadata: %+v", applied)
@@ -227,7 +229,7 @@ func TestApplyChangePrefersLiveSessionMetadata(t *testing.T) {
 			},
 		},
 	}
-	rt := ChangeRuntime{
+	rt := changes.ChangeRuntime{
 		Workspace:        repo,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(repo),
 		PatchApply:       sandbox.NewGitPatchApply(repo),
@@ -240,13 +242,13 @@ func TestApplyChangePrefersLiveSessionMetadata(t *testing.T) {
 			return nil, false
 		},
 	}
-	applied, err := ApplyChange(ctx, rt, ApplyChangeRequest{
+	applied, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:     patch,
 		Summary:   "update tracked.txt",
 		SessionID: live.ID,
 	})
 	if err != nil {
-		t.Fatalf("ApplyChange: %v", err)
+		t.Fatalf("changes.ApplyChange: %v", err)
 	}
 	if applied.RunID != "run-live" || applied.TurnID != "run-live-turn-002" {
 		t.Fatalf("expected live metadata, got %+v", applied)
@@ -325,11 +327,11 @@ func readTestFile(t *testing.T, path string) string {
 	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
-func asChangeOperationError(err error, target **ChangeOperationError) bool {
+func asChangeOperationError(err error, target **changes.ChangeOperationError) bool {
 	if err == nil {
 		return false
 	}
-	value, ok := err.(*ChangeOperationError)
+	value, ok := err.(*changes.ChangeOperationError)
 	if !ok {
 		return false
 	}
@@ -338,7 +340,7 @@ func asChangeOperationError(err error, target **ChangeOperationError) bool {
 }
 
 func TestSummarizeChange(t *testing.T) {
-	summary := SummarizeChange(ChangeOperation{
+	summary := changes.SummarizeChange(changes.ChangeOperation{
 		ID:           "change-1",
 		RepoRoot:     "repo",
 		BaseHeadSHA:  "abc123",
@@ -347,7 +349,7 @@ func TestSummarizeChange(t *testing.T) {
 		CheckpointID: "cp-1",
 		Summary:      "hello",
 		TargetFiles:  []string{"tracked.txt"},
-		Status:       ChangeStatusApplied,
+		Status:       changes.ChangeStatusApplied,
 		CreatedAt:    timeNowTest(),
 	})
 	if summary.ID != "change-1" || summary.PatchID != "patch-1" {
@@ -362,17 +364,17 @@ func timeNowTest() (out time.Time) {
 // ── pure rendering functions ──────────────────────────────────────────────────
 
 func TestRenderChangeSummaries_Empty(t *testing.T) {
-	got := RenderChangeSummaries(nil)
+	got := changes.RenderChangeSummaries(nil)
 	if got != "Changes: none" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
 
 func TestRenderChangeSummaries_Items(t *testing.T) {
-	items := []ChangeSummary{
+	items := []changes.ChangeSummary{
 		{
 			ID:          "chg-1",
-			Status:      ChangeStatusApplied,
+			Status:      changes.ChangeStatusApplied,
 			PatchID:     "p1",
 			TargetFiles: []string{"a.go", "b.go"},
 			Summary:     "fix bug",
@@ -380,11 +382,11 @@ func TestRenderChangeSummaries_Items(t *testing.T) {
 		},
 		{
 			ID:        "chg-2",
-			Status:    ChangeStatusPreparing,
+			Status:    changes.ChangeStatusPreparing,
 			CreatedAt: timeNowTest(),
 		},
 	}
-	got := RenderChangeSummaries(items)
+	got := changes.RenderChangeSummaries(items)
 	if !strings.Contains(got, "chg-1") {
 		t.Error("missing chg-1")
 	}
@@ -406,14 +408,14 @@ func TestRenderChangeSummaries_Items(t *testing.T) {
 }
 
 func TestRenderChangeDetail_Nil(t *testing.T) {
-	got := RenderChangeDetail(nil)
+	got := changes.RenderChangeDetail(nil)
 	if got != "Change: not found" {
 		t.Fatalf("unexpected: %q", got)
 	}
 }
 
 func TestRenderChangeDetail_Full(t *testing.T) {
-	item := &ChangeOperation{
+	item := &changes.ChangeOperation{
 		ID:                 "chg-full",
 		RepoRoot:           "/repo",
 		BaseHeadSHA:        "abc123",
@@ -427,17 +429,17 @@ func TestRenderChangeDetail_Full(t *testing.T) {
 		Summary:            "test change",
 		TargetFiles:        []string{"main.go", "go.mod"},
 		VisibleTools:       []string{"read_file", "write_file"},
-		Status:             ChangeStatusApplied,
+		Status:             changes.ChangeStatusApplied,
 		RecoveryMode:       "",
-		RollbackMode:       RollbackModeExact,
+		RollbackMode:       changes.RollbackModeExact,
 		RollbackDetails:    "rollback detail",
 		CreatedAt:          timeNowTest(),
 	}
-	got := RenderChangeDetail(item)
+	got := changes.RenderChangeDetail(item)
 	for _, want := range []string{
 		"chg-full", "/repo", "abc123", "sess-1", "run-1", "turn-1", "default",
 		"fast", "patch-1", "cp-1", "main.go", "go.mod", "read_file", "write_file",
-		string(RollbackModeExact), "rollback detail", "applied",
+		string(changes.RollbackModeExact), "rollback detail", "applied",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in output:\n%s", want, got)
@@ -446,8 +448,8 @@ func TestRenderChangeDetail_Full(t *testing.T) {
 }
 
 func TestRenderChangeDetail_NoFiles(t *testing.T) {
-	item := &ChangeOperation{ID: "chg-empty", Status: ChangeStatusPreparing, CreatedAt: timeNowTest()}
-	got := RenderChangeDetail(item)
+	item := &changes.ChangeOperation{ID: "chg-empty", Status: changes.ChangeStatusPreparing, CreatedAt: timeNowTest()}
+	got := changes.RenderChangeDetail(item)
 	if !strings.Contains(got, "files:     (none)") {
 		t.Errorf("expected no-files message, got:\n%s", got)
 	}
@@ -458,36 +460,36 @@ func TestRenderChangeDetail_NoFiles(t *testing.T) {
 }
 
 func TestRenderChangeDetail_WithCapture(t *testing.T) {
-	item := &ChangeOperation{
+	item := &changes.ChangeOperation{
 		ID:        "chg-cap",
-		Status:    ChangeStatusApplied,
+		Status:    changes.ChangeStatusApplied,
 		CreatedAt: timeNowTest(),
 	}
 	// No capture → no capture line
-	got := RenderChangeDetail(item)
+	got := changes.RenderChangeDetail(item)
 	if strings.Contains(got, "capture:") {
 		t.Error("should not include capture line when nil")
 	}
 }
 
 func TestRenderChangeDetail_RecoveryDetails(t *testing.T) {
-	item := &ChangeOperation{
+	item := &changes.ChangeOperation{
 		ID:              "chg-rec",
-		Status:          ChangeStatusApplyInconsistent,
+		Status:          changes.ChangeStatusApplyInconsistent,
 		RecoveryDetails: "manual step needed",
 		CreatedAt:       timeNowTest(),
 	}
-	got := RenderChangeDetail(item)
+	got := changes.RenderChangeDetail(item)
 	if !strings.Contains(got, "manual step needed") {
 		t.Errorf("missing recovery details in output:\n%s", got)
 	}
 }
 
 func TestPadField(t *testing.T) {
-	if got := padField(""); got != "" {
+	if got := changes.PadField(""); got != "" {
 		t.Fatalf("empty string: want empty, got %q", got)
 	}
-	if got := padField("val"); got != " val" {
+	if got := changes.PadField("val"); got != " val" {
 		t.Fatalf("non-empty: want \" val\", got %q", got)
 	}
 }

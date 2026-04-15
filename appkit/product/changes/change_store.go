@@ -1,4 +1,4 @@
-package product
+package changes
 
 import (
 	"context"
@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	appconfig "github.com/mossagents/moss/config"
 )
 
 type FileChangeStore struct {
@@ -22,6 +24,10 @@ func NewFileChangeStore(dir string) (*FileChangeStore, error) {
 		return nil, fmt.Errorf("create change store dir: %w", err)
 	}
 	return &FileChangeStore{dir: dir}, nil
+}
+
+func ChangeStoreDir() string {
+	return filepath.Join(appconfig.AppDir(), "changes")
 }
 
 func OpenChangeStore() (*FileChangeStore, error) {
@@ -186,7 +192,7 @@ func newChangeID(repoRoot string) string {
 	return fmt.Sprintf("change-%s-%d", base, time.Now().UnixNano())
 }
 
-func changeSortTime(item ChangeOperation) time.Time {
+func ChangeSortTime(item ChangeOperation) time.Time {
 	if !item.RolledBackAt.IsZero() {
 		return item.RolledBackAt.UTC()
 	}
@@ -195,8 +201,8 @@ func changeSortTime(item ChangeOperation) time.Time {
 
 func sortChangesNewestFirst(items []ChangeOperation) {
 	sort.Slice(items, func(i, j int) bool {
-		left := changeSortTime(items[i])
-		right := changeSortTime(items[j])
+		left := ChangeSortTime(items[i])
+		right := ChangeSortTime(items[j])
 		if left.Equal(right) {
 			return items[i].ID > items[j].ID
 		}

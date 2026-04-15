@@ -9,6 +9,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
@@ -36,7 +37,7 @@ func launchTUI(cfg *config) error {
 		Trust:            resolved.Trust,
 		Profile:          resolved.Name,
 		ApprovalMode:     resolved.ApprovalMode,
-		SessionStoreDir:  product.SessionStoreDir(),
+		SessionStoreDir:  runtimeenv.SessionStoreDir(),
 		BaseURL:          flags.BaseURL,
 		APIKey:           flags.APIKey,
 		BaseObserver:     cfg.observer,
@@ -87,11 +88,11 @@ func launchTUI(cfg *config) error {
 }
 
 func runResume(ctx context.Context, cfg *config) error {
-	summaries, snapshotCounts, err := product.ListResumeCandidates(ctx, cfg.flags.Workspace)
+	summaries, snapshotCounts, err := runtimeenv.ListResumeCandidates(ctx, cfg.flags.Workspace)
 	if err != nil {
 		return err
 	}
-	selected, recoverable, err := product.SelectResumeSummary(summaries, cfg.resumeSessionID, cfg.resumeLatest)
+	selected, recoverable, err := runtimeenv.SelectResumeSummary(summaries, cfg.resumeSessionID, cfg.resumeLatest)
 	if err != nil {
 		return err
 	}

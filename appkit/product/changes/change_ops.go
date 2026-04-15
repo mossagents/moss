@@ -1,4 +1,4 @@
-package product
+package changes
 
 import (
 	"fmt"
@@ -168,9 +168,9 @@ func RenderChangeDetail(item *ChangeOperation) string {
 	fmt.Fprintf(&b, "  run:       %s\n", stringutil.FirstNonEmpty(item.RunID, "(none)"))
 	fmt.Fprintf(&b, "  turn:      %s\n", stringutil.FirstNonEmpty(item.TurnID, "(none)"))
 	fmt.Fprintf(&b, "  profile:   %s\n", stringutil.FirstNonEmpty(item.InstructionProfile, "(none)"))
-	fmt.Fprintf(&b, "  model lane:%s\n", padField(stringutil.FirstNonEmpty(item.ModelLane, "(none)")))
+	fmt.Fprintf(&b, "  model lane:%s\n", PadField(stringutil.FirstNonEmpty(item.ModelLane, "(none)")))
 	fmt.Fprintf(&b, "  patch:     %s\n", stringutil.FirstNonEmpty(item.PatchID, "(none)"))
-	fmt.Fprintf(&b, "  checkpoint:%s\n", padField(stringutil.FirstNonEmpty(item.CheckpointID, "(none)")))
+	fmt.Fprintf(&b, "  checkpoint:%s\n", PadField(stringutil.FirstNonEmpty(item.CheckpointID, "(none)")))
 	fmt.Fprintf(&b, "  status:    %s\n", item.Status)
 	fmt.Fprintf(&b, "  recovery:  %s\n", stringutil.FirstNonEmpty(item.RecoveryMode, "(none)"))
 	if strings.TrimSpace(item.RecoveryDetails) != "" {
@@ -269,10 +269,10 @@ func manualRecoveryDetails(item *ChangeOperation, base string) string {
 			parts = append(parts, "capture_head="+stringutil.FirstNonEmpty(item.Capture.HeadSHA, "(none)"))
 		}
 	}
-	return strings.Join(compactStrings(parts), "; ")
+	return strings.Join(CompactStrings(parts), "; ")
 }
 
-func compactStrings(items []string) []string {
+func CompactStrings(items []string) []string {
 	out := make([]string, 0, len(items))
 	for _, item := range items {
 		item = strings.TrimSpace(item)
@@ -283,7 +283,7 @@ func compactStrings(items []string) []string {
 	return out
 }
 
-func padField(value string) string {
+func PadField(value string) string {
 	if value == "" {
 		return ""
 	}

@@ -8,44 +8,12 @@ import (
 	"strings"
 )
 
-func SessionStoreDir() string {
-	return filepath.Join(appconfig.AppDir(), "sessions")
-}
-
-func StateStoreDir() string {
-	return filepath.Join(appconfig.AppDir(), "state")
-}
-
-func StateEventDir() string {
-	return filepath.Join(StateStoreDir(), "events")
-}
-
-func CheckpointStoreDir() string {
-	return filepath.Join(appconfig.AppDir(), "checkpoints")
-}
-
-func ChangeStoreDir() string {
-	return filepath.Join(appconfig.AppDir(), "changes")
-}
-
-func MemoryDir() string {
-	return filepath.Join(appconfig.AppDir(), "memories")
-}
-
-func TaskRuntimeDir() string {
-	return filepath.Join(appconfig.AppDir(), "tasks")
-}
-
-func WorkspaceIsolationDir() string {
-	return filepath.Join(appconfig.AppDir(), "workspaces")
-}
-
 func defaultPricingCatalogPath(workspace, explicit string) string {
 	path := ResolvePricingCatalogPath(workspace, explicit)
 	if path != "" {
 		return path
 	}
-	candidates := pricingCatalogCandidates(workspace)
+	candidates := PricingCatalogCandidates(workspace)
 	if len(candidates) == 0 {
 		return filepath.Join(appconfig.AppDir(), "pricing.yaml")
 	}

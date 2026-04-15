@@ -1,4 +1,4 @@
-package product
+package changes
 
 import (
 	"context"
@@ -345,6 +345,6 @@ func persistInconsistentChange(ctx context.Context, store *FileChangeStore, op *
 }
 
 func appendDetails(base, extra string) string {
-	parts := compactStrings([]string{base, extra})
+	parts := CompactStrings([]string{base, extra})
 	return strings.Join(parts, "; ")
 }

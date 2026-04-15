@@ -7,16 +7,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/workspace"
 )
 
 type checkpointActionReport struct {
 	Mode             string                      `json:"mode"`
-	Checkpoints      []product.CheckpointSummary `json:"checkpoints,omitempty"`
-	Checkpoint       *product.CheckpointSummary  `json:"checkpoint,omitempty"`
-	CheckpointDetail *product.CheckpointDetail   `json:"checkpoint_detail,omitempty"`
+	Checkpoints      []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
+	Checkpoint       *runtimeenv.CheckpointSummary  `json:"checkpoint,omitempty"`
+	CheckpointDetail *runtimeenv.CheckpointDetail   `json:"checkpoint_detail,omitempty"`
 	SessionID        string                      `json:"session_id,omitempty"`
 	SourceKind       string                      `json:"source_kind,omitempty"`
 	SourceID         string                      `json:"source_id,omitempty"`
@@ -29,8 +30,8 @@ type checkpointActionReport struct {
 
 type changeActionReport struct {
 	Mode    string                   `json:"mode"`
-	Change  *product.ChangeOperation `json:"change,omitempty"`
-	Changes []product.ChangeSummary  `json:"changes,omitempty"`
+	Change  *changes.ChangeOperation `json:"change,omitempty"`
+	Changes []changes.ChangeSummary  `json:"changes,omitempty"`
 	Details string                   `json:"details,omitempty"`
 }
 
@@ -63,7 +64,7 @@ func runCheckpointList(ctx context.Context, cfg *config) error {
 	if limit <= 0 {
 		limit = 20
 	}
-	items, err := product.ListCheckpoints(ctx, limit)
+	items, err := runtimeenv.ListCheckpoints(ctx, limit)
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func runCheckpointList(ctx context.Context, cfg *config) error {
 	if cfg.checkpointJSON {
 		return printJSON(report)
 	}
-	fmt.Println(product.RenderCheckpointSummaries(items))
+	fmt.Println(runtimeenv.RenderCheckpointSummaries(items))
 	return nil
 }
 
@@ -83,7 +84,7 @@ func runCheckpointShow(ctx context.Context, cfg *config) error {
 	if checkpointID == "" {
 		return fmt.Errorf("usage: mosscode checkpoint show <id|latest> [--json]")
 	}
-	detail, err := product.LoadCheckpoint(ctx, checkpointID)
+	detail, err := runtimeenv.LoadCheckpoint(ctx, checkpointID)
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,7 @@ func runCheckpointShow(ctx context.Context, cfg *config) error {
 	if cfg.checkpointJSON {
 		return printJSON(report)
 	}
-	fmt.Println(product.RenderCheckpointDetail(detail))
+	fmt.Println(runtimeenv.RenderCheckpointDetail(detail))
 	return nil
 }
 
@@ -126,7 +127,7 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 	if err != nil {
 		return err
 	}
-	summary := product.SummarizeCheckpoint(*record)
+	summary := runtimeenv.SummarizeCheckpoint(*record)
 	report := checkpointActionReport{
 		Mode:       "create",
 		Checkpoint: &summary,
@@ -179,7 +180,7 @@ func runCheckpointFork(ctx context.Context, cfg *config) error {
 		return err
 	}
 	if sourceKind == checkpoint.ForkSourceCheckpoint {
-		record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
+		record, err := runtimeenv.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
 		if err != nil {
 			return err
 		}
@@ -242,7 +243,7 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 	if err := k.Boot(ctx); err != nil {
 		return err
 	}
-	record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), checkpointID)
+	record, err := runtimeenv.ResolveCheckpointRecord(ctx, k.Checkpoints(), checkpointID)
 	if err != nil {
 		return err
 	}
@@ -292,7 +293,7 @@ func runApply(ctx context.Context, cfg *config) error {
 		return err
 	}
 	defer cleanup()
-	item, err := product.ApplyChange(ctx, rt, product.ApplyChangeRequest{
+	item, err := changes.ApplyChange(ctx, rt, changes.ApplyChangeRequest{
 		Patch:     string(data),
 		Summary:   summary,
 		SessionID: sessionID,
@@ -303,7 +304,7 @@ func runApply(ctx context.Context, cfg *config) error {
 		Change: item,
 	}
 	if err != nil {
-		if opErr := (*product.ChangeOperationError)(nil); errors.As(err, &opErr) {
+		if opErr := (*changes.ChangeOperationError)(nil); errors.As(err, &opErr) {
 			report.Change = opErr.Operation
 			report.Details = opErr.Error()
 			return emitChangeReport(report, cfg.applyJSON, true)
@@ -323,13 +324,13 @@ func runRollback(ctx context.Context, cfg *config) error {
 		return err
 	}
 	defer cleanup()
-	item, err := product.RollbackChange(ctx, rt, product.RollbackChangeRequest{ChangeID: changeID})
+	item, err := changes.RollbackChange(ctx, rt, changes.RollbackChangeRequest{ChangeID: changeID})
 	report := changeActionReport{
 		Mode:   "rollback",
 		Change: item,
 	}
 	if err != nil {
-		if opErr := (*product.ChangeOperationError)(nil); errors.As(err, &opErr) {
+		if opErr := (*changes.ChangeOperationError)(nil); errors.As(err, &opErr) {
 			report.Change = opErr.Operation
 			report.Details = opErr.Error()
 			return emitChangeReport(report, cfg.rollbackJSON, true)
@@ -358,7 +359,7 @@ func runChangesList(ctx context.Context, cfg *config) error {
 	if limit <= 0 {
 		limit = 20
 	}
-	items, err := product.ListChangeOperations(ctx, cfg.flags.Workspace, limit)
+	items, err := changes.ListChangeOperations(ctx, cfg.flags.Workspace, limit)
 	if err != nil {
 		return err
 	}
@@ -374,7 +375,7 @@ func runChangesShow(ctx context.Context, cfg *config) error {
 	if changeID == "" {
 		return fmt.Errorf("usage: mosscode changes show <id> [--json]")
 	}
-	item, err := product.LoadChangeOperation(ctx, cfg.flags.Workspace, changeID)
+	item, err := changes.LoadChangeOperation(ctx, cfg.flags.Workspace, changeID)
 	if err != nil {
 		return err
 	}
@@ -397,9 +398,9 @@ func emitChangeReport(report changeActionReport, jsonOut, fail bool) error {
 	}
 	switch report.Mode {
 	case "list":
-		fmt.Println(product.RenderChangeSummaries(report.Changes))
+		fmt.Println(changes.RenderChangeSummaries(report.Changes))
 	case "show", "apply", "rollback":
-		fmt.Println(product.RenderChangeDetail(report.Change))
+		fmt.Println(changes.RenderChangeDetail(report.Change))
 	}
 	if strings.TrimSpace(report.Details) != "" {
 		fmt.Printf("Details: %s\n", report.Details)

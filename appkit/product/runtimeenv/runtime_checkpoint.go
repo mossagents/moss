@@ -1,4 +1,4 @@
-package product
+package runtimeenv
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type CheckpointDetail struct {
 }
 
 func SummarizeCheckpoint(item checkpoint.CheckpointRecord) CheckpointSummary {
-	sessionID := checkpointSessionID(item)
+	sessionID := CheckpointSessionID(item)
 	return CheckpointSummary{
 		ID:           item.ID,
 		SessionID:    sessionID,
@@ -48,7 +48,7 @@ func SummarizeCheckpoint(item checkpoint.CheckpointRecord) CheckpointSummary {
 	}
 }
 
-func checkpointSessionID(item checkpoint.CheckpointRecord) string {
+func CheckpointSessionID(item checkpoint.CheckpointRecord) string {
 	sessionID := item.SessionID
 	for _, ref := range item.Lineage {
 		if ref.Kind == checkpoint.CheckpointLineageSession && strings.TrimSpace(ref.ID) != "" {
@@ -67,7 +67,7 @@ func DescribeCheckpoint(item checkpoint.CheckpointRecord) CheckpointDetail {
 	sort.Strings(keys)
 	return CheckpointDetail{
 		ID:           item.ID,
-		SessionID:    checkpointSessionID(item),
+		SessionID:    CheckpointSessionID(item),
 		SnapshotID:   item.WorktreeSnapshotID,
 		Note:         item.Note,
 		PatchIDs:     append([]string(nil), item.PatchIDs...),

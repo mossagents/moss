@@ -13,6 +13,8 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
@@ -31,7 +33,7 @@ func initTestApp(t *testing.T) {
 func TestRunCheckpointListJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -140,7 +142,7 @@ func TestRunCompletionPowerShellOutputsCompleter(t *testing.T) {
 func TestRunCheckpointShowJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -172,7 +174,7 @@ func TestRunCheckpointShowJSON(t *testing.T) {
 func TestRunCheckpointShowLatestJSON(t *testing.T) {
 	initTestApp(t)
 
-	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -217,17 +219,17 @@ func TestRunChangesListJSON(t *testing.T) {
 	initTestApp(t)
 	repo := initRepoForCLIChangeTests(t)
 
-	store, err := product.OpenChangeStore()
+	store, err := changes.OpenChangeStore()
 	if err != nil {
 		t.Fatalf("OpenChangeStore: %v", err)
 	}
-	err = store.Save(context.Background(), &product.ChangeOperation{
+	err = store.Save(context.Background(), &changes.ChangeOperation{
 		ID:           "change-1",
 		RepoRoot:     repo,
 		BaseHeadSHA:  "abc123",
 		PatchID:      "patch-1",
 		Summary:      "update tracked.txt",
-		Status:       product.ChangeStatusApplied,
+		Status:       changes.ChangeStatusApplied,
 		TargetFiles:  []string{"tracked.txt"},
 		RecoveryMode: "patch+capture",
 		CreatedAt:    time.Unix(10, 0).UTC(),
@@ -255,17 +257,17 @@ func TestRunChangesShowJSON(t *testing.T) {
 	initTestApp(t)
 	repo := initRepoForCLIChangeTests(t)
 
-	store, err := product.OpenChangeStore()
+	store, err := changes.OpenChangeStore()
 	if err != nil {
 		t.Fatalf("OpenChangeStore: %v", err)
 	}
-	err = store.Save(context.Background(), &product.ChangeOperation{
+	err = store.Save(context.Background(), &changes.ChangeOperation{
 		ID:           "change-1",
 		RepoRoot:     repo,
 		BaseHeadSHA:  "abc123",
 		PatchID:      "patch-1",
 		Summary:      "update tracked.txt",
-		Status:       product.ChangeStatusApplied,
+		Status:       changes.ChangeStatusApplied,
 		TargetFiles:  []string{"tracked.txt"},
 		RecoveryMode: "patch+capture",
 		CreatedAt:    time.Unix(10, 0).UTC(),
@@ -303,7 +305,7 @@ func TestRunRollbackRequiresChange(t *testing.T) {
 
 func TestExecuteCLIForCheckpointShowSupportsInterspersedFlags(t *testing.T) {
 	initTestApp(t)
-	store, err := checkpoint.NewFileCheckpointStore(product.CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}

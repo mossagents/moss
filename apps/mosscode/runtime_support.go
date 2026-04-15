@@ -11,6 +11,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/product/changes"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
@@ -52,8 +53,8 @@ func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, er
 	return k, err
 }
 
-func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (product.ChangeRuntime, func(), error) {
-	rt := product.ChangeRuntime{
+func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (changes.ChangeRuntime, func(), error) {
+	rt := changes.ChangeRuntime{
 		Workspace:        cfg.flags.Workspace,
 		RepoStateCapture: sandbox.NewGitRepoStateCapture(cfg.flags.Workspace),
 		PatchApply:       sandbox.NewGitPatchApply(cfg.flags.Workspace),
@@ -64,12 +65,12 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (pro
 	}
 	k, err := buildCheckpointKernel(ctx, cfg)
 	if err != nil {
-		return product.ChangeRuntime{}, nil, err
+		return changes.ChangeRuntime{}, nil, err
 	}
 	if err := k.Boot(ctx); err != nil {
-		return product.ChangeRuntime{}, nil, err
+		return changes.ChangeRuntime{}, nil, err
 	}
-	return product.ChangeRuntimeFromKernel(cfg.flags.Workspace, k), func() {
+	return changes.ChangeRuntimeFromKernel(cfg.flags.Workspace, k), func() {
 		_ = k.Shutdown(ctx)
 	}, nil
 }

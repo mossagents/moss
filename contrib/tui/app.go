@@ -8,6 +8,8 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel"
@@ -274,11 +276,11 @@ func (a *agentState) listPersistedCheckpoints(limit int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	summaries := product.SummarizeCheckpoints(items)
+	summaries := runtimeenv.SummarizeCheckpoints(items)
 	if len(summaries) > limit {
 		summaries = summaries[:limit]
 	}
-	return product.RenderCheckpointSummaries(summaries), nil
+	return runtimeenv.RenderCheckpointSummaries(summaries), nil
 }
 
 func (a *agentState) showPersistedCheckpoint(checkpointID string) (string, error) {
@@ -291,11 +293,11 @@ func (a *agentState) showPersistedCheckpoint(checkpointID string) (string, error
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	detail, err := product.LoadCheckpointWithStore(reqCtx, k.Checkpoints(), checkpointID)
+	detail, err := runtimeenv.LoadCheckpointWithStore(reqCtx, k.Checkpoints(), checkpointID)
 	if err != nil {
 		return "", err
 	}
-	return product.RenderCheckpointDetail(detail), nil
+	return runtimeenv.RenderCheckpointDetail(detail), nil
 }
 
 func (a *agentState) listPersistedChanges(limit int) (string, error) {
@@ -308,11 +310,11 @@ func (a *agentState) listPersistedChanges(limit int) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	items, err := product.ListChangeOperations(reqCtx, workspace, limit)
+	items, err := changes.ListChangeOperations(reqCtx, workspace, limit)
 	if err != nil {
 		return "", err
 	}
-	return product.RenderChangeSummaries(items), nil
+	return changes.RenderChangeSummaries(items), nil
 }
 
 func (a *agentState) showPersistedChange(changeID string) (string, error) {
@@ -326,11 +328,11 @@ func (a *agentState) showPersistedChange(changeID string) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	item, err := product.LoadChangeOperation(reqCtx, workspace, changeID)
+	item, err := changes.LoadChangeOperation(reqCtx, workspace, changeID)
 	if err != nil {
 		return "", err
 	}
-	return product.RenderChangeDetail(item), nil
+	return changes.RenderChangeDetail(item), nil
 }
 
 func (a *agentState) setPermission(toolName, mode string) (string, error) {

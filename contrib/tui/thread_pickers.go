@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	kernelsession "github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -12,12 +12,12 @@ import (
 )
 
 type resumePickerState struct {
-	threads []product.ThreadBrowseSummary
+	threads []runtimeenv.ThreadBrowseSummary
 	list    *selectionListState
 }
 
 func newResumePickerState(workspace string) (*resumePickerState, error) {
-	threads, err := product.ListThreadBrowseSummaries(context.Background(), workspace, kernelsession.ThreadQuery{
+	threads, err := runtimeenv.ListThreadBrowseSummaries(context.Background(), workspace, kernelsession.ThreadQuery{
 		RecoverableOnly: true,
 		Limit:           20,
 	})
@@ -106,7 +106,7 @@ type forkPickerState struct {
 }
 
 func newForkPickerState(workspace string) (*forkPickerState, error) {
-	sources, err := product.ListForkSources(context.Background(), workspace, 12, 12)
+	sources, err := runtimeenv.ListForkSources(context.Background(), workspace, 12, 12)
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ type agentPickerState struct {
 }
 
 func newAgentPickerState() (*agentPickerState, error) {
-	tasks, err := product.ListTaskBrowseSummaries(context.Background(), taskrt.TaskQuery{Limit: 20})
+	tasks, err := runtimeenv.ListTaskBrowseSummaries(context.Background(), taskrt.TaskQuery{Limit: 20})
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +283,7 @@ func threadTitle(thread kernelsession.ThreadRef) string {
 	return firstPopulatedString(thread.Preview, thread.Goal, thread.SessionID)
 }
 
-func renderThreadBrowseSummary(item product.ThreadBrowseSummary) string {
+func renderThreadBrowseSummary(item runtimeenv.ThreadBrowseSummary) string {
 	thread := item.Thread
 	var b strings.Builder
 	fmt.Fprintf(&b, "Thread: %s\n", thread.SessionID)

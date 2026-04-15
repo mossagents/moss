@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
@@ -64,7 +65,7 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 		if k == nil || k.Checkpoints() == nil {
 			return nil, "", fmt.Errorf("checkpoint store is unavailable")
 		}
-		record, err := product.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
+		record, err := runtimeenv.ResolveCheckpointRecord(ctx, k.Checkpoints(), sourceID)
 		if err != nil {
 			return nil, "", err
 		}

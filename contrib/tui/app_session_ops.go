@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -74,11 +75,11 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if strings.EqualFold(sessionID, "latest") {
-		summaries, _, err := product.ListResumeCandidates(ctx, workspace)
+		summaries, _, err := runtimeenv.ListResumeCandidates(ctx, workspace)
 		if err != nil {
 			return "", err
 		}
-		selected, _, err := product.SelectResumeSummary(summaries, "", true)
+		selected, _, err := runtimeenv.SelectResumeSummary(summaries, "", true)
 		if err != nil {
 			return "", err
 		}
@@ -210,7 +211,7 @@ func (a *agentState) createCheckpoint(note string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	summary := product.SummarizeCheckpoint(*record)
+	summary := runtimeenv.SummarizeCheckpoint(*record)
 	msg := fmt.Sprintf("Created checkpoint %s for session %s.", summary.ID, sess.ID)
 	if summary.SnapshotID != "" {
 		msg += fmt.Sprintf(" snapshot=%s.", summary.SnapshotID)
@@ -263,19 +264,19 @@ func (a *agentState) applyChange(patchFile, summary string) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	item, err := product.ApplyChange(reqCtx, product.ChangeRuntimeFromKernel(wsPath, k), product.ApplyChangeRequest{
+	item, err := changes.ApplyChange(reqCtx, changes.ChangeRuntimeFromKernel(wsPath, k), changes.ApplyChangeRequest{
 		Patch:   string(data),
 		Summary: strings.TrimSpace(summary),
 		Source:  workspace.PatchSourceUser,
 	})
 	if err != nil {
-		var opErr *product.ChangeOperationError
+		var opErr *changes.ChangeOperationError
 		if errors.As(err, &opErr) && opErr.Operation != nil {
-			return "", fmt.Errorf("%s\nDetails: %s", product.RenderChangeDetail(opErr.Operation), opErr.Error())
+			return "", fmt.Errorf("%s\nDetails: %s", changes.RenderChangeDetail(opErr.Operation), opErr.Error())
 		}
 		return "", err
 	}
-	return product.RenderChangeDetail(item), nil
+	return changes.RenderChangeDetail(item), nil
 }
 
 func (a *agentState) rollbackChange(changeID string) (string, error) {
@@ -293,17 +294,17 @@ func (a *agentState) rollbackChange(changeID string) (string, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	item, err := product.RollbackChange(reqCtx, product.ChangeRuntimeFromKernel(workspace, k), product.RollbackChangeRequest{
+	item, err := changes.RollbackChange(reqCtx, changes.ChangeRuntimeFromKernel(workspace, k), changes.RollbackChangeRequest{
 		ChangeID: strings.TrimSpace(changeID),
 	})
 	if err != nil {
-		var opErr *product.ChangeOperationError
+		var opErr *changes.ChangeOperationError
 		if errors.As(err, &opErr) && opErr.Operation != nil {
-			return "", fmt.Errorf("%s\nDetails: %s", product.RenderChangeDetail(opErr.Operation), opErr.Error())
+			return "", fmt.Errorf("%s\nDetails: %s", changes.RenderChangeDetail(opErr.Operation), opErr.Error())
 		}
 		return "", err
 	}
-	return product.RenderChangeDetail(item), nil
+	return changes.RenderChangeDetail(item), nil
 }
 
 func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
@@ -351,7 +352,7 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if sourceKind == string(checkpoint.ForkSourceCheckpoint) {
-		record, err := product.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), sourceID)
+		record, err := runtimeenv.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), sourceID)
 		if err != nil {
 			return "", err
 		}
@@ -418,7 +419,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	record, err := product.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), checkpointID)
+	record, err := runtimeenv.ResolveCheckpointRecord(reqCtx, k.Checkpoints(), checkpointID)
 	if err != nil {
 		return "", err
 	}

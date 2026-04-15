@@ -9,6 +9,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 )
 
 func runInit(cfg *config) error {
@@ -217,7 +218,7 @@ func runConfigMCP(flags *appkit.AppFlags, args []string) error {
 }
 
 func runReview(ctx context.Context, cfg *config) error {
-	report, err := product.BuildReviewReport(ctx, cfg.flags.Workspace, cfg.reviewArgs)
+	report, err := runtimeenv.BuildReviewReport(ctx, cfg.flags.Workspace, cfg.reviewArgs)
 	if err != nil {
 		return err
 	}
@@ -229,7 +230,7 @@ func runReview(ctx context.Context, cfg *config) error {
 		fmt.Println(string(data))
 		return nil
 	}
-	fmt.Print(product.RenderReviewReport(report))
+	fmt.Print(runtimeenv.RenderReviewReport(report))
 	return nil
 }
 

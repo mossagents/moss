@@ -1,4 +1,4 @@
-package product
+package runtimeenv
 
 import (
 	"context"
@@ -111,7 +111,7 @@ func SelectResumeSummary(summaries []session.SessionSummary, sessionID string, l
 }
 
 func SnapshotCountsBySession(ctx context.Context, workspace string) (map[string]int, error) {
-	snapshots, err := listSnapshots(ctx, workspace)
+	snapshots, err := ListSnapshots(ctx, workspace)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func SnapshotCountsBySession(ctx context.Context, workspace string) (map[string]
 	return counts, nil
 }
 
-func listSnapshots(ctx context.Context, workspaceDir string) ([]workspace.WorktreeSnapshot, error) {
+func ListSnapshots(ctx context.Context, workspaceDir string) ([]workspace.WorktreeSnapshot, error) {
 	store := sandbox.NewGitWorktreeSnapshotStore(workspaceDir)
 	snapshots, err := store.List(ctx)
 	if err != nil {

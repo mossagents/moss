@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/internal/stringutil"
-
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/internal/stringutil"
 )
 
 type DebugConfigReport struct {
@@ -56,12 +56,12 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 		ProjectConfig:         appconfig.DefaultProjectConfigPath(workspace),
 		AppDir:                appconfig.AppDir(),
 		CommandDirs:           debugCommandDirs(appName, workspace),
-		StateStoreDir:         StateStoreDir(),
-		StateEventDir:         StateEventDir(),
-		SessionStoreDir:       SessionStoreDir(),
-		TaskRuntimeDir:        TaskRuntimeDir(),
-		MemoryDir:             MemoryDir(),
-		WorkspaceRootDir:      WorkspaceIsolationDir(),
+		StateStoreDir:         runtimeenv.StateStoreDir(),
+		StateEventDir:         runtimeenv.StateEventDir(),
+		SessionStoreDir:       runtimeenv.SessionStoreDir(),
+		TaskRuntimeDir:        runtimeenv.TaskRuntimeDir(),
+		MemoryDir:             runtimeenv.MemoryDir(),
+		WorkspaceRootDir:      runtimeenv.WorkspaceIsolationDir(),
 		AuditLog:              AuditLogPath(),
 		DebugLog:              DebugLogPath(),
 		RouterConfig:          filepath.Join(appconfig.AppDir(), "models.yaml"),

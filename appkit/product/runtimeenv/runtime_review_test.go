@@ -1,11 +1,16 @@
-package product
+package runtimeenv
 
 import (
+	"github.com/mossagents/moss/appkit/product/changes"
 	"github.com/mossagents/moss/kernel/workspace"
 	"strings"
 	"testing"
 	"time"
 )
+
+func timeNowTest() time.Time {
+	return time.Unix(10, 0).UTC()
+}
 
 func TestRenderReviewReport_StatusMode(t *testing.T) {
 	report := ReviewReport{
@@ -131,8 +136,8 @@ func TestRenderReviewReport_ChangesMode_Items(t *testing.T) {
 	report := ReviewReport{
 		Mode: "changes",
 		Repo: ReviewRepoState{Available: true, Root: "/r"},
-		Changes: []ChangeSummary{
-			{ID: "chg-1", Status: ChangeStatusApplied, PatchID: "p1", Summary: "update", CreatedAt: timeNowTest()},
+		Changes: []changes.ChangeSummary{
+			{ID: "chg-1", Status: changes.ChangeStatusApplied, PatchID: "p1", Summary: "update", CreatedAt: timeNowTest()},
 		},
 	}
 	got := RenderReviewReport(report)
@@ -145,7 +150,7 @@ func TestRenderReviewReport_ChangeMode(t *testing.T) {
 	report := ReviewReport{
 		Mode:   "change",
 		Repo:   ReviewRepoState{Available: true, Root: "/r"},
-		Change: &ChangeOperation{ID: "chg-x", Status: ChangeStatusApplied, CreatedAt: timeNowTest()},
+		Change: &changes.ChangeOperation{ID: "chg-x", Status: changes.ChangeStatusApplied, CreatedAt: timeNowTest()},
 	}
 	got := RenderReviewReport(report)
 	if !strings.Contains(got, "chg-x") {
@@ -214,27 +219,5 @@ func TestRenderStringFiles_Items(t *testing.T) {
 	got := b.String()
 	if !strings.Contains(got, "Untracked:\n") || !strings.Contains(got, "foo.go") || !strings.Contains(got, "bar.go") {
 		t.Fatalf("unexpected: %q", got)
-	}
-}
-
-// ── MarshalJSON (runtime_paths.go) ───────────────────────────────────────────
-
-func TestMarshalJSON_Simple(t *testing.T) {
-	got, err := MarshalJSON(map[string]int{"count": 42})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(got, `"count"`) || !strings.Contains(got, "42") {
-		t.Fatalf("unexpected output: %q", got)
-	}
-}
-
-func TestMarshalJSON_Indented(t *testing.T) {
-	got, err := MarshalJSON([]string{"a", "b"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(got, "\n") {
-		t.Fatalf("expected indented output, got: %q", got)
 	}
 }

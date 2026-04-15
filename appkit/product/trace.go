@@ -281,7 +281,7 @@ func RenderRunTraceDetail(summary RunTraceSummary, limit int) string {
 	}
 	lines = append(lines, fmt.Sprintf("  timeline: showing %d of %d events", len(events), totalEvents))
 	for i, event := range events {
-		lines = append(lines, fmt.Sprintf("    %02d. %s", start+i+1, formatTraceEventDetail(event)))
+		lines = append(lines, fmt.Sprintf("    %02d. %s", start+i+1, FormatTraceEventDetail(event)))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -501,7 +501,7 @@ func summarizeSlowestTraceEvent(trace RunTrace) (traceEventSummary, bool) {
 	}, true
 }
 
-func formatTraceEventDetail(event TraceEvent) string {
+func FormatTraceEventDetail(event TraceEvent) string {
 	details := make([]string, 0, 10)
 	switch event.Kind {
 	case "session":

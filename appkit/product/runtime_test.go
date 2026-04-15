@@ -3,6 +3,7 @@ package product
 import (
 	"context"
 	"github.com/mossagents/moss/appkit"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
@@ -20,7 +21,7 @@ func TestSelectResumeSummaryLatest(t *testing.T) {
 		{ID: "run-1", Status: session.StatusRunning, Recoverable: true},
 		{ID: "fail-1", Status: session.StatusFailed, Recoverable: true},
 	}
-	selected, recoverable, err := SelectResumeSummary(summaries, "", true)
+	selected, recoverable, err := runtimeenv.SelectResumeSummary(summaries, "", true)
 	if err != nil {
 		t.Fatalf("select resume: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestSelectResumeSummarySpecificRequiresRecoverable(t *testing.T) {
 	summaries := []session.SessionSummary{
 		{ID: "done-1", Status: session.StatusCompleted, Recoverable: false},
 	}
-	selected, _, err := SelectResumeSummary(summaries, "done-1", false)
+	selected, _, err := runtimeenv.SelectResumeSummary(summaries, "done-1", false)
 	if err == nil {
 		t.Fatal("expected non-recoverable session error")
 	}
@@ -47,7 +48,7 @@ func TestSelectResumeSummarySpecificRequiresRecoverable(t *testing.T) {
 
 func TestSummarizeSnapshot(t *testing.T) {
 	now := time.Now().UTC()
-	summary := SummarizeSnapshot(workspace.WorktreeSnapshot{
+	summary := runtimeenv.SummarizeSnapshot(workspace.WorktreeSnapshot{
 		ID:        "snap-1",
 		SessionID: "sess-1",
 		Mode:      workspace.WorktreeSnapshotGhostState,
@@ -69,7 +70,7 @@ func TestSummarizeSnapshot(t *testing.T) {
 
 func TestSummarizeCheckpoint(t *testing.T) {
 	now := time.Now().UTC()
-	summary := SummarizeCheckpoint(checkpoint.CheckpointRecord{
+	summary := runtimeenv.SummarizeCheckpoint(checkpoint.CheckpointRecord{
 		ID:                 "cp-1",
 		SessionID:          "sess-1",
 		WorktreeSnapshotID: "snap-1",
@@ -87,7 +88,7 @@ func TestSummarizeCheckpoint(t *testing.T) {
 }
 
 func TestRenderCheckpointSummaries(t *testing.T) {
-	out := RenderCheckpointSummaries([]CheckpointSummary{{
+	out := runtimeenv.RenderCheckpointSummaries([]runtimeenv.CheckpointSummary{{
 		ID:           "cp-1",
 		SessionID:    "sess-1",
 		SnapshotID:   "snap-1",
@@ -104,7 +105,7 @@ func TestRenderCheckpointSummaries(t *testing.T) {
 }
 
 func TestDescribeCheckpointSortsMetadataKeys(t *testing.T) {
-	detail := DescribeCheckpoint(checkpoint.CheckpointRecord{
+	detail := runtimeenv.DescribeCheckpoint(checkpoint.CheckpointRecord{
 		ID:                 "cp-1",
 		SessionID:          "sess-hidden",
 		WorktreeSnapshotID: "snap-1",
@@ -178,7 +179,7 @@ func TestBuildDoctorReportIncludesMCPServerStatus(t *testing.T) {
 }
 
 func TestRenderCheckpointDetail(t *testing.T) {
-	out := RenderCheckpointDetail(&CheckpointDetail{
+	out := runtimeenv.RenderCheckpointDetail(&runtimeenv.CheckpointDetail{
 		ID:           "cp-1",
 		SessionID:    "sess-1",
 		SnapshotID:   "snap-1",
@@ -200,7 +201,7 @@ func TestRenderCheckpointDetail(t *testing.T) {
 func TestListCheckpoints(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestListCheckpoints(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Create second checkpoint: %v", err)
 	}
-	items, err := ListCheckpoints(context.Background(), 1)
+	items, err := runtimeenv.ListCheckpoints(context.Background(), 1)
 	if err != nil {
 		t.Fatalf("ListCheckpoints: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestListCheckpoints(t *testing.T) {
 func TestLoadCheckpoint(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -240,7 +241,7 @@ func TestLoadCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create checkpoint: %v", err)
 	}
-	detail, err := LoadCheckpoint(context.Background(), record.ID)
+	detail, err := runtimeenv.LoadCheckpoint(context.Background(), record.ID)
 	if err != nil {
 		t.Fatalf("LoadCheckpoint: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestLoadCheckpoint(t *testing.T) {
 func TestResolveCheckpointRecordLatest(t *testing.T) {
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
-	store, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	store, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileCheckpointStore: %v", err)
 	}
@@ -265,19 +266,40 @@ func TestResolveCheckpointRecordLatest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create second checkpoint: %v", err)
 	}
-
-	latest, err := ResolveCheckpointRecord(context.Background(), store, "latest")
+	latest, err := runtimeenv.ResolveCheckpointRecord(context.Background(), store, "latest")
 	if err != nil {
 		t.Fatalf("ResolveCheckpointRecord latest: %v", err)
 	}
 	if latest == nil || latest.ID != second.ID {
 		t.Fatalf("latest checkpoint = %+v, want %s", latest, second.ID)
 	}
-	implicit, err := ResolveCheckpointRecord(context.Background(), store, "")
+	implicit, err := runtimeenv.ResolveCheckpointRecord(context.Background(), store, "")
 	if err != nil {
 		t.Fatalf("ResolveCheckpointRecord empty selector: %v", err)
 	}
 	if implicit == nil || implicit.ID != second.ID || implicit.ID == first.ID {
 		t.Fatalf("implicit latest checkpoint = %+v, want %s", implicit, second.ID)
+	}
+}
+
+// ── MarshalJSON (runtime_paths.go) ───────────────────────────────────────────
+
+func TestMarshalJSON_Simple(t *testing.T) {
+	got, err := MarshalJSON(map[string]int{"count": 42})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `"count"`) || !strings.Contains(got, "42") {
+		t.Fatalf("unexpected output: %q", got)
+	}
+}
+
+func TestMarshalJSON_Indented(t *testing.T) {
+	got, err := MarshalJSON([]string{"a", "b"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "\n") {
+		t.Fatalf("expected indented output, got: %q", got)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/model"
 	rpolicy "github.com/mossagents/moss/runtime/policy"
@@ -469,11 +470,11 @@ func handleReviewSlashCommand(m chatModel, args []string, _ string, _ string) (c
 	if len(args) == 0 {
 		return m.openReviewPicker()
 	}
-	report, err := product.BuildReviewReport(context.Background(), m.workspace, args)
+	report, err := runtimeenv.BuildReviewReport(context.Background(), m.workspace, args)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("review failed: %v", err)})
 	} else {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: product.RenderReviewReport(report)})
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: runtimeenv.RenderReviewReport(report)})
 	}
 	m.refreshViewport()
 	return m, nil

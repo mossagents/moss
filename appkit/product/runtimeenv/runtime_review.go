@@ -1,4 +1,4 @@
-package product
+package runtimeenv
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/appkit/product/changes"
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
@@ -18,8 +19,8 @@ type ReviewReport struct {
 	Repo      ReviewRepoState         `json:"repo"`
 	Snapshots []ReviewSnapshotSummary `json:"snapshots,omitempty"`
 	Snapshot  *ReviewSnapshotSummary  `json:"snapshot,omitempty"`
-	Changes   []ChangeSummary         `json:"changes,omitempty"`
-	Change    *ChangeOperation        `json:"change,omitempty"`
+	Changes   []changes.ChangeSummary  `json:"changes,omitempty"`
+	Change    *changes.ChangeOperation `json:"change,omitempty"`
 }
 
 type ReviewRepoState struct {
@@ -71,7 +72,7 @@ func BuildReviewReport(ctx context.Context, workspace string, args []string) (Re
 			Ignored:   append([]string(nil), capture.Ignored...),
 		}
 	}
-	snapshots, err := listSnapshots(ctx, workspace)
+	snapshots, err := ListSnapshots(ctx, workspace)
 	if err != nil && report.Repo.Error == "" {
 		report.Repo.Error = err.Error()
 	}
@@ -98,7 +99,7 @@ func BuildReviewReport(ctx context.Context, workspace string, args []string) (Re
 		if !report.Repo.Available {
 			return report, nil
 		}
-		items, err := ListChangeOperationsByRepoRoot(ctx, report.Repo.Root, 20)
+		items, err := changes.ListChangeOperationsByRepoRoot(ctx, report.Repo.Root, 20)
 		if err != nil {
 			return ReviewReport{}, err
 		}
@@ -111,7 +112,7 @@ func BuildReviewReport(ctx context.Context, workspace string, args []string) (Re
 		if !report.Repo.Available {
 			return ReviewReport{}, fmt.Errorf("repository state capture is unavailable")
 		}
-		item, err := LoadChangeOperationByRepoRoot(ctx, report.Repo.Root, strings.TrimSpace(args[1]))
+		item, err := changes.LoadChangeOperationByRepoRoot(ctx, report.Repo.Root, strings.TrimSpace(args[1]))
 		if err != nil {
 			return ReviewReport{}, err
 		}
@@ -168,10 +169,10 @@ func RenderReviewReport(report ReviewReport) string {
 			b.WriteString("Changes: none\n")
 			return b.String()
 		}
-		b.WriteString(RenderChangeSummaries(report.Changes))
+		b.WriteString(changes.RenderChangeSummaries(report.Changes))
 		b.WriteString("\n")
 	case "change":
-		b.WriteString(RenderChangeDetail(report.Change))
+		b.WriteString(changes.RenderChangeDetail(report.Change))
 		b.WriteString("\n")
 	}
 	return b.String()

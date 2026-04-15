@@ -5,6 +5,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/appkit/product"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/config"
 	"strings"
 )
@@ -318,11 +319,11 @@ func newReviewPickerState(workspace string) (*reviewPickerState, error) {
 	items := make([]selectionListItem, 0, len(raw))
 	options := make([]reviewPickerOption, 0, len(raw))
 	for _, option := range raw {
-		report, err := product.BuildReviewReport(context.Background(), workspace, []string{option.mode})
+		report, err := runtimeenv.BuildReviewReport(context.Background(), workspace, []string{option.mode})
 		if err != nil {
 			return nil, err
 		}
-		option.detail = product.RenderReviewReport(report)
+		option.detail = runtimeenv.RenderReviewReport(report)
 		options = append(options, option)
 		items = append(items, selectionListItem{
 			Key:    option.mode,

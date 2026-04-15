@@ -3,6 +3,8 @@ package product
 import (
 	"context"
 	"encoding/json"
+	"github.com/mossagents/moss/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/model"
@@ -22,7 +24,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	ctx := context.Background()
 	configureProductTestApp(t)
 	workspace := t.TempDir()
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := session.NewFileStore(runtimeenv.SessionStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
@@ -37,7 +39,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save session: %v", err)
 	}
-	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(runtimeenv.StateStoreDir(), runtimeenv.StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -132,17 +134,17 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 			t.Fatalf("AppendExecutionEvent(%s): %v", event.Type, err)
 		}
 	}
-	changeStore, err := OpenChangeStore()
+	changeStore, err := changes.OpenChangeStore()
 	if err != nil {
 		t.Fatalf("OpenChangeStore: %v", err)
 	}
-	if err := changeStore.Save(ctx, &ChangeOperation{
+	if err := changeStore.Save(ctx, &changes.ChangeOperation{
 		ID:          "change-1",
 		RepoRoot:    workspace,
 		SessionID:   "sess-inspect",
 		Summary:     "update tracked.txt",
 		TargetFiles: []string{"tracked.txt"},
-		Status:      ChangeStatusApplied,
+		Status:      changes.ChangeStatusApplied,
 		CreatedAt:   now.Add(4 * time.Millisecond),
 	}); err != nil {
 		t.Fatalf("Save change operation: %v", err)
@@ -194,12 +196,11 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	ctx := context.Background()
 	configureProductTestApp(t)
 	workspace := t.TempDir()
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := session.NewFileStore(runtimeenv.SessionStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 	root := &session.Session{
-		ID:        "sess-root",
 		Status:    session.StatusPaused,
 		CreatedAt: time.Now().Add(-time.Hour),
 		Config: session.SessionConfig{
@@ -246,28 +247,28 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if err := store.Save(ctx, child); err != nil {
 		t.Fatalf("save child: %v", err)
 	}
-	cpStore, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("checkpoint store: %v", err)
 	}
 	if _, err := cpStore.Create(ctx, checkpoint.CheckpointCreateRequest{SessionID: "sess-root", Note: "before switch"}); err != nil {
 		t.Fatalf("create checkpoint: %v", err)
 	}
-	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(runtimeenv.StateStoreDir(), runtimeenv.StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	changeStore, err := OpenChangeStore()
+	changeStore, err := changes.OpenChangeStore()
 	if err != nil {
 		t.Fatalf("OpenChangeStore: %v", err)
 	}
-	if err := changeStore.Save(ctx, &ChangeOperation{
+	if err := changeStore.Save(ctx, &changes.ChangeOperation{
 		ID:          "change-1",
 		RepoRoot:    workspace,
 		SessionID:   "sess-root",
 		Summary:     "edit a.txt",
 		TargetFiles: []string{"a.txt"},
-		Status:      ChangeStatusApplied,
+		Status:      changes.ChangeStatusApplied,
 		CreatedAt:   time.Now(),
 	}); err != nil {
 		t.Fatalf("Save change operation: %v", err)
@@ -349,7 +350,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 	ctx := context.Background()
 	configureProductTestApp(t)
 	workspace := t.TempDir()
-	store, err := session.NewFileStore(SessionStoreDir())
+	store, err := session.NewFileStore(runtimeenv.SessionStoreDir())
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
@@ -378,7 +379,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 		t.Fatalf("save child: %v", err)
 	}
 
-	cpStore, err := checkpoint.NewFileCheckpointStore(CheckpointStoreDir())
+	cpStore, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
 		t.Fatalf("checkpoint store: %v", err)
 	}
@@ -391,35 +392,35 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 		t.Fatalf("create checkpoint: %v", err)
 	}
 
-	changeStore, err := OpenChangeStore()
+	changeStore, err := changes.OpenChangeStore()
 	if err != nil {
 		t.Fatalf("OpenChangeStore: %v", err)
 	}
-	if err := changeStore.Save(ctx, &ChangeOperation{
+	if err := changeStore.Save(ctx, &changes.ChangeOperation{
 		ID:           "change-govern-1",
 		SessionID:    child.ID,
 		RepoRoot:     workspace,
 		Summary:      "edit tracked.txt",
-		Status:       ChangeStatusRolledBack,
+		Status:       changes.ChangeStatusRolledBack,
 		TargetFiles:  []string{"tracked.txt"},
 		CreatedAt:    now.Add(-time.Minute),
 		RolledBackAt: now.Add(-30 * time.Second),
 	}); err != nil {
 		t.Fatalf("save change operation: %v", err)
 	}
-	if err := changeStore.Save(ctx, &ChangeOperation{
+	if err := changeStore.Save(ctx, &changes.ChangeOperation{
 		ID:          "change-govern-2",
 		SessionID:   child.ID,
 		RepoRoot:    workspace,
 		Summary:     "edit risk.txt",
-		Status:      ChangeStatusApplyInconsistent,
+		Status:      changes.ChangeStatusApplyInconsistent,
 		TargetFiles: []string{"risk.txt"},
 		CreatedAt:   now.Add(-20 * time.Second),
 	}); err != nil {
 		t.Fatalf("save inconsistent change operation: %v", err)
 	}
 
-	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(runtimeenv.StateStoreDir(), runtimeenv.StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
