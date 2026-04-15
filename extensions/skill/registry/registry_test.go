@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 )
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

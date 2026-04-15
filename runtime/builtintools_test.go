@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/internal/runtime/policy/policystate"
+	"github.com/mossagents/moss/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -1277,3 +1277,4 @@ func TestDatetimeTool(t *testing.T) {
 		t.Fatalf("missing unix_timestamp: %+v", resp)
 	}
 }
+

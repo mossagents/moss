@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"github.com/mossagents/moss/bootstrap"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"

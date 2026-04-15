@@ -6,7 +6,7 @@ import (
 
 	"github.com/mossagents/moss/bootstrap"
 	"github.com/mossagents/moss/internal/runtime/execution"
-	runtimepolicy "github.com/mossagents/moss/internal/runtime/policy"
+	runtimepolicy "github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -260,3 +260,4 @@ func PatchToolCalls() Feature {
 		},
 	}
 }
+

@@ -1,6 +1,6 @@
 package runtime
 
-import "github.com/mossagents/moss/capability"
+import "github.com/mossagents/moss/extensions/capability"
 
 type CapabilityStatus = capability.CapabilityStatus
 type CapabilitySnapshot = capability.CapabilitySnapshot

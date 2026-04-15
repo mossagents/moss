@@ -8,17 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/builtintools"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agent"
 	"github.com/mossagents/moss/extensions/mcp"
 	"github.com/mossagents/moss/extensions/skill"
-	"github.com/mossagents/moss/internal/runtime/capability"
-	"github.com/mossagents/moss/internal/runtime/policy"
+	"github.com/mossagents/moss/internal/runtime/capstate"
+	"github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/runtime"
 )
 
 // Config controls runtime capability assembly through the non-public setup
@@ -143,10 +143,10 @@ func (builtinToolsCapability) Name() string            { return "builtin-tools" 
 func (builtinToolsCapability) Critical() bool          { return true }
 func (builtinToolsCapability) Enabled(cfg Config) bool { return cfg.BuiltinTools }
 func (builtinToolsCapability) Register(ctx context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	return runtimecapability.Manager(k).Register(ctx, &builtinToolsProvider{}, runtimecapability.CapabilityDeps(k))
+	return capstate.Manager(k).Register(ctx, &builtinToolsProvider{}, capstate.CapabilityDeps(k))
 }
 func (builtinToolsCapability) Validate(_ context.Context, k *kernel.Kernel, _ string, _ Config) error {
-	manager, ok := runtimecapability.LookupManager(k)
+	manager, ok := capstate.LookupManager(k)
 	if !ok || manager == nil {
 		return fmt.Errorf("runtime validation failed: capability manager missing")
 	}
@@ -171,7 +171,7 @@ func (mcpCapability) Register(ctx context.Context, k *kernel.Kernel, workspaceDi
 		report(cfg.CapabilityReporter, ctx, "mcp:global-config", true, "failed", err)
 		return fmt.Errorf("load global config: %w", err)
 	}
-	deps := runtimecapability.CapabilityDeps(k)
+	deps := capstate.CapabilityDeps(k)
 	allSkills := append([]appconfig.SkillConfig(nil), globalCfg.Skills...)
 	projectCfg, err := appconfig.LoadProjectConfigForTrust(workspaceDir, cfg.Trust)
 	if err != nil {
@@ -228,14 +228,14 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 		return err
 	}
 	if cfg.ProgressiveSkills {
-		runtimecapability.SetSkillManifests(k, ordered)
-		runtimecapability.EnableProgressiveSkills(k)
+		capstate.SetSkillManifests(k, ordered)
+		capstate.EnableProgressiveSkills(k)
 		for _, mf := range ordered {
 			report(cfg.CapabilityReporter, ctx, "skill-manifest:"+mf.Name, false, "discoverable", nil)
 		}
-		return runtimecapability.RegisterProgressiveSkillTools(k)
+		return capstate.RegisterProgressiveSkillTools(k)
 	}
-	deps := runtimecapability.CapabilityDeps(k)
+	deps := capstate.CapabilityDeps(k)
 	for _, mf := range ordered {
 		ps, err := skill.ParseSkillMD(mf.Source)
 		if err != nil {
@@ -246,7 +246,7 @@ func (promptSkillsCapability) Register(ctx context.Context, k *kernel.Kernel, wo
 			)
 			continue
 		}
-		if err := runtimecapability.Manager(k).Register(ctx, ps, deps); err != nil {
+		if err := capstate.Manager(k).Register(ctx, ps, deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "skill:"+ps.Metadata().Name, false, "degraded", err)
 			logger.WarnContext(ctx, "failed to load skill",
 				slog.String("skill", ps.Metadata().Name),
@@ -321,7 +321,7 @@ func registerMCPServers(ctx context.Context, cfg Config, deps capability.Deps, s
 		if !sc.IsEnabled() || !sc.IsMCP() {
 			continue
 		}
-		if err := runtimecapability.Manager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
+		if err := capstate.Manager(deps.Kernel).Register(ctx, mcp.NewMCPServer(sc), deps); err != nil {
 			report(cfg.CapabilityReporter, ctx, "mcp:"+sc.Name, sc.IsRequired(), "failed", err)
 			if sc.IsRequired() {
 				return fmt.Errorf("required MCP server %q failed: %w", sc.Name, err)
@@ -459,8 +459,8 @@ func (s *builtinToolsProvider) Metadata() capability.Metadata {
 }
 
 func (s *builtinToolsProvider) Init(ctx context.Context, deps capability.Deps) error {
-	s.toolNames = builtintools.RegisteredToolNamesForKernel(deps.Kernel)
-	return builtintools.RegisterForKernel(deps.Kernel, deps.ToolRegistry)
+	s.toolNames = runtime.RegisteredBuiltinToolNamesForKernel(deps.Kernel)
+	return runtime.RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry)
 }
 
 func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }
@@ -477,3 +477,6 @@ func collectAgentDirs(workspaceDir string, cfg Config) []string {
 	}
 	return dirs
 }
+
+
+

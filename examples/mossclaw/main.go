@@ -23,7 +23,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/gateway"
-	"github.com/mossagents/moss/gateway/channel"
+	channel "github.com/mossagents/moss/gateway/channel"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"

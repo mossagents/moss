@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	appconfig "github.com/mossagents/moss/config"
-	runtimepolicy2 "github.com/mossagents/moss/internal/runtime/policy"
+	runtimepolicy2 "github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
@@ -146,3 +146,4 @@ func hasProjectHTTPRule(rules []appconfig.HTTPRuleConfig, target appconfig.HTTPR
 	}
 	return false
 }
+

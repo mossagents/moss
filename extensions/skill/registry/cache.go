@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"io"
 	"net/http"

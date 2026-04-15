@@ -3,7 +3,7 @@ package runtime
 import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/statecatalog"
+	statecatalog "github.com/mossagents/moss/runtime/catalog"
 )
 
 const stateCatalogStateKey = kernel.ServiceKey("statecatalog.state")

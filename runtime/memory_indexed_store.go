@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"github.com/mossagents/moss/kernel/memory"
+	memstore "github.com/mossagents/moss/runtime/memory"
 	"io"
 	"time"
 )
@@ -36,7 +37,7 @@ func (s *indexedMemoryStore) DeleteByPath(ctx context.Context, path string) erro
 	if err := s.base.DeleteByPath(ctx, path); err != nil {
 		return err
 	}
-	return s.catalog.Delete(StateKindMemory, normalizeMemoryPath(path))
+	return s.catalog.Delete(StateKindMemory, memstore.NormalizePath(path))
 }
 
 func (s *indexedMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
@@ -51,7 +52,7 @@ func (s *indexedMemoryStore) RecordUsage(ctx context.Context, paths []string, us
 	if err := s.base.RecordUsage(ctx, paths, usedAt); err != nil {
 		return err
 	}
-	for _, path := range dedupeStrings(paths) {
+	for _, path := range memstore.DedupeStrings(paths) {
 		record, err := s.base.GetByPath(ctx, path)
 		if err != nil {
 			continue
@@ -76,3 +77,4 @@ func (s *indexedMemoryStore) syncRecord(record memory.MemoryRecord) {
 		}
 	}
 }
+

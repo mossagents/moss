@@ -2,7 +2,7 @@ package skill
 
 import (
 	"context"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	config "github.com/mossagents/moss/config"
 	"os"
 	"path/filepath"

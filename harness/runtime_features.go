@@ -9,7 +9,7 @@ import (
 
 	"github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/internal/runtime/assembly"
-	runtimectx "github.com/mossagents/moss/internal/runtime/context"
+	runtimectx "github.com/mossagents/moss/internal/runtime/runctx"
 	"github.com/mossagents/moss/internal/runtime/planning"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
@@ -315,3 +315,4 @@ func installPersistentMemories(k *kernel.Kernel, memoriesDir, sqlitePath string)
 	k.Apply(runtime.WithMemoryWorkspace(ws), runtime.WithMemoryStore(store))
 	return nil
 }
+

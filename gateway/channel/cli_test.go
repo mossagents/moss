@@ -1,4 +1,4 @@
-package channel_test
+package gatewaychannel_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/gateway/channel"
+	channel "github.com/mossagents/moss/gateway/channel"
 	kchannel "github.com/mossagents/moss/kernel/channel"
 )
 

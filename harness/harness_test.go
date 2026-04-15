@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	runtimepolicy "github.com/mossagents/moss/internal/runtime/policy"
+	runtimepolicy "github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
@@ -686,3 +686,4 @@ func TestHarness_FeatureAccessesKernelAndBackend(t *testing.T) {
 		t.Fatal("feature should see the same backend")
 	}
 }
+

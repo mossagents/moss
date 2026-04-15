@@ -11,7 +11,7 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agent"
-	"github.com/mossagents/moss/internal/runtime/policy"
+	"github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
@@ -443,3 +443,4 @@ func containsReportPrefix(events []string, prefix string) bool {
 	}
 	return false
 }
+

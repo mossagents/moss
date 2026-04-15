@@ -7,7 +7,7 @@ import (
 	"fmt"
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	config "github.com/mossagents/moss/config"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"

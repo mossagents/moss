@@ -1,9 +1,9 @@
 package runtime
 
 import (
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/extensions/skill"
-	"github.com/mossagents/moss/internal/runtime/capability"
+	"github.com/mossagents/moss/internal/runtime/capstate"
 	"github.com/mossagents/moss/kernel"
 )
 
@@ -16,5 +16,6 @@ func LookupCapabilityManager(k *kernel.Kernel) (*capability.Manager, bool) {
 // LookupSkillManifests returns the currently remembered discovered skill
 // manifests without creating capability state on first access.
 func LookupSkillManifests(k *kernel.Kernel) []skill.Manifest {
-	return runtimecapability.LookupSkillManifests(k)
+	return capstate.LookupSkillManifests(k)
 }
+

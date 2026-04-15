@@ -12,6 +12,7 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
+	memstore "github.com/mossagents/moss/runtime/memory"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 	"path/filepath"
@@ -153,7 +154,7 @@ func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	ctx := context.Background()
 	ws := sandbox.NewMemoryWorkspace()
-	store := NewWorkspaceMemoryStore(ws)
+	store := memstore.NewWorkspaceMemoryStore(ws)
 	if err := ws.WriteFile(ctx, "team/legacy.txt", []byte("legacy memory")); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
@@ -186,7 +187,7 @@ func TestWithMemoryStoreWithoutWorkspace_BootFails(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		WithMemoryStore(NewWorkspaceMemoryStore(sandbox.NewMemoryWorkspace())),
+		WithMemoryStore(memstore.NewWorkspaceMemoryStore(sandbox.NewMemoryWorkspace())),
 	)
 	err := k.Boot(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "memory workspace is nil") {
@@ -226,7 +227,7 @@ func TestWithMemoryWorkspace_BootInitializesPipeline(t *testing.T) {
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
 		WithMemoryWorkspace(ws),
-		WithMemoryStore(NewWorkspaceMemoryStore(ws)),
+		WithMemoryStore(memstore.NewWorkspaceMemoryStore(ws)),
 	)
 	st := ensureMemoryState(k)
 	if st.pipeline != nil {
@@ -533,7 +534,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
-	if len(items) != 2 || normalizeMemoryPath(items[0].Path) != "team/beta.md" {
+	if len(items) != 2 || memstore.NormalizePath(items[0].Path) != "team/beta.md" {
 		t.Fatalf("expected usage-ranked result first, got %+v", items)
 	}
 }
@@ -552,7 +553,7 @@ func TestIngestMemoryTrace_WithAtomicJobRuntime(t *testing.T) {
 	if _, err := taskRuntime.MarkJobItemRunning(context.Background(), "job-mem", "item-1", "exec-a"); err != nil {
 		t.Fatalf("MarkJobItemRunning: %v", err)
 	}
-	reg := bootMemoryTestRegistry(t, ws, NewWorkspaceMemoryStore(ws), taskRuntime)
+	reg := bootMemoryTestRegistry(t, ws, memstore.NewWorkspaceMemoryStore(ws), taskRuntime)
 	ctx := context.Background()
 	itTool, ok := reg.Get("ingest_memory_trace")
 	if !ok {
@@ -632,3 +633,4 @@ func waitForCondition(t *testing.T, timeout time.Duration, check func() bool) {
 	}
 	t.Fatal("condition not satisfied before timeout")
 }
+

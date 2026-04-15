@@ -6,7 +6,7 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/internal/runtime/policy/policystate"
+	"github.com/mossagents/moss/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -14,53 +14,53 @@ import (
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
-	"github.com/mossagents/moss/toolpolicy"
+	policypack "github.com/mossagents/moss/runtime/policy"
 )
 
-type ToolAccess = toolpolicy.ToolAccess
+type ToolAccess = policypack.ToolAccess
 
 const (
-	ToolAccessAllow           ToolAccess = toolpolicy.ToolAccessAllow
-	ToolAccessRequireApproval ToolAccess = toolpolicy.ToolAccessRequireApproval
-	ToolAccessDeny            ToolAccess = toolpolicy.ToolAccessDeny
+	ToolAccessAllow           ToolAccess = policypack.ToolAccessAllow
+	ToolAccessRequireApproval ToolAccess = policypack.ToolAccessRequireApproval
+	ToolAccessDeny            ToolAccess = policypack.ToolAccessDeny
 )
 
-type CommandPolicy = toolpolicy.CommandPolicy
+type CommandPolicy = policypack.CommandPolicy
 
-type HTTPPolicy = toolpolicy.HTTPPolicy
+type HTTPPolicy = policypack.HTTPPolicy
 
-type CommandRule = toolpolicy.CommandRule
+type CommandRule = policypack.CommandRule
 
-type HTTPRule = toolpolicy.HTTPRule
+type HTTPRule = policypack.HTTPRule
 
-type ToolPolicy = toolpolicy.ToolPolicy
+type ToolPolicy = policypack.ToolPolicy
 
 func ResolveToolPolicyForWorkspace(workspace, trust, approvalMode string) ToolPolicy {
-	return toolpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
+	return policypack.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 }
 
 func ValidateToolPolicy(policy ToolPolicy) error {
-	return toolpolicy.ValidateToolPolicy(policy)
+	return policypack.ValidateToolPolicy(policy)
 }
 
 func NormalizeToolPolicy(policy ToolPolicy) ToolPolicy {
-	return toolpolicy.NormalizeToolPolicy(policy)
+	return policypack.NormalizeToolPolicy(policy)
 }
 
 func EncodeToolPolicyMetadata(policy ToolPolicy) (map[string]any, error) {
-	return toolpolicy.EncodeToolPolicyMetadata(policy)
+	return policypack.EncodeToolPolicyMetadata(policy)
 }
 
 func DecodeToolPolicyMetadata(value any) (ToolPolicy, bool) {
-	return toolpolicy.DecodeToolPolicyMetadata(value)
+	return policypack.DecodeToolPolicyMetadata(value)
 }
 
 func SummarizeToolPolicy(policy ToolPolicy) session.ToolPolicySummary {
-	return toolpolicy.SummarizeToolPolicy(policy)
+	return policypack.SummarizeToolPolicy(policy)
 }
 
 func MergeToolPolicyPermissions(policy ToolPolicy, perms io.PermissionProfile) ToolPolicy {
-	return toolpolicy.MergeToolPolicyPermissions(policy, perms)
+	return policypack.MergeToolPolicyPermissions(policy, perms)
 }
 
 func toolPolicyOf(k *kernel.Kernel) ToolPolicy {
@@ -94,7 +94,7 @@ func resolveToolPolicyForKernel(k *kernel.Kernel, trust, approvalMode string) To
 	if k != nil {
 		sb = k.Sandbox()
 	}
-	return toolpolicy.ResolveToolPolicy(trust, approvalMode, commandPolicyDefaults(sb, "", nil))
+	return policypack.ResolveToolPolicy(trust, approvalMode, commandPolicyDefaults(sb, "", nil))
 }
 
 func commandPolicyDefaults(sb sandbox.Sandbox, workspaceRoot string, _ workspace.Workspace) CommandPolicy {
@@ -130,27 +130,27 @@ func commandPolicyDefaults(sb sandbox.Sandbox, workspaceRoot string, _ workspace
 // NormalizeApprovalMode canonicalizes approval mode aliases onto the runtime
 // policy vocabulary.
 func NormalizeApprovalMode(mode string) string {
-	return toolpolicy.NormalizeApprovalMode(mode)
+	return policypack.NormalizeApprovalMode(mode)
 }
 
 // ValidateApprovalMode validates the canonical runtime approval-mode set.
 func ValidateApprovalMode(mode string) error {
-	return toolpolicy.ValidateApprovalMode(mode)
+	return policypack.ValidateApprovalMode(mode)
 }
 
-func cloneToolPolicy(policy ToolPolicy) ToolPolicy {
-	policy.Command.AllowedPaths = append([]string(nil), policy.Command.AllowedPaths...)
-	policy.Command.Env = cloneStringMap(policy.Command.Env)
-	policy.Command.Network.AllowHosts = append([]string(nil), policy.Command.Network.AllowHosts...)
-	policy.Command.Rules = append([]CommandRule(nil), policy.Command.Rules...)
-	policy.HTTP.AllowedMethods = append([]string(nil), policy.HTTP.AllowedMethods...)
-	policy.HTTP.AllowedSchemes = append([]string(nil), policy.HTTP.AllowedSchemes...)
-	policy.HTTP.AllowedHosts = append([]string(nil), policy.HTTP.AllowedHosts...)
-	policy.HTTP.Rules = append([]HTTPRule(nil), policy.HTTP.Rules...)
-	policy.ProtectedPathPrefixes = append([]string(nil), policy.ProtectedPathPrefixes...)
-	policy.ApprovalRequiredClasses = append([]tool.ApprovalClass(nil), policy.ApprovalRequiredClasses...)
-	policy.DeniedClasses = append([]tool.ApprovalClass(nil), policy.DeniedClasses...)
-	return policy
+func cloneToolPolicy(p ToolPolicy) ToolPolicy {
+	p.Command.AllowedPaths = append([]string(nil), p.Command.AllowedPaths...)
+	p.Command.Env = cloneStringMap(p.Command.Env)
+	p.Command.Network.AllowHosts = append([]string(nil), p.Command.Network.AllowHosts...)
+	p.Command.Rules = append([]CommandRule(nil), p.Command.Rules...)
+	p.HTTP.AllowedMethods = append([]string(nil), p.HTTP.AllowedMethods...)
+	p.HTTP.AllowedSchemes = append([]string(nil), p.HTTP.AllowedSchemes...)
+	p.HTTP.AllowedHosts = append([]string(nil), p.HTTP.AllowedHosts...)
+	p.HTTP.Rules = append([]HTTPRule(nil), p.HTTP.Rules...)
+	p.ProtectedPathPrefixes = append([]string(nil), p.ProtectedPathPrefixes...)
+	p.ApprovalRequiredClasses = append([]tool.ApprovalClass(nil), p.ApprovalRequiredClasses...)
+	p.DeniedClasses = append([]tool.ApprovalClass(nil), p.DeniedClasses...)
+	return p
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
@@ -199,3 +199,5 @@ func absWorkspace(workspaceRoot string) string {
 	}
 	return abs
 }
+
+

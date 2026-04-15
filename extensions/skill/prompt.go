@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/capability"
+	"github.com/mossagents/moss/extensions/capability"
 	appconfig "github.com/mossagents/moss/config"
 	"gopkg.in/yaml.v3"
 	"io/fs"

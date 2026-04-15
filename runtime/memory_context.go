@@ -8,6 +8,7 @@ import (
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/memory"
+	memstore "github.com/mossagents/moss/runtime/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/logging"
@@ -44,7 +45,7 @@ func (s contextMemoryService) CompactSessionContext(
 	withSummary bool,
 ) (map[string]any, error) {
 	var memoryStore memory.MemoryStore
-	var memoryPipeline *memoryPipelineManager
+	var memoryPipeline *memstore.PipelineManager
 	if st := memoryStateOf(s.kernel); st != nil {
 		memoryStore = st.store
 		memoryPipeline = st.pipeline
@@ -56,7 +57,7 @@ func compactSessionContext(
 	ctx context.Context,
 	store session.SessionStore,
 	memoryStore memory.MemoryStore,
-	memoryPipeline *memoryPipelineManager,
+	memoryPipeline *memstore.PipelineManager,
 	sess *session.Session,
 	keepRecent int,
 	note string,
@@ -194,7 +195,7 @@ func persistContextSummaryMemory(
 		mode = "summary"
 	}
 	content := strings.TrimSpace(summary)
-	recordPath := normalizeMemoryPath(fmt.Sprintf("context_snapshots/%s/%s.md", strings.TrimSpace(sess.ID), strings.TrimSpace(snapshotID)))
+	recordPath := memstore.NormalizePath(fmt.Sprintf("context_snapshots/%s/%s.md", strings.TrimSpace(sess.ID), strings.TrimSpace(snapshotID)))
 	return store.Upsert(ctx, memory.MemoryRecord{
 		Path:       recordPath,
 		Content:    content,
@@ -202,9 +203,10 @@ func persistContextSummaryMemory(
 		Tags:       []string{"context", "session:" + strings.TrimSpace(sess.ID), mode},
 		Stage:      memory.MemoryStageSnapshot,
 		Status:     memory.MemoryStatusActive,
-		Group:      normalizeMemoryPath("context_snapshots/" + strings.TrimSpace(sess.ID)),
+		Group:      memstore.NormalizePath("context_snapshots/" + strings.TrimSpace(sess.ID)),
 		SourceKind: "context_" + mode,
 		SourceID:   strings.TrimSpace(snapshotID),
 		SourcePath: strings.TrimSpace(snapshotID),
 	})
 }
+

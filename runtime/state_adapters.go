@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	memstore "github.com/mossagents/moss/runtime/memory"
 )
 
 func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
@@ -205,7 +206,7 @@ func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
 	}
 	sortTime := record.UpdatedAt
 	if sortTime.IsZero() {
-		sortTime = memoryFreshness(record)
+		sortTime = memstore.MemoryFreshness(record)
 	}
 	return StateEntry{
 		Kind:       StateKindMemory,
@@ -471,3 +472,4 @@ func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, ite
 	}
 	return item, nil
 }
+
