@@ -15,7 +15,6 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
 	policypack "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/harness/sandbox"
@@ -1184,7 +1183,7 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 	}
 	ws := &mockWorkspace{files: map[string]string{}}
 	handler := runCommandHandlerExec(exec, ws)
-	ctx := toolctx.WithToolCallContext(context.Background(), toolctx.ToolCallContext{
+	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: "sess-1",
 		ToolName:  "run_command",
 		CallID:    "call-1",

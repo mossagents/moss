@@ -1,21 +1,21 @@
-package toolctx_test
+package tool_test
 
 import (
 	"context"
 	"testing"
 
-	"github.com/mossagents/moss/kernel/toolctx"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestWithToolCallContext_RoundTrip(t *testing.T) {
-	meta := toolctx.ToolCallContext{
+	meta := tool.ToolCallContext{
 		SessionID: "sess-1",
 		ToolName:  "read_file",
 		CallID:    "call-42",
 	}
-	ctx := toolctx.WithToolCallContext(context.Background(), meta)
+	ctx := tool.WithToolCallContext(context.Background(), meta)
 
-	got, ok := toolctx.ToolCallContextFromContext(ctx)
+	got, ok := tool.ToolCallContextFromContext(ctx)
 	if !ok {
 		t.Fatal("expected ok=true")
 	}
@@ -31,20 +31,20 @@ func TestWithToolCallContext_RoundTrip(t *testing.T) {
 }
 
 func TestToolCallContextFromContext_MissingKey(t *testing.T) {
-	_, ok := toolctx.ToolCallContextFromContext(context.Background())
+	_, ok := tool.ToolCallContextFromContext(context.Background())
 	if ok {
 		t.Fatal("expected ok=false for context without tool call context")
 	}
 }
 
 func TestWithToolCallContext_Overwrite(t *testing.T) {
-	meta1 := toolctx.ToolCallContext{SessionID: "s1", ToolName: "tool1"}
-	meta2 := toolctx.ToolCallContext{SessionID: "s2", ToolName: "tool2"}
+	meta1 := tool.ToolCallContext{SessionID: "s1", ToolName: "tool1"}
+	meta2 := tool.ToolCallContext{SessionID: "s2", ToolName: "tool2"}
 
-	ctx := toolctx.WithToolCallContext(context.Background(), meta1)
-	ctx = toolctx.WithToolCallContext(ctx, meta2)
+	ctx := tool.WithToolCallContext(context.Background(), meta1)
+	ctx = tool.WithToolCallContext(ctx, meta2)
 
-	got, ok := toolctx.ToolCallContextFromContext(ctx)
+	got, ok := tool.ToolCallContextFromContext(ctx)
 	if !ok {
 		t.Fatal("expected ok=true")
 	}

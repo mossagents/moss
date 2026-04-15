@@ -14,7 +14,6 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 )
 
 func (l *AgentLoop) executeToolCalls(ctx context.Context, sess *session.Session, calls []model.ToolCall) error {
@@ -327,7 +326,7 @@ func (l *AgentLoop) executeSingleToolCall(ctx context.Context, sess *session.Ses
 	}
 	l.emitToolStarted(ctx, sess, call, *spec, repairedArgs)
 
-	toolCtx := toolctx.WithToolCallContext(ctx, toolctx.ToolCallContext{
+	toolCtx := tool.WithToolCallContext(ctx, tool.ToolCallContext{
 		SessionID: sess.ID,
 		ToolName:  call.Name,
 		CallID:    call.ID,

@@ -14,7 +14,6 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
 	policy "github.com/mossagents/moss/harness/runtime/policy"
 )
@@ -246,7 +245,7 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 	if len(raw) <= maxInlineCommandOutput {
 		return raw, nil
 	}
-	meta, ok := toolctx.ToolCallContextFromContext(ctx)
+	meta, ok := tool.ToolCallContextFromContext(ctx)
 	if !ok || meta.SessionID == "" || meta.CallID == "" {
 		return raw, nil
 	}
@@ -272,7 +271,7 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 func effectiveToolPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) policy.ToolPolicy {
 	if k != nil {
 		p := policy.PolicyOf(k)
-		if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
+		if meta, ok := tool.ToolCallContextFromContext(ctx); ok {
 			return policy.PolicyForContext(ctx, meta, k, p)
 		}
 		return p

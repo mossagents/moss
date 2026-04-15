@@ -12,7 +12,6 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 )
 
 const contextStateKey kernel.ServiceKey = "context.state"
@@ -312,7 +311,7 @@ func registerCompactConversationTool(reg tool.Registry, st *contextState, llm mo
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 		if strings.TrimSpace(in.SessionID) == "" {
-			if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
+			if meta, ok := tool.ToolCallContextFromContext(ctx); ok {
 				in.SessionID = meta.SessionID
 			}
 		}

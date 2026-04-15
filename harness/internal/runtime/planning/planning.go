@@ -10,7 +10,6 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 )
 
 const planningStateKey kernel.ServiceKey = "planning.state"
@@ -68,7 +67,7 @@ func RegisterPlanningTools(reg tool.Registry, manager session.Manager) error {
 		Capabilities: []string{"planning"},
 	}
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
-		meta, ok := toolctx.ToolCallContextFromContext(ctx)
+		meta, ok := tool.ToolCallContextFromContext(ctx)
 		if !ok || strings.TrimSpace(meta.SessionID) == "" {
 			return nil, fmt.Errorf("write_todos requires session context")
 		}

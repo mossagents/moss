@@ -10,7 +10,6 @@ import (
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	kt "github.com/mossagents/moss/harness/testing"
 )
 
@@ -111,7 +110,7 @@ func TestWriteTodosTool_WithSessionContext(t *testing.T) {
 	}
 
 	// Inject session context
-	ctx := toolctx.WithToolCallContext(context.Background(), toolctx.ToolCallContext{
+	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
 		ToolName:  "write_todos",
 	})
@@ -148,7 +147,7 @@ func TestWriteTodosTool_EmptyTodos(t *testing.T) {
 	entry, _ := reg.Get("write_todos")
 
 	sess, _ := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
-	ctx := toolctx.WithToolCallContext(context.Background(), toolctx.ToolCallContext{
+	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
 	})
 
@@ -168,7 +167,7 @@ func TestWriteTodosTool_MergeMode(t *testing.T) {
 	entry, _ := reg.Get("write_todos")
 
 	sess, _ := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
-	ctx := toolctx.WithToolCallContext(context.Background(), toolctx.ToolCallContext{
+	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
 	})
 

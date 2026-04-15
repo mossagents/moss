@@ -1,4 +1,4 @@
-package toolctx
+package tool
 
 import (
 	"context"

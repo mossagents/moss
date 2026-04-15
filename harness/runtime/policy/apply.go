@@ -12,7 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	toolctx "github.com/mossagents/moss/kernel/toolctx"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 const (
@@ -64,7 +64,7 @@ func PolicyOf(k *kernel.Kernel) ToolPolicy {
 }
 
 // PolicyForContext merges session-level granted permissions into the base policy.
-func PolicyForContext(_ context.Context, tctx toolctx.ToolCallContext, k *kernel.Kernel, base ToolPolicy) ToolPolicy {
+func PolicyForContext(_ context.Context, tctx tool.ToolCallContext, k *kernel.Kernel, base ToolPolicy) ToolPolicy {
 	if k == nil || strings.TrimSpace(tctx.SessionID) == "" {
 		return base
 	}
