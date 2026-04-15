@@ -1,4 +1,4 @@
-package runtime
+package profile
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/session"
+	policypack "github.com/mossagents/moss/runtime/policy"
 )
 
 type ProfileResolveOptions struct {
@@ -25,7 +26,7 @@ type ResolvedProfile struct {
 	TaskMode        string
 	Trust           string
 	ApprovalMode    string
-	ToolPolicy      ToolPolicy
+	ToolPolicy      policypack.ToolPolicy
 	SessionDefaults appconfig.SessionProfileConfig
 }
 
@@ -34,7 +35,7 @@ type SessionPosture struct {
 	EffectiveTrust    string
 	EffectiveApproval string
 	TaskMode          string
-	ToolPolicy        ToolPolicy
+	ToolPolicy        policypack.ToolPolicy
 	HasToolPolicy     bool
 }
 
@@ -100,8 +101,8 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 		return ResolvedProfile{}, fmt.Errorf("unknown profile %q", requested)
 	}
 	trust := appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(strings.TrimSpace(opts.Trust), strings.TrimSpace(resolvedCfg.Trust), appconfig.TrustTrusted))
-	approval := NormalizeApprovalMode(stringutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
-	policy := ResolveToolPolicyForWorkspace(opts.Workspace, trust, approval)
+	approval := policypack.NormalizeApprovalMode(stringutil.FirstNonEmpty(strings.TrimSpace(opts.ApprovalMode), strings.TrimSpace(resolvedCfg.Approval), "confirm"))
+	policy := policypack.ResolveToolPolicyForWorkspace(opts.Workspace, trust, approval)
 	var overrideErr error
 	policy, overrideErr = ApplyProfileToolPolicy(policy, resolvedCfg.Execution)
 	if overrideErr != nil {
@@ -114,17 +115,17 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 		TaskMode:        stringutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.TaskMode), requested),
 		Trust:           trust,
 		ApprovalMode:    approval,
-		ToolPolicy:      policy,
+		ToolPolicy:    policy,
 		SessionDefaults: resolvedCfg.Session,
 	}, nil
 }
 
 func ResolveProfileFromPosture(profileName string, posture SessionPosture) (ResolvedProfile, error) {
 	trust := appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(posture.EffectiveTrust, appconfig.TrustTrusted))
-	approval := NormalizeApprovalMode(stringutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
+	approval := policypack.NormalizeApprovalMode(stringutil.FirstNonEmpty(posture.EffectiveApproval, "confirm"))
 	policy := posture.ToolPolicy
 	if !posture.HasToolPolicy {
-		policy = ResolveToolPolicyForWorkspace("", trust, approval)
+		policy = policypack.ResolveToolPolicyForWorkspace("", trust, approval)
 	}
 	return ResolvedProfile{
 		RequestedName: strings.TrimSpace(profileName),
@@ -141,9 +142,9 @@ func SessionPostureFromResolvedProfile(resolved ResolvedProfile) SessionPosture 
 	return SessionPosture{
 		Profile:           strings.TrimSpace(resolved.Name),
 		EffectiveTrust:    appconfig.NormalizeTrustLevel(resolved.Trust),
-		EffectiveApproval: NormalizeApprovalMode(resolved.ApprovalMode),
+		EffectiveApproval: policypack.NormalizeApprovalMode(resolved.ApprovalMode),
 		TaskMode:          stringutil.FirstNonEmpty(strings.TrimSpace(resolved.TaskMode), strings.TrimSpace(resolved.Name), "coding"),
-		ToolPolicy:        cloneToolPolicy(resolved.ToolPolicy),
+		ToolPolicy:    policypack.CloneToolPolicy(resolved.ToolPolicy),
 		HasToolPolicy:     true,
 	}
 }
@@ -167,12 +168,12 @@ func ApplyResolvedProfileToSessionConfig(cfg session.SessionConfig, resolved Res
 	cfg.Metadata[session.MetadataEffectiveTrust] = resolved.Trust
 	cfg.Metadata[session.MetadataEffectiveApproval] = resolved.ApprovalMode
 	cfg.Metadata[session.MetadataTaskMode] = resolved.TaskMode
-	toolPolicyMetadata, err := EncodeToolPolicyMetadata(resolved.ToolPolicy)
+	toolPolicyMetadata, err := policypack.EncodeToolPolicyMetadata(resolved.ToolPolicy)
 	if err != nil {
 		panic(fmt.Sprintf("encode tool policy metadata: %v", err))
 	}
 	cfg.Metadata[session.MetadataToolPolicy] = toolPolicyMetadata
-	cfg.Metadata[session.MetadataToolPolicySummary] = session.EncodeToolPolicySummary(SummarizeToolPolicy(resolved.ToolPolicy))
+	cfg.Metadata[session.MetadataToolPolicySummary] = session.EncodeToolPolicySummary(policypack.SummarizeToolPolicy(resolved.ToolPolicy))
 	if cfg.MaxSteps == 0 && resolved.SessionDefaults.MaxSteps > 0 {
 		cfg.MaxSteps = resolved.SessionDefaults.MaxSteps
 	}
@@ -189,13 +190,13 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 	}
 	posture.Profile = strings.TrimSpace(sess.Config.Profile)
 	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
-	posture.EffectiveApproval = NormalizeApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
+	posture.EffectiveApproval = policypack.NormalizeApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
 	posture.TaskMode = stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
 	if policy, ok := metadataToolPolicy(sess.Config.Metadata); ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true
 		if posture.EffectiveApproval == "" {
-			posture.EffectiveApproval = NormalizeApprovalMode(policy.ApprovalMode)
+			posture.EffectiveApproval = policypack.NormalizeApprovalMode(policy.ApprovalMode)
 		}
 		if posture.EffectiveTrust == "" {
 			posture.EffectiveTrust = appconfig.NormalizeTrustLevel(policy.Trust)
@@ -221,8 +222,8 @@ func SessionSummaryFields(sess *session.Session) (profile, effectiveTrust, effec
 	return posture.Profile, posture.EffectiveTrust, posture.EffectiveApproval, posture.TaskMode
 }
 
-func ApplyProfileToolPolicy(policy ToolPolicy, override appconfig.ExecutionProfileConfig) (ToolPolicy, error) {
-	policy = cloneToolPolicy(policy)
+func ApplyProfileToolPolicy(policy policypack.ToolPolicy, override appconfig.ExecutionProfileConfig) (policypack.ToolPolicy, error) {
+	policy = policypack.CloneToolPolicy(policy)
 	if access := normalizeProfileAccess(override.CommandAccess); access != "" {
 		policy.Command.Access = access
 	}
@@ -232,7 +233,7 @@ func ApplyProfileToolPolicy(policy ToolPolicy, override appconfig.ExecutionProfi
 	if strings.TrimSpace(override.CommandTimeout) != "" {
 		dur, err := time.ParseDuration(strings.TrimSpace(override.CommandTimeout))
 		if err != nil {
-			return ToolPolicy{}, fmt.Errorf("parse command timeout: %w", err)
+			return policypack.ToolPolicy{}, fmt.Errorf("parse command timeout: %w", err)
 		}
 		policy.Command.DefaultTimeout = dur
 		policy.Command.MaxTimeout = dur
@@ -240,7 +241,7 @@ func ApplyProfileToolPolicy(policy ToolPolicy, override appconfig.ExecutionProfi
 	if strings.TrimSpace(override.HTTPTimeout) != "" {
 		dur, err := time.ParseDuration(strings.TrimSpace(override.HTTPTimeout))
 		if err != nil {
-			return ToolPolicy{}, fmt.Errorf("parse http timeout: %w", err)
+			return policypack.ToolPolicy{}, fmt.Errorf("parse http timeout: %w", err)
 		}
 		policy.HTTP.DefaultTimeout = dur
 		policy.HTTP.MaxTimeout = dur
@@ -248,14 +249,14 @@ func ApplyProfileToolPolicy(policy ToolPolicy, override appconfig.ExecutionProfi
 	if len(override.CommandRules) > 0 {
 		rules, err := normalizeProfileCommandRules(override.CommandRules)
 		if err != nil {
-			return ToolPolicy{}, err
+			return policypack.ToolPolicy{}, err
 		}
 		policy.Command.Rules = rules
 	}
 	if len(override.HTTPRules) > 0 {
 		rules, err := normalizeProfileHTTPRules(override.HTTPRules)
 		if err != nil {
-			return ToolPolicy{}, err
+			return policypack.ToolPolicy{}, err
 		}
 		policy.HTTP.Rules = rules
 	}
@@ -387,26 +388,26 @@ func isZeroProfileConfig(cfg appconfig.ProfileConfig) bool {
 		len(cfg.Execution.HTTPRules) == 0
 }
 
-func normalizeProfileAccess(value string) ToolAccess {
+func normalizeProfileAccess(value string) policypack.ToolAccess {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
 		return ""
 	case "allow":
-		return ToolAccessAllow
+		return policypack.ToolAccessAllow
 	case "require-approval", "confirm", "ask":
-		return ToolAccessRequireApproval
+		return policypack.ToolAccessRequireApproval
 	case "deny", "read-only", "readonly":
-		return ToolAccessDeny
+		return policypack.ToolAccessDeny
 	default:
 		return ""
 	}
 }
 
-func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]CommandRule, error) {
+func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]policypack.CommandRule, error) {
 	if len(rules) == 0 {
 		return nil, nil
 	}
-	out := make([]CommandRule, 0, len(rules))
+	out := make([]policypack.CommandRule, 0, len(rules))
 	for i, rule := range rules {
 		match := strings.TrimSpace(rule.Match)
 		if match == "" {
@@ -420,7 +421,7 @@ func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]Comman
 			}
 			return nil, fmt.Errorf("command rule %s: access must be allow, require-approval, or deny", name)
 		}
-		out = append(out, CommandRule{
+		out = append(out, policypack.CommandRule{
 			Name:   strings.TrimSpace(rule.Name),
 			Match:  match,
 			Access: access,
@@ -429,11 +430,11 @@ func normalizeProfileCommandRules(rules []appconfig.CommandRuleConfig) ([]Comman
 	return out, nil
 }
 
-func normalizeProfileHTTPRules(rules []appconfig.HTTPRuleConfig) ([]HTTPRule, error) {
+func normalizeProfileHTTPRules(rules []appconfig.HTTPRuleConfig) ([]policypack.HTTPRule, error) {
 	if len(rules) == 0 {
 		return nil, nil
 	}
-	out := make([]HTTPRule, 0, len(rules))
+	out := make([]policypack.HTTPRule, 0, len(rules))
 	for i, rule := range rules {
 		match := strings.TrimSpace(rule.Match)
 		if match == "" {
@@ -447,7 +448,7 @@ func normalizeProfileHTTPRules(rules []appconfig.HTTPRuleConfig) ([]HTTPRule, er
 			}
 			return nil, fmt.Errorf("http rule %s: access must be allow, require-approval, or deny", name)
 		}
-		out = append(out, HTTPRule{
+		out = append(out, policypack.HTTPRule{
 			Name:    strings.TrimSpace(rule.Name),
 			Match:   match,
 			Methods: normalizeStringSlice(rule.Methods),
@@ -469,13 +470,40 @@ func metadataString(meta map[string]any, key string) string {
 	return strings.TrimSpace(actual)
 }
 
-func metadataToolPolicy(meta map[string]any) (ToolPolicy, bool) {
+func normalizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		key := strings.ToLower(v)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func metadataToolPolicy(meta map[string]any) (policypack.ToolPolicy, bool) {
 	if meta == nil {
-		return ToolPolicy{}, false
+		return policypack.ToolPolicy{}, false
 	}
 	value, ok := meta[session.MetadataToolPolicy]
 	if !ok || value == nil {
-		return ToolPolicy{}, false
+		return policypack.ToolPolicy{}, false
 	}
-	return DecodeToolPolicyMetadata(value)
+	return policypack.DecodeToolPolicyMetadata(value)
 }
+
+
+

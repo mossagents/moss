@@ -96,7 +96,7 @@ func ResolveToolPolicy(trust, approvalMode string, defaults CommandPolicy) ToolP
 			MaxTimeout:     defaults.MaxTimeout,
 			AllowedPaths:   append([]string(nil), defaults.AllowedPaths...),
 			ClearEnv:       defaults.ClearEnv,
-			Env:            cloneStringMap(defaults.Env),
+			Env:            CloneStringMap(defaults.Env),
 			Network:        defaults.Network,
 		},
 		HTTP: HTTPPolicy{
@@ -196,7 +196,7 @@ func ValidateToolPolicy(policy ToolPolicy) error {
 }
 
 func NormalizeToolPolicy(policy ToolPolicy) ToolPolicy {
-	policy = cloneToolPolicy(policy)
+	policy = CloneToolPolicy(policy)
 	policy.Trust = appconfig.NormalizeTrustLevel(policy.Trust)
 	policy.ApprovalMode = normalizeToolApprovalMode(policy.ApprovalMode)
 	defaultAccess := accessForApprovalMode(policy.ApprovalMode)
@@ -382,9 +382,10 @@ func accessForApprovalMode(mode string) ToolAccess {
 	}
 }
 
-func cloneToolPolicy(policy ToolPolicy) ToolPolicy {
+// CloneToolPolicy returns a deep copy of the tool policy.
+func CloneToolPolicy(policy ToolPolicy) ToolPolicy {
 	policy.Command.AllowedPaths = append([]string(nil), policy.Command.AllowedPaths...)
-	policy.Command.Env = cloneStringMap(policy.Command.Env)
+	policy.Command.Env = CloneStringMap(policy.Command.Env)
 	policy.Command.Network.AllowHosts = append([]string(nil), policy.Command.Network.AllowHosts...)
 	policy.Command.Rules = append([]CommandRule(nil), policy.Command.Rules...)
 	policy.HTTP.AllowedMethods = append([]string(nil), policy.HTTP.AllowedMethods...)
@@ -520,7 +521,8 @@ func isZeroToolPolicy(policy ToolPolicy) bool {
 		len(policy.DeniedClasses) == 0
 }
 
-func cloneStringMap(in map[string]string) map[string]string {
+// CloneStringMap returns a shallow copy of the given string map.
+func CloneStringMap(in map[string]string) map[string]string {
 	if len(in) == 0 {
 		return nil
 	}

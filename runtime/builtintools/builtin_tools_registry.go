@@ -1,4 +1,4 @@
-package runtime
+package builtintools
 
 import (
 	"fmt"
@@ -129,3 +129,4 @@ func applyRuntimeBuiltinExecutionMetadata(spec tool.ToolSpec) tool.ToolSpec {
 	}
 	return spec
 }
+

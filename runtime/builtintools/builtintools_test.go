@@ -1,4 +1,4 @@
-package runtime
+package builtintools
 
 import (
 	"context"
@@ -17,6 +17,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
+	policypack "github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -228,14 +229,14 @@ func newBuiltinToolsKernel(sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Wo
 	return kernel.New(opts...)
 }
 
-func newKernelWithToolPolicy(t *testing.T, policy ToolPolicy) *kernel.Kernel {
+func newKernelWithToolPolicy(t *testing.T, policy policypack.ToolPolicy) *kernel.Kernel {
 	t.Helper()
 	k := kernel.New()
-	payload, err := EncodeToolPolicyMetadata(policy)
+	payload, err := policypack.EncodeToolPolicyMetadata(policy)
 	if err != nil {
-		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
+		t.Fatalf("policypack.EncodeToolPolicyMetadata: %v", err)
 	}
-	policystate.Ensure(k).Set(payload, session.EncodeToolPolicySummary(SummarizeToolPolicy(policy)), nil)
+	policystate.Ensure(k).Set(payload, session.EncodeToolPolicySummary(policypack.SummarizeToolPolicy(policy)), nil)
 	return k
 }
 
@@ -597,7 +598,7 @@ func TestRunCommand(t *testing.T) {
 
 func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
 	sb := newMockSandbox("/ws", nil)
-	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "restricted", "confirm"))
+	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace("/ws", "restricted", "confirm"))
 	handler := runCommandHandlerWithPolicy(k, sb)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
@@ -890,7 +891,7 @@ func TestHTTPRequestTool(t *testing.T) {
 }
 
 func TestHTTPRequestPolicyRejectsDisallowedMethod(t *testing.T) {
-	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
+	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
 	handler := httpRequestHandlerWithPolicy(k)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
@@ -916,7 +917,7 @@ func TestHTTPRequestPolicyDisablesRedirectsByDefault(t *testing.T) {
 	}))
 	defer redirect.Close()
 
-	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
+	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace("/ws", "trusted", "full-auto"))
 	handler := httpRequestHandlerWithPolicy(k)
 	out, err := handler(context.Background(), toJSON(t, map[string]any{
 		"url": redirect.URL,
@@ -1156,7 +1157,7 @@ func TestRunCommandExec(t *testing.T) {
 func TestRunCommandExecPolicyForwarding(t *testing.T) {
 	exec := &mockExecutor{}
 	ws := &mockWorkspace{files: map[string]string{}}
-	k := newKernelWithToolPolicy(t, ResolveToolPolicyForWorkspace(".", "trusted", "confirm"))
+	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace(".", "trusted", "confirm"))
 	handler := runCommandHandlerExecWithPolicy(k, exec, ws)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
@@ -1277,4 +1278,6 @@ func TestDatetimeTool(t *testing.T) {
 		t.Fatalf("missing unix_timestamp: %+v", resp)
 	}
 }
+
+
 

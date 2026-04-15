@@ -1,4 +1,4 @@
-package runtime
+package state
 
 import (
 	"context"
@@ -128,6 +128,7 @@ func NewStateCatalogObserver(catalog *StateCatalog) observe.Observer {
 
 func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event observe.ExecutionEvent) {
 	if err := o.catalog.AppendExecutionEvent(event); err != nil {
-		o.catalog.markError(err)
+		o.catalog.MarkError(err)
 	}
 }
+

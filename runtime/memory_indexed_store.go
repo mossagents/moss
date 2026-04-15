@@ -73,7 +73,7 @@ func (s *indexedMemoryStore) Close() error {
 func (s *indexedMemoryStore) syncRecord(record memory.MemoryRecord) {
 	if entry, ok := StateEntryFromMemory(record); ok {
 		if err := s.catalog.Upsert(entry); err != nil {
-			s.catalog.markError(err)
+			s.catalog.MarkError(err)
 		}
 	}
 }

@@ -1,4 +1,4 @@
-package runtime
+package builtintools
 
 import (
 	"context"
@@ -280,3 +280,4 @@ func repairTruncatedJSON(s string) string {
 	}
 	return s
 }
+

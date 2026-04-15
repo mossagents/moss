@@ -18,7 +18,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/runtime"
+	builtintools "github.com/mossagents/moss/runtime/builtintools"
 )
 
 // Config controls runtime capability assembly through the non-public setup
@@ -459,8 +459,8 @@ func (s *builtinToolsProvider) Metadata() capability.Metadata {
 }
 
 func (s *builtinToolsProvider) Init(ctx context.Context, deps capability.Deps) error {
-	s.toolNames = runtime.RegisteredBuiltinToolNamesForKernel(deps.Kernel)
-	return runtime.RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry)
+	s.toolNames = builtintools.RegisteredBuiltinToolNamesForKernel(deps.Kernel)
+	return builtintools.RegisterBuiltinToolsForKernel(deps.Kernel, deps.ToolRegistry)
 }
 
 func (s *builtinToolsProvider) Shutdown(_ context.Context) error { return nil }

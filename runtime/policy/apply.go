@@ -3,12 +3,16 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mossagents/moss/runtime/policy/policystate"
+	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
+	toolctx "github.com/mossagents/moss/kernel/toolctx"
 )
 
 const (
@@ -48,6 +52,33 @@ func Current(k *kernel.Kernel) (ToolPolicy, bool) {
 		return ToolPolicy{}, false
 	}
 	return DecodeToolPolicyMetadata(st.Payload())
+}
+
+// PolicyOf returns the effective tool policy for the kernel, falling back to
+// a restricted default if no policy has been applied.
+func PolicyOf(k *kernel.Kernel) ToolPolicy {
+	if policy, ok := Current(k); ok {
+		return policy
+	}
+	return ResolveToolPolicyForWorkspace("", appconfig.TrustRestricted, "confirm")
+}
+
+// PolicyForContext merges session-level granted permissions into the base policy.
+func PolicyForContext(_ context.Context, tctx toolctx.ToolCallContext, k *kernel.Kernel, base ToolPolicy) ToolPolicy {
+	if k == nil || strings.TrimSpace(tctx.SessionID) == "" {
+		return base
+	}
+	sess, ok := k.SessionManager().Get(tctx.SessionID)
+	if !ok {
+		return base
+	}
+	return MergeToolPolicyPermissions(base, session.GrantedPermissionsOf(sess))
+}
+
+// MergeWithPermissions is an alias for MergeToolPolicyPermissions for use in
+// packages that import runtime/policy directly.
+func MergeWithPermissions(policy ToolPolicy, perms io.PermissionProfile) ToolPolicy {
+	return MergeToolPolicyPermissions(policy, perms)
 }
 
 func installPolicyHook(k *kernel.Kernel, st *policystate.State) {

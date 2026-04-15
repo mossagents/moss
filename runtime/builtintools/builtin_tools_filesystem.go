@@ -1,4 +1,4 @@
-package runtime
+package builtintools
 
 import (
 	"context"
@@ -387,3 +387,4 @@ func scopedPattern(pattern, scopePath string) string {
 	}
 	return filepath.Join(scopePath, pattern)
 }
+

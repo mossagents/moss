@@ -1,4 +1,4 @@
-package runtime
+package state
 
 import (
 	"encoding/base64"
@@ -206,7 +206,7 @@ func (c *StateCatalog) Upsert(entry StateEntry) error {
 
 func (c *StateCatalog) BestEffortUpsert(entry StateEntry) {
 	if err := c.Upsert(entry); err != nil {
-		c.markError(err)
+		c.MarkError(err)
 	}
 }
 
@@ -232,7 +232,7 @@ func (c *StateCatalog) Delete(kind StateKind, recordID string) error {
 
 func (c *StateCatalog) BestEffortDelete(kind StateKind, recordID string) {
 	if err := c.Delete(kind, recordID); err != nil {
-		c.markError(err)
+		c.MarkError(err)
 	}
 }
 
@@ -353,7 +353,7 @@ func (c *StateCatalog) Query(query StateQuery) (StatePage, error) {
 	return page, nil
 }
 
-func (c *StateCatalog) markError(err error) {
+func (c *StateCatalog) MarkError(err error) {
 	if c == nil || err == nil {
 		return
 	}
@@ -501,3 +501,4 @@ func marshalStateMetadata(value any) json.RawMessage {
 	}
 	return data
 }
+

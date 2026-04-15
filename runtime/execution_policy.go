@@ -10,7 +10,6 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
@@ -139,29 +138,11 @@ func ValidateApprovalMode(mode string) error {
 }
 
 func cloneToolPolicy(p ToolPolicy) ToolPolicy {
-	p.Command.AllowedPaths = append([]string(nil), p.Command.AllowedPaths...)
-	p.Command.Env = cloneStringMap(p.Command.Env)
-	p.Command.Network.AllowHosts = append([]string(nil), p.Command.Network.AllowHosts...)
-	p.Command.Rules = append([]CommandRule(nil), p.Command.Rules...)
-	p.HTTP.AllowedMethods = append([]string(nil), p.HTTP.AllowedMethods...)
-	p.HTTP.AllowedSchemes = append([]string(nil), p.HTTP.AllowedSchemes...)
-	p.HTTP.AllowedHosts = append([]string(nil), p.HTTP.AllowedHosts...)
-	p.HTTP.Rules = append([]HTTPRule(nil), p.HTTP.Rules...)
-	p.ProtectedPathPrefixes = append([]string(nil), p.ProtectedPathPrefixes...)
-	p.ApprovalRequiredClasses = append([]tool.ApprovalClass(nil), p.ApprovalRequiredClasses...)
-	p.DeniedClasses = append([]tool.ApprovalClass(nil), p.DeniedClasses...)
-	return p
+	return policypack.CloneToolPolicy(p)
 }
 
 func cloneStringMap(in map[string]string) map[string]string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
+	return policypack.CloneStringMap(in)
 }
 
 func normalizeStringSlice(values []string) []string {

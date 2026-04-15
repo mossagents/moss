@@ -1,4 +1,4 @@
-package runtime
+package builtintools
 
 import (
 	"context"
@@ -16,6 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	toolctx "github.com/mossagents/moss/kernel/toolctx"
 	"github.com/mossagents/moss/kernel/workspace"
+	policy "github.com/mossagents/moss/runtime/policy"
 )
 
 const maxInlineCommandOutput = 8000
@@ -113,8 +114,8 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if rawURL == "" {
 			return nil, fmt.Errorf("url is required")
 		}
-		policy := effectiveToolPolicy(ctx, k, nil, "")
-		if policy.HTTP.Access == ToolAccessDeny {
+		pol := effectiveToolPolicy(ctx, k, nil, "")
+		if pol.HTTP.Access == policy.ToolAccessDeny {
 			return nil, fmt.Errorf("http_request is disabled by tool policy")
 		}
 		parsed, err := url.Parse(rawURL)
@@ -125,18 +126,18 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		if method == "" {
 			method = http.MethodGet
 		}
-		if err := validateHTTPRequestPolicy(parsed, method, policy.HTTP); err != nil {
+		if err := validateHTTPRequestPolicy(parsed, method, pol.HTTP); err != nil {
 			return nil, err
 		}
-		timeout := policy.HTTP.DefaultTimeout
+		timeout := pol.HTTP.DefaultTimeout
 		if timeout <= 0 {
 			timeout = 30 * time.Second
 		}
 		if params.TimeoutSeconds > 0 {
 			timeout = time.Duration(params.TimeoutSeconds) * time.Second
 		}
-		if policy.HTTP.MaxTimeout > 0 && timeout > policy.HTTP.MaxTimeout {
-			timeout = policy.HTTP.MaxTimeout
+		if pol.HTTP.MaxTimeout > 0 && timeout > pol.HTTP.MaxTimeout {
+			timeout = pol.HTTP.MaxTimeout
 		}
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -160,7 +161,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 		}
 
 		client := &http.Client{}
-		followRedirects := policy.HTTP.FollowRedirects
+		followRedirects := pol.HTTP.FollowRedirects
 		if params.FollowRedirects != nil {
 			followRedirects = followRedirects && *params.FollowRedirects
 		}
@@ -170,7 +171,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 			}
 		} else {
 			client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
-				return validateHTTPRequestPolicy(req.URL, req.Method, policy.HTTP)
+				return validateHTTPRequestPolicy(req.URL, req.Method, pol.HTTP)
 			}
 		}
 
@@ -218,11 +219,11 @@ func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, ws
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		policy := effectiveToolPolicy(ctx, k, ws, workspaceRoot)
-		if policy.Command.Access == ToolAccessDeny {
+		pol := effectiveToolPolicy(ctx, k, ws, workspaceRoot)
+		if pol.Command.Access == policy.ToolAccessDeny {
 			return nil, fmt.Errorf("run_command is disabled by tool policy")
 		}
-		output, err := exec.Execute(ctx, buildExecRequest(params.Command, params.Args, policy))
+		output, err := exec.Execute(ctx, buildExecRequest(params.Command, params.Args, pol))
 		if err != nil {
 			return nil, err
 		}
@@ -268,48 +269,48 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 	return raw, nil
 }
 
-func effectiveToolPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) ToolPolicy {
+func effectiveToolPolicy(ctx context.Context, k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) policy.ToolPolicy {
 	if k != nil {
-		policy := toolPolicyOf(k)
+		p := policy.PolicyOf(k)
 		if meta, ok := toolctx.ToolCallContextFromContext(ctx); ok {
-			return toolPolicyForToolContext(meta, k, policy)
+			return policy.PolicyForContext(ctx, meta, k, p)
 		}
-		return policy
+		return p
 	}
-	return ResolveToolPolicyForWorkspace(workspaceRoot, appconfig.TrustTrusted, "full-auto")
+	return policy.ResolveToolPolicyForWorkspace(workspaceRoot, appconfig.TrustTrusted, "full-auto")
 }
 
-func buildExecRequest(command string, args []string, policy ToolPolicy) workspace.ExecRequest {
+func buildExecRequest(command string, args []string, p policy.ToolPolicy) workspace.ExecRequest {
 	req := workspace.ExecRequest{
 		Command:  command,
 		Args:     append([]string(nil), args...),
-		Timeout:  policy.Command.DefaultTimeout,
-		ClearEnv: policy.Command.ClearEnv,
-		Env:      cloneStringMap(policy.Command.Env),
-		Network:  policy.Command.Network,
+		Timeout:  p.Command.DefaultTimeout,
+		ClearEnv: p.Command.ClearEnv,
+		Env:      policy.CloneStringMap(p.Command.Env),
+		Network:  p.Command.Network,
 	}
-	if len(policy.Command.AllowedPaths) > 0 {
+	if len(p.Command.AllowedPaths) > 0 {
 		req.WorkingDir = "."
-		req.AllowedPaths = append([]string(nil), policy.Command.AllowedPaths...)
+		req.AllowedPaths = append([]string(nil), p.Command.AllowedPaths...)
 	}
-	if policy.Command.MaxTimeout > 0 && req.Timeout > policy.Command.MaxTimeout {
-		req.Timeout = policy.Command.MaxTimeout
+	if p.Command.MaxTimeout > 0 && req.Timeout > p.Command.MaxTimeout {
+		req.Timeout = p.Command.MaxTimeout
 	}
 	return req
 }
 
-func validateHTTPRequestPolicy(parsed *url.URL, method string, policy HTTPPolicy) error {
+func validateHTTPRequestPolicy(parsed *url.URL, method string, p policy.HTTPPolicy) error {
 	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
-	if !containsFolded(policy.AllowedSchemes, scheme) {
+	if !containsFolded(p.AllowedSchemes, scheme) {
 		return fmt.Errorf("url scheme %q is not allowed by tool policy", scheme)
 	}
 	method = strings.ToUpper(strings.TrimSpace(method))
-	if !containsFolded(policy.AllowedMethods, method) {
+	if !containsFolded(p.AllowedMethods, method) {
 		return fmt.Errorf("http method %q is not allowed by tool policy", method)
 	}
-	if len(policy.AllowedHosts) > 0 {
+	if len(p.AllowedHosts) > 0 {
 		host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
-		if !containsFolded(policy.AllowedHosts, host) {
+		if !containsFolded(p.AllowedHosts, host) {
 			return fmt.Errorf("url host %q is not allowed by tool policy", host)
 		}
 	}
@@ -325,3 +326,6 @@ func containsFolded(items []string, target string) bool {
 	}
 	return false
 }
+
+
+
