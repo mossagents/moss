@@ -1,4 +1,4 @@
-package gatewaychannel_test
+package gateway_test
 
 import (
 	"context"
@@ -7,19 +7,19 @@ import (
 	"testing"
 	"time"
 
-	channel "github.com/mossagents/moss/gateway/channel"
+	"github.com/mossagents/moss/gateway"
 	kchannel "github.com/mossagents/moss/kernel/channel"
 )
 
 func TestNewCLI_Defaults(t *testing.T) {
-	c := channel.NewCLI()
+	c := gateway.NewCLI()
 	if c.Name() != "cli" {
 		t.Errorf("expected name=cli, got %s", c.Name())
 	}
 }
 
 func TestCLI_Close(t *testing.T) {
-	c := channel.NewCLI()
+	c := gateway.NewCLI()
 	if err := c.Close(); err != nil {
 		t.Errorf("unexpected error on Close: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestCLI_Close(t *testing.T) {
 
 func TestCLI_Send(t *testing.T) {
 	var buf strings.Builder
-	c := channel.NewCLI(channel.WithWriter(&buf))
+	c := gateway.NewCLI(gateway.WithWriter(&buf))
 
 	err := c.Send(context.Background(), kchannel.OutboundMessage{
 		Content: "hello world",
@@ -42,9 +42,9 @@ func TestCLI_Send(t *testing.T) {
 
 func TestCLI_Receive_SingleLine(t *testing.T) {
 	input := "test input\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -73,9 +73,9 @@ func TestCLI_Receive_SingleLine(t *testing.T) {
 
 func TestCLI_Receive_MultipleLines(t *testing.T) {
 	input := "first\nsecond\nthird\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -93,9 +93,9 @@ func TestCLI_Receive_MultipleLines(t *testing.T) {
 
 func TestCLI_Receive_SkipsEmptyLines(t *testing.T) {
 	input := "\n\nhello\n\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -113,16 +113,16 @@ func TestCLI_Receive_SkipsEmptyLines(t *testing.T) {
 
 func TestCLI_Receive_ExitCommand(t *testing.T) {
 	input := "/exit\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	ch := c.Receive(ctx)
-	msgs := collect(ch)
+	msgs := collectCLI(ch)
 	if len(msgs) != 0 {
 		t.Errorf("expected 0 messages after /exit, got %d", len(msgs))
 	}
@@ -130,16 +130,16 @@ func TestCLI_Receive_ExitCommand(t *testing.T) {
 
 func TestCLI_Receive_QuitCommand(t *testing.T) {
 	input := "/quit\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	ch := c.Receive(ctx)
-	msgs := collect(ch)
+	msgs := collectCLI(ch)
 	if len(msgs) != 0 {
 		t.Errorf("expected 0 messages after /quit, got %d", len(msgs))
 	}
@@ -147,16 +147,16 @@ func TestCLI_Receive_QuitCommand(t *testing.T) {
 
 func TestCLI_Receive_ExitCaseInsensitive(t *testing.T) {
 	input := "/EXIT\n"
-	c := channel.NewCLI(
-		channel.WithReader(strings.NewReader(input)),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(strings.NewReader(input)),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	ch := c.Receive(ctx)
-	msgs := collect(ch)
+	msgs := collectCLI(ch)
 	if len(msgs) != 0 {
 		t.Errorf("expected 0 messages after /EXIT, got %d", len(msgs))
 	}
@@ -167,9 +167,9 @@ func TestCLI_Receive_ContextCancellation(t *testing.T) {
 	pr, pw := io.Pipe()
 	defer pw.Close()
 
-	c := channel.NewCLI(
-		channel.WithReader(pr),
-		channel.WithWriter(io.Discard),
+	c := gateway.NewCLI(
+		gateway.WithReader(pr),
+		gateway.WithWriter(io.Discard),
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -200,24 +200,24 @@ func TestCLI_Receive_ContextCancellation(t *testing.T) {
 
 func TestCLI_WithCustomPrompt(t *testing.T) {
 	var buf strings.Builder
-	c := channel.NewCLI(
-		channel.WithPrompt("$ "),
-		channel.WithReader(strings.NewReader("hello\n")),
-		channel.WithWriter(&buf),
+	c := gateway.NewCLI(
+		gateway.WithPrompt("$ "),
+		gateway.WithReader(strings.NewReader("hello\n")),
+		gateway.WithWriter(&buf),
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
 	ch := c.Receive(ctx)
-	collect(ch)
+	collectCLI(ch)
 
 	if !strings.Contains(buf.String(), "$ ") {
 		t.Errorf("expected prompt '$ ' in output, got: %q", buf.String())
 	}
 }
 
-func collect(ch <-chan kchannel.InboundMessage) []kchannel.InboundMessage {
+func collectCLI(ch <-chan kchannel.InboundMessage) []kchannel.InboundMessage {
 	var msgs []kchannel.InboundMessage
 	for msg := range ch {
 		msgs = append(msgs, msg)

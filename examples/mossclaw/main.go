@@ -23,7 +23,6 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/gateway"
-	channel "github.com/mossagents/moss/gateway/channel"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -196,7 +195,7 @@ func serveGatewayCLI(ctx context.Context, prompt, systemPrompt, deliveryDir stri
 	if prompt == "" {
 		prompt = "> "
 	}
-	cli := channel.NewCLI(channel.WithPrompt(prompt))
+	cli := gateway.NewCLI(gateway.WithPrompt(prompt))
 	opts := []gateway.Option{
 		gateway.WithSystemPrompt(systemPrompt),
 		gateway.WithOnError(func(err error) { fmt.Fprintf(os.Stderr, "\nError: %v\n\n", err) }),
@@ -545,4 +544,5 @@ func truncate(s string, max int) string {
 	}
 	return s[:max] + "..."
 }
+
 

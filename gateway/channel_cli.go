@@ -1,4 +1,4 @@
-package gatewaychannel
+package gateway
 
 import (
 	"bufio"
