@@ -15,13 +15,12 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
 )
 
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*model.CompletionResponse, error) {
 	specs := l.toolSpecs(plan)
 	promptMessages := session.PromptMessages(sess)
-	logging.GetLogger().DebugContext(ctx, "llm request prepared",
+	l.logger().DebugContext(ctx, "llm request prepared",
 		slog.String("session_id", sess.ID),
 		slog.String("turn_id", plan.TurnID),
 		slog.String("model_lane", plan.ModelRoute.Lane),
@@ -103,7 +102,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 				state.stopReason = "tool_use"
 				if l.IO != nil {
 					if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {
-						logging.GetLogger().DebugContext(ctx, "stream end send failed", "error", sendErr)
+						l.logger().DebugContext(ctx, "stream end send failed", "error", sendErr)
 					}
 				}
 				break
@@ -172,7 +171,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 				Type:    kernio.OutputReasoning,
 				Content: chunk.ReasoningDelta,
 			}); err != nil {
-				logging.GetLogger().DebugContext(ctx, "reasoning send failed", "error", err)
+				l.logger().DebugContext(ctx, "reasoning send failed", "error", err)
 			}
 		}
 	}
@@ -185,7 +184,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 				Type:    kernio.OutputStream,
 				Content: chunk.Delta,
 			}); err != nil {
-				logging.GetLogger().DebugContext(ctx, "stream chunk send failed", "error", err)
+				l.logger().DebugContext(ctx, "stream chunk send failed", "error", err)
 			}
 		}
 	}
@@ -207,7 +206,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 	}
 	if l.IO != nil {
 		if err := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); err != nil {
-			logging.GetLogger().DebugContext(ctx, "stream completion send failed", "error", err)
+			l.logger().DebugContext(ctx, "stream completion send failed", "error", err)
 		}
 	}
 	return true

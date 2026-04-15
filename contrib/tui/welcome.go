@@ -5,7 +5,7 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	config "github.com/mossagents/moss/config"
+	config "github.com/mossagents/moss/harness/config"
 	"strings"
 )
 

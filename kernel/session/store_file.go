@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/internal/stringutil"
 	"github.com/mossagents/moss/kernel/model"
 )
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/mossagents/moss/scheduler"
+	"github.com/mossagents/moss/harness/scheduler"
 	"testing"
 )
 

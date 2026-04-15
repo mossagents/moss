@@ -14,8 +14,8 @@ package main
 import (
 	"context"
 	"embed"
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/logging"
 	"golang.org/x/net/websocket"
 	"log/slog"
 	"net/http"

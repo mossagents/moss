@@ -3,7 +3,7 @@ package kernel
 import (
 	"context"
 	"github.com/mossagents/moss/kernel/io"
-	kt "github.com/mossagents/moss/testing"
+	kt "github.com/mossagents/moss/kernel/testing"
 	"strings"
 	"testing"
 )

@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"log/slog"
 	"sync"
 
 	"github.com/mossagents/moss/kernel/hooks"
@@ -94,6 +95,7 @@ type AgentLoop struct {
 	IO                  io.UserIO
 	Config              LoopConfig
 	Observer            observe.Observer // 可观测性观察者（可选，默认 NoOpObserver）
+	Logger              *slog.Logger     // 结构化日志（可选，默认 slog.Default()）
 	RunID               string
 	AgentName           string // name of the agent driving this loop (used in yielded events)
 	sidefxMu            sync.Mutex
@@ -138,4 +140,11 @@ func (l *AgentLoop) observer() observe.Observer {
 		return l.Observer
 	}
 	return observe.NoOpObserver{}
+}
+
+func (l *AgentLoop) logger() *slog.Logger {
+	if l.Logger != nil {
+		return l.Logger
+	}
+	return slog.Default()
 }

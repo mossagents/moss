@@ -21,7 +21,7 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	kt "github.com/mossagents/moss/testing"
+	kt "github.com/mossagents/moss/kernel/testing"
 )
 
 func TestLoopTextOnly(t *testing.T) {

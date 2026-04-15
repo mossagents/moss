@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
-	configpkg "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"strings"
 )
 

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/kernel/io"
 )
 

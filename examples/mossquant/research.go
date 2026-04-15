@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"strings"

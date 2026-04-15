@@ -16,7 +16,6 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/logging"
 )
 
 func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, call model.ToolCall, spec tool.ToolSpec, repairedArgs json.RawMessage) {
@@ -31,7 +30,7 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 				"args_preview": previewToolArguments(repairedArgs),
 			},
 		}); err != nil {
-			logging.GetLogger().DebugContext(ctx, "tool start send failed", "session_id", sess.ID, "tool", call.Name, "error", err)
+			l.logger().DebugContext(ctx, "tool start send failed", "session_id", sess.ID, "tool", call.Name, "error", err)
 		}
 	}
 	observe.ObserveExecutionEvent(ctx, l.observer(), observe.ExecutionEvent{
@@ -153,7 +152,7 @@ func (l *AgentLoop) sendToolResultIO(ctx context.Context, call model.ToolCall, r
 		Content: model.ContentPartsToPlainText(result.ContentParts),
 		Meta:    meta,
 	}); sendErr != nil {
-		logging.GetLogger().DebugContext(ctx, "tool result send failed", "tool", call.Name, "error", sendErr)
+		l.logger().DebugContext(ctx, "tool result send failed", "tool", call.Name, "error", sendErr)
 	}
 }
 

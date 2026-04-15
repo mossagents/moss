@@ -5,7 +5,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	appconfig "github.com/mossagents/moss/config"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/contrib/tools"
 	"github.com/mossagents/moss/kernel/tool"
 	"time"

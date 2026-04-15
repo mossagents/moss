@@ -2,6 +2,9 @@ package kernel
 
 import (
 	"context"
+	"log/slog"
+	"os"
+
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
@@ -12,7 +15,6 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	"os"
 )
 
 // Option 是 Kernel 的函数式配置选项。
@@ -21,6 +23,11 @@ type Option func(*Kernel)
 // WithLLM 设置 LLM Port。
 func WithLLM(llm model.LLM) Option {
 	return func(k *Kernel) { k.llm = llm }
+}
+
+// WithLogger sets the kernel's logger. If not set, slog.Default() is used.
+func WithLogger(l *slog.Logger) Option {
+	return func(k *Kernel) { k.logger = l }
 }
 
 // WithSandbox 设置 Sandbox。

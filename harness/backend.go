@@ -7,7 +7,7 @@ import (
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/harness/sandbox"
 )
 
 // Backend provides unified file-system and command-execution capabilities

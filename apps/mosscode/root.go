@@ -10,15 +10,23 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/logging"
-	rpolicy "github.com/mossagents/moss/runtime/policy"
+	"github.com/mossagents/moss/harness/logging"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 func buildRootCommand(cfg *config) *cobra.Command {
 	root := &cobra.Command{
@@ -272,7 +280,7 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
 		return err
 	}
-	cfg.approvalMode = stringutil.FirstNonEmpty(
+	cfg.approvalMode = firstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
 		os.Getenv("MOSS_APPROVAL_MODE"),

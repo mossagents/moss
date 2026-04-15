@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/product/changes"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
+	"github.com/mossagents/moss/harness/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 )
 

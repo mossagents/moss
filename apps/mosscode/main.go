@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/logging"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/logging"
 )
 
 func main() {

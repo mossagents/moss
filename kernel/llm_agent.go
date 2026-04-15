@@ -2,6 +2,7 @@ package kernel
 
 import (
 	"iter"
+	"log/slog"
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/loop"
@@ -19,6 +20,7 @@ type LLMAgent struct {
 	tools       tool.Registry
 	hooks       *hooks.Registry
 	config      loop.LoopConfig
+	logger      *slog.Logger
 	subAgents   []Agent
 }
 
@@ -30,6 +32,7 @@ type LLMAgentConfig struct {
 	Tools       tool.Registry
 	Plugins     []Plugin
 	Config      loop.LoopConfig
+	Logger      *slog.Logger
 	SubAgents   []Agent
 
 	hookRegistry *hooks.Registry
@@ -54,6 +57,7 @@ func NewLLMAgent(cfg LLMAgentConfig) *LLMAgent {
 		tools:       cfg.Tools,
 		hooks:       registry,
 		config:      cfg.Config,
+		logger:      cfg.Logger,
 		subAgents:   cfg.SubAgents,
 	}
 }
@@ -110,8 +114,9 @@ func (a *LLMAgent) Run(ctx *InvocationContext) iter.Seq2[*session.Event, error] 
 			IO:        ctx.IO(),
 			Config:    a.config,
 			Observer:  ctx.Observer(),
+			Logger:    a.logger,
 			RunID:     ctx.RunID(),
-		}
+}
 
 		result, err := l.RunYield(ctx, ctx.Session(), safeYield)
 		ctx.setLifecycleResult(lifecycleResultFromLoop(result))

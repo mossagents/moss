@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 )
 
 func runInit(cfg *config) error {

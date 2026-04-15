@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 type Kernel struct {
 	llm         model.LLM
 	io          io.UserIO
+	logger      *slog.Logger
 	sandbox     workspace.Sandbox
 	workspace   workspace.Workspace
 	executor    workspace.Executor
@@ -222,6 +224,14 @@ func (k *Kernel) LLM() model.LLM {
 	return k.llm
 }
 
+// Logger returns the kernel's configured logger, falling back to slog.Default().
+func (k *Kernel) Logger() *slog.Logger {
+	if k.logger != nil {
+		return k.logger
+	}
+	return slog.Default()
+}
+
 // SetLLM 在构建后更新默认模型端口。
 func (k *Kernel) SetLLM(llm model.LLM) {
 	k.llm = llm
@@ -400,6 +410,7 @@ func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 		Tools:        k.tools,
 		hookRegistry: k.chain,
 		Config:       k.loopCfg,
+		Logger:       k.Logger(),
 	})
 }
 

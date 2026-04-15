@@ -2,14 +2,14 @@ package tui
 
 import (
 	"context"
-	appconfig "github.com/mossagents/moss/config"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	rpolicy "github.com/mossagents/moss/runtime/policy"
-	rprofile "github.com/mossagents/moss/runtime/profile"
-	kt "github.com/mossagents/moss/testing"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	kt "github.com/mossagents/moss/harness/testing"
 	"os"
 	"path/filepath"
 	"strings"

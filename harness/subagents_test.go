@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel"
-	kt "github.com/mossagents/moss/testing"
+	kt "github.com/mossagents/moss/harness/testing"
 )
 
 func TestRegisterSubagentUsesHarnessCatalog(t *testing.T) {

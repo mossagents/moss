@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/runtime/scheduling"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
 	"strings"
 )
 

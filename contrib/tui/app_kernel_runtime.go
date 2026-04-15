@@ -3,7 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
-	configpkg "github.com/mossagents/moss/config"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
 	"strings"
 )

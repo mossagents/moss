@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	kernelsession "github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"

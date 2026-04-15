@@ -5,10 +5,10 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/appkit/product"
-	configpkg "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel/io"
-	userapproval "github.com/mossagents/moss/userio/approval"
+	userapproval "github.com/mossagents/moss/harness/userio/approval"
 	"strconv"
 	"strings"
 )

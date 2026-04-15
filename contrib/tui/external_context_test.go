@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	userattachments "github.com/mossagents/moss/userio/attachments"
-	userlocation "github.com/mossagents/moss/userio/location"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
+	userlocation "github.com/mossagents/moss/harness/userio/location"
 )
 
 func TestExpandInlineFileMentionsLeavesTextUntouched(t *testing.T) {

@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"syscall"
 
-	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

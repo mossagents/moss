@@ -15,14 +15,14 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
-	"github.com/mossagents/moss/appkit/product"
-	config "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	config "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
-	rprofile "github.com/mossagents/moss/runtime/profile"
-	"github.com/mossagents/moss/runtime/scheduling"
-	userapproval "github.com/mossagents/moss/userio/approval"
-	userattachments "github.com/mossagents/moss/userio/attachments"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	userapproval "github.com/mossagents/moss/harness/userio/approval"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
 )
 
 const (

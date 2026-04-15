@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/userio/prompting"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"os"
 	"path/filepath"
 	"strings"

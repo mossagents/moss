@@ -2,7 +2,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
-	configpkg "github.com/mossagents/moss/config"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"path/filepath"
 	"strings"
 )

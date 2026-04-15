@@ -3,7 +3,7 @@ package tui
 import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	rstate "github.com/mossagents/moss/runtime/state"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"path/filepath"
 	"strings"
 	"testing"

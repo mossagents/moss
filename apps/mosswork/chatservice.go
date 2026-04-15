@@ -15,17 +15,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/appkit"
-	appconfig "github.com/mossagents/moss/config"
-	"github.com/mossagents/moss/extensions/agent"
-	"github.com/mossagents/moss/extensions/skill"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/extensions/agent"
+	"github.com/mossagents/moss/harness/extensions/skill"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
-	"github.com/mossagents/moss/scheduler"
+	appruntime "github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

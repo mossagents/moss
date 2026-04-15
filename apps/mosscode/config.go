@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/kernel/observe"
 )
 

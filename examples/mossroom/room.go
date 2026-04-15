@@ -6,14 +6,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
-	providers "github.com/mossagents/moss/providers"
-	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/harness/logging"
+	providers "github.com/mossagents/moss/harness/providers"
+	"github.com/mossagents/moss/harness/sandbox"
 	"golang.org/x/net/websocket"
 	"log/slog"
 	"math/big"
@@ -443,34 +443,34 @@ type RoomIO struct {
 
 var _ io.UserIO = (*RoomIO)(nil)
 
-func (io *RoomIO) Send(_ context.Context, msg io.OutputMessage) error {
-	isChatScript := io.room.ScriptID == "chat"
+func (r *RoomIO) Send(_ context.Context, msg io.OutputMessage) error {
+	isChatScript := r.room.ScriptID == "chat"
 	switch msg.Type {
 	case io.OutputStream:
 		if isChatScript {
 			return nil // 陡聊剧本不显示主持人流式输出
 		}
-		io.room.broadcast(ServerMsg{Type: MsgStream, Content: msg.Content, From: "主持人"})
+		r.room.broadcast(ServerMsg{Type: MsgStream, Content: msg.Content, From: "主持人"})
 	case io.OutputStreamEnd:
 		if isChatScript {
 			return nil
 		}
-		io.room.broadcast(ServerMsg{Type: MsgStreamEnd, From: "主持人"})
+		r.room.broadcast(ServerMsg{Type: MsgStreamEnd, From: "主持人"})
 	case io.OutputText:
 		if isChatScript {
 			return nil // 陡聊剧本主持人隐身，不广播直接文本
 		}
-		io.room.addHistory("主持人", msg.Content, "agent")
-		io.room.broadcast(ServerMsg{Type: MsgAgent, Content: msg.Content, From: "主持人"})
+		r.room.addHistory("主持人", msg.Content, "agent")
+		r.room.broadcast(ServerMsg{Type: MsgAgent, Content: msg.Content, From: "主持人"})
 	case io.OutputToolStart, io.OutputToolResult:
 		// 工具调用内部过程不广播给玩家
 	default:
-		io.room.broadcast(ServerMsg{Type: MsgSystem, Content: msg.Content})
+		r.room.broadcast(ServerMsg{Type: MsgSystem, Content: msg.Content})
 	}
 	return nil
 }
 
-func (io *RoomIO) Ask(_ context.Context, _ io.InputRequest) (io.InputResponse, error) {
+func (r *RoomIO) Ask(_ context.Context, _ io.InputRequest) (io.InputResponse, error) {
 	// 游戏 Agent 的工具调用自动批准
 	return io.InputResponse{Approved: true, Value: "y"}, nil
 }

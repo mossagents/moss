@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
-	configpkg "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
-	rprofile "github.com/mossagents/moss/runtime/profile"
-	"github.com/mossagents/moss/userio/prompting"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"strings"
 )
 

@@ -7,17 +7,17 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	rpolicy "github.com/mossagents/moss/runtime/policy"
-	rprofile "github.com/mossagents/moss/runtime/profile"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 )
 
 func launchTUI(cfg *config) error {

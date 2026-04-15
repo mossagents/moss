@@ -3,7 +3,7 @@ package tui
 import (
 	"fmt"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/appkit/product"
+	"github.com/mossagents/moss/harness/appkit/product"
 	"strings"
 )
 

@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mossagents/moss/extensions/knowledge"
+	"github.com/mossagents/moss/harness/extensions/knowledge"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/scheduler"
-	kt "github.com/mossagents/moss/testing"
+	"github.com/mossagents/moss/harness/scheduler"
+	kt "github.com/mossagents/moss/harness/testing"
 )
 
 func TestRuntimeCapabilityFeatures_RegisterExpectedTools(t *testing.T) {

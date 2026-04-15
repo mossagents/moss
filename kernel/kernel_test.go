@@ -17,7 +17,7 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	kt "github.com/mossagents/moss/testing"
+	kt "github.com/mossagents/moss/kernel/testing"
 	"iter"
 	"sync"
 	"sync/atomic"

@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
-	configpkg "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"strings"
 )
 

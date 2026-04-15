@@ -2,7 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	appconfig "github.com/mossagents/moss/config"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"os"
 	"path/filepath"
 	"strings"

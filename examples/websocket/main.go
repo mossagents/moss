@@ -19,13 +19,13 @@ import (
 	"embed"
 	"encoding/hex"
 	"fmt"
-	"github.com/mossagents/moss/appkit"
+	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
-	"github.com/mossagents/moss/runtime/events"
+	"github.com/mossagents/moss/harness/logging"
+	"github.com/mossagents/moss/harness/runtime/events"
 	"golang.org/x/net/websocket"
 	"log/slog"
 	"net/http"
@@ -228,7 +228,7 @@ func (w *WebSocketIO) Send(_ context.Context, msg io.OutputMessage) error {
 	if wsType == string(events.EventAssistantMessage) {
 		wsType = "assistant"
 	}
-	return websocket.JSON.Send(w.conn, wsMsg{Type: wsType, Content: ev.Content, Meta: ev.Meta})
+	return websocket.JSON.Send(w.conn, wsMsg{Type: wsType, Content: ev.Content, Meta: ev.Metadata})
 }
 
 func (w *WebSocketIO) Ask(_ context.Context, req io.InputRequest) (io.InputResponse, error) {

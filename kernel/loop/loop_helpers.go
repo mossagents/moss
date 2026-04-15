@@ -16,7 +16,6 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/logging"
 )
 
 func (l *AgentLoop) withSideEffectsLock(fn func()) {
@@ -128,7 +127,7 @@ func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err
 		Observer: l.observer(),
 	}
 	if runErr := l.Hooks.OnError.Run(ctx, ev); runErr != nil {
-		logging.GetLogger().DebugContext(ctx, "error hook failed", "session_id", sess.ID, "error", runErr)
+		l.logger().DebugContext(ctx, "error hook failed", "session_id", sess.ID, "error", runErr)
 	}
 }
 

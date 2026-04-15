@@ -9,7 +9,6 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
 )
 
 // Run 执行 Agent Loop 直到完成、预算耗尽或达到最大迭代次数。
@@ -65,7 +64,7 @@ func (l *AgentLoop) runCore(ctx context.Context, sess *session.Session) (*Sessio
 }
 
 func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStartedAt time.Time) {
-	logging.GetLogger().DebugContext(ctx, "session run started",
+	l.logger().DebugContext(ctx, "session run started",
 		"session_id", sess.ID,
 		"mode", sess.Config.Mode,
 		"goal_chars", len(sess.Config.Goal),
@@ -156,7 +155,7 @@ type iterationLLMResult struct {
 
 func (l *AgentLoop) emitIterationStart(ctx context.Context, sess *session.Session, iteration, maxIter int, runStartedAt time.Time) time.Time {
 	iterationStartedAt := time.Now().UTC()
-	logging.GetLogger().DebugContext(ctx, "iteration started",
+	l.logger().DebugContext(ctx, "iteration started",
 		"session_id", sess.ID,
 		"turn_id", l.currentTurn.TurnID,
 		"iteration", iteration,
@@ -195,7 +194,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	llmDur := time.Since(llmStart)
 	if err != nil {
 		metadata := llmMetadataFromError(sess.Config.ModelConfig.Model, err)
-		logging.GetLogger().DebugContext(ctx, "llm response failed",
+		l.logger().DebugContext(ctx, "llm response failed",
 			"session_id", sess.ID,
 			"model", metadata.ActualModel,
 			"duration_ms", llmDur.Milliseconds(),
@@ -219,7 +218,7 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	}
 
 	metadata := llmMetadataFromResponse(sess.Config.ModelConfig.Model, resp)
-	logging.GetLogger().DebugContext(ctx, "llm response received",
+	l.logger().DebugContext(ctx, "llm response received",
 		"session_id", sess.ID,
 		"model", metadata.ActualModel,
 		"duration_ms", llmDur.Milliseconds(),
@@ -316,7 +315,7 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 		for _, call := range resp.ToolCalls {
 			names = append(names, call.Name)
 		}
-		logging.GetLogger().DebugContext(ctx, "assistant requested tool calls",
+		l.logger().DebugContext(ctx, "assistant requested tool calls",
 			"session_id", sess.ID,
 			"tool_calls", strings.Join(names, ","),
 		)
@@ -328,7 +327,7 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 	}
 
 	*lastOutput = model.ContentPartsToPlainText(resp.Message.ContentParts)
-	logging.GetLogger().DebugContext(ctx, "assistant produced final content",
+	l.logger().DebugContext(ctx, "assistant produced final content",
 		"session_id", sess.ID,
 		"chars", len(*lastOutput),
 	)
@@ -364,7 +363,7 @@ func (l *AgentLoop) emitIterationProgress(
 func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, totalUsage model.TokenUsage, lastOutput string) *SessionResult {
 	sess.Status = session.StatusCompleted
 	sess.EndedAt = time.Now()
-	logging.GetLogger().DebugContext(ctx, "session run completed",
+	l.logger().DebugContext(ctx, "session run completed",
 		"session_id", sess.ID,
 		"steps", sess.Budget.UsedStepsValue(),
 		"tokens", totalUsage.TotalTokens,

@@ -3,10 +3,10 @@ package tui
 import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/appkit/product"
-	config "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	config "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	rprofile "github.com/mossagents/moss/runtime/profile"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"strconv"
 	"strings"
 )

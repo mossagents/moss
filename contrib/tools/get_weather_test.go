@@ -53,14 +53,11 @@ func TestRegisterWeather_RegistersSpecAndHandler(t *testing.T) {
 	reg := tool.NewRegistry()
 	RegisterWeather(reg)
 
-	spec, handler, ok := reg.Get(WeatherSpec.Name)
+	got, ok := reg.Get(WeatherSpec.Name)
 	if !ok {
 		t.Fatalf("tool %q not registered", WeatherSpec.Name)
 	}
-	if spec.Name != WeatherSpec.Name {
-		t.Fatalf("spec name: want %q got %q", WeatherSpec.Name, spec.Name)
-	}
-	if handler == nil {
-		t.Fatal("handler should not be nil")
+	if got.Spec().Name != WeatherSpec.Name {
+		t.Fatalf("spec name: want %q got %q", WeatherSpec.Name, got.Spec().Name)
 	}
 }

@@ -22,12 +22,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	appkit "github.com/mossagents/moss/appkit"
+	appkit "github.com/mossagents/moss/harness/appkit"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	rprofile "github.com/mossagents/moss/runtime/profile"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/spf13/pflag"
 )
 

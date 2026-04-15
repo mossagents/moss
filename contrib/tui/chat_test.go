@@ -13,16 +13,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/appkit/product"
-	runtimeenv "github.com/mossagents/moss/appkit/product/runtimeenv"
-	configpkg "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/runtime/scheduling"
-	userapproval "github.com/mossagents/moss/userio/approval"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	userapproval "github.com/mossagents/moss/harness/userio/approval"
 )
 
 type fakeScheduleController struct {

@@ -3,11 +3,14 @@ module github.com/mossagents/moss/apps/mosswork
 go 1.25.0
 
 require (
-	github.com/mossagents/moss v0.0.0
+	github.com/mossagents/moss/harness v0.0.0
+	github.com/mossagents/moss/kernel v0.0.0
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 )
 
-replace github.com/mossagents/moss => ./../..
+replace github.com/mossagents/moss/kernel => ./../../kernel
+
+replace github.com/mossagents/moss/harness => ./../../harness
 
 replace github.com/mossagents/moss/contrib/tools => ./../../contrib/tools
 
@@ -75,15 +78,15 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
-	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/genai v1.52.1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/grpc v1.66.2 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
+	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.70.0 // indirect

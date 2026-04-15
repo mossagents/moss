@@ -3,12 +3,12 @@ package kernel
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/logging"
 )
 
 const persistentSessionStoreStateKey ServiceKey = "persistent-session-store.state"
@@ -74,6 +74,6 @@ func persistPersistentSessionEvent(ctx context.Context, store session.SessionSto
 	}
 	session.RefreshThreadMetadata(sess, when, kind)
 	if err := store.Save(ctx, sess); err != nil {
-		logging.GetLogger().WarnContext(ctx, "persist session event failed", "session_id", sess.ID, "kind", kind, "error", err)
+		slog.Default().WarnContext(ctx, "persist session event failed", "session_id", sess.ID, "kind", kind, "error", err)
 	}
 }

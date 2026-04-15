@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mossagents/moss/internal/stringutil"
+	"github.com/mossagents/moss/kernel/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 )
 

@@ -1,0 +1,19 @@
+go 1.25.0
+
+use (
+	./apps/mosscode
+	./apps/mosswork
+	./contrib/telemetry
+	./contrib/tools
+	./contrib/tui
+	./examples/basic
+	./examples/custom-tool
+	./examples/mossclaw
+	./examples/mossquant
+	./examples/mossresearch
+	./examples/mossroom
+	./examples/mosswriter
+	./examples/websocket
+	./harness
+	./kernel
+)

@@ -12,7 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	kt "github.com/mossagents/moss/testing"
+	kt "github.com/mossagents/moss/harness/testing"
 )
 
 type recordingSessionStore struct {

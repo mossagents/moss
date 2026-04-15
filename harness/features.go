@@ -4,19 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/mossagents/moss/bootstrap"
-	"github.com/mossagents/moss/extensions/capability"
-	"github.com/mossagents/moss/internal/runtime/execution"
-	runtimepolicy "github.com/mossagents/moss/runtime/policy"
+	"github.com/mossagents/moss/harness/bootstrap"
+	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/internal/runtime/execution"
+	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/runtime"
-	rprobe "github.com/mossagents/moss/runtime/probe"
-	rstate "github.com/mossagents/moss/runtime/state"
+	"github.com/mossagents/moss/harness/runtime"
+	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 
 // KernelOptions returns a Feature that applies raw kernel.Option values to

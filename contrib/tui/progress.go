@@ -9,14 +9,22 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
-	rstate "github.com/mossagents/moss/runtime/state"
+	"github.com/mossagents/moss/harness/runtime"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 type notificationProgressMsg struct {
 	Snapshot   executionProgressState
@@ -277,9 +285,9 @@ func (m *chatModel) recordProgressDetail(status, phase, message string, updatedA
 	snapshot.Message = strings.TrimSpace(message)
 	switch strings.TrimSpace(snapshot.Phase) {
 	case "tools":
-		snapshot.ActivityKey = "tool:" + stringutil.FirstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
+		snapshot.ActivityKey = "tool:" + firstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
 	case "approval":
-		snapshot.ActivityKey = "approval:" + stringutil.FirstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
+		snapshot.ActivityKey = "approval:" + firstNonEmpty(strings.TrimSpace(snapshot.ToolName), "active")
 	case "completed", "failed", "cancelled":
 		snapshot.ActivityKey = "run:" + strings.TrimSpace(snapshot.Phase)
 	default:
@@ -538,7 +546,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "tools"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "tool:" + stringutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "unknown")
+		next.ActivityKey = "tool:" + firstNonEmpty(strings.TrimSpace(event.ToolName), "unknown")
 		if next.ToolName != "" {
 			next.Message = "running " + next.ToolName
 		} else {
@@ -548,7 +556,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "waiting"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "approval:" + stringutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
+		next.ActivityKey = "approval:" + firstNonEmpty(strings.TrimSpace(event.ToolName), "request")
 		if next.ToolName != "" {
 			next.Message = "approval required for " + next.ToolName
 		} else if reason := strings.TrimSpace(stringData(event.Metadata, "reason")); reason != "" {
@@ -560,7 +568,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Status = "running"
 		next.Phase = "approval"
 		next.ToolName = strings.TrimSpace(event.ToolName)
-		next.ActivityKey = "approval:" + stringutil.FirstNonEmpty(strings.TrimSpace(event.ToolName), "request")
+		next.ActivityKey = "approval:" + firstNonEmpty(strings.TrimSpace(event.ToolName), "request")
 		if approved, ok := boolData(event.Metadata, "approved"); ok && !approved {
 			next.Message = "approval denied"
 		} else if next.ToolName != "" {
@@ -614,13 +622,13 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 		next.Phase = "failed"
 		next.ToolName = ""
 		next.ActivityKey = "run:failed"
-		next.Message = stringutil.FirstNonEmpty(strings.TrimSpace(event.Error), "run failed")
+		next.Message = firstNonEmpty(strings.TrimSpace(event.Error), "run failed")
 	case observe.ExecutionRunCancelled:
 		next.Status = "cancelled"
 		next.Phase = "cancelled"
 		next.ToolName = ""
 		next.ActivityKey = "run:cancelled"
-		next.Message = stringutil.FirstNonEmpty(strings.TrimSpace(event.Error), "run cancelled")
+		next.Message = firstNonEmpty(strings.TrimSpace(event.Error), "run cancelled")
 	}
 	return next
 }

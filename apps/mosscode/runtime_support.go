@@ -9,19 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/appkit"
-	"github.com/mossagents/moss/appkit/product"
-	"github.com/mossagents/moss/appkit/product/changes"
-	rprofile "github.com/mossagents/moss/runtime/profile"
-	appconfig "github.com/mossagents/moss/config"
+	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/appkit/product"
+	"github.com/mossagents/moss/harness/appkit/product/changes"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/logging"
-	providers "github.com/mossagents/moss/providers"
-	"github.com/mossagents/moss/sandbox"
+	"github.com/mossagents/moss/harness/logging"
+	providers "github.com/mossagents/moss/harness/providers"
+	"github.com/mossagents/moss/harness/sandbox"
 )
 
 //go:embed templates/system_prompt.tmpl

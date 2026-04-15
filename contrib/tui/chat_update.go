@@ -4,7 +4,7 @@ import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/kernel/model"
-	userattachments "github.com/mossagents/moss/userio/attachments"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
 	"strings"
 	"time"
 )

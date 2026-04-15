@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	runtimepolicy "github.com/mossagents/moss/runtime/policy"
+	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
@@ -14,8 +14,8 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/sandbox"
-	kt "github.com/mossagents/moss/testing"
+	"github.com/mossagents/moss/harness/sandbox"
+	kt "github.com/mossagents/moss/harness/testing"
 )
 
 // --- test helpers ---
