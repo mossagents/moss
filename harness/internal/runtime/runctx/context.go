@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/mossagents/moss/kernel"
@@ -206,12 +207,14 @@ func ensureOffloadState(k *kernel.Kernel) *offloadState {
 	if loaded {
 		return st
 	}
-	k.Prompts().Add(230, func(_ *kernel.Kernel) string {
+	if err := k.Prompts().Add(230, func(_ *kernel.Kernel) string {
 		if st.store == nil {
 			return ""
 		}
 		return "Use offload_context to compact long conversations and persist an offload snapshot."
-	})
+	}); err != nil {
+		log.Printf("runctx: register prompt hook: %v", err)
+	}
 	return st
 }
 
@@ -227,7 +230,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 	if loaded {
 		return st
 	}
-	k.Stages().OnBoot(130, func(_ context.Context, k *kernel.Kernel) error {
+	if err := k.Stages().OnBoot(130, func(_ context.Context, k *kernel.Kernel) error {
 		if st.manager == nil {
 			st.manager = k.SessionManager()
 		}
@@ -248,13 +251,17 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 			st.autoHookRegistered = true
 		}
 		return nil
-	})
-	k.Prompts().Add(235, func(_ *kernel.Kernel) string {
+	}); err != nil {
+		log.Printf("runctx: register boot hook: %v", err)
+	}
+	if err := k.Prompts().Add(235, func(_ *kernel.Kernel) string {
 		if st.store == nil {
 			return ""
 		}
 		return "Use compact_conversation to keep prompt-visible context within budget with structured summaries, startup context, and snapshot-backed compaction."
-	})
+	}); err != nil {
+		log.Printf("runctx: register prompt hook: %v", err)
+	}
 	return st
 }
 
@@ -434,4 +441,3 @@ func AutoCompactHook(k *kernel.Kernel) hooks.Hook[hooks.LLMEvent] {
 		return nil
 	}
 }
-

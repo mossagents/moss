@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"iter"
 	"strings"
+	"sync/atomic"
 
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -29,7 +30,7 @@ type InvocationContext struct {
 	io       io.UserIO
 	observer observe.Observer
 
-	ended bool
+	ended atomic.Bool
 }
 
 // InvocationContextParams contains parameters for creating an InvocationContext.
@@ -114,51 +115,70 @@ func (c *InvocationContext) IO() io.UserIO { return c.io }
 func (c *InvocationContext) Observer() observe.Observer { return c.observer }
 
 // EndInvocation signals that the current invocation should stop.
-func (c *InvocationContext) EndInvocation() { c.ended = true }
+func (c *InvocationContext) EndInvocation() { c.ended.Store(true) }
 
 // Ended returns whether EndInvocation was called.
-func (c *InvocationContext) Ended() bool { return c.ended }
+func (c *InvocationContext) Ended() bool { return c.ended.Load() }
+
+// shallowCopy returns a new InvocationContext that shares all scalar/pointer
+// fields with the receiver but has its own ended flag (reset to false).
+// atomic.Bool must not be copied, so we rebuild the struct explicitly.
+func (c *InvocationContext) shallowCopy() *InvocationContext {
+	return &InvocationContext{
+		Context:      c.Context,
+		invocationID: c.invocationID,
+		branch:       c.branch,
+		runID:        c.runID,
+		agent:        c.agent,
+		session:      c.session,
+		userContent:  c.userContent,
+		resultWriter: c.resultWriter,
+		io:           c.io,
+		observer:     c.observer,
+		// ended is intentionally zero-valued (false)
+	}
+}
 
 // WithAgent returns a new InvocationContext for a different agent, preserving other fields.
 func (c *InvocationContext) WithAgent(agent Agent) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.agent = agent
-	return &cp
+	return cp
 }
 
 // WithBranch returns a new InvocationContext with an updated branch path.
 func (c *InvocationContext) WithBranch(branch string) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.branch = branch
-	return &cp
+	return cp
 }
 
 // WithSession returns a new InvocationContext with a different session.
 func (c *InvocationContext) WithSession(sess *session.Session) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.session = sess
-	return &cp
+	return cp
 }
 
 // WithUserContent returns a new InvocationContext with different input content.
 func (c *InvocationContext) WithUserContent(msg *model.Message) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.userContent = msg
-	return &cp
+	return cp
 }
 
 // WithContext returns a new InvocationContext with a different base context.
 func (c *InvocationContext) WithContext(ctx context.Context) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.Context = ctx
-	return &cp
+	return cp
 }
 
 // WithIO returns a new InvocationContext with a different UserIO.
 func (c *InvocationContext) WithIO(userIO io.UserIO) *InvocationContext {
-	cp := *c
+	cp := c.shallowCopy()
 	cp.io = userIO
-	return &cp
+	return cp
 }
 
 // maxForkDepth is the maximum allowed nesting depth for child agent invocations.

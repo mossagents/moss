@@ -111,14 +111,18 @@ func (h *Harness) ensureBackend(ctx context.Context) error {
 	}
 	stages := h.kernel.Stages()
 	if booter, ok := h.backend.(BackendBooter); ok {
-		stages.OnBoot(backendBootOrder, func(ctx context.Context, k *kernel.Kernel) error {
+		if err := stages.OnBoot(backendBootOrder, func(ctx context.Context, k *kernel.Kernel) error {
 			return booter.Boot(ctx, k)
-		})
+		}); err != nil {
+			return fmt.Errorf("register backend boot hook: %w", err)
+		}
 	}
 	if shutdowner, ok := h.backend.(BackendShutdowner); ok {
-		stages.OnShutdown(backendShutdownOrder, func(ctx context.Context, k *kernel.Kernel) error {
+		if err := stages.OnShutdown(backendShutdownOrder, func(ctx context.Context, k *kernel.Kernel) error {
 			return shutdowner.Shutdown(ctx, k)
-		})
+		}); err != nil {
+			return fmt.Errorf("register backend shutdown hook: %w", err)
+		}
 	}
 	h.backendReady = true
 	return nil

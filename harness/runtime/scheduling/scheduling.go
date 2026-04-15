@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
+	"sort"
+	"strings"
+
+	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/scheduler"
-	"sort"
-	"strings"
 )
 
 const schedulingStateKey kernel.ServiceKey = "scheduling.state"
@@ -154,12 +156,14 @@ func ensureSchedulingState(k *kernel.Kernel) *schedulingState {
 	if loaded {
 		return st
 	}
-	k.Stages().OnShutdown(200, func(_ context.Context, _ *kernel.Kernel) error {
+	if err := k.Stages().OnShutdown(200, func(_ context.Context, _ *kernel.Kernel) error {
 		if st.scheduler != nil {
 			st.scheduler.Stop()
 		}
 		return nil
-	})
+	}); err != nil {
+		log.Printf("scheduling: register shutdown hook: %v", err)
+	}
 	return st
 }
 
@@ -291,4 +295,3 @@ func cancelScheduleHandler(sched *scheduler.Scheduler) tool.ToolHandler {
 		})
 	}
 }
-

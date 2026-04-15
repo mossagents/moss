@@ -7,16 +7,16 @@ import (
 	"github.com/mossagents/moss/harness/bootstrap"
 	"github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/internal/runtime/execution"
+	"github.com/mossagents/moss/harness/runtime"
 	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/harness/runtime"
-	rprobe "github.com/mossagents/moss/harness/runtime/probe"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 
 // KernelOptions returns a Feature that applies raw kernel.Option values to
@@ -43,9 +43,11 @@ func BootstrapContext(workspace, appName, trust string) Feature {
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			bctx := bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust)
-			h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
+			if err := h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
 				return bctx.SystemPromptSection()
-			})
+			}); err != nil {
+				return fmt.Errorf("register bootstrap prompt: %w", err)
+			}
 			return nil
 		},
 	}
@@ -63,9 +65,11 @@ func BootstrapContextValue(ctx *bootstrap.Context) Feature {
 			if ctx == nil {
 				return nil
 			}
-			h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
+			if err := h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
 				return ctx.SystemPromptSection()
-			})
+			}); err != nil {
+				return fmt.Errorf("register bootstrap prompt: %w", err)
+			}
 			return nil
 		},
 	}
@@ -263,5 +267,3 @@ func PatchToolCalls() Feature {
 		},
 	}
 }
-
-

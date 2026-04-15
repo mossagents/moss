@@ -78,19 +78,20 @@ func New(opts ...Option) *Kernel {
 }
 
 // Apply applies additional Options during the kernel install phase.
-// Once booting, serving, or shutdown begins, further option application panics.
-func (k *Kernel) Apply(opts ...Option) {
+// Once booting, serving, or shutdown begins, further option application returns an error.
+func (k *Kernel) Apply(opts ...Option) error {
 	if len(opts) == 0 {
-		return
+		return nil
 	}
 	k.assemblyMu.Lock()
 	defer k.assemblyMu.Unlock()
 	if k.assemblyFrozen {
-		panic(fmt.Errorf("apply kernel options after kernel install phase closed"))
+		return fmt.Errorf("apply kernel options after kernel install phase closed")
 	}
 	for _, opt := range opts {
 		opt(k)
 	}
+	return nil
 }
 
 // Boot 验证 Kernel 配置完整性。
@@ -232,13 +233,22 @@ func (k *Kernel) Logger() *slog.Logger {
 	return slog.Default()
 }
 
-// SetLLM 在构建后更新默认模型端口。
+// SetLLM 在 Boot 之前更新默认模型端口。
+// 在 assembly 冻结后调用会 panic，请在 Boot 之前调用。
 func (k *Kernel) SetLLM(llm model.LLM) {
+	k.assemblyMu.Lock()
+	defer k.assemblyMu.Unlock()
+	if k.assemblyFrozen {
+		panic(fmt.Errorf("SetLLM called after kernel assembly phase closed"))
+	}
 	k.llm = llm
 }
 
-// SetObserver 在构建后更新运行时事件观察者。
+// SetObserver 更新运行时事件观察者。
+// 可在运行时调用以切换可观测性后端。
 func (k *Kernel) SetObserver(observer observe.Observer) {
+	k.assemblyMu.Lock()
+	defer k.assemblyMu.Unlock()
 	k.observer = observer
 	k.propagateObserver(observer)
 }
@@ -383,7 +393,9 @@ func (k *Kernel) installPlugin(p Plugin) {
 	if k.runs.hasStarted() {
 		panic(fmt.Errorf("install plugin %q after kernel started serving work", p.Name))
 	}
-	installPlugin(k.chain, p)
+	if err := installPlugin(k.chain, p); err != nil {
+		panic(err)
+	}
 }
 
 // OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
@@ -449,4 +461,3 @@ func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*s
 		streamAgentEvents(req.Agent, invCtx, yield)
 	}
 }
-

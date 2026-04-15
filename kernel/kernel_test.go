@@ -6,6 +6,12 @@ import (
 	stderrors "errors"
 	"fmt"
 
+	"iter"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
@@ -15,14 +21,9 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	kt "github.com/mossagents/moss/kernel/testing"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	kt "github.com/mossagents/moss/kernel/testing"
-	"iter"
-	"sync"
-	"sync/atomic"
-	"testing"
-	"time"
 )
 
 type recordingObserver struct {
@@ -742,24 +743,36 @@ func TestKernelStagesAndPromptsRunInOrder(t *testing.T) {
 	)
 
 	var order []string
-	k.Stages().OnBoot(20, func(context.Context, *Kernel) error {
+	if err := k.Stages().OnBoot(20, func(context.Context, *Kernel) error {
 		order = append(order, "boot-20")
 		return nil
-	})
-	k.Stages().OnBoot(10, func(context.Context, *Kernel) error {
+	}); err != nil {
+		t.Fatalf("OnBoot: %v", err)
+	}
+	if err := k.Stages().OnBoot(10, func(context.Context, *Kernel) error {
 		order = append(order, "boot-10")
 		return nil
-	})
-	k.Stages().OnShutdown(20, func(context.Context, *Kernel) error {
+	}); err != nil {
+		t.Fatalf("OnBoot: %v", err)
+	}
+	if err := k.Stages().OnShutdown(20, func(context.Context, *Kernel) error {
 		order = append(order, "shutdown-20")
 		return nil
-	})
-	k.Stages().OnShutdown(10, func(context.Context, *Kernel) error {
+	}); err != nil {
+		t.Fatalf("OnShutdown: %v", err)
+	}
+	if err := k.Stages().OnShutdown(10, func(context.Context, *Kernel) error {
 		order = append(order, "shutdown-10")
 		return nil
-	})
-	k.Prompts().Add(20, func(*Kernel) string { return "prompt-20" })
-	k.Prompts().Add(10, func(*Kernel) string { return "prompt-10" })
+	}); err != nil {
+		t.Fatalf("OnShutdown: %v", err)
+	}
+	if err := k.Prompts().Add(20, func(*Kernel) string { return "prompt-20" }); err != nil {
+		t.Fatalf("Prompts.Add: %v", err)
+	}
+	if err := k.Prompts().Add(10, func(*Kernel) string { return "prompt-10" }); err != nil {
+		t.Fatalf("Prompts.Add: %v", err)
+	}
 
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -795,7 +808,7 @@ func TestKernelStagesAndPromptsRunInOrder(t *testing.T) {
 	}
 }
 
-func TestKernelAssemblyMutationPanicsAfterBoot(t *testing.T) {
+func TestKernelAssemblyMutationErrorsAfterBoot(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{}),
 		WithUserIO(&io.NoOpIO{}),
@@ -804,21 +817,21 @@ func TestKernelAssemblyMutationPanicsAfterBoot(t *testing.T) {
 		t.Fatalf("Boot: %v", err)
 	}
 
-	expectKernelPanic(t, func() {
-		k.Apply(WithLLM(&kt.MockLLM{}))
-	})
-	expectKernelPanic(t, func() {
-		k.Stages().OnBoot(10, func(context.Context, *Kernel) error { return nil })
-	})
-	expectKernelPanic(t, func() {
-		k.Stages().OnShutdown(10, func(context.Context, *Kernel) error { return nil })
-	})
-	expectKernelPanic(t, func() {
-		k.Prompts().Add(10, func(*Kernel) string { return "late" })
-	})
+	if err := k.Apply(WithLLM(&kt.MockLLM{})); err == nil {
+		t.Fatal("Apply after boot should return error")
+	}
+	if err := k.Stages().OnBoot(10, func(context.Context, *Kernel) error { return nil }); err == nil {
+		t.Fatal("OnBoot after boot should return error")
+	}
+	if err := k.Stages().OnShutdown(10, func(context.Context, *Kernel) error { return nil }); err == nil {
+		t.Fatal("OnShutdown after boot should return error")
+	}
+	if err := k.Prompts().Add(10, func(*Kernel) string { return "late" }); err == nil {
+		t.Fatal("Prompts.Add after boot should return error")
+	}
 }
 
-func TestKernelApplyPanicsAfterRunStart(t *testing.T) {
+func TestKernelApplyErrorsAfterRunStart(t *testing.T) {
 	k := New(
 		WithLLM(&kt.MockLLM{}),
 		WithUserIO(&io.NoOpIO{}),
@@ -830,9 +843,9 @@ func TestKernelApplyPanicsAfterRunStart(t *testing.T) {
 	defer cancel()
 	defer k.runs.end(runID)
 
-	expectKernelPanic(t, func() {
-		k.Apply(WithLLM(&kt.MockLLM{}))
-	})
+	if err := k.Apply(WithLLM(&kt.MockLLM{})); err == nil {
+		t.Fatal("Apply after run start should return error")
+	}
 }
 
 func TestKernelSessionLifecycleHooksRunInOrder(t *testing.T) {
@@ -1003,14 +1016,4 @@ func TestKernelPortAccessors(t *testing.T) {
 	if k.TaskRuntime() == nil || k.Mailbox() == nil {
 		t.Fatal("expected task runtime and mailbox accessors to return configured ports")
 	}
-}
-
-func expectKernelPanic(t *testing.T, fn func()) {
-	t.Helper()
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic")
-		}
-	}()
-	fn()
 }

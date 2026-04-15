@@ -30,28 +30,30 @@ type StageRegistry struct {
 
 func newStageRegistry() *StageRegistry { return &StageRegistry{} }
 
-func (r *StageRegistry) OnBoot(order int, hook func(context.Context, *Kernel) error) {
+func (r *StageRegistry) OnBoot(order int, hook func(context.Context, *Kernel) error) error {
 	if r == nil || hook == nil {
-		return
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.frozen {
-		panic(fmt.Errorf("register boot hook after kernel install phase closed"))
+		return fmt.Errorf("register boot hook after kernel install phase closed")
 	}
 	r.bootHooks = append(r.bootHooks, orderedBootHook{order: order, run: hook})
+	return nil
 }
 
-func (r *StageRegistry) OnShutdown(order int, hook func(context.Context, *Kernel) error) {
+func (r *StageRegistry) OnShutdown(order int, hook func(context.Context, *Kernel) error) error {
 	if r == nil || hook == nil {
-		return
+		return nil
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.frozen {
-		panic(fmt.Errorf("register shutdown hook after kernel install phase closed"))
+		return fmt.Errorf("register shutdown hook after kernel install phase closed")
 	}
 	r.shutdownHooks = append(r.shutdownHooks, orderedShutdownHook{order: order, run: hook})
+	return nil
 }
 
 func (r *StageRegistry) BootStarted() bool {

@@ -3,10 +3,11 @@ package session
 import (
 	"context"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/model"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // Manager 管理 Session 的生命周期。
@@ -120,13 +121,13 @@ func (m *memoryManager) Cancel(id string) error {
 }
 
 func (m *memoryManager) Notify(id string, msg model.Message) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
 	s, ok := m.sessions[id]
+	m.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("session %q not found", id)
 	}
-	s.Messages = append(s.Messages, msg)
+	s.AppendMessage(msg)
 	return nil
 }
 

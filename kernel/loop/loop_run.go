@@ -42,7 +42,7 @@ func (l *AgentLoop) runCore(ctx context.Context, sess *session.Session) (*Sessio
 	maxIter := l.Config.maxIter()
 
 	for i := 0; i < maxIter; i++ {
-		if l.yieldStopped {
+		if l.yieldStopped.Load() {
 			break
 		}
 		if sess.Budget.Exhausted() {

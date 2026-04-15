@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/mossagents/moss/kernel"
@@ -116,7 +117,7 @@ func ensurePlanningState(k *kernel.Kernel) *planningState {
 	if loaded {
 		return st
 	}
-	k.Stages().OnBoot(125, func(_ context.Context, k *kernel.Kernel) error {
+	if err := k.Stages().OnBoot(125, func(_ context.Context, k *kernel.Kernel) error {
 		if st.manager == nil {
 			st.manager = k.SessionManager()
 		}
@@ -124,13 +125,17 @@ func ensurePlanningState(k *kernel.Kernel) *planningState {
 			return nil
 		}
 		return RegisterPlanningTools(k.ToolRegistry(), st.manager)
-	})
-	k.Prompts().Add(225, func(_ *kernel.Kernel) string {
+	}); err != nil {
+		log.Printf("planning: register boot hook: %v", err)
+	}
+	if err := k.Prompts().Add(225, func(_ *kernel.Kernel) string {
 		if st.manager == nil {
 			return ""
 		}
 		return "Use write_todos to keep an explicit task list with statuses: pending, in_progress, completed."
-	})
+	}); err != nil {
+		log.Printf("planning: register prompt hook: %v", err)
+	}
 	return st
 }
 

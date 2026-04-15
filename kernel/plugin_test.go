@@ -151,15 +151,12 @@ func TestPlugin_InterceptorWrapsHook(t *testing.T) {
 }
 
 func TestPlugin_RequiresName(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic for unnamed plugin")
-		}
-	}()
-
-	installPlugin(hooks.NewRegistry(), Plugin{
+	err := installPlugin(hooks.NewRegistry(), Plugin{
 		BeforeLLM: func(ctx context.Context, ev *hooks.LLMEvent) error { return nil },
 	})
+	if err == nil {
+		t.Fatal("expected error for unnamed plugin")
+	}
 }
 
 func TestWithPlugin_InvalidPluginPanics(t *testing.T) {

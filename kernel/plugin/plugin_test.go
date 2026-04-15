@@ -12,7 +12,7 @@ import (
 
 func TestValidate_EmptyName(t *testing.T) {
 	p := plugin.Plugin{
-		Name: "",
+		Name:      "",
 		BeforeLLM: func(ctx context.Context, e *hooks.LLMEvent) error { return nil },
 	}
 	if err := plugin.Validate(p); err == nil {
@@ -59,7 +59,9 @@ func TestInstall_BeforeLLMHookFires(t *testing.T) {
 			return nil
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("BeforeLLM hook was not called")
@@ -76,7 +78,9 @@ func TestInstall_AfterLLMHookFires(t *testing.T) {
 			return nil
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.AfterLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("AfterLLM hook was not called")
@@ -93,7 +97,9 @@ func TestInstall_OnToolLifecycleHookFires(t *testing.T) {
 			return nil
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.OnToolLifecycle.Run(context.Background(), &hooks.ToolEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("OnToolLifecycle hook was not called")
@@ -110,7 +116,9 @@ func TestInstall_OnSessionLifecycleHookFires(t *testing.T) {
 			return nil
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("OnSessionLifecycle hook was not called")
@@ -127,7 +135,9 @@ func TestInstall_OnErrorHookFires(t *testing.T) {
 			return nil
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.OnError.Run(context.Background(), &hooks.ErrorEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("OnError hook was not called")
@@ -144,21 +154,20 @@ func TestInstall_InterceptorFires(t *testing.T) {
 			return next(ctx)
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("BeforeLLMInterceptor was not called")
 	}
 }
 
-func TestInstall_PanicOnInvalidPlugin(t *testing.T) {
+func TestInstall_ErrorOnInvalidPlugin(t *testing.T) {
 	reg := hooks.NewRegistry()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Fatal("expected panic for invalid plugin")
-		}
-	}()
-	plugin.Install(reg, plugin.Plugin{Name: ""})
+	if err := plugin.Install(reg, plugin.Plugin{Name: ""}); err == nil {
+		t.Fatal("expected error for invalid plugin")
+	}
 }
 
 func TestInstall_AllSessionInterceptorFires(t *testing.T) {
@@ -171,7 +180,9 @@ func TestInstall_AllSessionInterceptorFires(t *testing.T) {
 			return next(ctx)
 		},
 	}
-	plugin.Install(reg, p)
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
 	reg.OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("OnSessionLifecycleInterceptor was not called")

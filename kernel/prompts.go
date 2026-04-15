@@ -20,16 +20,17 @@ type PromptAssembler struct {
 
 func newPromptAssembler() *PromptAssembler { return &PromptAssembler{} }
 
-func (a *PromptAssembler) Add(order int, hook func(*Kernel) string) {
+func (a *PromptAssembler) Add(order int, hook func(*Kernel) string) error {
 	if a == nil || hook == nil {
-		return
+		return nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.frozen {
-		panic(fmt.Errorf("register prompt hook after kernel install phase closed"))
+		return fmt.Errorf("register prompt hook after kernel install phase closed")
 	}
 	a.hooks = append(a.hooks, orderedPromptHook{order: order, run: hook})
+	return nil
 }
 
 func (a *PromptAssembler) Extend(k *Kernel, base string) string {

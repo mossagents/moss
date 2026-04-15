@@ -33,7 +33,7 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 	if loaded {
 		return st
 	}
-	k.Stages().OnShutdown(100, func(ctx context.Context, k *Kernel) error {
+	if err := k.Stages().OnShutdown(100, func(ctx context.Context, k *Kernel) error {
 		if st.store == nil {
 			return nil
 		}
@@ -46,7 +46,9 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		slog.Default().Warn("failed to register shutdown hook for session persistence", "error", err)
+	}
 	k.installPlugin(Plugin{
 		Name:  "persistent-session-store",
 		Order: 100,

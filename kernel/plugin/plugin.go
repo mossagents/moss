@@ -45,9 +45,9 @@ func Validate(p Plugin) error {
 	return nil
 }
 
-func Install(reg *hooks.Registry, p Plugin) {
+func Install(reg *hooks.Registry, p Plugin) error {
 	if err := Validate(p); err != nil {
-		panic(err)
+		return err
 	}
 	if p.BeforeLLMInterceptor != nil {
 		reg.BeforeLLM.AddInterceptor(p.Name, p.BeforeLLMInterceptor, p.Order)
@@ -79,4 +79,5 @@ func Install(reg *hooks.Registry, p Plugin) {
 	if p.OnError != nil {
 		reg.OnError.AddHook(p.Name, p.OnError, p.Order)
 	}
+	return nil
 }

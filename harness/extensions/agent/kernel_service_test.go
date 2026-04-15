@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 func TestKernelRegistryReturnsSingletonRegistry(t *testing.T) {
@@ -41,7 +41,7 @@ func TestEnsureKernelDelegationQueuesBootInstallationBeforeBoot(t *testing.T) {
 func TestEnsureKernelDelegationInstallsSynchronouslyDuringBoot(t *testing.T) {
 	k := newTestKernel()
 	called := false
-	k.Stages().OnBoot(10, func(context.Context, *kernel.Kernel) error {
+	if err := k.Stages().OnBoot(10, func(context.Context, *kernel.Kernel) error {
 		called = true
 		if err := EnsureKernelDelegation(k); err != nil {
 			return err
@@ -50,7 +50,9 @@ func TestEnsureKernelDelegationInstallsSynchronouslyDuringBoot(t *testing.T) {
 			t.Fatal("expected delegate_agent to be available in the same boot pass")
 		}
 		return nil
-	})
+	}); err != nil {
+		t.Fatalf("OnBoot: %v", err)
+	}
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}

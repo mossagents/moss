@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"path/filepath"
 	"strings"
 	"time"
 
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/memory"
-	 memstore "github.com/mossagents/moss/harness/runtime/memory"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -55,7 +56,7 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 	if loaded {
 		return st
 	}
-	k.Stages().OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
+	if err := k.Stages().OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
 		if st.workspace == nil {
 			if st.store != nil || st.runtime != nil {
 				return fmt.Errorf("memory workspace is nil")
@@ -77,8 +78,10 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 			st.pipeline.Start()
 		}
 		return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline)
-	})
-	k.Stages().OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
+	}); err != nil {
+		log.Printf("memory: register boot hook: %v", err)
+	}
+	if err := k.Stages().OnShutdown(120, func(_ context.Context, _ *kernel.Kernel) error {
 		if st.pipeline != nil {
 			st.pipeline.Stop()
 		}
@@ -87,13 +90,17 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 			return nil
 		}
 		return closer.Close()
-	})
-	k.Prompts().Add(220, func(_ *kernel.Kernel) string {
+	}); err != nil {
+		log.Printf("memory: register shutdown hook: %v", err)
+	}
+	if err := k.Prompts().Add(220, func(_ *kernel.Kernel) string {
 		if st.workspace == nil {
 			return ""
 		}
 		return "You have staged persistent memory tools backed by /memories. Prefer memory_summary.md and MEMORY.md for quick context, then inspect rollout_summaries/ or individual memory records when needed."
-	})
+	}); err != nil {
+		log.Printf("memory: register prompt hook: %v", err)
+	}
 	return st
 }
 
@@ -653,7 +660,3 @@ func recordMemoryUsages(ctx context.Context, store memory.MemoryStore, paths []s
 	}
 	return store.RecordUsage(ctx, paths, time.Now().UTC())
 }
-
-
-
-

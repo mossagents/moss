@@ -2,16 +2,16 @@ package kernel
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"strings"
-	"time"
 )
 
 const (
@@ -29,12 +29,12 @@ const (
 // ForkResult 描述一次 session fork 的结构化结果。
 type ForkResult struct {
 	SourceKind       checkpoint.ForkSourceKind `json:"source_kind"`
-	SourceID         string              `json:"source_id,omitempty"`
-	CheckpointID     string              `json:"checkpoint_id,omitempty"`
-	SessionID        string              `json:"session_id,omitempty"`
-	RestoredWorktree bool                `json:"restored_worktree,omitempty"`
-	Degraded         bool                `json:"degraded,omitempty"`
-	Details          string              `json:"details,omitempty"`
+	SourceID         string                    `json:"source_id,omitempty"`
+	CheckpointID     string                    `json:"checkpoint_id,omitempty"`
+	SessionID        string                    `json:"session_id,omitempty"`
+	RestoredWorktree bool                      `json:"restored_worktree,omitempty"`
+	Degraded         bool                      `json:"degraded,omitempty"`
+	Details          string                    `json:"details,omitempty"`
 }
 
 // CreateCheckpoint captures the current session into a recoverable checkpoint.
@@ -446,41 +446,11 @@ func cloneSessionConfig(cfg session.SessionConfig) session.SessionConfig {
 }
 
 func cloneMessages(items []model.Message) []model.Message {
-	if len(items) == 0 {
-		return nil
-	}
-	out := make([]model.Message, len(items))
-	for i, item := range items {
-		out[i] = cloneMessage(item)
-	}
-	return out
+	return session.CloneMessages(items)
 }
 
 func cloneMessage(msg model.Message) model.Message {
-	cp := msg
-	if len(msg.ToolCalls) > 0 {
-		cp.ToolCalls = make([]model.ToolCall, len(msg.ToolCalls))
-		for i, call := range msg.ToolCalls {
-			cp.ToolCalls[i] = model.ToolCall{
-				ID:        call.ID,
-				Name:      call.Name,
-				Arguments: cloneJSON(call.Arguments),
-			}
-		}
-	}
-	if len(msg.ToolResults) > 0 {
-		cp.ToolResults = append([]model.ToolResult(nil), msg.ToolResults...)
-	}
-	return cp
-}
-
-func cloneJSON(in json.RawMessage) json.RawMessage {
-	if len(in) == 0 {
-		return nil
-	}
-	out := make(json.RawMessage, len(in))
-	copy(out, in)
-	return out
+	return session.CloneMessage(msg)
 }
 
 func cloneState(in map[string]any) map[string]any {
@@ -503,6 +473,6 @@ func (k *Kernel) emitExecutionEvent(ctx context.Context, typ observe.ExecutionEv
 		Type:      typ,
 		SessionID: sessionID,
 		Timestamp: time.Now().UTC(),
-		Metadata:      data,
+		Metadata:  data,
 	})
 }

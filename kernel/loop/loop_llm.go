@@ -6,7 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -57,7 +57,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 			return nil, attempt.err
 		}
 
-		jitter := time.Duration(rand.Int63n(int64(delay) / 2))
+		jitter := time.Duration(rand.Int64N(int64(delay) / 2))
 		sleepDuration := delay + jitter
 		if sleepDuration > cfg.MaxDelayOrDefault() {
 			sleepDuration = cfg.MaxDelayOrDefault()

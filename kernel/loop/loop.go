@@ -3,6 +3,7 @@ package loop
 import (
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
@@ -103,7 +104,7 @@ type AgentLoop struct {
 	currentTurn         TurnPlan
 	compressionInjected bool                             // 防止 Run() 重复注入压缩 hook
 	eventYield          func(*session.Event, error) bool // internal: set by RunYield
-	yieldStopped        bool                             // internal: set when eventYield returns false
+	yieldStopped        atomic.Bool                      // internal: set when eventYield returns false
 }
 
 // emitAgentEvent yields an agent-level event (LLM response, tool result) to the EventYield callback.
@@ -112,14 +113,14 @@ func (l *AgentLoop) emitAgentEvent(event *session.Event) bool {
 	if l.eventYield == nil {
 		return true
 	}
-	if l.yieldStopped {
+	if l.yieldStopped.Load() {
 		return false
 	}
 	if event.ID == "" {
 		event.ID = l.nextEventID("agent")
 	}
 	if !l.eventYield(event, nil) {
-		l.yieldStopped = true
+		l.yieldStopped.Store(true)
 		return false
 	}
 	return true

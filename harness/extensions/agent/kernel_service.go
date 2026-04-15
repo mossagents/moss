@@ -85,9 +85,12 @@ func EnsureKernelDelegation(k *kernel.Kernel) error {
 	if !k.Stages().BootStarted() {
 		if !st.bootHookRegistered {
 			st.bootHookRegistered = true
-			k.Stages().OnBoot(delegationBootOrder, func(_ context.Context, k *kernel.Kernel) error {
+			if err := k.Stages().OnBoot(delegationBootOrder, func(_ context.Context, k *kernel.Kernel) error {
 				return installKernelDelegation(k)
-			})
+			}); err != nil {
+				st.mu.Unlock()
+				return fmt.Errorf("register boot hook: %w", err)
+			}
 		}
 		st.mu.Unlock()
 		return nil

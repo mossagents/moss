@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	rootcap "github.com/mossagents/moss/harness/extensions/capability"
@@ -30,13 +31,15 @@ func Ensure(k *kernel.Kernel) *State {
 	if loaded {
 		return st
 	}
-	k.Stages().OnShutdown(300, func(ctx context.Context, _ *kernel.Kernel) error {
+	if err := k.Stages().OnShutdown(300, func(ctx context.Context, _ *kernel.Kernel) error {
 		if st.manager == nil {
 			return nil
 		}
 		return st.manager.ShutdownAll(ctx)
-	})
-	k.Prompts().Add(200, func(_ *kernel.Kernel) string {
+	}); err != nil {
+		log.Printf("capstate: register shutdown hook: %v", err)
+	}
+	if err := k.Prompts().Add(200, func(_ *kernel.Kernel) string {
 		if st.manager == nil {
 			return ""
 		}
@@ -59,7 +62,9 @@ func Ensure(k *kernel.Kernel) *State {
 			return hint
 		}
 		return additions + "\n\n" + hint
-	})
+	}); err != nil {
+		log.Printf("capstate: register prompt hook: %v", err)
+	}
 	return st
 }
 
@@ -250,5 +255,3 @@ func activateManifestRecursive(ctx context.Context, manager *rootcap.Manager, ma
 	}
 	return manager.Register(ctx, ps, deps)
 }
-
-

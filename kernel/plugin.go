@@ -9,8 +9,8 @@ import (
 type Plugin = kplugin.Plugin
 
 // installPlugin 将 Plugin 中所有非 nil 的 hook / interceptor 注册到 Registry。
-func installPlugin(reg *hooks.Registry, p Plugin) {
-	kplugin.Install(reg, p)
+func installPlugin(reg *hooks.Registry, p Plugin) error {
+	return kplugin.Install(reg, p)
 }
 
 func validatePlugin(p Plugin) error {

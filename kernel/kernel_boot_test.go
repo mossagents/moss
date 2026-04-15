@@ -2,10 +2,11 @@ package kernel
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/io"
-	kt "github.com/mossagents/moss/kernel/testing"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/kernel/io"
+	kt "github.com/mossagents/moss/kernel/testing"
 )
 
 func TestBoot_RequiresLLMAndUserIO(t *testing.T) {
@@ -56,10 +57,12 @@ func TestBoot_AllowsRepairAfterValidationFailure(t *testing.T) {
 		t.Fatal("expected validation error")
 	}
 
-	k.Apply(
+	if err := k.Apply(
 		WithLLM(&kt.MockLLM{}),
 		WithUserIO(&io.NoOpIO{}),
-	)
+	); err != nil {
+		t.Fatalf("Apply after validation failure: %v", err)
+	}
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot after repair: %v", err)
 	}
