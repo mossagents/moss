@@ -8,7 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
+	extcapability "github.com/mossagents/moss/extensions/capability"
 	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
@@ -279,14 +279,14 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 			t.Fatalf("Upsert(%s): %v", entry.Kind, err)
 		}
 	}
-	capabilitySnapshot := appruntime.CapabilitySnapshot{
+	capabilitySnapshot := extcapability.CapabilitySnapshot{
 		UpdatedAt: time.Now().UTC(),
-		Items: []appruntime.CapabilityStatus{
+		Items: []extcapability.CapabilityStatus{
 			{Capability: "builtin-tools", Kind: "builtin", Name: "builtin-tools", State: "ready", Critical: true, UpdatedAt: time.Now().UTC()},
 			{Capability: "subagent:planner", Kind: "subagent", Name: "planner", State: "ready", UpdatedAt: time.Now().UTC()},
 		},
 	}
-	path := appruntime.CapabilityStatusPath()
+	path := extcapability.CapabilityStatusPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir capability dir: %v", err)
 	}

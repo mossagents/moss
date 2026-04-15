@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/runtime"
 	kt "github.com/mossagents/moss/testing"
 )
@@ -104,7 +105,7 @@ func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 		t.Fatal("expected workspace isolation to be configured")
 	}
 
-	snapshot, err := runtime.LoadCapabilitySnapshot(runtime.CapabilityStatusPath())
+	snapshot, err := capability.LoadCapabilitySnapshot(capability.CapabilityStatusPath())
 	if err != nil {
 		t.Fatalf("LoadCapabilitySnapshot: %v", err)
 	}

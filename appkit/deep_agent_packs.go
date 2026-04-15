@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rstate "github.com/mossagents/moss/runtime/state"
 )
 
@@ -227,7 +228,7 @@ func buildDeepAgentPostRuntimePack(state *deepAgentPresetState) ([]harness.Featu
 	if appconfig.NormalizeTrustLevel(state.flags.Trust) == appconfig.TrustRestricted &&
 		deepAgentValueOrDefault(state.config.EnableDefaultRestrictedPolicy, true) {
 		features = append(features, harness.ToolPolicy(
-			runtime.ResolveToolPolicyForWorkspace(state.flags.Workspace, state.flags.Trust, "confirm"),
+			rpolicy.ResolveToolPolicyForWorkspace(state.flags.Workspace, state.flags.Trust, "confirm"),
 		))
 	}
 	features = append(features, harness.ExecutionCapabilityReport(state.flags.Workspace, state.isolationRoot, state.isolationEnabled))

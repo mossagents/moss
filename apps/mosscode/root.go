@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/logging"
-	appruntime "github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -278,8 +278,8 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 		os.Getenv("MOSS_APPROVAL_MODE"),
 		product.ApprovalModeConfirm,
 	)
-	cfg.approvalMode = appruntime.NormalizeApprovalMode(cfg.approvalMode)
-	if err := appruntime.ValidateApprovalMode(cfg.approvalMode); err != nil {
+	cfg.approvalMode = rpolicy.NormalizeApprovalMode(cfg.approvalMode)
+	if err := rpolicy.ValidateApprovalMode(cfg.approvalMode); err != nil {
 		return err
 	}
 	cfg.explicitFlags = collectExplicitCobraFlagNames(cmd)

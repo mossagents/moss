@@ -8,7 +8,7 @@ import (
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 	"reflect"
 	"strings"
@@ -126,8 +126,8 @@ func postureWarningForSession(sess *session.Session) string {
 func planPostureRebuild(sessionID string, current, target rprofile.SessionPosture) (postureRebuildPlan, error) {
 	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
-	targetApproval := runtime.NormalizeApprovalMode(target.EffectiveApproval)
-	currentApproval := runtime.NormalizeApprovalMode(current.EffectiveApproval)
+	targetApproval := rpolicy.NormalizeApprovalMode(target.EffectiveApproval)
+	currentApproval := rpolicy.NormalizeApprovalMode(current.EffectiveApproval)
 
 	if currentTrust == targetTrust && currentApproval == targetApproval {
 		if !target.HasToolPolicy || reflect.DeepEqual(target.ToolPolicy, current.ToolPolicy) {
@@ -154,7 +154,7 @@ func formatPosture(posture rprofile.SessionPosture) string {
 		parts = append(parts, "trust="+configpkg.NormalizeTrustLevel(posture.EffectiveTrust))
 	}
 	if strings.TrimSpace(posture.EffectiveApproval) != "" {
-		parts = append(parts, "approval="+runtime.NormalizeApprovalMode(posture.EffectiveApproval))
+		parts = append(parts, "approval="+rpolicy.NormalizeApprovalMode(posture.EffectiveApproval))
 	}
 	if strings.TrimSpace(posture.TaskMode) != "" {
 		parts = append(parts, "task="+strings.TrimSpace(posture.TaskMode))

@@ -32,6 +32,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/providers/embedding"
 	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/scheduler"
 	"io"
 	"net/http"
@@ -242,7 +243,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 }
 
 func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, io kernio.UserIO) {
-	_ = runtime.StartScheduledRunner(ctx, runtime.ScheduledRunnerConfig{
+	_ = scheduling.StartScheduledRunner(ctx, scheduling.ScheduledRunnerConfig{
 		Kernel:       k,
 		Scheduler:    r.sched,
 		SessionStore: r.store,
@@ -264,7 +265,7 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 		},
 		RunIO: func(_ context.Context, job scheduler.Job) kernio.UserIO {
 			_ = job
-			return runtime.NewScheduledCaptureIO()
+			return scheduling.NewScheduledCaptureIO()
 		},
 		OnCreateError: func(jobCtx context.Context, job scheduler.Job, err error) {
 			_ = io.Send(jobCtx, kernio.OutputMessage{Type: kernio.OutputProgress, Content: fmt.Sprintf("Scheduled task [%s] failed to create session: %v", job.ID, err)})
@@ -275,7 +276,7 @@ func (r *mossclawRuntime) startScheduler(ctx context.Context, k *kernel.Kernel, 
 		OnComplete: func(jobCtx context.Context, job scheduler.Job, _ *session.Session, result *session.LifecycleResult, runIO kernio.UserIO) {
 			summary := strings.TrimSpace(result.Output)
 			if summary == "" {
-				if capture, ok := runIO.(*runtime.ScheduledCaptureIO); ok {
+				if capture, ok := runIO.(*scheduling.ScheduledCaptureIO); ok {
 					summary = strings.TrimSpace(capture.FinalText())
 				}
 			}

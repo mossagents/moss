@@ -10,10 +10,12 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	appconfig "github.com/mossagents/moss/config"
+	extcapability "github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
 	appruntime "github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 	"github.com/mossagents/moss/sandbox"
 )
@@ -150,7 +152,7 @@ type DoctorExtensionHealth struct {
 	MCPServerStatus  []MCPServerConfigView         `json:"mcp_server_status,omitempty"`
 	PromptSkills     int                           `json:"prompt_skills"`
 	DiscoveredSkills int                           `json:"discovered_skills"`
-	CapabilityStatus []appruntime.CapabilityStatus `json:"capability_status,omitempty"`
+	CapabilityStatus []extcapability.CapabilityStatus `json:"capability_status,omitempty"`
 	Error            string                        `json:"error,omitempty"`
 }
 
@@ -158,12 +160,12 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspaceDir)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
-	normalizedApprovalMode := appruntime.NormalizeApprovalMode(approvalMode)
+	normalizedApprovalMode := rpolicy.NormalizeApprovalMode(approvalMode)
 	toolPolicy := resolveDoctorToolPolicy(workspaceDir, flags, explicitFlags, trust, normalizedApprovalMode)
 	projectAssetsAllowed := appconfig.ProjectAssetsAllowed(trust)
 	commandNetworkEnforcement := "none"
 	commandNetworkDegraded := false
-	if toolPolicy.Command.Access == appruntime.ToolAccessDeny {
+	if toolPolicy.Command.Access == rpolicy.ToolAccessDeny {
 		commandNetworkEnforcement = "disabled"
 	} else if toolPolicy.Command.Network.Mode == workspace.ExecNetworkDisabled {
 		commandNetworkEnforcement = "soft-limit"
@@ -343,7 +345,7 @@ func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bo
 		health.MCPServerStatus = servers
 	}
 	health.DiscoveredSkills = len(skill.DiscoverSkillManifestsForTrust(workspace, trust))
-	snapshot, err := appruntime.LoadCapabilitySnapshot(appruntime.CapabilityStatusPath())
+	snapshot, err := extcapability.LoadCapabilitySnapshot(extcapability.CapabilityStatusPath())
 	if err == nil {
 		health.CapabilityStatus = snapshot.Items
 	}
@@ -402,11 +404,11 @@ func buildDoctorSnapshotHealth(ctx context.Context, workspace string, sessionSto
 	}
 }
 
-func mergeCapabilityStatuses(base []appruntime.CapabilityStatus, extra []appruntime.CapabilityStatus) []appruntime.CapabilityStatus {
+func mergeCapabilityStatuses(base []extcapability.CapabilityStatus, extra []extcapability.CapabilityStatus) []extcapability.CapabilityStatus {
 	if len(extra) == 0 {
 		return base
 	}
-	indexed := make(map[string]appruntime.CapabilityStatus, len(base)+len(extra))
+	indexed := make(map[string]extcapability.CapabilityStatus, len(base)+len(extra))
 	for _, item := range base {
 		indexed[item.Capability] = item
 	}
@@ -416,7 +418,7 @@ func mergeCapabilityStatuses(base []appruntime.CapabilityStatus, extra []apprunt
 			indexed[item.Capability] = item
 		}
 	}
-	out := make([]appruntime.CapabilityStatus, 0, len(indexed))
+	out := make([]extcapability.CapabilityStatus, 0, len(indexed))
 	for _, item := range indexed {
 		out = append(out, item)
 	}
@@ -429,9 +431,9 @@ func mergeCapabilityStatuses(base []appruntime.CapabilityStatus, extra []apprunt
 	return out
 }
 
-func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) appruntime.ToolPolicy {
+func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) rpolicy.ToolPolicy {
 	if flags == nil {
-		return appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
+		return rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 	}
 	trustOverride := ""
 	if containsString(explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
@@ -450,7 +452,7 @@ func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitF
 	if err == nil {
 		return resolved.ToolPolicy
 	}
-	return appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
+	return rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 }
 
 func containsString(items []string, want string) bool {

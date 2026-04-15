@@ -2,7 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/scheduling"
 )
 
 type overlayID string
@@ -290,7 +290,7 @@ func (m *chatModel) closeAskOverlay() {
 	}
 }
 
-func (m *chatModel) openScheduleOverlay(items []runtime.ScheduleItem) {
+func (m *chatModel) openScheduleOverlay(items []scheduling.ScheduleItem) {
 	m.scheduleBrowser = newScheduleBrowserState(items)
 	m.ensureOverlayStack()
 	m.overlays.Open(overlaySchedule)

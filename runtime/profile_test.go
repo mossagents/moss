@@ -4,6 +4,7 @@ import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
 	rprofile "github.com/mossagents/moss/runtime/profile"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	"os"
 	"path/filepath"
 	"slices"
@@ -88,7 +89,7 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 			MaxSteps:  42,
 			MaxTokens: 99,
 		},
-		ToolPolicy: ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "confirm"),
+		ToolPolicy: rpolicy.ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "confirm"),
 	}
 
 	cfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{}, resolved)
@@ -138,7 +139,7 @@ func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
 		t.Fatalf("expected 1 command rule, got %d", len(resolved.ToolPolicy.Command.Rules))
 	}
 	rule := resolved.ToolPolicy.Command.Rules[0]
-	if rule.Name != "git-push" || rule.Match != "git push*" || rule.Access != ToolAccessRequireApproval {
+	if rule.Name != "git-push" || rule.Match != "git push*" || rule.Access != rpolicy.ToolAccessRequireApproval {
 		t.Fatalf("unexpected command rule: %+v", rule)
 	}
 }
@@ -169,7 +170,7 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 		t.Fatalf("expected 1 http rule, got %d", len(resolved.ToolPolicy.HTTP.Rules))
 	}
 	rule := resolved.ToolPolicy.HTTP.Rules[0]
-	if rule.Name != "api-host" || rule.Match != "api.example.com" || rule.Access != ToolAccessRequireApproval || len(rule.Methods) != 1 || rule.Methods[0] != "GET" {
+	if rule.Name != "api-host" || rule.Match != "api.example.com" || rule.Access != rpolicy.ToolAccessRequireApproval || len(rule.Methods) != 1 || rule.Methods[0] != "GET" {
 		t.Fatalf("unexpected http rule: %+v", rule)
 	}
 }

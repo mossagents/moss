@@ -1,4 +1,4 @@
-package runtime
+package thinking
 
 import (
 	"context"
@@ -109,3 +109,4 @@ func RegisterThinkTool(reg tool.Registry, opts ...ThinkToolOption) error {
 	}
 	return nil
 }
+

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/bootstrap"
+	"github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/internal/runtime/execution"
 	runtimepolicy "github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
@@ -183,7 +184,7 @@ func ExecutionServices(workspaceRoot, isolationRoot string, isolationEnabled boo
 
 // ExecutionCapabilityReport returns a Feature that reports execution capability
 // readiness after runtime assembly.
-func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled bool, reporters ...runtime.CapabilityReporter) Feature {
+func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled bool, reporters ...capability.CapabilityReporter) Feature {
 	return FeatureFunc{
 		FeatureName: "execution-capability-report",
 		MetadataValue: FeatureMetadata{
@@ -192,7 +193,7 @@ func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled
 			Requires: []string{"execution-services"},
 		},
 		InstallFunc: func(ctx context.Context, h *Harness) error {
-			reporter := runtime.NewCapabilityReporter(runtime.CapabilityStatusPath(), nil)
+			reporter := capability.NewCapabilityReporter(capability.CapabilityStatusPath(), nil)
 			if len(reporters) > 0 && reporters[0] != nil {
 				reporter = reporters[0]
 			}
@@ -230,7 +231,7 @@ func LLMResilience(retryCfg *retry.Config, breakerCfg *retry.BreakerConfig) Feat
 }
 
 // ToolPolicy returns a Feature that installs the canonical structured tool policy.
-func ToolPolicy(policy runtime.ToolPolicy) Feature {
+func ToolPolicy(policy runtimepolicy.ToolPolicy) Feature {
 	return FeatureFunc{
 		FeatureName: "tool-policy",
 		MetadataValue: FeatureMetadata{

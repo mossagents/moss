@@ -14,7 +14,6 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 )
@@ -628,7 +627,7 @@ func TestFeature_PatchToolCalls(t *testing.T) {
 
 func TestFeature_ToolPolicy(t *testing.T) {
 	h := newTestHarness()
-	policy := runtime.ResolveToolPolicyForWorkspace(t.TempDir(), "trusted", "confirm")
+	policy := runtimepolicy.ResolveToolPolicyForWorkspace(t.TempDir(), "trusted", "confirm")
 	if err := h.Install(context.Background(), ToolPolicy(policy)); err != nil {
 		t.Fatalf("ToolPolicy Install failed: %v", err)
 	}
@@ -643,7 +642,7 @@ func TestFeature_ToolPolicy(t *testing.T) {
 
 func TestFeature_ToolPolicyRejectsEmptyPolicy(t *testing.T) {
 	h := newTestHarness()
-	err := h.Install(context.Background(), ToolPolicy(runtime.ToolPolicy{}))
+	err := h.Install(context.Background(), ToolPolicy(runtimepolicy.ToolPolicy{}))
 	if err == nil {
 		t.Fatal("expected error")
 	}

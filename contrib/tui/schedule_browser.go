@@ -3,17 +3,17 @@ package tui
 import (
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/scheduling"
 	"strings"
 )
 
 type scheduleBrowserState struct {
-	items   []runtime.ScheduleItem
+	items   []scheduling.ScheduleItem
 	cursor  int
 	message string
 }
 
-func newScheduleBrowserState(items []runtime.ScheduleItem) *scheduleBrowserState {
+func newScheduleBrowserState(items []scheduling.ScheduleItem) *scheduleBrowserState {
 	return &scheduleBrowserState{items: items}
 }
 
@@ -109,7 +109,7 @@ func (m chatModel) deleteSelectedSchedule() (chatModel, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 	}
-	items, listErr := []runtime.ScheduleItem(nil), error(nil)
+	items, listErr := []scheduling.ScheduleItem(nil), error(nil)
 	if m.scheduleCtrl != nil {
 		items, listErr = m.scheduleCtrl.List()
 	}

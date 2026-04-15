@@ -11,6 +11,7 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agent"
+	"github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/runtime/policy"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
@@ -125,7 +126,7 @@ func TestInstall_PersistsCapabilitySnapshot(t *testing.T) {
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
 	}
-	snapshot, err := appruntime.LoadCapabilitySnapshot(appruntime.CapabilityStatusPath())
+	snapshot, err := capability.LoadCapabilitySnapshot(capability.CapabilityStatusPath())
 	if err != nil {
 		t.Fatalf("LoadCapabilitySnapshot: %v", err)
 	}

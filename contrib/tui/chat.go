@@ -19,8 +19,8 @@ import (
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/runtime"
 	rprofile "github.com/mossagents/moss/runtime/profile"
+	"github.com/mossagents/moss/runtime/scheduling"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	userattachments "github.com/mossagents/moss/userio/attachments"
 )
@@ -116,7 +116,7 @@ type chatModel struct {
 	taskListFn            func(status string, limit int) (string, error)
 	taskQueryFn           func(taskID string) (string, error)
 	taskCancelFn          func(taskID, reason string) (string, error)
-	scheduleCtrl          runtime.ScheduleController
+	scheduleCtrl          scheduling.ScheduleController
 	sessionListFn         func(limit int) (string, error)
 	changeListFn          func(limit int) (string, error)
 	changeShowFn          func(changeID string) (string, error)

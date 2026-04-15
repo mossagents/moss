@@ -18,6 +18,8 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
+	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"sort"
@@ -58,7 +60,7 @@ type Config struct {
 	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
 	PromptModelInstructions  string
-	ScheduleController       runtime.ScheduleController
+	ScheduleController       scheduling.ScheduleController
 	// Extensions registers custom slash commands, key bindings, widgets, and overlays.
 	// Duplicate slash command names across extensions cause Run to return an error.
 	Extensions []*Extension
@@ -190,7 +192,7 @@ func (a *agentState) sessionSummary() string {
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
-	policy := runtime.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
+	policy := rpolicy.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
 	if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
 		policy = posture.ToolPolicy
 	}
@@ -365,7 +367,7 @@ func (a *agentState) permissionSummary() string {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
 	}
 	if k != nil {
-		policy := runtime.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
+		policy := rpolicy.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
 		if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
 			policy = posture.ToolPolicy
 		}

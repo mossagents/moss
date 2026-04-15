@@ -11,7 +11,6 @@ import (
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/runtime"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 )
 
@@ -21,12 +20,12 @@ const (
 	ApprovalModeFullAuto = "full-auto"
 )
 
-func approvalModeToolPolicyForTrust(trust, mode string) (runtime.ToolPolicy, error) {
-	mode = runtime.NormalizeApprovalMode(mode)
-	if err := runtime.ValidateApprovalMode(mode); err != nil {
-		return runtime.ToolPolicy{}, err
+func approvalModeToolPolicyForTrust(trust, mode string) (runtimepolicy2.ToolPolicy, error) {
+	mode = runtimepolicy2.NormalizeApprovalMode(mode)
+	if err := runtimepolicy2.ValidateApprovalMode(mode); err != nil {
+		return runtimepolicy2.ToolPolicy{}, err
 	}
-	return runtime.ResolveToolPolicyForWorkspace("", trust, mode), nil
+	return runtimepolicy2.ResolveToolPolicyForWorkspace("", trust, mode), nil
 }
 
 func ApplyApprovalMode(k *kernel.Kernel, mode string) (string, error) {
@@ -34,8 +33,8 @@ func ApplyApprovalMode(k *kernel.Kernel, mode string) (string, error) {
 }
 
 func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, error) {
-	mode = runtime.NormalizeApprovalMode(mode)
-	if err := runtime.ValidateApprovalMode(mode); err != nil {
+	mode = runtimepolicy2.NormalizeApprovalMode(mode)
+	if err := runtimepolicy2.ValidateApprovalMode(mode); err != nil {
 		return "", err
 	}
 	policy, err := approvalModeToolPolicyForTrust(trust, mode)
@@ -49,14 +48,14 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile rprofile.ResolvedProfile) er
 	if k == nil {
 		return fmt.Errorf("kernel is nil")
 	}
-	mode := runtime.NormalizeApprovalMode(profile.ApprovalMode)
-	if err := runtime.ValidateApprovalMode(mode); err != nil {
+	mode := runtimepolicy2.NormalizeApprovalMode(profile.ApprovalMode)
+	if err := runtimepolicy2.ValidateApprovalMode(mode); err != nil {
 		return err
 	}
 	return runtimepolicy2.Apply(k, profile.ToolPolicy)
 }
 
-func EvaluateToolPolicy(policy runtime.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
+func EvaluateToolPolicy(policy runtimepolicy2.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
 	return runtimepolicy2.Evaluate(policy, spec, input)
 }
 

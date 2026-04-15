@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 )
 
@@ -72,7 +72,7 @@ func launchTUI(cfg *config) error {
 					TaskMode:     profile,
 					Trust:        trust,
 					ApprovalMode: approvalMode,
-					ToolPolicy:   appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
+					ToolPolicy:   rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
 				}
 			}
 			return rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{

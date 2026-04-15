@@ -7,7 +7,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rprofile "github.com/mossagents/moss/runtime/profile"
 	kt "github.com/mossagents/moss/testing"
 	"os"
@@ -104,7 +104,7 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postureFromRuntime: %v", err)
 	}
-	toolPolicyMeta, err := runtime.EncodeToolPolicyMetadata(runtime.ResolveToolPolicyForWorkspace("", "restricted", "read-only"))
+	toolPolicyMeta, err := rpolicy.EncodeToolPolicyMetadata(rpolicy.ResolveToolPolicyForWorkspace("", "restricted", "read-only"))
 	if err != nil {
 		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
 	}

@@ -14,7 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/scheduler"
 	"os"
 	"path/filepath"
@@ -132,7 +132,7 @@ func launchTUI(cfg *config) error {
 				},
 			}
 		},
-		ScheduleController: runtime.SchedulerAdapter{
+		ScheduleController: scheduling.SchedulerAdapter{
 			Scheduler: rt.sched,
 		},
 	})
@@ -218,7 +218,7 @@ func (r *mossquantRuntime) afterBoot(ctx context.Context, k *kernel.Kernel, user
 		r.profile = &InvestorProfile{}
 	}
 
-	if err := runtime.StartScheduledRunner(ctx, runtime.ScheduledRunnerConfig{
+	if err := scheduling.StartScheduledRunner(ctx, scheduling.ScheduledRunnerConfig{
 		Kernel:       k,
 		Scheduler:    r.sched,
 		SessionStore: r.store,

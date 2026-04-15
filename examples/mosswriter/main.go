@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/thinking"
 	"io"
 	"os"
 	"os/signal"
@@ -220,11 +220,11 @@ func registerWriterTools(reg tool.Registry) error {
 		handler tool.ToolHandler
 	}{
 		{
-			runtime.NewThinkToolSpec(
-				runtime.WithThinkToolDescription("Record a short reflection about writing, research gaps, or next steps."),
-				runtime.WithThinkToolCapabilities("thinking", "writing"),
+			thinking.NewThinkToolSpec(
+				thinking.WithThinkToolDescription("Record a short reflection about writing, research gaps, or next steps."),
+				thinking.WithThinkToolCapabilities("thinking", "writing"),
 			),
-			runtime.NewThinkToolHandler("think_tool"),
+			thinking.NewThinkToolHandler("think_tool"),
 		},
 		{makeSlugSpec, makeSlugHandler()},
 		{generateImageBriefSpec, generateImageBriefHandler()},
@@ -315,3 +315,4 @@ func valueOr(v, fallback string) string {
 	}
 	return strings.TrimSpace(v)
 }
+

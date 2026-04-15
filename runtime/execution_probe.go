@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	extcap "github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/sandbox"
@@ -106,11 +107,11 @@ func (p *ExecutionProbe) Error(capability string) error {
 	return p.errors[strings.TrimSpace(capability)]
 }
 
-func (p *ExecutionProbe) CapabilityStatuses() []CapabilityStatus {
+func (p *ExecutionProbe) CapabilityStatuses() []extcap.CapabilityStatus {
 	if p == nil {
 		return nil
 	}
-	return []CapabilityStatus{
+	return []extcap.CapabilityStatus{
 		p.capabilityStatus(CapabilityExecutionWorkspace, "workspace", p.workspace != nil, true),
 		p.capabilityStatus(CapabilityExecutionExecutor, "executor", p.executor != nil, true),
 		p.capabilityStatus(CapabilityExecutionIsolation, "workspace_isolation", p.isolation != nil, false),
@@ -121,7 +122,7 @@ func (p *ExecutionProbe) CapabilityStatuses() []CapabilityStatus {
 	}
 }
 
-func ReportExecutionProbe(ctx context.Context, reporter CapabilityReporter, probe *ExecutionProbe) {
+func ReportExecutionProbe(ctx context.Context, reporter extcap.CapabilityReporter, probe *ExecutionProbe) {
 	if reporter == nil || probe == nil {
 		return
 	}
@@ -130,8 +131,8 @@ func ReportExecutionProbe(ctx context.Context, reporter CapabilityReporter, prob
 	}
 }
 
-func (p *ExecutionProbe) capabilityStatus(capability, name string, ready bool, critical bool) CapabilityStatus {
-	status := CapabilityStatus{
+func (p *ExecutionProbe) capabilityStatus(capability, name string, ready bool, critical bool) extcap.CapabilityStatus {
+	status := extcap.CapabilityStatus{
 		Capability: capability,
 		Kind:       "execution",
 		Name:       name,

@@ -14,7 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/runtime/thinking"
 	"io"
 	"os"
 	"os/signal"
@@ -266,9 +266,9 @@ func ensureFinalReport(workspace, output string) error {
 }
 
 func registerResearchTools(reg tool.Registry) error {
-	return runtime.RegisterThinkTool(reg,
-		runtime.WithThinkToolDescription("Record a short research reflection about what was found, what is missing, and what to do next."),
-		runtime.WithThinkToolCapabilities("thinking", "research"),
+	return thinking.RegisterThinkTool(reg,
+		thinking.WithThinkToolDescription("Record a short research reflection about what was found, what is missing, and what to do next."),
+		thinking.WithThinkToolCapabilities("thinking", "research"),
 	)
 }
 
@@ -303,3 +303,4 @@ Suggested budgets:
 		TrustLevel:   flags.Trust,
 	})
 }
+

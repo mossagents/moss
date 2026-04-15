@@ -11,6 +11,7 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/extensions/agent"
+	extcapability "github.com/mossagents/moss/extensions/capability"
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/session"
@@ -214,7 +215,7 @@ func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptRepor
 func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport, error) {
 	report := &InspectCapabilityReport{}
 	indexed := map[string]InspectCapabilityItem{}
-	if snapshot, err := appruntime.LoadCapabilitySnapshot(appruntime.CapabilityStatusPath()); err == nil {
+	if snapshot, err := extcapability.LoadCapabilitySnapshot(extcapability.CapabilityStatusPath()); err == nil {
 		report.UpdatedAt = snapshot.UpdatedAt
 		for _, item := range snapshot.Items {
 			indexed[item.Capability] = InspectCapabilityItem{

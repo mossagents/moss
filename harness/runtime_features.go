@@ -15,6 +15,8 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	"github.com/mossagents/moss/extensions/capability"
+	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/scheduler"
 )
@@ -25,7 +27,7 @@ type runtimeSetupConfig struct {
 	skills            bool
 	progressiveSkills bool
 	agents            bool
-	reporter          runtime.CapabilityReporter
+	reporter          capability.CapabilityReporter
 }
 
 // RuntimeSetupOption configures harness-owned runtime capability assembly.
@@ -71,7 +73,7 @@ func WithAgents(enabled bool) RuntimeSetupOption {
 	return func(cfg *runtimeSetupConfig) { cfg.agents = enabled }
 }
 
-func WithCapabilityReporter(r runtime.CapabilityReporter) RuntimeSetupOption {
+func WithCapabilityReporter(r capability.CapabilityReporter) RuntimeSetupOption {
 	return func(cfg *runtimeSetupConfig) { cfg.reporter = r }
 }
 
@@ -245,8 +247,8 @@ func Scheduling(s *scheduler.Scheduler) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().Apply(runtime.WithScheduler(s))
-			return runtime.RegisterSchedulerTools(h.Kernel(), s)
+			h.Kernel().Apply(scheduling.WithScheduler(s))
+			return scheduling.RegisterSchedulerTools(h.Kernel(), s)
 		},
 	}
 }
