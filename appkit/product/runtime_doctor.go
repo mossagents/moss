@@ -14,9 +14,9 @@ import (
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	appruntime "github.com/mossagents/moss/runtime"
 	rpolicy "github.com/mossagents/moss/runtime/policy"
 	rprofile "github.com/mossagents/moss/runtime/profile"
+	rprobe "github.com/mossagents/moss/runtime/probe"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -349,7 +349,7 @@ func buildDoctorExtensionHealth(workspace, trust string, projectAssetsAllowed bo
 	if err == nil {
 		health.CapabilityStatus = snapshot.Items
 	}
-	if probe := appruntime.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+	if probe := rprobe.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
 		health.CapabilityStatus = mergeCapabilityStatuses(health.CapabilityStatus, probe.CapabilityStatuses())
 	}
 	return health
@@ -472,3 +472,4 @@ func envConfigured(keys ...string) bool {
 	}
 	return false
 }
+

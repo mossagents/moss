@@ -16,6 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
 	"github.com/mossagents/moss/extensions/capability"
+	rknowledge "github.com/mossagents/moss/runtime/knowledge"
 	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/sandbox"
 	"github.com/mossagents/moss/scheduler"
@@ -262,7 +263,7 @@ func Knowledge(store knowledge.Store, embedder model.Embedder) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			return runtime.RegisterKnowledgeTools(h.Kernel(), store, embedder)
+			return rknowledge.RegisterKnowledgeTools(h.Kernel(), store, embedder)
 		},
 	}
 }
@@ -317,4 +318,5 @@ func installPersistentMemories(k *kernel.Kernel, memoriesDir, sqlitePath string)
 	k.Apply(runtime.WithMemoryWorkspace(ws), runtime.WithMemoryStore(store))
 	return nil
 }
+
 

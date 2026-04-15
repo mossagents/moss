@@ -14,8 +14,8 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/runtime"
 	rpolicy "github.com/mossagents/moss/runtime/policy"
+	rprobe "github.com/mossagents/moss/runtime/probe"
 	rstate "github.com/mossagents/moss/runtime/state"
 )
 
@@ -172,8 +172,8 @@ func buildDeepAgentExecutionPack(state *deepAgentPresetState) ([]harness.Feature
 		}
 	}
 
-	probe := runtime.NewExecutionProbe(state.flags.Workspace, state.isolationRoot, state.isolationEnabled)
-	if err := probe.Error(runtime.CapabilityExecutionIsolation); err != nil {
+	probe := rprobe.NewExecutionProbe(state.flags.Workspace, state.isolationRoot, state.isolationEnabled)
+	if err := probe.Error(rprobe.CapabilityExecutionIsolation); err != nil {
 		return nil, fmt.Errorf("workspace isolation: %w", err)
 	}
 	return []harness.Feature{
@@ -267,3 +267,4 @@ func deepAgentGeneralPurposeFeature(flags *AppFlags, cfg DeepAgentConfig) harnes
 		},
 	}
 }
+

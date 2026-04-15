@@ -16,7 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/extensions/capability"
-	"github.com/mossagents/moss/runtime"
+	rprobe "github.com/mossagents/moss/runtime/probe"
 	kt "github.com/mossagents/moss/testing"
 )
 
@@ -110,13 +110,13 @@ func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 		t.Fatalf("LoadCapabilitySnapshot: %v", err)
 	}
 	want := map[string]bool{
-		runtime.CapabilityExecutionWorkspace:      false,
-		runtime.CapabilityExecutionExecutor:       false,
-		runtime.CapabilityExecutionIsolation:      false,
-		runtime.CapabilityExecutionRepoState:      false,
-		runtime.CapabilityExecutionPatchApply:     false,
-		runtime.CapabilityExecutionPatchRevert:    false,
-		runtime.CapabilityExecutionWorktreeStates: false,
+		rprobe.CapabilityExecutionWorkspace:      false,
+		rprobe.CapabilityExecutionExecutor:       false,
+		rprobe.CapabilityExecutionIsolation:      false,
+		rprobe.CapabilityExecutionRepoState:      false,
+		rprobe.CapabilityExecutionPatchApply:     false,
+		rprobe.CapabilityExecutionPatchRevert:    false,
+		rprobe.CapabilityExecutionWorktreeStates: false,
 	}
 	for _, item := range snapshot.Items {
 		if _, ok := want[item.Capability]; ok && item.State == "ready" {
@@ -628,3 +628,4 @@ func deepAgentFeatureMetadata(t *testing.T, feature harness.Feature) harness.Fea
 	}
 	return withMetadata.Metadata()
 }
+

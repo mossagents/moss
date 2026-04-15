@@ -1,26 +1,26 @@
-package runtime
+package knowledge
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/extensions/knowledge"
+	extknowledge "github.com/mossagents/moss/extensions/knowledge"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
 // NewMemoryStore 返回官方提供的内存知识库实现。
-func NewMemoryKnowledgeStore() *knowledge.MemoryStore {
-	return knowledge.NewMemoryStore()
+func NewMemoryKnowledgeStore() *extknowledge.MemoryStore {
+	return extknowledge.NewMemoryStore()
 }
 
 // RegisterTools 将 knowledge 能力作为标准扩展工具集接入 Kernel。
-func RegisterKnowledgeTools(k *kernel.Kernel, store knowledge.Store, embedder model.Embedder) error {
+func RegisterKnowledgeTools(k *kernel.Kernel, store extknowledge.Store, embedder model.Embedder) error {
 	return register(k.ToolRegistry(), store, embedder)
 }
 
-func register(reg tool.Registry, store knowledge.Store, embedder model.Embedder) error {
+func register(reg tool.Registry, store extknowledge.Store, embedder model.Embedder) error {
 	tools := []struct {
 		spec    tool.ToolSpec
 		handler tool.ToolHandler
@@ -58,7 +58,7 @@ Example: ingest_document(id="readme", source="README.md", text="...", chunk_size
 	Capabilities: []string{"knowledge"},
 }
 
-func ingestDocHandler(store knowledge.Store, embedder model.Embedder) tool.ToolHandler {
+func ingestDocHandler(store extknowledge.Store, embedder model.Embedder) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			ID        string `json:"id"`
@@ -70,7 +70,7 @@ func ingestDocHandler(store knowledge.Store, embedder model.Embedder) tool.ToolH
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 
-		chunks := knowledge.ChunkText(params.Text, params.ChunkSize, 0)
+		chunks := extknowledge.ChunkText(params.Text, params.ChunkSize, 0)
 		if err := store.Add(ctx, embedder, params.ID, params.Source, chunks, nil); err != nil {
 			return nil, fmt.Errorf("ingest document: %w", err)
 		}
@@ -105,7 +105,7 @@ Example: knowledge_search(query="how to deploy", limit=5)`,
 	Capabilities: []string{"knowledge"},
 }
 
-func knowledgeSearchHandler(store knowledge.Store, embedder model.Embedder) tool.ToolHandler {
+func knowledgeSearchHandler(store extknowledge.Store, embedder model.Embedder) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Query string `json:"query"`
@@ -141,7 +141,7 @@ var knowledgeListSpec = tool.ToolSpec{
 	Capabilities: []string{"knowledge"},
 }
 
-func knowledgeListHandler(store knowledge.Store) tool.ToolHandler {
+func knowledgeListHandler(store extknowledge.Store) tool.ToolHandler {
 	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		summaries := store.List()
 		docs, chunks := store.Count()
@@ -152,3 +152,4 @@ func knowledgeListHandler(store knowledge.Store) tool.ToolHandler {
 		})
 	}
 }
+

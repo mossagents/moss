@@ -1,4 +1,4 @@
-package runtime
+package probe
 
 import (
 	"testing"
@@ -45,3 +45,4 @@ func TestNewExecutionProbeDisablesIsolation(t *testing.T) {
 	}
 	t.Fatal("missing workspace isolation capability")
 }
+

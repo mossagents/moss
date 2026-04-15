@@ -1,4 +1,4 @@
-package runtime
+package probe
 
 import (
 	"context"
@@ -162,3 +162,4 @@ func (p *ExecutionProbe) capabilityStatus(capability, name string, ready bool, c
 	status.State = "degraded"
 	return status
 }
+

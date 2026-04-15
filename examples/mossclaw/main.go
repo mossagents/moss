@@ -31,7 +31,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/providers/embedding"
-	"github.com/mossagents/moss/runtime"
+	rknowledge "github.com/mossagents/moss/runtime/knowledge"
 	"github.com/mossagents/moss/runtime/scheduling"
 	"github.com/mossagents/moss/scheduler"
 	"io"
@@ -218,7 +218,7 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 
 	sched := scheduler.New()
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
-	knStore := runtime.NewMemoryKnowledgeStore()
+	knStore := rknowledge.NewMemoryKnowledgeStore()
 
 	k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 		harness.SessionPersistence(store),
@@ -545,3 +545,4 @@ func truncate(s string, max int) string {
 	}
 	return s[:max] + "..."
 }
+

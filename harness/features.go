@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/runtime"
+	rprobe "github.com/mossagents/moss/runtime/probe"
 	rstate "github.com/mossagents/moss/runtime/state"
 )
 
@@ -197,10 +198,10 @@ func ExecutionCapabilityReport(workspace, isolationRoot string, isolationEnabled
 			if len(reporters) > 0 && reporters[0] != nil {
 				reporter = reporters[0]
 			}
-			runtime.ReportExecutionProbe(
+			rprobe.ReportExecutionProbe(
 				ctx,
 				reporter,
-				runtime.ExecutionProbeFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
+				rprobe.ExecutionProbeFromKernel(h.Kernel(), workspace, isolationRoot, isolationEnabled),
 			)
 			return nil
 		},
@@ -262,4 +263,5 @@ func PatchToolCalls() Feature {
 		},
 	}
 }
+
 

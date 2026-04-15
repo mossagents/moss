@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/extensions/skill"
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
+	rprobe "github.com/mossagents/moss/runtime/probe"
 	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/userio/prompting"
 )
@@ -229,7 +229,7 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			}
 		}
 	}
-	if probe := appruntime.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
+	if probe := rprobe.ProbeExecutionCapabilities(workspace, WorkspaceIsolationDir(), true); probe != nil {
 		for _, status := range probe.CapabilityStatuses() {
 			item := indexed[status.Capability]
 			item.Capability = status.Capability
@@ -241,24 +241,24 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 				item.Error = status.Error
 			}
 			switch status.Capability {
-			case appruntime.CapabilityExecutionIsolation:
+			case rprobe.CapabilityExecutionIsolation:
 				item.Source = probe.IsolationRoot
 			default:
 				item.Source = probe.WorkspaceRoot
 			}
 			if item.Details == "" {
 				switch status.Capability {
-				case appruntime.CapabilityExecutionWorkspace, appruntime.CapabilityExecutionExecutor:
+				case rprobe.CapabilityExecutionWorkspace, rprobe.CapabilityExecutionExecutor:
 					item.Details = "local sandbox"
-				case appruntime.CapabilityExecutionRepoState:
+				case rprobe.CapabilityExecutionRepoState:
 					item.Details = "git repo capture"
-				case appruntime.CapabilityExecutionPatchApply:
+				case rprobe.CapabilityExecutionPatchApply:
 					item.Details = "git apply"
-				case appruntime.CapabilityExecutionPatchRevert:
+				case rprobe.CapabilityExecutionPatchRevert:
 					item.Details = "git revert/reset"
-				case appruntime.CapabilityExecutionWorktreeStates:
+				case rprobe.CapabilityExecutionWorktreeStates:
 					item.Details = "ghost-state snapshots"
-				case appruntime.CapabilityExecutionIsolation:
+				case rprobe.CapabilityExecutionIsolation:
 					item.Details = "task-scoped workspace leases"
 				}
 			}
@@ -539,3 +539,4 @@ func cloneIntMap(in map[string]int) map[string]int {
 	}
 	return out
 }
+
