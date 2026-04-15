@@ -12,7 +12,6 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/sandbox"
 	"os"
 )
 
@@ -26,7 +25,7 @@ func WithLLM(llm model.LLM) Option {
 
 // WithSandbox 设置 Sandbox。
 // 同时自动适配为 Workspace 和 Executor（如果尚未单独设置）。
-func WithSandbox(sb sandbox.Sandbox) Option {
+func WithSandbox(sb workspace.Sandbox) Option {
 	return func(k *Kernel) {
 		k.sandbox = sb
 		if k.workspace == nil {
@@ -156,7 +155,7 @@ func WithLLMBreaker(cfg retry.BreakerConfig) Option {
 
 // sandboxWorkspaceAdapter 将任意 Sandbox 适配为 workspace.Workspace。
 type sandboxWorkspaceAdapter struct {
-	sb sandbox.Sandbox
+	sb workspace.Sandbox
 }
 
 func (a *sandboxWorkspaceAdapter) ReadFile(_ context.Context, path string) ([]byte, error) {
@@ -198,9 +197,10 @@ func (a *sandboxWorkspaceAdapter) DeleteFile(_ context.Context, path string) err
 
 // sandboxExecutorAdapter 将任意 Sandbox 适配为 workspace.Executor。
 type sandboxExecutorAdapter struct {
-	sb sandbox.Sandbox
+	sb workspace.Sandbox
 }
 
 func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return a.sb.Execute(ctx, req)
 }
+

@@ -20,14 +20,13 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/sandbox"
 )
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
 	llm         model.LLM
 	io          io.UserIO
-	sandbox     sandbox.Sandbox
+	sandbox     workspace.Sandbox
 	workspace   workspace.Workspace
 	executor    workspace.Executor
 	tasks       taskrt.TaskRuntime
@@ -283,7 +282,7 @@ func panicAsError(prefix string, value any) error {
 }
 
 // Sandbox 返回沙箱抽象（可能为 nil）。
-func (k *Kernel) Sandbox() sandbox.Sandbox {
+func (k *Kernel) Sandbox() workspace.Sandbox {
 	return k.sandbox
 }
 
@@ -439,3 +438,4 @@ func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*s
 		streamAgentEvents(req.Agent, invCtx, yield)
 	}
 }
+
