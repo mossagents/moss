@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	kerrors "github.com/mossagi/moss/kernel/errors"
+	kerrors "github.com/mossagents/moss/kernel/errors"
 )
 
 func TestRunSupervisorBeginRejectsAfterShutdown(t *testing.T) {
