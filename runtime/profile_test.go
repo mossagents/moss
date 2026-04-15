@@ -3,6 +3,7 @@ package runtime
 import (
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/session"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,7 +38,7 @@ func TestProfileNamesForWorkspaceIncludesBuiltinsAndConfig(t *testing.T) {
 	}
 	writeProjectConfig(t, workspace, []byte("profiles:\n  custom-project:\n    label: Custom Project\n"))
 
-	names, err := ProfileNamesForWorkspace(workspace, appconfig.TrustTrusted)
+	names, err := rprofile.ProfileNamesForWorkspace(workspace, appconfig.TrustTrusted)
 	if err != nil {
 		t.Fatalf("ProfileNamesForWorkspace: %v", err)
 	}
@@ -65,7 +66,7 @@ func TestProfileNamesForWorkspaceRestrictedSkipsProjectConfig(t *testing.T) {
 	}
 	writeProjectConfig(t, workspace, []byte("profiles:\n  custom-project:\n    label: Custom Project\n"))
 
-	names, err := ProfileNamesForWorkspace(workspace, appconfig.TrustRestricted)
+	names, err := rprofile.ProfileNamesForWorkspace(workspace, appconfig.TrustRestricted)
 	if err != nil {
 		t.Fatalf("ProfileNamesForWorkspace: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestProfileNamesForWorkspaceRestrictedSkipsProjectConfig(t *testing.T) {
 }
 
 func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
-	resolved := ResolvedProfile{
+	resolved := rprofile.ResolvedProfile{
 		Name:         "research",
 		TaskMode:     "research",
 		Trust:        appconfig.TrustTrusted,
@@ -90,7 +91,7 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 		ToolPolicy: ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "confirm"),
 	}
 
-	cfg := ApplyResolvedProfileToSessionConfig(session.SessionConfig{}, resolved)
+	cfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{}, resolved)
 	if cfg.Profile != "research" {
 		t.Fatalf("profile = %q, want research", cfg.Profile)
 	}
@@ -126,7 +127,7 @@ func TestResolveProfileForWorkspaceAppliesCommandRules(t *testing.T) {
 	configData := []byte("profiles:\n  guarded:\n    execution:\n      command_rules:\n        - name: git-push\n          match: \"git push*\"\n          access: require-approval\n")
 	writeProjectConfig(t, workspace, configData)
 
-	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
+	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: "guarded",
 	})
@@ -157,7 +158,7 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 	configData := []byte("profiles:\n  guarded:\n    execution:\n      http_rules:\n        - name: api-host\n          match: \"api.example.com\"\n          methods: [GET]\n          access: require-approval\n")
 	writeProjectConfig(t, workspace, configData)
 
-	resolved, err := ResolveProfileForWorkspace(ProfileResolveOptions{
+	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: "guarded",
 	})
@@ -174,7 +175,7 @@ func TestResolveProfileForWorkspaceAppliesHTTPRules(t *testing.T) {
 }
 
 func TestResolveSessionPostureForWorkspaceUsesResolvedProfile(t *testing.T) {
-	posture, resolved, err := ResolveSessionPostureForWorkspace(ProfileResolveOptions{
+	posture, resolved, err := rprofile.ResolveSessionPostureForWorkspace(rprofile.ProfileResolveOptions{
 		RequestedProfile: "coding",
 		Trust:            appconfig.TrustRestricted,
 		ApprovalMode:     "full",

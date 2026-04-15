@@ -4,16 +4,17 @@ import (
 	"context"
 	"github.com/mossagents/moss/kernel/memory"
 	memstore "github.com/mossagents/moss/runtime/memory"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"io"
 	"time"
 )
 
 type indexedMemoryStore struct {
 	base    memory.MemoryStore
-	catalog *StateCatalog
+	catalog *rstate.StateCatalog
 }
 
-func newIndexedMemoryStore(base memory.MemoryStore, catalog *StateCatalog) memory.MemoryStore {
+func newIndexedMemoryStore(base memory.MemoryStore, catalog *rstate.StateCatalog) memory.MemoryStore {
 	if base == nil || catalog == nil || !catalog.Enabled() {
 		return base
 	}
@@ -37,7 +38,7 @@ func (s *indexedMemoryStore) DeleteByPath(ctx context.Context, path string) erro
 	if err := s.base.DeleteByPath(ctx, path); err != nil {
 		return err
 	}
-	return s.catalog.Delete(StateKindMemory, memstore.NormalizePath(path))
+	return s.catalog.Delete(rstate.StateKindMemory, memstore.NormalizePath(path))
 }
 
 func (s *indexedMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
@@ -71,7 +72,7 @@ func (s *indexedMemoryStore) Close() error {
 }
 
 func (s *indexedMemoryStore) syncRecord(record memory.MemoryRecord) {
-	if entry, ok := StateEntryFromMemory(record); ok {
+	if entry, ok := rstate.StateEntryFromMemory(record); ok {
 		if err := s.catalog.Upsert(entry); err != nil {
 			s.catalog.MarkError(err)
 		}

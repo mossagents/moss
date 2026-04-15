@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 type notificationProgressMsg struct {
@@ -624,7 +625,7 @@ func foldExecutionProgressEvent(current executionProgressState, event observe.Ex
 	return next
 }
 
-func rebuildExecutionProgress(catalog *runtime.StateCatalog, sess *session.Session) executionProgressState {
+func rebuildExecutionProgress(catalog *rstate.StateCatalog, sess *session.Session) executionProgressState {
 	state := executionProgressState{}
 	if sess == nil {
 		return state
@@ -634,8 +635,8 @@ func rebuildExecutionProgress(catalog *runtime.StateCatalog, sess *session.Sessi
 	if catalog == nil || !catalog.Enabled() || strings.TrimSpace(sess.ID) == "" {
 		return state
 	}
-	page, err := catalog.Query(runtime.StateQuery{
-		Kinds:     []runtime.StateKind{runtime.StateKindExecutionEvent},
+	page, err := catalog.Query(rstate.StateQuery{
+		Kinds:     []rstate.StateKind{rstate.StateKindExecutionEvent},
 		SessionID: sess.ID,
 		Limit:     128,
 	})
@@ -654,11 +655,11 @@ func rebuildExecutionProgress(catalog *runtime.StateCatalog, sess *session.Sessi
 	return state
 }
 
-func latestRunEntries(items []runtime.StateEntry) []runtime.StateEntry {
+func latestRunEntries(items []rstate.StateEntry) []rstate.StateEntry {
 	if len(items) == 0 {
 		return nil
 	}
-	collected := make([]runtime.StateEntry, 0, len(items))
+	collected := make([]rstate.StateEntry, 0, len(items))
 	sawProgress := false
 	for _, item := range items {
 		collected = append(collected, item)
@@ -687,8 +688,8 @@ type stateEntryExecutionMetadata struct {
 	Metadata    map[string]any `json:"data"`
 }
 
-func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEvent, bool) {
-	if entry.Kind != runtime.StateKindExecutionEvent {
+func executionEventFromStateEntry(entry rstate.StateEntry) (observe.ExecutionEvent, bool) {
+	if entry.Kind != rstate.StateKindExecutionEvent {
 		return observe.ExecutionEvent{}, false
 	}
 	meta := stateEntryExecutionMetadata{}
@@ -721,7 +722,7 @@ func executionEventFromStateEntry(entry runtime.StateEntry) (observe.ExecutionEv
 	}, true
 }
 
-func stateEntryEventType(entry runtime.StateEntry) observe.ExecutionEventType {
+func stateEntryEventType(entry rstate.StateEntry) observe.ExecutionEventType {
 	if len(entry.Metadata) > 0 {
 		var meta map[string]json.RawMessage
 		if err := json.Unmarshal(entry.Metadata, &meta); err == nil {

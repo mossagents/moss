@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"testing"
 	"time"
 )
@@ -26,12 +27,12 @@ func (s *spyObserver) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
 }
 
 func TestStateCatalogQueryPagination(t *testing.T) {
-	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
 	now := time.Now().UTC()
-	first, ok := StateEntryFromSession(&session.Session{
+	first, ok := rstate.StateEntryFromSession(&session.Session{
 		ID:        "sess-1",
 		Status:    session.StatusCompleted,
 		Config:    session.SessionConfig{Goal: "alpha"},
@@ -41,7 +42,7 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 	if !ok {
 		t.Fatal("expected visible session entry")
 	}
-	second, ok := StateEntryFromTask(taskrt.TaskRecord{
+	second, ok := rstate.StateEntryFromTask(taskrt.TaskRecord{
 		ID:        "task-1",
 		AgentName: "general-purpose",
 		Goal:      "beta task",
@@ -59,7 +60,7 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 		t.Fatalf("Upsert second: %v", err)
 	}
 
-	page, err := catalog.Query(StateQuery{Limit: 1})
+	page, err := catalog.Query(rstate.StateQuery{Limit: 1})
 	if err != nil {
 		t.Fatalf("Query page 1: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 		t.Fatal("expected next cursor")
 	}
 
-	next, err := catalog.Query(StateQuery{Limit: 1, Cursor: page.NextCursor})
+	next, err := catalog.Query(rstate.StateQuery{Limit: 1, Cursor: page.NextCursor})
 	if err != nil {
 		t.Fatalf("Query page 2: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 		t.Fatalf("unexpected second page: %+v", next.Items)
 	}
 
-	search, err := catalog.Query(StateQuery{Text: "beta"})
+	search, err := catalog.Query(rstate.StateQuery{Text: "beta"})
 	if err != nil {
 		t.Fatalf("Query search: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestStateCatalogQueryPagination(t *testing.T) {
 }
 
 func TestStateCatalogObserverComposition(t *testing.T) {
-	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 	if len(spy.events) != 1 {
 		t.Fatalf("expected spy observer to receive event, got %d", len(spy.events))
 	}
-	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindExecutionEvent}})
+	page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindExecutionEvent}})
 	if err != nil {
 		t.Fatalf("catalog query: %v", err)
 	}
@@ -119,14 +120,14 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 	if page.Items[0].Title == "" || page.Items[0].SessionID != "sess-1" {
 		t.Fatalf("unexpected catalog event entry: %+v", page.Items[0])
 	}
-	if page.Items[0].Kind != StateKindExecutionEvent {
+	if page.Items[0].Kind != rstate.StateKindExecutionEvent {
 		t.Fatalf("expected execution_event kind, got %q", page.Items[0].Kind)
 	}
 }
 
 func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	now := time.Now().UTC()
-	mem, ok := StateEntryFromMemory(memory.MemoryRecord{
+	mem, ok := rstate.StateEntryFromMemory(memory.MemoryRecord{
 		ID:        "m-1",
 		Path:      "team/decision.md",
 		Content:   "sqlite backend selected",
@@ -137,11 +138,11 @@ func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	if !ok {
 		t.Fatal("expected memory entry")
 	}
-	if mem.Kind != StateKindMemory {
+	if mem.Kind != rstate.StateKindMemory {
 		t.Fatalf("expected memory kind, got %q", mem.Kind)
 	}
 
-	job, ok := StateEntryFromJob(taskrt.AgentJob{
+	job, ok := rstate.StateEntryFromJob(taskrt.AgentJob{
 		ID:        "job-1",
 		AgentName: "worker",
 		Goal:      "process data",
@@ -152,11 +153,11 @@ func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	if !ok {
 		t.Fatal("expected job entry")
 	}
-	if job.Kind != StateKindJob {
+	if job.Kind != rstate.StateKindJob {
 		t.Fatalf("expected job kind, got %q", job.Kind)
 	}
 
-	item, ok := StateEntryFromJobItem(taskrt.AgentJobItem{
+	item, ok := rstate.StateEntryFromJobItem(taskrt.AgentJobItem{
 		JobID:     "job-1",
 		ItemID:    "item-1",
 		Status:    taskrt.JobCompleted,
@@ -167,17 +168,17 @@ func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	if !ok {
 		t.Fatal("expected job item entry")
 	}
-	if item.Kind != StateKindJobItem {
+	if item.Kind != rstate.StateKindJobItem {
 		t.Fatalf("expected job item kind, got %q", item.Kind)
 	}
 }
 
 func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
-	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	wrapped := WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
+	wrapped := rstate.WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
 	jobRuntime, ok := wrapped.(taskrt.JobRuntime)
 	if !ok {
 		t.Fatal("expected wrapped runtime to implement JobRuntime")
@@ -198,7 +199,7 @@ func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("UpsertJobItem: %v", err)
 	}
-	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindJob, StateKindJobItem}})
+	page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindJob, rstate.StateKindJobItem}})
 	if err != nil {
 		t.Fatalf("catalog query: %v", err)
 	}
@@ -208,11 +209,11 @@ func TestIndexedTaskRuntime_JobRuntimeMethods(t *testing.T) {
 }
 
 func TestIndexedTaskRuntime_AtomicJobRuntimeMethods(t *testing.T) {
-	catalog, err := NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
-	wrapped := WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
+	wrapped := rstate.WrapTaskRuntime(taskrt.NewMemoryTaskRuntime(), catalog)
 	jobRuntime, ok := wrapped.(taskrt.JobRuntime)
 	if !ok {
 		t.Fatal("expected wrapped runtime to implement JobRuntime")
@@ -236,7 +237,7 @@ func TestIndexedTaskRuntime_AtomicJobRuntimeMethods(t *testing.T) {
 	if _, err := atomicRuntime.ReportJobItemResult(ctx, "job-atomic", "item-1", "exec-a", taskrt.JobFailed, "", "boom"); err != nil {
 		t.Fatalf("ReportJobItemResult: %v", err)
 	}
-	page, err := catalog.Query(StateQuery{Kinds: []StateKind{StateKindJobItem}, Text: "item-1"})
+	page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindJobItem}, Text: "item-1"})
 	if err != nil {
 		t.Fatalf("catalog query: %v", err)
 	}

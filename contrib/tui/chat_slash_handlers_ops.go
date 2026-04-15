@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	config "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"strconv"
 	"strings"
 )
@@ -404,7 +404,7 @@ func handleProfileSlashCommand(m chatModel, args []string, input string, _ strin
 		return m, nil
 	}
 	if strings.EqualFold(args[0], "list") {
-		names, err := runtime.ProfileNamesForWorkspace(m.workspace, m.trust)
+		names, err := rprofile.ProfileNamesForWorkspace(m.workspace, m.trust)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
 		} else {

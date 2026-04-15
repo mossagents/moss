@@ -14,6 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 // KernelOptions returns a Feature that applies raw kernel.Option values to
@@ -148,7 +149,7 @@ func TaskDelegation(rt taskrt.TaskRuntime) Feature {
 }
 
 // StateCatalog returns a Feature that installs a runtime state catalog.
-func StateCatalog(catalog *runtime.StateCatalog) Feature {
+func StateCatalog(catalog *rstate.StateCatalog) Feature {
 	return FeatureFunc{
 		FeatureName: "state-catalog",
 		MetadataValue: FeatureMetadata{

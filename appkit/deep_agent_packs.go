@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 type deepAgentPresetState struct {
@@ -22,7 +23,7 @@ type deepAgentPresetState struct {
 	config DeepAgentConfig
 	appDir string
 
-	stateCatalog     *runtime.StateCatalog
+	stateCatalog     *rstate.StateCatalog
 	isolationRoot    string
 	isolationEnabled bool
 }
@@ -76,7 +77,7 @@ func buildDeepAgentStateCatalogPack(state *deepAgentPresetState) ([]harness.Feat
 		return nil, nil
 	}
 	stateDir := filepath.Join(state.appDir, "state")
-	catalog, err := runtime.NewStateCatalog(stateDir, filepath.Join(stateDir, "events"), true)
+	catalog, err := rstate.NewStateCatalog(stateDir, filepath.Join(stateDir, "events"), true)
 	if err != nil {
 		return nil, fmt.Errorf("state catalog: %w", err)
 	}
@@ -100,7 +101,7 @@ func buildDeepAgentSessionContextPack(state *deepAgentPresetState) ([]harness.Fe
 		return nil, fmt.Errorf("session store: %w", err)
 	}
 
-	var store session.SessionStore = runtime.WrapSessionStore(rawStore, state.stateCatalog)
+	var store session.SessionStore = rstate.WrapSessionStore(rawStore, state.stateCatalog)
 	features := []harness.Feature{harness.SessionPersistence(store)}
 	if deepAgentValueOrDefault(state.config.EnableContextOffload, true) {
 		features = append(features, harness.ContextOffload(store), harness.ContextManagement(store))
@@ -122,7 +123,7 @@ func buildDeepAgentCheckpointPack(state *deepAgentPresetState) ([]harness.Featur
 		return nil, fmt.Errorf("checkpoint store: %w", err)
 	}
 	return []harness.Feature{
-		harness.Checkpointing(runtime.WrapCheckpointStore(store, state.stateCatalog)),
+		harness.Checkpointing(rstate.WrapCheckpointStore(store, state.stateCatalog)),
 	}, nil
 }
 
@@ -140,7 +141,7 @@ func buildDeepAgentTaskRuntimePack(state *deepAgentPresetState) ([]harness.Featu
 		return nil, fmt.Errorf("task runtime: %w", err)
 	}
 	return []harness.Feature{
-		harness.TaskDelegation(runtime.WrapTaskRuntime(taskRuntime, state.stateCatalog)),
+		harness.TaskDelegation(rstate.WrapTaskRuntime(taskRuntime, state.stateCatalog)),
 	}, nil
 }
 

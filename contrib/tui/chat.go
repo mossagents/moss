@@ -20,6 +20,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	userapproval "github.com/mossagents/moss/userio/approval"
 	userattachments "github.com/mossagents/moss/userio/attachments"
 )
@@ -728,7 +729,7 @@ func (m chatModel) cycleProfile() (chatModel, tea.Cmd) {
 		return m, nil
 	}
 	current := valueOrDefaultString(strings.TrimSpace(m.profile), "default")
-	names, err := runtime.ProfileNamesForWorkspace(m.workspace, m.trust)
+	names, err := rprofile.ProfileNamesForWorkspace(m.workspace, m.trust)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
 		m.refreshViewport()

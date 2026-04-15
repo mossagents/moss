@@ -12,7 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 type InspectReplayReport struct {
@@ -121,7 +121,7 @@ type inspectGovernanceTurn struct {
 	exhausted bool
 }
 
-func buildInspectReplay(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectReplayReport, error) {
+func buildInspectReplay(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, target string) (*InspectReplayReport, error) {
 	checkpoints, err := OpenCheckpointStore()
 	if err != nil {
 		return nil, err
@@ -155,7 +155,7 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 				item := inspectThreadSummaryFromSession(summary)
 				item.CheckpointCount = checkpointCountsBySession(ctx)[summary.ID]
 				item.ChangeCount = changeCounts[summary.ID]
-				item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
+				item.TaskCount = countStateEntries(catalog, rstate.StateKindTask, summary.ID)
 				report.Thread = &item
 				break
 			}
@@ -186,14 +186,14 @@ func buildInspectReplay(ctx context.Context, workspace string, catalog *apprunti
 		report.Changes = inspectChangesForSession(ctx, changeStore, detail.SessionID, 10)
 	}
 	if catalog != nil && strings.TrimSpace(detail.SessionID) != "" {
-		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindTask}, SessionID: detail.SessionID, Limit: 10}); err == nil {
+		if page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindTask}, SessionID: detail.SessionID, Limit: 10}); err == nil {
 			report.Tasks = inspectStateItems(page.Items)
 		}
 	}
 	return report, nil
 }
 
-func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
+func buildInspectCompare(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, leftSelector, rightSelector string) (*InspectCompareReport, error) {
 	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
@@ -248,13 +248,13 @@ func buildInspectCompare(ctx context.Context, catalog *appruntime.StateCatalog, 
 	return report, nil
 }
 
-func buildInspectGovernance(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, limit int) (*InspectGovernanceReport, error) {
+func buildInspectGovernance(ctx context.Context, workspace string, catalog *rstate.StateCatalog, limit int) (*InspectGovernanceReport, error) {
 	report := &InspectGovernanceReport{}
 	if catalog == nil || !catalog.Enabled() {
 		return report, nil
 	}
-	page, err := catalog.Query(appruntime.StateQuery{
-		Kinds: []appruntime.StateKind{appruntime.StateKindExecutionEvent},
+	page, err := catalog.Query(rstate.StateQuery{
+		Kinds: []rstate.StateKind{rstate.StateKindExecutionEvent},
 		Limit: limit,
 	})
 	if err != nil {
@@ -479,7 +479,7 @@ func renderInspectGovernanceReport(b *strings.Builder, report InspectGovernanceR
 	}
 }
 
-func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
+func resolveInspectCompareTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, selector string) (InspectCompareTarget, error) {
 	kind, raw := splitInspectCompareSelector(selector)
 	switch kind {
 	case "checkpoint":
@@ -489,7 +489,7 @@ func resolveInspectCompareTarget(ctx context.Context, catalog *appruntime.StateC
 	}
 }
 
-func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
+func buildInspectThreadTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, target string) (InspectCompareTarget, error) {
 	selected, err := resolveInspectSessionSummary(summaries, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
@@ -507,7 +507,7 @@ func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCata
 		TaskID:          item.TaskID,
 		CheckpointCount: checkpointCountsBySession(ctx)[item.ID],
 		ChangeCount:     changeCounts[item.ID],
-		TaskCount:       countStateEntries(catalog, appruntime.StateKindTask, item.ID),
+		TaskCount:       countStateEntries(catalog, rstate.StateKindTask, item.ID),
 		Recoverable:     item.Recoverable,
 		Archived:        item.Archived,
 		Preview:         item.Preview,
@@ -515,7 +515,7 @@ func buildInspectThreadTarget(ctx context.Context, catalog *appruntime.StateCata
 	}, nil
 }
 
-func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
+func buildInspectCheckpointTarget(ctx context.Context, catalog *rstate.StateCatalog, changeStore *FileChangeStore, summaries []session.SessionSummary, checkpoints checkpoint.CheckpointStore, target string) (InspectCompareTarget, error) {
 	record, err := ResolveCheckpointRecord(ctx, checkpoints, target)
 	if err != nil {
 		return InspectCompareTarget{}, err
@@ -548,7 +548,7 @@ func buildInspectCheckpointTarget(ctx context.Context, catalog *appruntime.State
 		item.Preview = thread.Preview
 		item.CheckpointCount = checkpointCountsBySession(ctx)[thread.ID]
 		item.ChangeCount = changeCounts[thread.ID]
-		item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, thread.ID)
+		item.TaskCount = countStateEntries(catalog, rstate.StateKindTask, thread.ID)
 		break
 	}
 	return item, nil
@@ -570,12 +570,12 @@ func splitInspectCompareSelector(selector string) (string, string) {
 	}
 }
 
-func latestRunIDForSession(catalog *appruntime.StateCatalog, sessionID string) string {
+func latestRunIDForSession(catalog *rstate.StateCatalog, sessionID string) string {
 	if catalog == nil || !catalog.Enabled() || strings.TrimSpace(sessionID) == "" {
 		return ""
 	}
-	page, err := catalog.Query(appruntime.StateQuery{
-		Kinds:     []appruntime.StateKind{appruntime.StateKindExecutionEvent},
+	page, err := catalog.Query(rstate.StateQuery{
+		Kinds:     []rstate.StateKind{rstate.StateKindExecutionEvent},
 		SessionID: sessionID,
 		Limit:     1,
 	})

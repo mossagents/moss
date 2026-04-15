@@ -16,6 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 )
 
 func launchTUI(cfg *config) error {
@@ -59,14 +60,14 @@ func launchTUI(cfg *config) error {
 		},
 		BuildSystemPrompt: buildSystemPrompt,
 		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
-			resolvedProfile, err := appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+			resolvedProfile, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 				Workspace:        workspace,
 				RequestedProfile: profile,
 				Trust:            trust,
 				ApprovalMode:     approvalMode,
 			})
 			if err != nil {
-				resolvedProfile = appruntime.ResolvedProfile{
+				resolvedProfile = rprofile.ResolvedProfile{
 					Name:         profile,
 					TaskMode:     profile,
 					Trust:        trust,
@@ -74,7 +75,7 @@ func launchTUI(cfg *config) error {
 					ToolPolicy:   appruntime.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
 				}
 			}
-			return appruntime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+			return rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
@@ -186,7 +187,7 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		)
 	}
 
-	sessCfg := appruntime.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+	sessCfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 		Goal:         cfg.prompt,
 		Mode:         "oneshot",
 		TrustLevel:   resolved.Trust,

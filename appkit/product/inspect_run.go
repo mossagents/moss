@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/internal/stringutil"
-	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 type InspectRunReport struct {
@@ -89,7 +89,7 @@ type inspectExecutionMetadata struct {
 	Metadata     map[string]any `json:"data,omitempty"`
 }
 
-func resolveInspectSessionID(ctx context.Context, catalog *appruntime.StateCatalog, target string) (string, error) {
+func resolveInspectSessionID(ctx context.Context, catalog *rstate.StateCatalog, target string) (string, error) {
 	target = strings.TrimSpace(target)
 	if target == "" || strings.EqualFold(target, "latest") {
 		store, err := OpenSessionStore()
@@ -100,8 +100,8 @@ func resolveInspectSessionID(ctx context.Context, catalog *appruntime.StateCatal
 			}
 		}
 		if catalog != nil && catalog.Enabled() {
-			page, err := catalog.Query(appruntime.StateQuery{
-				Kinds: []appruntime.StateKind{appruntime.StateKindExecutionEvent},
+			page, err := catalog.Query(rstate.StateQuery{
+				Kinds: []rstate.StateKind{rstate.StateKindExecutionEvent},
 				Limit: 1,
 			})
 			if err == nil && len(page.Items) > 0 && strings.TrimSpace(page.Items[0].SessionID) != "" {
@@ -113,7 +113,7 @@ func resolveInspectSessionID(ctx context.Context, catalog *appruntime.StateCatal
 	return target, nil
 }
 
-func inspectStateItems(entries []appruntime.StateEntry) []InspectStateItem {
+func inspectStateItems(entries []rstate.StateEntry) []InspectStateItem {
 	items := make([]InspectStateItem, 0, len(entries))
 	for _, entry := range entries {
 		items = append(items, InspectStateItem{
@@ -167,7 +167,7 @@ func changeCountsBySession(ctx context.Context, store *FileChangeStore) map[stri
 	return counts
 }
 
-func buildInspectRun(entries []appruntime.StateEntry, sessionID string) InspectRunReport {
+func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunReport {
 	report := InspectRunReport{SessionID: sessionID}
 	for _, entry := range entries {
 		event, ok := decodeInspectTraceEvent(entry)
@@ -236,8 +236,8 @@ func buildInspectRun(entries []appruntime.StateEntry, sessionID string) InspectR
 	return report
 }
 
-func decodeInspectTraceEvent(entry appruntime.StateEntry) (TraceEvent, bool) {
-	if entry.Kind != appruntime.StateKindExecutionEvent {
+func decodeInspectTraceEvent(entry rstate.StateEntry) (TraceEvent, bool) {
+	if entry.Kind != rstate.StateKindExecutionEvent {
 		return TraceEvent{}, false
 	}
 	var meta inspectExecutionMetadata

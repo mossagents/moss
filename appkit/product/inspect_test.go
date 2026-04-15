@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("save session: %v", err)
 	}
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -252,7 +253,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if _, err := cpStore.Create(ctx, checkpoint.CheckpointCreateRequest{SessionID: "sess-root", Note: "before switch"}); err != nil {
 		t.Fatalf("create checkpoint: %v", err)
 	}
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -271,8 +272,8 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save change operation: %v", err)
 	}
-	for _, entry := range []appruntime.StateEntry{
-		{Kind: appruntime.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
+	for _, entry := range []rstate.StateEntry{
+		{Kind: rstate.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	} {
 		if err := catalog.Upsert(entry); err != nil {
 			t.Fatalf("Upsert(%s): %v", entry.Kind, err)
@@ -418,7 +419,7 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 		t.Fatalf("save inconsistent change operation: %v", err)
 	}
 
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -490,8 +491,8 @@ func TestBuildInspectReportReplayCompareAndGovernance(t *testing.T) {
 			t.Fatalf("AppendExecutionEvent(%s): %v", event.Type, err)
 		}
 	}
-	for _, entry := range []appruntime.StateEntry{
-		{Kind: appruntime.StateKindTask, RecordID: "task-govern", SessionID: child.ID, Status: "running", Title: "delegate child", SortTime: now, CreatedAt: now, UpdatedAt: now},
+	for _, entry := range []rstate.StateEntry{
+		{Kind: rstate.StateKindTask, RecordID: "task-govern", SessionID: child.ID, Status: "running", Title: "delegate child", SortTime: now, CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := catalog.Upsert(entry); err != nil {
 			t.Fatalf("Upsert(%s): %v", entry.Kind, err)

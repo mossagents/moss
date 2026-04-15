@@ -11,7 +11,7 @@ import (
 
 	"github.com/mossagents/moss/appkit"
 	"github.com/mossagents/moss/appkit/product"
-	appruntime "github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/kernel"
@@ -74,7 +74,7 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (pro
 	}, nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, appruntime.ResolvedProfile, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, rprofile.ResolvedProfile, error) {
 	logging.GetLogger().DebugContext(ctx, "build kernel requested",
 		"workspace", flags.Workspace,
 		"profile", flags.Profile,
@@ -83,14 +83,14 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	)
 	resolved, err := resolveProfileForFlags(flags, approvalMode)
 	if err != nil {
-		return nil, appruntime.ResolvedProfile{}, err
+		return nil, rprofile.ResolvedProfile{}, err
 	}
 	flags.Trust = resolved.Trust
 	flags.Profile = resolved.Name
 	disableDefaultPolicy := false
 	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
 	if err != nil {
-		return nil, appruntime.ResolvedProfile{}, fmt.Errorf("load model router: %w", err)
+		return nil, rprofile.ResolvedProfile{}, fmt.Errorf("load model router: %w", err)
 	}
 	failoverCfg, failoverEnabled := governance.FailoverConfig()
 	useFailover := failoverEnabled && router != nil
@@ -111,7 +111,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		AdditionalFeatures:            []harness.Feature{},
 	})
 	if err != nil {
-		return nil, appruntime.ResolvedProfile{}, err
+		return nil, rprofile.ResolvedProfile{}, err
 	}
 	logging.GetLogger().DebugContext(ctx, "kernel built",
 		"profile", resolved.Name,
@@ -125,7 +125,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		if useFailover {
 			failoverLLM, err := providers.NewFailoverLLM(router, failoverCfg)
 			if err != nil {
-				return nil, appruntime.ResolvedProfile{}, fmt.Errorf("build failover llm: %w", err)
+				return nil, rprofile.ResolvedProfile{}, fmt.Errorf("build failover llm: %w", err)
 			}
 			llm = failoverLLM
 		}
@@ -133,13 +133,13 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	}
 	k.SetObserver(product.ComposeStateObserver(k, observer))
 	if err := product.ApplyResolvedProfile(k, resolved); err != nil {
-		return nil, appruntime.ResolvedProfile{}, err
+		return nil, rprofile.ResolvedProfile{}, err
 	}
 	return k, resolved, nil
 }
 
-func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (appruntime.ResolvedProfile, error) {
-	return appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (rprofile.ResolvedProfile, error) {
+	return rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        flags.Workspace,
 		RequestedProfile: flags.Profile,
 		Trust:            flags.Trust,
@@ -147,7 +147,7 @@ func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (apprun
 	})
 }
 
-func resolveProfileForConfig(cfg *config) (appruntime.ResolvedProfile, error) {
+func resolveProfileForConfig(cfg *config) (rprofile.ResolvedProfile, error) {
 	trust := ""
 	if hasExplicitFlag(cfg.explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
 		trust = cfg.flags.Trust
@@ -156,7 +156,7 @@ func resolveProfileForConfig(cfg *config) (appruntime.ResolvedProfile, error) {
 	if hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
 		approval = cfg.approvalMode
 	}
-	return appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+	return rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        cfg.flags.Workspace,
 		RequestedProfile: cfg.flags.Profile,
 		Trust:            trust,

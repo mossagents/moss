@@ -3,7 +3,7 @@ package tui
 import (
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -53,7 +53,7 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 
 func TestRebuildExecutionProgressUsesLatestRun(t *testing.T) {
 	dir := t.TempDir()
-	catalog, err := runtime.NewStateCatalog(filepath.Join(dir, "catalog"), filepath.Join(dir, "events"), true)
+	catalog, err := rstate.NewStateCatalog(filepath.Join(dir, "catalog"), filepath.Join(dir, "events"), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}

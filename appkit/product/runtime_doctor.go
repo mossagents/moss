@@ -14,6 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
 	appruntime "github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -440,7 +441,7 @@ func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitF
 	if containsString(explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
 		approvalOverride = approvalMode
 	}
-	resolved, err := appruntime.ResolveProfileForWorkspace(appruntime.ProfileResolveOptions{
+	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: flags.Profile,
 		Trust:            trustOverride,

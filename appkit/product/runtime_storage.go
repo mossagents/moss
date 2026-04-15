@@ -9,7 +9,7 @@ import (
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
-	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/sandbox"
 )
 
@@ -37,8 +37,8 @@ func OpenTaskRuntime() (*taskrt.FileTaskRuntime, error) {
 	return rt, nil
 }
 
-func OpenStateCatalog() (*appruntime.StateCatalog, error) {
-	catalog, err := appruntime.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
+func OpenStateCatalog() (*rstate.StateCatalog, error) {
+	catalog, err := rstate.NewStateCatalog(StateStoreDir(), StateEventDir(), true)
 	if err != nil {
 		return nil, err
 	}

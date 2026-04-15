@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
 	rt "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/sandbox"
 	kt "github.com/mossagents/moss/testing"
 )
@@ -175,7 +176,7 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewFileStore: %v", err)
 	}
-	catalog, err := rt.NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
 	if err != nil {
 		t.Fatalf("NewStateCatalog: %v", err)
 	}
@@ -217,8 +218,8 @@ func TestAutoCompactMiddlewareInjectsStartupContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSession: %v", err)
 	}
-	if err := catalog.Upsert(rt.StateEntry{
-		Kind:      rt.StateKindMemory,
+	if err := catalog.Upsert(rstate.StateEntry{
+		Kind:      rstate.StateKindMemory,
 		RecordID:  "memory/project",
 		SessionID: sess.ID,
 		Status:    "active",

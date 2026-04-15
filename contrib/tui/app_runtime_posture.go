@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"reflect"
 	"strings"
 	"time"
@@ -16,7 +17,7 @@ import (
 
 type postureRebuildPlan struct {
 	Rebuild  bool
-	Resolved runtime.ResolvedProfile
+	Resolved rprofile.ResolvedProfile
 	Notice   string
 }
 
@@ -88,7 +89,7 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 	}
 }
 
-func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.SessionPosture) (string, error) {
+func (a *agentState) ensureRuntimePosture(sessionID string, target rprofile.SessionPosture) (string, error) {
 	a.mu.Lock()
 	current, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode)
 	a.mu.Unlock()
@@ -108,8 +109,8 @@ func (a *agentState) ensureRuntimePosture(sessionID string, target runtime.Sessi
 	return plan.Notice, nil
 }
 
-func postureFromRuntime(workspace, profile, trust, approval string) (runtime.SessionPosture, error) {
-	posture, _, err := runtime.ResolveSessionPostureForWorkspace(runtime.ProfileResolveOptions{
+func postureFromRuntime(workspace, profile, trust, approval string) (rprofile.SessionPosture, error) {
+	posture, _, err := rprofile.ResolveSessionPostureForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: profile,
 		Trust:            trust,
@@ -122,7 +123,7 @@ func postureWarningForSession(sess *session.Session) string {
 	return ""
 }
 
-func planPostureRebuild(sessionID string, current, target runtime.SessionPosture) (postureRebuildPlan, error) {
+func planPostureRebuild(sessionID string, current, target rprofile.SessionPosture) (postureRebuildPlan, error) {
 	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
 	targetApproval := runtime.NormalizeApprovalMode(target.EffectiveApproval)
@@ -133,7 +134,7 @@ func planPostureRebuild(sessionID string, current, target runtime.SessionPosture
 			return postureRebuildPlan{}, nil
 		}
 	}
-	resolved, err := runtime.ResolveProfileFromPosture(target.Profile, target)
+	resolved, err := rprofile.ResolveProfileFromPosture(target.Profile, target)
 	if err != nil {
 		return postureRebuildPlan{}, err
 	}
@@ -144,7 +145,7 @@ func planPostureRebuild(sessionID string, current, target runtime.SessionPosture
 	}, nil
 }
 
-func formatPosture(posture runtime.SessionPosture) string {
+func formatPosture(posture rprofile.SessionPosture) string {
 	parts := []string{}
 	if strings.TrimSpace(posture.Profile) != "" {
 		parts = append(parts, "profile="+strings.TrimSpace(posture.Profile))

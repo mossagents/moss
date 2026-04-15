@@ -8,7 +8,7 @@ import (
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"github.com/mossagents/moss/userio/prompting"
 	"strings"
 )
@@ -95,7 +95,7 @@ func (s *kernelInitState) loadInitialSession() error {
 	plan, err := planPostureRebuild(
 		s.cfg.InitialSessionID,
 		currentPosture,
-		runtime.SessionPostureFromSession(s.sess),
+		rprofile.SessionPostureFromSession(s.sess),
 	)
 	if err != nil {
 		s.cancel()

@@ -9,13 +9,13 @@ import (
 
 	appconfig "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/internal/stringutil"
-	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 type InspectReport struct {
 	Mode         string                        `json:"mode"`
 	Workspace    string                        `json:"workspace"`
-	Catalog      appruntime.StateCatalogHealth `json:"catalog"`
+	Catalog      rstate.StateCatalogHealth `json:"catalog"`
 	SessionID    string                        `json:"session_id,omitempty"`
 	Items        []InspectStateItem            `json:"items,omitempty"`
 	Run          *InspectRunReport             `json:"run,omitempty"`
@@ -62,7 +62,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 	}
 	switch mode {
 	case "status":
-		page, err := catalog.Query(appruntime.StateQuery{Limit: inspectLimit(args, 1, 20)})
+		page, err := catalog.Query(rstate.StateQuery{Limit: inspectLimit(args, 1, 20)})
 		if err != nil {
 			return InspectReport{}, err
 		}
@@ -70,8 +70,8 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		return report, nil
 	case "events":
 		limit, text := inspectLimitAndText(args[1:], 20)
-		page, err := catalog.Query(appruntime.StateQuery{
-			Kinds: []appruntime.StateKind{appruntime.StateKindExecutionEvent},
+		page, err := catalog.Query(rstate.StateQuery{
+			Kinds: []rstate.StateKind{rstate.StateKindExecutionEvent},
 			Limit: limit,
 			Text:  text,
 		})
@@ -91,8 +91,8 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 			return InspectReport{}, err
 		}
 		report.SessionID = sessionID
-		page, err := catalog.Query(appruntime.StateQuery{
-			Kinds:     []appruntime.StateKind{appruntime.StateKindExecutionEvent},
+		page, err := catalog.Query(rstate.StateQuery{
+			Kinds:     []rstate.StateKind{rstate.StateKindExecutionEvent},
 			SessionID: sessionID,
 			Limit:     limit,
 		})

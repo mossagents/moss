@@ -12,6 +12,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 )
 
 const (
@@ -44,7 +45,7 @@ func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, e
 	return mode, runtimepolicy2.Apply(k, policy)
 }
 
-func ApplyResolvedProfile(k *kernel.Kernel, profile runtime.ResolvedProfile) error {
+func ApplyResolvedProfile(k *kernel.Kernel, profile rprofile.ResolvedProfile) error {
 	if k == nil {
 		return fmt.Errorf("kernel is nil")
 	}

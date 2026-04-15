@@ -6,7 +6,7 @@ import (
 	"github.com/mossagents/moss/appkit/product"
 	configpkg "github.com/mossagents/moss/config"
 	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"strings"
 )
 
@@ -82,7 +82,7 @@ func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Mode
 		}
 	}
 	m = m.stopAgentForKernelRebuild()
-	resolved, err := runtime.ResolveProfileForWorkspace(runtime.ProfileResolveOptions{
+	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 		Workspace:        m.config.Workspace,
 		RequestedProfile: st.profile,
 	})

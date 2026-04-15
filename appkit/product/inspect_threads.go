@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/internal/stringutil"
 	"github.com/mossagents/moss/kernel/session"
 	appruntime "github.com/mossagents/moss/runtime"
+	rstate "github.com/mossagents/moss/runtime/state"
 	"github.com/mossagents/moss/userio/prompting"
 )
 
@@ -82,7 +83,7 @@ type InspectCapabilityItem struct {
 	UpdatedAt  time.Time `json:"updated_at,omitempty"`
 }
 
-func buildInspectThreads(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, limit int) ([]InspectThreadSummary, error) {
+func buildInspectThreads(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, limit int) ([]InspectThreadSummary, error) {
 	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
@@ -98,7 +99,7 @@ func buildInspectThreads(ctx context.Context, workspace string, catalog *apprunt
 		item := inspectThreadSummaryFromSession(summary)
 		item.CheckpointCount = checkpointCounts[summary.ID]
 		item.ChangeCount = changeCounts[summary.ID]
-		item.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
+		item.TaskCount = countStateEntries(catalog, rstate.StateKindTask, summary.ID)
 		out = append(out, item)
 	}
 	if limit > 0 && len(out) > limit {
@@ -107,7 +108,7 @@ func buildInspectThreads(ctx context.Context, workspace string, catalog *apprunt
 	return out, nil
 }
 
-func buildInspectThread(ctx context.Context, workspace string, catalog *appruntime.StateCatalog, changeStore *FileChangeStore, target string) (*InspectThreadReport, error) {
+func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.StateCatalog, changeStore *FileChangeStore, target string) (*InspectThreadReport, error) {
 	store, err := OpenSessionStore()
 	if err != nil {
 		return nil, err
@@ -125,7 +126,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 	changeCounts := changeCountsBySession(ctx, changeStore)
 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
 	report.Summary.ChangeCount = changeCounts[selected.ID]
-	report.Summary.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, selected.ID)
+	report.Summary.TaskCount = countStateEntries(catalog, rstate.StateKindTask, selected.ID)
 	for _, summary := range summaries {
 		if summary.ParentID != selected.ID {
 			continue
@@ -133,7 +134,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 		child := inspectThreadSummaryFromSession(summary)
 		child.CheckpointCount = checkpointCounts[summary.ID]
 		child.ChangeCount = changeCounts[summary.ID]
-		child.TaskCount = countStateEntries(catalog, appruntime.StateKindTask, summary.ID)
+		child.TaskCount = countStateEntries(catalog, rstate.StateKindTask, summary.ID)
 		report.Children = append(report.Children, child)
 	}
 	sort.Slice(report.Children, func(i, j int) bool { return report.Children[i].UpdatedAt > report.Children[j].UpdatedAt })
@@ -150,7 +151,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *apprunti
 		report.Changes = inspectChangesForSession(ctx, changeStore, selected.ID, 10)
 	}
 	if catalog != nil {
-		if page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{appruntime.StateKindTask}, SessionID: selected.ID, Limit: 10}); err == nil {
+		if page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindTask}, SessionID: selected.ID, Limit: 10}); err == nil {
 			report.Tasks = inspectStateItems(page.Items)
 		}
 	}
@@ -474,11 +475,11 @@ func inspectThreadSummaryFromSession(summary session.SessionSummary) InspectThre
 	}
 }
 
-func countStateEntries(catalog *appruntime.StateCatalog, kind appruntime.StateKind, sessionID string) int {
+func countStateEntries(catalog *rstate.StateCatalog, kind rstate.StateKind, sessionID string) int {
 	if catalog == nil || !catalog.Enabled() || strings.TrimSpace(sessionID) == "" {
 		return 0
 	}
-	page, err := catalog.Query(appruntime.StateQuery{Kinds: []appruntime.StateKind{kind}, SessionID: sessionID, Limit: 200})
+	page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{kind}, SessionID: sessionID, Limit: 200})
 	if err != nil {
 		return 0
 	}

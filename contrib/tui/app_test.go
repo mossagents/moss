@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	kt "github.com/mossagents/moss/testing"
 	"os"
 	"path/filepath"
@@ -107,7 +108,7 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
 	}
-	target := runtime.SessionPostureFromSession(&session.Session{
+	target := rprofile.SessionPostureFromSession(&session.Session{
 		ID: "sess-1",
 		Config: session.SessionConfig{
 			Profile:    "readonly",
@@ -138,7 +139,7 @@ func TestPlanPostureRebuildDefaultPostureRebuilds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postureFromRuntime: %v", err)
 	}
-	target := runtime.SessionPostureFromSession(&session.Session{
+	target := rprofile.SessionPostureFromSession(&session.Session{
 		ID: "legacy-1",
 		Config: session.SessionConfig{
 			TrustLevel: "restricted",

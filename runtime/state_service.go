@@ -4,21 +4,22 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/observe"
 	statecatalog "github.com/mossagents/moss/runtime/catalog"
+	rstate "github.com/mossagents/moss/runtime/state"
 )
 
 const stateCatalogStateKey = kernel.ServiceKey("statecatalog.state")
 
 type stateCatalogState struct {
-	catalog *StateCatalog
+	catalog *rstate.StateCatalog
 }
 
 type stateCatalogView struct {
-	catalog *StateCatalog
+	catalog *rstate.StateCatalog
 }
 
 // WithStateCatalog stores the runtime-owned state catalog substrate. Public
 // assembly should prefer harness-owned features over direct Services() access.
-func WithStateCatalog(catalog *StateCatalog) kernel.Option {
+func WithStateCatalog(catalog *rstate.StateCatalog) kernel.Option {
 	return func(k *kernel.Kernel) {
 		ensureStateCatalogState(k).catalog = catalog
 		statecatalog.WithCatalog(stateCatalogView{catalog: catalog})(k)
@@ -27,7 +28,7 @@ func WithStateCatalog(catalog *StateCatalog) kernel.Option {
 
 // StateCatalogOf looks up the runtime-owned state catalog without creating the
 // underlying kernel substrate slot on first access.
-func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
+func StateCatalogOf(k *kernel.Kernel) *rstate.StateCatalog {
 	if k == nil {
 		return nil
 	}
@@ -43,7 +44,7 @@ func StateCatalogOf(k *kernel.Kernel) *StateCatalog {
 }
 
 func ObserverForStateCatalog(k *kernel.Kernel) observe.Observer {
-	return NewStateCatalogObserver(StateCatalogOf(k))
+	return rstate.NewStateCatalogObserver(StateCatalogOf(k))
 }
 
 func (v stateCatalogView) Enabled() bool {
@@ -54,11 +55,11 @@ func (v stateCatalogView) Query(query statecatalog.Query) (statecatalog.Page, er
 	if v.catalog == nil {
 		return statecatalog.Page{}, nil
 	}
-	kinds := make([]StateKind, 0, len(query.Kinds))
+	kinds := make([]rstate.StateKind, 0, len(query.Kinds))
 	for _, kind := range query.Kinds {
-		kinds = append(kinds, StateKind(kind))
+		kinds = append(kinds, rstate.StateKind(kind))
 	}
-	page, err := v.catalog.Query(StateQuery{
+	page, err := v.catalog.Query(rstate.StateQuery{
 		Kinds:     kinds,
 		SessionID: query.SessionID,
 		Limit:     query.Limit,

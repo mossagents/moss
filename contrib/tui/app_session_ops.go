@@ -8,7 +8,7 @@ import (
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/runtime"
+	rprofile "github.com/mossagents/moss/runtime/profile"
 	"github.com/mossagents/moss/userio/prompting"
 	"os"
 	"path/filepath"
@@ -100,13 +100,13 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	warning, err := a.ensureRuntimePosture(loaded.ID, runtime.SessionPostureFromSession(loaded))
+	warning, err := a.ensureRuntimePosture(loaded.ID, rprofile.SessionPostureFromSession(loaded))
 	if err != nil {
 		return "", err
 	}
 	a.mu.Lock()
 	a.sess = loaded
-	posture := runtime.SessionPostureFromSession(loaded)
+	posture := rprofile.SessionPostureFromSession(loaded)
 	if strings.TrimSpace(posture.Profile) != "" {
 		a.profile = posture.Profile
 	}
@@ -341,7 +341,7 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	if err != nil {
 		return "", err
 	}
-	if _, err := a.ensureRuntimePosture(sourceSession.ID, runtime.SessionPostureFromSession(sourceSession)); err != nil {
+	if _, err := a.ensureRuntimePosture(sourceSession.ID, rprofile.SessionPostureFromSession(sourceSession)); err != nil {
 		return "", err
 	}
 	a.mu.Lock()
@@ -427,7 +427,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 		return "", err
 	}
 	cancel()
-	if _, err := a.ensureRuntimePosture(sourceSession.ID, runtime.SessionPostureFromSession(sourceSession)); err != nil {
+	if _, err := a.ensureRuntimePosture(sourceSession.ID, rprofile.SessionPostureFromSession(sourceSession)); err != nil {
 		return "", err
 	}
 	a.mu.Lock()
