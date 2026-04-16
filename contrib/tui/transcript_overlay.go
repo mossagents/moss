@@ -2,10 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"strings"
 )
 
 // transcriptOverlayState 保存全屏对话历史覆盖层的状态。

@@ -3,11 +3,12 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"strings"
 )
 
 type statuslinePickerState struct {

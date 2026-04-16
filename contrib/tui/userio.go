@@ -2,9 +2,10 @@ package tui
 
 import (
 	"context"
+	"sync"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/kernel/io"
-	"sync"
 )
 
 // bridgeMsg 是从 UserIO 桥接到 Bubble Tea 的消息类型。
