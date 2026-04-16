@@ -5,79 +5,35 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/session"
 )
 
-// Plugin is the shared lifecycle extension model used by kernel-facing helpers.
-type Plugin struct {
-	Name  string
-	Order int
-
-	BeforeLLM          hooks.Hook[hooks.LLMEvent]
-	AfterLLM           hooks.Hook[hooks.LLMEvent]
-	OnSessionLifecycle hooks.Hook[session.LifecycleEvent]
-	OnToolLifecycle    hooks.Hook[hooks.ToolEvent]
-	OnError            hooks.Hook[hooks.ErrorEvent]
-
-	BeforeLLMInterceptor          hooks.Interceptor[hooks.LLMEvent]
-	AfterLLMInterceptor           hooks.Interceptor[hooks.LLMEvent]
-	OnSessionLifecycleInterceptor hooks.Interceptor[session.LifecycleEvent]
-	OnToolLifecycleInterceptor    hooks.Interceptor[hooks.ToolEvent]
-	OnErrorInterceptor            hooks.Interceptor[hooks.ErrorEvent]
+// Plugin 是生命周期扩展的核心接口。
+// 复杂或多阶段的插件直接实现此接口；单阶段插件使用 Group 便捷构造。
+type Plugin interface {
+	// Name 返回插件唯一标识。
+	Name() string
+	// Order 返回执行优先级（值越小越先执行）。
+	Order() int
+	// Install 将 hook/interceptor 注册到 Registry。
+	Install(reg *hooks.Registry)
 }
 
+// Validate 校验插件合法性。
 func Validate(p Plugin) error {
-	if strings.TrimSpace(p.Name) == "" {
+	if strings.TrimSpace(p.Name()) == "" {
 		return fmt.Errorf("plugin name is required")
 	}
-	if p.BeforeLLM == nil &&
-		p.AfterLLM == nil &&
-		p.OnSessionLifecycle == nil &&
-		p.OnToolLifecycle == nil &&
-		p.OnError == nil &&
-		p.BeforeLLMInterceptor == nil &&
-		p.AfterLLMInterceptor == nil &&
-		p.OnSessionLifecycleInterceptor == nil &&
-		p.OnToolLifecycleInterceptor == nil &&
-		p.OnErrorInterceptor == nil {
-		return fmt.Errorf("plugin %q must define at least one hook or interceptor", p.Name)
+	if g, ok := p.(*Group); ok && g.Empty() {
+		return fmt.Errorf("plugin %q must define at least one hook or interceptor", p.Name())
 	}
 	return nil
 }
 
+// Install 校验并安装插件到 Registry。
 func Install(reg *hooks.Registry, p Plugin) error {
 	if err := Validate(p); err != nil {
 		return err
 	}
-	if p.BeforeLLMInterceptor != nil {
-		reg.BeforeLLM.AddInterceptor(p.Name, p.BeforeLLMInterceptor, p.Order)
-	}
-	if p.BeforeLLM != nil {
-		reg.BeforeLLM.AddHook(p.Name, p.BeforeLLM, p.Order)
-	}
-	if p.AfterLLMInterceptor != nil {
-		reg.AfterLLM.AddInterceptor(p.Name, p.AfterLLMInterceptor, p.Order)
-	}
-	if p.AfterLLM != nil {
-		reg.AfterLLM.AddHook(p.Name, p.AfterLLM, p.Order)
-	}
-	if p.OnSessionLifecycleInterceptor != nil {
-		reg.OnSessionLifecycle.AddInterceptor(p.Name, p.OnSessionLifecycleInterceptor, p.Order)
-	}
-	if p.OnSessionLifecycle != nil {
-		reg.OnSessionLifecycle.AddHook(p.Name, p.OnSessionLifecycle, p.Order)
-	}
-	if p.OnToolLifecycleInterceptor != nil {
-		reg.OnToolLifecycle.AddInterceptor(p.Name, p.OnToolLifecycleInterceptor, p.Order)
-	}
-	if p.OnToolLifecycle != nil {
-		reg.OnToolLifecycle.AddHook(p.Name, p.OnToolLifecycle, p.Order)
-	}
-	if p.OnErrorInterceptor != nil {
-		reg.OnError.AddInterceptor(p.Name, p.OnErrorInterceptor, p.Order)
-	}
-	if p.OnError != nil {
-		reg.OnError.AddHook(p.Name, p.OnError, p.Order)
-	}
+	p.Install(reg)
 	return nil
 }

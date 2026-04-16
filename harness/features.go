@@ -14,6 +14,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
@@ -259,10 +260,7 @@ func PatchToolCalls() Feature {
 			Phase: FeaturePhasePostRuntime,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().InstallPlugin(kernel.Plugin{
-				Name:      "patch-tool-calls",
-				BeforeLLM: builtins.PatchToolCalls(),
-			})
+			h.Kernel().InstallPlugin(kplugin.BeforeLLMHook("patch-tool-calls", 0, builtins.PatchToolCalls()))
 			return nil
 		},
 	}

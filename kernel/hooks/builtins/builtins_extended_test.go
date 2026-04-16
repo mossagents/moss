@@ -17,6 +17,7 @@ import (
 	kernio "github.com/mossagents/moss/kernel/io"
 	kernelmemory "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -48,12 +49,18 @@ func (s *stubContextInjector) InjectContext(_ context.Context, cfg kernelmemory.
 
 // ─── EventEmitterPlugin ───────────────────────────────────────────────────────
 
+func installEventEmitter(pattern string, handler builtins.EventHandler) *hooks.Registry {
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, builtins.EventEmitterPlugin(pattern, handler))
+	return reg
+}
+
 func TestEventEmitter_BeforeLLM(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("llm.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("llm.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
-	if err := p.BeforeLLM(context.Background(), ev); err != nil {
+	if err := reg.BeforeLLM.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].Type != "llm.started" {
@@ -63,10 +70,10 @@ func TestEventEmitter_BeforeLLM(t *testing.T) {
 
 func TestEventEmitter_AfterLLM(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("llm.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("llm.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
-	if err := p.AfterLLM(context.Background(), ev); err != nil {
+	if err := reg.AfterLLM.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].Type != "llm.completed" {
@@ -76,10 +83,10 @@ func TestEventEmitter_AfterLLM(t *testing.T) {
 
 func TestEventEmitter_PatternNoMatch(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("session.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("session.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
-	_ = p.BeforeLLM(context.Background(), ev)
+	reg.BeforeLLM.Run(context.Background(), ev)
 	if len(got) != 0 {
 		t.Fatalf("expected no events for non-matching pattern, got %v", got)
 	}
@@ -87,10 +94,10 @@ func TestEventEmitter_PatternNoMatch(t *testing.T) {
 
 func TestEventEmitter_WildcardPattern(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
-	_ = p.BeforeLLM(context.Background(), ev)
+	reg.BeforeLLM.Run(context.Background(), ev)
 	if len(got) != 1 {
 		t.Fatalf("wildcard should match llm.started")
 	}
@@ -98,7 +105,7 @@ func TestEventEmitter_WildcardPattern(t *testing.T) {
 
 func TestEventEmitter_ToolLifecycle(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("tool.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("tool.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.ToolEvent{
 		Stage:     hooks.ToolLifecycleBefore,
@@ -108,7 +115,7 @@ func TestEventEmitter_ToolLifecycle(t *testing.T) {
 		Risk:      "low",
 		Timestamp: time.Now(),
 	}
-	if err := p.OnToolLifecycle(context.Background(), ev); err != nil {
+	if err := reg.OnToolLifecycle.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].Type != "tool.started" {
@@ -122,7 +129,7 @@ func TestEventEmitter_ToolLifecycle(t *testing.T) {
 
 func TestEventEmitter_ToolAfterStage(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("tool.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("tool.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.ToolEvent{
 		Stage:      hooks.ToolLifecycleAfter,
@@ -130,7 +137,7 @@ func TestEventEmitter_ToolAfterStage(t *testing.T) {
 		ToolResult: &model.ToolResult{IsError: false},
 		Duration:   5 * time.Millisecond,
 	}
-	_ = p.OnToolLifecycle(context.Background(), ev)
+	reg.OnToolLifecycle.Run(context.Background(), ev)
 	if len(got) != 1 || got[0].Type != "tool.completed" {
 		t.Fatalf("expected tool.completed")
 	}
@@ -138,13 +145,13 @@ func TestEventEmitter_ToolAfterStage(t *testing.T) {
 
 func TestEventEmitter_SessionLifecycle(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("session.*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("session.*", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &session.LifecycleEvent{
 		Stage:   session.LifecycleCreated,
 		Session: &session.Session{ID: "s3", State: map[string]any{}},
 	}
-	if err := p.OnSessionLifecycle(context.Background(), ev); err != nil {
+	if err := reg.OnSessionLifecycle.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].Type != "session.created" {
@@ -164,9 +171,9 @@ func TestEventEmitter_SessionLifecycleVariants(t *testing.T) {
 	}
 	for _, c := range cases {
 		var got []builtins.Event
-		p := builtins.EventEmitterPlugin("*", func(e builtins.Event) { got = append(got, e) })
+		reg := installEventEmitter("*", func(e builtins.Event) { got = append(got, e) })
 		ev := &session.LifecycleEvent{Stage: c.stage, Session: &session.Session{ID: "s", State: map[string]any{}}}
-		_ = p.OnSessionLifecycle(context.Background(), ev)
+		reg.OnSessionLifecycle.Run(context.Background(), ev)
 		if len(got) == 0 || got[0].Type != c.want {
 			t.Errorf("stage %v: expected %q, got %v", c.stage, c.want, got)
 		}
@@ -175,13 +182,13 @@ func TestEventEmitter_SessionLifecycleVariants(t *testing.T) {
 
 func TestEventEmitter_OnError(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("error", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("error", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.ErrorEvent{
 		Session: &session.Session{ID: "s4", State: map[string]any{}},
 		Error:   errors.New("something failed"),
 	}
-	if err := p.OnError(context.Background(), ev); err != nil {
+	if err := reg.OnError.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got[0].Type != "error" {
@@ -195,10 +202,10 @@ func TestEventEmitter_OnError(t *testing.T) {
 
 func TestEventEmitter_NilSessionFields(t *testing.T) {
 	var got []builtins.Event
-	p := builtins.EventEmitterPlugin("*", func(e builtins.Event) { got = append(got, e) })
+	reg := installEventEmitter("*", func(e builtins.Event) { got = append(got, e) })
 
 	// nil session on LLM event
-	_ = p.BeforeLLM(context.Background(), &hooks.LLMEvent{Session: nil})
+	reg.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{Session: nil})
 	if len(got) == 0 {
 		t.Fatal("should still emit when session is nil")
 	}

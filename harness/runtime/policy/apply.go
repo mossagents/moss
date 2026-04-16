@@ -11,6 +11,7 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -103,22 +104,19 @@ func installSessionSyncHook(k *kernel.Kernel, st *policystate.State) {
 	if st == nil || st.MarkSessionHookInstalled() {
 		return
 	}
-	k.InstallPlugin(kernel.Plugin{
-		Name: toolPolicySessionName,
-		OnSessionLifecycle: func(_ context.Context, ev *session.LifecycleEvent) error {
-			if ev == nil || ev.Session == nil {
-				return nil
-			}
-			switch ev.Stage {
-			case session.LifecycleCreated, session.LifecycleStarted:
-				current, ok := policystate.Lookup(k)
-				if ok {
-					syncSessionMetadata(ev.Session, current)
-				}
-			}
+	k.InstallPlugin(kplugin.SessionLifecycleHook(toolPolicySessionName, 0, func(_ context.Context, ev *session.LifecycleEvent) error {
+		if ev == nil || ev.Session == nil {
 			return nil
-		},
-	})
+		}
+		switch ev.Stage {
+		case session.LifecycleCreated, session.LifecycleStarted:
+			current, ok := policystate.Lookup(k)
+			if ok {
+				syncSessionMetadata(ev.Session, current)
+			}
+		}
+		return nil
+	}))
 }
 
 func syncExistingSessions(k *kernel.Kernel, st *policystate.State) {

@@ -6,28 +6,34 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
-	kplugin "github.com/mossagents/moss/kernel/plugin"
+	"github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 )
 
+type loggerPlugin struct {
+	logger *slog.Logger
+}
+
+func (p *loggerPlugin) Name() string { return "logger" }
+func (p *loggerPlugin) Order() int   { return 1000 }
+
+func (p *loggerPlugin) Install(reg *hooks.Registry) {
+	reg.BeforeLLM.AddInterceptor("logger", logInterceptor(p.logger, "before_llm", llmSessionID), 1000)
+	reg.AfterLLM.AddInterceptor("logger", logInterceptor(p.logger, "after_llm", llmSessionID), 1000)
+	reg.OnToolLifecycle.AddInterceptor("logger", logToolInterceptor(p.logger), 1000)
+	reg.OnSessionLifecycle.AddInterceptor("logger", logSessionInterceptor(p.logger), 1000)
+	reg.OnError.AddHook("logger", func(ctx context.Context, ev *hooks.ErrorEvent) error {
+		p.logger.ErrorContext(ctx, "hook error",
+			slog.String("phase", "on_error"),
+			slog.Any("error", ev.Error),
+		)
+		return nil
+	}, 1000)
+}
+
 // LoggerPlugin returns the canonical logger lifecycle plugin.
-func LoggerPlugin() kplugin.Plugin {
-	logger := slog.Default()
-	return kplugin.Plugin{
-		Name:                          "logger",
-		Order:                         1000,
-		BeforeLLMInterceptor:          logInterceptor(logger, "before_llm", llmSessionID),
-		AfterLLMInterceptor:           logInterceptor(logger, "after_llm", llmSessionID),
-		OnToolLifecycleInterceptor:    logToolInterceptor(logger),
-		OnSessionLifecycleInterceptor: logSessionInterceptor(logger),
-		OnError: func(ctx context.Context, ev *hooks.ErrorEvent) error {
-			logger.ErrorContext(ctx, "hook error",
-				slog.String("phase", "on_error"),
-				slog.Any("error", ev.Error),
-			)
-			return nil
-		},
-	}
+func LoggerPlugin() plugin.Plugin {
+	return &loggerPlugin{logger: slog.Default()}
 }
 
 func llmSessionID(ev *hooks.LLMEvent) string {

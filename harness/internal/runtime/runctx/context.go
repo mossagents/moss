@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -243,10 +244,7 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 			return err
 		}
 		if !st.autoHookRegistered {
-			k.InstallPlugin(kernel.Plugin{
-				Name:      "auto-compact",
-				BeforeLLM: AutoCompactHook(k),
-			})
+			k.InstallPlugin(kplugin.BeforeLLMHook("auto-compact", 0, AutoCompactHook(k)))
 			st.autoHookRegistered = true
 		}
 		return nil

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/hooks"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -49,24 +50,22 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 	}); err != nil {
 		slog.Default().Warn("failed to register shutdown hook for session persistence", "error", err)
 	}
-	k.installPlugin(Plugin{
-		Name:  "persistent-session-store",
-		Order: 100,
-		OnSessionLifecycle: func(ctx context.Context, event *session.LifecycleEvent) error {
-			if event == nil {
-				return nil
-			}
-			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
+	g := kplugin.NewGroup("persistent-session-store", 100)
+	g.OnSessionLifecycle(func(ctx context.Context, event *session.LifecycleEvent) error {
+		if event == nil {
 			return nil
-		},
-		OnToolLifecycle: func(ctx context.Context, event *hooks.ToolEvent) error {
-			if event == nil || event.Stage != hooks.ToolLifecycleAfter {
-				return nil
-			}
-			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
-			return nil
-		},
+		}
+		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
+		return nil
 	})
+	g.OnToolLifecycle(func(ctx context.Context, event *hooks.ToolEvent) error {
+		if event == nil || event.Stage != hooks.ToolLifecycleAfter {
+			return nil
+		}
+		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
+		return nil
+	})
+	k.installPlugin(g)
 	return st
 }
 

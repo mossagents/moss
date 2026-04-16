@@ -6,28 +6,30 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/runtime"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/runtime"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	"github.com/mossagents/moss/harness/runtime/scheduling"
-	"github.com/mossagents/moss/harness/userio/prompting"
-	"os"
-	"sort"
-	"strings"
-	"sync"
-	"time"
 )
 
 const appVersion = "0.3.0"
@@ -495,11 +497,7 @@ func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.Too
 }
 
 func (a *agentState) permissionOverridePlugin() kernel.Plugin {
-	return kernel.Plugin{
-		Name:                       "tui-permission-override",
-		Order:                      0,
-		OnToolLifecycleInterceptor: a.permissionOverrideInterceptor(),
-	}
+	return kplugin.ToolLifecycleInterceptor("tui-permission-override", 0, a.permissionOverrideInterceptor())
 }
 
 func (a *agentState) invokeTool(ctx context.Context, name string, input any) (json.RawMessage, error) {

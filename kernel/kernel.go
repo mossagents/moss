@@ -13,6 +13,7 @@ import (
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
@@ -391,7 +392,7 @@ func (k *Kernel) InstallPlugin(p Plugin) {
 
 func (k *Kernel) installPlugin(p Plugin) {
 	if k.runs.hasStarted() {
-		panic(fmt.Errorf("install plugin %q after kernel started serving work", p.Name))
+		panic(fmt.Errorf("install plugin %q after kernel started serving work", p.Name()))
 	}
 	if err := installPlugin(k.chain, p); err != nil {
 		panic(err)
@@ -405,10 +406,7 @@ func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
 
 // WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
 func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
-	k.InstallPlugin(Plugin{
-		Name:            "policy",
-		OnToolLifecycle: builtins.PolicyCheck(rules...),
-	})
+	k.InstallPlugin(kplugin.ToolLifecycleHook("policy", 0, builtins.PolicyCheck(rules...)))
 }
 
 // ── Agent API ───────────────────────────────────────────────────

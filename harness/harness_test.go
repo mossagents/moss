@@ -7,15 +7,16 @@ import (
 	"testing"
 
 	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/harness/sandbox"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 // --- test helpers ---
@@ -271,22 +272,14 @@ func TestFeature_Plugins_InstallInOrder(t *testing.T) {
 	var order []string
 
 	err := h.Install(context.Background(), Plugins(
-		kernel.Plugin{
-			Name:  "late",
-			Order: 10,
-			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
-				order = append(order, "late")
-				return nil
-			},
-		},
-		kernel.Plugin{
-			Name:  "early",
-			Order: 1,
-			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
-				order = append(order, "early")
-				return nil
-			},
-		},
+		kplugin.BeforeLLMHook("late", 10, func(_ context.Context, _ *hooks.LLMEvent) error {
+			order = append(order, "late")
+			return nil
+		}),
+		kplugin.BeforeLLMHook("early", 1, func(_ context.Context, _ *hooks.LLMEvent) error {
+			order = append(order, "early")
+			return nil
+		}),
 	))
 	if err != nil {
 		t.Fatalf("Install returned error: %v", err)
@@ -308,20 +301,14 @@ func TestFeature_Plugins_AllowsMultipleFeatureValues(t *testing.T) {
 	var order []string
 
 	err := h.Install(context.Background(),
-		Plugins(kernel.Plugin{
-			Name: "one",
-			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
-				order = append(order, "one")
-				return nil
-			},
-		}),
-		Plugins(kernel.Plugin{
-			Name: "two",
-			BeforeLLM: func(_ context.Context, _ *hooks.LLMEvent) error {
-				order = append(order, "two")
-				return nil
-			},
-		}),
+		Plugins(kplugin.BeforeLLMHook("one", 0, func(_ context.Context, _ *hooks.LLMEvent) error {
+			order = append(order, "one")
+			return nil
+		})),
+		Plugins(kplugin.BeforeLLMHook("two", 0, func(_ context.Context, _ *hooks.LLMEvent) error {
+			order = append(order, "two")
+			return nil
+		})),
 	)
 	if err != nil {
 		t.Fatalf("Install returned error: %v", err)
@@ -685,4 +672,3 @@ func TestHarness_FeatureAccessesKernelAndBackend(t *testing.T) {
 		t.Fatal("feature should see the same backend")
 	}
 }
-

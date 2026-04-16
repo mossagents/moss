@@ -14,6 +14,7 @@ import (
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -202,44 +203,43 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 
 func TestLoggerPlugin_Construction(t *testing.T) {
 	p := builtins.LoggerPlugin()
-	if p.Name != "logger" {
-		t.Fatalf("expected name=logger, got %q", p.Name)
+	if p.Name() != "logger" {
+		t.Fatalf("expected name=logger, got %q", p.Name())
 	}
-	if p.BeforeLLMInterceptor == nil {
-		t.Fatal("BeforeLLMInterceptor should not be nil")
+	// Install into registry and verify pipelines are non-empty.
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, p)
+	if reg.BeforeLLM.Empty() {
+		t.Fatal("BeforeLLM should not be empty after install")
 	}
-	if p.OnToolLifecycleInterceptor == nil {
-		t.Fatal("OnToolLifecycleInterceptor should not be nil")
+	if reg.OnToolLifecycle.Empty() {
+		t.Fatal("OnToolLifecycle should not be empty after install")
 	}
-	if p.OnSessionLifecycleInterceptor == nil {
-		t.Fatal("OnSessionLifecycleInterceptor should not be nil")
+	if reg.OnSessionLifecycle.Empty() {
+		t.Fatal("OnSessionLifecycle should not be empty after install")
 	}
 }
 
 func TestLoggerPlugin_BeforeLLMInterceptor_Invokes(t *testing.T) {
-	p := builtins.LoggerPlugin()
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, builtins.LoggerPlugin())
 	sess := &session.Session{ID: "log-test"}
 	ev := &hooks.LLMEvent{Session: sess}
-	called := false
-	next := func(_ context.Context) error {
-		called = true
-		return nil
-	}
-	if err := p.BeforeLLMInterceptor(context.Background(), ev, next); err != nil {
+	if err := reg.BeforeLLM.Run(context.Background(), ev); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !called {
-		t.Fatal("next() was not called by BeforeLLMInterceptor")
 	}
 }
 
 func TestLoggerPlugin_BeforeLLMInterceptor_PropagatesError(t *testing.T) {
-	p := builtins.LoggerPlugin()
-	ev := &hooks.LLMEvent{Session: &session.Session{}}
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, builtins.LoggerPlugin())
+	// Add a hook that returns an error to test propagation through the interceptor.
 	sentinel := errors.New("downstream error")
-	err := p.BeforeLLMInterceptor(context.Background(), ev, func(_ context.Context) error {
+	reg.BeforeLLM.AddHook("fail", func(_ context.Context, _ *hooks.LLMEvent) error {
 		return sentinel
-	})
+	}, 2000)
+	ev := &hooks.LLMEvent{Session: &session.Session{}}
+	err := reg.BeforeLLM.Run(context.Background(), ev)
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("expected sentinel, got: %v", err)
 	}
@@ -530,28 +530,19 @@ func TestRequireApprovalForURLHost_NonHTTPTool(t *testing.T) {
 // ─── LoggerPlugin interceptors ────────────────────────────────────────────
 
 func TestLoggerPlugin_AfterLLM(t *testing.T) {
-	p := builtins.LoggerPlugin()
-	if p.AfterLLMInterceptor == nil {
-		t.Fatal("AfterLLMInterceptor should not be nil")
-	}
-	called := false
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, builtins.LoggerPlugin())
 	ev := &hooks.LLMEvent{Session: &session.Session{ID: "after-test"}}
-	err := p.AfterLLMInterceptor(context.Background(), ev, func(_ context.Context) error {
-		called = true
-		return nil
-	})
-	if err != nil || !called {
-		t.Fatalf("AfterLLMInterceptor failed: err=%v called=%v", err, called)
+	if err := reg.AfterLLM.Run(context.Background(), ev); err != nil {
+		t.Fatalf("AfterLLM run failed: %v", err)
 	}
 }
 
 func TestLoggerPlugin_OnError(t *testing.T) {
-	p := builtins.LoggerPlugin()
-	if p.OnError == nil {
-		t.Fatal("OnError should not be nil")
-	}
+	reg := hooks.NewRegistry()
+	plugin.Install(reg, builtins.LoggerPlugin())
 	ev := &hooks.ErrorEvent{Error: errors.New("test error")}
-	if err := p.OnError(context.Background(), ev); err != nil {
+	if err := reg.OnError.Run(context.Background(), ev); err != nil {
 		t.Fatalf("OnError should not propagate error, got %v", err)
 	}
 }
