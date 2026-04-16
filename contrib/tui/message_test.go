@@ -130,7 +130,7 @@ func TestRenderMessage_ProgressShowsThinkingDetail(t *testing.T) {
 	}
 }
 
-func TestRenderMessage_TimestampOnlyShownForAssistant(t *testing.T) {
+func TestRenderMessage_TimestampNotShownForAnyRole(t *testing.T) {
 	ts := time.Date(2026, 4, 4, 12, 34, 56, 0, time.UTC)
 	stamp := formatMessageTimestamp(map[string]any{"timestamp": ts})
 	assistant := renderMessage(chatMessage{
@@ -138,8 +138,8 @@ func TestRenderMessage_TimestampOnlyShownForAssistant(t *testing.T) {
 		content: "done",
 		meta:    map[string]any{"timestamp": ts},
 	}, 80)
-	if !strings.Contains(assistant, stamp) {
-		t.Fatalf("assistant message should show timestamp: %q", assistant)
+	if strings.Contains(assistant, stamp) {
+		t.Fatalf("assistant message should not show timestamp: %q", assistant)
 	}
 
 	user := renderMessage(chatMessage{

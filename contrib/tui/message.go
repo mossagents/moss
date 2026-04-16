@@ -53,7 +53,7 @@ func renderMessage(m chatMessage, width int) string {
 		return userMessageStyle.Width(width).Render(inner)
 
 	case msgAssistant:
-		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) }, true)
+		return renderRoleMessage(m, maxContent, func(s string) string { return assistantLabelStyle.Render(s) }, false)
 
 	case msgSystem:
 		return systemStyle.Render(renderSystemMessage(m.content, maxContent))
