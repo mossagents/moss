@@ -4,9 +4,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 )
 
 func TestEnsure_NilKernel(t *testing.T) {
@@ -59,9 +59,9 @@ func TestSetAndGet(t *testing.T) {
 
 	payload := map[string]any{"mode": "strict"}
 	summary := map[string]any{"rules": 3}
-	rules := []builtins.PolicyRule{
-		builtins.CommandRules(
-			builtins.CommandPatternRule{Name: "ls", Match: "ls", Access: builtins.Allow},
+	rules := []governance.PolicyRule{
+		governance.CommandRules(
+			governance.CommandPatternRule{Name: "ls", Match: "ls", Access: governance.Allow},
 		),
 	}
 
@@ -168,16 +168,16 @@ func TestPayloadIsolation(t *testing.T) {
 func TestCompiledRulesIsolation(t *testing.T) {
 	k := kernel.New()
 	st := policystate.Ensure(k)
-	rules := []builtins.PolicyRule{
-		builtins.CommandRules(
-			builtins.CommandPatternRule{Name: "echo", Match: "echo", Access: builtins.Allow},
+	rules := []governance.PolicyRule{
+		governance.CommandRules(
+			governance.CommandPatternRule{Name: "echo", Match: "echo", Access: governance.Allow},
 		),
 	}
 	st.Set(nil, nil, rules)
 
 	got := st.CompiledRules()
-	got = append(got, builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "sh", Match: "sh", Access: builtins.Deny},
+	got = append(got, governance.CommandRules(
+		governance.CommandPatternRule{Name: "sh", Match: "sh", Access: governance.Deny},
 	))
 
 	got2 := st.CompiledRules()

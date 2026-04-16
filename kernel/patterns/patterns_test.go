@@ -71,7 +71,7 @@ func makeEvent(author, text string) *session.Event {
 func testCtx() *kernel.InvocationContext {
 	return testCtxWithSession(&session.Session{
 		ID:    "test-session",
-		State: make(map[string]any),
+		State: session.ScopedState{},
 	})
 }
 
@@ -157,7 +157,7 @@ func TestSequentialAgent_SubAgents(t *testing.T) {
 }
 
 func TestSequentialAgent_MaterializesEventsIntoParentSession(t *testing.T) {
-	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	parent := &session.Session{ID: "parent", State: session.ScopedState{}}
 	first := makeEvent("a1", "first")
 	first.Actions.StateDelta = map[string]any{"phase": "first"}
 	a1 := &stubAgent{name: "a1", events: []*session.Event{first}}
@@ -355,7 +355,7 @@ func TestLoopAgent_SubAgents(t *testing.T) {
 }
 
 func TestLoopAgent_MaterializesIterationEvents(t *testing.T) {
-	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	parent := &session.Session{ID: "parent", State: session.ScopedState{}}
 	var seenCounts []int
 	worker := &scriptedAgent{
 		name: "worker",
@@ -394,7 +394,7 @@ func TestSupervisorAgent_RoutesToWorker(t *testing.T) {
 	result.Actions.StateDelta = map[string]any{"handled_by": "w1"}
 	w1 := &stubAgent{name: "w1", events: []*session.Event{result}}
 	w2 := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "other")}}
-	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	parent := &session.Session{ID: "parent", State: session.ScopedState{}}
 
 	sup := &SupervisorAgent{
 		AgentName: "sup",
@@ -448,7 +448,7 @@ func TestSupervisorAgent_NoMatchReturnsEmpty(t *testing.T) {
 }
 
 func TestSupervisorAgent_FailoverRecordsDecisionState(t *testing.T) {
-	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	sess := &session.Session{ID: "s1", State: session.ScopedState{}}
 	w1 := &stubAgent{name: "w1", err: fmt.Errorf("boom")}
 	w2 := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "ok")}}
 
@@ -506,7 +506,7 @@ func TestSupervisorAgent_FailoverRecordsDecisionState(t *testing.T) {
 }
 
 func TestSupervisorAgent_TimeoutEscalatesWhenConfigured(t *testing.T) {
-	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	sess := &session.Session{ID: "s1", State: session.ScopedState{}}
 	timeoutWorker := &scriptedAgent{
 		name: "w1",
 		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -553,7 +553,7 @@ func TestSupervisorAgent_TimeoutEscalatesWhenConfigured(t *testing.T) {
 }
 
 func TestSupervisorAgent_TimeoutFailoverTracksHealth(t *testing.T) {
-	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	sess := &session.Session{ID: "s1", State: session.ScopedState{}}
 	timeoutWorker := &scriptedAgent{
 		name: "w1",
 		run: func(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
@@ -609,7 +609,7 @@ func TestSupervisorAgent_TimeoutFailoverTracksHealth(t *testing.T) {
 
 func TestSupervisorAgent_SkipsSuppressedWorkerAcrossInvocations(t *testing.T) {
 	now := time.Date(2026, 4, 11, 13, 30, 0, 0, time.UTC)
-	sess := &session.Session{ID: "s1", State: map[string]any{}}
+	sess := &session.Session{ID: "s1", State: session.ScopedState{}}
 	failing := &stubAgent{name: "w1", err: fmt.Errorf("boom")}
 	okWorker := &stubAgent{name: "w2", events: []*session.Event{makeEvent("w2", "ok")}}
 	sup := &SupervisorAgent{
@@ -659,7 +659,7 @@ func TestSupervisorAgent_SkipsSuppressedWorkerAcrossInvocations(t *testing.T) {
 func TestSupervisorAgent_FiltersWorkersByBudget(t *testing.T) {
 	sess := &session.Session{
 		ID:    "s1",
-		State: map[string]any{},
+		State: session.ScopedState{},
 		Budget: session.Budget{
 			MaxTokens:  100,
 			MaxSteps:   10,
@@ -707,7 +707,7 @@ func TestSupervisorAgent_FiltersWorkersByBudget(t *testing.T) {
 }
 
 func TestParallelAgent_IsolatesChildSessionsAndMaterializesMergedEvents(t *testing.T) {
-	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	parent := &session.Session{ID: "parent", State: session.ScopedState{}}
 	var (
 		mu       sync.Mutex
 		branches []*session.Session
@@ -932,7 +932,7 @@ func TestResearchAgent_PropagatesQueriesAndFindings(t *testing.T) {
 }
 
 func TestResearchAgent_MaterializesEventsIntoParentSession(t *testing.T) {
-	parent := &session.Session{ID: "parent", State: map[string]any{}}
+	parent := &session.Session{ID: "parent", State: session.ScopedState{}}
 	queryAgent := &stubAgent{
 		name:   "query",
 		events: []*session.Event{makeEvent("query", "query1\nquery2")},
@@ -1005,92 +1005,92 @@ func TestConcatAggregate(t *testing.T) {
 // ─── Accessor tests ─────────────────────────────────────────────────────────
 
 func TestSequentialAgent_Accessors(t *testing.T) {
-child1 := &stubAgent{name: "c1"}
-child2 := &stubAgent{name: "c2"}
-a := &SequentialAgent{AgentName: "seq", Desc: "sequential agent", Agents: []kernel.Agent{child1, child2}}
-if a.Name() != "seq" {
-t.Fatalf("Name = %q, want seq", a.Name())
-}
-if a.Description() != "sequential agent" {
-t.Fatalf("Description = %q", a.Description())
-}
-if len(a.SubAgents()) != 2 {
-t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
-}
+	child1 := &stubAgent{name: "c1"}
+	child2 := &stubAgent{name: "c2"}
+	a := &SequentialAgent{AgentName: "seq", Desc: "sequential agent", Agents: []kernel.Agent{child1, child2}}
+	if a.Name() != "seq" {
+		t.Fatalf("Name = %q, want seq", a.Name())
+	}
+	if a.Description() != "sequential agent" {
+		t.Fatalf("Description = %q", a.Description())
+	}
+	if len(a.SubAgents()) != 2 {
+		t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
+	}
 }
 
 func TestParallelAgent_Accessors(t *testing.T) {
-child := &stubAgent{name: "p1"}
-a := &ParallelAgent{AgentName: "par", Desc: "parallel agent", Agents: []kernel.Agent{child}}
-if a.Name() != "par" {
-t.Fatalf("Name = %q, want par", a.Name())
-}
-if a.Description() != "parallel agent" {
-t.Fatalf("Description = %q", a.Description())
-}
-if len(a.SubAgents()) != 1 {
-t.Fatalf("SubAgents len = %d, want 1", len(a.SubAgents()))
-}
+	child := &stubAgent{name: "p1"}
+	a := &ParallelAgent{AgentName: "par", Desc: "parallel agent", Agents: []kernel.Agent{child}}
+	if a.Name() != "par" {
+		t.Fatalf("Name = %q, want par", a.Name())
+	}
+	if a.Description() != "parallel agent" {
+		t.Fatalf("Description = %q", a.Description())
+	}
+	if len(a.SubAgents()) != 1 {
+		t.Fatalf("SubAgents len = %d, want 1", len(a.SubAgents()))
+	}
 }
 
 func TestLoopAgent_Accessors(t *testing.T) {
-child := &stubAgent{name: "inner"}
-a := &LoopAgent{AgentName: "loop", Desc: "loop agent", Agent: child}
-if a.Name() != "loop" {
-t.Fatalf("Name = %q, want loop", a.Name())
-}
-if a.Description() != "loop agent" {
-t.Fatalf("Description = %q", a.Description())
-}
-subs := a.SubAgents()
-if len(subs) != 1 || subs[0].Name() != "inner" {
-t.Fatalf("SubAgents = %v, want [inner]", subs)
-}
+	child := &stubAgent{name: "inner"}
+	a := &LoopAgent{AgentName: "loop", Desc: "loop agent", Agent: child}
+	if a.Name() != "loop" {
+		t.Fatalf("Name = %q, want loop", a.Name())
+	}
+	if a.Description() != "loop agent" {
+		t.Fatalf("Description = %q", a.Description())
+	}
+	subs := a.SubAgents()
+	if len(subs) != 1 || subs[0].Name() != "inner" {
+		t.Fatalf("SubAgents = %v, want [inner]", subs)
+	}
 }
 
 func TestLoopAgent_SubAgentsNilInner(t *testing.T) {
-a := &LoopAgent{AgentName: "loop"}
-if a.SubAgents() != nil {
-t.Fatal("SubAgents should be nil when Agent is nil")
-}
+	a := &LoopAgent{AgentName: "loop"}
+	if a.SubAgents() != nil {
+		t.Fatal("SubAgents should be nil when Agent is nil")
+	}
 }
 
 func TestSupervisorAgent_Accessors(t *testing.T) {
-w1 := &stubAgent{name: "worker1"}
-w2 := &stubAgent{name: "worker2"}
-a := &SupervisorAgent{AgentName: "sup", Desc: "supervisor", Workers: []kernel.Agent{w1, w2}}
-if a.Name() != "sup" {
-t.Fatalf("Name = %q, want sup", a.Name())
-}
-if a.Description() != "supervisor" {
-t.Fatalf("Description = %q", a.Description())
-}
-if len(a.SubAgents()) != 2 {
-t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
-}
+	w1 := &stubAgent{name: "worker1"}
+	w2 := &stubAgent{name: "worker2"}
+	a := &SupervisorAgent{AgentName: "sup", Desc: "supervisor", Workers: []kernel.Agent{w1, w2}}
+	if a.Name() != "sup" {
+		t.Fatalf("Name = %q, want sup", a.Name())
+	}
+	if a.Description() != "supervisor" {
+		t.Fatalf("Description = %q", a.Description())
+	}
+	if len(a.SubAgents()) != 2 {
+		t.Fatalf("SubAgents len = %d, want 2", len(a.SubAgents()))
+	}
 }
 
 func TestResearchAgent_Accessors(t *testing.T) {
-q := &stubAgent{name: "query"}
-s := &stubAgent{name: "search"}
-synth := &stubAgent{name: "synth"}
-a := NewResearchAgent(ResearchConfig{
-Name:           "research",
-Description:    "research agent",
-QueryAgent:     q,
-SearchAgent:    s,
-SynthesisAgent: synth,
-})
-if a.Name() != "research" {
-t.Fatalf("Name = %q, want research", a.Name())
-}
-if a.Description() != "research agent" {
-t.Fatalf("Description = %q", a.Description())
-}
-subs := a.SubAgents()
-if len(subs) != 3 {
-t.Fatalf("SubAgents len = %d, want 3", len(subs))
-}
+	q := &stubAgent{name: "query"}
+	s := &stubAgent{name: "search"}
+	synth := &stubAgent{name: "synth"}
+	a := NewResearchAgent(ResearchConfig{
+		Name:           "research",
+		Description:    "research agent",
+		QueryAgent:     q,
+		SearchAgent:    s,
+		SynthesisAgent: synth,
+	})
+	if a.Name() != "research" {
+		t.Fatalf("Name = %q, want research", a.Name())
+	}
+	if a.Description() != "research agent" {
+		t.Fatalf("Description = %q", a.Description())
+	}
+	subs := a.SubAgents()
+	if len(subs) != 3 {
+		t.Fatalf("SubAgents len = %d, want 3", len(subs))
+	}
 }
 
 func TestRoundRobinRouter_CyclesWorkers(t *testing.T) {

@@ -218,11 +218,13 @@ func TestNewLLMAgent_InstallsPlugins(t *testing.T) {
 	}
 }
 
-func TestKernel_WithPolicy_UsesPlugin(t *testing.T) {
+func TestKernel_InstallPlugin_ToolLifecycle(t *testing.T) {
 	k := New()
-	k.WithPolicy()
+	k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
+		return nil
+	}))
 	if k.chain.OnToolLifecycle.Empty() {
-		t.Fatal("WithPolicy should install OnToolLifecycle hook")
+		t.Fatal("InstallPlugin with ToolLifecycleHook should install OnToolLifecycle hook")
 	}
 }
 

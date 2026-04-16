@@ -113,7 +113,7 @@ type Session struct {
 	Config    SessionConfig   `json:"config"`
 	Title     string          `json:"title,omitempty"` // user-facing display title
 	Messages  []model.Message `json:"messages"`
-	State     map[string]any  `json:"state,omitempty"`
+	State     ScopedState     `json:"state,omitempty"`
 	Budget    Budget          `json:"budget"`
 	CreatedAt time.Time       `json:"created_at"`
 	EndedAt   time.Time       `json:"ended_at,omitempty"`
@@ -219,46 +219,72 @@ func (s *Session) TruncateMessages(maxTokens int, counter func(model.Message) in
 	}
 }
 
-// SetState 设置键值状态。
+// SetState sets a state key-value pair with automatic scope routing.
+// Keys prefixed with "app:", "user:", or "temp:" are routed to the
+// corresponding scope; all other keys go to the Session scope.
 func (s *Session) SetState(key string, value any) {
+	scope, realKey := ParseScopeKey(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.State == nil {
-		s.State = make(map[string]any)
-	}
-	s.State[key] = value
+	s.State.Set(scope, realKey, value)
 }
 
-// GetState 获取键值状态。
+// GetState retrieves a state value with automatic scope routing.
 func (s *Session) GetState(key string) (any, bool) {
+	scope, realKey := ParseScopeKey(key)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.State == nil {
-		return nil, false
-	}
-	v, ok := s.State[key]
-	return v, ok
+	return s.State.Get(scope, realKey)
 }
 
-// DeleteState 删除键值状态。
+// DeleteState removes a state key with automatic scope routing.
 func (s *Session) DeleteState(key string) {
+	scope, realKey := ParseScopeKey(key)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.State, key)
+	s.State.Delete(scope, realKey)
 }
 
-// CopyState 在读锁保护下返回状态的浅拷贝。
+// SetScopedState explicitly sets a value in the given scope.
+func (s *Session) SetScopedState(scope StateScope, key string, value any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.State.Set(scope, key, value)
+}
+
+// GetScopedState explicitly reads a value from the given scope.
+func (s *Session) GetScopedState(scope StateScope, key string) (any, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.State.Get(scope, key)
+}
+
+// DeleteScopedState explicitly deletes a key from the given scope.
+func (s *Session) DeleteScopedState(scope StateScope, key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.State.Delete(scope, key)
+}
+
+// CopyState returns a shallow copy of the Session scope map (backward-compatible).
 func (s *Session) CopyState() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if len(s.State) == 0 {
-		return nil
-	}
-	out := make(map[string]any, len(s.State))
-	for k, v := range s.State {
-		out[k] = v
-	}
-	return out
+	return s.State.CopySessionScope()
+}
+
+// CopyAllState returns a deep copy of all four scopes.
+func (s *Session) CopyAllState() ScopedState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.State.Clone()
+}
+
+// ClearTempState resets the Temp scope.
+func (s *Session) ClearTempState() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.State.ClearTemp()
 }
 
 // SetMetadata 线程安全地设置 Config.Metadata 键值。

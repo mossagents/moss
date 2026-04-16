@@ -11,7 +11,6 @@ import (
 	"github.com/mossagents/moss/harness/internal/stringutil"
 
 	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/workspace"
 )
 
@@ -21,11 +20,11 @@ type workspaceMemoryStore struct {
 	ws workspace.Workspace
 }
 
-func NewWorkspaceMemoryStore(ws workspace.Workspace) memory.MemoryStore {
+func NewWorkspaceMemoryStore(ws workspace.Workspace) ExtendedMemoryStore {
 	return &workspaceMemoryStore{ws: ws}
 }
 
-func (s *workspaceMemoryStore) Upsert(ctx context.Context, record memory.MemoryRecord) (*memory.MemoryRecord, error) {
+func (s *workspaceMemoryStore) UpsertExtended(ctx context.Context, record ExtendedMemoryRecord) (*ExtendedMemoryRecord, error) {
 	if strings.TrimSpace(record.Path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
@@ -35,7 +34,7 @@ func (s *workspaceMemoryStore) Upsert(ctx context.Context, record memory.MemoryR
 		return nil, err
 	}
 	key := NormalizePath(record.Path)
-	var existing *memory.MemoryRecord
+	var existing *ExtendedMemoryRecord
 	if current, ok := records[key]; ok {
 		cp := current
 		existing = &cp
@@ -52,7 +51,7 @@ func (s *workspaceMemoryStore) Upsert(ctx context.Context, record memory.MemoryR
 	return &out, nil
 }
 
-func (s *workspaceMemoryStore) GetByPath(ctx context.Context, path string) (*memory.MemoryRecord, error) {
+func (s *workspaceMemoryStore) GetByPathExtended(ctx context.Context, path string) (*ExtendedMemoryRecord, error) {
 	key := NormalizePath(path)
 	records, err := s.loadIndex(ctx)
 	if err != nil {
@@ -76,25 +75,25 @@ func (s *workspaceMemoryStore) DeleteByPath(ctx context.Context, path string) er
 	return s.persistIndex(ctx, records)
 }
 
-func (s *workspaceMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
+func (s *workspaceMemoryStore) ListExtended(ctx context.Context, limit int) ([]ExtendedMemoryRecord, error) {
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]memory.MemoryRecord, 0, len(records))
+	out := make([]ExtendedMemoryRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, record)
 	}
-	sortMemoryRecords(out, memory.MemoryQuery{})
+	sortMemoryRecords(out, ExtendedMemoryQuery{})
 	return trimMemoryRecords(out, limit), nil
 }
 
-func (s *workspaceMemoryStore) Search(ctx context.Context, query memory.MemoryQuery) ([]memory.MemoryRecord, error) {
+func (s *workspaceMemoryStore) SearchExtended(ctx context.Context, query ExtendedMemoryQuery) ([]ExtendedMemoryRecord, error) {
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]memory.MemoryRecord, 0, len(records))
+	out := make([]ExtendedMemoryRecord, 0, len(records))
 	for _, record := range records {
 		if !memoryMatchesQuery(record, query) {
 			continue
@@ -126,43 +125,43 @@ func (s *workspaceMemoryStore) RecordUsage(ctx context.Context, paths []string, 
 	return s.persistIndex(ctx, records)
 }
 
-func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]memory.MemoryRecord, error) {
+func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]ExtendedMemoryRecord, error) {
 	raw, err := s.ws.ReadFile(ctx, memoryIndexPath)
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "not found") {
-			return make(map[string]memory.MemoryRecord), nil
+			return make(map[string]ExtendedMemoryRecord), nil
 		}
 		return nil, err
 	}
-	var records map[string]memory.MemoryRecord
+	var records map[string]ExtendedMemoryRecord
 	if err := json.Unmarshal(raw, &records); err != nil {
 		return nil, fmt.Errorf("decode memory index: %w", err)
 	}
 	if records == nil {
-		records = make(map[string]memory.MemoryRecord)
+		records = make(map[string]ExtendedMemoryRecord)
 	}
 	for key, record := range records {
 		record.Path = NormalizePath(stringutil.FirstNonEmpty(record.Path, key))
 		record.Tags = normalizeMemoryTags(record.Tags)
 		record.Citation = normalizeMemoryCitation(record.Citation)
 		if record.Stage == "" {
-			record.Stage = memory.MemoryStageManual
+			record.Stage = MemoryStageManual
 		}
 		if record.Status == "" {
-			record.Status = memory.MemoryStatusActive
+			record.Status = MemoryStatusActive
 		}
 		records[key] = record
 	}
 	return records, nil
 }
 
-func (s *workspaceMemoryStore) persistIndex(ctx context.Context, records map[string]memory.MemoryRecord) error {
+func (s *workspaceMemoryStore) persistIndex(ctx context.Context, records map[string]ExtendedMemoryRecord) error {
 	keys := make([]string, 0, len(records))
 	for key := range records {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	ordered := make(map[string]memory.MemoryRecord, len(records))
+	ordered := make(map[string]ExtendedMemoryRecord, len(records))
 	for _, key := range keys {
 		ordered[key] = records[key]
 	}
@@ -172,6 +171,3 @@ func (s *workspaceMemoryStore) persistIndex(ctx context.Context, records map[str
 	}
 	return s.ws.WriteFile(ctx, memoryIndexPath, raw)
 }
-
-
-

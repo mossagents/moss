@@ -1,4 +1,4 @@
-package builtins
+package governance
 
 import (
 	"context"
@@ -39,22 +39,24 @@ func (r RBACRule) matchesTool(toolName string) bool {
 // identityKey 用于在 Session.State 中存取 Identity 的 key。
 const identityKey = "__identity__"
 
-// SetIdentity 将认证身份存入 Session 的 State。
-func SetIdentity(state map[string]any, id *io.Identity) {
-	if state != nil {
-		state[identityKey] = id
+// SetIdentity stores the authenticated identity in a Session.
+func SetIdentity(sess *session.Session, id *io.Identity) {
+	if sess != nil {
+		sess.SetState(identityKey, id)
 	}
 }
 
-// GetIdentity 从 Session 的 State 中取出认证身份。
-func GetIdentity(state map[string]any) *io.Identity {
-	if state == nil {
+// GetIdentity retrieves the authenticated identity from a Session.
+func GetIdentity(sess *session.Session) *io.Identity {
+	if sess == nil {
 		return nil
 	}
-	if v, ok := state[identityKey]; ok {
-		if id, ok := v.(*io.Identity); ok {
-			return id
-		}
+	v, ok := sess.GetState(identityKey)
+	if !ok {
+		return nil
+	}
+	if id, ok := v.(*io.Identity); ok {
+		return id
 	}
 	return nil
 }
@@ -71,7 +73,7 @@ func RBAC(rules []RBACRule) hooks.Hook[hooks.ToolEvent] {
 			return nil
 		}
 
-		identity := GetIdentity(ev.Session.State)
+		identity := GetIdentity(ev.Session)
 		if identity == nil {
 			return &PolicyDeniedError{
 				ToolName:    ev.Tool.Name,
@@ -127,7 +129,7 @@ func AuthMiddleware(auth io.Authenticator) hooks.Hook[session.LifecycleEvent] {
 			return err
 		}
 
-		ev.Session.SetState(identityKey, identity)
+		SetIdentity(ev.Session, identity)
 		return nil
 	}
 }

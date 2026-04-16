@@ -19,6 +19,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	kt "github.com/mossagents/moss/kernel/testing"
@@ -217,11 +218,47 @@ func TestKernelIntegration(t *testing.T) {
 		t.Fatalf("register write_file: %v", err)
 	}
 
-	// 设置策略：write_file 需要审批
-	k.WithPolicy(
-		builtins.RequireApprovalFor("write_file"),
-		builtins.DefaultAllow(),
-	)
+	// Install a tool lifecycle hook that requires approval for write_file.
+	k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Stage != hooks.ToolLifecycleBefore || ev.Tool == nil {
+			return nil
+		}
+		if ev.Tool.Name == "write_file" && ev.IO != nil {
+			// Emit approval.requested event.
+			if ev.Observer != nil {
+				ev.Observer.OnExecutionEvent(ctx, observe.ExecutionEvent{
+					Type:     observe.ExecutionApprovalRequest,
+					ToolName: ev.Tool.Name,
+					CallID:   ev.CallID,
+				})
+			}
+			resp, err := ev.IO.Ask(ctx, io.InputRequest{
+				Type:   io.InputConfirm,
+				Prompt: fmt.Sprintf("Allow %s?", ev.Tool.Name),
+				Approval: &io.ApprovalRequest{
+					ToolName:  ev.Tool.Name,
+					Risk:      string(ev.Tool.Risk),
+					SessionID: ev.Session.ID,
+				},
+			})
+			if err != nil {
+				return err
+			}
+			// Emit approval.resolved event.
+			if ev.Observer != nil {
+				ev.Observer.OnExecutionEvent(ctx, observe.ExecutionEvent{
+					Type:     observe.ExecutionApprovalResolved,
+					ToolName: ev.Tool.Name,
+					CallID:   ev.CallID,
+					Metadata: map[string]any{"approved": resp.Approved},
+				})
+			}
+			if !resp.Approved {
+				return errors.New(errors.ErrPolicyDenied, "tool call denied by policy")
+			}
+		}
+		return nil
+	}))
 
 	// 收集事件
 	var events []builtins.Event

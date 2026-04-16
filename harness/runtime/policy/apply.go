@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/policy/policystate"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
@@ -96,7 +96,7 @@ func installPolicyHook(k *kernel.Kernel, st *policystate.State) {
 		if len(rules) == 0 {
 			return nil
 		}
-		return builtins.PolicyCheck(rules...)(ctx, ev)
+		return governance.PolicyCheck(rules...)(ctx, ev)
 	})
 }
 

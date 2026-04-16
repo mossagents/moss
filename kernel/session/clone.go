@@ -55,18 +55,21 @@ func cloneSessionConfig(cfg SessionConfig) SessionConfig {
 }
 
 // Clone returns a branch-local copy of the session with independent message,
-// state, and budget containers.
+// state, and budget containers. All four state scopes are shallow-copied so the
+// child session is fully independent. Temp is cleared in the clone.
 func (s *Session) Clone() *Session {
 	if s == nil {
 		return nil
 	}
+	clonedState := s.CopyAllState()
+	clonedState.ClearTemp()
 	return &Session{
 		ID:                    s.ID,
 		Status:                s.Status,
 		Config:                cloneSessionConfig(s.Config),
 		Title:                 s.GetTitle(),
 		Messages:              CloneMessages(s.CopyMessages()),
-		State:                 s.CopyState(),
+		State:                 clonedState,
 		Budget:                s.Budget.Clone(),
 		CreatedAt:             s.CreatedAt,
 		EndedAt:               s.EndedAt,

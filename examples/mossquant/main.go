@@ -6,20 +6,23 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"github.com/mossagents/moss/harness/appkit"
-	appconfig "github.com/mossagents/moss/harness/config"
-	mosstui "github.com/mossagents/moss/contrib/tui"
-	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/runtime/scheduling"
-	"github.com/mossagents/moss/harness/scheduler"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	mosstui "github.com/mossagents/moss/contrib/tui"
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	"github.com/mossagents/moss/harness/scheduler"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/kernel/io"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 //go:embed templates/trading_prompt.tmpl
@@ -198,10 +201,10 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, userIO io.UserIO) (*
 		return nil, err
 	}
 
-	k.WithPolicy(
-		builtins.RequireApprovalFor("place_order"),
-		builtins.DefaultAllow(),
-	)
+	k.InstallPlugin(kplugin.ToolLifecycleHook("policy", 0, governance.PolicyCheck(
+		governance.RequireApprovalFor("place_order"),
+		governance.DefaultAllow(),
+	)))
 	k.OnEvent("tool.completed", func(e builtins.Event) {
 		if data, ok := e.Data.(map[string]any); ok {
 			if name, _ := data["tool"].(string); name == "place_order" {

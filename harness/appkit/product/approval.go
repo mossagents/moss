@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	runtimepolicy2 "github.com/mossagents/moss/harness/runtime/policy"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 )
 
 const (
@@ -55,7 +55,7 @@ func ApplyResolvedProfile(k *kernel.Kernel, profile rprofile.ResolvedProfile) er
 	return runtimepolicy2.Apply(k, profile.ToolPolicy)
 }
 
-func EvaluateToolPolicy(policy runtimepolicy2.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) builtins.PolicyDecision {
+func EvaluateToolPolicy(policy runtimepolicy2.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) governance.PolicyDecision {
 	return runtimepolicy2.Evaluate(policy, spec, input)
 }
 
@@ -146,4 +146,3 @@ func hasProjectHTTPRule(rules []appconfig.HTTPRuleConfig, target appconfig.HTTPR
 	}
 	return false
 }
-

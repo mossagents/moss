@@ -15,13 +15,12 @@ import (
 
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/kernel/testing"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestLoopTextOnly(t *testing.T) {
@@ -480,7 +479,17 @@ func TestLoopPolicyDeny(t *testing.T) {
 	}
 
 	chain := hooks.NewRegistry()
-	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
+	chain.OnToolLifecycle.AddHook("", func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Stage == hooks.ToolLifecycleBefore && ev.Tool != nil && ev.Tool.Name == "dangerous_tool" {
+			e := errors.New(errors.ErrPolicyDenied, "tool call denied by policy")
+			e.Meta = map[string]any{
+				"reason_code": "tool.denied",
+				"tool":        ev.Tool.Name,
+			}
+			return e
+		}
+		return nil
+	}, 0)
 
 	io := kt.NewRecorderIO()
 	l := &AgentLoop{
@@ -511,7 +520,7 @@ func TestLoopPolicyDeny(t *testing.T) {
 	var toolResultMsg *kernio.OutputMessage
 	for _, msg := range sess.Messages {
 		for _, tr := range msg.ToolResults {
-			if tr.IsError && model.ContentPartsToPlainText(tr.ContentParts) == builtins.ErrDenied.Error() {
+			if tr.IsError && strings.Contains(model.ContentPartsToPlainText(tr.ContentParts), "tool call denied by policy") {
 				found = true
 			}
 		}
@@ -833,7 +842,17 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 		t.Fatalf("register dangerous_tool: %v", err)
 	}
 	chain := hooks.NewRegistry()
-	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
+	chain.OnToolLifecycle.AddHook("", func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Stage == hooks.ToolLifecycleBefore && ev.Tool != nil && ev.Tool.Name == "dangerous_tool" {
+			e := errors.New(errors.ErrPolicyDenied, "tool call denied by policy")
+			e.Meta = map[string]any{
+				"reason_code": "tool.denied",
+				"tool":        ev.Tool.Name,
+			}
+			return e
+		}
+		return nil
+	}, 0)
 	observer := &recordingObserver{}
 	l := &AgentLoop{
 		Tools:    reg,
@@ -1182,7 +1201,17 @@ func TestLoopToolLifecycleHooksCaptureDeniedToolCall(t *testing.T) {
 		}
 		return nil
 	}, -10)
-	chain.OnToolLifecycle.AddHook("", builtins.PolicyCheck(builtins.DenyTool("dangerous_tool")), 0)
+	chain.OnToolLifecycle.AddHook("", func(ctx context.Context, ev *hooks.ToolEvent) error {
+		if ev.Stage == hooks.ToolLifecycleBefore && ev.Tool != nil && ev.Tool.Name == "dangerous_tool" {
+			e := errors.New(errors.ErrPolicyDenied, "tool call denied by policy")
+			e.Meta = map[string]any{
+				"reason_code": "tool.denied",
+				"tool":        ev.Tool.Name,
+			}
+			return e
+		}
+		return nil
+	}, 0)
 	reg := tool.NewRegistry()
 	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{Name: "dangerous_tool", Risk: tool.RiskHigh}, func(context.Context, json.RawMessage) (json.RawMessage, error) {
 		t.Fatal("tool should not be executed")

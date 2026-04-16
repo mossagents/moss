@@ -3,8 +3,8 @@ package policystate
 import (
 	"sync"
 
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 )
 
 const serviceKey kernel.ServiceKey = "tool-policy.state"
@@ -14,7 +14,7 @@ type State struct {
 
 	payload  map[string]any
 	summary  map[string]any
-	compiled []builtins.PolicyRule
+	compiled []governance.PolicyRule
 
 	toolHookInstalled    bool
 	sessionHookInstalled bool
@@ -42,7 +42,7 @@ func Lookup(k *kernel.Kernel) (*State, bool) {
 	return st, ok
 }
 
-func (s *State) Set(payload, summary map[string]any, compiled []builtins.PolicyRule) {
+func (s *State) Set(payload, summary map[string]any, compiled []governance.PolicyRule) {
 	if s == nil {
 		return
 	}
@@ -50,7 +50,7 @@ func (s *State) Set(payload, summary map[string]any, compiled []builtins.PolicyR
 	defer s.mu.Unlock()
 	s.payload = cloneMap(payload)
 	s.summary = cloneMap(summary)
-	s.compiled = append([]builtins.PolicyRule(nil), compiled...)
+	s.compiled = append([]governance.PolicyRule(nil), compiled...)
 }
 
 func (s *State) Payload() map[string]any {
@@ -71,13 +71,13 @@ func (s *State) Summary() map[string]any {
 	return cloneMap(s.summary)
 }
 
-func (s *State) CompiledRules() []builtins.PolicyRule {
+func (s *State) CompiledRules() []governance.PolicyRule {
 	if s == nil {
 		return nil
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return append([]builtins.PolicyRule(nil), s.compiled...)
+	return append([]governance.PolicyRule(nil), s.compiled...)
 }
 
 func (s *State) MarkToolHookInstalled() bool {

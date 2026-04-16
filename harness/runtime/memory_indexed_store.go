@@ -2,27 +2,27 @@ package runtime
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/memory"
-	memstore "github.com/mossagents/moss/harness/runtime/memory"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"io"
 	"time"
+
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 
 type indexedMemoryStore struct {
-	base    memory.MemoryStore
+	base    memstore.ExtendedMemoryStore
 	catalog *rstate.StateCatalog
 }
 
-func newIndexedMemoryStore(base memory.MemoryStore, catalog *rstate.StateCatalog) memory.MemoryStore {
+func newIndexedMemoryStore(base memstore.ExtendedMemoryStore, catalog *rstate.StateCatalog) memstore.ExtendedMemoryStore {
 	if base == nil || catalog == nil || !catalog.Enabled() {
 		return base
 	}
 	return &indexedMemoryStore{base: base, catalog: catalog}
 }
 
-func (s *indexedMemoryStore) Upsert(ctx context.Context, record memory.MemoryRecord) (*memory.MemoryRecord, error) {
-	out, err := s.base.Upsert(ctx, record)
+func (s *indexedMemoryStore) UpsertExtended(ctx context.Context, record memstore.ExtendedMemoryRecord) (*memstore.ExtendedMemoryRecord, error) {
+	out, err := s.base.UpsertExtended(ctx, record)
 	if err != nil {
 		return nil, err
 	}
@@ -30,8 +30,8 @@ func (s *indexedMemoryStore) Upsert(ctx context.Context, record memory.MemoryRec
 	return out, nil
 }
 
-func (s *indexedMemoryStore) GetByPath(ctx context.Context, path string) (*memory.MemoryRecord, error) {
-	return s.base.GetByPath(ctx, path)
+func (s *indexedMemoryStore) GetByPathExtended(ctx context.Context, path string) (*memstore.ExtendedMemoryRecord, error) {
+	return s.base.GetByPathExtended(ctx, path)
 }
 
 func (s *indexedMemoryStore) DeleteByPath(ctx context.Context, path string) error {
@@ -41,12 +41,12 @@ func (s *indexedMemoryStore) DeleteByPath(ctx context.Context, path string) erro
 	return s.catalog.Delete(rstate.StateKindMemory, memstore.NormalizePath(path))
 }
 
-func (s *indexedMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
-	return s.base.List(ctx, limit)
+func (s *indexedMemoryStore) ListExtended(ctx context.Context, limit int) ([]memstore.ExtendedMemoryRecord, error) {
+	return s.base.ListExtended(ctx, limit)
 }
 
-func (s *indexedMemoryStore) Search(ctx context.Context, query memory.MemoryQuery) ([]memory.MemoryRecord, error) {
-	return s.base.Search(ctx, query)
+func (s *indexedMemoryStore) SearchExtended(ctx context.Context, query memstore.ExtendedMemoryQuery) ([]memstore.ExtendedMemoryRecord, error) {
+	return s.base.SearchExtended(ctx, query)
 }
 
 func (s *indexedMemoryStore) RecordUsage(ctx context.Context, paths []string, usedAt time.Time) error {
@@ -54,7 +54,7 @@ func (s *indexedMemoryStore) RecordUsage(ctx context.Context, paths []string, us
 		return err
 	}
 	for _, path := range memstore.DedupeStrings(paths) {
-		record, err := s.base.GetByPath(ctx, path)
+		record, err := s.base.GetByPathExtended(ctx, path)
 		if err != nil {
 			continue
 		}
@@ -71,11 +71,10 @@ func (s *indexedMemoryStore) Close() error {
 	return closer.Close()
 }
 
-func (s *indexedMemoryStore) syncRecord(record memory.MemoryRecord) {
+func (s *indexedMemoryStore) syncRecord(record memstore.ExtendedMemoryRecord) {
 	if entry, ok := rstate.StateEntryFromMemory(record); ok {
 		if err := s.catalog.Upsert(entry); err != nil {
 			s.catalog.MarkError(err)
 		}
 	}
 }
-

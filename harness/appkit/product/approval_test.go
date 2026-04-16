@@ -1,11 +1,12 @@
 package product
 
 import (
+	"testing"
+
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
-	"testing"
 )
 
 func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
@@ -50,8 +51,8 @@ func TestEvaluatePolicy_ConfirmModeUsesEffectSemantics(t *testing.T) {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"memory"},
 	}, nil)
-	if decision != builtins.RequireApproval {
-		t.Fatalf("decision = %s, want %s", decision, builtins.RequireApproval)
+	if decision != governance.RequireApproval {
+		t.Fatalf("decision = %s, want %s", decision, governance.RequireApproval)
 	}
 }
 
@@ -65,8 +66,8 @@ func TestEvaluatePolicy_ReadOnlyModeDeniesGraphMutation(t *testing.T) {
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"context"},
 	}, nil)
-	if decision != builtins.Deny {
-		t.Fatalf("decision = %s, want %s", decision, builtins.Deny)
+	if decision != governance.Deny {
+		t.Fatalf("decision = %s, want %s", decision, governance.Deny)
 	}
 }
 

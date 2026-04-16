@@ -19,20 +19,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/mossagents/moss/harness/appkit"
-	appconfig "github.com/mossagents/moss/harness/config"
-	mosstui "github.com/mossagents/moss/contrib/tui"
-	"github.com/mossagents/moss/harness/gateway"
-	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
-	kernio "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/providers/embedding"
-	rknowledge "github.com/mossagents/moss/harness/runtime/knowledge"
-	"github.com/mossagents/moss/harness/runtime/scheduling"
-	"github.com/mossagents/moss/harness/scheduler"
 	"io"
 	"net/http"
 	"os"
@@ -42,6 +28,22 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	mosstui "github.com/mossagents/moss/contrib/tui"
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/gateway"
+	"github.com/mossagents/moss/harness/providers/embedding"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
+	rknowledge "github.com/mossagents/moss/harness/runtime/knowledge"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	"github.com/mossagents/moss/harness/scheduler"
+	"github.com/mossagents/moss/kernel"
+	kernio "github.com/mossagents/moss/kernel/io"
+	kplugin "github.com/mossagents/moss/kernel/plugin"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -232,10 +234,10 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 		return nil, nil, err
 	}
 	if flags.Trust == "restricted" {
-		k.WithPolicy(
-			builtins.RequireApprovalFor("write_file", "run_command", "fetch_url"),
-			builtins.DefaultAllow(),
-		)
+		k.InstallPlugin(kplugin.ToolLifecycleHook("policy", 0, governance.PolicyCheck(
+			governance.RequireApprovalFor("write_file", "run_command", "fetch_url"),
+			governance.DefaultAllow(),
+		)))
 	}
 
 	return k, &mossclawRuntime{flags: flags, store: store, sched: sched}, nil
@@ -544,5 +546,3 @@ func truncate(s string, max int) string {
 	}
 	return s[:max] + "..."
 }
-
-

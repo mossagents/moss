@@ -2,15 +2,16 @@ package runtime
 
 import (
 	"context"
+	"testing"
+	"time"
+
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
-	"testing"
-	"time"
 )
 
 type spyObserver struct {
@@ -127,7 +128,7 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 
 func TestStateEntryFromMemoryAndJobKinds(t *testing.T) {
 	now := time.Now().UTC()
-	mem, ok := rstate.StateEntryFromMemory(memory.MemoryRecord{
+	mem, ok := rstate.StateEntryFromMemory(memstore.ExtendedMemoryRecord{
 		ID:        "m-1",
 		Path:      "team/decision.md",
 		Content:   "sqlite backend selected",

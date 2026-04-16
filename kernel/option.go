@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
@@ -99,6 +100,11 @@ func WithCheckpoints(store checkpoint.CheckpointStore) Option {
 // WithSessionStore 设置 SessionStore Port。
 func WithSessionStore(store session.SessionStore) Option {
 	return func(k *Kernel) { k.store = store }
+}
+
+// WithArtifactStore 设置 Artifact Store Port（可选）。
+func WithArtifactStore(store artifact.Store) Option {
+	return func(k *Kernel) { k.artifacts = store }
 }
 
 // WithUserIO 设置 UserIO Port。
@@ -210,4 +216,3 @@ type sandboxExecutorAdapter struct {
 func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return a.sb.Execute(ctx, req)
 }
-

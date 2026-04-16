@@ -317,7 +317,7 @@ func (k *Kernel) instantiateClonedSession(ctx context.Context, source *session.S
 	}
 	live.Status = session.StatusCreated
 	live.Messages = cloneMessages(source.Messages)
-	live.State = cloneState(source.State)
+	live.State = source.CopyAllState()
 	live.Budget = source.Budget.Clone()
 	live.EndedAt = time.Time{}
 	if k.store != nil {
@@ -340,7 +340,7 @@ func rerunSession(source *session.Session) *session.Session {
 		}
 	}
 	cloned.Messages = filtered
-	cloned.State = make(map[string]any)
+	cloned.State = session.ScopedState{}
 	cloned.Budget.ResetUsage()
 	cloned.Status = session.StatusCreated
 	cloned.EndedAt = time.Time{}
@@ -433,7 +433,7 @@ func cloneSession(source *session.Session) *session.Session {
 		Status:    source.Status,
 		Config:    cloneSessionConfig(source.Config),
 		Messages:  cloneMessages(source.Messages),
-		State:     cloneState(source.State),
+		State:     source.CopyAllState(),
 		Budget:    source.Budget.Clone(),
 		CreatedAt: source.CreatedAt,
 		EndedAt:   source.EndedAt,

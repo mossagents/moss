@@ -1,4 +1,4 @@
-package builtins
+package governance
 
 import (
 	"context"
@@ -362,8 +362,8 @@ func buildPolicyContext(ev *hooks.ToolEvent) PolicyContext {
 	}
 	if ev.Session != nil {
 		ctx.SessionID = ev.Session.ID
-		ctx.SessionState = ev.Session.State
-		ctx.Identity = GetIdentity(ev.Session.State)
+		ctx.SessionState = ev.Session.CopyState()
+		ctx.Identity = GetIdentity(ev.Session)
 	}
 	return ctx
 }

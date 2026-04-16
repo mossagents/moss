@@ -7,11 +7,10 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness/internal/stringutil"
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	memstore "github.com/mossagents/moss/harness/runtime/memory"
 )
 
 func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
@@ -200,7 +199,7 @@ func StateEntryFromJobItem(item taskrt.AgentJobItem) (StateEntry, bool) {
 	}, true
 }
 
-func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
+func StateEntryFromMemory(record memstore.ExtendedMemoryRecord) (StateEntry, bool) {
 	if strings.TrimSpace(record.Path) == "" {
 		return StateEntry{}, false
 	}
@@ -213,7 +212,7 @@ func StateEntryFromMemory(record memory.MemoryRecord) (StateEntry, bool) {
 		RecordID:   strings.TrimSpace(record.Path),
 		Workspace:  strings.TrimSpace(record.Workspace),
 		RepoRoot:   strings.TrimSpace(record.CWD),
-		Status:     stringutil.FirstNonEmpty(string(record.Status), string(memory.MemoryStatusActive)),
+		Status:     stringutil.FirstNonEmpty(string(record.Status), string(memstore.MemoryStatusActive)),
 		Title:      stringutil.FirstNonEmpty(record.Path, record.Group, record.SourcePath, record.ID),
 		Summary:    strings.TrimSpace(record.Summary),
 		SearchText: normalizeStateText(record.Path, record.Group, record.Summary, record.Content, strings.Join(record.Tags, " "), record.SourcePath, record.CWD, record.GitBranch, record.SourceKind, string(record.Stage), string(record.Status)),
@@ -472,4 +471,3 @@ func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, ite
 	}
 	return item, nil
 }
-

@@ -78,7 +78,7 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 		Status:    StatusCreated,
 		Config:    cfg,
 		Messages:  make([]model.Message, 0),
-		State:     make(map[string]any),
+		State:     ScopedState{},
 		Budget:    Budget{MaxTokens: cfg.MaxTokens, MaxSteps: cfg.MaxSteps},
 		CreatedAt: time.Now(),
 	}

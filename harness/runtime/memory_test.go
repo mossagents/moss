@@ -4,24 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	"github.com/mossagents/moss/harness/sandbox"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	memstore "github.com/mossagents/moss/harness/runtime/memory"
-	"github.com/mossagents/moss/harness/sandbox"
-	kt "github.com/mossagents/moss/harness/testing"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 )
 
-func bootMemoryTestKernel(t *testing.T, ws workspace.Workspace, store memory.MemoryStore, taskRuntime taskrt.TaskRuntime) *kernel.Kernel {
+func bootMemoryTestKernel(t *testing.T, ws workspace.Workspace, store memstore.ExtendedMemoryStore, taskRuntime taskrt.TaskRuntime) *kernel.Kernel {
 	t.Helper()
 	opts := []kernel.Option{
 		kernel.WithLLM(&kt.MockLLM{}),
@@ -47,7 +47,7 @@ func bootMemoryTestKernel(t *testing.T, ws workspace.Workspace, store memory.Mem
 	return k
 }
 
-func bootMemoryTestRegistry(t *testing.T, ws workspace.Workspace, store memory.MemoryStore, taskRuntime taskrt.TaskRuntime) tool.Registry {
+func bootMemoryTestRegistry(t *testing.T, ws workspace.Workspace, store memstore.ExtendedMemoryStore, taskRuntime taskrt.TaskRuntime) tool.Registry {
 	t.Helper()
 	return bootMemoryTestKernel(t, ws, store, taskRuntime).ToolRegistry()
 }
@@ -174,7 +174,7 @@ func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	if content != "legacy memory" {
 		t.Fatalf("content = %q", content)
 	}
-	record, err := store.GetByPath(ctx, "team/legacy.txt")
+	record, err := store.GetByPathExtended(ctx, "team/legacy.txt")
 	if err != nil {
 		t.Fatalf("GetByPath: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/decision.md")
-	var record memory.MemoryRecord
+	var record memstore.ExtendedMemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
@@ -308,8 +308,8 @@ func TestStructuredMemoryTools_RecordAndSearch(t *testing.T) {
 		t.Fatalf("search_memories failed: %v", err)
 	}
 	var searchResp struct {
-		Count int                   `json:"count"`
-		Items []memory.MemoryRecord `json:"items"`
+		Count int                             `json:"count"`
+		Items []memstore.ExtendedMemoryRecord `json:"items"`
 	}
 	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
 		t.Fatalf("decode search_memories: %v", err)
@@ -361,11 +361,11 @@ func TestStructuredMemoryTools_IngestMemoryTrace(t *testing.T) {
 	}
 
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "team/memory/trace-summary.md")
-	var record memory.MemoryRecord
+	var record memstore.ExtendedMemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode read_memory_record: %v", err)
 	}
-	if record.Stage != memory.MemoryStageConsolidated {
+	if record.Stage != memstore.MemoryStageConsolidated {
 		t.Fatalf("expected consolidated stage, got %+v", record)
 	}
 	if len(record.Citation.MemoryPaths) == 0 {
@@ -408,11 +408,11 @@ func TestStructuredMemoryTools_PromotesCorroboratedFacts(t *testing.T) {
 		}
 	}
 	recordRaw := waitForMemoryRecord(t, ctx, readRecord, "promoted/promoted-fact.md")
-	var record memory.MemoryRecord
+	var record memstore.ExtendedMemoryRecord
 	if err := json.Unmarshal(recordRaw, &record); err != nil {
 		t.Fatalf("decode promoted record: %v", err)
 	}
-	if record.Stage != memory.MemoryStagePromoted || record.SourceKind != "promotion" {
+	if record.Stage != memstore.MemoryStagePromoted || record.SourceKind != "promotion" {
 		t.Fatalf("unexpected promoted record: %+v", record)
 	}
 	if !strings.Contains(record.Content, "confidence: 1.0") {
@@ -460,37 +460,37 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	_, err = store.Upsert(ctx, memory.MemoryRecord{
+	_, err = store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
 		Path:    "team/decision.md",
 		Content: "Use sqlite memory backend",
 		Tags:    []string{"state", "sqlite"},
 	})
 	if err != nil {
-		t.Fatalf("Upsert: %v", err)
+		t.Fatalf("UpsertExtended: %v", err)
 	}
 
-	got, err := store.GetByPath(ctx, "team/decision.md")
+	got, err := store.GetByPathExtended(ctx, "team/decision.md")
 	if err != nil {
-		t.Fatalf("GetByPath: %v", err)
+		t.Fatalf("GetByPathExtended: %v", err)
 	}
 	if got.Summary == "" {
 		t.Fatal("expected summary to be generated")
 	}
-	if got.Stage != memory.MemoryStageManual || got.Status != memory.MemoryStatusActive {
+	if got.Stage != memstore.MemoryStageManual || got.Status != memstore.MemoryStatusActive {
 		t.Fatalf("expected default stage/status, got %+v", got)
 	}
 	if err := store.RecordUsage(ctx, []string{"team/decision.md"}, time.Now().UTC()); err != nil {
 		t.Fatalf("RecordUsage: %v", err)
 	}
-	got, err = store.GetByPath(ctx, "team/decision.md")
+	got, err = store.GetByPathExtended(ctx, "team/decision.md")
 	if err != nil {
-		t.Fatalf("GetByPath after usage: %v", err)
+		t.Fatalf("GetByPathExtended after usage: %v", err)
 	}
 	if got.UsageCount != 1 || got.LastUsedAt.IsZero() {
 		t.Fatalf("expected usage tracking, got %+v", got)
 	}
 
-	items, err := store.Search(ctx, memory.MemoryQuery{Query: "sqlite", Limit: 10})
+	items, err := store.SearchExtended(ctx, memstore.ExtendedMemoryQuery{Query: "sqlite", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -501,7 +501,7 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	if err := store.DeleteByPath(ctx, "team/decision.md"); err != nil {
 		t.Fatalf("DeleteByPath: %v", err)
 	}
-	if _, err := store.GetByPath(ctx, "team/decision.md"); err == nil {
+	if _, err := store.GetByPathExtended(ctx, "team/decision.md"); err == nil {
 		t.Fatal("expected GetByPath to fail after delete")
 	}
 }
@@ -516,11 +516,11 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 		t.Cleanup(func() { _ = closer.Close() })
 	}
 	ctx := context.Background()
-	for _, record := range []memory.MemoryRecord{
+	for _, record := range []memstore.ExtendedMemoryRecord{
 		{Path: "team/alpha.md", Content: "sqlite backend decision alpha"},
 		{Path: "team/beta.md", Content: "sqlite backend decision beta"},
 	} {
-		if _, err := store.Upsert(ctx, record); err != nil {
+		if _, err := store.UpsertExtended(ctx, record); err != nil {
 			t.Fatalf("Upsert %s: %v", record.Path, err)
 		}
 	}
@@ -530,7 +530,7 @@ func TestSQLiteMemoryStore_SearchRanksByUsage(t *testing.T) {
 	if err := store.RecordUsage(ctx, []string{"team/beta.md"}, time.Now().UTC().Add(time.Millisecond)); err != nil {
 		t.Fatalf("RecordUsage: %v", err)
 	}
-	items, err := store.Search(ctx, memory.MemoryQuery{Query: "sqlite backend", Limit: 2})
+	items, err := store.SearchExtended(ctx, memstore.ExtendedMemoryQuery{Query: "sqlite backend", Limit: 2})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -633,4 +633,3 @@ func waitForCondition(t *testing.T, timeout time.Duration, check func() bool) {
 	}
 	t.Fatal("condition not satisfied before timeout")
 }
-

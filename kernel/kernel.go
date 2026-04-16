@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
-	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
@@ -41,6 +41,7 @@ type Kernel struct {
 	snapshots   workspace.WorktreeSnapshotStore
 	checkpoints checkpoint.CheckpointStore
 	store       session.SessionStore
+	artifacts   artifact.Store
 	tools       tool.Registry
 	sessions    session.Manager
 	chain       *hooks.Registry
@@ -214,6 +215,11 @@ func (k *Kernel) Prompts() *PromptAssembler {
 // an extension surface.
 func (k *Kernel) Services() *ServiceRegistry {
 	return k.services
+}
+
+// ArtifactStore returns the optional artifact store. Returns nil if not configured.
+func (k *Kernel) ArtifactStore() artifact.Store {
+	return k.artifacts
 }
 
 // UserIO 返回默认交互端口（可能为 nil）。
@@ -402,11 +408,6 @@ func (k *Kernel) installPlugin(p Plugin) {
 // OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
 func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
 	k.InstallPlugin(builtins.EventEmitterPlugin(pattern, handler))
-}
-
-// WithPolicy 设置权限策略（便利 API，内部注册 PolicyCheck hook）。
-func (k *Kernel) WithPolicy(rules ...builtins.PolicyRule) {
-	k.InstallPlugin(kplugin.ToolLifecycleHook("policy", 0, builtins.PolicyCheck(rules...)))
 }
 
 // ── Agent API ───────────────────────────────────────────────────

@@ -268,7 +268,7 @@ type persistedSession struct {
 	Status    SessionStatus      `json:"status"`
 	Config    SessionConfig      `json:"config"`
 	Messages  []persistedMessage `json:"messages"`
-	State     map[string]any     `json:"state,omitempty"`
+	State     json.RawMessage    `json:"state,omitempty"`
 	Budget    persistedBudget    `json:"budget"`
 	CreatedAt time.Time          `json:"created_at"`
 	EndedAt   time.Time          `json:"ended_at,omitempty"`
@@ -303,8 +303,13 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 	snap := sess.Budget.Clone()
 	// Take thread-safe snapshots of mutable fields.
 	messages := sess.CopyMessages()
-	state := sess.CopyState()
+	allState := sess.CopyAllState()
 	metadata := sess.CopyMetadata()
+
+	stateJSON, err := json.Marshal(allState)
+	if err != nil {
+		stateJSON = nil
+	}
 
 	cfg := sess.Config
 	cfg.Metadata = metadata
@@ -313,7 +318,7 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 		ID:     sess.ID,
 		Status: sess.Status,
 		Config: cfg,
-		State:  state,
+		State:  stateJSON,
 		Budget: persistedBudget{
 			MaxTokens:  snap.MaxTokens,
 			MaxSteps:   snap.MaxSteps,
@@ -349,11 +354,17 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 }
 
 func (ps *persistedSession) toSession(id string) (*Session, error) {
+	var scopedState ScopedState
+	if len(ps.State) > 0 {
+		if err := json.Unmarshal(ps.State, &scopedState); err != nil {
+			return nil, fmt.Errorf("unmarshal session %s state: %w", id, err)
+		}
+	}
 	sess := &Session{
 		ID:     ps.ID,
 		Status: ps.Status,
 		Config: ps.Config,
-		State:  ps.State,
+		State:  scopedState,
 		Budget: Budget{
 			MaxTokens:  ps.Budget.MaxTokens,
 			MaxSteps:   ps.Budget.MaxSteps,

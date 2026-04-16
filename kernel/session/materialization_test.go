@@ -7,7 +7,7 @@ import (
 )
 
 func TestMaterializeEvent_TracksDomainPerSession(t *testing.T) {
-	parent := &Session{ID: "parent", State: map[string]any{}}
+	parent := &Session{ID: "parent", State: ScopedState{}}
 	child := parent.Clone()
 	event := &Event{
 		Type: EventTypeCustom,

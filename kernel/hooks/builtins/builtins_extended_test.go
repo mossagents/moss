@@ -1,12 +1,10 @@
 package builtins_test
 
 // Extended tests covering previously-uncovered builtins:
-// events, retry, patch_tool_calls, priority, sliding, truncate,
-// policy_command, rbac/AuthMiddleware, rag helpers.
+// events, retry, patch_tool_calls, priority, sliding, truncate.
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -14,8 +12,6 @@ import (
 
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
-	kernio "github.com/mossagents/moss/kernel/io"
-	kernelmemory "github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
@@ -25,7 +21,7 @@ import (
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 func sessWithMessages(msgs ...model.Message) *session.Session {
-	s := &session.Session{ID: "s1", State: map[string]any{}}
+	s := &session.Session{ID: "s1", State: session.ScopedState{}}
 	for _, m := range msgs {
 		s.AppendMessage(m)
 	}
@@ -34,17 +30,6 @@ func sessWithMessages(msgs ...model.Message) *session.Session {
 
 func textMsg(role model.Role, text string) model.Message {
 	return model.Message{Role: role, ContentParts: []model.ContentPart{model.TextPart(text)}}
-}
-
-type stubContextInjector struct {
-	injected   string
-	err        error
-	lastConfig kernelmemory.ContextInjectConfig
-}
-
-func (s *stubContextInjector) InjectContext(_ context.Context, cfg kernelmemory.ContextInjectConfig) (string, error) {
-	s.lastConfig = cfg
-	return s.injected, s.err
 }
 
 // ─── EventEmitterPlugin ───────────────────────────────────────────────────────
@@ -59,7 +44,7 @@ func TestEventEmitter_BeforeLLM(t *testing.T) {
 	var got []builtins.Event
 	reg := installEventEmitter("llm.*", func(e builtins.Event) { got = append(got, e) })
 
-	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
+	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: session.ScopedState{}}}
 	if err := reg.BeforeLLM.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +57,7 @@ func TestEventEmitter_AfterLLM(t *testing.T) {
 	var got []builtins.Event
 	reg := installEventEmitter("llm.*", func(e builtins.Event) { got = append(got, e) })
 
-	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
+	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: session.ScopedState{}}}
 	if err := reg.AfterLLM.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +70,7 @@ func TestEventEmitter_PatternNoMatch(t *testing.T) {
 	var got []builtins.Event
 	reg := installEventEmitter("session.*", func(e builtins.Event) { got = append(got, e) })
 
-	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
+	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: session.ScopedState{}}}
 	reg.BeforeLLM.Run(context.Background(), ev)
 	if len(got) != 0 {
 		t.Fatalf("expected no events for non-matching pattern, got %v", got)
@@ -96,7 +81,7 @@ func TestEventEmitter_WildcardPattern(t *testing.T) {
 	var got []builtins.Event
 	reg := installEventEmitter("*", func(e builtins.Event) { got = append(got, e) })
 
-	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: map[string]any{}}}
+	ev := &hooks.LLMEvent{Session: &session.Session{ID: "s1", State: session.ScopedState{}}}
 	reg.BeforeLLM.Run(context.Background(), ev)
 	if len(got) != 1 {
 		t.Fatalf("wildcard should match llm.started")
@@ -110,7 +95,7 @@ func TestEventEmitter_ToolLifecycle(t *testing.T) {
 	ev := &hooks.ToolEvent{
 		Stage:     hooks.ToolLifecycleBefore,
 		Tool:      &tool.ToolSpec{Name: "read_file"},
-		Session:   &session.Session{ID: "s2", State: map[string]any{}},
+		Session:   &session.Session{ID: "s2", State: session.ScopedState{}},
 		CallID:    "c1",
 		Risk:      "low",
 		Timestamp: time.Now(),
@@ -149,7 +134,7 @@ func TestEventEmitter_SessionLifecycle(t *testing.T) {
 
 	ev := &session.LifecycleEvent{
 		Stage:   session.LifecycleCreated,
-		Session: &session.Session{ID: "s3", State: map[string]any{}},
+		Session: &session.Session{ID: "s3", State: session.ScopedState{}},
 	}
 	if err := reg.OnSessionLifecycle.Run(context.Background(), ev); err != nil {
 		t.Fatal(err)
@@ -172,7 +157,7 @@ func TestEventEmitter_SessionLifecycleVariants(t *testing.T) {
 	for _, c := range cases {
 		var got []builtins.Event
 		reg := installEventEmitter("*", func(e builtins.Event) { got = append(got, e) })
-		ev := &session.LifecycleEvent{Stage: c.stage, Session: &session.Session{ID: "s", State: map[string]any{}}}
+		ev := &session.LifecycleEvent{Stage: c.stage, Session: &session.Session{ID: "s", State: session.ScopedState{}}}
 		reg.OnSessionLifecycle.Run(context.Background(), ev)
 		if len(got) == 0 || got[0].Type != c.want {
 			t.Errorf("stage %v: expected %q, got %v", c.stage, c.want, got)
@@ -185,7 +170,7 @@ func TestEventEmitter_OnError(t *testing.T) {
 	reg := installEventEmitter("error", func(e builtins.Event) { got = append(got, e) })
 
 	ev := &hooks.ErrorEvent{
-		Session: &session.Session{ID: "s4", State: map[string]any{}},
+		Session: &session.Session{ID: "s4", State: session.ScopedState{}},
 		Error:   errors.New("something failed"),
 	}
 	if err := reg.OnError.Run(context.Background(), ev); err != nil {
@@ -338,7 +323,7 @@ func TestPatchToolCalls_NilSession(t *testing.T) {
 
 func TestPatchToolCalls_NoMessages(t *testing.T) {
 	hook := builtins.PatchToolCalls()
-	sess := &session.Session{ID: "s", State: map[string]any{}}
+	sess := &session.Session{ID: "s", State: session.ScopedState{}}
 	err := hook(context.Background(), &hooks.LLMEvent{Session: sess})
 	if err != nil {
 		t.Fatalf("empty messages should return nil, got %v", err)
@@ -347,7 +332,7 @@ func TestPatchToolCalls_NoMessages(t *testing.T) {
 
 func TestPatchToolCalls_BalancedCalls(t *testing.T) {
 	hook := builtins.PatchToolCalls()
-	sess := &session.Session{ID: "s", State: map[string]any{}}
+	sess := &session.Session{ID: "s", State: session.ScopedState{}}
 	// tool call + matching result = balanced
 	sess.AppendMessage(model.Message{
 		Role:      model.RoleAssistant,
@@ -369,7 +354,7 @@ func TestPatchToolCalls_BalancedCalls(t *testing.T) {
 
 func TestPatchToolCalls_UnbalancedCalls(t *testing.T) {
 	hook := builtins.PatchToolCalls()
-	sess := &session.Session{ID: "s", State: map[string]any{}}
+	sess := &session.Session{ID: "s", State: session.ScopedState{}}
 	// two tool calls, only one result
 	sess.AppendMessage(model.Message{
 		Role: model.RoleAssistant,
@@ -402,7 +387,7 @@ func TestPatchToolCalls_UnbalancedCalls(t *testing.T) {
 
 func TestPatchToolCalls_EmptyCallIDs(t *testing.T) {
 	hook := builtins.PatchToolCalls()
-	sess := &session.Session{ID: "s", State: map[string]any{}}
+	sess := &session.Session{ID: "s", State: session.ScopedState{}}
 	// tool calls with empty IDs are ignored
 	sess.AppendMessage(model.Message{
 		Role:      model.RoleAssistant,
@@ -746,336 +731,5 @@ func TestAutoTruncate_SystemMessagesPreserved(t *testing.T) {
 	}
 	if msgs[0].Role != model.RoleSystem {
 		t.Fatal("original system message should be first")
-	}
-}
-
-// ─── CommandRules ─────────────────────────────────────────────────────────────
-
-func makePolicyCtx(toolName string, input any) kernio.PolicyContext {
-	b, _ := json.Marshal(input)
-	return kernio.PolicyContext{
-		Tool:  tool.ToolSpec{Name: toolName},
-		Input: b,
-	}
-}
-
-func TestCommandRules_AllowedCommand(t *testing.T) {
-	rule := builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "git", Match: "git", Access: builtins.Allow},
-	)
-	ctx := makePolicyCtx("run_command", map[string]any{"command": "git", "args": []string{"status"}})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyAllow {
-		t.Fatalf("git should be allowed, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_DeniedCommand(t *testing.T) {
-	rule := builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "rm", Match: "rm", Access: builtins.Deny},
-	)
-	ctx := makePolicyCtx("run_command", map[string]any{"command": "rm", "args": []string{"-rf", "/"}})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyDeny {
-		t.Fatalf("rm should be denied, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_RequireApproval(t *testing.T) {
-	rule := builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "sudo", Match: "sudo*", Access: builtins.RequireApproval},
-	)
-	ctx := makePolicyCtx("run_command", map[string]any{"command": "sudo", "args": []string{"rm", "/etc/file"}})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyRequireApproval {
-		t.Fatalf("sudo should require approval, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_DefaultWithNoMatch(t *testing.T) {
-	rule := builtins.CommandRulesWithDefault(builtins.Deny,
-		builtins.CommandPatternRule{Name: "git", Match: "git", Access: builtins.Allow},
-	)
-	// unknown command → default = Deny
-	ctx := makePolicyCtx("run_command", map[string]any{"command": "curl"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyDeny {
-		t.Fatalf("unknown command with Deny default should be denied, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_NonCommandToolPassthrough(t *testing.T) {
-	rule := builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "rm", Match: "rm", Access: builtins.Deny},
-	)
-	ctx := makePolicyCtx("read_file", map[string]any{"command": "rm"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyAllow {
-		t.Fatalf("non-run_command tool should pass through, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_WildcardGlob(t *testing.T) {
-	rule := builtins.CommandRules(
-		builtins.CommandPatternRule{Name: "delete", Match: "rm*", Access: builtins.Deny},
-	)
-	ctx := makePolicyCtx("run_command", map[string]any{"command": "rmdir", "args": []string{"/tmp/work"}})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyDeny {
-		t.Fatalf("rmdir should match rm* pattern, got %v", result.Decision)
-	}
-}
-
-func TestCommandRules_EmptyInput(t *testing.T) {
-	rule := builtins.CommandRulesWithDefault(builtins.RequireApproval)
-	ctx := kernio.PolicyContext{
-		Tool:  tool.ToolSpec{Name: "run_command"},
-		Input: nil,
-	}
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyRequireApproval {
-		t.Fatalf("empty input with RequireApproval default, got %v", result.Decision)
-	}
-}
-
-// ─── HTTPRules ────────────────────────────────────────────────────────────────
-
-func TestHTTPRules_AllowedURL(t *testing.T) {
-	rule := builtins.HTTPRules(
-		builtins.HTTPPatternRule{Name: "github", Match: "*github.com*", Access: builtins.Allow},
-	)
-	ctx := makePolicyCtx("http_request", map[string]any{"url": "https://api.github.com/repos", "method": "GET"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyAllow {
-		t.Fatalf("github should be allowed, got %v", result.Decision)
-	}
-}
-
-func TestHTTPRules_DeniedURL(t *testing.T) {
-	rule := builtins.HTTPRules(
-		builtins.HTTPPatternRule{Name: "evil", Match: "*evil.com*", Access: builtins.Deny},
-	)
-	ctx := makePolicyCtx("http_request", map[string]any{"url": "https://evil.com/api", "method": "GET"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyDeny {
-		t.Fatalf("evil.com should be denied, got %v", result.Decision)
-	}
-}
-
-func TestHTTPRules_MethodFilter(t *testing.T) {
-	rule := builtins.HTTPRules(
-		builtins.HTTPPatternRule{
-			Name:    "post-only-deny",
-			Match:   "*api.example.com*",
-			Methods: []string{"DELETE"},
-			Access:  builtins.Deny,
-		},
-	)
-	// DELETE should be denied
-	ctxDel := makePolicyCtx("http_request", map[string]any{"url": "https://api.example.com/res", "method": "DELETE"})
-	if result := rule(ctxDel); result.Decision != kernio.PolicyDeny {
-		t.Fatalf("DELETE to api.example.com should be denied, got %v", result.Decision)
-	}
-	// GET should pass through (method doesn't match rule)
-	ctxGet := makePolicyCtx("http_request", map[string]any{"url": "https://api.example.com/res", "method": "GET"})
-	if result := rule(ctxGet); result.Decision != kernio.PolicyAllow {
-		t.Fatalf("GET should not be denied by DELETE-only rule, got %v", result.Decision)
-	}
-}
-
-func TestHTTPRules_DefaultDeny(t *testing.T) {
-	rule := builtins.HTTPRulesWithDefault(builtins.Deny,
-		builtins.HTTPPatternRule{Name: "gh", Match: "*github.com*", Access: builtins.Allow},
-	)
-	ctx := makePolicyCtx("http_request", map[string]any{"url": "https://unknown.io/api", "method": "GET"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyDeny {
-		t.Fatalf("unknown URL with Deny default should be denied, got %v", result.Decision)
-	}
-}
-
-func TestHTTPRules_NonHTTPTool(t *testing.T) {
-	rule := builtins.HTTPRules(
-		builtins.HTTPPatternRule{Name: "block", Match: "*", Access: builtins.Deny},
-	)
-	ctx := makePolicyCtx("run_command", map[string]any{"url": "https://evil.com"})
-	result := rule(ctx)
-	if result.Decision != kernio.PolicyAllow {
-		t.Fatalf("non-http_request tool should pass through, got %v", result.Decision)
-	}
-}
-
-// ─── AuthMiddleware ───────────────────────────────────────────────────────────
-
-type mockAuthenticator struct {
-	token    string
-	identity *kernio.Identity
-	err      error
-}
-
-func (m *mockAuthenticator) Authenticate(_ context.Context, token string) (*kernio.Identity, error) {
-	if token == m.token {
-		return m.identity, m.err
-	}
-	return nil, errors.New("invalid token")
-}
-
-func sessionWithMetadata(id, key, value string) *session.Session {
-	s := &session.Session{ID: id, State: map[string]any{}}
-	s.SetMetadata(key, value)
-	return s
-}
-
-func TestAuthMiddleware_NilEvent(t *testing.T) {
-	auth := &mockAuthenticator{}
-	hook := builtins.AuthMiddleware(auth)
-	err := hook(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("nil event should return nil, got %v", err)
-	}
-}
-
-func TestAuthMiddleware_NonStartedStage(t *testing.T) {
-	auth := &mockAuthenticator{}
-	hook := builtins.AuthMiddleware(auth)
-	ev := &session.LifecycleEvent{
-		Stage:   session.LifecycleCreated,
-		Session: &session.Session{ID: "s", State: map[string]any{}},
-	}
-	err := hook(context.Background(), ev)
-	if err != nil {
-		t.Fatalf("non-started stage should be skipped, got %v", err)
-	}
-}
-
-func TestAuthMiddleware_MissingToken(t *testing.T) {
-	auth := &mockAuthenticator{}
-	hook := builtins.AuthMiddleware(auth)
-	ev := &session.LifecycleEvent{
-		Stage:   session.LifecycleStarted,
-		Session: &session.Session{ID: "s", State: map[string]any{}},
-	}
-	err := hook(context.Background(), ev)
-	if err == nil || !strings.Contains(err.Error(), "auth token is required") {
-		t.Fatalf("missing token should return auth error, got %v", err)
-	}
-}
-
-func TestAuthMiddleware_ValidToken(t *testing.T) {
-	identity := &kernio.Identity{UserID: "user1", Roles: []string{"admin"}}
-	auth := &mockAuthenticator{token: "valid-token", identity: identity}
-	hook := builtins.AuthMiddleware(auth)
-	sess := sessionWithMetadata("s", "auth_token", "valid-token")
-	ev := &session.LifecycleEvent{
-		Stage:   session.LifecycleStarted,
-		Session: sess,
-	}
-	err := hook(context.Background(), ev)
-	if err != nil {
-		t.Fatalf("valid token should succeed, got %v", err)
-	}
-}
-
-func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	auth := &mockAuthenticator{token: "good", identity: &kernio.Identity{UserID: "u1"}}
-	hook := builtins.AuthMiddleware(auth)
-	sess := sessionWithMetadata("s", "auth_token", "bad-token")
-	ev := &session.LifecycleEvent{
-		Stage:   session.LifecycleStarted,
-		Session: sess,
-	}
-	err := hook(context.Background(), ev)
-	if err == nil {
-		t.Fatal("invalid token should return error")
-	}
-}
-
-func TestAuthMiddleware_AuthError(t *testing.T) {
-	authErr := errors.New("server down")
-	auth := &mockAuthenticator{token: "tok", err: authErr}
-	hook := builtins.AuthMiddleware(auth)
-	sess := sessionWithMetadata("s", "auth_token", "tok")
-	ev := &session.LifecycleEvent{
-		Stage:   session.LifecycleStarted,
-		Session: sess,
-	}
-	err := hook(context.Background(), ev)
-	if !errors.Is(err, authErr) {
-		t.Fatalf("expected authErr, got %v", err)
-	}
-}
-
-// ─── RAG helpers ──────────────────────────────────────────────────────────────
-
-// TestRAG_DisabledSkips verifies RAG hook returns nil immediately when disabled.
-func TestRAG_DisabledSkips(t *testing.T) {
-	disabled := false
-	hook := builtins.RAG(builtins.RAGConfig{Enabled: &disabled})
-	sess := sessWithMessages(textMsg(model.RoleUser, "query"))
-	err := hook(context.Background(), &hooks.LLMEvent{Session: sess})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestRAG_NilManagerSkips verifies RAG hook is a no-op when Manager is nil.
-func TestRAG_NilManagerSkips(t *testing.T) {
-	hook := builtins.RAG(builtins.RAGConfig{Manager: nil})
-	sess := sessWithMessages(textMsg(model.RoleUser, "what is moss?"))
-	err := hook(context.Background(), &hooks.LLMEvent{Session: sess})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// TestRAG_NilSessionSkips verifies RAG hook is a no-op when session is nil.
-func TestRAG_NilSessionSkips(t *testing.T) {
-	hook := builtins.RAG(builtins.RAGConfig{})
-	err := hook(context.Background(), &hooks.LLMEvent{Session: nil})
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRAG_TypedNilManagerSkips(t *testing.T) {
-	var injector *stubContextInjector
-	hook := builtins.RAG(builtins.RAGConfig{Manager: injector})
-	sess := sessWithMessages(textMsg(model.RoleUser, "what is moss?"))
-	if err := hook(context.Background(), &hooks.LLMEvent{Session: sess}); err != nil {
-		t.Fatal(err)
-	}
-	if len(sess.Messages) != 1 {
-		t.Fatalf("expected session messages to remain unchanged, got %d", len(sess.Messages))
-	}
-}
-
-func TestRAG_AppendsInjectedContext(t *testing.T) {
-	injector := &stubContextInjector{injected: "<memory_context>\nremember this\n</memory_context>"}
-	hook := builtins.RAG(builtins.RAGConfig{
-		Manager:   injector,
-		MaxChars:  1200,
-		EpisodicN: 7,
-		SemanticK: 3,
-		Threshold: 0.8,
-	})
-	sess := sessWithMessages(
-		textMsg(model.RoleSystem, "base system prompt"),
-		textMsg(model.RoleUser, "what is moss?"),
-	)
-	if err := hook(context.Background(), &hooks.LLMEvent{Session: sess}); err != nil {
-		t.Fatal(err)
-	}
-	if injector.lastConfig.SessionID != "s1" {
-		t.Fatalf("expected SessionID s1, got %q", injector.lastConfig.SessionID)
-	}
-	if injector.lastConfig.Query != "what is moss?" {
-		t.Fatalf("expected query from latest user turn, got %q", injector.lastConfig.Query)
-	}
-	if injector.lastConfig.EpisodicN != 7 || injector.lastConfig.SemanticK != 3 || injector.lastConfig.Threshold != 0.8 || injector.lastConfig.MaxChars != 1200 {
-		t.Fatalf("unexpected injector config: %+v", injector.lastConfig)
-	}
-	got := model.ContentPartsToPlainText(sess.Messages[0].ContentParts)
-	if !strings.Contains(got, "base system prompt") || !strings.Contains(got, "remember this") {
-		t.Fatalf("expected merged system prompt, got %q", got)
 	}
 }

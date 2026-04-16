@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -58,7 +58,7 @@ func TestApplyInstallsPolicyGate(t *testing.T) {
 	// 验证 Apply 后策略已存储，且规则链对危险命令返回 Deny
 	input, _ := json.Marshal(map[string]any{"command": "rm -rf /"})
 	decision := Evaluate(policy, tool.ToolSpec{Name: "run_command"}, input)
-	if decision != builtins.Deny {
+	if decision != governance.Deny {
 		t.Fatalf("expected Deny for dangerous command via compiled rules, got %s", decision)
 	}
 }
@@ -80,4 +80,3 @@ func TestApplyIdempotent(t *testing.T) {
 		t.Fatal("Current should be available after repeated Apply")
 	}
 }
-

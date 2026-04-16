@@ -3,11 +3,12 @@ package kernel
 import (
 	"context"
 	"errors"
+	"testing"
+
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"testing"
 )
 
 type stubCheckpointStore struct {
@@ -30,7 +31,9 @@ func (s *stubCheckpointStore) Load(ctx context.Context, id string) (*checkpoint.
 	return nil, nil
 }
 
-func (*stubCheckpointStore) List(context.Context) ([]checkpoint.CheckpointRecord, error) { return nil, nil }
+func (*stubCheckpointStore) List(context.Context) ([]checkpoint.CheckpointRecord, error) {
+	return nil, nil
+}
 
 func (s *stubCheckpointStore) FindBySession(ctx context.Context, sessionID string) ([]checkpoint.CheckpointRecord, error) {
 	if s.findBySessionFn != nil {
@@ -58,7 +61,9 @@ func (s *stubSnapshotStore) Load(ctx context.Context, id string) (*workspace.Wor
 	return nil, nil
 }
 
-func (*stubSnapshotStore) List(context.Context) ([]workspace.WorktreeSnapshot, error) { return nil, nil }
+func (*stubSnapshotStore) List(context.Context) ([]workspace.WorktreeSnapshot, error) {
+	return nil, nil
+}
 func (*stubSnapshotStore) FindBySession(context.Context, string) ([]workspace.WorktreeSnapshot, error) {
 	return nil, nil
 }
@@ -230,7 +235,7 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 			{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("assistant")}},
 			{Role: model.RoleTool, ContentParts: []model.ContentPart{model.TextPart("tool")}},
 		},
-		State:  map[string]any{"phase": "mid"},
+		State:  session.ScopedState{Session: map[string]any{"phase": "mid"}},
 		Budget: session.Budget{MaxSteps: 10, UsedSteps: 4, UsedTokens: 100},
 	}); err != nil {
 		t.Fatalf("save checkpoint session: %v", err)
@@ -263,7 +268,7 @@ func TestKernelReplayFromCheckpointRerunKeepsOnlyUserAndSystemMessages(t *testin
 	if cloned.Budget.UsedSteps != 0 || cloned.Budget.UsedTokens != 0 {
 		t.Fatalf("expected budget reset, got steps=%d tokens=%d", cloned.Budget.UsedSteps, cloned.Budget.UsedTokens)
 	}
-	if len(cloned.State) != 0 {
+	if !cloned.State.IsEmpty() {
 		t.Fatalf("expected empty state, got %+v", cloned.State)
 	}
 }

@@ -7,17 +7,17 @@ import (
 	"testing"
 	"time"
 
+	rt "github.com/mossagents/moss/harness/runtime"
+	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/harness/sandbox"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	rt "github.com/mossagents/moss/harness/runtime"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
-	"github.com/mossagents/moss/harness/sandbox"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 type stubRepoStateCapture struct {
@@ -127,11 +127,11 @@ func TestCompactConversationPreservesHistoryAndPersistsSnapshot(t *testing.T) {
 	if strings.TrimSpace(recordPath) == "" {
 		t.Fatalf("expected memory_record_path in tool output: %+v", out)
 	}
-	record, err := rt.MemoryStoreOf(k).GetByPath(ctx, recordPath)
+	record, err := rt.ExtendedMemoryStoreOf(k).GetByPathExtended(ctx, recordPath)
 	if err != nil {
-		t.Fatalf("GetByPath: %v", err)
+		t.Fatalf("GetByPathExtended: %v", err)
 	}
-	if record == nil || record.Stage != memory.MemoryStageSnapshot || record.SourceKind != "context_summary" {
+	if record == nil || record.Stage != memstore.MemoryStageSnapshot || record.SourceKind != "context_summary" {
 		t.Fatalf("unexpected memory record: %+v", record)
 	}
 	waitForCondition(t, 2*time.Second, func() bool {
@@ -422,4 +422,3 @@ func mustJSON(t *testing.T, value any) json.RawMessage {
 	}
 	return data
 }
-

@@ -6,12 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/harness/logging"
 	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/logging"
 )
 
 type contextMemoryService struct {
@@ -44,7 +43,7 @@ func (s contextMemoryService) CompactSessionContext(
 	llm model.LLM,
 	withSummary bool,
 ) (map[string]any, error) {
-	var memoryStore memory.MemoryStore
+	var memoryStore memstore.ExtendedMemoryStore
 	var memoryPipeline *memstore.PipelineManager
 	if st := memoryStateOf(s.kernel); st != nil {
 		memoryStore = st.store
@@ -56,7 +55,7 @@ func (s contextMemoryService) CompactSessionContext(
 func compactSessionContext(
 	ctx context.Context,
 	store session.SessionStore,
-	memoryStore memory.MemoryStore,
+	memoryStore memstore.ExtendedMemoryStore,
 	memoryPipeline *memstore.PipelineManager,
 	sess *session.Session,
 	keepRecent int,
@@ -99,12 +98,14 @@ func compactSessionContext(
 		Status:   session.StatusCompleted,
 		Config:   sess.Config,
 		Messages: original,
-		State: map[string]any{
-			"context_snapshot_of": sess.ID,
-			"context_summary":     summaryText,
-			"context_keep_recent": keepRecent,
-			"context_mode":        map[bool]string{true: "summary", false: "offload"}[withSummary],
-			"note":                note,
+		State: session.ScopedState{
+			Session: map[string]any{
+				"context_snapshot_of": sess.ID,
+				"context_summary":     summaryText,
+				"context_keep_recent": keepRecent,
+				"context_mode":        map[bool]string{true: "summary", false: "offload"}[withSummary],
+				"note":                note,
+			},
 		},
 		Budget:    sess.Budget.Clone(),
 		CreatedAt: time.Now(),
@@ -181,12 +182,12 @@ var _ ContextMemoryService = contextMemoryService{}
 
 func persistContextSummaryMemory(
 	ctx context.Context,
-	store memory.MemoryStore,
+	store memstore.ExtendedMemoryStore,
 	sess *session.Session,
 	snapshotID string,
 	summary string,
 	withSummary bool,
-) (*memory.MemoryRecord, error) {
+) (*memstore.ExtendedMemoryRecord, error) {
 	if store == nil || sess == nil {
 		return nil, fmt.Errorf("context summary memory requires memory store and session")
 	}
@@ -196,17 +197,16 @@ func persistContextSummaryMemory(
 	}
 	content := strings.TrimSpace(summary)
 	recordPath := memstore.NormalizePath(fmt.Sprintf("context_snapshots/%s/%s.md", strings.TrimSpace(sess.ID), strings.TrimSpace(snapshotID)))
-	return store.Upsert(ctx, memory.MemoryRecord{
+	return store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
 		Path:       recordPath,
 		Content:    content,
 		Summary:    content,
 		Tags:       []string{"context", "session:" + strings.TrimSpace(sess.ID), mode},
-		Stage:      memory.MemoryStageSnapshot,
-		Status:     memory.MemoryStatusActive,
+		Stage:      memstore.MemoryStageSnapshot,
+		Status:     memstore.MemoryStatusActive,
 		Group:      memstore.NormalizePath("context_snapshots/" + strings.TrimSpace(sess.ID)),
 		SourceKind: "context_" + mode,
 		SourceID:   strings.TrimSpace(snapshotID),
 		SourcePath: strings.TrimSpace(snapshotID),
 	})
 }
-

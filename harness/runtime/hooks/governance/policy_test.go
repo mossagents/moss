@@ -1,4 +1,4 @@
-package builtins_test
+package governance_test
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -24,12 +24,12 @@ func makeToolEvent(spec tool.ToolSpec) *hooks.ToolEvent {
 
 // TestPolicyCheckDenyTool 验证 DenyTool 规则在命中时拒绝工具调用。
 func TestPolicyCheckDenyTool(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.DenyTool("rm", "drop_table"))
+	hook := governance.PolicyCheck(governance.DenyTool("rm", "drop_table"))
 	ctx := context.Background()
 
 	t.Run("denied tool returns error", func(t *testing.T) {
 		err := hook(ctx, makeToolEvent(tool.ToolSpec{Name: "rm"}))
-		if !errors.Is(err, builtins.ErrDenied) {
+		if !errors.Is(err, governance.ErrDenied) {
 			t.Fatalf("expected ErrDenied, got %v", err)
 		}
 	})
@@ -60,7 +60,7 @@ func TestPolicyCheckDenyTool(t *testing.T) {
 
 // TestPolicyCheckDefaultAllow 验证 DefaultAllow 规则放行一切工具。
 func TestPolicyCheckDefaultAllow(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.DefaultAllow())
+	hook := governance.PolicyCheck(governance.DefaultAllow())
 	ctx := context.Background()
 
 	err := hook(ctx, makeToolEvent(tool.ToolSpec{Name: "anything"}))
@@ -71,7 +71,7 @@ func TestPolicyCheckDefaultAllow(t *testing.T) {
 
 // TestPolicyCheckDenyApprovalClass 验证 DenyApprovalClasses 正确拒绝。
 func TestPolicyCheckDenyApprovalClass(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly))
+	hook := governance.PolicyCheck(governance.DenyApprovalClasses(tool.ApprovalClassSupervisorOnly))
 	ctx := context.Background()
 
 	t.Run("supervisor_only denied", func(t *testing.T) {
@@ -80,7 +80,7 @@ func TestPolicyCheckDenyApprovalClass(t *testing.T) {
 			ApprovalClass: tool.ApprovalClassSupervisorOnly,
 		}
 		err := hook(ctx, makeToolEvent(spec))
-		if !errors.Is(err, builtins.ErrDenied) {
+		if !errors.Is(err, governance.ErrDenied) {
 			t.Fatalf("expected ErrDenied for supervisor_only, got %v", err)
 		}
 	})
@@ -96,18 +96,18 @@ func TestPolicyCheckDenyApprovalClass(t *testing.T) {
 
 // TestPolicyCheckMultipleRules 验证多规则取最严格决策。
 func TestPolicyCheckMultipleRules(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.DefaultAllow(), builtins.DenyTool("bad_tool"))
+	hook := governance.PolicyCheck(governance.DefaultAllow(), governance.DenyTool("bad_tool"))
 	ctx := context.Background()
 
 	err := hook(ctx, makeToolEvent(tool.ToolSpec{Name: "bad_tool"}))
-	if !errors.Is(err, builtins.ErrDenied) {
+	if !errors.Is(err, governance.ErrDenied) {
 		t.Fatalf("Deny should win over Allow, got %v", err)
 	}
 }
 
 // TestAutoEnforceApprovalClass 验证 AutoEnforceApprovalClass 对显式声明的工具有效。
 func TestAutoEnforceApprovalClass(t *testing.T) {
-	rule := builtins.AutoEnforceApprovalClass()
+	rule := governance.AutoEnforceApprovalClass()
 
 	t.Run("explicit_user requires approval", func(t *testing.T) {
 		pctx := io.PolicyContext{
@@ -163,7 +163,7 @@ func TestAutoEnforceApprovalClass(t *testing.T) {
 // TestAutoEnforceApprovalClassInPolicyCheck 验证 AutoEnforceApprovalClass 与 PolicyCheck 集成后
 // 能在 ToolEvent 中正确触发审批。
 func TestAutoEnforceApprovalClassInPolicyCheck(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.AutoEnforceApprovalClass(), builtins.DefaultAllow())
+	hook := governance.PolicyCheck(governance.AutoEnforceApprovalClass(), governance.DefaultAllow())
 	ctx := context.Background()
 
 	t.Run("explicit_user without IO passes through safely", func(t *testing.T) {
@@ -189,7 +189,7 @@ func TestAutoEnforceApprovalClassInPolicyCheck(t *testing.T) {
 
 // TestRequireApprovalForPathPrefix 验证路径前缀保护规则。
 func TestRequireApprovalForPathPrefix(t *testing.T) {
-	rule := builtins.RequireApprovalForPathPrefix("/etc/", "/root/")
+	rule := governance.RequireApprovalForPathPrefix("/etc/", "/root/")
 
 	t.Run("protected path requires approval", func(t *testing.T) {
 		pctx := io.PolicyContext{
@@ -227,7 +227,7 @@ func TestRequireApprovalForPathPrefix(t *testing.T) {
 
 // TestDenyCommandContaining 验证危险命令片段被拒绝。
 func TestDenyCommandContaining(t *testing.T) {
-	rule := builtins.DenyCommandContaining("rm -rf /", "format c:")
+	rule := governance.DenyCommandContaining("rm -rf /", "format c:")
 
 	t.Run("dangerous fragment denied", func(t *testing.T) {
 		pctx := io.PolicyContext{
@@ -265,7 +265,7 @@ func TestDenyCommandContaining(t *testing.T) {
 
 // TestRequireApprovalForHTTPMethod 验证 HTTP method 审批规则。
 func TestRequireApprovalForHTTPMethod(t *testing.T) {
-	rule := builtins.RequireApprovalForHTTPMethod("GET", "HEAD")
+	rule := governance.RequireApprovalForHTTPMethod("GET", "HEAD")
 
 	t.Run("allowed method passes", func(t *testing.T) {
 		pctx := io.PolicyContext{
@@ -303,7 +303,7 @@ func TestRequireApprovalForHTTPMethod(t *testing.T) {
 
 // TestDenyURLHost 验证 URL host 拒绝规则。
 func TestDenyURLHost(t *testing.T) {
-	rule := builtins.DenyURLHost("evil.example.com", "malicious.io")
+	rule := governance.DenyURLHost("evil.example.com", "malicious.io")
 
 	t.Run("denied host is blocked", func(t *testing.T) {
 		pctx := io.PolicyContext{
@@ -343,7 +343,7 @@ func makeToolEventWithIO(spec tool.ToolSpec, userIO io.UserIO) *hooks.ToolEvent 
 
 // TestPolicyCheckApprovalGranted 验证 IO 在场且用户批准时，RequireApproval 返回 nil。
 func TestPolicyCheckApprovalGranted(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.RequireApprovalForPathPrefix("/etc/"))
+	hook := governance.PolicyCheck(governance.RequireApprovalForPathPrefix("/etc/"))
 	ctx := context.Background()
 
 	recorder := &approvalRecorderIO{approved: true}
@@ -364,7 +364,7 @@ func TestPolicyCheckApprovalGranted(t *testing.T) {
 
 // TestPolicyCheckApprovalDenied 验证 IO 在场且用户拒绝时，RequireApproval 返回 ErrDenied。
 func TestPolicyCheckApprovalDenied(t *testing.T) {
-	hook := builtins.PolicyCheck(builtins.RequireApprovalForPathPrefix("/etc/"))
+	hook := governance.PolicyCheck(governance.RequireApprovalForPathPrefix("/etc/"))
 	ctx := context.Background()
 
 	recorder := &approvalRecorderIO{approved: false}
@@ -373,7 +373,7 @@ func TestPolicyCheckApprovalDenied(t *testing.T) {
 	ev.Input = mustJSON(map[string]any{"path": "/etc/passwd"})
 
 	err := hook(ctx, ev)
-	if !errors.Is(err, builtins.ErrDenied) {
+	if !errors.Is(err, governance.ErrDenied) {
 		t.Fatalf("expected ErrDenied when user denies, got %v", err)
 	}
 }

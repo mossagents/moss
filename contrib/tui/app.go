@@ -19,12 +19,12 @@ import (
 	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/extensions/skill"
 	"github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
@@ -438,7 +438,7 @@ func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.Too
 						),
 					})
 				}
-				return builtins.ErrDenied
+				return governance.ErrDenied
 			case "ask":
 				if ev.IO != nil {
 					approval := &io.ApprovalRequest{
@@ -484,7 +484,7 @@ func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.Too
 								approval.Enforcement,
 							),
 						})
-						return builtins.ErrDenied
+						return governance.ErrDenied
 					}
 				}
 				return next(ctx)

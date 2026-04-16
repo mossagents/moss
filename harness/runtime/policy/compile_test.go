@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/hooks/builtins"
+	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -22,22 +22,22 @@ func TestCompileRulesApplyCommandRules(t *testing.T) {
 		"command": "git",
 		"args":    []string{"push", "origin", "main"},
 	})
-	result := builtins.Allow
+	result := governance.Allow
 	for _, rule := range rules {
-		next := rule(builtins.PolicyContext{
+		next := rule(governance.PolicyContext{
 			Tool:  tool.ToolSpec{Name: "run_command"},
 			Input: input,
 		})
-		if next.Decision == builtins.Deny {
-			result = builtins.Deny
+		if next.Decision == governance.Deny {
+			result = governance.Deny
 			break
 		}
-		if next.Decision == builtins.RequireApproval {
-			result = builtins.RequireApproval
+		if next.Decision == governance.RequireApproval {
+			result = governance.RequireApproval
 		}
 	}
-	if result != builtins.RequireApproval {
-		t.Fatalf("decision = %s, want %s", result, builtins.RequireApproval)
+	if result != governance.RequireApproval {
+		t.Fatalf("decision = %s, want %s", result, governance.RequireApproval)
 	}
 }
 
@@ -54,22 +54,22 @@ func TestCompileRulesAllowRuleOverridesDefaultConfirm(t *testing.T) {
 		"command": "git",
 		"args":    []string{"status"},
 	})
-	result := builtins.Allow
+	result := governance.Allow
 	for _, rule := range rules {
-		next := rule(builtins.PolicyContext{
+		next := rule(governance.PolicyContext{
 			Tool:  tool.ToolSpec{Name: "run_command"},
 			Input: input,
 		})
-		if next.Decision == builtins.Deny {
-			result = builtins.Deny
+		if next.Decision == governance.Deny {
+			result = governance.Deny
 			break
 		}
-		if next.Decision == builtins.RequireApproval {
-			result = builtins.RequireApproval
+		if next.Decision == governance.RequireApproval {
+			result = governance.RequireApproval
 		}
 	}
-	if result != builtins.Allow {
-		t.Fatalf("decision = %s, want %s", result, builtins.Allow)
+	if result != governance.Allow {
+		t.Fatalf("decision = %s, want %s", result, governance.Allow)
 	}
 }
 
@@ -78,7 +78,7 @@ func TestEvaluateDenyDangerousCommand(t *testing.T) {
 	policy := ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
 	input, _ := json.Marshal(map[string]any{"command": "rm -rf /"})
 	decision := Evaluate(policy, tool.ToolSpec{Name: "run_command"}, input)
-	if decision != builtins.Deny {
+	if decision != governance.Deny {
 		t.Fatalf("expected Deny for dangerous command, got %s", decision)
 	}
 }
@@ -89,7 +89,7 @@ func TestEvaluateProtectedPathPrefix(t *testing.T) {
 	policy.ProtectedPathPrefixes = []string{"/etc/"}
 	input, _ := json.Marshal(map[string]any{"path": "/etc/hosts"})
 	decision := Evaluate(policy, tool.ToolSpec{Name: "read_file"}, input)
-	if decision != builtins.RequireApproval {
+	if decision != governance.RequireApproval {
 		t.Fatalf("expected RequireApproval for protected path, got %s", decision)
 	}
 }
@@ -98,7 +98,7 @@ func TestEvaluateProtectedPathPrefix(t *testing.T) {
 func TestEvaluateNormalToolAllowed(t *testing.T) {
 	policy := ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, "full-auto")
 	decision := Evaluate(policy, tool.ToolSpec{Name: "list_files"}, nil)
-	if decision != builtins.Allow {
+	if decision != governance.Allow {
 		t.Fatalf("expected Allow for normal tool in full-auto, got %s", decision)
 	}
 }
@@ -111,7 +111,7 @@ func TestEvaluateExplicitUserApprovalClass(t *testing.T) {
 		ApprovalClass: tool.ApprovalClassExplicitUser,
 	}
 	decision := Evaluate(policy, spec, nil)
-	if decision != builtins.RequireApproval {
+	if decision != governance.RequireApproval {
 		t.Fatalf("expected RequireApproval for ApprovalClassExplicitUser, got %s", decision)
 	}
 }
@@ -125,8 +125,7 @@ func TestEvaluateDenyApprovalClass(t *testing.T) {
 		ApprovalClass: tool.ApprovalClassSupervisorOnly,
 	}
 	decision := Evaluate(policy, spec, nil)
-	if decision != builtins.Deny {
+	if decision != governance.Deny {
 		t.Fatalf("expected Deny for denied approval class, got %s", decision)
 	}
 }
-

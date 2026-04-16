@@ -89,6 +89,7 @@ type Config struct {
 	DefaultProfile    string                   `yaml:"default_profile,omitempty"`
 	Profiles          map[string]ProfileConfig `yaml:"profiles,omitempty"`
 	Skills            []SkillConfig            `yaml:"skills,omitempty"`
+	Hooks             []HookConfig             `yaml:"hooks,omitempty"`
 	TUI               TUIConfig                `yaml:"tui,omitempty"`
 }
 
@@ -130,6 +131,20 @@ type SkillConfig struct {
 	RequiredEnv []string          `yaml:"required_env,omitempty"`
 	Enabled     *bool             `yaml:"enabled,omitempty"`
 	Required    *bool             `yaml:"required,omitempty"`
+}
+
+// HookConfig declares a hook that fires on tool use events.
+type HookConfig struct {
+	Name           string `yaml:"name" json:"name"`
+	Type           string `yaml:"type" json:"type"`                                         // "command", "http", "prompt"
+	Event          string `yaml:"event" json:"event"`                                       // "pre_tool_use", "post_tool_use"
+	Match          string `yaml:"match,omitempty" json:"match,omitempty"`                   // glob pattern for tool name
+	Command        string `yaml:"command,omitempty" json:"command,omitempty"`               // for command hooks
+	URL            string `yaml:"url,omitempty" json:"url,omitempty"`                       // for http hooks
+	Method         string `yaml:"method,omitempty" json:"method,omitempty"`                 // for http hooks
+	Prompt         string `yaml:"prompt,omitempty" json:"prompt,omitempty"`                 // for prompt hooks
+	Timeout        string `yaml:"timeout,omitempty" json:"timeout,omitempty"`               // e.g. "10s"
+	BlockOnFailure bool   `yaml:"block_on_failure,omitempty" json:"block_on_failure,omitempty"`
 }
 
 type ProfileConfig struct {

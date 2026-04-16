@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness/internal/stringutil"
-	"github.com/mossagents/moss/kernel/memory"
 )
 
 func NormalizePath(path string) string {
@@ -75,9 +74,9 @@ func normalizeMemoryTags(tags []string) []string {
 	return out
 }
 
-func normalizeMemoryCitation(citation memory.MemoryCitation) memory.MemoryCitation {
-	out := memory.MemoryCitation{
-		Entries:     make([]memory.MemoryCitationEntry, 0, len(citation.Entries)),
+func normalizeMemoryCitation(citation MemoryCitation) MemoryCitation {
+	out := MemoryCitation{
+		Entries:     make([]MemoryCitationEntry, 0, len(citation.Entries)),
 		MemoryPaths: DedupeStrings(citation.MemoryPaths),
 		RolloutIDs:  DedupeStrings(citation.RolloutIDs),
 	}
@@ -101,7 +100,7 @@ func normalizeMemoryCitation(citation memory.MemoryCitation) memory.MemoryCitati
 	return out
 }
 
-func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRecord, now time.Time) memory.MemoryRecord {
+func normalizeMemoryRecord(record ExtendedMemoryRecord, existing *ExtendedMemoryRecord, now time.Time) ExtendedMemoryRecord {
 	record.Path = NormalizePath(record.Path)
 	record.Group = NormalizePath(record.Group)
 	record.Workspace = strings.TrimSpace(record.Workspace)
@@ -120,8 +119,8 @@ func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRe
 		if record.CreatedAt.IsZero() {
 			record.CreatedAt = existing.CreatedAt
 		}
-		record.Stage = memory.MemoryStage(stringutil.FirstNonEmpty(string(record.Stage), string(existing.Stage)))
-		record.Status = memory.MemoryStatus(stringutil.FirstNonEmpty(string(record.Status), string(existing.Status)))
+		record.Stage = MemoryStage(stringutil.FirstNonEmpty(string(record.Stage), string(existing.Stage)))
+		record.Status = MemoryStatus(stringutil.FirstNonEmpty(string(record.Status), string(existing.Status)))
 		if record.Group == "" {
 			record.Group = existing.Group
 		}
@@ -160,10 +159,10 @@ func normalizeMemoryRecord(record memory.MemoryRecord, existing *memory.MemoryRe
 		}
 	}
 	if record.Stage == "" {
-		record.Stage = memory.MemoryStageManual
+		record.Stage = MemoryStageManual
 	}
 	if record.Status == "" {
-		record.Status = memory.MemoryStatusActive
+		record.Status = MemoryStatusActive
 	}
 	if record.CreatedAt.IsZero() {
 		record.CreatedAt = now.UTC()
@@ -193,7 +192,7 @@ func DedupeStrings(values []string) []string {
 	return out
 }
 
-func memoryMatchesQuery(item memory.MemoryRecord, query memory.MemoryQuery) bool {
+func memoryMatchesQuery(item ExtendedMemoryRecord, query ExtendedMemoryQuery) bool {
 	if len(query.Tags) > 0 {
 		expected := make(map[string]struct{}, len(query.Tags))
 		for _, tag := range query.Tags {
@@ -252,7 +251,7 @@ func memoryMatchesQuery(item memory.MemoryRecord, query memory.MemoryQuery) bool
 	return memoryTextScore(item, needle) > 0
 }
 
-func memoryTextScore(item memory.MemoryRecord, needle string) int {
+func memoryTextScore(item ExtendedMemoryRecord, needle string) int {
 	if needle == "" {
 		return 0
 	}
@@ -284,7 +283,7 @@ func memoryTextScore(item memory.MemoryRecord, needle string) int {
 	return score
 }
 
-func sortMemoryRecords(records []memory.MemoryRecord, query memory.MemoryQuery) {
+func sortMemoryRecords(records []ExtendedMemoryRecord, query ExtendedMemoryQuery) {
 	needle := strings.ToLower(strings.TrimSpace(query.Query))
 	sort.Slice(records, func(i, j int) bool {
 		left := records[i]
@@ -309,14 +308,14 @@ func sortMemoryRecords(records []memory.MemoryRecord, query memory.MemoryQuery) 
 	})
 }
 
-func trimMemoryRecords(records []memory.MemoryRecord, limit int) []memory.MemoryRecord {
+func trimMemoryRecords(records []ExtendedMemoryRecord, limit int) []ExtendedMemoryRecord {
 	if limit > 0 && len(records) > limit {
 		return records[:limit]
 	}
 	return records
 }
 
-func MemoryFreshness(item memory.MemoryRecord) time.Time {
+func MemoryFreshness(item ExtendedMemoryRecord) time.Time {
 	switch {
 	case !item.LastUsedAt.IsZero():
 		return item.LastUsedAt.UTC()
@@ -329,7 +328,7 @@ func MemoryFreshness(item memory.MemoryRecord) time.Time {
 	}
 }
 
-func BumpMemoryUsage(record memory.MemoryRecord, usedAt time.Time) memory.MemoryRecord {
+func BumpMemoryUsage(record ExtendedMemoryRecord, usedAt time.Time) ExtendedMemoryRecord {
 	if usedAt.IsZero() {
 		usedAt = time.Now().UTC()
 	}
@@ -337,6 +336,3 @@ func BumpMemoryUsage(record memory.MemoryRecord, usedAt time.Time) memory.Memory
 	record.LastUsedAt = usedAt.UTC()
 	return record
 }
-
-
-

@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/memory"
-	_ "modernc.org/sqlite"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
+	_ "modernc.org/sqlite"
 )
 
 type sqliteMemoryStore struct {
@@ -25,7 +25,7 @@ func (s *sqliteMemoryStore) Close() error {
 	return s.db.Close()
 }
 
-func NewSQLiteMemoryStore(dbPath string) (memory.MemoryStore, error) {
+func NewSQLiteMemoryStore(dbPath string) (ExtendedMemoryStore, error) {
 	dbPath = strings.TrimSpace(dbPath)
 	if dbPath == "" {
 		return nil, fmt.Errorf("memory sqlite path is empty")
@@ -128,13 +128,13 @@ func sqliteTableHasColumns(db *sql.DB, table string, required map[string]struct{
 	return true, nil
 }
 
-func (s *sqliteMemoryStore) Upsert(ctx context.Context, record memory.MemoryRecord) (*memory.MemoryRecord, error) {
+func (s *sqliteMemoryStore) UpsertExtended(ctx context.Context, record ExtendedMemoryRecord) (*ExtendedMemoryRecord, error) {
 	if strings.TrimSpace(record.Path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
 	now := time.Now().UTC()
 	key := NormalizePath(record.Path)
-	existing, _ := s.GetByPath(ctx, key)
+	existing, _ := s.GetByPathExtended(ctx, key)
 	record = normalizeMemoryRecord(record, existing, now)
 	if existing == nil {
 		record.ID = uuid.New().String()
@@ -175,7 +175,7 @@ ON CONFLICT(path) DO UPDATE SET
 	return &out, nil
 }
 
-func (s *sqliteMemoryStore) GetByPath(ctx context.Context, path string) (*memory.MemoryRecord, error) {
+func (s *sqliteMemoryStore) GetByPathExtended(ctx context.Context, path string) (*ExtendedMemoryRecord, error) {
 	key := NormalizePath(path)
 	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
 	record, err := scanMemoryRecord(row)
@@ -194,13 +194,13 @@ func (s *sqliteMemoryStore) DeleteByPath(ctx context.Context, path string) error
 	return err
 }
 
-func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memory.MemoryRecord, error) {
+func (s *sqliteMemoryStore) ListExtended(ctx context.Context, limit int) ([]ExtendedMemoryRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]memory.MemoryRecord, 0)
+	out := make([]ExtendedMemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)
 		if err != nil {
@@ -211,11 +211,11 @@ func (s *sqliteMemoryStore) List(ctx context.Context, limit int) ([]memory.Memor
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sortMemoryRecords(out, memory.MemoryQuery{})
+	sortMemoryRecords(out, ExtendedMemoryQuery{})
 	return trimMemoryRecords(out, limit), nil
 }
 
-func (s *sqliteMemoryStore) Search(ctx context.Context, query memory.MemoryQuery) ([]memory.MemoryRecord, error) {
+func (s *sqliteMemoryStore) SearchExtended(ctx context.Context, query ExtendedMemoryQuery) ([]ExtendedMemoryRecord, error) {
 	q := `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
 	args := make([]any, 0, 16)
 	if group := NormalizePath(query.Group); group != "" {
@@ -262,7 +262,7 @@ func (s *sqliteMemoryStore) Search(ctx context.Context, query memory.MemoryQuery
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	out := make([]memory.MemoryRecord, 0)
+	out := make([]ExtendedMemoryRecord, 0)
 	for rows.Next() {
 		record, err := scanMemoryRecord(rows)
 		if err != nil {
@@ -315,7 +315,7 @@ type memoryScanner interface {
 	Scan(dest ...any) error
 }
 
-func scanMemoryRecord(scanner memoryScanner) (*memory.MemoryRecord, error) {
+func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 	var (
 		id              string
 		path            string
@@ -341,13 +341,13 @@ func scanMemoryRecord(scanner memoryScanner) (*memory.MemoryRecord, error) {
 	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
-	record := &memory.MemoryRecord{
+	record := &ExtendedMemoryRecord{
 		ID:              id,
 		Path:            NormalizePath(path),
 		Content:         content,
 		Summary:         summary,
-		Stage:           memory.MemoryStage(stage),
-		Status:          memory.MemoryStatus(status),
+		Stage:           MemoryStage(stage),
+		Status:          MemoryStatus(status),
 		Group:           NormalizePath(group),
 		Workspace:       workspace,
 		CWD:             cwd,
@@ -366,10 +366,10 @@ func scanMemoryRecord(scanner memoryScanner) (*memory.MemoryRecord, error) {
 	record.Tags = normalizeMemoryTags(record.Tags)
 	record.Citation = normalizeMemoryCitation(record.Citation)
 	if record.Stage == "" {
-		record.Stage = memory.MemoryStageManual
+		record.Stage = MemoryStageManual
 	}
 	if record.Status == "" {
-		record.Status = memory.MemoryStatusActive
+		record.Status = MemoryStatusActive
 	}
 	return record, nil
 }
@@ -391,6 +391,3 @@ func ParseMemoryTime(raw string) time.Time {
 	}
 	return parsed.UTC()
 }
-
-
-
