@@ -23,12 +23,37 @@ import (
 func newCodingExtension(ws string) *mosstui.Extension {
 	return &mosstui.Extension{
 		Name: "coding",
-		SlashCommands: map[string]mosstui.SlashHandlerFunc{
-			"/changes":  makeCodingChangesHandler(ws),
-			"/apply":    makeCodingApplyHandler(ws),
-			"/rollback": makeCodingRollbackHandler(ws),
-			"/diff":     makeCodingDiffHandler(ws),
-			"/git":      makeCodingGitHandler(ws),
+		SlashCommands: map[string]mosstui.SlashCommandDef{
+			"/changes": {
+				Handler: makeCodingChangesHandler(ws),
+				Summary: "Inspect persisted change operations",
+				Section: "Review and recovery",
+				Usage:   "/changes list [limit]\n/changes show <change_id>",
+			},
+			"/apply": {
+				Handler: makeCodingApplyHandler(ws),
+				Summary: "Apply an explicit patch file",
+				Section: "Review and recovery",
+				Usage:   "/apply <patch_file> [summary...]",
+			},
+			"/rollback": {
+				Handler: makeCodingRollbackHandler(ws),
+				Summary: "Roll back a persisted change",
+				Section: "Review and recovery",
+				Usage:   "/rollback <change_id>",
+			},
+			"/diff": {
+				Handler: makeCodingDiffHandler(ws),
+				Summary: "Show the current git diff",
+				Section: "Review and recovery",
+				Usage:   "/diff [path...]",
+			},
+			"/git": {
+				Handler: makeCodingGitHandler(ws),
+				Summary: "Run common git and gh helpers",
+				Section: "Review and recovery",
+				Usage:   "/git status | /git diff [path] | /git commit <message> | /git pr [args...]",
+			},
 		},
 	}
 }

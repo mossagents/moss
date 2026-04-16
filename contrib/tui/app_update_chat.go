@@ -2,12 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/model"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	"strings"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -28,6 +29,12 @@ func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, model tea.Mo
 		if m.agent != nil && m.agent.cancel != nil {
 			m.agent.cancel()
 		}
+		// Fire OnSessionEnd hooks before quitting.
+		hookCmds := m.fireExtensionSessionEnd()
+		if len(hookCmds) > 0 {
+			// Batch hook commands with quit so cleanups can run.
+			return true, m, tea.Batch(append(hookCmds, tea.Quit)...)
+		}
 		return true, m, tea.Quit
 	}
 
@@ -38,12 +45,18 @@ func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, model tea.Mo
 			m.chat.refreshViewport()
 			return true, m, nil
 		}
+		prevModel := m.config.Model
 		m = m.stopAgentForKernelRebuild()
 		m.config.Provider = sm.provider
 		m.config.ProviderName = sm.providerName
 		m.config.Model = sm.model
 		m.chat.modelAuto = sm.auto
 		nextModel, nextCmd := m.rebuildKernelWithSelection(sm.provider, sm.providerName, sm.model)
+		// Fire OnModelSwitch hooks.
+		hookCmds := m.fireExtensionModelSwitch(prevModel, sm.model)
+		if len(hookCmds) > 0 {
+			return true, nextModel, tea.Batch(append(hookCmds, nextCmd)...)
+		}
 		return true, nextModel, nextCmd
 	}
 
@@ -169,10 +182,16 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model
 		m.chat = nextChat
 		m.chat.refreshViewport()
 		go agent.publishProgressReplay()
-		return true, m, dispatchCmd
+		cmds := append(m.fireExtensionSessionStart(), dispatchCmd)
+		return true, m, tea.Batch(cmds...)
 	}
 	m.chat.refreshViewport()
 	go agent.publishProgressReplay()
+	// Fire OnSessionStart lifecycle hooks.
+	hookCmds := m.fireExtensionSessionStart()
+	if len(hookCmds) > 0 {
+		return true, m, tea.Batch(hookCmds...)
+	}
 	return true, m, nil
 }
 
@@ -268,4 +287,50 @@ func (m *appModel) bindToolingCallbacks(agent *agentState) {
 	m.chat.skillListFn = func() string {
 		return renderSkillsSummary(agent, m.config.Workspace)
 	}
+}
+
+// fireExtensionSessionStart calls OnSessionStart on all extensions and returns
+// the non-nil Cmds. The TUI context is captured from the current chat state.
+func (m appModel) fireExtensionSessionStart() []tea.Cmd {
+	ctx := m.chat.tuiContext()
+	var cmds []tea.Cmd
+	for _, ext := range m.chat.extensions {
+		if ext == nil || ext.OnSessionStart == nil {
+			continue
+		}
+		if cmd := ext.OnSessionStart(ctx); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
+// fireExtensionSessionEnd calls OnSessionEnd on all extensions and returns the non-nil Cmds.
+func (m appModel) fireExtensionSessionEnd() []tea.Cmd {
+	ctx := m.chat.tuiContext()
+	var cmds []tea.Cmd
+	for _, ext := range m.chat.extensions {
+		if ext == nil || ext.OnSessionEnd == nil {
+			continue
+		}
+		if cmd := ext.OnSessionEnd(ctx); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
+}
+
+// fireExtensionModelSwitch calls OnModelSwitch on all extensions and returns the non-nil Cmds.
+func (m appModel) fireExtensionModelSwitch(prevModel, nextModel string) []tea.Cmd {
+	ctx := m.chat.tuiContext()
+	var cmds []tea.Cmd
+	for _, ext := range m.chat.extensions {
+		if ext == nil || ext.OnModelSwitch == nil {
+			continue
+		}
+		if cmd := ext.OnModelSwitch(ctx, prevModel, nextModel); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+	return cmds
 }

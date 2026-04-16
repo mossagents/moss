@@ -206,7 +206,7 @@ type helpPickerState struct {
 	list    *selectionListState
 }
 
-func newHelpPickerState(customCommands []product.CustomCommand) *helpPickerState {
+func newHelpPickerState(customCommands []product.CustomCommand, extensions []*Extension) *helpPickerState {
 	entries := make([]helpPickerEntry, 0, len(slashCommandCatalog)+len(customCommands))
 	items := make([]selectionListItem, 0, len(slashCommandCatalog)+len(customCommands))
 	for _, cmd := range slashCommandCatalog {
@@ -223,6 +223,32 @@ func newHelpPickerState(customCommands []product.CustomCommand) *helpPickerState
 			Title:  cmd.Name,
 			Detail: cmd.Summary,
 		})
+	}
+	// Extension commands with a Summary are shown in /help after built-in commands.
+	for _, ext := range extensions {
+		if ext == nil {
+			continue
+		}
+		for name, def := range ext.SlashCommands {
+			if def.HiddenInNav || strings.TrimSpace(def.Summary) == "" {
+				continue
+			}
+			usage := def.Usage
+			if strings.TrimSpace(usage) == "" {
+				usage = def.Summary
+			}
+			section := def.Section
+			if strings.TrimSpace(section) == "" {
+				section = ext.Name
+			}
+			detail := usage + "\n\nSection: " + section
+			entries = append(entries, helpPickerEntry{command: name, detail: detail})
+			items = append(items, selectionListItem{
+				Key:    name,
+				Title:  name,
+				Detail: def.Summary,
+			})
+		}
 	}
 	for _, cmd := range customCommands {
 		name := "/" + strings.TrimSpace(cmd.Name)
@@ -251,7 +277,7 @@ func newHelpPickerState(customCommands []product.CustomCommand) *helpPickerState
 }
 
 func (m chatModel) openHelpPicker() (chatModel, tea.Cmd) {
-	m.helpPicker = newHelpPickerState(m.customCommands)
+	m.helpPicker = newHelpPickerState(m.customCommands, m.extensions)
 	m.openHelpOverlay()
 	m.refreshViewport()
 	return m, nil

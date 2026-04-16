@@ -16,13 +16,13 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/scheduling"
+	userapproval "github.com/mossagents/moss/harness/userio/approval"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"github.com/mossagents/moss/harness/runtime/scheduling"
-	userapproval "github.com/mossagents/moss/harness/userio/approval"
 )
 
 type fakeScheduleController struct {
@@ -2740,8 +2740,8 @@ func TestSlashCommandMediaSavePersistsAudioData(t *testing.T) {
 
 func TestInstallExtensionsDuplicateSlashCommandReturnsError(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	ext1 := &Extension{Name: "alpha", SlashCommands: map[string]SlashHandlerFunc{"/foo": func(ctx TUIContext, args []string) tea.Cmd { return nil }}}
-	ext2 := &Extension{Name: "beta", SlashCommands: map[string]SlashHandlerFunc{"/foo": func(ctx TUIContext, args []string) tea.Cmd { return nil }}}
+	ext1 := &Extension{Name: "alpha", SlashCommands: map[string]SlashCommandDef{"/foo": {Handler: func(ctx TUIContext, args []string) tea.Cmd { return nil }}}}
+	ext2 := &Extension{Name: "beta", SlashCommands: map[string]SlashCommandDef{"/foo": {Handler: func(ctx TUIContext, args []string) tea.Cmd { return nil }}}}
 	if err := m.installExtensions([]*Extension{ext1, ext2}); err == nil {
 		t.Fatal("expected error for duplicate slash command, got nil")
 	}
@@ -2760,11 +2760,11 @@ func TestExtensionSlashCommandDispatch(t *testing.T) {
 	called := false
 	ext := &Extension{
 		Name: "test",
-		SlashCommands: map[string]SlashHandlerFunc{
-			"/hello": func(ctx TUIContext, args []string) tea.Cmd {
+		SlashCommands: map[string]SlashCommandDef{
+			"/hello": {Handler: func(ctx TUIContext, args []string) tea.Cmd {
 				called = true
 				return nil
-			},
+			}},
 		},
 	}
 	if err := m.installExtensions([]*Extension{ext}); err != nil {
@@ -2781,11 +2781,11 @@ func TestExtensionSlashCommandDoesNotOverrideBuiltin(t *testing.T) {
 	extCalled := false
 	ext := &Extension{
 		Name: "test",
-		SlashCommands: map[string]SlashHandlerFunc{
-			"/help": func(ctx TUIContext, args []string) tea.Cmd {
+		SlashCommands: map[string]SlashCommandDef{
+			"/help": {Handler: func(ctx TUIContext, args []string) tea.Cmd {
 				extCalled = true
 				return nil
-			},
+			}},
 		},
 	}
 	if err := m.installExtensions([]*Extension{ext}); err != nil {

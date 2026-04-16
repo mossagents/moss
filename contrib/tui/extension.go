@@ -139,6 +139,25 @@ type openCustomOverlayMsg struct{ id string }
 type appendSystemMessageMsg struct{ text string }
 type appendErrorMessageMsg struct{ text string }
 
+// SlashCommandDef describes a slash command registered by an Extension.
+type SlashCommandDef struct {
+	// Handler processes the slash command. Required.
+	Handler SlashHandlerFunc
+
+	// Summary is the one-line description shown in /help. Optional.
+	Summary string
+
+	// Section is the /help group header (e.g. "Review and recovery"). Optional.
+	Section string
+
+	// Usage is the full usage string shown as detail in /help when selected. Optional.
+	// Defaults to Summary if empty.
+	Usage string
+
+	// HiddenInNav hides this command from the /help picker and autocomplete. Optional.
+	HiddenInNav bool
+}
+
 // coreKeys lists key strings that extensions may not override.
 var coreKeys = map[string]bool{
 	"ctrl+c":      true,
@@ -169,10 +188,11 @@ type Extension struct {
 	// Name identifies this extension in error messages and debugging.
 	Name string
 
-	// SlashCommands maps "/command" strings to handler functions.
+	// SlashCommands maps "/command" strings to SlashCommandDef descriptors.
 	// Commands must start with "/" and be lowercase.
 	// Built-in commands take precedence over extension commands with the same name.
-	SlashCommands map[string]SlashHandlerFunc
+	// Use SlashCommandDef.Summary/Section to make the command appear in /help.
+	SlashCommands map[string]SlashCommandDef
 
 	// KeyBindings maps tea.KeyMsg.String() values to handler functions.
 	// Extensions are evaluated before the built-in key dispatch.
@@ -192,4 +212,18 @@ type Extension struct {
 	// Open an overlay via OpenOverlayCmd(id) from a slash command or key handler.
 	// The factory is invoked each time the overlay is opened, producing a fresh instance.
 	Overlays map[string]func() CustomOverlay
+
+	// OnSessionStart is called when the kernel and session become ready (e.g. on
+	// startup, after a model switch, or after a profile/trust switch).
+	// Return a non-nil Cmd for side effects (e.g. AppendSystemMessageCmd).
+	OnSessionStart func(ctx TUIContext) tea.Cmd
+
+	// OnSessionEnd is called just before the TUI exits (ctrl+c / /exit).
+	// Return a non-nil Cmd for cleanup side effects.
+	OnSessionEnd func(ctx TUIContext) tea.Cmd
+
+	// OnModelSwitch is called after the active model changes.
+	// prevModel is the old model ID; nextModel is the new one.
+	// Return a non-nil Cmd for side effects.
+	OnModelSwitch func(ctx TUIContext, prevModel, nextModel string) tea.Cmd
 }

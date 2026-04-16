@@ -4,18 +4,19 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/harness/appkit/product"
-	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/model"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	userattachments "github.com/mossagents/moss/harness/userio/attachments"
-	userlocation "github.com/mossagents/moss/harness/userio/location"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	config "github.com/mossagents/moss/harness/config"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
+	userlocation "github.com/mossagents/moss/harness/userio/location"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 type slashCommandHandler func(chatModel, []string, string, string) (chatModel, tea.Cmd)
@@ -90,8 +91,8 @@ func (m chatModel) handleSlashCommand(input string) (chatModel, tea.Cmd) {
 	// Extension slash commands (after built-ins, before workspace custom commands).
 	ctx := m.tuiContext()
 	for _, ext := range m.extensions {
-		if handler, ok := ext.SlashCommands[cmd]; ok {
-			return m, handler(ctx, args)
+		if def, ok := ext.SlashCommands[cmd]; ok {
+			return m, def.Handler(ctx, args)
 		}
 	}
 	if custom, ok := m.findCustomCommand(cmd); ok {

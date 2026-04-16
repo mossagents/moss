@@ -954,7 +954,7 @@ func saveInputHistory(path string, history []string) error {
 func (m *chatModel) refreshSlashHints() {
 	raw := m.textarea.Value()
 	text := strings.TrimSpace(raw)
-	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills)
+	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills, m.extensions)
 	// raw（保留末尾空格）传入 buildSlashPopup，避免 applySlashCompletion 写入 "/cmd " 后
 	// TrimSpace 导致弹窗立即重建（看起来选择无效）。
 	newPopup := buildSlashPopup(raw, m.customCommands, m.discoveredSkills)
@@ -1058,7 +1058,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "PgUp / PgDn", Summary: "Scroll the chat viewport by a full page", Section: "Keyboard shortcuts"},
 }
 
-func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string) []string {
+func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string, extensions []*Extension) []string {
 	if !strings.HasPrefix(input, "/") {
 		return nil
 	}
@@ -1078,6 +1078,23 @@ func filterSlashHints(input string, customCommands []product.CustomCommand, disc
 			}
 			seen[cmd.Name] = struct{}{}
 			hints = append(hints, cmd.Name)
+		}
+	}
+	for _, ext := range extensions {
+		if ext == nil {
+			continue
+		}
+		for name, def := range ext.SlashCommands {
+			if def.HiddenInNav {
+				continue
+			}
+			if strings.HasPrefix(name, lower) {
+				if _, ok := seen[name]; ok {
+					continue
+				}
+				seen[name] = struct{}{}
+				hints = append(hints, name)
+			}
 		}
 	}
 	for _, cmd := range customCommands {

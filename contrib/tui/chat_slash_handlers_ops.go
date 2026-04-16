@@ -2,13 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/checkpoint"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	"strconv"
-	"strings"
+	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
 func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
