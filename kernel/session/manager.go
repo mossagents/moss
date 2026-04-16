@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/ids"
 	"github.com/mossagents/moss/kernel/model"
 )
 
@@ -71,7 +71,7 @@ func (m *memoryManager) Create(_ context.Context, cfg SessionConfig) (*Session, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	id := uuid.New().String()
+	id := ids.New()
 
 	s := &Session{
 		ID:        id,

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/ids"
 	_ "modernc.org/sqlite"
 )
 
@@ -137,7 +137,7 @@ func (s *sqliteMemoryStore) UpsertExtended(ctx context.Context, record ExtendedM
 	existing, _ := s.GetByPathExtended(ctx, key)
 	record = normalizeMemoryRecord(record, existing, now)
 	if existing == nil {
-		record.ID = uuid.New().String()
+		record.ID = ids.New()
 	}
 	tagsRaw, _ := json.Marshal(record.Tags)
 	citationRaw, _ := json.Marshal(record.Citation)

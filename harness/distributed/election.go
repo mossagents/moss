@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/ids"
 )
 
 // LeaderElector manages leader election for a named group.
@@ -64,7 +64,7 @@ type LockBasedElector struct {
 func NewLockBasedElector(lock DistributedLock, opts ...ElectorOption) *LockBasedElector {
 	e := &LockBasedElector{
 		lock:    lock,
-		nodeID:  uuid.New().String(),
+		nodeID:  ids.New(),
 		ttl:     defaultTTL,
 		leaders: make(map[string]string),
 	}
@@ -157,7 +157,7 @@ type lockBasedSession struct {
 	closeOnce sync.Once
 }
 
-func (s *lockBasedSession) ID() string          { return s.id }
+func (s *lockBasedSession) ID() string            { return s.id }
 func (s *lockBasedSession) Done() <-chan struct{} { return s.done }
 
 // Resign voluntarily gives up leadership.

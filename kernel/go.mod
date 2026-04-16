@@ -1,10 +1,10 @@
 module github.com/mossagents/moss/kernel
 
-go 1.25.0
+go 1.25.8
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/mossagents/moss/x v0.0.0-00010101000000-000000000000
+	github.com/oklog/ulid/v2 v2.1.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	gopkg.in/yaml.v3 v3.0.1

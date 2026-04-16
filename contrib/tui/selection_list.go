@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"github.com/charmbracelet/lipgloss"
 	"strings"
 )
 
@@ -104,51 +105,182 @@ func (s *selectionListState) SelectedKeys() []string {
 	return out
 }
 
-func renderSelectionListDialog(width int, state *selectionListState) string {
+const (
+	selectionListCompactMaxHeight   = 18
+	selectionListDefaultVisibleRows = 8
+)
+
+func (m chatModel) selectionDialogMaxHeight() int {
+	if m.height <= 0 {
+		return 0
+	}
+	layout := m.generateLayout()
+	if layout.BodyHeight <= 0 {
+		return 0
+	}
+	limit := min(layout.BodyHeight-1, selectionListCompactMaxHeight)
+	if limit < 10 {
+		return layout.BodyHeight
+	}
+	return limit
+}
+
+func renderSelectionListDialog(width, maxHeight int, state *selectionListState) string {
+	if state == nil {
+		return ""
+	}
+	if maxHeight <= 0 {
+		return renderSelectionListDialogWithLimits(width, state, len(state.Items), -1)
+	}
+	visibleRows := min(len(state.Items), selectionListDefaultVisibleRows)
+	detailLines := 5
+	rendered := renderSelectionListDialogWithLimits(width, state, visibleRows, detailLines)
+	for lipgloss.Height(rendered) > maxHeight {
+		switch {
+		case detailLines > 0:
+			detailLines--
+		case visibleRows > 1:
+			visibleRows--
+		default:
+			return rendered
+		}
+		rendered = renderSelectionListDialogWithLimits(width, state, visibleRows, detailLines)
+	}
+	return rendered
+}
+
+func renderSelectionListDialogWithLimits(width int, state *selectionListState, visibleRows, detailLines int) string {
 	if state == nil {
 		return ""
 	}
 	if width < 40 {
 		width = 40
 	}
-	var body strings.Builder
+	contentWidth := width - dialogBoxStyle.GetHorizontalFrameSize()
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	listBlock := renderSelectionListItems(state, visibleRows)
+	detailBlock := renderSelectionListDetail(contentWidth, state, detailLines)
+	sections := make([]string, 0, 2)
+	if strings.TrimSpace(listBlock) != "" {
+		sections = append(sections, listBlock)
+	}
+	if strings.TrimSpace(detailBlock) != "" {
+		sections = append(sections, detailBlock)
+	}
+	body := strings.Join(sections, "\n\n")
+	return renderDialogFrame(width, valueOrDefaultString(state.Title, "Select"), []string{strings.TrimSpace(body)}, valueOrDefaultString(state.Footer, "↑↓ move  •  Enter confirm  •  Esc close"))
+}
+
+func renderSelectionListItems(state *selectionListState, visibleRows int) string {
+	if state == nil {
+		return ""
+	}
 	if len(state.Items) == 0 {
-		body.WriteString(mutedStyle.Render(valueOrDefaultString(state.EmptyMessage, "No items available.")))
+		return mutedStyle.Render(valueOrDefaultString(state.EmptyMessage, "No items available."))
+	}
+	selected := state.SelectedIndex()
+	start, end := selectionListVisibleRange(len(state.Items), selected, visibleRows)
+	lines := make([]string, 0, end-start+2)
+	if start > 0 {
+		lines = append(lines, mutedStyle.Render("  ↑ more"))
+	}
+	for i := start; i < end; i++ {
+		item := state.Items[i]
+		prefix := "  "
+		if i == selected {
+			prefix = "› "
+		}
+		line := prefix
+		if state.MultiSelect {
+			mark := "[ ] "
+			if state.IsSelected(i) {
+				mark = "[x] "
+			}
+			line += mark
+		}
+		line += item.Title
+		if strings.TrimSpace(item.Detail) != "" {
+			line += "  " + mutedStyle.Render(item.Detail)
+		}
+		if i == selected {
+			lines = append(lines, dialogSelectedItemStyle.Render(line))
+		} else {
+			lines = append(lines, dialogItemStyle.Render(line))
+		}
+	}
+	if end < len(state.Items) {
+		lines = append(lines, mutedStyle.Render("  ↓ more"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderSelectionListDetail(width int, state *selectionListState, detailLines int) string {
+	if state == nil || detailLines == 0 {
+		return ""
+	}
+	if message := trimSelectionListText(strings.TrimSpace(state.Message), detailLines); message != "" {
+		return mutedStyle.Render(message)
+	}
+	selected := state.Selected()
+	if selected == nil || strings.TrimSpace(selected.Detail) == "" {
+		return ""
+	}
+	detail := trimSelectionListText(wrapText(selected.Detail, max(1, width-4)), detailLines)
+	if detail == "" {
+		return ""
+	}
+	return dialogAccentStyle.Render("Selected") + "\n" + detail
+}
+
+func selectionListVisibleRange(total, selected, limit int) (int, int) {
+	if total <= 0 {
+		return 0, 0
+	}
+	if limit <= 0 || limit >= total {
+		return 0, total
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= total {
+		selected = total - 1
+	}
+	start := selected - limit/2
+	if start < 0 {
+		start = 0
+	}
+	end := start + limit
+	if end > total {
+		end = total
+		start = max(0, end-limit)
+	}
+	return start, end
+}
+
+func trimSelectionListText(text string, maxLines int) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	if maxLines < 0 {
+		return text
+	}
+	if maxLines == 0 {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	lines = append([]string(nil), lines[:maxLines]...)
+	last := strings.TrimRight(lines[len(lines)-1], " ")
+	if last == "" {
+		last = "…"
 	} else {
-		for i, item := range state.Items {
-			prefix := "  "
-			if i == state.SelectedIndex() {
-				prefix = "› "
-			}
-			line := prefix
-			if state.MultiSelect {
-				mark := "[ ] "
-				if state.IsSelected(i) {
-					mark = "[x] "
-				}
-				line += mark
-			}
-			line += item.Title
-			if strings.TrimSpace(item.Detail) != "" {
-				line += "  " + mutedStyle.Render(item.Detail)
-			}
-			if i == state.SelectedIndex() {
-				body.WriteString(dialogSelectedItemStyle.Render(line))
-			} else {
-				body.WriteString(dialogItemStyle.Render(line))
-			}
-			body.WriteString("\n")
-		}
-		if selected := state.Selected(); selected != nil && strings.TrimSpace(selected.Detail) != "" {
-			body.WriteString("\n")
-			body.WriteString(dialogAccentStyle.Render("Selected"))
-			body.WriteString("\n")
-			body.WriteString(wrapText(selected.Detail, width-4))
-		}
+		last += " …"
 	}
-	if strings.TrimSpace(state.Message) != "" {
-		body.WriteString("\n\n")
-		body.WriteString(mutedStyle.Render(state.Message))
-	}
-	return renderDialogFrame(width, valueOrDefaultString(state.Title, "Select"), []string{strings.TrimSpace(body.String())}, valueOrDefaultString(state.Footer, "↑↓ move  •  Enter confirm  •  Esc close"))
+	lines[len(lines)-1] = last
+	return strings.Join(lines, "\n")
 }

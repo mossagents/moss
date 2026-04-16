@@ -359,5 +359,5 @@ func (m chatModel) renderMentionPicker(width int) string {
 		candidate := m.mentionPicker.candidates[idx]
 		m.mentionPicker.list.Message = fmt.Sprintf("%s\n\nType: %s", candidate.Path, detectAttachmentKind(candidate.Path))
 	}
-	return renderSelectionListDialog(width, m.mentionPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.mentionPicker.list)
 }

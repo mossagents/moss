@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/ids"
 )
 
 // MemoryStore is an in-memory Store implementation for testing and lightweight use.
@@ -40,7 +40,7 @@ func (s *MemoryStore) Save(_ context.Context, sessionID string, a *Artifact) err
 	versions := s.data[sessionID][a.Name]
 
 	saved := &Artifact{
-		ID:        uuid.New().String(),
+		ID:        ids.New(),
 		Name:      a.Name,
 		MIMEType:  a.MIMEType,
 		Data:      append([]byte(nil), a.Data...),

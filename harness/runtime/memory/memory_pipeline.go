@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/x/stringutil"
+	"github.com/mossagents/moss/kernel/ids"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 const (
@@ -66,7 +66,7 @@ func NewPipelineManager(ws workspace.Workspace, store ExtendedMemoryStore, runti
 		ws:       ws,
 		store:    store,
 		runtime:  runtime,
-		executor: "memory-pipeline-" + uuid.NewString(),
+		executor: ids.NewPrefixed("memory-pipeline"),
 		stopCh:   make(chan struct{}),
 		wakeCh:   make(chan struct{}, 1),
 		doneCh:   make(chan struct{}),
@@ -111,7 +111,7 @@ func (m *PipelineManager) Enqueue(ctx context.Context, job PipelineJob) (*taskrt
 	job.GitBranch = strings.TrimSpace(job.GitBranch)
 	job.Tags = normalizeMemoryTags(job.Tags)
 	if job.JobID == "" {
-		job.JobID = "memjob-" + uuid.NewString()
+		job.JobID = ids.NewPrefixed("memjob")
 	}
 	if job.RequestedAt.IsZero() {
 		job.RequestedAt = time.Now().UTC()

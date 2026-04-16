@@ -8,10 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
-
-	"github.com/google/uuid"
+	"github.com/mossagents/moss/kernel/ids"
 	"github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 const memoryIndexPath = ".moss/memory_index.json"
@@ -41,7 +40,7 @@ func (s *workspaceMemoryStore) UpsertExtended(ctx context.Context, record Extend
 	}
 	record = normalizeMemoryRecord(record, existing, now)
 	if existing == nil {
-		record.ID = uuid.New().String()
+		record.ID = ids.New()
 	}
 	records[key] = record
 	if err := s.persistIndex(ctx, records); err != nil {

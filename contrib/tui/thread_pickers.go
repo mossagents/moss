@@ -97,7 +97,7 @@ func (m chatModel) renderResumePicker(width int) string {
 	if idx := m.resumePicker.list.SelectedIndex(); idx >= 0 && idx < len(m.resumePicker.threads) {
 		m.resumePicker.list.Message = renderThreadBrowseSummary(m.resumePicker.threads[idx])
 	}
-	return renderSelectionListDialog(width, m.resumePicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.resumePicker.list)
 }
 
 type forkPickerState struct {
@@ -189,7 +189,7 @@ func (m chatModel) renderForkPicker(width int) string {
 		detail += "\n\nRestore worktree: " + onOff(m.forkPicker.restore) + " (press R to toggle)"
 		m.forkPicker.list.Message = detail
 	}
-	return renderSelectionListDialog(width, m.forkPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.forkPicker.list)
 }
 
 type agentPickerState struct {
@@ -277,7 +277,7 @@ func (m chatModel) renderAgentPicker(width int) string {
 	if idx := m.agentPicker.list.SelectedIndex(); idx >= 0 && idx < len(m.agentPicker.tasks) {
 		m.agentPicker.list.Message = renderTaskSummary(m.agentPicker.tasks[idx])
 	}
-	return renderSelectionListDialog(width, m.agentPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.agentPicker.list)
 }
 
 func threadTitle(thread kernelsession.ThreadRef) string {

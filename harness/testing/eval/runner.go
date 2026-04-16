@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/kernel/model"
 	"os"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/kernel/ids"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // CaseRunner 是执行单个 EvalCase 并返回 EvalRun 的函数。
@@ -140,7 +141,7 @@ func (r *EvalRunner) runOne(ctx context.Context, c EvalCase) (EvalResult, error)
 	runCtx, cancel := context.WithTimeout(ctx, r.cfg.timeout())
 	defer cancel()
 
-	runID := uuid.New().String()
+	runID := ids.New()
 	start := time.Now()
 
 	var run EvalRun
@@ -448,4 +449,3 @@ func (r *EvalRunner) CompareBaseline(results []EvalResult) (GateDecision, error)
 	decision.Blocked = len(decision.Regressed) > 0 && !decision.ReportOnly
 	return decision, nil
 }
-

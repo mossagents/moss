@@ -93,5 +93,5 @@ func (m chatModel) renderThemePicker(width int) string {
 	if m.themePicker == nil || m.themePicker.list == nil {
 		return ""
 	}
-	return renderSelectionListDialog(width, m.themePicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.themePicker.list)
 }

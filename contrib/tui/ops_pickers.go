@@ -116,7 +116,7 @@ func (m chatModel) renderStatuslinePicker(width int) string {
 	if m.statuslinePicker == nil || m.statuslinePicker.list == nil {
 		return ""
 	}
-	return renderSelectionListDialog(width, m.statuslinePicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.statuslinePicker.list)
 }
 
 type mcpPickerState struct {
@@ -194,7 +194,7 @@ func (m chatModel) renderMCPPicker(width int) string {
 	if idx := m.mcpPicker.list.SelectedIndex(); idx >= 0 && idx < len(m.mcpPicker.details) {
 		m.mcpPicker.list.Message = m.mcpPicker.details[idx]
 	}
-	return renderSelectionListDialog(width, m.mcpPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.mcpPicker.list)
 }
 
 type helpPickerEntry struct {
@@ -323,7 +323,7 @@ func (m chatModel) renderHelpPicker(width int) string {
 			m.helpPicker.list.Message = entry.detail
 		}
 	}
-	return renderSelectionListDialog(width, m.helpPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.helpPicker.list)
 }
 
 type reviewPickerOption struct {
@@ -410,5 +410,5 @@ func (m chatModel) renderReviewPicker(width int) string {
 	if idx := m.reviewPicker.list.SelectedIndex(); idx >= 0 && idx < len(m.reviewPicker.options) {
 		m.reviewPicker.list.Message = m.reviewPicker.options[idx].detail
 	}
-	return renderSelectionListDialog(width, m.reviewPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.reviewPicker.list)
 }

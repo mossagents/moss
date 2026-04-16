@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/mossagents/moss/x/stringutil"
+	"github.com/mossagents/moss/harness/logging"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/ids"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/logging"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 // ── 公共执行逻辑 ─────────────────────────────────────
@@ -31,7 +31,7 @@ func startBackgroundTask(ctx context.Context, agents *Registry, tracker *TaskTra
 		return "", fmt.Errorf("delegation depth limit (%d) exceeded", MaxDepth(ctx))
 	}
 
-	taskID := uuid.New().String()
+	taskID := ids.New()
 	logging.GetLogger().DebugContext(ctx, "background task requested",
 		"task_id", taskID,
 		"agent", agentName,

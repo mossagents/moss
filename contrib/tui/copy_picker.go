@@ -93,7 +93,7 @@ func (copyPickerOverlayDialog) View(m chatModel, width, _ int) string {
 	if m.copyPicker == nil {
 		return ""
 	}
-	return renderSelectionListDialog(width, m.copyPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.copyPicker.list)
 }
 
 func (copyPickerOverlayDialog) HandleKey(m chatModel, msg tea.KeyMsg) (chatModel, tea.Cmd) {

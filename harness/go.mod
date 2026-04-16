@@ -1,10 +1,9 @@
 module github.com/mossagents/moss/harness
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.27.1
-	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mossagents/moss/kernel v0.0.0-00010101000000-000000000000
 	github.com/mossagents/moss/x v0.0.0-00010101000000-000000000000
@@ -26,12 +25,14 @@ require (
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect

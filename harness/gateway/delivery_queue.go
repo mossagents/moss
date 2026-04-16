@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/google/uuid"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/ids"
 )
 
 type OutboundMessage struct {
@@ -164,7 +165,7 @@ func (dq *DeliveryQueue) Recover(ctx context.Context) error {
 			continue
 		}
 		if st.msg.MessageID == "" {
-			st.msg.MessageID = uuid.NewString()
+			st.msg.MessageID = ids.New()
 		}
 		dq.queue = append(dq.queue, *st)
 	}
@@ -214,7 +215,7 @@ func (dq *DeliveryQueue) Publish(msg OutboundMessage) error {
 		return err
 	}
 	if msg.MessageID == "" {
-		msg.MessageID = uuid.NewString()
+		msg.MessageID = ids.New()
 	}
 	ev := persistentEvent{
 		Type:      "enqueued",
@@ -450,4 +451,3 @@ func readJSONL(path string, fn func(persistentEvent) error) error {
 	}
 	return nil
 }
-

@@ -256,5 +256,5 @@ func (m chatModel) renderModelPicker(width int) string {
 	if m.modelPicker == nil || m.modelPicker.list == nil {
 		return ""
 	}
-	return renderSelectionListDialog(width, m.modelPicker.list)
+	return renderSelectionListDialog(width, m.selectionDialogMaxHeight(), m.modelPicker.list)
 }
