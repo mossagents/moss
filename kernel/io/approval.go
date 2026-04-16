@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/kernel/internal/stringutil"
+	"github.com/mossagents/moss/kernel/stringutil"
 )
 
 // ApprovalKind 表示审批对象类型。
