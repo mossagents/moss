@@ -185,8 +185,7 @@ type chatModel struct {
 	slashPopup    *slashPopupState
 
 	// Extension system
-	extensions        []*Extension
-	customOverlayImpl CustomOverlay
+	extensions []*Extension
 
 	now          func() time.Time
 	lastEscAt    time.Time

@@ -51,7 +51,7 @@ func (t *transcriptOverlayState) refreshContent(messages []chatMessage, toolColl
 // openTranscriptOverlay 打开全屏对话历史覆盖层。
 func (m *chatModel) openTranscriptOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayTranscript)
+	m.overlays.Open(overlayTranscript, transcriptOverlayDialog{})
 }
 
 // initTranscriptOverlay 初始化 transcript overlay 状态（需要布局信息）。

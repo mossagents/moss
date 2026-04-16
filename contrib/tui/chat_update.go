@@ -288,10 +288,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		for _, ext := range m.extensions {
 			if ext.Overlays != nil {
 				if factory, ok := ext.Overlays[msg.id]; ok {
-					m.customOverlayImpl = factory()
-					if m.overlays != nil {
-						m.overlays.Open(overlayExt)
-					}
+					m.ensureOverlayStack()
+					m.overlays.Open(overlayExt, extOverlayAdapter{impl: factory()})
 					return m, nil
 				}
 			}
@@ -299,14 +297,12 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		return m, nil
 
 	case closeCustomOverlayMsg:
-		m.customOverlayImpl = nil
 		if m.overlays != nil {
 			m.overlays.Close(overlayExt)
 		}
 		return m, nil
 
 	case sendFromOverlayMsg:
-		m.customOverlayImpl = nil
 		if m.overlays != nil {
 			m.overlays.Close(overlayExt)
 		}

@@ -33,10 +33,11 @@ type overlayDialog interface {
 
 type overlayStack struct {
 	dialogs []overlayID
+	active  map[overlayID]overlayDialog
 }
 
 func newOverlayStack() *overlayStack {
-	return &overlayStack{}
+	return &overlayStack{active: make(map[overlayID]overlayDialog)}
 }
 
 func (o *overlayStack) HasDialogs() bool {
@@ -50,12 +51,24 @@ func (o *overlayStack) Top() overlayID {
 	return o.dialogs[len(o.dialogs)-1]
 }
 
-func (o *overlayStack) Open(id overlayID) {
+func (o *overlayStack) TopDialog() overlayDialog {
+	id := o.Top()
+	if id == "" || o.active == nil {
+		return nil
+	}
+	return o.active[id]
+}
+
+func (o *overlayStack) Open(id overlayID, d overlayDialog) {
 	if o == nil || id == "" {
 		return
 	}
 	o.Close(id)
 	o.dialogs = append(o.dialogs, id)
+	if o.active == nil {
+		o.active = make(map[overlayID]overlayDialog)
+	}
+	o.active[id] = d
 }
 
 func (o *overlayStack) Close(id overlayID) {
@@ -65,6 +78,7 @@ func (o *overlayStack) Close(id overlayID) {
 	for i := len(o.dialogs) - 1; i >= 0; i-- {
 		if o.dialogs[i] == id {
 			o.dialogs = append(o.dialogs[:i], o.dialogs[i+1:]...)
+			delete(o.active, id)
 			return
 		}
 	}
@@ -74,7 +88,9 @@ func (o *overlayStack) CloseTop() {
 	if o == nil || len(o.dialogs) == 0 {
 		return
 	}
+	id := o.dialogs[len(o.dialogs)-1]
 	o.dialogs = o.dialogs[:len(o.dialogs)-1]
+	delete(o.active, id)
 }
 
 type askOverlayDialog struct{}
@@ -281,7 +297,7 @@ func (m *chatModel) ensureOverlayStack() {
 
 func (m *chatModel) openAskOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayAsk)
+	m.overlays.Open(overlayAsk, askOverlayDialog{})
 }
 
 func (m *chatModel) closeAskOverlay() {
@@ -293,7 +309,7 @@ func (m *chatModel) closeAskOverlay() {
 func (m *chatModel) openScheduleOverlay(items []scheduling.ScheduleItem) {
 	m.scheduleBrowser = newScheduleBrowserState(items)
 	m.ensureOverlayStack()
-	m.overlays.Open(overlaySchedule)
+	m.overlays.Open(overlaySchedule, scheduleOverlayDialog{})
 }
 
 func (m chatModel) closeScheduleOverlay() chatModel {
@@ -307,7 +323,7 @@ func (m chatModel) closeScheduleOverlay() chatModel {
 
 func (m *chatModel) openModelOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayModel)
+	m.overlays.Open(overlayModel, modelOverlayDialog{})
 }
 
 func (m chatModel) closeModelOverlay() chatModel {
@@ -321,7 +337,7 @@ func (m chatModel) closeModelOverlay() chatModel {
 
 func (m *chatModel) openThemeOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayTheme)
+	m.overlays.Open(overlayTheme, themeOverlayDialog{})
 }
 
 func (m chatModel) closeThemeOverlay() chatModel {
@@ -335,7 +351,7 @@ func (m chatModel) closeThemeOverlay() chatModel {
 
 func (m *chatModel) openStatuslineOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayStatus)
+	m.overlays.Open(overlayStatus, statuslineOverlayDialog{})
 }
 
 func (m chatModel) closeStatuslineOverlay() chatModel {
@@ -349,7 +365,7 @@ func (m chatModel) closeStatuslineOverlay() chatModel {
 
 func (m *chatModel) openMCPOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayMCP)
+	m.overlays.Open(overlayMCP, mcpOverlayDialog{})
 }
 
 func (m chatModel) closeMCPOverlay() chatModel {
@@ -363,7 +379,7 @@ func (m chatModel) closeMCPOverlay() chatModel {
 
 func (m *chatModel) openHelpOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayHelp)
+	m.overlays.Open(overlayHelp, helpOverlayDialog{})
 }
 
 func (m chatModel) closeHelpOverlay() chatModel {
@@ -377,7 +393,7 @@ func (m chatModel) closeHelpOverlay() chatModel {
 
 func (m *chatModel) openReviewOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayReview)
+	m.overlays.Open(overlayReview, reviewOverlayDialog{})
 }
 
 func (m chatModel) closeReviewOverlay() chatModel {
@@ -391,7 +407,7 @@ func (m chatModel) closeReviewOverlay() chatModel {
 
 func (m *chatModel) openResumeOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayResume)
+	m.overlays.Open(overlayResume, resumeOverlayDialog{})
 }
 
 func (m chatModel) closeResumeOverlay() chatModel {
@@ -405,7 +421,7 @@ func (m chatModel) closeResumeOverlay() chatModel {
 
 func (m *chatModel) openForkOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayFork)
+	m.overlays.Open(overlayFork, forkOverlayDialog{})
 }
 
 func (m chatModel) closeForkOverlay() chatModel {
@@ -419,7 +435,7 @@ func (m chatModel) closeForkOverlay() chatModel {
 
 func (m *chatModel) openAgentOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayAgent)
+	m.overlays.Open(overlayAgent, agentOverlayDialog{})
 }
 
 func (m chatModel) closeAgentOverlay() chatModel {
@@ -433,7 +449,7 @@ func (m chatModel) closeAgentOverlay() chatModel {
 
 func (m *chatModel) openMentionOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayMention)
+	m.overlays.Open(overlayMention, mentionOverlayDialog{})
 }
 
 func (m chatModel) closeMentionOverlay() chatModel {
@@ -447,7 +463,7 @@ func (m chatModel) closeMentionOverlay() chatModel {
 
 func (m *chatModel) openCopyOverlay() {
 	m.ensureOverlayStack()
-	m.overlays.Open(overlayCopy)
+	m.overlays.Open(overlayCopy, copyPickerOverlayDialog{})
 }
 
 func (m chatModel) closeCopyOverlay() chatModel {
@@ -460,113 +476,10 @@ func (m chatModel) closeCopyOverlay() chatModel {
 }
 
 func (m chatModel) activeOverlay() overlayDialog {
-	if m.overlays != nil {
-		switch m.overlays.Top() {
-		case overlayTranscript:
-			if m.transcriptOverlay != nil {
-				return transcriptOverlayDialog{}
-			}
-		case overlayAsk:
-			if m.askForm != nil && m.pendAsk != nil {
-				return askOverlayDialog{}
-			}
-		case overlaySchedule:
-			if m.scheduleBrowser != nil {
-				return scheduleOverlayDialog{}
-			}
-		case overlayModel:
-			if m.modelPicker != nil {
-				return modelOverlayDialog{}
-			}
-		case overlayTheme:
-			if m.themePicker != nil {
-				return themeOverlayDialog{}
-			}
-		case overlayStatus:
-			if m.statuslinePicker != nil {
-				return statuslineOverlayDialog{}
-			}
-		case overlayMCP:
-			if m.mcpPicker != nil {
-				return mcpOverlayDialog{}
-			}
-		case overlayHelp:
-			if m.helpPicker != nil {
-				return helpOverlayDialog{}
-			}
-		case overlayReview:
-			if m.reviewPicker != nil {
-				return reviewOverlayDialog{}
-			}
-		case overlayResume:
-			if m.resumePicker != nil {
-				return resumeOverlayDialog{}
-			}
-		case overlayFork:
-			if m.forkPicker != nil {
-				return forkOverlayDialog{}
-			}
-		case overlayAgent:
-			if m.agentPicker != nil {
-				return agentOverlayDialog{}
-			}
-		case overlayMention:
-			if m.mentionPicker != nil {
-				return mentionOverlayDialog{}
-			}
-		case overlayExt:
-			if m.customOverlayImpl != nil {
-				return extOverlayAdapter{impl: m.customOverlayImpl}
-			}
-		case overlayCopy:
-			if m.copyPicker != nil {
-				return copyPickerOverlayDialog{}
-			}
-		}
+	if m.overlays == nil {
+		return nil
 	}
-	if m.transcriptOverlay != nil {
-		return transcriptOverlayDialog{}
-	}
-	if m.askForm != nil && m.pendAsk != nil {
-		return askOverlayDialog{}
-	}
-	if m.scheduleBrowser != nil {
-		return scheduleOverlayDialog{}
-	}
-	if m.modelPicker != nil {
-		return modelOverlayDialog{}
-	}
-	if m.themePicker != nil {
-		return themeOverlayDialog{}
-	}
-	if m.statuslinePicker != nil {
-		return statuslineOverlayDialog{}
-	}
-	if m.mcpPicker != nil {
-		return mcpOverlayDialog{}
-	}
-	if m.helpPicker != nil {
-		return helpOverlayDialog{}
-	}
-	if m.reviewPicker != nil {
-		return reviewOverlayDialog{}
-	}
-	if m.resumePicker != nil {
-		return resumeOverlayDialog{}
-	}
-	if m.forkPicker != nil {
-		return forkOverlayDialog{}
-	}
-	if m.agentPicker != nil {
-		return agentOverlayDialog{}
-	}
-	if m.mentionPicker != nil {
-		return mentionOverlayDialog{}
-	}
-	if m.copyPicker != nil {
-		return copyPickerOverlayDialog{}
-	}
-	return nil
+	return m.overlays.TopDialog()
 }
 
 // extOverlayAdapter wraps a CustomOverlay so it satisfies overlayDialog,

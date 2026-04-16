@@ -849,7 +849,7 @@ func TestGenerateLayoutHidesEditorWhenOverlayActive(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.width = 160
 	m.height = 40
-	m.scheduleBrowser = newScheduleBrowserState(nil)
+	m.openScheduleOverlay(nil)
 
 	layout := m.generateLayout()
 	if layout.EditorHeight != 0 {
@@ -2864,17 +2864,11 @@ func TestExtensionCustomOverlayOpenClose(t *testing.T) {
 	}
 	// Open the overlay via message.
 	m, _ = m.Update(openCustomOverlayMsg{id: "my-overlay"})
-	if m.customOverlayImpl == nil {
-		t.Fatal("customOverlayImpl should be set after open")
-	}
 	if m.activeOverlay() == nil || m.activeOverlay().ID() != overlayExt {
 		t.Fatal("activeOverlay should return extOverlayAdapter after open")
 	}
 	// Close the overlay.
 	m, _ = m.Update(closeCustomOverlayMsg{})
-	if m.customOverlayImpl != nil {
-		t.Fatal("customOverlayImpl should be nil after close")
-	}
 	if m.activeOverlay() != nil {
 		t.Fatal("activeOverlay should return nil after close")
 	}
