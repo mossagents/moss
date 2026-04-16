@@ -178,7 +178,7 @@ func runtimeContextOptions(opts []ContextOption) []runtimectx.ContextOption {
 	return out
 }
 
-// Planning returns a Feature that installs the write_todos planning tool.
+// Planning returns a Feature that installs the unified update_plan planning tool.
 func Planning() Feature {
 	return FeatureFunc{
 		FeatureName: "planning",

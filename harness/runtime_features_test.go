@@ -43,7 +43,7 @@ func TestRuntimeCapabilityFeatures_RegisterExpectedTools(t *testing.T) {
 			features: func(*testing.T) []Feature {
 				return []Feature{Planning()}
 			},
-			tools: []string{"write_todos"},
+			tools: []string{"update_plan"},
 		},
 		{
 			name: "context-offload",

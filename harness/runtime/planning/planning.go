@@ -5,26 +5,51 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-const planningStateKey kernel.ServiceKey = "planning.state"
-const planningTodosStateKey = "planning.todos"
+const planningServiceKey kernel.ServiceKey = "planning.service"
+const planningSessionStateKey = "planning.state"
 
 type planningState struct {
 	manager session.Manager
 }
 
-// PlanningTodoItem 是 write_todos 的单条任务项。
-type PlanningTodoItem struct {
-	ID          string `json:"id,omitempty"`
-	Title       string `json:"title"`
-	Status      string `json:"status,omitempty"`
-	Description string `json:"description,omitempty"`
+// Item is the unified planning item model. The same item powers both the
+// plan view and the execution/todo view.
+type Item struct {
+	ID          string   `json:"id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description,omitempty"`
+	Status      string   `json:"status"`
+	DependsOn   []string `json:"depends_on,omitempty"`
+	Group       string   `json:"group,omitempty"`
+	Notes       string   `json:"notes,omitempty"`
+	Acceptance  string   `json:"acceptance,omitempty"`
+	Order       int      `json:"order"`
+}
+
+// State is the unified planning source of truth for a session.
+type State struct {
+	Goal         string    `json:"goal,omitempty"`
+	Explanation  string    `json:"explanation,omitempty"`
+	CurrentFocus string    `json:"current_focus,omitempty"`
+	Items        []Item    `json:"items"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type UpdateInput struct {
+	Goal         string `json:"goal,omitempty"`
+	Explanation  string `json:"explanation,omitempty"`
+	CurrentFocus string `json:"current_focus,omitempty"`
+	Items        []Item `json:"items"`
 }
 
 func WithPlanningSessionManager(m session.Manager) kernel.Option {
@@ -33,35 +58,45 @@ func WithPlanningSessionManager(m session.Manager) kernel.Option {
 	}
 }
 
+func WithPlanningDefaults() kernel.Option {
+	return WithPlanningSessionManager(nil)
+}
+
 func RegisterPlanningTools(reg tool.Registry, manager session.Manager) error {
 	if manager == nil {
 		return fmt.Errorf("session manager is nil")
 	}
-	if _, ok := reg.Get("write_todos"); ok {
+	if _, ok := reg.Get("update_plan"); ok {
 		return nil
 	}
 	spec := tool.ToolSpec{
-		Name:        "write_todos",
-		Description: "Write or update a structured todo list for the current session.",
+		Name:        "update_plan",
+		Description: "Replace the current session planning state with a unified plan/todo graph.",
 		InputSchema: json.RawMessage(`{
 			"type":"object",
 			"properties":{
-				"todos":{
+				"goal":{"type":"string"},
+				"explanation":{"type":"string"},
+				"current_focus":{"type":"string"},
+				"items":{
 					"type":"array",
 					"items":{
 						"type":"object",
 						"properties":{
 							"id":{"type":"string"},
 							"title":{"type":"string"},
-							"status":{"type":"string","description":"pending|in_progress|completed"},
-							"description":{"type":"string"}
+							"description":{"type":"string"},
+							"status":{"type":"string","description":"pending|in_progress|completed|blocked"},
+							"depends_on":{"type":"array","items":{"type":"string"}},
+							"group":{"type":"string"},
+							"notes":{"type":"string"},
+							"acceptance":{"type":"string"}
 						},
 						"required":["title"]
 					}
-				},
-				"replace":{"type":"boolean","description":"Whether to replace all existing todos (default: true)"}
+				}
 			},
-			"required":["todos"]
+			"required":["items"]
 		}`),
 		Risk:         tool.RiskLow,
 		Capabilities: []string{"planning"},
@@ -69,49 +104,170 @@ func RegisterPlanningTools(reg tool.Registry, manager session.Manager) error {
 	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		meta, ok := tool.ToolCallContextFromContext(ctx)
 		if !ok || strings.TrimSpace(meta.SessionID) == "" {
-			return nil, fmt.Errorf("write_todos requires session context")
+			return nil, fmt.Errorf("update_plan requires session context")
 		}
 		sess, exists := manager.Get(meta.SessionID)
 		if !exists || sess == nil {
 			return nil, fmt.Errorf("session %q not found", meta.SessionID)
 		}
-		var in struct {
-			Todos   []PlanningTodoItem `json:"todos"`
-			Replace *bool              `json:"replace"`
-		}
+		var in UpdateInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
-		if len(in.Todos) == 0 {
-			return nil, fmt.Errorf("todos is required")
+		next, err := NormalizeState(in)
+		if err != nil {
+			return nil, err
 		}
-
-		next := normalizePlanningTodos(in.Todos)
-		replace := true
-		if in.Replace != nil {
-			replace = *in.Replace
-		}
-		if !replace {
-			next = mergePlanningTodos(readPlanningTodos(sess), next)
-		}
-		sess.SetState(planningTodosStateKey, next)
+		sess.SetState(planningSessionStateKey, next)
 		return json.Marshal(map[string]any{
-			"status":     "ok",
-			"session_id": sess.ID,
-			"count":      len(next),
-			"todos":      next,
+			"status":        "ok",
+			"session_id":    sess.ID,
+			"current_focus": next.CurrentFocus,
+			"item_count":    len(next.Items),
+			"pending_count": countItemsByStatus(next.Items, "pending"),
+			"blocked_count": countItemsByStatus(next.Items, "blocked"),
+			"plan":          next,
+			"plan_markdown": RenderPlanMarkdown(next),
+			"todo_markdown": RenderTodoMarkdown(next),
 		})
 	}
 	return reg.Register(tool.NewRawTool(spec, handler))
 }
 
-func WithPlanningDefaults() kernel.Option {
-	return WithPlanningSessionManager(nil)
+func ReadSessionPlan(sess *session.Session) (State, bool) {
+	if sess == nil {
+		return State{}, false
+	}
+	raw, ok := sess.GetState(planningSessionStateKey)
+	if !ok || raw == nil {
+		return State{}, false
+	}
+	blob, err := json.Marshal(raw)
+	if err != nil {
+		return State{}, false
+	}
+	var out State
+	if err := json.Unmarshal(blob, &out); err != nil {
+		return State{}, false
+	}
+	return out, true
+}
+
+func RenderPlanMarkdown(state State) string {
+	var b strings.Builder
+	title := strings.TrimSpace(state.Goal)
+	if title == "" {
+		title = "Plan"
+	}
+	b.WriteString("# ")
+	b.WriteString(title)
+	b.WriteString("\n")
+	if explanation := strings.TrimSpace(state.Explanation); explanation != "" {
+		b.WriteString("\n")
+		b.WriteString(explanation)
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	for _, item := range state.Items {
+		b.WriteString(fmt.Sprintf("%d. [%s] %s", item.Order, item.Status, item.Title))
+		if item.Description != "" {
+			b.WriteString(" — ")
+			b.WriteString(item.Description)
+		}
+		if len(item.DependsOn) > 0 {
+			b.WriteString(" (depends on: ")
+			b.WriteString(strings.Join(item.DependsOn, ", "))
+			b.WriteString(")")
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func RenderTodoMarkdown(state State) string {
+	var b strings.Builder
+	for _, item := range state.Items {
+		marker := " "
+		switch item.Status {
+		case "completed":
+			marker = "x"
+		case "in_progress":
+			marker = ">"
+		case "blocked":
+			marker = "!"
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s", marker, item.Title))
+		if item.Notes != "" {
+			b.WriteString(" — ")
+			b.WriteString(item.Notes)
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// NormalizeState validates and canonicalizes the unified plan/todo state.
+func NormalizeState(in UpdateInput) (State, error) {
+	if len(in.Items) == 0 {
+		return State{}, fmt.Errorf("items is required")
+	}
+	items := make([]Item, 0, len(in.Items))
+	seenIDs := make(map[string]int, len(in.Items))
+	inProgressCount := 0
+	for i, raw := range in.Items {
+		item := normalizeItem(raw, i+1)
+		item.ID = uniqueItemID(item.ID, item.Title, seenIDs)
+		if item.Status == "in_progress" {
+			inProgressCount++
+		}
+		items = append(items, item)
+	}
+	if inProgressCount > 1 {
+		return State{}, fmt.Errorf("at most one item can be in_progress")
+	}
+	index := make(map[string]Item, len(items))
+	for _, item := range items {
+		index[item.ID] = item
+	}
+	for _, item := range items {
+		for _, dep := range item.DependsOn {
+			if dep == item.ID {
+				return State{}, fmt.Errorf("item %q cannot depend on itself", item.ID)
+			}
+			if _, ok := index[dep]; !ok {
+				return State{}, fmt.Errorf("item %q depends on unknown item %q", item.ID, dep)
+			}
+		}
+	}
+	if hasDependencyCycle(items) {
+		return State{}, fmt.Errorf("planning items contain dependency cycle")
+	}
+
+	focus := normalizeIdentifier(in.CurrentFocus)
+	if focus != "" {
+		if _, ok := index[focus]; !ok {
+			return State{}, fmt.Errorf("current_focus %q not found", focus)
+		}
+	} else {
+		for _, item := range items {
+			if item.Status == "in_progress" {
+				focus = item.ID
+				break
+			}
+		}
+	}
+	return State{
+		Goal:         strings.TrimSpace(in.Goal),
+		Explanation:  strings.TrimSpace(in.Explanation),
+		CurrentFocus: focus,
+		Items:        items,
+		UpdatedAt:    time.Now().UTC(),
+	}, nil
 }
 
 // ensurePlanningState owns the planning substrate slot on the kernel service registry.
 func ensurePlanningState(k *kernel.Kernel) *planningState {
-	actual, loaded := k.Services().LoadOrStore(planningStateKey, &planningState{})
+	actual, loaded := k.Services().LoadOrStore(planningServiceKey, &planningState{})
 	st := actual.(*planningState)
 	if loaded {
 		return st
@@ -131,86 +287,128 @@ func ensurePlanningState(k *kernel.Kernel) *planningState {
 		if st.manager == nil {
 			return ""
 		}
-		return "Use write_todos to keep an explicit task list with statuses: pending, in_progress, completed."
+		return "Use update_plan to maintain the unified planning state. The same structured plan powers both the high-level plan and the execution todo list. Allowed statuses: pending, in_progress, completed, blocked."
 	}); err != nil {
 		log.Printf("planning: register prompt hook: %v", err)
 	}
 	return st
 }
 
-func normalizePlanningTodos(in []PlanningTodoItem) []PlanningTodoItem {
-	out := make([]PlanningTodoItem, 0, len(in))
-	for i, item := range in {
-		title := strings.TrimSpace(item.Title)
-		if title == "" {
-			title = fmt.Sprintf("todo-%d", i+1)
-		}
-		status := strings.ToLower(strings.TrimSpace(item.Status))
-		switch status {
-		case "", "pending":
-			status = "pending"
-		case "in_progress", "completed":
-		default:
-			status = "pending"
-		}
-		out = append(out, PlanningTodoItem{
-			ID:          strings.TrimSpace(item.ID),
-			Title:       title,
-			Status:      status,
-			Description: strings.TrimSpace(item.Description),
-		})
+func normalizeItem(in Item, order int) Item {
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		title = fmt.Sprintf("step-%d", order)
 	}
+	status := normalizeStatus(in.Status)
+	deps := make([]string, 0, len(in.DependsOn))
+	for _, dep := range in.DependsOn {
+		dep = normalizeIdentifier(dep)
+		if dep != "" && !slices.Contains(deps, dep) {
+			deps = append(deps, dep)
+		}
+	}
+	return Item{
+		ID:          normalizeIdentifier(in.ID),
+		Title:       title,
+		Description: strings.TrimSpace(in.Description),
+		Status:      status,
+		DependsOn:   deps,
+		Group:       strings.TrimSpace(in.Group),
+		Notes:       strings.TrimSpace(in.Notes),
+		Acceptance:  strings.TrimSpace(in.Acceptance),
+		Order:       order,
+	}
+}
+
+func normalizeStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "pending":
+		return "pending"
+	case "in_progress", "completed", "blocked":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "pending"
+	}
+}
+
+func uniqueItemID(id string, title string, seen map[string]int) string {
+	base := normalizeIdentifier(id)
+	if base == "" {
+		base = normalizeIdentifier(title)
+	}
+	if base == "" {
+		base = "step"
+	}
+	count := seen[base]
+	seen[base] = count + 1
+	if count == 0 {
+		return base
+	}
+	return fmt.Sprintf("%s-%d", base, count+1)
+}
+
+func normalizeIdentifier(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		switch {
+		case unicode.IsLetter(r) || unicode.IsDigit(r):
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_' || unicode.IsSpace(r):
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
 	return out
 }
 
-func readPlanningTodos(sess *session.Session) []PlanningTodoItem {
-	raw, ok := sess.GetState(planningTodosStateKey)
-	if !ok || raw == nil {
-		return nil
+func hasDependencyCycle(items []Item) bool {
+	graph := make(map[string][]string, len(items))
+	for _, item := range items {
+		graph[item.ID] = append([]string(nil), item.DependsOn...)
 	}
-	blob, err := json.Marshal(raw)
-	if err != nil {
-		return nil
+	visiting := map[string]bool{}
+	visited := map[string]bool{}
+	var visit func(string) bool
+	visit = func(id string) bool {
+		if visiting[id] {
+			return true
+		}
+		if visited[id] {
+			return false
+		}
+		visiting[id] = true
+		for _, dep := range graph[id] {
+			if visit(dep) {
+				return true
+			}
+		}
+		delete(visiting, id)
+		visited[id] = true
+		return false
 	}
-	var out []PlanningTodoItem
-	if err := json.Unmarshal(blob, &out); err != nil {
-		return nil
+	for _, item := range items {
+		if visit(item.ID) {
+			return true
+		}
 	}
-	return normalizePlanningTodos(out)
+	return false
 }
 
-func mergePlanningTodos(existing, updates []PlanningTodoItem) []PlanningTodoItem {
-	byID := make(map[string]PlanningTodoItem, len(existing))
-	ordered := make([]PlanningTodoItem, 0, len(existing)+len(updates))
-	for _, it := range existing {
-		key := strings.TrimSpace(it.ID)
-		if key == "" {
-			ordered = append(ordered, it)
-			continue
-		}
-		byID[key] = it
-		ordered = append(ordered, it)
-	}
-	for _, up := range updates {
-		key := strings.TrimSpace(up.ID)
-		if key == "" {
-			ordered = append(ordered, up)
-			continue
-		}
-		_, exists := byID[key]
-		byID[key] = up
-		if !exists {
-			ordered = append(ordered, up)
+func countItemsByStatus(items []Item, status string) int {
+	total := 0
+	for _, item := range items {
+		if item.Status == status {
+			total++
 		}
 	}
-	for i := range ordered {
-		key := strings.TrimSpace(ordered[i].ID)
-		if key == "" {
-			continue
-		}
-		if latest, ok := byID[key]; ok {
-			ordered[i] = latest
-		}
-	}
-	return ordered
+	return total
 }

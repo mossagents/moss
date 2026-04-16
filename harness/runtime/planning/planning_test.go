@@ -3,6 +3,7 @@ package planning_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/mossagents/moss/harness/runtime/planning"
@@ -30,9 +31,9 @@ func TestRegisterPlanningTools_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	_, ok := reg.Get("write_todos")
+	_, ok := reg.Get("update_plan")
 	if !ok {
-		t.Fatal("expected write_todos to be registered")
+		t.Fatal("expected update_plan to be registered")
 	}
 }
 
@@ -43,14 +44,12 @@ func TestRegisterPlanningTools_Idempotent(t *testing.T) {
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-	// Second call should be a no-op (already registered)
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatalf("expected no error on re-registration: %v", err)
 	}
 }
 
 func TestWithPlanningDefaults(t *testing.T) {
-	// WithPlanningDefaults is WithPlanningSessionManager(nil); should not panic on apply
 	k := kernel.New()
 	k.Apply(planning.WithPlanningDefaults())
 }
@@ -66,25 +65,24 @@ func TestWithPlanningSessionManager(t *testing.T) {
 	if err := k.Boot(ctx); err != nil {
 		t.Fatalf("unexpected boot error: %v", err)
 	}
-	_, ok := k.ToolRegistry().Get("write_todos")
+	_, ok := k.ToolRegistry().Get("update_plan")
 	if !ok {
-		t.Fatal("expected write_todos after boot with session manager")
+		t.Fatal("expected update_plan after boot with session manager")
 	}
 }
 
-func TestWriteTodosTool_NoSessionContext(t *testing.T) {
+func TestUpdatePlanTool_NoSessionContext(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-	entry, ok := reg.Get("write_todos")
+	entry, ok := reg.Get("update_plan")
 	if !ok {
-		t.Fatal("write_todos not found")
+		t.Fatal("update_plan not found")
 	}
-	// Call without tool call context in context
 	input, _ := json.Marshal(map[string]any{
-		"todos": []map[string]any{{"title": "task1"}},
+		"items": []map[string]any{{"title": "task1"}},
 	})
 	_, err := entry.Execute(context.Background(), input)
 	if err == nil {
@@ -92,32 +90,44 @@ func TestWriteTodosTool_NoSessionContext(t *testing.T) {
 	}
 }
 
-func TestWriteTodosTool_WithSessionContext(t *testing.T) {
+func TestUpdatePlanTool_WithSessionContextStoresUnifiedState(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-	entry, ok := reg.Get("write_todos")
+	entry, ok := reg.Get("update_plan")
 	if !ok {
-		t.Fatal("write_todos not found")
+		t.Fatal("update_plan not found")
 	}
 
-	// Create a real session
 	sess, err := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Inject session context
 	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
-		ToolName:  "write_todos",
+		ToolName:  "update_plan",
 	})
 
 	input, _ := json.Marshal(map[string]any{
-		"todos": []map[string]any{
-			{"title": "implement feature", "status": "pending"},
+		"goal":          "Ship unified planning",
+		"explanation":   "Keep one source of truth for plan and progress.",
+		"current_focus": "implement-core",
+		"items": []map[string]any{
+			{
+				"id":          "design-state",
+				"title":       "Design planning state",
+				"status":      "completed",
+				"description": "Define the unified model.",
+			},
+			{
+				"id":          "implement-core",
+				"title":       "Implement update_plan",
+				"status":      "in_progress",
+				"depends_on":  []string{"design-state"},
+				"description": "Replace the old planning tool.",
+			},
 		},
 	})
 	result, err := entry.Execute(ctx, input)
@@ -125,77 +135,119 @@ func TestWriteTodosTool_WithSessionContext(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var out map[string]any
+	var out struct {
+		Status       string         `json:"status"`
+		CurrentFocus string         `json:"current_focus"`
+		ItemCount    int            `json:"item_count"`
+		Plan         planning.State `json:"plan"`
+		PlanMarkdown string         `json:"plan_markdown"`
+		TodoMarkdown string         `json:"todo_markdown"`
+	}
 	if err := json.Unmarshal(result, &out); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
-	if out["status"] != "ok" {
-		t.Errorf("expected status=ok, got %v", out["status"])
+	if out.Status != "ok" {
+		t.Fatalf("expected status=ok, got %q", out.Status)
 	}
-	count, _ := out["count"].(float64)
-	if count != 1 {
-		t.Errorf("expected count=1, got %v", out["count"])
+	if out.ItemCount != 2 {
+		t.Fatalf("expected item_count=2, got %d", out.ItemCount)
+	}
+	if out.CurrentFocus != "implement-core" {
+		t.Fatalf("unexpected current_focus %q", out.CurrentFocus)
+	}
+	if !strings.Contains(out.PlanMarkdown, "Ship unified planning") {
+		t.Fatalf("missing goal in plan markdown: %q", out.PlanMarkdown)
+	}
+	if !strings.Contains(out.TodoMarkdown, "Implement update_plan") {
+		t.Fatalf("missing todo item in todo markdown: %q", out.TodoMarkdown)
+	}
+	state, ok := planning.ReadSessionPlan(sess)
+	if !ok {
+		t.Fatal("expected session planning state")
+	}
+	if state.CurrentFocus != "implement-core" {
+		t.Fatalf("unexpected stored current focus %q", state.CurrentFocus)
+	}
+	if len(state.Items) != 2 || state.Items[1].DependsOn[0] != "design-state" {
+		t.Fatalf("unexpected stored items: %+v", state.Items)
 	}
 }
 
-func TestWriteTodosTool_EmptyTodos(t *testing.T) {
+func TestUpdatePlanTool_RejectsEmptyItems(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-	entry, _ := reg.Get("write_todos")
-
+	entry, _ := reg.Get("update_plan")
 	sess, _ := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
 	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
 	})
-
-	input, _ := json.Marshal(map[string]any{"todos": []any{}})
+	input, _ := json.Marshal(map[string]any{"items": []any{}})
 	_, err := entry.Execute(ctx, input)
 	if err == nil {
-		t.Fatal("expected error for empty todos")
+		t.Fatal("expected error for empty items")
 	}
 }
 
-func TestWriteTodosTool_MergeMode(t *testing.T) {
+func TestUpdatePlanTool_RejectsMultipleInProgressItems(t *testing.T) {
 	reg := tool.NewRegistry()
 	mgr := session.NewManager()
 	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-	entry, _ := reg.Get("write_todos")
-
+	entry, _ := reg.Get("update_plan")
 	sess, _ := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
 	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: sess.ID,
 	})
-
-	// First write
-	input1, _ := json.Marshal(map[string]any{
-		"todos": []map[string]any{
-			{"id": "t1", "title": "task 1"},
+	input, _ := json.Marshal(map[string]any{
+		"items": []map[string]any{
+			{"id": "a", "title": "task a", "status": "in_progress"},
+			{"id": "b", "title": "task b", "status": "in_progress"},
 		},
 	})
-	_, err := entry.Execute(ctx, input1)
-	if err != nil {
+	_, err := entry.Execute(ctx, input)
+	if err == nil || !strings.Contains(err.Error(), "at most one item can be in_progress") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUpdatePlanTool_RejectsUnknownDependencies(t *testing.T) {
+	reg := tool.NewRegistry()
+	mgr := session.NewManager()
+	if err := planning.RegisterPlanningTools(reg, mgr); err != nil {
 		t.Fatal(err)
 	}
-
-	// Second write in merge mode (replace=false)
-	replace := false
-	input2, _ := json.Marshal(map[string]any{
-		"todos":   []map[string]any{{"id": "t2", "title": "task 2"}},
-		"replace": replace,
+	entry, _ := reg.Get("update_plan")
+	sess, _ := mgr.Create(context.Background(), session.SessionConfig{Goal: "test"})
+	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
+		SessionID: sess.ID,
 	})
-	result, err := entry.Execute(ctx, input2)
-	if err != nil {
-		t.Fatalf("unexpected error in merge mode: %v", err)
+	input, _ := json.Marshal(map[string]any{
+		"items": []map[string]any{
+			{"id": "task-a", "title": "task a", "depends_on": []string{"task-b"}},
+		},
+	})
+	_, err := entry.Execute(ctx, input)
+	if err == nil || !strings.Contains(err.Error(), "depends on unknown item") {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	var out map[string]any
-	json.Unmarshal(result, &out)
-	count, _ := out["count"].(float64)
-	if count != 2 {
-		t.Errorf("expected 2 todos after merge, got %v", out["count"])
+}
+
+func TestNormalizeState_AssignsFocusFromInProgressItem(t *testing.T) {
+	state, err := planning.NormalizeState(planning.UpdateInput{
+		Goal: "ship it",
+		Items: []planning.Item{
+			{Title: "design", Status: "completed"},
+			{Title: "implement", Status: "in_progress"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NormalizeState: %v", err)
+	}
+	if state.CurrentFocus != "implement" {
+		t.Fatalf("unexpected current focus %q", state.CurrentFocus)
 	}
 }

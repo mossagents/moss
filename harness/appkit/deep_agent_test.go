@@ -10,14 +10,14 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/extensions/capability"
+	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/extensions/capability"
-	rprobe "github.com/mossagents/moss/harness/runtime/probe"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
@@ -130,7 +130,7 @@ func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 	}
 }
 
-func TestBuildDeepAgent_PlanningProfileEnablesWriteTodos(t *testing.T) {
+func TestBuildDeepAgent_PlanningProfileEnablesUpdatePlan(t *testing.T) {
 	flags := &AppFlags{
 		Provider:  "openai",
 		Workspace: ".",
@@ -144,8 +144,8 @@ func TestBuildDeepAgent_PlanningProfileEnablesWriteTodos(t *testing.T) {
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
 	}
-	if _, ok := k.ToolRegistry().Get("write_todos"); !ok {
-		t.Fatal("expected write_todos tool in planning profile")
+	if _, ok := k.ToolRegistry().Get("update_plan"); !ok {
+		t.Fatal("expected update_plan tool in planning profile")
 	}
 }
 
@@ -628,4 +628,3 @@ func deepAgentFeatureMetadata(t *testing.T, feature harness.Feature) harness.Fea
 	}
 	return withMetadata.Metadata()
 }
-

@@ -50,7 +50,7 @@ type Provider interface {
 在此基础上，扩展还会继续注册更多工具组，例如：
 
 - context：`offload_context`、`compact_conversation`
-- planning / task：`write_todos`、`update_task`、`plan_task`、`claim_task`
+- planning / task：`update_plan`、`update_task`、`plan_task`、`claim_task`
 - mailbox：`send_mail`、`read_mailbox`
 - workspace isolation：`acquire_workspace`、`release_workspace`
 - memory：`read_memory`、`write_memory`、`search_memories` 等
