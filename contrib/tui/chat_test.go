@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1521,6 +1522,71 @@ func TestMouseClickDoesNotInsertComposerGarbage(t *testing.T) {
 	})
 	if updated.textarea.Value() != "hello" {
 		t.Fatalf("expected mouse motion to preserve composer text, got %q", updated.textarea.Value())
+	}
+}
+
+func TestMouseWheelScrollsViewportWithoutTouchingComposer(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 16
+	for i := 0; i < 40; i++ {
+		m.messages = append(m.messages, chatMessage{
+			kind:    msgSystem,
+			content: strings.Repeat("line ", 12) + strconv.Itoa(i),
+		})
+	}
+	m.textarea.SetValue("draft")
+	m.recalcLayout()
+	initialOffset := m.viewport.YOffset
+
+	updated, _ := m.Update(tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelUp,
+	})
+	if updated.textarea.Value() != "draft" {
+		t.Fatalf("expected mouse wheel to preserve composer text, got %q", updated.textarea.Value())
+	}
+	if updated.viewport.YOffset >= initialOffset {
+		t.Fatalf("expected wheel up to scroll transcript up, offset %d -> %d", initialOffset, updated.viewport.YOffset)
+	}
+	if updated.pinnedToBottom {
+		t.Fatal("expected wheel up to unpin the viewport from bottom")
+	}
+
+	down, _ := updated.Update(tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+	})
+	if down.viewport.YOffset <= updated.viewport.YOffset {
+		t.Fatalf("expected wheel down to scroll transcript down, offset %d -> %d", updated.viewport.YOffset, down.viewport.YOffset)
+	}
+}
+
+func TestArrowKeysNavigateInputHistory(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.inputHistory = []string{"first prompt", "second prompt"}
+	m.historyCursor = len(m.inputHistory)
+	m.textarea.SetValue("draft prompt")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := updated.textarea.Value(); got != "second prompt" {
+		t.Fatalf("expected latest history item on first up, got %q", got)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := updated.textarea.Value(); got != "first prompt" {
+		t.Fatalf("expected previous history item on second up, got %q", got)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := updated.textarea.Value(); got != "second prompt" {
+		t.Fatalf("expected to move forward in history, got %q", got)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := updated.textarea.Value(); got != "draft prompt" {
+		t.Fatalf("expected to restore draft after leaving history, got %q", got)
 	}
 }
 

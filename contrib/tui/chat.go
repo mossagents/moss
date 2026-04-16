@@ -108,15 +108,15 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn      func(string, []model.ContentPart) // 发送用户消息给 agent
-	cancelRunFn func() bool                        // 取消当前运行中的任务
-	skillListFn func() string                      // 查询已加载 skills
-	debugConfigFn func() string                    // 构建 debug 配置报告
-	session    *agentSessionOps
-	checkpoint *agentCheckpointOps
-	task       *agentTaskOps
-	inspect    *agentInspectOps
-	scheduleCtrl scheduling.ScheduleController
+	sendFn                func(string, []model.ContentPart) // 发送用户消息给 agent
+	cancelRunFn           func() bool                       // 取消当前运行中的任务
+	skillListFn           func() string                     // 查询已加载 skills
+	debugConfigFn         func() string                     // 构建 debug 配置报告
+	session               *agentSessionOps
+	checkpoint            *agentCheckpointOps
+	task                  *agentTaskOps
+	inspect               *agentInspectOps
+	scheduleCtrl          scheduling.ScheduleController
 	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm               *askFormState
 	scheduleBrowser       *scheduleBrowserState
@@ -1040,6 +1040,7 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "ctrl+c", Summary: "Interrupt running response; double-press to quit", Section: "Keyboard shortcuts"},
 	{Name: "Esc Esc", Summary: "Cancel a streaming response", Section: "Keyboard shortcuts"},
 	{Name: "↑ / ↓", Summary: "Navigate command history (previous/next prompt)", Section: "Keyboard shortcuts"},
+	{Name: "Mouse wheel", Summary: "Scroll the chat viewport without changing composer history", Section: "Keyboard shortcuts"},
 	{Name: "ctrl+p / ctrl+n", Summary: "Scroll the chat viewport up/down", Section: "Keyboard shortcuts"},
 	{Name: "PgUp / PgDn", Summary: "Scroll the chat viewport by a full page", Section: "Keyboard shortcuts"},
 }

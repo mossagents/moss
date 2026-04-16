@@ -876,7 +876,7 @@ func Run(cfg Config) error {
 	// program loop. On Windows Terminal, VT output is always active, so
 	// this takes effect immediately even before Bubble Tea starts.
 	fmt.Print("\x1b[?1007h")
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	bridge.SetProgram(p)
 
 	_, err := p.Run()

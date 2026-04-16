@@ -126,16 +126,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		case "ctrl+p", "ctrl+n":
 			// Scroll the chat viewport.
 			if msg.String() == "ctrl+p" {
-				m.pinnedToBottom = false
-				m.viewport.ScrollUp(3)
-			} else {
-				m.viewport.ScrollDown(3)
-				if m.viewport.AtBottom() {
-					m.pinnedToBottom = true
-				}
+				return m.scrollMainViewport(-3), nil
 			}
-			m.refreshViewport()
-			return m, nil
+			return m.scrollMainViewport(3), nil
 		case "pgup":
 			m.pinnedToBottom = false
 			m.viewport.ScrollUp(m.viewport.Height)
@@ -176,6 +169,9 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return m.handleSend()
 		}
+
+	case tea.MouseMsg:
+		return m.handleMouse(msg)
 
 	case bridgeMsg:
 		return m.handleBridge(msg)
@@ -360,6 +356,45 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m chatModel) handleMouse(msg tea.MouseMsg) (chatModel, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseButtonWheelUp:
+		if m.transcriptOverlay != nil {
+			m.transcriptOverlay.viewport.ScrollUp(3)
+			return m, nil
+		}
+		if m.activeOverlay() != nil {
+			return m, nil
+		}
+		return m.scrollMainViewport(-3), nil
+	case tea.MouseButtonWheelDown:
+		if m.transcriptOverlay != nil {
+			m.transcriptOverlay.viewport.ScrollDown(3)
+			return m, nil
+		}
+		if m.activeOverlay() != nil {
+			return m, nil
+		}
+		return m.scrollMainViewport(3), nil
+	default:
+		return m, nil
+	}
+}
+
+func (m chatModel) scrollMainViewport(lines int) chatModel {
+	if lines < 0 {
+		m.pinnedToBottom = false
+		m.viewport.ScrollUp(-lines)
+	} else if lines > 0 {
+		m.viewport.ScrollDown(lines)
+		if m.viewport.AtBottom() {
+			m.pinnedToBottom = true
+		}
+	}
+	m.refreshViewport()
+	return m
 }
 
 func outputMediaKind(typ model.ContentPartType) string {
