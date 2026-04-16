@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/mossagents/moss/harness/internal/runtime/planning"
+	"github.com/mossagents/moss/harness/runtime/planning"
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"

@@ -15,7 +15,7 @@ import (
 	"github.com/mossagents/moss/harness/extensions/agent"
 	extcapability "github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/extensions/skill"
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 	"github.com/mossagents/moss/kernel/session"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	rstate "github.com/mossagents/moss/harness/runtime/state"

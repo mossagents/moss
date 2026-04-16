@@ -10,7 +10,7 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"

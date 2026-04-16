@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 )
 
 func RenderDoctorReport(report DoctorReport) string {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"

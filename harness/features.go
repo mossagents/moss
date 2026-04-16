@@ -6,7 +6,7 @@ import (
 
 	"github.com/mossagents/moss/harness/bootstrap"
 	"github.com/mossagents/moss/harness/extensions/capability"
-	"github.com/mossagents/moss/harness/internal/runtime/execution"
+	"github.com/mossagents/moss/harness/runtime/execution"
 	"github.com/mossagents/moss/harness/runtime"
 	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/mossagents/moss/harness/internal/runtime/execution"
+	"github.com/mossagents/moss/harness/runtime/execution"
 	"github.com/mossagents/moss/kernel"
 	kworkspace "github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/harness/sandbox"

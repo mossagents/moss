@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/harness/extensions/knowledge"
-	"github.com/mossagents/moss/harness/internal/runtime/assembly"
-	runtimectx "github.com/mossagents/moss/harness/internal/runtime/runctx"
-	"github.com/mossagents/moss/harness/internal/runtime/planning"
+	"github.com/mossagents/moss/harness/runtime/assembly"
+	runtimectx "github.com/mossagents/moss/harness/runtime/runctx"
+	"github.com/mossagents/moss/harness/runtime/planning"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"

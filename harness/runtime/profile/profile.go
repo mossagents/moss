@@ -7,7 +7,7 @@ import (
 	"time"
 
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 	"github.com/mossagents/moss/kernel/session"
 	policypack "github.com/mossagents/moss/harness/runtime/policy"
 )

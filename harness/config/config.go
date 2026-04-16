@@ -9,7 +9,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 	"gopkg.in/yaml.v3"
 )
 

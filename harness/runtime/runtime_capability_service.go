@@ -3,7 +3,7 @@ package runtime
 import (
 	"github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/extensions/skill"
-	"github.com/mossagents/moss/harness/internal/runtime/capstate"
+	"github.com/mossagents/moss/harness/runtime/capstate"
 	"github.com/mossagents/moss/kernel"
 )
 

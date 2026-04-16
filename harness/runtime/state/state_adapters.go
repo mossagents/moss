@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/harness/internal/stringutil"
+	"github.com/mossagents/moss/harness/stringutil"
 	memstore "github.com/mossagents/moss/harness/runtime/memory"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
