@@ -17,12 +17,12 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/mossagents/moss/harness/appkit/product"
 	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/model"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	userapproval "github.com/mossagents/moss/harness/userio/approval"
 	userattachments "github.com/mossagents/moss/harness/userio/attachments"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 const (

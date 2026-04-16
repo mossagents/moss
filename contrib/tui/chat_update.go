@@ -2,11 +2,12 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/mossagents/moss/kernel/model"
-	userattachments "github.com/mossagents/moss/harness/userio/attachments"
 	"strings"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
