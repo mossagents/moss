@@ -35,10 +35,6 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/new":          handleNewSlashCommand,
 	"/checkpoint":   handleCheckpointSlashCommand,
 	"/fork":         handleForkSlashCommand,
-	"/changes":      handleChangesSlashCommand,
-	"/apply":        handleApplySlashCommand,
-	"/rollback":     handleRollbackSlashCommand,
-	"/diff":         handleDiffSlashCommand,
 	"/review":       handleReviewSlashCommand,
 	"/inspect":      handleInspectSlashCommand,
 	"/mcp":          handleMCPSlashCommand,
@@ -47,7 +43,6 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/ps":           handlePSSlashCommand,
 	"/config":       handleConfigSlashCommand,
 	"/schedules":    handleSchedulesSlashCommand,
-	"/git":          handleGitSlashCommand,
 	"/permissions":  handlePermissionsSlashCommand,
 	"/trust":        handleTrustSlashCommand,
 	"/approval":     handleApprovalSlashCommand,
@@ -340,130 +335,6 @@ func handleNewSlashCommand(m chatModel, _ []string, _ string, _ string) (chatMod
 		}
 		return out, nil
 	})
-}
-
-func handleChangesSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /changes list [limit]\n  /changes show <change_id>"})
-		m.refreshViewport()
-		return m, nil
-	}
-	switch strings.ToLower(strings.TrimSpace(args[0])) {
-	case "list":
-		if m.changeListFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change list is unavailable."})
-			m.refreshViewport()
-			return m, nil
-		}
-		limit := 20
-		if len(args) >= 2 {
-			v, err := strconv.Atoi(args[1])
-			if err != nil || v <= 0 {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes list [limit:int]"})
-				m.refreshViewport()
-				return m, nil
-			}
-			limit = v
-		}
-		out, err := m.changeListFn(limit)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list changes: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-		m.refreshViewport()
-		return m, nil
-	case "show":
-		if m.changeShowFn == nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change detail is unavailable."})
-			m.refreshViewport()
-			return m, nil
-		}
-		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes show <change_id>"})
-			m.refreshViewport()
-			return m, nil
-		}
-		out, err := m.changeShowFn(strings.TrimSpace(args[1]))
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to show change: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-		m.refreshViewport()
-		return m, nil
-	default:
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /changes list|show ..."})
-		m.refreshViewport()
-		return m, nil
-	}
-}
-
-func handleApplySlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.applyChangeFn == nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change apply is unavailable."})
-		m.refreshViewport()
-		return m, nil
-	}
-	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /apply <patch_file> [summary...]"})
-		m.refreshViewport()
-		return m, nil
-	}
-	patchFile := strings.TrimSpace(args[0])
-	summary := strings.TrimSpace(strings.Join(args[1:], " "))
-	out, err := m.applyChangeFn(patchFile, summary)
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to apply change: %v", err)})
-	} else {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-	}
-	m.refreshViewport()
-	return m, nil
-}
-
-func handleRollbackSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.rollbackChangeFn == nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Change rollback is unavailable."})
-		m.refreshViewport()
-		return m, nil
-	}
-	if len(args) == 0 || strings.TrimSpace(args[0]) == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /rollback <change_id>"})
-		m.refreshViewport()
-		return m, nil
-	}
-	out, err := m.rollbackChangeFn(strings.TrimSpace(args[0]))
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to roll back change: %v", err)})
-	} else {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-	}
-	m.refreshViewport()
-	return m, nil
-}
-
-func handleDiffSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.gitRunFn == nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Diff inspection is unavailable."})
-		m.refreshViewport()
-		return m, nil
-	}
-	cmdArgs := []string{"--no-pager", "diff"}
-	if len(args) > 0 {
-		cmdArgs = append(cmdArgs, "--")
-		cmdArgs = append(cmdArgs, args...)
-	}
-	out, err := m.gitRunFn("git", cmdArgs)
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git diff failed: %v", err)})
-	} else if strings.TrimSpace(out) == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "No diff."})
-	} else {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-	}
-	m.refreshViewport()
-	return m, nil
 }
 
 func handleReviewSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {

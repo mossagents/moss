@@ -235,12 +235,15 @@ func (a *agentState) refreshSystemPrompt() error {
 	ctx := a.ctx
 	workspace := a.workspace
 	trust := a.trust
+	k := a.k
+	configInstructions := a.promptConfigInstructions
+	modelInstructions := a.promptModelInstructions
 	buildPrompt := a.buildSystemPrompt
 	a.mu.Unlock()
 	if sess == nil {
 		return errors.New("active thread is unavailable")
 	}
-	nextPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, a.k, a.promptConfigInstructions, a.promptModelInstructions, sess.Config.Metadata)
+	nextPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, configInstructions, modelInstructions, sess.Config.Metadata)
 	if err != nil {
 		return err
 	}
@@ -815,6 +818,9 @@ func (m *appModel) configureChatShell() {
 
 // Run 启动 TUI 应用。
 func Run(cfg Config) error {
+	if err := ValidateExtensions(cfg.Extensions); err != nil {
+		return err
+	}
 	bridge := NewBridgeIO()
 	if provider, providerName, model, ok := persistedModelOverride(); ok {
 		cfg.Provider = provider
@@ -918,9 +924,8 @@ func (m appModel) updateWelcome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.config.Workspace = cfg.Workspace
 		theme := m.theme
 		m.chat = newChatModel(configpkg.NormalizeProviderIdentity(cfg.Provider, cfg.ProviderName).Label(), cfg.Model, cfg.Workspace)
-		// Ignore installExtensions error here — welcome flow can't surface it cleanly.
-		// Extensions provided via Config are already validated on first boot.
-		_ = m.chat.installExtensions(m.config.Extensions)
+		// Extensions were validated in Run() before any state was created.
+		m.chat.extensions = m.config.Extensions
 		m.chat.modelAuto = !hasPersistedModelOverride()
 		m.configureChatShell()
 		if strings.TrimSpace(theme) != "" {

@@ -1138,51 +1138,6 @@ func TestSlashCommandCheckpointShowRequiresID(t *testing.T) {
 	}
 }
 
-func TestSlashCommandChangesListSuccess(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.changeListFn = func(limit int) (string, error) {
-		if limit != 20 {
-			t.Fatalf("limit = %d, want 20", limit)
-		}
-		return "Changes:\n- change-1", nil
-	}
-	updated, _ := m.handleSlashCommand("/changes list")
-	last := updated.messages[len(updated.messages)-1]
-	if last.kind != msgSystem || !strings.Contains(last.content, "change-1") {
-		t.Fatalf("unexpected changes list output: %+v", last)
-	}
-}
-
-func TestSlashCommandApplySuccess(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.applyChangeFn = func(patchFile, summary string) (string, error) {
-		if patchFile != "fix.patch" {
-			t.Fatalf("patchFile = %q, want fix.patch", patchFile)
-		}
-		if summary != "update tracked file" {
-			t.Fatalf("summary = %q, want update tracked file", summary)
-		}
-		return "Change: change-1", nil
-	}
-	updated, _ := m.handleSlashCommand("/apply fix.patch update tracked file")
-	last := updated.messages[len(updated.messages)-1]
-	if last.kind != msgSystem || !strings.Contains(last.content, "change-1") {
-		t.Fatalf("unexpected apply output: %+v", last)
-	}
-}
-
-func TestSlashCommandRollbackValidation(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.rollbackChangeFn = func(changeID string) (string, error) {
-		return "", nil
-	}
-	updated, _ := m.handleSlashCommand("/rollback")
-	last := updated.messages[len(updated.messages)-1]
-	if last.kind != msgError || !strings.Contains(last.content, "Usage: /rollback <change_id>") {
-		t.Fatalf("unexpected rollback validation output: %+v", last)
-	}
-}
-
 func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
@@ -1303,9 +1258,16 @@ func TestHelpIncludesChangeCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	updated, _ := m.handleSlashCommand("/help")
 	help := updated.renderHelpPicker(120)
-	for _, want := range []string{"/diff", "/review", "/inspect", "/changes", "/apply", "/rollback"} {
+	for _, want := range []string{"/review", "/inspect"} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("help missing %q in %q", want, help)
+		}
+	}
+	// /diff, /changes, /apply, /rollback, /git are mosscode extension commands —
+	// they are no longer in the base tui help catalog.
+	for _, moved := range []string{"/diff", "/changes", "/apply", "/rollback"} {
+		if strings.Contains(help, moved) {
+			t.Fatalf("help should not contain moved command %q", moved)
 		}
 	}
 }
@@ -2287,22 +2249,28 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	m.textarea.SetValue("/a")
 	m.refreshSlashHints()
 	hints = m.currentSlashHints()
-	if !slices.Contains(hints, "/apply") {
-		t.Fatalf("expected /apply in hints, got %v", hints)
+	// /apply is now a mosscode extension command — not in base tui autocomplete.
+	if slices.Contains(hints, "/apply") {
+		t.Fatalf("extension command /apply should not appear in base tui hints, got %v", hints)
 	}
 
 	m.textarea.SetValue("/r")
 	m.refreshSlashHints()
 	hints = m.currentSlashHints()
-	if !slices.Contains(hints, "/rollback") || !slices.Contains(hints, "/resume") {
-		t.Fatalf("expected /rollback and /resume in hints, got %v", hints)
+	if !slices.Contains(hints, "/resume") {
+		t.Fatalf("expected /resume in hints, got %v", hints)
+	}
+	// /rollback is now a mosscode extension command — not in base tui autocomplete.
+	if slices.Contains(hints, "/rollback") {
+		t.Fatalf("extension command /rollback should not appear in base tui hints, got %v", hints)
 	}
 
 	m.textarea.SetValue("/ch")
 	m.refreshSlashHints()
 	hints = m.currentSlashHints()
-	if !slices.Contains(hints, "/changes") {
-		t.Fatalf("expected /changes in hints, got %v", hints)
+	// /changes is now a mosscode extension command — not in base tui autocomplete.
+	if slices.Contains(hints, "/changes") {
+		t.Fatalf("extension command /changes should not appear in base tui hints, got %v", hints)
 	}
 
 	m.textarea.SetValue("/tr")

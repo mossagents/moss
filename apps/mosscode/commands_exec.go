@@ -42,6 +42,7 @@ func launchTUI(cfg *config) error {
 		APIKey:           flags.APIKey,
 		BaseObserver:     cfg.observer,
 		InitialSessionID: cfg.resumeSessionID,
+		Extensions:       []*mosstui.Extension{newCodingExtension(flags.Workspace)},
 		BuildRunTraceObserver: func() (*product.RunTraceRecorder, observe.Observer) {
 			recorder := product.NewRunTraceRecorder()
 			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)

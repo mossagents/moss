@@ -279,69 +279,6 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 	return m, nil
 }
 
-func handleGitSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.gitRunFn == nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Git workflow commands are unavailable."})
-		m.refreshViewport()
-		return m, nil
-	}
-	if len(args) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Usage:\n  /git status\n  /git diff [path]\n  /git commit <message>\n  /git pr [args...]"})
-		m.refreshViewport()
-		return m, nil
-	}
-	sub := strings.ToLower(args[0])
-	switch sub {
-	case "status":
-		out, err := m.gitRunFn("git", []string{"--no-pager", "status", "--short"})
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git status failed: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-	case "diff":
-		cmdArgs := []string{"--no-pager", "diff"}
-		if len(args) > 1 {
-			cmdArgs = append(cmdArgs, args[1:]...)
-		}
-		out, err := m.gitRunFn("git", cmdArgs)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git diff failed: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-	case "commit":
-		if len(args) < 2 {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /git commit <message>"})
-		} else {
-			msg := strings.Join(args[1:], " ")
-			out, err := m.gitRunFn("git", []string{"commit", "-m", msg})
-			if err != nil {
-				m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("git commit failed: %v", err)})
-			} else {
-				m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-			}
-		}
-	case "pr":
-		prArgs := []string{"pr"}
-		if len(args) > 1 {
-			prArgs = append(prArgs, args[1:]...)
-		} else {
-			prArgs = append(prArgs, "status")
-		}
-		out, err := m.gitRunFn("gh", prArgs)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("gh pr failed: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: out})
-		}
-	default:
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /git status | /git diff [path] | /git commit <message> | /git pr [args...]"})
-	}
-	m.refreshViewport()
-	return m, nil
-}
-
 func handlePermissionsSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
 		info := "Permission policy information is unavailable."

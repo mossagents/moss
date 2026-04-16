@@ -106,10 +106,38 @@ func OpenOverlayCmd(id string) tea.Cmd {
 	return func() tea.Msg { return openCustomOverlayMsg{id: id} }
 }
 
+// AppendSystemMessageCmd returns a Cmd that appends a system info message to the chat.
+// For use inside async Cmd closures, return SystemMsg(text) directly.
+func AppendSystemMessageCmd(text string) tea.Cmd {
+	return func() tea.Msg { return appendSystemMessageMsg{text: text} }
+}
+
+// AppendErrorMessageCmd returns a Cmd that appends a system error message to the chat.
+// For use inside async Cmd closures, return ErrorMsg(text) directly.
+func AppendErrorMessageCmd(text string) tea.Cmd {
+	return func() tea.Msg { return appendErrorMessageMsg{text: text} }
+}
+
+// SystemMsg returns a tea.Msg that appends a system info message. Use inside async Cmd closures:
+//
+//	return func() tea.Msg {
+//	    result, err := doWork()
+//	    if err != nil { return mosstui.ErrorMsg(err.Error()) }
+//	    return mosstui.SystemMsg(result)
+//	}
+func SystemMsg(text string) tea.Msg { return appendSystemMessageMsg{text: text} }
+
+// ErrorMsg returns a tea.Msg that appends a system error message. Use inside async Cmd closures.
+func ErrorMsg(text string) tea.Msg { return appendErrorMessageMsg{text: text} }
+
 // Internal message types for custom overlay lifecycle.
 type closeCustomOverlayMsg struct{}
 type sendFromOverlayMsg struct{ text string }
 type openCustomOverlayMsg struct{ id string }
+
+// Internal message types for extension-initiated chat messages.
+type appendSystemMessageMsg struct{ text string }
+type appendErrorMessageMsg struct{ text string }
 
 // coreKeys lists key strings that extensions may not override.
 var coreKeys = map[string]bool{

@@ -274,6 +274,16 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.gitBranch = string(msg)
 		return m, nil
 
+	case appendSystemMessageMsg:
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: msg.text})
+		m.refreshViewport()
+		return m, nil
+
+	case appendErrorMessageMsg:
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.text})
+		m.refreshViewport()
+		return m, nil
+
 	case openCustomOverlayMsg:
 		for _, ext := range m.extensions {
 			if ext.Overlays != nil {

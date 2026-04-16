@@ -118,10 +118,6 @@ type chatModel struct {
 	taskCancelFn          func(taskID, reason string) (string, error)
 	scheduleCtrl          scheduling.ScheduleController
 	sessionListFn         func(limit int) (string, error)
-	changeListFn          func(limit int) (string, error)
-	changeShowFn          func(changeID string) (string, error)
-	applyChangeFn         func(patchFile, summary string) (string, error)
-	rollbackChangeFn      func(changeID string) (string, error)
 	checkpointListFn      func(limit int) (string, error)
 	checkpointShowFn      func(checkpointID string) (string, error)
 	checkpointCreateFn    func(note string) (string, error)
@@ -129,7 +125,6 @@ type chatModel struct {
 	checkpointReplayFn    func(checkpointID, mode string, restoreWorktree bool) (string, error)
 	sessionRestoreFn      func(sessionID string) (string, error)
 	newSessionFn          func() (string, error)
-	gitRunFn              func(cmd string, args []string) (string, error)
 	permissionSummaryFn   func() string
 	setPermissionFn       func(toolName, mode string) (string, error)
 	debugConfigFn         func() string
@@ -317,7 +312,9 @@ func (m chatModel) submitInjectedText(text string) (chatModel, tea.Cmd) {
 // installExtensions validates and attaches a set of extensions to the model.
 // Returns an error if any extension registers a duplicate slash command or
 // attempts to override a core key binding.
-func (m *chatModel) installExtensions(exts []*Extension) error {
+// ValidateExtensions checks all provided extensions for conflicts without
+// installing them. Returns the first error found.
+func ValidateExtensions(exts []*Extension) error {
 	seen := map[string]string{}
 	for _, ext := range exts {
 		if ext == nil {
@@ -334,6 +331,13 @@ func (m *chatModel) installExtensions(exts []*Extension) error {
 				return fmt.Errorf("tui extension %q: cannot override core key binding %q", ext.Name, key)
 			}
 		}
+	}
+	return nil
+}
+
+func (m *chatModel) installExtensions(exts []*Extension) error {
+	if err := ValidateExtensions(exts); err != nil {
+		return err
 	}
 	m.extensions = exts
 	return nil
@@ -1024,14 +1028,9 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/theme", Summary: "Show or switch the TUI theme", Section: "Runtime posture"},
 	{Name: "/statusline", Summary: "Configure footer status items", Section: "Runtime posture"},
 	{Name: "/experimental", Summary: "Toggle experimental product features", Section: "Runtime posture"},
-	{Name: "/diff", Summary: "Show the current git diff", Section: "Review and recovery"},
 	{Name: "/review", Summary: "Review working tree state", Section: "Review and recovery"},
 	{Name: "/inspect", Summary: "Inspect runs, threads, replay, and governance", Section: "Review and recovery"},
-	{Name: "/changes", Summary: "Inspect persisted change operations", Section: "Review and recovery"},
-	{Name: "/apply", Summary: "Apply an explicit patch file", Section: "Review and recovery"},
-	{Name: "/rollback", Summary: "Roll back a persisted change", Section: "Review and recovery"},
 	{Name: "/checkpoint", Summary: "List, inspect, create, or replay checkpoints", Section: "Review and recovery"},
-	{Name: "/git", Summary: "Run common git and gh helpers", Section: "Review and recovery"},
 	{Name: "/init", Summary: "Scaffold AGENTS.md and custom commands", Section: "Tools and integrations"},
 	{Name: "/mention", Summary: "Insert an @file mention into the composer", Section: "Tools and integrations"},
 	{Name: "/search", Summary: "Search the web via Jina", Section: "Tools and integrations"},
@@ -1250,7 +1249,6 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []m
 	})
 	m.pendingAttachments = nil
 	m.textarea.Reset()
-	m.adjustInputHeight()
 	m.adjustInputHeight()
 	m.streaming = true
 	m.runStartedAt = m.now().UTC()

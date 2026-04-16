@@ -126,7 +126,6 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model
 	m.chat.scheduleCtrl = m.config.ScheduleController
 
 	m.bindSessionCallbacks(agent)
-	m.bindChangeCallbacks(agent)
 	m.bindCheckpointCallbacks(agent)
 	m.bindTaskCallbacks(agent)
 	m.bindDebugCallbacks(agent)
@@ -200,21 +199,6 @@ func (m *appModel) bindSessionCallbacks(agent *agentState) {
 	}
 }
 
-func (m *appModel) bindChangeCallbacks(agent *agentState) {
-	m.chat.changeListFn = func(limit int) (string, error) {
-		return agent.listPersistedChanges(limit)
-	}
-	m.chat.changeShowFn = func(changeID string) (string, error) {
-		return agent.showPersistedChange(changeID)
-	}
-	m.chat.applyChangeFn = func(patchFile, summary string) (string, error) {
-		return agent.applyChange(patchFile, summary)
-	}
-	m.chat.rollbackChangeFn = func(changeID string) (string, error) {
-		return agent.rollbackChange(changeID)
-	}
-}
-
 func (m *appModel) bindCheckpointCallbacks(agent *agentState) {
 	m.chat.checkpointListFn = func(limit int) (string, error) {
 		return agent.listPersistedCheckpoints(limit)
@@ -281,16 +265,6 @@ func (m *appModel) bindToolingCallbacks(agent *agentState) {
 		go agent.appendAndRun(text, parts)
 	}
 	m.chat.cancelRunFn = agent.cancelCurrentRun
-	m.chat.gitRunFn = func(cmd string, args []string) (string, error) {
-		raw, err := agent.invokeTool(agent.ctx, "run_command", map[string]any{
-			"command": cmd,
-			"args":    args,
-		})
-		if err != nil {
-			return "", err
-		}
-		return formatJSON(raw), nil
-	}
 	m.chat.skillListFn = func() string {
 		return renderSkillsSummary(agent, m.config.Workspace)
 	}
