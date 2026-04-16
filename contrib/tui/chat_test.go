@@ -3045,3 +3045,183 @@ func TestNewCopyPickerStateNewestFirst(t *testing.T) {
 		t.Errorf("expected oldest last (first), got %q", state.items[2].content)
 	}
 }
+
+// Phase 7 — BridgeIO, overlayStack, Extension lifecycle hooks
+
+func TestBridgeIONilProgramSend(t *testing.T) {
+	b := newBridgeIO()
+	// Send with no program should not panic and return nil error.
+	if err := b.Send(nil, io.OutputMessage{}); err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+}
+
+func TestBridgeIONilProgramRefresh(t *testing.T) {
+	b := newBridgeIO()
+	// Refresh with no program should not panic.
+	b.Refresh()
+}
+
+func TestBridgeIONilProgramAsk(t *testing.T) {
+	b := newBridgeIO()
+	// Ask with no program should return empty response immediately (no block).
+	resp, err := b.Ask(context.Background(), io.InputRequest{})
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if resp.Value != "" {
+		t.Fatalf("expected empty response, got %q", resp.Value)
+	}
+}
+
+func TestOverlayStackOpenAndTopDialog(t *testing.T) {
+	s := newOverlayStack()
+	if s.HasDialogs() {
+		t.Fatal("expected no dialogs initially")
+	}
+	s.Open(overlayModel, modelOverlayDialog{})
+	if !s.HasDialogs() {
+		t.Fatal("expected dialogs after Open")
+	}
+	if s.Top() != overlayModel {
+		t.Fatalf("expected top=%s, got %s", overlayModel, s.Top())
+	}
+	d := s.TopDialog()
+	if d == nil {
+		t.Fatal("expected non-nil TopDialog after Open")
+	}
+	if d.ID() != overlayModel {
+		t.Fatalf("expected dialog ID=%s, got %s", overlayModel, d.ID())
+	}
+}
+
+func TestOverlayStackCloseRemovesDialog(t *testing.T) {
+	s := newOverlayStack()
+	s.Open(overlayModel, modelOverlayDialog{})
+	s.Open(overlayTheme, themeOverlayDialog{})
+	s.Close(overlayModel)
+	if s.Top() != overlayTheme {
+		t.Fatalf("expected top=%s after closing model, got %s", overlayTheme, s.Top())
+	}
+	if s.active[overlayModel] != nil {
+		t.Fatal("expected model dialog removed from active map after Close")
+	}
+}
+
+func TestOverlayStackCloseTopRemovesDialog(t *testing.T) {
+	s := newOverlayStack()
+	s.Open(overlayModel, modelOverlayDialog{})
+	s.CloseTop()
+	if s.HasDialogs() {
+		t.Fatal("expected no dialogs after CloseTop")
+	}
+	if s.TopDialog() != nil {
+		t.Fatal("expected nil TopDialog after CloseTop")
+	}
+}
+
+func TestOverlayStackReopenUpdatesDialog(t *testing.T) {
+	s := newOverlayStack()
+	s.Open(overlayModel, modelOverlayDialog{})
+	s.Open(overlayTheme, themeOverlayDialog{})
+	// Re-opening model brings it to top with new dialog.
+	s.Open(overlayModel, modelOverlayDialog{})
+	if s.Top() != overlayModel {
+		t.Fatalf("expected reopened overlay on top, got %s", s.Top())
+	}
+	if len(s.dialogs) != 2 {
+		t.Fatalf("expected 2 dialogs (no dup), got %d", len(s.dialogs))
+	}
+}
+
+func TestActiveOverlayUsesStack(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	if m.activeOverlay() != nil {
+		t.Fatal("expected nil activeOverlay initially")
+	}
+	m.openModelOverlay()
+	d := m.activeOverlay()
+	if d == nil {
+		t.Fatal("expected non-nil activeOverlay after openModelOverlay")
+	}
+	if d.ID() != overlayModel {
+		t.Fatalf("expected overlayModel, got %s", d.ID())
+	}
+	m = m.closeModelOverlay()
+	if m.activeOverlay() != nil {
+		t.Fatal("expected nil activeOverlay after close")
+	}
+}
+
+func TestExtensionOnSessionStartHook(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	fired := false
+	ext := &Extension{
+		Name: "lifecycle-test",
+		OnSessionStart: func(ctx TUIContext) tea.Cmd {
+			fired = true
+			return nil
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	ctx := m.tuiContext()
+	for _, e := range m.extensions {
+		if e.OnSessionStart != nil {
+			e.OnSessionStart(ctx)
+		}
+	}
+	if !fired {
+		t.Fatal("OnSessionStart hook was not called")
+	}
+}
+
+func TestExtensionOnSessionEndHook(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	fired := false
+	ext := &Extension{
+		Name: "lifecycle-test",
+		OnSessionEnd: func(ctx TUIContext) tea.Cmd {
+			fired = true
+			return nil
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	ctx := m.tuiContext()
+	for _, e := range m.extensions {
+		if e.OnSessionEnd != nil {
+			e.OnSessionEnd(ctx)
+		}
+	}
+	if !fired {
+		t.Fatal("OnSessionEnd hook was not called")
+	}
+}
+
+func TestExtensionOnModelSwitchHook(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	var gotPrev, gotNext string
+	ext := &Extension{
+		Name: "lifecycle-test",
+		OnModelSwitch: func(ctx TUIContext, prev, next string) tea.Cmd {
+			gotPrev = prev
+			gotNext = next
+			return nil
+		},
+	}
+	if err := m.installExtensions([]*Extension{ext}); err != nil {
+		t.Fatalf("installExtensions: %v", err)
+	}
+	ctx := m.tuiContext()
+	for _, e := range m.extensions {
+		if e.OnModelSwitch != nil {
+			e.OnModelSwitch(ctx, "gpt-4o", "claude-3-5-sonnet")
+		}
+	}
+	if gotPrev != "gpt-4o" || gotNext != "claude-3-5-sonnet" {
+		t.Fatalf("expected prev=gpt-4o next=claude-3-5-sonnet, got prev=%q next=%q", gotPrev, gotNext)
+	}
+}
