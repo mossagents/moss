@@ -13,6 +13,7 @@ import (
 	memstore "github.com/mossagents/moss/harness/runtime/memory"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/memory"
+	"github.com/mossagents/moss/kernel/model"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -21,10 +22,12 @@ import (
 const memoryStateKey kernel.ServiceKey = "memory.state"
 
 type memoryState struct {
-	workspace workspace.Workspace
-	store     memstore.ExtendedMemoryStore
-	runtime   taskrt.TaskRuntime
-	pipeline  *memstore.PipelineManager
+	workspace     workspace.Workspace
+	store         memstore.ExtendedMemoryStore
+	runtime       taskrt.TaskRuntime
+	pipeline      *memstore.PipelineManager
+	embedder      model.Embedder
+	documentTools bool
 }
 
 // WithMemoryWorkspace configures the runtime-owned memory substrate on the kernel.
@@ -44,6 +47,18 @@ func WithMemoryStore(store memstore.ExtendedMemoryStore) kernel.Option {
 	}
 }
 
+func WithMemoryEmbedder(embedder model.Embedder) kernel.Option {
+	return func(k *kernel.Kernel) {
+		ensureMemoryState(k).embedder = embedder
+	}
+}
+
+func WithMemoryDocumentTools() kernel.Option {
+	return func(k *kernel.Kernel) {
+		ensureMemoryState(k).documentTools = true
+	}
+}
+
 // NewSQLiteMemoryStore creates a SQLite-backed memory store.
 func NewSQLiteMemoryStore(dbPath string) (memstore.ExtendedMemoryStore, error) {
 	return memstore.NewSQLiteMemoryStore(dbPath)
@@ -58,7 +73,7 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 	}
 	if err := k.Stages().OnBoot(120, func(_ context.Context, k *kernel.Kernel) error {
 		if st.workspace == nil {
-			if st.store != nil || st.runtime != nil {
+			if st.store != nil || st.runtime != nil || st.embedder != nil || st.documentTools {
 				return fmt.Errorf("memory workspace is nil")
 			}
 			return nil
@@ -77,7 +92,7 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 			st.pipeline = memstore.NewPipelineManager(st.workspace, st.store, st.runtime)
 			st.pipeline.Start()
 		}
-		return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline)
+		return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline, st.embedder, st.documentTools)
 	}); err != nil {
 		log.Printf("memory: register boot hook: %v", err)
 	}
@@ -137,7 +152,7 @@ func ExtendedMemoryStoreOf(k *kernel.Kernel) memstore.ExtendedMemoryStore {
 	return nil
 }
 
-func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memstore.ExtendedMemoryStore, pipeline *memstore.PipelineManager) error {
+func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, store memstore.ExtendedMemoryStore, pipeline *memstore.PipelineManager, embedder model.Embedder, documentTools bool) error {
 	if ws == nil {
 		return fmt.Errorf("memory workspace is nil")
 	}
@@ -156,6 +171,22 @@ func registerMemoryToolsWithPipeline(reg tool.Registry, ws workspace.Workspace, 
 		{writeMemoryRecordSpec, writeMemoryRecordHandler(ws, store, pipeline)},
 		{searchMemoriesSpec, searchMemoriesHandler(store)},
 		{ingestMemoryTraceSpec, ingestMemoryTraceHandler(pipeline)},
+	}
+	if documentTools {
+		tools = append(tools,
+			struct {
+				spec    tool.ToolSpec
+				handler tool.ToolHandler
+			}{ingestDocumentSpec, ingestDocumentHandler(store, embedder, pipeline)},
+			struct {
+				spec    tool.ToolSpec
+				handler tool.ToolHandler
+			}{knowledgeSearchSpec, knowledgeSearchHandler(store, embedder)},
+			struct {
+				spec    tool.ToolSpec
+				handler tool.ToolHandler
+			}{knowledgeListSpec, knowledgeListHandler(store)},
+		)
 	}
 	for _, t := range tools {
 		spec := runtimeMemoryToolSpec(t.spec)
@@ -193,6 +224,22 @@ func runtimeMemoryToolSpec(spec tool.ToolSpec) tool.ToolSpec {
 		spec.LockScope = []string{"memory:*"}
 		spec.SideEffectClass = tool.SideEffectMemory
 		spec.ApprovalClass = tool.ApprovalClassPolicyGuarded
+		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
+		spec.CommutativityClass = tool.CommutativityNonCommutative
+	case "knowledge_search", "knowledge_list":
+		spec.Effects = []tool.Effect{tool.EffectReadOnly}
+		spec.ResourceScope = []string{"memory:*"}
+		spec.SideEffectClass = tool.SideEffectNone
+		spec.ApprovalClass = tool.ApprovalClassNone
+		spec.PlannerVisibility = tool.PlannerVisibilityVisible
+		spec.Idempotent = true
+		spec.CommutativityClass = tool.CommutativityFullyCommutative
+	case "ingest_document":
+		spec.Effects = []tool.Effect{tool.EffectWritesMemory}
+		spec.ResourceScope = []string{"memory:*"}
+		spec.LockScope = []string{"memory:*"}
+		spec.SideEffectClass = tool.SideEffectMemory
+		spec.ApprovalClass = tool.ApprovalClassExplicitUser
 		spec.PlannerVisibility = tool.PlannerVisibilityVisibleWithConstraints
 		spec.CommutativityClass = tool.CommutativityNonCommutative
 	}

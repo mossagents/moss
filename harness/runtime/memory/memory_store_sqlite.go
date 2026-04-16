@@ -46,7 +46,7 @@ func NewSQLiteMemoryStore(dbPath string) (ExtendedMemoryStore, error) {
 
 func initSQLiteMemorySchema(db *sql.DB) error {
 	requiredColumns := map[string]struct{}{
-		"path": {}, "id": {}, "content": {}, "summary": {}, "tags_json": {}, "citation_json": {},
+		"path": {}, "id": {}, "content": {}, "summary": {}, "tags_json": {}, "citation_json": {}, "metadata_json": {},
 		"stage": {}, "status": {}, "group_key": {}, "workspace": {}, "cwd": {}, "git_branch": {},
 		"source_kind": {}, "source_id": {}, "source_path": {}, "source_updated_at": {},
 		"usage_count": {}, "last_used_at": {}, "created_at": {}, "updated_at": {},
@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS memory_records (
   summary TEXT NOT NULL,
   tags_json TEXT NOT NULL,
   citation_json TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
   stage TEXT NOT NULL,
   status TEXT NOT NULL,
   group_key TEXT NOT NULL,
@@ -141,18 +142,20 @@ func (s *sqliteMemoryStore) UpsertExtended(ctx context.Context, record ExtendedM
 	}
 	tagsRaw, _ := json.Marshal(record.Tags)
 	citationRaw, _ := json.Marshal(record.Citation)
+	metadataRaw, _ := json.Marshal(record.Metadata)
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO memory_records(
-  path,id,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,
+  path,id,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,
   source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at
 )
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(path) DO UPDATE SET
   id=excluded.id,
   content=excluded.content,
   summary=excluded.summary,
   tags_json=excluded.tags_json,
   citation_json=excluded.citation_json,
+  metadata_json=excluded.metadata_json,
   stage=excluded.stage,
   status=excluded.status,
   group_key=excluded.group_key,
@@ -167,7 +170,7 @@ ON CONFLICT(path) DO UPDATE SET
   last_used_at=excluded.last_used_at,
   created_at=excluded.created_at,
   updated_at=excluded.updated_at
-`, record.Path, record.ID, record.Content, record.Summary, string(tagsRaw), string(citationRaw), string(record.Stage), string(record.Status), record.Group, record.Workspace, record.CWD, record.GitBranch, record.SourceKind, record.SourceID, record.SourcePath, FormatMemoryTime(record.SourceUpdatedAt), record.UsageCount, FormatMemoryTime(record.LastUsedAt), FormatMemoryTime(record.CreatedAt), FormatMemoryTime(record.UpdatedAt))
+`, record.Path, record.ID, record.Content, record.Summary, string(tagsRaw), string(citationRaw), string(metadataRaw), string(record.Stage), string(record.Status), record.Group, record.Workspace, record.CWD, record.GitBranch, record.SourceKind, record.SourceID, record.SourcePath, FormatMemoryTime(record.SourceUpdatedAt), record.UsageCount, FormatMemoryTime(record.LastUsedAt), FormatMemoryTime(record.CreatedAt), FormatMemoryTime(record.UpdatedAt))
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +180,7 @@ ON CONFLICT(path) DO UPDATE SET
 
 func (s *sqliteMemoryStore) GetByPathExtended(ctx context.Context, path string) (*ExtendedMemoryRecord, error) {
 	key := NormalizePath(path)
-	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
+	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
 	record, err := scanMemoryRecord(row)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("memory %q not found", key)
@@ -195,7 +198,7 @@ func (s *sqliteMemoryStore) DeleteByPath(ctx context.Context, path string) error
 }
 
 func (s *sqliteMemoryStore) ListExtended(ctx context.Context, limit int) ([]ExtendedMemoryRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +219,7 @@ func (s *sqliteMemoryStore) ListExtended(ctx context.Context, limit int) ([]Exte
 }
 
 func (s *sqliteMemoryStore) SearchExtended(ctx context.Context, query ExtendedMemoryQuery) ([]ExtendedMemoryRecord, error) {
-	q := `SELECT id,path,content,summary,tags_json,citation_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
+	q := `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
 	args := make([]any, 0, 16)
 	if group := NormalizePath(query.Group); group != "" {
 		q += ` AND group_key=?`
@@ -323,6 +326,7 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 		summary         string
 		tagsRaw         string
 		citationRaw     string
+		metadataRaw     string
 		stage           string
 		status          string
 		group           string
@@ -338,7 +342,7 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 		createdAt       string
 		updatedAt       string
 	)
-	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &metadataRaw, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	record := &ExtendedMemoryRecord{
@@ -363,6 +367,7 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 	}
 	_ = json.Unmarshal([]byte(tagsRaw), &record.Tags)
 	_ = json.Unmarshal([]byte(citationRaw), &record.Citation)
+	_ = json.Unmarshal([]byte(metadataRaw), &record.Metadata)
 	record.Tags = normalizeMemoryTags(record.Tags)
 	record.Citation = normalizeMemoryCitation(record.Citation)
 	if record.Stage == "" {

@@ -47,9 +47,51 @@ func bootMemoryTestKernel(t *testing.T, ws workspace.Workspace, store memstore.E
 	return k
 }
 
+type runtimeMockEmbedder struct{}
+
+func (runtimeMockEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
+	return []float64{float64(len(text)), 1}, nil
+}
+
+func (runtimeMockEmbedder) EmbedBatch(_ context.Context, texts []string) ([][]float64, error) {
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		out[i] = []float64{float64(len(text)), float64(i + 1)}
+	}
+	return out, nil
+}
+
+func (runtimeMockEmbedder) Dimension() int { return 2 }
+
 func bootMemoryTestRegistry(t *testing.T, ws workspace.Workspace, store memstore.ExtendedMemoryStore, taskRuntime taskrt.TaskRuntime) tool.Registry {
 	t.Helper()
 	return bootMemoryTestKernel(t, ws, store, taskRuntime).ToolRegistry()
+}
+
+func bootMemoryTestRegistryWithDocuments(t *testing.T, ws workspace.Workspace, store memstore.ExtendedMemoryStore, taskRuntime taskrt.TaskRuntime) tool.Registry {
+	t.Helper()
+	opts := []kernel.Option{
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		WithMemoryWorkspace(ws),
+		WithMemoryEmbedder(runtimeMockEmbedder{}),
+		WithMemoryDocumentTools(),
+	}
+	if taskRuntime != nil {
+		opts = append(opts, kernel.WithTaskRuntime(taskRuntime))
+	}
+	if store != nil {
+		opts = append(opts, WithMemoryStore(store))
+	}
+	k := kernel.New(opts...)
+	ctx := context.Background()
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = k.Shutdown(ctx)
+	})
+	return k.ToolRegistry()
 }
 
 func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
@@ -122,7 +164,7 @@ func TestRegisterMemoryTools_RoundTrip(t *testing.T) {
 
 func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 	ws := sandbox.NewMemoryWorkspace()
-	reg := bootMemoryTestRegistry(t, ws, nil, nil)
+	reg := bootMemoryTestRegistryWithDocuments(t, ws, nil, nil)
 	cases := []struct {
 		name       string
 		effect     tool.Effect
@@ -132,6 +174,8 @@ func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 		{"read_memory", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone},
 		{"write_memory", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassExplicitUser},
 		{"ingest_memory_trace", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassPolicyGuarded},
+		{"ingest_document", tool.EffectWritesMemory, tool.SideEffectMemory, tool.ApprovalClassExplicitUser},
+		{"knowledge_search", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone},
 	}
 	for _, tc := range cases {
 		tl, ok := reg.Get(tc.name)
@@ -148,6 +192,82 @@ func TestRegisterMemoryTools_ExecutionMetadata(t *testing.T) {
 		if spec.ApprovalClass != tc.approval {
 			t.Fatalf("%s approval_class = %q", tc.name, spec.ApprovalClass)
 		}
+	}
+}
+
+func TestUnifiedMemoryTools_IngestAndSearchDocuments(t *testing.T) {
+	ws := sandbox.NewMemoryWorkspace()
+	reg := bootMemoryTestRegistryWithDocuments(t, ws, nil, nil)
+	ctx := context.Background()
+
+	ingestTool, ok := reg.Get("ingest_document")
+	if !ok {
+		t.Fatal("ingest_document not registered")
+	}
+	searchTool, ok := reg.Get("knowledge_search")
+	if !ok {
+		t.Fatal("knowledge_search not registered")
+	}
+	listTool, ok := reg.Get("knowledge_list")
+	if !ok {
+		t.Fatal("knowledge_list not registered")
+	}
+
+	if _, err := ingestTool.Execute(ctx, mustJSON(t, map[string]any{
+		"id":         "readme",
+		"source":     "README.md",
+		"text":       "Moss uses sqlite for state and memory indexing.\nPersistent memories are runtime-owned.",
+		"chunk_size": 40,
+	})); err != nil {
+		t.Fatalf("ingest_document: %v", err)
+	}
+
+	searchRaw, err := searchTool.Execute(ctx, mustJSON(t, map[string]any{
+		"query": "sqlite memory indexing",
+		"limit": 3,
+	}))
+	if err != nil {
+		t.Fatalf("knowledge_search: %v", err)
+	}
+	var searchResp struct {
+		Count   int `json:"count"`
+		Results []struct {
+			DocID    string  `json:"doc_id"`
+			Source   string  `json:"source"`
+			Text     string  `json:"text"`
+			Score    float64 `json:"score"`
+			ChunkIdx int     `json:"chunk_index"`
+			Path     string  `json:"path"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(searchRaw, &searchResp); err != nil {
+		t.Fatalf("decode knowledge_search: %v", err)
+	}
+	if searchResp.Count == 0 || len(searchResp.Results) == 0 {
+		t.Fatalf("expected knowledge search hits, got %+v", searchResp)
+	}
+	if searchResp.Results[0].DocID != "readme" || searchResp.Results[0].Source != "README.md" {
+		t.Fatalf("unexpected top result: %+v", searchResp.Results[0])
+	}
+
+	listRaw, err := listTool.Execute(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("knowledge_list: %v", err)
+	}
+	var listResp struct {
+		Documents []struct {
+			ID     string `json:"id"`
+			Source string `json:"source"`
+			Chunks int    `json:"chunks"`
+		} `json:"documents"`
+		TotalDocs   int `json:"total_docs"`
+		TotalChunks int `json:"total_chunks"`
+	}
+	if err := json.Unmarshal(listRaw, &listResp); err != nil {
+		t.Fatalf("decode knowledge_list: %v", err)
+	}
+	if listResp.TotalDocs != 1 || len(listResp.Documents) != 1 || listResp.Documents[0].ID != "readme" {
+		t.Fatalf("unexpected knowledge list: %+v", listResp)
 	}
 }
 
@@ -476,6 +596,9 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	if got.Summary == "" {
 		t.Fatal("expected summary to be generated")
 	}
+	if got.Metadata != nil {
+		t.Fatalf("expected empty metadata by default, got %+v", got.Metadata)
+	}
 	if got.Stage != memstore.MemoryStageManual || got.Status != memstore.MemoryStatusActive {
 		t.Fatalf("expected default stage/status, got %+v", got)
 	}
@@ -503,6 +626,41 @@ func TestSQLiteMemoryStore_BasicOperations(t *testing.T) {
 	}
 	if _, err := store.GetByPathExtended(ctx, "team/decision.md"); err == nil {
 		t.Fatal("expected GetByPath to fail after delete")
+	}
+}
+
+func TestSQLiteMemoryStore_PersistsMetadata(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "memory-meta.db")
+	store, err := NewSQLiteMemoryStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteMemoryStore: %v", err)
+	}
+	if closer, ok := store.(interface{ Close() error }); ok {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+	ctx := context.Background()
+	_, err = store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
+		Path:       "knowledge/readme/chunk-0000.md",
+		Content:    "runtime-owned memory",
+		SourceKind: "knowledge.document",
+		Metadata: map[string]any{
+			"doc_id":    "readme",
+			"embedding": []float64{1, 2, 3},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpsertExtended: %v", err)
+	}
+	got, err := store.GetByPathExtended(ctx, "knowledge/readme/chunk-0000.md")
+	if err != nil {
+		t.Fatalf("GetByPathExtended: %v", err)
+	}
+	if got.Metadata == nil || got.Metadata["doc_id"] != "readme" {
+		t.Fatalf("expected metadata to round-trip, got %+v", got.Metadata)
+	}
+	embedding, ok := got.Metadata["embedding"].([]any)
+	if !ok || len(embedding) != 3 {
+		t.Fatalf("expected embedding metadata to round-trip, got %+v", got.Metadata["embedding"])
 	}
 }
 

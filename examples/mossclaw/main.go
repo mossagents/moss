@@ -2,7 +2,7 @@
 //
 // 演示如何用 moss kernel 构建具有丰富能力的个人 AI 助理：
 //   - 网络访问工具：fetch_url（抓取网页内容）、extract_links（提取链接）
-//   - 知识库：语义检索、文档摄入
+//   - 统一 memory：历史记忆 + 文档摄入/检索
 //   - 定时任务调度
 //   - Bootstrap 上下文（AGENTS.md / SOUL.md / TOOLS.md）
 //   - 交互式 TUI 模式
@@ -36,7 +36,6 @@ import (
 	"github.com/mossagents/moss/harness/gateway"
 	"github.com/mossagents/moss/harness/providers/embedding"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
-	rknowledge "github.com/mossagents/moss/harness/runtime/knowledge"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/mossagents/moss/kernel"
@@ -219,13 +218,14 @@ func buildMiniclawKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.
 
 	sched := scheduler.New()
 	embedder := embedding.NewWithBaseURL(flags.APIKey, flags.BaseURL)
-	knStore := rknowledge.NewMemoryKnowledgeStore()
+	memDir := filepath.Join(appconfig.AppDir(), "memories")
 
 	k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 		harness.SessionPersistence(store),
 		harness.Scheduling(sched),
 		harness.BootstrapContext(flags.Workspace, "mossclaw", flags.Trust),
-		harness.Knowledge(knStore, embedder),
+		harness.PersistentMemories(memDir),
+		harness.Knowledge(embedder),
 		harness.FeatureFunc{FeatureName: "web-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
 			return registerWebTools(h.Kernel())
 		}},

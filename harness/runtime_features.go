@@ -7,19 +7,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/harness/extensions/knowledge"
-	"github.com/mossagents/moss/harness/runtime/assembly"
-	runtimectx "github.com/mossagents/moss/harness/runtime/runctx"
-	"github.com/mossagents/moss/harness/runtime/planning"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/extensions/capability"
-	rknowledge "github.com/mossagents/moss/harness/runtime/knowledge"
+	"github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/runtime/assembly"
+	"github.com/mossagents/moss/harness/runtime/planning"
+	runtimectx "github.com/mossagents/moss/harness/runtime/runctx"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/harness/scheduler"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 type runtimeSetupConfig struct {
@@ -254,8 +252,10 @@ func Scheduling(s *scheduler.Scheduler) Feature {
 	}
 }
 
-// Knowledge returns a Feature that registers knowledge-base tools.
-func Knowledge(store knowledge.Store, embedder model.Embedder) Feature {
+// Knowledge returns a Feature that enables document ingestion/search on the
+// runtime-owned memory substrate. It requires PersistentMemories to be installed
+// in the same kernel so all memory flows share a single store.
+func Knowledge(embedder model.Embedder) Feature {
 	return FeatureFunc{
 		FeatureName: "knowledge",
 		MetadataValue: FeatureMetadata{
@@ -263,7 +263,8 @@ func Knowledge(store knowledge.Store, embedder model.Embedder) Feature {
 			Phase: FeaturePhaseConfigure,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			return rknowledge.RegisterKnowledgeTools(h.Kernel(), store, embedder)
+			h.Kernel().Apply(runtime.WithMemoryEmbedder(embedder), runtime.WithMemoryDocumentTools())
+			return nil
 		},
 	}
 }
@@ -318,5 +319,3 @@ func installPersistentMemories(k *kernel.Kernel, memoriesDir, sqlitePath string)
 	k.Apply(runtime.WithMemoryWorkspace(ws), runtime.WithMemoryStore(store))
 	return nil
 }
-
-

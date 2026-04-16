@@ -425,6 +425,9 @@ func (m *PipelineManager) SyncArtifacts(ctx context.Context) error {
 		if record.Status != "" && record.Status != MemoryStatusActive {
 			continue
 		}
+		if strings.HasPrefix(strings.TrimSpace(record.SourceKind), "knowledge.") {
+			continue
+		}
 		switch record.Stage {
 		case MemoryStageSnapshot:
 			snapshots = append(snapshots, record)
