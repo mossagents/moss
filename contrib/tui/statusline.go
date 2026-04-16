@@ -177,15 +177,38 @@ func (m chatModel) progressStatusSummary() string {
 		return ""
 	}
 	if msg := strings.TrimSpace(m.progress.Message); msg != "" {
-		return truncateDisplayWidth(msg, 40)
+		return truncateDisplayWidth(humanizeProgressMessage(msg, m.progress.Phase, m.progress.ToolName), 48)
+	}
+	if strings.EqualFold(strings.TrimSpace(m.progress.Phase), "tools") && strings.TrimSpace(m.progress.ToolName) != "" {
+		return truncateDisplayWidth("Using "+toolPrettyName(m.progress.ToolName), 48)
 	}
 	if phase := strings.TrimSpace(progressPhaseLabel(m.progress.Phase)); phase != "" {
-		return phase
+		return truncateDisplayWidth(titleCaseWord(phase), 48)
 	}
 	if status := strings.TrimSpace(progressStatusLabel(m.progress.Status)); status != "" {
-		return strings.ToLower(status)
+		return status
 	}
 	return ""
+}
+
+func humanizeProgressMessage(message, phase, toolName string) string {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return ""
+	}
+	toolName = strings.TrimSpace(toolName)
+	switch {
+	case toolName != "" && strings.EqualFold(message, "running "+toolName):
+		return "Using " + toolPrettyName(toolName)
+	case toolName != "" && strings.EqualFold(message, "approval required for "+toolName):
+		return "Approval required for " + toolPrettyName(toolName)
+	case toolName != "" && strings.EqualFold(message, "approval granted for "+toolName):
+		return "Approval granted for " + toolPrettyName(toolName)
+	case strings.EqualFold(strings.TrimSpace(phase), "tools") && toolName != "" && strings.EqualFold(message, "running tool"):
+		return "Using " + toolPrettyName(toolName)
+	default:
+		return titleCaseWord(message)
+	}
 }
 
 func (m chatModel) composerMetaSummary() (string, string) {
@@ -201,15 +224,15 @@ func (m chatModel) composerMetaSummary() (string, string) {
 	case m.slashPopup != nil:
 		return "Command", fmt.Sprintf("%s  •  Tab complete", m.composerSlashContext())
 	case m.streaming:
-		detail := valueOrDefaultString(strings.TrimSpace(m.progressStatusSummary()), "working")
+		summary := valueOrDefaultString(strings.TrimSpace(m.progressStatusSummary()), "Running")
+		detailParts := []string{"Esc Esc cancel"}
 		if queued := len(m.queuedInputs); queued > 0 {
-			detail += fmt.Sprintf("  •  %d queued", queued)
+			detailParts = append(detailParts, fmt.Sprintf("%d queued", queued))
 		}
 		if m.lastTrace != nil && m.lastTrace.Trace.TotalTokens > 0 {
-			detail += "  •  " + formatTokenCount(m.lastTrace.Trace.TotalTokens) + " tokens"
+			detailParts = append(detailParts, formatTokenCount(m.lastTrace.Trace.TotalTokens)+" tokens")
 		}
-		detail += "  •  Esc Esc cancel"
-		return spinnerFrame(m.now()) + " Running", detail
+		return spinnerFrame(m.now()) + " " + summary, strings.Join(detailParts, "  •  ")
 	case len(m.pendingAttachments) > 0:
 		return "Attach", fmt.Sprintf("%d ready  •  Ctrl+X remove latest", len(m.pendingAttachments))
 	case len(m.queuedInputs) > 0:

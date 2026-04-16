@@ -425,6 +425,14 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 			m.appendReasoning(o.Content)
 		case io.OutputProgress:
 			m.messages = append(m.messages, chatMessage{kind: msgProgress, content: o.Content})
+			if m.streaming {
+				m.setProgressDetail(
+					metaString(o.Meta, "status", ""),
+					metaString(o.Meta, "phase", ""),
+					o.Content,
+					m.now().UTC(),
+				)
+			}
 		case io.OutputToolStart:
 			meta := cloneMessageMeta(o.Meta)
 			if _, ok := meta["started_at"]; !ok {

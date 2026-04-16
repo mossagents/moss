@@ -2450,11 +2450,47 @@ func TestRenderComposerMetaLineShowsRunningContext(t *testing.T) {
 		SessionID: "sess-1",
 		Status:    "running",
 		Phase:     "tools",
+		ToolName:  "run_command",
 		Message:   "running run_command",
 	}
 	line := m.renderComposerMetaLine(120)
-	if !strings.Contains(line, "Running") || !strings.Contains(line, "running run_command") || !strings.Contains(line, "Esc Esc cancel") {
+	if !strings.Contains(line, "Using Bash") || !strings.Contains(line, "Esc Esc cancel") {
 		t.Fatalf("unexpected running composer meta: %q", line)
+	}
+}
+
+func TestOutputProgressUpdatesRunningSummary(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.streaming = true
+	m.currentSessionID = "sess-1"
+	m.progress = executionProgressState{
+		SessionID: "sess-1",
+		Status:    "running",
+		Phase:     "tools",
+		ToolName:  "powershell",
+		StartedAt: time.Now().Add(-time.Second),
+	}
+	updated, _ := m.handleBridge(bridgeMsg{
+		output: &io.OutputMessage{
+			Type:    io.OutputProgress,
+			Content: "inspecting memory tests",
+		},
+	})
+	if got := updated.progress.Message; got != "inspecting memory tests" {
+		t.Fatalf("progress message = %q, want progress update content", got)
+	}
+	progressCount := 0
+	for _, msg := range updated.messages {
+		if msg.kind == msgProgress {
+			progressCount++
+		}
+	}
+	if progressCount != 1 {
+		t.Fatalf("progress transcript count = %d, want 1", progressCount)
+	}
+	line := updated.renderComposerMetaLine(120)
+	if !strings.Contains(line, "Inspecting memory tests") || !strings.Contains(line, "Esc Esc cancel") {
+		t.Fatalf("unexpected progress-driven composer meta: %q", line)
 	}
 }
 

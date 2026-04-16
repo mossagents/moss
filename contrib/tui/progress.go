@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mossagents/moss/harness/runtime"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/runtime"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 
 func firstNonEmpty(values ...string) string {
@@ -263,13 +263,13 @@ func (m *chatModel) applyProgressSnapshot(next executionProgressState, reset boo
 	}
 }
 
-func (m *chatModel) recordProgressDetail(status, phase, message string, updatedAt time.Time) {
+func (m *chatModel) buildProgressDetailSnapshot(status, phase, message string, updatedAt time.Time) (executionProgressState, bool) {
 	sessionID := strings.TrimSpace(m.currentSessionID)
 	if sessionID == "" {
 		sessionID = strings.TrimSpace(m.progress.SessionID)
 	}
 	if sessionID == "" || strings.TrimSpace(message) == "" {
-		return
+		return executionProgressState{}, false
 	}
 	snapshot := m.progress
 	if strings.TrimSpace(status) != "" {
@@ -300,6 +300,23 @@ func (m *chatModel) recordProgressDetail(status, phase, message string, updatedA
 		snapshot.StartedAt = updatedAt
 	}
 	snapshot.UpdatedAt = updatedAt
+	return snapshot, true
+}
+
+func (m *chatModel) setProgressDetail(status, phase, message string, updatedAt time.Time) {
+	snapshot, ok := m.buildProgressDetailSnapshot(status, phase, message, updatedAt)
+	if !ok {
+		return
+	}
+	m.recordProgressSnapshot(snapshot, false)
+	m.progress = snapshot
+}
+
+func (m *chatModel) recordProgressDetail(status, phase, message string, updatedAt time.Time) {
+	snapshot, ok := m.buildProgressDetailSnapshot(status, phase, message, updatedAt)
+	if !ok {
+		return
+	}
 	m.applyProgressSnapshot(snapshot, false)
 }
 
