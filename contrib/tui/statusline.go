@@ -173,11 +173,21 @@ func (m chatModel) runtimeStateLabel() string {
 }
 
 func (m chatModel) progressStatusSummary() string {
+	explicit := ""
 	if !m.progress.visible() {
-		return ""
+		return truncateDisplayWidth(strings.TrimSpace(m.activeRunSummary), 48)
 	}
 	if msg := strings.TrimSpace(m.progress.Message); msg != "" {
-		return truncateDisplayWidth(humanizeProgressMessage(msg, m.progress.Phase, m.progress.ToolName), 48)
+		explicit = humanizeProgressMessage(msg, m.progress.Phase, m.progress.ToolName)
+		if !progressMessageIsGeneric(msg) {
+			return truncateDisplayWidth(explicit, 48)
+		}
+	}
+	if summary := strings.TrimSpace(m.activeRunSummary); summary != "" {
+		return truncateDisplayWidth(summary, 48)
+	}
+	if explicit != "" {
+		return truncateDisplayWidth(explicit, 48)
 	}
 	if strings.EqualFold(strings.TrimSpace(m.progress.Phase), "tools") && strings.TrimSpace(m.progress.ToolName) != "" {
 		return truncateDisplayWidth("Using "+toolPrettyName(m.progress.ToolName), 48)
@@ -189,6 +199,14 @@ func (m chatModel) progressStatusSummary() string {
 		return status
 	}
 	return ""
+}
+
+func summarizeActiveRun(text string) string {
+	line := firstNonEmptyLine(text)
+	if line == "" {
+		return ""
+	}
+	return strings.Join(strings.Fields(line), " ")
 }
 
 func humanizeProgressMessage(message, phase, toolName string) string {
@@ -208,6 +226,30 @@ func humanizeProgressMessage(message, phase, toolName string) string {
 		return "Using " + toolPrettyName(toolName)
 	default:
 		return titleCaseWord(message)
+	}
+}
+
+func progressMessageIsGeneric(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	switch {
+	case message == "":
+		return true
+	case message == "run started":
+		return true
+	case strings.HasPrefix(message, "iteration ") && strings.HasSuffix(message, " started"):
+		return true
+	case message == "assistant response ready":
+		return true
+	case message == "calling model":
+		return true
+	case strings.HasPrefix(message, "calling "):
+		return true
+	case message == "iteration updated":
+		return true
+	case strings.HasPrefix(message, "iteration updated ("):
+		return true
+	default:
+		return false
 	}
 }
 

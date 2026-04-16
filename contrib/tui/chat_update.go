@@ -259,6 +259,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			m.streaming = true
 			m.finished = false
+			m.activeRunSummary = summarizeActiveRun(next)
 			m.runStartedAt = m.now().UTC()
 			m.sendFn(next, nextParts)
 		}

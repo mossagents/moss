@@ -140,6 +140,7 @@ type chatModel struct {
 	currentSessionID      string
 	progress              executionProgressState
 	progressTrail         []executionProgressState
+	activeRunSummary      string
 	lastThinkingSignature string
 	approvalRules         map[string][]userapproval.MemoryRule
 	projectApprovalRules  []userapproval.MemoryRule
@@ -395,6 +396,7 @@ func (m chatModel) startThreadSwitch(statusText string, run func() (string, erro
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: statusText})
 	}
 	m.streaming = true
+	m.activeRunSummary = summarizeActiveRun(statusText)
 	m.runStartedAt = m.now().UTC()
 	m.refreshViewport()
 	return m, func() tea.Msg {
@@ -1263,6 +1265,7 @@ func (m chatModel) dispatchUserSubmission(displayText, runText string, parts []m
 	m.textarea.Reset()
 	m.adjustInputHeight()
 	m.streaming = true
+	m.activeRunSummary = summarizeActiveRun(runText)
 	m.runStartedAt = m.now().UTC()
 	m.refreshViewport()
 	if m.sendFn != nil {

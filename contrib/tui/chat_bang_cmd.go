@@ -34,6 +34,7 @@ func (m chatModel) handleBangCommand(input string) (chatModel, tea.Cmd) {
 		meta:    map[string]any{"timestamp": m.now().UTC()},
 	})
 	m.streaming = true
+	m.activeRunSummary = summarizeActiveRun(cmdLine)
 	m.runStartedAt = m.now().UTC()
 	m.pinnedToBottom = true
 	m.refreshViewport()

@@ -2494,6 +2494,21 @@ func TestOutputProgressUpdatesRunningSummary(t *testing.T) {
 	}
 }
 
+func TestRenderComposerMetaLineUsesActiveRunSummaryForGenericThinkingState(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, _ := m.dispatchUserSubmission("杭州天气详情", "杭州天气详情", []model.ContentPart{model.TextPart("杭州天气详情")})
+	updated.progress = executionProgressState{
+		SessionID: "sess-1",
+		Status:    "running",
+		Phase:     "thinking",
+		Message:   "calling model",
+	}
+	line := updated.renderComposerMetaLine(120)
+	if !strings.Contains(line, "杭州天气详情") || strings.Contains(line, "Calling model") {
+		t.Fatalf("expected active run summary to replace generic thinking status, got %q", line)
+	}
+}
+
 func TestRenderEditorPaneDoesNotRepeatRunningMetaWithExtraStreamingRow(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.width = 120
