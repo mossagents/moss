@@ -116,10 +116,15 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			if hints := m.currentSlashHints(); len(hints) > 0 {
 				return m, nil
 			}
-			// Scroll the chat viewport. The terminal converts wheel events to
-			// up/down arrows via alternate scroll mode (CSI ?1007h), so this
-			// handles both the scroll wheel and keyboard arrow keys.
-			if delta == -1 {
+			// Navigate input history.
+			dir := "up"
+			if msg.String() == "down" {
+				dir = "down"
+			}
+			return m.handleHistoryNavigation(dir)
+		case "ctrl+p", "ctrl+n":
+			// Scroll the chat viewport.
+			if msg.String() == "ctrl+p" {
 				m.pinnedToBottom = false
 				m.viewport.ScrollUp(3)
 			} else {
@@ -130,12 +135,6 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			m.refreshViewport()
 			return m, nil
-		case "ctrl+p", "ctrl+n":
-			dir := "up"
-			if msg.String() == "ctrl+n" {
-				dir = "down"
-			}
-			return m.handleHistoryNavigation(dir)
 		case "pgup":
 			m.pinnedToBottom = false
 			m.viewport.ScrollUp(m.viewport.Height)
