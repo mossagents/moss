@@ -173,8 +173,8 @@ func handleFastSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 		return m, nil
 	}
 	m.fastMode = enabled
-	if m.refreshSystemPromptFn != nil {
-		if err := m.refreshSystemPromptFn(); err != nil {
+	if m.inspect != nil && m.inspect.refreshSP != nil {
+		if err := m.inspect.refreshSP(); err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("fast mode saved but failed to refresh the current thread prompt: %v", err)})
 			m.refreshViewport()
 			return m, nil
@@ -209,8 +209,8 @@ func handlePersonalitySlashCommand(m chatModel, args []string, _ string, _ strin
 		return m, nil
 	}
 	m.personality = personality
-	if m.refreshSystemPromptFn != nil {
-		if err := m.refreshSystemPromptFn(); err != nil {
+	if m.inspect != nil && m.inspect.refreshSP != nil {
+		if err := m.inspect.refreshSP(); err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("personality saved but failed to refresh the current thread prompt: %v", err)})
 			m.refreshViewport()
 			return m, nil
@@ -278,8 +278,8 @@ func handleResumeSlashCommand(m chatModel, args []string, _ string, _ string) (c
 	if len(args) == 0 {
 		return m.openResumePicker()
 	}
-	if len(args) > 1 || m.sessionRestoreFn == nil {
-		if m.sessionRestoreFn == nil {
+	if len(args) > 1 || m.session == nil {
+		if m.session == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Resume is unavailable."})
 		} else {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /resume [session_id|latest]"})
@@ -294,7 +294,7 @@ func handleResumeSlashCommand(m chatModel, args []string, _ string, _ string) (c
 		return m, nil
 	}
 	return m.startThreadSwitch(fmt.Sprintf("Resuming thread %s...", id), func() (string, error) {
-		out, err := m.sessionRestoreFn(id)
+		out, err := m.session.restore(id)
 		if err != nil {
 			return "", fmt.Errorf("failed to resume thread: %v", err)
 		}
@@ -324,13 +324,13 @@ func handleTraceSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 }
 
 func handleNewSlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.newSessionFn == nil {
+	if m.session == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "New thread creation is unavailable."})
 		m.refreshViewport()
 		return m, nil
 	}
 	return m.startThreadSwitch("Starting a fresh thread...", func() (string, error) {
-		out, err := m.newSessionFn()
+		out, err := m.session.newSess()
 		if err != nil {
 			return "", fmt.Errorf("failed to create new thread: %v", err)
 		}
@@ -383,7 +383,7 @@ func handleMCPSlashCommand(m chatModel, args []string, _ string, _ string) (chat
 }
 
 func handleCompactSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.offloadFn == nil {
+	if m.session == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Context compaction is unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -402,7 +402,7 @@ func handleCompactSlashCommand(m chatModel, args []string, _ string, _ string) (
 	if len(args) >= 2 {
 		note = strings.Join(args[1:], " ")
 	}
-	out, err := m.offloadFn(keepRecent, note)
+	out, err := m.session.offload(keepRecent, note)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("compact failed: %v", err)})
 	} else {
@@ -418,7 +418,7 @@ func handlePSSlashCommand(m chatModel, args []string, _ string, _ string) (chatM
 		m.refreshViewport()
 		return m, nil
 	}
-	if m.taskListFn == nil {
+	if m.task == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Background activity view is unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -447,7 +447,7 @@ func handlePSSlashCommand(m chatModel, args []string, _ string, _ string) (chatM
 		}
 		limit = v
 	}
-	out, err := m.taskListFn(status, limit)
+	out, err := m.task.list(status, limit)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to inspect background activity: %v", err)})
 	} else {
@@ -575,9 +575,9 @@ func handleDebugConfigSlashCommand(m chatModel, _ []string, _ string, _ string) 
 	} else {
 		content := m.debugConfigFn()
 		if m.debugPromptPreview {
-			if m.debugPromptFn == nil {
+			if m.inspect == nil || m.inspect.debugPrompt == nil {
 				content += "\n\nPrompt preview: unavailable."
-			} else if preview := strings.TrimSpace(m.debugPromptFn()); preview == "" {
+			} else if preview := strings.TrimSpace(m.inspect.debugPrompt()); preview == "" {
 				content += "\n\nPrompt preview: unavailable."
 			} else {
 				content += "\n\nPrompt preview:\n" + preview

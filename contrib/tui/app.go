@@ -419,6 +419,15 @@ func (a *agentState) permissionSummary() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func (a *agentState) debugPrompt() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.sess == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.sess.Config.SystemPrompt)
+}
+
 func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent, next func(context.Context) error) error {
 		if ev == nil || ev.Stage != hooks.ToolLifecycleBefore {

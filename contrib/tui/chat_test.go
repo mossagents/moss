@@ -76,7 +76,7 @@ func TestSlashCommandStatusSummary(t *testing.T) {
 	m.profile = "coding"
 	m.approvalMode = "confirm"
 	m.theme = "plain"
-	m.sessionInfoFn = func() string { return "session summary" }
+	m.session = &agentSessionOps{info: func() string { return "session summary" }}
 	updated, _ := m.handleSlashCommand("/status")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected a system message")
@@ -428,7 +428,7 @@ func TestHandleBridge_AppendsAdjacentReasoningWhenNotStreaming(t *testing.T) {
 func TestSlashCommandDebugToggleAndPreview(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.debugConfigFn = func() string { return "debug config" }
-	m.debugPromptFn = func() string { return "prompt preview body" }
+	m.inspect = &agentInspectOps{debugPrompt: func() string { return "prompt preview body" }}
 
 	updated, _ := m.handleSlashCommand("/debug on")
 	if !updated.debugPromptPreview {
@@ -448,12 +448,12 @@ func TestSlashCommandDebugToggleAndPreview(t *testing.T) {
 
 func TestSlashCommandResumeRestoresSession(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.sessionRestoreFn = func(sessionID string) (string, error) {
+	m.session = &agentSessionOps{restore: func(sessionID string) (string, error) {
 		if sessionID != "sess-123" {
 			t.Fatalf("unexpected session id: %s", sessionID)
 		}
 		return "Restored session sess-123.", nil
-	}
+	}}
 	updated, cmd := m.handleSlashCommand("/resume sess-123")
 	if !updated.streaming {
 		t.Fatal("expected /resume to enter busy state")
@@ -487,12 +487,12 @@ func TestSlashCommandResumeOpensPicker(t *testing.T) {
 	}
 
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.sessionRestoreFn = func(sessionID string) (string, error) {
+	m.session = &agentSessionOps{restore: func(sessionID string) (string, error) {
 		if sessionID != "sess-picker" {
 			t.Fatalf("unexpected session id: %s", sessionID)
 		}
 		return "Restored session sess-picker.", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/resume")
 	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayResume {
 		t.Fatal("expected resume picker overlay")
@@ -565,7 +565,7 @@ func TestSlashCommandTraceRendersLastTrace(t *testing.T) {
 
 func TestSlashCommandAgentValidation(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.taskListFn = func(status string, limit int) (string, error) { return "ok", nil }
+	m.task = &agentTaskOps{list: func(status string, limit int) (string, error) { return "ok", nil }}
 	updated, _ := m.handleSlashCommand("/agent bad")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected validation message")
@@ -596,7 +596,7 @@ func TestSlashCommandAgentOpensPicker(t *testing.T) {
 	}
 
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.taskListFn = func(status string, limit int) (string, error) { return "legacy list", nil }
+	m.task = &agentTaskOps{list: func(status string, limit int) (string, error) { return "legacy list", nil }}
 	updated, _ := m.handleSlashCommand("/agent")
 	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayAgent {
 		t.Fatal("expected agent picker overlay")
@@ -608,13 +608,15 @@ func TestSlashCommandAgentOpensPicker(t *testing.T) {
 
 func TestSlashCommandAgentCancel(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.taskCancelFn = func(taskID, reason string) (string, error) {
-		if taskID != "t1" {
-			t.Fatalf("unexpected taskID: %s", taskID)
-		}
-		return "cancelled", nil
+	m.task = &agentTaskOps{
+		cancel: func(taskID, reason string) (string, error) {
+			if taskID != "t1" {
+				t.Fatalf("unexpected taskID: %s", taskID)
+			}
+			return "cancelled", nil
+		},
+		list: func(status string, limit int) (string, error) { return "ok", nil },
 	}
-	m.taskListFn = func(status string, limit int) (string, error) { return "ok", nil }
 	updated, _ := m.handleSlashCommand("/agent cancel t1 because")
 	if len(updated.messages) == 0 {
 		t.Fatal("expected cancel output message")
@@ -683,12 +685,12 @@ func TestSlashCommandForkOpensPicker(t *testing.T) {
 	}
 
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.checkpointForkFn = func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
+	m.checkpoint = &agentCheckpointOps{fork: func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
 		if sourceKind != string(checkpoint.ForkSourceSession) || sourceID != "sess-fork" || !restoreWorktree {
 			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restoreWorktree)
 		}
 		return "Forked thread sess-fork.", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/fork")
 	if updated.activeOverlay() == nil || updated.activeOverlay().ID() != overlayFork {
 		t.Fatal("expected fork picker overlay")
@@ -1018,9 +1020,9 @@ func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 	m.result = "done"
 	m.queuedInputs = []string{"queued"}
 	m.textarea.SetValue("/new")
-	m.newSessionFn = func() (string, error) {
+	m.session = &agentSessionOps{newSess: func() (string, error) {
 		return "Previous thread sess_1 auto-saved.\nSwitched to new thread sess_2.", nil
-	}
+	}}
 
 	updated, cmd := m.handleSlashCommand("/new")
 	if !updated.streaming {
@@ -1054,9 +1056,9 @@ func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
-	m.newSessionFn = func() (string, error) {
+	m.session = &agentSessionOps{newSess: func() (string, error) {
 		return "", errors.New("cannot create a new thread while a run is active")
-	}
+	}}
 
 	updated, cmd := m.handleSlashCommand("/new")
 	updated = applyAsyncChatCmd(t, updated, cmd)
@@ -1074,12 +1076,12 @@ func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 
 func TestSlashCommandCheckpointListSuccess(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.checkpointListFn = func(limit int) (string, error) {
+	m.checkpoint = &agentCheckpointOps{list: func(limit int) (string, error) {
 		if limit != 20 {
 			t.Fatalf("limit = %d, want 20", limit)
 		}
 		return "Checkpoints:\n- cp-1", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/checkpoint list")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "cp-1") {
@@ -1089,12 +1091,12 @@ func TestSlashCommandCheckpointListSuccess(t *testing.T) {
 
 func TestSlashCommandCheckpointShowSuccess(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.checkpointShowFn = func(checkpointID string) (string, error) {
+	m.checkpoint = &agentCheckpointOps{show: func(checkpointID string) (string, error) {
 		if checkpointID != "cp-1" {
 			t.Fatalf("checkpointID = %q, want cp-1", checkpointID)
 		}
 		return "Checkpoint: cp-1\n  metadata: source, trigger", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/checkpoint show cp-1")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "Checkpoint: cp-1") {
@@ -1104,12 +1106,12 @@ func TestSlashCommandCheckpointShowSuccess(t *testing.T) {
 
 func TestSlashCommandCheckpointShowLatestSuccess(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.checkpointShowFn = func(checkpointID string) (string, error) {
+	m.checkpoint = &agentCheckpointOps{show: func(checkpointID string) (string, error) {
 		if checkpointID != "latest" {
 			t.Fatalf("checkpointID = %q, want latest", checkpointID)
 		}
 		return "Checkpoint: cp-latest", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/checkpoint show latest")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "cp-latest") {
@@ -1128,9 +1130,9 @@ func TestSlashCommandCheckpointShowUnavailable(t *testing.T) {
 
 func TestSlashCommandCheckpointShowRequiresID(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.checkpointShowFn = func(checkpointID string) (string, error) {
+	m.checkpoint = &agentCheckpointOps{show: func(checkpointID string) (string, error) {
 		return "", nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/checkpoint show")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgError || !strings.Contains(last.content, "Usage: /checkpoint show <checkpoint_id|latest>") {
@@ -1149,12 +1151,12 @@ func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 	m.finished = true
 	m.result = "done"
 	m.queuedInputs = []string{"queued"}
-	m.checkpointReplayFn = func(checkpointID, mode string, restore bool) (string, error) {
+	m.checkpoint = &agentCheckpointOps{replay: func(checkpointID, mode string, restore bool) (string, error) {
 		if checkpointID != "cp-1" || mode != "rerun" || !restore {
 			t.Fatalf("unexpected replay args id=%q mode=%q restore=%v", checkpointID, mode, restore)
 		}
 		return "Switched to replay session sess_2 from checkpoint cp-1 (rerun).", nil
-	}
+	}}
 	updated, cmd := m.handleSlashCommand("/checkpoint replay cp-1 rerun restore")
 	if !updated.streaming {
 		t.Fatal("expected replay to enter busy state")
@@ -1178,12 +1180,12 @@ func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
-	m.checkpointReplayFn = func(checkpointID, mode string, restore bool) (string, error) {
+	m.checkpoint = &agentCheckpointOps{replay: func(checkpointID, mode string, restore bool) (string, error) {
 		if checkpointID != "" || mode != "rerun" || !restore {
 			t.Fatalf("unexpected replay args id=%q mode=%q restore=%v", checkpointID, mode, restore)
 		}
 		return "Switched to replay session sess_latest from checkpoint cp-latest (rerun).", nil
-	}
+	}}
 	updated, cmd := m.handleSlashCommand("/checkpoint replay rerun restore")
 	updated = applyAsyncChatCmd(t, updated, cmd)
 	last := updated.messages[0]
@@ -1198,12 +1200,12 @@ func TestSlashCommandForkLatestShorthand(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
-	m.checkpointForkFn = func(sourceKind, sourceID string, restore bool) (string, error) {
+	m.checkpoint = &agentCheckpointOps{fork: func(sourceKind, sourceID string, restore bool) (string, error) {
 		if sourceKind != string(checkpoint.ForkSourceCheckpoint) || sourceID != "" || !restore {
 			t.Fatalf("unexpected fork args kind=%q id=%q restore=%v", sourceKind, sourceID, restore)
 		}
 		return "Switched to forked thread sess_latest from checkpoint cp-latest.", nil
-	}
+	}}
 	updated, cmd := m.handleSlashCommand("/fork latest restore")
 	updated = applyAsyncChatCmd(t, updated, cmd)
 	last := updated.messages[0]
@@ -1399,10 +1401,10 @@ func TestSlashCommandFastUpdatesPromptMode(t *testing.T) {
 
 	refreshed := false
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.refreshSystemPromptFn = func() error {
+	m.inspect = &agentInspectOps{refreshSP: func() error {
 		refreshed = true
 		return nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/fast on")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "Fast mode on") {
@@ -1420,10 +1422,10 @@ func TestSlashCommandPersonalityUpdatesPromptMode(t *testing.T) {
 
 	refreshed := false
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.refreshSystemPromptFn = func() error {
+	m.inspect = &agentInspectOps{refreshSP: func() error {
 		refreshed = true
 		return nil
-	}
+	}}
 	updated, _ := m.handleSlashCommand("/personality pragmatic")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem || !strings.Contains(last.content, "pragmatic") {

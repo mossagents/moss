@@ -3,12 +3,13 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	kernelsession "github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"strings"
 )
 
 type resumePickerState struct {
@@ -45,7 +46,7 @@ func newResumePickerState(workspace string) (*resumePickerState, error) {
 }
 
 func (m chatModel) openResumePicker() (chatModel, tea.Cmd) {
-	if m.sessionRestoreFn == nil {
+	if m.session == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Resume is unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -77,7 +78,7 @@ func (m chatModel) handleResumePickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 			thread := m.resumePicker.threads[idx].Thread
 			m = m.closeResumeOverlay()
 			return m.startThreadSwitch(fmt.Sprintf("Resuming thread %s...", thread.SessionID), func() (string, error) {
-				out, err := m.sessionRestoreFn(thread.SessionID)
+				out, err := m.session.restore(thread.SessionID)
 				if err != nil {
 					return "", fmt.Errorf("failed to resume thread: %v", err)
 				}
@@ -131,7 +132,7 @@ func newForkPickerState(workspace string) (*forkPickerState, error) {
 }
 
 func (m chatModel) openForkPicker() (chatModel, tea.Cmd) {
-	if m.checkpointForkFn == nil {
+	if m.checkpoint == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Fork is unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -167,7 +168,7 @@ func (m chatModel) handleForkPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 			label := strings.TrimSpace(forkSourceTitle(source))
 			m = m.closeForkOverlay()
 			return m.startThreadSwitch(fmt.Sprintf("Forking from %s...", label), func() (string, error) {
-				out, err := m.checkpointForkFn(string(source.Kind), source.SourceID, restore)
+				out, err := m.checkpoint.fork(string(source.Kind), source.SourceID, restore)
 				if err != nil {
 					return "", fmt.Errorf("failed to fork thread: %v", err)
 				}
@@ -249,12 +250,12 @@ func (m chatModel) handleAgentPickerKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 	case "down":
 		m.agentPicker.list.Move(1)
 	case "c":
-		if m.taskCancelFn == nil {
+		if m.task == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread cancellation is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.taskCancelFn(task.Handle.ID, "cancelled by user from agent picker")
+		out, err := m.task.cancel(task.Handle.ID, "cancelled by user from agent picker")
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to cancel agent thread: %v", err)})
 		} else {

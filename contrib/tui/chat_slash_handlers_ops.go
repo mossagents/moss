@@ -20,7 +20,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 	}
 	switch strings.ToLower(strings.TrimSpace(args[0])) {
 	case "list":
-		if m.checkpointListFn == nil {
+		if m.checkpoint == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint list is unavailable."})
 			m.refreshViewport()
 			return m, nil
@@ -35,7 +35,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 			}
 			limit = v
 		}
-		out, err := m.checkpointListFn(limit)
+		out, err := m.checkpoint.list(limit)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list checkpoints: %v", err)})
 		} else {
@@ -44,7 +44,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 		m.refreshViewport()
 		return m, nil
 	case "show":
-		if m.checkpointShowFn == nil {
+		if m.checkpoint == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint detail is unavailable."})
 			m.refreshViewport()
 			return m, nil
@@ -54,7 +54,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 			m.refreshViewport()
 			return m, nil
 		}
-		out, err := m.checkpointShowFn(strings.TrimSpace(args[1]))
+		out, err := m.checkpoint.show(strings.TrimSpace(args[1]))
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to show checkpoint: %v", err)})
 		} else {
@@ -63,13 +63,13 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 		m.refreshViewport()
 		return m, nil
 	case "create":
-		if m.checkpointCreateFn == nil {
+		if m.checkpoint == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint creation is unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
 		note := strings.TrimSpace(strings.Join(args[1:], " "))
-		out, err := m.checkpointCreateFn(note)
+		out, err := m.checkpoint.create(note)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to create checkpoint: %v", err)})
 		} else {
@@ -78,7 +78,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 		m.refreshViewport()
 		return m, nil
 	case "replay":
-		if m.checkpointReplayFn == nil {
+		if m.checkpoint == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Checkpoint replay is unavailable."})
 			m.refreshViewport()
 			return m, nil
@@ -114,7 +114,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 			label = checkpointID
 		}
 		return m.startThreadSwitch(fmt.Sprintf("Replaying checkpoint %s...", label), func() (string, error) {
-			out, err := m.checkpointReplayFn(checkpointID, mode, restore)
+			out, err := m.checkpoint.replay(checkpointID, mode, restore)
 			if err != nil {
 				return "", fmt.Errorf("failed to replay checkpoint: %v", err)
 			}
@@ -132,7 +132,7 @@ func handleCheckpointSlashCommand(m chatModel, args []string, _ string, _ string
 }
 
 func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
-	if m.checkpointForkFn == nil {
+	if m.checkpoint == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Fork is unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -179,7 +179,7 @@ func handleForkSlashCommand(m chatModel, args []string, _ string, _ string) (cha
 		label += " " + sourceID
 	}
 	return m.startThreadSwitch(fmt.Sprintf("Forking from %s...", strings.TrimSpace(label)), func() (string, error) {
-		out, err := m.checkpointForkFn(sourceKind, sourceID, restore)
+		out, err := m.checkpoint.fork(sourceKind, sourceID, restore)
 		if err != nil {
 			return "", fmt.Errorf("failed to fork thread: %v", err)
 		}
@@ -191,7 +191,7 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 	if len(args) == 0 {
 		return m.openAgentPicker()
 	}
-	if m.taskListFn == nil {
+	if m.task == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread controls are unavailable."})
 		m.refreshViewport()
 		return m, nil
@@ -225,7 +225,7 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 			}
 			limit = v
 		}
-		out, err := m.taskListFn(status, limit)
+		out, err := m.task.list(status, limit)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list agent threads: %v", err)})
 		} else {
@@ -240,7 +240,7 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 		return m, nil
 	}
 	if args[0] == "cancel" {
-		if m.taskCancelFn == nil {
+		if m.task == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread cancellation is unavailable."})
 			m.refreshViewport()
 			return m, nil
@@ -255,7 +255,7 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 		if len(args) >= 3 {
 			reason = strings.Join(args[2:], " ")
 		}
-		out, err := m.taskCancelFn(agentID, reason)
+		out, err := m.task.cancel(agentID, reason)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to cancel agent thread: %v", err)})
 		} else {
@@ -264,13 +264,13 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 		m.refreshViewport()
 		return m, nil
 	}
-	if m.taskQueryFn == nil {
+	if m.task == nil || m.task.query == nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: "Agent thread query is unavailable."})
 		m.refreshViewport()
 		return m, nil
 	}
 	agentID := strings.TrimSpace(args[0])
-	out, err := m.taskQueryFn(agentID)
+	out, err := m.task.query(agentID)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to query agent thread: %v", err)})
 	} else {
@@ -283,8 +283,8 @@ func handleAgentSlashCommand(m chatModel, args []string, _ string, _ string) (ch
 func handlePermissionsSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
 		info := "Permission policy information is unavailable."
-		if m.permissionSummaryFn != nil {
-			info = m.permissionSummaryFn()
+		if m.inspect != nil && m.inspect.permSummary != nil {
+			info = m.inspect.permSummary()
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
 		m.refreshViewport()
@@ -313,14 +313,14 @@ func handlePermissionsSlashCommand(m chatModel, args []string, _ string, _ strin
 			m.refreshViewport()
 			return m, nil
 		}
-		if m.setPermissionFn == nil {
+		if m.inspect == nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Runtime permissions are unavailable."})
 			m.refreshViewport()
 			return m, nil
 		}
 		toolName := strings.TrimSpace(args[1])
 		mode := strings.ToLower(strings.TrimSpace(args[2]))
-		out, err := m.setPermissionFn(toolName, mode)
+		out, err := m.inspect.setPerm(toolName, mode)
 		if err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to set permission: %v", err)})
 		} else {

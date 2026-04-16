@@ -138,9 +138,7 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model
 	m.chat.approvalMode = m.config.ApprovalMode
 	m.chat.scheduleCtrl = m.config.ScheduleController
 
-	m.bindSessionCallbacks(agent)
-	m.bindCheckpointCallbacks(agent)
-	m.bindTaskCallbacks(agent)
+	m.bindAgentOps(agent)
 	m.bindDebugCallbacks(agent)
 	m.bindToolingCallbacks(agent)
 
@@ -202,64 +200,35 @@ func (m appModel) fallbackChatUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *appModel) bindSessionCallbacks(agent *agentState) {
-	m.chat.sessionInfoFn = agent.sessionSummary
-	m.chat.sessionListFn = func(limit int) (string, error) {
-		return agent.listPersistedSessions(limit)
+func (m *appModel) bindAgentOps(agent *agentState) {
+	m.chat.session = &agentSessionOps{
+		info:    agent.sessionSummary,
+		list:    agent.listPersistedSessions,
+		restore: agent.restoreSession,
+		newSess: agent.newSession,
+		offload: agent.offloadContext,
 	}
-	m.chat.sessionRestoreFn = func(sessionID string) (string, error) {
-		return agent.restoreSession(sessionID)
+	m.chat.checkpoint = &agentCheckpointOps{
+		list:   agent.listPersistedCheckpoints,
+		show:   agent.showPersistedCheckpoint,
+		create: agent.createCheckpoint,
+		fork:   agent.forkSession,
+		replay: agent.replayCheckpoint,
 	}
-	m.chat.newSessionFn = func() (string, error) {
-		return agent.newSession()
+	m.chat.task = &agentTaskOps{
+		list:   agent.listTasks,
+		query:  agent.queryTask,
+		cancel: agent.cancelTask,
 	}
-	m.chat.offloadFn = func(keepRecent int, note string) (string, error) {
-		return agent.offloadContext(keepRecent, note)
-	}
-}
-
-func (m *appModel) bindCheckpointCallbacks(agent *agentState) {
-	m.chat.checkpointListFn = func(limit int) (string, error) {
-		return agent.listPersistedCheckpoints(limit)
-	}
-	m.chat.checkpointShowFn = func(checkpointID string) (string, error) {
-		return agent.showPersistedCheckpoint(checkpointID)
-	}
-	m.chat.checkpointCreateFn = func(note string) (string, error) {
-		return agent.createCheckpoint(note)
-	}
-	m.chat.checkpointForkFn = func(sourceKind, sourceID string, restoreWorktree bool) (string, error) {
-		return agent.forkSession(sourceKind, sourceID, restoreWorktree)
-	}
-	m.chat.checkpointReplayFn = func(checkpointID, mode string, restoreWorktree bool) (string, error) {
-		return agent.replayCheckpoint(checkpointID, mode, restoreWorktree)
-	}
-}
-
-func (m *appModel) bindTaskCallbacks(agent *agentState) {
-	m.chat.taskListFn = func(status string, limit int) (string, error) {
-		return agent.listTasks(status, limit)
-	}
-	m.chat.taskQueryFn = func(taskID string) (string, error) {
-		return agent.queryTask(taskID)
-	}
-	m.chat.taskCancelFn = func(taskID, reason string) (string, error) {
-		return agent.cancelTask(taskID, reason)
+	m.chat.inspect = &agentInspectOps{
+		permSummary: agent.permissionSummary,
+		setPerm:     agent.setPermission,
+		refreshSP:   agent.refreshSystemPrompt,
+		debugPrompt: agent.debugPrompt,
 	}
 }
 
 func (m *appModel) bindDebugCallbacks(agent *agentState) {
-	m.chat.permissionSummaryFn = agent.permissionSummary
-	m.chat.setPermissionFn = agent.setPermission
-	m.chat.refreshSystemPromptFn = agent.refreshSystemPrompt
-	m.chat.debugPromptFn = func() string {
-		agent.mu.Lock()
-		defer agent.mu.Unlock()
-		if agent.sess == nil {
-			return ""
-		}
-		return strings.TrimSpace(agent.sess.Config.SystemPrompt)
-	}
 	m.chat.debugConfigFn = func() string {
 		baseSource, dynamicSections, sourceChain := agent.promptDebugInfo()
 		report := product.BuildDebugConfigReport(

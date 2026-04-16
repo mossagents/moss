@@ -108,28 +108,15 @@ type chatModel struct {
 	ready     bool
 
 	// agent 交互
-	sendFn                func(string, []model.ContentPart) // 发送用户消息给 agent
-	cancelRunFn           func() bool                       // 取消当前运行中的任务
-	skillListFn           func() string                     // 查询已加载 skills
-	sessionInfoFn         func() string
-	offloadFn             func(keepRecent int, note string) (string, error)
-	taskListFn            func(status string, limit int) (string, error)
-	taskQueryFn           func(taskID string) (string, error)
-	taskCancelFn          func(taskID, reason string) (string, error)
-	scheduleCtrl          scheduling.ScheduleController
-	sessionListFn         func(limit int) (string, error)
-	checkpointListFn      func(limit int) (string, error)
-	checkpointShowFn      func(checkpointID string) (string, error)
-	checkpointCreateFn    func(note string) (string, error)
-	checkpointForkFn      func(sourceKind, sourceID string, restoreWorktree bool) (string, error)
-	checkpointReplayFn    func(checkpointID, mode string, restoreWorktree bool) (string, error)
-	sessionRestoreFn      func(sessionID string) (string, error)
-	newSessionFn          func() (string, error)
-	permissionSummaryFn   func() string
-	setPermissionFn       func(toolName, mode string) (string, error)
-	debugConfigFn         func() string
-	debugPromptFn         func() string
-	refreshSystemPromptFn func() error
+	sendFn      func(string, []model.ContentPart) // 发送用户消息给 agent
+	cancelRunFn func() bool                        // 取消当前运行中的任务
+	skillListFn func() string                      // 查询已加载 skills
+	debugConfigFn func() string                    // 构建 debug 配置报告
+	session    *agentSessionOps
+	checkpoint *agentCheckpointOps
+	task       *agentTaskOps
+	inspect    *agentInspectOps
+	scheduleCtrl scheduling.ScheduleController
 	pendAsk               *bridgeAsk // 当前阻塞的 Ask 请求
 	askForm               *askFormState
 	scheduleBrowser       *scheduleBrowserState
@@ -1151,8 +1138,8 @@ func (m chatModel) renderStatusSummary() string {
 		fmt.Fprintf(&b, "Pending attachments: %d\n", len(m.pendingAttachments))
 	}
 	fmt.Fprintf(&b, "Experimental: %s", strings.Join(effectiveExperimentalFeatures(m.experimentalFeatures), ", "))
-	if m.sessionInfoFn != nil {
-		info := strings.TrimSpace(m.sessionInfoFn())
+	if m.session != nil && m.session.info != nil {
+		info := strings.TrimSpace(m.session.info())
 		if info != "" {
 			b.WriteString("\n\n")
 			b.WriteString(info)
