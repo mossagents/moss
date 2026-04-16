@@ -14,7 +14,7 @@ import (
 )
 
 // initKernelCmd 异步创建 kernel + session。
-func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
+func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) tea.Cmd {
 	return func() tea.Msg {
 		state, err := newKernelInitState(cfg, wCfg, bridge)
 		if err != nil {
@@ -32,7 +32,7 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) tea.Cmd {
 type kernelInitState struct {
 	cfg      Config
 	wCfg     WelcomeConfig
-	bridge   *BridgeIO
+	bridge   *bridgeIO
 	provider string
 
 	k      *kernel.Kernel
@@ -44,7 +44,7 @@ type kernelInitState struct {
 	notices []string
 }
 
-func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *BridgeIO) (*kernelInitState, error) {
+func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) (*kernelInitState, error) {
 	provider := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
 	k, ctx, cancel, err := buildRuntimeKernel(cfg, wCfg, bridge)
 	if err != nil {

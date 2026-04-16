@@ -468,13 +468,13 @@ func progressPhaseLabel(phase string) string {
 
 type executionProgressObserver struct {
 	observe.NoOpObserver
-	bridge    *BridgeIO
+	bridge    *bridgeIO
 	sessionID string
 	mu        sync.Mutex
 	state     executionProgressState
 }
 
-func newExecutionProgressObserver(bridge *BridgeIO, sess *session.Session) observe.Observer {
+func newExecutionProgressObserver(bridge *bridgeIO, sess *session.Session) observe.Observer {
 	if bridge == nil || sess == nil || strings.TrimSpace(sess.ID) == "" {
 		return nil
 	}
@@ -749,7 +749,7 @@ func stateEntryEventType(entry rstate.StateEntry) observe.ExecutionEventType {
 	return observe.ExecutionEventType(title)
 }
 
-func publishProgressReplay(bridge *BridgeIO, k *kernel.Kernel, sess *session.Session) {
+func publishProgressReplay(bridge *bridgeIO, k *kernel.Kernel, sess *session.Session) {
 	if bridge == nil || sess == nil {
 		return
 	}

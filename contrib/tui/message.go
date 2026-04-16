@@ -37,7 +37,14 @@ type chatMessage struct {
 	meta    map[string]any
 }
 
-var markdownRendererCache sync.Map // map[int]*glamour.TermRenderer
+// markdownRenderer cache: single-slot, keyed by width.
+// Terminals typically use one width at a time; a sync.Map would grow
+// unboundedly on repeated resizes whereas this always holds at most one entry.
+var (
+	mdRendererMu    sync.Mutex
+	mdRendererWidth int
+	mdRendererInst  *glamour.TermRenderer
+)
 
 // renderMessage 渲染单条消息为带样式的字符串。
 func renderMessage(m chatMessage, width int) string {
@@ -301,8 +308,10 @@ func isOrderedMarkdownLine(line string) bool {
 }
 
 func markdownRenderer(width int) (*glamour.TermRenderer, error) {
-	if v, ok := markdownRendererCache.Load(width); ok {
-		return v.(*glamour.TermRenderer), nil
+	mdRendererMu.Lock()
+	defer mdRendererMu.Unlock()
+	if mdRendererInst != nil && mdRendererWidth == width {
+		return mdRendererInst, nil
 	}
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
@@ -311,7 +320,8 @@ func markdownRenderer(width int) (*glamour.TermRenderer, error) {
 	if err != nil {
 		return nil, err
 	}
-	markdownRendererCache.Store(width, r)
+	mdRendererInst = r
+	mdRendererWidth = width
 	return r, nil
 }
 

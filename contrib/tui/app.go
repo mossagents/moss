@@ -85,7 +85,7 @@ type agentState struct {
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	runCancel                context.CancelFunc
-	bridge                   *BridgeIO
+	bridge                   *bridgeIO
 	workspace                string
 	trust                    string
 	profile                  string
@@ -801,7 +801,7 @@ type appModel struct {
 	welcome             welcomeModel
 	chat                chatModel
 	config              Config
-	bridgeIO            *BridgeIO
+	bridgeIO            *bridgeIO
 	agent               *agentState // 共享指针，跨值传递保持一致
 	width               int
 	height              int
@@ -821,7 +821,7 @@ func Run(cfg Config) error {
 	if err := ValidateExtensions(cfg.Extensions); err != nil {
 		return err
 	}
-	bridge := NewBridgeIO()
+	bridge := newBridgeIO()
 	if provider, providerName, model, ok := persistedModelOverride(); ok {
 		cfg.Provider = provider
 		cfg.ProviderName = providerName

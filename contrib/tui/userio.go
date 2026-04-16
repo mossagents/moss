@@ -21,27 +21,27 @@ type bridgeAsk struct {
 	replyCh chan io.InputResponse
 }
 
-// BridgeIO 实现 io.UserIO，桥接 kernel 与 Bubble Tea TUI。
-// kernel 在后台 goroutine 调用 Send/Ask，BridgeIO 将消息发送到 tea.Program。
-type BridgeIO struct {
+// bridgeIO 实现 io.UserIO，桥接 kernel 与 Bubble Tea TUI。
+// kernel 在后台 goroutine 调用 Send/Ask，bridgeIO 将消息发送到 tea.Program。
+type bridgeIO struct {
 	program *tea.Program
 	mu      sync.Mutex
 }
 
-// NewBridgeIO 创建桥接器。需要在 tea.Program 创建后设置 program。
-func NewBridgeIO() *BridgeIO {
-	return &BridgeIO{}
+// newBridgeIO 创建桥接器。需要在 tea.Program 创建后设置 program。
+func newBridgeIO() *bridgeIO {
+	return &bridgeIO{}
 }
 
 // SetProgram 设置 tea.Program 引用（需要在 Program 创建后立即调用）。
-func (b *BridgeIO) SetProgram(p *tea.Program) {
+func (b *bridgeIO) SetProgram(p *tea.Program) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.program = p
 }
 
 // Send 向用户推送内容（非阻塞，通过 tea.Program.Send 注入消息）。
-func (b *BridgeIO) Send(_ context.Context, msg io.OutputMessage) error {
+func (b *bridgeIO) Send(_ context.Context, msg io.OutputMessage) error {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
@@ -53,7 +53,7 @@ func (b *BridgeIO) Send(_ context.Context, msg io.OutputMessage) error {
 }
 
 // Refresh 请求 TUI 立即重绘一次，适合外部状态面板刷新。
-func (b *BridgeIO) Refresh() {
+func (b *bridgeIO) Refresh() {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
@@ -63,7 +63,7 @@ func (b *BridgeIO) Refresh() {
 	p.Send(refreshMsg{})
 }
 
-func (b *BridgeIO) SendProgress(snapshot executionProgressState, setCurrent bool) {
+func (b *bridgeIO) SendProgress(snapshot executionProgressState, setCurrent bool) {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
@@ -77,7 +77,7 @@ func (b *BridgeIO) SendProgress(snapshot executionProgressState, setCurrent bool
 }
 
 // Ask 向用户请求输入（阻塞当前 goroutine，等待 TUI 回复）。
-func (b *BridgeIO) Ask(ctx context.Context, req io.InputRequest) (io.InputResponse, error) {
+func (b *bridgeIO) Ask(ctx context.Context, req io.InputRequest) (io.InputResponse, error) {
 	b.mu.Lock()
 	p := b.program
 	b.mu.Unlock()
