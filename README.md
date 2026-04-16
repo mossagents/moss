@@ -175,6 +175,7 @@ For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, har
 | Path | Purpose |
 |---|---|
 | `kernel\` | Core runtime primitives (Agent, `RunAgent`, Session, Event, Tool, Plugin) — independent Go module |
+| `kernel\patterns\` | Agent orchestration primitives (Sequential, Parallel, Loop, Supervisor, Research) |
 | `harness\` | Composable orchestration layer (Feature, Backend, Harness) — independent Go module, depends on kernel |
 | `harness\appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
 | `harness\appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |

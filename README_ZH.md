@@ -175,6 +175,7 @@ func main() {
 | 路径 | 作用 |
 |---|---|
 | `kernel\` | 核心运行时原语（Agent、`RunAgent`、Session、Event、Tool、Plugin）— 独立 Go 模块 |
+| `kernel\patterns\` | Agent 编排原语（Sequential、Parallel、Loop、Supervisor、Research） |
 | `harness\` | 可组合编排层（Feature、Backend、Harness）— 独立 Go 模块，依赖 kernel |
 | `harness\appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
 | `harness\appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |

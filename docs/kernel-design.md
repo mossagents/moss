@@ -46,18 +46,33 @@ tool := kernel.NewFunctionTool("greet", "Say hello",
 
 ### Plugin
 
-Plugin 聚合多个生命周期 Hook 到一个单元，替换原有的 `hooks.Registry` 和单独的 Hook Option：
+Plugin 是将多个生命周期 Hook/Interceptor 聚合到一个单元的接口：
 
 ```go
-type Plugin struct {
-    Name        string
-    BeforeModel func(ctx *RunContext, req *LLMRequest) error
-    AfterModel  func(ctx *RunContext, resp *LLMResponse) error
-    BeforeTool  func(ctx *ToolContext, tool Tool, args json.RawMessage) error
-    AfterTool   func(ctx *ToolContext, tool Tool, result json.RawMessage) error
-    // ...
+type Plugin interface {
+    Name() string   // 唯一标识
+    Order() int     // 执行优先级（越小越先执行）
+    Install(reg *hooks.Registry)
 }
 ```
+
+`Group` 是为单阶段或简单多阶段插件提供的流式构建器，无需手写接口实现：
+
+```go
+g := plugin.NewGroup("my-plugin", 10)
+g.OnBeforeLLM(func(ctx context.Context, ev *hooks.LLMEvent) error {
+    // 在每次 LLM 调用前执行
+    return nil
+})
+g.InterceptToolLifecycle(func(ctx context.Context, ev *hooks.ToolEvent, next func() error) error {
+    // 拦截工具调用
+    return next()
+})
+kernel.New(kernel.WithPlugin(g))
+```
+
+复杂插件可直接实现 `Plugin` 接口，并在 `Install` 中手动注册多个 hook/interceptor。
+`plugin/shorthand.go` 提供了 `BeforeLLMHook`、`ToolLifecycleHook` 等快捷构造函数。
 
 ## Kernel 组合的能力
 
@@ -111,13 +126,16 @@ Shutdown
 |---|---|
 | `kernel\model` | LLM 接口、消息与 tool-call 数据结构 |
 | `kernel\io` | `UserIO`、审批与结构化策略上下文 |
-| `kernel\tool` | 工具规范、注册表与风险级别 |
-| `kernel\session` | 会话、状态、预算、持久化接口 |
-| `kernel\middleware` | 拦截链与 builtins policy / logger 等（通过 Plugin 安装） |
+| `kernel\tool` | 工具规范、注册表、风险级别与 `ToolCallContext` |
+| `kernel\session` | 会话、`ScopedState`、预算、持久化接口 |
+| `kernel\hooks` | Hook/Interceptor pipeline、事件类型（LLMEvent、ToolEvent、ErrorEvent）与 builtins |
+| `kernel\plugin` | Plugin 接口、`Group` 构建器与快捷构造函数 |
+| `kernel\patterns` | Agent 编排原语（Sequential、Parallel、Loop、Supervisor、Research） |
 | `kernel\loop` | Agent 执行循环 |
 | `kernel\workspace` | `Workspace` / `Executor` / isolation / snapshot 边界 |
 | `kernel\task` | task runtime、mailbox 等协作抽象 |
 | `kernel\checkpoint` | 会话检查点抽象 |
+| `kernel\artifact` | Artifact 存储接口与内存实现 |
 | `kernel\observe` | observer 事件、归一化指标、release gates |
 | `kernel\retry` | retry 与 breaker 原语 |
 | `kernel\prompt` | prompt registry |
