@@ -7,7 +7,7 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type MCPConfigSource string

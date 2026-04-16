@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 // LineageKind 表示线程/检查点目录里的统一引用类型。

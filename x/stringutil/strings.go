@@ -1,4 +1,4 @@
-// Package stringutil provides lightweight string helpers shared across the module.
+// Package stringutil provides lightweight string helpers shared across moss modules.
 package stringutil
 
 import "strings"

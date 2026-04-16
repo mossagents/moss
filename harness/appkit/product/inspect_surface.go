@@ -10,7 +10,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 

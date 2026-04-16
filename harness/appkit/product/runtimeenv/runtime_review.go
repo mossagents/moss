@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness/appkit/product/changes"
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 	"github.com/mossagents/moss/kernel/workspace"
 	"github.com/mossagents/moss/harness/sandbox"
 )

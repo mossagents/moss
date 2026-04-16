@@ -8,7 +8,7 @@ import (
 
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type DebugConfigReport struct {

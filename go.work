@@ -1,4 +1,4 @@
-go 1.25.0
+go 1.25.8
 
 use (
 	./apps/mosscode
@@ -16,4 +16,5 @@ use (
 	./examples/websocket
 	./harness
 	./kernel
+	./x
 )

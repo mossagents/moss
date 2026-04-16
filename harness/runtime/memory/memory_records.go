@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 func NormalizePath(path string) string {

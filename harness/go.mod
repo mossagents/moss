@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v0.45.0
 	github.com/mossagents/moss/kernel v0.0.0-00010101000000-000000000000
+	github.com/mossagents/moss/x v0.0.0-00010101000000-000000000000
 	github.com/openai/openai-go v1.12.0
 	github.com/spf13/pflag v1.0.10
 	google.golang.org/genai v1.52.1
@@ -57,3 +58,5 @@ require (
 )
 
 replace github.com/mossagents/moss/kernel => ../kernel
+
+replace github.com/mossagents/moss/x => ../x

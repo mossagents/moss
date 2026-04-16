@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mossagents/moss/harness/stringutil"
+	"github.com/mossagents/moss/x/stringutil"
 
 	config "github.com/mossagents/moss/harness/config"
 	"github.com/spf13/pflag"
