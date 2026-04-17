@@ -14,8 +14,12 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/userio/prompting"
+	"github.com/mossagents/moss/kernel"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func initTestApp(t *testing.T) {
@@ -27,6 +31,38 @@ func initTestApp(t *testing.T) {
 	t.Setenv("LOCALAPPDATA", home)
 	if err := appkit.InitializeApp(appName, nil); err != nil {
 		t.Fatalf("InitializeApp: %v", err)
+	}
+}
+
+func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
+	initTestApp(t)
+	workspace := t.TempDir()
+	resolved := rprofile.ResolvedProfile{
+		Name:         "coding",
+		TaskMode:     "coding",
+		Trust:        "trusted",
+		ApprovalMode: "confirm",
+	}
+	prompt, metadata, err := composeProductSystemPrompt(workspace, resolved.Trust, kernel.New(), resolved, nil)
+	if err != nil {
+		t.Fatalf("composeProductSystemPrompt: %v", err)
+	}
+	for _, want := range []string{"## Environment", "## Operating Mode", "## Product Guidance"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("expected %q in prompt:\n%s", want, prompt)
+		}
+	}
+	if strings.Contains(prompt, "## Tools") {
+		t.Fatalf("unexpected legacy tools section in prompt:\n%s", prompt)
+	}
+	if got := strings.TrimSpace(metadata[prompting.MetadataBaseSourceKey].(string)); got == "" {
+		t.Fatalf("expected compose debug metadata, got %+v", metadata)
+	}
+	if got := metadata[prompting.MetadataProfileNameKey]; got != resolved.Name {
+		t.Fatalf("profile metadata = %v, want %q", got, resolved.Name)
+	}
+	if got := metadata[session.MetadataTaskMode]; got != resolved.TaskMode {
+		t.Fatalf("task_mode metadata = %v, want %q", got, resolved.TaskMode)
 	}
 }
 

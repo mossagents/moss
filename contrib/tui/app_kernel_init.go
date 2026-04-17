@@ -143,7 +143,24 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 }
 
 func (s *kernelInitState) createInteractiveSession() error {
-	metadata := map[string]any{}
+	sessCfg := normalizeSessionConfigDefaults(session.SessionConfig{
+		Goal:       "interactive",
+		Mode:       "interactive",
+		TrustLevel: s.cfg.Trust,
+		Profile:    s.cfg.Profile,
+		MaxSteps:   200,
+	}, s.cfg.Trust, s.cfg.Profile, "interactive", "interactive", 200)
+	if s.cfg.BuildSessionConfig != nil {
+		sessCfg = normalizeSessionConfigDefaults(
+			s.cfg.BuildSessionConfig(s.wCfg.Workspace, s.cfg.Trust, s.cfg.ApprovalMode, s.cfg.Profile, ""),
+			s.cfg.Trust,
+			s.cfg.Profile,
+			"interactive",
+			"interactive",
+			200,
+		)
+	}
+	metadata := preparePromptMetadata(sessCfg, s.cfg.Profile)
 	sysPrompt, err := prompting.ComposeSystemPrompt(
 		s.wCfg.Workspace,
 		s.cfg.Trust,
@@ -156,48 +173,8 @@ func (s *kernelInitState) createInteractiveSession() error {
 		s.cancel()
 		return fmt.Errorf("failed to compose system prompt: %w", err)
 	}
-	if s.cfg.BuildSystemPrompt != nil {
-		sysPrompt = s.cfg.BuildSystemPrompt(s.wCfg.Workspace, s.cfg.Trust)
-	}
-	sessCfg := session.SessionConfig{
-		Goal:         "interactive",
-		Mode:         "interactive",
-		TrustLevel:   s.cfg.Trust,
-		Profile:      s.cfg.Profile,
-		MaxSteps:     200,
-		SystemPrompt: sysPrompt,
-		Metadata:     metadata,
-	}
-	if strings.TrimSpace(s.cfg.Profile) != "" {
-		metadata["profile"] = strings.TrimSpace(s.cfg.Profile)
-	}
-	if _, ok := metadata[session.MetadataTaskMode]; !ok && strings.TrimSpace(s.cfg.Profile) != "" {
-		metadata[session.MetadataTaskMode] = strings.TrimSpace(s.cfg.Profile)
-	}
-	if s.cfg.BuildSessionConfig != nil {
-		sessCfg = s.cfg.BuildSessionConfig(s.wCfg.Workspace, s.cfg.Trust, s.cfg.ApprovalMode, s.cfg.Profile, sysPrompt)
-		if sessCfg.SystemPrompt == "" {
-			sessCfg.SystemPrompt = sysPrompt
-		}
-		if len(sessCfg.Metadata) == 0 {
-			sessCfg.Metadata = metadata
-		}
-		if strings.TrimSpace(sessCfg.Profile) == "" {
-			sessCfg.Profile = s.cfg.Profile
-		}
-		if sessCfg.TrustLevel == "" {
-			sessCfg.TrustLevel = s.cfg.Trust
-		}
-		if sessCfg.Goal == "" {
-			sessCfg.Goal = "interactive"
-		}
-		if sessCfg.Mode == "" {
-			sessCfg.Mode = "interactive"
-		}
-		if sessCfg.MaxSteps == 0 {
-			sessCfg.MaxSteps = 200
-		}
-	}
+	sessCfg.SystemPrompt = sysPrompt
+	sessCfg.Metadata = metadata
 	s.sess, err = s.k.NewSession(s.ctx, sessCfg)
 	if err != nil {
 		s.cancel()
@@ -222,7 +199,6 @@ func (s *kernelInitState) buildAgent() *agentState {
 		buildRunTraceObserver:    s.cfg.BuildRunTraceObserver,
 		buildKernel:              s.cfg.BuildKernel,
 		afterBoot:                s.cfg.AfterBoot,
-		buildSystemPrompt:        s.cfg.BuildSystemPrompt,
 		buildSessionConfig:       s.cfg.BuildSessionConfig,
 		promptConfigInstructions: s.cfg.PromptConfigInstructions,
 		promptModelInstructions:  s.cfg.PromptModelInstructions,

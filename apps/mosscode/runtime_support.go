@@ -12,6 +12,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
@@ -19,13 +20,14 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/harness/logging"
 	providers "github.com/mossagents/moss/harness/providers"
 	"github.com/mossagents/moss/harness/sandbox"
 )
 
 //go:embed templates/system_prompt.tmpl
-var defaultSystemPromptTemplate string
+var defaultPromptInstructionsTemplate string
 
 func initializeCommandRuntime(cfg *config) (func(), error) {
 	auditObserver, auditCloser, err := product.OpenAuditObserver()
@@ -183,13 +185,38 @@ func envConfigured(keys ...string) bool {
 	return false
 }
 
-func buildSystemPrompt(workspace, trust string) string {
+func buildProductPromptInstructions(workspace, trust string) string {
 	ctx := appconfig.DefaultTemplateContext(workspace)
 	if prefs, err := product.LoadTUIConfig(); err == nil {
 		ctx["Personality"] = product.NormalizePersonality(prefs.Personality)
 		ctx["FastMode"] = prefs.FastMode != nil && *prefs.FastMode
 	}
-	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultSystemPromptTemplate, ctx)
+	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultPromptInstructionsTemplate, ctx)
+}
+
+func composeProductSystemPrompt(workspace, trust string, k *kernel.Kernel, resolved rprofile.ResolvedProfile, metadata map[string]any) (string, map[string]any, error) {
+	promptMetadata := make(map[string]any, len(metadata)+2)
+	for key, value := range metadata {
+		promptMetadata[key] = value
+	}
+	if profile := strings.TrimSpace(resolved.Name); profile != "" {
+		promptMetadata[prompting.MetadataProfileNameKey] = profile
+	}
+	if taskMode := strings.TrimSpace(resolved.TaskMode); taskMode != "" {
+		promptMetadata[session.MetadataTaskMode] = taskMode
+	}
+	systemPrompt, err := prompting.ComposeSystemPrompt(
+		workspace,
+		trust,
+		k,
+		buildProductPromptInstructions(workspace, trust),
+		"",
+		promptMetadata,
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return systemPrompt, promptMetadata, nil
 }
 
 func effectiveFlags() *appkit.AppFlags {

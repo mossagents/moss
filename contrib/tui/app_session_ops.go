@@ -136,56 +136,37 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	trust := a.trust
 	approvalMode := a.approvalMode
 	profile := a.profile
-	buildPrompt := a.buildSystemPrompt
 	buildCfg := a.buildSessionConfig
+	configInstructions := a.promptConfigInstructions
+	modelInstructions := a.promptModelInstructions
 	a.mu.Unlock()
 	if k == nil {
 		return nil, errors.New("runtime is unavailable")
 	}
-	metadata := map[string]any{}
-	sysPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, a.promptConfigInstructions, a.promptModelInstructions, metadata)
+	sessCfg := normalizeSessionConfigDefaults(session.SessionConfig{
+		Goal:       "interactive",
+		Mode:       "interactive",
+		TrustLevel: trust,
+		Profile:    profile,
+		MaxSteps:   200,
+	}, trust, profile, "interactive", "interactive", 200)
+	if buildCfg != nil {
+		sessCfg = normalizeSessionConfigDefaults(
+			buildCfg(workspace, trust, approvalMode, profile, ""),
+			trust,
+			profile,
+			"interactive",
+			"interactive",
+			200,
+		)
+	}
+	metadata := preparePromptMetadata(sessCfg, profile)
+	sysPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, configInstructions, modelInstructions, metadata)
 	if err != nil {
 		return nil, err
 	}
-	if buildPrompt != nil {
-		sysPrompt = buildPrompt(workspace, trust)
-	}
-	sessCfg := session.SessionConfig{
-		Goal:         "interactive",
-		Mode:         "interactive",
-		TrustLevel:   trust,
-		Profile:      profile,
-		MaxSteps:     200,
-		SystemPrompt: sysPrompt,
-		Metadata:     metadata,
-	}
-	if strings.TrimSpace(profile) != "" {
-		metadata["profile"] = strings.TrimSpace(profile)
-		if _, ok := metadata[session.MetadataTaskMode]; !ok {
-			metadata[session.MetadataTaskMode] = strings.TrimSpace(profile)
-		}
-	}
-	if buildCfg != nil {
-		sessCfg = buildCfg(workspace, trust, approvalMode, profile, sysPrompt)
-		if sessCfg.SystemPrompt == "" {
-			sessCfg.SystemPrompt = sysPrompt
-		}
-		if len(sessCfg.Metadata) == 0 {
-			sessCfg.Metadata = metadata
-		}
-		if sessCfg.TrustLevel == "" {
-			sessCfg.TrustLevel = trust
-		}
-		if sessCfg.Goal == "" {
-			sessCfg.Goal = "interactive"
-		}
-		if sessCfg.Mode == "" {
-			sessCfg.Mode = "interactive"
-		}
-		if sessCfg.MaxSteps == 0 {
-			sessCfg.MaxSteps = 200
-		}
-	}
+	sessCfg.SystemPrompt = sysPrompt
+	sessCfg.Metadata = metadata
 	return k.NewSession(ctx, sessCfg)
 }
 

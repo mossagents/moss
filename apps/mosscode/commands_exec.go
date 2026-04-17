@@ -60,7 +60,7 @@ func launchTUI(cfg *config) error {
 			k, _, err := buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
 			return k, err
 		},
-		BuildSystemPrompt: buildSystemPrompt,
+		PromptConfigInstructions: buildProductPromptInstructions(flags.Workspace, resolved.Trust),
 		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
 			resolvedProfile, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 				Workspace:        workspace,
@@ -193,9 +193,15 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		Goal:         cfg.prompt,
 		Mode:         "oneshot",
 		TrustLevel:   resolved.Trust,
-		SystemPrompt: buildSystemPrompt(cfg.flags.Workspace, resolved.Trust),
 		MaxSteps:     80,
 	}, resolved)
+	systemPrompt, metadata, err := composeProductSystemPrompt(cfg.flags.Workspace, resolved.Trust, k, resolved, sessCfg.Metadata)
+	if err != nil {
+		report.Error = err.Error()
+		return report, fmt.Errorf("compose system prompt: %w", err)
+	}
+	sessCfg.SystemPrompt = systemPrompt
+	sessCfg.Metadata = metadata
 	sess, err := k.NewSession(ctx, sessCfg)
 	if err != nil {
 		report.Error = err.Error()

@@ -60,7 +60,6 @@ type Config struct {
 	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
 	BuildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
 	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
-	BuildSystemPrompt        func(workspace, trust string) string
 	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
 	PromptModelInstructions  string
@@ -94,7 +93,6 @@ type agentState struct {
 	buildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
 	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
 	afterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
-	buildSystemPrompt        func(workspace, trust string) string
 	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
 	promptModelInstructions  string
@@ -224,6 +222,53 @@ func (a *agentState) promptDebugInfo() (baseSource, dynamicSections, sourceChain
 	return baseSource, dynamicSections, sourceChain
 }
 
+func cloneMetadataMap(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func normalizeSessionConfigDefaults(cfg session.SessionConfig, trust, profile, goal, mode string, maxSteps int) session.SessionConfig {
+	if strings.TrimSpace(cfg.Profile) == "" {
+		cfg.Profile = profile
+	}
+	if cfg.TrustLevel == "" {
+		cfg.TrustLevel = trust
+	}
+	if cfg.Goal == "" {
+		cfg.Goal = goal
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = mode
+	}
+	if cfg.MaxSteps == 0 {
+		cfg.MaxSteps = maxSteps
+	}
+	return cfg
+}
+
+func preparePromptMetadata(cfg session.SessionConfig, fallbackProfile string) map[string]any {
+	metadata := cloneMetadataMap(cfg.Metadata)
+	profile := strings.TrimSpace(cfg.Profile)
+	if profile == "" {
+		profile = strings.TrimSpace(fallbackProfile)
+	}
+	if profile != "" {
+		if _, ok := metadata[prompting.MetadataProfileNameKey]; !ok {
+			metadata[prompting.MetadataProfileNameKey] = profile
+		}
+		if _, ok := metadata[session.MetadataTaskMode]; !ok {
+			metadata[session.MetadataTaskMode] = profile
+		}
+	}
+	return metadata
+}
+
 func (a *agentState) refreshSystemPrompt() error {
 	a.mu.Lock()
 	if a.running {
@@ -238,7 +283,6 @@ func (a *agentState) refreshSystemPrompt() error {
 	k := a.k
 	configInstructions := a.promptConfigInstructions
 	modelInstructions := a.promptModelInstructions
-	buildPrompt := a.buildSystemPrompt
 	a.mu.Unlock()
 	if sess == nil {
 		return errors.New("active thread is unavailable")
@@ -246,9 +290,6 @@ func (a *agentState) refreshSystemPrompt() error {
 	nextPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, configInstructions, modelInstructions, sess.Config.Metadata)
 	if err != nil {
 		return err
-	}
-	if buildPrompt != nil {
-		nextPrompt = buildPrompt(workspace, trust)
 	}
 	a.mu.Lock()
 	sess.Config.SystemPrompt = nextPrompt
