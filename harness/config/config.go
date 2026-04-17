@@ -84,6 +84,7 @@ type Config struct {
 	BaseURL           string                   `yaml:"base_url,omitempty"`
 	APIKey            string                   `yaml:"api_key,omitempty"`
 	Models            []ModelConfig            `yaml:"models,omitempty"`
+	Guardian          GuardianConfig           `yaml:"guardian,omitempty"`
 	BaseInstructions  string                   `yaml:"base_instructions,omitempty"`
 	ModelInstructions string                   `yaml:"model_instructions,omitempty"`
 	DefaultProfile    string                   `yaml:"default_profile,omitempty"`
@@ -94,14 +95,24 @@ type Config struct {
 }
 
 type ModelConfig struct {
-	Name     string `yaml:"name,omitempty"`
-	Provider string `yaml:"provider,omitempty"`
-	Model    string `yaml:"model,omitempty"`
-	BaseURL  string `yaml:"base_url,omitempty"`
-	APIKey   string `yaml:"api_key,omitempty"`
-	ContextWindow         int  `yaml:"context_window,omitempty"`
-	AutoCompactTokenLimit int  `yaml:"auto_compact_token_limit,omitempty"`
-	Default  bool   `yaml:"default,omitempty"`
+	Name                  string `yaml:"name,omitempty"`
+	Provider              string `yaml:"provider,omitempty"`
+	Model                 string `yaml:"model,omitempty"`
+	BaseURL               string `yaml:"base_url,omitempty"`
+	APIKey                string `yaml:"api_key,omitempty"`
+	ContextWindow         int    `yaml:"context_window,omitempty"`
+	AutoCompactTokenLimit int    `yaml:"auto_compact_token_limit,omitempty"`
+	Default               bool   `yaml:"default,omitempty"`
+}
+
+type GuardianConfig struct {
+	Enabled               *bool  `yaml:"enabled,omitempty"`
+	Provider              string `yaml:"provider,omitempty"`
+	Model                 string `yaml:"model,omitempty"`
+	BaseURL               string `yaml:"base_url,omitempty"`
+	APIKey                string `yaml:"api_key,omitempty"`
+	ContextWindow         int    `yaml:"context_window,omitempty"`
+	AutoCompactTokenLimit int    `yaml:"auto_compact_token_limit,omitempty"`
 }
 
 type TUIConfig struct {
@@ -138,14 +149,14 @@ type SkillConfig struct {
 // HookConfig declares a hook that fires on tool use events.
 type HookConfig struct {
 	Name           string `yaml:"name" json:"name"`
-	Type           string `yaml:"type" json:"type"`                                         // "command", "http", "prompt"
-	Event          string `yaml:"event" json:"event"`                                       // "pre_tool_use", "post_tool_use"
-	Match          string `yaml:"match,omitempty" json:"match,omitempty"`                   // glob pattern for tool name
-	Command        string `yaml:"command,omitempty" json:"command,omitempty"`               // for command hooks
-	URL            string `yaml:"url,omitempty" json:"url,omitempty"`                       // for http hooks
-	Method         string `yaml:"method,omitempty" json:"method,omitempty"`                 // for http hooks
-	Prompt         string `yaml:"prompt,omitempty" json:"prompt,omitempty"`                 // for prompt hooks
-	Timeout        string `yaml:"timeout,omitempty" json:"timeout,omitempty"`               // e.g. "10s"
+	Type           string `yaml:"type" json:"type"`                           // "command", "http", "prompt"
+	Event          string `yaml:"event" json:"event"`                         // "pre_tool_use", "post_tool_use"
+	Match          string `yaml:"match,omitempty" json:"match,omitempty"`     // glob pattern for tool name
+	Command        string `yaml:"command,omitempty" json:"command,omitempty"` // for command hooks
+	URL            string `yaml:"url,omitempty" json:"url,omitempty"`         // for http hooks
+	Method         string `yaml:"method,omitempty" json:"method,omitempty"`   // for http hooks
+	Prompt         string `yaml:"prompt,omitempty" json:"prompt,omitempty"`   // for prompt hooks
+	Timeout        string `yaml:"timeout,omitempty" json:"timeout,omitempty"` // e.g. "10s"
 	BlockOnFailure bool   `yaml:"block_on_failure,omitempty" json:"block_on_failure,omitempty"`
 }
 
@@ -203,6 +214,26 @@ func (sc SkillConfig) IsEnabled() bool {
 		return true
 	}
 	return *sc.Enabled
+}
+
+func (gc GuardianConfig) IsEnabled() bool {
+	return gc.Enabled != nil && *gc.Enabled
+}
+
+func (gc GuardianConfig) UsesDedicatedLLM() bool {
+	return strings.TrimSpace(gc.Provider) != "" ||
+		strings.TrimSpace(gc.BaseURL) != "" ||
+		strings.TrimSpace(gc.APIKey) != ""
+}
+
+func (gc GuardianConfig) Validate() error {
+	if !gc.UsesDedicatedLLM() {
+		return nil
+	}
+	if strings.TrimSpace(gc.Provider) == "" {
+		return fmt.Errorf("guardian provider is required when base_url or api_key is set")
+	}
+	return nil
 }
 
 func (sc SkillConfig) IsMCP() bool {
@@ -317,11 +348,13 @@ func SaveConfig(path string, cfg *Config) error {
 func MergeConfigs(configs ...*Config) *Config {
 	seen := make(map[string]int)
 	var result []SkillConfig
+	var guardian GuardianConfig
 
 	for _, cfg := range configs {
 		if cfg == nil {
 			continue
 		}
+		guardian = mergeGuardianConfig(guardian, cfg.Guardian)
 		for _, sc := range cfg.Skills {
 			if idx, ok := seen[sc.Name]; ok {
 				result[idx] = sc
@@ -332,9 +365,36 @@ func MergeConfigs(configs ...*Config) *Config {
 		}
 	}
 
-	cfg := &Config{Skills: result}
+	cfg := &Config{Skills: result, Guardian: guardian}
 	cfg.normalizeProviderFields()
 	return cfg
+}
+
+func mergeGuardianConfig(base, overlay GuardianConfig) GuardianConfig {
+	out := base
+	if overlay.Enabled != nil {
+		out.Enabled = overlay.Enabled
+	}
+	if value := strings.TrimSpace(overlay.Provider); value != "" {
+		out.Provider = value
+	}
+	if value := strings.TrimSpace(overlay.Model); value != "" {
+		out.Model = value
+	}
+	if value := strings.TrimSpace(overlay.BaseURL); value != "" {
+		out.BaseURL = value
+	}
+	if value := strings.TrimSpace(overlay.APIKey); value != "" {
+		out.APIKey = value
+	}
+	if overlay.ContextWindow > 0 {
+		out.ContextWindow = overlay.ContextWindow
+	}
+	if overlay.AutoCompactTokenLimit > 0 {
+		out.AutoCompactTokenLimit = overlay.AutoCompactTokenLimit
+	}
+	out.normalizeProviderFields()
+	return out
 }
 
 func (c *Config) normalizeProviderFields() {
@@ -342,6 +402,7 @@ func (c *Config) normalizeProviderFields() {
 		return
 	}
 	c.normalizeModels()
+	c.Guardian.normalizeProviderFields()
 	if selected := c.selectedModel(); selected != nil {
 		identity := NormalizeProviderIdentity(selected.Provider, selected.Name)
 		selected.Provider = identity.Provider
@@ -359,6 +420,16 @@ func (c *Config) normalizeProviderFields() {
 	c.Model = strings.TrimSpace(c.Model)
 	c.BaseURL = strings.TrimSpace(c.BaseURL)
 	c.APIKey = strings.TrimSpace(c.APIKey)
+}
+
+func (gc *GuardianConfig) normalizeProviderFields() {
+	if gc == nil {
+		return
+	}
+	gc.Provider = normalizeLLMAPIType(gc.Provider)
+	gc.Model = strings.TrimSpace(gc.Model)
+	gc.BaseURL = strings.TrimSpace(gc.BaseURL)
+	gc.APIKey = strings.TrimSpace(gc.APIKey)
 }
 
 func (c *Config) ProviderIdentity() ProviderIdentity {
@@ -505,6 +576,22 @@ func LoadProjectConfigForTrust(workspace, trust string) (*Config, error) {
 	return LoadProjectConfig(workspace)
 }
 
+func ResolveGuardianConfig(workspace, trust string) (GuardianConfig, error) {
+	globalCfg, err := LoadGlobalConfig()
+	if err != nil {
+		return GuardianConfig{}, err
+	}
+	projectCfg, err := LoadProjectConfigForTrust(workspace, trust)
+	if err != nil {
+		return GuardianConfig{}, err
+	}
+	guardian := mergeGuardianConfig(globalCfg.Guardian, projectCfg.Guardian)
+	if err := guardian.Validate(); err != nil {
+		return GuardianConfig{}, err
+	}
+	return guardian, nil
+}
+
 func ResolvePromptInstructionLayers(workspace, trust string) (string, string, error) {
 	globalCfg, err := LoadGlobalConfig()
 	if err != nil {
@@ -618,6 +705,17 @@ const defaultConfigTemplate = `# Global config for moss
 #     model: gpt-4o
 #     base_url: ""
 #     api_key: ""
+
+# guardian:
+#   # Disabled by default. When enabled, only policy_guarded tools are eligible,
+#   # and any review failure falls back to the normal approval flow.
+#   enabled: true
+#   # provider: openai-completions
+#   # model: gpt-4o-mini
+#   # base_url: ""
+#   # api_key: ""
+#   # context_window: 16000
+#   # auto_compact_token_limit: 12000
 
 # tui:
 #   # theme: default

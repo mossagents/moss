@@ -16,6 +16,7 @@ import (
 	"github.com/mossagents/moss/harness/runtime/policy"
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/guardian"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -81,6 +82,128 @@ func TestInstall_DefaultToolPolicyIsRestrictedConfirm(t *testing.T) {
 	}
 	if !policy.Command.ClearEnv {
 		t.Fatal("expected command env to be cleared by default")
+	}
+}
+
+func TestInstall_GuardianDisabledByDefault(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
+	)
+	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if _, ok := guardian.Lookup(k); ok {
+		t.Fatal("guardian should be disabled by default")
+	}
+}
+
+func TestInstall_GuardianEnabledFromGlobalConfig(t *testing.T) {
+	orig := appconfig.AppName()
+	t.Cleanup(func() { appconfig.SetAppName(orig) })
+	appconfig.SetAppName("moss-assembly-guardian")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+
+	globalPath := appconfig.DefaultGlobalConfigPath()
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(global): %v", err)
+	}
+	if err := os.WriteFile(globalPath, []byte("guardian:\n  enabled: true\n  model: reviewer-mini\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(global): %v", err)
+	}
+
+	rootLLM := &kt.MockLLM{}
+	k := kernel.New(
+		kernel.WithLLM(rootLLM),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
+	)
+	if err := Install(context.Background(), k, t.TempDir(), defaultAssemblyConfig()); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	g, ok := guardian.Lookup(k)
+	if !ok || g == nil {
+		t.Fatal("expected guardian to be installed")
+	}
+	if g.LLM != rootLLM {
+		t.Fatal("expected guardian to reuse kernel llm by default")
+	}
+	if g.ModelConfig.Model != "reviewer-mini" {
+		t.Fatalf("guardian model = %q, want reviewer-mini", g.ModelConfig.Model)
+	}
+	if g.ModelConfig.Temperature != 0 {
+		t.Fatalf("guardian temperature = %v, want 0", g.ModelConfig.Temperature)
+	}
+}
+
+func TestInstall_GuardianProjectConfigIgnoredForRestrictedTrust(t *testing.T) {
+	orig := appconfig.AppName()
+	t.Cleanup(func() { appconfig.SetAppName(orig) })
+	appconfig.SetAppName("moss-assembly-guardian")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+
+	workspace := t.TempDir()
+	projectPath := appconfig.DefaultProjectConfigPath(workspace)
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(project): %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("guardian:\n  enabled: true\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(project): %v", err)
+	}
+
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
+	)
+	cfg := defaultAssemblyConfig()
+	cfg.Trust = appconfig.TrustRestricted
+	if err := Install(context.Background(), k, workspace, cfg); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if _, ok := guardian.Lookup(k); ok {
+		t.Fatal("restricted workspace should not install project guardian config")
+	}
+}
+
+func TestInstall_GuardianDedicatedConfigRequiresProvider(t *testing.T) {
+	orig := appconfig.AppName()
+	t.Cleanup(func() { appconfig.SetAppName(orig) })
+	appconfig.SetAppName("moss-assembly-guardian")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+
+	globalPath := appconfig.DefaultGlobalConfigPath()
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(global): %v", err)
+	}
+	if err := os.WriteFile(globalPath, []byte("guardian:\n  enabled: true\n  base_url: https://example.test/v1\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(global): %v", err)
+	}
+
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
+	)
+	err := Install(context.Background(), k, t.TempDir(), defaultAssemblyConfig())
+	if err == nil {
+		t.Fatal("expected guardian config error")
+	}
+	if !strings.Contains(err.Error(), "guardian provider is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

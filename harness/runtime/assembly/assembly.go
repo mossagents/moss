@@ -8,17 +8,20 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/harness/extensions/capability"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/extensions/agent"
+	"github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/extensions/mcp"
 	"github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/logging"
+	"github.com/mossagents/moss/harness/providers"
+	builtintools "github.com/mossagents/moss/harness/runtime/builtintools"
 	"github.com/mossagents/moss/harness/runtime/capstate"
 	"github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/guardian"
 	kernio "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/harness/logging"
-	builtintools "github.com/mossagents/moss/harness/runtime/builtintools"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // Config controls runtime capability assembly through the non-public setup
@@ -68,7 +71,48 @@ func Install(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Con
 	if err := policy.ApplyResolved(k, workspaceDir, cfg.Trust, "confirm"); err != nil {
 		return err
 	}
+	if err := installGuardian(ctx, k, workspaceDir, cfg); err != nil {
+		report(cfg.CapabilityReporter, ctx, "guardian", false, "failed", err)
+		return err
+	}
 	return newLifecycleManager().Run(ctx, k, workspaceDir, cfg)
+}
+
+func installGuardian(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Config) error {
+	guardianCfg, err := appconfig.ResolveGuardianConfig(workspaceDir, cfg.Trust)
+	if err != nil {
+		return fmt.Errorf("resolve guardian config: %w", err)
+	}
+	if !guardianCfg.IsEnabled() {
+		report(cfg.CapabilityReporter, ctx, "guardian", false, "disabled", nil)
+		return nil
+	}
+	reviewLLM, err := guardianLLM(k, guardianCfg)
+	if err != nil {
+		return err
+	}
+	guardian.Install(k, guardian.New(reviewLLM, model.ModelConfig{
+		Model:                 guardianCfg.Model,
+		Temperature:           0,
+		ContextWindow:         guardianCfg.ContextWindow,
+		AutoCompactTokenLimit: guardianCfg.AutoCompactTokenLimit,
+	}))
+	report(cfg.CapabilityReporter, ctx, "guardian", false, "ready", nil)
+	return nil
+}
+
+func guardianLLM(k *kernel.Kernel, cfg appconfig.GuardianConfig) (model.LLM, error) {
+	if cfg.UsesDedicatedLLM() {
+		llm, err := providers.BuildLLM(cfg.Provider, cfg.Model, cfg.APIKey, cfg.BaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("build guardian llm: %w", err)
+		}
+		return llm, nil
+	}
+	if k == nil || k.LLM() == nil {
+		return nil, fmt.Errorf("guardian requires a kernel llm or dedicated guardian provider")
+	}
+	return k.LLM(), nil
 }
 
 type capabilityInstaller interface {
@@ -477,6 +521,3 @@ func collectAgentDirs(workspaceDir string, cfg Config) []string {
 	}
 	return dirs
 }
-
-
-

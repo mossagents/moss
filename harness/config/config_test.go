@@ -236,6 +236,25 @@ func TestMergeConfigs_NilInputIgnored(t *testing.T) {
 	}
 }
 
+func TestMergeConfigs_MergesGuardianOverlay(t *testing.T) {
+	enabled := true
+	base := &Config{Guardian: GuardianConfig{Enabled: &enabled, Model: "guardian-a"}}
+	overlay := &Config{Guardian: GuardianConfig{Provider: "openai", ContextWindow: 16000}}
+	merged := MergeConfigs(base, overlay)
+	if !merged.Guardian.IsEnabled() {
+		t.Fatal("expected guardian to remain enabled")
+	}
+	if merged.Guardian.Provider != APITypeOpenAICompletions {
+		t.Fatalf("Provider = %q, want %q", merged.Guardian.Provider, APITypeOpenAICompletions)
+	}
+	if merged.Guardian.Model != "guardian-a" {
+		t.Fatalf("Model = %q, want guardian-a", merged.Guardian.Model)
+	}
+	if merged.Guardian.ContextWindow != 16000 {
+		t.Fatalf("ContextWindow = %d, want 16000", merged.Guardian.ContextWindow)
+	}
+}
+
 // ─── Config.ProviderIdentity / EffectiveAPIType / DisplayProviderName ──────
 
 func TestConfig_ProviderIdentityNilSafe(t *testing.T) {
@@ -374,5 +393,86 @@ func TestLoadProjectConfigForTrust_Trusted_ReadsConfig(t *testing.T) {
 	}
 	if cfg.DefaultProfile != "guarded" {
 		t.Fatalf("trusted should read project config, got %q", cfg.DefaultProfile)
+	}
+}
+
+func TestResolveGuardianConfig_TrustedMergesProjectOverride(t *testing.T) {
+	orig := AppName()
+	t.Cleanup(func() { SetAppName(orig) })
+	SetAppName("moss-guardian-test")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+
+	globalPath := DefaultGlobalConfigPath()
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(global): %v", err)
+	}
+	if err := os.WriteFile(globalPath, []byte("guardian:\n  enabled: true\n  provider: openai\n  model: guardian-global\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(global): %v", err)
+	}
+
+	workspace := t.TempDir()
+	projectPath := DefaultProjectConfigPath(workspace)
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(project): %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("guardian:\n  model: guardian-project\n  context_window: 24000\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(project): %v", err)
+	}
+
+	guardian, err := ResolveGuardianConfig(workspace, TrustTrusted)
+	if err != nil {
+		t.Fatalf("ResolveGuardianConfig() = %v", err)
+	}
+	if !guardian.IsEnabled() {
+		t.Fatal("expected guardian enabled from global config")
+	}
+	if guardian.Provider != APITypeOpenAICompletions {
+		t.Fatalf("Provider = %q, want %q", guardian.Provider, APITypeOpenAICompletions)
+	}
+	if guardian.Model != "guardian-project" {
+		t.Fatalf("Model = %q, want guardian-project", guardian.Model)
+	}
+	if guardian.ContextWindow != 24000 {
+		t.Fatalf("ContextWindow = %d, want 24000", guardian.ContextWindow)
+	}
+}
+
+func TestResolveGuardianConfig_RestrictedIgnoresProjectOverride(t *testing.T) {
+	orig := AppName()
+	t.Cleanup(func() { SetAppName(orig) })
+	SetAppName("moss-guardian-test")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("APPDATA", home)
+	t.Setenv("LOCALAPPDATA", home)
+
+	globalPath := DefaultGlobalConfigPath()
+	if err := os.MkdirAll(filepath.Dir(globalPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(global): %v", err)
+	}
+	if err := os.WriteFile(globalPath, []byte("guardian:\n  enabled: true\n  model: guardian-global\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(global): %v", err)
+	}
+
+	workspace := t.TempDir()
+	projectPath := DefaultProjectConfigPath(workspace)
+	if err := os.MkdirAll(filepath.Dir(projectPath), 0o700); err != nil {
+		t.Fatalf("MkdirAll(project): %v", err)
+	}
+	if err := os.WriteFile(projectPath, []byte("guardian:\n  model: guardian-project\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(project): %v", err)
+	}
+
+	guardian, err := ResolveGuardianConfig(workspace, TrustRestricted)
+	if err != nil {
+		t.Fatalf("ResolveGuardianConfig() = %v", err)
+	}
+	if guardian.Model != "guardian-global" {
+		t.Fatalf("Model = %q, want guardian-global", guardian.Model)
 	}
 }
