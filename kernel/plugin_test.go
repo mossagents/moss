@@ -172,10 +172,12 @@ func TestWithPlugin_KernelOption(t *testing.T) {
 func TestKernel_InstallPlugin(t *testing.T) {
 	k := New()
 	var called bool
-	k.InstallPlugin(kplugin.BeforeLLMHook("dynamic", 0, func(ctx context.Context, ev *hooks.LLMEvent) error {
+	if err := k.InstallPlugin(kplugin.BeforeLLMHook("dynamic", 0, func(ctx context.Context, ev *hooks.LLMEvent) error {
 		called = true
 		return nil
-	}))
+	})); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
 
 	k.chain.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if !called {
@@ -183,7 +185,7 @@ func TestKernel_InstallPlugin(t *testing.T) {
 	}
 }
 
-func TestKernel_InstallPluginPanicsAfterRunStarted(t *testing.T) {
+func TestKernel_InstallPluginErrorsAfterRunStarted(t *testing.T) {
 	k := New()
 	_, runID, err := k.runs.begin(context.Background(), "sess")
 	if err != nil {
@@ -191,13 +193,10 @@ func TestKernel_InstallPluginPanicsAfterRunStarted(t *testing.T) {
 	}
 	defer k.runs.end(runID)
 
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic when installing plugin after run start")
-		}
-	}()
-
-	k.InstallPlugin(kplugin.BeforeLLMHook("late", 0, func(ctx context.Context, ev *hooks.LLMEvent) error { return nil }))
+	err = k.InstallPlugin(kplugin.BeforeLLMHook("late", 0, func(ctx context.Context, ev *hooks.LLMEvent) error { return nil }))
+	if err == nil {
+		t.Fatal("expected error when installing plugin after run start")
+	}
 }
 
 func TestNewLLMAgent_InstallsPlugins(t *testing.T) {
@@ -220,9 +219,11 @@ func TestNewLLMAgent_InstallsPlugins(t *testing.T) {
 
 func TestKernel_InstallPlugin_ToolLifecycle(t *testing.T) {
 	k := New()
-	k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
+	if err := k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
 		return nil
-	}))
+	})); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
 	if k.chain.OnToolLifecycle.Empty() {
 		t.Fatal("InstallPlugin with ToolLifecycleHook should install OnToolLifecycle hook")
 	}
@@ -231,9 +232,11 @@ func TestKernel_InstallPlugin_ToolLifecycle(t *testing.T) {
 func TestKernel_OnEvent_UsesPlugin(t *testing.T) {
 	k := New()
 	var received bool
-	k.OnEvent("*", func(ev builtins.Event) {
+	if err := k.OnEvent("*", func(ev builtins.Event) {
 		received = true
-	})
+	}); err != nil {
+		t.Fatalf("OnEvent: %v", err)
+	}
 	sess := &session.Session{ID: "test"}
 	k.chain.OnSessionLifecycle.Run(context.Background(), &session.LifecycleEvent{Stage: session.LifecycleStarted, Session: sess})
 	if !received {

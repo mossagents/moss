@@ -174,7 +174,7 @@ func (l *InProcessWorkspaceLock) TryLock(_ context.Context, path string, agentID
 	if entry, exists := l.locks[path]; exists {
 		select {
 		case <-entry.ch:
-			// 已释放，可以重新获取
+			delete(l.locks, path) // 清理已释放的过期条目
 		default:
 			return nil, false // 锁还在被持有
 		}

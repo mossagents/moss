@@ -43,6 +43,12 @@ type Feature interface {
 	Install(ctx context.Context, h *Harness) error
 }
 
+// Uninstaller is an optional interface that features can implement to support
+// rollback when a later feature in the same Install batch fails.
+type Uninstaller interface {
+	Uninstall(ctx context.Context, h *Harness) error
+}
+
 // FeatureFunc adapts a plain function into a Feature.
 type FeatureFunc struct {
 	FeatureName   string

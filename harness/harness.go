@@ -80,6 +80,8 @@ func (h *Harness) ActivateBackend(ctx context.Context) error {
 // Install applies Features to the Harness in order. Each feature may
 // register tools, hooks, system-prompt extensions, or kernel options.
 // Official features are installed under phase/dependency governance.
+// If any feature fails, already-installed features that implement Uninstaller
+// are rolled back in reverse order.
 func (h *Harness) Install(ctx context.Context, features ...Feature) error {
 	if err := h.ensureBackend(ctx); err != nil {
 		return err
@@ -88,12 +90,19 @@ func (h *Harness) Install(ctx context.Context, features ...Feature) error {
 	if err != nil {
 		return err
 	}
+	var installed []Feature
 	for _, item := range planned {
 		if err := item.feature.Install(ctx, h); err != nil {
+			for i := len(installed) - 1; i >= 0; i-- {
+				if u, ok := installed[i].(Uninstaller); ok {
+					_ = u.Uninstall(ctx, h)
+				}
+			}
 			return fmt.Errorf("feature %q: %w", item.feature.Name(), err)
 		}
-		h.features = append(h.features, item.feature)
+		installed = append(installed, item.feature)
 	}
+	h.features = append(h.features, installed...)
 	return nil
 }
 

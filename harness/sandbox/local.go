@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/workspace"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -254,6 +255,11 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 	if req.Network.Mode == workspace.ExecNetworkDisabled {
 		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
 			return workspace.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
+		}
+		if req.Network.PreferHardBlock {
+			slog.Warn("network isolation degraded to soft limit",
+				"reason", "hard isolation unavailable in local sandbox",
+				"command", req.Command)
 		}
 		if !customized {
 			env = envMapToSlice(SafeInheritedEnvironment())

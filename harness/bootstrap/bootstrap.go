@@ -16,10 +16,12 @@
 package bootstrap
 
 import (
-	appconfig "github.com/mossagents/moss/harness/config"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+
+	appconfig "github.com/mossagents/moss/harness/config"
 )
 
 // Context 包含所有引导文件的内容，用于注入 system prompt。
@@ -30,6 +32,9 @@ type Context struct {
 	Identity string // IDENTITY.md 内容
 	User     string // USER.md 内容
 }
+
+// maxBootstrapFileSize 限制单个引导文件的最大大小，防止超大文件注入。
+const maxBootstrapFileSize = 64 * 1024 // 64 KB
 
 // Empty 返回引导上下文是否为空（没有加载到任何文件）。
 func (c *Context) Empty() bool {
@@ -115,6 +120,11 @@ func LoadWithAppNameAndTrust(workspace, name, trust string) *Context {
 			data, err := os.ReadFile(path)
 			if err != nil {
 				continue
+			}
+			if len(data) > maxBootstrapFileSize {
+				slog.Warn("bootstrap file exceeds size limit, truncating",
+					"path", path, "size", len(data), "limit", maxBootstrapFileSize)
+				data = data[:maxBootstrapFileSize]
 			}
 			content := strings.TrimSpace(string(data))
 			if content == "" {

@@ -219,7 +219,7 @@ func TestKernelIntegration(t *testing.T) {
 	}
 
 	// Install a tool lifecycle hook that requires approval for write_file.
-	k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
+	if err := k.InstallPlugin(kplugin.ToolLifecycleHook("test-policy", 0, func(ctx context.Context, ev *hooks.ToolEvent) error {
 		if ev.Stage != hooks.ToolLifecycleBefore || ev.Tool == nil {
 			return nil
 		}
@@ -258,13 +258,15 @@ func TestKernelIntegration(t *testing.T) {
 			}
 		}
 		return nil
-	}))
-
-	// 收集事件
+	})); err != nil {
+		t.Fatalf("InstallPlugin: %v", err)
+	}
 	var events []builtins.Event
-	k.OnEvent("tool.*", func(e builtins.Event) {
+	if err := k.OnEvent("tool.*", func(e builtins.Event) {
 		events = append(events, e)
-	})
+	}); err != nil {
+		t.Fatalf("OnEvent: %v", err)
+	}
 
 	// Boot
 	if err := k.Boot(context.Background()); err != nil {

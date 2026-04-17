@@ -49,8 +49,8 @@ func NewRegistry() *Registry {
 // 拦截器无法绕过此门控，因为它在 pipeline 之外直接调用。
 func (r *Registry) SetToolPolicyGate(fn func(context.Context, *ToolEvent) error) {
 	r.toolPolicyMu.Lock()
+	defer r.toolPolicyMu.Unlock()
 	r.toolPolicyGate = fn
-	r.toolPolicyMu.Unlock()
 }
 
 // RunToolPolicyGate 执行已注册的权限门控（如果有）。

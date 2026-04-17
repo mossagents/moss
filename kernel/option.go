@@ -114,8 +114,13 @@ func WithUserIO(io io.UserIO) Option {
 
 // WithPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
 // Plugin 是注册生命周期 hook 的推荐方式。
+// 在构造阶段（New）中使用，无效 plugin 会 panic。
 func WithPlugin(p Plugin) Option {
-	return func(k *Kernel) { k.installPlugin(p) }
+	return func(k *Kernel) {
+		if err := k.installPlugin(p); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // WithToolRegistry 替换默认的 Tool Registry。

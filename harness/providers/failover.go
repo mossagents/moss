@@ -84,6 +84,9 @@ func (f *FailoverLLM) candidates(req *model.TaskRequirement) ([]routedModel, err
 	if err != nil {
 		return nil, err
 	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("failover: no candidate models available")
+	}
 	limit := f.cfg.MaxCandidates
 	if limit <= 0 {
 		limit = defaultFailoverMaxCandidates

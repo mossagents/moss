@@ -25,10 +25,12 @@ type entry[T any] struct {
 
 // Pipeline 管理某一生命周期阶段的有序 hook/interceptor 列表。
 // 执行时按 order 排序，相同 order 保持注册顺序。
+// 首次 Run 之后 pipeline 自动冻结，不再接受新注册。
 type Pipeline[T any] struct {
 	mu      sync.RWMutex
 	entries []entry[T]
 	names   map[string]bool
+	frozen  bool
 }
 
 // NewPipeline 创建空 Pipeline。
@@ -40,6 +42,9 @@ func NewPipeline[T any]() *Pipeline[T] {
 func (p *Pipeline[T]) OnNamed(name string, order int, hook Hook[T], dependsOn ...string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen {
+		return fmt.Errorf("pipeline is frozen; hook %q cannot be registered after first Run", name)
+	}
 	for _, dep := range dependsOn {
 		if !p.names[dep] {
 			return fmt.Errorf("hook %q depends on %q which is not registered", name, dep)
@@ -56,6 +61,9 @@ func (p *Pipeline[T]) OnNamed(name string, order int, hook Hook[T], dependsOn ..
 func (p *Pipeline[T]) Intercept(interceptor Interceptor[T]) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen {
+		return
+	}
 	p.entries = append(p.entries, entry[T]{interceptor: interceptor})
 }
 
@@ -63,6 +71,9 @@ func (p *Pipeline[T]) Intercept(interceptor Interceptor[T]) {
 func (p *Pipeline[T]) InterceptNamed(name string, order int, interceptor Interceptor[T], dependsOn ...string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen {
+		return fmt.Errorf("pipeline is frozen; interceptor %q cannot be registered after first Run", name)
+	}
 	for _, dep := range dependsOn {
 		if !p.names[dep] {
 			return fmt.Errorf("interceptor %q depends on %q which is not registered", name, dep)
@@ -76,11 +87,13 @@ func (p *Pipeline[T]) InterceptNamed(name string, order int, interceptor Interce
 }
 
 // Run 按 order 排序后以洋葱模型执行所有已注册的 hook/interceptor。
+// 首次调用时自动冻结 pipeline，之后不再接受新注册。
 func (p *Pipeline[T]) Run(ctx context.Context, ev *T) error {
-	p.mu.RLock()
+	p.mu.Lock()
+	p.frozen = true
 	sorted := make([]entry[T], len(p.entries))
 	copy(sorted, p.entries)
-	p.mu.RUnlock()
+	p.mu.Unlock()
 
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return sorted[i].order < sorted[j].order
@@ -109,6 +122,9 @@ func execute[T any](ctx context.Context, ev *T, entries []entry[T], index int) e
 func (p *Pipeline[T]) AddHook(name string, hook Hook[T], order int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen {
+		return
+	}
 	p.entries = append(p.entries, entry[T]{name: name, order: order, hook: hook})
 	if name != "" {
 		p.names[name] = true
@@ -119,6 +135,9 @@ func (p *Pipeline[T]) AddHook(name string, hook Hook[T], order int) {
 func (p *Pipeline[T]) AddInterceptor(name string, interceptor Interceptor[T], order int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.frozen {
+		return
+	}
 	p.entries = append(p.entries, entry[T]{name: name, order: order, interceptor: interceptor})
 	if name != "" {
 		p.names[name] = true

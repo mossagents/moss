@@ -392,22 +392,20 @@ func (k *Kernel) SetToolPolicyGate(fn func(context.Context, *hooks.ToolEvent) er
 
 // InstallPlugin 注册一个 Plugin，将其包含的 hook 安装到对应的 pipeline。
 // 可在 Kernel 构建后调用，用于运行时动态安装插件。
-func (k *Kernel) InstallPlugin(p Plugin) {
-	k.installPlugin(p)
+func (k *Kernel) InstallPlugin(p Plugin) error {
+	return k.installPlugin(p)
 }
 
-func (k *Kernel) installPlugin(p Plugin) {
+func (k *Kernel) installPlugin(p Plugin) error {
 	if k.runs.hasStarted() {
-		panic(fmt.Errorf("install plugin %q after kernel started serving work", p.Name()))
+		return fmt.Errorf("install plugin %q after kernel started serving work", p.Name())
 	}
-	if err := installPlugin(k.chain, p); err != nil {
-		panic(err)
-	}
+	return installPlugin(k.chain, p)
 }
 
 // OnEvent 注册事件监听（便利 API，内部通过 hooks 安装 EventEmitter）。
-func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) {
-	k.InstallPlugin(builtins.EventEmitterPlugin(pattern, handler))
+func (k *Kernel) OnEvent(pattern string, handler builtins.EventHandler) error {
+	return k.InstallPlugin(builtins.EventEmitterPlugin(pattern, handler))
 }
 
 // ── Agent API ───────────────────────────────────────────────────

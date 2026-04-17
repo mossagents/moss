@@ -38,7 +38,7 @@ jobs:
 
       - name: Run root tests
         shell: pwsh
-        run: go test ./...
+        run: go test -race -count=1 ./...
 
   example-validation:
     runs-on: windows-latest

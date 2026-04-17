@@ -244,7 +244,9 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 			return err
 		}
 		if !st.autoHookRegistered {
-			k.InstallPlugin(kplugin.BeforeLLMHook("auto-compact", 0, AutoCompactHook(k)))
+			if err := k.InstallPlugin(kplugin.BeforeLLMHook("auto-compact", 0, AutoCompactHook(k))); err != nil {
+				return err
+			}
 			st.autoHookRegistered = true
 		}
 		return nil

@@ -6,8 +6,8 @@ import (
 
 	"github.com/mossagents/moss/harness/bootstrap"
 	"github.com/mossagents/moss/harness/extensions/capability"
-	"github.com/mossagents/moss/harness/runtime/execution"
 	"github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/runtime/execution"
 	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
@@ -91,7 +91,9 @@ func Plugins(plugins ...kernel.Plugin) Feature {
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			for _, plugin := range plugins {
-				h.Kernel().InstallPlugin(plugin)
+				if err := h.Kernel().InstallPlugin(plugin); err != nil {
+					return err
+				}
 			}
 			return nil
 		},
@@ -260,8 +262,7 @@ func PatchToolCalls() Feature {
 			Phase: FeaturePhasePostRuntime,
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
-			h.Kernel().InstallPlugin(kplugin.BeforeLLMHook("patch-tool-calls", 0, builtins.PatchToolCalls()))
-			return nil
+			return h.Kernel().InstallPlugin(kplugin.BeforeLLMHook("patch-tool-calls", 0, builtins.PatchToolCalls()))
 		},
 	}
 }

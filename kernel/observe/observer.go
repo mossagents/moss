@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	"log/slog"
 	"time"
 )
 
@@ -175,7 +176,9 @@ func (o joinedObserver) OnEvent(ctx context.Context, e EventEnvelope) {
 // safeObserve 执行 observer 回调并捕获 panic，防止单个 observer 崩溃影响其他 observer。
 func safeObserve(fn func()) {
 	defer func() {
-		recover() //nolint:errcheck // observer panic is intentionally silenced
+		if r := recover(); r != nil {
+			slog.Error("observer panic recovered", "panic", r)
+		}
 	}()
 	fn()
 }

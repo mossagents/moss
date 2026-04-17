@@ -57,11 +57,12 @@ const (
 
 // Error 是 Moss Kernel 的结构化错误。
 type Error struct {
-	Code      Code           `json:"code"`
-	Message   string         `json:"message"`
-	Cause     error          `json:"-"`
-	Retryable bool           `json:"retryable"`
-	Meta      map[string]any `json:"meta,omitempty"`
+	Code         Code           `json:"code"`
+	Message      string         `json:"message"`
+	Cause        error          `json:"-"`
+	CauseMessage string         `json:"cause,omitempty"`
+	Retryable    bool           `json:"retryable"`
+	Meta         map[string]any `json:"meta,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -89,12 +90,20 @@ func New(code Code, msg string) *Error {
 
 // Wrap 包装一个底层错误为结构化错误。
 func Wrap(code Code, msg string, cause error) *Error {
-	return &Error{Code: code, Message: msg, Cause: cause}
+	e := &Error{Code: code, Message: msg, Cause: cause}
+	if cause != nil {
+		e.CauseMessage = cause.Error()
+	}
+	return e
 }
 
 // Retryable 创建一个可重试的结构化错误。
 func Retryable(code Code, msg string, cause error) *Error {
-	return &Error{Code: code, Message: msg, Cause: cause, Retryable: true}
+	e := &Error{Code: code, Message: msg, Cause: cause, Retryable: true}
+	if cause != nil {
+		e.CauseMessage = cause.Error()
+	}
+	return e
 }
 
 // WithMeta 向错误添加上下文元数据（链式调用）。

@@ -295,6 +295,8 @@ func SaveConfig(path string, cfg *Config) error {
 		copyCfg.Models = append([]ModelConfig(nil), cfg.Models...)
 	}
 	copyCfg.normalizeProviderFields()
+	// 清空顶层 provider 字段，避免与 Models 数组中的配置重复序列化。
+	// normalizeProviderFields 已将这些字段合并到 Models 中。
 	copyCfg.Provider = ""
 	copyCfg.Name = ""
 	copyCfg.Model = ""

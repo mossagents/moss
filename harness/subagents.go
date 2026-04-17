@@ -167,6 +167,9 @@ func LoadSubagentsFromYAML(k *kernel.Kernel, path string) error {
 	}
 
 	for name, def := range defs {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("subagent name is empty in %s", path)
+		}
 		cfg := SubagentConfig{
 			Name:         name,
 			Description:  def.Description,

@@ -20,11 +20,12 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/session"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // Job 表示一个定时任务。
@@ -214,8 +215,14 @@ func (s *Scheduler) Stop() {
 		s.cancel()
 	}
 	s.running = false
-	s.stopPersistErrorWorkerLocked()
+	persistCancel := s.persistErrCancel
+	s.persistErrCancel = nil
 	s.mu.Unlock()
+
+	if persistCancel != nil {
+		persistCancel()
+		s.persistErrWorkerWG.Wait()
+	}
 }
 
 // Running 返回调度器是否在运行。
@@ -365,7 +372,6 @@ func (s *Scheduler) executeFire(ctx context.Context, jobID string, entry *jobEnt
 
 func (s *Scheduler) stopAll() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, entry := range s.jobs {
 		if entry.timer != nil {
 			entry.timer.Stop()
@@ -375,7 +381,14 @@ func (s *Scheduler) stopAll() {
 		}
 	}
 	s.running = false
-	s.stopPersistErrorWorkerLocked()
+	persistCancel := s.persistErrCancel
+	s.persistErrCancel = nil
+	s.mu.Unlock()
+
+	if persistCancel != nil {
+		persistCancel()
+		s.persistErrWorkerWG.Wait()
+	}
 }
 
 // snapshotJobsLocked 在持有锁的状态下复制 jobs 快照。
@@ -408,7 +421,9 @@ func (s *Scheduler) persistSnapshot(seq uint64, jobs []Job) {
 	if seq < s.persistedSeq {
 		return
 	}
-	if err := s.store.SaveJobs(context.Background(), jobs); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := s.store.SaveJobs(ctx, jobs); err != nil {
 		s.dispatchPersistError(err)
 		return
 	}
@@ -438,18 +453,6 @@ func (s *Scheduler) startPersistErrorWorkerLocked() {
 			}
 		}
 	}()
-}
-
-func (s *Scheduler) stopPersistErrorWorkerLocked() {
-	cancel := s.persistErrCancel
-	if cancel == nil {
-		return
-	}
-	s.persistErrCancel = nil
-	cancel()
-	s.mu.Unlock()
-	s.persistErrWorkerWG.Wait()
-	s.mu.Lock()
 }
 
 func (s *Scheduler) dispatchPersistError(err error) {

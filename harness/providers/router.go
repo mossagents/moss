@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/model"
-	"gopkg.in/yaml.v3"
 	"iter"
 	"os"
 	"sort"
 	"strings"
+
+	config "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/kernel/model"
+	"gopkg.in/yaml.v3"
 )
 
 // ModelProfile 描述一个模型的能力画像和连接信息。
@@ -102,15 +103,13 @@ func NewModelRouter(profiles []ModelProfile) (*ModelRouter, error) {
 		rm := routedModel{profile: p, llm: llm}
 		r.models = append(r.models, rm)
 		if p.IsDefault {
-			copied := rm
-			r.defaultModel = &copied
+			r.defaultModel = &r.models[len(r.models)-1]
 		}
 	}
 
 	if r.defaultModel == nil {
 		// 未显式指定默认模型时使用第一个
-		first := r.models[0]
-		r.defaultModel = &first
+		r.defaultModel = &r.models[0]
 	}
 
 	return r, nil

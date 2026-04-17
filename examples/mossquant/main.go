@@ -205,7 +205,7 @@ func (r *mossquantRuntime) buildKernel(ctx context.Context, userIO io.UserIO) (*
 		governance.RequireApprovalFor("place_order"),
 		governance.DefaultAllow(),
 	)))
-	k.OnEvent("tool.completed", func(e builtins.Event) {
+	_ = k.OnEvent("tool.completed", func(e builtins.Event) {
 		if data, ok := e.Data.(map[string]any); ok {
 			if name, _ := data["tool"].(string); name == "place_order" {
 				sendOutput(context.Background(), userIO, io.OutputProgress, fmt.Sprintf("📊 Simulated trade executed at %s", e.Timestamp.Format("15:04:05")))

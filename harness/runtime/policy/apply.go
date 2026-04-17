@@ -104,7 +104,7 @@ func installSessionSyncHook(k *kernel.Kernel, st *policystate.State) {
 	if st == nil || st.MarkSessionHookInstalled() {
 		return
 	}
-	k.InstallPlugin(kplugin.SessionLifecycleHook(toolPolicySessionName, 0, func(_ context.Context, ev *session.LifecycleEvent) error {
+	_ = k.InstallPlugin(kplugin.SessionLifecycleHook(toolPolicySessionName, 0, func(_ context.Context, ev *session.LifecycleEvent) error {
 		if ev == nil || ev.Session == nil {
 			return nil
 		}

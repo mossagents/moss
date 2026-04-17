@@ -249,7 +249,11 @@ func marshalCommandOutput(ctx context.Context, output any, writeFile func(path s
 	if !ok || meta.SessionID == "" || meta.CallID == "" {
 		return raw, nil
 	}
-	path := filepath.Join(".moss", "large_tool_results", fmt.Sprintf("%s_%s.json", meta.SessionID, meta.CallID))
+	name := fmt.Sprintf("%s_%s.json", meta.SessionID, meta.CallID)
+	if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+		return raw, nil
+	}
+	path := filepath.Join(".moss", "large_tool_results", name)
 	if writeFile != nil && path != "" {
 		if werr := writeFile(path, raw); werr == nil {
 			preview := string(raw)
