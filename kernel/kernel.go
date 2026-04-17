@@ -258,6 +258,11 @@ func (k *Kernel) SetObserver(observer observe.Observer) {
 	k.propagateObserver(observer)
 }
 
+// Observer returns the configured runtime observer, falling back to NoOpObserver.
+func (k *Kernel) Observer() observe.Observer {
+	return k.observerOrNoOp()
+}
+
 func (k *Kernel) propagateObserver(observer observe.Observer) {
 	if observer == nil {
 		observer = observe.NoOpObserver{}

@@ -2,13 +2,34 @@ package session
 
 import "github.com/mossagents/moss/kernel/model"
 
+type PromptNormalizationStats struct {
+	InputMessages                 int `json:"input_messages,omitempty"`
+	OutputMessages                int `json:"output_messages,omitempty"`
+	DroppedOrphanToolResults      int `json:"dropped_orphan_tool_results,omitempty"`
+	SynthesizedMissingToolResults int `json:"synthesized_missing_tool_results,omitempty"`
+}
+
+func (s PromptNormalizationStats) Changed() bool {
+	return s.DroppedOrphanToolResults > 0 ||
+		s.SynthesizedMissingToolResults > 0 ||
+		s.InputMessages != s.OutputMessages
+}
+
 // NormalizeForPrompt repairs tool call / tool result history before sending it
 // to the model:
 // 1. orphan tool results are dropped
 // 2. missing tool results are synthesized as aborted errors
 func NormalizeForPrompt(messages []model.Message) []model.Message {
+	normalized, _ := NormalizeForPromptWithStats(messages)
+	return normalized
+}
+
+// NormalizeForPromptWithStats repairs tool call / tool result history and
+// reports how much cleanup was required.
+func NormalizeForPromptWithStats(messages []model.Message) ([]model.Message, PromptNormalizationStats) {
+	stats := PromptNormalizationStats{InputMessages: len(messages)}
 	if len(messages) == 0 {
-		return nil
+		return nil, stats
 	}
 	out := make([]model.Message, 0, len(messages)+1)
 	var pending []string
@@ -18,6 +39,7 @@ func NormalizeForPrompt(messages []model.Message) []model.Message {
 		if len(pending) == 0 {
 			return
 		}
+		stats.SynthesizedMissingToolResults += len(pending)
 		results := make([]model.ToolResult, 0, len(pending))
 		for _, callID := range pending {
 			results = append(results, model.ToolResult{
@@ -47,11 +69,13 @@ func NormalizeForPrompt(messages []model.Message) []model.Message {
 			}
 		case len(msg.ToolResults) > 0:
 			if len(pending) == 0 {
+				stats.DroppedOrphanToolResults += len(msg.ToolResults)
 				continue
 			}
 			filtered := make([]model.ToolResult, 0, len(msg.ToolResults))
 			for _, result := range msg.ToolResults {
 				if _, ok := pendingSet[result.CallID]; !ok {
+					stats.DroppedOrphanToolResults++
 					continue
 				}
 				filtered = append(filtered, result)
@@ -72,5 +96,6 @@ func NormalizeForPrompt(messages []model.Message) []model.Message {
 		}
 	}
 	flushPending()
-	return out
+	stats.OutputMessages = len(out)
+	return out, stats
 }

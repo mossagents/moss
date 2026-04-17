@@ -17,10 +17,24 @@ import (
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
 )
+
+type executionObserverRecorder struct {
+	execution []observe.ExecutionEvent
+}
+
+func (o *executionObserverRecorder) OnLLMCall(context.Context, observe.LLMCallEvent)      {}
+func (o *executionObserverRecorder) OnToolCall(context.Context, observe.ToolCallEvent)    {}
+func (o *executionObserverRecorder) OnApproval(context.Context, io.ApprovalEvent)         {}
+func (o *executionObserverRecorder) OnSessionEvent(context.Context, observe.SessionEvent) {}
+func (o *executionObserverRecorder) OnError(context.Context, observe.ErrorEvent)          {}
+func (o *executionObserverRecorder) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
+	o.execution = append(o.execution, e)
+}
 
 type stubRepoStateCapture struct {
 	state *workspace.RepoState
@@ -227,6 +241,62 @@ func TestEffectivePromptBudgetFallsBackToContextDefaults(t *testing.T) {
 	}
 	if got := effectiveTriggerTokens(sess, st); got != 3000 {
 		t.Fatalf("trigger tokens=%d, want 3000", got)
+	}
+}
+
+func TestPreparePromptContextEmitsCompactionEvent(t *testing.T) {
+	ctx := context.Background()
+	store, err := session.NewFileStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	observer := &executionObserverRecorder{}
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("summary")}},
+			StopReason: "end_turn",
+		}}}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+		kernel.WithObserver(observer),
+		rt.WithMemoryWorkspace(sandbox.NewMemoryWorkspace()),
+		WithContextSessionStore(store),
+		ConfigureContext(
+			WithKeepRecent(2),
+			WithContextPromptBudget(120),
+			WithContextTriggerTokens(80),
+			WithContextStartupBudget(0),
+		),
+	)
+	applyContextMemoryService(k)
+	if err := k.Boot(ctx); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	sess, err := k.NewSession(ctx, session.SessionConfig{Goal: "observe compaction"})
+	if err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	appendDialog(sess,
+		strings.Repeat("first user context ", 12),
+		strings.Repeat("first assistant context ", 12),
+		strings.Repeat("second user context ", 12),
+		strings.Repeat("second assistant context ", 12),
+	)
+	if _, _, _, err := preparePromptContext(ctx, k, ensureContextState(k), sess); err != nil {
+		t.Fatalf("preparePromptContext: %v", err)
+	}
+	var found bool
+	for _, event := range observer.execution {
+		if event.Type != observe.ExecutionContextCompacted {
+			continue
+		}
+		found = true
+		if event.Metadata["snapshot_id"] == "" {
+			t.Fatalf("expected snapshot_id metadata, got %+v", event.Metadata)
+		}
+		break
+	}
+	if !found {
+		t.Fatal("expected context compaction execution event")
 	}
 }
 

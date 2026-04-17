@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
@@ -12,6 +13,7 @@ import (
 	"github.com/mossagents/moss/kernel/guardian"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
@@ -122,11 +124,50 @@ func guardianAutoApproval(k *kernel.Kernel) governance.AutoApprovalFunc {
 			ReasonCode: req.ReasonCode,
 			Input:      req.Input,
 		})
+		emitGuardianReviewEvent(ctx, ev, req, review, err)
 		if err != nil {
 			return nil
 		}
 		return guardian.AutoApprovalDecision(req, review)
 	}
+}
+
+func emitGuardianReviewEvent(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest, review *guardian.ReviewResult, err error) {
+	if ev == nil || ev.Observer == nil || req == nil {
+		return
+	}
+	outcome := "fallback"
+	metadata := map[string]any{
+		"source":  "guardian",
+		"outcome": outcome,
+	}
+	if err != nil {
+		outcome = "fallback_error"
+		metadata["error"] = err.Error()
+	} else if review == nil {
+		outcome = "fallback_nil"
+	} else {
+		metadata["approved"] = review.Approved
+		metadata["confidence"] = review.Confidence
+		metadata["reason"] = review.Reason
+		if review.Approved && strings.EqualFold(review.Confidence, "high") {
+			outcome = "auto_approved"
+		}
+	}
+	metadata["outcome"] = outcome
+	observe.ObserveExecutionEvent(ctx, ev.Observer, observe.ExecutionEvent{
+		Type:        observe.ExecutionGuardianReviewed,
+		SessionID:   req.SessionID,
+		Timestamp:   time.Now().UTC(),
+		Phase:       "approval",
+		Actor:       "guardian",
+		PayloadKind: "guardian_review",
+		ToolName:    req.ToolName,
+		Risk:        req.Risk,
+		ReasonCode:  req.ReasonCode,
+		Enforcement: req.Enforcement,
+		Metadata:    metadata,
+	})
 }
 
 func installSessionSyncHook(k *kernel.Kernel, st *policystate.State) {

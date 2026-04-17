@@ -19,7 +19,10 @@ import (
 
 func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan TurnPlan) (*model.CompletionResponse, error) {
 	specs := l.toolSpecs(plan)
-	promptMessages := session.PromptMessages(sess)
+	promptMessages, normalizeStats := session.PromptMessagesWithStats(sess)
+	if normalizeStats.Changed() {
+		l.emitPromptNormalizationEvent(ctx, sess, normalizeStats)
+	}
 	l.logger().DebugContext(ctx, "llm request prepared",
 		slog.String("session_id", sess.ID),
 		slog.String("turn_id", plan.TurnID),
@@ -51,6 +54,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 		if !ok {
 			return nil, err
 		}
+		l.emitContextTrimRetryEvent(ctx, sess, trimAttempt+1, req.Messages, trimmed)
 		l.logger().WarnContext(ctx, "context window exceeded; trimming oldest prompt message and retrying",
 			"session_id", sess.ID,
 			"turn_id", plan.TurnID,
@@ -62,6 +66,34 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	}
 
 	return nil, &model.LLMCallError{Err: errors.New("context trim retry exhausted"), Retryable: false}
+}
+
+func (l *AgentLoop) emitPromptNormalizationEvent(ctx context.Context, sess *session.Session, stats session.PromptNormalizationStats) {
+	if !stats.Changed() {
+		return
+	}
+	event := l.executionEventBase(sess, observe.ExecutionContextNormalized, "prompt", "runtime", "prompt_normalization")
+	event.Metadata = map[string]any{
+		"input_messages":                   stats.InputMessages,
+		"output_messages":                  stats.OutputMessages,
+		"dropped_orphan_tool_results":      stats.DroppedOrphanToolResults,
+		"synthesized_missing_tool_results": stats.SynthesizedMissingToolResults,
+	}
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
+}
+
+func (l *AgentLoop) emitContextTrimRetryEvent(ctx context.Context, sess *session.Session, attempt int, before, after []model.Message) {
+	event := l.executionEventBase(sess, observe.ExecutionContextTrimRetry, "llm", "runtime", "prompt_trim")
+	event.Metadata = map[string]any{
+		"trim_attempt":            attempt,
+		"messages_before":         len(before),
+		"messages_after":          len(after),
+		"messages_removed":        len(before) - len(after),
+		"estimated_tokens_before": session.EstimateMessagesTokens(before),
+		"estimated_tokens_after":  session.EstimateMessagesTokens(after),
+		"trigger":                 "context_window",
+	}
+	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
 func (l *AgentLoop) callLLMWithRetry(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {

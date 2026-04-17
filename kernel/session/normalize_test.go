@@ -37,3 +37,27 @@ func TestNormalizeForPromptDropsOrphanToolResult(t *testing.T) {
 		t.Fatalf("remaining message=%q, want hello", got)
 	}
 }
+
+func TestNormalizeForPromptWithStatsReportsDroppedAndSynthesized(t *testing.T) {
+	msgs := []model.Message{
+		{Role: model.RoleTool, ToolResults: []model.ToolResult{{CallID: "orphan", ContentParts: []model.ContentPart{model.TextPart("ignored")}}}},
+		{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read_file", Arguments: json.RawMessage(`{}`)}}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("continue")}},
+	}
+	normalized, stats := NormalizeForPromptWithStats(msgs)
+	if len(normalized) != 3 {
+		t.Fatalf("len=%d, want 3", len(normalized))
+	}
+	if stats.DroppedOrphanToolResults != 1 {
+		t.Fatalf("dropped orphan tool results=%d, want 1", stats.DroppedOrphanToolResults)
+	}
+	if stats.SynthesizedMissingToolResults != 1 {
+		t.Fatalf("synthesized missing tool results=%d, want 1", stats.SynthesizedMissingToolResults)
+	}
+	if !stats.Changed() {
+		t.Fatal("expected normalization stats to report a change")
+	}
+	if normalized[1].Role != model.RoleTool || len(normalized[1].ToolResults) != 1 {
+		t.Fatalf("missing synthesized tool result: %+v", normalized)
+	}
+}

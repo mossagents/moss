@@ -71,19 +71,33 @@ func WritePromptContextState(sess *Session, st PromptContextState) {
 }
 
 func PromptMessages(sess *Session) []model.Message {
+	msgs, _ := PromptMessagesWithStats(sess)
+	return msgs
+}
+
+func PromptMessagesWithStats(sess *Session) ([]model.Message, PromptNormalizationStats) {
 	if sess == nil {
-		return nil
+		return nil, PromptNormalizationStats{}
 	}
 	st := ReadPromptContextState(sess)
-	msgs := NormalizeForPrompt(sess.CopyMessages())
+	msgs, stats := NormalizeForPromptWithStats(sess.CopyMessages())
 	if st.Version == 0 {
-		return lightweightChatPromptMessages(msgs)
+		return lightweightChatPromptMessages(msgs), stats
 	}
-	return BuildPromptMessages(msgs, st)
+	return buildPromptMessagesNormalized(msgs, st), stats
 }
 
 func BuildPromptMessages(messages []model.Message, st PromptContextState) []model.Message {
-	messages = NormalizeForPrompt(messages)
+	out, _ := BuildPromptMessagesWithStats(messages, st)
+	return out
+}
+
+func BuildPromptMessagesWithStats(messages []model.Message, st PromptContextState) ([]model.Message, PromptNormalizationStats) {
+	normalized, stats := NormalizeForPromptWithStats(messages)
+	return buildPromptMessagesNormalized(normalized, st), stats
+}
+
+func buildPromptMessagesNormalized(messages []model.Message, st PromptContextState) []model.Message {
 	st = normalizePromptContextState(st)
 	if st.Version == 0 {
 		return lightweightChatPromptMessages(messages)

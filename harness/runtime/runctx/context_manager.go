@@ -14,6 +14,7 @@ import (
 	statecatalog "github.com/mossagents/moss/harness/runtime/catalog"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/x/stringutil"
 )
@@ -58,7 +59,10 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 	}
 	currentPrompt := session.BuildPromptMessages(sess.Messages, state)
 	currentTokens := session.EstimateMessagesTokens(currentPrompt)
+	compactReason := ""
+	beforeCompactTokens := currentTokens
 	if !lightweightChat && shouldCompactPrompt(sess, state, st, currentTokens) {
+		compactReason = compactTriggerReason(sess, state, st, currentTokens)
 		session.WritePromptContextState(sess, state)
 		if _, err := st.memory.CompactSessionContext(ctx, st.store, sess, state.KeepRecent, "auto compact", k.LLM(), true); err != nil {
 			return state, nil, 0, err
@@ -69,6 +73,7 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 		state.DynamicFragments = append(filterFragmentsByKind(state.DynamicFragments, contextSummaryFragmentKind), buildRealtimeFragments(ctx, k, sess)...)
 		currentPrompt = session.BuildPromptMessages(sess.Messages, state)
 		currentTokens = session.EstimateMessagesTokens(currentPrompt)
+		emitContextCompactedEvent(ctx, k, sess, compactReason, beforeCompactTokens, currentTokens, state)
 	}
 	changed, hashes := session.ComputePromptFragmentDiff(state.FragmentHashes, session.FlattenPromptContextFragments(state))
 	state.FragmentHashes = hashes
@@ -123,6 +128,43 @@ func effectiveTriggerTokens(sess *session.Session, st *contextState) int {
 		return 0
 	}
 	return st.triggerTokens
+}
+
+func compactTriggerReason(sess *session.Session, state session.PromptContextState, st *contextState, promptTokens int) string {
+	triggerTokens := effectiveTriggerTokens(sess, st)
+	if triggerTokens > 0 && promptTokens >= triggerTokens {
+		return "trigger_tokens"
+	}
+	if st != nil && st.triggerDialog > 0 && countDialogMessages(sess.Messages) >= st.triggerDialog {
+		return "trigger_dialog"
+	}
+	maxPromptTokens := effectivePromptBudget(sess, st)
+	if maxPromptTokens > 0 && promptTokens > maxPromptTokens && countDialogMessages(sess.Messages) > state.KeepRecent {
+		return "prompt_budget"
+	}
+	return "manual"
+}
+
+func emitContextCompactedEvent(ctx context.Context, k *kernel.Kernel, sess *session.Session, reason string, beforeTokens, afterTokens int, state session.PromptContextState) {
+	if k == nil || sess == nil {
+		return
+	}
+	observe.ObserveExecutionEvent(ctx, k.Observer(), observe.ExecutionEvent{
+		Type:        observe.ExecutionContextCompacted,
+		SessionID:   sess.ID,
+		Timestamp:   time.Now().UTC(),
+		Phase:       "context",
+		Actor:       "runtime",
+		PayloadKind: "context_compaction",
+		Metadata: map[string]any{
+			"reason":                 reason,
+			"tokens_before":          beforeTokens,
+			"tokens_after":           afterTokens,
+			"compacted_dialog_count": state.CompactedDialogCount,
+			"keep_recent":            state.KeepRecent,
+			"snapshot_id":            state.LastSnapshotID,
+		},
+	})
 }
 
 func buildBaselineFragments(messages []model.Message) []session.PromptContextFragment {

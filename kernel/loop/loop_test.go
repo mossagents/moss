@@ -1094,6 +1094,21 @@ func (t *toolThenErrLLM) GenerateContent(_ context.Context, _ model.CompletionRe
 	}
 }
 
+type trimRetryLLM struct {
+	calls int32
+}
+
+func (t *trimRetryLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		call := atomic.AddInt32(&t.calls, 1)
+		if call == 1 {
+			yield(model.StreamChunk{}, stderrors.New("context_length_exceeded"))
+			return
+		}
+		yield(model.StreamChunk{Delta: "trimmed", Done: true, Usage: &model.TokenUsage{TotalTokens: 7}}, nil)
+	}
+}
+
 type recordingObserver struct {
 	llmCalls  []observe.LLMCallEvent
 	execution []observe.ExecutionEvent
@@ -1162,6 +1177,92 @@ func TestLoopLLMRetry_Sync(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&l.LLM.(*flakyLLM).calls); got != 3 {
 		t.Fatalf("expected 3 LLM calls, got %d", got)
+	}
+}
+
+func TestLoopContextTrimRetryEmitsExecutionEvent(t *testing.T) {
+	llm := &trimRetryLLM{}
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM:      llm,
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:     "test-trim-retry",
+		Status: session.StatusCreated,
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("old user context")}},
+			{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("old assistant context")}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("latest request")}},
+		},
+		Budget: session.Budget{MaxSteps: 4},
+	}
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success || result.Output != "trimmed" {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if got := atomic.LoadInt32(&llm.calls); got != 2 {
+		t.Fatalf("llm calls = %d, want 2", got)
+	}
+	var found bool
+	for _, event := range observer.execution {
+		if event.Type != observe.ExecutionContextTrimRetry {
+			continue
+		}
+		found = true
+		if removed, ok := event.Metadata["messages_removed"].(int); !ok || removed <= 0 {
+			t.Fatalf("unexpected trim event metadata: %+v", event.Metadata)
+		}
+		break
+	}
+	if !found {
+		t.Fatal("expected context trim retry execution event")
+	}
+}
+
+func TestLoopPromptNormalizationEmitsExecutionEvent(t *testing.T) {
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM: &kt.MockLLM{Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("ok")}},
+			StopReason: "end_turn",
+			Usage:      model.TokenUsage{TotalTokens: 6},
+		}}},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:     "test-normalize-observe",
+		Status: session.StatusCreated,
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("call tool")}},
+			{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call-1", Name: "read_file", Arguments: json.RawMessage(`{"path":"README.md"}`)}}},
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("continue")}},
+		},
+		Budget: session.Budget{MaxSteps: 4},
+	}
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var found bool
+	for _, event := range observer.execution {
+		if event.Type != observe.ExecutionContextNormalized {
+			continue
+		}
+		found = true
+		if got, ok := event.Metadata["synthesized_missing_tool_results"].(int); !ok || got != 1 {
+			t.Fatalf("unexpected normalization event metadata: %+v", event.Metadata)
+		}
+		break
+	}
+	if !found {
+		t.Fatal("expected prompt normalization execution event")
 	}
 }
 
