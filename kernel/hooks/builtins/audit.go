@@ -96,7 +96,15 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
 
 func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
 	data := map[string]any{
-		"type": e.Type,
+		"type":          e.Type,
+		"event_id":      e.EventID,
+		"event_version": e.EventVersion,
+		"run_id":        e.RunID,
+		"turn_id":       e.TurnID,
+		"parent_id":     e.ParentID,
+		"phase":         e.Phase,
+		"actor":         e.Actor,
+		"payload_kind":  e.PayloadKind,
 	}
 	if e.ToolName != "" {
 		data["tool"] = e.ToolName
@@ -125,8 +133,12 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
 	for k, v := range e.Metadata {
 		data[k] = v
 	}
+	ts := e.Timestamp.UTC()
+	if ts.IsZero() {
+		ts = time.Now().UTC()
+	}
 	a.write(auditEntry{
-		Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
+		Timestamp: ts.Format(time.RFC3339),
 		Type:      "execution_event",
 		SessionID: e.SessionID,
 		Data:      data,

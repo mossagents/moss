@@ -46,6 +46,13 @@
 - `llm_latency_avg <= 10000ms`
 - `tool_latency_avg <= 5000ms`
 - `tool_error_rate <= 0.05`
+- `guardian_error_rate <= 0.01`
+
+并进一步把 context / guardian 观测面接到了默认 exporter 与 product 审计消费层：
+
+- `context.compacted` / `context.trim_retry` / `context.normalized` / `guardian.reviewed` 已进入归一化指标
+- `contrib\telemetry\otel` 与 `contrib\telemetry\prometheus` 已直接导出 `moss.context.*` / `moss.guardian.*`
+- `inspect run` / `inspect thread` 已开始消费 `audit.jsonl`，输出 session/run 级 guardian 与 context 审计摘要
 
 ### 上下文压缩与中间件注入
 

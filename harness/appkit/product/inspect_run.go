@@ -9,20 +9,21 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	"github.com/mossagents/moss/x/stringutil"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type InspectRunReport struct {
-	SessionID  string             `json:"session_id"`
-	RunID      string             `json:"run_id,omitempty"`
-	TurnID     string             `json:"turn_id,omitempty"`
-	TurnPlan   *InspectTurnPlan   `json:"turn_plan,omitempty"`
-	ToolRoute  *InspectToolRoute  `json:"tool_route,omitempty"`
-	ModelRoute *InspectModelRoute `json:"model_route,omitempty"`
-	Failovers  []InspectFailover  `json:"failovers,omitempty"`
-	Changes    []InspectStateItem `json:"changes,omitempty"`
-	Events     []TraceEvent       `json:"events,omitempty"`
+	SessionID  string               `json:"session_id"`
+	RunID      string               `json:"run_id,omitempty"`
+	TurnID     string               `json:"turn_id,omitempty"`
+	TurnPlan   *InspectTurnPlan     `json:"turn_plan,omitempty"`
+	ToolRoute  *InspectToolRoute    `json:"tool_route,omitempty"`
+	ModelRoute *InspectModelRoute   `json:"model_route,omitempty"`
+	Audit      *InspectAuditSummary `json:"audit,omitempty"`
+	Failovers  []InspectFailover    `json:"failovers,omitempty"`
+	Changes    []InspectStateItem   `json:"changes,omitempty"`
+	Events     []TraceEvent         `json:"events,omitempty"`
 }
 
 type InspectTurnPlan struct {
@@ -235,6 +236,7 @@ func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunRe
 		}
 		return report.Failovers[i].AttemptIndex < report.Failovers[j].AttemptIndex
 	})
+	report.Audit = buildInspectAuditSummary(sessionID, report.RunID)
 	return report
 }
 

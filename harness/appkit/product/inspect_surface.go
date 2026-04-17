@@ -10,24 +10,24 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/x/stringutil"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type InspectReport struct {
-	Mode         string                        `json:"mode"`
-	Workspace    string                        `json:"workspace"`
+	Mode         string                    `json:"mode"`
+	Workspace    string                    `json:"workspace"`
 	Catalog      rstate.StateCatalogHealth `json:"catalog"`
-	SessionID    string                        `json:"session_id,omitempty"`
-	Items        []InspectStateItem            `json:"items,omitempty"`
-	Run          *InspectRunReport             `json:"run,omitempty"`
-	Threads      []InspectThreadSummary        `json:"threads,omitempty"`
-	Thread       *InspectThreadReport          `json:"thread,omitempty"`
-	Prompt       *InspectPromptReport          `json:"prompt,omitempty"`
-	Capabilities *InspectCapabilityReport      `json:"capabilities,omitempty"`
-	Replay       *InspectReplayReport          `json:"replay,omitempty"`
-	Compare      *InspectCompareReport         `json:"compare,omitempty"`
-	Governance   *InspectGovernanceReport      `json:"governance,omitempty"`
+	SessionID    string                    `json:"session_id,omitempty"`
+	Items        []InspectStateItem        `json:"items,omitempty"`
+	Run          *InspectRunReport         `json:"run,omitempty"`
+	Threads      []InspectThreadSummary    `json:"threads,omitempty"`
+	Thread       *InspectThreadReport      `json:"thread,omitempty"`
+	Prompt       *InspectPromptReport      `json:"prompt,omitempty"`
+	Capabilities *InspectCapabilityReport  `json:"capabilities,omitempty"`
+	Replay       *InspectReplayReport      `json:"replay,omitempty"`
+	Compare      *InspectCompareReport     `json:"compare,omitempty"`
+	Governance   *InspectGovernanceReport  `json:"governance,omitempty"`
 }
 
 type InspectStateItem struct {
@@ -290,6 +290,7 @@ func RenderInspectReport(report InspectReport) string {
 				)
 			}
 		}
+		renderInspectAuditSummary(&b, "Audit", run.Audit)
 		if len(run.Changes) == 0 {
 			b.WriteString("Changes:     none\n")
 		} else {

@@ -68,6 +68,7 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 
 - `LLMCallEvent`
 - `ToolCallEvent`
+- `ExecutionEvent`
 - `SessionEvent`
 - `ErrorEvent`
 - `NormalizedMetricsSnapshot`
@@ -81,6 +82,20 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 | `llm_latency_avg` | `<= 10000ms` |
 | `tool_latency_avg` | `<= 5000ms` |
 | `tool_error_rate` | `<= 0.05` |
+| `guardian_error_rate` | `<= 0.01` |
+
+与此同时，context / guardian 相关执行路径已经进入统一指标面：
+
+- `context.compactions_total`
+- `context.compaction_tokens_reclaimed_sum`
+- `context.trim_retry_total`
+- `context.trim_removed_messages_total`
+- `context.normalize_total`
+- `guardian.review_total`
+- `guardian.fallback_rate`
+- `guardian.error_rate`
+
+这些指标既可以由 `NormalizedMetricsSnapshot` / `ReleaseGateMeter` 消费，也可以通过 `contrib\telemetry\otel` 与 `contrib\telemetry\prometheus` 直接导出到外部观测系统。
 
 ### 1.6 健康面
 
@@ -145,6 +160,13 @@ docs\release-overrides.log
 ```
 
 这份日志是**当前保留的正式审计轨迹**，不再依赖旧的 `docs\v1\` 目录。
+
+现在产品层也开始消费这份审计轨迹，而不只是写入它：
+
+- `moss inspect run ...` 会输出 run 级 context / guardian 审计摘要
+- `moss inspect thread ...` 会输出 session 级 context / guardian 审计摘要
+
+这让 guardian fallback、context compact / trim retry / normalize 等路径，不再只能靠逐行翻日志确认。
 
 ## 4. 仍需继续补强的部分
 

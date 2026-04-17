@@ -3,21 +3,23 @@ package product
 import (
 	"context"
 	"encoding/json"
-	"github.com/mossagents/moss/harness/appkit/product/changes"
-	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/session"
-	extcapability "github.com/mossagents/moss/harness/extensions/capability"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
-	"github.com/mossagents/moss/harness/userio/prompting"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/harness/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	appconfig "github.com/mossagents/moss/harness/config"
+	extcapability "github.com/mossagents/moss/harness/extensions/capability"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/harness/userio/prompting"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
@@ -149,6 +151,35 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save change operation: %v", err)
 	}
+	writeAuditLogEntries(t,
+		map[string]any{
+			"timestamp":  now.Add(5 * time.Millisecond).UTC().Format(time.RFC3339),
+			"type":       "execution_event",
+			"session_id": "sess-inspect",
+			"data": map[string]any{
+				"type":          string(observe.ExecutionContextCompacted),
+				"run_id":        "run-1",
+				"turn_id":       "run-1-turn-001",
+				"phase":         "context",
+				"payload_kind":  "context_compaction",
+				"reason":        "trigger_tokens",
+				"tokens_before": 220,
+				"tokens_after":  140,
+			},
+		},
+		map[string]any{
+			"timestamp":  now.Add(6 * time.Millisecond).UTC().Format(time.RFC3339),
+			"type":       "execution_event",
+			"session_id": "sess-inspect",
+			"data": map[string]any{
+				"type":    string(observe.ExecutionGuardianReviewed),
+				"run_id":  "run-1",
+				"turn_id": "run-1-turn-001",
+				"phase":   "approval",
+				"outcome": "auto_approved",
+			},
+		},
+	)
 
 	report, err := BuildInspectReport(ctx, workspace, []string{"run", "latest", "10"})
 	if err != nil {
@@ -175,6 +206,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	if len(report.Run.Changes) != 1 || report.Run.Changes[0].RecordID != "change-1" {
 		t.Fatalf("unexpected changes: %+v", report.Run.Changes)
 	}
+	if report.Run.Audit == nil || report.Run.Audit.EventCount != 2 || report.Run.Audit.Context.Compactions != 1 || report.Run.Audit.Guardian.AutoApproved != 1 {
+		t.Fatalf("unexpected run audit summary: %+v", report.Run.Audit)
+	}
 
 	rendered := RenderInspectReport(report)
 	for _, want := range []string{
@@ -184,6 +218,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 		"Model route: configured=gpt-5 lane=reasoning",
 		"Tool decisions:",
 		"Failover:",
+		"Audit: source=audit_log events=2",
+		"Context audit: compactions=1 reclaimed=80",
+		"Guardian audit: reviews=1 auto_approved=1",
 		"Changes:",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -273,6 +310,29 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Save change operation: %v", err)
 	}
+	writeAuditLogEntries(t,
+		map[string]any{
+			"timestamp":  time.Now().UTC().Format(time.RFC3339),
+			"type":       "execution_event",
+			"session_id": "sess-root",
+			"data": map[string]any{
+				"type":                             string(observe.ExecutionContextNormalized),
+				"phase":                            "prompt",
+				"dropped_orphan_tool_results":      1,
+				"synthesized_missing_tool_results": 2,
+			},
+		},
+		map[string]any{
+			"timestamp":  time.Now().Add(time.Millisecond).UTC().Format(time.RFC3339),
+			"type":       "execution_event",
+			"session_id": "sess-root",
+			"data": map[string]any{
+				"type":    string(observe.ExecutionGuardianReviewed),
+				"phase":   "approval",
+				"outcome": "fallback_error",
+			},
+		},
+	)
 	for _, entry := range []rstate.StateEntry{
 		{Kind: rstate.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
 	} {
@@ -323,6 +383,9 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if threadReport.Thread == nil || len(threadReport.Thread.Children) != 1 || len(threadReport.Thread.Checkpoints) < 1 || threadReport.Thread.Summary.CheckpointCount < 1 {
 		t.Fatalf("unexpected thread detail: %+v", threadReport.Thread)
 	}
+	if threadReport.Thread.Audit == nil || threadReport.Thread.Audit.Context.Normalizations != 1 || threadReport.Thread.Audit.Guardian.Errors != 1 {
+		t.Fatalf("unexpected thread audit summary: %+v", threadReport.Thread.Audit)
+	}
 	promptReport, err := BuildInspectReport(ctx, workspace, []string{"prompt", "sess-root"})
 	if err != nil {
 		t.Fatalf("BuildInspectReport prompt: %v", err)
@@ -339,7 +402,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	}
 
 	rendered := RenderInspectReport(promptReport) + "\n" + RenderInspectReport(threadReport) + "\n" + RenderInspectReport(capReport)
-	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Capabilities:"} {
+	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Audit: source=audit_log events=2", "Context audit: compactions=0 reclaimed=0 trim_retries=0 trimmed_messages=0 normalizations=1", "Capabilities:"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("expected %q in rendered output:\n%s", want, rendered)
 		}
@@ -624,5 +687,27 @@ func TestInspectLimitAndText(t *testing.T) {
 	limit, text = inspectLimitAndText([]string{"-3"}, 8)
 	if limit != 8 {
 		t.Fatalf("negative first arg: limit=%d, want 8", limit)
+	}
+}
+
+func writeAuditLogEntries(t *testing.T, entries ...map[string]any) {
+	t.Helper()
+	path := AuditLogPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open audit log: %v", err)
+	}
+	defer f.Close()
+	for _, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatalf("marshal audit entry: %v", err)
+		}
+		if _, err := fmt.Fprintln(f, string(data)); err != nil {
+			t.Fatalf("write audit entry: %v", err)
+		}
 	}
 }

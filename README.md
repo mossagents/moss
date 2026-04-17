@@ -219,6 +219,27 @@ Priority is:
 
 **CLI flags > environment variables > config file**
 
+## Telemetry and Audit
+
+Moss now exposes two complementary observability layers:
+
+- Structured runtime events and normalized metrics in `kernel/observe`
+- Optional exporters in `contrib/telemetry/otel` and `contrib/telemetry/prometheus`
+
+The normalized metrics surface now includes context-management and guardian-review signals in addition to success/latency/cost/tool-error counters, including:
+
+- `context.compactions_total`
+- `context.compaction_tokens_reclaimed_sum`
+- `context.trim_retry_total`
+- `context.normalize_total`
+- `guardian.review_total`
+- `guardian.fallback_rate`
+- `guardian.error_rate`
+
+The OTEL and Prometheus exporters also emit first-class execution metrics for these paths under `moss.context.*` and `moss.guardian.*`, so dashboards do not need to reconstruct them indirectly from raw event streams.
+
+For operator-facing audit consumption, the product layer now treats `audit.jsonl` as more than an append-only trail: `moss inspect run ...` and `moss inspect thread ...` surface aggregated context and guardian audit summaries derived from the audit log.
+
 ## Applications and examples
 
 Core apps in `apps\`:

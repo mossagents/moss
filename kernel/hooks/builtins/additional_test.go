@@ -168,12 +168,19 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 	var buf bytes.Buffer
 	al := builtins.NewAuditLogger(&buf)
 	al.OnExecutionEvent(context.Background(), observe.ExecutionEvent{
-		Type:      "tool_approved",
-		SessionID: "sess-7",
-		ToolName:  "bash",
-		Risk:      "high",
-		CallID:    "cid-1",
-		Timestamp: time.Now(),
+		EventID:      "evt-1",
+		EventVersion: 1,
+		RunID:        "run-1",
+		TurnID:       "run-1-turn-001",
+		Type:         "tool_approved",
+		SessionID:    "sess-7",
+		ToolName:     "bash",
+		Risk:         "high",
+		CallID:       "cid-1",
+		Phase:        "approval",
+		Actor:        "guardian",
+		PayloadKind:  "guardian_review",
+		Timestamp:    time.Now(),
 	})
 	var entry map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
@@ -181,6 +188,10 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 	}
 	if entry["type"] != "execution_event" {
 		t.Fatalf("expected type=execution_event, got %v", entry["type"])
+	}
+	data, _ := entry["data"].(map[string]any)
+	if data["run_id"] != "run-1" || data["turn_id"] != "run-1-turn-001" || data["phase"] != "approval" {
+		t.Fatalf("expected run/turn/phase metadata in data, got %v", data)
 	}
 }
 

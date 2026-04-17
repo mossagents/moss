@@ -219,6 +219,27 @@ skills:
 
 **命令行参数 > 环境变量 > 配置文件**
 
+## 观测与审计
+
+Moss 现在有两层互补的观测面：
+
+- `kernel/observe` 中的结构化运行事件与归一化指标
+- `contrib/telemetry/otel` 与 `contrib/telemetry/prometheus` 中的可选 exporter
+
+归一化指标现在除了 success / latency / cost / tool-error 之外，也直接覆盖 context 管理和 guardian review，包括：
+
+- `context.compactions_total`
+- `context.compaction_tokens_reclaimed_sum`
+- `context.trim_retry_total`
+- `context.normalize_total`
+- `guardian.review_total`
+- `guardian.fallback_rate`
+- `guardian.error_rate`
+
+OTEL 和 Prometheus exporter 也会把这些路径导出为一等指标族（`moss.context.*` 与 `moss.guardian.*`），因此 dashboard 不需要再从原始事件流侧推导。
+
+在 operator 侧，产品层也不再把 `audit.jsonl` 仅当作追加日志：`moss inspect run ...` 与 `moss inspect thread ...` 现在会直接展示由 audit log 聚合出来的 context / guardian 审计摘要。
+
 ## 应用与示例
 
 `apps\` 下的核心应用：

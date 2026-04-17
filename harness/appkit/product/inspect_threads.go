@@ -46,6 +46,7 @@ type InspectThreadSummary struct {
 
 type InspectThreadReport struct {
 	Summary     InspectThreadSummary           `json:"summary"`
+	Audit       *InspectAuditSummary           `json:"audit,omitempty"`
 	Children    []InspectThreadSummary         `json:"children,omitempty"`
 	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
 	Changes     []InspectStateItem             `json:"changes,omitempty"`
@@ -125,6 +126,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 		return nil, err
 	}
 	report := &InspectThreadReport{Summary: inspectThreadSummaryFromSession(*selected)}
+	report.Audit = buildInspectAuditSummary(selected.ID, "")
 	checkpointCounts := checkpointCountsBySession(ctx)
 	changeCounts := changeCountsBySession(ctx, changeStore)
 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
@@ -356,6 +358,7 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 	)
 	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
+	renderInspectAuditSummary(b, "Audit", report.Audit)
 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
 	if len(report.Children) > 0 {
 		b.WriteString("Children:\n")
