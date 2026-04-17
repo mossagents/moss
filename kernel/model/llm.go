@@ -160,14 +160,96 @@ type StreamIterator interface {
 	Close() error
 }
 
+type StreamChunkType string
+
+const (
+	StreamChunkTextDelta      StreamChunkType = "text.delta"
+	StreamChunkReasoningDelta StreamChunkType = "reasoning.delta"
+	StreamChunkRefusalDelta   StreamChunkType = "refusal.delta"
+	StreamChunkToolCall       StreamChunkType = "tool.call"
+	StreamChunkHostedTool     StreamChunkType = "hosted_tool"
+	StreamChunkDone           StreamChunkType = "done"
+)
+
 // StreamChunk 是流式响应的一个片段。
 type StreamChunk struct {
+	Type           StreamChunkType  `json:"type,omitempty"`
+	Content        string           `json:"content,omitempty"`
+	ToolCall       *ToolCall        `json:"tool_call,omitempty"`
+	HostedTool     *HostedToolEvent `json:"hosted_tool,omitempty"`
+	Usage          *TokenUsage      `json:"usage,omitempty"`
+	StopReason     string           `json:"stop_reason,omitempty"`
+	Metadata       *LLMCallMetadata `json:"metadata,omitempty"`
 	Delta          string           `json:"delta,omitempty"`
 	ReasoningDelta string           `json:"reasoning_delta,omitempty"`
-	ToolCall       *ToolCall        `json:"tool_call,omitempty"`
 	Done           bool             `json:"done,omitempty"`
-	Usage          *TokenUsage      `json:"usage,omitempty"`
-	Metadata       *LLMCallMetadata `json:"metadata,omitempty"`
+}
+
+func TextDeltaChunk(content string) StreamChunk {
+	return StreamChunk{Type: StreamChunkTextDelta, Content: content, Delta: content}
+}
+
+func ReasoningDeltaChunk(content string) StreamChunk {
+	return StreamChunk{Type: StreamChunkReasoningDelta, Content: content, ReasoningDelta: content}
+}
+
+func RefusalDeltaChunk(content string) StreamChunk {
+	return StreamChunk{Type: StreamChunkRefusalDelta, Content: content}
+}
+
+func ToolCallChunk(call *ToolCall) StreamChunk {
+	return StreamChunk{Type: StreamChunkToolCall, ToolCall: call}
+}
+
+func HostedToolChunk(event *HostedToolEvent) StreamChunk {
+	return StreamChunk{Type: StreamChunkHostedTool, HostedTool: event}
+}
+
+func DoneChunk(stopReason string, usage *TokenUsage, metadata *LLMCallMetadata) StreamChunk {
+	return StreamChunk{Type: StreamChunkDone, Usage: usage, StopReason: stopReason, Metadata: metadata, Done: true}
+}
+
+func (c StreamChunk) Normalized() StreamChunk {
+	if c.Type != "" {
+		if c.Type == StreamChunkTextDelta && c.Content == "" {
+			c.Content = c.Delta
+		}
+		if c.Type == StreamChunkReasoningDelta && c.Content == "" {
+			c.Content = c.ReasoningDelta
+		}
+		if c.Type == StreamChunkDone {
+			c.Done = true
+		}
+		return c
+	}
+	switch {
+	case c.ReasoningDelta != "":
+		c.Type = StreamChunkReasoningDelta
+		c.Content = c.ReasoningDelta
+	case c.Delta != "":
+		c.Type = StreamChunkTextDelta
+		c.Content = c.Delta
+	case c.ToolCall != nil:
+		c.Type = StreamChunkToolCall
+	case c.HostedTool != nil:
+		c.Type = StreamChunkHostedTool
+	case c.Done:
+		c.Type = StreamChunkDone
+	}
+	return c
+}
+
+func (c StreamChunk) IsDone() bool {
+	return c.Normalized().Type == StreamChunkDone
+}
+
+func (c StreamChunk) EmitsVisibleContent() bool {
+	switch c.Normalized().Type {
+	case StreamChunkTextDelta, StreamChunkReasoningDelta, StreamChunkRefusalDelta, StreamChunkToolCall, StreamChunkHostedTool:
+		return true
+	default:
+		return false
+	}
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -178,49 +260,64 @@ type StreamChunk struct {
 // 适用于不需要流式处理的消费方（摘要、评估、上下文压缩等）。
 func Complete(ctx context.Context, llm LLM, req CompletionRequest) (*CompletionResponse, error) {
 	var (
-		content    strings.Builder
-		reasoning  strings.Builder
-		toolCalls  []ToolCall
-		usage      TokenUsage
-		stopReason string
-		metadata   *LLMCallMetadata
+		content         strings.Builder
+		reasoning       strings.Builder
+		refusal         strings.Builder
+		toolCalls       []ToolCall
+		hostedToolCalls []HostedToolEvent
+		hostedToolIndex = map[string]int{}
+		usage           TokenUsage
+		stopReason      string
+		metadata        *LLMCallMetadata
 	)
 	for chunk, err := range llm.GenerateContent(ctx, req) {
 		if err != nil {
 			return nil, err
 		}
-		if chunk.Delta != "" {
-			content.WriteString(chunk.Delta)
-		}
-		if chunk.ReasoningDelta != "" {
-			reasoning.WriteString(chunk.ReasoningDelta)
-		}
-		if chunk.ToolCall != nil {
-			toolCalls = append(toolCalls, *chunk.ToolCall)
+		chunk = chunk.Normalized()
+		switch chunk.Type {
+		case StreamChunkTextDelta:
+			content.WriteString(chunk.Content)
+		case StreamChunkReasoningDelta:
+			reasoning.WriteString(chunk.Content)
+		case StreamChunkRefusalDelta:
+			refusal.WriteString(chunk.Content)
+		case StreamChunkToolCall:
+			if chunk.ToolCall != nil {
+				toolCalls = append(toolCalls, *chunk.ToolCall)
+			}
+		case StreamChunkHostedTool:
+			if chunk.HostedTool != nil {
+				hostedToolCalls = upsertHostedToolCalls(hostedToolCalls, hostedToolIndex, *chunk.HostedTool)
+			}
 		}
 		if chunk.Metadata != nil {
 			metadata = chunk.Metadata
 		}
-		if chunk.Done {
+		if chunk.IsDone() {
 			if chunk.Usage != nil {
 				usage = *chunk.Usage
 			}
-			stopReason = "end_turn"
-			if len(toolCalls) > 0 {
-				stopReason = "tool_use"
-			}
+			stopReason = strings.TrimSpace(chunk.StopReason)
 		}
 	}
 
-	msg := Message{Role: RoleAssistant, ToolCalls: toolCalls}
+	msg := Message{Role: RoleAssistant, ToolCalls: toolCalls, HostedToolCalls: hostedToolCalls}
 	if reasoning.Len() > 0 {
 		msg.ContentParts = append(msg.ContentParts, ReasoningPart(reasoning.String()))
+	}
+	if refusal.Len() > 0 {
+		msg.ContentParts = append(msg.ContentParts, RefusalPart(refusal.String()))
 	}
 	if content.Len() > 0 {
 		msg.ContentParts = append(msg.ContentParts, TextPart(content.String()))
 	}
 	if stopReason == "" {
-		stopReason = "end_turn"
+		if len(toolCalls) > 0 {
+			stopReason = "tool_use"
+		} else {
+			stopReason = "end_turn"
+		}
 	}
 
 	return &CompletionResponse{
@@ -240,31 +337,58 @@ func ResponseToSeq(resp *CompletionResponse) iter.Seq2[StreamChunk, error] {
 		}
 		// Yield reasoning part if present.
 		if reasoning := ContentPartsToReasoningText(resp.Message.ContentParts); reasoning != "" {
-			if !yield(StreamChunk{ReasoningDelta: reasoning}, nil) {
+			if !yield(ReasoningDeltaChunk(reasoning), nil) {
+				return
+			}
+		}
+		if refusal := ContentPartsToRefusalText(resp.Message.ContentParts); refusal != "" {
+			if !yield(RefusalDeltaChunk(refusal), nil) {
+				return
+			}
+		}
+		for i := range resp.Message.HostedToolCalls {
+			event := resp.Message.HostedToolCalls[i]
+			if !yield(HostedToolChunk(&event), nil) {
 				return
 			}
 		}
 		// Yield tool calls.
 		for i := range resp.ToolCalls {
 			call := resp.ToolCalls[i]
-			if !yield(StreamChunk{ToolCall: &call}, nil) {
+			if !yield(ToolCallChunk(&call), nil) {
 				return
 			}
 		}
 		// Yield content + done.
-		content := ContentPartsToPlainText(resp.Message.ContentParts)
+		content := ContentPartsToTextOnly(resp.Message.ContentParts)
 		var meta *LLMCallMetadata
 		if resp.Metadata != nil {
 			copied := *resp.Metadata
 			meta = &copied
 		}
-		yield(StreamChunk{
-			Delta:    content,
-			Done:     true,
-			Usage:    &resp.Usage,
-			Metadata: meta,
-		}, nil)
+		if content != "" {
+			if !yield(TextDeltaChunk(content), nil) {
+				return
+			}
+		}
+		yield(DoneChunk(resp.StopReason, &resp.Usage, meta), nil)
 	}
+}
+
+func upsertHostedToolCalls(existing []HostedToolEvent, index map[string]int, event HostedToolEvent) []HostedToolEvent {
+	key := strings.TrimSpace(event.ID)
+	if key == "" {
+		key = strings.TrimSpace(event.Name)
+	}
+	if key == "" {
+		key = string(event.Input) + "\x00" + string(event.Output)
+	}
+	if pos, ok := index[key]; ok {
+		existing[pos] = event
+		return existing
+	}
+	index[key] = len(existing)
+	return append(existing, event)
 }
 
 // SeqToIterator 将 iter.Seq2（push 模式）转换为 StreamIterator（pull 模式）。

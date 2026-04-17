@@ -145,7 +145,7 @@ func (l *AgentLoop) runIteration(
 		return true, nil
 	}
 
-	return resp.StopReason == "end_turn", nil
+	return resp.StopReason != "tool_use", nil
 }
 
 type iterationLLMResult struct {

@@ -21,6 +21,8 @@ const (
 	OutputStream     OutputType = "stream"      // 流式 chunk（追加到当前消息）
 	OutputStreamEnd  OutputType = "stream_end"  // 流式结束
 	OutputReasoning  OutputType = "reasoning"   // 模型推理内容
+	OutputRefusal    OutputType = "refusal"     // 模型拒绝内容
+	OutputHostedTool OutputType = "hosted_tool" // provider 托管工具事件
 	OutputProgress   OutputType = "progress"    // 进度更新
 	OutputToolStart  OutputType = "tool_start"  // 工具开始执行
 	OutputToolResult OutputType = "tool_result" // 工具执行结果
@@ -85,4 +87,3 @@ type InputResponse struct {
 	Decision *ApprovalDecision `json:"decision,omitempty"`
 	Form     map[string]any    `json:"form,omitempty"`
 }
-

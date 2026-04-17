@@ -186,11 +186,15 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 	l.recordBreakerSuccess()
 
 	msg := model.Message{
-		Role:      model.RoleAssistant,
-		ToolCalls: state.toolCalls,
+		Role:            model.RoleAssistant,
+		ToolCalls:       state.toolCalls,
+		HostedToolCalls: state.hostedToolCalls,
 	}
 	if state.fullReasoning != "" {
 		msg.ContentParts = append(msg.ContentParts, model.ReasoningPart(state.fullReasoning))
+	}
+	if state.fullRefusal != "" {
+		msg.ContentParts = append(msg.ContentParts, model.RefusalPart(state.fullRefusal))
 	}
 	if state.fullContent != "" {
 		msg.ContentParts = append(msg.ContentParts, model.TextPart(state.fullContent))
@@ -208,12 +212,14 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 }
 
 type streamAccumulator struct {
-	fullContent    string
-	fullReasoning  string
-	toolCalls      []model.ToolCall
-	usage          model.TokenUsage
-	stopReason     string
-	emittedContent bool
+	fullContent     string
+	fullReasoning   string
+	fullRefusal     string
+	toolCalls       []model.ToolCall
+	hostedToolCalls []model.HostedToolEvent
+	usage           model.TokenUsage
+	stopReason      string
+	emittedContent  bool
 }
 
 func derefMetadata(m *model.LLMCallMetadata) model.LLMCallMetadata {
@@ -224,46 +230,74 @@ func derefMetadata(m *model.LLMCallMetadata) model.LLMCallMetadata {
 }
 
 func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChunk, state *streamAccumulator) bool {
-	if chunk.ReasoningDelta != "" {
+	chunk = chunk.Normalized()
+	switch chunk.Type {
+	case model.StreamChunkReasoningDelta:
 		state.emittedContent = true
-		state.fullReasoning += chunk.ReasoningDelta
+		state.fullReasoning += chunk.Content
 		if l.IO != nil {
 			if err := l.IO.Send(ctx, kernio.OutputMessage{
 				Type:    kernio.OutputReasoning,
-				Content: chunk.ReasoningDelta,
+				Content: chunk.Content,
 			}); err != nil {
 				l.logger().DebugContext(ctx, "reasoning send failed", "error", err)
 			}
 		}
-	}
-
-	if chunk.Delta != "" {
+	case model.StreamChunkRefusalDelta:
 		state.emittedContent = true
-		state.fullContent += chunk.Delta
+		state.fullRefusal += chunk.Content
+		if l.IO != nil {
+			if err := l.IO.Send(ctx, kernio.OutputMessage{
+				Type:    kernio.OutputRefusal,
+				Content: chunk.Content,
+			}); err != nil {
+				l.logger().DebugContext(ctx, "refusal send failed", "error", err)
+			}
+		}
+	case model.StreamChunkTextDelta:
+		state.emittedContent = true
+		state.fullContent += chunk.Content
 		if l.IO != nil {
 			if err := l.IO.Send(ctx, kernio.OutputMessage{
 				Type:    kernio.OutputStream,
-				Content: chunk.Delta,
+				Content: chunk.Content,
 			}); err != nil {
 				l.logger().DebugContext(ctx, "stream chunk send failed", "error", err)
 			}
 		}
-	}
-
-	if chunk.ToolCall != nil {
+	case model.StreamChunkToolCall:
 		state.emittedContent = true
-		state.toolCalls = append(state.toolCalls, *chunk.ToolCall)
+		if chunk.ToolCall != nil {
+			state.toolCalls = append(state.toolCalls, *chunk.ToolCall)
+		}
+	case model.StreamChunkHostedTool:
+		state.emittedContent = true
+		if chunk.HostedTool != nil {
+			state.hostedToolCalls = appendOrReplaceHostedTool(state.hostedToolCalls, *chunk.HostedTool)
+			if l.IO != nil {
+				if err := l.IO.Send(ctx, kernio.OutputMessage{
+					Type:    kernio.OutputHostedTool,
+					Content: describeHostedTool(*chunk.HostedTool),
+					Meta:    hostedToolMeta(*chunk.HostedTool),
+				}); err != nil {
+					l.logger().DebugContext(ctx, "hosted tool send failed", "error", err)
+				}
+			}
+		}
 	}
 
-	if !chunk.Done {
+	if !chunk.IsDone() {
 		return false
 	}
 	if chunk.Usage != nil {
 		state.usage = *chunk.Usage
 	}
-	state.stopReason = "end_turn"
-	if len(state.toolCalls) > 0 {
-		state.stopReason = "tool_use"
+	state.stopReason = strings.TrimSpace(chunk.StopReason)
+	if state.stopReason == "" {
+		state.stopReason = "end_turn"
+		if len(state.toolCalls) > 0 {
+			state.stopReason = "tool_use"
+		}
 	}
 	if l.IO != nil {
 		if err := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); err != nil {
@@ -271,6 +305,62 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 		}
 	}
 	return true
+}
+
+func appendOrReplaceHostedTool(existing []model.HostedToolEvent, event model.HostedToolEvent) []model.HostedToolEvent {
+	key := strings.TrimSpace(event.ID)
+	if key == "" {
+		key = strings.TrimSpace(event.Name)
+	}
+	for i := range existing {
+		candidate := strings.TrimSpace(existing[i].ID)
+		if candidate == "" {
+			candidate = strings.TrimSpace(existing[i].Name)
+		}
+		if candidate == key && key != "" {
+			existing[i] = event
+			return existing
+		}
+	}
+	return append(existing, event)
+}
+
+func describeHostedTool(event model.HostedToolEvent) string {
+	name := strings.TrimSpace(event.Name)
+	status := strings.TrimSpace(event.Status)
+	switch {
+	case name != "" && status != "":
+		return name + " " + status
+	case name != "":
+		return name
+	case status != "":
+		return status
+	default:
+		return "hosted tool"
+	}
+}
+
+func hostedToolMeta(event model.HostedToolEvent) map[string]any {
+	meta := map[string]any{}
+	if strings.TrimSpace(event.ID) != "" {
+		meta["id"] = event.ID
+	}
+	if strings.TrimSpace(event.Name) != "" {
+		meta["name"] = event.Name
+	}
+	if strings.TrimSpace(event.Status) != "" {
+		meta["status"] = event.Status
+	}
+	if len(event.Input) > 0 {
+		meta["input"] = string(event.Input)
+	}
+	if len(event.Output) > 0 {
+		meta["output"] = string(event.Output)
+	}
+	if len(meta) == 0 {
+		return nil
+	}
+	return meta
 }
 
 func isRecoverableStreamTailError(err error) bool {

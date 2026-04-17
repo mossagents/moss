@@ -160,8 +160,9 @@ func (r *ModelRouter) GenerateContent(ctx context.Context, req model.CompletionR
 				yield(model.StreamChunk{}, attachModelMetadata(err, rm.profile.Name))
 				return
 			}
+			chunk = chunk.Normalized()
 			// Attach model metadata to final chunk.
-			if chunk.Done {
+			if chunk.IsDone() {
 				if chunk.Metadata == nil {
 					chunk.Metadata = &model.LLMCallMetadata{ActualModel: rm.profile.Name}
 				} else if strings.TrimSpace(chunk.Metadata.ActualModel) == "" {

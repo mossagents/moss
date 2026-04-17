@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	kerrors "github.com/mossagents/moss/kernel/errors"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/kernel/retry"
 	"io"
 	"iter"
 	"strings"
 	"sync"
 	"time"
+
+	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/retry"
 )
 
 const defaultFailoverMaxCandidates = 2
@@ -67,8 +68,9 @@ func (f *FailoverLLM) GenerateContent(ctx context.Context, req model.CompletionR
 				yield(model.StreamChunk{}, err)
 				return
 			}
+			chunk = chunk.Normalized()
 			// Attach metadata to final chunk.
-			if chunk.Done {
+			if chunk.IsDone() {
 				meta := it.Metadata()
 				chunk.Metadata = &meta
 			}
@@ -244,10 +246,11 @@ func (it *failoverStreamIterator) Next() (model.StreamChunk, error) {
 		}
 
 		if err == nil {
-			if chunk.Delta != "" || chunk.ToolCall != nil {
+			chunk = chunk.Normalized()
+			if chunk.EmitsVisibleContent() {
 				it.emitted = true
 			}
-			if chunk.Done {
+			if chunk.IsDone() {
 				it.parent.recordBreakerSuccess(it.currentModel)
 				it.selectedModel = it.currentModel
 				it.completedStream = true
@@ -503,5 +506,3 @@ func llmErrorFallbackSafe(err error) bool {
 	}
 	return false
 }
-
-

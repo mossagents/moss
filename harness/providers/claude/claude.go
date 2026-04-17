@@ -417,7 +417,7 @@ func contentPartsToTextOnlyString(parts []model.ContentPart, provider, modelName
 		if role == "assistant" && part.Type == model.ContentPartReasoning {
 			continue
 		}
-		if part.Type != model.ContentPartText {
+		if part.Type != model.ContentPartText && part.Type != model.ContentPartRefusal {
 			return "", unsupportedPartError(provider, modelName, role, part.Type)
 		}
 		textParts = append(textParts, part.Text)
@@ -446,6 +446,7 @@ type streamIterator struct {
 	pending         []model.StreamChunk
 	done            bool
 	usage           model.TokenUsage
+	emittedToolUse  bool
 	toolUseBuilders map[int]*toolUseBuilder
 }
 
@@ -486,7 +487,7 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 	case anthropic.ContentBlockDeltaEvent:
 		switch d := e.Delta.AsAny().(type) {
 		case anthropic.TextDelta:
-			it.pending = append(it.pending, model.StreamChunk{Delta: d.Text})
+			it.pending = append(it.pending, model.TextDeltaChunk(d.Text))
 		case anthropic.InputJSONDelta:
 			if tb, ok := it.toolUseBuilders[int(e.Index)]; ok {
 				tb.input += d.PartialJSON
@@ -504,7 +505,8 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 				Name:      tb.name,
 				Arguments: json.RawMessage(input),
 			}
-			it.pending = append(it.pending, model.StreamChunk{ToolCall: &tc})
+			it.pending = append(it.pending, model.ToolCallChunk(&tc))
+			it.emittedToolUse = true
 			delete(it.toolUseBuilders, int(e.Index))
 		}
 
@@ -513,10 +515,11 @@ func (it *streamIterator) processEvent(event anthropic.MessageStreamEventUnion) 
 		it.usage.TotalTokens = it.usage.PromptTokens + it.usage.CompletionTokens
 
 	case anthropic.MessageStopEvent:
-		it.pending = append(it.pending, model.StreamChunk{
-			Done:  true,
-			Usage: &it.usage,
-		})
+		stopReason := "end_turn"
+		if it.emittedToolUse {
+			stopReason = "tool_use"
+		}
+		it.pending = append(it.pending, model.DoneChunk(stopReason, &it.usage, nil))
 	}
 }
 

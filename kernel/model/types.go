@@ -16,10 +16,11 @@ const (
 
 // Message 是 Kernel 中的统一消息结构。
 type Message struct {
-	Role         Role          `json:"role"`
-	ContentParts []ContentPart `json:"content_parts,omitempty"`
-	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`
-	ToolResults  []ToolResult  `json:"tool_results,omitempty"`
+	Role            Role              `json:"role"`
+	ContentParts    []ContentPart     `json:"content_parts,omitempty"`
+	ToolCalls       []ToolCall        `json:"tool_calls,omitempty"`
+	ToolResults     []ToolResult      `json:"tool_results,omitempty"`
+	HostedToolCalls []HostedToolEvent `json:"hosted_tool_calls,omitempty"`
 }
 
 // ToolCall 表示 LLM 请求的一次工具调用。
@@ -36,12 +37,22 @@ type ToolResult struct {
 	IsError      bool          `json:"is_error,omitempty"`
 }
 
+// HostedToolEvent 表示 provider 托管工具的生命周期或最终结果快照。
+type HostedToolEvent struct {
+	ID     string          `json:"id,omitempty"`
+	Name   string          `json:"name,omitempty"`
+	Status string          `json:"status,omitempty"`
+	Input  json.RawMessage `json:"input,omitempty"`
+	Output json.RawMessage `json:"output,omitempty"`
+}
+
 // ContentPartType 表示消息内容分片类型。
 type ContentPartType string
 
 const (
 	ContentPartText        ContentPartType = "text"
 	ContentPartReasoning   ContentPartType = "reasoning"
+	ContentPartRefusal     ContentPartType = "refusal"
 	ContentPartFileRef     ContentPartType = "file_ref"
 	ContentPartInputImage  ContentPartType = "input_image"
 	ContentPartOutputImage ContentPartType = "output_image"

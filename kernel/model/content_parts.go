@@ -13,6 +13,10 @@ func ReasoningPart(text string) ContentPart {
 	return ContentPart{Type: ContentPartReasoning, Text: text}
 }
 
+func RefusalPart(text string) ContentPart {
+	return ContentPart{Type: ContentPartRefusal, Text: text}
+}
+
 func FileRefPart(ref AttachmentRef, mention *MentionBinding) ContentPart {
 	part := ContentPart{
 		Type:       ContentPartFileRef,
@@ -50,13 +54,31 @@ func MediaURLPart(typ ContentPartType, url, sourcePath string) ContentPart {
 	}
 }
 
-func ContentPartsToPlainText(parts []ContentPart) string {
+func ContentPartsToTextOnly(parts []ContentPart) string {
 	if len(parts) == 0 {
 		return ""
 	}
 	lines := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if p.Type != ContentPartText {
+			continue
+		}
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func ContentPartsToPlainText(parts []ContentPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != ContentPartText && p.Type != ContentPartRefusal {
 			continue
 		}
 		text := strings.TrimSpace(p.Text)
@@ -75,6 +97,24 @@ func ContentPartsToReasoningText(parts []ContentPart) string {
 	lines := make([]string, 0, len(parts))
 	for _, p := range parts {
 		if p.Type != ContentPartReasoning {
+			continue
+		}
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			continue
+		}
+		lines = append(lines, text)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func ContentPartsToRefusalText(parts []ContentPart) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	lines := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p.Type != ContentPartRefusal {
 			continue
 		}
 		text := strings.TrimSpace(p.Text)
@@ -111,7 +151,7 @@ func ValidateContentParts(parts []ContentPart) error {
 
 func validateContentPart(part ContentPart) error {
 	switch part.Type {
-	case ContentPartText, ContentPartReasoning:
+	case ContentPartText, ContentPartReasoning, ContentPartRefusal:
 		if strings.TrimSpace(part.Text) == "" {
 			return fmt.Errorf("%s part requires non-empty text", part.Type)
 		}

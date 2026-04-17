@@ -190,12 +190,15 @@ func TestResponseToSeq_TextContent(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("expected at least 1 chunk")
 	}
+	if chunks[0].Normalized().Type != StreamChunkTextDelta || chunks[0].Delta != "hi" {
+		t.Fatalf("unexpected first chunk: %+v", chunks[0])
+	}
 	last := chunks[len(chunks)-1]
-	if !last.Done {
+	if !last.IsDone() {
 		t.Fatal("last chunk should be Done=true")
 	}
-	if last.Delta != "hi" {
-		t.Fatalf("unexpected delta: %q", last.Delta)
+	if last.StopReason != "end_turn" {
+		t.Fatalf("unexpected stop reason: %q", last.StopReason)
 	}
 }
 

@@ -1,25 +1,29 @@
 package events
 
 import (
+	"time"
+
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/observe"
-	"time"
 )
 
 // StreamEventType is a frontend-facing normalized runtime event type.
 type StreamEventType string
 
 const (
-	EventAssistantMessage StreamEventType = "assistant.message"
-	EventAssistantDelta   StreamEventType = "assistant.delta"
-	EventAssistantDone    StreamEventType = "assistant.done"
-	EventProgress         StreamEventType = "runtime.progress"
-	EventToolStarted      StreamEventType = "tool.started"
-	EventToolCompleted    StreamEventType = "tool.completed"
-	EventRunStarted       StreamEventType = "run.started"
-	EventRunCompleted     StreamEventType = "run.completed"
-	EventRunFailed        StreamEventType = "run.failed"
-	EventUnknown          StreamEventType = "unknown"
+	EventAssistantMessage    StreamEventType = "assistant.message"
+	EventAssistantDelta      StreamEventType = "assistant.delta"
+	EventAssistantReasoning  StreamEventType = "assistant.reasoning"
+	EventAssistantRefusal    StreamEventType = "assistant.refusal"
+	EventAssistantHostedTool StreamEventType = "assistant.hosted_tool"
+	EventAssistantDone       StreamEventType = "assistant.done"
+	EventProgress            StreamEventType = "runtime.progress"
+	EventToolStarted         StreamEventType = "tool.started"
+	EventToolCompleted       StreamEventType = "tool.completed"
+	EventRunStarted          StreamEventType = "run.started"
+	EventRunCompleted        StreamEventType = "run.completed"
+	EventRunFailed           StreamEventType = "run.failed"
+	EventUnknown             StreamEventType = "unknown"
 )
 
 // StreamEvent is a normalized event DTO for UI/transport layers.
@@ -44,6 +48,12 @@ func FromOutputMessage(msg io.OutputMessage, now time.Time) StreamEvent {
 		event.Type = EventAssistantMessage
 	case io.OutputStream:
 		event.Type = EventAssistantDelta
+	case io.OutputReasoning:
+		event.Type = EventAssistantReasoning
+	case io.OutputRefusal:
+		event.Type = EventAssistantRefusal
+	case io.OutputHostedTool:
+		event.Type = EventAssistantHostedTool
 	case io.OutputStreamEnd:
 		event.Type = EventAssistantDone
 	case io.OutputProgress:

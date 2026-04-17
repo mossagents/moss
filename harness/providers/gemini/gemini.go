@@ -513,11 +513,12 @@ type streamIterator struct {
 	next func() (*genai.GenerateContentResponse, error, bool)
 	stop func()
 
-	pending       []model.StreamChunk
-	done          bool
-	stopped       bool
-	usage         model.TokenUsage
-	seenToolCalls map[string]struct{}
+	pending        []model.StreamChunk
+	done           bool
+	stopped        bool
+	usage          model.TokenUsage
+	seenToolCalls  map[string]struct{}
+	emittedToolUse bool
 }
 
 func (it *streamIterator) Next() (model.StreamChunk, error) {
@@ -535,10 +536,11 @@ func (it *streamIterator) Next() (model.StreamChunk, error) {
 		if !ok {
 			it.closeStop()
 			it.done = true
-			it.pending = append(it.pending, model.StreamChunk{
-				Done:  true,
-				Usage: &it.usage,
-			})
+			stopReason := "end_turn"
+			if it.emittedToolUse {
+				stopReason = "tool_use"
+			}
+			it.pending = append(it.pending, model.DoneChunk(stopReason, &it.usage, nil))
 			continue
 		}
 		if err != nil {
@@ -566,7 +568,7 @@ func (it *streamIterator) processResponse(resp *genai.GenerateContentResponse) {
 			continue
 		}
 		if p.Text != "" {
-			it.pending = append(it.pending, model.StreamChunk{Delta: p.Text})
+			it.pending = append(it.pending, model.TextDeltaChunk(p.Text))
 		}
 		if p.FunctionCall != nil {
 			args, _ := json.Marshal(p.FunctionCall.Args)
@@ -587,7 +589,8 @@ func (it *streamIterator) processResponse(resp *genai.GenerateContentResponse) {
 				Name:      p.FunctionCall.Name,
 				Arguments: json.RawMessage(args),
 			}
-			it.pending = append(it.pending, model.StreamChunk{ToolCall: &tc})
+			it.pending = append(it.pending, model.ToolCallChunk(&tc))
+			it.emittedToolUse = true
 		}
 	}
 }
@@ -614,7 +617,7 @@ func contentPartsToTextOnlyString(parts []model.ContentPart, provider, modelName
 		if role == "assistant" && part.Type == model.ContentPartReasoning {
 			continue
 		}
-		if part.Type != model.ContentPartText {
+		if part.Type != model.ContentPartText && part.Type != model.ContentPartRefusal {
 			return "", unsupportedPartError(provider, modelName, role, part.Type)
 		}
 		textParts = append(textParts, part.Text)

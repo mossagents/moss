@@ -455,7 +455,7 @@ func contentPartsToTextOnlyString(parts []model.ContentPart, provider, modelName
 		if role == "assistant" && part.Type == model.ContentPartReasoning {
 			continue
 		}
-		if part.Type != model.ContentPartText {
+		if part.Type != model.ContentPartText && part.Type != model.ContentPartRefusal {
 			return "", unsupportedPartError(provider, modelName, role, part.Type)
 		}
 		textParts = append(textParts, part.Text)
@@ -507,6 +507,7 @@ type streamIterator struct {
 	pending      []model.StreamChunk
 	done         bool
 	usage        model.TokenUsage
+	stopReason   string
 	toolBuilders map[int]*toolCallBuilder
 }
 
@@ -532,10 +533,11 @@ func (it *streamIterator) Next() (model.StreamChunk, error) {
 				return model.StreamChunk{}, err
 			}
 			// 流正常结束，发出完成信号
-			it.pending = append(it.pending, model.StreamChunk{
-				Done:  true,
-				Usage: &it.usage,
-			})
+			stopReason := strings.TrimSpace(it.stopReason)
+			if stopReason == "" {
+				stopReason = "end_turn"
+			}
+			it.pending = append(it.pending, model.DoneChunk(stopReason, &it.usage, nil))
 			it.done = true
 			continue
 		}
@@ -562,10 +564,10 @@ func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 
 	// 文本增量
 	if delta.Content != "" {
-		it.pending = append(it.pending, model.StreamChunk{Delta: delta.Content})
+		it.pending = append(it.pending, model.TextDeltaChunk(delta.Content))
 	}
 	if reasoning := extractReasoningText(delta.RawJSON()); reasoning != "" {
-		it.pending = append(it.pending, model.StreamChunk{ReasoningDelta: reasoning})
+		it.pending = append(it.pending, model.ReasoningDeltaChunk(reasoning))
 	}
 
 	// 工具调用增量
@@ -586,7 +588,10 @@ func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 
 	// 如果 finish_reason 是 tool_calls 或 stop，flush 工具调用
 	if choice.FinishReason == "tool_calls" {
+		it.stopReason = normalizeOpenAIStopReason(choice.FinishReason)
 		it.flushToolCalls()
+	} else if choice.FinishReason != "" {
+		it.stopReason = normalizeOpenAIStopReason(choice.FinishReason)
 	}
 }
 
@@ -602,7 +607,7 @@ func (it *streamIterator) flushToolCalls() {
 			Name:      tb.name,
 			Arguments: json.RawMessage(args),
 		}
-		it.pending = append(it.pending, model.StreamChunk{ToolCall: &tc})
+		it.pending = append(it.pending, model.ToolCallChunk(&tc))
 		delete(it.toolBuilders, idx)
 	}
 }

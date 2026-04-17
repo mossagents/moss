@@ -46,6 +46,8 @@ func TestConsoleIO_Send_AllOutputTypes(t *testing.T) {
 		{OutputMessage{Type: OutputStream, Content: "stream"}, "stream"},
 		{OutputMessage{Type: OutputStreamEnd, Content: ""}, ""},
 		{OutputMessage{Type: OutputReasoning, Content: "think"}, "💭"},
+		{OutputMessage{Type: OutputRefusal, Content: "blocked"}, "⛔"},
+		{OutputMessage{Type: OutputHostedTool, Content: "file_search completed"}, "🛰"},
 		{OutputMessage{Type: OutputProgress, Content: "progress"}, "⏳"},
 		{OutputMessage{Type: OutputToolStart, Content: "calling"}, "🔧"},
 		{OutputMessage{Type: OutputToolResult, Content: "done"}, "✅"},

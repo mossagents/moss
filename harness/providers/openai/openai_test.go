@@ -344,6 +344,152 @@ func TestFromResponsesResponse(t *testing.T) {
 	}
 }
 
+func TestFromResponsesResponse_RefusalAndHostedTool(t *testing.T) {
+	raw := `{
+		"id": "resp_refusal",
+		"output": [
+			{
+				"type": "message",
+				"role": "assistant",
+				"status": "completed",
+				"content": [{"type": "refusal", "refusal": "I can't help with that request."}]
+			},
+			{
+				"id": "fs_1",
+				"type": "file_search_call",
+				"status": "completed",
+				"queries": ["redirect chain"],
+				"results": []
+			}
+		],
+		"usage": {"input_tokens": 3, "output_tokens": 2, "total_tokens": 5}
+	}`
+	var resp responses.Response
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal responses.Response: %v", err)
+	}
+	completion := fromResponsesResponse(&resp)
+	if got := model.ContentPartsToRefusalText(completion.Message.ContentParts); got != "I can't help with that request." {
+		t.Fatalf("refusal=%q", got)
+	}
+	if len(completion.Message.HostedToolCalls) != 1 {
+		t.Fatalf("hosted tool calls=%+v", completion.Message.HostedToolCalls)
+	}
+	if completion.Message.HostedToolCalls[0].Name != "file_search_call" {
+		t.Fatalf("hosted tool name=%q", completion.Message.HostedToolCalls[0].Name)
+	}
+	if completion.StopReason != "refusal" {
+		t.Fatalf("stop reason=%q", completion.StopReason)
+	}
+}
+
+func responsesEventFromJSON(t *testing.T, raw string) responses.ResponseStreamEventUnion {
+	t.Helper()
+	var event responses.ResponseStreamEventUnion
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
+		t.Fatalf("unmarshal responses event: %v", err)
+	}
+	return event
+}
+
+func TestResponsesStreamIterator_DeltaEvents(t *testing.T) {
+	it := &responsesStreamIterator{
+		functionBuilders: map[string]*responsesFunctionCallBuilder{},
+		emittedToolCalls: map[string]struct{}{},
+	}
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.output_text.delta",
+		"item_id":"msg_1",
+		"output_index":0,
+		"content_index":0,
+		"delta":"Hello"
+	}`))
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.reasoning_summary_text.delta",
+		"item_id":"rs_1",
+		"output_index":0,
+		"summary_index":0,
+		"delta":"Inspect first."
+	}`))
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.refusal.delta",
+		"item_id":"msg_2",
+		"output_index":1,
+		"content_index":0,
+		"delta":"Cannot comply."
+	}`))
+
+	if len(it.pending) != 3 {
+		t.Fatalf("pending=%d, want 3", len(it.pending))
+	}
+	if got := it.pending[0].Normalized(); got.Type != model.StreamChunkTextDelta || got.Content != "Hello" {
+		t.Fatalf("text chunk=%+v", got)
+	}
+	if got := it.pending[1].Normalized(); got.Type != model.StreamChunkReasoningDelta || got.Content != "Inspect first." {
+		t.Fatalf("reasoning chunk=%+v", got)
+	}
+	if got := it.pending[2].Normalized(); got.Type != model.StreamChunkRefusalDelta || got.Content != "Cannot comply." {
+		t.Fatalf("refusal chunk=%+v", got)
+	}
+}
+
+func TestResponsesStreamIterator_OutputItemsAndCompletion(t *testing.T) {
+	it := &responsesStreamIterator{
+		actualModel:      "gpt-5",
+		functionBuilders: map[string]*responsesFunctionCallBuilder{},
+		emittedToolCalls: map[string]struct{}{},
+	}
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.output_item.done",
+		"output_index":0,
+		"item":{
+			"id":"fc_item_1",
+			"type":"function_call",
+			"call_id":"call_1",
+			"name":"read_file",
+			"arguments":"{\"path\":\"main.go\"}"
+		}
+	}`))
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.output_item.done",
+		"output_index":1,
+		"item":{
+			"id":"fs_1",
+			"type":"file_search_call",
+			"status":"completed",
+			"queries":["redirect chain"],
+			"results":[]
+		}
+	}`))
+	it.processEvent(responsesEventFromJSON(t, `{
+		"type":"response.completed",
+		"sequence_number":9,
+		"response":{
+			"id":"resp_done",
+			"output":[{
+				"type":"message",
+				"role":"assistant",
+				"status":"completed",
+				"content":[{"type":"output_text","text":"done"}]
+			}],
+			"usage":{"input_tokens":4,"output_tokens":2,"total_tokens":6}
+		}
+	}`))
+
+	if len(it.pending) != 3 {
+		t.Fatalf("pending=%d, want 3", len(it.pending))
+	}
+	if got := it.pending[0].Normalized(); got.Type != model.StreamChunkToolCall || got.ToolCall == nil || got.ToolCall.Name != "read_file" {
+		t.Fatalf("tool call chunk=%+v", got)
+	}
+	if got := it.pending[1].Normalized(); got.Type != model.StreamChunkHostedTool || got.HostedTool == nil || got.HostedTool.Name != "file_search_call" {
+		t.Fatalf("hosted tool chunk=%+v", got)
+	}
+	if got := it.pending[2].Normalized(); !got.IsDone() || got.StopReason != "end_turn" || got.Metadata == nil || got.Metadata.ActualModel != "gpt-5" {
+		t.Fatalf("done chunk=%+v", got)
+	}
+}
+
 // ─── fromOpenAIResponse ──────────────────────────────
 
 func TestFromOpenAIResponse_TextOnly(t *testing.T) {

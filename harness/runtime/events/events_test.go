@@ -16,6 +16,9 @@ func TestFromOutputMessage_AllTypes(t *testing.T) {
 	}{
 		{io.OutputText, EventAssistantMessage},
 		{io.OutputStream, EventAssistantDelta},
+		{io.OutputReasoning, EventAssistantReasoning},
+		{io.OutputRefusal, EventAssistantRefusal},
+		{io.OutputHostedTool, EventAssistantHostedTool},
 		{io.OutputStreamEnd, EventAssistantDone},
 		{io.OutputProgress, EventProgress},
 		{io.OutputToolStart, EventToolStarted},

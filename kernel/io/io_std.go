@@ -90,6 +90,10 @@ func (p *PrintfIO) Send(_ context.Context, msg OutputMessage) error {
 		_, err = fmt.Fprintln(p.w)
 	case OutputReasoning:
 		_, err = fmt.Fprintf(p.w, "💭 %s\n", msg.Content)
+	case OutputRefusal:
+		_, err = fmt.Fprintf(p.w, "⛔ %s\n", msg.Content)
+	case OutputHostedTool:
+		_, err = fmt.Fprintf(p.w, "🛰 %s\n", msg.Content)
 	case OutputProgress:
 		_, err = fmt.Fprintf(p.w, "⏳ %s\n", msg.Content)
 	case OutputToolStart:
@@ -236,4 +240,3 @@ func (b *BufferIO) SentTexts() []string {
 	}
 	return texts
 }
-

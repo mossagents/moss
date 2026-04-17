@@ -46,6 +46,10 @@ func (c *ConsoleIO) Send(_ context.Context, msg OutputMessage) error {
 		_, err = fmt.Fprintln(c.W)
 	case OutputReasoning:
 		_, err = fmt.Fprintf(c.W, "💭 %s\n", msg.Content)
+	case OutputRefusal:
+		_, err = fmt.Fprintf(c.W, "⛔ %s\n", msg.Content)
+	case OutputHostedTool:
+		_, err = fmt.Fprintf(c.W, "🛰 %s\n", msg.Content)
 	case OutputProgress:
 		_, err = fmt.Fprintf(c.W, "⏳ %s\n", msg.Content)
 	case OutputToolStart:
@@ -200,4 +204,3 @@ func (c *ConsoleIO) Ask(_ context.Context, req InputRequest) (InputResponse, err
 		return InputResponse{Value: strings.TrimSpace(line)}, nil
 	}
 }
-

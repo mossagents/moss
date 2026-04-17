@@ -65,6 +65,8 @@ func TestPrintfIO_Send(t *testing.T) {
 		{OutputMessage{Type: OutputText, Content: "hello"}, "hello"},
 		{OutputMessage{Type: OutputStream, Content: "chunk"}, "chunk"},
 		{OutputMessage{Type: OutputReasoning, Content: "plan next step"}, "plan next step"},
+		{OutputMessage{Type: OutputRefusal, Content: "blocked"}, "blocked"},
+		{OutputMessage{Type: OutputHostedTool, Content: "file_search completed"}, "file_search completed"},
 		{OutputMessage{Type: OutputProgress, Content: "working"}, "working"},
 		{OutputMessage{Type: OutputToolStart, Content: "run_command"}, "run_command"},
 		{OutputMessage{Type: OutputToolResult, Content: "done"}, "done"},
@@ -169,4 +171,3 @@ func TestBufferIO_ThreadSafe(t *testing.T) {
 		t.Errorf("expected 200, got %d", len(bio.Sent))
 	}
 }
-
