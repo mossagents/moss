@@ -696,7 +696,7 @@ func writeAuditLogEntries(t *testing.T, entries ...map[string]any) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatalf("mkdir audit dir: %v", err)
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatalf("open audit log: %v", err)
 	}
