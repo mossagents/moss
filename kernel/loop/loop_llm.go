@@ -36,6 +36,35 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 		Config:   modelConfig,
 	}
 
+	// Context-window trim retry: 当 provider 返回上下文超限错误时，
+	// 采用 FIFO 修剪最老的非 system 消息并重试，避免直接失败。
+	const maxTrimRetries = 5
+	for trimAttempt := 0; trimAttempt <= maxTrimRetries; trimAttempt++ {
+		resp, err := l.callLLMWithRetry(ctx, req)
+		if err == nil {
+			return resp, nil
+		}
+		if !isContextWindowExceededError(err) || trimAttempt == maxTrimRetries {
+			return nil, err
+		}
+		trimmed, ok := trimOldestPromptMessage(req.Messages)
+		if !ok {
+			return nil, err
+		}
+		l.logger().WarnContext(ctx, "context window exceeded; trimming oldest prompt message and retrying",
+			"session_id", sess.ID,
+			"turn_id", plan.TurnID,
+			"trim_attempt", trimAttempt+1,
+			"messages_before", len(req.Messages),
+			"messages_after", len(trimmed),
+		)
+		req.Messages = trimmed
+	}
+
+	return nil, &model.LLMCallError{Err: errors.New("context trim retry exhausted"), Retryable: false}
+}
+
+func (l *AgentLoop) callLLMWithRetry(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	cfg := l.Config.LLMRetry
 	if !cfg.Enabled() {
 		attempt := l.callLLMOnce(ctx, req)
@@ -236,11 +265,15 @@ func ensureLLMCallError(err error, retryable, fallbackSafe bool, metadata model.
 	var callErr *model.LLMCallError
 	if errors.As(err, &callErr) {
 		merged := *callErr
+		if merged.Class == "" {
+			merged.Class = model.ClassifyError(merged.Err)
+		}
 		merged.Metadata = mergeLLMMetadata(merged.Metadata, metadata)
 		return &merged
 	}
 	return &model.LLMCallError{
 		Err:          err,
+		Class:        model.ClassifyError(err),
 		Retryable:    retryable,
 		FallbackSafe: fallbackSafe,
 		Metadata:     metadata,
@@ -330,4 +363,58 @@ func (l *AgentLoop) emitLLMAttemptEvents(ctx context.Context, sessionID string, 
 		event.Model = metadata.ActualModel
 		observe.ObserveExecutionEvent(ctx, l.observer(), event)
 	}
+}
+
+func isContextWindowExceededError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var callErr *model.LLMCallError
+	if errors.As(err, &callErr) && callErr != nil && callErr.Class == model.LLMErrorContextWindow {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "context window") ||
+		strings.Contains(msg, "context_length_exceeded") ||
+		strings.Contains(msg, "maximum context length") ||
+		strings.Contains(msg, "prompt is too long") ||
+		strings.Contains(msg, "too many tokens") ||
+		strings.Contains(msg, "input token")
+}
+
+// trimOldestPromptMessage FIFO 移除最老的非 system 消息。
+// 为避免破坏 tool call / tool result 配对：
+// - assistant(tool call) + 后续 user(tool result) 会被一起删除
+// - orphan tool result 也会被清理掉
+func trimOldestPromptMessage(messages []model.Message) ([]model.Message, bool) {
+	if len(messages) == 0 {
+		return messages, false
+	}
+	idx := -1
+	for i, msg := range messages {
+		if msg.Role != model.RoleSystem {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return messages, false
+	}
+
+	end := idx + 1
+	if len(messages[idx].ToolCalls) > 0 && end < len(messages) {
+		// If this assistant message initiated tool calls, also remove immediate tool result carrier(s).
+		for end < len(messages) {
+			next := messages[end]
+			if next.Role == model.RoleUser && len(next.ToolResults) > 0 {
+				end++
+				continue
+			}
+			break
+		}
+	}
+
+	trimmed := append([]model.Message(nil), messages[:idx]...)
+	trimmed = append(trimmed, messages[end:]...)
+	return trimmed, true
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
+	kt "github.com/mossagents/moss/kernel/testing"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -185,6 +186,29 @@ func TestAutoEnforceApprovalClassInPolicyCheck(t *testing.T) {
 			t.Fatalf("expected nil for normal tool, got %v", err)
 		}
 	})
+}
+
+func TestPolicyCheckWithAutoApproveBypassesAsk(t *testing.T) {
+	recorder := kt.NewRecorderIO()
+	recorder.AskFunc = func(req io.InputRequest) (io.InputResponse, error) {
+		t.Fatalf("Ask should not be called when auto approval resolves request: %+v", req)
+		return io.InputResponse{}, nil
+	}
+	hook := governance.PolicyCheckWithAutoApprove(
+		func(_ context.Context, _ *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
+			return &io.ApprovalDecision{RequestID: req.ID, Type: io.ApprovalDecisionApprove, Approved: true, Source: "guardian"}
+		},
+		governance.RequireApprovalForPathPrefix("/etc/"),
+	)
+	ev := makeToolEvent(tool.ToolSpec{Name: "read_file", ApprovalClass: tool.ApprovalClassPolicyGuarded})
+	ev.IO = recorder
+	ev.Input = mustJSON(map[string]any{"path": "/etc/passwd"})
+	if err := hook(context.Background(), ev); err != nil {
+		t.Fatalf("expected nil, got %v", err)
+	}
+	if len(recorder.Asked) != 0 {
+		t.Fatalf("expected no Ask calls, got %d", len(recorder.Asked))
+	}
 }
 
 // TestRequireApprovalForPathPrefix 验证路径前缀保护规则。

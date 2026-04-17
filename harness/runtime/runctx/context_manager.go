@@ -4,16 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
+	skillx "github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/logging"
+	statecatalog "github.com/mossagents/moss/harness/runtime/catalog"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/logging"
-	statecatalog "github.com/mossagents/moss/harness/runtime/catalog"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 const (
@@ -37,8 +39,8 @@ func preparePromptContext(ctx context.Context, k *kernel.Kernel, st *contextStat
 	state := session.ReadPromptContextState(sess)
 	state.Version = contextStateVersion
 	lightweightChat := session.LatestUserTurnIsLightweightChat(sess.Messages)
-	if st.maxPromptTokens > 0 {
-		state.PromptBudget = st.maxPromptTokens
+	if promptBudget := effectivePromptBudget(sess, st); promptBudget > 0 {
+		state.PromptBudget = promptBudget
 	}
 	if st.startupTokens > 0 {
 		state.StartupBudget = st.startupTokens
@@ -89,16 +91,38 @@ func shouldCompactPrompt(sess *session.Session, state session.PromptContextState
 	if sess == nil {
 		return false
 	}
-	if st.triggerTokens > 0 && promptTokens >= st.triggerTokens {
+	triggerTokens := effectiveTriggerTokens(sess, st)
+	maxPromptTokens := effectivePromptBudget(sess, st)
+	if triggerTokens > 0 && promptTokens >= triggerTokens {
 		return true
 	}
 	if st.triggerDialog > 0 && countDialogMessages(sess.Messages) >= st.triggerDialog {
 		return true
 	}
-	if st.maxPromptTokens > 0 && promptTokens > st.maxPromptTokens && countDialogMessages(sess.Messages) > state.KeepRecent {
+	if maxPromptTokens > 0 && promptTokens > maxPromptTokens && countDialogMessages(sess.Messages) > state.KeepRecent {
 		return true
 	}
 	return false
+}
+
+func effectivePromptBudget(sess *session.Session, st *contextState) int {
+	if sess != nil && sess.Config.ModelConfig.ContextWindow > 0 {
+		return sess.Config.ModelConfig.ContextWindow
+	}
+	if st == nil {
+		return 0
+	}
+	return st.maxPromptTokens
+}
+
+func effectiveTriggerTokens(sess *session.Session, st *contextState) int {
+	if sess != nil && sess.Config.ModelConfig.AutoCompactTokenLimit > 0 {
+		return sess.Config.ModelConfig.AutoCompactTokenLimit
+	}
+	if st == nil {
+		return 0
+	}
+	return st.triggerTokens
 }
 
 func buildBaselineFragments(messages []model.Message) []session.PromptContextFragment {
@@ -174,6 +198,7 @@ func buildStartupFragments(ctx context.Context, k *kernel.Kernel, sess *session.
 		buildRepoStartupFragment(ctx, k),
 		buildMemoryStartupFragment(ctx, k),
 		buildStateCatalogStartupFragment(k, sess),
+		buildSkillCatalogStartupFragment(k),
 		buildWorkspaceStartupFragment(ctx, k),
 	}
 	filtered := make([]session.PromptContextFragment, 0, len(candidates))
@@ -322,6 +347,60 @@ func buildWorkspaceStartupFragment(ctx context.Context, k *kernel.Kernel) sessio
 	)
 }
 
+func buildSkillCatalogStartupFragment(k *kernel.Kernel) session.PromptContextFragment {
+	manifests := localSkillManifests(k)
+	if len(manifests) == 0 {
+		return session.PromptContextFragment{}
+	}
+	return skillx.BuildSkillCatalogFragment(manifests)
+}
+
+func buildMentionedSkillFragments(k *kernel.Kernel, sess *session.Session) []session.PromptContextFragment {
+	if sess == nil {
+		return nil
+	}
+	userInput := latestUserMessageText(sess.Messages)
+	if strings.TrimSpace(userInput) == "" {
+		return nil
+	}
+	return skillx.CollectSkillMentions(userInput, localSkillManifests(k))
+}
+
+func localSkillManifests(k *kernel.Kernel) []skillx.Manifest {
+	if k == nil || k.Workspace() == nil {
+		return nil
+	}
+	root, err := k.Workspace().ResolvePath(".")
+	if err != nil {
+		return nil
+	}
+	root = filepath.Clean(strings.TrimSpace(root))
+	if root == "" || root == "." {
+		return nil
+	}
+	manifests := skillx.DiscoverSkillManifests(root)
+	filtered := make([]skillx.Manifest, 0, len(manifests))
+	for _, mf := range manifests {
+		src := filepath.Clean(strings.TrimSpace(mf.Source))
+		if src == "" {
+			continue
+		}
+		if rel, err := filepath.Rel(root, src); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			filtered = append(filtered, mf)
+		}
+	}
+	return filtered
+}
+
+func latestUserMessageText(messages []model.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		if messages[i].Role == model.RoleUser {
+			return strings.TrimSpace(model.ContentPartsToPlainText(messages[i].ContentParts))
+		}
+	}
+	return ""
+}
+
 type realtimeContextSnapshot struct {
 	Repo      repoRealtimeState                `json:"repo,omitempty"`
 	Workspace map[string]workspaceRealtimeFile `json:"workspace,omitempty"`
@@ -349,13 +428,14 @@ func buildRealtimeFragments(ctx context.Context, k *kernel.Kernel, sess *session
 		Workspace: captureWorkspaceRealtimeState(ctx, k),
 	}
 	writeRealtimeSnapshot(sess, current)
-	fragments := make([]session.PromptContextFragment, 0, 2)
+	fragments := make([]session.PromptContextFragment, 0, 4)
 	if fragment := buildRepoRealtimeFragment(previous.Repo, current.Repo); strings.TrimSpace(fragment.Text) != "" {
 		fragments = append(fragments, fragment)
 	}
 	if fragment := buildWorkspaceRealtimeFragment(previous.Workspace, current.Workspace); strings.TrimSpace(fragment.Text) != "" {
 		fragments = append(fragments, fragment)
 	}
+	fragments = append(fragments, buildMentionedSkillFragments(k, sess)...)
 	return fragments
 }
 
@@ -571,4 +651,3 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
-

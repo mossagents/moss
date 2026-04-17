@@ -60,6 +60,21 @@ func TestLLMCallError_UnwrapNil(t *testing.T) {
 	}
 }
 
+func TestClassifyError(t *testing.T) {
+	if got := ClassifyError(context.DeadlineExceeded); got != LLMErrorTimeout {
+		t.Fatalf("timeout class=%q", got)
+	}
+	if got := ClassifyError(errors.New("rate limit exceeded")); got != LLMErrorRateLimit {
+		t.Fatalf("rate limit class=%q", got)
+	}
+	if got := ClassifyError(errors.New("maximum context length exceeded")); got != LLMErrorContextWindow {
+		t.Fatalf("context class=%q", got)
+	}
+	if got := ClassifyError(errors.New("unauthorized")); got != LLMErrorAuth {
+		t.Fatalf("auth class=%q", got)
+	}
+}
+
 // ─── Complete ─────────────────────────────────────────────────────────────
 
 func TestComplete_TextOnly(t *testing.T) {

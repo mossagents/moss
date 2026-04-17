@@ -19,6 +19,8 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
+type AutoApprovalFunc func(context.Context, *hooks.ToolEvent, *io.ApprovalRequest) *io.ApprovalDecision
+
 // PolicyDecision 表示权限决策。
 type PolicyDecision = io.PolicyDecision
 
@@ -71,6 +73,10 @@ type PolicyRule func(ctx PolicyContext) PolicyResult
 
 // PolicyCheck 构造 policy hook，仅在工具调用 before 阶段执行权限决策。
 func PolicyCheck(rules ...PolicyRule) hooks.Hook[hooks.ToolEvent] {
+	return PolicyCheckWithAutoApprove(nil, rules...)
+}
+
+func PolicyCheckWithAutoApprove(autoApprove AutoApprovalFunc, rules ...PolicyRule) hooks.Hook[hooks.ToolEvent] {
 	return func(ctx context.Context, ev *hooks.ToolEvent) error {
 		if ev == nil || ev.Stage != hooks.ToolLifecycleBefore || ev.Tool == nil {
 			return nil
@@ -79,7 +85,7 @@ func PolicyCheck(rules ...PolicyRule) hooks.Hook[hooks.ToolEvent] {
 		policyCtx := buildPolicyContext(ev)
 		result := evaluatePolicyRules(policyCtx, rules)
 		emitPolicyRuleMatchedEvent(ctx, ev, result)
-		if err := applyPolicyDecision(ctx, ev, result); err != nil {
+		if err := applyPolicyDecision(ctx, ev, result, autoApprove); err != nil {
 			return err
 		}
 
@@ -127,7 +133,7 @@ func emitPolicyRuleMatchedEvent(ctx context.Context, ev *hooks.ToolEvent, result
 	})
 }
 
-func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) error {
+func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult, autoApprove AutoApprovalFunc) error {
 	switch result.Decision {
 	case Deny:
 		if ev.IO != nil {
@@ -146,13 +152,13 @@ func applyPolicyDecision(ctx context.Context, ev *hooks.ToolEvent, result Policy
 		if ev.IO == nil {
 			return nil
 		}
-		return handlePolicyApproval(ctx, ev, result)
+		return handlePolicyApproval(ctx, ev, result, autoApprove)
 	default:
 		return nil
 	}
 }
 
-func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult) error {
+func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result PolicyResult, autoApprove AutoApprovalFunc) error {
 	approval := buildApprovalRequest(ev, result)
 	observer := approvalObserver(ev)
 	observe.ObserveApproval(ctx, observer, io.ApprovalEvent{
@@ -170,7 +176,7 @@ func handlePolicyApproval(ctx context.Context, ev *hooks.ToolEvent, result Polic
 		Enforcement: approval.Enforcement,
 		Metadata:    approvalRequestData(approval, ev.Input, result.Meta),
 	})
-	if auto := autoApprovalDecision(ev, approval); auto != nil {
+	if auto := autoApprovalDecision(ctx, ev, approval, autoApprove); auto != nil {
 		resolved := io.NormalizeApprovalDecisionForRequest(approval, auto)
 		observe.ObserveApproval(ctx, observer, io.ApprovalEvent{
 			SessionID: approval.SessionID,
@@ -477,29 +483,36 @@ func normalizeApprovalDecision(resp io.InputResponse, req *io.ApprovalRequest) *
 	})
 }
 
-func autoApprovalDecision(ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
-	if ev == nil || ev.Session == nil || req == nil {
+func autoApprovalDecision(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest, autoApprove AutoApprovalFunc) *io.ApprovalDecision {
+	if ev == nil || req == nil {
 		return nil
 	}
-	if rule, ok := session.MatchingApprovalRule(ev.Session, req); ok {
-		return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
-			RequestID: req.ID,
-			Type:      rule.Type,
-			Approved:  true,
-			Reason:    "remembered approval in session state",
-			Source:    "session-policy-cache",
-			DecidedAt: time.Now().UTC(),
-		})
+	if ev.Session != nil {
+		if rule, ok := session.MatchingApprovalRule(ev.Session, req); ok {
+			return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
+				RequestID: req.ID,
+				Type:      rule.Type,
+				Approved:  true,
+				Reason:    "remembered approval in session state",
+				Source:    "session-policy-cache",
+				DecidedAt: time.Now().UTC(),
+			})
+		}
+		if session.PermissionProfileCovers(session.GrantedPermissionsOf(ev.Session), req.ProposedPermissions) {
+			return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
+				RequestID: req.ID,
+				Type:      io.ApprovalDecisionGrantPermission,
+				Approved:  true,
+				Reason:    "required permissions already granted for this session",
+				Source:    "session-permissions",
+				DecidedAt: time.Now().UTC(),
+			})
+		}
 	}
-	if session.PermissionProfileCovers(session.GrantedPermissionsOf(ev.Session), req.ProposedPermissions) {
-		return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
-			RequestID: req.ID,
-			Type:      io.ApprovalDecisionGrantPermission,
-			Approved:  true,
-			Reason:    "required permissions already granted for this session",
-			Source:    "session-permissions",
-			DecidedAt: time.Now().UTC(),
-		})
+	if autoApprove != nil {
+		if decision := autoApprove(ctx, ev, req); decision != nil {
+			return io.NormalizeApprovalDecisionForRequest(req, decision)
+		}
 	}
 	return nil
 }

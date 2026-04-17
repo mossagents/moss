@@ -440,3 +440,22 @@ func AutoCompactHook(k *kernel.Kernel) hooks.Hook[hooks.LLMEvent] {
 		return nil
 	}
 }
+
+// MidTurnCompactHook 返回一个可用于 LoopConfig.MidTurnCompact 的回调。
+// 在工具执行完成后调用，检查上下文是否因大量工具输出而需要即时压缩。
+func MidTurnCompactHook(k *kernel.Kernel) func(ctx context.Context, sess *session.Session) error {
+	return func(ctx context.Context, sess *session.Session) error {
+		if sess == nil {
+			return nil
+		}
+		st := ensureContextState(k)
+		if st.store == nil || st.memory == nil {
+			return nil
+		}
+		// 用 shouldCompactPrompt 判断是否需要压缩
+		if _, _, _, err := preparePromptContext(ctx, k, st, sess); err != nil {
+			return err
+		}
+		return nil
+	}
+}

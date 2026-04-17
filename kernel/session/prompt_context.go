@@ -74,7 +74,7 @@ func PromptMessages(sess *Session) []model.Message {
 		return nil
 	}
 	st := ReadPromptContextState(sess)
-	msgs := sess.CopyMessages()
+	msgs := NormalizeForPrompt(sess.CopyMessages())
 	if st.Version == 0 {
 		return lightweightChatPromptMessages(msgs)
 	}
@@ -82,6 +82,7 @@ func PromptMessages(sess *Session) []model.Message {
 }
 
 func BuildPromptMessages(messages []model.Message, st PromptContextState) []model.Message {
+	messages = NormalizeForPrompt(messages)
 	st = normalizePromptContextState(st)
 	if st.Version == 0 {
 		return lightweightChatPromptMessages(messages)
@@ -157,9 +158,24 @@ func EstimateTextTokens(text string) int {
 	if text == "" {
 		return 0
 	}
-	runes := utf8.RuneCountInString(text)
+	var asciiCount, cjkCount, otherCount int
+	for _, r := range text {
+		switch {
+		case r == '\n' || r == '\r':
+			continue
+		case r <= utf8.RuneSelf:
+			asciiCount++
+		case unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul):
+			cjkCount++
+		default:
+			otherCount++
+		}
+	}
 	lines := strings.Count(text, "\n") + 1
-	return max(1, (runes+3)/4+lines)
+	asciiTokens := (asciiCount + 3) / 4
+	cjkTokens := (cjkCount*2 + 2) / 3
+	otherTokens := (otherCount + 1) / 2
+	return max(1, asciiTokens+cjkTokens+otherTokens+lines)
 }
 
 func NewPromptContextFragment(id, kind string, role model.Role, title, text string) PromptContextFragment {

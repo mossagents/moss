@@ -1,6 +1,7 @@
 package loop
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"sync/atomic"
@@ -59,6 +60,11 @@ type ContextCompressionConfig struct {
 	Tokenizer model.Tokenizer
 }
 
+// MidTurnCompactFunc 是 mid-turn compact 回调签名。
+// 在工具执行完成后、下一次 LLM 调用前调用，用于在单次迭代内
+// 检测上下文是否超限并触发压缩，避免必须等到下一次 BeforeLLM hook。
+type MidTurnCompactFunc func(ctx context.Context, sess *session.Session) error
+
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
 	MaxIterations      int                      // 最大循环次数（默认 50）
@@ -70,6 +76,10 @@ type LoopConfig struct {
 	// ContextCompression 配置自动上下文压缩（可选）。
 	// 设置后 AgentLoop 会在启动时自动将压缩 hook 添加到 BeforeLLM pipeline。
 	ContextCompression ContextCompressionConfig
+	// MidTurnCompact 在工具调用完成后触发上下文压缩检查。
+	// 当单次迭代产生大量工具输出导致上下文膨胀时，可在迭代内即时压缩，
+	// 而非等到下一次 BeforeLLM hook。为 nil 时不执行 mid-turn compact。
+	MidTurnCompact MidTurnCompactFunc
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。

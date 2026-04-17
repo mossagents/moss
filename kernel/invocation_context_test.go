@@ -111,3 +111,30 @@ func TestForkDepthEmptyBranch(t *testing.T) {
 		t.Fatalf("root branch should allow RunChild, got %v", gotErr)
 	}
 }
+
+func TestRunChildActiveAgentLimit(t *testing.T) {
+	t.Cleanup(func() {
+		activeChildAgentCount.Store(0)
+	})
+	activeChildAgentCount.Store(maxActiveAgents)
+
+	sess := &session.Session{ID: "test-active-agent-limit"}
+	ctx := NewInvocationContext(context.Background(), InvocationContextParams{
+		Branch:  "root",
+		Session: sess,
+	})
+
+	var gotErr error
+	for _, err := range ctx.RunChild(noopAgent("child"), ChildRunConfig{}) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	if gotErr == nil {
+		t.Fatal("expected active child agent limit error, got nil")
+	}
+	if !strings.Contains(gotErr.Error(), "active child agent limit") {
+		t.Fatalf("expected active child agent limit error, got %q", gotErr.Error())
+	}
+}

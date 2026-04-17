@@ -955,6 +955,37 @@ func TestLoopRunFailedEventIncludesErrorCode(t *testing.T) {
 	}
 }
 
+func TestIsContextWindowExceededError(t *testing.T) {
+	if !isContextWindowExceededError(stderrors.New("maximum context length exceeded")) {
+		t.Fatal("expected context length error to be detected")
+	}
+	if isContextWindowExceededError(stderrors.New("network timeout")) {
+		t.Fatal("unexpected match for non-context error")
+	}
+}
+
+func TestTrimOldestPromptMessage_RemovesToolPair(t *testing.T) {
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("sys")}},
+		{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "c1", Name: "echo", Arguments: json.RawMessage(`{}`)}}},
+		{Role: model.RoleUser, ToolResults: []model.ToolResult{{CallID: "c1", ContentParts: []model.ContentPart{model.TextPart("ok")}}}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("final user")}},
+	}
+	trimmed, ok := trimOldestPromptMessage(msgs)
+	if !ok {
+		t.Fatal("expected trim to succeed")
+	}
+	if len(trimmed) != 2 {
+		t.Fatalf("len(trimmed)=%d, want 2", len(trimmed))
+	}
+	if len(trimmed[0].ToolCalls) != 0 || len(trimmed[0].ToolResults) != 0 {
+		t.Fatalf("unexpected orphan tool data in first remaining message: %+v", trimmed[0])
+	}
+	if got := model.ContentPartsToPlainText(trimmed[1].ContentParts); got != "final user" {
+		t.Fatalf("last message=%q, want final user", got)
+	}
+}
+
 type blockingLLM struct {
 	calls int32
 }

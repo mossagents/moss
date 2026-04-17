@@ -3,6 +3,8 @@ package runctx
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -167,6 +169,64 @@ func TestContextToolsExposeExecutionMetadata(t *testing.T) {
 	}
 	if spec.PlannerVisibility != tool.PlannerVisibilityVisibleWithConstraints {
 		t.Fatalf("planner_visibility = %q", spec.PlannerVisibility)
+	}
+}
+
+func TestSkillCatalogAndMentionedSkillFragments(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	skillFile := filepath.Join(root, ".agents", "skills", "jina", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillFile), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	content := "---\nname: jina\ndescription: Extract content from URLs\n---\n\nUse this skill to fetch web pages.\n"
+	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	ws, err := sandbox.NewLocalWorkspace(root)
+	if err != nil {
+		t.Fatalf("NewLocalWorkspace: %v", err)
+	}
+	k := kernel.New(kernel.WithWorkspace(ws))
+	sess := &session.Session{
+		ID:       "sess-skill",
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Please use @jina now")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+
+	catalog := buildSkillCatalogStartupFragment(k)
+	if !strings.Contains(catalog.Text, "@jina") {
+		t.Fatalf("catalog missing skill listing: %q", catalog.Text)
+	}
+	fragments := buildMentionedSkillFragments(k, sess)
+	if len(fragments) != 1 {
+		t.Fatalf("fragments=%d, want 1", len(fragments))
+	}
+	if !strings.Contains(fragments[0].Text, "fetch web pages") {
+		t.Fatalf("skill body not injected: %q", fragments[0].Text)
+	}
+	_ = ctx
+}
+
+func TestEffectivePromptBudgetPrefersModelConfig(t *testing.T) {
+	st := &contextState{maxPromptTokens: 4000, triggerTokens: 3000}
+	sess := &session.Session{Config: session.SessionConfig{ModelConfig: model.ModelConfig{ContextWindow: 12000, AutoCompactTokenLimit: 9000}}}
+	if got := effectivePromptBudget(sess, st); got != 12000 {
+		t.Fatalf("prompt budget=%d, want 12000", got)
+	}
+	if got := effectiveTriggerTokens(sess, st); got != 9000 {
+		t.Fatalf("trigger tokens=%d, want 9000", got)
+	}
+}
+
+func TestEffectivePromptBudgetFallsBackToContextDefaults(t *testing.T) {
+	st := &contextState{maxPromptTokens: 4000, triggerTokens: 3000}
+	sess := &session.Session{}
+	if got := effectivePromptBudget(sess, st); got != 4000 {
+		t.Fatalf("prompt budget=%d, want 4000", got)
+	}
+	if got := effectiveTriggerTokens(sess, st); got != 3000 {
+		t.Fatalf("trigger tokens=%d, want 3000", got)
 	}
 }
 

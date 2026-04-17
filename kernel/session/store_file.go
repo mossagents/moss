@@ -12,15 +12,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 // FileStore 是基于文件系统的 SessionStore 实现。
-// 每个 Session 保存为独立的 JSON 文件：{dir}/{session_id}.json
+// 每个 Session 保存为独立的 append-only JSONL 文件：{dir}/{session_id}.jsonl。
+// 读取时兼容旧版单 JSON 对象文件，便于平滑升级。
 type FileStore struct {
-	dir string
-	mu  sync.RWMutex
+	dir          string
+	mu           sync.RWMutex
+	summaryCache map[string]SessionSummary // lazy-loaded cache
+	cacheLoaded  bool
 }
 
 // NewFileStore 创建文件存储，dir 为存储目录（不存在则自动创建）。
@@ -47,25 +50,30 @@ func (fs *FileStore) Load(_ context.Context, id string) (*Session, error) {
 
 func (fs *FileStore) loadLocked(id string) (*Session, error) {
 	path := fs.path(id)
-	data, err := os.ReadFile(path)
+	raw, err := loadPersistedSessionFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			// 兼容旧版 .json 单对象路径。
+			legacyRaw, legacyErr := loadPersistedSessionFile(fs.legacyPath(id))
+			if legacyErr != nil {
+				if os.IsNotExist(legacyErr) {
+					return nil, nil
+				}
+				return nil, fmt.Errorf("read session %s: %w", id, legacyErr)
+			}
+			raw = legacyRaw
+		} else {
+			return nil, fmt.Errorf("read session %s: %w", id, err)
 		}
-		return nil, fmt.Errorf("read session %s: %w", id, err)
 	}
 
-	var raw persistedSession
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("unmarshal session %s: %w", id, err)
-	}
 	sess, err := raw.toSession(id)
 	if err != nil {
 		return nil, err
 	}
 	if reasoningChanged(sess.Messages) {
 		sess.Messages = sanitizePersistedMessages(sess.Messages)
-		if err := fs.saveLocked(sess); err != nil {
+		if err := fs.rewriteLocked(sess); err != nil {
 			return nil, err
 		}
 	}
@@ -73,63 +81,19 @@ func (fs *FileStore) loadLocked(id string) (*Session, error) {
 }
 
 func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
-	fs.mu.RLock()
-	defer fs.mu.RUnlock()
-
-	entries, err := os.ReadDir(fs.dir)
-	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
+	fs.mu.Lock()
+	if !fs.cacheLoaded {
+		if err := fs.loadAllSummariesLocked(); err != nil {
+			fs.mu.Unlock()
+			return nil, err
+		}
 	}
-
-	var summaries []SessionSummary
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
-			continue
-		}
-
-		data, err := os.ReadFile(filepath.Join(fs.dir, e.Name()))
-		if err != nil {
-			continue
-		}
-
-		var sess Session
-		if err := json.Unmarshal(data, &sess); err != nil {
-			continue
-		}
-		if !VisibleInHistory(&sess) {
-			continue
-		}
-
-		source, parentID, taskID, preview, activityKind, archived, activityAt := ThreadMetadataValues(&sess)
-		endedAt := formatSessionTime(sess.EndedAt)
-		updatedAt := formatSessionTime(activityAt)
-		if updatedAt == "" {
-			updatedAt = formatSessionTime(sess.CreatedAt)
-		}
-		profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(&sess)
-		summaries = append(summaries, SessionSummary{
-			ID:                sess.ID,
-			Title:             sess.Title,
-			Goal:              sess.Config.Goal,
-			Mode:              sess.Config.Mode,
-			Profile:           profile,
-			EffectiveTrust:    effectiveTrust,
-			EffectiveApproval: effectiveApproval,
-			TaskMode:          taskMode,
-			Source:            source,
-			ParentID:          parentID,
-			TaskID:            taskID,
-			Preview:           preview,
-			ActivityKind:      activityKind,
-			Status:            sess.Status,
-			Recoverable:       IsRecoverableStatus(sess.Status),
-			Archived:          archived,
-			Steps:             sess.Budget.UsedStepsValue(),
-			CreatedAt:         formatSessionTime(sess.CreatedAt),
-			UpdatedAt:         updatedAt,
-			EndedAt:           endedAt,
-		})
+	summaries := make([]SessionSummary, 0, len(fs.summaryCache))
+	for _, s := range fs.summaryCache {
+		summaries = append(summaries, s)
 	}
+	fs.mu.Unlock()
+
 	sort.Slice(summaries, func(i, j int) bool {
 		left := stringutil.FirstNonEmpty(summaries[i].UpdatedAt, summaries[i].CreatedAt)
 		right := stringutil.FirstNonEmpty(summaries[j].UpdatedAt, summaries[j].CreatedAt)
@@ -139,6 +103,69 @@ func (fs *FileStore) List(_ context.Context) ([]SessionSummary, error) {
 		return left > right
 	})
 	return summaries, nil
+}
+
+// loadAllSummariesLocked scans the directory and populates the summary cache.
+// Must be called with fs.mu held for writing.
+func (fs *FileStore) loadAllSummariesLocked() error {
+	entries, err := os.ReadDir(fs.dir)
+	if err != nil {
+		return fmt.Errorf("list sessions: %w", err)
+	}
+	fs.summaryCache = make(map[string]SessionSummary, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || (!strings.HasSuffix(e.Name(), ".json") && !strings.HasSuffix(e.Name(), ".jsonl")) {
+			continue
+		}
+		raw, err := loadPersistedSessionFile(filepath.Join(fs.dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		sess, err := raw.toSession(raw.ID)
+		if err != nil || sess == nil {
+			continue
+		}
+		if !VisibleInHistory(sess) {
+			continue
+		}
+		summary := buildSessionSummary(sess)
+		fs.summaryCache[sess.ID] = summary
+	}
+	fs.cacheLoaded = true
+	return nil
+}
+
+// buildSessionSummary extracts a SessionSummary from a Session.
+func buildSessionSummary(sess *Session) SessionSummary {
+	source, parentID, taskID, preview, activityKind, archived, activityAt := ThreadMetadataValues(sess)
+	endedAt := formatSessionTime(sess.EndedAt)
+	updatedAt := formatSessionTime(activityAt)
+	if updatedAt == "" {
+		updatedAt = formatSessionTime(sess.CreatedAt)
+	}
+	profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(sess)
+	return SessionSummary{
+		ID:                sess.ID,
+		Title:             sess.Title,
+		Goal:              sess.Config.Goal,
+		Mode:              sess.Config.Mode,
+		Profile:           profile,
+		EffectiveTrust:    effectiveTrust,
+		EffectiveApproval: effectiveApproval,
+		TaskMode:          taskMode,
+		Source:            source,
+		ParentID:          parentID,
+		TaskID:            taskID,
+		Preview:           preview,
+		ActivityKind:      activityKind,
+		Status:            sess.Status,
+		Recoverable:       IsRecoverableStatus(sess.Status),
+		Archived:          archived,
+		Steps:             sess.Budget.UsedStepsValue(),
+		CreatedAt:         formatSessionTime(sess.CreatedAt),
+		UpdatedAt:         updatedAt,
+		EndedAt:           endedAt,
+	}
 }
 
 func formatSessionTime(ts time.Time) string {
@@ -155,6 +182,9 @@ func (fs *FileStore) Delete(_ context.Context, id string) error {
 	path := fs.path(id)
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("delete session %s: %w", id, err)
+	}
+	if fs.cacheLoaded {
+		delete(fs.summaryCache, id)
 	}
 	return nil
 }
@@ -223,6 +253,10 @@ func sanitizeID(id string) string {
 }
 
 func (fs *FileStore) path(id string) string {
+	return filepath.Join(fs.dir, sanitizeID(id)+".jsonl")
+}
+
+func (fs *FileStore) legacyPath(id string) string {
 	return filepath.Join(fs.dir, sanitizeID(id)+".json")
 }
 
@@ -251,16 +285,32 @@ func (fs *FileStore) deleteRouteLocked(key string) error {
 }
 
 func (fs *FileStore) saveLocked(sess *Session) error {
-	data, err := json.MarshalIndent(persistedSessionFromSession(sess), "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal session: %w", err)
+	if err := appendPersistedSessionJSONL(fs.path(sess.ID), persistedSessionFromSession(sess)); err != nil {
+		return err
 	}
-	path := fs.path(sess.ID)
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0600); err != nil {
-		return fmt.Errorf("write session tmp: %w", err)
+	// Update summary cache if initialized.
+	if fs.cacheLoaded {
+		if VisibleInHistory(sess) {
+			fs.summaryCache[sess.ID] = buildSessionSummary(sess)
+		} else {
+			delete(fs.summaryCache, sess.ID)
+		}
 	}
-	return os.Rename(tmpPath, path)
+	return nil
+}
+
+func (fs *FileStore) rewriteLocked(sess *Session) error {
+	if err := rewritePersistedSessionJSONL(fs.path(sess.ID), persistedSessionFromSession(sess)); err != nil {
+		return err
+	}
+	if fs.cacheLoaded {
+		if VisibleInHistory(sess) {
+			fs.summaryCache[sess.ID] = buildSessionSummary(sess)
+		} else {
+			delete(fs.summaryCache, sess.ID)
+		}
+	}
+	return nil
 }
 
 type persistedSession struct {

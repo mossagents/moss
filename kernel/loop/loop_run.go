@@ -323,6 +323,17 @@ func (l *AgentLoop) processIterationResponse(ctx context.Context, sess *session.
 			l.runErrorHook(ctx, sess, err)
 			return err
 		}
+		// Mid-turn compact: 工具执行后检查上下文是否需要压缩。
+		// 大量工具输出可能导致上下文膨胀，在此处即时压缩而非等待下一次 BeforeLLM。
+		if l.Config.MidTurnCompact != nil {
+			if err := l.Config.MidTurnCompact(ctx, sess); err != nil {
+				l.logger().WarnContext(ctx, "mid-turn compact failed",
+					"session_id", sess.ID,
+					"error", err.Error(),
+				)
+				// 不中断循环，compact 失败非致命
+			}
+		}
 		return nil
 	}
 

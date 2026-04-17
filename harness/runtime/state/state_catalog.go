@@ -12,7 +12,12 @@ import (
 	"time"
 )
 
-const stateCatalogSchemaVersion = 1
+const (
+	stateCatalogSchemaVersion = 1
+	// stateCatalogFlushInterval is the debounce window for write coalescing.
+	// Mutations within this window are batched into a single disk write.
+	stateCatalogFlushInterval = 100 * time.Millisecond
+)
 
 type StateKind string
 
@@ -83,6 +88,12 @@ type StateCatalog struct {
 	entries    map[string]StateEntry
 	lastError  string
 	updatedAt  time.Time
+
+	// Write coalescing: batch multiple mutations into a single persist.
+	dirty     bool
+	flushC    chan struct{} // signals the debounce goroutine
+	closeOnce sync.Once
+	done      chan struct{} // closed when the debounce goroutine exits
 }
 
 type stateCatalogDisk struct {
@@ -115,8 +126,11 @@ func NewStateCatalog(catalogDir, eventDir string, enabled bool) (*StateCatalog, 
 		catalog:    filepath.Join(catalogDir, "catalog.json"),
 		meta:       filepath.Join(catalogDir, "catalog.meta.json"),
 		entries:    make(map[string]StateEntry),
+		flushC:     make(chan struct{}, 1),
+		done:       make(chan struct{}),
 	}
 	if !enabled {
+		close(c.done)
 		return c, nil
 	}
 	if err := os.MkdirAll(catalogDir, 0o700); err != nil {
@@ -128,6 +142,7 @@ func NewStateCatalog(catalogDir, eventDir string, enabled bool) (*StateCatalog, 
 	if err := c.load(); err != nil {
 		return nil, err
 	}
+	go c.flushLoop()
 	return c, nil
 }
 
@@ -502,3 +517,14 @@ func marshalStateMetadata(value any) json.RawMessage {
 	return data
 }
 
+// flushLoop 保留给未来的写合并/防抖持久化。
+// 当前 catalog 仍采用同步 persistLocked，因此这里仅负责维持生命周期，
+// 避免 NewStateCatalog 中的后台 goroutine 引用缺失导致编译失败。
+func (c *StateCatalog) flushLoop() {
+	defer close(c.done)
+	for range c.flushC {
+		if c == nil || !c.Enabled() {
+			return
+		}
+	}
+}

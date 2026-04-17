@@ -99,6 +99,8 @@ type ModelConfig struct {
 	Model    string `yaml:"model,omitempty"`
 	BaseURL  string `yaml:"base_url,omitempty"`
 	APIKey   string `yaml:"api_key,omitempty"`
+	ContextWindow         int  `yaml:"context_window,omitempty"`
+	AutoCompactTokenLimit int  `yaml:"auto_compact_token_limit,omitempty"`
 	Default  bool   `yaml:"default,omitempty"`
 }
 

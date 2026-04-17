@@ -185,6 +185,13 @@ func (c *InvocationContext) WithIO(userIO io.UserIO) *InvocationContext {
 // Deeper nesting causes exponential resource consumption.
 const maxForkDepth = 5
 
+// maxActiveAgents limits the number of concurrently running child agents across
+// the current process. This prevents runaway fan-out from exhausting memory,
+// model quota, or workspace resources.
+const maxActiveAgents = 16
+
+var activeChildAgentCount atomic.Int32
+
 // forkDepth calculates the current fork nesting depth from a branch path.
 func forkDepth(branch string) int {
 	if branch == "" {
@@ -212,6 +219,12 @@ func (c *InvocationContext) RunChild(agent Agent, cfg ChildRunConfig) iter.Seq2[
 			yield(nil, fmt.Errorf("fork depth limit reached (%d): cannot spawn child agent %q", maxForkDepth, agent.Name()))
 			return
 		}
+		if active := activeChildAgentCount.Add(1); active > maxActiveAgents {
+			activeChildAgentCount.Add(-1)
+			yield(nil, fmt.Errorf("active child agent limit reached (%d): cannot spawn child agent %q", maxActiveAgents, agent.Name()))
+			return
+		}
+		defer activeChildAgentCount.Add(-1)
 
 		childCtx := c.WithAgent(agent).WithBranch(childBranch(c.Branch(), agent.Name(), cfg.Branch))
 		if cfg.UserContent != nil {

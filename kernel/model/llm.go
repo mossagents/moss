@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"iter"
 	"strings"
@@ -47,6 +48,8 @@ type ModelConfig struct {
 	Model        string           `json:"model"`
 	MaxTokens    int              `json:"max_tokens,omitempty"`
 	Temperature  float64          `json:"temperature,omitempty"`
+	ContextWindow int             `json:"context_window,omitempty"`
+	AutoCompactTokenLimit int     `json:"auto_compact_token_limit,omitempty"`
 	Extra        map[string]any   `json:"extra,omitempty"`
 	Requirements *TaskRequirement `json:"requirements,omitempty"`
 }
@@ -68,6 +71,19 @@ type LLMCallMetadata struct {
 	Attempts    []LLMCallAttempt `json:"attempts,omitempty"`
 }
 
+type LLMErrorClass string
+
+const (
+	LLMErrorUnknown       LLMErrorClass = "unknown"
+	LLMErrorTimeout       LLMErrorClass = "timeout"
+	LLMErrorRateLimit     LLMErrorClass = "rate_limit"
+	LLMErrorContextWindow LLMErrorClass = "context_window"
+	LLMErrorAuth          LLMErrorClass = "auth"
+	LLMErrorUnavailable   LLMErrorClass = "unavailable"
+	LLMErrorInvalid       LLMErrorClass = "invalid_request"
+	LLMErrorCancelled     LLMErrorClass = "cancelled"
+)
+
 // CompletionResponse 是 LLM 返回的同步响应。
 type CompletionResponse struct {
 	Message    Message          `json:"message"`
@@ -80,6 +96,7 @@ type CompletionResponse struct {
 // LLMCallError 为 LLM 调用错误附加重试、fallback 和观测元数据。
 type LLMCallError struct {
 	Err          error
+	Class        LLMErrorClass
 	Retryable    bool
 	FallbackSafe bool
 	Metadata     LLMCallMetadata
@@ -97,6 +114,35 @@ func (e *LLMCallError) Unwrap() error {
 		return nil
 	}
 	return e.Err
+}
+
+func ClassifyError(err error) LLMErrorClass {
+	if err == nil {
+		return LLMErrorUnknown
+	}
+	var callErr *LLMCallError
+	if errors.As(err, &callErr) && callErr != nil && callErr.Class != "" {
+		return callErr.Class
+	}
+	msg := strings.ToLower(err.Error())
+	switch {
+	case errors.Is(err, context.Canceled), strings.Contains(msg, "context canceled"):
+		return LLMErrorCancelled
+	case errors.Is(err, context.DeadlineExceeded), strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "timeout"):
+		return LLMErrorTimeout
+	case strings.Contains(msg, "rate limit"), strings.Contains(msg, "too many requests"), strings.Contains(msg, "429"):
+		return LLMErrorRateLimit
+	case strings.Contains(msg, "context window"), strings.Contains(msg, "context_length_exceeded"), strings.Contains(msg, "maximum context length"), strings.Contains(msg, "prompt is too long"), strings.Contains(msg, "too many tokens"), strings.Contains(msg, "input token"):
+		return LLMErrorContextWindow
+	case strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"), strings.Contains(msg, "invalid api key"), strings.Contains(msg, "401"), strings.Contains(msg, "403"):
+		return LLMErrorAuth
+	case strings.Contains(msg, "bad request"), strings.Contains(msg, "invalid request"), strings.Contains(msg, "malformed"):
+		return LLMErrorInvalid
+	case strings.Contains(msg, "unavailable"), strings.Contains(msg, "overloaded"), strings.Contains(msg, "service down"), strings.Contains(msg, "502"), strings.Contains(msg, "503"), strings.Contains(msg, "504"):
+		return LLMErrorUnavailable
+	default:
+		return LLMErrorUnknown
+	}
 }
 
 // ToolSpec 描述一个工具的声明信息，供 LLM 选择调用。

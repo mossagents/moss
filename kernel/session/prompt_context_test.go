@@ -102,3 +102,18 @@ func TestBuildPromptMessagesForGreetingDropsEarlierDialog(t *testing.T) {
 		t.Fatalf("last visible dialog=%q, want 你好", got)
 	}
 }
+
+func TestEstimateTextTokensUsesLanguageAwareHeuristics(t *testing.T) {
+	if got := EstimateTextTokens("abcdefgh"); got != 3 {
+		t.Fatalf("ascii tokens=%d, want 3", got)
+	}
+	if got := EstimateTextTokens("你好世界你好世界"); got != 7 {
+		t.Fatalf("cjk tokens=%d, want 7", got)
+	}
+	if got := EstimateTextTokens("абвгде"); got != 4 {
+		t.Fatalf("unicode tokens=%d, want 4", got)
+	}
+	if got := EstimateTextTokens("ab\ncd"); got != 3 {
+		t.Fatalf("multiline tokens=%d, want 3", got)
+	}
+}

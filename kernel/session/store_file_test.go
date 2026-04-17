@@ -577,6 +577,49 @@ func TestFileStoreSaveWritesNewSchemaOnly(t *testing.T) {
 	}
 }
 
+func TestFileStoreSaveAppendsJSONLAndLoadReturnsLatest(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := &Session{
+		ID:     "jsonl-latest",
+		Status: StatusRunning,
+		Config: SessionConfig{Goal: "append"},
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("first")}},
+		},
+		CreatedAt: time.Now(),
+	}
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	sess.Status = StatusCompleted
+	sess.Messages = append(sess.Messages, model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("second")}})
+	if err := store.Save(context.Background(), sess); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+	raw, err := os.ReadFile(store.path(sess.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected append-only jsonl with >=2 lines, got %d: %q", len(lines), string(raw))
+	}
+	loaded, err := store.Load(context.Background(), sess.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil || loaded.Status != StatusCompleted {
+		t.Fatalf("unexpected loaded session: %+v", loaded)
+	}
+	if got := model.ContentPartsToPlainText(loaded.Messages[len(loaded.Messages)-1].ContentParts); got != "second" {
+		t.Fatalf("latest message=%q, want second", got)
+	}
+}
+
 func TestFileStoreStripsReasoningPartsOnSaveAndLoad(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sessions")
 	store, err := NewFileStore(dir)

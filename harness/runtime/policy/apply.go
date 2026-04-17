@@ -8,6 +8,7 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/policy/policystate"
+	"github.com/mossagents/moss/kernel/guardian"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/io"
@@ -96,8 +97,36 @@ func installPolicyHook(k *kernel.Kernel, st *policystate.State) {
 		if len(rules) == 0 {
 			return nil
 		}
-		return governance.PolicyCheck(rules...)(ctx, ev)
+		return governance.PolicyCheckWithAutoApprove(guardianAutoApproval(k), rules...)(ctx, ev)
 	})
+}
+
+func guardianAutoApproval(k *kernel.Kernel) governance.AutoApprovalFunc {
+	return func(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
+		if k == nil || ev == nil || ev.Tool == nil || req == nil {
+			return nil
+		}
+		if ev.Tool.EffectiveApprovalClass() != tool.ApprovalClassPolicyGuarded {
+			return nil
+		}
+		g, ok := guardian.Lookup(k)
+		if !ok || g == nil {
+			return nil
+		}
+		review, err := g.ReviewToolApproval(ctx, guardian.ReviewInput{
+			SessionID:  req.SessionID,
+			ToolName:   req.ToolName,
+			Risk:       req.Risk,
+			Category:   string(req.Category),
+			Reason:     req.Reason,
+			ReasonCode: req.ReasonCode,
+			Input:      req.Input,
+		})
+		if err != nil {
+			return nil
+		}
+		return guardian.AutoApprovalDecision(req, review)
+	}
 }
 
 func installSessionSyncHook(k *kernel.Kernel, st *policystate.State) {
