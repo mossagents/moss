@@ -1,12 +1,12 @@
 // Package harness provides a composable orchestration layer between the
 // Moss Kernel and applications. It introduces the Feature interface for
 // pluggable capabilities (tools, hooks, system-prompt extensions) and the
-// Backend interface that unifies workspace and command-execution ports.
+// workspace-centric backend model.
 //
 // Usage:
 //
 //	k := kernel.New(kernel.WithLLM(llm), kernel.WithUserIO(io))
-//	backend := &harness.LocalBackend{Workspace: ws, Executor: exec}
+//	backend, _ := harness.OpenLocalBackend(workspace)
 //	h := harness.New(k, backend)
 //	err := h.Install(ctx,
 //	    harness.BootstrapContext(workspace, appName, trust),
@@ -20,28 +20,29 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
-// Harness orchestrates a Kernel with a Backend and composable Features.
+// Harness orchestrates a Kernel with a workspace backend and composable Features.
 type Harness struct {
 	kernel       *kernel.Kernel
-	backend      Backend
+	backend      workspace.Workspace
 	backendReady bool
 	features     []Feature
-}
-
-// New creates a Harness around an existing Kernel and Backend.
-func New(k *kernel.Kernel, backend Backend) *Harness {
-	return &Harness{
-		kernel:  k,
-		backend: backend,
-	}
 }
 
 const (
 	backendBootOrder     = -100
 	backendShutdownOrder = 1000
 )
+
+// New creates a Harness around an existing Kernel and workspace backend.
+func New(k *kernel.Kernel, backend workspace.Workspace) *Harness {
+	return &Harness{
+		kernel:  k,
+		backend: backend,
+	}
+}
 
 // NewWithBackendFactory builds a backend via factory, activates it against the
 // Kernel, and returns a ready Harness.
@@ -66,8 +67,8 @@ func NewWithBackendFactory(ctx context.Context, k *kernel.Kernel, factory Backen
 // Kernel returns the underlying Kernel.
 func (h *Harness) Kernel() *kernel.Kernel { return h.kernel }
 
-// Backend returns the underlying Backend.
-func (h *Harness) Backend() Backend { return h.backend }
+// Backend returns the underlying workspace backend.
+func (h *Harness) Backend() workspace.Workspace { return h.backend }
 
 // ActivateBackend wires any managed backend hooks and kernel ports exactly once.
 func (h *Harness) ActivateBackend(ctx context.Context) error {

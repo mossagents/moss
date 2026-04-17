@@ -11,7 +11,6 @@ import (
 
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 // ─── read_file ───────────────────────────────────────
@@ -321,17 +320,6 @@ func grepHandlerPort(ws workspace.Workspace, root string) tool.ToolHandler {
 	}
 }
 
-func sandboxRoot(sb sandbox.Sandbox) string {
-	if sb == nil {
-		return ""
-	}
-	root, err := sb.ResolvePath(".")
-	if err != nil {
-		return ""
-	}
-	return filepath.Clean(root)
-}
-
 func normalizeMaxResults(n int) int {
 	if n <= 0 {
 		return 200
@@ -387,4 +375,3 @@ func scopedPattern(pattern, scopePath string) string {
 	}
 	return filepath.Join(scopePath, pattern)
 }
-

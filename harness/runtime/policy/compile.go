@@ -2,9 +2,11 @@ package policy
 
 import (
 	"encoding/json"
+	"path/filepath"
 
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 func CompileRules(policy ToolPolicy) []governance.PolicyRule {
@@ -109,4 +111,53 @@ func toolAccessDecision(access ToolAccess) governance.PolicyDecision {
 	default:
 		return governance.Allow
 	}
+}
+
+// CompileSecurityPolicy converts a ToolPolicy into a workspace.SecurityPolicy
+// suitable for injection into a Workspace implementation.
+func CompileSecurityPolicy(tp ToolPolicy, workspaceRoot string) workspace.SecurityPolicy {
+	tp = NormalizeToolPolicy(tp)
+	sp := workspace.SecurityPolicy{}
+
+	// Map ProtectedPathPrefixes to absolute paths.
+	for _, prefix := range tp.ProtectedPathPrefixes {
+		var abs string
+		if filepath.IsAbs(prefix) {
+			abs = filepath.Clean(prefix)
+		} else if workspaceRoot != "" {
+			abs = filepath.Clean(filepath.Join(workspaceRoot, prefix))
+		} else {
+			abs = filepath.Clean(prefix)
+		}
+		sp.ProtectedPaths = append(sp.ProtectedPaths, abs)
+	}
+
+	// Default protected paths: .git and .moss are always protected.
+	defaults := []string{".git", ".moss"}
+	existing := map[string]bool{}
+	for _, p := range sp.ProtectedPaths {
+		existing[p] = true
+	}
+	for _, d := range defaults {
+		var abs string
+		if workspaceRoot != "" {
+			abs = filepath.Clean(filepath.Join(workspaceRoot, d))
+		} else {
+			abs = filepath.Clean(d)
+		}
+		if !existing[abs] {
+			sp.ProtectedPaths = append(sp.ProtectedPaths, abs)
+		}
+	}
+
+	// Map workspace write access to ReadOnly.
+	if tp.WorkspaceWriteAccess == ToolAccessDeny {
+		sp.ReadOnly = true
+	}
+
+	// Map network policy.
+	sp.NetworkMode = tp.Command.Network.Mode
+	sp.AllowedHosts = append([]string(nil), tp.Command.Network.AllowHosts...)
+
+	return sp
 }

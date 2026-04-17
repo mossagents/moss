@@ -2,15 +2,19 @@ package workspace
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/io"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
 )
 
-// Workspace 是 Agent 工作区的抽象层。
-// 将文件系统操作从 Sandbox 中解耦，使不同部署场景
-// （本地、Docker、云存储、内存虚拟文件系统）可以提供各自的实现。
+// Workspace 是 Agent 工作区的完整抽象。
+// 统一文件 I/O、命令执行、安全策略和资源治理。
+// 不同部署场景（本地、Docker、云存储、内存）提供各自实现。
 type Workspace interface {
+	// ── 文件操作 ──
+
 	// ReadFile 从工作区读取文件。
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	// WriteFile 向工作区写入文件。
@@ -21,6 +25,22 @@ type Workspace interface {
 	Stat(ctx context.Context, path string) (FileInfo, error)
 	// DeleteFile 删除指定文件。
 	DeleteFile(ctx context.Context, path string) error
+
+	// ── 命令执行 ──
+
+	// Execute 在工作区环境中执行命令。
+	Execute(ctx context.Context, req ExecRequest) (ExecOutput, error)
+
+	// ── 安全边界 ──
+
+	// ResolvePath 解析并验证路径，防止路径逃逸。
+	ResolvePath(path string) (string, error)
+	// Capabilities 报告此 workspace 的实际隔离能力。
+	Capabilities() Capabilities
+	// Policy 返回当前生效的安全策略。
+	Policy() SecurityPolicy
+	// Limits 返回当前资源限制。
+	Limits() ResourceLimits
 }
 
 // ExecNetworkMode 表示命令执行的网络策略。
@@ -68,6 +88,16 @@ type ExecRequest struct {
 	IsolationLevel IsolationLevel `json:"isolation_level,omitempty"`
 }
 
+// ExecOutput 是命令执行的结果。
+type ExecOutput struct {
+	Stdout      string             `json:"stdout"`
+	Stderr      string             `json:"stderr"`
+	ExitCode    int                `json:"exit_code"`
+	Enforcement io.EnforcementMode `json:"enforcement,omitempty"`
+	Degraded    bool               `json:"degraded,omitempty"`
+	Details     string             `json:"details,omitempty"`
+}
+
 // FileInfo 描述文件元信息。
 type FileInfo struct {
 	Name    string    `json:"name"`
@@ -76,37 +106,35 @@ type FileInfo struct {
 	ModTime time.Time `json:"mod_time"`
 }
 
-// Executor 是命令执行的抽象层。
-// 与 Workspace 正交：可以组合不同的 Workspace + Executor 实现。
-type Executor interface {
-	// Execute 在隔离环境中执行命令。
-	Execute(ctx context.Context, req ExecRequest) (ExecOutput, error)
-}
+// NoOpWorkspace 拒绝所有操作，用于纯对话场景。
+type NoOpWorkspace struct{}
 
-// ExecOutput 是命令执行的结果。
-type ExecOutput struct {
-	Stdout      string               `json:"stdout"`
-	Stderr      string               `json:"stderr"`
-	ExitCode    int                  `json:"exit_code"`
-	Enforcement io.EnforcementMode `json:"enforcement,omitempty"`
-	Degraded    bool                 `json:"degraded,omitempty"`
-	Details     string               `json:"details,omitempty"`
-}
+var errWorkspaceDisabled = fmt.Errorf("workspace not available: this agent is running in conversation-only mode")
 
-// NoOpExecutor 拒绝所有命令执行，用于纯对话场景。
-type NoOpExecutor struct{}
-
-func (NoOpExecutor) Execute(_ context.Context, req ExecRequest) (ExecOutput, error) {
-	return ExecOutput{}, &executorDisabledError{cmd: req.Command}
+func (NoOpWorkspace) ReadFile(_ context.Context, _ string) ([]byte, error) {
+	return nil, errWorkspaceDisabled
 }
-
-type executorDisabledError struct {
-	cmd string
+func (NoOpWorkspace) WriteFile(_ context.Context, _ string, _ []byte) error {
+	return errWorkspaceDisabled
 }
-
-func (e *executorDisabledError) Error() string {
-	return "command execution is disabled: " + e.cmd
+func (NoOpWorkspace) ListFiles(_ context.Context, _ string) ([]string, error) {
+	return nil, errWorkspaceDisabled
 }
+func (NoOpWorkspace) Stat(_ context.Context, _ string) (FileInfo, error) {
+	return FileInfo{}, errWorkspaceDisabled
+}
+func (NoOpWorkspace) DeleteFile(_ context.Context, _ string) error {
+	return errWorkspaceDisabled
+}
+func (NoOpWorkspace) Execute(_ context.Context, _ ExecRequest) (ExecOutput, error) {
+	return ExecOutput{}, errWorkspaceDisabled
+}
+func (NoOpWorkspace) ResolvePath(_ string) (string, error) {
+	return "", errWorkspaceDisabled
+}
+func (NoOpWorkspace) Capabilities() Capabilities   { return Capabilities{} }
+func (NoOpWorkspace) Policy() SecurityPolicy        { return SecurityPolicy{} }
+func (NoOpWorkspace) Limits() ResourceLimits        { return ResourceLimits{} }
 
 // ---- WorkspaceLock 并发保护 -----------------------------------------------
 

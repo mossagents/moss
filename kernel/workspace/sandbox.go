@@ -6,29 +6,15 @@ import (
 	"time"
 )
 
-// Sandbox 是安全隔离层，所有文件与命令操作必须经由此接口。
-// 实现由 sandbox/ 包提供，通过 kernel.WithSandbox 注入。
-type Sandbox interface {
-	// ResolvePath 解析并验证路径，防止路径逃逸。
-	ResolvePath(path string) (string, error)
-	// ListFiles 按 glob pattern 列出文件。
-	ListFiles(pattern string) ([]string, error)
-	// ReadFile 读取文件内容。
-	ReadFile(path string) ([]byte, error)
-	// WriteFile 写入文件内容。
-	WriteFile(path string, content []byte) error
-	// Execute 执行命令。
-	Execute(ctx context.Context, req ExecRequest) (ExecOutput, error)
-	// Limits 返回当前资源限制。
-	Limits() ResourceLimits
-}
-
-// ResourceLimits 表示 sandbox 的资源限制。
+// ResourceLimits 表示 workspace 的资源限制。
 // Zero values for limit fields mean "unlimited" (no enforcement).
 type ResourceLimits struct {
 	MaxFileSize    int64         `json:"max_file_size"`
 	CommandTimeout time.Duration `json:"command_timeout"`
 	AllowedPaths   []string      `json:"allowed_paths"`
+
+	MaxOutputBytes int64         `json:"max_output_bytes,omitempty"`
+	IODrainTimeout time.Duration `json:"io_drain_timeout,omitempty"`
 
 	MaxMemoryBytes int64                 `json:"max_memory_bytes,omitempty"`
 	MaxCPUPercent  int                   `json:"max_cpu_percent,omitempty"`

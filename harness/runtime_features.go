@@ -304,11 +304,10 @@ func installPersistentMemories(k *kernel.Kernel, memoriesDir, sqlitePath string)
 	if err := os.MkdirAll(absDir, 0o755); err != nil {
 		return fmt.Errorf("create memories dir: %w", err)
 	}
-	sb, err := sandbox.NewLocal(absDir)
+	ws, err := sandbox.NewLocalWorkspace(absDir)
 	if err != nil {
-		return fmt.Errorf("memory sandbox: %w", err)
+		return fmt.Errorf("memory workspace: %w", err)
 	}
-	ws := sandbox.NewLocalWorkspace(sb)
 	if strings.TrimSpace(sqlitePath) == "" {
 		sqlitePath = filepath.Join(absDir, ".moss", "memory.db")
 	}

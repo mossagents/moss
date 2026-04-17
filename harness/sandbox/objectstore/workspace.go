@@ -3,10 +3,11 @@ package objectstore
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/workspace"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 // ObjectStoreWorkspace implements workspace.Workspace over a BlobClient.
@@ -131,6 +132,28 @@ func globPrefix(pattern string) string {
 
 // ensure ObjectStoreWorkspace satisfies workspace.Workspace at compile time
 var _ workspace.Workspace = (*ObjectStoreWorkspace)(nil)
+
+// ── Workspace 统一接口方法 ──
+
+func (w *ObjectStoreWorkspace) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+	return workspace.ExecOutput{}, fmt.Errorf("command execution not supported by object store workspace")
+}
+
+func (w *ObjectStoreWorkspace) ResolvePath(path string) (string, error) {
+	return w.key(path), nil
+}
+
+func (w *ObjectStoreWorkspace) Capabilities() workspace.Capabilities {
+	return workspace.Capabilities{}
+}
+
+func (w *ObjectStoreWorkspace) Policy() workspace.SecurityPolicy {
+	return workspace.SecurityPolicy{}
+}
+
+func (w *ObjectStoreWorkspace) Limits() workspace.ResourceLimits {
+	return workspace.ResourceLimits{}
+}
 
 // StaticFileInfo is a convenience FileInfo used for stub implementations.
 var StaticFileInfo = workspace.FileInfo{ModTime: time.Time{}}

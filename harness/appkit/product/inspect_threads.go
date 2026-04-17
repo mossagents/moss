@@ -15,11 +15,11 @@ import (
 	"github.com/mossagents/moss/harness/extensions/agent"
 	extcapability "github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/extensions/skill"
-	"github.com/mossagents/moss/x/stringutil"
-	"github.com/mossagents/moss/kernel/session"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/harness/userio/prompting"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type InspectThreadSummary struct {
@@ -45,11 +45,11 @@ type InspectThreadSummary struct {
 }
 
 type InspectThreadReport struct {
-	Summary     InspectThreadSummary   `json:"summary"`
-	Children    []InspectThreadSummary `json:"children,omitempty"`
+	Summary     InspectThreadSummary           `json:"summary"`
+	Children    []InspectThreadSummary         `json:"children,omitempty"`
 	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
-	Changes     []InspectStateItem     `json:"changes,omitempty"`
-	Tasks       []InspectStateItem     `json:"tasks,omitempty"`
+	Changes     []InspectStateItem             `json:"changes,omitempty"`
+	Tasks       []InspectStateItem             `json:"tasks,omitempty"`
 }
 
 type InspectPromptReport struct {
@@ -250,7 +250,7 @@ func buildInspectCapabilities(workspace, trust string) (*InspectCapabilityReport
 			}
 			if item.Details == "" {
 				switch status.Capability {
-				case rprobe.CapabilityExecutionWorkspace, rprobe.CapabilityExecutionExecutor:
+				case rprobe.CapabilityExecutionWorkspace:
 					item.Details = "local sandbox"
 				case rprobe.CapabilityExecutionRepoState:
 					item.Details = "git repo capture"
@@ -541,4 +541,3 @@ func cloneIntMap(in map[string]int) map[string]int {
 	}
 	return out
 }
-

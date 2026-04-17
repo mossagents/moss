@@ -3,16 +3,16 @@ package probe
 import (
 	"context"
 	"errors"
+	"strings"
+
 	extcap "github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
-	"strings"
 )
 
 const (
 	CapabilityExecutionWorkspace      = "execution:workspace"
-	CapabilityExecutionExecutor       = "execution:executor"
 	CapabilityExecutionIsolation      = "execution:workspace_isolation"
 	CapabilityExecutionRepoState      = "execution:repo_state_capture"
 	CapabilityExecutionPatchApply     = "execution:patch_apply"
@@ -26,7 +26,6 @@ type ExecutionProbe struct {
 	IsolationEnabled bool
 
 	workspace         workspace.Workspace
-	executor          workspace.Executor
 	isolation         workspace.WorkspaceIsolation
 	repoStateCapture  workspace.RepoStateCapture
 	patchApply        workspace.PatchApply
@@ -65,14 +64,12 @@ func NewExecutionProbe(workspaceRoot, isolationRoot string, enableIsolation bool
 
 func ProbeExecutionCapabilities(workspaceRoot, isolationRoot string, enableIsolation bool) *ExecutionProbe {
 	probe := NewExecutionProbe(workspaceRoot, isolationRoot, enableIsolation)
-	sb, err := sandbox.NewLocal(strings.TrimSpace(workspaceRoot))
+	ws, err := sandbox.NewLocalWorkspace(strings.TrimSpace(workspaceRoot))
 	if err != nil {
 		probe.errors[CapabilityExecutionWorkspace] = err
-		probe.errors[CapabilityExecutionExecutor] = err
 		return probe
 	}
-	probe.workspace = sandbox.NewLocalWorkspace(sb)
-	probe.executor = sandbox.NewLocalExecutor(sb)
+	probe.workspace = ws
 	return probe
 }
 
@@ -85,7 +82,6 @@ func ExecutionProbeFromKernel(k *kernel.Kernel, workspaceRoot, isolationRoot str
 		IsolationRoot:     strings.TrimSpace(isolationRoot),
 		IsolationEnabled:  enableIsolation,
 		workspace:         k.Workspace(),
-		executor:          k.Executor(),
 		isolation:         k.WorkspaceIsolation(),
 		repoStateCapture:  k.RepoStateCapture(),
 		patchApply:        k.PatchApply(),
@@ -113,7 +109,6 @@ func (p *ExecutionProbe) CapabilityStatuses() []extcap.CapabilityStatus {
 	}
 	return []extcap.CapabilityStatus{
 		p.capabilityStatus(CapabilityExecutionWorkspace, "workspace", p.workspace != nil, true),
-		p.capabilityStatus(CapabilityExecutionExecutor, "executor", p.executor != nil, true),
 		p.capabilityStatus(CapabilityExecutionIsolation, "workspace_isolation", p.isolation != nil, false),
 		p.capabilityStatus(CapabilityExecutionRepoState, "repo_state_capture", p.repoStateCapture != nil, false),
 		p.capabilityStatus(CapabilityExecutionPatchApply, "patch_apply", p.patchApply != nil, false),
@@ -162,4 +157,3 @@ func (p *ExecutionProbe) capabilityStatus(capability, name string, ready bool, c
 	status.State = "degraded"
 	return status
 }
-

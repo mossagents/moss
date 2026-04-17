@@ -2,18 +2,19 @@ package tui
 
 import (
 	"context"
-	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/session"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	kt "github.com/mossagents/moss/harness/testing"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/harness"
+	appconfig "github.com/mossagents/moss/harness/config"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	kt "github.com/mossagents/moss/harness/testing"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func installTestRuntime(t *testing.T, k *kernel.Kernel) {
@@ -30,7 +31,7 @@ func installTestRuntime(t *testing.T, k *kernel.Kernel) {
 func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 	k := kernel.New(
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	installTestRuntime(t, k)
 
@@ -46,7 +47,7 @@ func TestRenderSkillsSummaryShowsOnlyUserSkills(t *testing.T) {
 func TestRenderSkillsSummaryUsesStatusIcons(t *testing.T) {
 	k := kernel.New(
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	installTestRuntime(t, k)
 

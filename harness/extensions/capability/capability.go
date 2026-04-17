@@ -9,7 +9,6 @@ import (
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
 	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 // Provider is a runtime-loadable capability unit.
@@ -42,10 +41,8 @@ type Metadata struct {
 type Deps struct {
 	Kernel       *kernel.Kernel
 	ToolRegistry tool.Registry
-	Sandbox      sandbox.Sandbox
 	UserIO       io.UserIO
 	Workspace    workspace.Workspace
-	Executor     workspace.Executor
 	TaskRuntime  taskrt.TaskRuntime
 	Mailbox      taskrt.Mailbox
 	SessionStore session.SessionStore

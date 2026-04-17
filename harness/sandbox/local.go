@@ -3,9 +3,6 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/workspace"
-	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,70 +10,95 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/workspace"
+	"log/slog"
 )
 
-// LocalSandbox 是基于本地文件系统的 Sandbox 实现。
-type LocalSandbox struct {
+// LocalWorkspace 是基于本地文件系统的 Workspace 实现。
+// 提供路径验证、文件 I/O、命令执行和资源限制。
+type LocalWorkspace struct {
 	root   string
-	limits ResourceLimits
+	limits workspace.ResourceLimits
+	policy workspace.SecurityPolicy
 }
 
-// NewLocal 在指定根目录创建 LocalSandbox。
-func NewLocal(root string, opts ...LocalOption) (*LocalSandbox, error) {
+var _ workspace.Workspace = (*LocalWorkspace)(nil)
+
+// NewLocalWorkspace 在指定根目录创建 LocalWorkspace。
+func NewLocalWorkspace(root string, opts ...Option) (*LocalWorkspace, error) {
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve sandbox root: %w", err)
+		return nil, fmt.Errorf("resolve workspace root: %w", err)
 	}
-	s := &LocalSandbox{
+	w := &LocalWorkspace{
 		root: absRoot,
-		limits: ResourceLimits{
+		limits: workspace.ResourceLimits{
 			MaxFileSize:    10 * 1024 * 1024, // 10 MB
 			CommandTimeout: 30 * time.Second,
 			AllowedPaths:   []string{absRoot},
 		},
 	}
 	for _, opt := range opts {
-		opt(s)
+		opt(w)
 	}
-	return s, nil
+	return w, nil
 }
 
-// LocalOption 配置 LocalSandbox。
-type LocalOption func(*LocalSandbox)
+// Option 配置 LocalWorkspace。
+type Option func(*LocalWorkspace)
 
 // WithMaxFileSize 设置文件大小限制。
-func WithMaxFileSize(n int64) LocalOption {
-	return func(s *LocalSandbox) { s.limits.MaxFileSize = n }
+func WithMaxFileSize(n int64) Option {
+	return func(w *LocalWorkspace) { w.limits.MaxFileSize = n }
 }
 
 // WithCommandTimeout 设置命令执行超时。
-func WithCommandTimeout(d time.Duration) LocalOption {
-	return func(s *LocalSandbox) { s.limits.CommandTimeout = d }
+func WithCommandTimeout(d time.Duration) Option {
+	return func(w *LocalWorkspace) { w.limits.CommandTimeout = d }
 }
 
 // WithAllowedPaths 设置额外的路径白名单。
-func WithAllowedPaths(paths ...string) LocalOption {
-	return func(s *LocalSandbox) {
+func WithAllowedPaths(paths ...string) Option {
+	return func(w *LocalWorkspace) {
 		for _, p := range paths {
 			abs, err := filepath.Abs(p)
 			if err == nil {
-				s.limits.AllowedPaths = append(s.limits.AllowedPaths, abs)
+				w.limits.AllowedPaths = append(w.limits.AllowedPaths, abs)
 			}
 		}
 	}
 }
 
-func (s *LocalSandbox) ResolvePath(path string) (string, error) {
+// WithSecurityPolicy 设置安全策略。
+func WithSecurityPolicy(p workspace.SecurityPolicy) Option {
+	return func(w *LocalWorkspace) { w.policy = p }
+}
+
+// WithResourceLimits 覆盖资源限制。
+func WithResourceLimits(l workspace.ResourceLimits) Option {
+	return func(w *LocalWorkspace) { w.limits = l }
+}
+
+// Root 返回 workspace 根目录的绝对路径。
+func (w *LocalWorkspace) Root() string {
+	return w.root
+}
+
+// ── 安全边界 ──
+
+func (w *LocalWorkspace) ResolvePath(path string) (string, error) {
 	var abs string
 	if filepath.IsAbs(path) {
 		abs = filepath.Clean(path)
 	} else {
-		abs = filepath.Clean(filepath.Join(s.root, path))
+		abs = filepath.Clean(filepath.Join(w.root, path))
 	}
 
 	// First check: fast path before symlink resolution.
-	if !s.isWithinAllowed(abs) {
-		return "", fmt.Errorf("path %q escapes sandbox (root=%s)", path, s.root)
+	if !w.isWithinAllowed(abs) {
+		return "", fmt.Errorf("path %q escapes workspace (root=%s)", path, w.root)
 	}
 
 	// Second check: resolve symlinks and verify again to prevent symlink-based escapes.
@@ -84,15 +106,15 @@ func (s *LocalSandbox) ResolvePath(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve symlinks in %q: %w", path, err)
 	}
-	if !s.isWithinAllowed(resolved) {
-		return "", fmt.Errorf("path %q (resolved: %s) escapes sandbox via symlink", path, resolved)
+	if !w.isWithinAllowed(resolved) {
+		return "", fmt.Errorf("path %q (resolved: %s) escapes workspace via symlink", path, resolved)
 	}
 	return resolved, nil
 }
 
-// isWithinAllowed reports whether p is within any of the sandbox's allowed paths.
-func (s *LocalSandbox) isWithinAllowed(p string) bool {
-	for _, allowed := range s.limits.AllowedPaths {
+// isWithinAllowed reports whether p is within any of the workspace's allowed paths.
+func (w *LocalWorkspace) isWithinAllowed(p string) bool {
+	for _, allowed := range w.limits.AllowedPaths {
 		if p == allowed || strings.HasPrefix(p, allowed+string(filepath.Separator)) {
 			return true
 		}
@@ -100,27 +122,165 @@ func (s *LocalSandbox) isWithinAllowed(p string) bool {
 	return false
 }
 
-func (s *LocalSandbox) ListFiles(pattern string) ([]string, error) {
+func (w *LocalWorkspace) Capabilities() workspace.Capabilities {
+	return workspace.Capabilities{
+		FileSystemIsolation: workspace.IsolationMethodPathCheck,
+		NetworkIsolation:    workspace.IsolationMethodProxy,
+		ProcessIsolation:    workspace.IsolationMethodNone,
+		ResourceEnforcement: false,
+	}
+}
+
+func (w *LocalWorkspace) Policy() workspace.SecurityPolicy {
+	return w.policy
+}
+
+func (w *LocalWorkspace) Limits() workspace.ResourceLimits {
+	return w.limits
+}
+
+// ── 文件操作 ──
+
+// isProtected reports whether absPath falls under any ProtectedPaths prefix.
+func (w *LocalWorkspace) isProtected(absPath string) bool {
+	for _, pp := range w.policy.ProtectedPaths {
+		var protectedAbs string
+		if filepath.IsAbs(pp) {
+			protectedAbs = filepath.Clean(pp)
+		} else {
+			protectedAbs = filepath.Clean(filepath.Join(w.root, pp))
+		}
+		if absPath == protectedAbs || strings.HasPrefix(absPath, protectedAbs+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDenyRead reports whether absPath matches any DenyReadPatterns glob.
+func (w *LocalWorkspace) isDenyRead(absPath string) bool {
+	rel, err := filepath.Rel(w.root, absPath)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	for _, pattern := range w.policy.DenyReadPatterns {
+		pattern = filepath.ToSlash(pattern)
+		if matched, _ := filepath.Match(pattern, rel); matched {
+			return true
+		}
+		if matched, _ := filepath.Match(pattern, filepath.Base(rel)); matched {
+			return true
+		}
+	}
+	return false
+}
+
+// resolveFileAccess returns the effective access mode for absPath based on FileRules.
+// Returns FileAccessWrite (default full access) if no rule matches.
+func (w *LocalWorkspace) resolveFileAccess(absPath string) workspace.FileAccessMode {
+	rel, err := filepath.Rel(w.root, absPath)
+	if err != nil {
+		return workspace.FileAccessWrite
+	}
+	rel = filepath.ToSlash(rel)
+	for _, rule := range w.policy.FileRules {
+		rulePattern := filepath.ToSlash(rule.Path)
+		if matched, _ := filepath.Match(rulePattern, rel); matched {
+			return rule.Access
+		}
+		if matched, _ := filepath.Match(rulePattern, filepath.Base(rel)); matched {
+			return rule.Access
+		}
+	}
+	return workspace.FileAccessWrite
+}
+
+func (w *LocalWorkspace) ReadFile(_ context.Context, path string) ([]byte, error) {
+	resolved, err := w.ResolvePath(path)
+	if err != nil {
+		return nil, err
+	}
+	if w.isDenyRead(resolved) {
+		return nil, fmt.Errorf("read access denied for %q", path)
+	}
+	return os.ReadFile(resolved)
+}
+
+func (w *LocalWorkspace) WriteFile(_ context.Context, path string, content []byte) error {
+	resolved, err := w.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	if w.policy.ReadOnly {
+		return fmt.Errorf("workspace is read-only")
+	}
+	if w.isProtected(resolved) {
+		return fmt.Errorf("path %q is protected (read-only)", path)
+	}
+	if access := w.resolveFileAccess(resolved); access == workspace.FileAccessNone {
+		return fmt.Errorf("write access denied for %q", path)
+	} else if access == workspace.FileAccessRead {
+		return fmt.Errorf("path %q is read-only per file access rule", path)
+	}
+	if w.limits.MaxFileSize > 0 && int64(len(content)) > w.limits.MaxFileSize {
+		return fmt.Errorf("file size %d exceeds limit %d", len(content), w.limits.MaxFileSize)
+	}
+	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
+		return fmt.Errorf("create parent dirs: %w", err)
+	}
+	return os.WriteFile(resolved, content, 0644)
+}
+
+func (w *LocalWorkspace) ListFiles(_ context.Context, pattern string) ([]string, error) {
 	if err := validateSandboxPattern(pattern); err != nil {
 		return nil, err
 	}
 	// 支持 ** 递归匹配
 	if strings.Contains(pattern, "**") {
-		return s.listFilesRecursive(pattern)
+		return w.listFilesRecursive(pattern)
 	}
-	fullPattern := filepath.Join(s.root, pattern)
+	fullPattern := filepath.Join(w.root, pattern)
 	matches, err := filepath.Glob(fullPattern)
 	if err != nil {
 		return nil, err
 	}
-	return s.filterListedPaths(matches)
+	return w.filterListedPaths(matches)
+}
+
+func (w *LocalWorkspace) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
+	resolved, err := w.ResolvePath(path)
+	if err != nil {
+		return workspace.FileInfo{}, err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return workspace.FileInfo{}, err
+	}
+	return workspace.FileInfo{
+		Name:    info.Name(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+		ModTime: info.ModTime(),
+	}, nil
+}
+
+func (w *LocalWorkspace) DeleteFile(_ context.Context, path string) error {
+	resolved, err := w.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	if w.policy.ReadOnly {
+		return fmt.Errorf("workspace is read-only")
+	}
+	if w.isProtected(resolved) {
+		return fmt.Errorf("path %q is protected (read-only)", path)
+	}
+	return os.Remove(resolved)
 }
 
 // listFilesRecursive 用 WalkDir 实现 ** 递归 glob 匹配。
-func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
-	// 将 pattern 拆为前缀（** 之前）和后缀（** 之后）
-	// 例如 "**/*.go" → prefix="", suffix="*.go"
-	// 例如 "src/**/*.go" → prefix="src", suffix="*.go"
+func (w *LocalWorkspace) listFilesRecursive(pattern string) ([]string, error) {
 	parts := strings.SplitN(pattern, "**", 2)
 	prefix := strings.TrimRight(parts[0], "/\\")
 	suffix := ""
@@ -128,11 +288,11 @@ func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
 		suffix = strings.TrimLeft(parts[1], "/\\")
 	}
 
-	searchRoot := s.root
+	searchRoot := w.root
 	if prefix != "" {
-		searchRoot = filepath.Join(s.root, prefix)
+		searchRoot = filepath.Join(w.root, prefix)
 	}
-	if _, err := s.ResolvePath(searchRoot); err != nil {
+	if _, err := w.ResolvePath(searchRoot); err != nil {
 		return nil, err
 	}
 
@@ -158,35 +318,31 @@ func (s *LocalSandbox) listFilesRecursive(pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.filterListedPaths(matches)
+	return w.filterListedPaths(matches)
 }
 
-func (s *LocalSandbox) ReadFile(path string) ([]byte, error) {
-	resolved, err := s.ResolvePath(path)
-	if err != nil {
-		return nil, err
+func (w *LocalWorkspace) filterListedPaths(paths []string) ([]string, error) {
+	filtered := make([]string, 0, len(paths))
+	for _, match := range paths {
+		rel, err := filepath.Rel(w.root, match)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := w.ResolvePath(rel); err != nil {
+			continue
+		}
+		filtered = append(filtered, match)
 	}
-	return os.ReadFile(resolved)
+	slices.Sort(filtered)
+	return filtered, nil
 }
 
-func (s *LocalSandbox) WriteFile(path string, content []byte) error {
-	resolved, err := s.ResolvePath(path)
-	if err != nil {
-		return err
-	}
-	if s.limits.MaxFileSize > 0 && int64(len(content)) > s.limits.MaxFileSize {
-		return fmt.Errorf("file size %d exceeds limit %d", len(content), s.limits.MaxFileSize)
-	}
-	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
-		return fmt.Errorf("create parent dirs: %w", err)
-	}
-	return os.WriteFile(resolved, content, 0644)
-}
+// ── 命令执行 ──
 
-func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
+func (w *LocalWorkspace) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	timeout := req.Timeout
 	if timeout <= 0 {
-		timeout = s.limits.CommandTimeout
+		timeout = w.limits.CommandTimeout
 	}
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -201,8 +357,6 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 	}
 	shellWrapped := len(args) == 0 && needsShell(cmd)
 
-	// 如果无参数且命令包含 shell 特殊字符，自动用 shell 包装。
-	// 这样 LLM 可以直接发送 "ls -la" 或 "go build ./..." 等完整 shell 命令。
 	if shellWrapped {
 		if err := rejectShellChaining(cmd); err != nil {
 			return workspace.ExecOutput{}, err
@@ -222,16 +376,17 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 	}
 
 	c := exec.CommandContext(ctx, cmd, args...)
-	workDir := s.root
+	c.SysProcAttr = newProcessGroupAttr()
+	workDir := w.root
 	if wd := strings.TrimSpace(req.WorkingDir); wd != "" {
-		resolved, err := s.ResolvePath(wd)
+		resolved, err := w.ResolvePath(wd)
 		if err != nil {
 			return workspace.ExecOutput{}, err
 		}
 		workDir = resolved
 	}
 	if len(req.AllowedPaths) > 0 {
-		allowedRoots, err := s.resolveAllowedRoots(req.AllowedPaths)
+		allowedRoots, err := w.resolveAllowedRoots(req.AllowedPaths)
 		if err != nil {
 			return workspace.ExecOutput{}, err
 		}
@@ -250,15 +405,15 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 	env, customized := buildCommandEnv(req)
 	outputMeta := workspace.ExecOutput{}
 	if len(req.Network.AllowHosts) > 0 {
-		return workspace.ExecOutput{}, fmt.Errorf("network host allowlists are not supported by the local sandbox executor")
+		return workspace.ExecOutput{}, fmt.Errorf("network host allowlists are not supported by the local workspace executor")
 	}
 	if req.Network.Mode == workspace.ExecNetworkDisabled {
 		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
-			return workspace.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local sandbox")
+			return workspace.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local workspace")
 		}
 		if req.Network.PreferHardBlock {
 			slog.Warn("network isolation degraded to soft limit",
-				"reason", "hard isolation unavailable in local sandbox",
+				"reason", "hard isolation unavailable in local workspace",
 				"command", req.Command)
 		}
 		if !customized {
@@ -268,23 +423,39 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 		env = applySoftNetworkLimit(env)
 		outputMeta.Enforcement = io.EnforcementSoftLimit
 		outputMeta.Degraded = true
-		outputMeta.Details = "hard network isolation unavailable in local sandbox; applied soft network limit via environment"
+		outputMeta.Details = "hard network isolation unavailable in local workspace; applied soft network limit via environment"
 	}
 	if customized {
 		c.Env = env
 	}
 
 	var stdout, stderr strings.Builder
-	c.Stdout = &stdout
-	c.Stderr = &stderr
+	maxOutput := w.limits.MaxOutputBytes
+	if maxOutput <= 0 {
+		maxOutput = 10 * 1024 * 1024 // 10 MB default
+	}
+	stdoutLimited := newLimitedWriter(&stdout, maxOutput)
+	stderrLimited := newLimitedWriter(&stderr, maxOutput)
+	c.Stdout = stdoutLimited
+	c.Stderr = stderrLimited
 
 	err := c.Run()
-	out := Output{
+
+	// On context cancellation (timeout), kill the entire process group
+	// to avoid orphaned child processes.
+	if ctx.Err() != nil && c.Process != nil {
+		killProcessGroup(c.Process)
+	}
+
+	out := workspace.ExecOutput{
 		Stdout:      stdout.String(),
 		Stderr:      stderr.String(),
 		Enforcement: outputMeta.Enforcement,
 		Degraded:    outputMeta.Degraded,
 		Details:     outputMeta.Details,
+	}
+	if stdoutLimited.Truncated() || stderrLimited.Truncated() {
+		out.Stderr += "\n[output truncated: exceeded limit]"
 	}
 
 	if err != nil {
@@ -296,6 +467,20 @@ func (s *LocalSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (
 	}
 	return out, nil
 }
+
+func (w *LocalWorkspace) resolveAllowedRoots(paths []string) ([]string, error) {
+	roots := make([]string, 0, len(paths))
+	for _, candidate := range paths {
+		resolved, err := w.ResolvePath(candidate)
+		if err != nil {
+			return nil, err
+		}
+		roots = append(roots, resolved)
+	}
+	return roots, nil
+}
+
+// ── 共享辅助函数 ──
 
 func buildCommandEnv(req workspace.ExecRequest) ([]string, bool) {
 	customized := req.ClearEnv || len(req.Env) > 0
@@ -336,34 +521,6 @@ func applySoftNetworkLimit(env []string) []string {
 		limited = upsertEnv(limited, key, value)
 	}
 	return limited
-}
-
-func (s *LocalSandbox) resolveAllowedRoots(paths []string) ([]string, error) {
-	roots := make([]string, 0, len(paths))
-	for _, candidate := range paths {
-		resolved, err := s.ResolvePath(candidate)
-		if err != nil {
-			return nil, err
-		}
-		roots = append(roots, resolved)
-	}
-	return roots, nil
-}
-
-func (s *LocalSandbox) filterListedPaths(paths []string) ([]string, error) {
-	filtered := make([]string, 0, len(paths))
-	for _, match := range paths {
-		rel, err := filepath.Rel(s.root, match)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := s.ResolvePath(rel); err != nil {
-			continue
-		}
-		filtered = append(filtered, match)
-	}
-	slices.Sort(filtered)
-	return filtered, nil
 }
 
 func isWithinAllowedRoots(path string, roots []string) bool {
@@ -411,7 +568,7 @@ func validateSandboxPattern(pattern string) error {
 		return r == '/' || r == '\\'
 	}) {
 		if part == ".." {
-			return fmt.Errorf("pattern %q escapes sandbox", pattern)
+			return fmt.Errorf("pattern %q escapes workspace", pattern)
 		}
 	}
 	return nil
@@ -515,7 +672,6 @@ func needsShell(cmd string) bool {
 // rejectShellChaining rejects commands that contain shell chaining or injection
 // operators (;, &&, ||, |, backtick, $(...), ${...}, >, <). These operators allow
 // composing multiple commands and must not be auto-wrapped via sh -c.
-// Simple word-splitting (spaces/tabs) is safe and is handled by the caller.
 func rejectShellChaining(cmd string) error {
 	dangerous := []struct {
 		seq  string
@@ -543,8 +699,6 @@ func rejectShellChaining(cmd string) error {
 }
 
 // shellBinaries is the set of binary names that spawn an interactive shell.
-// Commands with these names must have their arguments validated for chaining
-// operators even when the shell-wrap path is not taken.
 var shellBinaries = map[string]bool{
 	"sh": true, "bash": true, "zsh": true, "fish": true, "ksh": true,
 	"cmd": true, "cmd.exe": true, "powershell": true, "powershell.exe": true, "pwsh": true, "pwsh.exe": true,
@@ -552,7 +706,6 @@ var shellBinaries = map[string]bool{
 
 // rejectShellBinaryArgs guards against bypassing rejectShellChaining by
 // explicitly passing a shell binary (e.g. cmd="sh", args=["-c", "ls; rm -rf /"]).
-// For each argument passed to a known shell binary it checks for chaining operators.
 func rejectShellBinaryArgs(cmd string, args []string) error {
 	base := strings.ToLower(filepath.Base(cmd))
 	if !shellBinaries[base] {
@@ -564,69 +717,4 @@ func rejectShellBinaryArgs(cmd string, args []string) error {
 		}
 	}
 	return nil
-}
-
-func (s *LocalSandbox) Limits() ResourceLimits {
-	return s.limits
-}
-
-// LocalWorkspace 将 LocalSandbox 适配为 workspace.Workspace 接口。
-type LocalWorkspace struct {
-	sb *LocalSandbox
-}
-
-// NewLocalWorkspace 基于 LocalSandbox 创建 Workspace 适配器。
-func NewLocalWorkspace(sb *LocalSandbox) *LocalWorkspace {
-	return &LocalWorkspace{sb: sb}
-}
-
-func (w *LocalWorkspace) ReadFile(_ context.Context, path string) ([]byte, error) {
-	return w.sb.ReadFile(path)
-}
-
-func (w *LocalWorkspace) WriteFile(_ context.Context, path string, content []byte) error {
-	return w.sb.WriteFile(path, content)
-}
-
-func (w *LocalWorkspace) ListFiles(_ context.Context, pattern string) ([]string, error) {
-	return w.sb.ListFiles(pattern)
-}
-
-func (w *LocalWorkspace) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
-	resolved, err := w.sb.ResolvePath(path)
-	if err != nil {
-		return workspace.FileInfo{}, err
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return workspace.FileInfo{}, err
-	}
-	return workspace.FileInfo{
-		Name:    info.Name(),
-		Size:    info.Size(),
-		IsDir:   info.IsDir(),
-		ModTime: info.ModTime(),
-	}, nil
-}
-
-func (w *LocalWorkspace) DeleteFile(_ context.Context, path string) error {
-	resolved, err := w.sb.ResolvePath(path)
-	if err != nil {
-		return err
-	}
-	return os.Remove(resolved)
-}
-
-// LocalExecutor 将 LocalSandbox 适配为 workspace.Executor 接口。
-type LocalExecutor struct {
-	sb *LocalSandbox
-}
-
-// NewLocalExecutor 基于 LocalSandbox 创建 Executor 适配器。
-func NewLocalExecutor(sb *LocalSandbox) *LocalExecutor {
-	return &LocalExecutor{sb: sb}
-}
-
-func (e *LocalExecutor) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
-	return e.sb.Execute(ctx, req)
 }

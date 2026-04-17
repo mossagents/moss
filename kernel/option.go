@@ -1,9 +1,7 @@
 package kernel
 
 import (
-	"context"
 	"log/slog"
-	"os"
 
 	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
@@ -31,30 +29,9 @@ func WithLogger(l *slog.Logger) Option {
 	return func(k *Kernel) { k.logger = l }
 }
 
-// WithSandbox 设置 Sandbox。
-// 同时自动适配为 Workspace 和 Executor（如果尚未单独设置）。
-func WithSandbox(sb workspace.Sandbox) Option {
-	return func(k *Kernel) {
-		k.sandbox = sb
-		if k.workspace == nil {
-			k.workspace = &sandboxWorkspaceAdapter{sb: sb}
-		}
-		if k.executor == nil {
-			k.executor = &sandboxExecutorAdapter{sb: sb}
-		}
-	}
-}
-
-// WithWorkspace 设置 Workspace Port（文件系统抽象）。
-// 当同时设置了 Sandbox 时，内置工具优先使用 Workspace。
+// WithWorkspace 设置 Workspace Port。
 func WithWorkspace(ws workspace.Workspace) Option {
 	return func(k *Kernel) { k.workspace = ws }
-}
-
-// WithExecutor 设置 Executor Port（命令执行抽象）。
-// 当同时设置了 Sandbox 时，内置工具优先使用 Executor。
-func WithExecutor(exec workspace.Executor) Option {
-	return func(k *Kernel) { k.executor = exec }
 }
 
 // WithTaskRuntime 设置 TaskRuntime Port。
@@ -169,55 +146,3 @@ func WithLLMBreaker(cfg retry.BreakerConfig) Option {
 	return func(k *Kernel) { k.loopCfg.LLMBreaker = retry.NewBreaker(cfg) }
 }
 
-// ── Sandbox → Workspace/Executor 适配器 ─────────────
-
-// sandboxWorkspaceAdapter 将任意 Sandbox 适配为 workspace.Workspace。
-type sandboxWorkspaceAdapter struct {
-	sb workspace.Sandbox
-}
-
-func (a *sandboxWorkspaceAdapter) ReadFile(_ context.Context, path string) ([]byte, error) {
-	return a.sb.ReadFile(path)
-}
-
-func (a *sandboxWorkspaceAdapter) WriteFile(_ context.Context, path string, content []byte) error {
-	return a.sb.WriteFile(path, content)
-}
-
-func (a *sandboxWorkspaceAdapter) ListFiles(_ context.Context, pattern string) ([]string, error) {
-	return a.sb.ListFiles(pattern)
-}
-
-func (a *sandboxWorkspaceAdapter) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
-	resolved, err := a.sb.ResolvePath(path)
-	if err != nil {
-		return workspace.FileInfo{}, err
-	}
-	info, err := os.Stat(resolved)
-	if err != nil {
-		return workspace.FileInfo{}, err
-	}
-	return workspace.FileInfo{
-		Name:    info.Name(),
-		Size:    info.Size(),
-		IsDir:   info.IsDir(),
-		ModTime: info.ModTime(),
-	}, nil
-}
-
-func (a *sandboxWorkspaceAdapter) DeleteFile(_ context.Context, path string) error {
-	resolved, err := a.sb.ResolvePath(path)
-	if err != nil {
-		return err
-	}
-	return os.Remove(resolved)
-}
-
-// sandboxExecutorAdapter 将任意 Sandbox 适配为 workspace.Executor。
-type sandboxExecutorAdapter struct {
-	sb workspace.Sandbox
-}
-
-func (a *sandboxExecutorAdapter) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
-	return a.sb.Execute(ctx, req)
-}

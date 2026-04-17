@@ -3,9 +3,10 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/workspace"
 	"path"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 // ScopedWorkspace 为 Workspace 添加路径前缀隔离。
@@ -93,4 +94,30 @@ func (s *ScopedWorkspace) DeleteFile(ctx context.Context, path string) error {
 		return err
 	}
 	return s.inner.DeleteFile(ctx, sp)
+}
+
+// ── Workspace 统一接口方法 ──
+
+func (s *ScopedWorkspace) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
+	return s.inner.Execute(ctx, req)
+}
+
+func (s *ScopedWorkspace) ResolvePath(p string) (string, error) {
+	sp, err := s.scopedPath(p)
+	if err != nil {
+		return "", err
+	}
+	return s.inner.ResolvePath(sp)
+}
+
+func (s *ScopedWorkspace) Capabilities() workspace.Capabilities {
+	return s.inner.Capabilities()
+}
+
+func (s *ScopedWorkspace) Policy() workspace.SecurityPolicy {
+	return s.inner.Policy()
+}
+
+func (s *ScopedWorkspace) Limits() workspace.ResourceLimits {
+	return s.inner.Limits()
 }

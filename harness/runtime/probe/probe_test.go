@@ -13,7 +13,6 @@ func TestProbeExecutionCapabilitiesReady(t *testing.T) {
 
 	want := map[string]string{
 		CapabilityExecutionWorkspace:      "ready",
-		CapabilityExecutionExecutor:       "ready",
 		CapabilityExecutionIsolation:      "ready",
 		CapabilityExecutionRepoState:      "ready",
 		CapabilityExecutionPatchApply:     "ready",
@@ -45,4 +44,3 @@ func TestNewExecutionProbeDisablesIsolation(t *testing.T) {
 	}
 	t.Fatal("missing workspace isolation capability")
 }
-

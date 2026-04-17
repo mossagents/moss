@@ -8,7 +8,6 @@ import (
 	"github.com/mossagents/moss/harness/runtime/execution"
 	"github.com/mossagents/moss/kernel"
 	kworkspace "github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 // stubWorkspace satisfies workspace.Workspace for testing.
@@ -21,14 +20,22 @@ func (s *stubWorkspace) Stat(_ context.Context, _ string) (kworkspace.FileInfo, 
 	return kworkspace.FileInfo{}, nil
 }
 func (s *stubWorkspace) DeleteFile(_ context.Context, _ string) error { return nil }
+func (s *stubWorkspace) Execute(_ context.Context, _ kworkspace.ExecRequest) (kworkspace.ExecOutput, error) {
+	return kworkspace.ExecOutput{}, nil
+}
+func (s *stubWorkspace) ResolvePath(_ string) (string, error)  { return "", nil }
+func (s *stubWorkspace) Capabilities() kworkspace.Capabilities { return kworkspace.Capabilities{} }
+func (s *stubWorkspace) Policy() kworkspace.SecurityPolicy     { return kworkspace.SecurityPolicy{} }
+func (s *stubWorkspace) Limits() kworkspace.ResourceLimits     { return kworkspace.ResourceLimits{} }
 
-// stubSandbox satisfies sandbox.Sandbox for testing with a configurable root.
-type stubSandbox struct {
+// stubWorkspaceWithRoot is a workspace that reports a configurable root path.
+type stubWorkspaceWithRoot struct {
+	stubWorkspace
 	root    string
 	pathErr bool
 }
 
-func (s *stubSandbox) ResolvePath(path string) (string, error) {
+func (s *stubWorkspaceWithRoot) ResolvePath(path string) (string, error) {
 	if s.pathErr {
 		return "", errors.New("resolve failed")
 	}
@@ -37,13 +44,15 @@ func (s *stubSandbox) ResolvePath(path string) (string, error) {
 	}
 	return s.root + "/" + path, nil
 }
-func (s *stubSandbox) ListFiles(_ string) ([]string, error) { return nil, nil }
-func (s *stubSandbox) ReadFile(_ string) ([]byte, error)    { return nil, nil }
-func (s *stubSandbox) WriteFile(_ string, _ []byte) error   { return nil }
-func (s *stubSandbox) Execute(_ context.Context, _ kworkspace.ExecRequest) (kworkspace.ExecOutput, error) {
-	return kworkspace.ExecOutput{}, nil
+func (s *stubWorkspaceWithRoot) Capabilities() kworkspace.Capabilities {
+	return kworkspace.Capabilities{}
 }
-func (s *stubSandbox) Limits() sandbox.ResourceLimits { return sandbox.ResourceLimits{} }
+func (s *stubWorkspaceWithRoot) Policy() kworkspace.SecurityPolicy {
+	return kworkspace.SecurityPolicy{}
+}
+func (s *stubWorkspaceWithRoot) Limits() kworkspace.ResourceLimits {
+	return kworkspace.ResourceLimits{}
+}
 
 func TestInstall_NilKernel(t *testing.T) {
 	err := execution.Install(nil, "/tmp", "", false)
@@ -60,18 +69,9 @@ func TestInstall_NoWorkspace(t *testing.T) {
 	}
 }
 
-func TestInstall_NoExecutor(t *testing.T) {
-	k := kernel.New(kernel.WithWorkspace(&stubWorkspace{}))
-	err := execution.Install(k, t.TempDir(), "", false)
-	if err == nil {
-		t.Fatal("expected error when executor is not set")
-	}
-}
-
 func TestInstall_EmptyWorkspaceRoot(t *testing.T) {
 	k := kernel.New(
 		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
 	)
 	err := execution.Install(k, "", "", false)
 	if err == nil {
@@ -83,7 +83,6 @@ func TestInstall_ValidSetup(t *testing.T) {
 	root := t.TempDir()
 	k := kernel.New(
 		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
 	)
 	err := execution.Install(k, root, "", false)
 	if err != nil {
@@ -95,7 +94,6 @@ func TestInstall_IsolationEnabled_EmptyIsolationRoot(t *testing.T) {
 	root := t.TempDir()
 	k := kernel.New(
 		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
 	)
 	err := execution.Install(k, root, "", true)
 	if err == nil {
@@ -108,7 +106,6 @@ func TestInstall_IsolationEnabled_ValidRoot(t *testing.T) {
 	isolationRoot := t.TempDir()
 	k := kernel.New(
 		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
 	)
 	err := execution.Install(k, root, isolationRoot, true)
 	if err != nil {
@@ -116,43 +113,37 @@ func TestInstall_IsolationEnabled_ValidRoot(t *testing.T) {
 	}
 }
 
-func TestInstall_WithMatchingSandboxRoot(t *testing.T) {
+func TestInstall_WithMatchingWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	k := kernel.New(
-		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
-		kernel.WithSandbox(&stubSandbox{root: root}),
+		kernel.WithWorkspace(&stubWorkspaceWithRoot{root: root}),
 	)
 	err := execution.Install(k, root, "", false)
 	if err != nil {
-		t.Fatalf("unexpected error when sandbox root matches workspace root: %v", err)
+		t.Fatalf("unexpected error when workspace root matches: %v", err)
 	}
 }
 
-func TestInstall_WithMismatchedSandboxRoot(t *testing.T) {
+func TestInstall_WithMismatchedWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	differentRoot := t.TempDir()
 	k := kernel.New(
-		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
-		kernel.WithSandbox(&stubSandbox{root: differentRoot}),
+		kernel.WithWorkspace(&stubWorkspaceWithRoot{root: differentRoot}),
 	)
 	err := execution.Install(k, root, "", false)
 	if err == nil {
-		t.Fatal("expected error when sandbox root does not match workspace root")
+		t.Fatal("expected error when workspace root does not match")
 	}
 }
 
-func TestInstall_WithSandboxPathError(t *testing.T) {
+func TestInstall_WithWorkspacePathError(t *testing.T) {
 	root := t.TempDir()
 	k := kernel.New(
-		kernel.WithWorkspace(&stubWorkspace{}),
-		kernel.WithExecutor(kworkspace.NoOpExecutor{}),
-		kernel.WithSandbox(&stubSandbox{pathErr: true}),
+		kernel.WithWorkspace(&stubWorkspaceWithRoot{pathErr: true}),
 	)
-	// Sandbox.ResolvePath errors → kernelSandboxRoot returns false → no mismatch check → success
+	// Workspace.ResolvePath errors → kernelWorkspaceRoot returns false → no mismatch check → success
 	err := execution.Install(k, root, "", false)
 	if err != nil {
-		t.Fatalf("unexpected error when sandbox ResolvePath fails (should skip check): %v", err)
+		t.Fatalf("unexpected error when workspace ResolvePath fails (should skip check): %v", err)
 	}
 }

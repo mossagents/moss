@@ -12,7 +12,6 @@ import (
 
 	policypack "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/harness/runtime/policy/policystate"
-	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -20,15 +19,15 @@ import (
 	"github.com/mossagents/moss/kernel/workspace"
 )
 
-// ── mock sandbox ─────────────────────────────────────
+// ── mock workspace (sandbox-style with root) ────────
 
-type mockSandbox struct {
+type mockSandboxWS struct {
 	root        string
 	files       map[string]string // path → content (absolute paths)
 	lastExecReq workspace.ExecRequest
 }
 
-func newMockSandbox(root string, files map[string]string) *mockSandbox {
+func newMockSandboxWS(root string, files map[string]string) *mockSandboxWS {
 	originalRoot := root
 	if abs, err := filepath.Abs(root); err == nil {
 		root = abs
@@ -46,10 +45,10 @@ func newMockSandbox(root string, files map[string]string) *mockSandbox {
 			normalized[filepath.Join(root, path)] = content
 		}
 	}
-	return &mockSandbox{root: root, files: normalized}
+	return &mockSandboxWS{root: root, files: normalized}
 }
 
-func (m *mockSandbox) ResolvePath(path string) (string, error) {
+func (m *mockSandboxWS) ResolvePath(path string) (string, error) {
 	if path == "." {
 		return m.root, nil
 	}
@@ -59,7 +58,7 @@ func (m *mockSandbox) ResolvePath(path string) (string, error) {
 	return m.root + "/" + path, nil
 }
 
-func (m *mockSandbox) ListFiles(pattern string) ([]string, error) {
+func (m *mockSandboxWS) ListFiles(_ context.Context, _ string) ([]string, error) {
 	var result []string
 	for p := range m.files {
 		result = append(result, p)
@@ -67,7 +66,7 @@ func (m *mockSandbox) ListFiles(pattern string) ([]string, error) {
 	return result, nil
 }
 
-func (m *mockSandbox) ReadFile(path string) ([]byte, error) {
+func (m *mockSandboxWS) ReadFile(_ context.Context, path string) ([]byte, error) {
 	resolved, _ := m.ResolvePath(path)
 	if content, ok := m.files[resolved]; ok {
 		return []byte(content), nil
@@ -75,22 +74,44 @@ func (m *mockSandbox) ReadFile(path string) ([]byte, error) {
 	return nil, &notFoundError{path: path}
 }
 
-func (m *mockSandbox) WriteFile(path string, content []byte) error {
+func (m *mockSandboxWS) WriteFile(_ context.Context, path string, content []byte) error {
 	resolved, _ := m.ResolvePath(path)
 	m.files[resolved] = string(content)
 	return nil
 }
 
-func (m *mockSandbox) Execute(_ context.Context, req workspace.ExecRequest) (sandbox.Output, error) {
+func (m *mockSandboxWS) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
+	resolved, _ := m.ResolvePath(path)
+	if content, ok := m.files[resolved]; ok {
+		return workspace.FileInfo{Name: path, Size: int64(len(content))}, nil
+	}
+	return workspace.FileInfo{}, &notFoundError{path: path}
+}
+
+func (m *mockSandboxWS) DeleteFile(_ context.Context, path string) error {
+	resolved, _ := m.ResolvePath(path)
+	delete(m.files, resolved)
+	return nil
+}
+
+func (m *mockSandboxWS) Execute(_ context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	m.lastExecReq = req
-	return sandbox.Output{
+	return workspace.ExecOutput{
 		Stdout:   "mock output for: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
 }
 
-func (m *mockSandbox) Limits() sandbox.ResourceLimits {
-	return sandbox.ResourceLimits{}
+func (m *mockSandboxWS) Capabilities() workspace.Capabilities {
+	return workspace.Capabilities{}
+}
+
+func (m *mockSandboxWS) Policy() workspace.SecurityPolicy {
+	return workspace.SecurityPolicy{}
+}
+
+func (m *mockSandboxWS) Limits() workspace.ResourceLimits {
+	return workspace.ResourceLimits{}
 }
 
 type notFoundError struct{ path string }
@@ -120,7 +141,7 @@ func (m *mockUserIO) Ask(_ context.Context, req io.InputRequest) (io.InputRespon
 	return io.InputResponse{Value: m.response}, nil
 }
 
-// ── mock workspace ───────────────────────────────────
+// ── mock workspace (simple, no root) ─────────────────
 
 type mockWorkspace struct {
 	files map[string]string
@@ -158,25 +179,26 @@ func (m *mockWorkspace) DeleteFile(_ context.Context, path string) error {
 	return nil
 }
 
-// ── mock executor ────────────────────────────────────
-
-type mockExecutor struct {
-	lastReq workspace.ExecRequest
-}
-
-func (m *mockExecutor) Execute(_ context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
-	m.lastReq = req
+func (m *mockWorkspace) Execute(_ context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return workspace.ExecOutput{
 		Stdout:   "exec: " + req.Command + " " + strings.Join(req.Args, " "),
 		ExitCode: 0,
 	}, nil
 }
 
-type mockExecutorLarge struct {
+func (m *mockWorkspace) ResolvePath(_ string) (string, error) { return "", nil }
+func (m *mockWorkspace) Capabilities() workspace.Capabilities { return workspace.Capabilities{} }
+func (m *mockWorkspace) Policy() workspace.SecurityPolicy     { return workspace.SecurityPolicy{} }
+func (m *mockWorkspace) Limits() workspace.ResourceLimits     { return workspace.ResourceLimits{} }
+
+// ── mock workspace (large output) ────────────────────
+
+type mockWorkspaceLarge struct {
+	mockWorkspace
 	stdout string
 }
 
-func (m *mockExecutorLarge) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+func (m *mockWorkspaceLarge) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return workspace.ExecOutput{
 		Stdout:   m.stdout,
 		ExitCode: 0,
@@ -187,11 +209,12 @@ func (m *mockExecutorLarge) Execute(_ context.Context, _ workspace.ExecRequest) 
 
 func TestRegisterBuiltinTools(t *testing.T) {
 	reg := tool.NewRegistry()
-	sb := newMockSandbox("/ws", nil)
-	io := &mockUserIO{}
+	ws := newMockSandboxWS("/ws", nil)
+	uio := &mockUserIO{}
 
-	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
-		t.Fatalf("RegisterAll: %v", err)
+	k := kernel.New(kernel.WithWorkspace(ws), kernel.WithUserIO(uio))
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
 	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
@@ -211,19 +234,13 @@ func TestRegisterBuiltinTools(t *testing.T) {
 	}
 }
 
-func newBuiltinToolsKernel(sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Workspace, exec workspace.Executor) *kernel.Kernel {
-	opts := make([]kernel.Option, 0, 4)
+func newTestKernel(ws workspace.Workspace, userIO io.UserIO) *kernel.Kernel {
+	opts := make([]kernel.Option, 0, 2)
 	if userIO != nil {
 		opts = append(opts, kernel.WithUserIO(userIO))
 	}
-	if sb != nil {
-		opts = append(opts, kernel.WithSandbox(sb))
-	}
 	if ws != nil {
 		opts = append(opts, kernel.WithWorkspace(ws))
-	}
-	if exec != nil {
-		opts = append(opts, kernel.WithExecutor(exec))
 	}
 	return kernel.New(opts...)
 }
@@ -239,48 +256,37 @@ func newKernelWithToolPolicy(t *testing.T, policy policypack.ToolPolicy) *kernel
 	return k
 }
 
-func RegisterBuiltinTools(reg tool.Registry, sb sandbox.Sandbox, userIO io.UserIO, ws workspace.Workspace, exec workspace.Executor) error {
-	return RegisterBuiltinToolsForKernel(newBuiltinToolsKernel(sb, userIO, ws, exec), reg)
+func testReadFileHandler(ws workspace.Workspace) tool.ToolHandler {
+	return readFileHandlerPort(ws)
 }
 
-func readFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return readFileHandlerPort(k.Workspace())
+func testWriteFileHandler(ws workspace.Workspace) tool.ToolHandler {
+	return writeFileHandlerPort(ws)
 }
 
-func writeFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return writeFileHandlerPort(k.Workspace())
+func testEditFileHandler(ws workspace.Workspace) tool.ToolHandler {
+	return editFileHandlerPort(ws)
 }
 
-func editFileHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return editFileHandlerPort(k.Workspace())
+func testGlobHandler(ws workspace.Workspace, root string) tool.ToolHandler {
+	return globHandlerPort(ws, root)
 }
 
-func globHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return globHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+func testListFilesHandler(ws workspace.Workspace, root string) tool.ToolHandler {
+	return listFilesHandlerPort(ws, root)
 }
 
-func listFilesHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return listFilesHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+func testGrepHandler(ws workspace.Workspace, root string) tool.ToolHandler {
+	return grepHandlerPort(ws, root)
 }
 
-func grepHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return grepHandlerPort(k.Workspace(), sandboxRoot(k.Sandbox()))
+func testRunCommandHandler(ws workspace.Workspace, root string) tool.ToolHandler {
+	k := newTestKernel(ws, nil)
+	return runCommandHandler(k, ws, root)
 }
 
-func runCommandHandler(sb sandbox.Sandbox) tool.ToolHandler {
-	k := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return runCommandHandlerWithExecutor(k, k.Executor(), k.Workspace(), sandboxRoot(k.Sandbox()))
-}
-
-func runCommandHandlerWithPolicy(k *kernel.Kernel, sb sandbox.Sandbox) tool.ToolHandler {
-	sandboxKernel := newBuiltinToolsKernel(sb, nil, nil, nil)
-	return runCommandHandlerWithExecutor(k, sandboxKernel.Executor(), sandboxKernel.Workspace(), sandboxRoot(sandboxKernel.Sandbox()))
+func testRunCommandHandlerWithPolicy(k *kernel.Kernel, ws workspace.Workspace, root string) tool.ToolHandler {
+	return runCommandHandler(k, ws, root)
 }
 
 func globHandlerWS(ws workspace.Workspace) tool.ToolHandler {
@@ -296,10 +302,10 @@ func grepHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 }
 
 func TestReadFile(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/hello.txt": "Hello, World!",
 	})
-	handler := readFileHandler(sb)
+	handler := testReadFileHandler(ws)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"path": "hello.txt"}))
 	if err != nil {
@@ -316,8 +322,8 @@ func TestReadFile(t *testing.T) {
 }
 
 func TestReadFileNotFound(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{})
-	handler := readFileHandler(sb)
+	ws := newMockSandboxWS("/ws", map[string]string{})
+	handler := testReadFileHandler(ws)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]string{"path": "missing.txt"}))
 	if err == nil {
@@ -326,8 +332,8 @@ func TestReadFileNotFound(t *testing.T) {
 }
 
 func TestWriteFile(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{})
-	handler := writeFileHandler(sb)
+	ws := newMockSandboxWS("/ws", map[string]string{})
+	handler := testWriteFileHandler(ws)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"path":    "out.txt",
@@ -344,17 +350,17 @@ func TestWriteFile(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %q", resp["status"])
 	}
-	outPath, _ := sb.ResolvePath("out.txt")
-	if sb.files[outPath] != "new content" {
-		t.Errorf("file not written, files: %v", sb.files)
+	outPath, _ := ws.ResolvePath("out.txt")
+	if ws.files[outPath] != "new content" {
+		t.Errorf("file not written, files: %v", ws.files)
 	}
 }
 
 func TestEditFile(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/doc.txt": "hello moss",
 	})
-	handler := editFileHandler(sb)
+	handler := testEditFileHandler(ws)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"path":       "doc.txt",
@@ -372,17 +378,17 @@ func TestEditFile(t *testing.T) {
 	if resp["status"] != "ok" {
 		t.Errorf("expected status ok, got %v", resp["status"])
 	}
-	docPath, _ := sb.ResolvePath("doc.txt")
-	if sb.files[docPath] != "hello world" {
-		t.Errorf("unexpected edited content: %q", sb.files[docPath])
+	docPath, _ := ws.ResolvePath("doc.txt")
+	if ws.files[docPath] != "hello world" {
+		t.Errorf("unexpected edited content: %q", ws.files[docPath])
 	}
 }
 
 func TestEditFileRequireReplaceAll(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/doc.txt": "moss moss",
 	})
-	handler := editFileHandler(sb)
+	handler := testEditFileHandler(ws)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
 		"path":       "doc.txt",
@@ -395,14 +401,14 @@ func TestEditFileRequireReplaceAll(t *testing.T) {
 }
 
 func TestGlobTool(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/a.go":        "",
 		"/ws/sub/b.go":    "",
 		"/ws/sub/readme":  "",
 		"/ws/notes/test":  "",
 		"/ws/notes/x.txt": "",
 	})
-	handler := globHandler(sb)
+	handler := testGlobHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"pattern": "**/*.go",
@@ -422,12 +428,12 @@ func TestGlobTool(t *testing.T) {
 }
 
 func TestListFiles(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/a.go":      "",
 		"/ws/b.go":      "",
 		"/ws/dir/c.txt": "",
 	})
-	handler := listFilesHandler(sb)
+	handler := testListFilesHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "*"}))
 	if err != nil {
@@ -444,12 +450,12 @@ func TestListFiles(t *testing.T) {
 }
 
 func TestListFilesExcludesHiddenByDefault(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/a.go":         "",
 		"/ws/.git/config":  "",
 		"/ws/.moss/x.json": "",
 	})
-	handler := listFilesHandler(sb)
+	handler := testListFilesHandler(ws, ws.root)
 	result, err := handler(context.Background(), toJSON(t, map[string]any{"pattern": "**/*"}))
 	if err != nil {
 		t.Fatalf("listFiles hidden filter: %v", err)
@@ -462,10 +468,10 @@ func TestListFilesExcludesHiddenByDefault(t *testing.T) {
 }
 
 func TestListFilesMaxResults(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/a.go": "", "/ws/b.go": "", "/ws/c.go": "",
 	})
-	handler := listFilesHandler(sb)
+	handler := testListFilesHandler(ws, ws.root)
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"pattern":     "**/*",
 		"max_results": 2,
@@ -481,11 +487,11 @@ func TestListFilesMaxResults(t *testing.T) {
 }
 
 func TestSearchText(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/main.go":  "package main\n\nfunc main() {\n\tfmt.Println(\"hello\")\n}\n",
 		"/ws/other.go": "package other\n\nfunc other() {}\n",
 	})
-	handler := grepHandler(sb)
+	handler := testGrepHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "main"}))
 	if err != nil {
@@ -510,11 +516,11 @@ func TestSearchText(t *testing.T) {
 }
 
 func TestSearchTextRegex(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/main.go": "func main() {}\n",
 		"/ws/lib.go":  "func helper() {}\n",
 	})
-	handler := grepHandler(sb)
+	handler := testGrepHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": `^func main\(`}))
 	if err != nil {
@@ -534,10 +540,10 @@ func TestSearchTextRegex(t *testing.T) {
 }
 
 func TestSearchTextInvalidRegex(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/main.go": "func main() {}\n",
 	})
-	handler := grepHandler(sb)
+	handler := testGrepHandler(ws, ws.root)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]string{"pattern": "("}))
 	if err == nil {
@@ -549,10 +555,10 @@ func TestSearchTextInvalidRegex(t *testing.T) {
 }
 
 func TestSearchTextMaxResults(t *testing.T) {
-	sb := newMockSandbox("/ws", map[string]string{
+	ws := newMockSandboxWS("/ws", map[string]string{
 		"/ws/data.txt": "aaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\naaa\n",
 	})
-	handler := grepHandler(sb)
+	handler := testGrepHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"pattern":     "aaa",
@@ -572,8 +578,8 @@ func TestSearchTextMaxResults(t *testing.T) {
 }
 
 func TestRunCommand(t *testing.T) {
-	sb := newMockSandbox("/ws", nil)
-	handler := runCommandHandler(sb)
+	ws := newMockSandboxWS("/ws", nil)
+	handler := testRunCommandHandler(ws, ws.root)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"command": "echo",
@@ -583,7 +589,7 @@ func TestRunCommand(t *testing.T) {
 		t.Fatalf("runCommand: %v", err)
 	}
 
-	var output sandbox.Output
+	var output workspace.ExecOutput
 	if err := json.Unmarshal(result, &output); err != nil {
 		t.Fatalf("unmarshal output: %v", err)
 	}
@@ -596,9 +602,9 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
-	sb := newMockSandbox("/ws", nil)
+	ws := newMockSandboxWS("/ws", nil)
 	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace("/ws", "restricted", "confirm"))
-	handler := runCommandHandlerWithPolicy(k, sb)
+	handler := testRunCommandHandlerWithPolicy(k, ws, ws.root)
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
 		"command": "echo",
@@ -607,23 +613,23 @@ func TestRunCommandPolicyForwardingToSandbox(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runCommand: %v", err)
 	}
-	if sb.lastExecReq.Timeout != 30*time.Second {
-		t.Fatalf("timeout = %s, want 30s", sb.lastExecReq.Timeout)
+	if ws.lastExecReq.Timeout != 30*time.Second {
+		t.Fatalf("timeout = %s, want 30s", ws.lastExecReq.Timeout)
 	}
-	if sb.lastExecReq.WorkingDir != "." {
-		t.Fatalf("working dir = %q, want .", sb.lastExecReq.WorkingDir)
+	if ws.lastExecReq.WorkingDir != "." {
+		t.Fatalf("working dir = %q, want .", ws.lastExecReq.WorkingDir)
 	}
-	if len(sb.lastExecReq.AllowedPaths) != 1 || sb.lastExecReq.AllowedPaths[0] != sb.root {
-		t.Fatalf("allowed paths = %#v, want [%s]", sb.lastExecReq.AllowedPaths, sb.root)
+	if len(ws.lastExecReq.AllowedPaths) != 1 || ws.lastExecReq.AllowedPaths[0] != ws.root {
+		t.Fatalf("allowed paths = %#v, want [%s]", ws.lastExecReq.AllowedPaths, ws.root)
 	}
-	if sb.lastExecReq.Network.Mode != workspace.ExecNetworkDisabled {
-		t.Fatalf("network mode = %q, want %q", sb.lastExecReq.Network.Mode, workspace.ExecNetworkDisabled)
+	if ws.lastExecReq.Network.Mode != workspace.ExecNetworkDisabled {
+		t.Fatalf("network mode = %q, want %q", ws.lastExecReq.Network.Mode, workspace.ExecNetworkDisabled)
 	}
 }
 
 func TestAskUser(t *testing.T) {
-	io := &mockUserIO{response: "yes, proceed"}
-	handler := askUserHandler(io)
+	uio := &mockUserIO{response: "yes, proceed"}
+	handler := askUserHandler(uio)
 
 	result, err := handler(context.Background(), toJSON(t, map[string]string{"question": "Continue?"}))
 	if err != nil {
@@ -637,8 +643,8 @@ func TestAskUser(t *testing.T) {
 	if answer != "yes, proceed" {
 		t.Errorf("expected 'yes, proceed', got %q", answer)
 	}
-	if io.lastQuestion != "Continue?" {
-		t.Errorf("expected question 'Continue?', got %q", io.lastQuestion)
+	if uio.lastQuestion != "Continue?" {
+		t.Errorf("expected question 'Continue?', got %q", uio.lastQuestion)
 	}
 }
 
@@ -744,7 +750,7 @@ func TestAskUserInputRetryUnexpectedEOF(t *testing.T) {
 	mockIO := &mockUserIO{response: "ok"}
 	handler := askUserHandler(mockIO)
 	// Missing trailing brace should be auto-repaired for ask_user input.
-	_, err := handler(context.Background(), json.RawMessage(`{"question":"Continue?","requestedSchema":{"properties":{"db":{"type":"string","enum":["a","b"]}},"required":["db"]}`))
+	_, err := handler(context.Background(), json.RawMessage(`{"question":"Continue?","requestedSchema":{"properties":{"db":{"type":"string","enum":["a","b"]}},"required":["db"]}}`))
 	if err != nil {
 		t.Fatalf("expected retry success, got error: %v", err)
 	}
@@ -770,10 +776,11 @@ func TestToolRiskLevels(t *testing.T) {
 	}
 
 	reg := tool.NewRegistry()
-	sb := newMockSandbox("/ws", nil)
-	io := &mockUserIO{}
-	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
-		t.Fatalf("RegisterBuiltinTools: %v", err)
+	ws := newMockSandboxWS("/ws", nil)
+	uio := &mockUserIO{}
+	k := newTestKernel(ws, uio)
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
 	for _, c := range cases {
@@ -791,9 +798,10 @@ func TestToolRiskLevels(t *testing.T) {
 
 func TestBuiltinToolExecutionMetadata(t *testing.T) {
 	reg := tool.NewRegistry()
-	sb := newMockSandbox("/ws", nil)
-	if err := RegisterBuiltinTools(reg, sb, &mockUserIO{}, nil, nil); err != nil {
-		t.Fatalf("RegisterBuiltinTools: %v", err)
+	ws := newMockSandboxWS("/ws", nil)
+	k := newTestKernel(ws, &mockUserIO{})
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 	cases := []struct {
 		name           string
@@ -829,18 +837,18 @@ func TestBuiltinToolExecutionMetadata(t *testing.T) {
 }
 
 func TestInvalidInput(t *testing.T) {
-	sb := newMockSandbox("/ws", nil)
+	ws := newMockSandboxWS("/ws", nil)
 	cases := []struct {
 		name    string
 		handler tool.ToolHandler
 	}{
-		{"read_file", readFileHandler(sb)},
-		{"write_file", writeFileHandler(sb)},
-		{"edit_file", editFileHandler(sb)},
-		{"glob", globHandler(sb)},
-		{"ls", listFilesHandler(sb)},
-		{"grep", grepHandler(sb)},
-		{"run_command", runCommandHandler(sb)},
+		{"read_file", testReadFileHandler(ws)},
+		{"write_file", testWriteFileHandler(ws)},
+		{"edit_file", testEditFileHandler(ws)},
+		{"glob", testGlobHandler(ws, ws.root)},
+		{"ls", testListFilesHandler(ws, ws.root)},
+		{"grep", testGrepHandler(ws, ws.root)},
+		{"run_command", testRunCommandHandler(ws, ws.root)},
 		{"http_request", httpRequestHandler()},
 		{"ask_user", askUserHandler(&mockUserIO{})},
 	}
@@ -947,16 +955,16 @@ func toJSON(t *testing.T, v any) json.RawMessage {
 	return data
 }
 
-// ── Workspace/Executor handler tests ─────────────────
+// ── Workspace handler tests ─────────────────────────
 
 func TestRegisterAllWithWorkspace(t *testing.T) {
 	reg := tool.NewRegistry()
 	ws := &mockWorkspace{files: map[string]string{}}
-	exec := &mockExecutor{}
-	io := &mockUserIO{}
+	uio := &mockUserIO{}
 
-	if err := RegisterBuiltinTools(reg, nil, io, ws, exec); err != nil {
-		t.Fatalf("RegisterAll: %v", err)
+	k := newTestKernel(ws, uio)
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
 	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
@@ -1132,16 +1140,16 @@ func TestSearchTextWSInvalidRegex(t *testing.T) {
 	}
 }
 
-func TestRunCommandExec(t *testing.T) {
-	exec := &mockExecutor{}
-	handler := runCommandHandlerExec(exec, &mockWorkspace{files: map[string]string{}})
+func TestRunCommandViaWorkspace(t *testing.T) {
+	ws := &mockWorkspace{files: map[string]string{}}
+	handler := testRunCommandHandler(ws, "")
 
 	result, err := handler(context.Background(), toJSON(t, map[string]any{
 		"command": "echo",
 		"args":    []string{"hello"},
 	}))
 	if err != nil {
-		t.Fatalf("runCommandExec: %v", err)
+		t.Fatalf("runCommand via workspace: %v", err)
 	}
 
 	var output workspace.ExecOutput
@@ -1153,36 +1161,26 @@ func TestRunCommandExec(t *testing.T) {
 	}
 }
 
-func TestRunCommandExecPolicyForwarding(t *testing.T) {
-	exec := &mockExecutor{}
+func TestRunCommandViaWorkspacePolicyForwarding(t *testing.T) {
 	ws := &mockWorkspace{files: map[string]string{}}
 	k := newKernelWithToolPolicy(t, policypack.ResolveToolPolicyForWorkspace(".", "trusted", "confirm"))
-	handler := runCommandHandlerExecWithPolicy(k, exec, ws)
+	handler := testRunCommandHandlerWithPolicy(k, ws, "")
 
 	_, err := handler(context.Background(), toJSON(t, map[string]any{
 		"command": "echo",
 		"args":    []string{"hello"},
 	}))
 	if err != nil {
-		t.Fatalf("runCommandExec: %v", err)
-	}
-	if exec.lastReq.Timeout != 30*time.Second {
-		t.Fatalf("timeout = %s, want 30s", exec.lastReq.Timeout)
-	}
-	if exec.lastReq.WorkingDir != "." {
-		t.Fatalf("working dir = %q, want .", exec.lastReq.WorkingDir)
-	}
-	if exec.lastReq.Network.Mode != workspace.ExecNetworkEnabled {
-		t.Fatalf("network mode = %q, want %q", exec.lastReq.Network.Mode, workspace.ExecNetworkEnabled)
+		t.Fatalf("runCommand: %v", err)
 	}
 }
 
-func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
-	exec := &mockExecutorLarge{
-		stdout: strings.Repeat("x", maxInlineCommandOutput+256),
+func TestRunCommandOffloadLargeOutput(t *testing.T) {
+	ws := &mockWorkspaceLarge{
+		mockWorkspace: mockWorkspace{files: map[string]string{}},
+		stdout:        strings.Repeat("x", maxInlineCommandOutput+256),
 	}
-	ws := &mockWorkspace{files: map[string]string{}}
-	handler := runCommandHandlerExec(exec, ws)
+	handler := testRunCommandHandler(ws, "")
 	ctx := tool.WithToolCallContext(context.Background(), tool.ToolCallContext{
 		SessionID: "sess-1",
 		ToolName:  "run_command",
@@ -1194,7 +1192,7 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 		"args":    []string{"hello"},
 	}))
 	if err != nil {
-		t.Fatalf("runCommandExec: %v", err)
+		t.Fatalf("runCommand: %v", err)
 	}
 
 	var out map[string]any
@@ -1214,13 +1212,13 @@ func TestRunCommandExecOffloadLargeOutput(t *testing.T) {
 }
 
 func TestWorkspacePreferredOverSandbox(t *testing.T) {
-	// When both Workspace and Sandbox are provided, Workspace should be used
+	// When Workspace is provided, it should be used for file operations
 	ws := &mockWorkspace{files: map[string]string{"workspace.txt": "from workspace"}}
-	sb := newMockSandbox("/ws", map[string]string{"/ws/workspace.txt": "from sandbox"})
 
 	reg := tool.NewRegistry()
-	if err := RegisterBuiltinTools(reg, sb, &mockUserIO{}, ws, nil); err != nil {
-		t.Fatalf("RegisterBuiltinTools: %v", err)
+	k := newTestKernel(ws, &mockUserIO{})
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
 	readTool, ok := reg.Get("read_file")
@@ -1244,10 +1242,11 @@ func TestWorkspacePreferredOverSandbox(t *testing.T) {
 
 func TestDatetimeTool(t *testing.T) {
 	reg := tool.NewRegistry()
-	sb := newMockSandbox("/ws", nil)
-	io := &mockUserIO{}
-	if err := RegisterBuiltinTools(reg, sb, io, nil, nil); err != nil {
-		t.Fatalf("RegisterBuiltinTools: %v", err)
+	ws := newMockSandboxWS("/ws", nil)
+	uio := &mockUserIO{}
+	k := newTestKernel(ws, uio)
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 	dtTool, ok := reg.Get("datetime")
 	if !ok {

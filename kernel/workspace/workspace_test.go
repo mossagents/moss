@@ -178,13 +178,3 @@ func TestNoOpWorkspaceLock_CurrentHolder(t *testing.T) {
 		t.Fatal("NoOp lock should never report held")
 	}
 }
-
-// ——— NoOpExecutor ———
-
-func TestNoOpExecutor_Execute(t *testing.T) {
-	ex := workspace.NoOpExecutor{}
-	_, err := ex.Execute(context.Background(), workspace.ExecRequest{Command: "ls"})
-	if err == nil {
-		t.Fatal("expected error from NoOpExecutor")
-	}
-}

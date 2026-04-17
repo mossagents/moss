@@ -16,7 +16,7 @@ func TestLocalWorkspaceIsolation_AcquireRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lease1.WorkspaceID == "" || lease1.Workspace == nil || lease1.Executor == nil {
+	if lease1.WorkspaceID == "" || lease1.Workspace == nil {
 		t.Fatalf("invalid lease: %+v", lease1)
 	}
 

@@ -2,12 +2,14 @@ package docker_test
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/workspace"
-	dockersandbox "github.com/mossagents/moss/harness/sandbox/docker"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	dockersandbox "github.com/mossagents/moss/harness/sandbox/docker"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 func TestNew_Validation(t *testing.T) {
@@ -51,11 +53,12 @@ func TestReadWriteFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
 	content := []byte("hello docker sandbox")
-	if err := s.WriteFile("test.txt", content); err != nil {
+	if err := s.WriteFile(ctx, "test.txt", content); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.ReadFile("test.txt")
+	got, err := s.ReadFile(ctx, "test.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +73,7 @@ func TestMaxFileSizeEnforced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = s.WriteFile("big.txt", make([]byte, 11))
+	err = s.WriteFile(context.Background(), "big.txt", make([]byte, 11))
 	if err == nil {
 		t.Fatal("expected file size limit error")
 	}
@@ -78,17 +81,17 @@ func TestMaxFileSizeEnforced(t *testing.T) {
 
 func TestListFiles(t *testing.T) {
 	dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644); err != nil {
+		t.Fatal(err)
+	}
 	s, err := dockersandbox.New(dockersandbox.DockerConfig{Image: "ubuntu:22.04", WorkDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := s.ListFiles("*.txt")
+	files, err := s.ListFiles(context.Background(), "*.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,5 +140,35 @@ func TestLimits(t *testing.T) {
 	}
 	if limits.CommandTimeout != 10*time.Second {
 		t.Fatalf("expected 10s timeout")
+	}
+}
+
+func TestExecute_DockerArgsContainSecurityFlags(t *testing.T) {
+	dir := t.TempDir()
+	s, err := dockersandbox.New(dockersandbox.DockerConfig{
+		Image:   "ubuntu:22.04",
+		WorkDir: dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var capturedArgs []string
+	s.SetExecFunc(func(_ context.Context, name string, args ...string) ([]byte, []byte, int, error) {
+		capturedArgs = args
+		return nil, nil, 0, nil
+	})
+	s.Execute(context.Background(), workspace.ExecRequest{Command: "echo", Args: []string{"test"}})
+
+	argStr := strings.Join(capturedArgs, " ")
+	for _, flag := range []string{
+		"--security-opt no-new-privileges",
+		"--cap-drop ALL",
+		"--pids-limit 256",
+		"--read-only",
+		"--tmpfs /tmp:rw,noexec,nosuid,size=64m",
+	} {
+		if !strings.Contains(argStr, flag) {
+			t.Errorf("expected docker args to contain %q, got: %v", flag, capturedArgs)
+		}
 	}
 }

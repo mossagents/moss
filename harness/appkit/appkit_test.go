@@ -11,14 +11,14 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/config"
+	rt "github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
-	rt "github.com/mossagents/moss/harness/runtime"
-	"github.com/mossagents/moss/harness/scheduler"
 )
 
 func TestDefaultTemplateContext(t *testing.T) {
@@ -306,11 +306,8 @@ func TestBuildKernel_DefaultManagedBackendProvidesPorts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildKernel: %v", err)
 	}
-	if k.Sandbox() == nil {
-		t.Fatal("expected default builder to provision a sandbox-backed backend")
-	}
-	if k.Workspace() == nil || k.Executor() == nil {
-		t.Fatal("expected default builder to provision workspace and executor ports")
+	if k.Workspace() == nil {
+		t.Fatal("expected default builder to provision workspace port")
 	}
 }
 

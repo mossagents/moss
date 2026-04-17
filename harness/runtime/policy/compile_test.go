@@ -2,11 +2,14 @@ package policy
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 func TestCompileRulesApplyCommandRules(t *testing.T) {
@@ -127,5 +130,113 @@ func TestEvaluateDenyApprovalClass(t *testing.T) {
 	decision := Evaluate(policy, spec, nil)
 	if decision != governance.Deny {
 		t.Fatalf("expected Deny for denied approval class, got %s", decision)
+	}
+}
+
+// ── CompileSecurityPolicy tests ──
+
+func TestCompileSecurityPolicy_ProtectedPathsAbsolute(t *testing.T) {
+	wsRoot := t.TempDir()
+	tp := ToolPolicy{
+		Trust:                 appconfig.TrustTrusted,
+		ApprovalMode:          "confirm",
+		ProtectedPathPrefixes: []string{".git", ".moss"},
+	}
+	sp := CompileSecurityPolicy(tp, wsRoot)
+	if len(sp.ProtectedPaths) < 2 {
+		t.Fatalf("expected at least 2 protected paths, got %d: %v", len(sp.ProtectedPaths), sp.ProtectedPaths)
+	}
+	for _, p := range sp.ProtectedPaths {
+		if !filepath.IsAbs(p) {
+			t.Fatalf("protected path should be absolute: %q", p)
+		}
+	}
+}
+
+func TestCompileSecurityPolicy_DefaultProtectedPaths(t *testing.T) {
+	wsRoot := t.TempDir()
+	tp := ToolPolicy{
+		Trust:        appconfig.TrustTrusted,
+		ApprovalMode: "full-auto",
+	}
+	sp := CompileSecurityPolicy(tp, wsRoot)
+	gitFound := false
+	mossFound := false
+	for _, p := range sp.ProtectedPaths {
+		if strings.HasSuffix(p, ".git") || strings.HasSuffix(p, ".git"+string(filepath.Separator)) {
+			gitFound = true
+		}
+		if strings.HasSuffix(p, ".moss") || strings.HasSuffix(p, ".moss"+string(filepath.Separator)) {
+			mossFound = true
+		}
+	}
+	if !gitFound {
+		t.Fatal("expected .git in default protected paths")
+	}
+	if !mossFound {
+		t.Fatal("expected .moss in default protected paths")
+	}
+}
+
+func TestCompileSecurityPolicy_ReadOnlyFromDenyWrite(t *testing.T) {
+	tp := ToolPolicy{
+		Trust:                appconfig.TrustTrusted,
+		ApprovalMode:         "read-only",
+		WorkspaceWriteAccess: ToolAccessDeny,
+	}
+	sp := CompileSecurityPolicy(tp, t.TempDir())
+	if !sp.ReadOnly {
+		t.Fatal("expected ReadOnly when WorkspaceWriteAccess is deny")
+	}
+}
+
+func TestCompileSecurityPolicy_NotReadOnlyForAllow(t *testing.T) {
+	tp := ToolPolicy{
+		Trust:                appconfig.TrustTrusted,
+		ApprovalMode:         "full-auto",
+		WorkspaceWriteAccess: ToolAccessAllow,
+	}
+	sp := CompileSecurityPolicy(tp, t.TempDir())
+	if sp.ReadOnly {
+		t.Fatal("expected not ReadOnly when WorkspaceWriteAccess is allow")
+	}
+}
+
+func TestCompileSecurityPolicy_NetworkMode(t *testing.T) {
+	tp := ToolPolicy{
+		Trust:        appconfig.TrustRestricted,
+		ApprovalMode: "confirm",
+		Command: CommandPolicy{
+			Network: workspace.ExecNetworkPolicy{
+				Mode:       workspace.ExecNetworkDisabled,
+				AllowHosts: []string{"api.example.com"},
+			},
+		},
+	}
+	sp := CompileSecurityPolicy(tp, t.TempDir())
+	if sp.NetworkMode != workspace.ExecNetworkDisabled {
+		t.Fatalf("expected disabled network mode, got %q", sp.NetworkMode)
+	}
+	if len(sp.AllowedHosts) != 1 || sp.AllowedHosts[0] != "api.example.com" {
+		t.Fatalf("expected AllowedHosts=[api.example.com], got %v", sp.AllowedHosts)
+	}
+}
+
+func TestCompileSecurityPolicy_NoDuplicateDefaults(t *testing.T) {
+	wsRoot := t.TempDir()
+	tp := ToolPolicy{
+		Trust:                 appconfig.TrustTrusted,
+		ApprovalMode:          "confirm",
+		ProtectedPathPrefixes: []string{".git"},
+	}
+	sp := CompileSecurityPolicy(tp, wsRoot)
+	gitCount := 0
+	for _, p := range sp.ProtectedPaths {
+		if strings.HasSuffix(p, ".git") {
+			gitCount++
+		}
+	}
+	if gitCount != 1 {
+		t.Fatalf("expected exactly 1 .git entry, got %d in %v", gitCount, sp.ProtectedPaths)
 	}
 }

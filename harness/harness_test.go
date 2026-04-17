@@ -30,16 +30,16 @@ func (stubWorkspace) Stat(_ context.Context, _ string) (workspace.FileInfo, erro
 	return workspace.FileInfo{}, nil
 }
 func (stubWorkspace) DeleteFile(_ context.Context, _ string) error { return nil }
-
-type stubExecutor struct{ workspace.Executor }
-
-func (stubExecutor) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+func (stubWorkspace) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return workspace.ExecOutput{}, nil
 }
+func (stubWorkspace) ResolvePath(_ string) (string, error) { return "", nil }
+func (stubWorkspace) Capabilities() workspace.Capabilities { return workspace.Capabilities{} }
+func (stubWorkspace) Policy() workspace.SecurityPolicy     { return workspace.SecurityPolicy{} }
+func (stubWorkspace) Limits() workspace.ResourceLimits     { return workspace.ResourceLimits{} }
 
 type stubManagedBackend struct {
 	workspace.Workspace
-	workspace.Executor
 	installed int
 	booted    int
 	shutdowns int
@@ -48,16 +48,12 @@ type stubManagedBackend struct {
 func newStubManagedBackend() *stubManagedBackend {
 	return &stubManagedBackend{
 		Workspace: stubWorkspace{},
-		Executor:  stubExecutor{},
 	}
 }
 
 func (b *stubManagedBackend) Install(_ context.Context, k *kernel.Kernel) error {
 	b.installed++
-	k.Apply(
-		kernel.WithWorkspace(b.Workspace),
-		kernel.WithExecutor(b.Executor),
-	)
+	k.Apply(kernel.WithWorkspace(b.Workspace))
 	return nil
 }
 
@@ -75,18 +71,17 @@ func newTestHarness() *Harness {
 	k := kernel.New()
 	backend := &LocalBackend{
 		Workspace: stubWorkspace{},
-		Executor:  stubExecutor{},
 	}
 	return New(k, backend)
 }
 
 func newSandboxHarness(t *testing.T, root string) *Harness {
 	t.Helper()
-	sb, err := sandbox.NewLocal(root)
+	ws, err := sandbox.NewLocalWorkspace(root)
 	if err != nil {
-		t.Fatalf("NewLocal: %v", err)
+		t.Fatalf("NewLocalWorkspace: %v", err)
 	}
-	return New(kernel.New(), &LocalBackend{Sandbox: sb})
+	return New(kernel.New(), &LocalBackend{Workspace: ws})
 }
 
 type recordingCapabilityReporter struct {
@@ -354,8 +349,8 @@ func runHarnessBeforeLLM(t *testing.T, h *Harness) {
 	}
 }
 
-func TestLocalBackend_ImplementsBackend(t *testing.T) {
-	var _ Backend = &LocalBackend{}
+func TestLocalBackend_ImplementsWorkspace(t *testing.T) {
+	var _ workspace.Workspace = &LocalBackend{}
 }
 
 func TestNewWithBackendFactory_ActivatesLifecycle(t *testing.T) {
@@ -366,7 +361,7 @@ func TestNewWithBackendFactory_ActivatesLifecycle(t *testing.T) {
 	backend := newStubManagedBackend()
 	builds := 0
 
-	h, err := NewWithBackendFactory(context.Background(), k, BackendFactoryFunc(func(context.Context, *kernel.Kernel) (Backend, error) {
+	h, err := NewWithBackendFactory(context.Background(), k, BackendFactoryFunc(func(context.Context, *kernel.Kernel) (workspace.Workspace, error) {
 		builds++
 		return backend, nil
 	}))
@@ -382,8 +377,8 @@ func TestNewWithBackendFactory_ActivatesLifecycle(t *testing.T) {
 	if backend.installed != 1 {
 		t.Fatalf("install count = %d, want 1", backend.installed)
 	}
-	if k.Workspace() == nil || k.Executor() == nil {
-		t.Fatal("expected managed backend to wire kernel workspace and executor")
+	if k.Workspace() == nil {
+		t.Fatal("expected managed backend to wire kernel workspace")
 	}
 	if err := k.Boot(context.Background()); err != nil {
 		t.Fatalf("Boot: %v", err)
@@ -410,7 +405,6 @@ func TestInstall_ActivatesManagedBackendBeforeFeatureInstall(t *testing.T) {
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			sawInstalledBackend = backend.installed == 1 &&
 				h.Kernel().Workspace() != nil &&
-				h.Kernel().Executor() != nil &&
 				h.Backend() == backend
 			return nil
 		},
@@ -429,27 +423,19 @@ func TestLocalBackendFactory_InstallsPortsWhenMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewWithBackendFactory: %v", err)
 	}
-	backend, ok := h.Backend().(*LocalBackend)
+	_, ok := h.Backend().(*LocalBackend)
 	if !ok {
 		t.Fatalf("backend type = %T, want *LocalBackend", h.Backend())
 	}
-	if k.Sandbox() == nil {
-		t.Fatal("expected local backend factory to install sandbox")
-	}
-	if k.Workspace() == nil || k.Executor() == nil {
-		t.Fatal("expected local backend factory to install workspace and executor")
-	}
-	if backend.Sandbox == nil || backend.Workspace == nil || backend.Executor == nil {
-		t.Fatal("expected activated local backend to adopt effective kernel ports")
+	if k.Workspace() == nil {
+		t.Fatal("expected local backend factory to install workspace")
 	}
 }
 
 func TestLocalBackendFactory_PreservesExistingKernelPorts(t *testing.T) {
 	ws := stubWorkspace{}
-	exec := stubExecutor{}
 	k := kernel.New(
 		kernel.WithWorkspace(ws),
-		kernel.WithExecutor(exec),
 	)
 	h, err := NewWithBackendFactory(context.Background(), k, NewLocalBackendFactory(t.TempDir()))
 	if err != nil {
@@ -462,11 +448,8 @@ func TestLocalBackendFactory_PreservesExistingKernelPorts(t *testing.T) {
 	if got := k.Workspace(); got != ws {
 		t.Fatalf("workspace = %#v, want %#v", got, ws)
 	}
-	if got := k.Executor(); got != exec {
-		t.Fatalf("executor = %#v, want %#v", got, exec)
-	}
-	if backend.Workspace != ws || backend.Executor != exec {
-		t.Fatal("expected local backend to adopt existing kernel ports")
+	if backend.Workspace != ws {
+		t.Fatal("expected local backend to adopt existing kernel workspace")
 	}
 }
 
@@ -653,7 +636,7 @@ func TestKernel_Apply(t *testing.T) {
 func TestHarness_FeatureAccessesKernelAndBackend(t *testing.T) {
 	h := newTestHarness()
 	var gotKernel *kernel.Kernel
-	var gotBackend Backend
+	var gotBackend workspace.Workspace
 	f := FeatureFunc{
 		FeatureName: "introspect",
 		InstallFunc: func(_ context.Context, h *Harness) error {

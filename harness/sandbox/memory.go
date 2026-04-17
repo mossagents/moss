@@ -3,12 +3,13 @@ package sandbox
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/workspace"
 	"path"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 // MemoryWorkspace 是基于内存的 Workspace 实现。
@@ -135,4 +136,30 @@ func normalizePath(p string) string {
 	p = path.Clean(p)
 	p = strings.TrimPrefix(p, "/")
 	return p
+}
+
+// ── Workspace 统一接口方法 ──
+
+func (m *MemoryWorkspace) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
+	return workspace.ExecOutput{}, fmt.Errorf("command execution not supported by memory workspace")
+}
+
+func (m *MemoryWorkspace) ResolvePath(p string) (string, error) {
+	normalized := normalizePath(p)
+	if strings.HasPrefix(normalized, "..") {
+		return "", fmt.Errorf("path %q escapes workspace", p)
+	}
+	return normalized, nil
+}
+
+func (m *MemoryWorkspace) Capabilities() workspace.Capabilities {
+	return workspace.Capabilities{}
+}
+
+func (m *MemoryWorkspace) Policy() workspace.SecurityPolicy {
+	return workspace.SecurityPolicy{}
+}
+
+func (m *MemoryWorkspace) Limits() workspace.ResourceLimits {
+	return workspace.ResourceLimits{MaxDiskBytes: m.maxTotal}
 }

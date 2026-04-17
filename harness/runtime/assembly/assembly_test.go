@@ -12,12 +12,12 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/extensions/agent"
 	"github.com/mossagents/moss/harness/extensions/capability"
+	appruntime "github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/policy"
+	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
-	appruntime "github.com/mossagents/moss/harness/runtime"
-	kt "github.com/mossagents/moss/harness/testing"
 )
 
 type captureReporter struct {
@@ -50,7 +50,7 @@ func TestInstall_UsesDefaultsParity(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
@@ -64,7 +64,7 @@ func TestInstall_DefaultToolPolicyIsRestrictedConfirm(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
@@ -88,7 +88,7 @@ func TestInstall_ManagerReportsValidateReady(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	reporter := &captureReporter{}
 	cfg := defaultAssemblyConfig()
@@ -121,7 +121,7 @@ func TestInstall_PersistsCapabilitySnapshot(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	if err := Install(context.Background(), k, ".", defaultAssemblyConfig()); err != nil {
 		t.Fatalf("Install: %v", err)
@@ -149,7 +149,7 @@ func TestInstall_ReportsBuiltinCriticalFailure(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	_ = k.ToolRegistry().Register(tool.NewRawTool(toolSpecNoop("read_file"), toolHandlerNoop))
 	reporter := &captureReporter{}
@@ -184,7 +184,7 @@ func TestInstall_ReportsDegradedOnOptionalSkillParseFailure(t *testing.T) {
 	k := kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 	reporter := &captureReporter{}
 	cfg := defaultAssemblyConfig()
@@ -414,7 +414,7 @@ func newRuntimeAgentsTestKernel() *kernel.Kernel {
 	return kernel.New(
 		kernel.WithLLM(&kt.MockLLM{}),
 		kernel.WithUserIO(&io.NoOpIO{}),
-		kernel.WithSandbox(kt.NewMemorySandbox()),
+		kernel.WithWorkspace(kt.NewMemorySandbox()),
 	)
 }
 
@@ -444,4 +444,3 @@ func containsReportPrefix(events []string, prefix string) bool {
 	}
 	return false
 }
-

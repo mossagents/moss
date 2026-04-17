@@ -13,7 +13,6 @@ type WorkspaceLease struct {
 	AcquiredAt  time.Time `json:"acquired_at,omitempty"`
 	Recovered   bool      `json:"recovered,omitempty"`
 	Workspace   Workspace `json:"-"`
-	Executor    Executor  `json:"-"`
 }
 
 // WorkspaceIsolation 提供按任务隔离工作区能力。

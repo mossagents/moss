@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/kernel/workspace"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 type localLeaseRecord struct {
@@ -18,14 +19,13 @@ type localLeaseRecord struct {
 	AcquiredAt  time.Time `json:"acquired_at"`
 }
 
-// LocalWorkspaceIsolation 基于本地目录实现任务隔离（POC 版本）。
+// LocalWorkspaceIsolation 基于本地目录实现任务隔离。
 type LocalWorkspaceIsolation struct {
-	mu        sync.Mutex
-	root      string
-	journal   string
-	leases    map[string]localLeaseRecord
-	workspace map[string]*LocalWorkspace
-	executor  map[string]*LocalExecutor
+	mu         sync.Mutex
+	root       string
+	journal    string
+	leases     map[string]localLeaseRecord
+	workspaces map[string]*LocalWorkspace
 }
 
 func NewLocalWorkspaceIsolation(root string) (*LocalWorkspaceIsolation, error) {
@@ -37,11 +37,10 @@ func NewLocalWorkspaceIsolation(root string) (*LocalWorkspaceIsolation, error) {
 		return nil, fmt.Errorf("create isolation root: %w", err)
 	}
 	iso := &LocalWorkspaceIsolation{
-		root:      abs,
-		journal:   filepath.Join(abs, "leases.json"),
-		leases:    make(map[string]localLeaseRecord),
-		workspace: make(map[string]*LocalWorkspace),
-		executor:  make(map[string]*LocalExecutor),
+		root:       abs,
+		journal:    filepath.Join(abs, "leases.json"),
+		leases:     make(map[string]localLeaseRecord),
+		workspaces: make(map[string]*LocalWorkspace),
 	}
 	if err := iso.loadJournal(); err != nil {
 		return nil, err
@@ -58,7 +57,7 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*wo
 	defer i.mu.Unlock()
 
 	if lease, ok := i.leases[taskID]; ok {
-		ws, exec, recovered, err := i.ensureWorkspaceLocked(lease.WorkspaceID)
+		ws, recovered, err := i.ensureWorkspaceLocked(lease.WorkspaceID)
 		if err != nil {
 			return nil, err
 		}
@@ -68,7 +67,6 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*wo
 			AcquiredAt:  lease.AcquiredAt,
 			Recovered:   recovered,
 			Workspace:   ws,
-			Executor:    exec,
 		}, nil
 	}
 
@@ -78,15 +76,14 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*wo
 		WorkspaceID: wsID,
 		AcquiredAt:  time.Now().UTC(),
 	}
-	ws, exec, _, err := i.ensureWorkspaceLocked(wsID)
+	ws, _, err := i.ensureWorkspaceLocked(wsID)
 	if err != nil {
 		return nil, err
 	}
 	i.leases[taskID] = lease
 	if err := i.persistJournal(); err != nil {
 		delete(i.leases, taskID)
-		delete(i.workspace, wsID)
-		delete(i.executor, wsID)
+		delete(i.workspaces, wsID)
 		return nil, err
 	}
 
@@ -95,7 +92,6 @@ func (i *LocalWorkspaceIsolation) Acquire(_ context.Context, taskID string) (*wo
 		TaskID:      taskID,
 		AcquiredAt:  lease.AcquiredAt,
 		Workspace:   ws,
-		Executor:    exec,
 	}, nil
 }
 
@@ -110,8 +106,7 @@ func (i *LocalWorkspaceIsolation) Release(_ context.Context, workspaceID string)
 			delete(i.leases, taskID)
 		}
 	}
-	delete(i.workspace, workspaceID)
-	delete(i.executor, workspaceID)
+	delete(i.workspaces, workspaceID)
 	return i.persistJournal()
 }
 
@@ -129,23 +124,20 @@ func newWorkspaceID(taskID string) string {
 	return fmt.Sprintf("%s-%d", sanitizeWorkspaceID(taskID), time.Now().UnixNano())
 }
 
-func (i *LocalWorkspaceIsolation) ensureWorkspaceLocked(workspaceID string) (*LocalWorkspace, *LocalExecutor, bool, error) {
-	if ws, ok := i.workspace[workspaceID]; ok {
-		return ws, i.executor[workspaceID], false, nil
+func (i *LocalWorkspaceIsolation) ensureWorkspaceLocked(workspaceID string) (*LocalWorkspace, bool, error) {
+	if ws, ok := i.workspaces[workspaceID]; ok {
+		return ws, false, nil
 	}
 	dir := filepath.Join(i.root, workspaceID)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, nil, false, fmt.Errorf("create workspace dir: %w", err)
+		return nil, false, fmt.Errorf("create workspace dir: %w", err)
 	}
-	sb, err := NewLocal(dir)
+	ws, err := NewLocalWorkspace(dir)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, false, err
 	}
-	ws := NewLocalWorkspace(sb)
-	exec := NewLocalExecutor(sb)
-	i.workspace[workspaceID] = ws
-	i.executor[workspaceID] = exec
-	return ws, exec, true, nil
+	i.workspaces[workspaceID] = ws
+	return ws, true, nil
 }
 
 func (i *LocalWorkspaceIsolation) loadJournal() error {

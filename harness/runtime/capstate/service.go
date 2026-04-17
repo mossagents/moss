@@ -201,10 +201,8 @@ func CapabilityDeps(k *kernel.Kernel) rootcap.Deps {
 	return rootcap.Deps{
 		Kernel:       k,
 		ToolRegistry: k.ToolRegistry(),
-		Sandbox:      k.Sandbox(),
 		UserIO:       k.UserIO(),
 		Workspace:    k.Workspace(),
-		Executor:     k.Executor(),
 		TaskRuntime:  k.TaskRuntime(),
 		Mailbox:      k.Mailbox(),
 		SessionStore: k.SessionStore(),

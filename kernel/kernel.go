@@ -29,9 +29,7 @@ type Kernel struct {
 	llm         model.LLM
 	io          io.UserIO
 	logger      *slog.Logger
-	sandbox     workspace.Sandbox
 	workspace   workspace.Workspace
-	executor    workspace.Executor
 	tasks       taskrt.TaskRuntime
 	mailbox     taskrt.Mailbox
 	isolation   workspace.WorkspaceIsolation
@@ -308,19 +306,9 @@ func panicAsError(prefix string, value any) error {
 	return fmt.Errorf("%s: %v", prefix, value)
 }
 
-// Sandbox 返回沙箱抽象（可能为 nil）。
-func (k *Kernel) Sandbox() workspace.Sandbox {
-	return k.sandbox
-}
-
 // Workspace 返回工作区抽象（可能为 nil）。
 func (k *Kernel) Workspace() workspace.Workspace {
 	return k.workspace
-}
-
-// Executor 返回命令执行器（可能为 nil）。
-func (k *Kernel) Executor() workspace.Executor {
-	return k.executor
 }
 
 // TaskRuntime 返回任务运行时端口（可能为 nil）。

@@ -201,15 +201,7 @@ func httpRequestHandlerWithPolicy(k *kernel.Kernel) tool.ToolHandler {
 	}
 }
 
-func runCommandHandlerExec(exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
-	return runCommandHandlerExecWithPolicy(nil, exec, ws)
-}
-
-func runCommandHandlerExecWithPolicy(k *kernel.Kernel, exec workspace.Executor, ws workspace.Workspace) tool.ToolHandler {
-	return runCommandHandlerWithExecutor(k, exec, ws, "")
-}
-
-func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, ws workspace.Workspace, workspaceRoot string) tool.ToolHandler {
+func runCommandHandler(k *kernel.Kernel, ws workspace.Workspace, workspaceRoot string) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
 			Command string   `json:"command"`
@@ -222,7 +214,7 @@ func runCommandHandlerWithExecutor(k *kernel.Kernel, exec workspace.Executor, ws
 		if pol.Command.Access == policy.ToolAccessDeny {
 			return nil, fmt.Errorf("run_command is disabled by tool policy")
 		}
-		output, err := exec.Execute(ctx, buildExecRequest(params.Command, params.Args, pol))
+		output, err := ws.Execute(ctx, buildExecRequest(params.Command, params.Args, pol))
 		if err != nil {
 			return nil, err
 		}

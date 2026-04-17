@@ -1,4 +1,4 @@
-// Package docker 提供基于 Docker 容器的 Sandbox 实现。
+// Package docker 提供基于 Docker 容器的 Workspace 实现。
 // 所有命令通过 `docker run --rm` 执行，文件操作代理到宿主机工作目录。
 package docker
 
@@ -6,17 +6,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/workspace"
-	"github.com/mossagents/moss/harness/sandbox"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
-// DockerConfig 配置 Docker Sandbox。
+// DockerConfig 配置 Docker Workspace。
 type DockerConfig struct {
 	// Image 是容器镜像，例如 "ubuntu:22.04"。
 	Image string
@@ -37,17 +37,19 @@ type DockerConfig struct {
 // execFunc 是可替换的命令执行函数，方便测试。
 type execFunc func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error)
 
-// DockerSandbox 通过 `docker run --rm` 执行命令，文件操作代理到宿主机目录。
-type DockerSandbox struct {
+// DockerWorkspace 通过 `docker run --rm` 执行命令，文件操作代理到宿主机目录。
+type DockerWorkspace struct {
 	cfg     DockerConfig
 	workDir string // 已解析的绝对工作目录
 	exec    execFunc
 }
 
-// New 创建 DockerSandbox。
-func New(cfg DockerConfig) (*DockerSandbox, error) {
+var _ workspace.Workspace = (*DockerWorkspace)(nil)
+
+// New 创建 DockerWorkspace。
+func New(cfg DockerConfig) (*DockerWorkspace, error) {
 	if cfg.Image == "" {
-		return nil, fmt.Errorf("docker sandbox: Image is required")
+		return nil, fmt.Errorf("docker workspace: Image is required")
 	}
 	workDir := cfg.WorkDir
 	if workDir == "" {
@@ -55,7 +57,7 @@ func New(cfg DockerConfig) (*DockerSandbox, error) {
 	}
 	abs, err := filepath.Abs(workDir)
 	if err != nil {
-		return nil, fmt.Errorf("docker sandbox: resolve work dir: %w", err)
+		return nil, fmt.Errorf("docker workspace: resolve work dir: %w", err)
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 30 * time.Second
@@ -63,15 +65,17 @@ func New(cfg DockerConfig) (*DockerSandbox, error) {
 	if cfg.MaxFileSize <= 0 {
 		cfg.MaxFileSize = 10 * 1024 * 1024 // 10 MB
 	}
-	return &DockerSandbox{
+	return &DockerWorkspace{
 		cfg:     cfg,
 		workDir: abs,
 		exec:    defaultExecFunc,
 	}, nil
 }
 
+// ── 安全边界 ──
+
 // ResolvePath 解析路径并确保不逃逸工作目录。
-func (d *DockerSandbox) ResolvePath(path string) (string, error) {
+func (d *DockerWorkspace) ResolvePath(path string) (string, error) {
 	var abs string
 	if filepath.IsAbs(path) {
 		abs = filepath.Clean(path)
@@ -79,13 +83,36 @@ func (d *DockerSandbox) ResolvePath(path string) (string, error) {
 		abs = filepath.Clean(filepath.Join(d.workDir, path))
 	}
 	if abs != d.workDir && !strings.HasPrefix(abs, d.workDir+string(filepath.Separator)) {
-		return "", fmt.Errorf("docker sandbox: path %q escapes work dir %s", path, d.workDir)
+		return "", fmt.Errorf("docker workspace: path %q escapes work dir %s", path, d.workDir)
 	}
 	return abs, nil
 }
 
+func (d *DockerWorkspace) Capabilities() workspace.Capabilities {
+	return workspace.Capabilities{
+		FileSystemIsolation: workspace.IsolationMethodContainer,
+		NetworkIsolation:    workspace.IsolationMethodContainer,
+		ProcessIsolation:    workspace.IsolationMethodContainer,
+		ResourceEnforcement: true,
+	}
+}
+
+func (d *DockerWorkspace) Policy() workspace.SecurityPolicy {
+	return workspace.SecurityPolicy{}
+}
+
+func (d *DockerWorkspace) Limits() workspace.ResourceLimits {
+	return workspace.ResourceLimits{
+		MaxFileSize:    d.cfg.MaxFileSize,
+		CommandTimeout: d.cfg.Timeout,
+		AllowedPaths:   []string{d.workDir},
+	}
+}
+
+// ── 文件操作 ──
+
 // ListFiles 按 glob pattern 列出工作目录下的文件。
-func (d *DockerSandbox) ListFiles(pattern string) ([]string, error) {
+func (d *DockerWorkspace) ListFiles(_ context.Context, pattern string) ([]string, error) {
 	fullPattern := filepath.Join(d.workDir, pattern)
 	if strings.Contains(pattern, "**") {
 		return d.listFilesRecursive(pattern)
@@ -104,7 +131,7 @@ func (d *DockerSandbox) ListFiles(pattern string) ([]string, error) {
 	return result, nil
 }
 
-func (d *DockerSandbox) listFilesRecursive(pattern string) ([]string, error) {
+func (d *DockerWorkspace) listFilesRecursive(pattern string) ([]string, error) {
 	parts := strings.SplitN(pattern, "**", 2)
 	prefix := strings.TrimRight(parts[0], "/\\")
 	suffix := ""
@@ -135,7 +162,7 @@ func (d *DockerSandbox) listFilesRecursive(pattern string) ([]string, error) {
 }
 
 // ReadFile 从工作目录读取文件。
-func (d *DockerSandbox) ReadFile(path string) ([]byte, error) {
+func (d *DockerWorkspace) ReadFile(_ context.Context, path string) ([]byte, error) {
 	resolved, err := d.ResolvePath(path)
 	if err != nil {
 		return nil, err
@@ -144,23 +171,49 @@ func (d *DockerSandbox) ReadFile(path string) ([]byte, error) {
 }
 
 // WriteFile 写入文件到工作目录。
-func (d *DockerSandbox) WriteFile(path string, content []byte) error {
+func (d *DockerWorkspace) WriteFile(_ context.Context, path string, content []byte) error {
 	resolved, err := d.ResolvePath(path)
 	if err != nil {
 		return err
 	}
 	if d.cfg.MaxFileSize > 0 && int64(len(content)) > d.cfg.MaxFileSize {
-		return fmt.Errorf("docker sandbox: file size %d exceeds limit %d", len(content), d.cfg.MaxFileSize)
+		return fmt.Errorf("docker workspace: file size %d exceeds limit %d", len(content), d.cfg.MaxFileSize)
 	}
 	if err := os.MkdirAll(filepath.Dir(resolved), 0755); err != nil {
-		return fmt.Errorf("docker sandbox: create parent dirs: %w", err)
+		return fmt.Errorf("docker workspace: create parent dirs: %w", err)
 	}
 	return os.WriteFile(resolved, content, 0644)
 }
 
+func (d *DockerWorkspace) Stat(_ context.Context, path string) (workspace.FileInfo, error) {
+	resolved, err := d.ResolvePath(path)
+	if err != nil {
+		return workspace.FileInfo{}, err
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return workspace.FileInfo{}, err
+	}
+	return workspace.FileInfo{
+		Name:    info.Name(),
+		Size:    info.Size(),
+		IsDir:   info.IsDir(),
+		ModTime: info.ModTime(),
+	}, nil
+}
+
+func (d *DockerWorkspace) DeleteFile(_ context.Context, path string) error {
+	resolved, err := d.ResolvePath(path)
+	if err != nil {
+		return err
+	}
+	return os.Remove(resolved)
+}
+
+// ── 命令执行 ──
+
 // Execute 通过 `docker run --rm` 在容器内执行命令。
-// 工作目录挂载为容器内 /workspace。
-func (d *DockerSandbox) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
+func (d *DockerWorkspace) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = d.cfg.Timeout
@@ -172,10 +225,9 @@ func (d *DockerSandbox) Execute(ctx context.Context, req workspace.ExecRequest) 
 	}
 
 	if strings.TrimSpace(req.Command) == "" {
-		return workspace.ExecOutput{}, fmt.Errorf("docker sandbox: command is required")
+		return workspace.ExecOutput{}, fmt.Errorf("docker workspace: command is required")
 	}
 
-	// 构建 docker run 参数
 	dockerArgs := d.buildDockerArgs(req)
 
 	stdout, stderr, exitCode, err := d.exec(ctx, "docker", dockerArgs...)
@@ -185,20 +237,26 @@ func (d *DockerSandbox) Execute(ctx context.Context, req workspace.ExecRequest) 
 		ExitCode: exitCode,
 	}
 	if err != nil && exitCode == 0 {
-		return out, fmt.Errorf("docker sandbox: exec: %w", err)
+		return out, fmt.Errorf("docker workspace: exec: %w", err)
 	}
 	return out, nil
 }
 
 // buildDockerArgs 构建 docker run 命令参数。
-func (d *DockerSandbox) buildDockerArgs(req workspace.ExecRequest) []string {
+func (d *DockerWorkspace) buildDockerArgs(req workspace.ExecRequest) []string {
 	args := []string{"run", "--rm"}
+
+	// Security hardening
+	args = append(args, "--security-opt", "no-new-privileges")
+	args = append(args, "--cap-drop", "ALL")
+	args = append(args, "--pids-limit", "256")
+	args = append(args, "--read-only")
+	args = append(args, "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m")
 
 	// 挂载工作目录
 	args = append(args, "-v", d.workDir+":/workspace")
 	workDir := "/workspace"
 	if req.WorkingDir != "" {
-		// 将宿主机相对路径映射为容器内路径
 		workDir = "/workspace/" + strings.TrimPrefix(filepath.ToSlash(req.WorkingDir), "/")
 	}
 	args = append(args, "-w", workDir)
@@ -235,17 +293,8 @@ func (d *DockerSandbox) buildDockerArgs(req workspace.ExecRequest) []string {
 	return args
 }
 
-// Limits 返回当前资源限制。
-func (d *DockerSandbox) Limits() sandbox.ResourceLimits {
-	return sandbox.ResourceLimits{
-		MaxFileSize:    d.cfg.MaxFileSize,
-		CommandTimeout: d.cfg.Timeout,
-		AllowedPaths:   []string{d.workDir},
-	}
-}
-
 // SetExecFunc 替换底层命令执行函数，仅用于测试。
-func (d *DockerSandbox) SetExecFunc(fn func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error)) {
+func (d *DockerWorkspace) SetExecFunc(fn func(ctx context.Context, name string, args ...string) ([]byte, []byte, int, error)) {
 	d.exec = fn
 }
 

@@ -84,8 +84,6 @@ type ToolSpec struct {
 	Source             string             `json:"source,omitempty"`
 	Owner              string             `json:"owner,omitempty"`
 	RequiresWorkspace  bool               `json:"requires_workspace,omitempty"`
-	RequiresExecutor   bool               `json:"requires_executor,omitempty"`
-	RequiresSandbox    bool               `json:"requires_sandbox,omitempty"`
 }
 
 // Tool 是可被 Agent 调用的工具接口。
@@ -179,7 +177,7 @@ func (s ToolSpec) EffectivePlannerVisibility() PlannerVisibility {
 	if s.PlannerVisibility != "" {
 		return s.PlannerVisibility
 	}
-	if s.RequiresWorkspace || s.RequiresExecutor || s.RequiresSandbox {
+	if s.RequiresWorkspace {
 		return PlannerVisibilityVisibleWithConstraints
 	}
 	return PlannerVisibilityVisible

@@ -6,8 +6,8 @@ import (
 	goruntime "runtime"
 	"strings"
 
-	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/harness/sandbox"
+	"github.com/mossagents/moss/kernel"
 )
 
 // Install wires local path-scoped execution support services into the kernel.
@@ -20,9 +20,6 @@ func Install(k *kernel.Kernel, workspaceRoot, isolationRoot string, isolationEna
 	if k.Workspace() == nil {
 		return fmt.Errorf("execution services require a workspace port")
 	}
-	if k.Executor() == nil {
-		return fmt.Errorf("execution services require an executor port")
-	}
 	root, err := normalizePath(workspaceRoot)
 	if err != nil {
 		return fmt.Errorf("resolve execution workspace root: %w", err)
@@ -30,7 +27,7 @@ func Install(k *kernel.Kernel, workspaceRoot, isolationRoot string, isolationEna
 	if root == "" {
 		return fmt.Errorf("execution workspace root is empty")
 	}
-	if backendRoot, ok := kernelSandboxRoot(k); ok && !samePath(root, backendRoot) {
+	if backendRoot, ok := kernelWorkspaceRoot(k); ok && !samePath(root, backendRoot) {
 		return fmt.Errorf("execution workspace root %q does not match backend root %q", root, backendRoot)
 	}
 
@@ -59,11 +56,11 @@ func Install(k *kernel.Kernel, workspaceRoot, isolationRoot string, isolationEna
 	return nil
 }
 
-func kernelSandboxRoot(k *kernel.Kernel) (string, bool) {
-	if k == nil || k.Sandbox() == nil {
+func kernelWorkspaceRoot(k *kernel.Kernel) (string, bool) {
+	if k == nil || k.Workspace() == nil {
 		return "", false
 	}
-	root, err := k.Sandbox().ResolvePath(".")
+	root, err := k.Workspace().ResolvePath(".")
 	if err != nil {
 		return "", false
 	}

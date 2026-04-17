@@ -111,7 +111,6 @@ func TestBuildDeepAgent_PersistsExecutionCapabilities(t *testing.T) {
 	}
 	want := map[string]bool{
 		rprobe.CapabilityExecutionWorkspace:      false,
-		rprobe.CapabilityExecutionExecutor:       false,
 		rprobe.CapabilityExecutionIsolation:      false,
 		rprobe.CapabilityExecutionRepoState:      false,
 		rprobe.CapabilityExecutionPatchApply:     false,
