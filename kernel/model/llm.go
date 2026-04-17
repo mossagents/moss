@@ -45,13 +45,13 @@ type JSONSchemaSpec struct {
 
 // ModelConfig 配置模型参数。
 type ModelConfig struct {
-	Model        string           `json:"model"`
-	MaxTokens    int              `json:"max_tokens,omitempty"`
-	Temperature  float64          `json:"temperature,omitempty"`
-	ContextWindow int             `json:"context_window,omitempty"`
-	AutoCompactTokenLimit int     `json:"auto_compact_token_limit,omitempty"`
-	Extra        map[string]any   `json:"extra,omitempty"`
-	Requirements *TaskRequirement `json:"requirements,omitempty"`
+	Model                 string           `json:"model"`
+	MaxTokens             int              `json:"max_tokens,omitempty"`
+	Temperature           float64          `json:"temperature,omitempty"`
+	ContextWindow         int              `json:"context_window,omitempty"`
+	AutoCompactTokenLimit int              `json:"auto_compact_token_limit,omitempty"`
+	Extra                 map[string]any   `json:"extra,omitempty"`
+	Requirements          *TaskRequirement `json:"requirements,omitempty"`
 }
 
 // LLMCallAttempt 描述一次候选模型尝试的结果，用于 failover 观测。
@@ -178,12 +178,12 @@ type StreamChunk struct {
 // 适用于不需要流式处理的消费方（摘要、评估、上下文压缩等）。
 func Complete(ctx context.Context, llm LLM, req CompletionRequest) (*CompletionResponse, error) {
 	var (
-		content   strings.Builder
-		reasoning strings.Builder
-		toolCalls []ToolCall
-		usage     TokenUsage
+		content    strings.Builder
+		reasoning  strings.Builder
+		toolCalls  []ToolCall
+		usage      TokenUsage
 		stopReason string
-		metadata  *LLMCallMetadata
+		metadata   *LLMCallMetadata
 	)
 	for chunk, err := range llm.GenerateContent(ctx, req) {
 		if err != nil {

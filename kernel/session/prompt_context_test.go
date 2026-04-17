@@ -1,9 +1,10 @@
 package session
 
 import (
-	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/kernel/model"
 )
 
 func TestBuildPromptMessagesUsesFragmentsAndCompactedDialogBoundary(t *testing.T) {

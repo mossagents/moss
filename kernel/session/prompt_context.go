@@ -5,24 +5,25 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/kernel/model"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/mossagents/moss/kernel/model"
 )
 
 const promptContextStateKey = "prompt_context"
 
 // PromptContextFragment describes a typed, prompt-visible context fragment.
 type PromptContextFragment struct {
-	ID     string   `json:"id"`
-	Kind   string   `json:"kind"`
+	ID     string     `json:"id"`
+	Kind   string     `json:"kind"`
 	Role   model.Role `json:"role"`
-	Title  string   `json:"title,omitempty"`
-	Text   string   `json:"text"`
-	Hash   string   `json:"hash,omitempty"`
-	Tokens int      `json:"tokens,omitempty"`
+	Title  string     `json:"title,omitempty"`
+	Text   string     `json:"text"`
+	Hash   string     `json:"hash,omitempty"`
+	Tokens int        `json:"tokens,omitempty"`
 }
 
 // PromptContextState stores the managed prompt baseline and compaction state.

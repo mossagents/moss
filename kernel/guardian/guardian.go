@@ -69,15 +69,15 @@ func (g *Guardian) ReviewToolApproval(ctx context.Context, input ReviewInput) (*
 	resp, err := model.Complete(ctx, g.LLM, model.CompletionRequest{
 		Messages: []model.Message{
 			{
-				Role: model.RoleSystem,
+				Role:         model.RoleSystem,
 				ContentParts: []model.ContentPart{model.TextPart("You are a conservative tool-approval guardian. Return JSON only with fields approved(boolean), reason(string), confidence(string). Approve only when the action is narrow in scope, low blast radius, and clearly justified by the request. If uncertain, set approved to false.")},
 			},
 			{
-				Role: model.RoleUser,
+				Role:         model.RoleUser,
 				ContentParts: []model.ContentPart{model.TextPart(string(payload))},
 			},
 		},
-		Config: g.ModelConfig,
+		Config:         g.ModelConfig,
 		ResponseFormat: &model.ResponseFormat{Type: "json_object"},
 	})
 	if err != nil {
