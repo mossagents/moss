@@ -86,4 +86,10 @@ func TestMetricsAccumulator_ExecutionMetrics(t *testing.T) {
 	if m["guardian.error_total"] != 1 {
 		t.Fatalf("guardian error total = %v", m["guardian.error_total"])
 	}
+	if m["guardian.fallback_rate"] != 0.5 {
+		t.Fatalf("guardian fallback rate = %v", m["guardian.fallback_rate"])
+	}
+	if m["guardian.error_rate"] != 0.5 {
+		t.Fatalf("guardian error rate = %v", m["guardian.error_rate"])
+	}
 }

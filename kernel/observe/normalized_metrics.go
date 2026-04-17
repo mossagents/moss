@@ -53,6 +53,12 @@ func (s NormalizedMetricsSnapshot) Map() map[string]float64 {
 	if s.ToolMSCount > 0 {
 		toolAvgMs = s.ToolMSsum / s.ToolMSCount
 	}
+	guardianFallbackRate := 0.0
+	guardianErrorRate := 0.0
+	if s.GuardianReviewsTotal > 0 {
+		guardianFallbackRate = s.GuardianFallbackTotal / s.GuardianReviewsTotal
+		guardianErrorRate = s.GuardianErrorsTotal / s.GuardianReviewsTotal
+	}
 	return map[string]float64{
 		"success.run_total":                            s.RunTotal,
 		"success.run_success_total":                    s.RunSuccessTotal,
@@ -79,6 +85,8 @@ func (s NormalizedMetricsSnapshot) Map() map[string]float64 {
 		"guardian.auto_approved_total":                 s.GuardianAutoApprovedTotal,
 		"guardian.fallback_total":                      s.GuardianFallbackTotal,
 		"guardian.error_total":                         s.GuardianErrorsTotal,
+		"guardian.fallback_rate":                       guardianFallbackRate,
+		"guardian.error_rate":                          guardianErrorRate,
 	}
 }
 

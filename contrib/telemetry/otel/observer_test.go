@@ -94,6 +94,15 @@ func TestObserver_noopDoesNotPanic(t *testing.T) {
 				observe.ObserveError(ctx, obs, observe.ErrorEvent{Phase: "loop"})
 			},
 		},
+		{
+			name: "execution event",
+			run: func() {
+				observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+					Type:     observe.ExecutionGuardianReviewed,
+					Metadata: map[string]any{"outcome": "auto_approved"},
+				})
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -110,6 +119,14 @@ func TestObserver_NormalizedMetricsMap(t *testing.T) {
 	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "read_file", Duration: 20 * time.Millisecond})
 	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "run_command", Duration: 30 * time.Millisecond, Error: errors.New("fail")})
 	observe.ObserveSessionEvent(ctx, obs, observe.SessionEvent{Type: "completed"})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+		Type: observe.ExecutionContextNormalized,
+		Metadata: map[string]any{
+			"dropped_orphan_tool_results":      1,
+			"synthesized_missing_tool_results": 2,
+		},
+	})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionGuardianReviewed, Metadata: map[string]any{"outcome": "fallback_error"}})
 
 	m := obs.NormalizedMetricsMap()
 	if m["success.run_total"] != 1 {
@@ -118,5 +135,10 @@ func TestObserver_NormalizedMetricsMap(t *testing.T) {
 	if m["tool_error.calls_total"] != 2 || m["tool_error.errors_total"] != 1 {
 		t.Fatalf("tool error counters mismatch: %+v", m)
 	}
+	if m["context.normalize_total"] != 1 || m["context.normalize_synthesized_results_total"] != 2 {
+		t.Fatalf("execution metrics mismatch: %+v", m)
+	}
+	if m["guardian.error_rate"] != 1 {
+		t.Fatalf("guardian error rate mismatch: %+v", m)
+	}
 }
-

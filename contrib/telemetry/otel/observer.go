@@ -20,8 +20,7 @@ import (
 )
 
 // Observer implements observe.Observer by recording kernel events as OTEL metrics.
-// It embeds observe.NoOpObserver so only metrics-relevant methods are overridden;
-// fine-grained execution events (OnExecutionEvent) are silently discarded.
+// It embeds observe.NoOpObserver so only metrics-relevant methods are overridden.
 type Observer struct {
 	observe.NoOpObserver
 
@@ -32,8 +31,16 @@ type Observer struct {
 	llmTokensTotal metric.Int64Counter
 	llmCostUSD     metric.Float64Counter
 
-	toolCallsTotal metric.Int64Counter
-	toolDurationMs metric.Int64Histogram
+	toolCallsTotal                      metric.Int64Counter
+	toolDurationMs                      metric.Int64Histogram
+	contextCompactionsTotal             metric.Int64Counter
+	contextCompactionTokensReclaimed    metric.Int64Counter
+	contextTrimRetriesTotal             metric.Int64Counter
+	contextTrimRemovedMessagesTotal     metric.Int64Counter
+	contextNormalizationsTotal          metric.Int64Counter
+	contextNormalizeDroppedResultsTotal metric.Int64Counter
+	contextNormalizeSynthResultsTotal   metric.Int64Counter
+	guardianReviewsTotal                metric.Int64Counter
 
 	sessionsTotal  metric.Int64Counter
 	approvalsTotal metric.Int64Counter
@@ -83,6 +90,54 @@ func New(meter metric.Meter) (*Observer, error) {
 		metric.WithUnit("ms"),
 	); err != nil {
 		return nil, fmt.Errorf("moss.tool.duration: %w", err)
+	}
+
+	if o.contextCompactionsTotal, err = meter.Int64Counter("moss.context.compactions",
+		metric.WithDescription("Total prompt context compaction events."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.compactions: %w", err)
+	}
+
+	if o.contextCompactionTokensReclaimed, err = meter.Int64Counter("moss.context.compaction_tokens_reclaimed",
+		metric.WithDescription("Total prompt tokens reclaimed by context compaction."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.compaction_tokens_reclaimed: %w", err)
+	}
+
+	if o.contextTrimRetriesTotal, err = meter.Int64Counter("moss.context.trim_retries",
+		metric.WithDescription("Total prompt trim retries caused by context window pressure."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.trim_retries: %w", err)
+	}
+
+	if o.contextTrimRemovedMessagesTotal, err = meter.Int64Counter("moss.context.trim_removed_messages",
+		metric.WithDescription("Total prompt messages removed during trim retries."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.trim_removed_messages: %w", err)
+	}
+
+	if o.contextNormalizationsTotal, err = meter.Int64Counter("moss.context.normalizations",
+		metric.WithDescription("Total prompt normalization events."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.normalizations: %w", err)
+	}
+
+	if o.contextNormalizeDroppedResultsTotal, err = meter.Int64Counter("moss.context.normalize_dropped_tool_results",
+		metric.WithDescription("Total orphan tool results dropped during prompt normalization."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.normalize_dropped_tool_results: %w", err)
+	}
+
+	if o.contextNormalizeSynthResultsTotal, err = meter.Int64Counter("moss.context.normalize_synthesized_results",
+		metric.WithDescription("Total synthesized tool results inserted during prompt normalization."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.context.normalize_synthesized_results: %w", err)
+	}
+
+	if o.guardianReviewsTotal, err = meter.Int64Counter("moss.guardian.reviews",
+		metric.WithDescription("Total guardian review outcomes."),
+	); err != nil {
+		return nil, fmt.Errorf("moss.guardian.reviews: %w", err)
 	}
 
 	if o.sessionsTotal, err = meter.Int64Counter("moss.sessions",
@@ -154,6 +209,40 @@ func (o *Observer) OnToolCall(ctx context.Context, e observe.ToolCallEvent) {
 		metric.WithAttributes(attribute.String("tool_name", e.ToolName), attribute.String("risk", e.Risk)))
 }
 
+func (o *Observer) OnExecutionEvent(ctx context.Context, e observe.ExecutionEvent) {
+	switch e.Type {
+	case observe.ExecutionContextCompacted:
+		reason := executionMetricString(e.Metadata, "reason")
+		if reason == "" {
+			reason = "unknown"
+		}
+		o.contextCompactionsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("reason", reason)))
+		reclaimed := executionTokensReclaimed(e.Metadata)
+		if reclaimed > 0 {
+			o.contextCompactionTokensReclaimed.Add(ctx, reclaimed)
+		}
+	case observe.ExecutionContextTrimRetry:
+		o.contextTrimRetriesTotal.Add(ctx, 1)
+		if removed := executionMetricInt64(e.Metadata, "messages_removed"); removed > 0 {
+			o.contextTrimRemovedMessagesTotal.Add(ctx, removed)
+		}
+	case observe.ExecutionContextNormalized:
+		o.contextNormalizationsTotal.Add(ctx, 1)
+		if dropped := executionMetricInt64(e.Metadata, "dropped_orphan_tool_results"); dropped > 0 {
+			o.contextNormalizeDroppedResultsTotal.Add(ctx, dropped)
+		}
+		if synthesized := executionMetricInt64(e.Metadata, "synthesized_missing_tool_results"); synthesized > 0 {
+			o.contextNormalizeSynthResultsTotal.Add(ctx, synthesized)
+		}
+	case observe.ExecutionGuardianReviewed:
+		outcome := executionMetricString(e.Metadata, "outcome")
+		if outcome == "" {
+			outcome = "unknown"
+		}
+		o.guardianReviewsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+	}
+}
+
 func (o *Observer) OnSessionEvent(ctx context.Context, e observe.SessionEvent) {
 	o.sessionsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("type", e.Type)))
 }
@@ -177,4 +266,57 @@ func approvalDecision(e io.ApprovalEvent) string {
 
 func (o *Observer) OnError(ctx context.Context, e observe.ErrorEvent) {
 	o.errorsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("phase", e.Phase)))
+}
+
+func executionMetricInt64(meta map[string]any, key string) int64 {
+	if len(meta) == 0 {
+		return 0
+	}
+	v, ok := meta[key]
+	if !ok || v == nil {
+		return 0
+	}
+	switch value := v.(type) {
+	case int:
+		return int64(value)
+	case int32:
+		return int64(value)
+	case int64:
+		return value
+	case uint:
+		return int64(value)
+	case uint32:
+		return int64(value)
+	case uint64:
+		return int64(value)
+	case float32:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+func executionMetricString(meta map[string]any, key string) string {
+	if len(meta) == 0 {
+		return ""
+	}
+	v, ok := meta[key]
+	if !ok || v == nil {
+		return ""
+	}
+	if value, ok := v.(string); ok {
+		return value
+	}
+	return ""
+}
+
+func executionTokensReclaimed(meta map[string]any) int64 {
+	before := executionMetricInt64(meta, "tokens_before")
+	after := executionMetricInt64(meta, "tokens_after")
+	if before <= after {
+		return 0
+	}
+	return before - after
 }

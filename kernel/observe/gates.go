@@ -16,19 +16,19 @@ type ReleaseGate struct {
 
 // GateResult captures the outcome of a single gate check.
 type GateResult struct {
-	Gate     ReleaseGate
-	Value    float64
-	Passed   bool
-	Reason   string
+	Gate   ReleaseGate
+	Value  float64
+	Passed bool
+	Reason string
 }
 
 // GateStatus aggregates all gate results for a release snapshot.
 type GateStatus struct {
-	Timestamp  string
+	Timestamp   string
 	Environment string
-	Results    []GateResult
-	AllPassed  bool
-	FailCount  int
+	Results     []GateResult
+	AllPassed   bool
+	FailCount   int
 }
 
 // ReleaseGateMeter validates metrics snapshots against release gate thresholds.
@@ -69,6 +69,14 @@ func NewReleaseGateMeter() *ReleaseGateMeter {
 				Description: "Tool error rate (errors / total calls)",
 				Threshold:   0.05,
 				MetricKey:   "tool_error.rate",
+				Operator:    "lte",
+				Enabled:     true,
+			},
+			"guardian_error_rate": {
+				Name:        "guardian_error_rate",
+				Description: "Guardian review error rate (errors / total reviews)",
+				Threshold:   0.01,
+				MetricKey:   "guardian.error_rate",
 				Operator:    "lte",
 				Enabled:     true,
 			},
@@ -165,5 +173,3 @@ func boolToString(b bool, trueStr, falseStr string) string {
 	}
 	return falseStr
 }
-
-

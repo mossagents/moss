@@ -194,6 +194,68 @@ func TestOnError(t *testing.T) {
 	}
 }
 
+func TestOnExecutionEvent(t *testing.T) {
+	obs, reg := newTestObs(t)
+	ctx := context.Background()
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+		Type:     observe.ExecutionContextCompacted,
+		Metadata: map[string]any{"reason": "trigger_tokens", "tokens_before": 220, "tokens_after": 140},
+	})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+		Type:     observe.ExecutionContextTrimRetry,
+		Metadata: map[string]any{"messages_removed": 2},
+	})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+		Type: observe.ExecutionContextNormalized,
+		Metadata: map[string]any{
+			"dropped_orphan_tool_results":      1,
+			"synthesized_missing_tool_results": 2,
+		},
+	})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionGuardianReviewed, Metadata: map[string]any{"outcome": "auto_approved"}})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionGuardianReviewed, Metadata: map[string]any{"outcome": "fallback_error"}})
+
+	if v := sumCounter(t, reg, "moss_context_compactions_total"); v != 1 {
+		t.Fatalf("moss_context_compactions_total: want 1 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_compaction_tokens_reclaimed_total"); v != 80 {
+		t.Fatalf("moss_context_compaction_tokens_reclaimed_total: want 80 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_trim_retries_total"); v != 1 {
+		t.Fatalf("moss_context_trim_retries_total: want 1 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_trim_removed_messages_total"); v != 2 {
+		t.Fatalf("moss_context_trim_removed_messages_total: want 2 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_normalizations_total"); v != 1 {
+		t.Fatalf("moss_context_normalizations_total: want 1 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_normalize_dropped_tool_results_total"); v != 1 {
+		t.Fatalf("moss_context_normalize_dropped_tool_results_total: want 1 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_context_normalize_synthesized_results_total"); v != 2 {
+		t.Fatalf("moss_context_normalize_synthesized_results_total: want 2 got %v", v)
+	}
+	if v := sumCounter(t, reg, "moss_guardian_reviews_total"); v != 2 {
+		t.Fatalf("moss_guardian_reviews_total: want 2 got %v", v)
+	}
+	mfs := mustGather(t, reg)
+	foundFallbackError := false
+	for _, mf := range mfs {
+		if mf.GetName() != "moss_guardian_reviews_total" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			if hasLabelValue(m, "outcome", "fallback_error") {
+				foundFallbackError = true
+			}
+		}
+	}
+	if !foundFallbackError {
+		t.Fatal("expected outcome=fallback_error series in moss_guardian_reviews_total")
+	}
+}
+
 func TestMetricDescriptions(t *testing.T) {
 	obs, reg := newTestObs(t)
 	// Pre-seed one observation per metric family; CounterVec only appears in
@@ -208,6 +270,8 @@ func TestMetricDescriptions(t *testing.T) {
 	observe.ObserveSessionEvent(ctx, obs, observe.SessionEvent{Type: "created"})
 	observe.ObserveApproval(ctx, obs, io.ApprovalEvent{Request: io.ApprovalRequest{Kind: io.ApprovalKindTool}})
 	observe.ObserveError(ctx, obs, observe.ErrorEvent{Phase: "p"})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionContextCompacted, Metadata: map[string]any{"reason": "trigger_tokens", "tokens_before": 10, "tokens_after": 6}})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionGuardianReviewed, Metadata: map[string]any{"outcome": "auto_approved"}})
 
 	mfs := mustGather(t, reg)
 	names := make([]string, 0, len(mfs))
@@ -216,6 +280,9 @@ func TestMetricDescriptions(t *testing.T) {
 	}
 	want := []string{
 		"moss_approvals_total",
+		"moss_context_compactions_total",
+		"moss_context_compaction_tokens_reclaimed_total",
+		"moss_guardian_reviews_total",
 		"moss_errors_total",
 		"moss_llm_call_duration_seconds",
 		"moss_llm_calls_total",
@@ -246,6 +313,14 @@ func TestObserver_NormalizedMetricsMap(t *testing.T) {
 	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "read_file", Duration: 20 * time.Millisecond})
 	observe.ObserveToolCall(ctx, obs, observe.ToolCallEvent{ToolName: "run_command", Duration: 30 * time.Millisecond, Error: errors.New("fail")})
 	observe.ObserveSessionEvent(ctx, obs, observe.SessionEvent{Type: "completed"})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{
+		Type: observe.ExecutionContextNormalized,
+		Metadata: map[string]any{
+			"dropped_orphan_tool_results":      1,
+			"synthesized_missing_tool_results": 2,
+		},
+	})
+	observe.ObserveExecutionEvent(ctx, obs, observe.ExecutionEvent{Type: observe.ExecutionGuardianReviewed, Metadata: map[string]any{"outcome": "fallback_error"}})
 
 	m := obs.NormalizedMetricsMap()
 	if m["success.run_total"] != 1 {
@@ -254,5 +329,10 @@ func TestObserver_NormalizedMetricsMap(t *testing.T) {
 	if m["tool_error.calls_total"] != 2 || m["tool_error.errors_total"] != 1 {
 		t.Fatalf("tool error counters mismatch: %+v", m)
 	}
+	if m["context.normalize_total"] != 1 || m["context.normalize_synthesized_results_total"] != 2 {
+		t.Fatalf("execution metrics mismatch: %+v", m)
+	}
+	if m["guardian.error_rate"] != 1 {
+		t.Fatalf("guardian error rate mismatch: %+v", m)
+	}
 }
-
