@@ -62,6 +62,7 @@ func launchTUI(cfg *config) error {
 		},
 		PromptConfigInstructions: buildProductPromptInstructions(flags.Workspace, resolved.Trust),
 		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
+			runtimeFlags := runtimeFlags(workspace, flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
 			resolvedProfile, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
 				Workspace:        workspace,
 				RequestedProfile: profile,
@@ -77,13 +78,14 @@ func launchTUI(cfg *config) error {
 					ToolPolicy:   rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
 				}
 			}
-			return rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+			cfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
 			}, resolvedProfile)
+			return applyContextPolicy(cfg, runtimeFlags)
 		},
 	})
 }
@@ -189,12 +191,12 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		)
 	}
 
-	sessCfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
-		Goal:         cfg.prompt,
-		Mode:         "oneshot",
-		TrustLevel:   resolved.Trust,
-		MaxSteps:     80,
-	}, resolved)
+	sessCfg := applyContextPolicy(rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+		Goal:       cfg.prompt,
+		Mode:       "oneshot",
+		TrustLevel: resolved.Trust,
+		MaxSteps:   80,
+	}, resolved), cfg.flags)
 	systemPrompt, metadata, err := composeProductSystemPrompt(cfg.flags.Workspace, resolved.Trust, k, resolved, sessCfg.Metadata)
 	if err != nil {
 		report.Error = err.Error()
@@ -249,6 +251,16 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 		}
 	}
 	return report, nil
+}
+
+func runtimeFlags(workspace, provider, model, apiKey, baseURL string) *appkit.AppFlags {
+	return &appkit.AppFlags{
+		Provider:  provider,
+		Model:     model,
+		Workspace: workspace,
+		APIKey:    apiKey,
+		BaseURL:   baseURL,
+	}
 }
 
 func printResumeCandidates(summaries []session.SessionSummary, snapshotCounts map[string]int) {

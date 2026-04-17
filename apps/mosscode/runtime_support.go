@@ -9,21 +9,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
-	"github.com/mossagents/moss/harness/userio/prompting"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/logging"
+	providers "github.com/mossagents/moss/harness/providers"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/sandbox"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/logging"
-	providers "github.com/mossagents/moss/harness/providers"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -114,6 +114,9 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		AdditionalFeatures:            []harness.Feature{},
 	})
 	if err != nil {
+		return nil, rprofile.ResolvedProfile{}, err
+	}
+	if err := configureContextPolicy(k, flags); err != nil {
 		return nil, rprofile.ResolvedProfile{}, err
 	}
 	logging.GetLogger().DebugContext(ctx, "kernel built",

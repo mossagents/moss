@@ -14,10 +14,10 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
-	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 )
@@ -63,6 +63,36 @@ func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
 	}
 	if got := metadata[session.MetadataTaskMode]; got != resolved.TaskMode {
 		t.Fatalf("task_mode metadata = %v, want %q", got, resolved.TaskMode)
+	}
+}
+
+func TestResolveContextPolicyPrefersLargeBudgetsForReasoningModels(t *testing.T) {
+	policy := resolveContextPolicy(&appkit.AppFlags{Provider: "openai-completions", Model: "gpt-5"})
+	if policy.PromptBudget < 128000 {
+		t.Fatalf("PromptBudget = %d, want >= 128000", policy.PromptBudget)
+	}
+	if policy.TriggerTokens <= 3000 {
+		t.Fatalf("TriggerTokens = %d, want > 3000", policy.TriggerTokens)
+	}
+	if policy.StartupBudget <= 900 {
+		t.Fatalf("StartupBudget = %d, want > 900", policy.StartupBudget)
+	}
+	if policy.KeepRecent <= 20 {
+		t.Fatalf("KeepRecent = %d, want > 20", policy.KeepRecent)
+	}
+}
+
+func TestApplyContextPolicySetsSessionModelConfig(t *testing.T) {
+	flags := &appkit.AppFlags{Provider: "claude", Model: "claude-sonnet-4-20250514"}
+	cfg := applyContextPolicy(session.SessionConfig{}, flags)
+	if cfg.ModelConfig.ContextWindow <= 0 {
+		t.Fatal("expected ContextWindow to be set")
+	}
+	if cfg.ModelConfig.AutoCompactTokenLimit <= 0 {
+		t.Fatal("expected AutoCompactTokenLimit to be set")
+	}
+	if cfg.ModelConfig.AutoCompactTokenLimit >= cfg.ModelConfig.ContextWindow {
+		t.Fatalf("auto compact limit %d should be below context window %d", cfg.ModelConfig.AutoCompactTokenLimit, cfg.ModelConfig.ContextWindow)
 	}
 }
 
