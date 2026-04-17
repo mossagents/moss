@@ -3,6 +3,10 @@ package prometheus_test
 import (
 	"context"
 	"errors"
+	"strings"
+	"testing"
+	"time"
+
 	mossprom "github.com/mossagents/moss/contrib/telemetry/prometheus"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -10,9 +14,6 @@ import (
 	prom "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
-	"strings"
-	"testing"
-	"time"
 )
 
 func newTestObs(t *testing.T) (*mossprom.Observer, *prom.Registry) {

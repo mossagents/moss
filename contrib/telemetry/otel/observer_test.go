@@ -3,13 +3,14 @@ package otel_test
 import (
 	"context"
 	"errors"
+	"testing"
+	"time"
+
 	mossotel "github.com/mossagents/moss/contrib/telemetry/otel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"go.opentelemetry.io/otel/metric/noop"
-	"testing"
-	"time"
 )
 
 func newTestObs(t *testing.T) *mossotel.Observer {
