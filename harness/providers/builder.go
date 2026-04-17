@@ -2,11 +2,12 @@ package providers
 
 import (
 	"fmt"
-	"github.com/mossagents/moss/kernel/model"
+	"strings"
+
 	"github.com/mossagents/moss/harness/providers/claude"
 	"github.com/mossagents/moss/harness/providers/gemini"
 	"github.com/mossagents/moss/harness/providers/openai"
-	"strings"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // BuildLLM 根据 provider 构建 LLM 实例。
@@ -41,7 +42,14 @@ func BuildLLM(apiType, model, apiKey, baseURL string) (model.LLM, error) {
 		return openai.New("", opts...), nil
 
 	case "openai-responses":
-		return nil, fmt.Errorf("provider %q is reserved for the OpenAI Responses API and is not implemented yet", apiType)
+		var opts []openai.Option
+		if model != "" {
+			opts = append(opts, openai.WithModel(model))
+		}
+		if baseURL != "" || apiKey != "" {
+			return openai.NewResponsesWithBaseURL(apiKey, baseURL, opts...), nil
+		}
+		return openai.NewResponses("", opts...), nil
 
 	case "gemini", "google":
 		var opts []gemini.Option

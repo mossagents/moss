@@ -2,12 +2,13 @@ package product
 
 import (
 	"fmt"
-	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/retry"
-	providers "github.com/mossagents/moss/harness/providers"
 	"path/filepath"
 	"strings"
 	"time"
+
+	appconfig "github.com/mossagents/moss/harness/config"
+	providers "github.com/mossagents/moss/harness/providers"
+	"github.com/mossagents/moss/kernel/retry"
 )
 
 const defaultLLMBreakerReset = 30 * time.Second
@@ -135,7 +136,19 @@ func ResolveRouterConfigPath(workspace, explicit string) string {
 func OpenModelRouter(workspace, explicit string) (*providers.ModelRouter, string, error) {
 	path := ResolveRouterConfigPath(workspace, explicit)
 	if strings.TrimSpace(path) == "" {
-		return nil, "", nil
+		path = resolveConfigBackedRouterPath(workspace)
+		if strings.TrimSpace(path) == "" {
+			return nil, "", nil
+		}
+		cfg, err := appconfig.LoadConfig(path)
+		if err != nil {
+			return nil, path, fmt.Errorf("load config-backed router: %w", err)
+		}
+		router, err := providers.NewModelRouterFromConfig(cfg)
+		if err != nil {
+			return nil, path, err
+		}
+		return router, path, nil
 	}
 	router, err := providers.NewModelRouterFromFile(path)
 	if err != nil {
@@ -195,10 +208,10 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		report.PricingModels = len(pricingCatalog.Models)
 	}
 
-	path := ResolveRouterConfigPath(workspace, cfg.RouterConfigPath)
+	router, path, err := OpenModelRouter(workspace, cfg.RouterConfigPath)
 	if path == "" {
 		if report.FailoverEnabled {
-			report.Error = "failover enabled but no router config found"
+			report.Error = "failover enabled but no router config or model config found"
 		}
 		return report
 	}
@@ -208,8 +221,6 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 		report.Error = fmt.Sprintf("router config not found: %s", path)
 		return report
 	}
-
-	router, err := providers.NewModelRouterFromFile(path)
 	if err != nil {
 		report.Error = err.Error()
 		return report
@@ -219,6 +230,30 @@ func BuildGovernanceReport(workspace string, cfg GovernanceConfig) GovernanceRep
 	report.RouterDefaultModel = router.DefaultModel()
 	report.RouterModels = len(router.Models())
 	return report
+}
+
+func resolveConfigBackedRouterPath(workspace string) string {
+	for _, candidate := range []string{
+		appconfig.DefaultProjectConfigPath(workspace),
+		appconfig.DefaultGlobalConfigPath(),
+	} {
+		if configDefinesRouterModels(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func configDefinesRouterModels(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	cfg, err := appconfig.LoadConfig(path)
+	if err != nil {
+		return false
+	}
+	return len(cfg.Models) > 0
 }
 
 func routerConfigCandidates(workspace string) []string {

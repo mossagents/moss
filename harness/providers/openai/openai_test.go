@@ -2,10 +2,12 @@ package openai
 
 import (
 	"encoding/json"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/openai/openai-go"
 	"strings"
 	"testing"
+
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/responses"
 )
 
 // ─── toOpenAIMessages ────────────────────────────────
@@ -243,6 +245,102 @@ func TestToOpenAITools_Empty(t *testing.T) {
 	}
 	if result != nil {
 		t.Errorf("expected nil for empty tools, got %v", result)
+	}
+}
+
+func TestToResponsesInputItems(t *testing.T) {
+	msgs := []model.Message{
+		{Role: model.RoleSystem, ContentParts: []model.ContentPart{model.TextPart("You are helpful.")}},
+		{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Open a file")}},
+		{Role: model.RoleAssistant, ToolCalls: []model.ToolCall{{ID: "call_1", Name: "read_file", Arguments: json.RawMessage(`{"path":"main.go"}`)}}},
+		{Role: model.RoleTool, ToolResults: []model.ToolResult{{CallID: "call_1", ContentParts: []model.ContentPart{model.TextPart("package main")}}}},
+	}
+	instructions, items, err := toResponsesInputItems(msgs, "gpt-5")
+	if err != nil {
+		t.Fatalf("toResponsesInputItems: %v", err)
+	}
+	if instructions != "You are helpful." {
+		t.Fatalf("instructions=%q", instructions)
+	}
+	raw, err := json.Marshal(items)
+	if err != nil {
+		t.Fatalf("marshal items: %v", err)
+	}
+	payload := string(raw)
+	for _, want := range []string{`"role":"user"`, `"call_id":"call_1"`, `"output":"package main"`} {
+		if !strings.Contains(payload, want) {
+			t.Fatalf("expected %q in payload: %s", want, payload)
+		}
+	}
+}
+
+func TestToResponsesTools(t *testing.T) {
+	tools := []model.ToolSpec{{
+		Name:        "read_file",
+		Description: "Read a file",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+	}}
+	result, err := toResponsesTools(tools)
+	if err != nil {
+		t.Fatalf("toResponsesTools: %v", err)
+	}
+	if len(result) != 1 || result[0].OfFunction == nil {
+		t.Fatalf("unexpected tools result: %+v", result)
+	}
+	raw, err := json.Marshal(result[0])
+	if err != nil {
+		t.Fatalf("marshal response tool: %v", err)
+	}
+	payload := string(raw)
+	for _, want := range []string{`"name":"read_file"`, `"description":"Read a file"`, `"path"`} {
+		if !strings.Contains(payload, want) {
+			t.Fatalf("expected %q in payload: %s", want, payload)
+		}
+	}
+}
+
+func TestFromResponsesResponse(t *testing.T) {
+	raw := `{
+		"id": "resp_123",
+		"output": [
+			{
+				"type": "reasoning",
+				"summary": [{"text": "Need to inspect the file first."}]
+			},
+			{
+				"type": "message",
+				"role": "assistant",
+				"status": "completed",
+				"content": [{"type": "output_text", "text": "Here is the result."}]
+			},
+			{
+				"type": "function_call",
+				"call_id": "call_1",
+				"name": "read_file",
+				"arguments": "{\"path\":\"main.go\"}"
+			}
+		],
+		"usage": {"input_tokens": 12, "output_tokens": 8, "total_tokens": 20}
+	}`
+	var resp responses.Response
+	if err := json.Unmarshal([]byte(raw), &resp); err != nil {
+		t.Fatalf("unmarshal responses.Response: %v", err)
+	}
+	completion := fromResponsesResponse(&resp)
+	if got := model.ContentPartsToReasoningText(completion.Message.ContentParts); got != "Need to inspect the file first." {
+		t.Fatalf("reasoning=%q", got)
+	}
+	if got := model.ContentPartsToPlainText(completion.Message.ContentParts); got != "Here is the result." {
+		t.Fatalf("text=%q", got)
+	}
+	if len(completion.ToolCalls) != 1 || completion.ToolCalls[0].Name != "read_file" {
+		t.Fatalf("unexpected tool calls: %+v", completion.ToolCalls)
+	}
+	if completion.Usage.TotalTokens != 20 {
+		t.Fatalf("usage=%+v", completion.Usage)
+	}
+	if completion.StopReason != "tool_use" {
+		t.Fatalf("stop reason=%q", completion.StopReason)
 	}
 }
 

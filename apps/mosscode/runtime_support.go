@@ -96,7 +96,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		return nil, rprofile.ResolvedProfile{}, fmt.Errorf("load model router: %w", err)
 	}
 	failoverCfg, failoverEnabled := governance.FailoverConfig()
-	useFailover := failoverEnabled && router != nil
+	useFailover := failoverEnabled && router != nil && len(router.Models()) > 1
 	retryCfg, retryEnabled := governance.RetryConfig()
 	breakerCfg := governance.BreakerConfig()
 	if useFailover {

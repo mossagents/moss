@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mossagents/moss/kernel/model"
 	"io"
 	"iter"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // fakeLLM 是测试用的 LLM 假实现。
@@ -521,6 +523,30 @@ func TestNewModelRouter_NoExplicitDefault_UsesFirst(t *testing.T) {
 	}
 	if r.DefaultModel() != "first" {
 		t.Errorf("expected default 'first', got %q", r.DefaultModel())
+	}
+}
+
+func TestNewModelRouterFromConfig(t *testing.T) {
+	cfg := &appconfig.Config{Models: []appconfig.ModelConfig{
+		{Provider: "openai", Model: "gpt-4o-mini", Default: true},
+		{Provider: "openai-responses", Model: "gpt-5"},
+	}}
+	r, err := NewModelRouterFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("NewModelRouterFromConfig: %v", err)
+	}
+	if len(r.Models()) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(r.Models()))
+	}
+	if r.DefaultModel() != "gpt-4o-mini" {
+		t.Fatalf("default model = %q, want gpt-4o-mini", r.DefaultModel())
+	}
+	models := r.Models()
+	if !models[1].HasCapability(model.CapReasoning) {
+		t.Fatalf("expected gpt-5 synthesized profile to include reasoning: %+v", models[1])
+	}
+	if models[0].CostTier != 1 {
+		t.Fatalf("expected gpt-4o-mini cost tier 1, got %d", models[0].CostTier)
 	}
 }
 

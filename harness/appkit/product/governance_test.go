@@ -1,12 +1,13 @@
 package product
 
 import (
-	appconfig "github.com/mossagents/moss/harness/config"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	appconfig "github.com/mossagents/moss/harness/config"
 )
 
 func TestResolveRouterConfigPathPrefersExplicit(t *testing.T) {
@@ -28,6 +29,30 @@ func TestResolveRouterConfigPathDiscoversWorkspaceConfig(t *testing.T) {
 	}
 	if got := ResolveRouterConfigPath(dir, ""); got != path {
 		t.Fatalf("ResolveRouterConfigPath discovered=%q, want %q", got, path)
+	}
+}
+
+func TestOpenModelRouterFallsBackToProjectConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := appconfig.DefaultProjectConfigPath(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("models:\n  - provider: openai\n    model: gpt-4o-mini\n    default: true\n  - provider: openai-responses\n    model: gpt-5\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	router, source, err := OpenModelRouter(dir, "")
+	if err != nil {
+		t.Fatalf("OpenModelRouter: %v", err)
+	}
+	if router == nil {
+		t.Fatal("expected router from project config")
+	}
+	if source != path {
+		t.Fatalf("source=%q, want %q", source, path)
+	}
+	if got := len(router.Models()); got != 2 {
+		t.Fatalf("router models=%d, want 2", got)
 	}
 }
 
@@ -132,6 +157,32 @@ func TestBuildGovernanceReportIncludesFailoverFields(t *testing.T) {
 	}
 	if report.FailoverMaxCandidates != 2 {
 		t.Fatalf("failover max candidates = %d, want 2", report.FailoverMaxCandidates)
+	}
+}
+
+func TestBuildGovernanceReportConfigBackedRouterNeedsMultipleCandidatesForFailover(t *testing.T) {
+	dir := t.TempDir()
+	path := appconfig.DefaultProjectConfigPath(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("provider: openai\nmodel: gpt-5\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	report := BuildGovernanceReport(dir, GovernanceConfig{
+		LLMFailoverEnabled:             true,
+		LLMFailoverMaxCandidates:       2,
+		LLMFailoverPerCandidateRetries: 1,
+		LLMFailoverOnBreakerOpen:       true,
+	})
+	if !report.RouterEnabled {
+		t.Fatal("expected router to be enabled from config-backed models")
+	}
+	if !report.FailoverAvailable {
+		t.Fatalf("expected failover to remain reported as available when router exists: %+v", report)
+	}
+	if report.RouterConfig != path {
+		t.Fatalf("router config=%q, want %q", report.RouterConfig, path)
 	}
 }
 
