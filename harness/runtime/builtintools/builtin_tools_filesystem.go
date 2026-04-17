@@ -17,11 +17,13 @@ import (
 
 var readFileSpec = tool.ToolSpec{
 	Name:        "read_file",
-	Description: "Read the contents of a file. Returns the file content as text.",
+	Description: "Read a file. Optionally return only a specific line range.",
 	InputSchema: json.RawMessage(`{
 		"type": "object",
 		"properties": {
-			"path": {"type": "string", "description": "File path (relative to workspace root)"}
+			"path": {"type": "string", "description": "File path (relative to workspace root)"},
+			"start_line": {"type": "integer", "description": "Optional 1-based start line for partial reads"},
+			"end_line": {"type": "integer", "description": "Optional 1-based end line for partial reads (inclusive)"}
 		},
 		"required": ["path"]
 	}`),
@@ -36,7 +38,9 @@ func readFileHandlerWS(ws workspace.Workspace) tool.ToolHandler {
 func readFileHandlerPort(ws workspace.Workspace) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var params struct {
-			Path string `json:"path"`
+			Path      string `json:"path"`
+			StartLine int    `json:"start_line"`
+			EndLine   int    `json:"end_line"`
 		}
 		if err := json.Unmarshal(input, &params); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
@@ -45,8 +49,50 @@ func readFileHandlerPort(ws workspace.Workspace) tool.ToolHandler {
 		if err != nil {
 			return nil, err
 		}
+		if params.StartLine > 0 || params.EndLine > 0 {
+			content, startLine, endLine, totalLines, err := sliceFileByLineRange(string(data), params.StartLine, params.EndLine)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(map[string]any{
+				"path":        params.Path,
+				"start_line":  startLine,
+				"end_line":    endLine,
+				"total_lines": totalLines,
+				"content":     content,
+			})
+		}
 		return json.Marshal(string(data))
 	}
+}
+
+func sliceFileByLineRange(content string, startLine, endLine int) (string, int, int, int, error) {
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	lines := strings.Split(normalized, "\n")
+	if len(lines) > 0 && lines[len(lines)-1] == "" {
+		lines = lines[:len(lines)-1]
+	}
+	totalLines := len(lines)
+	if totalLines == 0 {
+		if startLine > 1 {
+			return "", 0, 0, 0, fmt.Errorf("start_line %d exceeds file length 0", startLine)
+		}
+		return "", 1, 0, 0, nil
+	}
+	if startLine <= 0 {
+		startLine = 1
+	}
+	if startLine > totalLines {
+		return "", 0, 0, totalLines, fmt.Errorf("start_line %d exceeds file length %d", startLine, totalLines)
+	}
+	if endLine <= 0 || endLine > totalLines {
+		endLine = totalLines
+	}
+	if endLine < startLine {
+		return "", 0, 0, totalLines, fmt.Errorf("end_line %d is smaller than start_line %d", endLine, startLine)
+	}
+	return strings.Join(lines[startLine-1:endLine], "\n"), startLine, endLine, totalLines, nil
 }
 
 // ─── write_file ──────────────────────────────────────
@@ -205,6 +251,14 @@ var listFilesSpec = tool.ToolSpec{
 			"include_hidden": {"type": "boolean", "description": "Whether to include hidden files/dirs like .git (default: false)"}
 		}
 	}`),
+	Risk:         tool.RiskLow,
+	Capabilities: []string{"filesystem"},
+}
+
+var listFilesAliasSpec = tool.ToolSpec{
+	Name:         "list_files",
+	Description:  "Compatibility alias for ls. List files matching a glob pattern relative to the workspace root.",
+	InputSchema:  listFilesSpec.InputSchema,
 	Risk:         tool.RiskLow,
 	Capabilities: []string{"filesystem"},
 }

@@ -119,6 +119,9 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	if err := configureContextPolicy(k, flags); err != nil {
 		return nil, rprofile.ResolvedProfile{}, err
 	}
+	if err := k.Apply(kernel.WithParallelToolCalls()); err != nil {
+		return nil, rprofile.ResolvedProfile{}, err
+	}
 	logging.GetLogger().DebugContext(ctx, "kernel built",
 		"profile", resolved.Name,
 		"trust", resolved.Trust,

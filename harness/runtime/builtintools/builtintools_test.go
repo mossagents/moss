@@ -198,6 +198,23 @@ type mockWorkspaceLarge struct {
 	stdout string
 }
 
+type mockPatchApply struct {
+	lastReq workspace.PatchApplyRequest
+	result  *workspace.PatchApplyResult
+	err     error
+}
+
+func (m *mockPatchApply) Apply(_ context.Context, req workspace.PatchApplyRequest) (*workspace.PatchApplyResult, error) {
+	m.lastReq = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.result != nil {
+		return m.result, nil
+	}
+	return &workspace.PatchApplyResult{Applied: true}, nil
+}
+
 func (m *mockWorkspaceLarge) Execute(_ context.Context, _ workspace.ExecRequest) (workspace.ExecOutput, error) {
 	return workspace.ExecOutput{
 		Stdout:   m.stdout,
@@ -217,7 +234,7 @@ func TestRegisterBuiltinTools(t *testing.T) {
 		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "list_files", "grep", "run_command", "http_request", "datetime", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
@@ -318,6 +335,39 @@ func TestReadFile(t *testing.T) {
 	}
 	if content != "Hello, World!" {
 		t.Errorf("expected 'Hello, World!', got %q", content)
+	}
+}
+
+func TestReadFileLineRange(t *testing.T) {
+	ws := newMockSandboxWS("/ws", map[string]string{
+		"/ws/hello.txt": "one\ntwo\nthree\nfour\n",
+	})
+	handler := testReadFileHandler(ws)
+
+	result, err := handler(context.Background(), toJSON(t, map[string]any{
+		"path":       "hello.txt",
+		"start_line": 2,
+		"end_line":   3,
+	}))
+	if err != nil {
+		t.Fatalf("readFile line range: %v", err)
+	}
+
+	var resp struct {
+		Path      string `json:"path"`
+		StartLine int    `json:"start_line"`
+		EndLine   int    `json:"end_line"`
+		Total     int    `json:"total_lines"`
+		Content   string `json:"content"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("unmarshal line range response: %v", err)
+	}
+	if resp.Path != "hello.txt" || resp.StartLine != 2 || resp.EndLine != 3 || resp.Total != 4 {
+		t.Fatalf("unexpected line range response: %+v", resp)
+	}
+	if resp.Content != "two\nthree" {
+		t.Fatalf("content = %q, want %q", resp.Content, "two\nthree")
 	}
 }
 
@@ -769,6 +819,7 @@ func TestToolRiskLevels(t *testing.T) {
 		{"edit_file", tool.RiskHigh},
 		{"glob", tool.RiskLow},
 		{"ls", tool.RiskLow},
+		{"list_files", tool.RiskLow},
 		{"grep", tool.RiskLow},
 		{"run_command", tool.RiskHigh},
 		{"http_request", tool.RiskHigh},
@@ -811,6 +862,7 @@ func TestBuiltinToolExecutionMetadata(t *testing.T) {
 		plannerVisible tool.PlannerVisibility
 	}{
 		{"read_file", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone, tool.PlannerVisibilityVisible},
+		{"list_files", tool.EffectReadOnly, tool.SideEffectNone, tool.ApprovalClassNone, tool.PlannerVisibilityVisible},
 		{"write_file", tool.EffectWritesWorkspace, tool.SideEffectWorkspace, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
 		{"run_command", tool.EffectExternalSideEffect, tool.SideEffectProcess, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
 		{"http_request", tool.EffectExternalSideEffect, tool.SideEffectNetwork, tool.ApprovalClassExplicitUser, tool.PlannerVisibilityVisibleWithConstraints},
@@ -967,10 +1019,34 @@ func TestRegisterAllWithWorkspace(t *testing.T) {
 		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
 	}
 
-	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "grep", "run_command", "http_request", "datetime", "ask_user"}
+	expected := []string{"read_file", "write_file", "edit_file", "glob", "ls", "list_files", "grep", "run_command", "http_request", "datetime", "ask_user"}
 	specs := reg.List()
 	if len(specs) != len(expected) {
 		t.Fatalf("expected %d tools, got %d", len(expected), len(specs))
+	}
+}
+
+func TestListFilesAlias(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := &mockWorkspace{files: map[string]string{"a.txt": "a", "b.go": "b"}}
+	k := newTestKernel(ws, &mockUserIO{})
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
+	}
+	listTool, ok := reg.Get("list_files")
+	if !ok {
+		t.Fatal("list_files not registered")
+	}
+	raw, err := listTool.Execute(context.Background(), toJSON(t, map[string]any{"pattern": "**/*"}))
+	if err != nil {
+		t.Fatalf("list_files: %v", err)
+	}
+	var paths []string
+	if err := json.Unmarshal(raw, &paths); err != nil {
+		t.Fatalf("decode list_files: %v", err)
+	}
+	if len(paths) != 2 || paths[0] != "a.txt" || paths[1] != "b.go" {
+		t.Fatalf("unexpected list_files response: %+v", paths)
 	}
 }
 
@@ -989,6 +1065,42 @@ func TestReadFileWS(t *testing.T) {
 	}
 	if content != "Hello via Workspace!" {
 		t.Errorf("expected 'Hello via Workspace!', got %q", content)
+	}
+}
+
+func TestApplyPatchTool(t *testing.T) {
+	reg := tool.NewRegistry()
+	ws := &mockWorkspace{files: map[string]string{"a.txt": "before"}}
+	applier := &mockPatchApply{result: &workspace.PatchApplyResult{PatchID: "p1", Applied: true, TargetFiles: []string{"a.txt"}}}
+	k := kernel.New(
+		kernel.WithWorkspace(ws),
+		kernel.WithUserIO(&mockUserIO{}),
+		kernel.WithPatchApply(applier),
+	)
+	if err := RegisterBuiltinToolsForKernel(k, reg); err != nil {
+		t.Fatalf("RegisterBuiltinToolsForKernel: %v", err)
+	}
+	patchTool, ok := reg.Get("apply_patch")
+	if !ok {
+		t.Fatal("apply_patch not registered")
+	}
+	raw, err := patchTool.Execute(context.Background(), toJSON(t, map[string]any{
+		"patch":     "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-before\n+after\n",
+		"three_way": true,
+		"source":    "user",
+	}))
+	if err != nil {
+		t.Fatalf("apply_patch: %v", err)
+	}
+	if !applier.lastReq.ThreeWay || applier.lastReq.Source != workspace.PatchSourceUser {
+		t.Fatalf("unexpected patch apply request: %+v", applier.lastReq)
+	}
+	var resp workspace.PatchApplyResult
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		t.Fatalf("decode apply_patch: %v", err)
+	}
+	if !resp.Applied || resp.PatchID != "p1" {
+		t.Fatalf("unexpected patch response: %+v", resp)
 	}
 }
 
