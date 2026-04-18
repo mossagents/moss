@@ -1,10 +1,11 @@
 package events
 
 import (
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/observe"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 var now = time.Unix(100, 0).UTC()
@@ -70,6 +71,10 @@ func TestFromExecutionEvent_AllTypes(t *testing.T) {
 		{observe.ExecutionRunCancelled, EventRunFailed},
 		{observe.ExecutionToolStarted, EventToolStarted},
 		{observe.ExecutionToolCompleted, EventToolCompleted},
+		{observe.ExecutionHostedToolStarted, EventHostedToolStarted},
+		{observe.ExecutionHostedToolProgress, EventHostedToolProgress},
+		{observe.ExecutionHostedToolCompleted, EventHostedToolCompleted},
+		{observe.ExecutionHostedToolFailed, EventHostedToolFailed},
 		{observe.ExecutionIterationProgress, EventProgress},
 		{observe.ExecutionEventType("other"), EventUnknown},
 	}

@@ -63,20 +63,20 @@ type TaskEvent struct {
 
 // EventEnvelope 是统一运行时事件封装。
 type EventEnvelope struct {
-	Kind      EventKind           `json:"kind"`
-	SessionID string              `json:"session_id,omitempty"`
-	RunID     string              `json:"run_id,omitempty"`
-	TurnID    string              `json:"turn_id,omitempty"`
-	ParentID  string              `json:"parent_id,omitempty"`
-	Timestamp time.Time           `json:"timestamp,omitempty"`
-	LLM       *LLMCallEvent       `json:"llm,omitempty"`
-	Tool      *ToolCallEvent      `json:"tool,omitempty"`
-	Execution *ExecutionEvent     `json:"execution,omitempty"`
+	Kind      EventKind         `json:"kind"`
+	SessionID string            `json:"session_id,omitempty"`
+	RunID     string            `json:"run_id,omitempty"`
+	TurnID    string            `json:"turn_id,omitempty"`
+	ParentID  string            `json:"parent_id,omitempty"`
+	Timestamp time.Time         `json:"timestamp,omitempty"`
+	LLM       *LLMCallEvent     `json:"llm,omitempty"`
+	Tool      *ToolCallEvent    `json:"tool,omitempty"`
+	Execution *ExecutionEvent   `json:"execution,omitempty"`
 	Approval  *io.ApprovalEvent `json:"approval,omitempty"`
-	Session   *SessionEvent       `json:"session,omitempty"`
-	Error     *ErrorEvent         `json:"error,omitempty"`
-	Turn      *TurnEvent          `json:"turn,omitempty"`
-	Task      *TaskEvent          `json:"task,omitempty"`
+	Session   *SessionEvent     `json:"session,omitempty"`
+	Error     *ErrorEvent       `json:"error,omitempty"`
+	Turn      *TurnEvent        `json:"turn,omitempty"`
+	Task      *TaskEvent        `json:"task,omitempty"`
 }
 
 func EnvelopeFromLLMCall(e LLMCallEvent) EventEnvelope {
@@ -179,7 +179,8 @@ func mapTurnEventType(typ ExecutionEventType) TurnEventType {
 	switch typ {
 	case ExecutionRunStarted, ExecutionIterationStarted:
 		return TurnEventStarted
-	case ExecutionIterationProgress, ExecutionLLMStarted, ExecutionLLMCompleted, ExecutionToolStarted, ExecutionToolCompleted:
+	case ExecutionIterationProgress, ExecutionLLMStarted, ExecutionLLMCompleted, ExecutionToolStarted, ExecutionToolCompleted,
+		ExecutionHostedToolStarted, ExecutionHostedToolProgress, ExecutionHostedToolCompleted, ExecutionHostedToolFailed:
 		return TurnEventProgress
 	case ExecutionRunCompleted:
 		return TurnEventCompleted

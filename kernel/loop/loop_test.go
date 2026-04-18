@@ -1109,6 +1109,22 @@ func (t *trimRetryLLM) GenerateContent(_ context.Context, _ model.CompletionRequ
 	}
 }
 
+type hostedToolLifecycleLLM struct {
+	events []model.HostedToolEvent
+}
+
+func (t *hostedToolLifecycleLLM) GenerateContent(_ context.Context, _ model.CompletionRequest) iter.Seq2[model.StreamChunk, error] {
+	return func(yield func(model.StreamChunk, error) bool) {
+		for i := range t.events {
+			event := t.events[i]
+			if !yield(model.HostedToolChunk(&event), nil) {
+				return
+			}
+		}
+		yield(model.DoneChunk("end_turn", &model.TokenUsage{TotalTokens: 3}, nil), nil)
+	}
+}
+
 type recordingObserver struct {
 	llmCalls  []observe.LLMCallEvent
 	execution []observe.ExecutionEvent
@@ -1222,6 +1238,77 @@ func TestLoopContextTrimRetryEmitsExecutionEvent(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("expected context trim retry execution event")
+	}
+}
+
+func TestLoopHostedToolLifecycleEmitsExecutionEvents(t *testing.T) {
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM: &hostedToolLifecycleLLM{events: []model.HostedToolEvent{
+			{ID: "ht-1", Name: "file_search_call", Status: "searching"},
+			{ID: "ht-1", Name: "file_search_call", Status: "completed", Output: json.RawMessage(`{"hits":2}`)},
+		}},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:       "test-hosted-tool-events",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("search docs")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("expected success, got %+v", result)
+	}
+	var got []observe.ExecutionEventType
+	for _, event := range observer.execution {
+		if event.PayloadKind == "hosted_tool" {
+			got = append(got, event.Type)
+			if event.CallID != "ht-1" {
+				t.Fatalf("unexpected call id: %+v", event)
+			}
+		}
+	}
+	if len(got) < 2 || got[0] != observe.ExecutionHostedToolStarted || got[len(got)-1] != observe.ExecutionHostedToolCompleted {
+		t.Fatalf("unexpected hosted tool lifecycle: %+v", got)
+	}
+}
+
+func TestLoopHostedToolWithoutTerminalGetsSyntheticCompletion(t *testing.T) {
+	observer := &recordingObserver{}
+	l := &AgentLoop{
+		LLM: &hostedToolLifecycleLLM{events: []model.HostedToolEvent{
+			{ID: "ht-synth", Name: "web_search_call", Status: "in_progress"},
+		}},
+		Tools:    tool.NewRegistry(),
+		IO:       kt.NewRecorderIO(),
+		Observer: observer,
+	}
+	sess := &session.Session{
+		ID:       "test-hosted-tool-synth",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("search web")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+	_, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var synthetic bool
+	for _, event := range observer.execution {
+		if event.Type == observe.ExecutionHostedToolCompleted && event.CallID == "ht-synth" {
+			if flag, ok := event.Metadata["synthetic_terminal"].(bool); ok && flag {
+				synthetic = true
+			}
+		}
+	}
+	if !synthetic {
+		t.Fatalf("expected synthetic hosted tool completion, events=%+v", observer.execution)
 	}
 }
 

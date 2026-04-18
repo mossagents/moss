@@ -97,6 +97,19 @@ func TestRenderRunTraceSummaryShowsUnavailableCostWhenMissing(t *testing.T) {
 	}
 }
 
+func TestSelectKeyTraceEventsIncludesHostedToolLifecycle(t *testing.T) {
+	events := SelectKeyTraceEvents(RunTrace{Timeline: []TraceEvent{{
+		Kind:     "execution_event",
+		Type:     "hosted_tool.completed",
+		ToolName: "file_search_call",
+		Metadata: map[string]any{"status": "completed"},
+	}}}, 3)
+	joined := strings.Join(events, "\n")
+	if !strings.Contains(joined, "Hosted tool file_search_call completed") {
+		t.Fatalf("expected hosted tool summary, got: %v", events)
+	}
+}
+
 func TestRenderRunTraceDetailIncludesTimelineAndLimit(t *testing.T) {
 	detail := RenderRunTraceDetail(RunTraceSummary{
 		Status: "completed",
@@ -232,12 +245,14 @@ type mockObserver struct {
 	errorEvents     int
 }
 
-func (m *mockObserver) OnLLMCall(_ context.Context, _ observe.LLMCallEvent)          {}
-func (m *mockObserver) OnToolCall(_ context.Context, _ observe.ToolCallEvent)        { m.toolCalls++ }
-func (m *mockObserver) OnExecutionEvent(_ context.Context, _ observe.ExecutionEvent) { m.executionEvents++ }
-func (m *mockObserver) OnApproval(_ context.Context, _ io.ApprovalEvent)             { m.approvals++ }
-func (m *mockObserver) OnSessionEvent(_ context.Context, _ observe.SessionEvent)     { m.sessionEvents++ }
-func (m *mockObserver) OnError(_ context.Context, _ observe.ErrorEvent)              { m.errorEvents++ }
+func (m *mockObserver) OnLLMCall(_ context.Context, _ observe.LLMCallEvent)   {}
+func (m *mockObserver) OnToolCall(_ context.Context, _ observe.ToolCallEvent) { m.toolCalls++ }
+func (m *mockObserver) OnExecutionEvent(_ context.Context, _ observe.ExecutionEvent) {
+	m.executionEvents++
+}
+func (m *mockObserver) OnApproval(_ context.Context, _ io.ApprovalEvent)         { m.approvals++ }
+func (m *mockObserver) OnSessionEvent(_ context.Context, _ observe.SessionEvent) { m.sessionEvents++ }
+func (m *mockObserver) OnError(_ context.Context, _ observe.ErrorEvent)          { m.errorEvents++ }
 
 func TestNewPricingObserver_NilNext(t *testing.T) {
 	if got := NewPricingObserver(nil, nil); got != nil {

@@ -43,7 +43,7 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	// 采用 FIFO 修剪最老的非 system 消息并重试，避免直接失败。
 	const maxTrimRetries = 5
 	for trimAttempt := 0; trimAttempt <= maxTrimRetries; trimAttempt++ {
-		resp, err := l.callLLMWithRetry(ctx, req)
+		resp, err := l.callLLMWithRetry(ctx, sess, req)
 		if err == nil {
 			return resp, nil
 		}
@@ -96,10 +96,10 @@ func (l *AgentLoop) emitContextTrimRetryEvent(ctx context.Context, sess *session
 	observe.ObserveExecutionEvent(ctx, l.observer(), event)
 }
 
-func (l *AgentLoop) callLLMWithRetry(ctx context.Context, req model.CompletionRequest) (*model.CompletionResponse, error) {
+func (l *AgentLoop) callLLMWithRetry(ctx context.Context, sess *session.Session, req model.CompletionRequest) (*model.CompletionResponse, error) {
 	cfg := l.Config.LLMRetry
 	if !cfg.Enabled() {
-		attempt := l.callLLMOnce(ctx, req)
+		attempt := l.callLLMOnce(ctx, sess, req)
 		return attempt.resp, attempt.err
 	}
 
@@ -108,7 +108,7 @@ func (l *AgentLoop) callLLMWithRetry(ctx context.Context, req model.CompletionRe
 	var lastErr error
 
 	for attemptIndex := 0; attemptIndex <= maxRetries; attemptIndex++ {
-		attempt := l.callLLMOnce(ctx, req)
+		attempt := l.callLLMOnce(ctx, sess, req)
 		if attempt.err == nil {
 			return attempt.resp, nil
 		}
@@ -139,7 +139,7 @@ func (l *AgentLoop) callLLMWithRetry(ctx context.Context, req model.CompletionRe
 	return nil, lastErr
 }
 
-func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest) callAttemptResult {
+func (l *AgentLoop) callLLMOnce(ctx context.Context, sess *session.Session, req model.CompletionRequest) callAttemptResult {
 	// 熔断器检查
 	if b := l.Config.LLMBreaker; b != nil {
 		if !b.Allow() {
@@ -161,6 +161,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 			// Check recoverable tail errors when we have partial content + tool calls.
 			if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
 				state.stopReason = "tool_use"
+				l.finalizeHostedToolLifecycle(ctx, sess, &state, false)
 				if l.IO != nil {
 					if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {
 						l.logger().DebugContext(ctx, "stream end send failed", "error", sendErr)
@@ -168,6 +169,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 				}
 				break
 			}
+			l.finalizeHostedToolLifecycle(ctx, sess, &state, true)
 			safePreEmission := !state.emittedContent && len(state.toolCalls) == 0
 			llmErr := ensureLLMCallError(err, safePreEmission, safePreEmission, derefMetadata(metadata))
 			l.recordBreakerFailure()
@@ -178,7 +180,7 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 		if chunk.Metadata != nil {
 			metadata = chunk.Metadata
 		}
-		if done := l.applyStreamChunk(ctx, chunk, &state); done {
+		if done := l.applyStreamChunk(ctx, sess, chunk, &state); done {
 			break
 		}
 	}
@@ -212,14 +214,15 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, req model.CompletionRequest
 }
 
 type streamAccumulator struct {
-	fullContent     string
-	fullReasoning   string
-	fullRefusal     string
-	toolCalls       []model.ToolCall
-	hostedToolCalls []model.HostedToolEvent
-	usage           model.TokenUsage
-	stopReason      string
-	emittedContent  bool
+	fullContent      string
+	fullReasoning    string
+	fullRefusal      string
+	toolCalls        []model.ToolCall
+	hostedToolCalls  []model.HostedToolEvent
+	hostedToolPhases map[string]string
+	usage            model.TokenUsage
+	stopReason       string
+	emittedContent   bool
 }
 
 func derefMetadata(m *model.LLMCallMetadata) model.LLMCallMetadata {
@@ -229,7 +232,7 @@ func derefMetadata(m *model.LLMCallMetadata) model.LLMCallMetadata {
 	return *m
 }
 
-func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChunk, state *streamAccumulator) bool {
+func (l *AgentLoop) applyStreamChunk(ctx context.Context, sess *session.Session, chunk model.StreamChunk, state *streamAccumulator) bool {
 	chunk = chunk.Normalized()
 	switch chunk.Type {
 	case model.StreamChunkReasoningDelta:
@@ -274,6 +277,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 		state.emittedContent = true
 		if chunk.HostedTool != nil {
 			state.hostedToolCalls = appendOrReplaceHostedTool(state.hostedToolCalls, *chunk.HostedTool)
+			l.observeHostedToolLifecycle(ctx, sess, *chunk.HostedTool, state)
 			if l.IO != nil {
 				if err := l.IO.Send(ctx, kernio.OutputMessage{
 					Type:    kernio.OutputHostedTool,
@@ -299,6 +303,7 @@ func (l *AgentLoop) applyStreamChunk(ctx context.Context, chunk model.StreamChun
 			state.stopReason = "tool_use"
 		}
 	}
+	l.finalizeHostedToolLifecycle(ctx, sess, state, state.stopReason == "incomplete")
 	if l.IO != nil {
 		if err := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); err != nil {
 			l.logger().DebugContext(ctx, "stream completion send failed", "error", err)
@@ -361,6 +366,121 @@ func hostedToolMeta(event model.HostedToolEvent) map[string]any {
 		return nil
 	}
 	return meta
+}
+
+func (l *AgentLoop) observeHostedToolLifecycle(ctx context.Context, sess *session.Session, event model.HostedToolEvent, state *streamAccumulator) {
+	if state == nil {
+		return
+	}
+	key := hostedToolKey(event)
+	if key == "" {
+		return
+	}
+	if state.hostedToolPhases == nil {
+		state.hostedToolPhases = map[string]string{}
+	}
+	current := state.hostedToolPhases[key]
+	if current == "" {
+		l.emitHostedToolExecutionEvent(ctx, sess, observe.ExecutionHostedToolStarted, event, false)
+		state.hostedToolPhases[key] = "started"
+		current = "started"
+	}
+	next := normalizeHostedToolPhase(event.Status)
+	if next == "" || next == current {
+		return
+	}
+	l.emitHostedToolExecutionEvent(ctx, sess, hostedToolExecutionEventType(next), event, false)
+	state.hostedToolPhases[key] = next
+}
+
+func (l *AgentLoop) finalizeHostedToolLifecycle(ctx context.Context, sess *session.Session, state *streamAccumulator, failed bool) {
+	if state == nil || len(state.hostedToolCalls) == 0 {
+		return
+	}
+	if state.hostedToolPhases == nil {
+		state.hostedToolPhases = map[string]string{}
+	}
+	terminalPhase := "completed"
+	terminalType := observe.ExecutionHostedToolCompleted
+	if failed {
+		terminalPhase = "failed"
+		terminalType = observe.ExecutionHostedToolFailed
+	}
+	for i := range state.hostedToolCalls {
+		event := state.hostedToolCalls[i]
+		key := hostedToolKey(event)
+		if key == "" {
+			continue
+		}
+		if isHostedToolTerminalPhase(state.hostedToolPhases[key]) {
+			continue
+		}
+		event.Status = terminalPhase
+		l.emitHostedToolExecutionEvent(ctx, sess, terminalType, event, true)
+		state.hostedToolPhases[key] = terminalPhase
+	}
+}
+
+func (l *AgentLoop) emitHostedToolExecutionEvent(ctx context.Context, sess *session.Session, typ observe.ExecutionEventType, event model.HostedToolEvent, synthetic bool) {
+	exec := l.executionEventBase(sess, typ, "llm", "provider", "hosted_tool")
+	exec.ToolName = strings.TrimSpace(event.Name)
+	exec.CallID = hostedToolKey(event)
+	exec.Metadata = hostedToolMeta(event)
+	if exec.Metadata == nil {
+		exec.Metadata = map[string]any{}
+	}
+	exec.Metadata["synthetic_terminal"] = synthetic
+	exec.Metadata["read_only"] = isReadOnlyHostedTool(exec.ToolName)
+	observe.ObserveExecutionEvent(ctx, l.observer(), exec)
+}
+
+func hostedToolKey(event model.HostedToolEvent) string {
+	if id := strings.TrimSpace(event.ID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(event.Name)
+}
+
+func normalizeHostedToolPhase(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "", "queued", "pending":
+		return ""
+	case "searching", "in_progress", "in-progress", "processing", "running", "interpreting":
+		return "progress"
+	case "completed", "complete", "done", "succeeded", "success":
+		return "completed"
+	case "failed", "error", "errored", "cancelled", "canceled", "incomplete":
+		return "failed"
+	default:
+		return "progress"
+	}
+}
+
+func hostedToolExecutionEventType(phase string) observe.ExecutionEventType {
+	switch strings.TrimSpace(phase) {
+	case "progress":
+		return observe.ExecutionHostedToolProgress
+	case "failed":
+		return observe.ExecutionHostedToolFailed
+	case "completed":
+		return observe.ExecutionHostedToolCompleted
+	default:
+		return observe.ExecutionHostedToolProgress
+	}
+}
+
+func isHostedToolTerminalPhase(phase string) bool {
+	switch strings.TrimSpace(phase) {
+	case "completed", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReadOnlyHostedTool(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return strings.Contains(name, "file_search") || strings.Contains(name, "web_search") || strings.Contains(name, "image_generation")
 }
 
 func isRecoverableStreamTailError(err error) bool {

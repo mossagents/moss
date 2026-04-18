@@ -416,6 +416,19 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 				enforcement := valueOrUnknown(stringData(event.Metadata, "enforcement"), "degraded")
 				return traceEventSummary{priority: 6, index: index, message: fmt.Sprintf("Tool %s completed with %s enforcement", toolName, enforcement)}, true
 			}
+		case "hosted_tool.started":
+			toolName := valueOrUnknown(event.ToolName, "hosted tool")
+			return traceEventSummary{priority: 18, index: index, message: fmt.Sprintf("Hosted tool %s started", toolName)}, true
+		case "hosted_tool.progress":
+			toolName := valueOrUnknown(event.ToolName, "hosted tool")
+			status := valueOrUnknown(stringData(event.Metadata, "status"), "in progress")
+			return traceEventSummary{priority: 19, index: index, message: fmt.Sprintf("Hosted tool %s %s", toolName, status)}, true
+		case "hosted_tool.completed":
+			toolName := valueOrUnknown(event.ToolName, "hosted tool")
+			return traceEventSummary{priority: 12, index: index, message: fmt.Sprintf("Hosted tool %s completed", toolName)}, true
+		case "hosted_tool.failed":
+			toolName := valueOrUnknown(event.ToolName, "hosted tool")
+			return traceEventSummary{priority: 4, index: index, message: fmt.Sprintf("Hosted tool %s failed", toolName)}, true
 		}
 	case "llm_call":
 		if strings.TrimSpace(event.Error) == "" {

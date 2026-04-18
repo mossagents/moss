@@ -20,6 +20,10 @@ const (
 	EventProgress            StreamEventType = "runtime.progress"
 	EventToolStarted         StreamEventType = "tool.started"
 	EventToolCompleted       StreamEventType = "tool.completed"
+	EventHostedToolStarted   StreamEventType = "hosted_tool.started"
+	EventHostedToolProgress  StreamEventType = "hosted_tool.progress"
+	EventHostedToolCompleted StreamEventType = "hosted_tool.completed"
+	EventHostedToolFailed    StreamEventType = "hosted_tool.failed"
 	EventRunStarted          StreamEventType = "run.started"
 	EventRunCompleted        StreamEventType = "run.completed"
 	EventRunFailed           StreamEventType = "run.failed"
@@ -86,6 +90,14 @@ func FromExecutionEvent(e observe.ExecutionEvent) StreamEvent {
 		event.Type = EventToolStarted
 	case observe.ExecutionToolCompleted:
 		event.Type = EventToolCompleted
+	case observe.ExecutionHostedToolStarted:
+		event.Type = EventHostedToolStarted
+	case observe.ExecutionHostedToolProgress:
+		event.Type = EventHostedToolProgress
+	case observe.ExecutionHostedToolCompleted:
+		event.Type = EventHostedToolCompleted
+	case observe.ExecutionHostedToolFailed:
+		event.Type = EventHostedToolFailed
 	case observe.ExecutionIterationProgress:
 		event.Type = EventProgress
 	}
