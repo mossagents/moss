@@ -195,6 +195,40 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
 	}
 }
 
+func TestAuditLogger_OnHostedToolExecutionEvent(t *testing.T) {
+	var buf bytes.Buffer
+	al := builtins.NewAuditLogger(&buf)
+	al.OnExecutionEvent(context.Background(), observe.ExecutionEvent{
+		EventID:      "evt-hosted-1",
+		EventVersion: 1,
+		RunID:        "run-hosted",
+		TurnID:       "turn-hosted-1",
+		Type:         observe.ExecutionHostedToolCompleted,
+		SessionID:    "sess-hosted",
+		ToolName:     "file_search_call",
+		CallID:       "ht-1",
+		Phase:        "llm",
+		Actor:        "provider",
+		PayloadKind:  "hosted_tool",
+		Timestamp:    time.Now(),
+		Metadata: map[string]any{
+			"status":             "completed",
+			"synthetic_terminal": false,
+		},
+	})
+	var entry map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	data, _ := entry["data"].(map[string]any)
+	if data["payload_kind"] != "hosted_tool" || data["call_id"] != "ht-1" {
+		t.Fatalf("expected hosted tool payload metadata, got %v", data)
+	}
+	if data["status"] != "completed" {
+		t.Fatalf("expected hosted tool status to be persisted, got %v", data["status"])
+	}
+}
+
 // ─── LoggerPlugin ──────────────────────────────────────────────────────────
 
 func TestLoggerPlugin_Construction(t *testing.T) {

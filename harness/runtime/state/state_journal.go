@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
 	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
@@ -35,6 +35,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 			event.SessionID,
 			event.RunID,
 			event.TurnID,
+			event.CallID,
 			event.Phase,
 			event.PayloadKind,
 			event.ToolName,
@@ -57,6 +58,7 @@ func StateEntryFromExecutionEvent(event observe.ExecutionEvent) StateEntry {
 			"actor":         event.Actor,
 			"payload_kind":  event.PayloadKind,
 			"tool_name":     event.ToolName,
+			"call_id":       event.CallID,
 			"model":         event.Model,
 			"risk":          event.Risk,
 			"reason_code":   event.ReasonCode,
@@ -131,4 +133,3 @@ func (o *stateCatalogObserver) OnExecutionEvent(_ context.Context, event observe
 		o.catalog.MarkError(err)
 	}
 }
-

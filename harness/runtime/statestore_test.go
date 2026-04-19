@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -123,6 +124,48 @@ func TestStateCatalogObserverComposition(t *testing.T) {
 	}
 	if page.Items[0].Kind != rstate.StateKindExecutionEvent {
 		t.Fatalf("expected execution_event kind, got %q", page.Items[0].Kind)
+	}
+}
+
+func TestStateCatalogObserverPersistsHostedToolExecutionEvent(t *testing.T) {
+	catalog, err := rstate.NewStateCatalog(t.TempDir(), t.TempDir(), true)
+	if err != nil {
+		t.Fatalf("NewStateCatalog: %v", err)
+	}
+	k := kernel.New(WithStateCatalog(catalog))
+	observer := ObserverForStateCatalog(k)
+	event := observe.ExecutionEvent{
+		EventID:     "evt-hosted-1",
+		Type:        observe.ExecutionHostedToolCompleted,
+		SessionID:   "sess-hosted",
+		ToolName:    "file_search_call",
+		CallID:      "ht-1",
+		PayloadKind: "hosted_tool",
+		Timestamp:   time.Now().UTC(),
+		Metadata:    map[string]any{"status": "completed"},
+	}
+	observer.OnExecutionEvent(context.Background(), event)
+
+	page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindExecutionEvent}})
+	if err != nil {
+		t.Fatalf("catalog query: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("expected 1 execution event entry, got %d", len(page.Items))
+	}
+	item := page.Items[0]
+	if item.Title != "hosted_tool.completed:file_search_call" {
+		t.Fatalf("unexpected hosted tool title: %+v", item)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(item.Metadata, &meta); err != nil {
+		t.Fatalf("unmarshal state metadata: %v", err)
+	}
+	if payload, ok := meta["payload_kind"]; !ok || payload != "hosted_tool" {
+		t.Fatalf("expected payload_kind metadata, got %+v", meta)
+	}
+	if callID, ok := meta["call_id"]; !ok || callID != "ht-1" {
+		t.Fatalf("expected call_id metadata, got %+v", meta)
 	}
 }
 
