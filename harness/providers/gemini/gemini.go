@@ -5,13 +5,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/kernel/model"
-	"google.golang.org/genai"
 	"io"
 	"iter"
 	"net/http"
 	"path"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/model"
+	"google.golang.org/genai"
 )
 
 var _ model.LLM = (*Client)(nil)

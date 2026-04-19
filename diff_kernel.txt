@@ -1,0 +1,76 @@
+diff --git a/kernel/hooks/builtins/additional_test.go b/kernel/hooks/builtins/additional_test.go
+index f7e583f..74a8bd7 100644
+--- a/kernel/hooks/builtins/additional_test.go
++++ b/kernel/hooks/builtins/additional_test.go
+@@ -168,12 +168,19 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	var buf bytes.Buffer
+ 	al := builtins.NewAuditLogger(&buf)
+ 	al.OnExecutionEvent(context.Background(), observe.ExecutionEvent{
+-		Type:      "tool_approved",
+-		SessionID: "sess-7",
+-		ToolName:  "bash",
+-		Risk:      "high",
+-		CallID:    "cid-1",
+-		Timestamp: time.Now(),
++		EventID:      "evt-1",
++		EventVersion: 1,
++		RunID:        "run-1",
++		TurnID:       "run-1-turn-001",
++		Type:         "tool_approved",
++		SessionID:    "sess-7",
++		ToolName:     "bash",
++		Risk:         "high",
++		CallID:       "cid-1",
++		Phase:        "approval",
++		Actor:        "guardian",
++		PayloadKind:  "guardian_review",
++		Timestamp:    time.Now(),
+ 	})
+ 	var entry map[string]any
+ 	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+@@ -182,6 +189,10 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	if entry["type"] != "execution_event" {
+ 		t.Fatalf("expected type=execution_event, got %v", entry["type"])
+ 	}
++	data, _ := entry["data"].(map[string]any)
++	if data["run_id"] != "run-1" || data["turn_id"] != "run-1-turn-001" || data["phase"] != "approval" {
++		t.Fatalf("expected run/turn/phase metadata in data, got %v", data)
++	}
+ }
+ 
+ // 鈹€鈹€鈹€ LoggerPlugin 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+diff --git a/kernel/hooks/builtins/audit.go b/kernel/hooks/builtins/audit.go
+index 69160d5..0ee9d1d 100644
+--- a/kernel/hooks/builtins/audit.go
++++ b/kernel/hooks/builtins/audit.go
+@@ -96,7 +96,15 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
+ 
+ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
+ 	data := map[string]any{
+-		"type": e.Type,
++		"type":          e.Type,
++		"event_id":      e.EventID,
++		"event_version": e.EventVersion,
++		"run_id":        e.RunID,
++		"turn_id":       e.TurnID,
++		"parent_id":     e.ParentID,
++		"phase":         e.Phase,
++		"actor":         e.Actor,
++		"payload_kind":  e.PayloadKind,
+ 	}
+ 	if e.ToolName != "" {
+ 		data["tool"] = e.ToolName
+@@ -125,8 +133,12 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
+ 	for k, v := range e.Metadata {
+ 		data[k] = v
+ 	}
++	ts := e.Timestamp.UTC()
++	if ts.IsZero() {
++		ts = time.Now().UTC()
++	}
+ 	a.write(auditEntry{
+-		Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
++		Timestamp: ts.Format(time.RFC3339),
+ 		Type:      "execution_event",
+ 		SessionID: e.SessionID,
+ 		Data:      data,

@@ -1,9 +1,10 @@
 package observe
 
 import (
+	"time"
+
 	"github.com/mossagents/moss/kernel/io"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	"time"
 )
 
 // EventKind 表示统一运行时事件的分类。

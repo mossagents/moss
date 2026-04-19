@@ -4,18 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mossagents/moss/harness/appkit/product/changes"
-	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/workspace"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	"github.com/mossagents/moss/harness/userio/prompting"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/harness/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/userio/prompting"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/workspace"
 )
 
 func (a *agentState) listPersistedSessions(limit int) (string, error) {

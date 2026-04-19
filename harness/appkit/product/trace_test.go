@@ -3,11 +3,12 @@ package product
 import (
 	"context"
 	"errors"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/observe"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 func TestRunTraceRecorderApprovalResolvedStoresDecision(t *testing.T) {

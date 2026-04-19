@@ -3,14 +3,15 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/session"
 	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/userio/prompting"
-	"strings"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 // initKernelCmd 异步创建 kernel + session。

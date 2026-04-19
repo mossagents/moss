@@ -1,0 +1,365 @@
+diff --git a/harness/appkit/product/inspect_run.go b/harness/appkit/product/inspect_run.go
+index b476597..3ec080c 100644
+--- a/harness/appkit/product/inspect_run.go
++++ b/harness/appkit/product/inspect_run.go
+@@ -9,20 +9,21 @@ import (
+ 
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+-	"github.com/mossagents/moss/x/stringutil"
+ 	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/x/stringutil"
+ )
+ 
+ type InspectRunReport struct {
+-	SessionID  string             `json:"session_id"`
+-	RunID      string             `json:"run_id,omitempty"`
+-	TurnID     string             `json:"turn_id,omitempty"`
+-	TurnPlan   *InspectTurnPlan   `json:"turn_plan,omitempty"`
+-	ToolRoute  *InspectToolRoute  `json:"tool_route,omitempty"`
+-	ModelRoute *InspectModelRoute `json:"model_route,omitempty"`
+-	Failovers  []InspectFailover  `json:"failovers,omitempty"`
+-	Changes    []InspectStateItem `json:"changes,omitempty"`
+-	Events     []TraceEvent       `json:"events,omitempty"`
++	SessionID  string               `json:"session_id"`
++	RunID      string               `json:"run_id,omitempty"`
++	TurnID     string               `json:"turn_id,omitempty"`
++	TurnPlan   *InspectTurnPlan     `json:"turn_plan,omitempty"`
++	ToolRoute  *InspectToolRoute    `json:"tool_route,omitempty"`
++	ModelRoute *InspectModelRoute   `json:"model_route,omitempty"`
++	Audit      *InspectAuditSummary `json:"audit,omitempty"`
++	Failovers  []InspectFailover    `json:"failovers,omitempty"`
++	Changes    []InspectStateItem   `json:"changes,omitempty"`
++	Events     []TraceEvent         `json:"events,omitempty"`
+ }
+ 
+ type InspectTurnPlan struct {
+@@ -235,6 +236,7 @@ func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunRe
+ 		}
+ 		return report.Failovers[i].AttemptIndex < report.Failovers[j].AttemptIndex
+ 	})
++	report.Audit = buildInspectAuditSummary(sessionID, report.RunID)
+ 	return report
+ }
+ 
+diff --git a/harness/appkit/product/inspect_surface.go b/harness/appkit/product/inspect_surface.go
+index 9d2dffb..4aaa1cf 100644
+--- a/harness/appkit/product/inspect_surface.go
++++ b/harness/appkit/product/inspect_surface.go
+@@ -10,24 +10,24 @@ import (
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+ 	appconfig "github.com/mossagents/moss/harness/config"
+-	"github.com/mossagents/moss/x/stringutil"
+ 	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/x/stringutil"
+ )
+ 
+ type InspectReport struct {
+-	Mode         string                        `json:"mode"`
+-	Workspace    string                        `json:"workspace"`
++	Mode         string                    `json:"mode"`
++	Workspace    string                    `json:"workspace"`
+ 	Catalog      rstate.StateCatalogHealth `json:"catalog"`
+-	SessionID    string                        `json:"session_id,omitempty"`
+-	Items        []InspectStateItem            `json:"items,omitempty"`
+-	Run          *InspectRunReport             `json:"run,omitempty"`
+-	Threads      []InspectThreadSummary        `json:"threads,omitempty"`
+-	Thread       *InspectThreadReport          `json:"thread,omitempty"`
+-	Prompt       *InspectPromptReport          `json:"prompt,omitempty"`
+-	Capabilities *InspectCapabilityReport      `json:"capabilities,omitempty"`
+-	Replay       *InspectReplayReport          `json:"replay,omitempty"`
+-	Compare      *InspectCompareReport         `json:"compare,omitempty"`
+-	Governance   *InspectGovernanceReport      `json:"governance,omitempty"`
++	SessionID    string                    `json:"session_id,omitempty"`
++	Items        []InspectStateItem        `json:"items,omitempty"`
++	Run          *InspectRunReport         `json:"run,omitempty"`
++	Threads      []InspectThreadSummary    `json:"threads,omitempty"`
++	Thread       *InspectThreadReport      `json:"thread,omitempty"`
++	Prompt       *InspectPromptReport      `json:"prompt,omitempty"`
++	Capabilities *InspectCapabilityReport  `json:"capabilities,omitempty"`
++	Replay       *InspectReplayReport      `json:"replay,omitempty"`
++	Compare      *InspectCompareReport     `json:"compare,omitempty"`
++	Governance   *InspectGovernanceReport  `json:"governance,omitempty"`
+ }
+ 
+ type InspectStateItem struct {
+@@ -290,6 +290,7 @@ func RenderInspectReport(report InspectReport) string {
+ 				)
+ 			}
+ 		}
++		renderInspectAuditSummary(&b, "Audit", run.Audit)
+ 		if len(run.Changes) == 0 {
+ 			b.WriteString("Changes:     none\n")
+ 		} else {
+diff --git a/harness/appkit/product/inspect_test.go b/harness/appkit/product/inspect_test.go
+index 78ff073..b04d28e 100644
+--- a/harness/appkit/product/inspect_test.go
++++ b/harness/appkit/product/inspect_test.go
+@@ -3,21 +3,23 @@ package product
+ import (
+ 	"context"
+ 	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+ 	appconfig "github.com/mossagents/moss/harness/config"
++	extcapability "github.com/mossagents/moss/harness/extensions/capability"
++	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/harness/userio/prompting"
+ 	"github.com/mossagents/moss/kernel/checkpoint"
+ 	"github.com/mossagents/moss/kernel/model"
+ 	"github.com/mossagents/moss/kernel/observe"
+ 	"github.com/mossagents/moss/kernel/session"
+-	extcapability "github.com/mossagents/moss/harness/extensions/capability"
+-	rstate "github.com/mossagents/moss/harness/runtime/state"
+-	"github.com/mossagents/moss/harness/userio/prompting"
+-	"os"
+-	"path/filepath"
+-	"strings"
+-	"testing"
+-	"time"
+ )
+ 
+ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+@@ -149,6 +151,35 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 	}); err != nil {
+ 		t.Fatalf("Save change operation: %v", err)
+ 	}
++	writeAuditLogEntries(t,
++		map[string]any{
++			"timestamp":  now.Add(5 * time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-inspect",
++			"data": map[string]any{
++				"type":          string(observe.ExecutionContextCompacted),
++				"run_id":        "run-1",
++				"turn_id":       "run-1-turn-001",
++				"phase":         "context",
++				"payload_kind":  "context_compaction",
++				"reason":        "trigger_tokens",
++				"tokens_before": 220,
++				"tokens_after":  140,
++			},
++		},
++		map[string]any{
++			"timestamp":  now.Add(6 * time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-inspect",
++			"data": map[string]any{
++				"type":    string(observe.ExecutionGuardianReviewed),
++				"run_id":  "run-1",
++				"turn_id": "run-1-turn-001",
++				"phase":   "approval",
++				"outcome": "auto_approved",
++			},
++		},
++	)
+ 
+ 	report, err := BuildInspectReport(ctx, workspace, []string{"run", "latest", "10"})
+ 	if err != nil {
+@@ -175,6 +206,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 	if len(report.Run.Changes) != 1 || report.Run.Changes[0].RecordID != "change-1" {
+ 		t.Fatalf("unexpected changes: %+v", report.Run.Changes)
+ 	}
++	if report.Run.Audit == nil || report.Run.Audit.EventCount != 2 || report.Run.Audit.Context.Compactions != 1 || report.Run.Audit.Guardian.AutoApproved != 1 {
++		t.Fatalf("unexpected run audit summary: %+v", report.Run.Audit)
++	}
+ 
+ 	rendered := RenderInspectReport(report)
+ 	for _, want := range []string{
+@@ -184,6 +218,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 		"Model route: configured=gpt-5 lane=reasoning",
+ 		"Tool decisions:",
+ 		"Failover:",
++		"Audit: source=audit_log events=2",
++		"Context audit: compactions=1 reclaimed=80",
++		"Guardian audit: reviews=1 auto_approved=1",
+ 		"Changes:",
+ 	} {
+ 		if !strings.Contains(rendered, want) {
+@@ -273,6 +310,29 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	}); err != nil {
+ 		t.Fatalf("Save change operation: %v", err)
+ 	}
++	writeAuditLogEntries(t,
++		map[string]any{
++			"timestamp":  time.Now().UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-root",
++			"data": map[string]any{
++				"type":                             string(observe.ExecutionContextNormalized),
++				"phase":                            "prompt",
++				"dropped_orphan_tool_results":      1,
++				"synthesized_missing_tool_results": 2,
++			},
++		},
++		map[string]any{
++			"timestamp":  time.Now().Add(time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-root",
++			"data": map[string]any{
++				"type":    string(observe.ExecutionGuardianReviewed),
++				"phase":   "approval",
++				"outcome": "fallback_error",
++			},
++		},
++	)
+ 	for _, entry := range []rstate.StateEntry{
+ 		{Kind: rstate.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
+ 	} {
+@@ -323,6 +383,9 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	if threadReport.Thread == nil || len(threadReport.Thread.Children) != 1 || len(threadReport.Thread.Checkpoints) < 1 || threadReport.Thread.Summary.CheckpointCount < 1 {
+ 		t.Fatalf("unexpected thread detail: %+v", threadReport.Thread)
+ 	}
++	if threadReport.Thread.Audit == nil || threadReport.Thread.Audit.Context.Normalizations != 1 || threadReport.Thread.Audit.Guardian.Errors != 1 {
++		t.Fatalf("unexpected thread audit summary: %+v", threadReport.Thread.Audit)
++	}
+ 	promptReport, err := BuildInspectReport(ctx, workspace, []string{"prompt", "sess-root"})
+ 	if err != nil {
+ 		t.Fatalf("BuildInspectReport prompt: %v", err)
+@@ -339,7 +402,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	}
+ 
+ 	rendered := RenderInspectReport(promptReport) + "\n" + RenderInspectReport(threadReport) + "\n" + RenderInspectReport(capReport)
+-	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Capabilities:"} {
++	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Audit: source=audit_log events=2", "Context audit: compactions=0 reclaimed=0 trim_retries=0 trimmed_messages=0 normalizations=1", "Capabilities:"} {
+ 		if !strings.Contains(rendered, want) {
+ 			t.Fatalf("expected %q in rendered output:\n%s", want, rendered)
+ 		}
+@@ -626,3 +689,25 @@ func TestInspectLimitAndText(t *testing.T) {
+ 		t.Fatalf("negative first arg: limit=%d, want 8", limit)
+ 	}
+ }
++
++func writeAuditLogEntries(t *testing.T, entries ...map[string]any) {
++	t.Helper()
++	path := AuditLogPath()
++	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
++		t.Fatalf("mkdir audit dir: %v", err)
++	}
++	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
++	if err != nil {
++		t.Fatalf("open audit log: %v", err)
++	}
++	defer f.Close()
++	for _, entry := range entries {
++		data, err := json.Marshal(entry)
++		if err != nil {
++			t.Fatalf("marshal audit entry: %v", err)
++		}
++		if _, err := fmt.Fprintln(f, string(data)); err != nil {
++			t.Fatalf("write audit entry: %v", err)
++		}
++	}
++}
+diff --git a/harness/appkit/product/inspect_threads.go b/harness/appkit/product/inspect_threads.go
+index dede1a5..2841972 100644
+--- a/harness/appkit/product/inspect_threads.go
++++ b/harness/appkit/product/inspect_threads.go
+@@ -46,6 +46,7 @@ type InspectThreadSummary struct {
+ 
+ type InspectThreadReport struct {
+ 	Summary     InspectThreadSummary           `json:"summary"`
++	Audit       *InspectAuditSummary           `json:"audit,omitempty"`
+ 	Children    []InspectThreadSummary         `json:"children,omitempty"`
+ 	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
+ 	Changes     []InspectStateItem             `json:"changes,omitempty"`
+@@ -125,6 +126,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
+ 		return nil, err
+ 	}
+ 	report := &InspectThreadReport{Summary: inspectThreadSummaryFromSession(*selected)}
++	report.Audit = buildInspectAuditSummary(selected.ID, "")
+ 	checkpointCounts := checkpointCountsBySession(ctx)
+ 	changeCounts := changeCountsBySession(ctx, changeStore)
+ 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
+@@ -356,6 +358,7 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
+ 	)
+ 	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
+ 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
++	renderInspectAuditSummary(b, "Audit", report.Audit)
+ 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
+ 	if len(report.Children) > 0 {
+ 		b.WriteString("Children:\n")
+diff --git a/kernel/hooks/builtins/additional_test.go b/kernel/hooks/builtins/additional_test.go
+index f7e583f..74a8bd7 100644
+--- a/kernel/hooks/builtins/additional_test.go
++++ b/kernel/hooks/builtins/additional_test.go
+@@ -168,12 +168,19 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	var buf bytes.Buffer
+ 	al := builtins.NewAuditLogger(&buf)
+ 	al.OnExecutionEvent(context.Background(), observe.ExecutionEvent{
+-		Type:      "tool_approved",
+-		SessionID: "sess-7",
+-		ToolName:  "bash",
+-		Risk:      "high",
+-		CallID:    "cid-1",
+-		Timestamp: time.Now(),
++		EventID:      "evt-1",
++		EventVersion: 1,
++		RunID:        "run-1",
++		TurnID:       "run-1-turn-001",
++		Type:         "tool_approved",
++		SessionID:    "sess-7",
++		ToolName:     "bash",
++		Risk:         "high",
++		CallID:       "cid-1",
++		Phase:        "approval",
++		Actor:        "guardian",
++		PayloadKind:  "guardian_review",
++		Timestamp:    time.Now(),
+ 	})
+ 	var entry map[string]any
+ 	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+@@ -182,6 +189,10 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	if entry["type"] != "execution_event" {
+ 		t.Fatalf("expected type=execution_event, got %v", entry["type"])
+ 	}
++	data, _ := entry["data"].(map[string]any)
++	if data["run_id"] != "run-1" || data["turn_id"] != "run-1-turn-001" || data["phase"] != "approval" {
++		t.Fatalf("expected run/turn/phase metadata in data, got %v", data)
++	}
+ }
+ 
+ // 鈹€鈹€鈹€ LoggerPlugin 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+diff --git a/kernel/hooks/builtins/audit.go b/kernel/hooks/builtins/audit.go
+index 69160d5..0ee9d1d 100644
+--- a/kernel/hooks/builtins/audit.go
++++ b/kernel/hooks/builtins/audit.go
+@@ -96,7 +96,15 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
+ 
+ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
+ 	data := map[string]any{
+-		"type": e.Type,
++		"type":          e.Type,
++		"event_id":      e.EventID,
++		"event_version": e.EventVersion,
++		"run_id":        e.RunID,
++		"turn_id":       e.TurnID,
++		"parent_id":     e.ParentID,
++		"phase":         e.Phase,
++		"actor":         e.Actor,
++		"payload_kind":  e.PayloadKind,
+ 	}
+ 	if e.ToolName != "" {
+ 		data["tool"] = e.ToolName
+@@ -125,8 +133,12 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
+ 	for k, v := range e.Metadata {
+ 		data[k] = v
+ 	}
++	ts := e.Timestamp.UTC()
++	if ts.IsZero() {
++		ts = time.Now().UTC()
++	}
+ 	a.write(auditEntry{
+-		Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
++		Timestamp: ts.Format(time.RFC3339),
+ 		Type:      "execution_event",
+ 		SessionID: e.SessionID,
+ 		Data:      data,

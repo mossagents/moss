@@ -1,0 +1,480 @@
+diff --git a/README.md b/README.md
+index 1ed0bef..2603e5c 100644
+--- a/README.md
++++ b/README.md
+@@ -219,6 +219,27 @@ Priority is:
+ 
+ **CLI flags > environment variables > config file**
+ 
++## Telemetry and Audit
++
++Moss now exposes two complementary observability layers:
++
++- Structured runtime events and normalized metrics in `kernel/observe`
++- Optional exporters in `contrib/telemetry/otel` and `contrib/telemetry/prometheus`
++
++The normalized metrics surface now includes context-management and guardian-review signals in addition to success/latency/cost/tool-error counters, including:
++
++- `context.compactions_total`
++- `context.compaction_tokens_reclaimed_sum`
++- `context.trim_retry_total`
++- `context.normalize_total`
++- `guardian.review_total`
++- `guardian.fallback_rate`
++- `guardian.error_rate`
++
++The OTEL and Prometheus exporters also emit first-class execution metrics for these paths under `moss.context.*` and `moss.guardian.*`, so dashboards do not need to reconstruct them indirectly from raw event streams.
++
++For operator-facing audit consumption, the product layer now treats `audit.jsonl` as more than an append-only trail: `moss inspect run ...` and `moss inspect thread ...` surface aggregated context and guardian audit summaries derived from the audit log.
++
+ ## Applications and examples
+ 
+ Core apps in `apps\`:
+diff --git a/README_ZH.md b/README_ZH.md
+index 0711091..52d949f 100644
+--- a/README_ZH.md
++++ b/README_ZH.md
+@@ -219,6 +219,27 @@ skills:
+ 
+ **鍛戒护琛屽弬鏁?> 鐜鍙橀噺 > 閰嶇疆鏂囦欢**
+ 
++## 瑙傛祴涓庡璁?+
++Moss 鐜板湪鏈変袱灞備簰琛ョ殑瑙傛祴闈細
++
++- `kernel/observe` 涓殑缁撴瀯鍖栬繍琛屼簨浠朵笌褰掍竴鍖栨寚鏍?+- `contrib/telemetry/otel` 涓?`contrib/telemetry/prometheus` 涓殑鍙€?exporter
++
++褰掍竴鍖栨寚鏍囩幇鍦ㄩ櫎浜?success / latency / cost / tool-error 涔嬪锛屼篃鐩存帴瑕嗙洊 context 绠＄悊鍜?guardian review锛屽寘鎷細
++
++- `context.compactions_total`
++- `context.compaction_tokens_reclaimed_sum`
++- `context.trim_retry_total`
++- `context.normalize_total`
++- `guardian.review_total`
++- `guardian.fallback_rate`
++- `guardian.error_rate`
++
++OTEL 鍜?Prometheus exporter 涔熶細鎶婅繖浜涜矾寰勫鍑轰负涓€绛夋寚鏍囨棌锛坄moss.context.*` 涓?`moss.guardian.*`锛夛紝鍥犳 dashboard 涓嶉渶瑕佸啀浠庡師濮嬩簨浠舵祦渚ф帹瀵笺€?+
++鍦?operator 渚э紝浜у搧灞備篃涓嶅啀鎶?`audit.jsonl` 浠呭綋浣滆拷鍔犳棩蹇楋細`moss inspect run ...` 涓?`moss inspect thread ...` 鐜板湪浼氱洿鎺ュ睍绀虹敱 audit log 鑱氬悎鍑烘潵鐨?context / guardian 瀹¤鎽樿銆?+
+ ## 搴旂敤涓庣ず渚? 
+ `apps\` 涓嬬殑鏍稿績搴旂敤锛?diff --git a/docs/changelog.md b/docs/changelog.md
+index 9baffca..b987666 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -46,6 +46,13 @@
+ - `llm_latency_avg <= 10000ms`
+ - `tool_latency_avg <= 5000ms`
+ - `tool_error_rate <= 0.05`
++- `guardian_error_rate <= 0.01`
++
++骞惰繘涓€姝ユ妸 context / guardian 瑙傛祴闈㈡帴鍒颁簡榛樿 exporter 涓?product 瀹¤娑堣垂灞傦細
++
++- `context.compacted` / `context.trim_retry` / `context.normalized` / `guardian.reviewed` 宸茶繘鍏ュ綊涓€鍖栨寚鏍?+- `contrib\telemetry\otel` 涓?`contrib\telemetry\prometheus` 宸茬洿鎺ュ鍑?`moss.context.*` / `moss.guardian.*`
++- `inspect run` / `inspect thread` 宸插紑濮嬫秷璐?`audit.jsonl`锛岃緭鍑?session/run 绾?guardian 涓?context 瀹¤鎽樿
+ 
+ ### 涓婁笅鏂囧帇缂╀笌涓棿浠舵敞鍏? 
+diff --git a/docs/production-readiness.md b/docs/production-readiness.md
+index 9f8df2f..58c21d4 100644
+--- a/docs/production-readiness.md
++++ b/docs/production-readiness.md
+@@ -68,6 +68,7 @@ Moss 褰撳墠宸茬粡鍏峰 **鍗曡妭鐐广€佸彲瀹¤銆佸彲鍥炴斁銆佸彲娌荤悊** 鐨勪骇
+ 
+ - `LLMCallEvent`
+ - `ToolCallEvent`
++- `ExecutionEvent`
+ - `SessionEvent`
+ - `ErrorEvent`
+ - `NormalizedMetricsSnapshot`
+@@ -81,6 +82,20 @@ Moss 褰撳墠宸茬粡鍏峰 **鍗曡妭鐐广€佸彲瀹¤銆佸彲鍥炴斁銆佸彲娌荤悊** 鐨勪骇
+ | `llm_latency_avg` | `<= 10000ms` |
+ | `tool_latency_avg` | `<= 5000ms` |
+ | `tool_error_rate` | `<= 0.05` |
++| `guardian_error_rate` | `<= 0.01` |
++
++涓庢鍚屾椂锛宑ontext / guardian 鐩稿叧鎵ц璺緞宸茬粡杩涘叆缁熶竴鎸囨爣闈細
++
++- `context.compactions_total`
++- `context.compaction_tokens_reclaimed_sum`
++- `context.trim_retry_total`
++- `context.trim_removed_messages_total`
++- `context.normalize_total`
++- `guardian.review_total`
++- `guardian.fallback_rate`
++- `guardian.error_rate`
++
++杩欎簺鎸囨爣鏃㈠彲浠ョ敱 `NormalizedMetricsSnapshot` / `ReleaseGateMeter` 娑堣垂锛屼篃鍙互閫氳繃 `contrib\telemetry\otel` 涓?`contrib\telemetry\prometheus` 鐩存帴瀵煎嚭鍒板閮ㄨ娴嬬郴缁熴€? 
+ ### 1.6 鍋ュ悍闈? 
+@@ -146,6 +161,13 @@ docs\release-overrides.log
+ 
+ 杩欎唤鏃ュ織鏄?*褰撳墠淇濈暀鐨勬寮忓璁¤建杩?*锛屼笉鍐嶄緷璧栨棫鐨?`docs\v1\` 鐩綍銆? 
++鐜板湪浜у搧灞備篃寮€濮嬫秷璐硅繖浠藉璁¤建杩癸紝鑰屼笉鍙槸鍐欏叆瀹冿細
++
++- `moss inspect run ...` 浼氳緭鍑?run 绾?context / guardian 瀹¤鎽樿
++- `moss inspect thread ...` 浼氳緭鍑?session 绾?context / guardian 瀹¤鎽樿
++
++杩欒 guardian fallback銆乧ontext compact / trim retry / normalize 绛夎矾寰勶紝涓嶅啀鍙兘闈犻€愯缈绘棩蹇楃‘璁ゃ€?+
+ ## 4. 浠嶉渶缁х画琛ュ己鐨勯儴鍒? 
+ ### 4.1 鍒嗗竷寮忕姸鎬佷笌閿?diff --git a/harness/appkit/product/inspect_run.go b/harness/appkit/product/inspect_run.go
+index b476597..3ec080c 100644
+--- a/harness/appkit/product/inspect_run.go
++++ b/harness/appkit/product/inspect_run.go
+@@ -9,20 +9,21 @@ import (
+ 
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+-	"github.com/mossagents/moss/x/stringutil"
+ 	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/x/stringutil"
+ )
+ 
+ type InspectRunReport struct {
+-	SessionID  string             `json:"session_id"`
+-	RunID      string             `json:"run_id,omitempty"`
+-	TurnID     string             `json:"turn_id,omitempty"`
+-	TurnPlan   *InspectTurnPlan   `json:"turn_plan,omitempty"`
+-	ToolRoute  *InspectToolRoute  `json:"tool_route,omitempty"`
+-	ModelRoute *InspectModelRoute `json:"model_route,omitempty"`
+-	Failovers  []InspectFailover  `json:"failovers,omitempty"`
+-	Changes    []InspectStateItem `json:"changes,omitempty"`
+-	Events     []TraceEvent       `json:"events,omitempty"`
++	SessionID  string               `json:"session_id"`
++	RunID      string               `json:"run_id,omitempty"`
++	TurnID     string               `json:"turn_id,omitempty"`
++	TurnPlan   *InspectTurnPlan     `json:"turn_plan,omitempty"`
++	ToolRoute  *InspectToolRoute    `json:"tool_route,omitempty"`
++	ModelRoute *InspectModelRoute   `json:"model_route,omitempty"`
++	Audit      *InspectAuditSummary `json:"audit,omitempty"`
++	Failovers  []InspectFailover    `json:"failovers,omitempty"`
++	Changes    []InspectStateItem   `json:"changes,omitempty"`
++	Events     []TraceEvent         `json:"events,omitempty"`
+ }
+ 
+ type InspectTurnPlan struct {
+@@ -235,6 +236,7 @@ func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunRe
+ 		}
+ 		return report.Failovers[i].AttemptIndex < report.Failovers[j].AttemptIndex
+ 	})
++	report.Audit = buildInspectAuditSummary(sessionID, report.RunID)
+ 	return report
+ }
+ 
+diff --git a/harness/appkit/product/inspect_surface.go b/harness/appkit/product/inspect_surface.go
+index 9d2dffb..4aaa1cf 100644
+--- a/harness/appkit/product/inspect_surface.go
++++ b/harness/appkit/product/inspect_surface.go
+@@ -10,24 +10,24 @@ import (
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+ 	appconfig "github.com/mossagents/moss/harness/config"
+-	"github.com/mossagents/moss/x/stringutil"
+ 	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/x/stringutil"
+ )
+ 
+ type InspectReport struct {
+-	Mode         string                        `json:"mode"`
+-	Workspace    string                        `json:"workspace"`
++	Mode         string                    `json:"mode"`
++	Workspace    string                    `json:"workspace"`
+ 	Catalog      rstate.StateCatalogHealth `json:"catalog"`
+-	SessionID    string                        `json:"session_id,omitempty"`
+-	Items        []InspectStateItem            `json:"items,omitempty"`
+-	Run          *InspectRunReport             `json:"run,omitempty"`
+-	Threads      []InspectThreadSummary        `json:"threads,omitempty"`
+-	Thread       *InspectThreadReport          `json:"thread,omitempty"`
+-	Prompt       *InspectPromptReport          `json:"prompt,omitempty"`
+-	Capabilities *InspectCapabilityReport      `json:"capabilities,omitempty"`
+-	Replay       *InspectReplayReport          `json:"replay,omitempty"`
+-	Compare      *InspectCompareReport         `json:"compare,omitempty"`
+-	Governance   *InspectGovernanceReport      `json:"governance,omitempty"`
++	SessionID    string                    `json:"session_id,omitempty"`
++	Items        []InspectStateItem        `json:"items,omitempty"`
++	Run          *InspectRunReport         `json:"run,omitempty"`
++	Threads      []InspectThreadSummary    `json:"threads,omitempty"`
++	Thread       *InspectThreadReport      `json:"thread,omitempty"`
++	Prompt       *InspectPromptReport      `json:"prompt,omitempty"`
++	Capabilities *InspectCapabilityReport  `json:"capabilities,omitempty"`
++	Replay       *InspectReplayReport      `json:"replay,omitempty"`
++	Compare      *InspectCompareReport     `json:"compare,omitempty"`
++	Governance   *InspectGovernanceReport  `json:"governance,omitempty"`
+ }
+ 
+ type InspectStateItem struct {
+@@ -290,6 +290,7 @@ func RenderInspectReport(report InspectReport) string {
+ 				)
+ 			}
+ 		}
++		renderInspectAuditSummary(&b, "Audit", run.Audit)
+ 		if len(run.Changes) == 0 {
+ 			b.WriteString("Changes:     none\n")
+ 		} else {
+diff --git a/harness/appkit/product/inspect_test.go b/harness/appkit/product/inspect_test.go
+index 78ff073..b04d28e 100644
+--- a/harness/appkit/product/inspect_test.go
++++ b/harness/appkit/product/inspect_test.go
+@@ -3,21 +3,23 @@ package product
+ import (
+ 	"context"
+ 	"encoding/json"
++	"fmt"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
+ 	"github.com/mossagents/moss/harness/appkit/product/changes"
+ 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+ 	appconfig "github.com/mossagents/moss/harness/config"
++	extcapability "github.com/mossagents/moss/harness/extensions/capability"
++	rstate "github.com/mossagents/moss/harness/runtime/state"
++	"github.com/mossagents/moss/harness/userio/prompting"
+ 	"github.com/mossagents/moss/kernel/checkpoint"
+ 	"github.com/mossagents/moss/kernel/model"
+ 	"github.com/mossagents/moss/kernel/observe"
+ 	"github.com/mossagents/moss/kernel/session"
+-	extcapability "github.com/mossagents/moss/harness/extensions/capability"
+-	rstate "github.com/mossagents/moss/harness/runtime/state"
+-	"github.com/mossagents/moss/harness/userio/prompting"
+-	"os"
+-	"path/filepath"
+-	"strings"
+-	"testing"
+-	"time"
+ )
+ 
+ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+@@ -149,6 +151,35 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 	}); err != nil {
+ 		t.Fatalf("Save change operation: %v", err)
+ 	}
++	writeAuditLogEntries(t,
++		map[string]any{
++			"timestamp":  now.Add(5 * time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-inspect",
++			"data": map[string]any{
++				"type":          string(observe.ExecutionContextCompacted),
++				"run_id":        "run-1",
++				"turn_id":       "run-1-turn-001",
++				"phase":         "context",
++				"payload_kind":  "context_compaction",
++				"reason":        "trigger_tokens",
++				"tokens_before": 220,
++				"tokens_after":  140,
++			},
++		},
++		map[string]any{
++			"timestamp":  now.Add(6 * time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-inspect",
++			"data": map[string]any{
++				"type":    string(observe.ExecutionGuardianReviewed),
++				"run_id":  "run-1",
++				"turn_id": "run-1-turn-001",
++				"phase":   "approval",
++				"outcome": "auto_approved",
++			},
++		},
++	)
+ 
+ 	report, err := BuildInspectReport(ctx, workspace, []string{"run", "latest", "10"})
+ 	if err != nil {
+@@ -175,6 +206,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 	if len(report.Run.Changes) != 1 || report.Run.Changes[0].RecordID != "change-1" {
+ 		t.Fatalf("unexpected changes: %+v", report.Run.Changes)
+ 	}
++	if report.Run.Audit == nil || report.Run.Audit.EventCount != 2 || report.Run.Audit.Context.Compactions != 1 || report.Run.Audit.Guardian.AutoApproved != 1 {
++		t.Fatalf("unexpected run audit summary: %+v", report.Run.Audit)
++	}
+ 
+ 	rendered := RenderInspectReport(report)
+ 	for _, want := range []string{
+@@ -184,6 +218,9 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
+ 		"Model route: configured=gpt-5 lane=reasoning",
+ 		"Tool decisions:",
+ 		"Failover:",
++		"Audit: source=audit_log events=2",
++		"Context audit: compactions=1 reclaimed=80",
++		"Guardian audit: reviews=1 auto_approved=1",
+ 		"Changes:",
+ 	} {
+ 		if !strings.Contains(rendered, want) {
+@@ -273,6 +310,29 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	}); err != nil {
+ 		t.Fatalf("Save change operation: %v", err)
+ 	}
++	writeAuditLogEntries(t,
++		map[string]any{
++			"timestamp":  time.Now().UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-root",
++			"data": map[string]any{
++				"type":                             string(observe.ExecutionContextNormalized),
++				"phase":                            "prompt",
++				"dropped_orphan_tool_results":      1,
++				"synthesized_missing_tool_results": 2,
++			},
++		},
++		map[string]any{
++			"timestamp":  time.Now().Add(time.Millisecond).UTC().Format(time.RFC3339),
++			"type":       "execution_event",
++			"session_id": "sess-root",
++			"data": map[string]any{
++				"type":    string(observe.ExecutionGuardianReviewed),
++				"phase":   "approval",
++				"outcome": "fallback_error",
++			},
++		},
++	)
+ 	for _, entry := range []rstate.StateEntry{
+ 		{Kind: rstate.StateKindTask, RecordID: "task-1", SessionID: "sess-child", Status: "running", Title: "delegate child", SortTime: time.Now(), CreatedAt: time.Now(), UpdatedAt: time.Now()},
+ 	} {
+@@ -323,6 +383,9 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	if threadReport.Thread == nil || len(threadReport.Thread.Children) != 1 || len(threadReport.Thread.Checkpoints) < 1 || threadReport.Thread.Summary.CheckpointCount < 1 {
+ 		t.Fatalf("unexpected thread detail: %+v", threadReport.Thread)
+ 	}
++	if threadReport.Thread.Audit == nil || threadReport.Thread.Audit.Context.Normalizations != 1 || threadReport.Thread.Audit.Guardian.Errors != 1 {
++		t.Fatalf("unexpected thread audit summary: %+v", threadReport.Thread.Audit)
++	}
+ 	promptReport, err := BuildInspectReport(ctx, workspace, []string{"prompt", "sess-root"})
+ 	if err != nil {
+ 		t.Fatalf("BuildInspectReport prompt: %v", err)
+@@ -339,7 +402,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
+ 	}
+ 
+ 	rendered := RenderInspectReport(promptReport) + "\n" + RenderInspectReport(threadReport) + "\n" + RenderInspectReport(capReport)
+-	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Capabilities:"} {
++	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Audit: source=audit_log events=2", "Context audit: compactions=0 reclaimed=0 trim_retries=0 trimmed_messages=0 normalizations=1", "Capabilities:"} {
+ 		if !strings.Contains(rendered, want) {
+ 			t.Fatalf("expected %q in rendered output:\n%s", want, rendered)
+ 		}
+@@ -626,3 +689,25 @@ func TestInspectLimitAndText(t *testing.T) {
+ 		t.Fatalf("negative first arg: limit=%d, want 8", limit)
+ 	}
+ }
++
++func writeAuditLogEntries(t *testing.T, entries ...map[string]any) {
++	t.Helper()
++	path := AuditLogPath()
++	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
++		t.Fatalf("mkdir audit dir: %v", err)
++	}
++	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
++	if err != nil {
++		t.Fatalf("open audit log: %v", err)
++	}
++	defer f.Close()
++	for _, entry := range entries {
++		data, err := json.Marshal(entry)
++		if err != nil {
++			t.Fatalf("marshal audit entry: %v", err)
++		}
++		if _, err := fmt.Fprintln(f, string(data)); err != nil {
++			t.Fatalf("write audit entry: %v", err)
++		}
++	}
++}
+diff --git a/harness/appkit/product/inspect_threads.go b/harness/appkit/product/inspect_threads.go
+index dede1a5..2841972 100644
+--- a/harness/appkit/product/inspect_threads.go
++++ b/harness/appkit/product/inspect_threads.go
+@@ -46,6 +46,7 @@ type InspectThreadSummary struct {
+ 
+ type InspectThreadReport struct {
+ 	Summary     InspectThreadSummary           `json:"summary"`
++	Audit       *InspectAuditSummary           `json:"audit,omitempty"`
+ 	Children    []InspectThreadSummary         `json:"children,omitempty"`
+ 	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
+ 	Changes     []InspectStateItem             `json:"changes,omitempty"`
+@@ -125,6 +126,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
+ 		return nil, err
+ 	}
+ 	report := &InspectThreadReport{Summary: inspectThreadSummaryFromSession(*selected)}
++	report.Audit = buildInspectAuditSummary(selected.ID, "")
+ 	checkpointCounts := checkpointCountsBySession(ctx)
+ 	changeCounts := changeCountsBySession(ctx, changeStore)
+ 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
+@@ -356,6 +358,7 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
+ 	)
+ 	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
+ 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
++	renderInspectAuditSummary(b, "Audit", report.Audit)
+ 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
+ 	if len(report.Children) > 0 {
+ 		b.WriteString("Children:\n")
+diff --git a/kernel/hooks/builtins/additional_test.go b/kernel/hooks/builtins/additional_test.go
+index f7e583f..74a8bd7 100644
+--- a/kernel/hooks/builtins/additional_test.go
++++ b/kernel/hooks/builtins/additional_test.go
+@@ -168,12 +168,19 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	var buf bytes.Buffer
+ 	al := builtins.NewAuditLogger(&buf)
+ 	al.OnExecutionEvent(context.Background(), observe.ExecutionEvent{
+-		Type:      "tool_approved",
+-		SessionID: "sess-7",
+-		ToolName:  "bash",
+-		Risk:      "high",
+-		CallID:    "cid-1",
+-		Timestamp: time.Now(),
++		EventID:      "evt-1",
++		EventVersion: 1,
++		RunID:        "run-1",
++		TurnID:       "run-1-turn-001",
++		Type:         "tool_approved",
++		SessionID:    "sess-7",
++		ToolName:     "bash",
++		Risk:         "high",
++		CallID:       "cid-1",
++		Phase:        "approval",
++		Actor:        "guardian",
++		PayloadKind:  "guardian_review",
++		Timestamp:    time.Now(),
+ 	})
+ 	var entry map[string]any
+ 	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &entry); err != nil {
+@@ -182,6 +189,10 @@ func TestAuditLogger_OnExecutionEvent(t *testing.T) {
+ 	if entry["type"] != "execution_event" {
+ 		t.Fatalf("expected type=execution_event, got %v", entry["type"])
+ 	}
++	data, _ := entry["data"].(map[string]any)
++	if data["run_id"] != "run-1" || data["turn_id"] != "run-1-turn-001" || data["phase"] != "approval" {
++		t.Fatalf("expected run/turn/phase metadata in data, got %v", data)
++	}
+ }
+ 
+ // 鈹€鈹€鈹€ LoggerPlugin 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+diff --git a/kernel/hooks/builtins/audit.go b/kernel/hooks/builtins/audit.go
+index 69160d5..0ee9d1d 100644
+--- a/kernel/hooks/builtins/audit.go
++++ b/kernel/hooks/builtins/audit.go
+@@ -96,7 +96,15 @@ func (a *AuditLogger) OnToolCall(_ context.Context, e observe.ToolCallEvent) {
+ 
+ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEvent) {
+ 	data := map[string]any{
+-		"type": e.Type,
++		"type":          e.Type,
++		"event_id":      e.EventID,
++		"event_version": e.EventVersion,
++		"run_id":        e.RunID,
++		"turn_id":       e.TurnID,
++		"parent_id":     e.ParentID,
++		"phase":         e.Phase,
++		"actor":         e.Actor,
++		"payload_kind":  e.PayloadKind,
+ 	}
+ 	if e.ToolName != "" {
+ 		data["tool"] = e.ToolName
+@@ -125,8 +133,12 @@ func (a *AuditLogger) OnExecutionEvent(_ context.Context, e observe.ExecutionEve
+ 	for k, v := range e.Metadata {
+ 		data[k] = v
+ 	}
++	ts := e.Timestamp.UTC()
++	if ts.IsZero() {
++		ts = time.Now().UTC()
++	}
+ 	a.write(auditEntry{
+-		Timestamp: e.Timestamp.UTC().Format(time.RFC3339),
++		Timestamp: ts.Format(time.RFC3339),
+ 		Type:      "execution_event",
+ 		SessionID: e.SessionID,
+ 		Data:      data,

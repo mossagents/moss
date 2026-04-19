@@ -3,13 +3,14 @@ package product
 import (
 	"context"
 	"fmt"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/observe"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 )
 
 type TraceEvent struct {

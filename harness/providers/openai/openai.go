@@ -4,16 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/openai/openai-go"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/ssestream"
-	"github.com/openai/openai-go/shared"
 	"io"
 	"iter"
 	"net/http"
 	"path/filepath"
 	"strings"
+
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/ssestream"
+	"github.com/openai/openai-go/shared"
 )
 
 // 确保实现 model.LLM 接口。
