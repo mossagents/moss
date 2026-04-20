@@ -218,11 +218,11 @@ func shouldAppendThinkingTranscript(snapshot executionProgressState) bool {
 	if !snapshot.visible() || strings.TrimSpace(snapshot.Message) == "" {
 		return false
 	}
-	// 只记录有意义的阶段：工具调用、审批、终态。
-	// 跳过 starting/thinking — 这些是 LLM 内部处理阶段，对用户无意义，且在没有
-	// thinking 模型时尤其产生噪音。
+	// transcript 中只保留真正需要落盘提醒的终态错误。
+	// tools / approval / completed 会在状态栏、审批面板和 tool 摘要里体现，
+	// 再追加到对话流会产生重复噪音。
 	switch strings.TrimSpace(snapshot.Phase) {
-	case "tools", "approval", "completed", "failed", "cancelled":
+	case "failed", "cancelled":
 		return true
 	default:
 		return false
@@ -428,21 +428,8 @@ func summarizeTimelineApproval(req *io.ApprovalRequest) string {
 	label := "approval required"
 	if tool := strings.TrimSpace(req.ToolName); tool != "" {
 		label += " for " + toolPrettyName(tool)
-		if summary := strings.TrimSpace(summarizeToolParams(tool, strings.TrimSpace(string(req.Input)), 120)); summary != "" {
-			label += " " + summary
-		}
 	}
-	details := make([]string, 0, 2)
-	if risk := strings.TrimSpace(req.Risk); risk != "" {
-		details = append(details, "risk="+risk)
-	}
-	if reason := strings.TrimSpace(req.Reason); reason != "" {
-		details = append(details, reason)
-	}
-	if len(details) > 0 {
-		label += " · " + strings.Join(details, " · ")
-	}
-	return truncateDisplayWidth(label, 120)
+	return truncateDisplayWidth(label, 72)
 }
 
 func progressStatusLabel(status string) string {

@@ -337,8 +337,11 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 		},
 	}})
 	transcript := renderAllMessages(updated.messages, 120, false)
-	if !strings.Contains(transcript, "starting Http Request https://wttr.in/hangzhou?format=j1") {
-		t.Fatalf("expected detailed tool start in transcript, got %q", transcript)
+	if !strings.Contains(transcript, "│ tool · Http Request") {
+		t.Fatalf("expected compact tool item in transcript, got %q", transcript)
+	}
+	if strings.Contains(transcript, "starting Http Request https://wttr.in/hangzhou?format=j1") {
+		t.Fatalf("expected noisy tool lifecycle progress to stay hidden, got %q", transcript)
 	}
 
 	updated, _ = updated.handleBridge(bridgeMsg{ask: &bridgeAsk{
@@ -357,9 +360,12 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 		replyCh: make(chan io.InputResponse, 1),
 	}})
 	transcript = renderAllMessages(updated.messages, 120, false)
-	for _, want := range []string{"approval required for Http Request https://wttr.in/hangzhou?format=j1", "risk=medium"} {
-		if !strings.Contains(transcript, want) {
-			t.Fatalf("expected approval detail %q in transcript, got %q", want, transcript)
+	if !strings.Contains(transcript, "Approval required. Review the requested action and choose how to proceed.") {
+		t.Fatalf("expected concise approval notice in transcript, got %q", transcript)
+	}
+	for _, unwanted := range []string{"approval required for Http Request https://wttr.in/hangzhou?format=j1", "risk=medium"} {
+		if strings.Contains(transcript, unwanted) {
+			t.Fatalf("expected approval transcript to hide verbose detail %q in %q", unwanted, transcript)
 		}
 	}
 
@@ -373,8 +379,11 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 		},
 	}})
 	transcript = renderAllMessages(updated.messages, 120, false)
-	if !strings.Contains(transcript, "completed Http Request") || !strings.Contains(transcript, "status: 200") {
-		t.Fatalf("expected detailed tool result in transcript, got %q", transcript)
+	if !strings.Contains(transcript, `"status": 200`) {
+		t.Fatalf("expected tool result summary in transcript, got %q", transcript)
+	}
+	if strings.Count(transcript, "Http Request") != 1 {
+		t.Fatalf("expected a single compact tool entry after completion, got %q", transcript)
 	}
 }
 

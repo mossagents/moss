@@ -3,14 +3,15 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/io"
 	userapproval "github.com/mossagents/moss/harness/userio/approval"
-	"strconv"
-	"strings"
+	"github.com/mossagents/moss/kernel/io"
 )
 
 type askFieldState struct {
@@ -487,7 +488,7 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 	}
 	notice := "Approval denied."
 	if approved {
-		notice = "Approval granted for this action."
+		notice = "Approval granted."
 	}
 	switch selected {
 	case userapproval.ChoiceAllowSession:
@@ -501,14 +502,14 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			resp.Decision.Reason = "grant requested permissions for this session"
 			resp.Decision.Scope = io.DecisionScopeSession
 			resp.Decision.Persistence = io.DecisionPersistenceSession
-			notice = "Approval granted. The requested permissions are now available for this session."
+			notice = "Permission granted for this session."
 		} else {
 			resp.Decision.Type = io.ApprovalDecisionApproveSession
 			resp.Decision.Source = "tui-session-rule"
 			resp.Decision.Reason = "remember similar actions for this session"
 			resp.Decision.Scope = io.DecisionScopeSession
 			resp.Decision.Persistence = io.DecisionPersistenceSession
-			notice = "Approval granted. Similar actions will be allowed automatically for this session."
+			notice = "Approval granted for this session."
 		}
 	case userapproval.ChoiceAllowProject:
 		amendment := approvalProjectAmendment(ask.request.Approval)
@@ -539,7 +540,7 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 		resp.Decision.Reason = "persist matching policy amendment for this project"
 		resp.Decision.Scope = io.DecisionScopeProject
 		resp.Decision.Persistence = io.DecisionPersistenceProject
-		notice = "Approval granted. The project execution policy has been updated."
+		notice = "Project policy updated."
 	case userapproval.ChoiceAllowOnce:
 		resp.Decision.Type = io.ApprovalDecisionApprove
 		resp.Decision.Source = "tui-allow-once"

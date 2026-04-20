@@ -1,13 +1,14 @@
 package tui
 
 import (
-	"github.com/mossagents/moss/kernel/observe"
-	"github.com/mossagents/moss/kernel/session"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/kernel/observe"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func TestChatProgressIgnoresOtherSessions(t *testing.T) {
@@ -29,11 +30,8 @@ func TestChatProgressIgnoresOtherSessions(t *testing.T) {
 	if updated.progress.SessionID != "s1" {
 		t.Fatalf("progress session = %q, want s1", updated.progress.SessionID)
 	}
-	if len(updated.messages) == 0 || updated.messages[len(updated.messages)-1].kind != msgProgress {
-		t.Fatalf("expected tools progress appended to transcript, got %+v", updated.messages)
-	}
-	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "iteration updated") {
-		t.Fatalf("unexpected progress transcript content: %+v", updated.messages[len(updated.messages)-1])
+	if len(updated.messages) != 0 {
+		t.Fatalf("expected tool progress to stay out of transcript, got %+v", updated.messages)
 	}
 	next, _ := updated.Update(notificationProgressMsg{
 		Snapshot: executionProgressState{
@@ -173,17 +171,15 @@ func TestChatProgressBuildsThinkingTimeline(t *testing.T) {
 			progressCount++
 		}
 	}
-	if progressCount != 1 {
-		t.Fatalf("progress transcript count = %d, want 1 (thinking phases no longer added)", progressCount)
+	if progressCount != 0 {
+		t.Fatalf("progress transcript count = %d, want 0 for compact mode", progressCount)
 	}
 	if updated.visibleProgressHeight() != 0 {
 		t.Fatalf("visible progress height = %d, want 0", updated.visibleProgressHeight())
 	}
 	transcript := renderAllMessages(updated.messages, 100, false)
-	for _, want := range []string{"running run_command"} {
-		if !strings.Contains(transcript, want) {
-			t.Fatalf("progress transcript missing %q in %q", want, transcript)
-		}
+	if strings.Contains(transcript, "running run_command") {
+		t.Fatalf("progress transcript should stay quiet during tool execution, got %q", transcript)
 	}
 
 	reset, _ := updated.Update(notificationProgressMsg{
