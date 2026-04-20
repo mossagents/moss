@@ -196,7 +196,7 @@ func (s *kernelInitState) buildAgent() *agentState {
 		trust:                    s.cfg.Trust,
 		profile:                  s.cfg.Profile,
 		approvalMode:             s.cfg.ApprovalMode,
-		baseObserver:             s.cfg.BaseObserver,
+		baseObserver:             s.k.Observer(),
 		buildRunTraceObserver:    s.cfg.BuildRunTraceObserver,
 		buildKernel:              s.cfg.BuildKernel,
 		afterBoot:                s.cfg.AfterBoot,

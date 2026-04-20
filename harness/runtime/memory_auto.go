@@ -89,6 +89,9 @@ type toolOutcomeDescriptor struct {
 	SubjectTerms    []string
 	SubjectKey      string
 	SubjectDisplay  string
+	ProviderFamily  string
+	ProviderKey     string
+	ProviderLabel   string
 	Outcome         string
 	ObservationType string
 	Strategy        string
@@ -304,7 +307,12 @@ func (c *automaticMemoryCapture) captureExplicitPreferences(ctx context.Context,
 }
 
 func (c *automaticMemoryCapture) captureExecutionEvent(ctx context.Context, event observe.ExecutionEvent) {
-	if c == nil || c.store == nil || event.Type != observe.ExecutionToolCompleted {
+	if c == nil || c.store == nil {
+		return
+	}
+	switch event.Type {
+	case observe.ExecutionToolCompleted, observe.ExecutionHostedToolCompleted, observe.ExecutionHostedToolFailed:
+	default:
 		return
 	}
 	now := eventTimeOrNow(event.Timestamp)
@@ -366,6 +374,15 @@ func (c *automaticMemoryCapture) buildSessionOutcomeRecord(event observe.Executi
 	}
 	if desc.ObservationType != "" {
 		metadata["observation_type"] = desc.ObservationType
+	}
+	if desc.ProviderFamily != "" {
+		metadata["provider_family"] = desc.ProviderFamily
+	}
+	if desc.ProviderKey != "" {
+		metadata["provider_key"] = desc.ProviderKey
+	}
+	if desc.ProviderLabel != "" {
+		metadata["provider_label"] = desc.ProviderLabel
 	}
 	if desc.ErrorReason != "" {
 		metadata["error_reason"] = desc.ErrorReason
@@ -753,8 +770,11 @@ func buildToolOutcomeHint(event observe.ExecutionEvent, info autoToolContext, su
 	if label := buildOutcomeSubjectDisplay(subjectTerms, topics); strings.TrimSpace(label) != "" {
 		subject = label + " requests"
 	}
+	if desc.SubjectDisplay != "" {
+		subject = desc.SubjectDisplay + " requests"
+	}
 	method := firstNonEmpty(strings.TrimSpace(strings.ToUpper(fmt.Sprint(event.Metadata["method"]))), "request")
-	resource := firstNonEmpty(desc.Host, firstNonEmpty(strings.TrimSpace(event.ToolName), info.ToolName), "tool")
+	resource := firstNonEmpty(desc.ProviderLabel, desc.Host, firstNonEmpty(strings.TrimSpace(event.ToolName), info.ToolName), "tool")
 	if strings.EqualFold(desc.ToolName, "run_command") && strings.EqualFold(strings.TrimSpace(fmt.Sprint(appconfig.DefaultTemplateContext("")["OS"])), "windows") && isBashStyleStrategy(desc.Strategy) && desc.Outcome == "failure" {
 		reason := firstNonEmpty(desc.ErrorReason, "failed")
 		return fmt.Sprintf("Avoid bash-style commands on Windows for %s: run_command failed (%s).", subject, reason)
@@ -787,6 +807,12 @@ func buildToolOutcomeObservation(event observe.ExecutionEvent, info autoToolCont
 	}
 	if desc.SubjectKey != "" {
 		parts = append(parts, "subject="+desc.SubjectKey)
+	}
+	if desc.ProviderFamily != "" {
+		parts = append(parts, "provider_family="+desc.ProviderFamily)
+	}
+	if desc.ProviderKey != "" {
+		parts = append(parts, "provider_key="+desc.ProviderKey)
 	}
 	if desc.StatusCode > 0 {
 		parts = append(parts, fmt.Sprintf("status=%d", desc.StatusCode))
@@ -852,6 +878,12 @@ func buildToolOutcomeTags(toolName string, subjectTerms []string, topics []memor
 	if len(topics) == 0 {
 		tags = append(tags, subjectTerms...)
 	}
+	if desc := describeToolOutcome(event, info, subjectTerms); desc.ProviderFamily != "" {
+		tags = append(tags, desc.ProviderFamily)
+	}
+	if desc := describeToolOutcome(event, info, subjectTerms); desc.ProviderKey != "" {
+		tags = append(tags, sanitizePathSegment(desc.ProviderKey))
+	}
 	if strategy := classifyCommandStrategy(info); strategy != "" {
 		tags = append(tags, strategy)
 	}
@@ -868,6 +900,9 @@ func shouldCaptureToolOutcome(event observe.ExecutionEvent, info autoToolContext
 		return false
 	}
 	failed := eventFailed(event, eventStatusCode(event.Metadata))
+	if observationType := classifyOutcomeObservation(event, info).ObservationType; observationType != "" && observationType != "tool_outcome" {
+		return true
+	}
 	if firstNonEmpty(eventURL(event.Metadata), info.URL) != "" {
 		return true
 	}
@@ -881,6 +916,10 @@ func shouldCaptureToolOutcome(event observe.ExecutionEvent, info autoToolContext
 
 func shouldConsolidateToolOutcome(event observe.ExecutionEvent, info autoToolContext) bool {
 	if eventFailed(event, eventStatusCode(event.Metadata)) {
+		return false
+	}
+	switch classifyOutcomeObservation(event, info).ObservationType {
+	case "file_search_provider", "package_manager_provider", "database_tool_provider":
 		return false
 	}
 	if firstNonEmpty(eventURL(event.Metadata), info.URL) != "" {
@@ -1069,26 +1108,294 @@ func describeToolOutcome(event observe.ExecutionEvent, info autoToolContext, sub
 	if eventFailed(event, statusCode) {
 		outcome = "failure"
 	}
-	observationType := "tool_outcome"
-	if host != "" && isAPIOutcomeTool(toolName) {
-		observationType = "api_host"
-	}
 	strategy := classifyCommandStrategy(info)
-	if toolName == "run_command" {
-		observationType = "command_strategy"
+	classified := classifyOutcomeObservation(event, info)
+	observationType := classified.ObservationType
+	if observationType == "" {
+		observationType = "tool_outcome"
+	}
+	subjectKey := buildOutcomeSubjectKey(subjectTerms)
+	subjectDisplay := buildOutcomeSubjectDisplay(subjectTerms, nil)
+	if classified.SubjectKey != "" {
+		subjectKey = classified.SubjectKey
+	}
+	if classified.SubjectDisplay != "" {
+		subjectDisplay = classified.SubjectDisplay
 	}
 	return toolOutcomeDescriptor{
 		ToolName:        toolName,
 		Host:            host,
 		SubjectTerms:    append([]string(nil), subjectTerms...),
-		SubjectKey:      buildOutcomeSubjectKey(subjectTerms),
-		SubjectDisplay:  buildOutcomeSubjectDisplay(subjectTerms, nil),
+		SubjectKey:      subjectKey,
+		SubjectDisplay:  subjectDisplay,
+		ProviderFamily:  classified.ProviderFamily,
+		ProviderKey:     classified.ProviderKey,
+		ProviderLabel:   classified.ProviderLabel,
 		Outcome:         outcome,
 		ObservationType: observationType,
 		Strategy:        strategy,
 		StatusCode:      statusCode,
 		ExitCode:        exitCode,
 		ErrorReason:     firstNonEmpty(strings.TrimSpace(event.Error), errorReason(event.Metadata)),
+	}
+}
+
+func classifyOutcomeObservation(event observe.ExecutionEvent, info autoToolContext) toolOutcomeDescriptor {
+	toolName := strings.ToLower(firstNonEmpty(strings.TrimSpace(event.ToolName), info.ToolName))
+	host := extractHost(firstNonEmpty(eventURL(event.Metadata), info.URL))
+	if host != "" && isAPIOutcomeTool(toolName) {
+		return toolOutcomeDescriptor{ObservationType: "api_host"}
+	}
+	if toolName == "run_command" {
+		if family, key, label := classifyRunCommandProvider(info); family != "" && key != "" {
+			subjectKey, subjectDisplay := providerFamilySubject(family)
+			return toolOutcomeDescriptor{
+				ObservationType: providerFamilyObservationType(family),
+				ProviderFamily:  family,
+				ProviderKey:     key,
+				ProviderLabel:   label,
+				SubjectKey:      subjectKey,
+				SubjectDisplay:  subjectDisplay,
+			}
+		}
+		if strategy := classifyCommandStrategy(info); strategy != "" {
+			return toolOutcomeDescriptor{ObservationType: "command_strategy"}
+		}
+	}
+	if family, key, label := classifyDirectToolProvider(toolName); family != "" && key != "" {
+		subjectKey, subjectDisplay := providerFamilySubject(family)
+		return toolOutcomeDescriptor{
+			ObservationType: providerFamilyObservationType(family),
+			ProviderFamily:  family,
+			ProviderKey:     key,
+			ProviderLabel:   label,
+			SubjectKey:      subjectKey,
+			SubjectDisplay:  subjectDisplay,
+		}
+	}
+	return toolOutcomeDescriptor{ObservationType: "tool_outcome"}
+}
+
+func providerFamilyObservationType(family string) string {
+	switch strings.TrimSpace(family) {
+	case "file_search":
+		return "file_search_provider"
+	case "package_manager":
+		return "package_manager_provider"
+	case "database_tool":
+		return "database_tool_provider"
+	default:
+		return ""
+	}
+}
+
+func providerFamilySubject(family string) (string, string) {
+	switch strings.TrimSpace(family) {
+	case "file_search":
+		return "file-search", "file search"
+	case "package_manager":
+		return "package-management", "package management"
+	case "database_tool":
+		return "database-tooling", "database tool"
+	default:
+		return "", ""
+	}
+}
+
+func classifyDirectToolProvider(toolName string) (string, string, string) {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "glob":
+		return "file_search", "glob", "glob"
+	case "grep":
+		return "file_search", "grep", "grep"
+	case "file_search_call":
+		return "file_search", "file_search_call", "hosted file search"
+	default:
+		return "", "", ""
+	}
+}
+
+func classifyRunCommandProvider(info autoToolContext) (string, string, string) {
+	if !strings.EqualFold(strings.TrimSpace(info.ToolName), "run_command") {
+		return "", "", ""
+	}
+	base := strings.ToLower(filepath.Base(strings.TrimSpace(info.Command)))
+	if base == "" || isShellWrapperCommand(base) {
+		return "", "", ""
+	}
+	if key := classifyPackageManagerCommand(base, info.Args); key != "" {
+		return "package_manager", key, packageManagerLabel(key)
+	}
+	if key := classifyDatabaseToolBase(base); key != "" {
+		return "database_tool", key, databaseToolLabel(key)
+	}
+	if key := classifyFileSearchBase(base); key != "" {
+		return "file_search", key, fileSearchProviderLabel(key)
+	}
+	return "", "", ""
+}
+
+func isShellWrapperCommand(base string) bool {
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "bash", "sh", "zsh", "fish", "ksh", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "cmd", "cmd.exe":
+		return true
+	default:
+		return false
+	}
+}
+
+func classifyFileSearchBase(base string) string {
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "rg", "ripgrep", "grep", "find", "fd", "dir":
+		return strings.ToLower(strings.TrimSpace(base))
+	default:
+		return ""
+	}
+}
+
+func classifyPackageManagerCommand(base string, args []string) string {
+	base = strings.ToLower(strings.TrimSpace(base))
+	args = lowerTrimmedArgs(args)
+	first := ""
+	second := ""
+	if len(args) > 0 {
+		first = args[0]
+	}
+	if len(args) > 1 {
+		second = args[1]
+	}
+	switch base {
+	case "uv":
+		switch first {
+		case "add", "remove", "sync", "lock", "export", "tree":
+			return "uv"
+		case "pip":
+			switch second {
+			case "install", "uninstall", "sync":
+				return "uv"
+			}
+		case "tool":
+			if second == "install" || second == "uninstall" {
+				return "uv"
+			}
+		case "python":
+			if second == "install" {
+				return "uv"
+			}
+		}
+	case "pip", "pip3":
+		switch first {
+		case "install", "uninstall", "download", "wheel", "list", "show", "freeze", "check":
+			return "pip"
+		}
+	case "poetry":
+		switch first {
+		case "add", "remove", "install", "update", "lock", "show", "export":
+			return "poetry"
+		}
+	case "npm", "pnpm", "yarn", "bun":
+		switch first {
+		case "install", "add", "remove", "uninstall", "update", "up", "upgrade", "prune", "dedupe":
+			return base
+		}
+	case "go":
+		switch first {
+		case "get", "install":
+			return "go"
+		case "mod":
+			switch second {
+			case "tidy", "download", "vendor":
+				return "go"
+			}
+		}
+	case "cargo":
+		switch first {
+		case "add", "install", "remove", "update", "fetch":
+			return "cargo"
+		}
+	}
+	return ""
+}
+
+func lowerTrimmedArgs(args []string) []string {
+	out := make([]string, 0, len(args))
+	for _, arg := range args {
+		if trimmed := strings.ToLower(strings.TrimSpace(arg)); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func classifyDatabaseToolBase(base string) string {
+	switch strings.ToLower(strings.TrimSpace(base)) {
+	case "prisma", "psql", "sqlite3", "mysql", "mongosh", "redis-cli", "goose", "migrate", "atlas":
+		return strings.ToLower(strings.TrimSpace(base))
+	default:
+		return ""
+	}
+}
+
+func fileSearchProviderLabel(key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "file_search_call":
+		return "hosted file search"
+	case "rg", "ripgrep":
+		return "ripgrep"
+	case "fd":
+		return "fd"
+	default:
+		return strings.TrimSpace(key)
+	}
+}
+
+func packageManagerLabel(key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "uv":
+		return "uv"
+	case "pip", "pip3":
+		return "pip"
+	case "poetry":
+		return "Poetry"
+	case "npm":
+		return "npm"
+	case "pnpm":
+		return "pnpm"
+	case "yarn":
+		return "Yarn"
+	case "bun":
+		return "Bun"
+	case "go":
+		return "go toolchain"
+	case "cargo":
+		return "Cargo"
+	default:
+		return strings.TrimSpace(key)
+	}
+}
+
+func databaseToolLabel(key string) string {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "prisma":
+		return "Prisma CLI"
+	case "psql":
+		return "psql"
+	case "sqlite3":
+		return "sqlite3"
+	case "mysql":
+		return "mysql"
+	case "mongosh":
+		return "mongosh"
+	case "redis-cli":
+		return "redis-cli"
+	case "goose":
+		return "goose"
+	case "migrate":
+		return "migrate"
+	case "atlas":
+		return "Atlas CLI"
+	default:
+		return strings.TrimSpace(key)
 	}
 }
 
@@ -1191,6 +1498,22 @@ func (c *automaticMemoryCapture) buildExecutionLessonRecord(ctx context.Context,
 			return memstore.ExtendedMemoryRecord{}, false
 		}
 		return c.buildAvoidCommandStrategyLessonRecord(event, now, desc, failureCount), true
+	case "file_search_provider", "package_manager_provider", "database_tool_provider":
+		if desc.SubjectKey == "" || desc.ProviderFamily == "" || desc.ProviderKey == "" {
+			return memstore.ExtendedMemoryRecord{}, false
+		}
+		if desc.Outcome == "success" {
+			failedProviders, err := c.relatedFailedProviders(ctx, strings.TrimSpace(event.SessionID), desc, now)
+			if err != nil || len(failedProviders) == 0 {
+				return memstore.ExtendedMemoryRecord{}, false
+			}
+			return c.buildPreferredProviderLessonRecord(event, now, desc, failedProviders), true
+		}
+		failureCount, err := c.countRepeatedProviderFailures(ctx, desc, now)
+		if err != nil || failureCount < 2 {
+			return memstore.ExtendedMemoryRecord{}, false
+		}
+		return c.buildAvoidProviderLessonRecord(event, now, desc, failureCount), true
 	default:
 		return memstore.ExtendedMemoryRecord{}, false
 	}
@@ -1495,6 +1818,154 @@ func (c *automaticMemoryCapture) buildAvoidCommandStrategyLessonRecord(event obs
 			"failure_count":    failureCount,
 		},
 	}
+}
+
+func (c *automaticMemoryCapture) relatedFailedProviders(ctx context.Context, sessionID string, desc toolOutcomeDescriptor, now time.Time) ([]string, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return nil, nil
+	}
+	records, err := c.searchSessionOutcomeRecords(ctx, sessionID, now, 48)
+	if err != nil {
+		return nil, err
+	}
+	failedProviders := make([]string, 0, 4)
+	for _, record := range records {
+		if metadataStringValue(record.Metadata, "observation_type") != desc.ObservationType {
+			continue
+		}
+		if metadataStringValue(record.Metadata, "subject_key") != desc.SubjectKey {
+			continue
+		}
+		if metadataStringValue(record.Metadata, "outcome") != "failure" {
+			continue
+		}
+		providerKey := strings.ToLower(metadataStringValue(record.Metadata, "provider_key"))
+		if providerKey == "" || strings.EqualFold(providerKey, desc.ProviderKey) {
+			continue
+		}
+		failedProviders = append(failedProviders, providerKey)
+	}
+	return memstore.DedupeStrings(failedProviders), nil
+}
+
+func (c *automaticMemoryCapture) countRepeatedProviderFailures(ctx context.Context, desc toolOutcomeDescriptor, now time.Time) (int, error) {
+	records, err := c.searchSessionOutcomeRecords(ctx, "", now, 128)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, record := range records {
+		if metadataStringValue(record.Metadata, "observation_type") != desc.ObservationType {
+			continue
+		}
+		if metadataStringValue(record.Metadata, "subject_key") != desc.SubjectKey {
+			continue
+		}
+		if metadataStringValue(record.Metadata, "outcome") != "failure" {
+			continue
+		}
+		if !strings.EqualFold(metadataStringValue(record.Metadata, "provider_key"), desc.ProviderKey) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+func (c *automaticMemoryCapture) buildPreferredProviderLessonRecord(event observe.ExecutionEvent, now time.Time, desc toolOutcomeDescriptor, failedProviders []string) memstore.ExtendedMemoryRecord {
+	subject := firstNonEmpty(desc.SubjectDisplay, "similar")
+	summary := fmt.Sprintf("For %s requests, prefer %s after %s failed.", subject, desc.ProviderLabel, strings.Join(providerLabels(desc.ProviderFamily, failedProviders), ", "))
+	content := strings.Join([]string{
+		"# Execution Lesson",
+		"",
+		fmt.Sprintf("Prefer %s for %s requests in this repo.", desc.ProviderLabel, subject),
+		"",
+		"Evidence:",
+		fmt.Sprintf("- Previous attempts using %s failed.", strings.Join(providerLabels(desc.ProviderFamily, failedProviders), ", ")),
+		fmt.Sprintf("- A later attempt using %s succeeded.", desc.ProviderLabel),
+	}, "\n")
+	tags := []string{"auto", "execution-lesson", sanitizePathSegment(desc.ProviderFamily), sanitizePathSegment(desc.ProviderKey), "preferred"}
+	tags = append(tags, failedProviders...)
+	return memstore.ExtendedMemoryRecord{
+		Path:            filepath.ToSlash(filepath.Join("auto", "execution_lessons", sanitizeIdentifierPart(desc.ObservationType)+"-"+sanitizeIdentifierPart(desc.SubjectKey)+".md")),
+		Content:         content,
+		Summary:         summary,
+		Tags:            memstore.DedupeStrings(compactNonEmpty(tags)),
+		Scope:           memstore.MemoryScopeRepo,
+		RepoID:          c.repoID,
+		Kind:            autoMemoryExecutionLessonKind,
+		Fingerprint:     desc.ObservationType + ":" + sanitizeIdentifierPart(desc.SubjectKey),
+		Confidence:      0.95,
+		Stage:           memstore.MemoryStagePromoted,
+		Status:          memstore.MemoryStatusActive,
+		Workspace:       c.workspaceRoot,
+		SourceKind:      autoMemoryExecutionLessonSource,
+		SourceID:        firstNonEmpty(strings.TrimSpace(event.EventID), strings.TrimSpace(event.CallID)),
+		SourcePath:      buildOutcomeSourcePath(event),
+		SourceUpdatedAt: now,
+		Metadata: map[string]any{
+			"observation_type":   desc.ObservationType,
+			"provider_family":    desc.ProviderFamily,
+			"subject_key":        desc.SubjectKey,
+			"preferred_provider": desc.ProviderKey,
+			"failed_providers":   append([]string(nil), failedProviders...),
+		},
+	}
+}
+
+func (c *automaticMemoryCapture) buildAvoidProviderLessonRecord(event observe.ExecutionEvent, now time.Time, desc toolOutcomeDescriptor, failureCount int) memstore.ExtendedMemoryRecord {
+	subject := firstNonEmpty(desc.SubjectDisplay, "similar")
+	summary := fmt.Sprintf("Avoid %s by default for %s requests: repeated failures observed.", desc.ProviderLabel, subject)
+	content := strings.Join([]string{
+		"# Execution Lesson",
+		"",
+		fmt.Sprintf("Avoid %s by default for %s requests in this repo.", desc.ProviderLabel, subject),
+		"",
+		fmt.Sprintf("Evidence: %d recent failures were observed for this provider.", failureCount),
+	}, "\n")
+	tags := []string{"auto", "execution-lesson", sanitizePathSegment(desc.ProviderFamily), sanitizePathSegment(desc.ProviderKey), "avoid"}
+	return memstore.ExtendedMemoryRecord{
+		Path:            filepath.ToSlash(filepath.Join("auto", "execution_lessons", sanitizeIdentifierPart(desc.ObservationType)+"-"+sanitizeIdentifierPart(desc.SubjectKey)+".md")),
+		Content:         content,
+		Summary:         summary,
+		Tags:            memstore.DedupeStrings(compactNonEmpty(tags)),
+		Scope:           memstore.MemoryScopeRepo,
+		RepoID:          c.repoID,
+		Kind:            autoMemoryExecutionLessonKind,
+		Fingerprint:     desc.ObservationType + ":" + sanitizeIdentifierPart(desc.SubjectKey),
+		Confidence:      0.85,
+		Stage:           memstore.MemoryStagePromoted,
+		Status:          memstore.MemoryStatusActive,
+		Workspace:       c.workspaceRoot,
+		SourceKind:      autoMemoryExecutionLessonSource,
+		SourceID:        firstNonEmpty(strings.TrimSpace(event.EventID), strings.TrimSpace(event.CallID)),
+		SourcePath:      buildOutcomeSourcePath(event),
+		SourceUpdatedAt: now,
+		Metadata: map[string]any{
+			"observation_type": desc.ObservationType,
+			"provider_family":  desc.ProviderFamily,
+			"subject_key":      desc.SubjectKey,
+			"avoid_provider":   desc.ProviderKey,
+			"failure_count":    failureCount,
+		},
+	}
+}
+
+func providerLabels(family string, keys []string) []string {
+	labels := make([]string, 0, len(keys))
+	for _, key := range keys {
+		switch strings.TrimSpace(family) {
+		case "file_search":
+			labels = append(labels, fileSearchProviderLabel(key))
+		case "package_manager":
+			labels = append(labels, packageManagerLabel(key))
+		case "database_tool":
+			labels = append(labels, databaseToolLabel(key))
+		default:
+			labels = append(labels, strings.TrimSpace(key))
+		}
+	}
+	return labels
 }
 
 func commandStrategyLabel(strategy string) string {
@@ -1843,6 +2314,9 @@ func extractHost(rawURL string) string {
 }
 
 func eventFailed(event observe.ExecutionEvent, statusCode int) bool {
+	if event.Type == observe.ExecutionHostedToolFailed {
+		return true
+	}
 	if strings.TrimSpace(event.Error) != "" {
 		return true
 	}
@@ -1854,6 +2328,9 @@ func eventFailed(event observe.ExecutionEvent, statusCode int) bool {
 	}
 	if isError, ok := event.Metadata["is_error"].(bool); ok {
 		return isError
+	}
+	if status := strings.ToLower(metadataStringValue(event.Metadata, "status")); status == "failed" || status == "error" || status == "errored" || status == "cancelled" || status == "canceled" || status == "incomplete" {
+		return true
 	}
 	return false
 }

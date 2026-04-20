@@ -14,8 +14,14 @@ import (
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 )
+
+type markerObserver struct {
+	observe.NoOpObserver
+	name string
+}
 
 func installTestRuntime(t *testing.T, k *kernel.Kernel) {
 	t.Helper()
@@ -97,6 +103,26 @@ func TestSwitchProfileRejectsActiveRun(t *testing.T) {
 	last := next.chat.messages[len(next.chat.messages)-1]
 	if !strings.Contains(last.content, "cannot switch profile while a run is active") {
 		t.Fatalf("unexpected message: %q", last.content)
+	}
+}
+
+func TestBuildAgentUsesBootstrappedKernelObserver(t *testing.T) {
+	k := kernel.New(
+		kernel.WithUserIO(&io.NoOpIO{}),
+	)
+	kernelObserver := &markerObserver{name: "kernel"}
+	configObserver := &markerObserver{name: "config"}
+	k.SetObserver(kernelObserver)
+
+	state := &kernelInitState{
+		cfg:  Config{BaseObserver: configObserver},
+		wCfg: WelcomeConfig{Workspace: ".", Model: "test-model"},
+		k:    k,
+	}
+
+	agent := state.buildAgent()
+	if agent.baseObserver != kernelObserver {
+		t.Fatalf("expected agent to keep bootstrapped kernel observer, got %#v", agent.baseObserver)
 	}
 }
 

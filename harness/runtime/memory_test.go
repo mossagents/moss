@@ -887,6 +887,179 @@ func TestAutomaticMemoryCapture_PromotesCommandStrategyFallbackLesson(t *testing
 	}
 }
 
+func TestAutomaticMemoryCapture_PromotesProviderFallbackLessons(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	tests := []struct {
+		name        string
+		toolContext map[string]autoToolContext
+		events      []observe.ExecutionEvent
+		expects     []string
+	}{
+		{
+			name: "file search",
+			toolContext: map[string]autoToolContext{
+				"sess1:call-glob": {
+					SessionID:  "sess1",
+					CallID:     "call-glob",
+					ToolName:   "glob",
+					Query:      "找到 memory_auto.go",
+					CapturedAt: now,
+				},
+			},
+			events: []observe.ExecutionEvent{
+				{
+					Type:      observe.ExecutionToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "glob",
+					CallID:    "call-glob",
+					Timestamp: now,
+					Error:     "no matches",
+					Metadata:  map[string]any{"is_error": true},
+				},
+				{
+					Type:      observe.ExecutionHostedToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "file_search_call",
+					CallID:    "ht-1",
+					Timestamp: now.Add(time.Second),
+					Metadata: map[string]any{
+						"status": "completed",
+						"output": `{"hits":2}`,
+					},
+				},
+			},
+			expects: []string{"file search", "hosted file search", "glob"},
+		},
+		{
+			name: "package manager",
+			toolContext: map[string]autoToolContext{
+				"sess1:call-pip": {
+					SessionID:  "sess1",
+					CallID:     "call-pip",
+					ToolName:   "run_command",
+					Query:      "安装 ruff",
+					Command:    "pip",
+					Args:       []string{"install", "ruff"},
+					CapturedAt: now,
+				},
+				"sess1:call-uv": {
+					SessionID:  "sess1",
+					CallID:     "call-uv",
+					ToolName:   "run_command",
+					Query:      "安装 ruff",
+					Command:    "uv",
+					Args:       []string{"add", "ruff"},
+					CapturedAt: now,
+				},
+			},
+			events: []observe.ExecutionEvent{
+				{
+					Type:      observe.ExecutionToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "run_command",
+					CallID:    "call-pip",
+					Timestamp: now,
+					Metadata: map[string]any{
+						"exit_code":      1,
+						"stderr_preview": "pip failed",
+					},
+				},
+				{
+					Type:      observe.ExecutionToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "run_command",
+					CallID:    "call-uv",
+					Timestamp: now.Add(time.Second),
+					Metadata: map[string]any{
+						"exit_code":      0,
+						"stdout_preview": "installed",
+					},
+				},
+			},
+			expects: []string{"package management", "uv", "pip"},
+		},
+		{
+			name: "database tool",
+			toolContext: map[string]autoToolContext{
+				"sess1:call-sqlite3": {
+					SessionID:  "sess1",
+					CallID:     "call-sqlite3",
+					ToolName:   "run_command",
+					Query:      "查看数据库 schema",
+					Command:    "sqlite3",
+					Args:       []string{"dev.db", ".schema"},
+					CapturedAt: now,
+				},
+				"sess1:call-prisma": {
+					SessionID:  "sess1",
+					CallID:     "call-prisma",
+					ToolName:   "run_command",
+					Query:      "查看数据库 schema",
+					Command:    "prisma",
+					Args:       []string{"migrate", "status"},
+					CapturedAt: now,
+				},
+			},
+			events: []observe.ExecutionEvent{
+				{
+					Type:      observe.ExecutionToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "run_command",
+					CallID:    "call-sqlite3",
+					Timestamp: now,
+					Metadata: map[string]any{
+						"exit_code":      1,
+						"stderr_preview": "sqlite3 failed",
+					},
+				},
+				{
+					Type:      observe.ExecutionToolCompleted,
+					SessionID: "sess1",
+					ToolName:  "run_command",
+					CallID:    "call-prisma",
+					Timestamp: now.Add(time.Second),
+					Metadata: map[string]any{
+						"exit_code":      0,
+						"stdout_preview": "up to date",
+					},
+				},
+			},
+			expects: []string{"database tool", "Prisma CLI", "sqlite3"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ws := sandbox.NewMemoryWorkspace()
+			store := memstore.NewWorkspaceMemoryStore(ws)
+			capture := &automaticMemoryCapture{
+				store:       store,
+				toolContext: tc.toolContext,
+			}
+			for _, event := range tc.events {
+				capture.captureExecutionEvent(ctx, event)
+			}
+			items, err := store.SearchExtended(ctx, memstore.ExtendedMemoryQuery{
+				Scopes: []memstore.MemoryScope{memstore.MemoryScopeRepo},
+				Kinds:  []string{autoMemoryExecutionLessonKind},
+				Limit:  8,
+			})
+			if err != nil {
+				t.Fatalf("SearchExtended: %v", err)
+			}
+			if len(items) == 0 {
+				t.Fatal("expected provider lesson to be promoted")
+			}
+			for _, want := range tc.expects {
+				if !strings.Contains(items[0].Summary, want) {
+					t.Fatalf("expected provider lesson summary to mention %q, got %+v", want, items[0])
+				}
+			}
+		})
+	}
+}
+
 func TestReadMemory_ReconcilesProjectionIntoStore(t *testing.T) {
 	ctx := context.Background()
 	ws := sandbox.NewMemoryWorkspace()
