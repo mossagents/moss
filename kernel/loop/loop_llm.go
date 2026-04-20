@@ -11,6 +11,7 @@ import (
 	"time"
 
 	kerrors "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/hooks"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
@@ -23,14 +24,6 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 	if normalizeStats.Changed() {
 		l.emitPromptNormalizationEvent(ctx, sess, normalizeStats)
 	}
-	l.logger().DebugContext(ctx, "llm request prepared",
-		slog.String("session_id", sess.ID),
-		slog.String("turn_id", plan.TurnID),
-		slog.String("model_lane", plan.ModelRoute.Lane),
-		slog.Int("messages", len(promptMessages)),
-		slog.Int("tools", len(specs)),
-		slog.Int("estimated_tokens", session.EstimateMessagesTokens(promptMessages)),
-	)
 	modelConfig := sess.Config.ModelConfig
 	modelConfig.Requirements = cloneTaskRequirement(plan.ModelRoute.Requirements)
 	req := model.CompletionRequest{
@@ -38,6 +31,32 @@ func (l *AgentLoop) callLLM(ctx context.Context, sess *session.Session, plan Tur
 		Tools:    specs,
 		Config:   modelConfig,
 	}
+	if l.safeHooks().IsTrusted() {
+		ev := &hooks.LLMEvent{
+			Session:        sess,
+			IO:             l.IO,
+			Observer:       l.observer(),
+			Request:        &req,
+			PromptMessages: req.Messages,
+		}
+		if err := l.safeHooks().BeforeLLMRequest.Run(ctx, ev); err != nil {
+			return nil, err
+		}
+		if ev.Request != nil {
+			req = *ev.Request
+		}
+		if ev.PromptMessages != nil {
+			req.Messages = ev.PromptMessages
+		}
+	}
+	l.logger().DebugContext(ctx, "llm request prepared",
+		slog.String("session_id", sess.ID),
+		slog.String("turn_id", plan.TurnID),
+		slog.String("model_lane", plan.ModelRoute.Lane),
+		slog.Int("messages", len(req.Messages)),
+		slog.Int("tools", len(specs)),
+		slog.Int("estimated_tokens", session.EstimateMessagesTokens(req.Messages)),
+	)
 
 	// Context-window trim retry: 当 provider 返回上下文超限错误时，
 	// 采用 FIFO 修剪最老的非 system 消息并重试，避免直接失败。

@@ -15,6 +15,7 @@ import (
 // PromptAssembler 与 ServiceRegistry 负责。
 type Registry struct {
 	BeforeLLM          *Pipeline[LLMEvent]
+	BeforeLLMRequest   *Pipeline[LLMEvent]
 	AfterLLM           *Pipeline[LLMEvent]
 	OnSessionLifecycle *Pipeline[session.LifecycleEvent]
 	OnToolLifecycle    *Pipeline[ToolEvent]
@@ -35,6 +36,7 @@ type Registry struct {
 func NewRegistry() *Registry {
 	r := &Registry{
 		BeforeLLM:          NewPipeline[LLMEvent](),
+		BeforeLLMRequest:   NewPipeline[LLMEvent](),
 		AfterLLM:           NewPipeline[LLMEvent](),
 		OnSessionLifecycle: NewPipeline[session.LifecycleEvent](),
 		OnToolLifecycle:    NewPipeline[ToolEvent](),

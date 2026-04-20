@@ -379,8 +379,11 @@ func TestThinkingTimelineShowsToolAndApprovalDetails(t *testing.T) {
 		},
 	}})
 	transcript = renderAllMessages(updated.messages, 120, false)
-	if !strings.Contains(transcript, `"status": 200`) {
+	if !strings.Contains(transcript, "result · status: 200") {
 		t.Fatalf("expected tool result summary in transcript, got %q", transcript)
+	}
+	if strings.Contains(transcript, `"body":`) {
+		t.Fatalf("expected transcript to hide verbose tool body, got %q", transcript)
 	}
 	if strings.Count(transcript, "Http Request") != 1 {
 		t.Fatalf("expected a single compact tool entry after completion, got %q", transcript)

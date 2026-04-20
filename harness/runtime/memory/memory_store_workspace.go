@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mossagents/moss/kernel/ids"
@@ -17,6 +18,7 @@ const memoryIndexPath = ".moss/memory_index.json"
 
 type workspaceMemoryStore struct {
 	ws workspace.Workspace
+	mu sync.RWMutex
 }
 
 func NewWorkspaceMemoryStore(ws workspace.Workspace) ExtendedMemoryStore {
@@ -27,6 +29,8 @@ func (s *workspaceMemoryStore) UpsertExtended(ctx context.Context, record Extend
 	if strings.TrimSpace(record.Path) == "" {
 		return nil, fmt.Errorf("path is required")
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	now := time.Now().UTC()
 	records, err := s.loadIndex(ctx)
 	if err != nil {
@@ -51,6 +55,8 @@ func (s *workspaceMemoryStore) UpsertExtended(ctx context.Context, record Extend
 }
 
 func (s *workspaceMemoryStore) GetByPathExtended(ctx context.Context, path string) (*ExtendedMemoryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	key := NormalizePath(path)
 	records, err := s.loadIndex(ctx)
 	if err != nil {
@@ -65,6 +71,8 @@ func (s *workspaceMemoryStore) GetByPathExtended(ctx context.Context, path strin
 }
 
 func (s *workspaceMemoryStore) DeleteByPath(ctx context.Context, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	key := NormalizePath(path)
 	records, err := s.loadIndex(ctx)
 	if err != nil {
@@ -75,6 +83,8 @@ func (s *workspaceMemoryStore) DeleteByPath(ctx context.Context, path string) er
 }
 
 func (s *workspaceMemoryStore) ListExtended(ctx context.Context, limit int) ([]ExtendedMemoryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
@@ -88,6 +98,8 @@ func (s *workspaceMemoryStore) ListExtended(ctx context.Context, limit int) ([]E
 }
 
 func (s *workspaceMemoryStore) SearchExtended(ctx context.Context, query ExtendedMemoryQuery) ([]ExtendedMemoryRecord, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return nil, err
@@ -104,6 +116,8 @@ func (s *workspaceMemoryStore) SearchExtended(ctx context.Context, query Extende
 }
 
 func (s *workspaceMemoryStore) RecordUsage(ctx context.Context, paths []string, usedAt time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	records, err := s.loadIndex(ctx)
 	if err != nil {
 		return err
@@ -141,6 +155,12 @@ func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]Extend
 	}
 	for key, record := range records {
 		record.Path = NormalizePath(stringutil.FirstNonEmpty(record.Path, key))
+		record.Scope = NormalizeMemoryScope(record.Scope, record.SessionID, record.UserID)
+		record.SessionID = NormalizeMemoryIdentity(record.SessionID)
+		record.RepoID = NormalizeRepoID(record.RepoID)
+		record.UserID = NormalizeMemoryIdentity(record.UserID)
+		record.Kind = NormalizeMemoryKind(record.Kind)
+		record.Fingerprint = NormalizeMemoryFingerprint(record.Fingerprint)
 		record.Tags = normalizeMemoryTags(record.Tags)
 		record.Citation = normalizeMemoryCitation(record.Citation)
 		if record.Stage == "" {
@@ -148,6 +168,12 @@ func (s *workspaceMemoryStore) loadIndex(ctx context.Context) (map[string]Extend
 		}
 		if record.Status == "" {
 			record.Status = MemoryStatusActive
+		}
+		if record.RepoID == "" {
+			record.RepoID = NormalizeRepoID(record.Workspace)
+		}
+		if record.Fingerprint == "" {
+			record.Fingerprint = record.Path
 		}
 		records[key] = record
 	}

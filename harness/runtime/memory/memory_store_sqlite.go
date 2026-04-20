@@ -45,22 +45,7 @@ func NewSQLiteMemoryStore(dbPath string) (ExtendedMemoryStore, error) {
 }
 
 func initSQLiteMemorySchema(db *sql.DB) error {
-	requiredColumns := map[string]struct{}{
-		"path": {}, "id": {}, "content": {}, "summary": {}, "tags_json": {}, "citation_json": {}, "metadata_json": {},
-		"stage": {}, "status": {}, "group_key": {}, "workspace": {}, "cwd": {}, "git_branch": {},
-		"source_kind": {}, "source_id": {}, "source_path": {}, "source_updated_at": {},
-		"usage_count": {}, "last_used_at": {}, "created_at": {}, "updated_at": {},
-	}
-	compatible, err := sqliteTableHasColumns(db, "memory_records", requiredColumns)
-	if err != nil {
-		return err
-	}
-	if !compatible {
-		if _, err := db.Exec(`DROP TABLE IF EXISTS memory_records`); err != nil {
-			return fmt.Errorf("drop incompatible memory schema: %w", err)
-		}
-	}
-	const ddl = `
+	const createTableDDL = `
 CREATE TABLE IF NOT EXISTS memory_records (
   path TEXT PRIMARY KEY,
   id TEXT NOT NULL,
@@ -69,6 +54,14 @@ CREATE TABLE IF NOT EXISTS memory_records (
   tags_json TEXT NOT NULL,
   citation_json TEXT NOT NULL,
   metadata_json TEXT NOT NULL,
+	scope TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '',
+	repo_id TEXT NOT NULL DEFAULT '',
+	user_id TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT '',
+	fingerprint TEXT NOT NULL DEFAULT '',
+	confidence REAL NOT NULL DEFAULT 0,
+	expires_at TEXT NOT NULL DEFAULT '',
   stage TEXT NOT NULL,
   status TEXT NOT NULL,
   group_key TEXT NOT NULL,
@@ -83,13 +76,67 @@ CREATE TABLE IF NOT EXISTS memory_records (
   last_used_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);
+);`
+	if _, err := db.Exec(createTableDDL); err != nil {
+		return fmt.Errorf("init sqlite memory schema: %w", err)
+	}
+	missingColumns := map[string]string{
+		"scope":       `ALTER TABLE memory_records ADD COLUMN scope TEXT NOT NULL DEFAULT ''`,
+		"session_id":  `ALTER TABLE memory_records ADD COLUMN session_id TEXT NOT NULL DEFAULT ''`,
+		"repo_id":     `ALTER TABLE memory_records ADD COLUMN repo_id TEXT NOT NULL DEFAULT ''`,
+		"user_id":     `ALTER TABLE memory_records ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
+		"kind":        `ALTER TABLE memory_records ADD COLUMN kind TEXT NOT NULL DEFAULT ''`,
+		"fingerprint": `ALTER TABLE memory_records ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ''`,
+		"confidence":  `ALTER TABLE memory_records ADD COLUMN confidence REAL NOT NULL DEFAULT 0`,
+		"expires_at":  `ALTER TABLE memory_records ADD COLUMN expires_at TEXT NOT NULL DEFAULT ''`,
+	}
+	if err := sqliteEnsureColumns(db, "memory_records", missingColumns); err != nil {
+		return err
+	}
+	const createIndexesDDL = `
 CREATE INDEX IF NOT EXISTS idx_memory_records_stage_status_updated ON memory_records(stage, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_records_group_status ON memory_records(group_key, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_memory_records_usage ON memory_records(usage_count DESC, last_used_at DESC, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_memory_records_scope_identity ON memory_records(scope, session_id, repo_id, user_id, kind, fingerprint);
+CREATE INDEX IF NOT EXISTS idx_memory_records_expiry_confidence ON memory_records(expires_at, confidence, updated_at DESC);
 `
-	if _, err := db.Exec(ddl); err != nil {
-		return fmt.Errorf("init sqlite memory schema: %w", err)
+	if _, err := db.Exec(createIndexesDDL); err != nil {
+		return fmt.Errorf("init sqlite memory indexes: %w", err)
+	}
+	return nil
+}
+
+func sqliteEnsureColumns(db *sql.DB, table string, columns map[string]string) error {
+	rows, err := db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return fmt.Errorf("inspect sqlite memory schema: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	found := make(map[string]struct{}, len(columns))
+	var (
+		cid       int
+		name      string
+		valueType string
+		notNull   int
+		defaultV  any
+		pk        int
+	)
+	for rows.Next() {
+		if err := rows.Scan(&cid, &name, &valueType, &notNull, &defaultV, &pk); err != nil {
+			return fmt.Errorf("scan sqlite memory schema: %w", err)
+		}
+		found[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("read sqlite memory schema: %w", err)
+	}
+	for name, stmt := range columns {
+		if _, ok := found[name]; ok {
+			continue
+		}
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("extend sqlite memory schema with %s: %w", name, err)
+		}
 	}
 	return nil
 }
@@ -145,10 +192,10 @@ func (s *sqliteMemoryStore) UpsertExtended(ctx context.Context, record ExtendedM
 	metadataRaw, _ := json.Marshal(record.Metadata)
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO memory_records(
-  path,id,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,
+	path,id,content,summary,tags_json,citation_json,metadata_json,scope,session_id,repo_id,user_id,kind,fingerprint,confidence,expires_at,stage,status,group_key,workspace,cwd,git_branch,
   source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at
 )
-VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 ON CONFLICT(path) DO UPDATE SET
   id=excluded.id,
   content=excluded.content,
@@ -156,6 +203,14 @@ ON CONFLICT(path) DO UPDATE SET
   tags_json=excluded.tags_json,
   citation_json=excluded.citation_json,
   metadata_json=excluded.metadata_json,
+	scope=excluded.scope,
+	session_id=excluded.session_id,
+	repo_id=excluded.repo_id,
+	user_id=excluded.user_id,
+	kind=excluded.kind,
+	fingerprint=excluded.fingerprint,
+	confidence=excluded.confidence,
+	expires_at=excluded.expires_at,
   stage=excluded.stage,
   status=excluded.status,
   group_key=excluded.group_key,
@@ -170,7 +225,7 @@ ON CONFLICT(path) DO UPDATE SET
   last_used_at=excluded.last_used_at,
   created_at=excluded.created_at,
   updated_at=excluded.updated_at
-`, record.Path, record.ID, record.Content, record.Summary, string(tagsRaw), string(citationRaw), string(metadataRaw), string(record.Stage), string(record.Status), record.Group, record.Workspace, record.CWD, record.GitBranch, record.SourceKind, record.SourceID, record.SourcePath, FormatMemoryTime(record.SourceUpdatedAt), record.UsageCount, FormatMemoryTime(record.LastUsedAt), FormatMemoryTime(record.CreatedAt), FormatMemoryTime(record.UpdatedAt))
+`, record.Path, record.ID, record.Content, record.Summary, string(tagsRaw), string(citationRaw), string(metadataRaw), string(record.Scope), record.SessionID, record.RepoID, record.UserID, record.Kind, record.Fingerprint, record.Confidence, FormatMemoryTime(record.ExpiresAt), string(record.Stage), string(record.Status), record.Group, record.Workspace, record.CWD, record.GitBranch, record.SourceKind, record.SourceID, record.SourcePath, FormatMemoryTime(record.SourceUpdatedAt), record.UsageCount, FormatMemoryTime(record.LastUsedAt), FormatMemoryTime(record.CreatedAt), FormatMemoryTime(record.UpdatedAt))
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +235,7 @@ ON CONFLICT(path) DO UPDATE SET
 
 func (s *sqliteMemoryStore) GetByPathExtended(ctx context.Context, path string) (*ExtendedMemoryRecord, error) {
 	key := NormalizePath(path)
-	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
+	row := s.db.QueryRowContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,scope,session_id,repo_id,user_id,kind,fingerprint,confidence,expires_at,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE path=?`, key)
 	record, err := scanMemoryRecord(row)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("memory %q not found", key)
@@ -198,7 +253,7 @@ func (s *sqliteMemoryStore) DeleteByPath(ctx context.Context, path string) error
 }
 
 func (s *sqliteMemoryStore) ListExtended(ctx context.Context, limit int) ([]ExtendedMemoryRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,scope,session_id,repo_id,user_id,kind,fingerprint,confidence,expires_at,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records`)
 	if err != nil {
 		return nil, err
 	}
@@ -219,8 +274,60 @@ func (s *sqliteMemoryStore) ListExtended(ctx context.Context, limit int) ([]Exte
 }
 
 func (s *sqliteMemoryStore) SearchExtended(ctx context.Context, query ExtendedMemoryQuery) ([]ExtendedMemoryRecord, error) {
-	q := `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
+	q := `SELECT id,path,content,summary,tags_json,citation_json,metadata_json,scope,session_id,repo_id,user_id,kind,fingerprint,confidence,expires_at,stage,status,group_key,workspace,cwd,git_branch,source_kind,source_id,source_path,source_updated_at,usage_count,last_used_at,created_at,updated_at FROM memory_records WHERE 1=1`
 	args := make([]any, 0, 16)
+	if len(query.Scopes) > 0 {
+		parts := make([]string, 0, len(query.Scopes))
+		for _, scope := range query.Scopes {
+			if scope == "" {
+				continue
+			}
+			parts = append(parts, "?")
+			args = append(args, string(scope))
+		}
+		if len(parts) > 0 {
+			q += ` AND scope IN (` + strings.Join(parts, ",") + `)`
+		}
+	}
+	if sessionID := NormalizeMemoryIdentity(query.SessionID); sessionID != "" {
+		q += ` AND lower(session_id)=?`
+		args = append(args, strings.ToLower(sessionID))
+	}
+	if repoID := NormalizeRepoID(query.RepoID); repoID != "" {
+		q += ` AND lower(repo_id)=?`
+		args = append(args, strings.ToLower(repoID))
+	}
+	if userID := NormalizeMemoryIdentity(query.UserID); userID != "" {
+		q += ` AND lower(user_id)=?`
+		args = append(args, strings.ToLower(userID))
+	}
+	if len(query.Kinds) > 0 {
+		parts := make([]string, 0, len(query.Kinds))
+		for _, kind := range query.Kinds {
+			kind = NormalizeMemoryKind(kind)
+			if kind == "" {
+				continue
+			}
+			parts = append(parts, "?")
+			args = append(args, strings.ToLower(kind))
+		}
+		if len(parts) > 0 {
+			q += ` AND lower(kind) IN (` + strings.Join(parts, ",") + `)`
+		}
+	}
+	if fingerprint := NormalizeMemoryFingerprint(query.Fingerprint); fingerprint != "" {
+		q += ` AND fingerprint=?`
+		args = append(args, fingerprint)
+	}
+	if query.MinConfidence > 0 {
+		q += ` AND confidence >= ?`
+		args = append(args, query.MinConfidence)
+	}
+	if !query.NotExpiredAt.IsZero() {
+		notExpiredAt := FormatMemoryTime(query.NotExpiredAt.UTC())
+		q += ` AND (expires_at='' OR expires_at>=?)`
+		args = append(args, notExpiredAt)
+	}
 	if group := NormalizePath(query.Group); group != "" {
 		q += ` AND group_key=?`
 		args = append(args, group)
@@ -327,6 +434,14 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 		tagsRaw         string
 		citationRaw     string
 		metadataRaw     string
+		scope           string
+		sessionID       string
+		repoID          string
+		userID          string
+		kind            string
+		fingerprint     string
+		confidence      float64
+		expiresAt       string
 		stage           string
 		status          string
 		group           string
@@ -342,7 +457,7 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 		createdAt       string
 		updatedAt       string
 	)
-	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &metadataRaw, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
+	if err := scanner.Scan(&id, &path, &content, &summary, &tagsRaw, &citationRaw, &metadataRaw, &scope, &sessionID, &repoID, &userID, &kind, &fingerprint, &confidence, &expiresAt, &stage, &status, &group, &workspace, &cwd, &gitBranch, &sourceKind, &sourceID, &sourcePath, &sourceUpdatedAt, &usageCount, &lastUsedAt, &createdAt, &updatedAt); err != nil {
 		return nil, err
 	}
 	record := &ExtendedMemoryRecord{
@@ -350,6 +465,14 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 		Path:            NormalizePath(path),
 		Content:         content,
 		Summary:         summary,
+		Scope:           NormalizeMemoryScope(MemoryScope(scope), sessionID, userID),
+		SessionID:       NormalizeMemoryIdentity(sessionID),
+		RepoID:          NormalizeRepoID(repoID),
+		UserID:          NormalizeMemoryIdentity(userID),
+		Kind:            NormalizeMemoryKind(kind),
+		Fingerprint:     NormalizeMemoryFingerprint(fingerprint),
+		Confidence:      confidence,
+		ExpiresAt:       ParseMemoryTime(expiresAt),
 		Stage:           MemoryStage(stage),
 		Status:          MemoryStatus(status),
 		Group:           NormalizePath(group),
@@ -375,6 +498,12 @@ func scanMemoryRecord(scanner memoryScanner) (*ExtendedMemoryRecord, error) {
 	}
 	if record.Status == "" {
 		record.Status = MemoryStatusActive
+	}
+	if record.RepoID == "" {
+		record.RepoID = NormalizeRepoID(record.Workspace)
+	}
+	if record.Fingerprint == "" {
+		record.Fingerprint = record.Path
 	}
 	return record, nil
 }

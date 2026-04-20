@@ -26,6 +26,7 @@ type memoryState struct {
 	store         memstore.ExtendedMemoryStore
 	runtime       taskrt.TaskRuntime
 	pipeline      *memstore.PipelineManager
+	auto          *automaticMemoryRuntime
 	embedder      model.Embedder
 	documentTools bool
 }
@@ -91,6 +92,11 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 			st.store = newIndexedMemoryStore(st.store, StateCatalogOf(k))
 			st.pipeline = memstore.NewPipelineManager(st.workspace, st.store, st.runtime)
 			st.pipeline.Start()
+		}
+		if st.auto == nil {
+			if err := installAutomaticMemoryRuntime(k, st); err != nil {
+				return err
+			}
 		}
 		return registerMemoryToolsWithPipeline(k.ToolRegistry(), st.workspace, st.store, st.pipeline, st.embedder, st.documentTools)
 	}); err != nil {
@@ -318,6 +324,14 @@ var writeMemoryRecordSpec = tool.ToolSpec{
 			"content":{"type":"string"},
 			"summary":{"type":"string"},
 			"tags":{"type":"array","items":{"type":"string"}},
+			"scope":{"type":"string","enum":["session","repo","user"]},
+			"session_id":{"type":"string"},
+			"repo_id":{"type":"string"},
+			"user_id":{"type":"string"},
+			"kind":{"type":"string"},
+			"fingerprint":{"type":"string"},
+			"confidence":{"type":"number"},
+			"expires_at":{"type":"string","description":"RFC3339 timestamp"},
 			"citation":{"type":"object"},
 			"stage":{"type":"string","enum":["manual","snapshot","consolidated","promoted"]},
 			"status":{"type":"string","enum":["active","superseded","archived"]},
@@ -338,16 +352,25 @@ var writeMemoryRecordSpec = tool.ToolSpec{
 
 var searchMemoriesSpec = tool.ToolSpec{
 	Name:        "search_memories",
-	Description: "Search structured memories by text, tags, stage, status, workspace, and group.",
+	Description: "Search structured memories by typed identity filters, text, tags, stage/status, and stable sort/top-K semantics.",
 	InputSchema: json.RawMessage(`{
 		"type":"object",
 		"properties":{
 			"query":{"type":"string"},
 			"tags":{"type":"array","items":{"type":"string"}},
+			"scopes":{"type":"array","items":{"type":"string","enum":["session","repo","user"]}},
+			"session_id":{"type":"string"},
+			"repo_id":{"type":"string"},
+			"user_id":{"type":"string"},
+			"kinds":{"type":"array","items":{"type":"string"}},
+			"fingerprint":{"type":"string"},
+			"min_confidence":{"type":"number"},
+			"not_expired_at":{"type":"string","description":"RFC3339 timestamp"},
 			"stages":{"type":"array","items":{"type":"string","enum":["manual","snapshot","consolidated","promoted"]}},
 			"statuses":{"type":"array","items":{"type":"string","enum":["active","superseded","archived"]}},
 			"group":{"type":"string"},
 			"workspace":{"type":"string"},
+			"sort_by":{"type":"string","enum":["score","updated_at","last_used_at"]},
 			"limit":{"type":"integer"}
 		}
 	}`),
@@ -414,12 +437,16 @@ func writeMemoryHandler(ws workspace.Workspace, store memstore.ExtendedMemorySto
 		}
 		in.Path = memstore.NormalizePath(in.Path)
 		record, err := store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
-			Path:       in.Path,
-			Content:    in.Content,
-			Stage:      memstore.MemoryStageManual,
-			Status:     memstore.MemoryStatusActive,
-			SourceKind: "tool.write_memory",
-			SourcePath: in.Path,
+			Path:        in.Path,
+			Content:     in.Content,
+			Scope:       memstore.MemoryScopeRepo,
+			Kind:        "manual_note",
+			Fingerprint: in.Path,
+			Confidence:  0.95,
+			Stage:       memstore.MemoryStageManual,
+			Status:      memstore.MemoryStatusActive,
+			SourceKind:  "tool.write_memory",
+			SourcePath:  in.Path,
 		})
 		if err != nil {
 			return nil, err
@@ -512,6 +539,14 @@ func writeMemoryRecordHandler(ws workspace.Workspace, store memstore.ExtendedMem
 			Content         string                  `json:"content"`
 			Summary         string                  `json:"summary"`
 			Tags            []string                `json:"tags"`
+			Scope           memstore.MemoryScope    `json:"scope"`
+			SessionID       string                  `json:"session_id"`
+			RepoID          string                  `json:"repo_id"`
+			UserID          string                  `json:"user_id"`
+			Kind            string                  `json:"kind"`
+			Fingerprint     string                  `json:"fingerprint"`
+			Confidence      float64                 `json:"confidence"`
+			ExpiresAt       string                  `json:"expires_at"`
 			Citation        memstore.MemoryCitation `json:"citation"`
 			Stage           memstore.MemoryStage    `json:"stage"`
 			Status          memstore.MemoryStatus   `json:"status"`
@@ -532,6 +567,14 @@ func writeMemoryRecordHandler(ws workspace.Workspace, store memstore.ExtendedMem
 			Content:         in.Content,
 			Summary:         in.Summary,
 			Tags:            in.Tags,
+			Scope:           in.Scope,
+			SessionID:       in.SessionID,
+			RepoID:          in.RepoID,
+			UserID:          in.UserID,
+			Kind:            in.Kind,
+			Fingerprint:     in.Fingerprint,
+			Confidence:      in.Confidence,
+			ExpiresAt:       memstore.ParseMemoryTime(in.ExpiresAt),
 			Citation:        in.Citation,
 			Stage:           in.Stage,
 			Status:          in.Status,
@@ -563,25 +606,43 @@ func writeMemoryRecordHandler(ws workspace.Workspace, store memstore.ExtendedMem
 func searchMemoriesHandler(store memstore.ExtendedMemoryStore) tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in struct {
-			Query     string                  `json:"query"`
-			Tags      []string                `json:"tags"`
-			Stages    []memstore.MemoryStage  `json:"stages"`
-			Statuses  []memstore.MemoryStatus `json:"statuses"`
-			Group     string                  `json:"group"`
-			Workspace string                  `json:"workspace"`
-			Limit     int                     `json:"limit"`
+			Query         string                  `json:"query"`
+			Tags          []string                `json:"tags"`
+			Scopes        []memstore.MemoryScope  `json:"scopes"`
+			SessionID     string                  `json:"session_id"`
+			RepoID        string                  `json:"repo_id"`
+			UserID        string                  `json:"user_id"`
+			Kinds         []string                `json:"kinds"`
+			Fingerprint   string                  `json:"fingerprint"`
+			MinConfidence float64                 `json:"min_confidence"`
+			NotExpiredAt  string                  `json:"not_expired_at"`
+			Stages        []memstore.MemoryStage  `json:"stages"`
+			Statuses      []memstore.MemoryStatus `json:"statuses"`
+			Group         string                  `json:"group"`
+			Workspace     string                  `json:"workspace"`
+			SortBy        memstore.MemorySortBy   `json:"sort_by"`
+			Limit         int                     `json:"limit"`
 		}
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, fmt.Errorf("invalid input: %w", err)
 		}
 		items, err := store.SearchExtended(ctx, memstore.ExtendedMemoryQuery{
-			Query:     in.Query,
-			Tags:      in.Tags,
-			Stages:    in.Stages,
-			Statuses:  in.Statuses,
-			Group:     in.Group,
-			Workspace: in.Workspace,
-			Limit:     in.Limit,
+			Query:         in.Query,
+			Tags:          in.Tags,
+			Scopes:        in.Scopes,
+			SessionID:     in.SessionID,
+			RepoID:        in.RepoID,
+			UserID:        in.UserID,
+			Kinds:         in.Kinds,
+			Fingerprint:   in.Fingerprint,
+			MinConfidence: in.MinConfidence,
+			NotExpiredAt:  memstore.ParseMemoryTime(in.NotExpiredAt),
+			Stages:        in.Stages,
+			Statuses:      in.Statuses,
+			Group:         in.Group,
+			Workspace:     in.Workspace,
+			SortBy:        in.SortBy,
+			Limit:         in.Limit,
 		})
 		if err != nil {
 			return nil, err
@@ -662,12 +723,16 @@ func ensureMemoryRecord(ctx context.Context, ws workspace.Workspace, store memst
 		return nil, false, readErr
 	}
 	record, err = store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
-		Path:       path,
-		Content:    string(data),
-		Stage:      memstore.MemoryStageManual,
-		Status:     memstore.MemoryStatusActive,
-		SourceKind: "projection.reconciled",
-		SourcePath: path,
+		Path:        path,
+		Content:     string(data),
+		Scope:       memstore.MemoryScopeRepo,
+		Kind:        "manual_note",
+		Fingerprint: path,
+		Confidence:  0.9,
+		Stage:       memstore.MemoryStageManual,
+		Status:      memstore.MemoryStatusActive,
+		SourceKind:  "projection.reconciled",
+		SourcePath:  path,
 	})
 	return record, true, err
 }

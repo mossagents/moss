@@ -261,11 +261,26 @@ func appendToolExecutionMetadata(event *observe.ExecutionEvent, output json.RawM
 	if event.Metadata == nil {
 		event.Metadata = map[string]any{}
 	}
-	for _, key := range []string{"enforcement", "degraded", "details", "url", "method", "status_code", "follow_redirects"} {
+	for _, key := range []string{"enforcement", "degraded", "details", "url", "method", "status_code", "follow_redirects", "exit_code"} {
 		if value, ok := payload[key]; ok {
 			event.Metadata[key] = value
 		}
 	}
+	for _, key := range []string{"stdout", "stderr"} {
+		if value, ok := payload[key]; ok {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+				event.Metadata[key+"_preview"] = compactToolStreamPreview(text, 240)
+			}
+		}
+	}
+}
+
+func compactToolStreamPreview(text string, maxLen int) string {
+	text = strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if maxLen <= 0 || len(text) <= maxLen {
+		return text
+	}
+	return strings.TrimSpace(text[:maxLen]) + "..."
 }
 
 func appendExecutionErrorMetadata(event *observe.ExecutionEvent, err error) {

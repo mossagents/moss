@@ -222,6 +222,74 @@ func TestLoopGreetingTurnDoesNotExposeTools(t *testing.T) {
 	}
 }
 
+func TestLoopBeforeLLMRequestHookMutatesOnlyRequestMessages(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{{
+			Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("ok")}},
+			StopReason: "end_turn",
+			Usage:      model.TokenUsage{TotalTokens: 6},
+		}},
+	}
+	chain := hooks.NewRegistry()
+	chain.BeforeLLM.AddHook("base-system", func(_ context.Context, ev *hooks.LLMEvent) error {
+		if ev == nil || ev.Session == nil {
+			return nil
+		}
+		ev.Session.UpdateSystemPrompt("base system")
+		return nil
+	}, 0)
+	chain.BeforeLLMRequest.AddHook("inject-memory", func(_ context.Context, ev *hooks.LLMEvent) error {
+		if ev == nil || ev.Request == nil {
+			t.Fatal("expected request-local LLM event")
+		}
+		if len(ev.PromptMessages) < 2 {
+			t.Fatalf("expected prompt messages, got %d", len(ev.PromptMessages))
+		}
+		if got := model.ContentPartsToPlainText(ev.PromptMessages[0].ContentParts); got != "base system" {
+			t.Fatalf("request hook saw system prompt %q, want base system", got)
+		}
+		updated := append([]model.Message(nil), ev.PromptMessages...)
+		updated[0] = model.Message{
+			Role: model.RoleSystem,
+			ContentParts: []model.ContentPart{model.TextPart(
+				"base system\n\n<memory_context>\nremember preferred weather API\n</memory_context>",
+			)},
+		}
+		ev.PromptMessages = updated
+		ev.Request.Messages = updated
+		return nil
+	}, 0)
+
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+		Hooks: chain,
+		IO:    kt.NewRecorderIO(),
+	}
+	sess := &session.Session{
+		ID:       "test-before-llm-request",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("Hi")}}},
+		Budget:   session.Budget{MaxSteps: 4},
+	}
+
+	if _, err := l.Run(context.Background(), sess); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(mock.Calls) != 1 {
+		t.Fatalf("calls=%d, want 1", len(mock.Calls))
+	}
+	if got := model.ContentPartsToPlainText(mock.Calls[0].Messages[0].ContentParts); !strings.Contains(got, "<memory_context>") {
+		t.Fatalf("request-local prompt missing memory context: %q", got)
+	}
+	if got := model.ContentPartsToPlainText(sess.Messages[0].ContentParts); got != "base system" {
+		t.Fatalf("session system prompt = %q, want base system", got)
+	}
+	if strings.Contains(model.ContentPartsToPlainText(sess.Messages[0].ContentParts), "<memory_context>") {
+		t.Fatalf("session messages should not persist request-local memory context: %q", model.ContentPartsToPlainText(sess.Messages[0].ContentParts))
+	}
+}
+
 func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 	mock := &kt.MockLLM{
 		Responses: []model.CompletionResponse{

@@ -56,6 +56,22 @@ func TestInstall_BeforeLLMHookFires(t *testing.T) {
 	}
 }
 
+func TestInstall_BeforeLLMRequestHookFires(t *testing.T) {
+	reg := hooks.NewRegistry()
+	var called int32
+	p := plugin.BeforeLLMRequestHook("test-before-llm-request", 0, func(ctx context.Context, e *hooks.LLMEvent) error {
+		atomic.AddInt32(&called, 1)
+		return nil
+	})
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	reg.BeforeLLMRequest.Run(context.Background(), &hooks.LLMEvent{})
+	if atomic.LoadInt32(&called) != 1 {
+		t.Fatal("BeforeLLMRequest hook was not called")
+	}
+}
+
 func TestInstall_AfterLLMHookFires(t *testing.T) {
 	reg := hooks.NewRegistry()
 	var called int32
@@ -133,6 +149,22 @@ func TestInstall_InterceptorFires(t *testing.T) {
 	reg.BeforeLLM.Run(context.Background(), &hooks.LLMEvent{})
 	if atomic.LoadInt32(&called) != 1 {
 		t.Fatal("BeforeLLMInterceptor was not called")
+	}
+}
+
+func TestInstall_BeforeLLMRequestInterceptorFires(t *testing.T) {
+	reg := hooks.NewRegistry()
+	var called int32
+	p := plugin.BeforeLLMRequestInterceptor("test-request-interceptor", 0, func(ctx context.Context, e *hooks.LLMEvent, next func(context.Context) error) error {
+		atomic.AddInt32(&called, 1)
+		return next(ctx)
+	})
+	if err := plugin.Install(reg, p); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	reg.BeforeLLMRequest.Run(context.Background(), &hooks.LLMEvent{})
+	if atomic.LoadInt32(&called) != 1 {
+		t.Fatal("BeforeLLMRequestInterceptor was not called")
 	}
 }
 

@@ -36,13 +36,16 @@ func (c RAGConfig) enabled() bool {
 }
 
 // RAG 构造 RAG 注入 hook。
-// 在每次 LLM 调用前检索三层记忆并将结果追加到 system message。
+// 在每次 LLM 请求发出前检索三层记忆并将结果追加到 request-local prompt。
 func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 	return func(ctx context.Context, ev *hooks.LLMEvent) error {
 		if !cfg.enabled() {
 			return nil
 		}
 		if !hasContextInjector(cfg.Manager) || ev.Session == nil {
+			return nil
+		}
+		if ev.Request == nil && len(ev.PromptMessages) == 0 {
 			return nil
 		}
 
@@ -63,7 +66,18 @@ func RAG(cfg RAGConfig) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 
-		appendMemoryContext(sess, msgs, injected)
+		promptMessages := ev.PromptMessages
+		if len(promptMessages) == 0 && ev.Request != nil {
+			promptMessages = ev.Request.Messages
+		}
+		if len(promptMessages) == 0 {
+			promptMessages, _ = sessionPromptMessages(sess)
+		}
+		updated := appendMemoryContext(promptMessages, injected)
+		ev.PromptMessages = updated
+		if ev.Request != nil {
+			ev.Request.Messages = updated
+		}
 
 		return nil
 	}
@@ -100,10 +114,7 @@ func extractQuery(msgs []model.Message, extractor func([]model.Message) string) 
 	return ""
 }
 
-func appendMemoryContext(sess interface {
-	CopyMessages() []model.Message
-	ReplaceMessages([]model.Message)
-}, msgs []model.Message, injected string) {
+func appendMemoryContext(msgs []model.Message, injected string) []model.Message {
 	newMsgs := make([]model.Message, len(msgs))
 	copy(newMsgs, msgs)
 
@@ -130,7 +141,16 @@ func appendMemoryContext(sess interface {
 		newMsgs = append([]model.Message{injectedMsg}, newMsgs...)
 	}
 
-	sess.ReplaceMessages(newMsgs)
+	return newMsgs
+}
+
+func sessionPromptMessages(sess interface {
+	CopyMessages() []model.Message
+}) ([]model.Message, bool) {
+	if sess == nil {
+		return nil, false
+	}
+	return sess.CopyMessages(), true
 }
 
 func stripMemoryContext(text string) string {

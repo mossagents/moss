@@ -2,6 +2,24 @@ package memstore
 
 import "time"
 
+// MemoryScope 表示 memory 记录所属的沉淀作用域。
+type MemoryScope string
+
+const (
+	MemoryScopeSession MemoryScope = "session"
+	MemoryScopeRepo    MemoryScope = "repo"
+	MemoryScopeUser    MemoryScope = "user"
+)
+
+// MemorySortBy 表示结构化 memory 查询的排序主键。
+type MemorySortBy string
+
+const (
+	MemorySortByScore      MemorySortBy = "score"
+	MemorySortByUpdatedAt  MemorySortBy = "updated_at"
+	MemorySortByLastUsedAt MemorySortBy = "last_used_at"
+)
+
 // MemoryCitationEntry 描述 memory 内容的来源片段。
 type MemoryCitationEntry struct {
 	Path      string `json:"path"`
@@ -50,6 +68,14 @@ type ExtendedMemoryRecord struct {
 	Metadata  map[string]any `json:"metadata,omitempty"`
 
 	// 扩展字段（harness 层）
+	Scope           MemoryScope    `json:"scope,omitempty"`
+	SessionID       string         `json:"session_id,omitempty"`
+	RepoID          string         `json:"repo_id,omitempty"`
+	UserID          string         `json:"user_id,omitempty"`
+	Kind            string         `json:"kind,omitempty"`
+	Fingerprint     string         `json:"fingerprint,omitempty"`
+	Confidence      float64        `json:"confidence,omitempty"`
+	ExpiresAt       time.Time      `json:"expires_at,omitempty"`
 	Citation        MemoryCitation `json:"citation,omitempty"`
 	Stage           MemoryStage    `json:"stage,omitempty"`
 	Status          MemoryStatus   `json:"status,omitempty"`
@@ -67,11 +93,20 @@ type ExtendedMemoryRecord struct {
 
 // ExtendedMemoryQuery 是 harness 层的完整 memory 查询参数。
 type ExtendedMemoryQuery struct {
-	Query     string         `json:"query,omitempty"`
-	Tags      []string       `json:"tags,omitempty"`
-	Stages    []MemoryStage  `json:"stages,omitempty"`
-	Statuses  []MemoryStatus `json:"statuses,omitempty"`
-	Group     string         `json:"group,omitempty"`
-	Workspace string         `json:"workspace,omitempty"`
-	Limit     int            `json:"limit,omitempty"`
+	Query         string         `json:"query,omitempty"`
+	Tags          []string       `json:"tags,omitempty"`
+	Scopes        []MemoryScope  `json:"scopes,omitempty"`
+	SessionID     string         `json:"session_id,omitempty"`
+	RepoID        string         `json:"repo_id,omitempty"`
+	UserID        string         `json:"user_id,omitempty"`
+	Kinds         []string       `json:"kinds,omitempty"`
+	Fingerprint   string         `json:"fingerprint,omitempty"`
+	MinConfidence float64        `json:"min_confidence,omitempty"`
+	NotExpiredAt  time.Time      `json:"not_expired_at,omitempty"`
+	Stages        []MemoryStage  `json:"stages,omitempty"`
+	Statuses      []MemoryStatus `json:"statuses,omitempty"`
+	Group         string         `json:"group,omitempty"`
+	Workspace     string         `json:"workspace,omitempty"`
+	SortBy        MemorySortBy   `json:"sort_by,omitempty"`
+	Limit         int            `json:"limit,omitempty"`
 }

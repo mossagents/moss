@@ -14,9 +14,11 @@ import (
 
 // LLMEvent 携带 BeforeLLM / AfterLLM 阶段的上下文。
 type LLMEvent struct {
-	Session  *session.Session
-	IO       io.UserIO
-	Observer observe.Observer
+	Session        *session.Session
+	IO             io.UserIO
+	Observer       observe.Observer
+	Request        *model.CompletionRequest
+	PromptMessages []model.Message
 }
 
 // ToolStage 表示工具调用生命周期 hook 的阶段。

@@ -502,9 +502,12 @@ func renderToolCall(start *chatMessage, result *chatMessage, width int, compact 
 	style := toolLabelStyle
 	icon := toolPendingIcon()
 	suffix := ""
-	summary := ""
+	startSummary := ""
+	resultSummary := ""
+	body := renderedToolBody{}
+	showBody := false
 	if start != nil {
-		summary = summarizeToolParams(toolName, toolMetaString(*start, "args_preview", ""), width)
+		startSummary = summarizeToolParams(toolName, toolMetaString(*start, "args_preview", ""), width)
 		suffix = formatToolRunningElapsed(start.meta)
 	}
 	if result != nil {
@@ -515,25 +518,36 @@ func renderToolCall(start *chatMessage, result *chatMessage, width int, compact 
 			icon = toolErrorIcon()
 		}
 		suffix = formatToolDuration(result.meta["duration_ms"])
+		resultSummary = compactToolResultSummary(toolName, result.content)
+		body = renderToolBody(toolName, result.content, max(20, width-5))
+		showBody = shouldRenderToolResultContent(toolName, result, body)
 	}
-	header := renderToolHeaderLine(style, icon, toolPrettyName(toolName), summary, suffix, width)
+	headerSummary := startSummary
+	if compact {
+		headerSummary = joinToolCallSummary(startSummary, resultSummary)
+	} else if start == nil && !showBody {
+		headerSummary = firstNonEmpty(strings.TrimSpace(resultSummary), strings.TrimSpace(body.summary))
+	}
+	header := renderToolHeaderLine(style, icon, toolPrettyName(toolName), headerSummary, suffix, width)
 	if compact {
 		return header
 	}
 	parts := []string{header}
 	if start != nil {
-		if body := renderToolSnippet(toolMetaString(*start, "args_preview", ""), max(20, width-5)); body != "" && strings.TrimSpace(body) != strings.TrimSpace(summary) {
-			parts = append(parts, "", halfMutedStyle.Render("    input"), renderToolBodyBlock(mutedStyle, body))
+		if inputBody := renderToolSnippet(toolMetaString(*start, "args_preview", ""), max(20, width-5)); inputBody != "" && strings.TrimSpace(inputBody) != strings.TrimSpace(startSummary) {
+			parts = append(parts, "", halfMutedStyle.Render("    input"), renderToolBodyBlock(mutedStyle, inputBody))
 		}
 	}
 	if result != nil {
-		body := renderToolBody(toolName, result.content, max(20, width-5))
-		if body.summary != "" {
-			parts = append(parts, "", halfMutedStyle.Render("    result · "+body.summary))
-		} else {
-			parts = append(parts, "", halfMutedStyle.Render("    result"))
+		if start != nil || showBody {
+			resultLabel := firstNonEmpty(strings.TrimSpace(body.summary), strings.TrimSpace(resultSummary))
+			if resultLabel != "" {
+				parts = append(parts, "", halfMutedStyle.Render("    result · "+resultLabel))
+			} else {
+				parts = append(parts, "", halfMutedStyle.Render("    result"))
+			}
 		}
-		if body.content != "" {
+		if showBody {
 			parts = append(parts, renderToolBodyBlock(baseStyle, body.content))
 		}
 	}
@@ -569,6 +583,7 @@ func renderShellToolCall(start *chatMessage, result *chatMessage, width int, com
 	style := toolLabelStyle
 	icon := toolPendingIcon()
 	suffix := ""
+	resultSummary := ""
 	if start != nil {
 		suffix = formatToolRunningElapsed(start.meta)
 	}
@@ -580,8 +595,14 @@ func renderShellToolCall(start *chatMessage, result *chatMessage, width int, com
 			icon = toolErrorIcon()
 		}
 		suffix = formatToolDuration(result.meta["duration_ms"])
+		resultSummary = compactToolResultSummary(toolName, result.content)
 	}
-	header := renderToolHeaderLine(style, icon, title, truncateDisplayWidth(strings.TrimSpace(cmd), max(20, width-12)), suffix, width)
+	cmdSummary := truncateDisplayWidth(strings.TrimSpace(cmd), max(20, width-12))
+	headerSummary := cmdSummary
+	if compact {
+		headerSummary = joinToolCallSummary(cmdSummary, resultSummary)
+	}
+	header := renderToolHeaderLine(style, icon, title, headerSummary, suffix, width)
 	if compact {
 		return header
 	}
@@ -863,7 +884,7 @@ func renderToolBody(toolName, content string, width int) renderedToolBody {
 
 	if value, ok := parseJSONObject(text); ok {
 		return renderedToolBody{
-			summary: "JSON object",
+			summary: structuredToolResultSummary(toolName, text, fmt.Sprintf("%d keys", len(value))),
 			content: truncateToolBlock(formatIndentedJSON(value), 14, 900),
 		}
 	}
@@ -898,6 +919,56 @@ func renderToolSnippet(content string, width int) string {
 		return body.summary + "\n" + body.content
 	}
 	return wrapText(truncateToolBlock(trimmed, 8, 400), width)
+}
+
+func compactToolResultSummary(toolName, content string) string {
+	switch toolName {
+	case "read_file", "view":
+		return ""
+	default:
+		return strings.TrimSpace(summarizeTimelineToolResult(toolName, content))
+	}
+}
+
+func structuredToolResultSummary(toolName, content, fallback string) string {
+	summary := compactToolResultSummary(toolName, content)
+	if summary == "" || strings.HasPrefix(summary, "{") || strings.HasPrefix(summary, "[") {
+		return fallback
+	}
+	return summary
+}
+
+func joinToolCallSummary(parts ...string) string {
+	joined := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key := strings.ToLower(part)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		joined = append(joined, part)
+	}
+	return strings.Join(joined, " · ")
+}
+
+func shouldRenderToolResultContent(toolName string, result *chatMessage, body renderedToolBody) bool {
+	if strings.TrimSpace(body.content) == "" {
+		return false
+	}
+	if result != nil && result.kind == msgToolError {
+		return true
+	}
+	switch toolName {
+	case "read_file", "view":
+		return true
+	default:
+		return strings.TrimSpace(body.summary) == ""
+	}
 }
 
 func looksMarkdown(content string) bool {
@@ -946,7 +1017,7 @@ func parseJSONString(content string) (string, bool) {
 }
 
 func renderToolJSONArray(values []any, width int) renderedToolBody {
-	summary := fmt.Sprintf("JSON array · %d items", len(values))
+	summary := fmt.Sprintf("%d items", len(values))
 	if len(values) == 0 {
 		return renderedToolBody{summary: summary, content: "[]"}
 	}

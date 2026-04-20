@@ -198,15 +198,20 @@ func persistContextSummaryMemory(
 	content := strings.TrimSpace(summary)
 	recordPath := memstore.NormalizePath(fmt.Sprintf("context_snapshots/%s/%s.md", strings.TrimSpace(sess.ID), strings.TrimSpace(snapshotID)))
 	return store.UpsertExtended(ctx, memstore.ExtendedMemoryRecord{
-		Path:       recordPath,
-		Content:    content,
-		Summary:    content,
-		Tags:       []string{"context", "session:" + strings.TrimSpace(sess.ID), mode},
-		Stage:      memstore.MemoryStageSnapshot,
-		Status:     memstore.MemoryStatusActive,
-		Group:      memstore.NormalizePath("context_snapshots/" + strings.TrimSpace(sess.ID)),
-		SourceKind: "context_" + mode,
-		SourceID:   strings.TrimSpace(snapshotID),
-		SourcePath: strings.TrimSpace(snapshotID),
+		Path:        recordPath,
+		Content:     content,
+		Summary:     content,
+		Tags:        []string{"context", "session:" + strings.TrimSpace(sess.ID), mode},
+		Scope:       memstore.MemoryScopeSession,
+		SessionID:   strings.TrimSpace(sess.ID),
+		Kind:        "context_snapshot",
+		Fingerprint: strings.TrimSpace(snapshotID),
+		Confidence:  0.8,
+		Stage:       memstore.MemoryStageSnapshot,
+		Status:      memstore.MemoryStatusActive,
+		Group:       memstore.NormalizePath("context_snapshots/" + strings.TrimSpace(sess.ID)),
+		SourceKind:  "context_" + mode,
+		SourceID:    strings.TrimSpace(snapshotID),
+		SourcePath:  strings.TrimSpace(snapshotID),
 	})
 }

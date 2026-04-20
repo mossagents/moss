@@ -36,6 +36,12 @@ func (g *Group) OnBeforeLLM(h hooks.Hook[hooks.LLMEvent]) {
 	})
 }
 
+func (g *Group) OnBeforeLLMRequest(h hooks.Hook[hooks.LLMEvent]) {
+	g.steps = append(g.steps, func(reg *hooks.Registry) {
+		reg.BeforeLLMRequest.AddHook(g.name, h, g.order)
+	})
+}
+
 func (g *Group) OnAfterLLM(h hooks.Hook[hooks.LLMEvent]) {
 	g.steps = append(g.steps, func(reg *hooks.Registry) {
 		reg.AfterLLM.AddHook(g.name, h, g.order)
@@ -65,6 +71,12 @@ func (g *Group) OnError(h hooks.Hook[hooks.ErrorEvent]) {
 func (g *Group) InterceptBeforeLLM(i hooks.Interceptor[hooks.LLMEvent]) {
 	g.steps = append(g.steps, func(reg *hooks.Registry) {
 		reg.BeforeLLM.AddInterceptor(g.name, i, g.order)
+	})
+}
+
+func (g *Group) InterceptBeforeLLMRequest(i hooks.Interceptor[hooks.LLMEvent]) {
+	g.steps = append(g.steps, func(reg *hooks.Registry) {
+		reg.BeforeLLMRequest.AddInterceptor(g.name, i, g.order)
 	})
 }
 

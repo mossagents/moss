@@ -296,9 +296,14 @@ func TestRenderMessage_ToolResultFormatsJSONObject(t *testing.T) {
 		content: `{"status":"ok","count":2}`,
 		meta:    map[string]any{"tool": "read_state"},
 	}, 80)
-	for _, want := range []string{"JSON object", `"status": "ok"`, `"count": 2`} {
+	for _, want := range []string{"│ tool · Read State · status: ok"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("tool result missing %q in %q", want, out)
+		}
+	}
+	for _, unwanted := range []string{"JSON object", `"status": "ok"`, `"count": 2`} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("tool result should stay compact and hide %q in %q", unwanted, out)
 		}
 	}
 }
@@ -309,13 +314,15 @@ func TestRenderMessage_ToolResultSummarizesJSONArray(t *testing.T) {
 		content: `[{"id":"a"},{"id":"b"},{"id":"c"},{"id":"d"}]`,
 		meta:    map[string]any{"tool": "list_threads"},
 	}, 80)
-	for _, want := range []string{"JSON array · 4 items", `1. {"id":"a"}`, `3. {"id":"c"}`, "... 1 more items"} {
+	for _, want := range []string{"│ tool · List Threads · 4 items"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("tool array summary missing %q in %q", want, out)
 		}
 	}
-	if strings.Contains(out, `4. {"id":"d"}`) {
-		t.Fatalf("tool array summary should not include full list: %q", out)
+	for _, unwanted := range []string{`1. {"id":"a"}`, `3. {"id":"c"}`, "... 1 more items", `4. {"id":"d"}`} {
+		if strings.Contains(out, unwanted) {
+			t.Fatalf("tool array summary should stay compact and hide %q in %q", unwanted, out)
+		}
 	}
 }
 
@@ -375,17 +382,22 @@ func TestRenderAllMessages_ExpandsToolDetailsAcrossInterveningMessages(t *testin
 	}
 
 	collapsed := renderAllMessages(msgs, 100, true)
-	if strings.Contains(collapsed, "result") || strings.Contains(collapsed, `"status": 200`) {
+	if strings.Contains(collapsed, "result") || strings.Contains(collapsed, `"body":`) {
 		t.Fatalf("collapsed tool view should hide detail body, got %q", collapsed)
 	}
-	if !strings.Contains(collapsed, "│ tool · Http Request · https://wttr.in/hangzhou?format=j1") {
+	if !strings.Contains(collapsed, "│ tool · Http Request · https://wttr.in/hangzhou?format=j1 · status: 200") {
 		t.Fatalf("collapsed tool view missing compact summary: %q", collapsed)
 	}
 
 	expanded := renderAllMessages(msgs, 100, false)
-	for _, want := range []string{"result", `"status": 200`, `"body":`, "Approval granted."} {
+	for _, want := range []string{"result · status: 200", "Approval granted."} {
 		if !strings.Contains(expanded, want) {
 			t.Fatalf("expanded tool view missing %q in %q", want, expanded)
+		}
+	}
+	for _, unwanted := range []string{`"status": 200`, `"body":`} {
+		if strings.Contains(expanded, unwanted) {
+			t.Fatalf("expanded tool view should hide verbose detail %q in %q", unwanted, expanded)
 		}
 	}
 	if strings.Count(expanded, "Http Request") != 1 {

@@ -13,6 +13,12 @@ func BeforeLLMHook(name string, order int, h hooks.Hook[hooks.LLMEvent]) *Group 
 	return g
 }
 
+func BeforeLLMRequestHook(name string, order int, h hooks.Hook[hooks.LLMEvent]) *Group {
+	g := NewGroup(name, order)
+	g.OnBeforeLLMRequest(h)
+	return g
+}
+
 func AfterLLMHook(name string, order int, h hooks.Hook[hooks.LLMEvent]) *Group {
 	g := NewGroup(name, order)
 	g.OnAfterLLM(h)
@@ -42,6 +48,12 @@ func ErrorHook(name string, order int, h hooks.Hook[hooks.ErrorEvent]) *Group {
 func BeforeLLMInterceptor(name string, order int, i hooks.Interceptor[hooks.LLMEvent]) *Group {
 	g := NewGroup(name, order)
 	g.InterceptBeforeLLM(i)
+	return g
+}
+
+func BeforeLLMRequestInterceptor(name string, order int, i hooks.Interceptor[hooks.LLMEvent]) *Group {
+	g := NewGroup(name, order)
+	g.InterceptBeforeLLMRequest(i)
 	return g
 }
 
