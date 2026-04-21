@@ -478,8 +478,8 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		}
 		m.pendAsk = msg.ask
 		m.askForm = newAskFormState(msg.ask.request, m.workspace)
-		// InputSelect タイプはインラインリスト表示（オーバーレイ不要）
-		if msg.ask.request.Type != io.InputSelect {
+		// InputSelect/InputConfirm タイプはインラインリスト表示（オーバーレイ不要）
+		if msg.ask.request.Type != io.InputSelect && msg.ask.request.Type != io.InputConfirm {
 			m.openAskOverlay()
 		}
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."

@@ -1855,7 +1855,7 @@ func TestConfirmAskFormUsesBottomSheetStyle(t *testing.T) {
 			t.Fatalf("rendered confirm form missing %q:\n%s", want, rendered)
 		}
 	}
-	if !strings.Contains(rendered, "› 2. No") {
+	if !strings.Contains(rendered, "> 2. No") {
 		t.Fatalf("expected confirm dialog to preserve default deny selection:\n%s", rendered)
 	}
 }
@@ -1924,10 +1924,10 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 		"Command",
 		"git push origin main",
 		"Matching rule",
-		"1. Allow once",
-		"2. Session",
-		"3. Project",
-		"4. Deny",
+		"1. Yes",
+		"2. Yes, and remember",
+		"3. Yes, and don't ask again",
+		"4. No",
 		"↑↓ navigate",
 	} {
 		if !strings.Contains(rendered, want) {
@@ -1951,18 +1951,16 @@ func TestConfirmOverlayPlacementUsesBottomSheet(t *testing.T) {
 		replyCh: replyCh,
 	}
 	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
-	dialog := updated.activeOverlay()
-	if dialog == nil || dialog.ID() != overlayAsk {
-		t.Fatal("expected confirm overlay to be active")
+	// InputConfirm はオーバーレイを開かず、インラインフォームとして表示される
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected no overlay for InputConfirm (inline mode)")
 	}
-	layout := updated.generateLayout()
-	width, vertical := updated.overlayPlacement(dialog, layout)
-	wantWidth := min(layout.MainWidth, max(56, layout.MainWidth-2))
-	if width != wantWidth {
-		t.Fatalf("confirm overlay width = %d, want %d", width, wantWidth)
+	if !updated.isSimpleConfirmAskActive() {
+		t.Fatal("expected isSimpleConfirmAskActive to be true for inline confirm")
 	}
-	if vertical != lipgloss.Bottom {
-		t.Fatalf("confirm overlay vertical placement = %v, want %v", vertical, lipgloss.Bottom)
+	rendered := updated.renderAskForm(110)
+	if !strings.Contains(rendered, "1. Yes") || !strings.Contains(rendered, "2. No") {
+		t.Fatalf("expected inline confirm form with Yes/No options:\n%s", rendered)
 	}
 }
 

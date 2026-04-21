@@ -711,11 +711,11 @@ func (m chatModel) renderAskForm(width int) string {
 		width = 30
 	}
 	var sb strings.Builder
-	if m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm && m.pendAsk.request.Approval != nil {
-		return m.renderApprovalAskForm(width)
+	if m.isApprovalAskActive() {
+		return m.renderInlineApprovalAsk(width)
 	}
 	if m.isSimpleConfirmAskActive() {
-		return m.renderSimpleConfirmAskForm(width)
+		return m.renderInlineSimpleConfirmAsk(width)
 	}
 	sb.WriteString(wrapText(m.askForm.prompt, width-4))
 	if strings.TrimSpace(m.askForm.errorText) != "" {
@@ -1085,6 +1085,144 @@ func approvalDecisionButtonLabel(option string) string {
 	default:
 		return option
 	}
+}
+
+// approvalInlineOptionLabel は Claude Code スタイルの自然言語ラベルを返す。
+func approvalInlineOptionLabel(option, actionLabel, workspace string) string {
+	switch option {
+	case userapproval.ChoiceAllowOnce:
+		return "Yes"
+	case userapproval.ChoiceAllowSession:
+		if actionLabel != "" {
+			return fmt.Sprintf("Yes, and remember similar %s commands this session", actionLabel)
+		}
+		return "Yes, and remember for this session"
+	case userapproval.ChoiceAllowProject:
+		if actionLabel != "" && workspace != "" {
+			return fmt.Sprintf("Yes, and don't ask again for %s commands in %s", actionLabel, workspace)
+		}
+		if actionLabel != "" {
+			return fmt.Sprintf("Yes, and don't ask again for %s commands", actionLabel)
+		}
+		return "Yes, and don't ask again for this project"
+	case userapproval.ChoiceDeny:
+		return "No"
+	default:
+		return option
+	}
+}
+
+// renderInlineApprovalAsk はオーバーレイなしで承認ダイアログをインライン表示する。
+func (m chatModel) renderInlineApprovalAsk(width int) string {
+	if !m.isApprovalAskActive() {
+		return ""
+	}
+	display := userapproval.BuildDisplay(m.pendAsk.request.Approval, m.currentSessionID)
+	decisionField := m.askForm.fields[0]
+
+	var sb strings.Builder
+
+	// セクションヘッダー
+	sb.WriteString(dialogAccentStyle.Render("□  " + display.Title))
+	sb.WriteString("\n\n")
+
+	// アクションブロック
+	if label := strings.TrimSpace(display.ActionLabel); label != "" {
+		sb.WriteString(mutedStyle.Render("  " + label))
+		sb.WriteString("\n")
+	}
+	if value := strings.TrimSpace(display.ActionValue); value != "" {
+		sb.WriteString("  " + value)
+		sb.WriteString("\n")
+	}
+
+	// 理由
+	if reason := strings.TrimSpace(display.Reason); reason != "" {
+		sb.WriteString("\n")
+		sb.WriteString(mutedStyle.Render("  " + wrapText(reason, max(20, width-4))))
+		sb.WriteString("\n")
+	}
+
+	// スコープ/マッチングルール
+	if scopeLabel := strings.TrimSpace(display.ScopeLabel); scopeLabel != "" {
+		if scopeValue := strings.TrimSpace(display.ScopeValue); scopeValue != "" {
+			sb.WriteString("\n")
+			sb.WriteString(mutedStyle.Render("  " + scopeLabel + "  " + scopeValue))
+			sb.WriteString("\n")
+		}
+	}
+
+	sb.WriteString("\nDo you want to proceed?\n\n")
+
+	if errText := strings.TrimSpace(m.askForm.errorText); errText != "" {
+		sb.WriteString(errorStyle.Render(wrapText(errText, max(20, width-4))))
+		sb.WriteString("\n\n")
+	}
+
+	// 決定オプション
+	for i, opt := range decisionField.def.Options {
+		label := approvalInlineOptionLabel(opt, display.ActionLabel, m.workspace)
+		numLabel := fmt.Sprintf("%d. ", i+1)
+		if decisionField.singleIndex == i {
+			sb.WriteString(dialogTitleStyle.Render("> " + numLabel + label))
+		} else {
+			sb.WriteString("  " + numLabel + label)
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(mutedStyle.Render("↑↓ navigate  ·  Enter select  ·  Esc cancel"))
+	return sb.String()
+}
+
+// renderInlineSimpleConfirmAsk はオーバーレイなしでシンプル確認ダイアログをインライン表示する。
+func (m chatModel) renderInlineSimpleConfirmAsk(width int) string {
+	if !m.isSimpleConfirmAskActive() {
+		return ""
+	}
+	field := m.askForm.fields[0]
+	yesSelected := field.boolValue
+
+	var sb strings.Builder
+
+	// タイトルバッジ
+	title := confirmDialogTitle(m.pendAsk.request)
+	sb.WriteString(dialogAccentStyle.Render("□  " + title))
+	sb.WriteString("\n\n")
+
+	// サマリーメタデータ
+	if _, summaryValue := confirmRequestSummary(m.pendAsk.request); summaryValue != "" {
+		sb.WriteString("  " + summaryValue)
+		sb.WriteString("\n\n")
+	}
+
+	// プロンプト
+	if prompt := strings.TrimSpace(m.pendAsk.request.Prompt); prompt != "" {
+		sb.WriteString(wrapText(prompt, max(20, width-4)))
+		sb.WriteString("\n\n")
+	}
+
+	if errText := strings.TrimSpace(m.askForm.errorText); errText != "" {
+		sb.WriteString(errorStyle.Render(wrapText(errText, max(20, width-4))))
+		sb.WriteString("\n\n")
+	}
+
+	// Yes/No オプション
+	for i, opt := range []string{"Yes", "No"} {
+		selected := (i == 0 && yesSelected) || (i == 1 && !yesSelected)
+		numLabel := fmt.Sprintf("%d. ", i+1)
+		if selected {
+			sb.WriteString(dialogTitleStyle.Render("> " + numLabel + opt))
+		} else {
+			sb.WriteString("  " + numLabel + opt)
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n")
+	sb.WriteString(mutedStyle.Render("↑↓ navigate  ·  Enter select  ·  Esc cancel"))
+	return sb.String()
 }
 
 func approvalDecisionNote(selected string, display userapproval.Display) string {

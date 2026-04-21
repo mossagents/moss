@@ -45,6 +45,23 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				return m.handleAskKey(msg)
 			}
 		}
+		// インライン承認/確認フォーム（InputConfirm）のキー処理：オーバーレイなしで独自に処理
+		if m.isApprovalAskActive() || m.isSimpleConfirmAskActive() {
+			switch msg.String() {
+			case "ctrl+c":
+				return m.handleCtrlC()
+			case "esc":
+				if m.cancelRunFn != nil && m.cancelRunFn() {
+					m.streaming = false
+					m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Input cancelled."})
+				}
+				m.resetAskFormState()
+				m.refreshViewport()
+				return m, nil
+			default:
+				return m.handleAskKey(msg)
+			}
+		}
 		// Extension key bindings evaluated before built-in handlers.
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {

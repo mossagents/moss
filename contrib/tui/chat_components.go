@@ -61,6 +61,22 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 			Render(form)
 	}
 
+	// InputConfirm タイプ（承認/シンプル確認）のインラインフォームはエディタ領域全体を置き換える
+	if m.isApprovalAskActive() {
+		form := m.renderInlineApprovalAsk(layout.MainWidth)
+		return lipgloss.NewStyle().
+			Width(layout.MainWidth).
+			PaddingLeft(2).
+			Render(form)
+	}
+	if m.isSimpleConfirmAskActive() {
+		form := m.renderInlineSimpleConfirmAsk(layout.MainWidth)
+		return lipgloss.NewStyle().
+			Width(layout.MainWidth).
+			PaddingLeft(2).
+			Render(form)
+	}
+
 	sections := []string{m.renderComposerMetaLine(layout.MainWidth)}
 	if len(m.queuedInputs) > 0 {
 		queueLines := make([]string, 0, len(m.queuedInputs)+1)
