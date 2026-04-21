@@ -87,6 +87,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				m.adjustInputHeight()
 				m.historyCursor = len(m.inputHistory)
 				m.historyDraft = m.textarea.Value()
+				m.historySlashSuppressed = false
 				m.refreshSlashHints()
 				m.refreshMentionPopup()
 				m.refreshViewport()
@@ -343,7 +344,11 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 	// 更新子组件
 	if m.pendAsk == nil {
 		var cmd tea.Cmd
+		prevValue := m.textarea.Value()
 		m.textarea, cmd = m.textarea.Update(msg)
+		if m.textarea.Value() != prevValue {
+			m.historySlashSuppressed = false
+		}
 		m.adjustInputHeight()
 		m.historyCursor = len(m.inputHistory)
 		m.historyDraft = m.textarea.Value()

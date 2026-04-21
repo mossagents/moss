@@ -1602,6 +1602,49 @@ func TestArrowKeysNavigateInputHistory(t *testing.T) {
 	}
 }
 
+func TestHistoryNavigationSuppressesSlashPopupUntilManualEdit(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.inputHistory = []string{"/mode plan", "second prompt"}
+	m.historyCursor = len(m.inputHistory)
+	m.textarea.SetValue("draft prompt")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := updated.textarea.Value(); got != "/mode plan" {
+		t.Fatalf("expected slash history item, got %q", got)
+	}
+	if updated.slashPopup != nil {
+		t.Fatal("expected slash popup to stay hidden during history navigation")
+	}
+	if hints := updated.currentSlashHints(); len(hints) != 0 {
+		t.Fatalf("expected slash hints to be suppressed during history navigation, got %v", hints)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := updated.textarea.Value(); got != "second prompt" {
+		t.Fatalf("expected history navigation to continue, got %q", got)
+	}
+	if updated.slashPopup != nil {
+		t.Fatal("expected slash popup to remain hidden while navigating history")
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if got := updated.textarea.Value(); got != "second promptx" {
+		t.Fatalf("expected manual edit to update textarea, got %q", got)
+	}
+
+	updated.textarea.SetValue("/mo")
+	updated.historySlashSuppressed = false
+	updated.refreshSlashHints()
+	if hints := updated.currentSlashHints(); len(hints) == 0 {
+		t.Fatal("expected slash hints to recover after manual editing")
+	}
+}
+
 func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
 	cases := map[string]string{
 		userapproval.ChoiceAllowOnce:    "Allow once",

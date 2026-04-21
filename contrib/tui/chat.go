@@ -178,12 +178,13 @@ type chatModel struct {
 	queuedParts        [][]model.ContentPart
 	pendingAttachments []userattachments.ComposerAttachment
 
-	inputHistory  []string
-	historyCursor int
-	historyDraft  string
-	historyPath   string
-	slashHints    []string
-	slashPopup    *slashPopupState
+	inputHistory           []string
+	historyCursor          int
+	historyDraft           string
+	historyPath            string
+	historySlashSuppressed bool
+	slashHints             []string
+	slashPopup             *slashPopupState
 
 	// Extension system
 	extensions []*Extension
@@ -890,6 +891,9 @@ func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd
 		if m.historyCursor > 0 {
 			m.historyCursor--
 			m.textarea.SetValue(m.inputHistory[m.historyCursor])
+			m.historySlashSuppressed = true
+			m.slashHints = nil
+			m.slashPopup = nil
 			m.adjustInputHeight()
 		}
 		return m, nil
@@ -902,6 +906,9 @@ func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd
 			} else {
 				m.textarea.SetValue(m.inputHistory[m.historyCursor])
 			}
+			m.historySlashSuppressed = true
+			m.slashHints = nil
+			m.slashPopup = nil
 			m.adjustInputHeight()
 		}
 		return m, nil
@@ -974,6 +981,11 @@ func saveInputHistory(path string, history []string) error {
 }
 
 func (m *chatModel) refreshSlashHints() {
+	if m.historySlashSuppressed {
+		m.slashHints = nil
+		m.slashPopup = nil
+		return
+	}
 	raw := m.textarea.Value()
 	text := strings.TrimSpace(raw)
 	m.slashHints = filterSlashHints(text, m.customCommands, m.discoveredSkills, m.extensions)
