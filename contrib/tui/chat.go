@@ -561,7 +561,19 @@ func (m *chatModel) queueNewMessages() {
 	}
 
 	// 渲染本批次消息
+	// 流式输出期间，reasoning 消息只在 renderStreamingPreview 中实时显示，
+	// 不打印到 stdout（避免出现只含几个字的碎片化 thinking 条目）。
+	// 流结束后，尾部 reasoning 消息会以完整内容打印。
 	slice := m.messages[m.printedCount:end]
+	if m.streaming {
+		filtered := make([]chatMessage, 0, len(slice))
+		for _, msg := range slice {
+			if msg.kind != msgReasoning {
+				filtered = append(filtered, msg)
+			}
+		}
+		slice = filtered
+	}
 	rendered := renderAllMessages(slice, m.mainWidth(), m.toolCollapsed)
 	if strings.TrimSpace(rendered) != "" {
 		m.pendingPrints = append(m.pendingPrints, rendered)
