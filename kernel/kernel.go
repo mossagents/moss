@@ -55,6 +55,11 @@ type Kernel struct {
 	runtimeResolver kruntime.RequestResolver
 	promptCompiler  kruntime.PromptCompiler
 
+	// §阶段4: blueprint policy applier — 在每次 RunAgentFromBlueprint 执行前
+	// 由 harness 注册，用于将 bp.EffectiveToolPolicy 应用到 kernel policystate，
+	// 替代直接 approval mode → runtime policy 的旧路径。
+	blueprintPolicyApplier func(bp kruntime.SessionBlueprint)
+
 	assemblyMu     sync.Mutex
 	assemblyFrozen bool
 	shutdownCh     chan struct{}
@@ -500,6 +505,20 @@ func (k *Kernel) EventStore() kruntime.EventStore {
 // 若未通过 WithRuntimeResolver 配置，返回 nil。
 func (k *Kernel) RuntimeResolver() kruntime.RequestResolver {
 	return k.runtimeResolver
+}
+
+// SetBlueprintPolicyApplier 注册一个 blueprint policy applier hook。
+// 该 hook 在每次 RunAgentFromBlueprint 执行前被调用，供 harness 将
+// bp.EffectiveToolPolicy 应用到 kernel 的 policystate（§阶段4）。
+//
+// 这是"删除 approval mode runtime application"的实现桥接点：
+// blueprint path 中的 policy 来源从 runtime approval mode 字符串改为
+// 经 PolicyCompiler 编译后的 EffectiveToolPolicy。
+func (k *Kernel) SetBlueprintPolicyApplier(fn func(bp kruntime.SessionBlueprint)) {
+	if k == nil {
+		return
+	}
+	k.blueprintPolicyApplier = fn
 }
 
 // StartRuntimeSession 通过新路径启动一个 Session：

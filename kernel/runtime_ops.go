@@ -237,6 +237,13 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 		o(bpOpts)
 	}
 	return func(yield func(*session.Event, error) bool) {
+		// 0. §阶段4: 删除 approval mode runtime application
+		// 若已注册 blueprint policy applier，在每次 turn 执行前应用 blueprint 编译后的 EffectiveToolPolicy，
+		// 替代 buildKernel 中的 ApplyApprovalModeWithTrust 作为 policystate 的权威来源。
+		if k.blueprintPolicyApplier != nil {
+			k.blueprintPolicyApplier(bp)
+		}
+
 		// 1. 从 blueprint 构造 legacy SessionConfig
 		cfg := blueprintToSessionConfig(bp)
 

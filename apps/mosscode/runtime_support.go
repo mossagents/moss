@@ -145,6 +145,9 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	if _, err := product.ApplyApprovalModeWithTrust(k, flags.Trust, approvalMode); err != nil {
 		return nil, err
 	}
+	// §阶段4: 注册 blueprint policy applier，替代每次 RunAgentFromBlueprint 时的 approval mode runtime application。
+	// 之后每次 RunAgentFromBlueprint 执行前，blueprint.EffectiveToolPolicy 将刷新 kernel policystate。
+	product.RegisterBlueprintPolicyApplier(k)
 	return k, nil
 }
 

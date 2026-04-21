@@ -434,8 +434,15 @@ func AutoCompactHook(k *kernel.Kernel) hooks.Hook[hooks.LLMEvent] {
 			return nil
 		}
 		st := ensureContextState(k)
-		if _, _, _, err := preparePromptContext(ctx, k, st, ev.Session); err != nil {
+		_, promptMsgs, _, err := preparePromptContext(ctx, k, st, ev.Session)
+		if err != nil {
 			return err
+		}
+		// §阶段4: 删除 fragment prompt context 的主传递机制。
+		// 直接将编译后的 prompt messages 设置到 ev.PromptMessages，
+		// loop_llm.go 会优先使用此值，从而绕过 ReadPromptContextState → fragment 读取路径。
+		if len(promptMsgs) > 0 {
+			ev.PromptMessages = promptMsgs
 		}
 		return nil
 	}

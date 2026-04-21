@@ -59,6 +59,12 @@ func NewDefaultPolicyCompiler() *DefaultPolicyCompiler {
 		TrustLevel: "high",
 		// 空 AllowedTools 表示允许所有工具
 	}
+	// 别名：approval mode 名称与 permission profile 名称的双向兼容映射（§阶段4）。
+	// "confirm" 等同于 "workspace-write"；"full-auto" 等同于 "full"。
+	// 旧路径中 ApplyApprovalModeWithTrust 使用 approval mode 字符串，
+	// 新路径中 RuntimeRequest.PermissionProfile 使用 profile 名称；两套名称通过别名对齐。
+	c.profiles["confirm"] = c.profiles["workspace-write"]
+	c.profiles["full-auto"] = c.profiles["full"]
 	c.profiles[""] = c.profiles["workspace-write"] // 默认配置
 	return c
 }
@@ -82,9 +88,10 @@ func (c *DefaultPolicyCompiler) Compile(req RuntimeRequest) (EffectiveToolPolicy
 		DeniedTools:           profile.DeniedTools,
 		ApprovalRequiredTools: profile.ApprovalRequiredTools,
 		Raw: map[string]any{
-			"profile":     req.PermissionProfile,
-			"workspace":   req.Workspace,
-			"trust_level": profile.TrustLevel,
+			"profile":          req.PermissionProfile,
+			"workspace":        req.Workspace,
+			"trust_level":      profile.TrustLevel,
+			"workspace_trust":  req.WorkspaceTrust, // §阶段4: 存储以供 BlueprintPolicyApplier 重建 ToolPolicy
 		},
 	}
 	policy.PolicyHash = computePolicyHash(policy)
