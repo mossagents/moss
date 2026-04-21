@@ -849,18 +849,20 @@ func sessionDialogCount(sess *session.Session) int {
 
 // appModel 是顶层 Bubble Tea Model。
 type appModel struct {
-	state               appState
-	welcome             welcomeModel
-	chat                chatModel
-	config              Config
-	bridgeIO            *bridgeIO
-	agent               *agentState // 共享指针，跨值传递保持一致
-	width               int
-	height              int
-	initCmd             tea.Cmd // 直接进入 chat 时的初始化命令
-	postInitDisplayText string
-	postInitRunText     string
-	theme               string
+	state                 appState
+	welcome               welcomeModel
+	chat                  chatModel
+	config                Config
+	bridgeIO              *bridgeIO
+	agent                 *agentState // 共享指针，跨值传递保持一致
+	width                 int
+	height                int
+	initCmd               tea.Cmd // 直接进入 chat 时的初始化命令
+	postInitDisplayText   string
+	postInitRunText       string
+	postInitSystemNotice  string
+	suppressConnectNotice bool
+	theme                 string
 }
 
 func (m *appModel) configureChatShell() {

@@ -78,8 +78,8 @@ func TestShiftTabCyclesMode(t *testing.T) {
 	if !updated.streaming {
 		t.Fatal("expected streaming state while switching mode")
 	}
-	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "Switching mode to ") {
-		t.Fatalf("unexpected switch message: %q", updated.messages[len(updated.messages)-1].content)
+	if len(updated.messages) != 0 {
+		t.Fatalf("expected no immediate switch transcript message, got %+v", updated.messages)
 	}
 	msg := cmd()
 	switchMsg, ok := msg.(switchModeMsg)

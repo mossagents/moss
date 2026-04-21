@@ -105,13 +105,9 @@ func (m appModel) handleModeSwitch(msg tea.Msg) (handled bool, model tea.Model, 
 	m.chat.collaborationMode = nextMode
 	m.postInitDisplayText = strings.TrimSpace(st.displayText)
 	m.postInitRunText = strings.TrimSpace(st.prompt)
-	if strings.TrimSpace(checkpointMsg) != "" {
-		m.chat.messages = append(m.chat.messages, chatMessage{
-			kind:    msgSystem,
-			content: checkpointMsg + "\nStarting a fresh session with the new mode.",
-		})
-		m.chat.refreshViewport()
-	}
+	m.postInitSystemNotice = fmt.Sprintf("Mode switched to %s.", collaborationModeDisplay(nextMode))
+	m.suppressConnectNotice = true
+	_ = checkpointMsg
 	nextModel, nextCmd := m.rebuildKernelWithSelection(m.config.Provider, m.config.ProviderName, m.config.Model)
 	return true, nextModel, nextCmd
 }
@@ -159,10 +155,17 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model
 		connInfo += " {" + m.config.ApprovalMode + "}"
 	}
 	m.chat.streaming = false
-	m.chat.messages = append(m.chat.messages, chatMessage{
-		kind:    msgSystem,
-		content: fmt.Sprintf("Connected to %s", connInfo),
-	})
+	if !m.suppressConnectNotice {
+		m.chat.messages = append(m.chat.messages, chatMessage{
+			kind:    msgSystem,
+			content: fmt.Sprintf("Connected to %s", connInfo),
+		})
+	}
+	m.suppressConnectNotice = false
+	if notice := strings.TrimSpace(m.postInitSystemNotice); notice != "" {
+		m.chat.messages = append(m.chat.messages, chatMessage{kind: msgSystem, content: notice})
+		m.postInitSystemNotice = ""
+	}
 	for _, notice := range ready.notices {
 		if strings.TrimSpace(notice) == "" {
 			continue

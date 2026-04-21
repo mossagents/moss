@@ -757,7 +757,6 @@ func (m chatModel) queueModeSwitch(modeName, displayText string) (chatModel, tea
 		m.refreshViewport()
 		return m, nil
 	}
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching mode to %s...", collaborationModeDisplay(modeName))})
 	m.streaming = true
 	m.refreshViewport()
 	return m, func() tea.Msg { return switchModeMsg{mode: modeName, displayText: displayText} }
