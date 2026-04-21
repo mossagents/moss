@@ -2,17 +2,18 @@ package product
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/mossagents/moss/harness/appkit"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 )
 
 func TestSelectResumeSummaryLatest(t *testing.T) {
@@ -158,7 +159,7 @@ func TestBuildDoctorReportIncludesMCPServerStatus(t *testing.T) {
 	report := BuildDoctorReport(context.Background(), "mosscode", workspace, &appkit.AppFlags{
 		Workspace: workspace,
 		Trust:     appconfig.TrustRestricted,
-	}, nil, "confirm", DefaultGovernanceConfig())
+	}, nil, "confirm", SessionSelectorReport{}, DefaultGovernanceConfig())
 	if got, want := len(report.Health.Extensions.MCPServerStatus), 1; got != want {
 		t.Fatalf("mcp server status count = %d, want %d", got, want)
 	}
@@ -191,7 +192,7 @@ func TestRenderCheckpointDetail(t *testing.T) {
 		MetadataKeys: []string{"source", "trigger"},
 		CreatedAt:    time.Unix(12, 0).UTC(),
 	})
-	for _, want := range []string{"Checkpoint: cp-1", "snapshot: snap-1", "patches:  2 (patch-1, patch-2)", "metadata: source, trigger", "lineage refs:", "mosscode checkpoint replay --checkpoint cp-1 --mode resume"} {
+	for _, want := range []string{"Checkpoint: cp-1", "snapshot: snap-1", "patches:  2 (patch-1, patch-2)", "metadata: source, trigger", "lineage refs:", "mosscode checkpoint replay --checkpoint cp-1 --replay-mode resume"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in detail output %q", want, out)
 		}

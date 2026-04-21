@@ -1,15 +1,19 @@
 package profile
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/x/stringutil"
-	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/harness/runtime/collaboration"
+	"github.com/mossagents/moss/harness/runtime/permissions"
 	policypack "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type ProfileResolveOptions struct {
@@ -115,7 +119,7 @@ func ResolveProfileForWorkspace(opts ProfileResolveOptions) (ResolvedProfile, er
 		TaskMode:        stringutil.FirstNonEmpty(strings.TrimSpace(resolvedCfg.TaskMode), requested),
 		Trust:           trust,
 		ApprovalMode:    approval,
-		ToolPolicy:    policy,
+		ToolPolicy:      policy,
 		SessionDefaults: resolvedCfg.Session,
 	}, nil
 }
@@ -144,7 +148,7 @@ func SessionPostureFromResolvedProfile(resolved ResolvedProfile) SessionPosture 
 		EffectiveTrust:    appconfig.NormalizeTrustLevel(resolved.Trust),
 		EffectiveApproval: policypack.NormalizeApprovalMode(resolved.ApprovalMode),
 		TaskMode:          stringutil.FirstNonEmpty(strings.TrimSpace(resolved.TaskMode), strings.TrimSpace(resolved.Name), "coding"),
-		ToolPolicy:    policypack.CloneToolPolicy(resolved.ToolPolicy),
+		ToolPolicy:        policypack.CloneToolPolicy(resolved.ToolPolicy),
 		HasToolPolicy:     true,
 	}
 }
@@ -161,6 +165,9 @@ func ApplyResolvedProfileToSessionConfig(cfg session.SessionConfig, resolved Res
 	cfg.Profile = resolved.Name
 	if cfg.TrustLevel == "" {
 		cfg.TrustLevel = resolved.Trust
+	}
+	if cfg.SessionSpec == nil || cfg.ResolvedSessionSpec == nil {
+		cfg = applyTypedSessionProjection(cfg, resolved)
 	}
 	if cfg.Metadata == nil {
 		cfg.Metadata = make(map[string]any)
@@ -183,15 +190,135 @@ func ApplyResolvedProfileToSessionConfig(cfg session.SessionConfig, resolved Res
 	return cfg
 }
 
+func applyTypedSessionProjection(cfg session.SessionConfig, resolved ResolvedProfile) session.SessionConfig {
+	trust := appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(cfg.TrustLevel, resolved.Trust, appconfig.TrustTrusted))
+	runMode := strings.TrimSpace(cfg.Mode)
+	if runMode == "" {
+		runMode = "interactive"
+	}
+	preset := strings.TrimSpace(resolved.Name)
+	collaborationMode := legacyCollaborationMode(resolved.TaskMode, resolved.Name)
+	permissionProfileName := legacyPermissionProfileName(resolved.Name)
+	sessionPolicyName := "legacy-session:" + sanitizeLegacyName(runMode)
+	modelProfileName := "legacy-model:" + sanitizeLegacyName(stringutil.FirstNonEmpty(cfg.ModelConfig.Model, "default-model"))
+	compiledPolicy, err := permissions.Compile(permissions.Profile{
+		Name:                    permissionProfileName,
+		ApprovalPolicy:          strings.TrimSpace(resolved.ApprovalMode),
+		Command:                 resolved.ToolPolicy.Command,
+		HTTP:                    resolved.ToolPolicy.HTTP,
+		WorkspaceWriteAccess:    resolved.ToolPolicy.WorkspaceWriteAccess,
+		MemoryWriteAccess:       resolved.ToolPolicy.MemoryWriteAccess,
+		GraphMutationAccess:     resolved.ToolPolicy.GraphMutationAccess,
+		ProtectedPathPrefixes:   append([]string(nil), resolved.ToolPolicy.ProtectedPathPrefixes...),
+		ApprovalRequiredClasses: append([]tool.ApprovalClass(nil), resolved.ToolPolicy.ApprovalRequiredClasses...),
+		DeniedClasses:           append([]tool.ApprovalClass(nil), resolved.ToolPolicy.DeniedClasses...),
+	}, trust)
+	if err != nil {
+		return cfg
+	}
+	policyJSON, err := json.Marshal(compiledPolicy)
+	if err != nil {
+		return cfg
+	}
+	if cfg.SessionSpec == nil {
+		cfg.SessionSpec = &session.SessionSpec{
+			Workspace: session.SessionWorkspace{Trust: trust},
+			Intent: session.SessionIntent{
+				CollaborationMode: collaborationMode,
+				PromptPack:        strings.TrimSpace(resolved.Name),
+			},
+			Runtime: session.SessionRuntime{
+				RunMode:           runMode,
+				PermissionProfile: permissionProfileName,
+				SessionPolicy:     sessionPolicyName,
+				ModelProfile:      modelProfileName,
+			},
+			Origin: session.SessionOrigin{Preset: preset},
+		}
+	}
+	if cfg.ResolvedSessionSpec == nil {
+		cfg.ResolvedSessionSpec = &session.ResolvedSessionSpec{
+			Workspace: session.ResolvedWorkspace{Trust: trust},
+			Intent: session.ResolvedIntent{
+				CollaborationMode: collaborationMode,
+				PromptPack: session.PromptPackRef{
+					ID:     strings.TrimSpace(resolved.Name),
+					Source: "legacy:" + strings.TrimSpace(resolved.Name),
+				},
+				CapabilityCeiling: capabilityStrings(collaboration.CeilingForMode(collaboration.NormalizeMode(collaborationMode)).Slice()),
+			},
+			Runtime: session.ResolvedRuntime{
+				RunMode:           runMode,
+				PermissionProfile: permissionProfileName,
+				PermissionPolicy:  policyJSON,
+				SessionPolicyName: sessionPolicyName,
+				SessionPolicy: session.SessionPolicySpec{
+					MaxSteps:             cfg.MaxSteps,
+					MaxTokens:            cfg.MaxTokens,
+					Timeout:              cfg.Timeout,
+					AutoCompactThreshold: cfg.ModelConfig.AutoCompactTokenLimit,
+				},
+				ModelProfile: modelProfileName,
+				ModelConfig:  cfg.ModelConfig,
+			},
+			Prompt: session.ResolvedPrompt{BasePackID: strings.TrimSpace(resolved.Name)},
+			Origin: session.ResolvedOrigin{Preset: preset},
+		}
+	}
+	return cfg
+}
+
+func legacyCollaborationMode(taskMode, profileName string) string {
+	switch strings.ToLower(strings.TrimSpace(stringutil.FirstNonEmpty(taskMode, profileName))) {
+	case "planning", "plan":
+		return "plan"
+	case "research", "investigate":
+		return "investigate"
+	default:
+		return "execute"
+	}
+}
+
+func legacyPermissionProfileName(profileName string) string {
+	name := strings.TrimSpace(profileName)
+	if name == "" {
+		name = "default"
+	}
+	return "legacy:" + sanitizeLegacyName(name)
+}
+
+func sanitizeLegacyName(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "-")
+	value = strings.ReplaceAll(value, "/", "-")
+	value = strings.ReplaceAll(value, "\\", "-")
+	if value == "" {
+		return "default"
+	}
+	return value
+}
+
+func capabilityStrings(values []collaboration.Capability) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, strings.TrimSpace(string(value)))
+	}
+	return out
+}
+
 func SessionPostureFromSession(sess *session.Session) SessionPosture {
 	posture := SessionPosture{}
 	if sess == nil {
 		return posture
 	}
-	posture.Profile = strings.TrimSpace(sess.Config.Profile)
-	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), sess.Config.TrustLevel))
+	_, preset, workspaceTrust, collaborationMode, _, permissionProfile, _, _ := session.SessionFacetValues(sess)
+	posture.Profile = stringutil.FirstNonEmpty(strings.TrimSpace(sess.Config.Profile), preset, permissionProfile)
+	posture.EffectiveTrust = appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), workspaceTrust, sess.Config.TrustLevel))
 	posture.EffectiveApproval = policypack.NormalizeApprovalMode(metadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
-	posture.TaskMode = stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), posture.Profile)
+	posture.TaskMode = stringutil.FirstNonEmpty(metadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, posture.Profile)
 	if policy, ok := metadataToolPolicy(sess.Config.Metadata); ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true
@@ -200,6 +327,15 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 		}
 		if posture.EffectiveTrust == "" {
 			posture.EffectiveTrust = appconfig.NormalizeTrustLevel(policy.Trust)
+		}
+	} else if compiled, ok := resolvedCompiledPolicy(sess.Config.ResolvedSessionSpec); ok {
+		posture.ToolPolicy = policypack.CloneToolPolicy(compiled.Policy)
+		posture.HasToolPolicy = true
+		if posture.EffectiveApproval == "" {
+			posture.EffectiveApproval = policypack.NormalizeApprovalMode(compiled.Policy.ApprovalMode)
+		}
+		if posture.EffectiveTrust == "" {
+			posture.EffectiveTrust = appconfig.NormalizeTrustLevel(stringutil.FirstNonEmpty(compiled.Policy.Trust, compiled.Trust))
 		}
 	}
 	if posture.EffectiveApproval == "" {
@@ -212,7 +348,7 @@ func SessionPostureFromSession(sess *session.Session) SessionPosture {
 		posture.EffectiveTrust = appconfig.TrustTrusted
 	}
 	if posture.TaskMode == "" {
-		posture.TaskMode = "coding"
+		posture.TaskMode = stringutil.FirstNonEmpty(collaborationMode, "coding")
 	}
 	return posture
 }
@@ -505,5 +641,13 @@ func metadataToolPolicy(meta map[string]any) (policypack.ToolPolicy, bool) {
 	return policypack.DecodeToolPolicyMetadata(value)
 }
 
-
-
+func resolvedCompiledPolicy(spec *session.ResolvedSessionSpec) (permissions.CompiledPolicy, bool) {
+	if spec == nil || len(spec.Runtime.PermissionPolicy) == 0 {
+		return permissions.CompiledPolicy{}, false
+	}
+	var compiled permissions.CompiledPolicy
+	if err := json.Unmarshal(spec.Runtime.PermissionPolicy, &compiled); err != nil {
+		return permissions.CompiledPolicy{}, false
+	}
+	return compiled, true
+}

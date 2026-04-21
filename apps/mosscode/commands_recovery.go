@@ -14,18 +14,18 @@ import (
 )
 
 type checkpointActionReport struct {
-	Mode             string                      `json:"mode"`
+	Mode             string                         `json:"mode"`
 	Checkpoints      []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
 	Checkpoint       *runtimeenv.CheckpointSummary  `json:"checkpoint,omitempty"`
 	CheckpointDetail *runtimeenv.CheckpointDetail   `json:"checkpoint_detail,omitempty"`
-	SessionID        string                      `json:"session_id,omitempty"`
-	SourceKind       string                      `json:"source_kind,omitempty"`
-	SourceID         string                      `json:"source_id,omitempty"`
-	ReplayMode       string                      `json:"replay_mode,omitempty"`
-	RestoredWorktree bool                        `json:"restored_worktree,omitempty"`
-	Degraded         bool                        `json:"degraded,omitempty"`
-	Details          string                      `json:"details,omitempty"`
-	Note             string                      `json:"note,omitempty"`
+	SessionID        string                         `json:"session_id,omitempty"`
+	SourceKind       string                         `json:"source_kind,omitempty"`
+	SourceID         string                         `json:"source_id,omitempty"`
+	ReplayMode       string                         `json:"replay_mode,omitempty"`
+	RestoredWorktree bool                           `json:"restored_worktree,omitempty"`
+	Degraded         bool                           `json:"degraded,omitempty"`
+	Details          string                         `json:"details,omitempty"`
+	Note             string                         `json:"note,omitempty"`
 }
 
 type changeActionReport struct {
@@ -230,7 +230,7 @@ func runCheckpointReplay(ctx context.Context, cfg *config) error {
 		checkpointID = ""
 	}
 	if checkpointID == "" && !cfg.checkpointLatest {
-		return fmt.Errorf("usage: mosscode checkpoint replay [--checkpoint <id|latest> | --latest] [--mode resume|rerun] [--restore-worktree] [--json]")
+		return fmt.Errorf("usage: mosscode checkpoint replay [--checkpoint <id|latest> | --latest] [--replay-mode resume|rerun] [--restore-worktree] [--json]")
 	}
 	if mode != string(checkpoint.ReplayModeResume) && mode != string(checkpoint.ReplayModeRerun) {
 		return fmt.Errorf("replay mode must be resume or rerun")

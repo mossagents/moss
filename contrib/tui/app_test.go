@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/appkit/product"
 	appconfig "github.com/mossagents/moss/harness/config"
 	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
@@ -127,15 +127,16 @@ func TestBuildAgentUsesBootstrappedKernelObserver(t *testing.T) {
 }
 
 func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
-	current, err := postureFromRuntime("", "default", "trusted", "confirm")
-	if err != nil {
-		t.Fatalf("postureFromRuntime: %v", err)
+	k := kernel.New()
+	if _, err := product.ApplyApprovalModeWithTrust(k, "trusted", "confirm"); err != nil {
+		t.Fatalf("ApplyApprovalModeWithTrust: %v", err)
 	}
+	current := postureFromRuntime(k, "default", "trusted", "confirm")
 	toolPolicyMeta, err := rpolicy.EncodeToolPolicyMetadata(rpolicy.ResolveToolPolicyForWorkspace("", "restricted", "read-only"))
 	if err != nil {
 		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
 	}
-	target := rprofile.SessionPostureFromSession(&session.Session{
+	targetSession := &session.Session{
 		ID: "sess-1",
 		Config: session.SessionConfig{
 			Profile:    "readonly",
@@ -147,14 +148,17 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 				session.MetadataToolPolicy:        toolPolicyMeta,
 			},
 		},
-	})
+	}
 
-	plan, err := planPostureRebuild("sess-1", current, target)
+	plan, err := planPostureRebuild("sess-1", current, targetSession)
 	if err != nil {
 		t.Fatalf("planPostureRebuild: %v", err)
 	}
 	if !plan.Rebuild {
 		t.Fatal("expected posture mismatch to require runtime rebuild")
+	}
+	if plan.Profile != "readonly" {
+		t.Fatalf("plan.Profile = %q, want readonly", plan.Profile)
 	}
 	if !strings.Contains(plan.Notice, "auto-rebuilt") {
 		t.Fatalf("unexpected rebuild notice: %q", plan.Notice)
@@ -162,26 +166,27 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 }
 
 func TestPlanPostureRebuildDefaultPostureRebuilds(t *testing.T) {
-	current, err := postureFromRuntime("", "coding", "restricted", "full-auto")
-	if err != nil {
-		t.Fatalf("postureFromRuntime: %v", err)
+	k := kernel.New()
+	if _, err := product.ApplyApprovalModeWithTrust(k, "restricted", "full-auto"); err != nil {
+		t.Fatalf("ApplyApprovalModeWithTrust: %v", err)
 	}
-	target := rprofile.SessionPostureFromSession(&session.Session{
+	current := postureFromRuntime(k, "coding", "restricted", "full-auto")
+	targetSession := &session.Session{
 		ID: "legacy-1",
 		Config: session.SessionConfig{
 			TrustLevel: "restricted",
 		},
-	})
+	}
 
-	plan, err := planPostureRebuild("legacy-1", current, target)
+	plan, err := planPostureRebuild("legacy-1", current, targetSession)
 	if err != nil {
 		t.Fatalf("planPostureRebuild: %v", err)
 	}
 	if !plan.Rebuild {
 		t.Fatal("session without persisted posture should trigger rebuild to canonical defaults")
 	}
-	if plan.Resolved.Name != "default" {
-		t.Fatalf("Resolved.Name = %q, want default", plan.Resolved.Name)
+	if plan.Profile != "default" {
+		t.Fatalf("plan.Profile = %q, want default", plan.Profile)
 	}
 	if !strings.Contains(plan.Notice, "Runtime auto-rebuilt") {
 		t.Fatalf("expected rebuild notice, got %q", plan.Notice)

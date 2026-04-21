@@ -11,8 +11,6 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -21,22 +19,20 @@ import (
 )
 
 func launchTUI(cfg *config) error {
-	flags := cfg.flags
-	resolved, err := resolveProfileForConfig(cfg)
+	invocation, err := resolveRuntimeInvocation(cfg, "interactive")
 	if err != nil {
 		return err
 	}
-	flags.Trust = resolved.Trust
-	flags.Profile = resolved.Name
-	cfg.approvalMode = resolved.ApprovalMode
+	flags := cloneAppFlags(invocation.CompatFlags)
+	cfg.approvalMode = invocation.ApprovalMode
 	return mosstui.Run(mosstui.Config{
 		Provider:         flags.Provider,
 		WelcomeBanner:    welcomeBanner,
 		Model:            flags.Model,
 		Workspace:        flags.Workspace,
-		Trust:            resolved.Trust,
-		Profile:          resolved.Name,
-		ApprovalMode:     resolved.ApprovalMode,
+		Trust:            flags.Trust,
+		Profile:          flags.Profile,
+		ApprovalMode:     invocation.ApprovalMode,
 		SessionStoreDir:  runtimeenv.SessionStoreDir(),
 		BaseURL:          flags.BaseURL,
 		APIKey:           flags.APIKey,
@@ -57,35 +53,24 @@ func launchTUI(cfg *config) error {
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
-			k, _, err := buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
-			return k, err
+			return buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
 		},
-		PromptConfigInstructions: buildProductPromptInstructions(flags.Workspace, resolved.Trust),
+		PromptConfigInstructions: buildProductPromptInstructions(flags.Workspace, flags.Trust),
 		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
 			runtimeFlags := runtimeFlags(workspace, flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
-			resolvedProfile, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
-				Workspace:        workspace,
-				RequestedProfile: profile,
-				Trust:            trust,
-				ApprovalMode:     approvalMode,
-			})
-			if err != nil {
-				resolvedProfile = rprofile.ResolvedProfile{
-					Name:         profile,
-					TaskMode:     profile,
-					Trust:        trust,
-					ApprovalMode: approvalMode,
-					ToolPolicy:   rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode),
-				}
-			}
-			cfg := rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+			runtimeFlags.Trust = trust
+			runtimeFlags.Profile = profile
+			base := session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
-			}, resolvedProfile)
-			return applyContextPolicy(cfg, runtimeFlags)
+			}
+			if invocation.Typed && matchesCompatibilitySelection(invocation, trust, approvalMode, profile) {
+				return buildTypedProjectedSessionConfig(base, runtimeFlags, invocation)
+			}
+			return buildLegacyProjectedSessionConfig(base, runtimeFlags, trust, approvalMode, profile, "coding")
 		},
 	})
 }
@@ -110,15 +95,13 @@ func runResume(ctx context.Context, cfg *config) error {
 }
 
 func runExec(ctx context.Context, cfg *config) int {
-	resolved, err := resolveProfileForConfig(cfg)
+	invocation, err := resolveRuntimeInvocation(cfg, "oneshot")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		return 1
 	}
-	cfg.flags.Trust = resolved.Trust
-	cfg.flags.Profile = resolved.Name
-	cfg.approvalMode = resolved.ApprovalMode
-	report, err := executeOneShot(ctx, cfg)
+	cfg.approvalMode = invocation.ApprovalMode
+	report, err := executeOneShot(ctx, cfg, invocation)
 	if cfg.execJSON {
 		data, marshalErr := json.MarshalIndent(report, "", "  ")
 		if marshalErr != nil {
@@ -138,28 +121,29 @@ func runExec(ctx context.Context, cfg *config) int {
 	return 0
 }
 
-func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error) {
+func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocation) (product.ExecReport, error) {
+	runtimeFlags := cloneAppFlags(invocation.CompatFlags)
 	report := product.ExecReport{
 		App:          appName,
 		Goal:         cfg.prompt,
-		Workspace:    cfg.flags.Workspace,
-		Provider:     cfg.flags.DisplayProviderName(),
-		Model:        cfg.flags.Model,
-		Trust:        cfg.flags.Trust,
-		ApprovalMode: cfg.approvalMode,
+		Workspace:    runtimeFlags.Workspace,
+		Provider:     runtimeFlags.DisplayProviderName(),
+		Model:        runtimeFlags.Model,
+		Trust:        runtimeFlags.Trust,
+		ApprovalMode: invocation.ApprovalMode,
 		Status:       "failed",
 	}
 	var recorder *product.RecordingIO
 	traceRecorder := product.NewRunTraceRecorder()
 	var userIO io.UserIO
 	if cfg.execJSON {
-		recorder = product.NewRecordingIO(cfg.approvalMode)
+		recorder = product.NewRecordingIO(invocation.ApprovalMode)
 		userIO = recorder
 	} else {
 		userIO = io.NewConsoleIO()
 	}
 	traceObserver := product.NewPricingObserver(cfg.pricingCatalog, traceRecorder)
-	k, resolved, err := buildKernel(ctx, cfg.flags, userIO, cfg.approvalMode, cfg.governance, observe.JoinObservers(cfg.observer, traceObserver))
+	k, err := buildKernel(ctx, runtimeFlags, userIO, invocation.ApprovalMode, cfg.governance, observe.JoinObservers(cfg.observer, traceObserver))
 	if err != nil {
 		report.Error = err.Error()
 		return report, err
@@ -171,33 +155,44 @@ func executeOneShot(ctx context.Context, cfg *config) (product.ExecReport, error
 	defer k.Shutdown(ctx)
 
 	if !cfg.execJSON {
-		modelName := cfg.flags.Model
+		modelName := runtimeFlags.Model
 		if modelName == "" {
 			modelName = "(default)"
 		}
+		hints := map[string]string{
+			"Provider":  runtimeFlags.Provider,
+			"Model":     modelName,
+			"Workspace": runtimeFlags.Workspace,
+			"Run":       "oneshot",
+			"Trust":     runtimeFlags.Trust,
+			"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
+			"Prompt":    cfg.prompt,
+		}
+		if invocation.Typed {
+			hints["Preset"] = strings.TrimSpace(invocation.ResolvedSpec.Origin.Preset)
+			hints["Mode"] = strings.TrimSpace(invocation.ResolvedSpec.Intent.CollaborationMode)
+			hints["Permissions"] = strings.TrimSpace(invocation.ResolvedSpec.Runtime.PermissionProfile)
+		} else {
+			hints["Profile"] = runtimeFlags.Profile
+			hints["Approval"] = invocation.ApprovalMode
+		}
 		appkit.PrintBannerWithHint("mosscode — Code Assistant",
-			map[string]string{
-				"Provider":  cfg.flags.Provider,
-				"Model":     modelName,
-				"Workspace": cfg.flags.Workspace,
-				"Mode":      "one-shot",
-				"Profile":   resolved.Name,
-				"Trust":     resolved.Trust,
-				"Approval":  resolved.ApprovalMode,
-				"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
-				"Prompt":    cfg.prompt,
-			},
+			hints,
 			"Using deep harness defaults: persistent threads/memories + context offload + async task lifecycle.",
 		)
 	}
 
-	sessCfg := applyContextPolicy(rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+	baseSessionConfig := session.SessionConfig{
 		Goal:       cfg.prompt,
 		Mode:       "oneshot",
-		TrustLevel: resolved.Trust,
+		TrustLevel: runtimeFlags.Trust,
 		MaxSteps:   80,
-	}, resolved), cfg.flags)
-	systemPrompt, metadata, err := composeProductSystemPrompt(cfg.flags.Workspace, resolved.Trust, k, resolved, sessCfg.Metadata)
+	}
+	sessCfg := buildLegacyProjectedSessionConfig(baseSessionConfig, runtimeFlags, runtimeFlags.Trust, invocation.ApprovalMode, runtimeFlags.Profile, "coding")
+	if invocation.Typed {
+		sessCfg = buildTypedProjectedSessionConfig(baseSessionConfig, runtimeFlags, invocation)
+	}
+	systemPrompt, metadata, err := composeProductSystemPrompt(runtimeFlags.Workspace, runtimeFlags.Trust, k, sessCfg)
 	if err != nil {
 		report.Error = err.Error()
 		return report, fmt.Errorf("compose system prompt: %w", err)
@@ -270,8 +265,17 @@ func printResumeCandidates(summaries []session.SessionSummary, snapshotCounts ma
 	}
 	fmt.Println("Recoverable threads:")
 	for _, summary := range summaries {
-		fmt.Printf("- %s | status=%s | steps=%d | snapshots=%d | created=%s | goal=%s\n",
-			summary.ID, summary.Status, summary.Steps, snapshotCounts[summary.ID], summary.CreatedAt, summary.Goal)
+		fmt.Printf("- %s | status=%s | run=%s | collab=%s | permissions=%s | steps=%d | snapshots=%d | created=%s | goal=%s\n",
+			summary.ID,
+			summary.Status,
+			strings.TrimSpace(summary.Mode),
+			strings.TrimSpace(summary.CollaborationMode),
+			strings.TrimSpace(summary.PermissionProfile),
+			summary.Steps,
+			snapshotCounts[summary.ID],
+			summary.CreatedAt,
+			summary.Goal,
+		)
 	}
 	fmt.Println()
 	fmt.Println("Use `mosscode resume --latest` or `mosscode resume --session <id>` to continue the thread.")

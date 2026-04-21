@@ -50,6 +50,13 @@ type SessionSummary struct {
 	Goal              string        `json:"goal"`
 	Mode              string        `json:"mode,omitempty"`
 	Profile           string        `json:"profile,omitempty"`
+	Preset            string        `json:"preset,omitempty"`
+	WorkspaceTrust    string        `json:"workspace_trust,omitempty"`
+	CollaborationMode string        `json:"collaboration_mode,omitempty"`
+	PromptPack        string        `json:"prompt_pack,omitempty"`
+	PermissionProfile string        `json:"permission_profile,omitempty"`
+	SessionPolicy     string        `json:"session_policy,omitempty"`
+	ModelProfile      string        `json:"model_profile,omitempty"`
 	EffectiveTrust    string        `json:"effective_trust,omitempty"`
 	EffectiveApproval string        `json:"effective_approval,omitempty"`
 	TaskMode          string        `json:"task_mode,omitempty"`

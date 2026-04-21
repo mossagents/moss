@@ -13,17 +13,17 @@ const (
 )
 
 type ToolPolicySummary struct {
-	Version               int      `json:"version"`
-	Trust                 string   `json:"trust"`
-	ApprovalMode          string   `json:"approval_mode"`
-	CommandAccess         string   `json:"command_access"`
-	HTTPAccess            string   `json:"http_access"`
-	WorkspaceWriteAccess  string   `json:"workspace_write_access"`
-	MemoryWriteAccess     string   `json:"memory_write_access"`
-	GraphMutationAccess   string   `json:"graph_mutation_access"`
-	ProtectedPathPrefixes []string `json:"protected_path_prefixes,omitempty"`
+	Version                 int      `json:"version"`
+	Trust                   string   `json:"trust"`
+	ApprovalMode            string   `json:"approval_mode"`
+	CommandAccess           string   `json:"command_access"`
+	HTTPAccess              string   `json:"http_access"`
+	WorkspaceWriteAccess    string   `json:"workspace_write_access"`
+	MemoryWriteAccess       string   `json:"memory_write_access"`
+	GraphMutationAccess     string   `json:"graph_mutation_access"`
+	ProtectedPathPrefixes   []string `json:"protected_path_prefixes,omitempty"`
 	ApprovalRequiredClasses []string `json:"approval_required_classes,omitempty"`
-	DeniedClasses         []string `json:"denied_classes,omitempty"`
+	DeniedClasses           []string `json:"denied_classes,omitempty"`
 }
 
 func EncodeToolPolicySummary(summary ToolPolicySummary) map[string]any {
@@ -50,10 +50,90 @@ func ToolPolicySummaryFromSession(sess *Session) (ToolPolicySummary, bool) {
 		return ToolPolicySummary{}, false
 	}
 	value, ok := sess.GetMetadata(MetadataToolPolicySummary)
-	if !ok {
+	if ok {
+		return decodeToolPolicySummary(value)
+	}
+	return ToolPolicySummaryFromResolvedSpec(sess.Config.ResolvedSessionSpec)
+}
+
+func ToolPolicySummaryFromResolvedSpec(spec *ResolvedSessionSpec) (ToolPolicySummary, bool) {
+	if spec == nil || len(spec.Runtime.PermissionPolicy) == 0 {
 		return ToolPolicySummary{}, false
 	}
-	return decodeToolPolicySummary(value)
+	type rawToolPolicy struct {
+		Trust        string `json:"trust"`
+		ApprovalMode string `json:"approval_mode"`
+		Command      struct {
+			Access string `json:"access"`
+		} `json:"command"`
+		HTTP struct {
+			Access string `json:"access"`
+		} `json:"http"`
+		WorkspaceWriteAccess    string   `json:"workspace_write_access"`
+		MemoryWriteAccess       string   `json:"memory_write_access"`
+		GraphMutationAccess     string   `json:"graph_mutation_access"`
+		ProtectedPathPrefixes   []string `json:"protected_path_prefixes,omitempty"`
+		ApprovalRequiredClasses []string `json:"approval_required_classes,omitempty"`
+		DeniedClasses           []string `json:"denied_classes,omitempty"`
+	}
+	var envelope struct {
+		Trust  string        `json:"Trust"`
+		Policy rawToolPolicy `json:"Policy"`
+	}
+	if err := json.Unmarshal(spec.Runtime.PermissionPolicy, &envelope); err != nil {
+		return ToolPolicySummary{}, false
+	}
+	policy := envelope.Policy
+	if isZeroRawToolPolicy(policy) {
+		if err := json.Unmarshal(spec.Runtime.PermissionPolicy, &policy); err != nil {
+			return ToolPolicySummary{}, false
+		}
+	}
+	summary := ToolPolicySummary{
+		Version:                 ToolPolicyMetadataVersion,
+		Trust:                   firstNonEmptyTrimmed(policy.Trust, envelope.Trust, spec.Workspace.Trust),
+		ApprovalMode:            strings.TrimSpace(policy.ApprovalMode),
+		CommandAccess:           strings.TrimSpace(policy.Command.Access),
+		HTTPAccess:              strings.TrimSpace(policy.HTTP.Access),
+		WorkspaceWriteAccess:    strings.TrimSpace(policy.WorkspaceWriteAccess),
+		MemoryWriteAccess:       strings.TrimSpace(policy.MemoryWriteAccess),
+		GraphMutationAccess:     strings.TrimSpace(policy.GraphMutationAccess),
+		ProtectedPathPrefixes:   cloneCompactStrings(policy.ProtectedPathPrefixes),
+		ApprovalRequiredClasses: cloneCompactStrings(policy.ApprovalRequiredClasses),
+		DeniedClasses:           cloneCompactStrings(policy.DeniedClasses),
+	}
+	if summary.Trust == "" && summary.ApprovalMode == "" && summary.CommandAccess == "" && summary.HTTPAccess == "" && summary.WorkspaceWriteAccess == "" && summary.MemoryWriteAccess == "" && summary.GraphMutationAccess == "" && len(summary.ApprovalRequiredClasses) == 0 && len(summary.DeniedClasses) == 0 {
+		return ToolPolicySummary{}, false
+	}
+	return summary, true
+}
+
+func isZeroRawToolPolicy(policy struct {
+	Trust        string `json:"trust"`
+	ApprovalMode string `json:"approval_mode"`
+	Command      struct {
+		Access string `json:"access"`
+	} `json:"command"`
+	HTTP struct {
+		Access string `json:"access"`
+	} `json:"http"`
+	WorkspaceWriteAccess    string   `json:"workspace_write_access"`
+	MemoryWriteAccess       string   `json:"memory_write_access"`
+	GraphMutationAccess     string   `json:"graph_mutation_access"`
+	ProtectedPathPrefixes   []string `json:"protected_path_prefixes,omitempty"`
+	ApprovalRequiredClasses []string `json:"approval_required_classes,omitempty"`
+	DeniedClasses           []string `json:"denied_classes,omitempty"`
+}) bool {
+	return strings.TrimSpace(policy.Trust) == "" &&
+		strings.TrimSpace(policy.ApprovalMode) == "" &&
+		strings.TrimSpace(policy.Command.Access) == "" &&
+		strings.TrimSpace(policy.HTTP.Access) == "" &&
+		strings.TrimSpace(policy.WorkspaceWriteAccess) == "" &&
+		strings.TrimSpace(policy.MemoryWriteAccess) == "" &&
+		strings.TrimSpace(policy.GraphMutationAccess) == "" &&
+		len(policy.ProtectedPathPrefixes) == 0 &&
+		len(policy.ApprovalRequiredClasses) == 0 &&
+		len(policy.DeniedClasses) == 0
 }
 
 func ToolPolicySummaryFromMetadata(meta map[string]any) (ToolPolicySummary, bool) {

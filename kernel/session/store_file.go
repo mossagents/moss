@@ -143,13 +143,33 @@ func buildSessionSummary(sess *Session) SessionSummary {
 	if updatedAt == "" {
 		updatedAt = formatSessionTime(sess.CreatedAt)
 	}
+	runMode, preset, workspaceTrust, collaborationMode, promptPack, permissionProfile, sessionPolicy, modelProfile := SessionFacetValues(sess)
 	profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(sess)
+	if profile == "" {
+		profile = firstNonEmptyTrimmed(preset, permissionProfile)
+	}
+	if effectiveTrust == "" {
+		effectiveTrust = workspaceTrust
+	}
+	if effectiveApproval == "" {
+		effectiveApproval = ResolvedApprovalMode(sess)
+	}
+	if taskMode == "" {
+		taskMode = collaborationMode
+	}
 	return SessionSummary{
 		ID:                sess.ID,
-		Title:             sess.Title,
+		Title:             sess.GetTitle(),
 		Goal:              sess.Config.Goal,
-		Mode:              sess.Config.Mode,
+		Mode:              runMode,
 		Profile:           profile,
+		Preset:            preset,
+		WorkspaceTrust:    workspaceTrust,
+		CollaborationMode: collaborationMode,
+		PromptPack:        promptPack,
+		PermissionProfile: permissionProfile,
+		SessionPolicy:     sessionPolicy,
+		ModelProfile:      modelProfile,
 		EffectiveTrust:    effectiveTrust,
 		EffectiveApproval: effectiveApproval,
 		TaskMode:          taskMode,
@@ -361,7 +381,7 @@ func persistedSessionFromSession(sess *Session) persistedSession {
 		stateJSON = nil
 	}
 
-	cfg := sess.Config
+	cfg := cloneSessionConfig(sess.Config)
 	cfg.Metadata = metadata
 
 	out := persistedSession{

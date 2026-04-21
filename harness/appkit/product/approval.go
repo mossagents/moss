@@ -7,10 +7,11 @@ import (
 
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
+	"github.com/mossagents/moss/harness/runtime/permissions"
 	runtimepolicy2 "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -44,15 +45,49 @@ func ApplyApprovalModeWithTrust(k *kernel.Kernel, trust, mode string) (string, e
 	return mode, runtimepolicy2.Apply(k, policy)
 }
 
-func ApplyResolvedProfile(k *kernel.Kernel, profile rprofile.ResolvedProfile) error {
+func ApplyToolPolicy(k *kernel.Kernel, policy runtimepolicy2.ToolPolicy) error {
 	if k == nil {
 		return fmt.Errorf("kernel is nil")
 	}
-	mode := runtimepolicy2.NormalizeApprovalMode(profile.ApprovalMode)
-	if err := runtimepolicy2.ValidateApprovalMode(mode); err != nil {
+	return runtimepolicy2.Apply(k, policy)
+}
+
+func ApplyCompiledPolicy(k *kernel.Kernel, compiled permissions.CompiledPolicy) error {
+	return ApplyToolPolicy(k, compiled.Policy)
+}
+
+func ApplyResolvedSessionSpec(k *kernel.Kernel, spec *session.ResolvedSessionSpec) error {
+	policy, ok, err := ToolPolicyFromResolvedSessionSpec(spec)
+	if err != nil {
 		return err
 	}
-	return runtimepolicy2.Apply(k, profile.ToolPolicy)
+	if !ok {
+		return fmt.Errorf("resolved session spec permission policy is unavailable")
+	}
+	return ApplyToolPolicy(k, policy)
+}
+
+func ApplySessionConfig(k *kernel.Kernel, cfg session.SessionConfig) error {
+	policy, ok, err := ToolPolicyForSessionConfig(cfg)
+	if err != nil {
+		return err
+	}
+	if ok {
+		return ApplyToolPolicy(k, policy)
+	}
+	trust := strings.TrimSpace(cfg.TrustLevel)
+	if trust == "" {
+		trust = metadataString(cfg.Metadata, session.MetadataEffectiveTrust)
+	}
+	if trust == "" {
+		trust = appconfig.TrustTrusted
+	}
+	approval := runtimepolicy2.NormalizeApprovalMode(metadataString(cfg.Metadata, session.MetadataEffectiveApproval))
+	if approval == "" {
+		approval = ApprovalModeConfirm
+	}
+	_, err = ApplyApprovalModeWithTrust(k, trust, approval)
+	return err
 }
 
 func EvaluateToolPolicy(policy runtimepolicy2.ToolPolicy, spec tool.ToolSpec, input json.RawMessage) governance.PolicyDecision {
@@ -145,4 +180,66 @@ func hasProjectHTTPRule(rules []appconfig.HTTPRuleConfig, target appconfig.HTTPR
 		}
 	}
 	return false
+}
+
+func ToolPolicyForSessionConfig(cfg session.SessionConfig) (runtimepolicy2.ToolPolicy, bool, error) {
+	if cfg.ResolvedSessionSpec != nil {
+		policy, ok, err := ToolPolicyFromResolvedSessionSpec(cfg.ResolvedSessionSpec)
+		if err != nil {
+			return runtimepolicy2.ToolPolicy{}, false, err
+		}
+		if ok {
+			return policy, true, nil
+		}
+	}
+	if policy, ok := toolPolicyFromMetadata(cfg.Metadata); ok {
+		return policy, true, nil
+	}
+	return runtimepolicy2.ToolPolicy{}, false, nil
+}
+
+func ToolPolicyFromResolvedSessionSpec(spec *session.ResolvedSessionSpec) (runtimepolicy2.ToolPolicy, bool, error) {
+	if spec == nil || len(spec.Runtime.PermissionPolicy) == 0 {
+		return runtimepolicy2.ToolPolicy{}, false, nil
+	}
+	var compiled permissions.CompiledPolicy
+	if err := json.Unmarshal(spec.Runtime.PermissionPolicy, &compiled); err == nil {
+		if err := runtimepolicy2.ValidateToolPolicy(compiled.Policy); err == nil {
+			return runtimepolicy2.NormalizeToolPolicy(compiled.Policy), true, nil
+		}
+	}
+	var policy runtimepolicy2.ToolPolicy
+	if err := json.Unmarshal(spec.Runtime.PermissionPolicy, &policy); err != nil {
+		return runtimepolicy2.ToolPolicy{}, false, fmt.Errorf("decode resolved session tool policy: %w", err)
+	}
+	if err := runtimepolicy2.ValidateToolPolicy(policy); err != nil {
+		return runtimepolicy2.ToolPolicy{}, false, fmt.Errorf("validate resolved session tool policy: %w", err)
+	}
+	return runtimepolicy2.NormalizeToolPolicy(policy), true, nil
+}
+
+func toolPolicyFromMetadata(meta map[string]any) (runtimepolicy2.ToolPolicy, bool) {
+	if meta == nil {
+		return runtimepolicy2.ToolPolicy{}, false
+	}
+	value, ok := meta[session.MetadataToolPolicy]
+	if !ok || value == nil {
+		return runtimepolicy2.ToolPolicy{}, false
+	}
+	return runtimepolicy2.DecodeToolPolicyMetadata(value)
+}
+
+func metadataString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	value, ok := meta[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }

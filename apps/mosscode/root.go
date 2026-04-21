@@ -12,9 +12,9 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
-	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/harness/logging"
 	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -37,10 +37,11 @@ func buildRootCommand(cfg *config) *cobra.Command {
 Launch the interactive TUI (no flags), run a one-shot prompt, or use one of
 the sub-commands to manage threads, checkpoints, config, and more.
 
-Approval modes:
-  read-only   No file writes — inspection only
-  confirm     Prompt before every write (default)
-  full-auto   Apply all changes without prompting
+Session selectors:
+  --preset       Expand a preset such as code
+  --mode         Set collaboration mode: execute|plan|investigate
+  --run          Set run mode: interactive|oneshot|batch|background
+  --permissions  Set permission profile: read-only|workspace-write|full-auto
 
 LLM governance flags (--llm-*) control retries, circuit-breaking, and
 model-failover. Supply a --router-config YAML to define candidate models.`,
@@ -50,9 +51,9 @@ model-failover. Supply a --router-config YAML to define candidate models.`,
   # One-shot prompt
   mosscode --prompt "Add unit tests for auth.go"
 
-  # One-shot with a specific model, no confirmation
-  mosscode --provider openai --model gpt-4o --approval full-auto \
-           --prompt "Refactor the payment module"`,
+	# One-shot with explicit typed selectors
+	mosscode exec --preset code --mode plan --permissions read-only \
+	         --prompt "Review the payment module"`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -81,7 +82,7 @@ model-failover. Supply a --router-config YAML to define candidate models.`,
 Equivalent to passing --prompt from the root command, but as an explicit
 sub-command that is easier to script and pipe.`,
 		Example: `  mosscode exec --prompt "Write a changelog entry for the last 5 commits"
-  mosscode exec --prompt "Fix lint errors" --approval full-auto --json`,
+	mosscode exec --preset code --permissions full-auto --prompt "Fix lint errors" --json`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true, withProductRuntime: true}, func(ctx context.Context, cfg *config) error {
 				return runExecCommand(ctx, cfg)
@@ -254,12 +255,22 @@ Sub-commands (passed as positional args):
 
 func bindAppAndProductCobraFlags(cmd *cobra.Command, cfg *config) {
 	appkit.BindAppPFlags(cmd.Flags(), cfg.flags)
+	if flag := cmd.Flags().Lookup("profile"); flag != nil {
+		flag.Usage = "Legacy profile name (compat only)"
+	}
 	bindProductFlags(cmd.Flags(), cfg)
 }
 
 func bindProductFlags(fs *pflag.FlagSet, cfg *config) {
 	fs.BoolVar(&cfg.debug, "debug", logging.DebugEnabled(), "Enable trace logging to ~/.mosscode/debug.log")
-	fs.StringVar(&cfg.approvalMode, "approval", "", "Approval mode: read-only|confirm|full-auto")
+	fs.StringVar(&cfg.request.Preset, "preset", "", "Preset ID for typed session assembly")
+	fs.StringVar(&cfg.request.CollaborationMode, "mode", "", "Collaboration mode: execute|plan|investigate")
+	fs.StringVar(&cfg.request.RunMode, "run", "", "Run mode: interactive|oneshot|batch|background")
+	fs.StringVar(&cfg.request.PermissionProfile, "permissions", "", "Permission profile: read-only|workspace-write|full-auto")
+	fs.StringVar(&cfg.request.PromptPack, "prompt-pack", "", "Prompt pack ID")
+	fs.StringVar(&cfg.request.SessionPolicy, "session-policy", "", "Session policy ID")
+	fs.StringVar(&cfg.request.ModelProfile, "model-profile", "", "Model profile ID")
+	fs.StringVar(&cfg.approvalMode, "approval", "", "Legacy approval mode (compat only): read-only|confirm|full-auto")
 	fs.StringVar(&cfg.governance.RouterConfigPath, "router-config", cfg.governance.RouterConfigPath, "Model router config path")
 	fs.StringVar(&cfg.governance.PricingCatalogPath, "pricing-catalog", cfg.governance.PricingCatalogPath, "Pricing catalog YAML path")
 	fs.IntVar(&cfg.governance.LLMRetries, "llm-retries", cfg.governance.LLMRetries, "LLM retry attempts (0 disables retries)")
@@ -280,6 +291,7 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 	if err := appkit.InitializeApp(appName, cfg.flags, "MOSSCODE", "MOSS"); err != nil {
 		return err
 	}
+	applySessionRequestEnv(&cfg.request)
 	cfg.approvalMode = firstNonEmpty(
 		cfg.approvalMode,
 		os.Getenv("MOSSCODE_APPROVAL_MODE"),
@@ -293,6 +305,19 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 	cfg.explicitFlags = collectExplicitCobraFlagNames(cmd)
 	applyGovernanceEnv(&cfg.governance, cfg.explicitFlags)
 	return nil
+}
+
+func applySessionRequestEnv(request *sessionRequest) {
+	if request == nil {
+		return
+	}
+	request.Preset = firstNonEmpty(request.Preset, os.Getenv("MOSSCODE_PRESET"), os.Getenv("MOSS_PRESET"))
+	request.CollaborationMode = firstNonEmpty(request.CollaborationMode, os.Getenv("MOSSCODE_MODE"), os.Getenv("MOSS_MODE"))
+	request.RunMode = firstNonEmpty(request.RunMode, os.Getenv("MOSSCODE_RUN"), os.Getenv("MOSS_RUN"), os.Getenv("MOSSCODE_RUN_MODE"), os.Getenv("MOSS_RUN_MODE"))
+	request.PermissionProfile = firstNonEmpty(request.PermissionProfile, os.Getenv("MOSSCODE_PERMISSIONS"), os.Getenv("MOSS_PERMISSIONS"))
+	request.PromptPack = firstNonEmpty(request.PromptPack, os.Getenv("MOSSCODE_PROMPT_PACK"), os.Getenv("MOSS_PROMPT_PACK"))
+	request.SessionPolicy = firstNonEmpty(request.SessionPolicy, os.Getenv("MOSSCODE_SESSION_POLICY"), os.Getenv("MOSS_SESSION_POLICY"))
+	request.ModelProfile = firstNonEmpty(request.ModelProfile, os.Getenv("MOSSCODE_MODEL_PROFILE"), os.Getenv("MOSS_MODEL_PROFILE"))
 }
 
 type commandExecutionOptions struct {
@@ -463,7 +488,7 @@ Sub-commands:
 			bindAppAndProductCobraFlags(replayCmd, cfg)
 			replayCmd.Flags().StringVar(&cfg.checkpointID, "checkpoint", "", "Checkpoint ID to replay")
 			replayCmd.Flags().BoolVar(&cfg.checkpointLatest, "latest", false, "Replay the latest persisted checkpoint")
-			replayCmd.Flags().StringVar(&cfg.checkpointReplayMode, "mode", string(checkpoint.ReplayModeResume), "Replay mode: resume|rerun")
+			replayCmd.Flags().StringVar(&cfg.checkpointReplayMode, "replay-mode", string(checkpoint.ReplayModeResume), "Replay mode: resume|rerun")
 			replayCmd.Flags().BoolVar(&cfg.checkpointRestoreWorktree, "restore-worktree", false, "Attempt worktree restore before replay")
 			replayCmd.Flags().BoolVar(&cfg.checkpointJSON, "json", false, "Emit checkpoint replay output as JSON")
 			return replayCmd

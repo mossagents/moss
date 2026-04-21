@@ -8,8 +8,19 @@ import (
 
 const appName = "mosscode"
 
+type sessionRequest struct {
+	Preset            string
+	CollaborationMode string
+	RunMode           string
+	PermissionProfile string
+	PromptPack        string
+	SessionPolicy     string
+	ModelProfile      string
+}
+
 type config struct {
 	flags                     *appkit.AppFlags
+	request                   sessionRequest
 	debug                     bool
 	prompt                    string
 	approvalMode              string

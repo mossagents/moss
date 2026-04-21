@@ -22,7 +22,12 @@ func runInit(cfg *config) error {
 }
 
 func runDoctor(ctx context.Context, cfg *config) error {
-	report := product.BuildDoctorReport(ctx, appName, cfg.flags.Workspace, cfg.flags, cfg.explicitFlags, cfg.approvalMode, cfg.governance)
+	invocation, err := resolveRuntimeInvocation(cfg, "interactive")
+	if err != nil {
+		return err
+	}
+	flags := cloneAppFlags(invocation.CompatFlags)
+	report := product.BuildDoctorReport(ctx, appName, flags.Workspace, flags, cfg.explicitFlags, invocation.ApprovalMode, sessionSelectorReportFromInvocation(invocation), cfg.governance)
 	if cfg.doctorJSON {
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -36,18 +41,20 @@ func runDoctor(ctx context.Context, cfg *config) error {
 }
 
 func runDebugConfig(cfg *config) error {
-	resolved, err := resolveProfileForConfig(cfg)
+	invocation, err := resolveRuntimeInvocation(cfg, "interactive")
 	if err != nil {
 		return err
 	}
+	flags := cloneAppFlags(invocation.CompatFlags)
 	report := product.BuildDebugConfigReport(
 		appName,
-		cfg.flags.Workspace,
-		cfg.flags.DisplayProviderName(),
-		cfg.flags.Model,
-		resolved.Trust,
-		resolved.ApprovalMode,
-		resolved.Name,
+		flags.Workspace,
+		flags.DisplayProviderName(),
+		flags.Model,
+		flags.Trust,
+		invocation.ApprovalMode,
+		invocation.DisplayProfile,
+		sessionSelectorReportFromInvocation(invocation),
 		currentThemeName(),
 		"",
 		"",
@@ -58,6 +65,21 @@ func runDebugConfig(cfg *config) error {
 	}
 	fmt.Println(product.RenderDebugConfigReport(report))
 	return nil
+}
+
+func sessionSelectorReportFromInvocation(invocation runtimeInvocation) product.SessionSelectorReport {
+	if !invocation.Typed {
+		return product.SessionSelectorReport{}
+	}
+	return product.SessionSelectorReport{
+		RunMode:           strings.TrimSpace(invocation.ResolvedSpec.Runtime.RunMode),
+		Preset:            strings.TrimSpace(invocation.ResolvedSpec.Origin.Preset),
+		CollaborationMode: strings.TrimSpace(invocation.ResolvedSpec.Intent.CollaborationMode),
+		PromptPack:        strings.TrimSpace(invocation.ResolvedSpec.Intent.PromptPack.ID),
+		PermissionProfile: strings.TrimSpace(invocation.ResolvedSpec.Runtime.PermissionProfile),
+		SessionPolicy:     strings.TrimSpace(invocation.ResolvedSpec.Runtime.SessionPolicyName),
+		ModelProfile:      strings.TrimSpace(invocation.ResolvedSpec.Runtime.ModelProfile),
+	}
 }
 
 func runCompletion(cfg *config) error {

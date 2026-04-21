@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -53,8 +54,7 @@ func TestCompose_DynamicSectionOrder(t *testing.T) {
 		Trust:             "trusted",
 		ModelInstructions: "model-base",
 		Kernel:            k,
-		ProfileName:       "coding",
-		TaskMode:          "coding",
+		CollaborationMode: "execute",
 		SkillPrompts:      []string{"skill-1"},
 		RuntimeNotices:    []string{"notice-1"},
 	})
@@ -239,26 +239,29 @@ func TestComposeDebugMetaFromMetadata(t *testing.T) {
 	}
 }
 
-func TestCompose_ProfileTaskModeSection(t *testing.T) {
+func TestCompose_CollaborationModeSection(t *testing.T) {
 	k := kernel.New(kernel.WithToolRegistry(tool.NewRegistry()))
 	out, err := Compose(ComposeInput{
 		Workspace:         t.TempDir(),
 		Trust:             "trusted",
 		ModelInstructions: "base",
-		ProfileName:       "research",
-		TaskMode:          "research",
+		CollaborationMode: "investigate",
+		PermissionProfile: "read-only",
 		Kernel:            k,
 	})
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
 	if !strings.Contains(out.Prompt, "## Operating Mode") ||
-		!strings.Contains(out.Prompt, "Active profile: research") ||
-		!strings.Contains(out.Prompt, "Task mode: research") {
+		!strings.Contains(out.Prompt, "Collaboration mode: investigate") ||
+		strings.Contains(out.Prompt, "Active profile:") {
 		t.Fatalf("missing operating mode section:\n%s", out.Prompt)
 	}
-	if out.Graph.Profile.ID != "research" {
-		t.Fatalf("profile id = %q, want research", out.Graph.Profile.ID)
+	if !strings.Contains(out.Prompt, "## Permissions Summary") || !strings.Contains(out.Prompt, "Permission profile: read-only") {
+		t.Fatalf("missing permissions summary:\n%s", out.Prompt)
+	}
+	if out.Graph.Profile.ID != "investigate" {
+		t.Fatalf("profile id = %q, want investigate", out.Graph.Profile.ID)
 	}
 }
 
@@ -268,14 +271,13 @@ func TestCompose_DebugMetaTracksEnabledAndSuppressedLayers(t *testing.T) {
 		Workspace:          t.TempDir(),
 		Trust:              "trusted",
 		ConfigInstructions: "## Environment\n- custom: yes",
-		ProfileName:        "planner",
-		TaskMode:           "planning",
+		CollaborationMode:  "plan",
 		Kernel:             k,
 	})
 	if err != nil {
 		t.Fatalf("compose: %v", err)
 	}
-	if out.DebugMeta.InstructionProfile != "planning" {
+	if out.DebugMeta.InstructionProfile != "plan" {
 		t.Fatalf("instruction profile = %q", out.DebugMeta.InstructionProfile)
 	}
 	if got := out.DebugMeta.SuppressionReasons["environment"]; got != "duplicate_heading" {
@@ -286,6 +288,36 @@ func TestCompose_DebugMetaTracksEnabledAndSuppressedLayers(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(out.DebugMeta.SourceChain, " -> "), "base:config") {
 		t.Fatalf("source chain = %v", out.DebugMeta.SourceChain)
+	}
+}
+
+func TestSessionPromptModeFromConfigPrefersResolvedSessionSpec(t *testing.T) {
+	mode, err := SessionPromptModeFromConfig(session.SessionConfig{
+		Profile: "legacy-profile",
+		Metadata: map[string]any{
+			MetadataProfileNameKey:   "legacy-profile",
+			session.MetadataTaskMode: "planning",
+		},
+		ResolvedSessionSpec: &session.ResolvedSessionSpec{
+			Intent:  session.ResolvedIntent{CollaborationMode: "investigate", PromptPack: session.PromptPackRef{ID: "coding"}},
+			Runtime: session.ResolvedRuntime{PermissionProfile: "workspace-write"},
+			Origin:  session.ResolvedOrigin{Preset: "code"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("SessionPromptModeFromConfig: %v", err)
+	}
+	if mode.CollaborationMode != "investigate" {
+		t.Fatalf("collaboration_mode = %q, want investigate", mode.CollaborationMode)
+	}
+	if mode.PermissionProfile != "workspace-write" {
+		t.Fatalf("permission_profile = %q, want workspace-write", mode.PermissionProfile)
+	}
+	if mode.PromptPack != "coding" {
+		t.Fatalf("prompt_pack = %q, want coding", mode.PromptPack)
+	}
+	if mode.Preset != "code" {
+		t.Fatalf("preset = %q, want code", mode.Preset)
 	}
 }
 

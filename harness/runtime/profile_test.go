@@ -1,14 +1,15 @@
 package runtime
 
 import (
-	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/session"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	appconfig "github.com/mossagents/moss/harness/config"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 func writeProjectConfig(t *testing.T, workspace string, data []byte) {
@@ -105,6 +106,15 @@ func TestApplyResolvedProfileToSessionConfigPersistsMetadata(t *testing.T) {
 	if got := cfg.Metadata[session.MetadataEffectiveApproval]; got != "confirm" {
 		t.Fatalf("approval metadata = %v", got)
 	}
+	if cfg.SessionSpec == nil || cfg.ResolvedSessionSpec == nil {
+		t.Fatalf("expected typed session spec projection, got %+v", cfg)
+	}
+	if cfg.ResolvedSessionSpec.Intent.CollaborationMode != "investigate" {
+		t.Fatalf("collaboration_mode = %q, want investigate", cfg.ResolvedSessionSpec.Intent.CollaborationMode)
+	}
+	if cfg.ResolvedSessionSpec.Runtime.PermissionProfile != "legacy:research" {
+		t.Fatalf("permission_profile = %q, want legacy:research", cfg.ResolvedSessionSpec.Runtime.PermissionProfile)
+	}
 	if _, ok := cfg.Metadata[session.MetadataToolPolicy]; !ok {
 		t.Fatal("expected tool policy metadata")
 	}
@@ -198,5 +208,36 @@ func TestResolveSessionPostureForWorkspaceUsesResolvedProfile(t *testing.T) {
 	}
 	if posture.ToolPolicy.ApprovalMode != "full-auto" {
 		t.Fatalf("posture.ToolPolicy.ApprovalMode = %q, want full-auto", posture.ToolPolicy.ApprovalMode)
+	}
+}
+
+func TestSessionPostureFromSessionUsesResolvedSessionSpec(t *testing.T) {
+	posture := rprofile.SessionPostureFromSession(&session.Session{
+		Config: session.SessionConfig{
+			ResolvedSessionSpec: &session.ResolvedSessionSpec{
+				Workspace: session.ResolvedWorkspace{Trust: appconfig.TrustTrusted},
+				Intent:    session.ResolvedIntent{CollaborationMode: "plan"},
+				Runtime: session.ResolvedRuntime{
+					PermissionProfile: "workspace-write",
+					PermissionPolicy:  []byte(`{"Name":"workspace-write","Trust":"trusted","Policy":{"trust":"trusted","approval_mode":"confirm","command":{"access":"allow"},"http":{"access":"allow"},"workspace_write_access":"allow","memory_write_access":"allow","graph_mutation_access":"allow"}}`),
+				},
+				Origin: session.ResolvedOrigin{Preset: "plan-safe"},
+			},
+		},
+	})
+	if posture.Profile != "plan-safe" {
+		t.Fatalf("posture.Profile = %q, want plan-safe", posture.Profile)
+	}
+	if posture.TaskMode != "plan" {
+		t.Fatalf("posture.TaskMode = %q, want plan", posture.TaskMode)
+	}
+	if posture.EffectiveTrust != appconfig.TrustTrusted {
+		t.Fatalf("posture.EffectiveTrust = %q, want %q", posture.EffectiveTrust, appconfig.TrustTrusted)
+	}
+	if posture.EffectiveApproval != "confirm" {
+		t.Fatalf("posture.EffectiveApproval = %q, want confirm", posture.EffectiveApproval)
+	}
+	if !posture.HasToolPolicy {
+		t.Fatal("expected posture to include resolved tool policy")
 	}
 }

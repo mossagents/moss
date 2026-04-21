@@ -15,7 +15,6 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/checkpoint"
@@ -37,13 +36,12 @@ func initTestApp(t *testing.T) {
 func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
 	initTestApp(t)
 	workspace := t.TempDir()
-	resolved := rprofile.ResolvedProfile{
-		Name:         "coding",
-		TaskMode:     "coding",
-		Trust:        "trusted",
-		ApprovalMode: "confirm",
-	}
-	prompt, metadata, err := composeProductSystemPrompt(workspace, resolved.Trust, kernel.New(), resolved, nil)
+	prompt, metadata, err := composeProductSystemPrompt(workspace, "trusted", kernel.New(), session.SessionConfig{
+		Profile: "coding",
+		Metadata: map[string]any{
+			session.MetadataTaskMode: "coding",
+		},
+	})
 	if err != nil {
 		t.Fatalf("composeProductSystemPrompt: %v", err)
 	}
@@ -58,11 +56,11 @@ func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
 	if got := strings.TrimSpace(metadata[prompting.MetadataBaseSourceKey].(string)); got == "" {
 		t.Fatalf("expected compose debug metadata, got %+v", metadata)
 	}
-	if got := metadata[prompting.MetadataProfileNameKey]; got != resolved.Name {
-		t.Fatalf("profile metadata = %v, want %q", got, resolved.Name)
+	if got := metadata[prompting.MetadataProfileNameKey]; got != "coding" {
+		t.Fatalf("profile metadata = %v, want %q", got, "coding")
 	}
-	if got := metadata[session.MetadataTaskMode]; got != resolved.TaskMode {
-		t.Fatalf("task_mode metadata = %v, want %q", got, resolved.TaskMode)
+	if got := metadata[session.MetadataTaskMode]; got != "coding" {
+		t.Fatalf("task_mode metadata = %v, want %q", got, "coding")
 	}
 }
 

@@ -241,9 +241,14 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 		Status:    session.StatusPaused,
 		CreatedAt: time.Now().Add(-time.Hour),
 		Config: session.SessionConfig{
-			Goal:         "root thread",
-			Mode:         "interactive",
-			Profile:      "planning",
+			Goal:    "root thread",
+			Mode:    "interactive",
+			Profile: "planning",
+			ResolvedSessionSpec: &session.ResolvedSessionSpec{
+				Intent:  session.ResolvedIntent{CollaborationMode: "plan", PromptPack: session.PromptPackRef{ID: "coding"}},
+				Runtime: session.ResolvedRuntime{PermissionProfile: "workspace-write"},
+				Origin:  session.ResolvedOrigin{Preset: "code"},
+			},
 			SystemPrompt: "system prompt",
 			Metadata: prompting.AttachComposeDebugMeta(map[string]any{
 				"profile":                                "planning",
@@ -390,7 +395,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildInspectReport prompt: %v", err)
 	}
-	if promptReport.Prompt == nil || promptReport.Prompt.InstructionProfile != "planning" || !promptReport.Prompt.SessionInstructions {
+	if promptReport.Prompt == nil || promptReport.Prompt.InstructionProfile != "planning" || promptReport.Prompt.CollaborationMode != "plan" || !promptReport.Prompt.SessionInstructions {
 		t.Fatalf("unexpected prompt detail: %+v", promptReport.Prompt)
 	}
 	capReport, err := BuildInspectReport(ctx, workspace, []string{"capabilities"})

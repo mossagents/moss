@@ -13,6 +13,16 @@ func RenderDoctorReport(report DoctorReport) string {
 	fmt.Fprintf(&b, "Workspace: %s\n", report.Workspace)
 	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s\n",
 		report.Config.Name, stringutil.FirstNonEmpty(report.Config.Model, "(default)"), report.Config.Trust, report.Config.ApprovalMode)
+	if !report.Config.Session.IsZero() {
+		fmt.Fprintf(&b, "Session selectors: run=%s | preset=%s | mode=%s | permissions=%s | prompt_pack=%s | session_policy=%s | model_profile=%s\n",
+			stringutil.FirstNonEmpty(report.Config.Session.RunMode, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.Preset, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.CollaborationMode, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.PermissionProfile, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.PromptPack, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.SessionPolicy, "(unset)"),
+			stringutil.FirstNonEmpty(report.Config.Session.ModelProfile, "(unset)"))
+	}
 	fmt.Fprintf(&b, "Config sources: flags=%s env=%s global=%t project=%t project_allowed=%t project_active=%t\n",
 		renderList(report.Config.ExplicitFlags), renderList(report.Config.DetectedEnv), report.Config.GlobalExists, report.Config.ProjectExists, report.Config.ProjectAssetsAllowed, report.Config.ProjectConfigActive)
 	fmt.Fprintf(&b, "Execution policy: command=%s http=%s cmd_network=%s enforcement=%s degraded=%t timeout=%ds allowed_roots=%d http_methods=%s redirects=%t hosts=%s\n",

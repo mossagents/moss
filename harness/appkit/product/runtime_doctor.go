@@ -13,12 +13,12 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	extcapability "github.com/mossagents/moss/harness/extensions/capability"
 	"github.com/mossagents/moss/harness/extensions/skill"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
+	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
-	rprobe "github.com/mossagents/moss/harness/runtime/probe"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 type DoctorReport struct {
@@ -33,21 +33,22 @@ type DoctorReport struct {
 }
 
 type DoctorConfigReport struct {
-	ExplicitFlags        []string `json:"explicit_flags,omitempty"`
-	DetectedEnv          []string `json:"detected_env,omitempty"`
-	GlobalConfig         string   `json:"global_config"`
-	GlobalExists         bool     `json:"global_exists"`
-	ProjectConfig        string   `json:"project_config"`
-	ProjectExists        bool     `json:"project_exists"`
-	ProjectAssetsAllowed bool     `json:"project_assets_allowed"`
-	ProjectConfigActive  bool     `json:"project_config_active"`
-	Provider             string   `json:"provider"`
-	Name                 string   `json:"name"`
-	Model                string   `json:"model,omitempty"`
-	BaseURLSet           bool     `json:"base_url_set"`
-	APIKeySet            bool     `json:"api_key_set"`
-	Trust                string   `json:"trust"`
-	ApprovalMode         string   `json:"approval_mode"`
+	ExplicitFlags        []string              `json:"explicit_flags,omitempty"`
+	DetectedEnv          []string              `json:"detected_env,omitempty"`
+	GlobalConfig         string                `json:"global_config"`
+	GlobalExists         bool                  `json:"global_exists"`
+	ProjectConfig        string                `json:"project_config"`
+	ProjectExists        bool                  `json:"project_exists"`
+	ProjectAssetsAllowed bool                  `json:"project_assets_allowed"`
+	ProjectConfigActive  bool                  `json:"project_config_active"`
+	Provider             string                `json:"provider"`
+	Name                 string                `json:"name"`
+	Model                string                `json:"model,omitempty"`
+	BaseURLSet           bool                  `json:"base_url_set"`
+	APIKeySet            bool                  `json:"api_key_set"`
+	Trust                string                `json:"trust"`
+	ApprovalMode         string                `json:"approval_mode"`
+	Session              SessionSelectorReport `json:"session,omitempty"`
 }
 
 type DoctorToolPolicyReport struct {
@@ -146,18 +147,18 @@ type DoctorSnapshotHealth struct {
 }
 
 type DoctorExtensionHealth struct {
-	Configured       int                           `json:"configured"`
-	Enabled          int                           `json:"enabled"`
-	Disabled         int                           `json:"disabled"`
-	MCPServers       int                           `json:"mcp_servers"`
-	MCPServerStatus  []MCPServerConfigView         `json:"mcp_server_status,omitempty"`
-	PromptSkills     int                           `json:"prompt_skills"`
-	DiscoveredSkills int                           `json:"discovered_skills"`
+	Configured       int                              `json:"configured"`
+	Enabled          int                              `json:"enabled"`
+	Disabled         int                              `json:"disabled"`
+	MCPServers       int                              `json:"mcp_servers"`
+	MCPServerStatus  []MCPServerConfigView            `json:"mcp_server_status,omitempty"`
+	PromptSkills     int                              `json:"prompt_skills"`
+	DiscoveredSkills int                              `json:"discovered_skills"`
 	CapabilityStatus []extcapability.CapabilityStatus `json:"capability_status,omitempty"`
-	Error            string                        `json:"error,omitempty"`
+	Error            string                           `json:"error,omitempty"`
 }
 
-func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, governanceCfg GovernanceConfig) DoctorReport {
+func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags *appkit.AppFlags, explicitFlags []string, approvalMode string, sessionSelectors SessionSelectorReport, governanceCfg GovernanceConfig) DoctorReport {
 	globalConfigPath := appconfig.DefaultGlobalConfigPath()
 	projectConfigPath := appconfig.DefaultProjectConfigPath(workspaceDir)
 	trust := appconfig.NormalizeTrustLevel(flags.Trust)
@@ -196,6 +197,7 @@ func BuildDoctorReport(ctx context.Context, appName, workspaceDir string, flags 
 			APIKeySet:            strings.TrimSpace(flags.APIKey) != "",
 			Trust:                trust,
 			ApprovalMode:         normalizedApprovalMode,
+			Session:              sessionSelectors,
 		},
 		Execution: DoctorToolPolicyReport{
 			CommandAccess:             string(toolPolicy.Command.Access),
@@ -444,7 +446,7 @@ func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitF
 	if containsString(explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
 		approvalOverride = approvalMode
 	}
-	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
+	resolved, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
 		Workspace:        workspace,
 		RequestedProfile: flags.Profile,
 		Trust:            trustOverride,
@@ -473,4 +475,3 @@ func envConfigured(keys ...string) bool {
 	}
 	return false
 }
-

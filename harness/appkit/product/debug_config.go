@@ -12,36 +12,57 @@ import (
 )
 
 type DebugConfigReport struct {
-	App                   string   `json:"app"`
-	Workspace             string   `json:"workspace"`
-	Provider              string   `json:"provider"`
-	Model                 string   `json:"model"`
-	Trust                 string   `json:"trust"`
-	ApprovalMode          string   `json:"approval_mode"`
-	Profile               string   `json:"profile"`
-	Theme                 string   `json:"theme"`
-	DebugEnabled          bool     `json:"debug_enabled"`
-	GlobalConfig          string   `json:"global_config"`
-	ProjectConfig         string   `json:"project_config"`
-	AppDir                string   `json:"app_dir"`
-	CommandDirs           []string `json:"command_dirs"`
-	StateStoreDir         string   `json:"state_store_dir"`
-	StateEventDir         string   `json:"state_event_dir"`
-	SessionStoreDir       string   `json:"session_store_dir"`
-	TaskRuntimeDir        string   `json:"task_runtime_dir"`
-	MemoryDir             string   `json:"memory_dir"`
-	WorkspaceRootDir      string   `json:"workspace_root_dir"`
-	AuditLog              string   `json:"audit_log"`
-	DebugLog              string   `json:"debug_log"`
-	RouterConfig          string   `json:"router_config"`
-	PricingCatalog        string   `json:"pricing_catalog"`
-	DetectedEnv           []string `json:"detected_env"`
-	PromptBaseSource      string   `json:"prompt_base_source,omitempty"`
-	PromptDynamicSections string   `json:"prompt_dynamic_sections,omitempty"`
-	PromptSourceChain     string   `json:"prompt_source_chain,omitempty"`
+	App                   string                `json:"app"`
+	Workspace             string                `json:"workspace"`
+	Provider              string                `json:"provider"`
+	Model                 string                `json:"model"`
+	Trust                 string                `json:"trust"`
+	ApprovalMode          string                `json:"approval_mode"`
+	Profile               string                `json:"profile"`
+	Session               SessionSelectorReport `json:"session,omitempty"`
+	Theme                 string                `json:"theme"`
+	DebugEnabled          bool                  `json:"debug_enabled"`
+	GlobalConfig          string                `json:"global_config"`
+	ProjectConfig         string                `json:"project_config"`
+	AppDir                string                `json:"app_dir"`
+	CommandDirs           []string              `json:"command_dirs"`
+	StateStoreDir         string                `json:"state_store_dir"`
+	StateEventDir         string                `json:"state_event_dir"`
+	SessionStoreDir       string                `json:"session_store_dir"`
+	TaskRuntimeDir        string                `json:"task_runtime_dir"`
+	MemoryDir             string                `json:"memory_dir"`
+	WorkspaceRootDir      string                `json:"workspace_root_dir"`
+	AuditLog              string                `json:"audit_log"`
+	DebugLog              string                `json:"debug_log"`
+	RouterConfig          string                `json:"router_config"`
+	PricingCatalog        string                `json:"pricing_catalog"`
+	DetectedEnv           []string              `json:"detected_env"`
+	PromptBaseSource      string                `json:"prompt_base_source,omitempty"`
+	PromptDynamicSections string                `json:"prompt_dynamic_sections,omitempty"`
+	PromptSourceChain     string                `json:"prompt_source_chain,omitempty"`
 }
 
-func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
+type SessionSelectorReport struct {
+	RunMode           string `json:"run_mode,omitempty"`
+	Preset            string `json:"preset,omitempty"`
+	CollaborationMode string `json:"collaboration_mode,omitempty"`
+	PromptPack        string `json:"prompt_pack,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	SessionPolicy     string `json:"session_policy,omitempty"`
+	ModelProfile      string `json:"model_profile,omitempty"`
+}
+
+func (r SessionSelectorReport) IsZero() bool {
+	return strings.TrimSpace(r.RunMode) == "" &&
+		strings.TrimSpace(r.Preset) == "" &&
+		strings.TrimSpace(r.CollaborationMode) == "" &&
+		strings.TrimSpace(r.PromptPack) == "" &&
+		strings.TrimSpace(r.PermissionProfile) == "" &&
+		strings.TrimSpace(r.SessionPolicy) == "" &&
+		strings.TrimSpace(r.ModelProfile) == ""
+}
+
+func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile string, sessionSelectors SessionSelectorReport, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
 	return DebugConfigReport{
 		App:                   appName,
 		Workspace:             workspace,
@@ -50,6 +71,7 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 		Trust:                 stringutil.FirstNonEmpty(trust, appconfig.TrustTrusted),
 		ApprovalMode:          stringutil.FirstNonEmpty(approvalMode, "confirm"),
 		Profile:               stringutil.FirstNonEmpty(profile, "default"),
+		Session:               sessionSelectors,
 		Theme:                 stringutil.FirstNonEmpty(theme, "default"),
 		DebugEnabled:          os.Getenv("MOSS_DEBUG") == "1",
 		GlobalConfig:          appconfig.DefaultGlobalConfigPath(),
@@ -84,6 +106,16 @@ func RenderDebugConfigReport(report DebugConfigReport) string {
 		stringutil.FirstNonEmpty(report.ApprovalMode, "confirm"),
 		stringutil.FirstNonEmpty(report.Profile, "default"),
 		stringutil.FirstNonEmpty(report.Theme, "default"))
+	if !report.Session.IsZero() {
+		fmt.Fprintf(&b, "Session selectors: run=%s | preset=%s | mode=%s | permissions=%s | prompt_pack=%s | session_policy=%s | model_profile=%s\n",
+			stringutil.FirstNonEmpty(report.Session.RunMode, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.Preset, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.CollaborationMode, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.PermissionProfile, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.PromptPack, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.SessionPolicy, "(unset)"),
+			stringutil.FirstNonEmpty(report.Session.ModelProfile, "(unset)"))
+	}
 	fmt.Fprintf(&b, "Debug logging: enabled=%t path=%s\n", report.DebugEnabled, report.DebugLog)
 	fmt.Fprintf(&b, "Global config: %s\n", renderDebugPath(report.GlobalConfig))
 	fmt.Fprintf(&b, "Project config: %s\n", renderDebugPath(report.ProjectConfig))

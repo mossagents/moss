@@ -1,11 +1,16 @@
 package product
 
 import (
+	"encoding/json"
 	"testing"
 
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
+	"github.com/mossagents/moss/harness/runtime/permissions"
+	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
 
@@ -104,5 +109,60 @@ func TestHasProjectCommandRule(t *testing.T) {
 	deny := appconfig.CommandRuleConfig{Match: "git commit", Access: "deny"}
 	if hasProjectCommandRule(rules, deny) {
 		t.Error("expected false when access differs")
+	}
+}
+
+func TestApplySessionConfigUsesResolvedSessionPolicy(t *testing.T) {
+	compiled, err := permissions.Compile(permissions.Profile{
+		Name:           "legacy:readonly",
+		ApprovalPolicy: ApprovalModeReadOnly,
+	}, appconfig.TrustRestricted)
+	if err != nil {
+		t.Fatalf("permissions.Compile: %v", err)
+	}
+	policyJSON, err := json.Marshal(compiled)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	k := kernel.New()
+	err = ApplySessionConfig(k, session.SessionConfig{
+		TrustLevel: appconfig.TrustRestricted,
+		ResolvedSessionSpec: &session.ResolvedSessionSpec{
+			Runtime: session.ResolvedRuntime{PermissionPolicy: policyJSON},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ApplySessionConfig: %v", err)
+	}
+	policy, ok := runtimepolicy.Current(k)
+	if !ok {
+		t.Fatal("expected tool policy to be installed")
+	}
+	if policy.ApprovalMode != ApprovalModeReadOnly {
+		t.Fatalf("policy.ApprovalMode = %q, want %q", policy.ApprovalMode, ApprovalModeReadOnly)
+	}
+	if policy.Trust != appconfig.TrustRestricted {
+		t.Fatalf("policy.Trust = %q, want %q", policy.Trust, appconfig.TrustRestricted)
+	}
+}
+
+func TestApplySessionConfigFallsBackToMetadataPolicy(t *testing.T) {
+	policyMeta, err := runtimepolicy.EncodeToolPolicyMetadata(runtimepolicy.ResolveToolPolicyForWorkspace("", appconfig.TrustTrusted, ApprovalModeConfirm))
+	if err != nil {
+		t.Fatalf("EncodeToolPolicyMetadata: %v", err)
+	}
+	k := kernel.New()
+	err = ApplySessionConfig(k, session.SessionConfig{
+		Metadata: map[string]any{session.MetadataToolPolicy: policyMeta},
+	})
+	if err != nil {
+		t.Fatalf("ApplySessionConfig: %v", err)
+	}
+	policy, ok := runtimepolicy.Current(k)
+	if !ok {
+		t.Fatal("expected tool policy to be installed")
+	}
+	if policy.ApprovalMode != ApprovalModeConfirm {
+		t.Fatalf("policy.ApprovalMode = %q, want %q", policy.ApprovalMode, ApprovalModeConfirm)
 	}
 }

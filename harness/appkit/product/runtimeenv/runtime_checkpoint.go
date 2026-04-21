@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
 	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type CheckpointSummary struct {
@@ -210,7 +210,7 @@ func RenderCheckpointDetail(item *CheckpointDetail) string {
 	}
 	b.WriteString("Next:\n")
 	fmt.Fprintf(&b, "  - mosscode checkpoint fork --checkpoint %s\n", item.ID)
-	fmt.Fprintf(&b, "  - mosscode checkpoint replay --checkpoint %s --mode resume\n", item.ID)
+	fmt.Fprintf(&b, "  - mosscode checkpoint replay --checkpoint %s --replay-mode resume\n", item.ID)
 	return strings.TrimRight(b.String(), "\n")
 }
 

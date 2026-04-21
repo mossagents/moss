@@ -20,7 +20,6 @@ import (
 	"github.com/mossagents/moss/harness/extensions/skill"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
@@ -194,10 +193,7 @@ func (a *agentState) sessionSummary() string {
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
-	policy := rpolicy.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
-	if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
-		policy = posture.ToolPolicy
-	}
+	policy := postureFromRuntime(a.k, a.profile, a.trust, a.approvalMode).ToolPolicy
 	if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
 		b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
 	}
@@ -287,12 +283,15 @@ func (a *agentState) refreshSystemPrompt() error {
 	if sess == nil {
 		return errors.New("active thread is unavailable")
 	}
-	nextPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, configInstructions, modelInstructions, sess.Config.Metadata)
+	cfg := sess.Config
+	cfg.Metadata = sess.CopyMetadata()
+	nextPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(workspace, trust, k, configInstructions, modelInstructions, cfg)
 	if err != nil {
 		return err
 	}
 	a.mu.Lock()
 	sess.Config.SystemPrompt = nextPrompt
+	sess.Config.Metadata = metadata
 	a.mu.Unlock()
 	sess.UpdateSystemPrompt(nextPrompt)
 	if store != nil {
@@ -415,10 +414,7 @@ func (a *agentState) permissionSummary() string {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
 	}
 	if k != nil {
-		policy := rpolicy.ResolveToolPolicyForWorkspace(a.workspace, a.trust, a.approvalMode)
-		if posture, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode); err == nil {
-			policy = posture.ToolPolicy
-		}
+		policy := postureFromRuntime(k, a.profile, a.trust, a.approvalMode).ToolPolicy
 		if len(policy.Command.Rules) > 0 {
 			b.WriteString("Command rules:\n")
 			for _, rule := range policy.Command.Rules {

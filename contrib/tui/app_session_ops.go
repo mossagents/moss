@@ -12,7 +12,6 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
@@ -46,8 +45,17 @@ func (a *agentState) listPersistedSessions(limit int) (string, error) {
 	b.WriteString("Saved threads:\n")
 	for _, s := range summaries {
 		b.WriteString(fmt.Sprintf("- %s | %s | %s", s.ID, s.Status, s.Mode))
+		if strings.TrimSpace(s.Preset) != "" {
+			b.WriteString(fmt.Sprintf(" | preset=%s", s.Preset))
+		}
+		if strings.TrimSpace(s.CollaborationMode) != "" {
+			b.WriteString(fmt.Sprintf(" | mode=%s", s.CollaborationMode))
+		}
+		if strings.TrimSpace(s.PermissionProfile) != "" {
+			b.WriteString(fmt.Sprintf(" | permissions=%s", s.PermissionProfile))
+		}
 		if strings.TrimSpace(s.Profile) != "" {
-			b.WriteString(fmt.Sprintf(" | profile=%s", s.Profile))
+			b.WriteString(fmt.Sprintf(" | legacy-profile=%s", s.Profile))
 		}
 		if strings.TrimSpace(s.EffectiveTrust) != "" {
 			b.WriteString(fmt.Sprintf(" | trust=%s", s.EffectiveTrust))
@@ -102,13 +110,13 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	warning, err := a.ensureRuntimePosture(loaded.ID, rprofile.SessionPostureFromSession(loaded))
+	warning, err := a.ensureRuntimePosture(loaded)
 	if err != nil {
 		return "", err
 	}
 	a.mu.Lock()
 	a.sess = loaded
-	posture := rprofile.SessionPostureFromSession(loaded)
+	posture := postureFromSession(loaded)
 	if strings.TrimSpace(posture.Profile) != "" {
 		a.profile = posture.Profile
 	}
@@ -162,7 +170,8 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		)
 	}
 	metadata := preparePromptMetadata(sessCfg, profile)
-	sysPrompt, err := prompting.ComposeSystemPrompt(workspace, trust, k, configInstructions, modelInstructions, metadata)
+	sessCfg.Metadata = metadata
+	sysPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(workspace, trust, k, configInstructions, modelInstructions, sessCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +333,7 @@ func (a *agentState) forkSession(sourceKind, sourceID string, restoreWorktree bo
 	if err != nil {
 		return "", err
 	}
-	if _, err := a.ensureRuntimePosture(sourceSession.ID, rprofile.SessionPostureFromSession(sourceSession)); err != nil {
+	if _, err := a.ensureRuntimePosture(sourceSession); err != nil {
 		return "", err
 	}
 	a.mu.Lock()
@@ -410,7 +419,7 @@ func (a *agentState) replayCheckpoint(checkpointID, mode string, restoreWorktree
 		return "", err
 	}
 	cancel()
-	if _, err := a.ensureRuntimePosture(sourceSession.ID, rprofile.SessionPostureFromSession(sourceSession)); err != nil {
+	if _, err := a.ensureRuntimePosture(sourceSession); err != nil {
 		return "", err
 	}
 	a.mu.Lock()

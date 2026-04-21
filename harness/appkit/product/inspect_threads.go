@@ -23,25 +23,30 @@ import (
 )
 
 type InspectThreadSummary struct {
-	ID              string `json:"id"`
-	Goal            string `json:"goal,omitempty"`
-	Status          string `json:"status,omitempty"`
-	Mode            string `json:"mode,omitempty"`
-	Profile         string `json:"profile,omitempty"`
-	TaskMode        string `json:"task_mode,omitempty"`
-	Source          string `json:"source,omitempty"`
-	ParentID        string `json:"parent_id,omitempty"`
-	TaskID          string `json:"task_id,omitempty"`
-	Preview         string `json:"preview,omitempty"`
-	ActivityKind    string `json:"activity_kind,omitempty"`
-	Recoverable     bool   `json:"recoverable"`
-	Archived        bool   `json:"archived"`
-	CreatedAt       string `json:"created_at,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
-	EndedAt         string `json:"ended_at,omitempty"`
-	CheckpointCount int    `json:"checkpoint_count,omitempty"`
-	ChangeCount     int    `json:"change_count,omitempty"`
-	TaskCount       int    `json:"task_count,omitempty"`
+	ID                string `json:"id"`
+	Goal              string `json:"goal,omitempty"`
+	Status            string `json:"status,omitempty"`
+	Mode              string `json:"mode,omitempty"`
+	Profile           string `json:"profile,omitempty"`
+	Preset            string `json:"preset,omitempty"`
+	CollaborationMode string `json:"collaboration_mode,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	PromptPack        string `json:"prompt_pack,omitempty"`
+	WorkspaceTrust    string `json:"workspace_trust,omitempty"`
+	TaskMode          string `json:"task_mode,omitempty"`
+	Source            string `json:"source,omitempty"`
+	ParentID          string `json:"parent_id,omitempty"`
+	TaskID            string `json:"task_id,omitempty"`
+	Preview           string `json:"preview,omitempty"`
+	ActivityKind      string `json:"activity_kind,omitempty"`
+	Recoverable       bool   `json:"recoverable"`
+	Archived          bool   `json:"archived"`
+	CreatedAt         string `json:"created_at,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
+	EndedAt           string `json:"ended_at,omitempty"`
+	CheckpointCount   int    `json:"checkpoint_count,omitempty"`
+	ChangeCount       int    `json:"change_count,omitempty"`
+	TaskCount         int    `json:"task_count,omitempty"`
 }
 
 type InspectThreadReport struct {
@@ -57,6 +62,10 @@ type InspectPromptReport struct {
 	SessionID            string            `json:"session_id"`
 	BaseSource           string            `json:"base_source,omitempty"`
 	InstructionProfile   string            `json:"instruction_profile,omitempty"`
+	CollaborationMode    string            `json:"collaboration_mode,omitempty"`
+	PermissionProfile    string            `json:"permission_profile,omitempty"`
+	PromptPack           string            `json:"prompt_pack,omitempty"`
+	Preset               string            `json:"preset,omitempty"`
 	ProfileName          string            `json:"profile_name,omitempty"`
 	TaskMode             string            `json:"task_mode,omitempty"`
 	SessionInstructions  bool              `json:"session_instructions"`
@@ -183,7 +192,7 @@ func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptRepor
 	if sess == nil {
 		return nil, fmt.Errorf("session %q not found", selected.ID)
 	}
-	profileName, taskMode, err := prompting.ProfileModeFromMetadata(sess.Config.Metadata)
+	mode, err := prompting.SessionPromptModeFromConfig(sess.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +208,12 @@ func buildInspectPrompt(ctx context.Context, target string) (*InspectPromptRepor
 		SessionID:           sess.ID,
 		BaseSource:          debug.BaseSource,
 		InstructionProfile:  debug.InstructionProfile,
-		ProfileName:         profileName,
-		TaskMode:            taskMode,
+		CollaborationMode:   mode.CollaborationMode,
+		PermissionProfile:   mode.PermissionProfile,
+		PromptPack:          mode.PromptPack,
+		Preset:              mode.Preset,
+		ProfileName:         mode.ProfileName,
+		TaskMode:            mode.TaskMode,
 		SessionInstructions: strings.TrimSpace(sessionInstructions) != "",
 		SystemPromptChars:   len(strings.TrimSpace(sess.Config.SystemPrompt)),
 		DynamicSections:     append([]string(nil), debug.DynamicSectionID...),
@@ -356,7 +369,16 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 		stringutil.FirstNonEmpty(report.Summary.TaskID, "(none)"),
 		stringutil.FirstNonEmpty(report.Summary.ActivityKind, "(none)"),
 	)
-	fmt.Fprintf(b, "Profile:     profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
+	fmt.Fprintf(b, "Session:     preset=%s collaboration_mode=%s permission_profile=%s prompt_pack=%s trust=%s\n",
+		stringutil.FirstNonEmpty(report.Summary.Preset, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.CollaborationMode, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.PermissionProfile, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.PromptPack, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.WorkspaceTrust, "(none)"),
+	)
+	if report.Summary.Profile != "" || report.Summary.TaskMode != "" {
+		fmt.Fprintf(b, "Legacy:      profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
+	}
 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
 	renderInspectAuditSummary(b, "Audit", report.Audit)
 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
@@ -389,11 +411,19 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 
 func renderInspectPromptReport(b *strings.Builder, report InspectPromptReport) {
 	fmt.Fprintf(b, "Prompt session: %s\n", report.SessionID)
-	fmt.Fprintf(b, "Profile:        profile=%s task_mode=%s instruction_profile=%s\n",
-		stringutil.FirstNonEmpty(report.ProfileName, "(none)"),
-		stringutil.FirstNonEmpty(report.TaskMode, "(none)"),
+	fmt.Fprintf(b, "Prompt facets:  collaboration_mode=%s permission_profile=%s prompt_pack=%s preset=%s instruction_profile=%s\n",
+		stringutil.FirstNonEmpty(report.CollaborationMode, "(none)"),
+		stringutil.FirstNonEmpty(report.PermissionProfile, "(none)"),
+		stringutil.FirstNonEmpty(report.PromptPack, "(none)"),
+		stringutil.FirstNonEmpty(report.Preset, "(none)"),
 		stringutil.FirstNonEmpty(report.InstructionProfile, "(none)"),
 	)
+	if report.ProfileName != "" || report.TaskMode != "" {
+		fmt.Fprintf(b, "Legacy facets:  profile=%s task_mode=%s\n",
+			stringutil.FirstNonEmpty(report.ProfileName, "(none)"),
+			stringutil.FirstNonEmpty(report.TaskMode, "(none)"),
+		)
+	}
 	fmt.Fprintf(b, "Base source:    %s | session_instructions=%t | system_prompt_chars=%d | enabled_tokens=%d\n",
 		stringutil.FirstNonEmpty(report.BaseSource, "(none)"),
 		report.SessionInstructions,
@@ -462,22 +492,27 @@ func resolveInspectSessionSummary(summaries []session.SessionSummary, target str
 
 func inspectThreadSummaryFromSession(summary session.SessionSummary) InspectThreadSummary {
 	return InspectThreadSummary{
-		ID:           summary.ID,
-		Goal:         summary.Goal,
-		Status:       string(summary.Status),
-		Mode:         summary.Mode,
-		Profile:      summary.Profile,
-		TaskMode:     summary.TaskMode,
-		Source:       summary.Source,
-		ParentID:     summary.ParentID,
-		TaskID:       summary.TaskID,
-		Preview:      summary.Preview,
-		ActivityKind: summary.ActivityKind,
-		Recoverable:  summary.Recoverable,
-		Archived:     summary.Archived,
-		CreatedAt:    summary.CreatedAt,
-		UpdatedAt:    summary.UpdatedAt,
-		EndedAt:      summary.EndedAt,
+		ID:                summary.ID,
+		Goal:              summary.Goal,
+		Status:            string(summary.Status),
+		Mode:              summary.Mode,
+		Profile:           summary.Profile,
+		Preset:            summary.Preset,
+		CollaborationMode: summary.CollaborationMode,
+		PermissionProfile: summary.PermissionProfile,
+		PromptPack:        summary.PromptPack,
+		WorkspaceTrust:    summary.WorkspaceTrust,
+		TaskMode:          summary.TaskMode,
+		Source:            summary.Source,
+		ParentID:          summary.ParentID,
+		TaskID:            summary.TaskID,
+		Preview:           summary.Preview,
+		ActivityKind:      summary.ActivityKind,
+		Recoverable:       summary.Recoverable,
+		Archived:          summary.Archived,
+		CreatedAt:         summary.CreatedAt,
+		UpdatedAt:         summary.UpdatedAt,
+		EndedAt:           summary.EndedAt,
 	}
 }
 

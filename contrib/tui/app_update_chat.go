@@ -7,8 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
 	"github.com/mossagents/moss/kernel/model"
+	ksession "github.com/mossagents/moss/kernel/session"
 )
 
 func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -95,7 +96,7 @@ func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Mode
 		}
 	}
 	m = m.stopAgentForKernelRebuild()
-	resolved, err := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
+	resolved, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
 		Workspace:        m.config.Workspace,
 		RequestedProfile: st.profile,
 	})
@@ -231,6 +232,7 @@ func (m *appModel) bindAgentOps(agent *agentState) {
 func (m *appModel) bindDebugCallbacks(agent *agentState) {
 	m.chat.debugConfigFn = func() string {
 		baseSource, dynamicSections, sourceChain := agent.promptDebugInfo()
+		runMode, preset, _, collaborationMode, promptPack, permissionProfile, sessionPolicy, modelProfile := ksession.SessionFacetValues(agent.sess)
 		report := product.BuildDebugConfigReport(
 			configpkg.AppName(),
 			m.config.Workspace,
@@ -239,6 +241,15 @@ func (m *appModel) bindDebugCallbacks(agent *agentState) {
 			m.chat.trust,
 			m.chat.approvalMode,
 			m.chat.profile,
+			product.SessionSelectorReport{
+				RunMode:           strings.TrimSpace(runMode),
+				Preset:            strings.TrimSpace(preset),
+				CollaborationMode: strings.TrimSpace(collaborationMode),
+				PromptPack:        strings.TrimSpace(promptPack),
+				PermissionProfile: strings.TrimSpace(permissionProfile),
+				SessionPolicy:     strings.TrimSpace(sessionPolicy),
+				ModelProfile:      strings.TrimSpace(modelProfile),
+			},
 			m.chat.theme,
 			baseSource,
 			dynamicSections,

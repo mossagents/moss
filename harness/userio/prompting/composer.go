@@ -3,14 +3,15 @@ package prompting
 import (
 	_ "embed"
 	"fmt"
-	"github.com/mossagents/moss/harness/bootstrap"
-	"github.com/mossagents/moss/harness/extensions/capability"
-	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel"
-	"github.com/mossagents/moss/kernel/session"
 	"hash/fnv"
 	"sort"
 	"strings"
+
+	"github.com/mossagents/moss/harness/bootstrap"
+	config "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/session"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -24,6 +25,10 @@ type ComposeInput struct {
 	ModelInstructions   string
 	ProfileName         string
 	TaskMode            string
+	CollaborationMode   string
+	PermissionProfile   string
+	PromptPack          string
+	Preset              string
 	Kernel              *kernel.Kernel
 	SkillPrompts        []string
 	RuntimeNotices      []string
@@ -42,9 +47,19 @@ type PromptEnvelope struct {
 }
 
 type InstructionProfile struct {
-	ID          string `json:"id,omitempty"`
-	ProfileName string `json:"profile_name,omitempty"`
-	TaskMode    string `json:"task_mode,omitempty"`
+	ID                string `json:"id,omitempty"`
+	ProfileName       string `json:"profile_name,omitempty"`
+	TaskMode          string `json:"task_mode,omitempty"`
+	CollaborationMode string `json:"collaboration_mode,omitempty"`
+}
+
+type SessionPromptMode struct {
+	ProfileName       string `json:"profile_name,omitempty"`
+	TaskMode          string `json:"task_mode,omitempty"`
+	CollaborationMode string `json:"collaboration_mode,omitempty"`
+	PermissionProfile string `json:"permission_profile,omitempty"`
+	PromptPack        string `json:"prompt_pack,omitempty"`
+	Preset            string `json:"preset,omitempty"`
 }
 
 type InstructionLayer struct {
@@ -111,7 +126,7 @@ func Compose(in ComposeInput) (ComposeOutput, error) {
 
 func buildInstructionGraph(in ComposeInput) (InstructionGraph, error) {
 	graph := InstructionGraph{
-		Profile: resolveInstructionProfile(in.ProfileName, in.TaskMode),
+		Profile: resolveInstructionProfile(in.CollaborationMode, in.ProfileName, in.TaskMode),
 	}
 	baseLayers, baseText, baseSource, err := buildBaseLayers(in)
 	if err != nil {
@@ -236,12 +251,20 @@ func buildDynamicLayers(in ComposeInput, baseText string) []InstructionLayer {
 			Content:    renderCapabilitiesSection(in.Kernel),
 		},
 		{
-			ID:         "profile_mode",
-			Source:     "profile",
+			ID:         "collaboration_mode",
+			Source:     "collaboration",
 			Scope:      "dynamic",
 			Priority:   180,
-			Activation: "if_profile_or_task_mode_present",
-			Content:    renderProfileModeSection(in.ProfileName, in.TaskMode),
+			Activation: "if_collaboration_mode_present",
+			Content:    renderCollaborationModeSection(in.CollaborationMode, in.TaskMode, in.ProfileName),
+		},
+		{
+			ID:         "permissions_summary",
+			Source:     "runtime",
+			Scope:      "dynamic",
+			Priority:   175,
+			Activation: "if_permission_profile_present",
+			Content:    renderPermissionSummarySection(in.PermissionProfile),
 		},
 		{
 			ID:         "skills",
@@ -359,20 +382,24 @@ func computePromptVersion(prompt string) string {
 	return fmt.Sprintf("unified:%x", h.Sum64())
 }
 
-func resolveInstructionProfile(profileName, taskMode string) InstructionProfile {
+func resolveInstructionProfile(collaborationMode, profileName, taskMode string) InstructionProfile {
 	profileName = strings.TrimSpace(profileName)
 	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
+	collaborationMode = effectiveCollaborationMode(collaborationMode, taskMode, profileName)
 	profileID := "default"
 	switch {
+	case collaborationMode != "":
+		profileID = collaborationMode
 	case taskMode != "":
 		profileID = taskMode
 	case profileName != "":
 		profileID = "profile:" + profileName
 	}
 	return InstructionProfile{
-		ID:          profileID,
-		ProfileName: profileName,
-		TaskMode:    taskMode,
+		ID:                profileID,
+		ProfileName:       profileName,
+		TaskMode:          taskMode,
+		CollaborationMode: collaborationMode,
 	}
 }
 
@@ -435,33 +462,31 @@ func renderRuntimeNoticesSection(notices []string) string {
 	return "## Runtime Notices\n" + strings.Join(parts, "\n")
 }
 
-func renderProfileModeSection(profileName, taskMode string) string {
-	profileName = strings.TrimSpace(profileName)
-	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
-	if profileName == "" && taskMode == "" {
+func renderCollaborationModeSection(collaborationMode, taskMode, profileName string) string {
+	collaborationMode = effectiveCollaborationMode(collaborationMode, taskMode, profileName)
+	if collaborationMode == "" {
 		return ""
 	}
 	var b strings.Builder
 	b.WriteString("## Operating Mode\n")
-	if profileName != "" {
-		fmt.Fprintf(&b, "- Active profile: %s\n", profileName)
-	}
-	if taskMode != "" {
-		fmt.Fprintf(&b, "- Task mode: %s\n", taskMode)
-	}
-	switch taskMode {
-	case "research":
-		b.WriteString("- Prefer broad reading, explicit evidence, and source-backed conclusions.\n")
-	case "planning":
+	fmt.Fprintf(&b, "- Collaboration mode: %s\n", collaborationMode)
+	switch collaborationMode {
+	case "investigate":
+		b.WriteString("- Prefer broad reading, explicit evidence, provenance, and source-backed conclusions.\n")
+	case "plan":
 		b.WriteString("- Prioritize decomposition, sequencing, and risk-aware implementation planning.\n")
-	case "readonly":
-		b.WriteString("- Avoid mutating operations unless explicitly approved by the user.\n")
 	default:
-		if taskMode != "" {
-			b.WriteString("- Prioritize direct implementation with concise verification.\n")
-		}
+		b.WriteString("- Prioritize direct implementation with concise verification.\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func renderPermissionSummarySection(permissionProfile string) string {
+	permissionProfile = strings.TrimSpace(permissionProfile)
+	if permissionProfile == "" {
+		return ""
+	}
+	return strings.TrimSpace("## Permissions Summary\n- Permission profile: " + permissionProfile)
 }
 
 func SessionInstructionsFromMetadata(metadata map[string]any) (string, error) {
@@ -498,6 +523,68 @@ func ProfileModeFromMetadata(metadata map[string]any) (profileName, taskMode str
 		profileName = strings.TrimSpace(value)
 	}
 	return profileName, taskMode, nil
+}
+
+func SessionPromptModeFromConfig(cfg session.SessionConfig) (SessionPromptMode, error) {
+	profileName, taskMode, err := ProfileModeFromMetadata(cfg.Metadata)
+	if err != nil {
+		return SessionPromptMode{}, err
+	}
+	_, preset, _, collaborationMode, promptPack, permissionProfile, _, _ := session.SessionFacetValues(&session.Session{Config: cfg})
+	profileName = firstNonEmptyTrimmed(profileName, strings.TrimSpace(cfg.Profile), preset, permissionProfile)
+	return SessionPromptMode{
+		ProfileName:       profileName,
+		TaskMode:          strings.ToLower(strings.TrimSpace(taskMode)),
+		CollaborationMode: effectiveCollaborationMode(collaborationMode, taskMode, profileName),
+		PermissionProfile: strings.TrimSpace(permissionProfile),
+		PromptPack:        strings.TrimSpace(promptPack),
+		Preset:            strings.TrimSpace(preset),
+	}, nil
+}
+
+func effectiveCollaborationMode(collaborationMode, taskMode, profileName string) string {
+	if mode := normalizePromptCollaborationMode(collaborationMode); mode != "" {
+		return mode
+	}
+	if mode := legacyTaskModeToCollaborationMode(taskMode); mode != "" {
+		return mode
+	}
+	return legacyTaskModeToCollaborationMode(profileName)
+}
+
+func normalizePromptCollaborationMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "plan", "planning":
+		return "plan"
+	case "investigate", "research":
+		return "investigate"
+	case "execute", "coding":
+		return "execute"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func legacyTaskModeToCollaborationMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "planning", "plan":
+		return "plan"
+	case "research", "investigate":
+		return "investigate"
+	case "coding", "execute", "readonly":
+		return "execute"
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func AttachComposeDebugMeta(metadata map[string]any, debug ComposeDebugMeta) map[string]any {

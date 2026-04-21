@@ -4,22 +4,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/mossagents/moss/harness/appkit/product"
-	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/checkpoint"
-	"github.com/mossagents/moss/kernel/session"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/harness/appkit/product"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	configpkg "github.com/mossagents/moss/harness/config"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/checkpoint"
+	"github.com/mossagents/moss/kernel/session"
 )
 
+type runtimePosture struct {
+	Profile           string
+	EffectiveTrust    string
+	EffectiveApproval string
+	TaskMode          string
+	ToolPolicy        rpolicy.ToolPolicy
+	HasToolPolicy     bool
+}
+
 type postureRebuildPlan struct {
-	Rebuild  bool
-	Resolved rprofile.ResolvedProfile
-	Notice   string
+	Rebuild      bool
+	TargetConfig session.SessionConfig
+	Trust        string
+	Profile      string
+	ApprovalMode string
+	Notice       string
 }
 
 func autosaveSessionBeforeSwitch(current *session.Session, store session.SessionStore, ctx context.Context) (string, error) {
@@ -90,14 +103,14 @@ func (a *agentState) loadForkSourceSession(ctx context.Context, sourceKind, sour
 	}
 }
 
-func (a *agentState) ensureRuntimePosture(sessionID string, target rprofile.SessionPosture) (string, error) {
-	a.mu.Lock()
-	current, err := postureFromRuntime(a.workspace, a.profile, a.trust, a.approvalMode)
-	a.mu.Unlock()
-	if err != nil {
-		return "", err
+func (a *agentState) ensureRuntimePosture(target *session.Session) (string, error) {
+	if target == nil {
+		return "", fmt.Errorf("target session is required")
 	}
-	plan, err := planPostureRebuild(sessionID, current, target)
+	a.mu.Lock()
+	current := postureFromRuntime(a.k, a.profile, a.trust, a.approvalMode)
+	a.mu.Unlock()
+	plan, err := planPostureRebuild(target.ID, current, target)
 	if err != nil {
 		return "", err
 	}
@@ -110,43 +123,76 @@ func (a *agentState) ensureRuntimePosture(sessionID string, target rprofile.Sess
 	return plan.Notice, nil
 }
 
-func postureFromRuntime(workspace, profile, trust, approval string) (rprofile.SessionPosture, error) {
-	posture, _, err := rprofile.ResolveSessionPostureForWorkspace(rprofile.ProfileResolveOptions{
-		Workspace:        workspace,
-		RequestedProfile: profile,
-		Trust:            trust,
-		ApprovalMode:     approval,
-	})
-	return posture, err
+func postureFromRuntime(k *kernel.Kernel, profile, trust, approval string) runtimePosture {
+	posture := runtimePosture{
+		Profile:           strings.TrimSpace(profile),
+		EffectiveTrust:    configpkg.NormalizeTrustLevel(trust),
+		EffectiveApproval: rpolicy.NormalizeApprovalMode(approval),
+		TaskMode:          strings.TrimSpace(profile),
+	}
+	if posture.EffectiveTrust == "" {
+		posture.EffectiveTrust = configpkg.TrustTrusted
+	}
+	if posture.EffectiveApproval == "" {
+		posture.EffectiveApproval = product.ApprovalModeConfirm
+	}
+	if policy, ok := rpolicy.Current(k); ok {
+		posture.ToolPolicy = policy
+		posture.HasToolPolicy = true
+		if posture.EffectiveTrust == "" {
+			posture.EffectiveTrust = configpkg.NormalizeTrustLevel(policy.Trust)
+		}
+		if posture.EffectiveApproval == "" {
+			posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(policy.ApprovalMode)
+		}
+	}
+	if !posture.HasToolPolicy {
+		posture.ToolPolicy = rpolicy.ResolveToolPolicyForWorkspace("", posture.EffectiveTrust, posture.EffectiveApproval)
+		posture.HasToolPolicy = true
+	}
+	if posture.Profile == "" {
+		posture.Profile = "default"
+	}
+	if posture.TaskMode == "" {
+		posture.TaskMode = "coding"
+	}
+	return posture
 }
 
 func postureWarningForSession(sess *session.Session) string {
 	return ""
 }
 
-func planPostureRebuild(sessionID string, current, target rprofile.SessionPosture) (postureRebuildPlan, error) {
-	targetTrust := configpkg.NormalizeTrustLevel(target.EffectiveTrust)
+func planPostureRebuild(sessionID string, current runtimePosture, target *session.Session) (postureRebuildPlan, error) {
+	if target == nil {
+		return postureRebuildPlan{}, fmt.Errorf("target session is required")
+	}
+	targetPosture := postureFromSession(target)
+	targetTrust := configpkg.NormalizeTrustLevel(targetPosture.EffectiveTrust)
 	currentTrust := configpkg.NormalizeTrustLevel(current.EffectiveTrust)
-	targetApproval := rpolicy.NormalizeApprovalMode(target.EffectiveApproval)
+	targetApproval := rpolicy.NormalizeApprovalMode(targetPosture.EffectiveApproval)
 	currentApproval := rpolicy.NormalizeApprovalMode(current.EffectiveApproval)
 
 	if currentTrust == targetTrust && currentApproval == targetApproval {
-		if !target.HasToolPolicy || reflect.DeepEqual(target.ToolPolicy, current.ToolPolicy) {
+		if !targetPosture.HasToolPolicy || reflect.DeepEqual(targetPosture.ToolPolicy, current.ToolPolicy) {
 			return postureRebuildPlan{}, nil
 		}
 	}
-	resolved, err := rprofile.ResolveProfileFromPosture(target.Profile, target)
-	if err != nil {
-		return postureRebuildPlan{}, err
+	profileName := strings.TrimSpace(targetPosture.Profile)
+	if profileName == "" {
+		profileName = "default"
 	}
 	return postureRebuildPlan{
-		Rebuild:  true,
-		Resolved: resolved,
-		Notice:   fmt.Sprintf("Runtime auto-rebuilt to recorded posture for session %s (%s).", sessionID, formatPosture(target)),
+		Rebuild:      true,
+		TargetConfig: target.Config,
+		Trust:        firstNonEmptyTrimmed(targetTrust, configpkg.TrustTrusted),
+		Profile:      profileName,
+		ApprovalMode: firstNonEmptyTrimmed(targetApproval, product.ApprovalModeConfirm),
+		Notice:       fmt.Sprintf("Runtime auto-rebuilt to recorded posture for session %s (%s).", sessionID, formatPosture(targetPosture)),
 	}, nil
 }
 
-func formatPosture(posture rprofile.SessionPosture) string {
+func formatPosture(posture runtimePosture) string {
 	parts := []string{}
 	if strings.TrimSpace(posture.Profile) != "" {
 		parts = append(parts, "profile="+strings.TrimSpace(posture.Profile))
@@ -164,6 +210,53 @@ func formatPosture(posture rprofile.SessionPosture) string {
 		return "profile=default"
 	}
 	return strings.Join(parts, ", ")
+}
+
+func postureFromSession(sess *session.Session) runtimePosture {
+	posture := runtimePosture{}
+	if sess == nil {
+		return posture
+	}
+	_, preset, workspaceTrust, collaborationMode, _, permissionProfile, _, _ := session.SessionFacetValues(sess)
+	posture.Profile = firstNonEmptyTrimmed(sess.Config.Profile, preset, permissionProfile)
+	posture.EffectiveTrust = configpkg.NormalizeTrustLevel(firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), workspaceTrust, sess.Config.TrustLevel))
+	posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
+	posture.TaskMode = firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, posture.Profile)
+	if policy, ok, err := product.ToolPolicyForSessionConfig(sess.Config); err == nil && ok {
+		posture.ToolPolicy = policy
+		posture.HasToolPolicy = true
+		if posture.EffectiveApproval == "" {
+			posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(policy.ApprovalMode)
+		}
+		if posture.EffectiveTrust == "" {
+			posture.EffectiveTrust = configpkg.NormalizeTrustLevel(policy.Trust)
+		}
+	}
+	if posture.EffectiveApproval == "" {
+		posture.EffectiveApproval = product.ApprovalModeConfirm
+	}
+	if posture.EffectiveTrust == "" {
+		posture.EffectiveTrust = configpkg.TrustTrusted
+	}
+	if posture.TaskMode == "" {
+		posture.TaskMode = firstNonEmptyTrimmed(collaborationMode, "coding")
+	}
+	return posture
+}
+
+func sessionMetadataString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	value, ok := meta[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
 }
 
 func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
@@ -184,13 +277,17 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if buildKernel == nil {
 		return fmt.Errorf("runtime rebuild is unavailable")
 	}
-	if currentProfile == "" {
-		currentProfile = "default"
+	rebuildProfile := strings.TrimSpace(plan.Profile)
+	if rebuildProfile == "" {
+		rebuildProfile = strings.TrimSpace(currentProfile)
+	}
+	if rebuildProfile == "" {
+		rebuildProfile = "default"
 	}
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
-		Trust:        plan.Resolved.Trust,
-		Profile:      currentProfile,
-		ApprovalMode: plan.Resolved.ApprovalMode,
+		Trust:        plan.Trust,
+		Profile:      rebuildProfile,
+		ApprovalMode: plan.ApprovalMode,
 		APIKey:       apiKey,
 		BaseURL:      baseURL,
 		BuildKernel:  buildKernel,
@@ -203,7 +300,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if err != nil {
 		return err
 	}
-	if err := product.ApplyResolvedProfile(k, plan.Resolved); err != nil {
+	if err := product.ApplySessionConfig(k, plan.TargetConfig); err != nil {
 		cancel()
 		return fmt.Errorf("apply rebuilt posture: %w", err)
 	}
@@ -219,9 +316,18 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	a.ctx = ctx
 	a.cancel = cancel
 	a.runCancel = nil
-	a.trust = plan.Resolved.Trust
-	a.profile = strings.TrimSpace(plan.Resolved.Name)
-	a.approvalMode = plan.Resolved.ApprovalMode
+	a.trust = plan.Trust
+	a.profile = rebuildProfile
+	a.approvalMode = plan.ApprovalMode
 	a.mu.Unlock()
 	return nil
+}
+
+func firstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

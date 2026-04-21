@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/tool"
 )
@@ -188,9 +189,79 @@ func TestBuildToolRoute_MissingSummaryUsesSafeDefaults(t *testing.T) {
 	}
 }
 
+func TestBuildToolRoute_UsesResolvedSessionSpecPolicyWhenSummaryMissing(t *testing.T) {
+	reg := tool.NewRegistry()
+	handler := func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) { return nil, nil }
+	if err := reg.Register(tool.NewRawTool(tool.ToolSpec{
+		Name:         "write_file",
+		Risk:         tool.RiskHigh,
+		Capabilities: []string{"filesystem"},
+	}, handler)); err != nil {
+		t.Fatalf("Register write_file: %v", err)
+	}
+
+	sess := &session.Session{
+		Config: session.SessionConfig{
+			ResolvedSessionSpec: &session.ResolvedSessionSpec{
+				Workspace: session.ResolvedWorkspace{Trust: "trusted"},
+				Runtime: session.ResolvedRuntime{
+					PermissionPolicy: json.RawMessage(`{"Trust":"trusted","Policy":{"trust":"trusted","approval_mode":"confirm","command":{"access":"deny"},"http":{"access":"deny"},"workspace_write_access":"deny","memory_write_access":"deny","graph_mutation_access":"deny","denied_classes":["supervisor-only"]}}`),
+				},
+			},
+		},
+	}
+
+	route := buildToolRoute(sess, reg, TurnPlan{})
+	if len(route) != 1 {
+		t.Fatalf("route len = %d, want 1", len(route))
+	}
+	if route[0].Status != ToolRouteHidden {
+		t.Fatalf("status = %q, want hidden", route[0].Status)
+	}
+	if !hasReasonCode(route[0].ReasonCodes, "tool.effect_denied") {
+		t.Fatalf("reason codes = %v", route[0].ReasonCodes)
+	}
+}
+
+func TestBuildModelRoute_UsesResolvedSessionSpecModes(t *testing.T) {
+	planningRoute := buildModelRoute(&session.Session{
+		Config: session.SessionConfig{
+			ResolvedSessionSpec: &session.ResolvedSessionSpec{
+				Intent: session.ResolvedIntent{CollaborationMode: "plan"},
+			},
+		},
+	}, TurnPlan{})
+	if planningRoute.Lane != "reasoning" {
+		t.Fatalf("planning lane = %q, want reasoning", planningRoute.Lane)
+	}
+	if planningRoute.Requirements == nil || !containsCapability(planningRoute.Requirements.Capabilities, model.CapReasoning) {
+		t.Fatalf("planning capabilities = %v, want reasoning", planningRoute.Requirements)
+	}
+
+	backgroundRoute := buildModelRoute(&session.Session{
+		Config: session.SessionConfig{
+			ResolvedSessionSpec: &session.ResolvedSessionSpec{
+				Runtime: session.ResolvedRuntime{RunMode: "background"},
+			},
+		},
+	}, TurnPlan{})
+	if backgroundRoute.Lane != "background-task" {
+		t.Fatalf("background lane = %q, want background-task", backgroundRoute.Lane)
+	}
+}
+
 func hasReasonCode(reasons []string, want string) bool {
 	for _, reason := range reasons {
 		if reason == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsCapability(values []model.ModelCapability, want model.ModelCapability) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}

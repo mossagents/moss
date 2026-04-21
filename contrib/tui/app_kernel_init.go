@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
@@ -88,15 +87,11 @@ func (s *kernelInitState) loadInitialSession() error {
 		return fmt.Errorf("session %q not found", s.cfg.InitialSessionID)
 	}
 	s.sess = sess
-	currentPosture, err := postureFromRuntime(s.wCfg.Workspace, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode)
-	if err != nil {
-		s.cancel()
-		return err
-	}
+	currentPosture := postureFromRuntime(s.k, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode)
 	plan, err := planPostureRebuild(
 		s.cfg.InitialSessionID,
 		currentPosture,
-		rprofile.SessionPostureFromSession(s.sess),
+		s.sess,
 	)
 	if err != nil {
 		s.cancel()
@@ -116,14 +111,17 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 		return nil
 	}
 	s.cancel()
-	rebuildProfile := strings.TrimSpace(s.cfg.Profile)
+	rebuildProfile := strings.TrimSpace(plan.Profile)
+	if rebuildProfile == "" {
+		rebuildProfile = strings.TrimSpace(s.cfg.Profile)
+	}
 	if rebuildProfile == "" {
 		rebuildProfile = "default"
 	}
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
-		Trust:        plan.Resolved.Trust,
+		Trust:        plan.Trust,
 		Profile:      rebuildProfile,
-		ApprovalMode: plan.Resolved.ApprovalMode,
+		ApprovalMode: plan.ApprovalMode,
 		APIKey:       s.cfg.APIKey,
 		BaseURL:      s.cfg.BaseURL,
 		BuildKernel:  s.cfg.BuildKernel,
@@ -133,13 +131,13 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 		return err
 	}
 	s.k, s.ctx, s.cancel = k, ctx, cancel
-	if err := product.ApplyResolvedProfile(s.k, plan.Resolved); err != nil {
+	if err := product.ApplySessionConfig(s.k, plan.TargetConfig); err != nil {
 		s.cancel()
 		return fmt.Errorf("apply rebuilt posture: %w", err)
 	}
-	s.cfg.Trust = plan.Resolved.Trust
-	s.cfg.Profile = strings.TrimSpace(plan.Resolved.Name)
-	s.cfg.ApprovalMode = plan.Resolved.ApprovalMode
+	s.cfg.Trust = plan.Trust
+	s.cfg.Profile = rebuildProfile
+	s.cfg.ApprovalMode = plan.ApprovalMode
 	return nil
 }
 
@@ -162,13 +160,14 @@ func (s *kernelInitState) createInteractiveSession() error {
 		)
 	}
 	metadata := preparePromptMetadata(sessCfg, s.cfg.Profile)
-	sysPrompt, err := prompting.ComposeSystemPrompt(
+	sessCfg.Metadata = metadata
+	sysPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(
 		s.wCfg.Workspace,
 		s.cfg.Trust,
 		s.k,
 		s.cfg.PromptConfigInstructions,
 		s.cfg.PromptModelInstructions,
-		metadata,
+		sessCfg,
 	)
 	if err != nil {
 		s.cancel()

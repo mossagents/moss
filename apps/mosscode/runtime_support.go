@@ -16,7 +16,7 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/logging"
 	providers "github.com/mossagents/moss/harness/providers"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
 	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
@@ -51,8 +51,11 @@ func initializeCommandRuntime(cfg *config) (func(), error) {
 }
 
 func buildCheckpointKernel(ctx context.Context, cfg *config) (*kernel.Kernel, error) {
-	k, _, err := buildKernel(ctx, cfg.flags, &io.NoOpIO{}, cfg.approvalMode, cfg.governance, cfg.observer)
-	return k, err
+	invocation, err := resolveRuntimeInvocation(cfg, "interactive")
+	if err != nil {
+		return nil, err
+	}
+	return buildKernel(ctx, cloneAppFlags(invocation.CompatFlags), &io.NoOpIO{}, invocation.ApprovalMode, cfg.governance, cfg.observer)
 }
 
 func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (changes.ChangeRuntime, func(), error) {
@@ -77,7 +80,7 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (cha
 	}, nil
 }
 
-func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, rprofile.ResolvedProfile, error) {
+func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, error) {
 	logging.GetLogger().DebugContext(ctx, "build kernel requested",
 		"workspace", flags.Workspace,
 		"profile", flags.Profile,
@@ -86,14 +89,14 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	)
 	resolved, err := resolveProfileForFlags(flags, approvalMode)
 	if err != nil {
-		return nil, rprofile.ResolvedProfile{}, err
+		return nil, err
 	}
 	flags.Trust = resolved.Trust
 	flags.Profile = resolved.Name
 	disableDefaultPolicy := false
 	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
 	if err != nil {
-		return nil, rprofile.ResolvedProfile{}, fmt.Errorf("load model router: %w", err)
+		return nil, fmt.Errorf("load model router: %w", err)
 	}
 	failoverCfg, failoverEnabled := governance.FailoverConfig()
 	useFailover := failoverEnabled && router != nil && len(router.Models()) > 1
@@ -114,13 +117,13 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		AdditionalFeatures:            []harness.Feature{},
 	})
 	if err != nil {
-		return nil, rprofile.ResolvedProfile{}, err
+		return nil, err
 	}
 	if err := configureContextPolicy(k, flags); err != nil {
-		return nil, rprofile.ResolvedProfile{}, err
+		return nil, err
 	}
 	if err := k.Apply(kernel.WithParallelToolCalls()); err != nil {
-		return nil, rprofile.ResolvedProfile{}, err
+		return nil, err
 	}
 	logging.GetLogger().DebugContext(ctx, "kernel built",
 		"profile", resolved.Name,
@@ -134,21 +137,21 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		if useFailover {
 			failoverLLM, err := providers.NewFailoverLLM(router, failoverCfg)
 			if err != nil {
-				return nil, rprofile.ResolvedProfile{}, fmt.Errorf("build failover llm: %w", err)
+				return nil, fmt.Errorf("build failover llm: %w", err)
 			}
 			llm = failoverLLM
 		}
 		k.SetLLM(llm)
 	}
 	k.SetObserver(product.ComposeStateObserver(k, observer))
-	if err := product.ApplyResolvedProfile(k, resolved); err != nil {
-		return nil, rprofile.ResolvedProfile{}, err
+	if err := product.ApplyToolPolicy(k, resolved.ToolPolicy); err != nil {
+		return nil, err
 	}
-	return k, resolved, nil
+	return k, nil
 }
 
-func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (rprofile.ResolvedProfile, error) {
-	return rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
+func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (rsessionspec.LegacyRuntimeSelection, error) {
+	return rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
 		Workspace:        flags.Workspace,
 		RequestedProfile: flags.Profile,
 		Trust:            flags.Trust,
@@ -156,7 +159,7 @@ func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (rprofi
 	})
 }
 
-func resolveProfileForConfig(cfg *config) (rprofile.ResolvedProfile, error) {
+func resolveProfileForConfig(cfg *config) (rsessionspec.LegacyRuntimeSelection, error) {
 	trust := ""
 	if hasExplicitFlag(cfg.explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
 		trust = cfg.flags.Trust
@@ -165,7 +168,7 @@ func resolveProfileForConfig(cfg *config) (rprofile.ResolvedProfile, error) {
 	if hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
 		approval = cfg.approvalMode
 	}
-	return rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
+	return rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
 		Workspace:        cfg.flags.Workspace,
 		RequestedProfile: cfg.flags.Profile,
 		Trust:            trust,
@@ -200,29 +203,90 @@ func buildProductPromptInstructions(workspace, trust string) string {
 	return appconfig.RenderSystemPromptForTrust(workspace, trust, defaultPromptInstructionsTemplate, ctx)
 }
 
-func composeProductSystemPrompt(workspace, trust string, k *kernel.Kernel, resolved rprofile.ResolvedProfile, metadata map[string]any) (string, map[string]any, error) {
-	promptMetadata := make(map[string]any, len(metadata)+2)
-	for key, value := range metadata {
+func composeProductSystemPrompt(workspace, trust string, k *kernel.Kernel, cfg session.SessionConfig) (string, map[string]any, error) {
+	promptMetadata := make(map[string]any, len(cfg.Metadata)+2)
+	for key, value := range cfg.Metadata {
 		promptMetadata[key] = value
 	}
-	if profile := strings.TrimSpace(resolved.Name); profile != "" {
+	promptCfg := cfg
+	promptCfg.Metadata = promptMetadata
+	if promptCfg.Profile == "" {
+		promptCfg.Profile = strings.TrimSpace(cfg.Profile)
+	}
+	if profile := strings.TrimSpace(promptCfg.Profile); profile != "" {
 		promptMetadata[prompting.MetadataProfileNameKey] = profile
 	}
-	if taskMode := strings.TrimSpace(resolved.TaskMode); taskMode != "" {
+	if taskMode := firstNonEmptyTrimmed(metadataString(promptMetadata, session.MetadataTaskMode), sessionConfigCollaborationMode(cfg), strings.TrimSpace(promptCfg.Profile)); taskMode != "" {
 		promptMetadata[session.MetadataTaskMode] = taskMode
 	}
-	systemPrompt, err := prompting.ComposeSystemPrompt(
+	systemPrompt, promptMetadata, err := prompting.ComposeSystemPromptForConfig(
 		workspace,
 		trust,
 		k,
 		buildProductPromptInstructions(workspace, trust),
 		"",
-		promptMetadata,
+		promptCfg,
 	)
 	if err != nil {
 		return "", nil, err
 	}
 	return systemPrompt, promptMetadata, nil
+}
+
+func buildLegacyProjectedSessionConfig(base session.SessionConfig, flags *appkit.AppFlags, trust, approvalMode, profile, promptPack string) session.SessionConfig {
+	selection, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
+		Workspace:        flags.Workspace,
+		RequestedProfile: profile,
+		Trust:            trust,
+		ApprovalMode:     approvalMode,
+	})
+	if err != nil {
+		selection = rsessionspec.DefaultLegacyRuntimeSelection(flags.Workspace, profile, trust, approvalMode)
+	}
+	cfg := applyContextPolicy(base, flags)
+	projected, err := rsessionspec.ApplyLegacyRuntimeSelection(cfg, selection, rsessionspec.LegacyProjectionInput{
+		PromptPack: firstNonEmptyTrimmed(promptPack, "coding"),
+		Provider:   flags.Provider,
+		ModelName:  flags.Model,
+	})
+	if err != nil {
+		return cfg
+	}
+	return projected
+}
+
+func sessionConfigCollaborationMode(cfg session.SessionConfig) string {
+	if cfg.ResolvedSessionSpec != nil && strings.TrimSpace(cfg.ResolvedSessionSpec.Intent.CollaborationMode) != "" {
+		return strings.TrimSpace(cfg.ResolvedSessionSpec.Intent.CollaborationMode)
+	}
+	if cfg.SessionSpec != nil && strings.TrimSpace(cfg.SessionSpec.Intent.CollaborationMode) != "" {
+		return strings.TrimSpace(cfg.SessionSpec.Intent.CollaborationMode)
+	}
+	return ""
+}
+
+func metadataString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	value, ok := meta[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(text)
+}
+
+func firstNonEmptyTrimmed(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func effectiveFlags() *appkit.AppFlags {

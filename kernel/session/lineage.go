@@ -35,6 +35,13 @@ type ThreadRef struct {
 	Goal              string        `json:"goal,omitempty"`
 	Mode              string        `json:"mode,omitempty"`
 	Profile           string        `json:"profile,omitempty"`
+	Preset            string        `json:"preset,omitempty"`
+	WorkspaceTrust    string        `json:"workspace_trust,omitempty"`
+	CollaborationMode string        `json:"collaboration_mode,omitempty"`
+	PromptPack        string        `json:"prompt_pack,omitempty"`
+	PermissionProfile string        `json:"permission_profile,omitempty"`
+	SessionPolicy     string        `json:"session_policy,omitempty"`
+	ModelProfile      string        `json:"model_profile,omitempty"`
 	EffectiveTrust    string        `json:"effective_trust,omitempty"`
 	EffectiveApproval string        `json:"effective_approval,omitempty"`
 	TaskMode          string        `json:"task_mode,omitempty"`
@@ -246,6 +253,13 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 		Goal:              summary.Goal,
 		Mode:              summary.Mode,
 		Profile:           summary.Profile,
+		Preset:            summary.Preset,
+		WorkspaceTrust:    summary.WorkspaceTrust,
+		CollaborationMode: summary.CollaborationMode,
+		PromptPack:        summary.PromptPack,
+		PermissionProfile: summary.PermissionProfile,
+		SessionPolicy:     summary.SessionPolicy,
+		ModelProfile:      summary.ModelProfile,
 		EffectiveTrust:    summary.EffectiveTrust,
 		EffectiveApproval: summary.EffectiveApproval,
 		TaskMode:          summary.TaskMode,
@@ -263,30 +277,7 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 }
 
 func ThreadRefFromSession(sess *Session) ThreadRef {
-	source, parentID, taskID, preview, activityKind, archived, activityAt := ThreadMetadataValues(sess)
-	profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(sess)
-	summary := SessionSummary{
-		ID:                sess.ID,
-		Goal:              sess.Config.Goal,
-		Mode:              sess.Config.Mode,
-		Profile:           profile,
-		EffectiveTrust:    effectiveTrust,
-		EffectiveApproval: effectiveApproval,
-		TaskMode:          taskMode,
-		Source:            source,
-		ParentID:          parentID,
-		TaskID:            taskID,
-		Preview:           preview,
-		ActivityKind:      activityKind,
-		Status:            sess.Status,
-		Recoverable:       IsRecoverableStatus(sess.Status),
-		Archived:          archived,
-		Steps:             sess.Budget.UsedStepsValue(),
-		CreatedAt:         formatSessionTime(sess.CreatedAt),
-		UpdatedAt:         formatSessionTime(activityAt),
-		EndedAt:           formatSessionTime(sess.EndedAt),
-	}
-	return ThreadRefFromSummary(summary)
+	return ThreadRefFromSummary(buildSessionSummary(sess))
 }
 
 func CheckpointRefFromRecord(record checkpoint.CheckpointRecord) CheckpointRef {

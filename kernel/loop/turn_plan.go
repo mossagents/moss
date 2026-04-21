@@ -37,9 +37,9 @@ type ToolRouteDecision struct {
 }
 
 type ModelRoutePlan struct {
-	Lane         string               `json:"lane,omitempty"`
+	Lane         string                 `json:"lane,omitempty"`
 	Requirements *model.TaskRequirement `json:"requirements,omitempty"`
-	ReasonCodes  []string             `json:"reason_codes,omitempty"`
+	ReasonCodes  []string               `json:"reason_codes,omitempty"`
 }
 
 type TurnPlan struct {
@@ -99,17 +99,21 @@ func instructionProfileForSession(sess *session.Session) string {
 			return strings.TrimSpace(profile)
 		}
 	}
-	_, _, _, taskMode := session.ProfileMetadataValues(sess)
-	if strings.TrimSpace(taskMode) != "" {
-		return taskMode
-	}
-	if v, ok := sess.GetMetadata(session.MetadataTaskMode); ok {
-		if taskMode, ok := v.(string); ok && strings.TrimSpace(taskMode) != "" {
-			return strings.TrimSpace(taskMode)
-		}
+	_, preset, _, collaborationMode, promptPack, permissionProfile, _, _ := session.SessionFacetValues(sess)
+	if strings.TrimSpace(collaborationMode) != "" {
+		return strings.TrimSpace(collaborationMode)
 	}
 	if profile := strings.TrimSpace(sess.Config.Profile); profile != "" {
 		return profile
+	}
+	if strings.TrimSpace(preset) != "" {
+		return strings.TrimSpace(preset)
+	}
+	if strings.TrimSpace(promptPack) != "" {
+		return strings.TrimSpace(promptPack)
+	}
+	if strings.TrimSpace(permissionProfile) != "" {
+		return strings.TrimSpace(permissionProfile)
 	}
 	return "default"
 }
@@ -119,8 +123,7 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 		return nil
 	}
 	summary, hasSummary := session.ToolPolicySummaryFromSession(sess)
-	_, _, _, taskMode := session.ProfileMetadataValues(sess)
-	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
+	intentMode := sessionIntentMode(sess)
 	specs := reg.List()
 	decisions := make([]ToolRouteDecision, 0, len(specs))
 	for _, t := range specs {
@@ -149,9 +152,9 @@ func buildToolRoute(sess *session.Session, reg tool.Registry, plan TurnPlan) []T
 		case plan.LightweightChat:
 			decision.Status = ToolRouteHidden
 			decision.ReasonCodes = append(decision.ReasonCodes, "lightweight_chat")
-		case (taskMode == "planning" || taskMode == "research") && shouldHideForPlanning(spec):
+		case shouldHideForIntentMode(intentMode, spec):
 			decision.Status = ToolRouteHidden
-			decision.ReasonCodes = append(decision.ReasonCodes, "planning_mode")
+			decision.ReasonCodes = append(decision.ReasonCodes, intentMode+"_mode")
 		default:
 			decision.Status, decision.ReasonCodes = routeStatusFromPolicySummary(spec, summary, hasSummary)
 		}
@@ -175,8 +178,7 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 	if req == nil {
 		req = &model.TaskRequirement{}
 	}
-	_, _, _, taskMode := session.ProfileMetadataValues(sess)
-	taskMode = strings.ToLower(strings.TrimSpace(taskMode))
+	intentMode := sessionIntentMode(sess)
 	lane := "default"
 	reasons := []string{}
 	visibleTools := visibleToolNames(plan.ToolRoute)
@@ -196,11 +198,11 @@ func buildModelRoute(sess *session.Session, plan TurnPlan) ModelRoutePlan {
 			lane = "tool-heavy"
 		}
 	}
-	switch taskMode {
-	case "planning", "research":
+	switch intentMode {
+	case "plan", "planning", "investigate", "research":
 		lane = "reasoning"
 		addModelCapability(req, model.CapReasoning)
-		reasons = append(reasons, taskMode+"_mode")
+		reasons = append(reasons, intentMode+"_mode")
 	case "coding":
 		addModelCapability(req, model.CapCodeGeneration)
 		reasons = append(reasons, "coding_mode")
@@ -353,6 +355,15 @@ func shouldHideForPlanning(spec tool.ToolSpec) bool {
 	return false
 }
 
+func shouldHideForIntentMode(mode string, spec tool.ToolSpec) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "plan", "planning", "investigate", "research":
+		return shouldHideForPlanning(spec)
+	default:
+		return false
+	}
+}
+
 func routeStatusFromPolicySummary(spec tool.ToolSpec, summary session.ToolPolicySummary, hasSummary bool) (ToolRouteStatus, []string) {
 	if !hasSummary {
 		return safeRouteStatus(spec)
@@ -496,5 +507,15 @@ func firstNonEmptySessionMode(sess *session.Session) string {
 	if sess == nil {
 		return ""
 	}
-	return strings.TrimSpace(sess.Config.Mode)
+	runMode, _, _, _, _, _, _, _ := session.SessionFacetValues(sess)
+	return strings.TrimSpace(runMode)
+}
+
+func sessionIntentMode(sess *session.Session) string {
+	_, _, _, collaborationMode, _, _, _, _ := session.SessionFacetValues(sess)
+	if trimmed := strings.ToLower(strings.TrimSpace(collaborationMode)); trimmed != "" {
+		return trimmed
+	}
+	_, _, _, taskMode := session.ProfileMetadataValues(sess)
+	return strings.ToLower(strings.TrimSpace(taskMode))
 }

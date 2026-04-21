@@ -44,13 +44,15 @@ func CloneMessages(msgs []model.Message) []model.Message {
 
 func cloneSessionConfig(cfg SessionConfig) SessionConfig {
 	out := cfg
-	if len(cfg.Metadata) == 0 {
-		return out
+	if len(cfg.Metadata) > 0 {
+		out.Metadata = make(map[string]any, len(cfg.Metadata))
+		for k, v := range cfg.Metadata {
+			out.Metadata[k] = v
+		}
 	}
-	out.Metadata = make(map[string]any, len(cfg.Metadata))
-	for k, v := range cfg.Metadata {
-		out.Metadata[k] = v
-	}
+	out.SessionSpec = cloneSessionSpec(cfg.SessionSpec)
+	out.ResolvedSessionSpec = cloneResolvedSessionSpec(cfg.ResolvedSessionSpec)
+	out.PromptSnapshot = clonePromptSnapshot(cfg.PromptSnapshot)
 	return out
 }
 

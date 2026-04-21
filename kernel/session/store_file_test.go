@@ -175,6 +175,133 @@ func TestFileStoreOverwrite(t *testing.T) {
 	}
 }
 
+func TestFileStorePersistsResolvedSessionSpecAndSummary(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	store, err := NewFileStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	sess := &Session{
+		ID:     "spec-1",
+		Status: StatusRunning,
+		Config: SessionConfig{
+			Goal: "ship typed session persistence",
+			SessionSpec: &SessionSpec{
+				Workspace: SessionWorkspace{Trust: "trusted"},
+				Intent: SessionIntent{
+					CollaborationMode: "plan",
+					PromptPack:        "planner",
+				},
+				Runtime: SessionRuntime{
+					RunMode:           "foreground",
+					PermissionProfile: "workspace-write",
+					SessionPolicy:     "deep-work",
+					ModelProfile:      "gpt-5.4-default",
+				},
+				Origin: SessionOrigin{Preset: "planner-safe"},
+			},
+			ResolvedSessionSpec: &ResolvedSessionSpec{
+				Workspace: ResolvedWorkspace{Trust: "trusted"},
+				Intent: ResolvedIntent{
+					CollaborationMode: "plan",
+					PromptPack:        PromptPackRef{ID: "planner", Source: "builtin:planner"},
+					CapabilityCeiling: []string{"read_workspace", "mutate_graph"},
+				},
+				Runtime: ResolvedRuntime{
+					RunMode:           "foreground",
+					PermissionProfile: "workspace-write",
+					PermissionPolicy:  json.RawMessage(`{"approval_mode":"confirm"}`),
+					SessionPolicyName: "deep-work",
+					SessionPolicy:     SessionPolicySpec{MaxSteps: 128, MaxTokens: 64000},
+					ModelProfile:      "gpt-5.4-default",
+					Provider:          "openai",
+					ModelConfig:       model.ModelConfig{Model: "gpt-5.4"},
+					ReasoningEffort:   "high",
+					Verbosity:         "medium",
+					RouterLane:        "coding",
+				},
+				Prompt: ResolvedPrompt{
+					BasePackID:            "planner",
+					RenderedPromptVersion: "v1",
+					SnapshotRef:           "snapshot-1",
+				},
+				Origin: ResolvedOrigin{Preset: "planner-safe"},
+			},
+			PromptSnapshot: &PromptSnapshot{
+				Ref:            "snapshot-1",
+				Layers:         []ResolvedPromptLayer{{ID: "system/base", Source: "builtin", Content: "You are the planner."}},
+				RenderedPrompt: "You are the planner.",
+				Version:        "v1",
+			},
+		},
+		CreatedAt: time.Now().UTC(),
+	}
+
+	if err := store.Save(ctx, sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := store.Load(ctx, sess.ID)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded == nil || loaded.Config.ResolvedSessionSpec == nil {
+		t.Fatalf("expected resolved session spec to round-trip, got %+v", loaded)
+	}
+	if loaded.Config.ResolvedSessionSpec.Intent.PromptPack.ID != "planner" {
+		t.Fatalf("prompt pack = %q, want planner", loaded.Config.ResolvedSessionSpec.Intent.PromptPack.ID)
+	}
+	if loaded.Config.PromptSnapshot == nil || loaded.Config.PromptSnapshot.Ref != "snapshot-1" {
+		t.Fatalf("prompt snapshot = %+v, want snapshot-1", loaded.Config.PromptSnapshot)
+	}
+
+	summaries, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("expected 1 summary, got %d", len(summaries))
+	}
+	summary := summaries[0]
+	if summary.Mode != "foreground" {
+		t.Fatalf("mode = %q, want foreground", summary.Mode)
+	}
+	if summary.Preset != "planner-safe" {
+		t.Fatalf("preset = %q, want planner-safe", summary.Preset)
+	}
+	if summary.Profile != "planner-safe" {
+		t.Fatalf("profile fallback = %q, want planner-safe", summary.Profile)
+	}
+	if summary.CollaborationMode != "plan" {
+		t.Fatalf("collaboration_mode = %q, want plan", summary.CollaborationMode)
+	}
+	if summary.EffectiveApproval != "confirm" {
+		t.Fatalf("effective_approval = %q, want confirm", summary.EffectiveApproval)
+	}
+	if summary.TaskMode != "plan" {
+		t.Fatalf("task_mode fallback = %q, want plan", summary.TaskMode)
+	}
+	if summary.WorkspaceTrust != "trusted" {
+		t.Fatalf("workspace_trust = %q, want trusted", summary.WorkspaceTrust)
+	}
+	if summary.PermissionProfile != "workspace-write" {
+		t.Fatalf("permission_profile = %q, want workspace-write", summary.PermissionProfile)
+	}
+	if summary.SessionPolicy != "deep-work" {
+		t.Fatalf("session_policy = %q, want deep-work", summary.SessionPolicy)
+	}
+	if summary.ModelProfile != "gpt-5.4-default" {
+		t.Fatalf("model_profile = %q, want gpt-5.4-default", summary.ModelProfile)
+	}
+	if summary.PromptPack != "planner" {
+		t.Fatalf("prompt_pack = %q, want planner", summary.PromptPack)
+	}
+	if thread := ThreadRefFromSession(loaded); thread.PromptPack != "planner" || thread.CollaborationMode != "plan" {
+		t.Fatalf("unexpected thread ref: %+v", thread)
+	}
+}
+
 func TestFileStoreSave_NormalizesInvalidToolCallArguments(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "sessions")
 	store, err := NewFileStore(dir)
