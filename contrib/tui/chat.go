@@ -12,7 +12,6 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-runewidth"
 	"github.com/mossagents/moss/harness/appkit/product"
@@ -99,19 +98,24 @@ func gitBranchCmd(dir string) tea.Cmd {
 
 // chatModel 是对话主界面。
 type chatModel struct {
-	viewport  viewport.Model
 	textarea  textarea.Model
 	messages  []chatMessage
 	streaming bool // 是否正在接收流式输出
 	width     int
 	height    int
-	ready     bool
+
+	// 内联打印队列：已完成的消息通过 tea.Println 刷新到终端滚动区
+	printedCount  int      // 已打印到 stdout 的消息数
+	pendingPrints []string // 待 tea.Println 的渲染内容
+	bannerPrinted bool     // startup banner 是否已打印
 
 	// agent 交互
-	sendFn                func(string, []model.ContentPart) // 发送用户消息给 agent
-	cancelRunFn           func() bool                       // 取消当前运行中的任务
-	skillListFn           func() string                     // 查询已加载 skills
-	debugConfigFn         func() string                     // 构建 debug 配置报告
+	sendFn                func(string, []model.ContentPart)    // 发送用户消息给 agent
+	cancelRunFn           func() bool                          // 取消当前运行中的任务
+	skillListFn           func() string                        // 查询已加载 skills
+	skillItemsFn          func() []skillsPickerItem            // 查询 skills 列表（含启用状态）
+	skillToggleFn         func(name string, enable bool) error // 切换 skill 启用状态
+	debugConfigFn         func() string                        // 构建 debug 配置报告
 	session               *agentSessionOps
 	checkpoint            *agentCheckpointOps
 	task                  *agentTaskOps
@@ -149,11 +153,6 @@ type chatModel struct {
 	// 工具输出折叠
 	toolCollapsed bool // true 时折叠 tool start/result 消息
 
-	// Viewport scroll pin: when true, refreshViewport auto-scrolls to the
-	// bottom. Set to false when the user manually scrolls up; re-pinned when
-	// the user sends a message or scrolls back to the bottom.
-	pinnedToBottom bool
-
 	// 配置显示
 	provider             string
 	providerID           string
@@ -186,6 +185,7 @@ type chatModel struct {
 	historyMentionSuppressed bool
 	slashHints               []string
 	slashPopup               *slashPopupState
+	skillsPopup              *skillsPopupState
 
 	// Extension system
 	extensions []*Extension
@@ -249,7 +249,6 @@ func newChatModel(provider, model, workspace string) chatModel {
 		statusLineItems:      statusLineItems,
 		experimentalFeatures: experimentalFeatures,
 		toolCollapsed:        true,
-		pinnedToBottom:       true,
 		approvalRules:        map[string][]userapproval.MemoryRule{},
 		projectApprovalRules: projectApprovalRules,
 		overlays:             newOverlayStack(),
@@ -363,7 +362,6 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		}
 		ask := m.pendAsk
 		m.pendAsk = nil
-		m.pinnedToBottom = true
 		m.messages = append(m.messages, chatMessage{
 			kind:    msgUser,
 			content: text,
@@ -371,7 +369,6 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 		})
 		m.textarea.Reset()
 		m.adjustInputHeight()
-		m.refreshViewport()
 
 		// 构造回复
 		resp := io.InputResponse{Value: text}
@@ -384,7 +381,6 @@ func (m chatModel) handleSend() (chatModel, tea.Cmd) {
 	}
 
 	// 普通用户消息
-	m.pinnedToBottom = true
 	displayText, runText, parts, err := userattachments.BuildComposerSubmission(text, m.workspace, m.pendingAttachments)
 	if err != nil {
 		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to build attachments: %v", err)})
@@ -482,8 +478,14 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		}
 		m.pendAsk = msg.ask
 		m.askForm = newAskFormState(msg.ask.request, m.workspace)
-		m.openAskOverlay()
+		// InputSelect タイプはインラインリスト表示（オーバーレイ不要）
+		if msg.ask.request.Type != io.InputSelect {
+			m.openAskOverlay()
+		}
 		notice := "Interactive input requested. Use Tab to navigate and Enter to confirm."
+		if msg.ask.request.Type == io.InputSelect {
+			notice = "Please select an option from the list below."
+		}
 		if msg.ask.request.Type == io.InputConfirm {
 			notice = "Confirmation required. Review the request and choose how to proceed."
 		}
@@ -493,9 +495,9 @@ func (m chatModel) handleBridge(msg bridgeMsg) (chatModel, tea.Cmd) {
 		}
 		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: notice})
 		m.activateAskField()
-		m.refreshViewport()
 	}
 
+	m.refreshViewport()
 	return m, nil
 }
 
@@ -529,16 +531,82 @@ func (m *chatModel) appendReasoning(delta string) {
 	})
 }
 
+// refreshViewport 排队刷新消息输出（内联模式）。
+// 将已完成的消息加入 pendingPrints 队列，由 appModel.Update() 统一通过 tea.Println 刷新到终端。
 func (m *chatModel) refreshViewport() {
-	m.syncViewportLayout()
-	content := renderAllMessages(m.messages, m.mainWidth(), m.toolCollapsed)
-	if banner := m.renderStartupBanner(); banner != "" {
-		content = banner + "\n\n" + content
+	m.queueNewMessages()
+}
+
+// queueNewMessages 将已完成的消息渲染并追加到 pendingPrints 队列。
+// 流式输出中的尾部 assistant/reasoning 消息暂不打印，等流结束后再打印。
+func (m *chatModel) queueNewMessages() {
+	// 首次调用时打印 startup banner（仅在对话尚未开始时）
+	if !m.bannerPrinted && strings.TrimSpace(m.startupBanner) != "" {
+		m.bannerPrinted = true
+		conversationStarted := false
+		for _, msg := range m.messages {
+			if msg.kind != msgSystem {
+				conversationStarted = true
+				break
+			}
+		}
+		if !conversationStarted {
+			m.pendingPrints = append(m.pendingPrints, titleStyle.Render(strings.TrimRight(m.startupBanner, "\r\n")))
+		}
 	}
-	m.viewport.SetContent(content)
-	if m.pinnedToBottom {
-		m.viewport.GotoBottom()
+
+	end := m.safePrintBoundary()
+	if end <= m.printedCount {
+		return
 	}
+
+	// 渲染本批次消息
+	slice := m.messages[m.printedCount:end]
+	rendered := renderAllMessages(slice, m.mainWidth(), m.toolCollapsed)
+	if strings.TrimSpace(rendered) != "" {
+		m.pendingPrints = append(m.pendingPrints, rendered)
+	}
+	m.printedCount = end
+}
+
+// safePrintBoundary 返回可安全打印到 stdout 的消息数量边界。
+// 在流式输出期间，会排除尾部尚未完成的 assistant/reasoning 消息。
+// 同时确保不会在工具调用 start/result 对中间截断。
+func (m *chatModel) safePrintBoundary() int {
+	count := len(m.messages)
+	if m.streaming {
+		// 排除尾部正在流式生成的 assistant/reasoning 消息
+		for count > m.printedCount {
+			kind := m.messages[count-1].kind
+			if kind == msgAssistant || kind == msgReasoning {
+				count--
+			} else {
+				break
+			}
+		}
+	}
+	// 若末尾为尚无结果的 toolStart，也不打印（等结果到达后再一起打印）
+	if count > m.printedCount && m.messages[count-1].kind == msgToolStart {
+		meta := m.messages[count-1].meta
+		if _, done := meta["completed_at"]; !done {
+			count--
+		}
+	}
+	return count
+}
+
+// drainPrints 返回将 pendingPrints 逐条 tea.Println 的 tea.Cmd，并清空队列。
+func (m *chatModel) drainPrints() tea.Cmd {
+	if len(m.pendingPrints) == 0 {
+		return nil
+	}
+	cmds := make([]tea.Cmd, len(m.pendingPrints))
+	for i, s := range m.pendingPrints {
+		s := s
+		cmds[i] = tea.Println(s)
+	}
+	m.pendingPrints = m.pendingPrints[:0]
+	return tea.Batch(cmds...)
 }
 
 func (m chatModel) renderStartupBanner() string {
@@ -605,11 +673,10 @@ func (m *chatModel) autoApproveAsk(ask *bridgeAsk) (io.InputResponse, string, bo
 
 func (m *chatModel) recalcLayout() {
 	m.syncViewportLayout()
-	m.refreshViewport()
 }
 
 func (m *chatModel) inputBoxHeight() int {
-	h := m.textarea.Height() + 2
+	h := m.textarea.Height() + 2 // 上下各一条水平分隔线
 	if h < 3 {
 		return 3
 	}
@@ -637,15 +704,6 @@ func (m *chatModel) syncViewportLayout() {
 	}
 	m.textarea.SetWidth(inputWidth)
 	m.adjustInputHeight()
-	layout := m.generateLayout()
-
-	if !m.ready {
-		m.viewport = viewport.New(layout.MainWidth, layout.ViewportHeight)
-		m.ready = true
-		return
-	}
-	m.viewport.Width = layout.MainWidth
-	m.viewport.Height = layout.ViewportHeight
 }
 
 func (m chatModel) visibleInputHeight() int {

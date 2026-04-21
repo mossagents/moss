@@ -2,9 +2,10 @@ package tui
 
 import (
 	"fmt"
-	"github.com/mattn/go-runewidth"
 	"strings"
 	"time"
+
+	"github.com/mattn/go-runewidth"
 )
 
 func (m chatModel) renderHeaderMetaLine() string {
@@ -45,17 +46,45 @@ func (m chatModel) renderComposerMetaLine(width int) string {
 }
 
 func (m chatModel) View() string {
-	if !m.ready {
-		return "Loading..."
-	}
 	layout := m.generateLayout()
-	body := m.renderBody(layout)
 
-	return strings.Join([]string{
-		m.renderShellHeader(),
-		body,
-		m.renderStatusPane(layout.Width),
-	}, "\n")
+	// 如果有全屏 overlay（transcript），独占整个抽屉区域
+	if overlay := m.activeOverlay(); overlay != nil {
+		if overlay.ID() == overlayTranscript {
+			overlayView := overlay.View(m, layout.MainWidth, layout.BodyHeight)
+			return strings.Join([]string{
+				overlayView,
+				m.renderStatusPane(layout.Width),
+			}, "\n")
+		}
+		// 其他 overlay 显示在编辑器区域上方
+		overlayView := m.renderOverlayPane(layout)
+		if strings.TrimSpace(overlayView) != "" {
+			return strings.Join([]string{
+				overlayView,
+				m.renderStatusPane(layout.Width),
+			}, "\n")
+		}
+	}
+
+	var parts []string
+
+	// 流式输出时，在顶部显示当前流式内容的最后几行预览
+	if m.streaming {
+		if preview := m.renderStreamingPreview(layout.MainWidth); preview != "" {
+			parts = append(parts, preview)
+		}
+	}
+
+	// 编辑器区域
+	if editor := m.renderEditorPane(layout); strings.TrimSpace(editor) != "" {
+		parts = append(parts, editor)
+	}
+
+	// 状态栏
+	parts = append(parts, m.renderStatusPane(layout.Width))
+
+	return strings.Join(parts, "\n")
 }
 
 func truncateForQueue(s string, max int) string {

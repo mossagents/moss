@@ -129,6 +129,32 @@ func SetSkillManifests(k *kernel.Kernel, manifests []skill.Manifest) {
 	}
 }
 
+// ActivateSkill loads the named skill into the capability manager.
+// Returns an error if the skill is not found or initialization fails.
+func ActivateSkill(ctx context.Context, k *kernel.Kernel, name string) error {
+	st, ok := Lookup(k)
+	if !ok || st == nil {
+		return fmt.Errorf("capability state not available")
+	}
+	manager := Manager(k)
+	if manager == nil {
+		return fmt.Errorf("capability manager not available")
+	}
+	if _, ok := manager.Get(name); ok {
+		return nil // already active
+	}
+	return activateManifestRecursive(ctx, manager, st.manifests, name, CapabilityDeps(k), nil)
+}
+
+// DeactivateSkill unregisters the named skill from the capability manager.
+func DeactivateSkill(ctx context.Context, k *kernel.Kernel, name string) error {
+	manager := Manager(k)
+	if manager == nil {
+		return fmt.Errorf("capability manager not available")
+	}
+	return manager.Unregister(ctx, name)
+}
+
 func EnableProgressiveSkills(k *kernel.Kernel) {
 	if st := Ensure(k); st != nil {
 		st.progressive = true

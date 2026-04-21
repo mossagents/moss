@@ -246,14 +246,14 @@ func (m *chatModel) applyMentionCompletion() bool {
 	return true
 }
 
-// renderMentionPopup 渲染 @ 文件补全弹窗（显示在输入框上方）。
+// renderMentionPopup 渲染 @ 文件补全弹窗（Claude Code 底部抽屉风格：无边框内联列表）。
 func (m chatModel) renderMentionPopup(width int) string {
 	p := m.mentionPopup
 	if p == nil || len(p.items) == 0 {
 		return ""
 	}
-	popupWidth := min(72, max(40, width-4))
-	nameWidth := popupWidth - 8
+	listWidth := min(width, max(40, width))
+	nameWidth := listWidth - 6
 
 	var rows []string
 	for i, item := range p.items {
@@ -262,26 +262,18 @@ func (m chatModel) renderMentionPopup(width int) string {
 		if len(name) > nameWidth {
 			name = "…" + name[len(name)-nameWidth+1:]
 		}
-		var row string
+
 		if i == p.cursor {
-			cursor := runningStyle.Render("›")
-			nameStr := lipgloss.NewStyle().Width(nameWidth).Bold(true).Foreground(colorSecondary).Render(name)
-			row = fmt.Sprintf(" %s %s", cursor, nameStr)
+			line := fmt.Sprintf(" › %-*s", nameWidth, name)
+			rows = append(rows, lipgloss.NewStyle().Width(listWidth).Reverse(true).Render(line))
 		} else {
-			num := fmt.Sprintf("%d", i+1)
-			if i >= 9 {
-				num = "+"
-			}
-			numStr := halfMutedStyle.Render(num)
-			nameStr := lipgloss.NewStyle().Width(nameWidth).Render(name)
-			row = fmt.Sprintf(" %s %s", numStr, nameStr)
+			line := fmt.Sprintf("   %-*s", nameWidth, name)
+			rows = append(rows, lipgloss.NewStyle().Width(listWidth).Render(line))
 		}
-		rows = append(rows, row)
 	}
-	footer := composerHintStyle.Render("  ↑↓ navigate  •  Tab/Enter attach  •  Esc dismiss")
-	rows = append(rows, footer)
-	inner := strings.Join(rows, "\n")
-	return dialogBoxStyle.Width(popupWidth).Render(inner)
+	// 顶部分隔线
+	sep := halfMutedStyle.Render(strings.Repeat("─", listWidth))
+	return sep + "\n" + strings.Join(rows, "\n")
 }
 
 func detectAttachmentKind(path string) string {

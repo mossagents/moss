@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -829,7 +828,6 @@ func TestInputWrapWidthUsesMainColumnWidth(t *testing.T) {
 
 func TestComposerRenderMatchesMainColumnWidth(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 160
 	m.height = 30
 	m.recalcLayout()
@@ -853,8 +851,8 @@ func TestGenerateLayoutSeparatesMainAndEditorRegions(t *testing.T) {
 	if layout.EditorHeight <= 0 {
 		t.Fatalf("expected positive editor height, got %d", layout.EditorHeight)
 	}
-	if layout.ViewportHeight < 3 {
-		t.Fatalf("expected viewport height >= 3, got %d", layout.ViewportHeight)
+	if layout.BodyHeight < 3 {
+		t.Fatalf("expected body height >= 3, got %d", layout.BodyHeight)
 	}
 }
 
@@ -1020,7 +1018,6 @@ func TestSlashCommandPlanReturnsPlanningSwitchMsg(t *testing.T) {
 
 func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1065,7 +1062,6 @@ func TestSlashCommandNewSuccessClearsVisibleTranscript(t *testing.T) {
 
 func TestSlashCommandNewBusySessionRejected(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1155,7 +1151,6 @@ func TestSlashCommandCheckpointShowRequiresID(t *testing.T) {
 
 func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1189,7 +1184,6 @@ func TestSlashCommandCheckpointReplaySwitchesTranscript(t *testing.T) {
 
 func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1209,7 +1203,6 @@ func TestSlashCommandCheckpointReplayDefaultsToLatest(t *testing.T) {
 
 func TestSlashCommandForkLatestShorthand(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1373,7 +1366,6 @@ func TestSlashCommandStatuslineSetPersistsSelection(t *testing.T) {
 
 func TestStatusLineBarRendersConfiguredItems(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", "/home/user/myproject")
-	m.ready = true
 	m.width = 160
 	m.height = 40
 	m.recalcLayout()
@@ -1467,7 +1459,6 @@ func TestSlashCommandExperimentalDisableAffectsFeatureGate(t *testing.T) {
 
 func TestCtrlCSingleClearsInput(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1489,7 +1480,6 @@ func TestCtrlCSingleClearsInput(t *testing.T) {
 
 func TestCtrlCDoubleQuits(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1510,7 +1500,6 @@ func TestCtrlCDoubleQuits(t *testing.T) {
 
 func TestMouseClickDoesNotInsertComposerGarbage(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1534,44 +1523,6 @@ func TestMouseClickDoesNotInsertComposerGarbage(t *testing.T) {
 	})
 	if updated.textarea.Value() != "hello" {
 		t.Fatalf("expected mouse motion to preserve composer text, got %q", updated.textarea.Value())
-	}
-}
-
-func TestMouseWheelScrollsViewportWithoutTouchingComposer(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
-	m.width = 120
-	m.height = 16
-	for i := 0; i < 40; i++ {
-		m.messages = append(m.messages, chatMessage{
-			kind:    msgSystem,
-			content: strings.Repeat("line ", 12) + strconv.Itoa(i),
-		})
-	}
-	m.textarea.SetValue("draft")
-	m.recalcLayout()
-	initialOffset := m.viewport.YOffset
-
-	updated, _ := m.Update(tea.MouseMsg{
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelUp,
-	})
-	if updated.textarea.Value() != "draft" {
-		t.Fatalf("expected mouse wheel to preserve composer text, got %q", updated.textarea.Value())
-	}
-	if updated.viewport.YOffset >= initialOffset {
-		t.Fatalf("expected wheel up to scroll transcript up, offset %d -> %d", initialOffset, updated.viewport.YOffset)
-	}
-	if updated.pinnedToBottom {
-		t.Fatal("expected wheel up to unpin the viewport from bottom")
-	}
-
-	down, _ := updated.Update(tea.MouseMsg{
-		Action: tea.MouseActionPress,
-		Button: tea.MouseButtonWheelDown,
-	})
-	if down.viewport.YOffset <= updated.viewport.YOffset {
-		t.Fatalf("expected wheel down to scroll transcript down, offset %d -> %d", updated.viewport.YOffset, down.viewport.YOffset)
 	}
 }
 
@@ -1604,7 +1555,6 @@ func TestArrowKeysNavigateInputHistory(t *testing.T) {
 
 func TestHistoryNavigationSuppressesSlashPopupUntilManualEdit(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1651,7 +1601,6 @@ func TestHistoryNavigationSuppressesMentionPopupUntilManualEdit(t *testing.T) {
 		t.Fatalf("write note: %v", err)
 	}
 	m := newChatModel("openai", "gpt-4o", workspace)
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1727,7 +1676,6 @@ func TestApprovalAskRespectsAllowedScopes(t *testing.T) {
 
 func TestEscDoubleCancelsRun(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1753,7 +1701,6 @@ func TestEscDoubleCancelsRun(t *testing.T) {
 
 func TestAskFormSingleSelectAndConfirm(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1790,7 +1737,6 @@ func TestAskFormSingleSelectAndConfirm(t *testing.T) {
 
 func TestAskFormMultiSelectToggle(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1827,7 +1773,6 @@ func TestAskFormMultiSelectToggle(t *testing.T) {
 
 func TestAskFormEscCancelsRunAndClearsForm(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1879,7 +1824,6 @@ func TestAskFormEscCancelsRunAndClearsForm(t *testing.T) {
 
 func TestConfirmAskFormUsesBottomSheetStyle(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1918,7 +1862,6 @@ func TestConfirmAskFormUsesBottomSheetStyle(t *testing.T) {
 
 func TestSimpleConfirmAskArrowSelectionAndSubmit(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -1947,7 +1890,6 @@ func TestSimpleConfirmAskArrowSelectionAndSubmit(t *testing.T) {
 
 func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.currentSessionID = "thread-1"
@@ -1996,7 +1938,6 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 
 func TestConfirmOverlayPlacementUsesBottomSheet(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2027,7 +1968,6 @@ func TestConfirmOverlayPlacementUsesBottomSheet(t *testing.T) {
 
 func TestFormOverlayPlacementRemainsCentered(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2061,7 +2001,6 @@ func TestFormOverlayPlacementRemainsCentered(t *testing.T) {
 
 func TestApprovalAllowForSessionRemembersSimilarCommands(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.currentSessionID = "thread-1"
@@ -2131,7 +2070,6 @@ func TestApprovalAllowForSessionRemembersSimilarCommands(t *testing.T) {
 
 func TestApprovalSessionRuleDoesNotMatchDifferentCommandPattern(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.currentSessionID = "thread-1"
@@ -2179,7 +2117,6 @@ func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
 	configpkg.SetAppName("moss")
 	workspace := t.TempDir()
 	m := newChatModel("openai", "gpt-4o", workspace)
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.currentSessionID = "thread-1"
@@ -2239,7 +2176,6 @@ func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
 	}
 
 	reloaded := newChatModel("openai", "gpt-4o", workspace)
-	reloaded.ready = true
 	reloaded.width = 120
 	reloaded.height = 40
 	reloaded.currentSessionID = "thread-2"
@@ -2265,7 +2201,6 @@ func TestApprovalAllowForProjectPersistsAndAutoApproves(t *testing.T) {
 
 func TestApprovalProjectPersistenceErrorStaysInlineInDialog(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", "")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.currentSessionID = "thread-1"
@@ -2314,7 +2249,6 @@ func TestApprovalProjectPersistenceErrorStaysInlineInDialog(t *testing.T) {
 
 func TestSendWhileRunning_QueuesInput(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2335,7 +2269,6 @@ func TestSendWhileRunning_QueuesInput(t *testing.T) {
 
 func TestSlashSkillCommandDispatchesPrompt(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2353,7 +2286,6 @@ func TestSlashSkillCommandDispatchesPrompt(t *testing.T) {
 
 func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2371,7 +2303,6 @@ func TestSlashShortcutCommandDispatchesPrompt(t *testing.T) {
 
 func TestSlashAutocompleteHintsAndTabCompletion(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2394,7 +2325,6 @@ func TestSlashAutocompleteHintsAndTabCompletion(t *testing.T) {
 
 func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2450,7 +2380,6 @@ func TestSlashAutocompleteHintsIncludesNew(t *testing.T) {
 
 func TestVisibleInputHeightDoesNotChangeWithSlashHints(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2660,7 +2589,6 @@ func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
 	if notice := m.syncCustomCommands(); notice != "" {
 		t.Fatalf("syncCustomCommands notice: %s", notice)
 	}
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2675,7 +2603,6 @@ func TestSlashAutocompleteHintsIncludeCustomCommands(t *testing.T) {
 func TestSlashAutocompleteHintsIncludeDiscoveredSkills(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.setDiscoveredSkills([]string{"wiki-researcher", "brainstorming"})
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2689,7 +2616,6 @@ func TestSlashAutocompleteHintsIncludeDiscoveredSkills(t *testing.T) {
 
 func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2725,7 +2651,6 @@ func TestSessionResult_DequeuesAndRunsNext(t *testing.T) {
 
 func TestSessionResult_AppendsOutputImageMessage(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2746,7 +2671,6 @@ func TestSessionResult_AppendsOutputImageMessage(t *testing.T) {
 
 func TestSessionResult_AppendsTraceSummary(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2768,7 +2692,6 @@ func TestSessionResult_AppendsTraceSummary(t *testing.T) {
 
 func TestSessionResult_StoresTraceForLaterCommand(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -2795,29 +2718,8 @@ func TestSessionResult_StoresTraceForLaterCommand(t *testing.T) {
 	}
 }
 
-func TestRefreshViewportRecalculatesHeightWhenRunningStateChanges(t *testing.T) {
+func TestRefreshViewportQueuesMessagesIntoPendingPrints(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
-	m.width = 120
-	m.height = 24
-	m.recalcLayout()
-
-	m.streaming = true
-	m.refreshViewport()
-	runningHeight := m.viewport.Height
-
-	m.streaming = false
-	m.refreshViewport()
-	idleHeight := m.viewport.Height
-
-	if idleHeight != runningHeight {
-		t.Fatalf("viewport height after running=%d idle=%d, want matching height after removing duplicate running row", runningHeight, idleHeight)
-	}
-}
-
-func TestRefreshViewportShowsStartupBannerBeforeConversationBegins(t *testing.T) {
-	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 24
 	m.startupBanner = "MOSSCODE BANNER"
@@ -2825,25 +2727,38 @@ func TestRefreshViewportShowsStartupBannerBeforeConversationBegins(t *testing.T)
 	m.recalcLayout()
 
 	m.refreshViewport()
-	if !strings.Contains(m.viewport.View(), "MOSSCODE BANNER") {
-		t.Fatalf("expected startup banner in initial chat viewport, got %q", m.viewport.View())
+	if len(m.pendingPrints) == 0 {
+		t.Fatal("expected refreshViewport to queue pending prints for startup banner")
+	}
+	bannerQueued := false
+	for _, s := range m.pendingPrints {
+		if strings.Contains(s, "MOSSCODE BANNER") {
+			bannerQueued = true
+			break
+		}
+	}
+	if !bannerQueued {
+		t.Fatalf("expected startup banner in pending prints, got %v", m.pendingPrints)
 	}
 
+	m.pendingPrints = nil
+	m.printedCount = 0
+	m.bannerPrinted = false
 	m.messages = append(m.messages, chatMessage{kind: msgUser, content: "hello"})
 	m.refreshViewport()
-	if strings.Contains(m.viewport.View(), "MOSSCODE BANNER") {
-		t.Fatalf("expected startup banner to disappear after conversation starts, got %q", m.viewport.View())
+	for _, s := range m.pendingPrints {
+		if strings.Contains(s, "MOSSCODE BANNER") {
+			t.Fatalf("expected startup banner to disappear after conversation starts, found in: %q", s)
+		}
 	}
 }
 
 func TestChatViewDoesNotRenderSidebarSections(t *testing.T) {
 	m := newChatModel("openai-completions", "gpt-4o", ".")
-	m.ready = true
 	m.width = 160
 	m.height = 30
 	m.messages = []chatMessage{{kind: msgAssistant, content: "Ready."}}
 	m.recalcLayout()
-	m.refreshViewport()
 
 	out := m.View()
 	for _, unwanted := range []string{"Session", "Shortcuts", "No product-specific context is available yet."} {

@@ -65,7 +65,6 @@ func TestSlashCommandModeSetReturnsSwitchMsg(t *testing.T) {
 
 func TestShiftTabCyclesMode(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
@@ -121,7 +120,6 @@ func TestShiftTabCyclesMode(t *testing.T) {
 
 func TestShiftTabDoesNothingWhileStreaming(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()

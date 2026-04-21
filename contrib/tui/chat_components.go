@@ -8,21 +8,57 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 )
 
-func (m chatModel) renderMainPane(layout chatUILayout) string {
-	var sections []string
-	if layout.MetaHeight > 0 {
-		sections = append(sections, m.renderHeaderMetaLine())
+// renderStreamingPreview 在流式输出期间，渲染当前流式消息的末尾预览行。
+// 为用户提供实时反馈，同时不污染终端滚动区。
+func (m chatModel) renderStreamingPreview(width int) string {
+	if !m.streaming || len(m.messages) == 0 {
+		return ""
 	}
-	sections = append(sections, lipgloss.NewStyle().Height(layout.ViewportHeight).Render(m.viewport.View()))
-	return lipgloss.NewStyle().
-		Width(layout.MainWidth).
-		Height(layout.MainHeight).
-		Render(strings.Join(sections, "\n"))
+	// 找最后一条 assistant 或 reasoning 消息
+	var content string
+	for i := len(m.messages) - 1; i >= 0; i-- {
+		msg := m.messages[i]
+		if msg.kind == msgAssistant || msg.kind == msgReasoning {
+			content = msg.content
+			break
+		}
+		// 遇到非流式消息就停止向前找
+		if msg.kind != msgReasoning {
+			break
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		return ""
+	}
+
+	// 截取最后 N 行作为预览
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	const maxPreviewLines = 5
+	if len(lines) > maxPreviewLines {
+		lines = lines[len(lines)-maxPreviewLines:]
+	}
+
+	// 用 muted 样式显示预览，最大宽度为 width
+	var b strings.Builder
+	for _, line := range lines {
+		b.WriteString(halfMutedStyle.Render(truncateDisplayWidth(line, width)))
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m chatModel) renderEditorPane(layout chatUILayout) string {
 	if layout.EditorHeight <= 0 {
 		return ""
+	}
+
+	// InputSelect タイプのインラインフォームはエディタ領域全体を置き換える
+	if m.isInlineSelectAsk() {
+		form := m.renderInlineSelectAsk(layout.MainWidth)
+		return lipgloss.NewStyle().
+			Width(layout.MainWidth).
+			PaddingLeft(2).
+			Render(form)
 	}
 
 	sections := []string{m.renderComposerMetaLine(layout.MainWidth)}
@@ -51,30 +87,60 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		rows = append(rows, "Ctrl+X removes the latest attachment")
 		sections = append(sections, composerHintStyle.Render("  "+strings.Join(rows, "  •  ")))
 	}
-	// 斜杠命令弹窗：替代普通 hint 行，提供可导航的富文本候选列表
-	if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
+	// 斜杠命令弹窗与 @ 文件补全弹窗移至输入框下方，先渲染输入框
+	sections = append(sections, m.renderComposerInput(layout.MainWidth))
+	if m.skillsPopup != nil {
+		m.skillsPopup.height = layout.Height
+		sections = append(sections, m.renderSkillsPopup(layout.MainWidth))
+	} else if m.slashPopup != nil && len(m.slashPopup.items) > 0 {
 		sections = append(sections, m.renderSlashPopup(layout.MainWidth))
 	} else if m.mentionPopup != nil && len(m.mentionPopup.items) > 0 {
 		// @ 文件补全弹窗：inline 替代 overlay
 		sections = append(sections, m.renderMentionPopup(layout.MainWidth))
 	}
-	boxStyle := composerBoxStyle.Copy()
-	if draft := strings.TrimSpace(m.textarea.Value()); draft != "" || len(m.pendingAttachments) > 0 {
-		boxStyle = boxStyle.BorderForeground(colorSubtle)
-	}
-	if m.slashPopup != nil || m.mentionPopup != nil || strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/") || strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@") {
-		boxStyle = boxStyle.BorderForeground(colorPrimary)
-	}
-	if m.pendAsk != nil {
-		boxStyle = boxStyle.BorderForeground(colorSecondary)
-	} else if m.streaming {
-		boxStyle = boxStyle.BorderForeground(colorPrimary)
-	}
-	sections = append(sections, boxStyle.Render(m.textarea.View()))
 	return lipgloss.NewStyle().
 		Width(layout.MainWidth).
-		Height(layout.EditorHeight).
 		Render(strings.Join(sections, "\n"))
+}
+
+// renderComposerInput 渲染带 ❯ 前缀指示符的输入区域，上下各一条水平分隔线。
+// 第一行左侧显示 ❯，后续行用等宽空格对齐，整体宽度与 mainWidth 一致。
+func (m chatModel) renderComposerInput(mainWidth int) string {
+	raw := m.textarea.View()
+	lines := strings.Split(raw, "\n")
+
+	// 根据当前状态选择指示符颜色
+	indStyle := lipgloss.NewStyle().Foreground(colorBorder)
+	if m.slashPopup != nil || m.mentionPopup != nil ||
+		strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "/") ||
+		strings.HasPrefix(strings.TrimSpace(m.textarea.Value()), "@") {
+		indStyle = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	} else if m.pendAsk != nil {
+		indStyle = lipgloss.NewStyle().Foreground(colorSecondary).Bold(true)
+	} else if m.streaming {
+		indStyle = lipgloss.NewStyle().Foreground(colorPrimary)
+	} else if strings.TrimSpace(m.textarea.Value()) != "" || len(m.pendingAttachments) > 0 {
+		indStyle = lipgloss.NewStyle().Foreground(colorSubtle)
+	}
+
+	ruleStr := strings.Repeat("─", mainWidth)
+	rule := indStyle.Render(ruleStr)
+
+	const indWidth = 2 // "❯ " 的宽度
+	ind := indStyle.Render("❯ ")
+	pad := strings.Repeat(" ", indWidth)
+
+	rendered := make([]string, 0, len(lines)+2)
+	rendered = append(rendered, rule)
+	for i, line := range lines {
+		if i == 0 {
+			rendered = append(rendered, ind+line)
+		} else {
+			rendered = append(rendered, pad+line)
+		}
+	}
+	rendered = append(rendered, rule)
+	return strings.Join(rendered, "\n")
 }
 
 func (m chatModel) renderOverlayPane(layout chatUILayout) string {
@@ -138,7 +204,7 @@ func (m chatModel) renderStatusPane(width int) string {
 		}
 		leftStr += "Esc Esc cancel"
 	default:
-		leftStr = "ctrl+y copy  •  ↑↓ history  •  wheel/ctrl+p/n scroll  •  shift+tab cycle mode  •  /help"
+		leftStr = "ctrl+y copy  •  ↑↓ history  •  /help"
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {
 			for _, widget := range ext.StatusWidgets {
@@ -174,14 +240,4 @@ func (m chatModel) renderStatusPane(width int) string {
 	gapW := max(0, inner-leftW-rightW)
 	gap := strings.Repeat(" ", gapW)
 	return statusBarStyle.Width(width).Render(left + gap + right)
-}
-
-func (m chatModel) renderBody(layout chatUILayout) string {
-	mainBody := m.renderMainPane(layout)
-	if overlay := m.renderOverlayPane(layout); strings.TrimSpace(overlay) != "" {
-		mainBody = overlay
-	} else if editor := m.renderEditorPane(layout); strings.TrimSpace(editor) != "" {
-		mainBody = lipgloss.JoinVertical(lipgloss.Left, mainBody, editor)
-	}
-	return mainBody
 }

@@ -36,7 +36,6 @@ func (m chatModel) handleBangCommand(input string) (chatModel, tea.Cmd) {
 	m.streaming = true
 	m.activeRunSummary = summarizeActiveRun(cmdLine)
 	m.runStartedAt = m.now().UTC()
-	m.pinnedToBottom = true
 	m.refreshViewport()
 
 	workspace := m.workspace

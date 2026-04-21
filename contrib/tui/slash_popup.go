@@ -2,9 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mossagents/moss/harness/appkit/product"
-	"strings"
 )
 
 // slashPopupItem 是弹窗中的一个候选命令项。
@@ -85,10 +86,6 @@ func buildSlashPopup(input string, customCommands []product.CustomCommand, disco
 	if len(items) == 0 {
 		return nil
 	}
-	const maxItems = 10
-	if len(items) > maxItems {
-		items = items[:maxItems]
-	}
 	return &slashPopupState{items: items, cursor: 0}
 }
 
@@ -117,24 +114,38 @@ func fuzzyContainsStr(s, pattern string) bool {
 	return pi == len(patRunes)
 }
 
-// renderSlashPopup 渲染斜杠命令弹窗（显示在输入框上方）。
+// renderSlashPopup 渲染斜杠命令弹窗（Claude Code 底部抽屉风格：无边框内联列表，支持滚动）。
 func (m chatModel) renderSlashPopup(width int) string {
 	p := m.slashPopup
 	if p == nil || len(p.items) == 0 {
 		return ""
 	}
-	// 弹窗宽度：不超过 88，不小于 48
-	popupWidth := min(88, max(48, width-4))
 
-	nameWidth := 22
-	summaryWidth := popupWidth - nameWidth - 4
+	// 限制最大显示行数：最多 10 行
+	total := len(p.items)
+	maxVisible := min(10, max(1, total))
+
+	listWidth := min(width, max(48, width))
+	nameWidth := 24
+	summaryWidth := listWidth - nameWidth - 6
+	if summaryWidth < 10 {
+		summaryWidth = 0
+	}
+
+	// 计算滚动视口：确保 cursor 始终可见
+	viewSize := min(maxVisible, total)
+	viewStart := 0
+	if p.cursor >= viewStart+viewSize {
+		viewStart = p.cursor - viewSize + 1
+	}
+	if p.cursor < viewStart {
+		viewStart = p.cursor
+	}
+	viewEnd := viewStart + viewSize
 
 	var rows []string
-	for i, item := range p.items {
-		num := fmt.Sprintf("%d", i+1)
-		if i >= 9 {
-			num = "+"
-		}
+	for i := viewStart; i < viewEnd; i++ {
+		item := p.items[i]
 		name := item.name
 		if len(name) > nameWidth {
 			name = name[:nameWidth-1] + "…"
@@ -143,23 +154,36 @@ func (m chatModel) renderSlashPopup(width int) string {
 		if summaryWidth > 0 && len(summary) > summaryWidth {
 			summary = summary[:summaryWidth-1] + "…"
 		}
-		var row string
+
 		if i == p.cursor {
-			// 选中项：用 › 替代数字，命令名高亮，不使用背景色（避免 ANSI reset 导致颜色混乱）
-			cursor := runningStyle.Render("›")
-			nameStr := lipgloss.NewStyle().Width(nameWidth).Bold(true).Foreground(colorPrimary).Render(name)
-			summaryStr := halfMutedStyle.Render(summary)
-			row = fmt.Sprintf(" %s %s  %s", cursor, nameStr, summaryStr)
+			cursor := "›"
+			var line string
+			if summaryWidth > 0 && strings.TrimSpace(summary) != "" {
+				line = fmt.Sprintf(" %s %-*s  %s", cursor, nameWidth, name, summary)
+			} else {
+				line = fmt.Sprintf(" %s %-*s", cursor, nameWidth, name)
+			}
+			rows = append(rows, lipgloss.NewStyle().Width(listWidth).Reverse(true).Render(line))
 		} else {
-			numStr := halfMutedStyle.Render(num)
-			nameStr := lipgloss.NewStyle().Width(nameWidth).Render(name)
-			summaryStr := mutedStyle.Render(summary)
-			row = fmt.Sprintf(" %s %s  %s", numStr, nameStr, summaryStr)
+			nameStr := lipgloss.NewStyle().Width(nameWidth + 3).Render(fmt.Sprintf("   %s", name))
+			var line string
+			if summaryWidth > 0 && strings.TrimSpace(summary) != "" {
+				line = nameStr + "  " + halfMutedStyle.Render(summary)
+			} else {
+				line = nameStr
+			}
+			rows = append(rows, lipgloss.NewStyle().Width(listWidth).Render(line))
 		}
-		rows = append(rows, row)
 	}
-	footer := composerHintStyle.Render("  ↑↓ move  •  Tab/Enter select  •  Esc dismiss")
-	rows = append(rows, footer)
-	inner := strings.Join(rows, "\n")
-	return dialogBoxStyle.Width(popupWidth).Render(inner)
+
+	// 顶部：分隔线 + 计数（多于 viewSize 时显示滚动提示）
+	var header string
+	if total > viewSize {
+		countStr := halfMutedStyle.Render(fmt.Sprintf("%d/%d", p.cursor+1, total))
+		sep := halfMutedStyle.Render(strings.Repeat("─", listWidth-8))
+		header = sep + "  " + countStr
+	} else {
+		header = halfMutedStyle.Render(strings.Repeat("─", listWidth))
+	}
+	return header + "\n" + strings.Join(rows, "\n")
 }

@@ -28,6 +28,23 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return overlay.HandleKey(m, msg)
 		}
+		// インラインセレクト（InputSelect）のキー処理：オーバーレイなしで独自に処理
+		if m.isInlineSelectAsk() {
+			switch msg.String() {
+			case "ctrl+c":
+				return m.handleCtrlC()
+			case "esc":
+				if m.cancelRunFn != nil && m.cancelRunFn() {
+					m.streaming = false
+					m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Input cancelled."})
+				}
+				m.resetAskFormState()
+				m.refreshViewport()
+				return m, nil
+			default:
+				return m.handleAskKey(msg)
+			}
+		}
 		// Extension key bindings evaluated before built-in handlers.
 		ctx := m.tuiContext()
 		for _, ext := range m.extensions {
@@ -49,6 +66,11 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			if m.mentionPopup != nil {
 				m.mentionPopup = nil
+				m.refreshViewport()
+				return m, nil
+			}
+			if m.skillsPopup != nil {
+				m.skillsPopup = nil
 				m.refreshViewport()
 				return m, nil
 			}
@@ -91,15 +113,13 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				m.historyMentionSuppressed = false
 				m.refreshSlashHints()
 				m.refreshMentionPopup()
-				m.refreshViewport()
 			}
 			return m, nil
 		case "ctrl+x":
 			if len(m.pendingAttachments) > 0 {
 				m.pendingAttachments = append([]userattachments.ComposerAttachment(nil), m.pendingAttachments[:len(m.pendingAttachments)-1]...)
-				m.refreshViewport()
-				return m, nil
 			}
+			return m, nil
 		case "up", "down":
 			delta := -1
 			if msg.String() == "down" {
@@ -108,12 +128,14 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			// Popups: navigate list items.
 			if m.slashPopup != nil {
 				m.slashPopup.move(delta)
-				m.refreshViewport()
 				return m, nil
 			}
 			if m.mentionPopup != nil {
 				m.mentionPopup.move(delta)
-				m.refreshViewport()
+				return m, nil
+			}
+			if m.skillsPopup != nil {
+				m.skillsPopup.move(delta)
 				return m, nil
 			}
 			if hints := m.currentSlashHints(); len(hints) > 0 {
@@ -125,24 +147,11 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 				dir = "down"
 			}
 			return m.handleHistoryNavigation(dir)
-		case "ctrl+p", "ctrl+n":
-			// Scroll the chat viewport.
-			if msg.String() == "ctrl+p" {
-				return m.scrollMainViewport(-3), nil
+		case " ":
+			// 空格：skills 弹窗可见时切换选中项，否则正常插入
+			if m.skillsPopup != nil {
+				return m.handleSkillsToggle()
 			}
-			return m.scrollMainViewport(3), nil
-		case "pgup":
-			m.pinnedToBottom = false
-			m.viewport.ScrollUp(m.viewport.Height)
-			m.refreshViewport()
-			return m, nil
-		case "pgdown":
-			m.viewport.ScrollDown(m.viewport.Height)
-			if m.viewport.AtBottom() {
-				m.pinnedToBottom = true
-			}
-			m.refreshViewport()
-			return m, nil
 		case "tab":
 			if m.applySlashCompletion() {
 				m.adjustInputHeight()
@@ -171,9 +180,6 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return m.handleSend()
 		}
-
-	case tea.MouseMsg:
-		return m.handleMouse(msg)
 
 	case bridgeMsg:
 		return m.handleBridge(msg)
@@ -265,8 +271,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.runStartedAt = m.now().UTC()
 			m.sendFn(next, nextParts)
 		}
-		m.refreshViewport()
 		m.textarea.Focus()
+		m.refreshViewport()
 		return m, nil
 
 	case gitBranchMsg:
@@ -318,6 +324,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			return m, nil
 		}
 		m.messages = []chatMessage{{kind: msgSystem, content: msg.output}}
+		m.printedCount = 0 // 重置打印计数，新线程重新打印
 		m.finished = false
 		m.result = ""
 		m.lastTrace = nil
@@ -325,8 +332,8 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		m.queuedParts = nil
 		m.textarea.Reset()
 		m.adjustInputHeight()
-		m.refreshViewport()
 		m.textarea.Focus()
+		m.refreshViewport()
 		return m, nil
 
 	case bangResultMsg:
@@ -337,6 +344,22 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: msg.output})
 		} else if msg.err != nil {
 			m.messages = append(m.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		}
+		m.refreshViewport()
+		return m, nil
+
+	case skillToggleResultMsg:
+		if msg.err != nil {
+			// 回滚本地乐观更新
+			if m.skillsPopup != nil {
+				for i := range m.skillsPopup.items {
+					if m.skillsPopup.items[i].name == msg.name {
+						m.skillsPopup.items[i].enabled = !msg.enabled
+						break
+					}
+				}
+			}
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("切换 skill %q 失败：%v", msg.name, msg.err)})
 		}
 		m.refreshViewport()
 		return m, nil
@@ -359,50 +382,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 		cmds = append(cmds, cmd)
 	}
 
-	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
-	cmds = append(cmds, cmd)
-
 	return m, tea.Batch(cmds...)
-}
-
-func (m chatModel) handleMouse(msg tea.MouseMsg) (chatModel, tea.Cmd) {
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		if m.transcriptOverlay != nil {
-			m.transcriptOverlay.viewport.ScrollUp(3)
-			return m, nil
-		}
-		if m.activeOverlay() != nil {
-			return m, nil
-		}
-		return m.scrollMainViewport(-3), nil
-	case tea.MouseButtonWheelDown:
-		if m.transcriptOverlay != nil {
-			m.transcriptOverlay.viewport.ScrollDown(3)
-			return m, nil
-		}
-		if m.activeOverlay() != nil {
-			return m, nil
-		}
-		return m.scrollMainViewport(3), nil
-	default:
-		return m, nil
-	}
-}
-
-func (m chatModel) scrollMainViewport(lines int) chatModel {
-	if lines < 0 {
-		m.pinnedToBottom = false
-		m.viewport.ScrollUp(-lines)
-	} else if lines > 0 {
-		m.viewport.ScrollDown(lines)
-		if m.viewport.AtBottom() {
-			m.pinnedToBottom = true
-		}
-	}
-	m.refreshViewport()
-	return m
 }
 
 func outputMediaKind(typ model.ContentPartType) string {
@@ -416,4 +396,33 @@ func outputMediaKind(typ model.ContentPartType) string {
 	default:
 		return ""
 	}
+}
+
+// handleSkillsToggle 处理 skills 弹窗中的空格键：切换选中项的启用状态。
+// 本地状态立即翻转，实际激活/停用在后台执行。
+func (m chatModel) handleSkillsToggle() (chatModel, tea.Cmd) {
+	if m.skillsPopup == nil || len(m.skillsPopup.items) == 0 {
+		return m, nil
+	}
+	item := m.skillsPopup.selected()
+	newEnabled := !item.enabled
+	m.skillsPopup.toggleCurrent() // 乐观更新本地状态
+	m.refreshViewport()
+	if m.skillToggleFn == nil {
+		return m, nil
+	}
+	toggleFn := m.skillToggleFn
+	name := item.name
+	return m, func() tea.Msg {
+		if err := toggleFn(name, newEnabled); err != nil {
+			return skillToggleResultMsg{name: name, err: err}
+		}
+		return skillToggleResultMsg{name: name, enabled: newEnabled}
+	}
+}
+
+type skillToggleResultMsg struct {
+	name    string
+	enabled bool
+	err     error
 }

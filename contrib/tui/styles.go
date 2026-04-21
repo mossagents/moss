@@ -102,10 +102,9 @@ var (
 				Bold(true).
 				Foreground(colorPrimary)
 
+	// 无边框输入区域：PaddingLeft(2) 与 "❯ " 前缀等宽，保持 GetHorizontalFrameSize()==2
 	inputBorderStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(colorBorder).
-				Padding(0, 1)
+				PaddingLeft(2)
 
 	composerBoxStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).

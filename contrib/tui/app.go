@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -981,11 +980,7 @@ func Run(cfg Config) error {
 		m.welcome = newWelcomeModel(defaultProviderID, defaultProviderName, cfg.Model, cfg.Workspace, cfg.WelcomeBanner)
 	}
 
-	// Belt: write the alternate scroll escape sequence before entering the
-	// program loop. On Windows Terminal, VT output is always active, so
-	// this takes effect immediately even before Bubble Tea starts.
-	fmt.Print("\x1b[?1007h")
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	p := tea.NewProgram(m)
 	bridge.SetProgram(p)
 
 	_, err := p.Run()
@@ -993,14 +988,6 @@ func Run(cfg Config) error {
 }
 
 func (m appModel) Init() tea.Cmd {
-	// Suspenders: re-send alternate scroll mode after Bubble Tea has
-	// initialized VT processing. This catches older ConHost environments
-	// where the pre-Run() write may not be processed.
-	altScrollCmd := func() tea.Msg {
-		os.Stdout.WriteString("\x1b[?1007h")
-		return nil
-	}
-
 	if m.state == stateChat {
 		// 跳过 Welcome 直接进入 Chat，同时启动 textarea 光标闪烁和 kernel 初始化
 		if strings.TrimSpace(m.config.Trust) != "" {
@@ -1009,9 +996,9 @@ func (m appModel) Init() tea.Cmd {
 		if strings.TrimSpace(m.config.ApprovalMode) != "" {
 			m.chat.approvalMode = m.config.ApprovalMode
 		}
-		return tea.Batch(m.chat.Init(), m.initCmd, altScrollCmd)
+		return tea.Batch(m.chat.Init(), m.initCmd)
 	}
-	return tea.Batch(m.welcome.Init(), altScrollCmd)
+	return m.welcome.Init()
 }
 
 func (m appModel) View() string {
@@ -1099,5 +1086,12 @@ func (m appModel) rebuildKernelWithSelection(provider, providerName, model strin
 }
 
 func (m appModel) updateChat(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return m.updateChatCore(msg)
+	result, cmd := m.updateChatCore(msg)
+	// 内联模式：每次 Update 后统一将 pendingPrints 通过 tea.Println 刷入终端滚动区
+	if appM, ok := result.(appModel); ok {
+		if printCmd := appM.chat.drainPrints(); printCmd != nil {
+			return appM, tea.Batch(cmd, printCmd)
+		}
+	}
+	return result, cmd
 }

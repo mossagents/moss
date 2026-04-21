@@ -249,11 +249,25 @@ func handleCopySlashCommand(m chatModel, _ []string, _ string, _ string) (chatMo
 }
 
 func handleSkillsSlashCommand(m chatModel, _ []string, _ string, _ string) (chatModel, tea.Cmd) {
-	info := "Skill information is unavailable."
-	if m.skillListFn != nil {
-		info = m.skillListFn()
+	// 无 skillItemsFn 时降级为文字摘要
+	if m.skillItemsFn == nil {
+		info := "Skill information is unavailable."
+		if m.skillListFn != nil {
+			info = m.skillListFn()
+		}
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+		m.refreshViewport()
+		return m, nil
 	}
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: info})
+	items := m.skillItemsFn()
+	if len(items) == 0 {
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "No skills discovered."})
+		m.refreshViewport()
+		return m, nil
+	}
+	m.skillsPopup = &skillsPopupState{items: items, cursor: 0}
+	m.textarea.Reset()
+	m.adjustInputHeight()
 	m.refreshViewport()
 	return m, nil
 }

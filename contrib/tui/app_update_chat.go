@@ -1,12 +1,15 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/collaboration"
 	"github.com/mossagents/moss/kernel/model"
 	ksession "github.com/mossagents/moss/kernel/session"
@@ -265,6 +268,33 @@ func (m *appModel) bindToolingCallbacks(agent *agentState) {
 	m.chat.cancelRunFn = agent.cancelCurrentRun
 	m.chat.skillListFn = func() string {
 		return renderSkillsSummary(agent, m.config.Workspace)
+	}
+	m.chat.skillItemsFn = func() []skillsPickerItem {
+		manifests := runtime.LookupSkillManifests(agent.k)
+		if len(manifests) == 0 {
+			return nil
+		}
+		sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
+		manager, _ := runtime.LookupCapabilityManager(agent.k)
+		items := make([]skillsPickerItem, 0, len(manifests))
+		for _, mf := range manifests {
+			enabled := false
+			if manager != nil {
+				_, enabled = manager.Get(mf.Name)
+			}
+			items = append(items, skillsPickerItem{
+				name:        mf.Name,
+				description: mf.Description,
+				enabled:     enabled,
+			})
+		}
+		return items
+	}
+	m.chat.skillToggleFn = func(name string, enable bool) error {
+		if enable {
+			return runtime.ActivateSkill(context.Background(), agent.k, name)
+		}
+		return runtime.DeactivateSkill(context.Background(), agent.k, name)
 	}
 }
 

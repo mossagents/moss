@@ -214,10 +214,19 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 				field.singleIndex--
 			}
 		case "down":
-			if field.singleIndex < len(field.def.Options)-1 {
+			maxIdx := len(field.def.Options) - 1
+			if m.isInlineSelectAsk() {
+				// インラインセレクトでは「Chat about this」も含む
+				maxIdx = len(field.def.Options)
+			}
+			if field.singleIndex < maxIdx {
 				field.singleIndex++
 			}
 		case "enter":
+			if m.isInlineSelectAsk() && field.singleIndex >= len(field.def.Options) {
+				// 「Chat about this」を選択した場合：実行をキャンセルしてフォームを閉じる
+				return m.handleChatAboutThis()
+			}
 			field.singleSel = field.singleIndex
 			form.focusIndex = (form.focusIndex + 1) % (len(form.fields) + 1)
 			m.activateAskField()
@@ -350,6 +359,18 @@ func indexOfApprovalOption(options []string, target string) int {
 		}
 	}
 	return -1
+}
+
+// handleChatAboutThis は「Chat about this」オプションが選択されたとき、実行をキャンセルして
+// 入力フォームを閉じ、ユーザーがテキストを入力できる状態に戻す。
+func (m chatModel) handleChatAboutThis() (chatModel, tea.Cmd) {
+	if m.cancelRunFn != nil {
+		m.cancelRunFn()
+		m.streaming = false
+	}
+	m.resetAskFormState()
+	m.refreshViewport()
+	return m, nil
 }
 
 func (m chatModel) submitAskForm() (chatModel, tea.Cmd) {
@@ -597,6 +618,89 @@ func (m *chatModel) rememberProjectApprovalRule(rule userapproval.MemoryRule) er
 	}
 	m.projectApprovalRules = nextRules
 	return nil
+}
+
+// isInlineSelectAsk は InputSelect タイプのリクエストで、インラインリスト形式で表示するかどうかを返す。
+func (m chatModel) isInlineSelectAsk() bool {
+	return m.askForm != nil &&
+		m.pendAsk != nil &&
+		m.pendAsk.request.Type == io.InputSelect &&
+		len(m.askForm.fields) == 1 &&
+		m.askForm.fields[0].def.Type == io.InputFieldSingleSelect
+}
+
+// renderInlineSelectAsk は InputSelect タイプのリクエストをスクリーンショット設計に従ってインラインで描画する。
+// 外枠なし・番号付きリスト・選択中は「> 」プレフィックスで表示。
+func (m chatModel) renderInlineSelectAsk(width int) string {
+	if !m.isInlineSelectAsk() {
+		return ""
+	}
+	field := m.askForm.fields[0]
+	options := field.def.Options
+
+	var sb strings.Builder
+
+	// タイトルバッジ
+	title := strings.TrimSpace(m.pendAsk.request.Prompt)
+	if title == "" {
+		title = strings.TrimSpace(field.def.Title)
+	}
+	if title == "" {
+		title = "Select an option"
+	}
+	sb.WriteString(dialogAccentStyle.Render("□  " + title))
+	sb.WriteString("\n\n")
+
+	if err := strings.TrimSpace(m.askForm.errorText); err != "" {
+		sb.WriteString(errorStyle.Render(wrapText(err, max(20, width-6))))
+		sb.WriteString("\n\n")
+	}
+
+	// 番号付きオプションリスト
+	for i, opt := range options {
+		// オプションテキストに "\n" が含まれる場合、2行目以降を説明文として扱う
+		parts := strings.SplitN(opt, "\n", 2)
+		optTitle := strings.TrimSpace(parts[0])
+		optDesc := ""
+		if len(parts) > 1 {
+			optDesc = strings.TrimSpace(parts[1])
+		}
+
+		numLabel := fmt.Sprintf("%d. ", i+1)
+		isSelected := field.singleIndex == i
+		if isSelected {
+			sb.WriteString(dialogTitleStyle.Render("> " + numLabel + optTitle))
+		} else {
+			sb.WriteString("  " + numLabel + optTitle)
+		}
+		sb.WriteString("\n")
+
+		if optDesc != "" {
+			indent := "     "
+			wrapW := max(20, width-len(indent)-2)
+			sb.WriteString(mutedStyle.Render(indent + wrapText(optDesc, wrapW)))
+			sb.WriteString("\n")
+		}
+	}
+
+	// 区切り線 + 「Chat about this」エスケープオプション
+	sb.WriteString("\n")
+	ruleLen := min(max(20, width-4), 48)
+	sb.WriteString(mutedStyle.Render(strings.Repeat("─", ruleLen)))
+	sb.WriteString("\n\n")
+
+	chatIdx := len(options)
+	chatLabel := fmt.Sprintf("%d. Chat about this", chatIdx+1)
+	if field.singleIndex == chatIdx {
+		sb.WriteString(dialogTitleStyle.Render("> " + chatLabel))
+	} else {
+		sb.WriteString("  " + chatLabel)
+	}
+	sb.WriteString("\n\n")
+
+	// フッターヒント
+	sb.WriteString(mutedStyle.Render("Enter to select  ·  ↑/↓ to navigate  ·  Esc to cancel"))
+	return sb.String()
 }
 
 func (m chatModel) renderAskForm(width int) string {
