@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -96,6 +97,10 @@ type MaterializedState struct {
 	// CurrentApproval 当前待处理的审批（若有）。
 	CurrentApproval *PendingApproval `json:"current_approval,omitempty"`
 
+	// ResolvedApprovals 本 session 内已决议且有 cache_key 的审批记录。
+	// 用于跨重启的审批 cache 查询，替代 session.ApprovalState 的旧路径。
+	ResolvedApprovals []ResolvedApprovalEntry `json:"resolved_approvals,omitempty"`
+
 	// EffectiveToolPolicy 当前有效的工具权限策略。
 	EffectiveToolPolicy *EffectiveToolPolicy `json:"effective_tool_policy,omitempty"`
 
@@ -109,6 +114,16 @@ type PendingApproval struct {
 	PolicyHash string `json:"policy_hash"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+}
+
+// ResolvedApprovalEntry 记录一条已决议的审批（用于跨重启的 cache 查询）。
+type ResolvedApprovalEntry struct {
+	// CacheKey 对应 ApprovalRequest.CacheKey，非空才会被记录。
+	CacheKey     string    `json:"cache_key"`
+	ToolName     string    `json:"tool_name,omitempty"`
+	DecisionType string    `json:"decision_type,omitempty"`
+	Approved     bool      `json:"approved"`
+	ResolvedAt   time.Time `json:"resolved_at"`
 }
 
 // PromptMaterializedSummary 最近一次 prompt 物化的摘要信息。
@@ -184,6 +199,16 @@ func (e *ProjectionEngine) Apply(state *MaterializedState, ev RuntimeEvent) erro
 
 	case EventTypeApprovalResolved:
 		state.CurrentApproval = nil
+		// 若有 cache_key，记录到 ResolvedApprovals 供跨重启查询（替代 session.ApprovalState 旧路径）。
+		if p, ok := ev.Payload.(*ApprovalResolvedPayload); ok && p != nil && strings.TrimSpace(p.CacheKey) != "" {
+			state.ResolvedApprovals = append(state.ResolvedApprovals, ResolvedApprovalEntry{
+				CacheKey:     p.CacheKey,
+				ToolName:     p.ToolName,
+				DecisionType: p.DecisionType,
+				Approved:     p.Approved,
+				ResolvedAt:   ev.Timestamp,
+			})
+		}
 
 	case EventTypePermissionsAmended:
 		// EffectiveToolPolicy 将在下一次 blueprint 重新编译时更新；

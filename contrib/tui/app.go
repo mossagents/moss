@@ -282,6 +282,7 @@ func (a *agentState) refreshSystemPrompt() error {
 	}
 	sess := a.sess
 	store := a.store
+	blueprint := a.blueprint
 	ctx := a.ctx
 	workspace := a.workspace
 	trust := a.trust
@@ -303,7 +304,9 @@ func (a *agentState) refreshSystemPrompt() error {
 	sess.Config.Metadata = metadata
 	a.mu.Unlock()
 	sess.UpdateSystemPrompt(nextPrompt)
-	if store != nil {
+	// 当 EventStore 已成为 truth source（blueprint 非 nil），跳过 FileStore 写入；
+	// EventStore 中的 session_created + turn 事件已充当持久化机制（SessionStore 旧路径迁移）。
+	if store != nil && blueprint == nil {
 		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()
 		if err := store.Save(saveCtx, sess); err != nil {

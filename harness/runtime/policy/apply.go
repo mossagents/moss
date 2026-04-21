@@ -99,37 +99,65 @@ func installPolicyHook(k *kernel.Kernel, st *policystate.State) {
 		if len(rules) == 0 {
 			return nil
 		}
-		return governance.PolicyCheckWithAutoApprove(guardianAutoApproval(k), rules...)(ctx, ev)
+		return governance.PolicyCheckWithAutoApprove(chainedAutoApproval(k), rules...)(ctx, ev)
 	})
+}
+
+// chainedAutoApproval 将 EventStore-based 审批查询与 Guardian 链接。
+// 查询顺序：
+// 1. EventStore 持久审批记录（跨重启恢复）；
+// 2. Guardian AI 自动审批。
+func chainedAutoApproval(k *kernel.Kernel) governance.AutoApprovalFunc {
+	return func(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
+		// 1. 查询 EventStore （跨重启的持久审批 cache）
+		if ev != nil && ev.Session != nil && req != nil && strings.TrimSpace(req.CacheKey) != "" {
+			if entry, found := k.LookupSessionApproval(ctx, ev.Session.ID, req.CacheKey); found {
+				return io.NormalizeApprovalDecisionForRequest(req, &io.ApprovalDecision{
+					RequestID: req.ID,
+					Type:      io.ApprovalDecisionType(entry.DecisionType),
+					Approved:  entry.Approved,
+					Reason:    "recalled from event store approval history",
+					Source:    "event-store-cache",
+					DecidedAt: entry.ResolvedAt,
+				})
+			}
+		}
+		// 2. Guardian 自动审批
+		return guardianApprovalCheck(ctx, k, ev, req)
+	}
 }
 
 func guardianAutoApproval(k *kernel.Kernel) governance.AutoApprovalFunc {
 	return func(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
-		if k == nil || ev == nil || ev.Tool == nil || req == nil {
-			return nil
-		}
-		if ev.Tool.EffectiveApprovalClass() != tool.ApprovalClassPolicyGuarded {
-			return nil
-		}
-		g, ok := guardian.Lookup(k)
-		if !ok || g == nil {
-			return nil
-		}
-		review, err := g.ReviewToolApproval(ctx, guardian.ReviewInput{
-			SessionID:  req.SessionID,
-			ToolName:   req.ToolName,
-			Risk:       req.Risk,
-			Category:   string(req.Category),
-			Reason:     req.Reason,
-			ReasonCode: req.ReasonCode,
-			Input:      req.Input,
-		})
-		emitGuardianReviewEvent(ctx, ev, req, review, err)
-		if err != nil {
-			return nil
-		}
-		return guardian.AutoApprovalDecision(req, review)
+		return guardianApprovalCheck(ctx, k, ev, req)
 	}
+}
+
+func guardianApprovalCheck(ctx context.Context, k *kernel.Kernel, ev *hooks.ToolEvent, req *io.ApprovalRequest) *io.ApprovalDecision {
+	if k == nil || ev == nil || ev.Tool == nil || req == nil {
+		return nil
+	}
+	if ev.Tool.EffectiveApprovalClass() != tool.ApprovalClassPolicyGuarded {
+		return nil
+	}
+	g, ok := guardian.Lookup(k)
+	if !ok || g == nil {
+		return nil
+	}
+	review, err := g.ReviewToolApproval(ctx, guardian.ReviewInput{
+		SessionID:  req.SessionID,
+		ToolName:   req.ToolName,
+		Risk:       req.Risk,
+		Category:   string(req.Category),
+		Reason:     req.Reason,
+		ReasonCode: req.ReasonCode,
+		Input:      req.Input,
+	})
+	emitGuardianReviewEvent(ctx, ev, req, review, err)
+	if err != nil {
+		return nil
+	}
+	return guardian.AutoApprovalDecision(req, review)
 }
 
 func emitGuardianReviewEvent(ctx context.Context, ev *hooks.ToolEvent, req *io.ApprovalRequest, review *guardian.ReviewResult, err error) {

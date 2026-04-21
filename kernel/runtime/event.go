@@ -212,6 +212,13 @@ type ApprovalResolvedPayload struct {
 	ResolverType ResolverType `json:"resolver_type"`
 	Approved     bool         `json:"approved"`
 	Reason       string       `json:"reason,omitempty"`
+	// CacheKey 对应 ApprovalRequest.CacheKey，用于跨重启的审批 cache 查询。
+	// 非空时表示此决议可在同 session 后续请求中复用（approve_for_session/grant_permission 等）。
+	CacheKey string `json:"cache_key,omitempty"`
+	// ToolName 被审批工具的名称。
+	ToolName string `json:"tool_name,omitempty"`
+	// DecisionType 决议类型（approve/approve_for_session/grant_permission/policy_amendment/deny）。
+	DecisionType string `json:"decision_type,omitempty"`
 }
 
 // PermissionsAmendedPayload 对应 permissions_amended 事件。

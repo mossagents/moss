@@ -574,6 +574,29 @@ func (k *Kernel) RecordCheckpointCreated(ctx context.Context, sessionID, bluepri
 	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
 }
 
+// LookupSessionApproval 从 EventStore 查询指定 session 内是否存在匹配 cacheKey 的已决议审批。
+// 这是 session.ApprovalState 旧路径的新路径替代品（§阶段 4 迁移）：
+// 旧路径将审批 cache 存于 in-memory session.Session.State，重启后丢失；
+// 新路径通过 EventStore 持久化，支持跨重启恢复。
+//
+// 返回 (entry, true) 表示找到匹配记录；返回 (zero, false) 表示无匹配或 EventStore 不可用。
+func (k *Kernel) LookupSessionApproval(ctx context.Context, sessionID, cacheKey string) (kruntime.ResolvedApprovalEntry, bool) {
+	if k.eventStore == nil || strings.TrimSpace(sessionID) == "" || strings.TrimSpace(cacheKey) == "" {
+		return kruntime.ResolvedApprovalEntry{}, false
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil || state == nil {
+		return kruntime.ResolvedApprovalEntry{}, false
+	}
+	cacheKey = strings.TrimSpace(cacheKey)
+	for _, entry := range state.ResolvedApprovals {
+		if strings.EqualFold(entry.CacheKey, cacheKey) {
+			return entry, true
+		}
+	}
+	return kruntime.ResolvedApprovalEntry{}, false
+}
+
 // ────────────────────────────────────────────────────────────────────
 // 阶段 5：导出与审计 API
 // ────────────────────────────────────────────────────────────────────
@@ -661,11 +684,21 @@ func (a *eventStoreObserver) OnApproval(ctx context.Context, e io.ApprovalEvent)
 		approvalID := ""
 		approved := false
 		reason := ""
+		cacheKey := ""
+		toolName := ""
+		decisionType := ""
 		if e.Decision != nil {
 			approvalID = e.Decision.RequestID
 			approved = e.Decision.Approved
 			reason = e.Decision.Reason
+			cacheKey = strings.TrimSpace(e.Decision.CacheKey)
+			decisionType = string(e.Decision.Type)
 		}
+		// CacheKey 优先从 Decision 取，再从 Request 取
+		if cacheKey == "" {
+			cacheKey = strings.TrimSpace(e.Request.CacheKey)
+		}
+		toolName = strings.TrimSpace(e.Request.ToolName)
 		a.appendToStore(ctx, kruntime.RuntimeEvent{
 			Type:             kruntime.EventTypeApprovalResolved,
 			SessionID:        a.sessionID,
@@ -677,6 +710,9 @@ func (a *eventStoreObserver) OnApproval(ctx context.Context, e io.ApprovalEvent)
 				ResolverType: resolverType,
 				Approved:     approved,
 				Reason:       reason,
+				CacheKey:     cacheKey,
+				ToolName:     toolName,
+				DecisionType: decisionType,
 			},
 		})
 	}

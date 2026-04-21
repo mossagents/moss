@@ -118,6 +118,13 @@ func runCheckpointCreate(ctx context.Context, cfg *config) error {
 	}
 	sess, err := k.SessionStore().Load(ctx, sessionID)
 	if err != nil {
+		// EventStore 路径：当 FileStore 加载失败时，检查 EventStore 是否存有该 session，
+		// 以便给出更准确的诊断信息。checkpoint create 仍依赖 FileStore 获取完整消息列表。
+		if k.EventStore() != nil {
+			if state, esErr := k.LoadRuntimeSession(ctx, sessionID); esErr == nil && state != nil {
+				return fmt.Errorf("thread %q exists in event store but not recoverable via file store for checkpoint creation: %w", sessionID, err)
+			}
+		}
 		return err
 	}
 	if sess == nil {
