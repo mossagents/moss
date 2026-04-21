@@ -2,16 +2,17 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/harness/appkit/product"
-	userattachments "github.com/mossagents/moss/harness/userio/attachments"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/mossagents/moss/harness/appkit/product"
+	userattachments "github.com/mossagents/moss/harness/userio/attachments"
 )
 
 type mentionCandidate struct {
@@ -189,6 +190,10 @@ func lastAtToken(value string) string {
 
 // refreshMentionPopup 根据输入框当前内容更新 @ 文件补全弹窗。
 func (m *chatModel) refreshMentionPopup() {
+	if m.historyMentionSuppressed {
+		m.mentionPopup = nil
+		return
+	}
 	token := lastAtToken(m.textarea.Value())
 	if token == "" {
 		m.mentionPopup = nil

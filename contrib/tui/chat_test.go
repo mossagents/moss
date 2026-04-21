@@ -1645,6 +1645,50 @@ func TestHistoryNavigationSuppressesSlashPopupUntilManualEdit(t *testing.T) {
 	}
 }
 
+func TestHistoryNavigationSuppressesMentionPopupUntilManualEdit(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "note.txt"), []byte("hello"), 0o600); err != nil {
+		t.Fatalf("write note: %v", err)
+	}
+	m := newChatModel("openai", "gpt-4o", workspace)
+	m.ready = true
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+	m.inputHistory = []string{"@not", "second prompt"}
+	m.historyCursor = len(m.inputHistory)
+	m.textarea.SetValue("draft prompt")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyUp})
+	if got := updated.textarea.Value(); got != "@not" {
+		t.Fatalf("expected mention history item, got %q", got)
+	}
+	if updated.mentionPopup != nil {
+		t.Fatal("expected mention popup to stay hidden during history navigation")
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	if got := updated.textarea.Value(); got != "second prompt" {
+		t.Fatalf("expected history navigation to continue, got %q", got)
+	}
+	if updated.mentionPopup != nil {
+		t.Fatal("expected mention popup to remain hidden while navigating history")
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	if got := updated.textarea.Value(); got != "second promptx" {
+		t.Fatalf("expected manual edit to update textarea, got %q", got)
+	}
+
+	updated.textarea.SetValue("@not")
+	updated.historyMentionSuppressed = false
+	updated.refreshMentionPopup()
+	if updated.mentionPopup == nil || len(updated.mentionPopup.items) == 0 {
+		t.Fatal("expected mention popup to recover after manual editing")
+	}
+}
+
 func TestApprovalDecisionButtonLabelsStayCompact(t *testing.T) {
 	cases := map[string]string{
 		userapproval.ChoiceAllowOnce:    "Allow once",

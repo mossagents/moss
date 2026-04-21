@@ -178,13 +178,14 @@ type chatModel struct {
 	queuedParts        [][]model.ContentPart
 	pendingAttachments []userattachments.ComposerAttachment
 
-	inputHistory           []string
-	historyCursor          int
-	historyDraft           string
-	historyPath            string
-	historySlashSuppressed bool
-	slashHints             []string
-	slashPopup             *slashPopupState
+	inputHistory             []string
+	historyCursor            int
+	historyDraft             string
+	historyPath              string
+	historySlashSuppressed   bool
+	historyMentionSuppressed bool
+	slashHints               []string
+	slashPopup               *slashPopupState
 
 	// Extension system
 	extensions []*Extension
@@ -892,8 +893,10 @@ func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd
 			m.historyCursor--
 			m.textarea.SetValue(m.inputHistory[m.historyCursor])
 			m.historySlashSuppressed = true
+			m.historyMentionSuppressed = true
 			m.slashHints = nil
 			m.slashPopup = nil
+			m.mentionPopup = nil
 			m.adjustInputHeight()
 		}
 		return m, nil
@@ -907,8 +910,10 @@ func (m chatModel) handleHistoryNavigation(direction string) (chatModel, tea.Cmd
 				m.textarea.SetValue(m.inputHistory[m.historyCursor])
 			}
 			m.historySlashSuppressed = true
+			m.historyMentionSuppressed = true
 			m.slashHints = nil
 			m.slashPopup = nil
+			m.mentionPopup = nil
 			m.adjustInputHeight()
 		}
 		return m, nil
