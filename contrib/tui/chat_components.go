@@ -14,31 +14,26 @@ func (m chatModel) renderStreamingPreview(width int) string {
 	if !m.streaming || len(m.messages) == 0 {
 		return ""
 	}
-	// 找最后一条 assistant 或 reasoning 消息
-	var content string
-	for i := len(m.messages) - 1; i >= 0; i-- {
-		msg := m.messages[i]
-		if msg.kind == msgAssistant || msg.kind == msgReasoning {
-			content = msg.content
-			break
-		}
-		// 遇到非流式消息就停止向前找
-		if msg.kind != msgReasoning {
-			break
-		}
+	// 只看最后一条消息：必须是 assistant 或 reasoning 才显示预览
+	lastMsg := m.messages[len(m.messages)-1]
+	if lastMsg.kind != msgAssistant && lastMsg.kind != msgReasoning {
+		return ""
 	}
-	if strings.TrimSpace(content) == "" {
+	if strings.TrimSpace(lastMsg.content) == "" {
 		return ""
 	}
 
-	// 截取最后 N 行作为预览；动态计算可用高度，尽量利用终端空间
-	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	// reasoning メッセージは完成後と同じスタイルで表示（スタイルの一貫性）
+	if lastMsg.kind == msgReasoning {
+		return renderReasoningMessage(lastMsg, width)
+	}
+
+	// assistant メッセージ：最後 N 行をプレビュー表示；動的に可用高度を計算
+	lines := strings.Split(strings.TrimRight(lastMsg.content, "\n"), "\n")
 	maxPreviewLines := max(5, m.height-m.editorPaneHeight(width)-1-1)
 	if len(lines) > maxPreviewLines {
 		lines = lines[len(lines)-maxPreviewLines:]
 	}
-
-	// 用 muted 样式显示预览，最大宽度为 width
 	var b strings.Builder
 	for _, line := range lines {
 		b.WriteString(halfMutedStyle.Render(truncateDisplayWidth(line, width)))

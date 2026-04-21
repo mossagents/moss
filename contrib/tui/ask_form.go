@@ -1122,9 +1122,9 @@ func (m chatModel) renderInlineApprovalAsk(width int) string {
 
 	var sb strings.Builder
 
-	// 上方与流式内容的分隔横线
-	ruleWidth := max(1, width-1)
-	sb.WriteString(shellRuleStyle.Render(strings.Repeat("─", ruleWidth)))
+	// 上方与流式内容的分隔横线（-2 为 renderEditorPane 的 PaddingLeft(2) 留出空间）
+	ruleWidth := max(1, width-2)
+	sb.WriteString(mutedStyle.Render(strings.Repeat("─", ruleWidth)))
 	sb.WriteString("\n")
 
 	// セクションヘッダー
@@ -1191,9 +1191,9 @@ func (m chatModel) renderInlineSimpleConfirmAsk(width int) string {
 
 	var sb strings.Builder
 
-	// 上方与流式内容的分隔横线
-	ruleWidth := max(1, width-1)
-	sb.WriteString(shellRuleStyle.Render(strings.Repeat("─", ruleWidth)))
+	// 上方与流式内容的分隔横线（-2 为 renderEditorPane 的 PaddingLeft(2) 留出空间）
+	ruleWidth := max(1, width-2)
+	sb.WriteString(mutedStyle.Render(strings.Repeat("─", ruleWidth)))
 	sb.WriteString("\n")
 
 	// タイトルバッジ
