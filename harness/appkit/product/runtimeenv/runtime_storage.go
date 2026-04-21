@@ -6,12 +6,23 @@ import (
 	"strings"
 
 	"github.com/mossagents/moss/kernel/checkpoint"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/harness/sandbox"
 )
+
+// OpenEventStore opens (or creates) the SQLite-backed EventStore at the
+// default path returned by EventStoreDBPath.
+func OpenEventStore() (kruntime.EventStore, error) {
+	store, err := kruntime.NewSQLiteEventStore(EventStoreDBPath())
+	if err != nil {
+		return nil, fmt.Errorf("event store: %w", err)
+	}
+	return store, nil
+}
 
 func OpenSessionStore() (session.SessionStore, error) {
 	store, err := session.NewFileStore(SessionStoreDir())

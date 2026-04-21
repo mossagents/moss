@@ -34,6 +34,7 @@ func launchTUI(cfg *config) error {
 		CollaborationMode: defaultCollaborationModeForInvocation(invocation),
 		ApprovalMode:      invocation.ApprovalMode,
 		SessionStoreDir:   runtimeenv.SessionStoreDir(),
+		EventStoreDBPath:  runtimeenv.EventStoreDBPath(),
 		BaseURL:           flags.BaseURL,
 		APIKey:            flags.APIKey,
 		BaseObserver:      cfg.observer,

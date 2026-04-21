@@ -9,6 +9,11 @@ func SessionStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "sessions")
 }
 
+// EventStoreDBPath returns the path to the SQLite EventStore database file.
+func EventStoreDBPath() string {
+	return filepath.Join(appconfig.AppDir(), "events.db")
+}
+
 func StateStoreDir() string {
 	return filepath.Join(appconfig.AppDir(), "state")
 }

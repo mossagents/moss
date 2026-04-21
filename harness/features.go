@@ -16,6 +16,7 @@ import (
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	kplugin "github.com/mossagents/moss/kernel/plugin"
 	"github.com/mossagents/moss/kernel/retry"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 )
@@ -95,6 +96,30 @@ func Plugins(plugins ...kernel.Plugin) Feature {
 					return err
 				}
 			}
+			return nil
+		},
+	}
+}
+
+// EventStorePersistence returns a Feature that opens a SQLite-backed EventStore
+// at storePath and registers it on the Kernel via WithEventStore.
+// This is the preferred persistence path replacing SessionPersistence.
+func EventStorePersistence(storePath string) Feature {
+	return FeatureFunc{
+		FeatureName: "event-store-persistence",
+		MetadataValue: FeatureMetadata{
+			Key:   "event-store-persistence",
+			Phase: FeaturePhaseConfigure,
+		},
+		InstallFunc: func(_ context.Context, h *Harness) error {
+			if storePath == "" {
+				return fmt.Errorf("event store path must not be empty")
+			}
+			store, err := kruntime.NewSQLiteEventStore(storePath)
+			if err != nil {
+				return fmt.Errorf("open event store %q: %w", storePath, err)
+			}
+			h.Kernel().Apply(kernel.WithEventStore(store))
 			return nil
 		},
 	}

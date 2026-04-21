@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 )
 
 func runInit(cfg *config) error {
@@ -259,4 +260,47 @@ func showConfig(flags *appkit.AppFlags) error {
 	}
 	fmt.Print(out)
 	return nil
+}
+
+// runExportSession 将指定 session 的 EventStore 事件流导出为 JSONL 或 JSON 文件（或 stdout）。
+func runExportSession(ctx context.Context, cfg *config) error {
+	if strings.TrimSpace(cfg.exportSessionID) == "" {
+		return fmt.Errorf("--session is required")
+	}
+	store, err := runtimeenv.OpenEventStore()
+	if err != nil {
+		return fmt.Errorf("open event store: %w", err)
+	}
+	format := kruntime.ExportFormatJSONL
+	if strings.EqualFold(strings.TrimSpace(cfg.exportFormat), "json") {
+		format = kruntime.ExportFormatJSON
+	}
+	events, err := store.LoadEvents(ctx, cfg.exportSessionID, 0)
+	if err != nil {
+		return fmt.Errorf("load events: %w", err)
+	}
+	var data []byte
+	switch format {
+	case kruntime.ExportFormatJSON:
+		data, err = json.MarshalIndent(events, "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal events: %w", err)
+		}
+	default:
+		// JSONL: one JSON object per line
+		for _, ev := range events {
+			line, merr := json.Marshal(ev)
+			if merr != nil {
+				return fmt.Errorf("marshal event: %w", merr)
+			}
+			data = append(data, line...)
+			data = append(data, '\n')
+		}
+	}
+	out := strings.TrimSpace(cfg.exportOutput)
+	if out == "" || out == "-" {
+		_, err = os.Stdout.Write(data)
+		return err
+	}
+	return os.WriteFile(out, data, 0o600)
 }

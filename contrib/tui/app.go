@@ -52,6 +52,7 @@ type Config struct {
 	CollaborationMode        string
 	ApprovalMode             string
 	SessionStoreDir          string
+	EventStoreDBPath         string
 	InitialSessionID         string
 	BaseURL                  string
 	APIKey                   string

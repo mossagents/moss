@@ -248,6 +248,7 @@ Sub-commands (passed as positional args):
 		buildApplyCommand(cfg),
 		buildRollbackCommand(cfg),
 		buildChangesCommand(cfg),
+		buildExportSessionCommand(cfg),
 	)
 
 	return root
@@ -635,6 +636,30 @@ func printJSON(v any) error {
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+func buildExportSessionCommand(cfg *config) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export-session",
+		Short: "Export a session's event stream",
+		Long: `Export the full EventStore event stream for a session to a file or stdout.
+
+The output can be used for auditing, debugging, or importing into another
+environment. Supported formats: jsonl (default), json.`,
+		Example: `  mosscode export-session --session sess_abc123
+  mosscode export-session --session sess_abc123 --format json --output session.json
+  mosscode export-session --session sess_abc123 | jq .`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executeCobraCommand(cmd, cfg, commandExecutionOptions{withSignal: true}, func(ctx context.Context, cfg *config) error {
+				return runExportSession(ctx, cfg)
+			})
+		},
+	}
+	cmd.Flags().StringVar(&cfg.exportSessionID, "session", "", "Session ID to export (required)")
+	cmd.Flags().StringVar(&cfg.exportFormat, "format", "jsonl", "Output format: jsonl (default) or json")
+	cmd.Flags().StringVar(&cfg.exportOutput, "output", "", "Output file path (default: stdout, use - for stdout)")
+	return cmd
 }
 
 func collectExplicitCobraFlagNames(cmd *cobra.Command) []string {

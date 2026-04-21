@@ -58,6 +58,9 @@ type config struct {
 	changesJSON               bool
 	changesLimit              int
 	changesShowID             string
+	exportSessionID           string
+	exportFormat              string
+	exportOutput              string
 	explicitFlags             []string
 	observer                  observe.Observer
 	pricingCatalog            *product.PricingCatalog

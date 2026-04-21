@@ -13,6 +13,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
+	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/logging"
 	providers "github.com/mossagents/moss/harness/providers"
@@ -110,6 +111,12 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 	})
 	if err != nil {
 		return nil, err
+	}
+	// 注入 EventStore（kernel-centric 持久化路径）
+	if eventStore, esErr := runtimeenv.OpenEventStore(); esErr == nil {
+		k.Apply(kernel.WithEventStore(eventStore))
+	} else {
+		logging.GetLogger().DebugContext(ctx, "event store unavailable, skipping", "error", esErr)
 	}
 	if err := configureContextPolicy(k, flags); err != nil {
 		return nil, err

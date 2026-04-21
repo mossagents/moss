@@ -10,6 +10,7 @@ import (
 	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -35,9 +36,10 @@ type kernelInitState struct {
 	bridge   *bridgeIO
 	provider string
 
-	k      *kernel.Kernel
-	ctx    context.Context
-	cancel context.CancelFunc
+	k          *kernel.Kernel
+	ctx        context.Context
+	cancel     context.CancelFunc
+	eventStore kruntime.EventStore
 
 	store   session.SessionStore
 	sess    *session.Session
@@ -59,6 +61,12 @@ func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) (*kern
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+	if strings.TrimSpace(cfg.EventStoreDBPath) != "" {
+		if es, err := kruntime.NewSQLiteEventStore(cfg.EventStoreDBPath); err == nil {
+			state.eventStore = es
+			k.Apply(kernel.WithEventStore(es))
+		}
+	}
 	if strings.TrimSpace(cfg.SessionStoreDir) != "" {
 		state.store, _ = session.NewFileStore(cfg.SessionStoreDir)
 	}
@@ -73,6 +81,28 @@ func (s *kernelInitState) initSession() error {
 }
 
 func (s *kernelInitState) loadInitialSession() error {
+	// 优先走 EventStore 路径（新 kernel-centric 路径）
+	if s.eventStore != nil {
+		bp, err := s.k.ResumeRuntimeSession(s.ctx, s.cfg.InitialSessionID)
+		if err == nil {
+			// 将 blueprint 的 config 应用到 kernel（session 由 blueprint 携带）
+			sessCfg := blueprintToSessionConfig(bp)
+			if applyErr := product.ApplySessionConfig(s.k, sessCfg); applyErr != nil {
+				s.cancel()
+				return fmt.Errorf("apply blueprint session config: %w", applyErr)
+			}
+			s.notices = append(s.notices, fmt.Sprintf("Resumed session %s via EventStore", s.cfg.InitialSessionID))
+			// 在 EventStore 上创建 interactive session（后续 turn 会通过 RunAgentFromBlueprint 写入）
+			var sessErr error
+			s.sess, sessErr = s.k.NewSession(s.ctx, sessCfg)
+			if sessErr != nil {
+				s.cancel()
+				return fmt.Errorf("create session for resumed blueprint: %w", sessErr)
+			}
+			return nil
+		}
+		// EventStore 找不到时 fallback 到旧路径
+	}
 	if s.store == nil {
 		s.cancel()
 		return fmt.Errorf("failed to load session %q: session store is unavailable", s.cfg.InitialSessionID)
