@@ -293,6 +293,11 @@ func (a *agentState) refreshSystemPrompt() error {
 	if sess == nil {
 		return errors.New("active thread is unavailable")
 	}
+	if blueprint != nil {
+		// blueprint 路径：prompt 由 PromptCompiler 在每次 turn 前通过 AutoCompactHook 重新编译并注入
+		// ev.PromptMessages，外部 refresh 写入 Config.SystemPrompt 不会影响 LLM 请求，属于旁路污染。
+		return nil
+	}
 	cfg := sess.Config
 	cfg.Metadata = sess.CopyMetadata()
 	nextPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(workspace, trust, k, configInstructions, modelInstructions, cfg)

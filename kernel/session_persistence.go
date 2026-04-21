@@ -55,20 +55,24 @@ func ensurePersistentSessionStoreState(k *Kernel) *persistentSessionStoreState {
 		slog.Default().Warn("failed to register shutdown hook for session persistence", "error", err)
 	}
 	g := kplugin.NewGroup("persistent-session-store", 100)
-	g.OnSessionLifecycle(func(ctx context.Context, event *session.LifecycleEvent) error {
-		if event == nil {
+	// 当 EventStore 已注册时，每个事件都已追加到事件流；跳过 FileStore per-event snapshot hooks
+	// 以避免双重持久化（EventStore 事件流 + FileStore 快照）造成的冗余写入和一致性风险。
+	if k.EventStore() == nil {
+		g.OnSessionLifecycle(func(ctx context.Context, event *session.LifecycleEvent) error {
+			if event == nil {
+				return nil
+			}
+			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
 			return nil
-		}
-		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, string(event.Stage))
-		return nil
-	})
-	g.OnToolLifecycle(func(ctx context.Context, event *hooks.ToolEvent) error {
-		if event == nil || event.Stage != hooks.ToolLifecycleAfter {
+		})
+		g.OnToolLifecycle(func(ctx context.Context, event *hooks.ToolEvent) error {
+			if event == nil || event.Stage != hooks.ToolLifecycleAfter {
+				return nil
+			}
+			persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
 			return nil
-		}
-		persistPersistentSessionEvent(ctx, st.store, event.Session, event.Timestamp, "tool:"+strings.TrimSpace(event.ToolName))
-		return nil
-	})
+		})
+	}
 	k.installPlugin(g)
 	return st
 }

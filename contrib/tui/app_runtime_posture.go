@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -40,7 +39,8 @@ func autosaveSessionBeforeSwitch(current *session.Session, store session.Session
 		return "", nil
 	}
 	if store == nil {
-		return "", errors.New("session store is unavailable, cannot auto-save current session before switching")
+		// EventStore 路径：所有事件已记录在 EventStore 中，无 FileStore 可写；静默跳过 autosave。
+		return "", nil
 	}
 	saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
