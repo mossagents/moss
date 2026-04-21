@@ -113,7 +113,7 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 	s.cancel()
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
 		Trust:             plan.Trust,
-		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), plan.Profile, s.cfg.CollaborationMode, "execute"),
+		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), plan.Mode, s.cfg.CollaborationMode, "execute"),
 		ApprovalMode:      plan.ApprovalMode,
 		APIKey:            s.cfg.APIKey,
 		BaseURL:           s.cfg.BaseURL,

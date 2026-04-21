@@ -144,10 +144,7 @@ func buildSessionSummary(sess *Session) SessionSummary {
 		updatedAt = formatSessionTime(sess.CreatedAt)
 	}
 	runMode, preset, workspaceTrust, collaborationMode, promptPack, permissionProfile, sessionPolicy, modelProfile := SessionFacetValues(sess)
-	profile, effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(sess)
-	if profile == "" {
-		profile = firstNonEmptyTrimmed(preset, permissionProfile)
-	}
+	effectiveTrust, effectiveApproval, taskMode := ProfileMetadataValues(sess)
 	if effectiveTrust == "" {
 		effectiveTrust = workspaceTrust
 	}
@@ -162,7 +159,6 @@ func buildSessionSummary(sess *Session) SessionSummary {
 		Title:             sess.GetTitle(),
 		Goal:              sess.Config.Goal,
 		Mode:              runMode,
-		Profile:           profile,
 		Preset:            preset,
 		WorkspaceTrust:    workspaceTrust,
 		CollaborationMode: collaborationMode,

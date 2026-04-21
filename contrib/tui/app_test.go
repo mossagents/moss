@@ -157,8 +157,8 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	if !plan.Rebuild {
 		t.Fatal("expected posture mismatch to require runtime rebuild")
 	}
-	if plan.Profile != "readonly" {
-		t.Fatalf("plan.Profile = %q, want readonly", plan.Profile)
+	if plan.Mode != "readonly" {
+		t.Fatalf("plan.Mode = %q, want readonly", plan.Mode)
 	}
 	if !strings.Contains(plan.Notice, "auto-rebuilt") {
 		t.Fatalf("unexpected rebuild notice: %q", plan.Notice)
@@ -185,8 +185,8 @@ func TestPlanPostureRebuildDefaultPostureRebuilds(t *testing.T) {
 	if !plan.Rebuild {
 		t.Fatal("session without persisted posture should trigger rebuild to canonical defaults")
 	}
-	if plan.Profile != "default" {
-		t.Fatalf("plan.Profile = %q, want default", plan.Profile)
+	if plan.Mode != "execute" {
+		t.Fatalf("plan.Mode = %q, want execute", plan.Mode)
 	}
 	if !strings.Contains(plan.Notice, "Runtime auto-rebuilt") {
 		t.Fatalf("expected rebuild notice, got %q", plan.Notice)

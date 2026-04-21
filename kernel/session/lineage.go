@@ -34,7 +34,6 @@ type ThreadRef struct {
 	TaskID            string        `json:"task_id,omitempty"`
 	Goal              string        `json:"goal,omitempty"`
 	Mode              string        `json:"mode,omitempty"`
-	Profile           string        `json:"profile,omitempty"`
 	Preset            string        `json:"preset,omitempty"`
 	WorkspaceTrust    string        `json:"workspace_trust,omitempty"`
 	CollaborationMode string        `json:"collaboration_mode,omitempty"`
@@ -252,7 +251,6 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 		TaskID:            summary.TaskID,
 		Goal:              summary.Goal,
 		Mode:              summary.Mode,
-		Profile:           summary.Profile,
 		Preset:            summary.Preset,
 		WorkspaceTrust:    summary.WorkspaceTrust,
 		CollaborationMode: summary.CollaborationMode,

@@ -49,7 +49,6 @@ type SessionSummary struct {
 	Title             string        `json:"title,omitempty"`
 	Goal              string        `json:"goal"`
 	Mode              string        `json:"mode,omitempty"`
-	Profile           string        `json:"profile,omitempty"`
 	Preset            string        `json:"preset,omitempty"`
 	WorkspaceTrust    string        `json:"workspace_trust,omitempty"`
 	CollaborationMode string        `json:"collaboration_mode,omitempty"`

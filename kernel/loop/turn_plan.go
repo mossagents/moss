@@ -513,6 +513,6 @@ func sessionIntentMode(sess *session.Session) string {
 	if trimmed := strings.ToLower(strings.TrimSpace(collaborationMode)); trimmed != "" {
 		return trimmed
 	}
-	_, _, _, taskMode := session.ProfileMetadataValues(sess)
+	_, _, taskMode := session.ProfileMetadataValues(sess)
 	return strings.ToLower(strings.TrimSpace(taskMode))
 }

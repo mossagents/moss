@@ -22,13 +22,12 @@ func metadataString(meta map[string]any, key string) string {
 	return strings.TrimSpace(actual)
 }
 
-func ProfileMetadataValues(sess *Session) (profile, effectiveTrust, effectiveApproval, taskMode string) {
+func ProfileMetadataValues(sess *Session) (effectiveTrust, effectiveApproval, taskMode string) {
 	if sess == nil {
-		return "", "", "", ""
+		return "", "", ""
 	}
 	meta := sess.CopyMetadata()
-	return strings.TrimSpace(sess.Config.Profile),
-		metadataString(meta, MetadataEffectiveTrust),
+	return metadataString(meta, MetadataEffectiveTrust),
 		metadataString(meta, MetadataEffectiveApproval),
 		metadataString(meta, MetadataTaskMode)
 }

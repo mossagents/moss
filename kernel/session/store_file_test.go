@@ -270,9 +270,6 @@ func TestFileStorePersistsResolvedSessionSpecAndSummary(t *testing.T) {
 	if summary.Preset != "planner-safe" {
 		t.Fatalf("preset = %q, want planner-safe", summary.Preset)
 	}
-	if summary.Profile != "planner-safe" {
-		t.Fatalf("profile fallback = %q, want planner-safe", summary.Profile)
-	}
 	if summary.CollaborationMode != "plan" {
 		t.Fatalf("collaboration_mode = %q, want plan", summary.CollaborationMode)
 	}

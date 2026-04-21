@@ -27,7 +27,6 @@ type InspectThreadSummary struct {
 	Goal              string `json:"goal,omitempty"`
 	Status            string `json:"status,omitempty"`
 	Mode              string `json:"mode,omitempty"`
-	Profile           string `json:"profile,omitempty"`
 	Preset            string `json:"preset,omitempty"`
 	CollaborationMode string `json:"collaboration_mode,omitempty"`
 	PermissionProfile string `json:"permission_profile,omitempty"`
@@ -487,7 +486,6 @@ func inspectThreadSummaryFromSession(summary session.SessionSummary) InspectThre
 		Goal:              summary.Goal,
 		Status:            string(summary.Status),
 		Mode:              summary.Mode,
-		Profile:           summary.Profile,
 		Preset:            summary.Preset,
 		CollaborationMode: summary.CollaborationMode,
 		PermissionProfile: summary.PermissionProfile,

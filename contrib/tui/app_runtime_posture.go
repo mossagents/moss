@@ -18,7 +18,7 @@ import (
 )
 
 type runtimePosture struct {
-	Profile           string
+	Mode              string
 	EffectiveTrust    string
 	EffectiveApproval string
 	TaskMode          string
@@ -30,7 +30,7 @@ type postureRebuildPlan struct {
 	Rebuild      bool
 	TargetConfig session.SessionConfig
 	Trust        string
-	Profile      string
+	Mode         string
 	ApprovalMode string
 	Notice       string
 }
@@ -123,12 +123,12 @@ func (a *agentState) ensureRuntimePosture(target *session.Session) (string, erro
 	return plan.Notice, nil
 }
 
-func postureFromRuntime(k *kernel.Kernel, profile, trust, approval string) runtimePosture {
+func postureFromRuntime(k *kernel.Kernel, mode, trust, approval string) runtimePosture {
 	posture := runtimePosture{
-		Profile:           strings.TrimSpace(profile),
+		Mode:              strings.TrimSpace(mode),
 		EffectiveTrust:    configpkg.NormalizeTrustLevel(trust),
 		EffectiveApproval: rpolicy.NormalizeApprovalMode(approval),
-		TaskMode:          strings.TrimSpace(profile),
+		TaskMode:          strings.TrimSpace(mode),
 	}
 	if posture.EffectiveTrust == "" {
 		posture.EffectiveTrust = configpkg.TrustTrusted
@@ -150,11 +150,11 @@ func postureFromRuntime(k *kernel.Kernel, profile, trust, approval string) runti
 		posture.ToolPolicy = rpolicy.ResolveToolPolicyForWorkspace("", posture.EffectiveTrust, posture.EffectiveApproval)
 		posture.HasToolPolicy = true
 	}
-	if posture.Profile == "" {
-		posture.Profile = "default"
+	if posture.Mode == "" {
+		posture.Mode = "execute"
 	}
 	if posture.TaskMode == "" {
-		posture.TaskMode = "coding"
+		posture.TaskMode = posture.Mode
 	}
 	return posture
 }
@@ -178,15 +178,15 @@ func planPostureRebuild(sessionID string, current runtimePosture, target *sessio
 			return postureRebuildPlan{}, nil
 		}
 	}
-	profileName := strings.TrimSpace(targetPosture.Profile)
-	if profileName == "" {
-		profileName = "default"
+	modeName := strings.TrimSpace(targetPosture.TaskMode)
+	if modeName == "" {
+		modeName = "execute"
 	}
 	return postureRebuildPlan{
 		Rebuild:      true,
 		TargetConfig: target.Config,
 		Trust:        firstNonEmptyTrimmed(targetTrust, configpkg.TrustTrusted),
-		Profile:      profileName,
+		Mode:         modeName,
 		ApprovalMode: firstNonEmptyTrimmed(targetApproval, product.ApprovalModeConfirm),
 		Notice:       fmt.Sprintf("Runtime auto-rebuilt to recorded posture for session %s (%s).", sessionID, formatPosture(targetPosture)),
 	}, nil
@@ -215,14 +215,15 @@ func postureFromSession(sess *session.Session) runtimePosture {
 		return posture
 	}
 	_, preset, workspaceTrust, collaborationMode, _, permissionProfile, _, _ := session.SessionFacetValues(sess)
-	posture.Profile = firstNonEmptyTrimmed(preset, sess.Config.Profile, permissionProfile)
 	posture.EffectiveTrust = configpkg.NormalizeTrustLevel(firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), workspaceTrust, sess.Config.TrustLevel))
 	posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
+	legacyProfile := firstNonEmptyTrimmed(preset, sess.Config.Profile, permissionProfile)
 	legacyMode := ""
-	if normalized, err := normalizeTUIMode(posture.Profile); err == nil {
+	if normalized, err := normalizeTUIMode(legacyProfile); err == nil {
 		legacyMode = normalized
 	}
 	posture.TaskMode = firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, legacyMode)
+	posture.Mode = firstNonEmptyTrimmed(collaborationMode, posture.TaskMode, legacyMode, "execute")
 	if policy, ok, err := product.ToolPolicyForSessionConfig(sess.Config); err == nil && ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true
@@ -241,6 +242,9 @@ func postureFromSession(sess *session.Session) runtimePosture {
 	}
 	if posture.TaskMode == "" {
 		posture.TaskMode = firstNonEmptyTrimmed(collaborationMode, legacyMode, "execute")
+	}
+	if posture.Mode == "" {
+		posture.Mode = firstNonEmptyTrimmed(posture.TaskMode, legacyMode, "execute")
 	}
 	return posture
 }
@@ -278,16 +282,16 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if buildKernel == nil {
 		return fmt.Errorf("runtime rebuild is unavailable")
 	}
-	rebuildProfile := strings.TrimSpace(plan.Profile)
-	if rebuildProfile == "" {
-		rebuildProfile = strings.TrimSpace(currentMode)
+	rebuildMode := strings.TrimSpace(plan.Mode)
+	if rebuildMode == "" {
+		rebuildMode = strings.TrimSpace(currentMode)
 	}
-	if rebuildProfile == "" {
-		rebuildProfile = "default"
+	if rebuildMode == "" {
+		rebuildMode = "execute"
 	}
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
 		Trust:             plan.Trust,
-		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildProfile, "execute"),
+		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildMode, "execute"),
 		ApprovalMode:      plan.ApprovalMode,
 		APIKey:            apiKey,
 		BaseURL:           baseURL,
@@ -318,7 +322,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	a.cancel = cancel
 	a.runCancel = nil
 	a.trust = plan.Trust
-	a.collaborationMode = firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildProfile, a.collaborationMode, "execute")
+	a.collaborationMode = firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildMode, a.collaborationMode, "execute")
 	a.approvalMode = plan.ApprovalMode
 	a.mu.Unlock()
 	return nil
