@@ -20,6 +20,10 @@ type persistentSessionStoreState struct {
 
 // WithPersistentSessionStore attaches a SessionStore and installs kernel-managed
 // persistence hooks. Public feature composition should prefer harness.SessionPersistence.
+//
+// Deprecated: 阶段 4 将删除本选项。
+// 新路径请改用 kernel.WithEventStore + kernel.StartRuntimeSession，
+// 以 EventStore 事件流为事实来源。
 func WithPersistentSessionStore(store session.SessionStore) Option {
 	return func(k *Kernel) {
 		WithSessionStore(store)(k)

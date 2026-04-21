@@ -12,6 +12,10 @@ type orderedPromptHook struct {
 }
 
 // PromptAssembler manages ordered system-prompt fragment builders.
+//
+// Deprecated: 阶段 4 将删除 raw string prompt hook 模式。
+// 新路径请改用 kernel/runtime.PromptLayerProvider 注册表，
+// 通过 PromptCompiler 统一编译 system prompt。
 type PromptAssembler struct {
 	mu     sync.RWMutex
 	hooks  []orderedPromptHook

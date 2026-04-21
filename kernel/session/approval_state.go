@@ -1,25 +1,31 @@
 package session
 
 import (
-	"github.com/mossagents/moss/kernel/io"
 	"strings"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
 )
 
 const ApprovalStateKey = "approval_state"
 
+// ApprovalState 存储 session 内内存态的审批规则和策略。
+//
+// Deprecated: 阶段 4 将删除本类型。
+// 新路径中审批状态通过 approval_requested / approval_resolved RuntimeEvent 持久化，
+// 并由 PolicyCompiler 编译的 EffectiveToolPolicy 驱动权限决策。
 type ApprovalState struct {
-	Rules              []ApprovalRule         `json:"rules,omitempty"`
+	Rules              []ApprovalRule       `json:"rules,omitempty"`
 	GrantedPermissions io.PermissionProfile `json:"granted_permissions,omitempty"`
 }
 
 type ApprovalRule struct {
-	CacheKey   string                    `json:"cache_key,omitempty"`
-	CacheLabel string                    `json:"cache_label,omitempty"`
-	ToolName   string                    `json:"tool_name,omitempty"`
+	CacheKey   string                  `json:"cache_key,omitempty"`
+	CacheLabel string                  `json:"cache_label,omitempty"`
+	ToolName   string                  `json:"tool_name,omitempty"`
 	Category   io.ApprovalCategory     `json:"category,omitempty"`
 	Type       io.ApprovalDecisionType `json:"type,omitempty"`
-	CreatedAt  time.Time                 `json:"created_at,omitempty"`
+	CreatedAt  time.Time               `json:"created_at,omitempty"`
 }
 
 func ApprovalStateOf(sess *Session) ApprovalState {

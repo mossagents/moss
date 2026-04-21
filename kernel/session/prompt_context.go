@@ -27,6 +27,10 @@ type PromptContextFragment struct {
 }
 
 // PromptContextState stores the managed prompt baseline and compaction state.
+//
+// Deprecated: 阶段 4 将删除 fragment 式 PromptContextState。
+// 新路径中所有上下文均通过 ContextProjector + PromptCompiler 编译，
+// 不再维护内存内的 fragment state。
 type PromptContextState struct {
 	Version              int                     `json:"version"`
 	PromptBudget         int                     `json:"prompt_budget,omitempty"`

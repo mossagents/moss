@@ -18,6 +18,7 @@ import (
 	"github.com/mossagents/moss/kernel/loop"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -48,6 +49,10 @@ type Kernel struct {
 	services    *ServiceRegistry
 	loopCfg     loop.LoopConfig
 	observer    observe.Observer
+
+	// 新路径：kernel-centric runtime（阶段1，与旧路径并存）
+	eventStore      kruntime.EventStore
+	runtimeResolver kruntime.RequestResolver
 
 	assemblyMu     sync.Mutex
 	assemblyFrozen bool
@@ -450,4 +455,56 @@ func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*s
 		})
 		streamAgentEvents(req.Agent, invCtx, yield)
 	}
+}
+
+// ── kernel-centric runtime（新路径，阶段 1）────────────────────────
+
+// EventStore 返回已注入的 EventStore（可能为 nil）。
+func (k *Kernel) EventStore() kruntime.EventStore {
+	return k.eventStore
+}
+
+// RuntimeResolver 返回已注入的 RequestResolver（可能为 nil）。
+// 若未通过 WithRuntimeResolver 配置，返回 nil。
+func (k *Kernel) RuntimeResolver() kruntime.RequestResolver {
+	return k.runtimeResolver
+}
+
+// StartRuntimeSession 通过新路径启动一个 Session：
+//  1. 用 RequestResolver 将 RuntimeRequest 解析为 SessionBlueprint
+//  2. 向 EventStore 追加 session_created 事件
+//  3. 返回 blueprint（供调用方继续发送 turn_started 等事件）
+//
+// 要求 WithEventStore 均已配置，否则返回错误。
+// 若未通过 WithRuntimeResolver 配置 resolver，则使用 DefaultRequestResolver（需注入 DefaultPolicyCompiler）。
+// 本方法不影响旧路径（session.Session / RunAgent），两条路径并存于阶段 1。
+func (k *Kernel) StartRuntimeSession(ctx context.Context, req kruntime.RuntimeRequest) (kruntime.SessionBlueprint, error) {
+	if k.eventStore == nil {
+		return kruntime.SessionBlueprint{}, errors.New(errors.ErrValidation, "StartRuntimeSession requires an EventStore (use kernel.WithEventStore())")
+	}
+	resolver := k.runtimeResolver
+	if resolver == nil {
+		resolver = kruntime.NewDefaultRequestResolver(kruntime.NewDefaultPolicyCompiler())
+	}
+
+	bp, err := resolver.Resolve(req)
+	if err != nil {
+		return kruntime.SessionBlueprint{}, fmt.Errorf("resolve runtime request: %w", err)
+	}
+
+	sessionID := bp.Identity.SessionID
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeSessionCreated,
+		SessionID:        sessionID,
+		Seq:              0,
+		BlueprintVersion: bp.Provenance.Hash,
+		Payload: kruntime.SessionCreatedPayload{
+			BlueprintPayload: &bp,
+			TriggerSource:    "api",
+		},
+	}
+	if err := k.eventStore.AppendEvents(ctx, sessionID, 0, "", []kruntime.RuntimeEvent{ev}); err != nil {
+		return kruntime.SessionBlueprint{}, fmt.Errorf("append session_created event: %w", err)
+	}
+	return bp, nil
 }

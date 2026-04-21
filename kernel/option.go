@@ -10,6 +10,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/retry"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/tool"
@@ -75,6 +76,10 @@ func WithCheckpoints(store checkpoint.CheckpointStore) Option {
 }
 
 // WithSessionStore 设置 SessionStore Port。
+//
+// Deprecated: 阶段 4 将删除本选项。
+// 新路径请改用 kernel.WithEventStore，
+// 以 SQLite EventStore 为事实层持久化并支持 projection 读取。
 func WithSessionStore(store session.SessionStore) Option {
 	return func(k *Kernel) { k.store = store }
 }
@@ -146,3 +151,16 @@ func WithLLMBreaker(cfg retry.BreakerConfig) Option {
 	return func(k *Kernel) { k.loopCfg.LLMBreaker = retry.NewBreaker(cfg) }
 }
 
+// ── kernel-centric runtime 选项（新路径，阶段 1）────────────────────
+
+// WithEventStore 注入 EventStore，启用 kernel-centric runtime 新路径。
+// 配置后可通过 kernel.StartRuntimeSession 使用事件溯源 session。
+func WithEventStore(store kruntime.EventStore) Option {
+	return func(k *Kernel) { k.eventStore = store }
+}
+
+// WithRuntimeResolver 注入自定义 RequestResolver。
+// 若不配置，StartRuntimeSession 将使用 DefaultRequestResolver。
+func WithRuntimeResolver(resolver kruntime.RequestResolver) Option {
+	return func(k *Kernel) { k.runtimeResolver = resolver }
+}

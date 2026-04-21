@@ -10,6 +10,10 @@ var ErrNotSupported = errors.New("operation not supported")
 
 // SessionStore 提供 Session 的持久化存储能力。
 // 实现应保证并发安全。
+//
+// Deprecated: 阶段 4 将删除本接口。
+// 新路径以 kernel/runtime.EventStore 为唯一事实层存储入口，
+// session 状态通过 projection 读取，不再直接写入 session 快照。
 type SessionStore interface {
 	// Save 持久化一个 Session（创建或更新）。
 	Save(ctx context.Context, sess *Session) error
