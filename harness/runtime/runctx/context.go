@@ -207,11 +207,11 @@ func ensureOffloadState(k *kernel.Kernel) *offloadState {
 	if loaded {
 		return st
 	}
-	if err := k.Prompts().Add(230, func(_ *kernel.Kernel) string {
+	if err := k.PromptLayers().Add("offload-context-instructions", 230, "system", func(_ *kernel.Kernel) (string, bool) {
 		if st.store == nil {
-			return ""
+			return "", false
 		}
-		return "Use offload_context to compact long conversations and persist an offload snapshot."
+		return "Use offload_context to compact long conversations and persist an offload snapshot.", true
 	}); err != nil {
 		log.Printf("runctx: register prompt hook: %v", err)
 	}
@@ -253,11 +253,11 @@ func ensureContextState(k *kernel.Kernel) *contextState {
 	}); err != nil {
 		log.Printf("runctx: register boot hook: %v", err)
 	}
-	if err := k.Prompts().Add(235, func(_ *kernel.Kernel) string {
+	if err := k.PromptLayers().Add("compact-conversation-instructions", 235, "system", func(_ *kernel.Kernel) (string, bool) {
 		if st.store == nil {
-			return ""
+			return "", false
 		}
-		return "Use compact_conversation to keep prompt-visible context within budget with structured summaries, startup context, and snapshot-backed compaction."
+		return "Use compact_conversation to keep prompt-visible context within budget with structured summaries, startup context, and snapshot-backed compaction.", true
 	}); err != nil {
 		log.Printf("runctx: register prompt hook: %v", err)
 	}

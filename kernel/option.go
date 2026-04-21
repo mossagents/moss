@@ -164,3 +164,9 @@ func WithEventStore(store kruntime.EventStore) Option {
 func WithRuntimeResolver(resolver kruntime.RequestResolver) Option {
 	return func(k *Kernel) { k.runtimeResolver = resolver }
 }
+
+// WithPromptCompiler 注入自定义 PromptCompiler。
+// 若不配置，RunAgentFromBlueprint 将使用 DefaultPromptCompiler。
+func WithPromptCompiler(compiler kruntime.PromptCompiler) Option {
+	return func(k *Kernel) { k.promptCompiler = compiler }
+}

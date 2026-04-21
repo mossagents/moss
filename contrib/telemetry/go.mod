@@ -1,6 +1,6 @@
 module github.com/mossagents/moss/contrib/telemetry
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/mossagents/moss/kernel v0.0.0

@@ -192,19 +192,23 @@ func TestCapabilityDeps_DoesNotPanic(t *testing.T) {
 
 // ── Prompt generation ─────────────────────────────────────────────────────────
 
+func buildPromptFromLayers(k *kernel.Kernel) string {
+	return kernel.BuildSystemPromptFromLayers(k)
+}
+
 func TestPromptGeneration_NoManager(t *testing.T) {
 	k := kernel.New()
 	capstate.Ensure(k)
 	// Manager is set but progressive is false; with empty manifests, prompt additions should be empty
-	prompt := k.Prompts().Extend(k, "base")
-	// No panic; prompt may just contain "base"
+	prompt := buildPromptFromLayers(k)
+	// No panic; prompt may just contain base
 	_ = prompt
 }
 
 func TestPromptGeneration_NonProgressive_NoManifests(t *testing.T) {
 	k := kernel.New()
 	capstate.Ensure(k)
-	prompt := k.Prompts().Extend(k, "")
+	prompt := buildPromptFromLayers(k)
 	// manager exists, progressive=false, no manifests → SystemPromptAdditions() returns ""
 	_ = prompt
 }
@@ -217,7 +221,7 @@ func TestPromptGeneration_ProgressiveWithUnloadedManifests(t *testing.T) {
 	})
 	capstate.EnableProgressiveSkills(k)
 
-	prompt := k.Prompts().Extend(k, "")
+	prompt := buildPromptFromLayers(k)
 	if !strings.Contains(prompt, "skill-alpha") {
 		t.Errorf("expected skill-alpha in progressive prompt, got: %s", prompt)
 	}
@@ -230,12 +234,8 @@ func TestPromptGeneration_ProgressiveNoManifests(t *testing.T) {
 	k := kernel.New()
 	// progressive=true but no manifests → hint omitted
 	capstate.EnableProgressiveSkills(k)
-	prompt := k.Prompts().Extend(k, "")
+	prompt := buildPromptFromLayers(k)
 	if strings.Contains(prompt, "activate_skill") {
 		t.Errorf("expected no activate_skill hint when no manifests, got: %s", prompt)
 	}
 }
-
-
-
-

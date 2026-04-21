@@ -15,17 +15,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/harness/appkit"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/extensions/agent"
 	"github.com/mossagents/moss/harness/extensions/skill"
-	"github.com/mossagents/moss/harness"
+	appruntime "github.com/mossagents/moss/harness/runtime"
+	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	appruntime "github.com/mossagents/moss/harness/runtime"
-	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -1418,14 +1418,16 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 
 	offloadID := fmt.Sprintf("%s_offload_%d", sess.ID, time.Now().UnixNano())
 	snapshot := &session.Session{
-		ID:       offloadID,
-		Status:   session.StatusCompleted,
-		Config:   sess.Config,
-		Messages: append([]model.Message(nil), sess.Messages...),
-		State: map[string]any{
-			"offload_of": sess.ID,
-			"note":       note,
+		ID:     offloadID,
+		Status: session.StatusCompleted,
+		Config: sess.Config,
+		State: session.ScopedState{
+			Session: map[string]any{
+				"offload_of": sess.ID,
+				"note":       note,
+			},
 		},
+		Messages:  append([]model.Message(nil), sess.Messages...),
 		Budget:    sess.Budget.Clone(),
 		CreatedAt: time.Now(),
 		EndedAt:   time.Now(),

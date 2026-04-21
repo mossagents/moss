@@ -28,6 +28,7 @@ import (
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	kplugin "github.com/mossagents/moss/kernel/plugin"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -80,6 +81,7 @@ type kernelReadyMsg struct {
 type agentState struct {
 	k                        *kernel.Kernel
 	sess                     *session.Session
+	blueprint                *kruntime.SessionBlueprint // 阶段 3：blueprint 主链路（nil = 旧路径）
 	store                    session.SessionStore
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -735,11 +737,35 @@ func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 		a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k), progressObserver))
 	}
 
+	// 阶段 3：若 blueprint 可用，通过 EventStore 写入 turn 事件
+	var turnID string
+	if a.blueprint != nil {
+		var turnErr error
+		turnID, turnErr = a.k.RecordTurnStarted(runCtx, *a.blueprint)
+		if turnErr != nil {
+			a.k.Logger().WarnContext(runCtx, "RecordTurnStarted failed", "error", turnErr)
+		}
+	}
+
 	result, err := kernel.CollectRunAgentResult(runCtx, a.k, kernel.RunAgentRequest{
 		Session:     a.sess,
 		Agent:       a.k.BuildLLMAgent("tui"),
 		UserContent: &userMsg,
 	})
+
+	// 阶段 3：写入 turn_completed 事件
+	if a.blueprint != nil && turnID != "" {
+		outcome := kruntime.TurnOutcomeCompleted
+		errKind := ""
+		if err != nil {
+			outcome = kruntime.TurnOutcomeError
+			errKind = "execution_error"
+		}
+		if compErr := a.k.RecordTurnCompleted(runCtx, *a.blueprint, turnID, outcome, errKind); compErr != nil {
+			a.k.Logger().WarnContext(runCtx, "RecordTurnCompleted failed", "error", compErr)
+		}
+	}
+
 	a.k.SetObserver(observe.JoinObservers(baseObserver, runtime.ObserverForStateCatalog(a.k)))
 
 	a.mu.Lock()

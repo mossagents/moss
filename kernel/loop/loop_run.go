@@ -202,7 +202,14 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 		)
 		l.emitLLMAttemptEvents(ctx, sess.ID, metadata, true)
 		observe.ObserveLLMCall(ctx, l.observer(), observe.LLMCallEvent{
-			SessionID: sess.ID, StartedAt: llmStart.UTC(), Duration: llmDur, Error: err, Streamed: true, Model: metadata.ActualModel,
+			SessionID:          sess.ID,
+			StartedAt:          llmStart.UTC(),
+			Duration:           llmDur,
+			Error:              err,
+			Streamed:           true,
+			Model:              metadata.ActualModel,
+			ProviderID:         metadata.ProviderID,
+			OriginalProviderID: metadata.OriginalProviderID,
 		})
 		observe.ObserveError(ctx, l.observer(), observe.ErrorEvent{
 			SessionID: sess.ID, Phase: "llm_call", Error: err, Message: err.Error(),
@@ -228,14 +235,20 @@ func (l *AgentLoop) executeIterationLLM(ctx context.Context, sess *session.Sessi
 	)
 	l.emitLLMAttemptEvents(ctx, sess.ID, metadata, false)
 	observe.ObserveLLMCall(ctx, l.observer(), observe.LLMCallEvent{
-		SessionID:  sess.ID,
-		Model:      metadata.ActualModel,
-		StartedAt:  llmStart.UTC(),
-		Duration:   llmDur,
-		Usage:      resp.Usage,
-		StopReason: resp.StopReason,
-		Streamed:   true,
+		SessionID:          sess.ID,
+		Model:              metadata.ActualModel,
+		StartedAt:          llmStart.UTC(),
+		Duration:           llmDur,
+		Usage:              resp.Usage,
+		StopReason:         resp.StopReason,
+		Streamed:           true,
+		ProviderID:         metadata.ProviderID,
+		OriginalProviderID: metadata.OriginalProviderID,
 	})
+	// §14.10：若 LLM 响应携带 thinking tokens，记录到 Budget
+	if resp.Usage.ThinkingTokens > 0 {
+		sess.Budget.RecordThinking(resp.Usage.ThinkingTokens)
+	}
 	event = l.executionEventBase(sess, observe.ExecutionLLMCompleted, "llm", "runtime", "llm")
 	event.Model = metadata.ActualModel
 	event.Duration = llmDur

@@ -8,6 +8,7 @@ import (
 	"github.com/mossagents/moss/harness/runtime/presets"
 	"github.com/mossagents/moss/harness/runtime/promptpacks"
 	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -184,4 +185,23 @@ func runtimeInvocationForTUI(base runtimeInvocation, flags *appkit.AppFlags, app
 		RequestedSpec: requested,
 		ResolvedSpec:  resolved,
 	}, nil
+}
+
+// runtimeInvocationToRuntimeRequest 将已解析的 runtimeInvocation 转换为
+// kruntime.RuntimeRequest，供 kernel.StartRuntimeSession 消费。
+// invocation 中的 PermissionProfile / ModelProfile / WorkspaceTrust
+// 均来自 rsessionspec.Resolve，已完成冲突消解，可直接透传。
+func runtimeInvocationToRuntimeRequest(invocation runtimeInvocation, runMode string) kruntime.RuntimeRequest {
+	r := invocation.ResolvedSpec
+	return kruntime.RuntimeRequest{
+		RunMode:           strings.TrimSpace(firstNonEmptyTrimmed(runMode, r.Runtime.RunMode)),
+		CollaborationMode: strings.TrimSpace(r.Intent.CollaborationMode),
+		WorkspaceTrust:    strings.TrimSpace(r.Workspace.Trust),
+		PermissionProfile: strings.TrimSpace(r.Runtime.PermissionProfile),
+		PromptPack:        strings.TrimSpace(r.Intent.PromptPack.ID),
+		SessionPolicy:     strings.TrimSpace(r.Runtime.SessionPolicyName),
+		ModelProfile:      strings.TrimSpace(r.Runtime.ModelProfile),
+		Workspace:         strings.TrimSpace(invocation.CompatFlags.Workspace),
+		UserGoal:          strings.TrimSpace(r.Goal),
+	}
 }

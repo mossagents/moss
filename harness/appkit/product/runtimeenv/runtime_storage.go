@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/workspace"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 // OpenEventStore opens (or creates) the SQLite-backed EventStore at the

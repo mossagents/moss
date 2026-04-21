@@ -4,6 +4,7 @@ import (
 	kerr "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -14,6 +15,8 @@ type RunAgentRequest struct {
 	UserContent *model.Message
 	IO          io.UserIO
 	OnResult    func(*session.LifecycleResult)
+	// Observer 可选。若非 nil，覆盖 kernel 全局 Observer 用于本次执行（§14.1/§14.2 审计路径注入）。
+	Observer observe.Observer
 }
 
 func (k *Kernel) normalizeRunAgentRequest(req RunAgentRequest) (RunAgentRequest, error) {

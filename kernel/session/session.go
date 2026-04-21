@@ -42,7 +42,10 @@ type Budget struct {
 	MaxSteps   int `json:"max_steps"`
 	UsedTokens int `json:"used_tokens"`
 	UsedSteps  int `json:"used_steps"`
-	mu         sync.Mutex
+	// §14.10 Thinking token 追踪：extended thinking 模式下扩展思考消耗的 token 数。
+	MaxThinkingTokens  int `json:"max_thinking_tokens,omitempty"`
+	UsedThinkingTokens int `json:"used_thinking_tokens,omitempty"`
+	mu                 sync.Mutex
 }
 
 // Exhausted 返回预算是否已耗尽。
@@ -59,6 +62,16 @@ func (b *Budget) Record(tokens, steps int) {
 	defer b.mu.Unlock()
 	b.UsedTokens += tokens
 	b.UsedSteps += steps
+}
+
+// RecordThinking 记录 extended thinking 消耗的 token（§14.10）。
+func (b *Budget) RecordThinking(thinkingTokens int) {
+	if thinkingTokens <= 0 {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.UsedThinkingTokens += thinkingTokens
 }
 
 // TryConsume 原子地检查并记录预算消耗。
@@ -89,11 +102,19 @@ func (b *Budget) UsedTokensValue() int {
 	return b.UsedTokens
 }
 
+// UsedThinkingTokensValue 返回 thinking token 用量（§14.10）。
+func (b *Budget) UsedThinkingTokensValue() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.UsedThinkingTokens
+}
+
 func (b *Budget) ResetUsage() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.UsedSteps = 0
 	b.UsedTokens = 0
+	b.UsedThinkingTokens = 0
 }
 
 // Clone returns a copy of budget counters with a fresh mutex.
@@ -101,10 +122,12 @@ func (b *Budget) Clone() Budget {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return Budget{
-		MaxTokens:  b.MaxTokens,
-		MaxSteps:   b.MaxSteps,
-		UsedTokens: b.UsedTokens,
-		UsedSteps:  b.UsedSteps,
+		MaxTokens:          b.MaxTokens,
+		MaxSteps:           b.MaxSteps,
+		UsedTokens:         b.UsedTokens,
+		UsedSteps:          b.UsedSteps,
+		MaxThinkingTokens:  b.MaxThinkingTokens,
+		UsedThinkingTokens: b.UsedThinkingTokens,
 	}
 }
 

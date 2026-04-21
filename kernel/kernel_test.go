@@ -806,11 +806,11 @@ func TestKernelStagesAndPromptsRunInOrder(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("OnShutdown: %v", err)
 	}
-	if err := k.Prompts().Add(20, func(*Kernel) string { return "prompt-20" }); err != nil {
-		t.Fatalf("Prompts.Add: %v", err)
+	if err := k.PromptLayers().Add("p20", 20, "system", func(*Kernel) (string, bool) { return "prompt-20", true }); err != nil {
+		t.Fatalf("PromptLayers.Add: %v", err)
 	}
-	if err := k.Prompts().Add(10, func(*Kernel) string { return "prompt-10" }); err != nil {
-		t.Fatalf("Prompts.Add: %v", err)
+	if err := k.PromptLayers().Add("p10", 10, "system", func(*Kernel) (string, bool) { return "prompt-10", true }); err != nil {
+		t.Fatalf("PromptLayers.Add: %v", err)
 	}
 
 	if err := k.Boot(context.Background()); err != nil {
@@ -865,8 +865,8 @@ func TestKernelAssemblyMutationErrorsAfterBoot(t *testing.T) {
 	if err := k.Stages().OnShutdown(10, func(context.Context, *Kernel) error { return nil }); err == nil {
 		t.Fatal("OnShutdown after boot should return error")
 	}
-	if err := k.Prompts().Add(10, func(*Kernel) string { return "late" }); err == nil {
-		t.Fatal("Prompts.Add after boot should return error")
+	if err := k.PromptLayers().Add("late", 10, "system", func(*Kernel) (string, bool) { return "late", true }); err == nil {
+		t.Fatal("PromptLayers.Add after boot should return error")
 	}
 }
 

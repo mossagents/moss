@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mossagents/moss/harness/extensions/capability"
 	config "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/sandbox"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/sandbox"
-	"os"
-	"strings"
 )
 
 const (
@@ -122,6 +123,9 @@ func (s *MCPServer) Init(ctx context.Context, deps capability.Deps) error {
 			Capabilities: []string{"mcp", s.cfg.Name},
 			Source:       "mcp",
 			Owner:        s.cfg.Name,
+			// §14.3：MCP 工具必须携带服务端标识，以便审计区分本地与远端工具。
+			MCPServerID: s.cfg.Name,
+			MCPToolName: mcpTool.Name,
 		}
 
 		handler := s.makeHandler(mcpTool.Name)

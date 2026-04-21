@@ -53,10 +53,13 @@ type ExecutionEvent struct {
 	ToolName     string             `json:"tool_name,omitempty"`
 	CallID       string             `json:"call_id,omitempty"`
 	Risk         string             `json:"risk,omitempty"`
-	ReasonCode   string             `json:"reason_code,omitempty"`
-	Enforcement  io.EnforcementMode `json:"enforcement,omitempty"`
-	Model        string             `json:"model,omitempty"`
-	Duration     time.Duration      `json:"duration,omitempty"`
-	Error        string             `json:"error,omitempty"`
-	Metadata     map[string]any     `json:"data,omitempty"`
+	// MCPServerID / MCPToolName MCP 工具扩展字段（§14.3）。
+	MCPServerID string             `json:"mcp_server_id,omitempty"`
+	MCPToolName string             `json:"mcp_tool_name,omitempty"`
+	ReasonCode  string             `json:"reason_code,omitempty"`
+	Enforcement io.EnforcementMode `json:"enforcement,omitempty"`
+	Model       string             `json:"model,omitempty"`
+	Duration    time.Duration      `json:"duration,omitempty"`
+	Error       string             `json:"error,omitempty"`
+	Metadata    map[string]any     `json:"data,omitempty"`
 }

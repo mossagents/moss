@@ -283,11 +283,11 @@ func ensurePlanningState(k *kernel.Kernel) *planningState {
 	}); err != nil {
 		log.Printf("planning: register boot hook: %v", err)
 	}
-	if err := k.Prompts().Add(225, func(_ *kernel.Kernel) string {
+	if err := k.PromptLayers().Add("planning-instructions", 225, "system", func(_ *kernel.Kernel) (string, bool) {
 		if st.manager == nil {
-			return ""
+			return "", false
 		}
-		return "Use update_plan to maintain the unified planning state. The same structured plan powers both the high-level plan and the execution todo list. Allowed statuses: pending, in_progress, completed, blocked."
+		return "Use update_plan to maintain the unified planning state. The same structured plan powers both the high-level plan and the execution todo list. Allowed statuses: pending, in_progress, completed, blocked.", true
 	}); err != nil {
 		log.Printf("planning: register prompt hook: %v", err)
 	}

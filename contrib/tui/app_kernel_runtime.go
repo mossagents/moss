@@ -7,8 +7,8 @@ import (
 
 	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
-	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/model"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 

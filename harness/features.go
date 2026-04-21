@@ -45,8 +45,9 @@ func BootstrapContext(workspace, appName, trust string) Feature {
 		},
 		InstallFunc: func(_ context.Context, h *Harness) error {
 			bctx := bootstrap.LoadWithAppNameAndTrust(workspace, appName, trust)
-			if err := h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
-				return bctx.SystemPromptSection()
+			if err := h.Kernel().PromptLayers().Add("bootstrap-context", 100, "system", func(_ *kernel.Kernel) (string, bool) {
+				content := bctx.SystemPromptSection()
+				return content, content != ""
 			}); err != nil {
 				return fmt.Errorf("register bootstrap prompt: %w", err)
 			}
@@ -67,8 +68,9 @@ func BootstrapContextValue(ctx *bootstrap.Context) Feature {
 			if ctx == nil {
 				return nil
 			}
-			if err := h.Kernel().Prompts().Add(100, func(_ *kernel.Kernel) string {
-				return ctx.SystemPromptSection()
+			if err := h.Kernel().PromptLayers().Add("bootstrap-context-value", 100, "system", func(_ *kernel.Kernel) (string, bool) {
+				content := ctx.SystemPromptSection()
+				return content, content != ""
 			}); err != nil {
 				return fmt.Errorf("register bootstrap prompt: %w", err)
 			}

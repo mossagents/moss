@@ -39,6 +39,8 @@ const (
 	EventTypeBudgetExhausted    EventType = "budget_exhausted"
 	EventTypeSubagentSpawned    EventType = "subagent_spawned"
 	EventTypeSubagentCompleted  EventType = "subagent_completed"
+	// EventTypeLLMCalled 对应一次 LLM 调用完成事件（§14.8 Provider Failover）。
+	EventTypeLLMCalled EventType = "llm_called"
 )
 
 // ─────────────────────────────────────────────
@@ -133,6 +135,8 @@ type PromptMaterializedPayload struct {
 	ProviderID string `json:"provider_id,omitempty"`
 	// ModelID 实际调用的模型名称（含 failover 后实际模型）。
 	ModelID string `json:"model_id,omitempty"`
+	// OriginalProviderID failover 时首选 provider（§14.8）。仅发生 failover 时设置。
+	OriginalProviderID string `json:"original_provider_id,omitempty"`
 }
 
 // ToolCalledPayload 对应 tool_called 事件。
@@ -154,6 +158,9 @@ type ToolCompletedPayload struct {
 	ResultParts  []model.ContentPart `json:"result_parts,omitempty"`
 	IsError      bool                `json:"is_error,omitempty"`
 	ErrorMessage string              `json:"error_message,omitempty"`
+	// MCP 工具扩展字段（§14.3），与 tool_called 对称。
+	MCPServerID string `json:"mcp_server_id,omitempty"`
+	MCPToolName string `json:"mcp_tool_name,omitempty"`
 }
 
 // ApprovalRequestedPayload 对应 approval_requested 事件。
@@ -162,6 +169,31 @@ type ApprovalRequestedPayload struct {
 	PolicyHash string `json:"policy_hash"`
 	ToolCallID string `json:"tool_call_id,omitempty"`
 	Reason     string `json:"reason,omitempty"`
+}
+
+// LLMCalledPayload 对应 llm_called 事件（§14.8 Provider Failover）。
+// 记录一次 LLM 调用完成的关键信息，包含 failover 审计字段。
+type LLMCalledPayload struct {
+	// TurnID 关联的 turn 标识。
+	TurnID string `json:"turn_id,omitempty"`
+	// PromptMaterializedID 触发此 LLM 调用的 prompt 物化 ID。
+	PromptMaterializedID string `json:"prompt_materialized_id,omitempty"`
+	// ModelID 实际命中的模型（含 failover 后）。
+	ModelID string `json:"model_id,omitempty"`
+	// ProviderID 实际使用的 LLM provider（§14.8）。
+	ProviderID string `json:"provider_id,omitempty"`
+	// OriginalProviderID failover 前首选 provider（§14.8）。仅发生 failover 时设置。
+	OriginalProviderID string `json:"original_provider_id,omitempty"`
+	// TokensUsed 本次调用消耗的总 token 数。
+	TokensUsed int `json:"tokens_used,omitempty"`
+	// ThinkingTokensUsed extended thinking 消耗的 token 数（§14.10）。
+	ThinkingTokensUsed int `json:"thinking_tokens_used,omitempty"`
+	// StopReason LLM 停止原因（end_turn / tool_use / max_tokens）。
+	StopReason string `json:"stop_reason,omitempty"`
+	// IsError 若 true 表示此次 LLM 调用以错误结束。
+	IsError bool `json:"is_error,omitempty"`
+	// ErrorMessage 错误描述，仅 IsError=true 时设置。
+	ErrorMessage string `json:"error_message,omitempty"`
 }
 
 // ResolverType 标识审批决策来源（§14.2 Guardian）。

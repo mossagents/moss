@@ -2,10 +2,11 @@ package observe
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/model"
 	"log/slog"
 	"time"
+
+	"github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
 )
 
 // LLMObserver receives LLM call completion events.
@@ -81,15 +82,19 @@ func JoinObservers(observers ...Observer) Observer {
 
 // LLMCallEvent 记录一次 LLM 调用的指标。
 type LLMCallEvent struct {
-	SessionID        string         `json:"session_id"`
-	Model            string         `json:"model,omitempty"`
-	StartedAt        time.Time      `json:"started_at,omitempty"`
-	Duration         time.Duration  `json:"duration_ms"`
+	SessionID        string           `json:"session_id"`
+	Model            string           `json:"model,omitempty"`
+	StartedAt        time.Time        `json:"started_at,omitempty"`
+	Duration         time.Duration    `json:"duration_ms"`
 	Usage            model.TokenUsage `json:"usage"`
-	EstimatedCostUSD float64        `json:"estimated_cost_usd,omitempty"`
-	StopReason       string         `json:"stop_reason,omitempty"`
-	Streamed         bool           `json:"streamed"`
-	Error            error          `json:"-"`
+	EstimatedCostUSD float64          `json:"estimated_cost_usd,omitempty"`
+	StopReason       string           `json:"stop_reason,omitempty"`
+	Streamed         bool             `json:"streamed"`
+	Error            error            `json:"-"`
+	// ProviderID 实际使用的 LLM provider（§14.8 Provider Failover）。
+	ProviderID string `json:"provider_id,omitempty"`
+	// OriginalProviderID failover 时首选 provider（§14.8）。仅发生 failover 时设置。
+	OriginalProviderID string `json:"original_provider_id,omitempty"`
 }
 
 // ToolCallEvent 记录一次工具调用的指标。
@@ -122,7 +127,7 @@ type NoOpObserver struct{}
 func (NoOpObserver) OnLLMCall(_ context.Context, _ LLMCallEvent)          {}
 func (NoOpObserver) OnToolCall(_ context.Context, _ ToolCallEvent)        {}
 func (NoOpObserver) OnExecutionEvent(_ context.Context, _ ExecutionEvent) {}
-func (NoOpObserver) OnApproval(_ context.Context, _ io.ApprovalEvent)   {}
+func (NoOpObserver) OnApproval(_ context.Context, _ io.ApprovalEvent)     {}
 func (NoOpObserver) OnSessionEvent(_ context.Context, _ SessionEvent)     {}
 func (NoOpObserver) OnError(_ context.Context, _ ErrorEvent)              {}
 func (NoOpObserver) OnEvent(_ context.Context, _ EventEnvelope)           {}

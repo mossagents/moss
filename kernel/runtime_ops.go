@@ -11,11 +11,13 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"strings"
 	"time"
 
 	"github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/observe"
 	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
@@ -187,33 +189,70 @@ func (k *Kernel) FailRuntimeSession(ctx context.Context, sessionID, errorKind, e
 // 阶段 3：Blueprint → legacy session.Session bridge
 // ────────────────────────────────────────────────────────────────────
 
+// RunBlueprintOption 是 RunAgentFromBlueprint 的可选参数。
+type RunBlueprintOption func(*runBlueprintOptions)
+
+type runBlueprintOptions struct {
+	onResult func(*session.LifecycleResult)
+}
+
+// WithBlueprintOnResult 设置 lifecycle result 回调，
+// 供 CollectRunAgentFromBlueprint 等辅助函数捕获执行结果。
+func WithBlueprintOnResult(cb func(*session.LifecycleResult)) RunBlueprintOption {
+	return func(o *runBlueprintOptions) { o.onResult = cb }
+}
+
 // RunAgentFromBlueprint 是阶段 3 的主链路桥接方法。
 // 它将 SessionBlueprint 翻译为 legacy session.Session，
 // 然后委托 RunAgent 执行，同时在 EventStore（若已配置）中写入 turn_started / turn_completed 事件。
 //
+// layers 是本次 turn 可用的 PromptLayerProvider 列表（含 system / user scope）。
+// 若 layers 非空，使用 DefaultPromptCompiler 编译出 system prompt 并写入 SessionConfig。
 // 这使现有 RunAgent 执行引擎无需修改即可被新 blueprint 路径驱动。
 // 阶段 4 完成后，本方法将成为唯一推荐入口，而 RunAgent 将被标记为 Deprecated。
 func (k *Kernel) RunAgentFromBlueprint(
 	ctx context.Context,
 	bp kruntime.SessionBlueprint,
+	layers []kruntime.PromptLayerProvider,
 	agent Agent,
 	userMsg *model.Message,
 	userIO io.UserIO,
+	opts ...RunBlueprintOption,
 ) iter.Seq2[*session.Event, error] {
-	return k.runAgentFromBlueprintImpl(ctx, bp, agent, userMsg, userIO)
+	return k.runAgentFromBlueprintImpl(ctx, bp, layers, agent, userMsg, userIO, opts...)
 }
 
 // runAgentFromBlueprintImpl 实际逻辑。
 func (k *Kernel) runAgentFromBlueprintImpl(
 	ctx context.Context,
 	bp kruntime.SessionBlueprint,
+	layers []kruntime.PromptLayerProvider,
 	agent Agent,
 	userMsg *model.Message,
 	userIO io.UserIO,
+	opts ...RunBlueprintOption,
 ) iter.Seq2[*session.Event, error] {
+	bpOpts := &runBlueprintOptions{}
+	for _, o := range opts {
+		o(bpOpts)
+	}
 	return func(yield func(*session.Event, error) bool) {
 		// 1. 从 blueprint 构造 legacy SessionConfig
 		cfg := blueprintToSessionConfig(bp)
+
+		// 1a. 若提供了 PromptLayerProvider，通过 PromptCompiler 编译 system prompt
+		if len(layers) > 0 {
+			compiler := k.promptCompiler
+			if compiler == nil {
+				compiler = kruntime.NewDefaultPromptCompiler()
+			}
+			compiled, compileErr := compiler.Compile(bp, nil, layers)
+			if compileErr == nil {
+				cfg.SystemPrompt = extractSystemPromptText(compiled)
+			} else {
+				k.Logger().WarnContext(ctx, "compile prompt from blueprint failed", "error", compileErr)
+			}
+		}
 
 		// 2. 创建 legacy session（走现有 NewSession 路径）
 		sess, err := k.NewSession(ctx, cfg)
@@ -233,11 +272,24 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 		}
 
 		// 4. 构造 RunAgentRequest 并执行
+		// §14.2/§14.3/§14.8：若 EventStore 可用，注入 eventStoreObserver 记录审计事件
+		var runObserver observe.Observer
+		if k.eventStore != nil {
+			runObserver = &eventStoreObserver{
+				Observer:  k.observerOrNoOp(),
+				store:     k.eventStore,
+				sessionID: bp.Identity.SessionID,
+				bpHash:    bp.Provenance.Hash,
+				logger:    k.Logger(),
+			}
+		}
 		req := RunAgentRequest{
 			Session:     sess,
 			Agent:       agent,
 			UserContent: userMsg,
 			IO:          userIO,
+			OnResult:    bpOpts.onResult,
+			Observer:    runObserver,
 		}
 
 		var outcome kruntime.TurnOutcome = kruntime.TurnOutcomeCompleted
@@ -249,6 +301,15 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 			}
 			if !yield(ev, evErr) {
 				break
+			}
+		}
+
+		// 4a. §14.4 预算耗尽检测：若预算耗尽且无执行错误，写 budget_exhausted 事件
+		if lastErr == nil && k.eventStore != nil && sess.Budget.Exhausted() {
+			outcome = kruntime.TurnOutcomeBudgetExhausted
+			if appendErr := k.appendBudgetExhausted(ctx, bp.Identity.SessionID, bp.Provenance.Hash, &sess.Budget); appendErr != nil {
+				k.Logger().WarnContext(ctx, "append budget_exhausted failed",
+					"session_id", bp.Identity.SessionID, "error", appendErr)
 			}
 		}
 
@@ -312,6 +373,64 @@ func (k *Kernel) appendTurnCompleted(ctx context.Context, sessionID, blueprintVe
 	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
 }
 
+// appendBudgetExhausted 向 EventStore 追加 budget_exhausted 事件（§14.4/§14.10）。
+// 根据 Budget 状态自动判断 budget_kind（thinking_token / step / token），优先级从高到低。
+func (k *Kernel) appendBudgetExhausted(ctx context.Context, sessionID, blueprintVersion string, budget *session.Budget) error {
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load session view for budget_exhausted: %w", err)
+	}
+	if state == nil {
+		return kruntime.ErrSessionNotFound
+	}
+
+	// 优先检查 step 耗尽，再检查 thinking token 耗尽，最后是普通 token 耗尽。
+	kind := kruntime.BudgetKindToken
+	consumed := int64(budget.UsedTokensValue())
+	limit := int64(budget.MaxTokens)
+	if budget.MaxSteps > 0 && budget.UsedStepsValue() >= budget.MaxSteps {
+		kind = kruntime.BudgetKindStep
+		consumed = int64(budget.UsedStepsValue())
+		limit = int64(budget.MaxSteps)
+	} else if budget.MaxThinkingTokens > 0 && budget.UsedThinkingTokensValue() >= budget.MaxThinkingTokens {
+		// §14.10：thinking token 配额耗尽
+		kind = kruntime.BudgetKindThinkingToken
+		consumed = int64(budget.UsedThinkingTokensValue())
+		limit = int64(budget.MaxThinkingTokens)
+	}
+
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeBudgetExhausted,
+		SessionID:        sessionID,
+		BlueprintVersion: blueprintVersion,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.BudgetExhaustedPayload{
+			BudgetKind:    kind,
+			ConsumedValue: consumed,
+			LimitValue:    limit,
+		},
+	}
+	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
+}
+
+// RecordTurnStarted 向 EventStore 追加 turn_started 事件并返回 turnID（供外部调用）。
+// 如果 EventStore 未配置，静默返回空 turnID。
+func (k *Kernel) RecordTurnStarted(ctx context.Context, bp kruntime.SessionBlueprint) (string, error) {
+	if k.eventStore == nil {
+		return "", nil
+	}
+	return k.appendTurnStarted(ctx, bp.Identity.SessionID, bp.Provenance.Hash)
+}
+
+// RecordTurnCompleted 向 EventStore 追加 turn_completed 事件（供外部调用）。
+// 如果 EventStore 未配置或 turnID 为空，静默返回 nil。
+func (k *Kernel) RecordTurnCompleted(ctx context.Context, bp kruntime.SessionBlueprint, turnID string, outcome kruntime.TurnOutcome, errorKind string) error {
+	if k.eventStore == nil || turnID == "" {
+		return nil
+	}
+	return k.appendTurnCompleted(ctx, bp.Identity.SessionID, bp.Provenance.Hash, turnID, outcome, errorKind)
+}
+
 // blueprintToSessionConfig 将 SessionBlueprint 映射到 legacy SessionConfig。
 // 这是阶段 3 的过渡适配层，仅在阶段 4 完成前使用。
 func blueprintToSessionConfig(bp kruntime.SessionBlueprint) session.SessionConfig {
@@ -338,6 +457,124 @@ func blueprintToSessionConfig(bp kruntime.SessionBlueprint) session.SessionConfi
 }
 
 // ────────────────────────────────────────────────────────────────────
+// §14.6 分布式 Task 事件 API
+// ────────────────────────────────────────────────────────────────────
+
+// RecordTaskStarted 向 EventStore 追加 task_started 事件（§14.6）。
+// claimedBy 填写认领该任务的 agent 名称；planningItemID 可选，填写关联的规划条目。
+// 若 EventStore 未配置，静默返回 nil。
+func (k *Kernel) RecordTaskStarted(ctx context.Context, sessionID, blueprintVersion, taskID, claimedBy, planningItemID string) error {
+	if k.eventStore == nil {
+		return nil
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load session view for task_started: %w", err)
+	}
+	if state == nil {
+		return kruntime.ErrSessionNotFound
+	}
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeTaskStarted,
+		SessionID:        sessionID,
+		BlueprintVersion: blueprintVersion,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.TaskStartedPayload{
+			TaskID:         taskID,
+			ClaimedBy:      claimedBy,
+			PlanningItemID: planningItemID,
+		},
+	}
+	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
+}
+
+// RecordTaskCompleted 向 EventStore 追加 task_completed 事件（§14.6）。
+// resultRef 填写结果引用（如 artifact 路径或 URL）。
+// 若 EventStore 未配置，静默返回 nil。
+func (k *Kernel) RecordTaskCompleted(ctx context.Context, sessionID, blueprintVersion, taskID, resultRef string) error {
+	if k.eventStore == nil {
+		return nil
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load session view for task_completed: %w", err)
+	}
+	if state == nil {
+		return kruntime.ErrSessionNotFound
+	}
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeTaskCompleted,
+		SessionID:        sessionID,
+		BlueprintVersion: blueprintVersion,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.TaskCompletedPayload{
+			TaskID:    taskID,
+			ResultRef: resultRef,
+		},
+	}
+	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
+}
+
+// RecordTaskAbandoned 向 EventStore 追加 task_abandoned 事件（§14.6）。
+// reason 填写放弃原因描述。
+// 若 EventStore 未配置，静默返回 nil。
+func (k *Kernel) RecordTaskAbandoned(ctx context.Context, sessionID, blueprintVersion, taskID, reason string) error {
+	if k.eventStore == nil {
+		return nil
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load session view for task_abandoned: %w", err)
+	}
+	if state == nil {
+		return kruntime.ErrSessionNotFound
+	}
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeTaskAbandoned,
+		SessionID:        sessionID,
+		BlueprintVersion: blueprintVersion,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.TaskAbandonedPayload{
+			TaskID: taskID,
+			Reason: reason,
+		},
+	}
+	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
+}
+
+// ────────────────────────────────────────────────────────────────────
+// §14.7 Sandbox Checkpoint 事件 API
+// ────────────────────────────────────────────────────────────────────
+
+// RecordCheckpointCreated 向 EventStore 追加 checkpoint_created 事件（§14.7）。
+// workspaceSnapshotRef 填写 sandbox 工作区快照的引用（如 git commit hash 或 tar 路径）。
+// 若 EventStore 未配置，静默返回 nil。
+func (k *Kernel) RecordCheckpointCreated(ctx context.Context, sessionID, blueprintVersion, checkpointID, workspaceSnapshotRef string) error {
+	if k.eventStore == nil {
+		return nil
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
+	if err != nil {
+		return fmt.Errorf("load session view for checkpoint_created: %w", err)
+	}
+	if state == nil {
+		return kruntime.ErrSessionNotFound
+	}
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeCheckpointCreated,
+		SessionID:        sessionID,
+		BlueprintVersion: blueprintVersion,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.CheckpointCreatedPayload{
+			CheckpointID:         checkpointID,
+			EventBoundarySeq:     state.CurrentSeq,
+			WorkspaceSnapshotRef: workspaceSnapshotRef,
+		},
+	}
+	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
+}
+
+// ────────────────────────────────────────────────────────────────────
 // 阶段 5：导出与审计 API
 // ────────────────────────────────────────────────────────────────────
 
@@ -359,4 +596,163 @@ func (k *Kernel) ImportRuntimeSession(ctx context.Context, sessionID string, dat
 		return errors.New(errors.ErrValidation, "ImportRuntimeSession requires an EventStore")
 	}
 	return k.eventStore.Import(ctx, sessionID, data, format)
+}
+
+// extractSystemPromptText 从 CompiledPrompt 中提取 system role 的纯文本内容。
+// 多个 system 消息的文本按换行拼接。
+func extractSystemPromptText(compiled kruntime.CompiledPrompt) string {
+	var parts []string
+	for _, msg := range compiled.Messages {
+		if msg.Role != model.RoleSystem {
+			continue
+		}
+		for _, part := range msg.ContentParts {
+			if part.Text != "" {
+				parts = append(parts, part.Text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n")
+}
+
+// ────────────────────────────────────────────────────────────────────
+// §14.1/§14.2/§14.3/§14.8：EventStore 审计 Observer
+// ────────────────────────────────────────────────────────────────────
+
+// eventStoreObserver 包装 base Observer，在关键运行时事件发生时先写入 EventStore，
+// 再触发 base Observer 回调（§14.1 ordering）。
+// 处理范围：
+//   - approval_resolved（§14.2 Guardian resolver_type）
+//   - tool_called / tool_completed（§14.3 MCP mcp_server_id/mcp_tool_name）
+//   - llm_called（§14.8 Provider Failover provider_id/original_provider_id）
+type eventStoreObserver struct {
+	observe.Observer
+	store     kruntime.EventStore
+	sessionID string
+	bpHash    string
+	logger    interface {
+		WarnContext(ctx context.Context, msg string, args ...any)
+	}
+}
+
+// appendToStore 是便捷写入辅助，加载当前 seq 后追加单个事件；失败仅 warn。
+func (a *eventStoreObserver) appendToStore(ctx context.Context, ev kruntime.RuntimeEvent) {
+	state, err := a.store.LoadSessionView(ctx, a.sessionID)
+	if err != nil || state == nil {
+		return
+	}
+	if appendErr := a.store.AppendEvents(ctx, a.sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev}); appendErr != nil {
+		if a.logger != nil {
+			a.logger.WarnContext(ctx, "eventStoreObserver: append event failed",
+				"type", ev.Type, "session_id", a.sessionID, "error", appendErr)
+		}
+	}
+}
+
+// OnApproval 处理 approval_resolved 事件（§14.2）。
+func (a *eventStoreObserver) OnApproval(ctx context.Context, e io.ApprovalEvent) {
+	if e.Type == "resolved" && a.store != nil {
+		resolverType := kruntime.ResolverTypeHuman
+		if e.Decision != nil && e.Decision.Source == "guardian" {
+			resolverType = kruntime.ResolverTypeGuardian
+		} else if e.Decision != nil && e.Decision.Source == "policy" {
+			resolverType = kruntime.ResolverTypePolicy
+		}
+		approvalID := ""
+		approved := false
+		reason := ""
+		if e.Decision != nil {
+			approvalID = e.Decision.RequestID
+			approved = e.Decision.Approved
+			reason = e.Decision.Reason
+		}
+		a.appendToStore(ctx, kruntime.RuntimeEvent{
+			Type:             kruntime.EventTypeApprovalResolved,
+			SessionID:        a.sessionID,
+			BlueprintVersion: a.bpHash,
+			Timestamp:        time.Now().UTC(),
+			Payload: kruntime.ApprovalResolvedPayload{
+				ApprovalID:   approvalID,
+				PolicyHash:   a.bpHash,
+				ResolverType: resolverType,
+				Approved:     approved,
+				Reason:       reason,
+			},
+		})
+	}
+	a.Observer.OnApproval(ctx, e)
+}
+
+// OnExecutionEvent 处理工具执行事件（§14.3 MCP）。
+// 对 tool_called / tool_completed 事件写入 RuntimeEvent，并携带 MCP 身份字段。
+func (a *eventStoreObserver) OnExecutionEvent(ctx context.Context, e observe.ExecutionEvent) {
+	if a.store != nil {
+		switch e.Type {
+		case observe.ExecutionToolStarted:
+			a.appendToStore(ctx, kruntime.RuntimeEvent{
+				Type:             kruntime.EventTypeToolCalled,
+				SessionID:        a.sessionID,
+				BlueprintVersion: a.bpHash,
+				Timestamp:        e.Timestamp,
+				Payload: kruntime.ToolCalledPayload{
+					ToolCallID:  e.CallID,
+					ToolName:    e.ToolName,
+					PolicyHash:  a.bpHash,
+					MCPServerID: e.MCPServerID,
+					MCPToolName: e.MCPToolName,
+				},
+			})
+		case observe.ExecutionToolCompleted:
+			isError := false
+			if e.Error != "" {
+				isError = true
+			}
+			a.appendToStore(ctx, kruntime.RuntimeEvent{
+				Type:             kruntime.EventTypeToolCompleted,
+				SessionID:        a.sessionID,
+				BlueprintVersion: a.bpHash,
+				Timestamp:        e.Timestamp,
+				Payload: kruntime.ToolCompletedPayload{
+					ToolCallID:   e.CallID,
+					ToolName:     e.ToolName,
+					IsError:      isError,
+					ErrorMessage: e.Error,
+					MCPServerID:  e.MCPServerID,
+					MCPToolName:  e.MCPToolName,
+				},
+			})
+		}
+	}
+	// EventStore 写入后再触发 base Observer（§14.1 ordering）
+	a.Observer.OnExecutionEvent(ctx, e)
+}
+
+// OnLLMCall 处理 LLM 调用事件（§14.8 Provider Failover）。
+// 写入 llm_called RuntimeEvent，携带 provider_id/original_provider_id 审计字段。
+func (a *eventStoreObserver) OnLLMCall(ctx context.Context, e observe.LLMCallEvent) {
+	if a.store != nil {
+		isError := e.Error != nil
+		errorMsg := ""
+		if isError {
+			errorMsg = e.Error.Error()
+		}
+		a.appendToStore(ctx, kruntime.RuntimeEvent{
+			Type:             kruntime.EventTypeLLMCalled,
+			SessionID:        a.sessionID,
+			BlueprintVersion: a.bpHash,
+			Timestamp:        time.Now().UTC(),
+			Payload: kruntime.LLMCalledPayload{
+				ModelID:            e.Model,
+				ProviderID:         e.ProviderID,
+				OriginalProviderID: e.OriginalProviderID,
+				TokensUsed:         e.Usage.TotalTokens,
+				ThinkingTokensUsed: e.Usage.ThinkingTokens,
+				StopReason:         e.StopReason,
+				IsError:            isError,
+				ErrorMessage:       errorMsg,
+			},
+		})
+	}
+	// EventStore 写入后再触发 base Observer（§14.1 ordering）
+	a.Observer.OnLLMCall(ctx, e)
 }

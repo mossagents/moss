@@ -101,4 +101,7 @@ type TokenUsage struct {
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
+	// ThinkingTokens 扩展思考模式（extended thinking）消耗的 token 数（§14.10）。
+	// 由 LLM 适配层填充，非 thinking 模型此字段为 0。
+	ThinkingTokens int `json:"thinking_tokens,omitempty"`
 }

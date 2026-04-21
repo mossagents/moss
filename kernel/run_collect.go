@@ -6,7 +6,10 @@ import (
 	"sync"
 
 	kerr "github.com/mossagents/moss/kernel/errors"
+	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/loop"
+	"github.com/mossagents/moss/kernel/model"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -77,4 +80,30 @@ func lifecycleResultFromLoop(result *loop.SessionResult) *session.LifecycleResul
 		TokensUsed: result.TokensUsed,
 		Error:      result.Error,
 	}
+}
+
+// CollectRunAgentFromBlueprint 执行 RunAgentFromBlueprint 到完成并返回 LifecycleResult。
+// 它是 CollectRunAgentResult 的 blueprint 路径对应版本。
+func CollectRunAgentFromBlueprint(
+	ctx context.Context,
+	k *Kernel,
+	bp kruntime.SessionBlueprint,
+	layers []kruntime.PromptLayerProvider,
+	agent Agent,
+	userMsg *model.Message,
+	userIO io.UserIO,
+) (*session.LifecycleResult, error) {
+	capture := &runResultCapture{}
+	for _, err := range k.RunAgentFromBlueprint(ctx, bp, layers, agent, userMsg, userIO,
+		WithBlueprintOnResult(capture.set),
+	) {
+		if err != nil {
+			return capture.resultValue(), err
+		}
+	}
+	result := capture.resultValue()
+	if result == nil {
+		return nil, kerr.New(kerr.ErrValidation, "run agent from blueprint did not produce a lifecycle result")
+	}
+	return result, nil
 }

@@ -27,32 +27,33 @@ import (
 
 // Kernel 是 Agent Runtime 的顶层入口，组合所有子系统。
 type Kernel struct {
-	llm         model.LLM
-	io          io.UserIO
-	logger      *slog.Logger
-	workspace   workspace.Workspace
-	tasks       taskrt.TaskRuntime
-	mailbox     taskrt.Mailbox
-	isolation   workspace.WorkspaceIsolation
-	repoState   workspace.RepoStateCapture
-	patches     workspace.PatchApply
-	reverts     workspace.PatchRevert
-	snapshots   workspace.WorktreeSnapshotStore
-	checkpoints checkpoint.CheckpointStore
-	store       session.SessionStore
-	artifacts   artifact.Store
-	tools       tool.Registry
-	sessions    session.Manager
-	chain       *hooks.Registry
-	stages      *StageRegistry
-	prompts     *PromptAssembler
-	services    *ServiceRegistry
-	loopCfg     loop.LoopConfig
-	observer    observe.Observer
+	llm          model.LLM
+	io           io.UserIO
+	logger       *slog.Logger
+	workspace    workspace.Workspace
+	tasks        taskrt.TaskRuntime
+	mailbox      taskrt.Mailbox
+	isolation    workspace.WorkspaceIsolation
+	repoState    workspace.RepoStateCapture
+	patches      workspace.PatchApply
+	reverts      workspace.PatchRevert
+	snapshots    workspace.WorktreeSnapshotStore
+	checkpoints  checkpoint.CheckpointStore
+	store        session.SessionStore
+	artifacts    artifact.Store
+	tools        tool.Registry
+	sessions     session.Manager
+	chain        *hooks.Registry
+	stages       *StageRegistry
+	promptLayers *PromptLayerRegistry
+	services     *ServiceRegistry
+	loopCfg      loop.LoopConfig
+	observer     observe.Observer
 
 	// 新路径：kernel-centric runtime（阶段1，与旧路径并存）
 	eventStore      kruntime.EventStore
 	runtimeResolver kruntime.RequestResolver
+	promptCompiler  kruntime.PromptCompiler
 
 	assemblyMu     sync.Mutex
 	assemblyFrozen bool
@@ -64,14 +65,14 @@ type Kernel struct {
 // New 使用函数式选项创建 Kernel。
 func New(opts ...Option) *Kernel {
 	k := &Kernel{
-		tools:      tool.NewRegistry(),
-		sessions:   session.NewManager(),
-		chain:      hooks.NewRegistry(),
-		stages:     newStageRegistry(),
-		prompts:    newPromptAssembler(),
-		services:   newServiceRegistry(),
-		shutdownCh: make(chan struct{}),
-		runs:       newRunSupervisor(),
+		tools:        tool.NewRegistry(),
+		sessions:     session.NewManager(),
+		chain:        hooks.NewRegistry(),
+		stages:       newStageRegistry(),
+		promptLayers: newPromptLayerRegistry(),
+		services:     newServiceRegistry(),
+		shutdownCh:   make(chan struct{}),
+		runs:         newRunSupervisor(),
 	}
 	k.sessions = session.WithCancelHook(k.sessions, func(id string) {
 		k.runs.cancelSessionRuns(id)
@@ -138,7 +139,17 @@ func (k *Kernel) NewSession(ctx context.Context, cfg session.SessionConfig) (*se
 		return nil, err
 	}
 
-	sysPrompt := k.Prompts().Extend(k, cfg.SystemPrompt)
+	// 合并 cfg.SystemPrompt 静态内容与 PromptLayerRegistry 的动态层内容，组装 system prompt。
+	sysPrompt := cfg.SystemPrompt
+	for _, layer := range k.PromptLayers().Build(k) {
+		if t := model.ContentPartsToPlainText(layer.ContentParts); t != "" {
+			if sysPrompt != "" {
+				sysPrompt += "\n\n" + t
+			} else {
+				sysPrompt = t
+			}
+		}
+	}
 	if sysPrompt != "" {
 		existing := sess.CopyMessages()
 		sess.ReplaceMessages(append([]model.Message{{
@@ -208,9 +219,11 @@ func (k *Kernel) Stages() *StageRegistry {
 	return k.stages
 }
 
-// Prompts returns the system prompt assembler.
-func (k *Kernel) Prompts() *PromptAssembler {
-	return k.prompts
+// PromptLayers 返回 prompt layer 注册表。
+// 各 harness 组件在 kernel 初始化阶段调用 PromptLayers().Add() 注册 layer builder；
+// 调用 RunAgentFromBlueprint 前通过 PromptLayers().Build(k) 收集所有 layers。
+func (k *Kernel) PromptLayers() *PromptLayerRegistry {
+	return k.promptLayers
 }
 
 // Services returns the kernel substrate registry used by typed owner packages.
@@ -299,7 +312,7 @@ func (k *Kernel) freezeAssembly() {
 	}
 	k.assemblyFrozen = true
 	k.stages.freeze()
-	k.prompts.freeze()
+	k.promptLayers.freeze()
 }
 
 func contextOrBackground(ctx context.Context) context.Context {
@@ -307,6 +320,21 @@ func contextOrBackground(ctx context.Context) context.Context {
 		return context.Background()
 	}
 	return ctx
+}
+
+// runModeTriggerSource 将 RuntimeRequest.RunMode 映射为 session_created 的 trigger_source（§14.5）。
+// interactive / 空值 → "interactive"；scheduled → "scheduled"；api → "api"；resume → "resume"；其他 → "api"。
+func runModeTriggerSource(runMode string) string {
+	switch runMode {
+	case "scheduled":
+		return "scheduled"
+	case "resume":
+		return "resume"
+	case "interactive", "oneshot", "":
+		return "interactive"
+	default:
+		return "api"
+	}
 }
 
 func panicAsError(prefix string, value any) error {
@@ -443,6 +471,10 @@ func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*s
 		defer cancel()
 		defer k.runs.end(runID)
 
+		invObs := k.observerOrNoOp()
+		if req.Observer != nil {
+			invObs = req.Observer
+		}
 		invCtx := NewInvocationContext(runCtx, InvocationContextParams{
 			RunID:        runID,
 			Branch:       req.Agent.Name(),
@@ -450,7 +482,7 @@ func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*s
 			Session:      req.Session,
 			UserContent:  req.UserContent,
 			IO:           req.IO,
-			Observer:     k.observerOrNoOp(),
+			Observer:     invObs,
 			resultWriter: req.OnResult,
 		})
 		streamAgentEvents(req.Agent, invCtx, yield)
@@ -500,7 +532,7 @@ func (k *Kernel) StartRuntimeSession(ctx context.Context, req kruntime.RuntimeRe
 		BlueprintVersion: bp.Provenance.Hash,
 		Payload: kruntime.SessionCreatedPayload{
 			BlueprintPayload: &bp,
-			TriggerSource:    "api",
+			TriggerSource:    runModeTriggerSource(req.RunMode),
 		},
 	}
 	if err := k.eventStore.AppendEvents(ctx, sessionID, 0, "", []kruntime.RuntimeEvent{ev}); err != nil {

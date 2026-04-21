@@ -1,8 +1,9 @@
 package runtimeenv
 
 import (
-	appconfig "github.com/mossagents/moss/harness/config"
 	"path/filepath"
+
+	appconfig "github.com/mossagents/moss/harness/config"
 )
 
 func SessionStoreDir() string {
@@ -37,4 +38,3 @@ func TaskRuntimeDir() string {
 func WorkspaceIsolationDir() string {
 	return filepath.Join(appconfig.AppDir(), "workspaces")
 }
-

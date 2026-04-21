@@ -47,6 +47,8 @@ func (l *AgentLoop) emitToolStarted(ctx context.Context, sess *session.Session, 
 		ToolName:     call.Name,
 		CallID:       call.ID,
 		Risk:         string(spec.Risk),
+		MCPServerID:  spec.MCPServerID,
+		MCPToolName:  spec.MCPToolName,
 	})
 }
 
@@ -76,6 +78,10 @@ func (l *AgentLoop) rejectToolCall(
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = risk
+	if spec != nil {
+		event.MCPServerID = spec.MCPServerID
+		event.MCPToolName = spec.MCPToolName
+	}
 	event.Metadata = map[string]any{
 		"is_error": true,
 	}
@@ -110,6 +116,8 @@ func (l *AgentLoop) observeToolCompletion(
 	event.ToolName = call.Name
 	event.CallID = call.ID
 	event.Risk = string(spec.Risk)
+	event.MCPServerID = spec.MCPServerID
+	event.MCPToolName = spec.MCPToolName
 	event.Duration = toolDur
 	event.Metadata = map[string]any{
 		"is_error": result.IsError,

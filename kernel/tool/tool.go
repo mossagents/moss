@@ -84,6 +84,10 @@ type ToolSpec struct {
 	Source             string             `json:"source,omitempty"`
 	Owner              string             `json:"owner,omitempty"`
 	RequiresWorkspace  bool               `json:"requires_workspace,omitempty"`
+	// MCPServerID MCP 服务端标识（§14.3）。仅 MCP 桥接工具设置此字段。
+	MCPServerID string `json:"mcp_server_id,omitempty"`
+	// MCPToolName MCP 服务端内部工具名（无前缀，§14.3）。
+	MCPToolName string `json:"mcp_tool_name,omitempty"`
 }
 
 // Tool 是可被 Agent 调用的工具接口。

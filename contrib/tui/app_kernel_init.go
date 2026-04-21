@@ -41,9 +41,10 @@ type kernelInitState struct {
 	cancel     context.CancelFunc
 	eventStore kruntime.EventStore
 
-	store   session.SessionStore
-	sess    *session.Session
-	notices []string
+	store     session.SessionStore
+	sess      *session.Session
+	blueprint *kruntime.SessionBlueprint // 阶段 3：blueprint 主链路
+	notices   []string
 }
 
 func newKernelInitState(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) (*kernelInitState, error) {
@@ -196,6 +197,17 @@ func (s *kernelInitState) createInteractiveSession() error {
 	}
 	sessCfg.SystemPrompt = sysPrompt
 	sessCfg.Metadata = metadata
+
+	// 阶段 3：若 EventStore 可用，注册 blueprint（后续 turn 走 RunAgentFromBlueprint）
+	if s.eventStore != nil {
+		runtimeReq := tuiRuntimeRequest(s.cfg, s.wCfg.Workspace)
+		if bp, bpErr := s.k.StartRuntimeSession(s.ctx, runtimeReq); bpErr == nil {
+			s.blueprint = &bp
+			s.notices = append(s.notices, fmt.Sprintf("Session %s registered in EventStore", bp.Identity.SessionID))
+		}
+		// blueprint 注册失败不阻断 TUI 启动，降级到无 blueprint 模式
+	}
+
 	s.sess, err = s.k.NewSession(s.ctx, sessCfg)
 	if err != nil {
 		s.cancel()
@@ -204,10 +216,36 @@ func (s *kernelInitState) createInteractiveSession() error {
 	return nil
 }
 
+// tuiRuntimeRequest 将 TUI Config 转换为 kruntime.RuntimeRequest，
+// 供 StartRuntimeSession 消费。
+func tuiRuntimeRequest(cfg Config, workspace string) kruntime.RuntimeRequest {
+	permProfile := tuiPermissionProfile(cfg.ApprovalMode)
+	return kruntime.RuntimeRequest{
+		RunMode:           "interactive",
+		CollaborationMode: firstNonEmptyTrimmed(cfg.CollaborationMode, "execute"),
+		WorkspaceTrust:    firstNonEmptyTrimmed(cfg.Trust, "restricted"),
+		PermissionProfile: permProfile,
+		Workspace:         workspace,
+	}
+}
+
+// tuiPermissionProfile maps approval mode to permission profile name.
+func tuiPermissionProfile(approvalMode string) string {
+	switch strings.TrimSpace(approvalMode) {
+	case "full-auto":
+		return "full-auto"
+	case "read-only":
+		return "read-only"
+	default:
+		return "workspace-write"
+	}
+}
+
 func (s *kernelInitState) buildAgent() *agentState {
 	return &agentState{
 		k:                        s.k,
 		sess:                     s.sess,
+		blueprint:                s.blueprint,
 		store:                    s.store,
 		ctx:                      s.ctx,
 		cancel:                   s.cancel,

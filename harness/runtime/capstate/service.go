@@ -39,13 +39,13 @@ func Ensure(k *kernel.Kernel) *State {
 	}); err != nil {
 		log.Printf("capstate: register shutdown hook: %v", err)
 	}
-	if err := k.Prompts().Add(200, func(_ *kernel.Kernel) string {
+	if err := k.PromptLayers().Add("capstate-capabilities", 200, "system", func(_ *kernel.Kernel) (string, bool) {
 		if st.manager == nil {
-			return ""
+			return "", false
 		}
 		additions := st.manager.SystemPromptAdditions()
 		if !st.progressive || len(st.manifests) == 0 {
-			return additions
+			return additions, additions != ""
 		}
 		names := make([]string, 0, len(st.manifests))
 		for _, mf := range st.manifests {
@@ -55,13 +55,13 @@ func Ensure(k *kernel.Kernel) *State {
 			names = append(names, mf.Name)
 		}
 		if len(names) == 0 {
-			return additions
+			return additions, additions != ""
 		}
 		hint := "Discovered skills are available on demand. Use `list_skills` to browse and `activate_skill` to load one when needed: " + strings.Join(names, ", ")
 		if additions == "" {
-			return hint
+			return hint, true
 		}
-		return additions + "\n\n" + hint
+		return additions + "\n\n" + hint, true
 	}); err != nil {
 		log.Printf("capstate: register prompt hook: %v", err)
 	}

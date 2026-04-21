@@ -16,6 +16,8 @@ const (
 	LifecycleCompleted LifecycleStage = "completed"
 	LifecycleFailed    LifecycleStage = "failed"
 	LifecycleCancelled LifecycleStage = "cancelled"
+	// LifecycleBudgetExhausted 预算耗尽（§14.4）。
+	LifecycleBudgetExhausted LifecycleStage = "budget_exhausted"
 )
 
 // LifecycleResult 描述一次 Session 运行的最终结果摘要。
@@ -27,13 +29,21 @@ type LifecycleResult struct {
 	Error      string           `json:"error,omitempty"`
 }
 
+// BudgetExhaustedDetail 预算耗尽的详细信息（§14.4）。
+type BudgetExhaustedDetail struct {
+	BudgetKind    string `json:"budget_kind"` // token / step / time / thinking_token
+	ConsumedValue int    `json:"consumed_value"`
+	LimitValue    int    `json:"limit_value"`
+}
+
 // LifecycleEvent 描述一次 Session 生命周期事件。
 type LifecycleEvent struct {
-	Stage     LifecycleStage   `json:"stage"`
-	Session   *Session         `json:"-"`
-	Result    *LifecycleResult `json:"result,omitempty"`
-	Error     error            `json:"-"`
-	Timestamp time.Time        `json:"timestamp"`
+	Stage           LifecycleStage         `json:"stage"`
+	Session         *Session               `json:"-"`
+	Result          *LifecycleResult       `json:"result,omitempty"`
+	BudgetExhausted *BudgetExhaustedDetail `json:"budget_exhausted,omitempty"`
+	Error           error                  `json:"-"`
+	Timestamp       time.Time              `json:"timestamp"`
 }
 
 // LifecycleHook 在 Session 生命周期阶段被调用。

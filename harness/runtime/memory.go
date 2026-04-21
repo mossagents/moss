@@ -114,11 +114,11 @@ func ensureMemoryState(k *kernel.Kernel) *memoryState {
 	}); err != nil {
 		log.Printf("memory: register shutdown hook: %v", err)
 	}
-	if err := k.Prompts().Add(220, func(_ *kernel.Kernel) string {
+	if err := k.PromptLayers().Add("memory-context", 220, "system", func(_ *kernel.Kernel) (string, bool) {
 		if st.workspace == nil {
-			return ""
+			return "", false
 		}
-		return "You have staged persistent memory tools backed by /memories. Prefer memory_summary.md and MEMORY.md for quick context, then inspect rollout_summaries/ or individual memory records when needed."
+		return "You have staged persistent memory tools backed by /memories. Prefer memory_summary.md and MEMORY.md for quick context, then inspect rollout_summaries/ or individual memory records when needed.", true
 	}); err != nil {
 		log.Printf("memory: register prompt hook: %v", err)
 	}

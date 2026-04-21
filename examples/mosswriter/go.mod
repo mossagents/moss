@@ -1,6 +1,6 @@
 module github.com/mossagents/moss/examples/mosswriter
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/mossagents/moss/contrib/tui v0.0.0
@@ -55,6 +55,7 @@ require (
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/openai/openai-go v1.12.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -74,7 +75,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.50.0 // indirect
-	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/term v0.40.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
@@ -83,10 +84,10 @@ require (
 	google.golang.org/grpc v1.66.2 // indirect
 	google.golang.org/protobuf v1.36.5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	modernc.org/libc v1.70.0 // indirect
+	modernc.org/libc v1.72.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.48.0 // indirect
+	modernc.org/sqlite v1.49.1 // indirect
 )
 
 replace github.com/mossagents/moss/kernel => ../../kernel

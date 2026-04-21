@@ -69,6 +69,10 @@ type LLMCallAttempt struct {
 type LLMCallMetadata struct {
 	ActualModel string           `json:"actual_model,omitempty"`
 	Attempts    []LLMCallAttempt `json:"attempts,omitempty"`
+	// ProviderID 实际命中的 LLM provider 标识（§14.8 Provider Failover）。由 LLM 适配层填充。
+	ProviderID string `json:"provider_id,omitempty"`
+	// OriginalProviderID failover 发生时首选 provider（§14.8）。仅在发生 failover 时由适配层填充。
+	OriginalProviderID string `json:"original_provider_id,omitempty"`
 }
 
 type LLMErrorClass string

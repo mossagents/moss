@@ -15,6 +15,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
+	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
 )
 
@@ -191,6 +192,61 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 	}
 	sessCfg.SystemPrompt = systemPrompt
 	sessCfg.Metadata = metadata
+
+	// 阶段 3：若 EventStore 可用，走 blueprint 主链路
+	if es := k.EventStore(); es != nil {
+		runtimeReq := runtimeInvocationToRuntimeRequest(invocation, "oneshot")
+		bp, bpErr := k.StartRuntimeSession(ctx, runtimeReq)
+		if bpErr != nil {
+			// EventStore 错误不阻断 exec，降级到旧路径并记录警告
+			k.Logger().WarnContext(ctx, "StartRuntimeSession failed, falling back to legacy path", "error", bpErr)
+		} else {
+			// 将 PromptLayerRegistry（动态层）与静态 system prompt 层合并，路由经 PromptCompiler
+			layers := k.PromptLayers().Build(k)
+			if staticLayers := systemPromptToLayers(systemPrompt, sessCfg.Metadata); len(staticLayers) > 0 {
+				layers = append(staticLayers, layers...)
+			}
+			report.SessionID = bp.Identity.SessionID
+			userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
+			agent := k.BuildLLMAgent("mosscode")
+
+			result, runErr := kernel.CollectRunAgentFromBlueprint(ctx, k, bp, layers, agent, &userMsg, userIO)
+			if recorder != nil {
+				report.Events = recorder.Events()
+			}
+			trace := traceRecorder.Snapshot()
+			report.PromptTokens = trace.PromptTokens
+			report.CompletionTokens = trace.CompletionTokens
+			report.Tokens = trace.TotalTokens
+			report.EstimatedCostUSD = trace.EstimatedCostUSD
+			report.Trace = trace.Timeline
+			if runErr != nil {
+				report.Error = runErr.Error()
+				return report, fmt.Errorf("run: %w", runErr)
+			}
+			report.Status = "completed"
+			report.Steps = result.Steps
+			if report.Tokens == 0 {
+				report.Tokens = result.TokensUsed.TotalTokens
+			}
+			report.Output = result.Output
+
+			if !cfg.execJSON {
+				fmt.Println()
+				fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", bp.Identity.SessionID, result.Steps, report.Tokens)
+				if report.EstimatedCostUSD > 0 {
+					fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
+				}
+				fmt.Printf(")\n")
+				if strings.TrimSpace(result.Output) != "" {
+					fmt.Printf("\n%s\n", result.Output)
+				}
+			}
+			return report, nil
+		}
+	}
+
+	// 旧路径（EventStore 不可用时的 fallback）
 	sess, err := k.NewSession(ctx, sessCfg)
 	if err != nil {
 		report.Error = err.Error()
@@ -248,6 +304,22 @@ func runtimeFlags(workspace, provider, model, apiKey, baseURL string) *appkit.Ap
 		APIKey:    apiKey,
 		BaseURL:   baseURL,
 	}
+}
+
+// systemPromptToLayers 将已组装的 system prompt 字符串包装为 PromptLayerProvider 切片，
+// 供 RunAgentFromBlueprint 路由经 PromptCompiler 编译。
+func systemPromptToLayers(systemPrompt string, metadata map[string]any) []kruntime.PromptLayerProvider {
+	if strings.TrimSpace(systemPrompt) == "" {
+		return nil
+	}
+	return []kruntime.PromptLayerProvider{{
+		LayerID:          "product-bootstrap",
+		Scope:            "system",
+		Priority:         100,
+		ContentParts:     []model.ContentPart{model.TextPart(systemPrompt)},
+		PersistenceScope: kruntime.PersistenceScopePersistent,
+		Provenance:       "mosscode-bootstrap",
+	}}
 }
 
 func printResumeCandidates(summaries []session.SessionSummary, snapshotCounts map[string]int) {

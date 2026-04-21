@@ -575,6 +575,8 @@ func newPayloadForType(evType EventType) any {
 		return &SubagentSpawnedPayload{}
 	case EventTypeSubagentCompleted:
 		return &SubagentCompletedPayload{}
+	case EventTypeLLMCalled:
+		return &LLMCalledPayload{}
 	default:
 		return nil
 	}
