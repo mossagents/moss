@@ -676,7 +676,7 @@ func (m *chatModel) recalcLayout() {
 }
 
 func (m *chatModel) inputBoxHeight() int {
-	h := m.textarea.Height() + 2 // 上下各一条水平分隔线
+	h := m.textarea.Height() + 1 // 上方横线（下方横线已移除）
 	if h < 3 {
 		return 3
 	}

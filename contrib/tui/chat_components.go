@@ -31,9 +31,9 @@ func (m chatModel) renderStreamingPreview(width int) string {
 		return ""
 	}
 
-	// 截取最后 N 行作为预览
+	// 截取最后 N 行作为预览；动态计算可用高度，尽量利用终端空间
 	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
-	const maxPreviewLines = 5
+	maxPreviewLines := max(5, m.height-m.editorPaneHeight(width)-1-1)
 	if len(lines) > maxPreviewLines {
 		lines = lines[len(lines)-maxPreviewLines:]
 	}
@@ -146,7 +146,7 @@ func (m chatModel) renderComposerInput(mainWidth int) string {
 	ind := indStyle.Render("❯ ")
 	pad := strings.Repeat(" ", indWidth)
 
-	rendered := make([]string, 0, len(lines)+2)
+	rendered := make([]string, 0, len(lines)+1)
 	rendered = append(rendered, rule)
 	for i, line := range lines {
 		if i == 0 {
@@ -155,7 +155,6 @@ func (m chatModel) renderComposerInput(mainWidth int) string {
 			rendered = append(rendered, pad+line)
 		}
 	}
-	rendered = append(rendered, rule)
 	return strings.Join(rendered, "\n")
 }
 
