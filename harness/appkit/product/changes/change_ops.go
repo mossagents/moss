@@ -167,7 +167,7 @@ func RenderChangeDetail(item *ChangeOperation) string {
 	fmt.Fprintf(&b, "  session:   %s\n", stringutil.FirstNonEmpty(item.SessionID, "(none)"))
 	fmt.Fprintf(&b, "  run:       %s\n", stringutil.FirstNonEmpty(item.RunID, "(none)"))
 	fmt.Fprintf(&b, "  turn:      %s\n", stringutil.FirstNonEmpty(item.TurnID, "(none)"))
-	fmt.Fprintf(&b, "  profile:   %s\n", stringutil.FirstNonEmpty(item.InstructionProfile, "(none)"))
+	fmt.Fprintf(&b, "  instruction:%s\n", PadField(stringutil.FirstNonEmpty(item.InstructionProfile, "(none)")))
 	fmt.Fprintf(&b, "  model lane:%s\n", PadField(stringutil.FirstNonEmpty(item.ModelLane, "(none)")))
 	fmt.Fprintf(&b, "  patch:     %s\n", stringutil.FirstNonEmpty(item.PatchID, "(none)"))
 	fmt.Fprintf(&b, "  checkpoint:%s\n", PadField(stringutil.FirstNonEmpty(item.CheckpointID, "(none)")))

@@ -143,7 +143,7 @@ func TestBuildDeepAgent_PlanningProfileEnablesUpdatePlan(t *testing.T) {
 		t.Fatalf("Boot: %v", err)
 	}
 	if _, ok := k.ToolRegistry().Get("update_plan"); !ok {
-		t.Fatal("expected update_plan tool in planning profile")
+		t.Fatal("expected update_plan tool in planning pack")
 	}
 }
 

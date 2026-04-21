@@ -214,7 +214,7 @@ type Extension struct {
 	Overlays map[string]func() CustomOverlay
 
 	// OnSessionStart is called when the kernel and session become ready (e.g. on
-	// startup, after a model switch, or after a profile/trust switch).
+	// startup, after a model switch, or after a mode/trust switch).
 	// Return a non-nil Cmd for side effects (e.g. AppendSystemMessageCmd).
 	OnSessionStart func(ctx TUIContext) tea.Cmd
 

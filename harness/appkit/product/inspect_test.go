@@ -250,7 +250,6 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 			},
 			SystemPrompt: "system prompt",
 			Metadata: prompting.AttachComposeDebugMeta(map[string]any{
-				"profile":                                "planning",
 				session.MetadataTaskMode:                 "planning",
 				prompting.MetadataSessionInstructionsKey: "focus on review",
 			}, prompting.ComposeDebugMeta{

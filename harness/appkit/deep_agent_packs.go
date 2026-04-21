@@ -48,7 +48,7 @@ func buildDeepAgentFeatures(flags *AppFlags, cfg DeepAgentConfig) ([]harness.Fea
 		{name: "task-runtime", build: buildDeepAgentTaskRuntimePack},
 		{name: "persistent-memories", build: buildDeepAgentPersistentMemoryPack},
 		{name: "execution-services", build: buildDeepAgentExecutionPack},
-		{name: "planning-profile", build: buildDeepAgentPlanningPack},
+		{name: "planning-pack", build: buildDeepAgentPlanningPack},
 		{name: "bootstrap-context", build: buildDeepAgentBootstrapPack},
 		{name: "llm-governance", build: buildDeepAgentLLMGovernancePack},
 		{name: "runtime-setup", build: buildDeepAgentRuntimePack},
