@@ -241,9 +241,8 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 		Status:    session.StatusPaused,
 		CreatedAt: time.Now().Add(-time.Hour),
 		Config: session.SessionConfig{
-			Goal:    "root thread",
-			Mode:    "interactive",
-			Profile: "planning",
+			Goal: "root thread",
+			Mode: "interactive",
 			ResolvedSessionSpec: &session.ResolvedSessionSpec{
 				Intent:  session.ResolvedIntent{CollaborationMode: "plan", PromptPack: session.PromptPackRef{ID: "coding"}},
 				Runtime: session.ResolvedRuntime{PermissionProfile: "workspace-write"},

@@ -255,12 +255,12 @@ func sessionConfigCollaborationMode(cfg session.SessionConfig) string {
 	return ""
 }
 
-func preparePromptMetadata(cfg session.SessionConfig, fallbackProfile string) map[string]any {
+func preparePromptMetadata(cfg session.SessionConfig, fallbackMode string) map[string]any {
 	metadata := cloneMetadataMap(cfg.Metadata)
 	if _, ok := metadata[session.MetadataTaskMode]; !ok {
 		mode := firstNonEmptyTrimmed(sessionConfigCollaborationMode(cfg))
 		if mode == "" {
-			if normalized, err := normalizeTUIMode(firstNonEmptyTrimmed(cfg.Profile, fallbackProfile)); err == nil {
+			if normalized, err := normalizeTUIMode(fallbackMode); err == nil {
 				mode = normalized
 			}
 		}

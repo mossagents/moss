@@ -37,7 +37,6 @@ func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
 	initTestApp(t)
 	workspace := t.TempDir()
 	prompt, metadata, err := composeProductSystemPrompt(workspace, "trusted", kernel.New(), session.SessionConfig{
-		Profile: "coding",
 		Metadata: map[string]any{
 			session.MetadataTaskMode: "coding",
 		},

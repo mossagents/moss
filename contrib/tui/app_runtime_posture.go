@@ -217,9 +217,9 @@ func postureFromSession(sess *session.Session) runtimePosture {
 	_, preset, workspaceTrust, collaborationMode, _, permissionProfile, _, _ := session.SessionFacetValues(sess)
 	posture.EffectiveTrust = configpkg.NormalizeTrustLevel(firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), workspaceTrust, sess.Config.TrustLevel))
 	posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
-	legacyProfile := firstNonEmptyTrimmed(preset, sess.Config.Profile, permissionProfile)
+	fallbackSelector := firstNonEmptyTrimmed(preset, permissionProfile)
 	legacyMode := ""
-	if normalized, err := normalizeTUIMode(legacyProfile); err == nil {
+	if normalized, err := normalizeTUIMode(fallbackSelector); err == nil {
 		legacyMode = normalized
 	}
 	posture.TaskMode = firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, legacyMode)

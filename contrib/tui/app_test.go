@@ -139,7 +139,6 @@ func TestPlanPostureRebuildRequestsRuntimeRebuildOnMismatch(t *testing.T) {
 	targetSession := &session.Session{
 		ID: "sess-1",
 		Config: session.SessionConfig{
-			Profile:    "readonly",
 			TrustLevel: "restricted",
 			Metadata: map[string]any{
 				session.MetadataEffectiveTrust:    "restricted",

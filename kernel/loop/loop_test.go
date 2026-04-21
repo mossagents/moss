@@ -321,7 +321,6 @@ func TestLoopPlanningTurnBuildsToolRouteAndModelLane(t *testing.T) {
 	sess := &session.Session{
 		ID: "planning-turn",
 		Config: session.SessionConfig{
-			Profile: "planner",
 			Metadata: map[string]any{
 				session.MetadataTaskMode:          "planning",
 				session.MetadataEffectiveTrust:    "trusted",

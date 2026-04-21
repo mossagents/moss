@@ -2,10 +2,11 @@ package session
 
 import (
 	"context"
-	"github.com/mossagents/moss/kernel/checkpoint"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
 type checkpointCatalogStub struct {
@@ -52,7 +53,7 @@ func TestCatalogListsThreadsAndCheckpoints(t *testing.T) {
 	sess := &Session{
 		ID:        "sess-1",
 		Status:    StatusRunning,
-		Config:    SessionConfig{Goal: "ship codex-style resume", Mode: "interactive", Profile: "default"},
+		Config:    SessionConfig{Goal: "ship codex-style resume", Mode: "interactive"},
 		CreatedAt: time.Now().Add(-time.Minute),
 	}
 	SetThreadParent(sess, "sess-root")

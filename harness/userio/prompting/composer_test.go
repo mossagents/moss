@@ -293,7 +293,6 @@ func TestCompose_DebugMetaTracksEnabledAndSuppressedLayers(t *testing.T) {
 
 func TestSessionPromptModeFromConfigPrefersResolvedSessionSpec(t *testing.T) {
 	mode, err := SessionPromptModeFromConfig(session.SessionConfig{
-		Profile: "legacy-profile",
 		Metadata: map[string]any{
 			session.MetadataTaskMode: "planning",
 		},

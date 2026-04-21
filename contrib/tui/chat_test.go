@@ -490,7 +490,7 @@ func TestSlashCommandResumeOpensPicker(t *testing.T) {
 	sess := &session.Session{
 		ID:        "sess-picker",
 		Status:    session.StatusRunning,
-		Config:    session.SessionConfig{Goal: "resume picker", Mode: "interactive", Profile: "default"},
+		Config:    session.SessionConfig{Goal: "resume picker", Mode: "interactive"},
 		CreatedAt: time.Now().Add(-time.Minute),
 	}
 	session.SetThreadPreview(sess, "resume picker")
@@ -688,7 +688,7 @@ func TestSlashCommandForkOpensPicker(t *testing.T) {
 	sess := &session.Session{
 		ID:        "sess-fork",
 		Status:    session.StatusRunning,
-		Config:    session.SessionConfig{Goal: "fork picker", Mode: "interactive", Profile: "default"},
+		Config:    session.SessionConfig{Goal: "fork picker", Mode: "interactive"},
 		CreatedAt: time.Now().Add(-time.Minute),
 	}
 	session.SetThreadPreview(sess, "fork picker")
