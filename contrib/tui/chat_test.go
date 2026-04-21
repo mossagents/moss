@@ -74,7 +74,7 @@ func applyAsyncChatCmd(t *testing.T, m chatModel, cmd tea.Cmd) chatModel {
 func TestSlashCommandStatusSummary(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.trust = "trusted"
-	m.profile = "coding"
+	m.collaborationMode = "execute"
 	m.approvalMode = "confirm"
 	m.theme = "plain"
 	m.session = &agentSessionOps{info: func() string { return "session summary" }}
@@ -1006,12 +1006,12 @@ func TestSlashCommandPlanReturnsPlanningSwitchMsg(t *testing.T) {
 		t.Fatal("expected switch command")
 	}
 	msg := cmd()
-	switchMsg, ok := msg.(switchProfileMsg)
+	switchMsg, ok := msg.(switchModeMsg)
 	if !ok {
-		t.Fatalf("expected switchProfileMsg, got %T", msg)
+		t.Fatalf("expected switchModeMsg, got %T", msg)
 	}
-	if switchMsg.profile != "planning" {
-		t.Fatalf("profile = %q, want planning", switchMsg.profile)
+	if switchMsg.mode != "plan" {
+		t.Fatalf("mode = %q, want plan", switchMsg.mode)
 	}
 	if !strings.Contains(switchMsg.prompt, "migration plan") {
 		t.Fatalf("unexpected inline plan prompt: %q", switchMsg.prompt)
@@ -2383,12 +2383,12 @@ func TestVisibleInputHeightDoesNotChangeWithSlashHints(t *testing.T) {
 
 func TestRenderHeaderMetaLineIsEmptyWithoutExtensions(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.profile = "planning"
+	m.collaborationMode = "plan"
 	m.trust = "trusted"
 	m.approvalMode = "confirm"
 	m.fastMode = true
 
-	// Posture info (profile/trust/approval) moved to composer meta line;
+	// Posture info (mode/trust/approval) moved to composer meta line;
 	// header meta line is empty when no extensions provide HeaderMetaWidgets.
 	line := m.renderHeaderMetaLine()
 	if strings.Contains(line, "planning") || strings.Contains(line, "trusted") {
@@ -2398,13 +2398,13 @@ func TestRenderHeaderMetaLineIsEmptyWithoutExtensions(t *testing.T) {
 
 func TestComposerMetaLineShowsPostureInReadyState(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.profile = "planning"
+	m.collaborationMode = "plan"
 	m.trust = "trusted"
 	m.approvalMode = "confirm"
 	m.fastMode = true
 
 	line := m.renderComposerMetaLine(120)
-	if !strings.Contains(line, "planning · trusted · confirm · fast") {
+	if !strings.Contains(line, "Plan · trusted · confirm · fast") {
 		t.Fatalf("expected posture in composer meta ready state, got: %q", line)
 	}
 	// State and thread should not appear here.
@@ -2413,15 +2413,15 @@ func TestComposerMetaLineShowsPostureInReadyState(t *testing.T) {
 	}
 }
 
-func TestComposerMetaLineDefaultProfile(t *testing.T) {
+func TestComposerMetaLineDefaultMode(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	m.profile = ""
+	m.collaborationMode = ""
 	m.trust = "trusted"
 	m.approvalMode = "confirm"
 
 	line := m.renderComposerMetaLine(120)
-	if !strings.Contains(line, "default · trusted · confirm") {
-		t.Fatalf("expected default profile in composer meta, got %q", line)
+	if !strings.Contains(line, "Agent · trusted · confirm") {
+		t.Fatalf("expected default mode in composer meta, got %q", line)
 	}
 }
 

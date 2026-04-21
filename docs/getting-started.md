@@ -48,14 +48,22 @@ provider: openai
 model: gpt-4o
 base_url: ""
 api_key: ""
-default_profile: coding
+default_preset: code
 
-profiles:
-  coding:
-    label: Coding
-    task_mode: coding
-    trust: trusted
-    approval: confirm
+collaboration_modes:
+	execute:
+		builtin: execute
+	plan:
+		builtin: plan
+	investigate:
+		builtin: investigate
+
+presets:
+	code:
+		prompt_pack: coding
+		collaboration_mode: execute
+		permission_profile: workspace-write
+		session_policy: deep-work
 
 skills:
   - name: github
@@ -63,6 +71,10 @@ skills:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
 ```
+
+推荐直接把产品协作姿态理解为三种 mode：`Agent`（`execute`）、`Plan`（`plan`）和 `Ask`（`investigate`）。CLI 与 TUI 都优先展示 mode，而不是旧的 profile 名称。
+
+注意：旧的 `--profile` / `--approval` 入口已经移除，当前只接受 typed selectors：`--preset`、`--mode`、`--permissions`。
 
 优先级保持一致：
 

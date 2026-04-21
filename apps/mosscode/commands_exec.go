@@ -26,40 +26,38 @@ func launchTUI(cfg *config) error {
 	flags := cloneAppFlags(invocation.CompatFlags)
 	cfg.approvalMode = invocation.ApprovalMode
 	return mosstui.Run(mosstui.Config{
-		Provider:         flags.Provider,
-		WelcomeBanner:    welcomeBanner,
-		Model:            flags.Model,
-		Workspace:        flags.Workspace,
-		Trust:            flags.Trust,
-		Profile:          flags.Profile,
-		ApprovalMode:     invocation.ApprovalMode,
-		SessionStoreDir:  runtimeenv.SessionStoreDir(),
-		BaseURL:          flags.BaseURL,
-		APIKey:           flags.APIKey,
-		BaseObserver:     cfg.observer,
-		InitialSessionID: cfg.resumeSessionID,
-		Extensions:       []*mosstui.Extension{newCodingExtension(flags.Workspace)},
+		Provider:          flags.Provider,
+		WelcomeBanner:     welcomeBanner,
+		Model:             flags.Model,
+		Workspace:         flags.Workspace,
+		Trust:             flags.Trust,
+		CollaborationMode: defaultCollaborationModeForInvocation(invocation),
+		ApprovalMode:      invocation.ApprovalMode,
+		SessionStoreDir:   runtimeenv.SessionStoreDir(),
+		BaseURL:           flags.BaseURL,
+		APIKey:            flags.APIKey,
+		BaseObserver:      cfg.observer,
+		InitialSessionID:  cfg.resumeSessionID,
+		Extensions:        []*mosstui.Extension{newCodingExtension(flags.Workspace)},
 		BuildRunTraceObserver: func() (*product.RunTraceRecorder, observe.Observer) {
 			recorder := product.NewRunTraceRecorder()
 			return recorder, product.NewPricingObserver(cfg.pricingCatalog, recorder)
 		},
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
-				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			return buildKernel(context.Background(), runtimeFlags, io, approvalMode, cfg.governance, cfg.observer)
 		},
 		PromptConfigInstructions: buildProductPromptInstructions(flags.Workspace, flags.Trust),
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
 			runtimeFlags := runtimeFlags(workspace, flags.Provider, flags.Model, flags.APIKey, flags.BaseURL)
 			runtimeFlags.Trust = trust
-			runtimeFlags.Profile = profile
 			base := session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
@@ -67,10 +65,11 @@ func launchTUI(cfg *config) error {
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
 			}
-			if invocation.Typed && matchesCompatibilitySelection(invocation, trust, approvalMode, profile) {
+			resolvedInvocation, err := runtimeInvocationForTUI(invocation, runtimeFlags, approvalMode, collaborationMode, "interactive")
+			if err != nil {
 				return buildTypedProjectedSessionConfig(base, runtimeFlags, invocation)
 			}
-			return buildLegacyProjectedSessionConfig(base, runtimeFlags, trust, approvalMode, profile, "coding")
+			return buildTypedProjectedSessionConfig(base, runtimeFlags, resolvedInvocation)
 		},
 	})
 }
@@ -168,14 +167,9 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 			"Tools":     fmt.Sprintf("%d loaded", len(k.ToolRegistry().List())),
 			"Prompt":    cfg.prompt,
 		}
-		if invocation.Typed {
-			hints["Preset"] = strings.TrimSpace(invocation.ResolvedSpec.Origin.Preset)
-			hints["Mode"] = strings.TrimSpace(invocation.ResolvedSpec.Intent.CollaborationMode)
-			hints["Permissions"] = strings.TrimSpace(invocation.ResolvedSpec.Runtime.PermissionProfile)
-		} else {
-			hints["Profile"] = runtimeFlags.Profile
-			hints["Approval"] = invocation.ApprovalMode
-		}
+		hints["Preset"] = strings.TrimSpace(invocation.ResolvedSpec.Origin.Preset)
+		hints["Mode"] = strings.TrimSpace(invocation.ResolvedSpec.Intent.CollaborationMode)
+		hints["Permissions"] = strings.TrimSpace(invocation.ResolvedSpec.Runtime.PermissionProfile)
 		appkit.PrintBannerWithHint("mosscode — Code Assistant",
 			hints,
 			"Using deep harness defaults: persistent threads/memories + context offload + async task lifecycle.",
@@ -188,10 +182,7 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 		TrustLevel: runtimeFlags.Trust,
 		MaxSteps:   80,
 	}
-	sessCfg := buildLegacyProjectedSessionConfig(baseSessionConfig, runtimeFlags, runtimeFlags.Trust, invocation.ApprovalMode, runtimeFlags.Profile, "coding")
-	if invocation.Typed {
-		sessCfg = buildTypedProjectedSessionConfig(baseSessionConfig, runtimeFlags, invocation)
-	}
+	sessCfg := buildTypedProjectedSessionConfig(baseSessionConfig, runtimeFlags, invocation)
 	systemPrompt, metadata, err := composeProductSystemPrompt(runtimeFlags.Workspace, runtimeFlags.Trust, k, sessCfg)
 	if err != nil {
 		report.Error = err.Error()

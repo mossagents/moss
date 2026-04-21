@@ -746,3 +746,67 @@ moss chat --prompt-pack coding --mode execute --permissions workspace-write
 - 最终使 prompt、runtime、session、配置、CLI 全部围绕同一套 typed model 收敛。
 
 这是在不考虑兼容性前提下，最适合 moss 长期演进的目标架构。
+
+## 14. 用户界面与交互（UI/UX）
+
+### 14.1 协作模式（Collaboration Mode）在 UI 的统一展示
+
+- 所有终端用户界面（TUI、CLI、Session Summary、Prompt）只展示“协作模式（mode）”，不再出现“profile”或“task_mode”字样。
+- 推荐三种协作模式：
+  - **执行（Agent/execute）**：直接实现与交付，适合代码生成、自动修复等场景。
+  - **规划（Plan/plan）**：以决策和完备规划为目标，禁止直接变更，适合需求分析、方案设计等场景。
+  - **调研（Ask/investigate）**：强调阅读、证据、溯源与问题分析，适合代码理解、文档检索、因果分析等场景。
+- UI 示例：
+
+  | 模式         | 中文标签 | 英文标签   | 典型用途           |
+  |--------------|----------|------------|--------------------|
+  | execute      | 执行     | Agent      | 代码生成、修复     |
+  | plan         | 规划     | Plan       | 需求分析、设计     |
+  | investigate  | 调研     | Ask        | 阅读、分析、检索   |
+
+- 切换模式时，TUI/CLI 应有明确提示，如“当前协作模式：规划（Plan）”。
+- Session summary 只展示 preset、run_mode、collaboration_mode、permission_profile、workspace_trust、model_profile 等新字段。
+- Prompt 只注入 collaboration_mode，不再注入 profile/task_mode。
+
+### 14.2 负向交互与错误提示
+
+- 对未知 mode、preset、permission_profile 等 typed selectors，所有入口（CLI/TUI/API）应 fail-fast 并给出明确报错，如“未知协作模式：foo，请选择 execute/plan/investigate”。
+- 旧参数（如 `--profile`）不再保留兼容入口，直接作为非法参数拒绝。
+
+### 14.3 典型 UI 展示片段
+
+- TUI 顶栏/状态栏示例：
+
+  ```
+  [工作区: trusted] [协作模式: 规划（Plan）] [权限: workspace-write] [模型: gpt-4o]
+  ```
+
+- CLI 启动参数示例：
+
+  ```
+  moss chat --mode plan --permissions read-only --prompt-pack coding
+  moss exec --run oneshot --mode execute --goal "run all tests"
+  ```
+
+- Session summary 示例：
+
+  ```
+  任务目标: 修复所有测试
+  协作模式: 执行（Agent）
+  权限: workspace-write
+  运行模式: oneshot
+  预设: code
+  ...
+  ```
+
+- Prompt 片段示例：
+
+  ```
+  # System
+  当前协作模式：规划（Plan）
+  ...
+  ```
+
+---
+
+> 所有 UI/Prompt/配置/文档均应以“协作模式（mode）”为唯一入口，彻底移除 profile/task_mode 等遗留概念。

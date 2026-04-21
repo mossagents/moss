@@ -214,7 +214,7 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	for _, want := range []string{
 		"moss inspect (run)",
 		"Run session: sess-inspect",
-		"Turn plan:   iteration=1 profile=planning lane=reasoning",
+		"Turn plan:   iteration=1 instruction_profile=planning lane=reasoning",
 		"Model route: configured=gpt-5 lane=reasoning",
 		"Tool decisions:",
 		"Failover:",

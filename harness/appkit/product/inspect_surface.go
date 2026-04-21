@@ -225,7 +225,7 @@ func RenderInspectReport(report InspectReport) string {
 		if run.TurnPlan != nil {
 			fmt.Fprintf(
 				&b,
-				"Turn plan:   iteration=%d profile=%s lane=%s lightweight=%t visible=%d hidden=%d approval=%d\n",
+				"Turn plan:   iteration=%d instruction_profile=%s lane=%s lightweight=%t visible=%d hidden=%d approval=%d\n",
 				run.TurnPlan.Iteration,
 				stringutil.FirstNonEmpty(run.TurnPlan.InstructionProfile, "(default)"),
 				stringutil.FirstNonEmpty(run.TurnPlan.ModelLane, "(default)"),

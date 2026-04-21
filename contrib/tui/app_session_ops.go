@@ -54,9 +54,6 @@ func (a *agentState) listPersistedSessions(limit int) (string, error) {
 		if strings.TrimSpace(s.PermissionProfile) != "" {
 			b.WriteString(fmt.Sprintf(" | permissions=%s", s.PermissionProfile))
 		}
-		if strings.TrimSpace(s.Profile) != "" {
-			b.WriteString(fmt.Sprintf(" | legacy-profile=%s", s.Profile))
-		}
 		if strings.TrimSpace(s.EffectiveTrust) != "" {
 			b.WriteString(fmt.Sprintf(" | trust=%s", s.EffectiveTrust))
 		}
@@ -117,9 +114,7 @@ func (a *agentState) restoreSession(sessionID string) (string, error) {
 	a.mu.Lock()
 	a.sess = loaded
 	posture := postureFromSession(loaded)
-	if strings.TrimSpace(posture.Profile) != "" {
-		a.profile = posture.Profile
-	}
+	a.collaborationMode = firstNonEmptyTrimmed(posture.TaskMode, a.collaborationMode)
 	a.trust = posture.EffectiveTrust
 	a.approvalMode = posture.EffectiveApproval
 	a.mu.Unlock()
@@ -143,8 +138,8 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 	ctx := a.ctx
 	workspace := a.workspace
 	trust := a.trust
+	collaborationMode := a.collaborationMode
 	approvalMode := a.approvalMode
-	profile := a.profile
 	buildCfg := a.buildSessionConfig
 	configInstructions := a.promptConfigInstructions
 	modelInstructions := a.promptModelInstructions
@@ -156,20 +151,18 @@ func (a *agentState) createInteractiveSession() (*session.Session, error) {
 		Goal:       "interactive",
 		Mode:       "interactive",
 		TrustLevel: trust,
-		Profile:    profile,
 		MaxSteps:   200,
-	}, trust, profile, "interactive", "interactive", 200)
+	}, trust, "interactive", "interactive", 200)
 	if buildCfg != nil {
 		sessCfg = normalizeSessionConfigDefaults(
-			buildCfg(workspace, trust, approvalMode, profile, ""),
+			buildCfg(workspace, trust, approvalMode, collaborationMode, ""),
 			trust,
-			profile,
 			"interactive",
 			"interactive",
 			200,
 		)
 	}
-	metadata := preparePromptMetadata(sessCfg, profile)
+	metadata := preparePromptMetadata(sessCfg, collaborationMode)
 	sessCfg.Metadata = metadata
 	sysPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(workspace, trust, k, configInstructions, modelInstructions, sessCfg)
 	if err != nil {
@@ -214,17 +207,17 @@ func (a *agentState) createCheckpoint(note string) (string, error) {
 	return msg, nil
 }
 
-func (a *agentState) prepareProfileSwitch(nextProfile string) (string, error) {
+func (a *agentState) prepareModeSwitch(nextMode string) (string, error) {
 	a.mu.Lock()
 	running := a.running
 	a.mu.Unlock()
 	if running {
-		return "", errors.New("cannot switch profile while a run is active")
+		return "", errors.New("cannot switch mode while a run is active")
 	}
-	note := fmt.Sprintf("profile switch to %s", strings.TrimSpace(nextProfile))
+	note := fmt.Sprintf("mode switch to %s", strings.TrimSpace(nextMode))
 	msg, err := a.createCheckpoint(note)
 	if err != nil {
-		return "", fmt.Errorf("checkpoint before profile switch: %w", err)
+		return "", fmt.Errorf("checkpoint before mode switch: %w", err)
 	}
 	return msg, nil
 }

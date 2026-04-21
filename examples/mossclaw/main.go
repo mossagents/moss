@@ -134,7 +134,7 @@ func launchTUI(flags *appkit.AppFlags) error {
 			return nil
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, collaborationMode, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
 				Goal:         "personal AI assistant",
 				Mode:         "interactive",

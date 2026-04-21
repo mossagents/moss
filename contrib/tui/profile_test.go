@@ -1,107 +1,121 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-	appconfig "github.com/mossagents/moss/harness/config"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
-func writeProjectConfig(t *testing.T, workspace string, data []byte) {
-	t.Helper()
-	path := appconfig.DefaultProjectConfigPath(workspace)
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		t.Fatalf("mkdir project config dir: %v", err)
-	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
-}
-
-func TestSlashCommandProfileList(t *testing.T) {
-	home := t.TempDir()
-	workspace := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	appconfig.SetAppName("mosscode")
-	t.Cleanup(func() { appconfig.SetAppName("moss") })
-
-	appDir := filepath.Join(home, ".mosscode")
-	if err := os.MkdirAll(appDir, 0o700); err != nil {
-		t.Fatalf("mkdir app dir: %v", err)
-	}
-	writeProjectConfig(t, workspace, []byte("profiles:\n  sandboxed:\n    label: Sandboxed\n"))
-
-	m := newChatModel("openai", "gpt-4o", workspace)
-	m.trust = appconfig.TrustTrusted
-	updated, _ := m.handleSlashCommand("/profile list")
+func TestSlashCommandModeReportsCurrentMode(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.collaborationMode = "plan"
+	updated, _ := m.handleSlashCommand("/mode")
 	last := updated.messages[len(updated.messages)-1]
 	if last.kind != msgSystem {
 		t.Fatalf("expected system message, got %v", last.kind)
 	}
-	for _, want := range []string{"Available profiles:", "- default", "- sandboxed"} {
+	for _, want := range []string{"Current mode: Plan (plan)", "Usage: /mode <execute|plan|investigate>"} {
 		if !strings.Contains(last.content, want) {
-			t.Fatalf("profile list missing %q:\n%s", want, last.content)
+			t.Fatalf("mode status missing %q:\n%s", want, last.content)
 		}
 	}
 }
 
-func TestSlashCommandProfileSetReturnsSwitchMsg(t *testing.T) {
+func TestSlashCommandAskReturnsSwitchMsg(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
-	updated, cmd := m.handleSlashCommand("/profile set research")
+	updated, cmd := m.handleSlashCommand("/ask trace the current architecture")
 	if !updated.streaming {
-		t.Fatal("expected profile switch to mark chat as streaming")
+		t.Fatal("expected ask mode switch to mark chat as streaming")
 	}
 	if cmd == nil {
 		t.Fatal("expected switch command")
 	}
 	msg := cmd()
-	switchMsg, ok := msg.(switchProfileMsg)
+	switchMsg, ok := msg.(switchModeMsg)
 	if !ok {
-		t.Fatalf("expected switchProfileMsg, got %T", msg)
+		t.Fatalf("expected switchModeMsg, got %T", msg)
 	}
-	if switchMsg.profile != "research" {
-		t.Fatalf("profile = %q, want research", switchMsg.profile)
+	if switchMsg.mode != "investigate" {
+		t.Fatalf("mode = %q, want investigate", switchMsg.mode)
+	}
+	if switchMsg.prompt != "trace the current architecture" {
+		t.Fatalf("prompt = %q, want investigate prompt", switchMsg.prompt)
 	}
 }
 
-func TestShiftTabCyclesProfile(t *testing.T) {
-	home := t.TempDir()
-	workspace := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	appconfig.SetAppName("mosscode")
-	t.Cleanup(func() { appconfig.SetAppName("moss") })
+func TestSlashCommandModeSetReturnsSwitchMsg(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	updated, cmd := m.handleSlashCommand("/mode plan")
+	if !updated.streaming {
+		t.Fatal("expected mode switch to mark chat as streaming")
+	}
+	if cmd == nil {
+		t.Fatal("expected switch command")
+	}
+	msg := cmd()
+	switchMsg, ok := msg.(switchModeMsg)
+	if !ok {
+		t.Fatalf("expected switchModeMsg, got %T", msg)
+	}
+	if switchMsg.mode != "plan" {
+		t.Fatalf("mode = %q, want plan", switchMsg.mode)
+	}
+}
 
-	writeProjectConfig(t, workspace, []byte("profiles:\n  zzz:\n    label: ZZZ\n"))
-
-	m := newChatModel("openai", "gpt-4o", workspace)
+func TestShiftTabCyclesMode(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
 	m.ready = true
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
-	m.trust = appconfig.TrustTrusted
-	m.profile = "default"
+	m.collaborationMode = "execute"
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if cmd == nil {
 		t.Fatal("expected switch command from Shift+Tab")
 	}
 	if !updated.streaming {
-		t.Fatal("expected streaming state while switching profile")
+		t.Fatal("expected streaming state while switching mode")
 	}
-	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "Switching profile to ") {
+	if !strings.Contains(updated.messages[len(updated.messages)-1].content, "Switching mode to ") {
 		t.Fatalf("unexpected switch message: %q", updated.messages[len(updated.messages)-1].content)
 	}
 	msg := cmd()
-	switchMsg, ok := msg.(switchProfileMsg)
+	switchMsg, ok := msg.(switchModeMsg)
 	if !ok {
-		t.Fatalf("expected switchProfileMsg, got %T", msg)
+		t.Fatalf("expected switchModeMsg, got %T", msg)
 	}
-	if strings.TrimSpace(switchMsg.profile) == "" || strings.EqualFold(switchMsg.profile, "default") {
-		t.Fatalf("expected next profile after default, got %q", switchMsg.profile)
+	if switchMsg.mode != "plan" {
+		t.Fatalf("expected next mode to be plan, got %q", switchMsg.mode)
+	}
+
+	m.collaborationMode = "plan"
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd == nil {
+		t.Fatal("expected switch command from Shift+Tab while in plan mode")
+	}
+	msg = cmd()
+	switchMsg, ok = msg.(switchModeMsg)
+	if !ok {
+		t.Fatalf("expected switchModeMsg, got %T", msg)
+	}
+	if switchMsg.mode != "investigate" {
+		t.Fatalf("expected next mode to be investigate, got %q", switchMsg.mode)
+	}
+
+	m.collaborationMode = "investigate"
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if cmd == nil {
+		t.Fatal("expected switch command from Shift+Tab while in investigate mode")
+	}
+	msg = cmd()
+	switchMsg, ok = msg.(switchModeMsg)
+	if !ok {
+		t.Fatalf("expected switchModeMsg, got %T", msg)
+	}
+	if switchMsg.mode != "execute" {
+		t.Fatalf("expected next mode to be execute, got %q", switchMsg.mode)
 	}
 }
 
@@ -111,7 +125,7 @@ func TestShiftTabDoesNothingWhileStreaming(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.recalcLayout()
-	m.profile = "default"
+	m.collaborationMode = "execute"
 	m.streaming = true
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})

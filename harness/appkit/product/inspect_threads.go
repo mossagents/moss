@@ -376,9 +376,6 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 		stringutil.FirstNonEmpty(report.Summary.PromptPack, "(none)"),
 		stringutil.FirstNonEmpty(report.Summary.WorkspaceTrust, "(none)"),
 	)
-	if report.Summary.Profile != "" || report.Summary.TaskMode != "" {
-		fmt.Fprintf(b, "Legacy:      profile=%s task_mode=%s\n", stringutil.FirstNonEmpty(report.Summary.Profile, "(none)"), stringutil.FirstNonEmpty(report.Summary.TaskMode, "(none)"))
-	}
 	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
 	renderInspectAuditSummary(b, "Audit", report.Audit)
 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
@@ -418,12 +415,6 @@ func renderInspectPromptReport(b *strings.Builder, report InspectPromptReport) {
 		stringutil.FirstNonEmpty(report.Preset, "(none)"),
 		stringutil.FirstNonEmpty(report.InstructionProfile, "(none)"),
 	)
-	if report.ProfileName != "" || report.TaskMode != "" {
-		fmt.Fprintf(b, "Legacy facets:  profile=%s task_mode=%s\n",
-			stringutil.FirstNonEmpty(report.ProfileName, "(none)"),
-			stringutil.FirstNonEmpty(report.TaskMode, "(none)"),
-		)
-	}
 	fmt.Fprintf(b, "Base source:    %s | session_instructions=%t | system_prompt_chars=%d | enabled_tokens=%d\n",
 		stringutil.FirstNonEmpty(report.BaseSource, "(none)"),
 		report.SessionInstructions,

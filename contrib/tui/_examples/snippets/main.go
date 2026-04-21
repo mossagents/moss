@@ -22,12 +22,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	appkit "github.com/mossagents/moss/harness/appkit"
 	mosstui "github.com/mossagents/moss/contrib/tui"
+	appkit "github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/spf13/pflag"
 )
 
@@ -171,43 +170,34 @@ func main() {
 	}
 
 	if err := mosstui.Run(mosstui.Config{
-		Provider:  provider,
-		Model:     model,
-		Workspace: workspace,
-		Trust:     "full",
+		Provider:          provider,
+		Model:             model,
+		Workspace:         workspace,
+		Trust:             "trusted",
+		CollaborationMode: "execute",
 
 		// Register our custom extension.
 		Extensions: []*mosstui.Extension{buildSnippetsExtension()},
 
-		BuildKernel: func(wsDir, trust, approvalMode, profile, prov, mod, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, prov, mod, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
 			return appkit.BuildKernel(context.Background(), &appkit.AppFlags{
 				Provider:  prov,
 				Model:     mod,
 				Workspace: wsDir,
 				Trust:     trust,
-				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}, io)
 		},
 
-		BuildSystemPrompt: func(workspace, trust string) string {
-			return "You are a helpful coding assistant."
-		},
-
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
-			resolved, _ := rprofile.ResolveProfileForWorkspace(rprofile.ProfileResolveOptions{
-				Workspace:    workspace,
-				Trust:        trust,
-				ApprovalMode: approvalMode,
-			})
-			return rprofile.ApplyResolvedProfileToSessionConfig(session.SessionConfig{
+		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
+			return session.SessionConfig{
 				Goal:         "interactive coding assistant",
 				Mode:         "interactive",
 				TrustLevel:   trust,
 				SystemPrompt: systemPrompt,
 				MaxSteps:     200,
-			}, resolved)
+			}
 		},
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

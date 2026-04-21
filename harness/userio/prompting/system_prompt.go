@@ -25,7 +25,7 @@ func ComposeSystemPrompt(workspace, trust string, k *kernel.Kernel, configInstru
 	if err != nil {
 		return "", err
 	}
-	profileName, taskMode, err := ProfileModeFromMetadata(metadata)
+	taskMode, err := taskModeFromMetadata(metadata)
 	if err != nil {
 		return "", err
 	}
@@ -35,9 +35,8 @@ func ComposeSystemPrompt(workspace, trust string, k *kernel.Kernel, configInstru
 		ConfigInstructions:  strings.TrimSpace(configInstructions),
 		SessionInstructions: sessionInstructions,
 		ModelInstructions:   strings.TrimSpace(modelInstructions),
-		ProfileName:         profileName,
 		TaskMode:            taskMode,
-		CollaborationMode:   effectiveCollaborationMode("", taskMode, profileName),
+		CollaborationMode:   effectiveCollaborationMode("", taskMode, ""),
 		Kernel:              k,
 		SkillPrompts:        skillPrompts,
 	})

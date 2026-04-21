@@ -108,7 +108,7 @@ func (a *agentState) ensureRuntimePosture(target *session.Session) (string, erro
 		return "", fmt.Errorf("target session is required")
 	}
 	a.mu.Lock()
-	current := postureFromRuntime(a.k, a.profile, a.trust, a.approvalMode)
+	current := postureFromRuntime(a.k, a.collaborationMode, a.trust, a.approvalMode)
 	a.mu.Unlock()
 	plan, err := planPostureRebuild(target.ID, current, target)
 	if err != nil {
@@ -194,8 +194,8 @@ func planPostureRebuild(sessionID string, current runtimePosture, target *sessio
 
 func formatPosture(posture runtimePosture) string {
 	parts := []string{}
-	if strings.TrimSpace(posture.Profile) != "" {
-		parts = append(parts, "profile="+strings.TrimSpace(posture.Profile))
+	if strings.TrimSpace(posture.TaskMode) != "" {
+		parts = append(parts, "mode="+strings.TrimSpace(posture.TaskMode))
 	}
 	if strings.TrimSpace(posture.EffectiveTrust) != "" {
 		parts = append(parts, "trust="+configpkg.NormalizeTrustLevel(posture.EffectiveTrust))
@@ -203,11 +203,8 @@ func formatPosture(posture runtimePosture) string {
 	if strings.TrimSpace(posture.EffectiveApproval) != "" {
 		parts = append(parts, "approval="+rpolicy.NormalizeApprovalMode(posture.EffectiveApproval))
 	}
-	if strings.TrimSpace(posture.TaskMode) != "" {
-		parts = append(parts, "task="+strings.TrimSpace(posture.TaskMode))
-	}
 	if len(parts) == 0 {
-		return "profile=default"
+		return "mode=execute"
 	}
 	return strings.Join(parts, ", ")
 }
@@ -218,10 +215,14 @@ func postureFromSession(sess *session.Session) runtimePosture {
 		return posture
 	}
 	_, preset, workspaceTrust, collaborationMode, _, permissionProfile, _, _ := session.SessionFacetValues(sess)
-	posture.Profile = firstNonEmptyTrimmed(sess.Config.Profile, preset, permissionProfile)
+	posture.Profile = firstNonEmptyTrimmed(preset, sess.Config.Profile, permissionProfile)
 	posture.EffectiveTrust = configpkg.NormalizeTrustLevel(firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveTrust), workspaceTrust, sess.Config.TrustLevel))
 	posture.EffectiveApproval = rpolicy.NormalizeApprovalMode(sessionMetadataString(sess.Config.Metadata, session.MetadataEffectiveApproval))
-	posture.TaskMode = firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, posture.Profile)
+	legacyMode := ""
+	if normalized, err := normalizeTUIMode(posture.Profile); err == nil {
+		legacyMode = normalized
+	}
+	posture.TaskMode = firstNonEmptyTrimmed(sessionMetadataString(sess.Config.Metadata, session.MetadataTaskMode), collaborationMode, legacyMode)
 	if policy, ok, err := product.ToolPolicyForSessionConfig(sess.Config); err == nil && ok {
 		posture.ToolPolicy = policy
 		posture.HasToolPolicy = true
@@ -239,7 +240,7 @@ func postureFromSession(sess *session.Session) runtimePosture {
 		posture.EffectiveTrust = configpkg.TrustTrusted
 	}
 	if posture.TaskMode == "" {
-		posture.TaskMode = firstNonEmptyTrimmed(collaborationMode, "coding")
+		posture.TaskMode = firstNonEmptyTrimmed(collaborationMode, legacyMode, "execute")
 	}
 	return posture
 }
@@ -269,7 +270,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	model := a.model
 	apiKey := a.apiKey
 	baseURL := a.baseURL
-	currentProfile := strings.TrimSpace(a.profile)
+	currentMode := strings.TrimSpace(a.collaborationMode)
 	oldCancel := a.cancel
 	oldRunCancel := a.runCancel
 	a.mu.Unlock()
@@ -279,19 +280,19 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	}
 	rebuildProfile := strings.TrimSpace(plan.Profile)
 	if rebuildProfile == "" {
-		rebuildProfile = strings.TrimSpace(currentProfile)
+		rebuildProfile = strings.TrimSpace(currentMode)
 	}
 	if rebuildProfile == "" {
 		rebuildProfile = "default"
 	}
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
-		Trust:        plan.Trust,
-		Profile:      rebuildProfile,
-		ApprovalMode: plan.ApprovalMode,
-		APIKey:       apiKey,
-		BaseURL:      baseURL,
-		BuildKernel:  buildKernel,
-		AfterBoot:    afterBoot,
+		Trust:             plan.Trust,
+		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildProfile, "execute"),
+		ApprovalMode:      plan.ApprovalMode,
+		APIKey:            apiKey,
+		BaseURL:           baseURL,
+		BuildKernel:       buildKernel,
+		AfterBoot:         afterBoot,
 	}, WelcomeConfig{
 		Provider:  provider,
 		Model:     model,
@@ -317,7 +318,7 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	a.cancel = cancel
 	a.runCancel = nil
 	a.trust = plan.Trust
-	a.profile = rebuildProfile
+	a.collaborationMode = firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), rebuildProfile, a.collaborationMode, "execute")
 	a.approvalMode = plan.ApprovalMode
 	a.mu.Unlock()
 	return nil

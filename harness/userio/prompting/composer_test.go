@@ -295,7 +295,6 @@ func TestSessionPromptModeFromConfigPrefersResolvedSessionSpec(t *testing.T) {
 	mode, err := SessionPromptModeFromConfig(session.SessionConfig{
 		Profile: "legacy-profile",
 		Metadata: map[string]any{
-			MetadataProfileNameKey:   "legacy-profile",
 			session.MetadataTaskMode: "planning",
 		},
 		ResolvedSessionSpec: &session.ResolvedSessionSpec{

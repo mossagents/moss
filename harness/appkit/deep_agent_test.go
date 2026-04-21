@@ -134,7 +134,6 @@ func TestBuildDeepAgent_PlanningProfileEnablesUpdatePlan(t *testing.T) {
 		Provider:  "openai",
 		Workspace: ".",
 		Trust:     "trusted",
-		Profile:   "planning",
 	}
 	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, nil)
 	if err != nil {
@@ -331,7 +330,6 @@ func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
 		Provider:  "openai",
 		Workspace: t.TempDir(),
 		Trust:     "restricted",
-		Profile:   "planning",
 	}
 	features, err := buildDeepAgentFeatures(flags, DeepAgentDefaults())
 	if err != nil {
@@ -407,6 +405,7 @@ func TestBuildDeepAgentFeatures_DisableOptionalPacks(t *testing.T) {
 	want := []string{
 		"state-catalog",
 		"execution-services",
+		"planning",
 		"runtime-setup",
 		"patch-tool-calls",
 		"execution-capability-report",

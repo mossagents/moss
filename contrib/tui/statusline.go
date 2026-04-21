@@ -19,7 +19,7 @@ var statusLineItemCatalog = []statusLineItemDef{
 	{Name: "state", Summary: "Current run state"},
 	{Name: "model", Summary: "Provider and model"},
 	{Name: "workspace", Summary: "Workspace root"},
-	{Name: "profile", Summary: "Resolved profile"},
+	{Name: "mode", Summary: "Current collaboration mode"},
 	{Name: "trust", Summary: "Current trust posture"},
 	{Name: "approval", Summary: "Current approval mode"},
 	{Name: "thread", Summary: "Current thread id"},
@@ -30,7 +30,7 @@ var statusLineItemCatalog = []statusLineItemDef{
 	{Name: "version", Summary: "mosscode version"},
 }
 
-var defaultStatusLineItems = []string{"model", "workspace", "profile", "approval", "thread", "messages"}
+var defaultStatusLineItems = []string{"model", "workspace", "mode", "approval", "thread", "messages"}
 
 func normalizeStatusLineItems(items []string) []string {
 	if len(items) == 0 {
@@ -89,7 +89,7 @@ func renderStatusLineUsage(current []string) string {
 	}
 	b.WriteString("\nUsage:\n")
 	b.WriteString("  /statusline\n")
-	b.WriteString("  /statusline set model,workspace,profile,approval,thread,messages\n")
+	b.WriteString("  /statusline set model,workspace,mode,approval,thread,messages\n")
 	b.WriteString("  /statusline reset")
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -343,8 +343,8 @@ func (m chatModel) statusLineItemValue(name string) string {
 			display += " (" + branch + ")"
 		}
 		return display
-	case "profile":
-		return valueOrDefaultString(m.profile, "default")
+	case "mode":
+		return collaborationModeLabel(m.currentCollaborationMode())
 	case "trust":
 		return valueOrDefaultString(m.trust, "trusted")
 	case "approval":

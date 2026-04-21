@@ -3,14 +3,15 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	configpkg "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
-	"strings"
 )
 
 func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) (*kernel.Kernel, context.Context, context.CancelFunc, error) {
 	provider := strings.ToLower(configpkg.NormalizeProviderIdentity(wCfg.Provider, wCfg.ProviderName).EffectiveAPIType())
-	k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, cfg.Profile, provider, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
+	k, err := cfg.BuildKernel(wCfg.Workspace, cfg.Trust, cfg.ApprovalMode, provider, wCfg.Model, cfg.APIKey, cfg.BaseURL, bridge)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to initialize kernel: %w", err)
 	}

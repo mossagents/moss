@@ -16,9 +16,8 @@ import (
 
 func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 	workspace := t.TempDir()
-	profile := "guarded"
 
-	err := PersistProjectApprovalAmendment(workspace, profile, &io.ExecPolicyAmendment{
+	err := PersistProjectApprovalAmendment(workspace, &io.ExecPolicyAmendment{
 		HTTPRule: &io.ExecPolicyHTTPRule{
 			Name:    "allow-api",
 			Match:   "api.example.com",
@@ -33,9 +32,9 @@ func TestPersistProjectApprovalAmendmentWritesProfileRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	profileCfg, ok := cfg.Profiles[profile]
+	profileCfg, ok := cfg.Profiles["default"]
 	if !ok {
-		t.Fatalf("expected profile %q to be written", profile)
+		t.Fatalf("expected profile %q to be written", "default")
 	}
 	if len(profileCfg.Execution.HTTPRules) != 1 {
 		t.Fatalf("http rules = %d, want 1", len(profileCfg.Execution.HTTPRules))

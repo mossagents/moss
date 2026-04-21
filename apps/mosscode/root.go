@@ -41,7 +41,7 @@ Session selectors:
   --preset       Expand a preset such as code
   --mode         Set collaboration mode: execute|plan|investigate
   --run          Set run mode: interactive|oneshot|batch|background
-  --permissions  Set permission profile: read-only|workspace-write|full-auto
+	--permissions  Set permission profile: read-only|workspace-write|full-auto
 
 LLM governance flags (--llm-*) control retries, circuit-breaking, and
 model-failover. Supply a --router-config YAML to define candidate models.`,
@@ -255,9 +255,6 @@ Sub-commands (passed as positional args):
 
 func bindAppAndProductCobraFlags(cmd *cobra.Command, cfg *config) {
 	appkit.BindAppPFlags(cmd.Flags(), cfg.flags)
-	if flag := cmd.Flags().Lookup("profile"); flag != nil {
-		flag.Usage = "Legacy profile name (compat only)"
-	}
 	bindProductFlags(cmd.Flags(), cfg)
 }
 
@@ -270,7 +267,6 @@ func bindProductFlags(fs *pflag.FlagSet, cfg *config) {
 	fs.StringVar(&cfg.request.PromptPack, "prompt-pack", "", "Prompt pack ID")
 	fs.StringVar(&cfg.request.SessionPolicy, "session-policy", "", "Session policy ID")
 	fs.StringVar(&cfg.request.ModelProfile, "model-profile", "", "Model profile ID")
-	fs.StringVar(&cfg.approvalMode, "approval", "", "Legacy approval mode (compat only): read-only|confirm|full-auto")
 	fs.StringVar(&cfg.governance.RouterConfigPath, "router-config", cfg.governance.RouterConfigPath, "Model router config path")
 	fs.StringVar(&cfg.governance.PricingCatalogPath, "pricing-catalog", cfg.governance.PricingCatalogPath, "Pricing catalog YAML path")
 	fs.IntVar(&cfg.governance.LLMRetries, "llm-retries", cfg.governance.LLMRetries, "LLM retry attempts (0 disables retries)")
@@ -303,7 +299,17 @@ func finalizeCommonCobraFlags(cmd *cobra.Command, cfg *config) error {
 		return err
 	}
 	cfg.explicitFlags = collectExplicitCobraFlagNames(cmd)
+	if err := rejectLegacySelectorInputs(cfg); err != nil {
+		return err
+	}
 	applyGovernanceEnv(&cfg.governance, cfg.explicitFlags)
+	return nil
+}
+
+func rejectLegacySelectorInputs(cfg *config) error {
+	if hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
+		return fmt.Errorf("legacy approval selection is no longer supported; use --permissions")
+	}
 	return nil
 }
 

@@ -206,7 +206,21 @@ provider: openai
 model: gpt-4o
 base_url: ""
 api_key: ""
-default_profile: coding
+default_preset: code
+
+collaboration_modes:
+	execute:
+		builtin: execute
+	plan:
+		builtin: plan
+	investigate:
+		builtin: investigate
+
+presets:
+	code:
+		prompt_pack: coding
+		collaboration_mode: execute
+		permission_profile: workspace-write
 
 skills:
   - name: github
@@ -214,6 +228,14 @@ skills:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
 ```
+
+面向产品层的三种协作模式如下：
+
+- `Agent`（`execute`）：直接实现与交付
+- `Plan`（`plan`）：只读规划与决策支持
+- `Ask`（`investigate`）：阅读、溯源、证据优先分析
+
+旧的 `--profile` 和 `--approval` 选择器已不再支持。请统一使用 `--preset`、`--mode`、`--permissions`。
 
 优先级：
 

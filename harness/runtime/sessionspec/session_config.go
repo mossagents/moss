@@ -100,7 +100,6 @@ func ApplyToSessionConfig(cfg kernelsession.SessionConfig, spec SessionSpec, res
 	}
 	cfg.Goal = firstNonEmpty(strings.TrimSpace(resolved.Goal), strings.TrimSpace(spec.Goal), strings.TrimSpace(cfg.Goal))
 	cfg.Mode = firstNonEmpty(strings.TrimSpace(resolved.Runtime.RunMode), strings.TrimSpace(spec.Runtime.RunMode), strings.TrimSpace(cfg.Mode))
-	cfg.Profile = firstNonEmpty(strings.TrimSpace(resolved.Origin.Preset), strings.TrimSpace(spec.Origin.Preset), strings.TrimSpace(resolved.Runtime.PermissionProfile), strings.TrimSpace(cfg.Profile))
 	cfg.TrustLevel = firstNonEmpty(strings.TrimSpace(resolved.Workspace.Trust), strings.TrimSpace(spec.Workspace.Trust), strings.TrimSpace(cfg.TrustLevel))
 	cfg.MaxSteps = maxNonZero(resolved.Runtime.SessionPolicy.MaxSteps, cfg.MaxSteps)
 	cfg.MaxTokens = maxNonZero(resolved.Runtime.SessionPolicy.MaxTokens, cfg.MaxTokens)

@@ -17,7 +17,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/mossagents/moss/harness/appkit/product"
 	config "github.com/mossagents/moss/harness/config"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
+	"github.com/mossagents/moss/harness/runtime/collaboration"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
 	userapproval "github.com/mossagents/moss/harness/userio/approval"
 	userattachments "github.com/mossagents/moss/harness/userio/attachments"
@@ -62,8 +62,8 @@ type switchApprovalMsg struct {
 	mode string
 }
 
-type switchProfileMsg struct {
-	profile     string
+type switchModeMsg struct {
+	mode        string
 	prompt      string
 	displayText string
 }
@@ -164,7 +164,7 @@ type chatModel struct {
 	workspace            string
 	gitBranch            string
 	trust                string
-	profile              string
+	collaborationMode    string
 	approvalMode         string
 	theme                string
 	personality          string
@@ -240,6 +240,7 @@ func newChatModel(provider, model, workspace string) chatModel {
 		modelAuto:            strings.TrimSpace(model) == "",
 		workspace:            workspace,
 		trust:                "trusted",
+		collaborationMode:    string(collaboration.ModeExecute),
 		theme:                theme,
 		personality:          personality,
 		fastMode:             fastMode,
@@ -266,15 +267,15 @@ func (m *chatModel) setProviderIdentity(provider, providerName string) {
 // tuiContext returns a read-only snapshot of the current TUI state for use by extensions.
 func (m chatModel) tuiContext() TUIContext {
 	return TUIContext{
-		Workspace:   m.workspace,
-		Provider:    m.provider,
-		Model:       m.model,
-		Profile:     m.profile,
-		Trust:       m.trust,
-		SessionID:   m.currentSessionID,
-		IsStreaming: m.streaming,
-		InputValue:  m.textarea.Value(),
-		Width:       m.width,
+		Workspace:         m.workspace,
+		Provider:          m.provider,
+		Model:             m.model,
+		CollaborationMode: m.currentCollaborationMode(),
+		Trust:             m.trust,
+		SessionID:         m.currentSessionID,
+		IsStreaming:       m.streaming,
+		InputValue:        m.textarea.Value(),
+		Width:             m.width,
 	}
 }
 
@@ -698,7 +699,7 @@ func (m chatModel) displayApprovalMode() string {
 
 func (m chatModel) compactPostureSummary() string {
 	tokens := make([]string, 0, 4)
-	tokens = append(tokens, valueOrDefaultString(strings.TrimSpace(m.profile), "default"))
+	tokens = append(tokens, collaborationModeLabel(m.currentCollaborationMode()))
 	if trust := strings.TrimSpace(m.trust); trust != "" {
 		tokens = append(tokens, trust)
 	}
@@ -711,43 +712,69 @@ func (m chatModel) compactPostureSummary() string {
 	return strings.Join(tokens, " · ")
 }
 
-func (m chatModel) queueProfileSwitch(profileName, displayText string) (chatModel, tea.Cmd) {
-	profileName = strings.TrimSpace(profileName)
-	if profileName == "" {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "profile name cannot be empty"})
+func (m chatModel) currentCollaborationMode() string {
+	mode := string(collaboration.NormalizeMode(m.collaborationMode))
+	if mode == "" {
+		return string(collaboration.ModeExecute)
+	}
+	return mode
+}
+
+func collaborationModeLabel(raw string) string {
+	switch collaboration.NormalizeMode(raw) {
+	case collaboration.ModePlan:
+		return "Plan"
+	case collaboration.ModeInvestigate:
+		return "Ask"
+	default:
+		return "Agent"
+	}
+}
+
+func collaborationModeDisplay(raw string) string {
+	mode := string(collaboration.NormalizeMode(raw))
+	if mode == "" {
+		mode = string(collaboration.ModeExecute)
+	}
+	return fmt.Sprintf("%s (%s)", collaborationModeLabel(mode), mode)
+}
+
+func normalizeTUIMode(raw string) (string, error) {
+	mode := collaboration.NormalizeMode(raw)
+	if err := mode.Validate(); err != nil {
+		return "", err
+	}
+	if mode != collaboration.ModeExecute && mode != collaboration.ModePlan && mode != collaboration.ModeInvestigate {
+		return "", fmt.Errorf("unsupported mode %q", strings.TrimSpace(raw))
+	}
+	return string(mode), nil
+}
+
+func (m chatModel) queueModeSwitch(modeName, displayText string) (chatModel, tea.Cmd) {
+	modeName, err := normalizeTUIMode(modeName)
+	if err != nil {
+		m.messages = append(m.messages, chatMessage{kind: msgError, content: err.Error()})
 		m.refreshViewport()
 		return m, nil
 	}
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching profile to %s...", profileName)})
+	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Switching mode to %s...", collaborationModeDisplay(modeName))})
 	m.streaming = true
 	m.refreshViewport()
-	return m, func() tea.Msg { return switchProfileMsg{profile: profileName, displayText: displayText} }
+	return m, func() tea.Msg { return switchModeMsg{mode: modeName, displayText: displayText} }
 }
 
-func (m chatModel) cycleProfile() (chatModel, tea.Cmd) {
+func (m chatModel) cycleMode() (chatModel, tea.Cmd) {
 	if m.streaming || m.hasRunningToolCalls() {
 		return m, nil
 	}
-	current := valueOrDefaultString(strings.TrimSpace(m.profile), "default")
-	names, err := rprofile.ProfileNamesForWorkspace(m.workspace, m.trust)
-	if err != nil {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
-		m.refreshViewport()
-		return m, nil
+	next := string(collaboration.ModePlan)
+	switch m.currentCollaborationMode() {
+	case string(collaboration.ModePlan):
+		next = string(collaboration.ModeInvestigate)
+	case string(collaboration.ModeInvestigate):
+		next = string(collaboration.ModeExecute)
 	}
-	if len(names) == 0 {
-		m.messages = append(m.messages, chatMessage{kind: msgError, content: "no profiles available"})
-		m.refreshViewport()
-		return m, nil
-	}
-	next := names[0]
-	for i, name := range names {
-		if strings.EqualFold(strings.TrimSpace(name), current) {
-			next = names[(i+1)%len(names)]
-			break
-		}
-	}
-	return m.queueProfileSwitch(next, "")
+	return m.queueModeSwitch(next, "")
 }
 
 func titleCaseWord(s string) string {
@@ -1013,14 +1040,15 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "/clear", Summary: "Clear the visible transcript", Section: "Threads and core"},
 	{Name: "/copy", Summary: "Copy the latest completed output", Section: "Threads and core"},
 	{Name: "/compact", Summary: "Compact transcript and persist snapshot", Section: "Threads and core"},
-	{Name: "/plan", Summary: "Switch to planning mode", Section: "Runtime posture"},
+	{Name: "/ask", Summary: "Switch to ask mode", Section: "Runtime posture"},
+	{Name: "/plan", Summary: "Switch to plan mode", Section: "Runtime posture"},
+	{Name: "/mode", Summary: "Show or switch the active mode", Section: "Runtime posture"},
 	{Name: "/model", Summary: "Show or switch the active model", Section: "Runtime posture"},
 	{Name: "/fast", Summary: "Toggle fast interaction mode", Section: "Runtime posture"},
 	{Name: "/personality", Summary: "Set the response personality", Section: "Runtime posture"},
 	{Name: "/permissions", Summary: "Inspect or override runtime permissions", Section: "Runtime posture"},
 	{Name: "/trust", Summary: "Switch trust posture", Section: "Runtime posture"},
 	{Name: "/approval", Summary: "Switch approval posture", Section: "Runtime posture"},
-	{Name: "/profile", Summary: "Show or switch profile", Section: "Runtime posture"},
 	{Name: "/theme", Summary: "Show or switch the TUI theme", Section: "Runtime posture"},
 	{Name: "/statusline", Summary: "Configure footer status items", Section: "Runtime posture"},
 	{Name: "/experimental", Summary: "Toggle experimental product features", Section: "Runtime posture"},
@@ -1135,7 +1163,7 @@ func (m chatModel) renderStatusSummary() string {
 	fmt.Fprintf(&b, "Workspace: %s\n", valueOrDefaultString(m.workspace, "."))
 	fmt.Fprintf(&b, "Run state: %s\n", valueOrDefaultRunState(m.streaming))
 	fmt.Fprintf(&b, "Trust: %s\n", valueOrDefaultString(m.trust, "(unknown)"))
-	fmt.Fprintf(&b, "Profile: %s\n", valueOrDefaultString(m.profile, "default"))
+	fmt.Fprintf(&b, "Mode: %s\n", m.currentCollaborationMode())
 	fmt.Fprintf(&b, "Theme: %s\n", valueOrDefaultString(m.theme, themeDefault))
 	fmt.Fprintf(&b, "Approval: %s\n", valueOrDefaultString(m.approvalMode, "(default)"))
 	fmt.Fprintf(&b, "Personality: %s\n", valueOrDefaultString(m.personality, product.PersonalityFriendly))

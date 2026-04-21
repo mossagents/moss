@@ -385,7 +385,7 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 			return traceEventSummary{
 				priority: 15,
 				index:    index,
-				message:  fmt.Sprintf("Turn plan prepared: profile=%s lane=%s", profile, lane),
+				message:  fmt.Sprintf("Turn plan prepared: instruction_profile=%s lane=%s", profile, lane),
 			}, true
 		case "model.route_planned":
 			lane := valueOrUnknown(stringData(event.Metadata, "lane"), "default")

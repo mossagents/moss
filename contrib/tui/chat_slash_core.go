@@ -47,7 +47,8 @@ var slashCommandRegistry = map[string]slashCommandHandler{
 	"/permissions":  handlePermissionsSlashCommand,
 	"/trust":        handleTrustSlashCommand,
 	"/approval":     handleApprovalSlashCommand,
-	"/profile":      handleProfileSlashCommand,
+	"/mode":         handleModeSlashCommand,
+	"/ask":          handleAskSlashCommand,
 	"/plan":         handlePlanSlashCommand,
 	"/help":         handleHelpSlashCommand,
 	"/debug":        handleDebugSlashCommand,
@@ -526,15 +527,35 @@ func handleApprovalSlashCommand(m chatModel, args []string, _ string, _ string) 
 
 func handlePlanSlashCommand(m chatModel, args []string, input string, _ string) (chatModel, tea.Cmd) {
 	prompt := strings.TrimSpace(strings.Join(args, " "))
-	m.messages = append(m.messages, chatMessage{kind: msgSystem, content: "Switching to planning mode..."})
-	m.streaming = true
-	m.refreshViewport()
-	return m, func() tea.Msg {
-		return switchProfileMsg{
-			profile:     "planning",
-			prompt:      prompt,
-			displayText: input,
+	next, cmd := m.queueModeSwitch("plan", input)
+	if cmd == nil {
+		return next, nil
+	}
+	return next, func() tea.Msg {
+		switchMsg := cmd()
+		modeMsg, ok := switchMsg.(switchModeMsg)
+		if !ok {
+			return switchMsg
 		}
+		modeMsg.prompt = prompt
+		return modeMsg
+	}
+}
+
+func handleAskSlashCommand(m chatModel, args []string, input string, _ string) (chatModel, tea.Cmd) {
+	prompt := strings.TrimSpace(strings.Join(args, " "))
+	next, cmd := m.queueModeSwitch("investigate", input)
+	if cmd == nil {
+		return next, nil
+	}
+	return next, func() tea.Msg {
+		switchMsg := cmd()
+		modeMsg, ok := switchMsg.(switchModeMsg)
+		if !ok {
+			return switchMsg
+		}
+		modeMsg.prompt = prompt
+		return modeMsg
 	}
 }
 

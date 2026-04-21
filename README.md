@@ -206,7 +206,21 @@ provider: openai
 model: gpt-4o
 base_url: ""
 api_key: ""
-default_profile: coding
+default_preset: code
+
+collaboration_modes:
+	execute:
+		builtin: execute
+	plan:
+		builtin: plan
+	investigate:
+		builtin: investigate
+
+presets:
+	code:
+		prompt_pack: coding
+		collaboration_mode: execute
+		permission_profile: workspace-write
 
 skills:
   - name: github
@@ -214,6 +228,14 @@ skills:
     command: npx
     args: ["-y", "@modelcontextprotocol/server-github"]
 ```
+
+The product-facing collaboration modes are:
+
+- `Agent` (`execute`) for direct implementation and delivery
+- `Plan` (`plan`) for read-only planning and decision support
+- `Ask` (`investigate`) for reading, tracing, and evidence-first analysis
+
+The legacy `--profile` and `--approval` selectors are no longer supported. Use `--preset`, `--mode`, and `--permissions` instead.
 
 Priority is:
 

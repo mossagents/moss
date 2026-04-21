@@ -28,9 +28,6 @@ func TestResolveRuntimeInvocationUsesTypedRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveRuntimeInvocation: %v", err)
 	}
-	if !invocation.Typed {
-		t.Fatal("expected typed invocation")
-	}
 	if got := invocation.ResolvedSpec.Intent.CollaborationMode; got != "plan" {
 		t.Fatalf("collaboration mode = %q, want plan", got)
 	}
@@ -40,11 +37,35 @@ func TestResolveRuntimeInvocationUsesTypedRequest(t *testing.T) {
 	if got := invocation.ResolvedSpec.Origin.Preset; got != "code" {
 		t.Fatalf("preset = %q, want code", got)
 	}
-	if got := invocation.CompatFlags.Profile; got != "planning" {
-		t.Fatalf("compat profile = %q, want planning", got)
-	}
 	if got := invocation.ApprovalMode; got != "confirm" {
 		t.Fatalf("approval mode = %q, want confirm", got)
+	}
+}
+
+func TestResolveRuntimeInvocationDefaultsToTypedPreset(t *testing.T) {
+	initTestApp(t)
+	cfg := &config{
+		flags: &appkit.AppFlags{
+			Workspace: t.TempDir(),
+			Provider:  "openai",
+			Model:     "gpt-5",
+			Trust:     "restricted",
+		},
+		governance: product.DefaultGovernanceConfig(),
+	}
+
+	invocation, err := resolveRuntimeInvocation(cfg, "interactive")
+	if err != nil {
+		t.Fatalf("resolveRuntimeInvocation: %v", err)
+	}
+	if got := invocation.ResolvedSpec.Origin.Preset; got != "code" {
+		t.Fatalf("preset = %q, want code", got)
+	}
+	if got := invocation.ResolvedSpec.Intent.CollaborationMode; got != "execute" {
+		t.Fatalf("collaboration mode = %q, want execute", got)
+	}
+	if got := invocation.ResolvedSpec.Runtime.PermissionProfile; got != "workspace-write" {
+		t.Fatalf("permission profile = %q, want workspace-write", got)
 	}
 }
 

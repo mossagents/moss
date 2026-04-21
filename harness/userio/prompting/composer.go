@@ -99,7 +99,6 @@ const (
 	MetadataBaseSourceKey          = "prompt.debug.base_source"
 	MetadataDynamicSectionsKey     = "prompt.debug.dynamic_sections"
 	MetadataSourceChainKey         = "prompt.debug.source_chain"
-	MetadataProfileNameKey         = "profile"
 	MetadataEnabledLayersKey       = "prompt.debug.enabled_layers"
 	MetadataSuppressedLayersKey    = "prompt.debug.suppressed_layers"
 	MetadataSuppressionReasonsKey  = "prompt.debug.suppression_reasons"
@@ -504,38 +503,31 @@ func SessionInstructionsFromMetadata(metadata map[string]any) (string, error) {
 	return strings.TrimSpace(text), nil
 }
 
-func ProfileModeFromMetadata(metadata map[string]any) (profileName, taskMode string, err error) {
+func taskModeFromMetadata(metadata map[string]any) (string, error) {
 	if len(metadata) == 0 {
-		return "", "", nil
+		return "", nil
 	}
 	if raw, ok := metadata[session.MetadataTaskMode]; ok && raw != nil {
 		value, ok := raw.(string)
 		if !ok {
-			return "", "", fmt.Errorf("metadata %q must be string", session.MetadataTaskMode)
+			return "", fmt.Errorf("metadata %q must be string", session.MetadataTaskMode)
 		}
-		taskMode = strings.TrimSpace(value)
+		return strings.TrimSpace(value), nil
 	}
-	if raw, ok := metadata[MetadataProfileNameKey]; ok && raw != nil {
-		value, ok := raw.(string)
-		if !ok {
-			return "", "", fmt.Errorf("metadata %q must be string", MetadataProfileNameKey)
-		}
-		profileName = strings.TrimSpace(value)
-	}
-	return profileName, taskMode, nil
+	return "", nil
 }
 
 func SessionPromptModeFromConfig(cfg session.SessionConfig) (SessionPromptMode, error) {
-	profileName, taskMode, err := ProfileModeFromMetadata(cfg.Metadata)
+	taskMode, err := taskModeFromMetadata(cfg.Metadata)
 	if err != nil {
 		return SessionPromptMode{}, err
 	}
 	_, preset, _, collaborationMode, promptPack, permissionProfile, _, _ := session.SessionFacetValues(&session.Session{Config: cfg})
-	profileName = firstNonEmptyTrimmed(profileName, strings.TrimSpace(cfg.Profile), preset, permissionProfile)
+	profileName := firstNonEmptyTrimmed(preset, permissionProfile)
 	return SessionPromptMode{
 		ProfileName:       profileName,
 		TaskMode:          strings.ToLower(strings.TrimSpace(taskMode)),
-		CollaborationMode: effectiveCollaborationMode(collaborationMode, taskMode, profileName),
+		CollaborationMode: effectiveCollaborationMode(collaborationMode, taskMode, ""),
 		PermissionProfile: strings.TrimSpace(permissionProfile),
 		PromptPack:        strings.TrimSpace(promptPack),
 		Preset:            strings.TrimSpace(preset),

@@ -27,10 +27,15 @@ func newResumePickerState(workspace string) (*resumePickerState, error) {
 	}
 	items := make([]selectionListItem, 0, len(threads))
 	for _, thread := range threads {
+		mode := firstPopulatedString(thread.Thread.CollaborationMode, thread.Thread.TaskMode, thread.Thread.Mode)
+		detail := string(thread.Thread.Status)
+		if strings.TrimSpace(mode) != "" {
+			detail += " · " + collaborationModeDisplay(mode)
+		}
 		items = append(items, selectionListItem{
 			Key:    thread.Thread.SessionID,
 			Title:  threadTitle(thread.Thread),
-			Detail: fmt.Sprintf("%s · %s", thread.Thread.Status, valueOrDefaultString(thread.Thread.Profile, "default")),
+			Detail: detail,
 		})
 	}
 	return &resumePickerState{
@@ -289,7 +294,9 @@ func renderThreadBrowseSummary(item runtimeenv.ThreadBrowseSummary) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Thread: %s\n", thread.SessionID)
 	fmt.Fprintf(&b, "Status: %s\n", thread.Status)
-	fmt.Fprintf(&b, "Profile: %s\n", valueOrDefaultString(thread.Profile, "default"))
+	if mode := firstPopulatedString(thread.CollaborationMode, thread.TaskMode, thread.Mode); mode != "" {
+		fmt.Fprintf(&b, "Mode: %s\n", collaborationModeDisplay(mode))
+	}
 	fmt.Fprintf(&b, "Trust: %s\n", valueOrDefaultString(thread.EffectiveTrust, "trusted"))
 	fmt.Fprintf(&b, "Approval: %s\n", valueOrDefaultString(thread.EffectiveApproval, "confirm"))
 	fmt.Fprintf(&b, "Snapshots: %d\n", item.SnapshotCount)

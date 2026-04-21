@@ -56,9 +56,6 @@ func TestComposeProductSystemPromptUsesUnifiedComposer(t *testing.T) {
 	if got := strings.TrimSpace(metadata[prompting.MetadataBaseSourceKey].(string)); got == "" {
 		t.Fatalf("expected compose debug metadata, got %+v", metadata)
 	}
-	if got := metadata[prompting.MetadataProfileNameKey]; got != "coding" {
-		t.Fatalf("profile metadata = %v, want %q", got, "coding")
-	}
 	if got := metadata[session.MetadataTaskMode]; got != "coding" {
 		t.Fatalf("task_mode metadata = %v, want %q", got, "coding")
 	}
@@ -180,7 +177,7 @@ func TestRunInitCreatesAgentsTemplate(t *testing.T) {
 func TestRunDebugConfigOutputsSummary(t *testing.T) {
 	initTestApp(t)
 	cfg := &config{
-		flags:      &appkit.AppFlags{Workspace: t.TempDir(), Provider: "openai", Model: "gpt-5", Trust: "trusted", Profile: "coding"},
+		flags:      &appkit.AppFlags{Workspace: t.TempDir(), Provider: "openai", Model: "gpt-5", Trust: "trusted"},
 		governance: product.DefaultGovernanceConfig(),
 	}
 	out, err := captureStdout(func() error { return runDebugConfig(cfg) })
@@ -189,6 +186,31 @@ func TestRunDebugConfigOutputsSummary(t *testing.T) {
 	}
 	if !strings.Contains(out, "mosscode debug-config") || !strings.Contains(out, "Global config:") {
 		t.Fatalf("unexpected debug-config output: %q", out)
+	}
+}
+
+func TestExecuteCLIRejectsLegacyProfileFlag(t *testing.T) {
+	initTestApp(t)
+	cfg := &config{
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	err := executeCLIForTest(cfg, "--profile", "coding", "debug-config")
+	if err == nil || !strings.Contains(err.Error(), "unknown flag: --profile") {
+		t.Fatalf("expected legacy profile rejection, got %v", err)
+	}
+}
+
+func TestExecuteCLIRejectsLegacyApprovalEnv(t *testing.T) {
+	initTestApp(t)
+	t.Setenv("MOSSCODE_APPROVAL_MODE", "confirm")
+	cfg := &config{
+		flags:      &appkit.AppFlags{},
+		governance: product.DefaultGovernanceConfig(),
+	}
+	err := executeCLIForTest(cfg, "debug-config")
+	if err == nil || !strings.Contains(err.Error(), "legacy approval selection is no longer supported") {
+		t.Fatalf("expected legacy approval rejection, got %v", err)
 	}
 }
 

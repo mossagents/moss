@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	config "github.com/mossagents/moss/harness/config"
-	rprofile "github.com/mossagents/moss/harness/runtime/profile"
 	"github.com/mossagents/moss/kernel/checkpoint"
 )
 
@@ -334,33 +333,22 @@ func handlePermissionsSlashCommand(m chatModel, args []string, _ string, _ strin
 	return m, nil
 }
 
-func handleProfileSlashCommand(m chatModel, args []string, input string, _ string) (chatModel, tea.Cmd) {
+func handleModeSlashCommand(m chatModel, args []string, input string, _ string) (chatModel, tea.Cmd) {
 	if len(args) == 0 {
-		current := valueOrDefaultString(m.profile, "default")
-		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current profile: %s\nUsage: /profile list\n       /profile set <name>", current)})
+		current := m.currentCollaborationMode()
+		m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Current mode: %s\nUsage: /mode <execute|plan|investigate>", collaborationModeDisplay(current))})
 		m.refreshViewport()
 		return m, nil
 	}
-	if strings.EqualFold(args[0], "list") {
-		names, err := rprofile.ProfileNamesForWorkspace(m.workspace, m.trust)
-		if err != nil {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to list profiles: %v", err)})
-		} else {
-			m.messages = append(m.messages, chatMessage{kind: msgSystem, content: fmt.Sprintf("Available profiles:\n- %s", strings.Join(names, "\n- "))})
-		}
-		m.refreshViewport()
-		return m, nil
-	}
-	profileName := strings.TrimSpace(args[0])
 	if strings.EqualFold(args[0], "set") {
 		if len(args) < 2 {
-			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /profile set <name>"})
+			m.messages = append(m.messages, chatMessage{kind: msgError, content: "Usage: /mode <execute|plan|investigate>"})
 			m.refreshViewport()
 			return m, nil
 		}
-		profileName = strings.TrimSpace(args[1])
+		args = args[1:]
 	}
-	return m.queueProfileSwitch(profileName, input)
+	return m.queueModeSwitch(strings.TrimSpace(args[0]), input)
 }
 
 func handleStatuslineSlashCommand(m chatModel, args []string, _ string, _ string) (chatModel, tea.Cmd) {

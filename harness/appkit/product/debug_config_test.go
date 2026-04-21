@@ -9,7 +9,7 @@ import (
 
 func TestBuildDebugConfigReportIncludesCommandDirs(t *testing.T) {
 	appconfig.SetAppName("mosscode")
-	report := BuildDebugConfigReport("mosscode", t.TempDir(), "openai", "gpt-5", "trusted", "confirm", "coding", SessionSelectorReport{}, "default", "", "", "")
+	report := BuildDebugConfigReport("mosscode", t.TempDir(), "openai", "gpt-5", "trusted", "confirm", SessionSelectorReport{}, "default", "", "", "")
 	if len(report.CommandDirs) != 3 {
 		t.Fatalf("expected 3 command dirs, got %d", len(report.CommandDirs))
 	}
@@ -17,7 +17,7 @@ func TestBuildDebugConfigReportIncludesCommandDirs(t *testing.T) {
 
 func TestRenderDebugConfigReportIncludesThemeAndPaths(t *testing.T) {
 	appconfig.SetAppName("mosscode")
-	report := BuildDebugConfigReport("mosscode", t.TempDir(), "openai", "gpt-5", "trusted", "confirm", "coding", SessionSelectorReport{RunMode: "interactive", Preset: "code", CollaborationMode: "execute", PermissionProfile: "workspace-write"}, "plain", "config", "environment,skills", "base:config -> dynamic:environment -> dynamic:skills")
+	report := BuildDebugConfigReport("mosscode", t.TempDir(), "openai", "gpt-5", "trusted", "confirm", SessionSelectorReport{RunMode: "interactive", Preset: "code", CollaborationMode: "execute", PermissionProfile: "workspace-write"}, "plain", "config", "environment,skills", "base:config -> dynamic:environment -> dynamic:skills")
 	rendered := RenderDebugConfigReport(report)
 	if !strings.Contains(rendered, "theme=plain") ||
 		!strings.Contains(rendered, "Session selectors: run=interactive | preset=code | mode=execute | permissions=workspace-write") ||

@@ -529,7 +529,7 @@ func (m chatModel) submitApprovalAskForm(ask *bridgeAsk, formValues map[string]a
 			m.refreshViewport()
 			return m, nil
 		}
-		if err := product.PersistProjectApprovalAmendment(m.workspace, m.profile, amendment); err != nil {
+		if err := product.PersistProjectApprovalAmendment(m.workspace, amendment); err != nil {
 			m.askForm.errorText = err.Error()
 			m.refreshViewport()
 			return m, nil

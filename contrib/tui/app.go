@@ -49,17 +49,17 @@ type Config struct {
 	Model                    string
 	Workspace                string
 	Trust                    string
-	Profile                  string
+	CollaborationMode        string
 	ApprovalMode             string
 	SessionStoreDir          string
 	InitialSessionID         string
 	BaseURL                  string
 	APIKey                   string
 	BaseObserver             observe.Observer
-	BuildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
+	BuildKernel              func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
 	BuildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
 	AfterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
-	BuildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	BuildSessionConfig       func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig
 	PromptConfigInstructions string
 	PromptModelInstructions  string
 	ScheduleController       scheduling.ScheduleController
@@ -86,13 +86,13 @@ type agentState struct {
 	bridge                   *bridgeIO
 	workspace                string
 	trust                    string
-	profile                  string
+	collaborationMode        string
 	approvalMode             string
 	baseObserver             observe.Observer
 	buildRunTraceObserver    func() (*product.RunTraceRecorder, observe.Observer)
-	buildKernel              func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
+	buildKernel              func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error)
 	afterBoot                func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error
-	buildSessionConfig       func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig
+	buildSessionConfig       func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig
 	promptConfigInstructions string
 	promptModelInstructions  string
 	provider                 string
@@ -187,13 +187,13 @@ func (a *agentState) sessionSummary() string {
 		b.WriteString(fmt.Sprintf("\nLast offload time: %v", v))
 	}
 	b.WriteString(fmt.Sprintf("\nTrust: %s", a.trust))
-	if strings.TrimSpace(a.profile) != "" {
-		b.WriteString(fmt.Sprintf("\nProfile: %s", a.profile))
+	if strings.TrimSpace(a.collaborationMode) != "" {
+		b.WriteString(fmt.Sprintf("\nMode: %s", collaborationModeDisplay(a.collaborationMode)))
 	}
 	if strings.TrimSpace(a.approvalMode) != "" {
 		b.WriteString(fmt.Sprintf("\nApproval mode: %s", a.approvalMode))
 	}
-	policy := postureFromRuntime(a.k, a.profile, a.trust, a.approvalMode).ToolPolicy
+	policy := postureFromRuntime(a.k, a.collaborationMode, a.trust, a.approvalMode).ToolPolicy
 	if len(policy.Command.Rules) > 0 || len(policy.HTTP.Rules) > 0 {
 		b.WriteString(fmt.Sprintf("\nRules: command=%d http=%d", len(policy.Command.Rules), len(policy.HTTP.Rules)))
 	}
@@ -229,10 +229,7 @@ func cloneMetadataMap(metadata map[string]any) map[string]any {
 	return cloned
 }
 
-func normalizeSessionConfigDefaults(cfg session.SessionConfig, trust, profile, goal, mode string, maxSteps int) session.SessionConfig {
-	if strings.TrimSpace(cfg.Profile) == "" {
-		cfg.Profile = profile
-	}
+func normalizeSessionConfigDefaults(cfg session.SessionConfig, trust, goal, mode string, maxSteps int) session.SessionConfig {
 	if cfg.TrustLevel == "" {
 		cfg.TrustLevel = trust
 	}
@@ -248,18 +245,27 @@ func normalizeSessionConfigDefaults(cfg session.SessionConfig, trust, profile, g
 	return cfg
 }
 
+func sessionConfigCollaborationMode(cfg session.SessionConfig) string {
+	if cfg.ResolvedSessionSpec != nil && strings.TrimSpace(cfg.ResolvedSessionSpec.Intent.CollaborationMode) != "" {
+		return strings.TrimSpace(cfg.ResolvedSessionSpec.Intent.CollaborationMode)
+	}
+	if cfg.SessionSpec != nil && strings.TrimSpace(cfg.SessionSpec.Intent.CollaborationMode) != "" {
+		return strings.TrimSpace(cfg.SessionSpec.Intent.CollaborationMode)
+	}
+	return ""
+}
+
 func preparePromptMetadata(cfg session.SessionConfig, fallbackProfile string) map[string]any {
 	metadata := cloneMetadataMap(cfg.Metadata)
-	profile := strings.TrimSpace(cfg.Profile)
-	if profile == "" {
-		profile = strings.TrimSpace(fallbackProfile)
-	}
-	if profile != "" {
-		if _, ok := metadata[prompting.MetadataProfileNameKey]; !ok {
-			metadata[prompting.MetadataProfileNameKey] = profile
+	if _, ok := metadata[session.MetadataTaskMode]; !ok {
+		mode := firstNonEmptyTrimmed(sessionConfigCollaborationMode(cfg))
+		if mode == "" {
+			if normalized, err := normalizeTUIMode(firstNonEmptyTrimmed(cfg.Profile, fallbackProfile)); err == nil {
+				mode = normalized
+			}
 		}
-		if _, ok := metadata[session.MetadataTaskMode]; !ok {
-			metadata[session.MetadataTaskMode] = profile
+		if mode != "" {
+			metadata[session.MetadataTaskMode] = mode
 		}
 	}
 	return metadata
@@ -414,7 +420,7 @@ func (a *agentState) permissionSummary() string {
 		b.WriteString(fmt.Sprintf("Approval mode: %s\n", a.approvalMode))
 	}
 	if k != nil {
-		policy := postureFromRuntime(k, a.profile, a.trust, a.approvalMode).ToolPolicy
+		policy := postureFromRuntime(k, a.collaborationMode, a.trust, a.approvalMode).ToolPolicy
 		if len(policy.Command.Rules) > 0 {
 			b.WriteString("Command rules:\n")
 			for _, rule := range policy.Command.Rules {
@@ -1021,7 +1027,7 @@ func (m appModel) rebuildKernelWithSelection(provider, providerName, model strin
 	m.chat.providerName = strings.TrimSpace(wCfg.ProviderName)
 	m.chat.model = model
 	m.chat.trust = m.config.Trust
-	m.chat.profile = m.config.Profile
+	m.chat.collaborationMode = m.config.CollaborationMode
 	m.chat.approvalMode = m.config.ApprovalMode
 	return m, initKernelCmd(m.config, wCfg, m.bridgeIO)
 }

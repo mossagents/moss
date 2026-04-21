@@ -152,7 +152,7 @@ func (m chatModel) Update(msg tea.Msg) (chatModel, tea.Cmd) {
 			}
 			return m, nil
 		case "shift+tab":
-			return m.cycleProfile()
+			return m.cycleMode()
 		case "enter":
 			// 弹窗可见时，Enter 确认选中项
 			if m.slashPopup != nil {

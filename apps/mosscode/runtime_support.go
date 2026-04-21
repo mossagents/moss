@@ -16,7 +16,6 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/logging"
 	providers "github.com/mossagents/moss/harness/providers"
-	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
 	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
@@ -83,16 +82,9 @@ func buildChangeRuntime(ctx context.Context, cfg *config, sessionID string) (cha
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, approvalMode string, governance product.GovernanceConfig, observer observe.Observer) (*kernel.Kernel, error) {
 	logging.GetLogger().DebugContext(ctx, "build kernel requested",
 		"workspace", flags.Workspace,
-		"profile", flags.Profile,
 		"trust", flags.Trust,
 		"approval_mode", approvalMode,
 	)
-	resolved, err := resolveProfileForFlags(flags, approvalMode)
-	if err != nil {
-		return nil, err
-	}
-	flags.Trust = resolved.Trust
-	flags.Profile = resolved.Name
 	disableDefaultPolicy := false
 	router, _, err := product.OpenModelRouter(flags.Workspace, governance.RouterConfigPath)
 	if err != nil {
@@ -126,8 +118,7 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		return nil, err
 	}
 	logging.GetLogger().DebugContext(ctx, "kernel built",
-		"profile", resolved.Name,
-		"trust", resolved.Trust,
+		"trust", flags.Trust,
 		"workspace", flags.Workspace,
 		"router_enabled", router != nil,
 		"failover_enabled", useFailover,
@@ -144,36 +135,10 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		k.SetLLM(llm)
 	}
 	k.SetObserver(product.ComposeStateObserver(k, observer))
-	if err := product.ApplyToolPolicy(k, resolved.ToolPolicy); err != nil {
+	if _, err := product.ApplyApprovalModeWithTrust(k, flags.Trust, approvalMode); err != nil {
 		return nil, err
 	}
 	return k, nil
-}
-
-func resolveProfileForFlags(flags *appkit.AppFlags, approvalMode string) (rsessionspec.LegacyRuntimeSelection, error) {
-	return rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
-		Workspace:        flags.Workspace,
-		RequestedProfile: flags.Profile,
-		Trust:            flags.Trust,
-		ApprovalMode:     approvalMode,
-	})
-}
-
-func resolveProfileForConfig(cfg *config) (rsessionspec.LegacyRuntimeSelection, error) {
-	trust := ""
-	if hasExplicitFlag(cfg.explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
-		trust = cfg.flags.Trust
-	}
-	approval := ""
-	if hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
-		approval = cfg.approvalMode
-	}
-	return rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
-		Workspace:        cfg.flags.Workspace,
-		RequestedProfile: cfg.flags.Profile,
-		Trust:            trust,
-		ApprovalMode:     approval,
-	})
 }
 
 func hasExplicitFlag(explicit []string, name string) bool {
@@ -210,13 +175,7 @@ func composeProductSystemPrompt(workspace, trust string, k *kernel.Kernel, cfg s
 	}
 	promptCfg := cfg
 	promptCfg.Metadata = promptMetadata
-	if promptCfg.Profile == "" {
-		promptCfg.Profile = strings.TrimSpace(cfg.Profile)
-	}
-	if profile := strings.TrimSpace(promptCfg.Profile); profile != "" {
-		promptMetadata[prompting.MetadataProfileNameKey] = profile
-	}
-	if taskMode := firstNonEmptyTrimmed(metadataString(promptMetadata, session.MetadataTaskMode), sessionConfigCollaborationMode(cfg), strings.TrimSpace(promptCfg.Profile)); taskMode != "" {
+	if taskMode := firstNonEmptyTrimmed(metadataString(promptMetadata, session.MetadataTaskMode), sessionConfigCollaborationMode(cfg)); taskMode != "" {
 		promptMetadata[session.MetadataTaskMode] = taskMode
 	}
 	systemPrompt, promptMetadata, err := prompting.ComposeSystemPromptForConfig(
@@ -231,28 +190,6 @@ func composeProductSystemPrompt(workspace, trust string, k *kernel.Kernel, cfg s
 		return "", nil, err
 	}
 	return systemPrompt, promptMetadata, nil
-}
-
-func buildLegacyProjectedSessionConfig(base session.SessionConfig, flags *appkit.AppFlags, trust, approvalMode, profile, promptPack string) session.SessionConfig {
-	selection, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
-		Workspace:        flags.Workspace,
-		RequestedProfile: profile,
-		Trust:            trust,
-		ApprovalMode:     approvalMode,
-	})
-	if err != nil {
-		selection = rsessionspec.DefaultLegacyRuntimeSelection(flags.Workspace, profile, trust, approvalMode)
-	}
-	cfg := applyContextPolicy(base, flags)
-	projected, err := rsessionspec.ApplyLegacyRuntimeSelection(cfg, selection, rsessionspec.LegacyProjectionInput{
-		PromptPack: firstNonEmptyTrimmed(promptPack, "coding"),
-		Provider:   flags.Provider,
-		ModelName:  flags.Model,
-	})
-	if err != nil {
-		return cfg
-	}
-	return projected
 }
 
 func sessionConfigCollaborationMode(cfg session.SessionConfig) string {

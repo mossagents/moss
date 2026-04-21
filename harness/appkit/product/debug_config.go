@@ -18,7 +18,6 @@ type DebugConfigReport struct {
 	Model                 string                `json:"model"`
 	Trust                 string                `json:"trust"`
 	ApprovalMode          string                `json:"approval_mode"`
-	Profile               string                `json:"profile"`
 	Session               SessionSelectorReport `json:"session,omitempty"`
 	Theme                 string                `json:"theme"`
 	DebugEnabled          bool                  `json:"debug_enabled"`
@@ -62,7 +61,7 @@ func (r SessionSelectorReport) IsZero() bool {
 		strings.TrimSpace(r.ModelProfile) == ""
 }
 
-func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode, profile string, sessionSelectors SessionSelectorReport, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
+func BuildDebugConfigReport(appName, workspace, provider, model, trust, approvalMode string, sessionSelectors SessionSelectorReport, theme, promptBaseSource, promptDynamicSections, promptSourceChain string) DebugConfigReport {
 	return DebugConfigReport{
 		App:                   appName,
 		Workspace:             workspace,
@@ -70,7 +69,6 @@ func BuildDebugConfigReport(appName, workspace, provider, model, trust, approval
 		Model:                 stringutil.FirstNonEmpty(model, "(default)"),
 		Trust:                 stringutil.FirstNonEmpty(trust, appconfig.TrustTrusted),
 		ApprovalMode:          stringutil.FirstNonEmpty(approvalMode, "confirm"),
-		Profile:               stringutil.FirstNonEmpty(profile, "default"),
 		Session:               sessionSelectors,
 		Theme:                 stringutil.FirstNonEmpty(theme, "default"),
 		DebugEnabled:          os.Getenv("MOSS_DEBUG") == "1",
@@ -99,12 +97,11 @@ func RenderDebugConfigReport(report DebugConfigReport) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "mosscode debug-config\n")
 	fmt.Fprintf(&b, "Workspace: %s\n", stringutil.FirstNonEmpty(report.Workspace, "."))
-	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s | profile=%s | theme=%s\n",
+	fmt.Fprintf(&b, "Provider: %s | model=%s | trust=%s | approval=%s | theme=%s\n",
 		stringutil.FirstNonEmpty(report.Provider, "(default)"),
 		stringutil.FirstNonEmpty(report.Model, "(default)"),
 		stringutil.FirstNonEmpty(report.Trust, appconfig.TrustTrusted),
 		stringutil.FirstNonEmpty(report.ApprovalMode, "confirm"),
-		stringutil.FirstNonEmpty(report.Profile, "default"),
 		stringutil.FirstNonEmpty(report.Theme, "default"))
 	if !report.Session.IsZero() {
 		fmt.Fprintf(&b, "Session selectors: run=%s | preset=%s | mode=%s | permissions=%s | prompt_pack=%s | session_policy=%s | model_profile=%s\n",

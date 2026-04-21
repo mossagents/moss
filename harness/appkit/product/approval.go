@@ -94,7 +94,7 @@ func EvaluateToolPolicy(policy runtimepolicy2.ToolPolicy, spec tool.ToolSpec, in
 	return runtimepolicy2.Evaluate(policy, spec, input)
 }
 
-func PersistProjectApprovalAmendment(workspace, profile string, amendment *io.ExecPolicyAmendment) error {
+func PersistProjectApprovalAmendment(workspace string, amendment *io.ExecPolicyAmendment) error {
 	workspace = strings.TrimSpace(workspace)
 	if workspace == "" {
 		return fmt.Errorf("workspace is required")
@@ -110,10 +110,7 @@ func PersistProjectApprovalAmendment(workspace, profile string, amendment *io.Ex
 	if cfg.Profiles == nil {
 		cfg.Profiles = map[string]appconfig.ProfileConfig{}
 	}
-	profile = strings.TrimSpace(profile)
-	if profile == "" {
-		profile = strings.TrimSpace(cfg.DefaultProfile)
-	}
+	profile := strings.TrimSpace(cfg.DefaultProfile)
 	if profile == "" {
 		profile = "default"
 	}

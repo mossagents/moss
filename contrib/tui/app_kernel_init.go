@@ -87,7 +87,7 @@ func (s *kernelInitState) loadInitialSession() error {
 		return fmt.Errorf("session %q not found", s.cfg.InitialSessionID)
 	}
 	s.sess = sess
-	currentPosture := postureFromRuntime(s.k, s.cfg.Profile, s.cfg.Trust, s.cfg.ApprovalMode)
+	currentPosture := postureFromRuntime(s.k, s.cfg.CollaborationMode, s.cfg.Trust, s.cfg.ApprovalMode)
 	plan, err := planPostureRebuild(
 		s.cfg.InitialSessionID,
 		currentPosture,
@@ -111,21 +111,14 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 		return nil
 	}
 	s.cancel()
-	rebuildProfile := strings.TrimSpace(plan.Profile)
-	if rebuildProfile == "" {
-		rebuildProfile = strings.TrimSpace(s.cfg.Profile)
-	}
-	if rebuildProfile == "" {
-		rebuildProfile = "default"
-	}
 	k, ctx, cancel, err := buildRuntimeKernel(Config{
-		Trust:        plan.Trust,
-		Profile:      rebuildProfile,
-		ApprovalMode: plan.ApprovalMode,
-		APIKey:       s.cfg.APIKey,
-		BaseURL:      s.cfg.BaseURL,
-		BuildKernel:  s.cfg.BuildKernel,
-		AfterBoot:    s.cfg.AfterBoot,
+		Trust:             plan.Trust,
+		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), plan.Profile, s.cfg.CollaborationMode, "execute"),
+		ApprovalMode:      plan.ApprovalMode,
+		APIKey:            s.cfg.APIKey,
+		BaseURL:           s.cfg.BaseURL,
+		BuildKernel:       s.cfg.BuildKernel,
+		AfterBoot:         s.cfg.AfterBoot,
 	}, s.wCfg, s.bridge)
 	if err != nil {
 		return err
@@ -136,7 +129,7 @@ func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
 		return fmt.Errorf("apply rebuilt posture: %w", err)
 	}
 	s.cfg.Trust = plan.Trust
-	s.cfg.Profile = rebuildProfile
+	s.cfg.CollaborationMode = firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), s.cfg.CollaborationMode, "execute")
 	s.cfg.ApprovalMode = plan.ApprovalMode
 	return nil
 }
@@ -146,20 +139,18 @@ func (s *kernelInitState) createInteractiveSession() error {
 		Goal:       "interactive",
 		Mode:       "interactive",
 		TrustLevel: s.cfg.Trust,
-		Profile:    s.cfg.Profile,
 		MaxSteps:   200,
-	}, s.cfg.Trust, s.cfg.Profile, "interactive", "interactive", 200)
+	}, s.cfg.Trust, "interactive", "interactive", 200)
 	if s.cfg.BuildSessionConfig != nil {
 		sessCfg = normalizeSessionConfigDefaults(
-			s.cfg.BuildSessionConfig(s.wCfg.Workspace, s.cfg.Trust, s.cfg.ApprovalMode, s.cfg.Profile, ""),
+			s.cfg.BuildSessionConfig(s.wCfg.Workspace, s.cfg.Trust, s.cfg.ApprovalMode, s.cfg.CollaborationMode, ""),
 			s.cfg.Trust,
-			s.cfg.Profile,
 			"interactive",
 			"interactive",
 			200,
 		)
 	}
-	metadata := preparePromptMetadata(sessCfg, s.cfg.Profile)
+	metadata := preparePromptMetadata(sessCfg, s.cfg.CollaborationMode)
 	sessCfg.Metadata = metadata
 	sysPrompt, metadata, err := prompting.ComposeSystemPromptForConfig(
 		s.wCfg.Workspace,
@@ -193,7 +184,7 @@ func (s *kernelInitState) buildAgent() *agentState {
 		bridge:                   s.bridge,
 		workspace:                s.wCfg.Workspace,
 		trust:                    s.cfg.Trust,
-		profile:                  s.cfg.Profile,
+		collaborationMode:        firstNonEmptyTrimmed(s.cfg.CollaborationMode, "execute"),
 		approvalMode:             s.cfg.ApprovalMode,
 		baseObserver:             s.k.Observer(),
 		buildRunTraceObserver:    s.cfg.BuildRunTraceObserver,

@@ -53,7 +53,6 @@ func runDebugConfig(cfg *config) error {
 		flags.Model,
 		flags.Trust,
 		invocation.ApprovalMode,
-		invocation.DisplayProfile,
 		sessionSelectorReportFromInvocation(invocation),
 		currentThemeName(),
 		"",
@@ -68,9 +67,6 @@ func runDebugConfig(cfg *config) error {
 }
 
 func sessionSelectorReportFromInvocation(invocation runtimeInvocation) product.SessionSelectorReport {
-	if !invocation.Typed {
-		return product.SessionSelectorReport{}
-	}
 	return product.SessionSelectorReport{
 		RunMode:           strings.TrimSpace(invocation.ResolvedSpec.Runtime.RunMode),
 		Preset:            strings.TrimSpace(invocation.ResolvedSpec.Origin.Preset),

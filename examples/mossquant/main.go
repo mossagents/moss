@@ -117,7 +117,7 @@ func launchTUI(cfg *config) error {
 			interval := effectiveReviewInterval(profile, cfg.reviewInterval)
 			return buildSystemPrompt(workspace, cfg.capital, interval, profile)
 		},
-		BuildSessionConfig: func(workspace, trust, approvalMode, profileName, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profileName, collaborationMode, systemPrompt string) session.SessionConfig {
 			profile, err := loadInvestorProfile(workspace)
 			if err != nil {
 				profile = &InvestorProfile{}

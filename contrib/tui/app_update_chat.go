@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
+	"github.com/mossagents/moss/harness/runtime/collaboration"
 	"github.com/mossagents/moss/kernel/model"
 	ksession "github.com/mossagents/moss/kernel/session"
 )
@@ -16,7 +16,7 @@ func (m appModel) updateChatCore(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if handled, model, cmd := m.handleControlMessages(msg); handled {
 		return model, cmd
 	}
-	if handled, model, cmd := m.handleProfileSwitch(msg); handled {
+	if handled, model, cmd := m.handleModeSwitch(msg); handled {
 		return model, cmd
 	}
 	if handled, model, cmd := m.handleKernelReady(msg); handled {
@@ -78,16 +78,21 @@ func (m appModel) handleControlMessages(msg tea.Msg) (handled bool, model tea.Mo
 	return false, nil, nil
 }
 
-func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Model, cmd tea.Cmd) {
-	st, ok := msg.(switchProfileMsg)
+func (m appModel) handleModeSwitch(msg tea.Msg) (handled bool, model tea.Model, cmd tea.Cmd) {
+	st, ok := msg.(switchModeMsg)
 	if !ok {
 		return false, nil, nil
+	}
+
+	nextMode := string(collaboration.NormalizeMode(st.mode))
+	if nextMode == "" {
+		nextMode = string(collaboration.ModeExecute)
 	}
 
 	checkpointMsg := ""
 	if m.agent != nil {
 		var err error
-		checkpointMsg, err = m.agent.prepareProfileSwitch(st.profile)
+		checkpointMsg, err = m.agent.prepareModeSwitch(nextMode)
 		if err != nil {
 			m.chat.messages = append(m.chat.messages, chatMessage{kind: msgError, content: err.Error()})
 			m.chat.streaming = false
@@ -96,28 +101,14 @@ func (m appModel) handleProfileSwitch(msg tea.Msg) (handled bool, model tea.Mode
 		}
 	}
 	m = m.stopAgentForKernelRebuild()
-	resolved, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
-		Workspace:        m.config.Workspace,
-		RequestedProfile: st.profile,
-	})
-	if err != nil {
-		m.chat.messages = append(m.chat.messages, chatMessage{kind: msgError, content: fmt.Sprintf("failed to switch profile: %v", err)})
-		m.chat.streaming = false
-		m.chat.refreshViewport()
-		return true, m, nil
-	}
-	m.config.Profile = resolved.Name
-	m.config.Trust = resolved.Trust
-	m.config.ApprovalMode = resolved.ApprovalMode
-	m.chat.profile = resolved.Name
-	m.chat.trust = resolved.Trust
-	m.chat.approvalMode = resolved.ApprovalMode
+	m.config.CollaborationMode = nextMode
+	m.chat.collaborationMode = nextMode
 	m.postInitDisplayText = strings.TrimSpace(st.displayText)
 	m.postInitRunText = strings.TrimSpace(st.prompt)
 	if strings.TrimSpace(checkpointMsg) != "" {
 		m.chat.messages = append(m.chat.messages, chatMessage{
 			kind:    msgSystem,
-			content: checkpointMsg + "\nStarting a fresh session with the new profile.",
+			content: checkpointMsg + "\nStarting a fresh session with the new mode.",
 		})
 		m.chat.refreshViewport()
 	}
@@ -135,7 +126,13 @@ func (m appModel) handleKernelReady(msg tea.Msg) (handled bool, result tea.Model
 	agent := ready.agent
 
 	m.chat.trust = m.config.Trust
-	m.chat.profile = m.config.Profile
+	mode := firstNonEmptyTrimmed(m.config.CollaborationMode, string(collaboration.ModeExecute))
+	if agent.sess != nil {
+		_, _, _, sessionMode, _, _, _, _ := ksession.SessionFacetValues(agent.sess)
+		mode = firstNonEmptyTrimmed(sessionMode, mode, string(collaboration.ModeExecute))
+	}
+	m.config.CollaborationMode = mode
+	m.chat.collaborationMode = mode
 	m.chat.approvalMode = m.config.ApprovalMode
 	m.chat.scheduleCtrl = m.config.ScheduleController
 
@@ -240,7 +237,6 @@ func (m *appModel) bindDebugCallbacks(agent *agentState) {
 			m.chat.model,
 			m.chat.trust,
 			m.chat.approvalMode,
-			m.chat.profile,
 			product.SessionSelectorReport{
 				RunMode:           strings.TrimSpace(runMode),
 				Preset:            strings.TrimSpace(preset),

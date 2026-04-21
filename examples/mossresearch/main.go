@@ -5,16 +5,6 @@ import (
 	_ "embed"
 	"flag"
 	"fmt"
-	"github.com/mossagents/moss/harness/appkit"
-	appconfig "github.com/mossagents/moss/harness/config"
-	mosstui "github.com/mossagents/moss/contrib/tui"
-	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/kernel"
-	kernio "github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/kernel/model"
-	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
-	"github.com/mossagents/moss/harness/runtime/thinking"
 	"io"
 	"os"
 	"os/signal"
@@ -22,6 +12,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	mosstui "github.com/mossagents/moss/contrib/tui"
+	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/appkit"
+	appconfig "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/runtime/thinking"
+	"github.com/mossagents/moss/kernel"
+	kernio "github.com/mossagents/moss/kernel/io"
+	"github.com/mossagents/moss/kernel/model"
+	"github.com/mossagents/moss/kernel/session"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 //go:embed templates/system_prompt.tmpl
@@ -120,7 +121,7 @@ func launchTUI(cfg *config) error {
 			return buildKernel(context.Background(), runtimeFlags, io)
 		},
 		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, profile, collaborationMode, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
 				Goal:         "interactive deep research assistant",
 				Mode:         "interactive",
@@ -303,4 +304,3 @@ Suggested budgets:
 		TrustLevel:   flags.Trust,
 	})
 }
-

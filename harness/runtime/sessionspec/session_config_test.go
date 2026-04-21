@@ -39,9 +39,6 @@ func TestApplyToSessionConfigAndRestore(t *testing.T) {
 	if cfg.Mode != "interactive" {
 		t.Fatalf("mode = %q, want interactive", cfg.Mode)
 	}
-	if cfg.Profile != "code" {
-		t.Fatalf("profile = %q, want code", cfg.Profile)
-	}
 	if cfg.Metadata[kernelsession.MetadataEffectiveApproval] != "confirm" {
 		t.Fatalf("effective approval metadata = %v, want confirm", cfg.Metadata[kernelsession.MetadataEffectiveApproval])
 	}

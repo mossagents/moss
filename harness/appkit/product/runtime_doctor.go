@@ -15,7 +15,6 @@ import (
 	"github.com/mossagents/moss/harness/extensions/skill"
 	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
-	rsessionspec "github.com/mossagents/moss/harness/runtime/sessionspec"
 	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/kernel/workspace"
@@ -435,26 +434,6 @@ func mergeCapabilityStatuses(base []extcapability.CapabilityStatus, extra []extc
 }
 
 func resolveDoctorToolPolicy(workspace string, flags *appkit.AppFlags, explicitFlags []string, trust, approvalMode string) rpolicy.ToolPolicy {
-	if flags == nil {
-		return rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
-	}
-	trustOverride := ""
-	if containsString(explicitFlags, "trust") || envConfigured("MOSSCODE_TRUST", "MOSS_TRUST") {
-		trustOverride = trust
-	}
-	approvalOverride := ""
-	if containsString(explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE") {
-		approvalOverride = approvalMode
-	}
-	resolved, err := rsessionspec.ResolveLegacyRuntimeSelection(rsessionspec.LegacyResolveOptions{
-		Workspace:        workspace,
-		RequestedProfile: flags.Profile,
-		Trust:            trustOverride,
-		ApprovalMode:     approvalOverride,
-	})
-	if err == nil {
-		return resolved.ToolPolicy
-	}
 	return rpolicy.ResolveToolPolicyForWorkspace(workspace, trust, approvalMode)
 }
 

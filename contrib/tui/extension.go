@@ -47,15 +47,15 @@ import tea "github.com/charmbracelet/bubbletea"
 // TUIContext is a read-only snapshot of TUI state passed to extension handlers.
 // It is captured at the moment of the call; it does not update automatically.
 type TUIContext struct {
-	Workspace   string
-	Provider    string
-	Model       string
-	Profile     string
-	Trust       string
-	SessionID   string
-	IsStreaming bool
-	InputValue  string
-	Width       int
+	Workspace         string
+	Provider          string
+	Model             string
+	CollaborationMode string
+	Trust             string
+	SessionID         string
+	IsStreaming       bool
+	InputValue        string
+	Width             int
 }
 
 // OverlayContext extends TUIContext with the dimensions available to an overlay.

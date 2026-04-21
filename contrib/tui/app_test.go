@@ -79,20 +79,20 @@ func TestWelcomeViewIncludesConfiguredBanner(t *testing.T) {
 	}
 }
 
-func TestSwitchProfileRejectsActiveRun(t *testing.T) {
+func TestSwitchModeRejectsActiveRun(t *testing.T) {
 	m := appModel{
 		state: stateChat,
 		config: Config{
-			Workspace:    ".",
-			Profile:      "default",
-			Trust:        "trusted",
-			ApprovalMode: "confirm",
+			Workspace:         ".",
+			CollaborationMode: "execute",
+			Trust:             "trusted",
+			ApprovalMode:      "confirm",
 		},
 		chat:  newChatModel("openai", "gpt-4o", "."),
 		agent: &agentState{running: true},
 	}
 
-	updated, cmd := m.Update(switchProfileMsg{profile: "research"})
+	updated, cmd := m.Update(switchModeMsg{mode: "plan"})
 	if cmd != nil {
 		t.Fatal("expected no async command when switch is rejected")
 	}
@@ -101,7 +101,7 @@ func TestSwitchProfileRejectsActiveRun(t *testing.T) {
 		t.Fatal("expected error message")
 	}
 	last := next.chat.messages[len(next.chat.messages)-1]
-	if !strings.Contains(last.content, "cannot switch profile while a run is active") {
+	if !strings.Contains(last.content, "cannot switch mode while a run is active") {
 		t.Fatalf("unexpected message: %q", last.content)
 	}
 }

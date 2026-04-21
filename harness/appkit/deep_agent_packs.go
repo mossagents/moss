@@ -8,15 +8,15 @@ import (
 	"strings"
 	"time"
 
-	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
+	appconfig "github.com/mossagents/moss/harness/config"
+	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
+	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
 	taskrt "github.com/mossagents/moss/kernel/task"
-	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
-	rprobe "github.com/mossagents/moss/harness/runtime/probe"
-	rstate "github.com/mossagents/moss/harness/runtime/state"
 )
 
 type deepAgentPresetState struct {
@@ -182,9 +182,6 @@ func buildDeepAgentExecutionPack(state *deepAgentPresetState) ([]harness.Feature
 }
 
 func buildDeepAgentPlanningPack(state *deepAgentPresetState) ([]harness.Feature, error) {
-	if !strings.EqualFold(strings.TrimSpace(state.flags.Profile), "planning") {
-		return nil, nil
-	}
 	return []harness.Feature{
 		harness.Planning(),
 	}, nil
@@ -267,4 +264,3 @@ func deepAgentGeneralPurposeFeature(flags *AppFlags, cfg DeepAgentConfig) harnes
 		},
 	}
 }
-

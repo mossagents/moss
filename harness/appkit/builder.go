@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/logging"
+	providers "github.com/mossagents/moss/harness/providers"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
 	"github.com/mossagents/moss/kernel/io"
-	"github.com/mossagents/moss/harness/logging"
-	providers "github.com/mossagents/moss/harness/providers"
 )
 
 // BuildKernel 根据 AppFlags 构建标准 Kernel，并装配官方默认运行时能力。
@@ -67,7 +67,6 @@ func buildKernel(ctx context.Context, flags *AppFlags, io io.UserIO, features []
 		logging.GetLogger().DebugContext(ctx, "kernel built",
 			"workspace", flags.Workspace,
 			"trust", flags.Trust,
-			"profile", flags.Profile,
 			"provider", flags.Provider,
 			"model", flags.Model,
 		)

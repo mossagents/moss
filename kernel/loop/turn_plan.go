@@ -103,9 +103,6 @@ func instructionProfileForSession(sess *session.Session) string {
 	if strings.TrimSpace(collaborationMode) != "" {
 		return strings.TrimSpace(collaborationMode)
 	}
-	if profile := strings.TrimSpace(sess.Config.Profile); profile != "" {
-		return profile
-	}
 	if strings.TrimSpace(preset) != "" {
 		return strings.TrimSpace(preset)
 	}

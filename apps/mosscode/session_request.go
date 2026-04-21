@@ -12,12 +12,10 @@ import (
 )
 
 type runtimeInvocation struct {
-	Typed          bool
-	CompatFlags    *appkit.AppFlags
-	DisplayProfile string
-	ApprovalMode   string
-	RequestedSpec  rsessionspec.SessionSpec
-	ResolvedSpec   rsessionspec.ResolvedSessionSpec
+	CompatFlags   *appkit.AppFlags
+	ApprovalMode  string
+	RequestedSpec rsessionspec.SessionSpec
+	ResolvedSpec  rsessionspec.ResolvedSessionSpec
 }
 
 func (r sessionRequest) normalized() sessionRequest {
@@ -45,21 +43,6 @@ func (r sessionRequest) active() bool {
 
 func resolveRuntimeInvocation(cfg *config, defaultRunMode string) (runtimeInvocation, error) {
 	request := cfg.request.normalized()
-	if !request.active() {
-		selection, err := resolveProfileForConfig(cfg)
-		if err != nil {
-			return runtimeInvocation{}, err
-		}
-		compatFlags := cloneAppFlags(cfg.flags)
-		compatFlags.Trust = selection.Trust
-		compatFlags.Profile = selection.Name
-		return runtimeInvocation{
-			CompatFlags:    compatFlags,
-			DisplayProfile: selection.Name,
-			ApprovalMode:   selection.ApprovalMode,
-		}, nil
-	}
-
 	requested := rsessionspec.SessionSpec{
 		Workspace: rsessionspec.WorkspaceRequest{Trust: strings.TrimSpace(cfg.flags.Trust)},
 		Intent: rsessionspec.IntentRequest{
@@ -74,9 +57,6 @@ func resolveRuntimeInvocation(cfg *config, defaultRunMode string) (runtimeInvoca
 		},
 		Origin: rsessionspec.OriginRequest{Preset: request.Preset},
 	}
-	if requested.Runtime.PermissionProfile == "" && legacyApprovalConfigured(cfg) {
-		requested.Runtime.PermissionProfile = permissionProfileFromApprovalMode(cfg.approvalMode)
-	}
 
 	resolved, err := rsessionspec.Resolve(requested, typedResolveInput(cfg.flags, defaultRunMode))
 	if err != nil {
@@ -87,15 +67,12 @@ func resolveRuntimeInvocation(cfg *config, defaultRunMode string) (runtimeInvoca
 	compatFlags.Trust = strings.TrimSpace(resolved.Workspace.Trust)
 	compatFlags.Provider = firstNonEmptyTrimmed(strings.TrimSpace(resolved.Runtime.Model.Provider), compatFlags.Provider)
 	compatFlags.Model = firstNonEmptyTrimmed(strings.TrimSpace(resolved.Runtime.Model.ModelConfig.Model), compatFlags.Model)
-	compatFlags.Profile = compatibilityProfileForResolved(resolved)
 
 	return runtimeInvocation{
-		Typed:          true,
-		CompatFlags:    compatFlags,
-		DisplayProfile: displayProfileForResolved(resolved),
-		ApprovalMode:   strings.TrimSpace(resolved.Runtime.PermissionPolicy.Policy.ApprovalMode),
-		RequestedSpec:  requested,
-		ResolvedSpec:   resolved,
+		CompatFlags:   compatFlags,
+		ApprovalMode:  strings.TrimSpace(resolved.Runtime.PermissionPolicy.Policy.ApprovalMode),
+		RequestedSpec: requested,
+		ResolvedSpec:  resolved,
 	}, nil
 }
 
@@ -166,13 +143,6 @@ func cloneAppFlags(flags *appkit.AppFlags) *appkit.AppFlags {
 	return &copy
 }
 
-func legacyApprovalConfigured(cfg *config) bool {
-	if cfg == nil {
-		return false
-	}
-	return hasExplicitFlag(cfg.explicitFlags, "approval") || envConfigured("MOSSCODE_APPROVAL_MODE", "MOSS_APPROVAL_MODE")
-}
-
 func permissionProfileFromApprovalMode(approvalMode string) string {
 	switch strings.ToLower(strings.TrimSpace(approvalMode)) {
 	case "read-only", "readonly", "ro":
@@ -184,32 +154,34 @@ func permissionProfileFromApprovalMode(approvalMode string) string {
 	}
 }
 
-func displayProfileForResolved(resolved rsessionspec.ResolvedSessionSpec) string {
-	return firstNonEmptyTrimmed(resolved.Origin.Preset, resolved.Runtime.PermissionProfile, resolved.Intent.CollaborationMode)
+func defaultCollaborationModeForInvocation(invocation runtimeInvocation) string {
+	if mode := strings.TrimSpace(invocation.ResolvedSpec.Intent.CollaborationMode); mode != "" {
+		return mode
+	}
+	return "execute"
 }
 
-func compatibilityProfileForResolved(resolved rsessionspec.ResolvedSessionSpec) string {
-	approvalMode := strings.ToLower(strings.TrimSpace(resolved.Runtime.PermissionPolicy.Policy.ApprovalMode))
-	mode := strings.ToLower(strings.TrimSpace(resolved.Intent.CollaborationMode))
-	switch {
-	case approvalMode == "read-only":
-		return "readonly"
-	case mode == "plan":
-		return "planning"
-	case mode == "investigate":
-		return "research"
-	case approvalMode == "full-auto":
-		return "coding"
-	default:
-		return "default"
+func runtimeInvocationForTUI(base runtimeInvocation, flags *appkit.AppFlags, approvalMode, collaborationMode, runMode string) (runtimeInvocation, error) {
+	requested := base.RequestedSpec
+	requested.Workspace.Trust = strings.TrimSpace(flags.Trust)
+	requested.Goal = ""
+	requested.Intent.CollaborationMode = strings.TrimSpace(collaborationMode)
+	requested.Runtime.RunMode = strings.TrimSpace(runMode)
+	if requested.Runtime.PermissionProfile == "" && strings.TrimSpace(approvalMode) != "" {
+		requested.Runtime.PermissionProfile = permissionProfileFromApprovalMode(approvalMode)
 	}
-}
-
-func matchesCompatibilitySelection(invocation runtimeInvocation, trust, approvalMode, profile string) bool {
-	if invocation.CompatFlags == nil {
-		return false
+	resolved, err := rsessionspec.Resolve(requested, typedResolveInput(flags, runMode))
+	if err != nil {
+		return runtimeInvocation{}, err
 	}
-	return strings.EqualFold(strings.TrimSpace(invocation.CompatFlags.Trust), strings.TrimSpace(trust)) &&
-		strings.EqualFold(strings.TrimSpace(invocation.ApprovalMode), strings.TrimSpace(approvalMode)) &&
-		strings.EqualFold(strings.TrimSpace(invocation.CompatFlags.Profile), strings.TrimSpace(profile))
+	compatFlags := cloneAppFlags(flags)
+	compatFlags.Trust = strings.TrimSpace(resolved.Workspace.Trust)
+	compatFlags.Provider = firstNonEmptyTrimmed(strings.TrimSpace(resolved.Runtime.Model.Provider), compatFlags.Provider)
+	compatFlags.Model = firstNonEmptyTrimmed(strings.TrimSpace(resolved.Runtime.Model.ModelConfig.Model), compatFlags.Model)
+	return runtimeInvocation{
+		CompatFlags:   compatFlags,
+		ApprovalMode:  strings.TrimSpace(resolved.Runtime.PermissionPolicy.Policy.ApprovalMode),
+		RequestedSpec: requested,
+		ResolvedSpec:  resolved,
+	}, nil
 }
