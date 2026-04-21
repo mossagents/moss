@@ -470,11 +470,40 @@ func (a *agentState) permissionSummary() string {
 
 func (a *agentState) debugPrompt() string {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.sess == nil {
+	sess := a.sess
+	k := a.k
+	bp := a.blueprint
+	ctx := a.ctx
+	a.mu.Unlock()
+	if sess == nil {
 		return ""
 	}
-	return strings.TrimSpace(a.sess.Config.SystemPrompt)
+	// §阶段5: review / debug 页面优先读取 prompt_materialized 审计结果。
+	// 当 EventStore + blueprint 可用时，从投影视图获取最近一次物化 prompt 的元数据，
+	// 比 sess.Config.SystemPrompt 更能反映模型实际收到的内容。
+	if k != nil && bp != nil {
+		if es := k.EventStore(); es != nil {
+			sessionID := bp.Identity.SessionID
+			if sessionID == "" {
+				sessionID = sess.ID
+			}
+			loadCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if view, err := es.LoadSessionView(loadCtx, sessionID); err == nil && view != nil {
+				if pm := view.LastPromptMaterialized; pm != nil {
+					var b strings.Builder
+					b.WriteString("[prompt_materialized audit]\n")
+					b.WriteString(fmt.Sprintf("materialized_id: %s\n", pm.PromptMaterializedID))
+					b.WriteString(fmt.Sprintf("prompt_hash:     %s\n", pm.PromptHash))
+					b.WriteString(fmt.Sprintf("event_seq:       %d\n", pm.Seq))
+					b.WriteString("\n[system_prompt (config)]\n")
+					b.WriteString(strings.TrimSpace(sess.Config.SystemPrompt))
+					return strings.TrimSpace(b.String())
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(sess.Config.SystemPrompt)
 }
 
 func (a *agentState) permissionOverrideInterceptor() hooks.Interceptor[hooks.ToolEvent] {

@@ -14,7 +14,17 @@ import (
 // ─────────────────────────────────────────────
 
 // JSONLEventStore 是基于 JSONL 文件的 EventStore 实现。
-// 适用于开发调试、离线审计等场景，不适合生产高并发写入。
+//
+// # 使用约束（§阶段5）
+//
+// JSONLEventStore 仅允许用于以下场景，禁止在生产运行时中直接注册为 kernel 的事件存储后端：
+//
+//  1. 单元测试和集成测试（test harness）；
+//  2. 单 session 的离线调试与 export / import（通过 EventStore.Export / Import 接口）；
+//  3. 轻量场景（不需要并发多 session 写入的工具脚本）。
+//
+// 生产路径（apps/mosscode、contrib/tui）必须使用 SQLiteEventStore。
+// 不得在同一 session 内混用两种实现。
 //
 // 文件布局：
 //   - <storeDir>/<sessionID>.jsonl  — 事件流（每行一个 RuntimeEvent JSON）

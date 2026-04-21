@@ -109,7 +109,14 @@ func (a *agentState) ensureRuntimePosture(target *session.Session) (string, erro
 	}
 	a.mu.Lock()
 	current := postureFromRuntime(a.k, a.collaborationMode, a.trust, a.approvalMode)
+	bp := a.blueprint
 	a.mu.Unlock()
+	// §阶段5: posture patch-up 停止。
+	// blueprint path 下，policy 由 blueprintPolicyApplier 在每次 RunAgentFromBlueprint 前应用，
+	// 不再需要根据 session metadata 重建 kernel runtime 的 posture。
+	if bp != nil {
+		return "", nil
+	}
 	plan, err := planPostureRebuild(target.ID, current, target)
 	if err != nil {
 		return "", err

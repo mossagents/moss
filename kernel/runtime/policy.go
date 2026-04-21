@@ -88,10 +88,10 @@ func (c *DefaultPolicyCompiler) Compile(req RuntimeRequest) (EffectiveToolPolicy
 		DeniedTools:           profile.DeniedTools,
 		ApprovalRequiredTools: profile.ApprovalRequiredTools,
 		Raw: map[string]any{
-			"profile":          req.PermissionProfile,
-			"workspace":        req.Workspace,
-			"trust_level":      profile.TrustLevel,
-			"workspace_trust":  req.WorkspaceTrust, // §阶段4: 存储以供 BlueprintPolicyApplier 重建 ToolPolicy
+			"profile":         req.PermissionProfile,
+			"workspace":       req.Workspace,
+			"trust_level":     profile.TrustLevel,
+			"workspace_trust": req.WorkspaceTrust, // §阶段4: 存储以供 BlueprintPolicyApplier 重建 ToolPolicy
 		},
 	}
 	policy.PolicyHash = computePolicyHash(policy)

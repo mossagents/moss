@@ -92,6 +92,10 @@ func (s *kernelInitState) loadInitialSession() error {
 				s.cancel()
 				return fmt.Errorf("apply blueprint session config: %w", applyErr)
 			}
+			// §阶段5: posture patch-up 停止 — blueprint path 存储 blueprint，
+			// 后续 turn 通过 RunAgentFromBlueprint + blueprintPolicyApplier 应用 EffectiveToolPolicy，
+			// 不再需要 planPostureRebuild / applyPostureRebuild。
+			s.blueprint = &bp
 			s.notices = append(s.notices, fmt.Sprintf("Resumed session %s via EventStore", s.cfg.InitialSessionID))
 			// 在 EventStore 上创建 interactive session（后续 turn 会通过 RunAgentFromBlueprint 写入）
 			var sessErr error
