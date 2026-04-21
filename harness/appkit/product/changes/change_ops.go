@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
 	"github.com/mossagents/moss/kernel/workspace"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 type ChangeStatus string
