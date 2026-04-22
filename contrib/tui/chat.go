@@ -518,11 +518,11 @@ func (m *chatModel) appendStream(delta string) {
 }
 
 func (m *chatModel) appendReasoning(delta string) {
-	if strings.TrimSpace(delta) == "" {
-		return
-	}
 	if len(m.messages) > 0 && m.messages[len(m.messages)-1].kind == msgReasoning {
 		m.messages[len(m.messages)-1].content += delta
+		return
+	}
+	if strings.TrimSpace(delta) == "" {
 		return
 	}
 	m.messages = append(m.messages, chatMessage{
@@ -1165,8 +1165,8 @@ var slashCommandCatalog = []slashCommandDef{
 	{Name: "Esc Esc", Summary: "Cancel a streaming response", Section: "Keyboard shortcuts"},
 	{Name: "↑ / ↓", Summary: "Navigate command history (previous/next prompt)", Section: "Keyboard shortcuts"},
 	{Name: "Mouse wheel", Summary: "Scroll the chat viewport without changing composer history", Section: "Keyboard shortcuts"},
-	{Name: "ctrl+p / ctrl+n", Summary: "Scroll the chat viewport up/down", Section: "Keyboard shortcuts"},
-	{Name: "PgUp / PgDn", Summary: "Scroll the chat viewport by a full page", Section: "Keyboard shortcuts"},
+	{Name: "ctrl+p / ctrl+n", Summary: "Reserved navigation keys used by supported widgets and inputs", Section: "Keyboard shortcuts"},
+	{Name: "PgUp / PgDn", Summary: "Reserved paging keys used by supported widgets and inputs", Section: "Keyboard shortcuts"},
 }
 
 func filterSlashHints(input string, customCommands []product.CustomCommand, discoveredSkills []string, extensions []*Extension) []string {

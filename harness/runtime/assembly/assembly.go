@@ -128,18 +128,32 @@ type lifecycleManager struct {
 	capabilities []capabilityInstaller
 }
 
+func defaultCapabilityInstallers() []capabilityInstaller {
+	return []capabilityInstaller{
+		builtinToolsCapability{},
+		mcpCapability{},
+		promptSkillsCapability{},
+		agentsCapability{},
+	}
+}
+
 func newLifecycleManager() lifecycleManager {
 	return lifecycleManager{
-		capabilities: []capabilityInstaller{
-			builtinToolsCapability{},
-			mcpCapability{},
-			promptSkillsCapability{},
-			agentsCapability{},
-		},
+		capabilities: defaultCapabilityInstallers(),
 	}
 }
 
 func (m lifecycleManager) Run(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Config) error {
+	if err := m.registerCapabilities(ctx, k, workspaceDir, cfg); err != nil {
+		return err
+	}
+	if err := m.validateCapabilities(ctx, k, workspaceDir, cfg); err != nil {
+		return err
+	}
+	return m.activateCapabilities(ctx, k, workspaceDir, cfg)
+}
+
+func (m lifecycleManager) registerCapabilities(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Config) error {
 	for _, cap := range m.capabilities {
 		if !cap.Enabled(cfg) {
 			report(cfg.CapabilityReporter, ctx, cap.Name(), cap.Critical(), "disabled", nil)
@@ -154,7 +168,10 @@ func (m lifecycleManager) Run(ctx context.Context, k *kernel.Kernel, workspaceDi
 		}
 		report(cfg.CapabilityReporter, ctx, cap.Name(), cap.Critical(), "ready", nil)
 	}
+	return nil
+}
 
+func (m lifecycleManager) validateCapabilities(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Config) error {
 	for _, cap := range m.capabilities {
 		if !cap.Enabled(cfg) {
 			continue
@@ -165,7 +182,10 @@ func (m lifecycleManager) Run(ctx context.Context, k *kernel.Kernel, workspaceDi
 		}
 	}
 	report(cfg.CapabilityReporter, ctx, "runtime-validate", true, "ready", nil)
+	return nil
+}
 
+func (m lifecycleManager) activateCapabilities(ctx context.Context, k *kernel.Kernel, workspaceDir string, cfg Config) error {
 	for _, cap := range m.capabilities {
 		if !cap.Enabled(cfg) {
 			continue

@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -11,11 +12,38 @@ func TestNewReleaseGateMeter(t *testing.T) {
 		t.Errorf("expected gates to be initialized, got %d", len(meter.gates))
 	}
 
-	expectedGates := []string{"success_rate", "llm_latency_avg", "tool_latency_avg", "tool_error_rate", "guardian_error_rate"}
+	expectedGates := []string{"success_rate", "llm_latency_avg", "tool_latency_avg", "tool_error_rate", "guardian_error_rate", "replay_prepared_total"}
 	for _, name := range expectedGates {
 		if _, exists := meter.gates[name]; !exists {
 			t.Errorf("expected gate '%s' to exist", name)
 		}
+	}
+}
+
+func TestNewReleaseGateMeterForEnvironment_StagingDefaults(t *testing.T) {
+	meter := NewReleaseGateMeterForEnvironment("staging")
+
+	if got := meter.gates["success_rate"].Threshold; got != 0.90 {
+		t.Fatalf("staging success_rate threshold = %v, want 0.90", got)
+	}
+	if got := meter.gates["llm_latency_avg"].Threshold; got != 15000 {
+		t.Fatalf("staging llm_latency_avg threshold = %v, want 15000", got)
+	}
+	if got := meter.gates["tool_latency_avg"].Threshold; got != 8000 {
+		t.Fatalf("staging tool_latency_avg threshold = %v, want 8000", got)
+	}
+	if got := meter.gates["tool_error_rate"].Threshold; got != 0.10 {
+		t.Fatalf("staging tool_error_rate threshold = %v, want 0.10", got)
+	}
+	if !meter.gates["replay_prepared_total"].Enabled {
+		t.Fatal("expected replay_prepared_total gate enabled in staging")
+	}
+}
+
+func TestNewReleaseGateMeterForEnvironment_DevDisablesReplayGate(t *testing.T) {
+	meter := NewReleaseGateMeterForEnvironment("dev")
+	if meter.gates["replay_prepared_total"].Enabled {
+		t.Fatal("expected replay_prepared_total gate disabled in dev")
 	}
 }
 
@@ -57,6 +85,7 @@ func TestValidateSnapshotAllPassed(t *testing.T) {
 		ToolCallsTotal:       100,
 		ToolErrorsTotal:      2, // 2% error rate
 		GuardianReviewsTotal: 20,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "prod")
@@ -88,6 +117,7 @@ func TestValidateSnapshotPartialFailure(t *testing.T) {
 		ToolCallsTotal:       100,
 		ToolErrorsTotal:      10, // 10% error rate > 5% threshold
 		GuardianReviewsTotal: 20,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "prod")
@@ -116,6 +146,7 @@ func TestValidateSnapshotLowSuccessRate(t *testing.T) {
 		ToolCallsTotal:       100,
 		ToolErrorsTotal:      2,
 		GuardianReviewsTotal: 20,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "prod")
@@ -179,6 +210,7 @@ func TestGateStatusReport(t *testing.T) {
 		ToolCallsTotal:       100,
 		ToolErrorsTotal:      6, // 6% error rate
 		GuardianReviewsTotal: 20,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "staging")
@@ -188,10 +220,10 @@ func TestGateStatusReport(t *testing.T) {
 	if report == "" {
 		t.Errorf("expected non-empty report")
 	}
-	if !contains(report, "staging") {
+	if !strings.Contains(report, "staging") {
 		t.Errorf("expected report to contain environment name")
 	}
-	if !contains(report, "Gate Results") {
+	if !strings.Contains(report, "Gate Results") {
 		t.Errorf("expected report to contain 'Gate Results'")
 	}
 }
@@ -216,6 +248,7 @@ func TestDisabledGate(t *testing.T) {
 		ToolCallsTotal:       100,
 		ToolErrorsTotal:      2,
 		GuardianReviewsTotal: 20,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "prod")
@@ -234,7 +267,7 @@ func TestDisabledGate(t *testing.T) {
 	}
 }
 
-func TestMissingMetricInSnapshot(t *testing.T) {
+func TestEmptySnapshotFailsCoreReleaseGates(t *testing.T) {
 	meter := NewReleaseGateMeter()
 
 	// Create empty snapshot
@@ -246,9 +279,22 @@ func TestMissingMetricInSnapshot(t *testing.T) {
 		t.Errorf("expected gates to fail due to missing metrics")
 	}
 
-	if status.FailCount != len(meter.gates) {
-		t.Logf("Expected all gates to fail, got %d failures out of %d gates",
-			status.FailCount, len(meter.gates))
+	failed := map[string]bool{}
+	for _, result := range status.Results {
+		if !result.Passed {
+			failed[result.Gate.Name] = true
+		}
+	}
+	for _, want := range []string{
+		"success_rate",
+		"llm_latency_avg",
+		"tool_latency_avg",
+		"tool_error_rate",
+		"replay_prepared_total",
+	} {
+		if !failed[want] {
+			t.Fatalf("expected %s to fail on empty snapshot, got %+v", want, status.Results)
+		}
 	}
 }
 
@@ -267,6 +313,7 @@ func TestValidateSnapshotGuardianErrorRateFailure(t *testing.T) {
 		ToolErrorsTotal:      1,
 		GuardianReviewsTotal: 10,
 		GuardianErrorsTotal:  1,
+		ReplayPreparedTotal:  1,
 	}
 
 	status := meter.ValidateSnapshot(snapshot, "prod")
@@ -285,11 +332,3 @@ func TestValidateSnapshotGuardianErrorRateFailure(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	for i := 0; i < len(s)-len(substr)+1; i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

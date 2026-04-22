@@ -290,12 +290,19 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 				logger:    k.Logger(),
 			}
 		}
+		var lifecycleResult *session.LifecycleResult
+		onResult := bpOpts.onResult
 		req := RunAgentRequest{
 			Session:     sess,
 			Agent:       agent,
 			UserContent: userMsg,
 			IO:          userIO,
-			OnResult:    bpOpts.onResult,
+			OnResult: func(result *session.LifecycleResult) {
+				lifecycleResult = cloneLifecycleResult(result)
+				if onResult != nil {
+					onResult(result)
+				}
+			},
 			Observer:    runObserver,
 		}
 
@@ -311,12 +318,25 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 			}
 		}
 
-		// 4a. §14.4 预算耗尽检测：若预算耗尽且无执行错误，写 budget_exhausted 事件
-		if lastErr == nil && k.eventStore != nil && sess.Budget.Exhausted() {
-			outcome = kruntime.TurnOutcomeBudgetExhausted
-			if appendErr := k.appendBudgetExhausted(ctx, bp.Identity.SessionID, bp.Provenance.Hash, &sess.Budget); appendErr != nil {
-				k.Logger().WarnContext(ctx, "append budget_exhausted failed",
-					"session_id", bp.Identity.SessionID, "error", appendErr)
+		// 4a. §14.4 预算耗尽检测：显式 budget result 优先，其次回退到 session budget 快照。
+		if lastErr == nil && k.eventStore != nil {
+			if lifecycleResult != nil && lifecycleResult.Status == session.LifecycleBudgetExhausted {
+				outcome = kruntime.TurnOutcomeBudgetExhausted
+				if appendErr := k.appendBudgetExhaustedDetail(
+					ctx,
+					bp.Identity.SessionID,
+					bp.Provenance.Hash,
+					lifecycleResult.BudgetExhausted,
+				); appendErr != nil {
+					k.Logger().WarnContext(ctx, "append budget_exhausted failed",
+						"session_id", bp.Identity.SessionID, "error", appendErr)
+				}
+			} else if sess.Budget.Exhausted() {
+				outcome = kruntime.TurnOutcomeBudgetExhausted
+				if appendErr := k.appendBudgetExhausted(ctx, bp.Identity.SessionID, bp.Provenance.Hash, &sess.Budget); appendErr != nil {
+					k.Logger().WarnContext(ctx, "append budget_exhausted failed",
+						"session_id", bp.Identity.SessionID, "error", appendErr)
+				}
 			}
 		}
 
@@ -380,9 +400,43 @@ func (k *Kernel) appendTurnCompleted(ctx context.Context, sessionID, blueprintVe
 	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
 }
 
+func budgetExhaustedDetailFromBudget(budget *session.Budget) *session.BudgetExhaustedDetail {
+	if budget == nil {
+		return nil
+	}
+	kind := "token"
+	consumed := budget.UsedTokensValue()
+	limit := budget.MaxTokens
+	if budget.MaxSteps > 0 && budget.UsedStepsValue() >= budget.MaxSteps {
+		kind = "step"
+		consumed = budget.UsedStepsValue()
+		limit = budget.MaxSteps
+	} else if budget.MaxThinkingTokens > 0 && budget.UsedThinkingTokensValue() >= budget.MaxThinkingTokens {
+		kind = "thinking_token"
+		consumed = budget.UsedThinkingTokensValue()
+		limit = budget.MaxThinkingTokens
+	}
+	return &session.BudgetExhaustedDetail{
+		BudgetKind:    kind,
+		ConsumedValue: consumed,
+		LimitValue:    limit,
+	}
+}
+
 // appendBudgetExhausted 向 EventStore 追加 budget_exhausted 事件（§14.4/§14.10）。
 // 根据 Budget 状态自动判断 budget_kind（thinking_token / step / token），优先级从高到低。
 func (k *Kernel) appendBudgetExhausted(ctx context.Context, sessionID, blueprintVersion string, budget *session.Budget) error {
+	return k.appendBudgetExhaustedDetail(ctx, sessionID, blueprintVersion, budgetExhaustedDetailFromBudget(budget))
+}
+
+func (k *Kernel) appendBudgetExhaustedDetail(
+	ctx context.Context,
+	sessionID, blueprintVersion string,
+	detail *session.BudgetExhaustedDetail,
+) error {
+	if detail == nil {
+		return nil
+	}
 	state, err := k.eventStore.LoadSessionView(ctx, sessionID)
 	if err != nil {
 		return fmt.Errorf("load session view for budget_exhausted: %w", err)
@@ -391,30 +445,15 @@ func (k *Kernel) appendBudgetExhausted(ctx context.Context, sessionID, blueprint
 		return kruntime.ErrSessionNotFound
 	}
 
-	// 优先检查 step 耗尽，再检查 thinking token 耗尽，最后是普通 token 耗尽。
-	kind := kruntime.BudgetKindToken
-	consumed := int64(budget.UsedTokensValue())
-	limit := int64(budget.MaxTokens)
-	if budget.MaxSteps > 0 && budget.UsedStepsValue() >= budget.MaxSteps {
-		kind = kruntime.BudgetKindStep
-		consumed = int64(budget.UsedStepsValue())
-		limit = int64(budget.MaxSteps)
-	} else if budget.MaxThinkingTokens > 0 && budget.UsedThinkingTokensValue() >= budget.MaxThinkingTokens {
-		// §14.10：thinking token 配额耗尽
-		kind = kruntime.BudgetKindThinkingToken
-		consumed = int64(budget.UsedThinkingTokensValue())
-		limit = int64(budget.MaxThinkingTokens)
-	}
-
 	ev := kruntime.RuntimeEvent{
 		Type:             kruntime.EventTypeBudgetExhausted,
 		SessionID:        sessionID,
 		BlueprintVersion: blueprintVersion,
 		Timestamp:        time.Now().UTC(),
 		Payload: kruntime.BudgetExhaustedPayload{
-			BudgetKind:    kind,
-			ConsumedValue: consumed,
-			LimitValue:    limit,
+			BudgetKind:    kruntime.BudgetKind(detail.BudgetKind),
+			ConsumedValue: int64(detail.ConsumedValue),
+			LimitValue:    int64(detail.LimitValue),
 		},
 	}
 	return k.eventStore.AppendEvents(ctx, sessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev})
@@ -436,6 +475,50 @@ func (k *Kernel) RecordTurnCompleted(ctx context.Context, bp kruntime.SessionBlu
 		return nil
 	}
 	return k.appendTurnCompleted(ctx, bp.Identity.SessionID, bp.Provenance.Hash, turnID, outcome, errorKind)
+}
+
+// RecordBudgetExhausted 向 EventStore 追加 budget_exhausted 事件（供外部调用）。
+func (k *Kernel) RecordBudgetExhausted(ctx context.Context, bp kruntime.SessionBlueprint, detail *session.BudgetExhaustedDetail) error {
+	if k.eventStore == nil {
+		return nil
+	}
+	return k.appendBudgetExhaustedDetail(ctx, bp.Identity.SessionID, bp.Provenance.Hash, detail)
+}
+
+// RecordBudgetLimitUpdated 向 EventStore 追加 budget_limit_updated 事件，并返回更新后的 blueprint 副本。
+func (k *Kernel) RecordBudgetLimitUpdated(
+	ctx context.Context,
+	bp kruntime.SessionBlueprint,
+	newMainTokenBudget int,
+	reason string,
+) (kruntime.SessionBlueprint, error) {
+	updated := bp
+	updated.ContextBudget.MainTokenBudget = newMainTokenBudget
+	if k.eventStore == nil {
+		return updated, nil
+	}
+	state, err := k.eventStore.LoadSessionView(ctx, bp.Identity.SessionID)
+	if err != nil {
+		return bp, fmt.Errorf("load session view for budget_limit_updated: %w", err)
+	}
+	if state == nil {
+		return bp, kruntime.ErrSessionNotFound
+	}
+	ev := kruntime.RuntimeEvent{
+		Type:             kruntime.EventTypeBudgetLimitUpdated,
+		SessionID:        bp.Identity.SessionID,
+		BlueprintVersion: bp.Provenance.Hash,
+		Timestamp:        time.Now().UTC(),
+		Payload: kruntime.BudgetLimitUpdatedPayload{
+			PreviousMainTokenBudget: int64(bp.ContextBudget.MainTokenBudget),
+			MainTokenBudget:         int64(newMainTokenBudget),
+			Reason:                  strings.TrimSpace(reason),
+		},
+	}
+	if err := k.eventStore.AppendEvents(ctx, bp.Identity.SessionID, state.CurrentSeq, "", []kruntime.RuntimeEvent{ev}); err != nil {
+		return bp, err
+	}
+	return updated, nil
 }
 
 // blueprintToSessionConfig 将 SessionBlueprint 映射到 legacy SessionConfig。

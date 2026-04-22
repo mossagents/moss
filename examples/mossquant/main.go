@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	mosstui "github.com/mossagents/moss/contrib/tui"
@@ -17,6 +18,7 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/harness/scheduler"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks/builtins"
@@ -46,6 +48,54 @@ type mossquantRuntime struct {
 	sched          *scheduler.Scheduler
 }
 
+type mossquantRuntimeRef struct {
+	mu sync.RWMutex
+	rt *mossquantRuntime
+}
+
+func (r *mossquantRuntimeRef) Set(rt *mossquantRuntime) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rt = rt
+}
+
+func (r *mossquantRuntimeRef) Get() *mossquantRuntime {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.rt
+}
+
+type lazyScheduleController struct {
+	runtime *mossquantRuntimeRef
+}
+
+func (c lazyScheduleController) adapter() scheduling.SchedulerAdapter {
+	if c.runtime == nil {
+		return scheduling.SchedulerAdapter{}
+	}
+	rt := c.runtime.Get()
+	if rt == nil {
+		return scheduling.SchedulerAdapter{}
+	}
+	return scheduling.SchedulerAdapter{Scheduler: rt.sched}
+}
+
+func (c lazyScheduleController) List() ([]scheduling.ScheduleItem, error) {
+	return c.adapter().List()
+}
+
+func (c lazyScheduleController) ListText() (string, error) {
+	return c.adapter().ListText()
+}
+
+func (c lazyScheduleController) Cancel(id string) (string, error) {
+	return c.adapter().Cancel(id)
+}
+
+func (c lazyScheduleController) RunNow(id string) (string, error) {
+	return c.adapter().RunNow(id)
+}
+
 func main() {
 	if err := appkit.InitializeApp("mossquant", nil); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -73,7 +123,7 @@ func parseFlags() *config {
 
 func launchTUI(cfg *config) error {
 	flags := cfg.flags
-	var rt *mossquantRuntime
+	runtimeRef := &mossquantRuntimeRef{}
 
 	return mosstui.Run(mosstui.Config{
 		ProviderName:    flags.DisplayProviderName(),
@@ -84,60 +134,50 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error) {
-			identity := appconfig.NormalizeProviderIdentity(provider, flags.DisplayProviderName())
+		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io io.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
-				Provider:  identity.Provider,
-				Name:      identity.Name,
+				Provider:  provider,
+				Name:      provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
-				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			var err error
-			rt, err = newMossquantRuntime(runtimeFlags, cfg.capital, cfg.reviewInterval, cfg.autoReview)
+			rt, err := newMossquantRuntime(runtimeFlags, cfg.capital, cfg.reviewInterval, cfg.autoReview)
 			if err != nil {
 				return nil, err
 			}
+			runtimeRef.Set(rt)
 			return rt.buildKernel(context.Background(), io)
 		},
 		AfterBoot: func(ctx context.Context, k *kernel.Kernel, io io.UserIO) error {
+			rt := runtimeRef.Get()
 			if rt == nil {
 				return nil
 			}
 			return rt.afterBoot(ctx, k, io)
 		},
-		BuildSystemPrompt: func(workspace, trust string) string {
+		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
 			profile, err := loadInvestorProfile(workspace)
 			if err != nil {
 				profile = &InvestorProfile{}
 			}
 			interval := effectiveReviewInterval(profile, cfg.reviewInterval)
-			return buildSystemPrompt(workspace, cfg.capital, interval, profile)
-		},
-		BuildSessionConfig: func(workspace, trust, approvalMode, profileName, collaborationMode, systemPrompt string) session.SessionConfig {
-			profile, err := loadInvestorProfile(workspace)
-			if err != nil {
-				profile = &InvestorProfile{}
-			}
 			return session.SessionConfig{
-				Goal:         "interactive investment research and advisory assistant",
-				Mode:         "interactive",
-				TrustLevel:   trust,
-				Profile:      profileName,
-				SystemPrompt: systemPrompt,
-				MaxSteps:     120,
+				Goal:       "interactive investment research and advisory assistant",
+				Mode:       "interactive",
+				TrustLevel: trust,
+				MaxSteps:   120,
 				Metadata: map[string]any{
-					"risk_tolerance": profile.DisplayRiskTolerance(),
-					"tracked_assets": profile.TrackedAssets(),
+					prompting.MetadataSessionInstructionsKey: buildSystemPrompt(workspace, cfg.capital, interval, profile),
+					"risk_tolerance":                        profile.DisplayRiskTolerance(),
+					"tracked_assets":                        profile.TrackedAssets(),
 				},
 			}
 		},
-		ScheduleController: scheduling.SchedulerAdapter{
-			Scheduler: rt.sched,
-		},
+		ScheduleController: lazyScheduleController{runtime: runtimeRef},
 	})
 }
 

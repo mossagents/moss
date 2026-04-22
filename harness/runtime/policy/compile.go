@@ -114,7 +114,8 @@ func toolAccessDecision(access ToolAccess) governance.PolicyDecision {
 }
 
 // CompileSecurityPolicy converts a ToolPolicy into a workspace.SecurityPolicy
-// suitable for injection into a Workspace implementation.
+// suitable for governance injection into a Workspace implementation.
+// Hard sandbox guarantees still depend on the backend's reported capabilities.
 func CompileSecurityPolicy(tp ToolPolicy, workspaceRoot string) workspace.SecurityPolicy {
 	tp = NormalizeToolPolicy(tp)
 	sp := workspace.SecurityPolicy{}

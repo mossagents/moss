@@ -128,6 +128,8 @@ func (w *LocalWorkspace) Capabilities() workspace.Capabilities {
 		NetworkIsolation:    workspace.IsolationMethodProxy,
 		ProcessIsolation:    workspace.IsolationMethodNone,
 		ResourceEnforcement: false,
+		GovernanceOnly:      true,
+		HardSandbox:         false,
 	}
 }
 
@@ -340,6 +342,14 @@ func (w *LocalWorkspace) filterListedPaths(paths []string) ([]string, error) {
 // ── 命令执行 ──
 
 func (w *LocalWorkspace) Execute(ctx context.Context, req workspace.ExecRequest) (workspace.ExecOutput, error) {
+	if req.IsolationLevel == workspace.IsolationSandbox && !w.Capabilities().SupportsHardSandbox() {
+		out := workspace.ExecOutput{
+			Enforcement: io.EnforcementHardBlock,
+			Details:     "IsolationSandbox requires a hard-sandbox backend; local workspace only provides governance-only host execution",
+		}
+		return out, fmt.Errorf("hard sandbox isolation is unavailable in local workspace")
+	}
+
 	timeout := req.Timeout
 	if timeout <= 0 {
 		timeout = w.limits.CommandTimeout
@@ -409,11 +419,11 @@ func (w *LocalWorkspace) Execute(ctx context.Context, req workspace.ExecRequest)
 	}
 	if req.Network.Mode == workspace.ExecNetworkDisabled {
 		if req.Network.PreferHardBlock && !req.Network.AllowSoftLimit {
-			return workspace.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local workspace")
+			return workspace.ExecOutput{}, fmt.Errorf("hard network isolation is unavailable in local workspace; restricted mode on this backend is governance-only")
 		}
 		if req.Network.PreferHardBlock {
 			slog.Warn("network isolation degraded to soft limit",
-				"reason", "hard isolation unavailable in local workspace",
+				"reason", "local workspace is governance-only",
 				"command", req.Command)
 		}
 		if !customized {
@@ -423,7 +433,7 @@ func (w *LocalWorkspace) Execute(ctx context.Context, req workspace.ExecRequest)
 		env = applySoftNetworkLimit(env)
 		outputMeta.Enforcement = io.EnforcementSoftLimit
 		outputMeta.Degraded = true
-		outputMeta.Details = "hard network isolation unavailable in local workspace; applied soft network limit via environment"
+		outputMeta.Details = "local workspace is governance-only; applied soft network limit via environment because hard network isolation is unavailable"
 	}
 	if customized {
 		c.Env = env

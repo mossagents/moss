@@ -182,6 +182,26 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 		return m.handleSimpleConfirmAskKey(msg)
 	}
 	form := m.askForm
+	if m.isInlineSelectAsk() && len(form.fields) == 1 && form.fields[0].def.Type == io.InputFieldSingleSelect {
+		field := &form.fields[0]
+		switch msg.String() {
+		case "tab", "shift+tab":
+			// Inline select has no visible confirm control; keep Enter as the only submit action.
+			return m, nil
+		case "enter":
+			if allowInlineSelectChatEscape(m.pendAsk.request) && field.singleIndex >= len(field.def.Options) {
+				return m.handleChatAboutThis()
+			}
+			if len(field.def.Options) > 0 {
+				idx := field.singleIndex
+				if idx < 0 || idx >= len(field.def.Options) {
+					idx = 0
+				}
+				field.singleSel = idx
+			}
+			return m.submitAskForm()
+		}
+	}
 	if msg.String() == "tab" {
 		form.focusIndex = (form.focusIndex + 1) % (len(form.fields) + 1)
 		m.activateAskField()
@@ -215,7 +235,7 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 			}
 		case "down":
 			maxIdx := len(field.def.Options) - 1
-			if m.isInlineSelectAsk() {
+			if m.isInlineSelectAsk() && allowInlineSelectChatEscape(m.pendAsk.request) {
 				// インラインセレクトでは「Chat about this」も含む
 				maxIdx = len(field.def.Options)
 			}
@@ -223,7 +243,7 @@ func (m chatModel) handleAskKey(msg tea.KeyMsg) (chatModel, tea.Cmd) {
 				field.singleIndex++
 			}
 		case "enter":
-			if m.isInlineSelectAsk() && field.singleIndex >= len(field.def.Options) {
+			if m.isInlineSelectAsk() && allowInlineSelectChatEscape(m.pendAsk.request) && field.singleIndex >= len(field.def.Options) {
 				// 「Chat about this」を選択した場合：実行をキャンセルしてフォームを閉じる
 				return m.handleChatAboutThis()
 			}
@@ -629,6 +649,18 @@ func (m chatModel) isInlineSelectAsk() bool {
 		m.askForm.fields[0].def.Type == io.InputFieldSingleSelect
 }
 
+func allowInlineSelectChatEscape(req io.InputRequest) bool {
+	if req.Meta == nil {
+		return true
+	}
+	raw, ok := req.Meta[io.InputMetaInlineSelectAllowChatEscape]
+	if !ok {
+		return true
+	}
+	allowed, ok := raw.(bool)
+	return !ok || allowed
+}
+
 // renderInlineSelectAsk は InputSelect タイプのリクエストをスクリーンショット設計に従ってインラインで描画する。
 // 外枠なし・番号付きリスト・選択中は「> 」プレフィックスで表示。
 func (m chatModel) renderInlineSelectAsk(width int) string {
@@ -683,20 +715,22 @@ func (m chatModel) renderInlineSelectAsk(width int) string {
 		}
 	}
 
-	// 区切り線 + 「Chat about this」エスケープオプション
-	sb.WriteString("\n")
-	ruleLen := min(max(20, width-4), 48)
-	sb.WriteString(mutedStyle.Render(strings.Repeat("─", ruleLen)))
-	sb.WriteString("\n\n")
+	if allowInlineSelectChatEscape(m.pendAsk.request) {
+		// 区切り線 + 「Chat about this」エスケープオプション
+		sb.WriteString("\n")
+		ruleLen := min(max(20, width-4), 48)
+		sb.WriteString(mutedStyle.Render(strings.Repeat("─", ruleLen)))
+		sb.WriteString("\n\n")
 
-	chatIdx := len(options)
-	chatLabel := fmt.Sprintf("%d. Chat about this", chatIdx+1)
-	if field.singleIndex == chatIdx {
-		sb.WriteString(dialogTitleStyle.Render("> " + chatLabel))
-	} else {
-		sb.WriteString("  " + chatLabel)
+		chatIdx := len(options)
+		chatLabel := fmt.Sprintf("%d. Chat about this", chatIdx+1)
+		if field.singleIndex == chatIdx {
+			sb.WriteString(dialogTitleStyle.Render("> " + chatLabel))
+		} else {
+			sb.WriteString("  " + chatLabel)
+		}
+		sb.WriteString("\n\n")
 	}
-	sb.WriteString("\n\n")
 
 	// フッターヒント
 	sb.WriteString(mutedStyle.Render("Enter to select  ·  ↑/↓ to navigate  ·  Esc to cancel"))

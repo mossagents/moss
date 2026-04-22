@@ -3,6 +3,7 @@ package appkit
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -182,6 +183,55 @@ func TestCommonFlags_MergeEnv_BudgetGovernance(t *testing.T) {
 	}
 	if f.GlobalWarnAt != 0.75 {
 		t.Fatalf("GlobalWarnAt = %f, want 0.75", f.GlobalWarnAt)
+	}
+}
+
+func TestCommonFlags_Precedence(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("MOSS_PROVIDER", "gemini")
+	t.Setenv("MOSS_MODEL", "env-model")
+	t.Setenv("MOSS_API_KEY", "env-key")
+	t.Setenv("MOSS_BASE_URL", "https://env.example.com")
+	t.Setenv("MOSS_WORKSPACE", "env-workspace")
+	t.Setenv("MOSS_TRUST", config.TrustTrusted)
+	config.SetAppName("mosscode")
+	t.Cleanup(func() { config.SetAppName("moss") })
+	if err := os.MkdirAll(config.AppDir(), 0700); err != nil {
+		t.Fatalf("prepare config dir: %v", err)
+	}
+	if err := os.WriteFile(config.DefaultGlobalConfigPath(), []byte("provider: claude\nmodel: config-model\napi_key: config-key\nbase_url: https://config.example.com\n"), 0600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	fs := flag.NewFlagSet("appflags", flag.ContinueOnError)
+	f := &AppFlags{}
+	BindAppFlags(fs, f)
+	if err := fs.Parse([]string{"--provider", "openai"}); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	f.MergeGlobalConfig()
+	f.MergeEnv("MOSS")
+	f.ApplyDefaults()
+
+	if f.Provider != config.APITypeOpenAICompletions {
+		t.Fatalf("Provider = %q, want %s", f.Provider, config.APITypeOpenAICompletions)
+	}
+	if f.Model != "config-model" {
+		t.Fatalf("Model = %q, want config-model", f.Model)
+	}
+	if f.APIKey != "config-key" {
+		t.Fatalf("APIKey = %q, want config-key", f.APIKey)
+	}
+	if f.BaseURL != "https://config.example.com" {
+		t.Fatalf("BaseURL = %q, want https://config.example.com", f.BaseURL)
+	}
+	if f.Workspace != "env-workspace" {
+		t.Fatalf("Workspace = %q, want env-workspace", f.Workspace)
+	}
+	if f.Trust != config.TrustTrusted {
+		t.Fatalf("Trust = %q, want %s", f.Trust, config.TrustTrusted)
 	}
 }
 

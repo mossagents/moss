@@ -230,7 +230,7 @@ func compactRunSummary(s string) string {
 	if status := kvs["status"]; status == "completed" {
 		parts = append(parts, "✓ "+status)
 	} else if status != "" {
-		parts = append(parts, status)
+		parts = append(parts, strings.ReplaceAll(status, "_", " "))
 	}
 	if steps := kvs["steps"]; steps != "" && steps != "0" && steps != "n/a" {
 		word := "steps"
@@ -339,6 +339,10 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 		rendered := ""
 		blockKind := m.kind
 		consumed := 1
+		if m.kind == msgReasoning && suppressReasoningTranscript(m.content) {
+			i++
+			continue
+		}
 		if m.kind == msgToolStart {
 			if startShouldRenderAtResult(messages, i) {
 				i++
@@ -365,6 +369,26 @@ func renderAllMessages(messages []chatMessage, width int, toolCollapsed bool) st
 		i += consumed
 	}
 	return b.String()
+}
+
+func suppressReasoningTranscript(content string) bool {
+	body := strings.Join(strings.Fields(strings.TrimSpace(content)), " ")
+	if body == "" {
+		return true
+	}
+	if strings.ContainsAny(body, ".!?;:。！？；：") {
+		return false
+	}
+	fields := strings.Fields(body)
+	width := runewidth.StringWidth(body)
+	switch {
+	case len(fields) >= 3:
+		return false
+	case len(fields) == 2:
+		return width < 12
+	default:
+		return width < 8
+	}
 }
 
 func transcriptBlockSeparator(prev, next msgKind) string {

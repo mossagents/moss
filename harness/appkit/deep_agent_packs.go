@@ -34,13 +34,11 @@ type deepAgentPack struct {
 	build func(*deepAgentPresetState) ([]harness.Feature, error)
 }
 
-func buildDeepAgentFeatures(flags *AppFlags, cfg DeepAgentConfig) ([]harness.Feature, error) {
-	state := &deepAgentPresetState{
-		flags:  flags,
-		config: cfg,
-		appDir: appconfig.AppDir(),
-	}
-	packs := []deepAgentPack{
+// defaultDeepAgentPacks is the internal manifest for the built-in deep-agent
+// preset. Product callers should customize via DeepAgentConfig options rather
+// than depending on this pack order directly.
+func defaultDeepAgentPacks() []deepAgentPack {
+	return []deepAgentPack{
 		{name: "additional-features", build: buildDeepAgentAdditionalFeaturesPack},
 		{name: "state-catalog", build: buildDeepAgentStateCatalogPack},
 		{name: "session-context", build: buildDeepAgentSessionContextPack},
@@ -54,9 +52,17 @@ func buildDeepAgentFeatures(flags *AppFlags, cfg DeepAgentConfig) ([]harness.Fea
 		{name: "runtime-setup", build: buildDeepAgentRuntimePack},
 		{name: "post-runtime-governance", build: buildDeepAgentPostRuntimePack},
 	}
+}
+
+func buildDeepAgentFeatures(flags *AppFlags, cfg DeepAgentConfig) ([]harness.Feature, error) {
+	state := &deepAgentPresetState{
+		flags:  flags,
+		config: cfg,
+		appDir: appconfig.AppDir(),
+	}
 
 	features := make([]harness.Feature, 0, len(cfg.AdditionalFeatures)+16)
-	for _, pack := range packs {
+	for _, pack := range defaultDeepAgentPacks() {
 		packFeatures, err := pack.build(state)
 		if err != nil {
 			return nil, fmt.Errorf("%s pack: %w", pack.name, err)

@@ -743,19 +743,14 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		APIKey:    s.cfg.apiKey,
 		BaseURL:   s.cfg.baseURL,
 	}
-	deepCfg := appkit.DeepAgentDefaults()
-	deepCfg.AppName = appconfig.AppName()
-	deepCfg.EnableSessionStore = boolRef(true)
-	deepCfg.EnablePersistentMemories = boolRef(true)
-	deepCfg.EnableContextOffload = boolRef(true)
-	deepCfg.EnableBootstrapContext = boolRef(true)
-	deepCfg.SessionStoreDir = sessionDir
-	deepCfg.MemoryDir = filepath.Join(appDir, "memories")
-	deepCfg.AdditionalFeatures = []harness.Feature{
-		harness.Scheduling(sched),
-	}
-
-	k, err := appkit.BuildDeepAgent(ctx, flags, s.wailsIO, &deepCfg)
+	k, err := appkit.BuildDeepAgent(ctx, flags, s.wailsIO, appkit.NewDeepAgentConfig(
+		appkit.WithDeepAgentAppName(appconfig.AppName()),
+		appkit.WithDeepAgentSessionStoreDir(sessionDir),
+		appkit.WithDeepAgentMemoryDir(filepath.Join(appDir, "memories")),
+		appkit.WithDeepAgentAdditionalFeatures(
+			harness.Scheduling(sched),
+		),
+	))
 	if err != nil {
 		return nil, err
 	}
@@ -1455,8 +1450,6 @@ func (s *ChatService) offloadContextLocally(ctx context.Context, sess *session.S
 	})
 	return formatJSON(raw), nil
 }
-
-func boolRef(v bool) *bool { return &v }
 
 // maybeGenerateTitle generates an LLM-based display title for the session if
 // the title is still the default "New Chat". Called as a background goroutine

@@ -82,6 +82,31 @@ func TestResumeRuntimeSession_HappyPath(t *testing.T) {
 	}
 }
 
+func TestRecordBudgetLimitUpdated_PersistsAcrossResume(t *testing.T) {
+	store, _ := kruntime.NewSQLiteEventStore(":memory:")
+	k := New(WithEventStore(store))
+
+	bp, _ := k.StartRuntimeSession(context.Background(), kruntime.RuntimeRequest{
+		PermissionProfile: "workspace-write",
+	})
+
+	updated, err := k.RecordBudgetLimitUpdated(context.Background(), bp, 240000, "token_overrun_continue")
+	if err != nil {
+		t.Fatalf("RecordBudgetLimitUpdated: %v", err)
+	}
+	if updated.ContextBudget.MainTokenBudget != 240000 {
+		t.Fatalf("updated main token budget = %d, want 240000", updated.ContextBudget.MainTokenBudget)
+	}
+
+	resumed, err := k.ResumeRuntimeSession(context.Background(), bp.Identity.SessionID)
+	if err != nil {
+		t.Fatalf("ResumeRuntimeSession: %v", err)
+	}
+	if resumed.ContextBudget.MainTokenBudget != 240000 {
+		t.Fatalf("resumed main token budget = %d, want 240000", resumed.ContextBudget.MainTokenBudget)
+	}
+}
+
 func TestResumeRuntimeSession_EndedSession(t *testing.T) {
 	store, _ := kruntime.NewSQLiteEventStore(":memory:")
 	k := New(WithEventStore(store))

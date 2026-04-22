@@ -169,16 +169,7 @@ func makeCodingDiffHandler(ws string) mosstui.SlashHandlerFunc {
 			cmdArgs = append(cmdArgs, "--")
 			cmdArgs = append(cmdArgs, args...)
 		}
-		return func() tea.Msg {
-			out, err := runGitCommand(ws, "git", cmdArgs)
-			if err != nil {
-				return mosstui.ErrorMsg(fmt.Sprintf("git diff failed: %v", err))
-			}
-			if strings.TrimSpace(out) == "" {
-				return mosstui.SystemMsg("No diff.")
-			}
-			return mosstui.SystemMsg(out)
-		}
+		return gitDiffCmd(ws, cmdArgs)
 	}
 }
 
@@ -202,13 +193,7 @@ func makeCodingGitHandler(ws string) mosstui.SlashHandlerFunc {
 			if len(args) > 1 {
 				cmdArgs = append(cmdArgs, args[1:]...)
 			}
-			return func() tea.Msg {
-				out, err := runGitCommand(ws, "git", cmdArgs)
-				if err != nil {
-					return mosstui.ErrorMsg(fmt.Sprintf("git diff failed: %v", err))
-				}
-				return mosstui.SystemMsg(out)
-			}
+			return gitDiffCmd(ws, cmdArgs)
 		case "commit":
 			if len(args) < 2 {
 				return mosstui.AppendErrorMessageCmd("Usage: /git commit <message>")
@@ -238,6 +223,19 @@ func makeCodingGitHandler(ws string) mosstui.SlashHandlerFunc {
 		default:
 			return mosstui.AppendErrorMessageCmd("Usage: /git status | /git diff [path] | /git commit <message> | /git pr [args...]")
 		}
+	}
+}
+
+func gitDiffCmd(ws string, cmdArgs []string) tea.Cmd {
+	return func() tea.Msg {
+		out, err := runGitCommand(ws, "git", cmdArgs)
+		if err != nil {
+			return mosstui.ErrorMsg(fmt.Sprintf("git diff failed: %v", err))
+		}
+		if strings.TrimSpace(out) == "" {
+			return mosstui.SystemMsg("No diff.")
+		}
+		return mosstui.SystemMsg(out)
 	}
 }
 

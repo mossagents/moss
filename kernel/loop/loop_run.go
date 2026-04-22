@@ -2,6 +2,7 @@ package loop
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -46,13 +47,17 @@ func (l *AgentLoop) runCore(ctx context.Context, sess *session.Session) (*Sessio
 			break
 		}
 		if sess.Budget.Exhausted() {
-			break
+			return l.stopForBudget(ctx, sess, totalUsage, budgetExhaustedDetailFromSnapshot(sess.Budget.Clone())), nil
 		}
 		if ctx.Err() != nil {
 			return l.fail(ctx, sess, totalUsage, ctx.Err()), ctx.Err()
 		}
 		shouldStop, err := l.runIteration(ctx, sess, i+1, maxIter, runStartedAt, &totalUsage, &lastOutput)
 		if err != nil {
+			var budgetStop *budgetStopError
+			if errors.As(err, &budgetStop) {
+				return l.stopForBudget(ctx, sess, totalUsage, budgetStop.detail), nil
+			}
 			return l.fail(ctx, sess, totalUsage, err), err
 		}
 		if shouldStop {
@@ -70,7 +75,6 @@ func (l *AgentLoop) beginRun(ctx context.Context, sess *session.Session, runStar
 		"goal_chars", len(sess.Config.Goal),
 		"max_steps", sess.Budget.MaxSteps,
 	)
-	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "running"})
 	event := l.executionEventBase(sess, observe.ExecutionRunStarted, "run", "runtime", "run")
 	event.Timestamp = runStartedAt
 	event.Metadata = map[string]any{
@@ -109,8 +113,11 @@ func (l *AgentLoop) runIteration(
 	totalUsage.PromptTokens += resp.Usage.PromptTokens
 	totalUsage.CompletionTokens += resp.Usage.CompletionTokens
 	totalUsage.TotalTokens += resp.Usage.TotalTokens
+	budgetSnapshot := sess.Budget.Clone()
 	if !sess.Budget.TryConsume(resp.Usage.TotalTokens, 1) {
-		return true, nil
+		if err := l.resolveBudgetStop(ctx, sess, budgetSnapshot, resp.Usage.TotalTokens); err != nil {
+			return false, err
+		}
 	}
 
 	if l.safeHooks().IsTrusted() {
@@ -392,7 +399,6 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		"steps", sess.Budget.UsedStepsValue(),
 		"tokens", totalUsage.TotalTokens,
 	)
-	observe.ObserveSessionEvent(ctx, l.observer(), observe.SessionEvent{SessionID: sess.ID, Type: "completed"})
 	event := l.executionEventBase(sess, observe.ExecutionRunCompleted, "run", "runtime", "run")
 	event.Metadata = map[string]any{
 		"steps":  sess.Budget.UsedStepsValue(),
@@ -402,6 +408,7 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    true,
+		Status:     session.LifecycleCompleted,
 		Output:     lastOutput,
 		Steps:      sess.Budget.UsedStepsValue(),
 		TokensUsed: totalUsage,
@@ -411,6 +418,7 @@ func (l *AgentLoop) completeRun(ctx context.Context, sess *session.Session, tota
 		Session: sess,
 		Result: &session.LifecycleResult{
 			Success:    true,
+			Status:     session.LifecycleCompleted,
 			Output:     lastOutput,
 			Steps:      sess.Budget.UsedStepsValue(),
 			TokensUsed: totalUsage,

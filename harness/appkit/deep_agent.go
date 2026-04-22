@@ -40,6 +40,111 @@ type DeepAgentConfig struct {
 	AdditionalFeatures            []harness.Feature
 }
 
+// DeepAgentPresetOption customizes the public deep-agent preset contract
+// without exposing callers to the internal pack assembly order.
+type DeepAgentPresetOption func(*DeepAgentConfig)
+
+// NewDeepAgentConfig builds a DeepAgentConfig overlay from explicit preset
+// options. The returned config is intended to be passed to BuildDeepAgent.
+func NewDeepAgentConfig(opts ...DeepAgentPresetOption) *DeepAgentConfig {
+	cfg := &DeepAgentConfig{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(cfg)
+		}
+	}
+	return cfg
+}
+
+// WithDeepAgentAppName overrides the preset application name.
+func WithDeepAgentAppName(name string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.AppName = name
+	}
+}
+
+// WithDeepAgentGeneralPurposeAgent overrides the delegated general-purpose
+// agent contract used by the preset. maxSteps <= 0 keeps the default.
+func WithDeepAgentGeneralPurposeAgent(name, prompt, desc string, maxSteps int) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.GeneralPurposeName = name
+		cfg.GeneralPurposePrompt = prompt
+		cfg.GeneralPurposeDesc = desc
+		if maxSteps > 0 {
+			cfg.GeneralPurposeMaxSteps = maxSteps
+		}
+	}
+}
+
+// WithDeepAgentAdditionalFeatures sets the product-specific features that
+// should be installed before the standard preset packs.
+func WithDeepAgentAdditionalFeatures(features ...harness.Feature) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.AdditionalFeatures = append([]harness.Feature(nil), features...)
+	}
+}
+
+// WithDeepAgentRuntimeSetupOptions sets RuntimeSetup options for the
+// preset-managed runtime assembly.
+func WithDeepAgentRuntimeSetupOptions(opts ...harness.RuntimeSetupOption) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.DefaultSetupOptions = append([]harness.RuntimeSetupOption(nil), opts...)
+	}
+}
+
+// WithDeepAgentSessionStoreDir overrides the preset-managed session store path.
+func WithDeepAgentSessionStoreDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.SessionStoreDir = dir
+	}
+}
+
+// WithDeepAgentCheckpointStoreDir overrides the preset-managed checkpoint store path.
+func WithDeepAgentCheckpointStoreDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.CheckpointStoreDir = dir
+	}
+}
+
+// WithDeepAgentTaskRuntimeDir overrides the preset-managed task runtime path.
+func WithDeepAgentTaskRuntimeDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.TaskRuntimeDir = dir
+	}
+}
+
+// WithDeepAgentMemoryDir overrides the preset-managed memory path.
+func WithDeepAgentMemoryDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.MemoryDir = dir
+	}
+}
+
+// WithDeepAgentIsolationRootDir overrides the preset-managed isolation root.
+func WithDeepAgentIsolationRootDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.IsolationRootDir = dir
+	}
+}
+
+// WithDeepAgentDefaultRestrictedPolicy toggles the preset's default restricted
+// tool policy injection.
+func WithDeepAgentDefaultRestrictedPolicy(enabled bool) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.EnableDefaultRestrictedPolicy = deepAgentBoolPtr(enabled)
+	}
+}
+
+// WithDeepAgentLLMGovernance overrides the preset's retry / breaker defaults.
+// Passing nil for enableDefaultRetry keeps the default enablement decision.
+func WithDeepAgentLLMGovernance(enableDefaultRetry *bool, retryCfg *retry.Config, breakerCfg *retry.BreakerConfig) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.EnableDefaultLLMRetry = enableDefaultRetry
+		cfg.LLMRetryConfig = retryCfg
+		cfg.LLMBreakerConfig = breakerCfg
+	}
+}
+
 // ApplyOver returns a new config where every non-zero field in c overrides
 // the corresponding field in base.
 func (c DeepAgentConfig) ApplyOver(base DeepAgentConfig) DeepAgentConfig {
@@ -141,6 +246,8 @@ func DeepAgentDefaults() DeepAgentConfig {
 
 // BuildDeepAgent builds a deep-agent style kernel by composing declarative
 // preset packs and delegating final assembly to BuildKernelWithFeatures.
+// Product callers should prefer NewDeepAgentConfig(...) to express preset
+// customizations through the public contract instead of mutating defaults in place.
 func BuildDeepAgent(ctx context.Context, flags *AppFlags, uio io.UserIO, cfg *DeepAgentConfig) (*kernel.Kernel, error) {
 	effective := DeepAgentDefaults()
 	if cfg != nil {

@@ -1,8 +1,7 @@
 # TUI Extension System
 
-The `contrib/tui` package provides a five-point extension API that lets you
-add custom behaviour to the mosscode terminal chat interface without modifying
-core code.
+The `contrib/tui` package provides an extension API that lets you add custom
+behaviour to the mosscode terminal chat interface without modifying core code.
 
 ---
 
@@ -22,7 +21,7 @@ mosstui.Run(mosstui.Config{
 })
 ```
 
-A working example that exercises all five extension points is in
+A working example that exercises the core interactive extension points is in
 [`_examples/snippets/main.go`](./_examples/snippets/main.go).
 
 ---
@@ -35,11 +34,14 @@ Register `/command` handlers. Type `/mycommand arg1 arg2` in the composer to
 trigger them.
 
 ```go
-SlashCommands: map[string]mosstui.SlashHandlerFunc{
-    "/greet": func(ctx mosstui.TUIContext, args []string) tea.Cmd {
-        // args = ["arg1", "arg2"] (words after the command name)
-        // return a tea.Cmd for side effects, or nil
-        return mosstui.SendMessageCmd("Hello from extension!")
+SlashCommands: map[string]mosstui.SlashCommandDef{
+    "/greet": {
+        Handler: func(ctx mosstui.TUIContext, args []string) tea.Cmd {
+            // args = ["arg1", "arg2"] (words after the command name)
+            // return a tea.Cmd for side effects, or nil
+            return mosstui.SendMessageCmd("Hello from extension!")
+        },
+        Summary: "Send a greeting through the chat pipeline",
     },
 },
 ```
@@ -62,7 +64,7 @@ Handle key presses **before** the built-in dispatch loop.
 
 ```go
 KeyBindings: map[string]mosstui.KeyHandlerFunc{
-    "ctrl+p": func(ctx mosstui.TUIContext) (consumed bool, cmd tea.Cmd) {
+    "ctrl+g": func(ctx mosstui.TUIContext) (consumed bool, cmd tea.Cmd) {
         return true, mosstui.OpenOverlayCmd("my-overlay")
         // consumed=true prevents the built-in handler from also firing
         // consumed=false lets the built-in handle it after your handler
@@ -83,9 +85,12 @@ Key strings use the [Bubble Tea](https://github.com/charmbracelet/bubbletea)
 | `shift+enter` / `alt+enter` | Insert newline |
 | `tab` / `shift+tab` | Navigation |
 | `up` / `down` | History navigation |
-| `ctrl+t` | Thread picker |
-| `ctrl+o` | Model picker |
-| `ctrl+x` | Toggle transcript |
+| `ctrl+t` | Toggle transcript overlay |
+| `ctrl+o` | Toggle tool output visibility |
+| `ctrl+x` | Remove the latest attachment |
+| `ctrl+y` | Open the copy picker |
+| `ctrl+p` / `ctrl+n` | Reserved internal navigation keys |
+| `pgup` / `pgdown` | Reserved paging keys |
 
 Attempting to bind a protected key causes `installExtensions` to return an
 error at startup.
@@ -172,6 +177,30 @@ replaces the first.
 
 ---
 
+### 6. Lifecycle hooks
+
+Extensions can also react to runtime lifecycle events:
+
+```go
+ext := &mosstui.Extension{
+    OnSessionStart: func(ctx mosstui.TUIContext) tea.Cmd {
+        return mosstui.AppendSystemMessageCmd("Session ready.")
+    },
+    OnSessionEnd: func(ctx mosstui.TUIContext) tea.Cmd {
+        return nil
+    },
+    OnModelSwitch: func(ctx mosstui.TUIContext, prevModel, nextModel string) tea.Cmd {
+        return mosstui.AppendSystemMessageCmd("Model switched: " + prevModel + " -> " + nextModel)
+    },
+}
+```
+
+- `OnSessionStart` runs when the kernel/session becomes ready.
+- `OnSessionEnd` runs before the TUI exits.
+- `OnModelSwitch` runs after the active model changes.
+
+---
+
 ## Helper commands
 
 Three `tea.Cmd` constructors are provided for use inside key handlers and
@@ -195,7 +224,7 @@ type TUIContext struct {
     Workspace   string  // active workspace directory
     Provider    string  // LLM provider name
     Model       string  // model identifier
-    Profile     string  // active profile name
+    CollaborationMode string // current collaboration mode
     Trust       string  // trust level
     SessionID   string  // current session / thread ID
     IsStreaming bool    // true while LLM is generating
@@ -234,7 +263,7 @@ The TUI will not open if validation fails; the error propagates to the
 ## Example: snippets picker
 
 See [`_examples/snippets/main.go`](./_examples/snippets/main.go) for a
-complete runnable example registering all five extension points.
+complete runnable example registering the interactive extension points.
 
 ```
 cd contrib/tui

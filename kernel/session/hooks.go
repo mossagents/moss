@@ -22,11 +22,13 @@ const (
 
 // LifecycleResult 描述一次 Session 运行的最终结果摘要。
 type LifecycleResult struct {
-	Success    bool             `json:"success"`
-	Output     string           `json:"output,omitempty"`
-	Steps      int              `json:"steps"`
-	TokensUsed model.TokenUsage `json:"tokens_used"`
-	Error      string           `json:"error,omitempty"`
+	Success         bool                  `json:"success"`
+	Status          LifecycleStage        `json:"status,omitempty"`
+	Output          string                `json:"output,omitempty"`
+	Steps           int                   `json:"steps"`
+	TokensUsed      model.TokenUsage      `json:"tokens_used"`
+	Error           string                `json:"error,omitempty"`
+	BudgetExhausted *BudgetExhaustedDetail `json:"budget_exhausted,omitempty"`
 }
 
 // BudgetExhaustedDetail 预算耗尽的详细信息（§14.4）。

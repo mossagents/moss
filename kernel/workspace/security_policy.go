@@ -1,7 +1,9 @@
 package workspace
 
-// SecurityPolicy 是 Workspace 的安全策略。
+// SecurityPolicy 是 Workspace 的治理策略。
 // 由 Workspace 实现在每次文件/命令操作时强制执行。
+// 注意：在 governance-only backend（如本地工作区）上，它不是硬安全边界；
+// 真正的硬隔离仍取决于 Workspace.Capabilities() 报告的实现能力。
 type SecurityPolicy struct {
 	FileRules        []FileAccessRule `json:"file_rules,omitempty"`
 	ProtectedPaths   []string         `json:"protected_paths,omitempty"`    // 强制只读子路径（如 .git/）

@@ -674,14 +674,165 @@ func TestLoopBudgetStopsWhenTokenConsumeWouldExceedLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !result.Success {
-		t.Fatalf("expected success stop, got error %s", result.Error)
+	if result.Success {
+		t.Fatalf("expected explicit budget stop, got success result %+v", result)
 	}
-	if result.Steps != 0 {
-		t.Fatalf("Steps = %d, want 0 because consume should be rejected", result.Steps)
+	if result.Status != session.LifecycleBudgetExhausted {
+		t.Fatalf("Status = %q, want %q", result.Status, session.LifecycleBudgetExhausted)
+	}
+	if result.BudgetExhausted == nil {
+		t.Fatal("expected budget exhausted detail")
+	}
+	if result.BudgetExhausted.ConsumedValue != 11 || result.BudgetExhausted.LimitValue != 10 {
+		t.Fatalf("BudgetExhausted = %+v, want consumed=11 limit=10", result.BudgetExhausted)
 	}
 	if sess.Budget.UsedTokensValue() != 0 {
 		t.Fatalf("UsedTokens = %d, want 0", sess.Budget.UsedTokensValue())
+	}
+}
+
+func TestLoopTokenOverrunPromptsAndContinues(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("large token response")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 11},
+			},
+		},
+	}
+	recorder := kt.NewRecorderIO()
+	persisted := false
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+		IO:    recorder,
+		Config: LoopConfig{
+			TokenOverrun: TokenOverrunConfig{
+				PromptUser: true,
+				PersistLimit: func(_ context.Context, sess *session.Session, req TokenOverrunRequest) error {
+					persisted = true
+					if req.ProposedLimit != 20 {
+						t.Fatalf("ProposedLimit = %d, want 20", req.ProposedLimit)
+					}
+					if sess.Config.MaxTokens != 20 || sess.Config.ModelConfig.MaxTokens != 20 {
+						t.Fatalf("session config max tokens not updated before persist: %+v", sess.Config)
+					}
+					return nil
+				},
+			},
+		},
+	}
+	recorder.AskFunc = func(req kernio.InputRequest) (kernio.InputResponse, error) {
+		if req.Type != kernio.InputSelect {
+			t.Fatalf("unexpected ask type %q", req.Type)
+		}
+		return kernio.InputResponse{Selected: 0}, nil
+	}
+
+	sess := &session.Session{
+		ID:       "budget-continue",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("test")}}},
+		Config: session.SessionConfig{
+			MaxTokens: 10,
+			ModelConfig: model.ModelConfig{
+				MaxTokens: 10,
+			},
+		},
+		Budget: session.Budget{MaxTokens: 10, MaxSteps: 10},
+	}
+
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !result.Success || result.Status != session.LifecycleCompleted {
+		t.Fatalf("expected completed result, got %+v", result)
+	}
+	if result.Output != "large token response" {
+		t.Fatalf("Output = %q, want large token response", result.Output)
+	}
+	if !persisted {
+		t.Fatal("expected persist callback to run")
+	}
+	if got := len(recorder.Asked); got != 1 {
+		t.Fatalf("Asked len = %d, want 1", got)
+	}
+	if !strings.Contains(recorder.Asked[0].Options[0], "doubled limit (20)") {
+		t.Fatalf("unexpected continue option: %q", recorder.Asked[0].Options[0])
+	}
+	if sess.Budget.MaxTokens != 20 {
+		t.Fatalf("Budget.MaxTokens = %d, want 20", sess.Budget.MaxTokens)
+	}
+	if sess.Budget.UsedTokensValue() != 11 {
+		t.Fatalf("UsedTokens = %d, want 11", sess.Budget.UsedTokensValue())
+	}
+	if len(sess.Messages) < 2 {
+		t.Fatalf("expected assistant response to be appended, got %d messages", len(sess.Messages))
+	}
+}
+
+func TestLoopTokenOverrunPromptsAndStops(t *testing.T) {
+	mock := &kt.MockLLM{
+		Responses: []model.CompletionResponse{
+			{
+				Message:    model.Message{Role: model.RoleAssistant, ContentParts: []model.ContentPart{model.TextPart("large token response")}},
+				StopReason: "end_turn",
+				Usage:      model.TokenUsage{TotalTokens: 11},
+			},
+		},
+	}
+	recorder := kt.NewRecorderIO()
+	recorder.AskFunc = func(req kernio.InputRequest) (kernio.InputResponse, error) {
+		if req.Type != kernio.InputSelect {
+			t.Fatalf("unexpected ask type %q", req.Type)
+		}
+		return kernio.InputResponse{Selected: 1}, nil
+	}
+	l := &AgentLoop{
+		LLM:   mock,
+		Tools: tool.NewRegistry(),
+		IO:    recorder,
+		Config: LoopConfig{
+			TokenOverrun: TokenOverrunConfig{
+				PromptUser: true,
+			},
+		},
+	}
+
+	sess := &session.Session{
+		ID:       "budget-stop",
+		Status:   session.StatusCreated,
+		Messages: []model.Message{{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart("test")}}},
+		Budget:   session.Budget{MaxTokens: 10, MaxSteps: 10},
+	}
+
+	result, err := l.Run(context.Background(), sess)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Success {
+		t.Fatalf("expected budget stop, got %+v", result)
+	}
+	if result.Status != session.LifecycleBudgetExhausted {
+		t.Fatalf("Status = %q, want %q", result.Status, session.LifecycleBudgetExhausted)
+	}
+	if result.BudgetExhausted == nil || result.BudgetExhausted.ConsumedValue != 11 {
+		t.Fatalf("BudgetExhausted = %+v, want consumed=11", result.BudgetExhausted)
+	}
+	if got := len(recorder.Asked); got != 1 {
+		t.Fatalf("Asked len = %d, want 1", got)
+	}
+	if sess.Budget.UsedTokensValue() != 0 {
+		t.Fatalf("UsedTokens = %d, want 0", sess.Budget.UsedTokensValue())
+	}
+}
+
+func TestBuildTokenOverrunRequest_PreservesHeadroomWhenDoublingIsInsufficient(t *testing.T) {
+	req := buildTokenOverrunRequest(session.Budget{MaxTokens: 100, UsedTokens: 95}, 150, 2)
+	if req.ProposedLimit != 345 {
+		t.Fatalf("ProposedLimit = %d, want 345", req.ProposedLimit)
 	}
 }
 

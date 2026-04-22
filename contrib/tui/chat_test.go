@@ -414,6 +414,39 @@ func TestHandleBridge_AppendsReasoningTranscript(t *testing.T) {
 	}
 }
 
+func TestHandleBridge_PreservesWhitespaceOnlyReasoningChunks(t *testing.T) {
+	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
+	m.streaming = true
+
+	updated, _ := m.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
+		Content: "The",
+	}})
+	updated, _ = updated.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
+		Content: " ",
+	}})
+	updated, _ = updated.handleBridge(bridgeMsg{output: &io.OutputMessage{
+		Type:    io.OutputReasoning,
+		Content: "user is asking about fast mode.",
+	}})
+
+	if len(updated.messages) == 0 {
+		t.Fatal("expected reasoning message")
+	}
+	last := updated.messages[len(updated.messages)-1]
+	if last.kind != msgReasoning {
+		t.Fatalf("last kind = %v, want reasoning", last.kind)
+	}
+	if got := last.content; got != "The user is asking about fast mode." {
+		t.Fatalf("reasoning content = %q", got)
+	}
+	rendered := renderMessage(last, 80)
+	if !strings.Contains(rendered, "The user is asking about fast mode.") {
+		t.Fatalf("rendered reasoning lost whitespace: %q", rendered)
+	}
+}
+
 func TestHandleBridge_AppendsAdjacentReasoningWhenNotStreaming(t *testing.T) {
 	m := newChatModel("openai-completions", "deepseek-reasoner", ".")
 
@@ -1822,6 +1855,157 @@ func TestAskFormEscCancelsRunAndClearsForm(t *testing.T) {
 	}
 }
 
+func TestInlineSelectEnterSubmitsImmediately(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:    io.InputSelect,
+			Prompt:  "Choose one",
+			Options: []string{"A", "B"},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	if updated.activeOverlay() != nil {
+		t.Fatal("expected inline select to avoid overlays")
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		if resp.Selected != 1 {
+			t.Fatalf("expected selection index 1, got %d", resp.Selected)
+		}
+	default:
+		t.Fatal("expected select response after a single Enter")
+	}
+	if updated.askForm != nil || updated.pendAsk != nil {
+		t.Fatal("expected inline select state to clear after submission")
+	}
+}
+
+func TestInlineSelectTabDoesNotMoveToHiddenConfirm(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:    io.InputSelect,
+			Prompt:  "Choose one",
+			Options: []string{"A", "B"},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if updated.askForm == nil || updated.askForm.focusIndex != 0 {
+		t.Fatalf("expected focus to stay on the inline select list, got %#v", updated.askForm)
+	}
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		if resp.Selected != 1 {
+			t.Fatalf("expected selection index 1 after Tab+Enter, got %d", resp.Selected)
+		}
+	default:
+		t.Fatal("expected select response after Tab+Enter")
+	}
+}
+
+func TestInlineSelectChatAboutThisCancelsAndClearsForm(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	cancelled := false
+	m.cancelRunFn = func() bool {
+		cancelled = true
+		return true
+	}
+	m.streaming = true
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:    io.InputSelect,
+			Prompt:  "Choose one",
+			Options: []string{"A", "B"},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if !cancelled {
+		t.Fatal("expected Chat about this to cancel the active run")
+	}
+	if updated.askForm != nil || updated.pendAsk != nil {
+		t.Fatal("expected inline select state to clear after Chat about this")
+	}
+	if updated.streaming {
+		t.Fatal("expected streaming to stop after Chat about this")
+	}
+
+	select {
+	case <-replyCh:
+		t.Fatal("unexpected select response when choosing Chat about this")
+	default:
+	}
+}
+
+func TestInlineSelectCanDisableChatAboutThisEscape(t *testing.T) {
+	m := newChatModel("openai", "gpt-4o", ".")
+	m.width = 120
+	m.height = 40
+	m.recalcLayout()
+
+	replyCh := make(chan io.InputResponse, 1)
+	ask := &bridgeAsk{
+		request: io.InputRequest{
+			Type:    io.InputSelect,
+			Prompt:  "Budget exceeded",
+			Options: []string{"Continue", "Terminate"},
+			Meta: map[string]any{
+				io.InputMetaInlineSelectAllowChatEscape: false,
+			},
+		},
+		replyCh: replyCh,
+	}
+	updated, _ := m.handleBridge(bridgeMsg{ask: ask})
+	rendered := updated.renderInlineSelectAsk(80)
+	if strings.Contains(rendered, "Chat about this") {
+		t.Fatalf("unexpected escape option in rendered inline select:\n%s", rendered)
+	}
+
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyDown})
+	updated, _ = updated.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case resp := <-replyCh:
+		if resp.Selected != 1 {
+			t.Fatalf("expected selection index 1, got %d", resp.Selected)
+		}
+	default:
+		t.Fatal("expected select response after choosing the last visible option")
+	}
+}
+
 func TestConfirmAskFormUsesBottomSheetStyle(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.width = 120
@@ -1936,7 +2120,7 @@ func TestApprovalAskFormShowsStructuredCommandAndOptions(t *testing.T) {
 	}
 }
 
-func TestConfirmOverlayPlacementUsesBottomSheet(t *testing.T) {
+func TestConfirmUsesInlineBottomSheetStyle(t *testing.T) {
 	m := newChatModel("openai", "gpt-4o", ".")
 	m.width = 120
 	m.height = 40

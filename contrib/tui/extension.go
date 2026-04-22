@@ -14,7 +14,8 @@
 //	    Extensions: []*mosstui.Extension{myExt},
 //	})
 //
-// An Extension bundles five independent customization points:
+// An Extension bundles the core interactive customization points plus
+// lifecycle hooks:
 //
 //   - SlashCommands – register /command handlers evaluated before workspace
 //     custom commands and the generic /<skill> fallback, but after all
@@ -22,7 +23,8 @@
 //
 //   - KeyBindings – handle key presses before the built-in dispatch loop.
 //     Core keys (ctrl+c, esc, enter, tab, up/down, shift+tab, shift+enter,
-//     alt+enter, ctrl+t, ctrl+o, ctrl+x, ctrl+y, ctrl+s) cannot be overridden.
+//     alt+enter, ctrl+t, ctrl+o, ctrl+x, ctrl+y, ctrl+p, ctrl+n, pgup,
+//     pgdown) cannot be overridden.
 //
 //   - StatusWidgets – contribute text segments appended to the left side of
 //     the footer status bar. Only rendered in idle (non-streaming) state.
@@ -35,11 +37,14 @@
 //     CustomOverlay instance. Only one custom overlay may be active at a
 //     time; opening a new one replaces any existing one.
 //
+//   - Lifecycle hooks – OnSessionStart, OnSessionEnd, and OnModelSwitch let
+//     extensions react to runtime lifecycle events.
+//
 // The Extension is validated at startup (installExtensions): duplicate slash
 // command names or reserved key bindings cause an error before the TUI opens.
 //
 // See _examples/snippets/main.go for a self-contained example that exercises
-// all five extension points.
+// the interactive extension points.
 package tui
 
 import tea "github.com/charmbracelet/bubbletea"

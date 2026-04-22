@@ -66,6 +66,10 @@ func cloneLifecycleResult(result *session.LifecycleResult) *session.LifecycleRes
 		return nil
 	}
 	cp := *result
+	if result.BudgetExhausted != nil {
+		detail := *result.BudgetExhausted
+		cp.BudgetExhausted = &detail
+	}
 	return &cp
 }
 
@@ -73,12 +77,19 @@ func lifecycleResultFromLoop(result *loop.SessionResult) *session.LifecycleResul
 	if result == nil {
 		return nil
 	}
+	var detail *session.BudgetExhaustedDetail
+	if result.BudgetExhausted != nil {
+		cloned := *result.BudgetExhausted
+		detail = &cloned
+	}
 	return &session.LifecycleResult{
-		Success:    result.Success,
-		Output:     result.Output,
-		Steps:      result.Steps,
-		TokensUsed: result.TokensUsed,
-		Error:      result.Error,
+		Success:         result.Success,
+		Status:          result.Status,
+		Output:          result.Output,
+		Steps:           result.Steps,
+		TokensUsed:      result.TokensUsed,
+		Error:           result.Error,
+		BudgetExhausted: detail,
 	}
 }
 

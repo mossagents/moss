@@ -567,7 +567,7 @@ func (it *streamIterator) processChunk(chunk openai.ChatCompletionChunk) {
 	if delta.Content != "" {
 		it.pending = append(it.pending, model.TextDeltaChunk(delta.Content))
 	}
-	if reasoning := extractReasoningText(delta.RawJSON()); reasoning != "" {
+	if reasoning := extractReasoningDeltaText(delta.RawJSON()); reasoning != "" {
 		it.pending = append(it.pending, model.ReasoningDeltaChunk(reasoning))
 	}
 
@@ -704,6 +704,22 @@ func extractReasoningText(raw string) string {
 	return ""
 }
 
+func extractReasoningDeltaText(raw string) string {
+	if strings.TrimSpace(raw) == "" {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"reasoning_content", "reasoning"} {
+		if text := extractReasoningDeltaValue(payload[key]); strings.TrimSpace(text) != "" {
+			return text
+		}
+	}
+	return ""
+}
+
 func extractReasoningValue(value any) string {
 	switch v := value.(type) {
 	case string:
@@ -719,6 +735,28 @@ func extractReasoningValue(value any) string {
 	case map[string]any:
 		for _, key := range []string{"text", "content"} {
 			if text := extractReasoningValue(v[key]); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func extractReasoningDeltaValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case []any:
+		parts := make([]string, 0, len(v))
+		for _, item := range v {
+			if text := extractReasoningDeltaValue(item); strings.TrimSpace(text) != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "\n")
+	case map[string]any:
+		for _, key := range []string{"text", "content"} {
+			if text := extractReasoningDeltaValue(v[key]); strings.TrimSpace(text) != "" {
 				return text
 			}
 		}

@@ -45,6 +45,12 @@ const (
 	InputForm     InputType = "form"      // 结构化表单
 )
 
+const (
+	// InputMetaInlineSelectAllowChatEscape 是可选 UI hint。
+	// 设为 false 时，支持 inline select 的前端不再额外展示 “Chat about this” 逃生选项。
+	InputMetaInlineSelectAllowChatEscape = "inline_select_allow_chat_escape"
+)
+
 // InputFieldType 表示表单字段类型。
 type InputFieldType string
 

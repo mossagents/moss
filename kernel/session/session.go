@@ -102,6 +102,13 @@ func (b *Budget) UsedTokensValue() int {
 	return b.UsedTokens
 }
 
+// SetMaxTokens 原子更新主 token 上限。
+func (b *Budget) SetMaxTokens(limit int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.MaxTokens = limit
+}
+
 // UsedThinkingTokensValue 返回 thinking token 用量（§14.10）。
 func (b *Budget) UsedThinkingTokensValue() int {
 	b.mu.Lock()
@@ -188,6 +195,15 @@ func (s *Session) UpdateSystemPrompt(prompt string) {
 	} else {
 		s.Messages = append([]model.Message{newMsg}, s.Messages...)
 	}
+}
+
+// UpdateTokenBudgetLimit 更新线程级 token 上限，同时同步 SessionConfig 与 Budget。
+func (s *Session) UpdateTokenBudgetLimit(limit int) {
+	s.mu.Lock()
+	s.Config.MaxTokens = limit
+	s.Config.ModelConfig.MaxTokens = limit
+	s.mu.Unlock()
+	s.Budget.SetMaxTokens(limit)
 }
 
 // SetTitle 线程安全地设置会话显示标题。

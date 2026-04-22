@@ -658,7 +658,7 @@ func formatTraceMetadataValue(v any) string {
 
 func normalizeRunTraceStatus(status, errMsg string) string {
 	switch strings.TrimSpace(strings.ToLower(status)) {
-	case "completed", "failed", "cancelled":
+	case "completed", "failed", "cancelled", "budget_exhausted":
 		return strings.TrimSpace(strings.ToLower(status))
 	}
 	if strings.Contains(strings.ToLower(errMsg), "context canceled") {

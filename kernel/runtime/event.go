@@ -37,6 +37,7 @@ const (
 	EventTypePlanUpdated        EventType = "plan_updated"
 	EventTypeMemoryConsolidated EventType = "memory_consolidated"
 	EventTypeBudgetExhausted    EventType = "budget_exhausted"
+	EventTypeBudgetLimitUpdated EventType = "budget_limit_updated"
 	EventTypeSubagentSpawned    EventType = "subagent_spawned"
 	EventTypeSubagentCompleted  EventType = "subagent_completed"
 	// EventTypeLLMCalled 对应一次 LLM 调用完成事件（§14.8 Provider Failover）。
@@ -331,6 +332,13 @@ type BudgetExhaustedPayload struct {
 	BudgetKind    BudgetKind `json:"budget_kind"`
 	ConsumedValue int64      `json:"consumed_value"`
 	LimitValue    int64      `json:"limit_value"`
+}
+
+// BudgetLimitUpdatedPayload 对应 budget_limit_updated 事件。
+type BudgetLimitUpdatedPayload struct {
+	PreviousMainTokenBudget int64  `json:"previous_main_token_budget"`
+	MainTokenBudget         int64  `json:"main_token_budget"`
+	Reason                  string `json:"reason,omitempty"`
 }
 
 // SubagentSpawnedPayload 对应 subagent_spawned 事件（§5.3 subagent 约束）。

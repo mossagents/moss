@@ -121,32 +121,31 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 func main() {
 	ctx := context.Background()
 
-	sb, _ := sandbox.NewLocal(".")
 	k := kernel.New(
 		kernel.WithLLM(myLLM),
-		kernel.WithSandbox(sb),
 		kernel.WithUserIO(myIO),
 	)
 
-	backend := &harness.LocalBackend{
-		Workspace: k.Workspace(),
-		Executor:  k.Executor(),
-	}
+	backend, _ := harness.OpenLocalBackend(".")
 	h := harness.New(k, backend)
-	_ = h.Install(ctx,
+	if err := h.ActivateBackend(ctx); err != nil {
+		panic(err)
+	}
+	if err := h.Install(ctx,
 		harness.BootstrapContext(".", "myapp", "trusted"),
 		harness.LLMResilience(&retry.Config{
 			MaxRetries:   3,
 			InitialDelay: 500 * time.Millisecond,
 		}, nil),
 		harness.PatchToolCalls(),
-	)
+	); err != nil {
+		panic(err)
+	}
 
 	_ = k.Boot(ctx)
 	defer k.Shutdown(ctx)
@@ -178,7 +177,7 @@ func main() {
 | `kernel\patterns\` | Agent 编排原语（Sequential、Parallel、Loop、Supervisor、Research） |
 | `harness\` | 可组合编排层（Feature、Backend、Harness）— 独立 Go 模块，依赖 kernel |
 | `harness\appkit\` | 推荐构建器、扩展组合 API，以及 deep-agent 预设装配路径 |
-| `harness\appkit\runtime\` | 默认能力装配（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
+| `harness\runtime\` | 默认能力装配与 policy/execution 基础设施（builtin tools、MCP、skills、subagents、memory、context、scheduling） |
 | `harness\extensions\` | 面向扩展的能力模块命名空间（`skill\`、`mcp\`、`agent\`、`knowledge\`） |
 | `harness\bootstrap\`、`config\`、`providers\`、`logging\` | 支撑包 |
 | `harness\scheduler\`、`gateway\`、`distributed\`、`sandbox\` | 更高层运行时积木 |
@@ -239,7 +238,7 @@ skills:
 
 优先级：
 
-**命令行参数 > 环境变量 > 配置文件**
+**命令行参数 > 配置文件 > 环境变量 > 默认值**
 
 ## 观测与审计
 

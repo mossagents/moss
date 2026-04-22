@@ -23,11 +23,8 @@ type Provider interface {
 
 - `Kernel`
 - `ToolRegistry`
-- `Hooks`
-- `Sandbox`
 - `UserIO`
 - `Workspace`
-- `Executor`
 - `TaskRuntime`
 - `Mailbox`
 - `SessionStore`

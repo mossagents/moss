@@ -12,7 +12,7 @@
   "dependencies": {
     "@assistant-ui/react": "^0.12.20",
     "@tailwindcss/vite": "^4.2.2",
-    "@wailsio/runtime": "latest",
+    "@wailsio/runtime": "3.0.0-alpha.79",
     "clsx": "^2.1.1",
     "lucide-react": "^1.6.0",
     "react": "^18.2.0",

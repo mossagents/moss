@@ -94,6 +94,8 @@ func (d *DockerWorkspace) Capabilities() workspace.Capabilities {
 		NetworkIsolation:    workspace.IsolationMethodContainer,
 		ProcessIsolation:    workspace.IsolationMethodContainer,
 		ResourceEnforcement: true,
+		GovernanceOnly:      false,
+		HardSandbox:         true,
 	}
 }
 

@@ -3,8 +3,6 @@ package loop
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log/slog"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -132,35 +130,7 @@ func (l *AgentLoop) runErrorHook(ctx context.Context, sess *session.Session, err
 }
 
 func (l *AgentLoop) emitLifecycle(ctx context.Context, event session.LifecycleEvent) {
-	callCtx := ctx
-	if callCtx == nil {
-		callCtx = context.Background()
-	}
-	reportErr := func(err error) {
-		sessionID := ""
-		if event.Session != nil {
-			sessionID = event.Session.ID
-		}
-		slog.Default().ErrorContext(callCtx, "session lifecycle hook error",
-			slog.String("stage", string(event.Stage)),
-			slog.String("session_id", sessionID),
-			slog.Any("error", err),
-		)
-		observe.ObserveError(context.Background(), l.observer(), observe.ErrorEvent{
-			SessionID: sessionID,
-			Phase:     "session_lifecycle_hook",
-			Error:     err,
-			Message:   err.Error(),
-		})
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			reportErr(fmt.Errorf("session lifecycle hook panic: %v", r))
-		}
-	}()
-	if err := l.safeHooks().OnSessionLifecycle.Run(callCtx, &event); err != nil {
-		reportErr(err)
-	}
+	hooks.DispatchSessionLifecycle(ctx, l.safeHooks(), l.observer(), l.logger(), event)
 }
 
 func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model.TokenUsage, err error) *SessionResult {
@@ -185,6 +155,7 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model
 	result := &SessionResult{
 		SessionID:  sess.ID,
 		Success:    false,
+		Status:     stage,
 		Steps:      sess.Budget.UsedStepsValue(),
 		TokensUsed: usage,
 		Error:      err.Error(),
@@ -194,11 +165,62 @@ func (l *AgentLoop) fail(ctx context.Context, sess *session.Session, usage model
 		Session: sess,
 		Result: &session.LifecycleResult{
 			Success:    false,
+			Status:     stage,
 			Steps:      sess.Budget.UsedStepsValue(),
 			TokensUsed: usage,
 			Error:      err.Error(),
 		},
 		Error:     err,
+		Timestamp: sess.EndedAt.UTC(),
+	})
+	return result
+}
+
+func (l *AgentLoop) stopForBudget(
+	ctx context.Context,
+	sess *session.Session,
+	usage model.TokenUsage,
+	detail *session.BudgetExhaustedDetail,
+) *SessionResult {
+	sess.Status = session.StatusCompleted
+	sess.EndedAt = time.Now()
+	l.logger().DebugContext(ctx, "session run stopped by budget",
+		"session_id", sess.ID,
+		"budget_kind", detail.BudgetKind,
+		"consumed", detail.ConsumedValue,
+		"limit", detail.LimitValue,
+		"steps", sess.Budget.UsedStepsValue(),
+		"tokens", usage.TotalTokens,
+	)
+	runEvent := l.executionEventBase(sess, observe.ExecutionRunCompleted, "run", "runtime", "run")
+	runEvent.Metadata = map[string]any{
+		"status":       string(session.LifecycleBudgetExhausted),
+		"budget_kind":  detail.BudgetKind,
+		"consumed":     detail.ConsumedValue,
+		"limit":        detail.LimitValue,
+		"steps":        sess.Budget.UsedStepsValue(),
+		"tokens":       usage.TotalTokens,
+	}
+	observe.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
+	result := &SessionResult{
+		SessionID:       sess.ID,
+		Success:         false,
+		Status:          session.LifecycleBudgetExhausted,
+		Steps:           sess.Budget.UsedStepsValue(),
+		TokensUsed:      usage,
+		BudgetExhausted: detail,
+	}
+	l.emitLifecycle(ctx, session.LifecycleEvent{
+		Stage:           session.LifecycleBudgetExhausted,
+		Session:         sess,
+		BudgetExhausted: detail,
+		Result: &session.LifecycleResult{
+			Success:         false,
+			Status:          session.LifecycleBudgetExhausted,
+			Steps:           sess.Budget.UsedStepsValue(),
+			TokensUsed:      usage,
+			BudgetExhausted: detail,
+		},
 		Timestamp: sess.EndedAt.UTC(),
 	})
 	return result

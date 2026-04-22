@@ -127,6 +127,15 @@ func WithLoopConfig(cfg loop.LoopConfig) Option {
 	return func(k *Kernel) { k.loopCfg = cfg }
 }
 
+// WithLoopConfigPatch 在保留现有配置的前提下增量修改 LoopConfig。
+func WithLoopConfigPatch(patch func(*loop.LoopConfig)) Option {
+	return func(k *Kernel) {
+		if patch != nil {
+			patch(&k.loopCfg)
+		}
+	}
+}
+
 // WithObserver 设置运行时事件观察者。
 // Observer 用于收集可观测性指标（LLM 调用耗时、工具调用结果等），
 // 不设置则使用 NoOpObserver（零开销）。

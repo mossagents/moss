@@ -84,14 +84,13 @@ kernel.New(kernel.WithPlugin(g))
 - `session.Manager`
 - `Plugin` 系统
 - `workspace.Workspace`
-- `workspace.Executor`
 - `task.TaskRuntime`
 - `task.Mailbox`
 - `workspace.WorkspaceIsolation`
 - repo state / patch apply / patch revert / worktree snapshots
 - checkpoint store
 - observer
-- extension bridge
+- prompt / stage / service registries
 
 Kernel 围绕 **一次完整 agent run 的状态、执行面、协作面和生命周期管理** 组织。
 
@@ -132,7 +131,7 @@ Shutdown
 | `kernel\plugin` | Plugin 接口、`Group` 构建器与快捷构造函数 |
 | `kernel\patterns` | Agent 编排原语（Sequential、Parallel、Loop、Supervisor、Research） |
 | `kernel\loop` | Agent 执行循环 |
-| `kernel\workspace` | `Workspace` / `Executor` / isolation / snapshot 边界 |
+| `kernel\workspace` | `Workspace` / isolation / snapshot 边界 |
 | `kernel\task` | task runtime、mailbox 等协作抽象 |
 | `kernel\checkpoint` | 会话检查点抽象 |
 | `kernel\artifact` | Artifact 存储接口与内存实现 |
@@ -141,12 +140,12 @@ Shutdown
 | `kernel\prompt` | prompt registry |
 | `kernel\errors` | 结构化错误 |
 
-## 为什么引入 `Workspace` / `Executor`
+## 为什么把执行面收进 `Workspace`
 
-旧式“直接把文件与命令执行绑在 sandbox 上”的模型不够表达当前需求。现在的内核把这两个概念拆开：
+旧式“直接把文件与命令执行绑在 sandbox 上”的模型不够表达当前需求。当前实现把文件访问与结构化命令执行统一收进 `workspace.Workspace` 这个端口：
 
-- `Workspace`：读写/列举/删除文件
-- `Executor`：执行结构化命令请求
+- 文件操作：读写/列举/删除文件
+- 命令执行：通过 `Execute(ctx, ExecRequest)` 执行结构化命令请求
 
 `ExecRequest` 目前已经包含：
 
@@ -191,17 +190,16 @@ type PolicyContext struct {
 
 这允许产品层在审批、审计、提示和降级执行之间共享统一语义。
 
-## 生命周期扩展桥
+## 运行时扩展接入点
 
-Kernel 通过 `ExtensionBridge` 暴露扩展接入点：
+当前 Kernel 主要通过几个显式注册面暴露扩展入口：
 
-- `OnBoot`
-- `OnShutdown`
-- `OnSystemPrompt`
-- `OnSessionLifecycle`
-- `OnToolLifecycle`
+- `Stages()`：注册 boot / shutdown 生命周期逻辑
+- `PromptLayers()`：拼装 system prompt layer
+- `InstallPlugin()`：把 hook 接入 `hooks.Registry`
+- `Services()`：挂载 owner package 持有的 substrate state
 
-这套机制的意义是：**让扩展在不污染内核 API 的情况下参与运行时生命周期。**
+这套机制的意义是：**让扩展按职责参与运行时生命周期，而不是依赖一个宽泛、难约束的扩展总线。**
 
 ## 运行时可观测性
 
@@ -213,7 +211,7 @@ Kernel 现在支持：
 - shutting-down 状态
 - release gate 校验
 
-这些能力分别被 `appkit\serve.Health*` 和 `testing\arch_guard.ps1` 等上层入口消费。
+这些能力分别被 `appkit\serve.Health*` 和 `harness\testing\arch_guard.ps1` 等上层入口消费。
 
 ## 设计取舍
 

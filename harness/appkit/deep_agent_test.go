@@ -494,6 +494,60 @@ func TestBuildDeepAgent_DisableDefaultLLMRetry(t *testing.T) {
 	}
 }
 
+func TestNewDeepAgentConfig_OptionsComposePresetContract(t *testing.T) {
+	retryEnabled := false
+	cfg := NewDeepAgentConfig(
+		WithDeepAgentAppName("mossresearch"),
+		WithDeepAgentGeneralPurposeAgent("research-generalist", "delegate carefully", "Research helper", 120),
+		WithDeepAgentDefaultRestrictedPolicy(false),
+		WithDeepAgentLLMGovernance(&retryEnabled, &retry.Config{MaxRetries: 4}, &retry.BreakerConfig{MaxFailures: 2}),
+		WithDeepAgentRuntimeSetupOptions(
+			harness.WithBuiltinTools(false),
+			harness.WithAgents(false),
+		),
+		WithDeepAgentAdditionalFeatures(
+			harness.FeatureFunc{FeatureName: "product-feature"},
+		),
+	)
+
+	if cfg == nil {
+		t.Fatal("expected config")
+	}
+	if cfg.AppName != "mossresearch" {
+		t.Fatalf("AppName = %q, want mossresearch", cfg.AppName)
+	}
+	if cfg.GeneralPurposeName != "research-generalist" {
+		t.Fatalf("GeneralPurposeName = %q, want research-generalist", cfg.GeneralPurposeName)
+	}
+	if cfg.GeneralPurposePrompt != "delegate carefully" {
+		t.Fatalf("GeneralPurposePrompt = %q, want delegate carefully", cfg.GeneralPurposePrompt)
+	}
+	if cfg.GeneralPurposeDesc != "Research helper" {
+		t.Fatalf("GeneralPurposeDesc = %q, want Research helper", cfg.GeneralPurposeDesc)
+	}
+	if cfg.GeneralPurposeMaxSteps != 120 {
+		t.Fatalf("GeneralPurposeMaxSteps = %d, want 120", cfg.GeneralPurposeMaxSteps)
+	}
+	if cfg.EnableDefaultRestrictedPolicy == nil || *cfg.EnableDefaultRestrictedPolicy {
+		t.Fatalf("EnableDefaultRestrictedPolicy = %v, want false", cfg.EnableDefaultRestrictedPolicy)
+	}
+	if cfg.EnableDefaultLLMRetry == nil || *cfg.EnableDefaultLLMRetry {
+		t.Fatalf("EnableDefaultLLMRetry = %v, want false", cfg.EnableDefaultLLMRetry)
+	}
+	if cfg.LLMRetryConfig == nil || cfg.LLMRetryConfig.MaxRetries != 4 {
+		t.Fatalf("LLMRetryConfig = %+v, want MaxRetries=4", cfg.LLMRetryConfig)
+	}
+	if cfg.LLMBreakerConfig == nil || cfg.LLMBreakerConfig.MaxFailures != 2 {
+		t.Fatalf("LLMBreakerConfig = %+v, want MaxFailures=2", cfg.LLMBreakerConfig)
+	}
+	if len(cfg.DefaultSetupOptions) != 2 {
+		t.Fatalf("DefaultSetupOptions len = %d, want 2", len(cfg.DefaultSetupOptions))
+	}
+	if len(cfg.AdditionalFeatures) != 1 || cfg.AdditionalFeatures[0].Name() != "product-feature" {
+		t.Fatalf("AdditionalFeatures = %v, want [product-feature]", deepAgentFeatureNames(cfg.AdditionalFeatures))
+	}
+}
+
 func TestDeepAgentApplyOver_zeroValueDoesNotOverrideBase(t *testing.T) {
 	base := DeepAgentDefaults()
 	overlay := DeepAgentConfig{}

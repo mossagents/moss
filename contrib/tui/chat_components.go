@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mossagents/moss/kernel/io"
 )
 
 // renderStreamingPreview 在流式输出期间，渲染当前流式消息的末尾预览行。
@@ -114,7 +113,7 @@ func (m chatModel) renderEditorPane(layout chatUILayout) string {
 		Render(strings.Join(sections, "\n"))
 }
 
-// renderComposerInput 渲染带 ❯ 前缀指示符的输入区域，上下各一条水平分隔线。
+// renderComposerInput 渲染带 ❯ 前缀指示符和顶部水平分隔线的输入区域。
 // 第一行左侧显示 ❯，后续行用等宽空格对齐，整体宽度与 mainWidth 一致。
 func (m chatModel) renderComposerInput(mainWidth int) string {
 	raw := m.textarea.View()
@@ -174,11 +173,6 @@ func (m chatModel) overlayPlacement(dialog overlayDialog, layout chatUILayout) (
 	width := min(84, max(48, layout.MainWidth-12))
 	vertical := lipgloss.Center
 	switch dialog.ID() {
-	case overlayAsk:
-		if m.pendAsk != nil && m.pendAsk.request.Type == io.InputConfirm {
-			width = min(layout.MainWidth, max(56, layout.MainWidth-2))
-			vertical = lipgloss.Bottom
-		}
 	case overlayHelp, overlaySchedule, overlayStatus, overlayModel, overlayTheme, overlayMCP, overlayResume, overlayFork, overlayAgent, overlayMention, overlayCopy:
 		vertical = lipgloss.Bottom
 	}
@@ -203,7 +197,7 @@ func (m chatModel) renderStatusPane(width int) string {
 	case m.scheduleBrowser != nil:
 		leftStr = "↑↓ choose  •  e run  •  d delete  •  Esc close"
 	case m.pendAsk != nil:
-		leftStr = "Enter confirm  •  Esc Esc cancel"
+		leftStr = "Enter confirm  •  Esc cancel"
 	case m.hasActiveOverlay():
 		leftStr = "↑↓ move  •  Enter confirm  •  Esc close"
 	case m.mentionPopup != nil || m.slashPopup != nil:

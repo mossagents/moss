@@ -38,7 +38,7 @@
 
 - `kernel\observe\ReleaseGateMeter`
 - `kernel\observe\NormalizedMetricsSnapshot`
-- `testing\arch_guard.ps1` 的环境参数、override 审计与 gate 校验流程
+- `harness\testing\arch_guard.ps1` 通过真实 smoke / checkpoint replay probe 驱动的 gate 校验流程
 
 默认 gate：
 
@@ -47,6 +47,7 @@
 - `tool_latency_avg <= 5000ms`
 - `tool_error_rate <= 0.05`
 - `guardian_error_rate <= 0.01`
+- `replay_prepared_total >= 1`
 
 并进一步把 context / guardian 观测面接到了默认 exporter 与 product 审计消费层：
 

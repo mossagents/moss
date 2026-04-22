@@ -1,12 +1,12 @@
 // Package main demonstrates the contrib/tui Extension API.
 //
-// This example registers a "snippets" extension that adds all five extension
-// points to a mosscode-style TUI:
+// This example registers a "snippets" extension that adds the core interactive
+// extension points to a mosscode-style TUI:
 //
 //   - Slash command  /snippet  — opens the snippet picker
-//   - Key binding    ctrl+p    — opens the snippet picker
+//   - Key binding    ctrl+g    — opens the snippet picker
 //   - Status widget             — shows "(N snippets)" in the footer
-//   - Header meta widget        — shows "ctrl+p: snippets"
+//   - Header meta widget        — shows "ctrl+g: snippets"
 //   - Custom overlay            — interactive list picker
 //
 // Run from this directory (requires a configured LLM provider):
@@ -24,6 +24,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	mosstui "github.com/mossagents/moss/contrib/tui"
 	appkit "github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/session"
@@ -119,15 +120,18 @@ func buildSnippetsExtension() *mosstui.Extension {
 		Name: "snippets",
 
 		// /snippet — type in the composer to open the picker
-		SlashCommands: map[string]mosstui.SlashHandlerFunc{
-			"/snippet": func(_ mosstui.TUIContext, _ []string) tea.Cmd {
-				return mosstui.OpenOverlayCmd("snippets")
+		SlashCommands: map[string]mosstui.SlashCommandDef{
+			"/snippet": {
+				Handler: func(_ mosstui.TUIContext, _ []string) tea.Cmd {
+					return mosstui.OpenOverlayCmd("snippets")
+				},
+				Summary: "Open the snippet picker overlay",
 			},
 		},
 
-		// ctrl+p — global hotkey to open the picker from anywhere
+		// ctrl+g — global hotkey to open the picker from anywhere
 		KeyBindings: map[string]mosstui.KeyHandlerFunc{
-			"ctrl+p": func(_ mosstui.TUIContext) (bool, tea.Cmd) {
+			"ctrl+g": func(_ mosstui.TUIContext) (bool, tea.Cmd) {
 				return true, mosstui.OpenOverlayCmd("snippets")
 			},
 		},
@@ -142,7 +146,7 @@ func buildSnippetsExtension() *mosstui.Extension {
 		// Header meta line: reminds the user of the hotkey
 		HeaderMetaWidgets: []mosstui.WidgetFunc{
 			func(_ mosstui.TUIContext) string {
-				return "ctrl+p: snippets"
+				return "ctrl+g: snippets"
 			},
 		},
 
@@ -192,11 +196,13 @@ func main() {
 
 		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
-				Goal:         "interactive coding assistant",
-				Mode:         "interactive",
-				TrustLevel:   trust,
-				SystemPrompt: systemPrompt,
-				MaxSteps:     200,
+				Goal:       "interactive coding assistant",
+				Mode:       "interactive",
+				TrustLevel: trust,
+				MaxSteps:   200,
+				Metadata: map[string]any{
+					prompting.MetadataSessionInstructionsKey: "You are an interactive coding assistant.",
+				},
 			}
 		},
 	}); err != nil {

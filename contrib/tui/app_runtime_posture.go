@@ -322,6 +322,10 @@ func (a *agentState) rebuildRuntime(plan postureRebuildPlan) error {
 	if oldCancel != nil {
 		oldCancel()
 	}
+	if err := a.installTokenOverrunNegotiation(k); err != nil {
+		cancel()
+		return fmt.Errorf("configure token overrun negotiation: %w", err)
+	}
 	k.InstallPlugin(a.permissionOverridePlugin())
 	a.mu.Lock()
 	a.k = k

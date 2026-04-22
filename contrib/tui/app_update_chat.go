@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
+	"github.com/mossagents/moss/harness/extensions/skill"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/collaboration"
 	"github.com/mossagents/moss/kernel/model"
@@ -272,7 +273,7 @@ func (m *appModel) bindToolingCallbacks(agent *agentState) {
 	m.chat.skillItemsFn = func() []skillsPickerItem {
 		manifests := runtime.LookupSkillManifests(agent.k)
 		if len(manifests) == 0 {
-			return nil
+			manifests = skill.DiscoverSkillManifestsForTrust(m.config.Workspace, agent.trust)
 		}
 		sort.Slice(manifests, func(i, j int) bool { return manifests[i].Name < manifests[j].Name })
 		manager, _ := runtime.LookupCapabilityManager(agent.k)

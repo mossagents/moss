@@ -222,6 +222,19 @@ func TestCompileSecurityPolicy_NetworkMode(t *testing.T) {
 	}
 }
 
+func TestResolveToolPolicyForWorkspace_RestrictedUsesSoftDegradableNetworkBlock(t *testing.T) {
+	tp := ResolveToolPolicyForWorkspace(t.TempDir(), appconfig.TrustRestricted, "confirm")
+	if tp.Command.Network.Mode != workspace.ExecNetworkDisabled {
+		t.Fatalf("network mode = %q, want %q", tp.Command.Network.Mode, workspace.ExecNetworkDisabled)
+	}
+	if !tp.Command.Network.PreferHardBlock {
+		t.Fatal("restricted policy should prefer hard network blocking when available")
+	}
+	if !tp.Command.Network.AllowSoftLimit {
+		t.Fatal("restricted policy should explicitly allow soft fallback on governance-only backends")
+	}
+}
+
 func TestCompileSecurityPolicy_NoDuplicateDefaults(t *testing.T) {
 	wsRoot := t.TempDir()
 	tp := ToolPolicy{

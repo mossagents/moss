@@ -105,6 +105,24 @@ func (k *Kernel) Apply(opts ...Option) error {
 	return nil
 }
 
+// PatchLoopConfig 在没有活跃 run 时安全地增量更新 loop 配置。
+// 与 Apply 不同，它允许在 Boot 之后调整运行期 loop 行为。
+func (k *Kernel) PatchLoopConfig(patch func(*loop.LoopConfig)) error {
+	if patch == nil {
+		return nil
+	}
+	k.assemblyMu.Lock()
+	defer k.assemblyMu.Unlock()
+	if k.IsShuttingDown() {
+		return errors.New(errors.ErrShutdown, "kernel is shutting down")
+	}
+	if k.runs.activeCount() > 0 {
+		return fmt.Errorf("cannot patch loop config while runs are active")
+	}
+	patch(&k.loopCfg)
+	return nil
+}
+
 // Boot 验证 Kernel 配置完整性。
 // 检查必要组件是否已设置，并给出具体的修复建议。
 // 同时初始化已接入的扩展桥接逻辑（如果已配置）。

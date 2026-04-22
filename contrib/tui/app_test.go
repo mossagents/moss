@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -79,6 +80,13 @@ func TestWelcomeViewIncludesConfiguredBanner(t *testing.T) {
 	}
 }
 
+func TestRunTraceStatus_UsesBudgetExhaustedLifecycleStatus(t *testing.T) {
+	got := runTraceStatus(&session.LifecycleResult{Status: session.LifecycleBudgetExhausted}, nil)
+	if got != "budget_exhausted" {
+		t.Fatalf("runTraceStatus = %q, want budget_exhausted", got)
+	}
+}
+
 func TestSwitchModeRejectsActiveRun(t *testing.T) {
 	m := appModel{
 		state: stateChat,
@@ -118,9 +126,36 @@ func TestBuildAgentUsesBootstrappedKernelObserver(t *testing.T) {
 		k:    k,
 	}
 
-	agent := state.buildAgent()
+	agent, err := state.buildAgent()
+	if err != nil {
+		t.Fatalf("buildAgent: %v", err)
+	}
 	if agent.baseObserver != kernelObserver {
 		t.Fatalf("expected agent to keep bootstrapped kernel observer, got %#v", agent.baseObserver)
+	}
+}
+
+func TestBuildAgentEnablesTokenOverrunPromptAfterBoot(t *testing.T) {
+	k := kernel.New(
+		kernel.WithLLM(&kt.MockLLM{}),
+		kernel.WithUserIO(&io.NoOpIO{}),
+	)
+	if err := k.Boot(context.Background()); err != nil {
+		t.Fatalf("Boot: %v", err)
+	}
+	state := &kernelInitState{
+		cfg:  Config{},
+		wCfg: WelcomeConfig{Workspace: ".", Model: "test-model"},
+		k:    k,
+	}
+	if _, err := state.buildAgent(); err != nil {
+		t.Fatalf("buildAgent: %v", err)
+	}
+	llmAgent := k.BuildLLMAgent("tui")
+	cfgValue := reflect.ValueOf(llmAgent).Elem().FieldByName("config")
+	promptUser := cfgValue.FieldByName("TokenOverrun").FieldByName("PromptUser").Bool()
+	if !promptUser {
+		t.Fatal("expected buildAgent to enable token overrun prompt after boot")
 	}
 }
 

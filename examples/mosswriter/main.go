@@ -19,6 +19,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/thinking"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -107,28 +108,27 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Name:      provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
-				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			return buildKernel(context.Background(), runtimeFlags, io)
 		},
-		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, collaborationMode, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
-				Goal:         "interactive content writing assistant",
-				Mode:         "interactive",
-				TrustLevel:   trust,
-				Profile:      profile,
-				SystemPrompt: systemPrompt,
-				MaxSteps:     200,
+				Goal:       "interactive content writing assistant",
+				Mode:       "interactive",
+				TrustLevel: trust,
+				MaxSteps:   200,
+				Metadata: map[string]any{
+					prompting.MetadataSessionInstructionsKey: buildSystemPrompt(workspace, trust),
+				},
 			}
 		},
 	})
@@ -194,20 +194,23 @@ func runOneShot(ctx context.Context, cfg *config) error {
 }
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) (*kernel.Kernel, error) {
-	deepCfg := appkit.DeepAgentDefaults()
-	deepCfg.AppName = appName
-	deepCfg.GeneralPurposeName = "content-generalist"
-	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results."
-	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for content workflokws."
-	deepCfg.AdditionalFeatures = []harness.Feature{
-		harness.FeatureFunc{FeatureName: "writer-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
-			if err := registerWriterTools(h.Kernel().ToolRegistry()); err != nil {
-				return err
-			}
-			return harness.LoadSubagentsFromYAML(h.Kernel(), filepath.Join(flags.Workspace, "subagents.yaml"))
-		}},
-	}
-	return appkit.BuildDeepAgent(ctx, flags, io, &deepCfg)
+	return appkit.BuildDeepAgent(ctx, flags, io, appkit.NewDeepAgentConfig(
+		appkit.WithDeepAgentAppName(appName),
+		appkit.WithDeepAgentGeneralPurposeAgent(
+			"content-generalist",
+			"You are a general-purpose delegated assistant helping a content creation workflow. Complete delegated tasks thoroughly and return concise, useful results.",
+			"General-purpose delegated assistant for content workflows.",
+			0,
+		),
+		appkit.WithDeepAgentAdditionalFeatures(
+			harness.FeatureFunc{FeatureName: "writer-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+				if err := registerWriterTools(h.Kernel().ToolRegistry()); err != nil {
+					return err
+				}
+				return harness.LoadSubagentsFromYAML(h.Kernel(), filepath.Join(flags.Workspace, "subagents.yaml"))
+			}},
+		),
+	))
 }
 
 func buildSystemPrompt(workspace, trust string) string {

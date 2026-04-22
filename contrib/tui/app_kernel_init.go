@@ -24,7 +24,10 @@ func initKernelCmd(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) tea.Cmd {
 		if err := state.initSession(); err != nil {
 			return sessionResultMsg{err: err}
 		}
-		agent := state.buildAgent()
+		agent, err := state.buildAgent()
+		if err != nil {
+			return sessionResultMsg{err: err}
+		}
 		state.k.InstallPlugin(agent.permissionOverridePlugin())
 		return kernelReadyMsg{agent: agent, notices: state.notices}
 	}
@@ -245,8 +248,8 @@ func tuiPermissionProfile(approvalMode string) string {
 	}
 }
 
-func (s *kernelInitState) buildAgent() *agentState {
-	return &agentState{
+func (s *kernelInitState) buildAgent() (*agentState, error) {
+	agent := &agentState{
 		k:                        s.k,
 		sess:                     s.sess,
 		blueprint:                s.blueprint,
@@ -271,4 +274,8 @@ func (s *kernelInitState) buildAgent() *agentState {
 		baseURL:                  s.cfg.BaseURL,
 		permissions:              map[string]string{},
 	}
+	if err := agent.installTokenOverrunNegotiation(s.k); err != nil {
+		return nil, err
+	}
+	return agent, nil
 }

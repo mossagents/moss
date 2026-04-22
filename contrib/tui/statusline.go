@@ -375,7 +375,7 @@ func (m chatModel) statusLineItemValue(name string) string {
 		}
 		return ""
 	case "version":
-		return "" // injected via build; not available in chatModel
+		return "v" + appVersion
 	default:
 		return ""
 	}

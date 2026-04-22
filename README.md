@@ -121,32 +121,31 @@ import (
 	"github.com/mossagents/moss/kernel/retry"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/harness/sandbox"
 )
 
 func main() {
 	ctx := context.Background()
 
-	sb, _ := sandbox.NewLocal(".")
 	k := kernel.New(
 		kernel.WithLLM(myLLM),
-		kernel.WithSandbox(sb),
 		kernel.WithUserIO(myIO),
 	)
 
-	backend := &harness.LocalBackend{
-		Workspace: k.Workspace(),
-		Executor:  k.Executor(),
-	}
+	backend, _ := harness.OpenLocalBackend(".")
 	h := harness.New(k, backend)
-	_ = h.Install(ctx,
+	if err := h.ActivateBackend(ctx); err != nil {
+		panic(err)
+	}
+	if err := h.Install(ctx,
 		harness.BootstrapContext(".", "myapp", "trusted"),
 		harness.LLMResilience(&retry.Config{
 			MaxRetries:   3,
 			InitialDelay: 500 * time.Millisecond,
 		}, nil),
 		harness.PatchToolCalls(),
-	)
+	); err != nil {
+		panic(err)
+	}
 
 	_ = k.Boot(ctx)
 	defer k.Shutdown(ctx)
@@ -178,7 +177,7 @@ For managed deployment wiring, prefer `harness.NewWithBackendFactory(ctx, k, har
 | `kernel\patterns\` | Agent orchestration primitives (Sequential, Parallel, Loop, Supervisor, Research) |
 | `harness\` | Composable orchestration layer (Feature, Backend, Harness) — independent Go module, depends on kernel |
 | `harness\appkit\` | Recommended builders, extension composition, and deep-agent preset assembly |
-| `harness\appkit\runtime\` | Default capability loading (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
+| `harness\runtime\` | Default capability loading and policy/execution plumbing (builtin tools, MCP, skills, subagents, memory, context, scheduling) |
 | `harness\extensions\` | Extension-oriented capability modules (`skill\`, `mcp\`, `agent\`, `knowledge\`) |
 | `harness\bootstrap\`, `config\`, `providers\`, `logging\` | Support packages |
 | `harness\scheduler\`, `gateway\`, `distributed\`, `sandbox\` | Higher-level runtime building blocks |
@@ -239,7 +238,7 @@ The legacy `--profile` and `--approval` selectors are no longer supported. Use `
 
 Priority is:
 
-**CLI flags > environment variables > config file**
+**CLI flags > config file > environment variables > defaults**
 
 ## Telemetry and Audit
 

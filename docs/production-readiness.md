@@ -16,6 +16,8 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 
 这意味着“是否允许执行命令、是否允许 HTTP、是否需要审批、是否只能软降级执行”都不再依赖 prompt 约定，而是走明确的运行时策略面。
 
+但需要明确：`restricted` 表示 **trust / policy 收紧**，不是“自动获得硬沙箱”。在 `harness\sandbox\local.go` 这类本地 backend 上，它仍然是治理边界；命令执行与网络限制会优先走审批、路径白名单与软降级，而不是容器级隔离。
+
 ### 1.2 结构化执行边界
 
 命令执行不再只是 `(cmd, args)`，而是 `workspace.ExecRequest`：
@@ -32,6 +34,8 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 - 正常执行
 - 因策略被硬阻断
 - 因宿主环境限制而降级
+
+如果调用方显式请求 `IsolationSandbox`，而当前 backend 的 `Workspace.Capabilities().HardSandbox` 为 `false`，实现现在必须直接拒绝，而不是静默退回到宿主机执行。真正的硬隔离路径应交给能明确宣告该能力的 backend（例如 Docker/容器实现）。
 
 ### 1.3 状态持久化
 
@@ -83,6 +87,7 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 | `tool_latency_avg` | `<= 5000ms` |
 | `tool_error_rate` | `<= 0.05` |
 | `guardian_error_rate` | `<= 0.01` |
+| `replay_prepared_total` | `>= 1` |
 
 与此同时，context / guardian 相关执行路径已经进入统一指标面：
 
@@ -95,7 +100,7 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 - `guardian.fallback_rate`
 - `guardian.error_rate`
 
-这些指标既可以由 `NormalizedMetricsSnapshot` / `ReleaseGateMeter` 消费，也可以通过 `contrib\telemetry\otel` 与 `contrib\telemetry\prometheus` 直接导出到外部观测系统。
+现在 `harness\testing\arch_guard.ps1` 会通过真实的 smoke probe + checkpoint replay probe 收集这些指标，再交给 `ReleaseGateMeter` 校验；这些指标也可以通过 `contrib\telemetry\otel` 与 `contrib\telemetry\prometheus` 直接导出到外部观测系统。
 
 ### 1.6 健康面
 
@@ -141,16 +146,16 @@ Moss 当前已经具备 **单节点、可审计、可回放、可治理** 的产
 
 ## 3. 发布门禁与审计
 
-仓库当前提供 `testing\arch_guard.ps1` 作为发布前守门脚本：
+仓库当前提供 `harness\testing\arch_guard.ps1` 作为发布前守门脚本：
 
 ```powershell
-pwsh .\testing\arch_guard.ps1 -Environment prod
+pwsh .\harness\testing\arch_guard.ps1 -Environment prod
 ```
 
-若需人工覆盖，可记录原因：
+`staging` 默认 fail-close：缺指标、probe 失败、阈值超标都会直接阻断。只有 `prod` 允许人工覆盖，并且必须记录原因：
 
 ```powershell
-pwsh .\testing\arch_guard.ps1 -Environment prod -OverrideReason "temporary incident mitigation"
+pwsh .\harness\testing\arch_guard.ps1 -Environment prod -OverrideReason "temporary incident mitigation"
 ```
 
 覆盖记录会写入：
@@ -218,10 +223,10 @@ docs\release-overrides.log
 
 如果你打算基于当前代码上线一个单实例产品，至少确认：
 
-1. 明确 `trusted` / `restricted` 与 approval mode 默认值
+1. 明确 `trusted` / `restricted` 与 approval mode 默认值，并区分“治理受限”与“硬隔离 backend”
 2. 配置 session / checkpoint / task / memory 持久化目录
 3. 打开审计日志和价格/治理观察器
-4. 在部署脚本中加入各模块的 `go test ./...`、`go build ./...` 与 `testing\arch_guard.ps1`
+4. 在部署脚本中加入各模块的 `go test ./...`、`go build ./...` 与 `harness\testing\arch_guard.ps1`
 5. 为 operator 提供 checkpoint、review、rollback 的操作路径
 
 做到这些后，当前仓库已经能支撑“谨慎上线、可回滚、可审计”的 agent 产品。

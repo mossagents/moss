@@ -18,6 +18,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit"
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/runtime/thinking"
+	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	kernio "github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -107,28 +108,27 @@ func launchTUI(cfg *config) error {
 		SessionStoreDir: filepath.Join(appconfig.AppDir(), "sessions"),
 		BaseURL:         flags.BaseURL,
 		APIKey:          flags.APIKey,
-		BuildKernel: func(wsDir, trust, approvalMode, profile, provider, model, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
+		BuildKernel: func(wsDir, trust, approvalMode, provider, model, apiKey, baseURL string, io kernio.UserIO) (*kernel.Kernel, error) {
 			runtimeFlags := &appkit.AppFlags{
 				Provider:  provider,
 				Name:      provider,
 				Model:     model,
 				Workspace: wsDir,
 				Trust:     trust,
-				Profile:   profile,
 				APIKey:    apiKey,
 				BaseURL:   baseURL,
 			}
 			return buildKernel(context.Background(), runtimeFlags, io)
 		},
-		BuildSystemPrompt: buildSystemPrompt,
-		BuildSessionConfig: func(workspace, trust, approvalMode, profile, collaborationMode, systemPrompt string) session.SessionConfig {
+		BuildSessionConfig: func(workspace, trust, approvalMode, collaborationMode, systemPrompt string) session.SessionConfig {
 			return session.SessionConfig{
-				Goal:         "interactive deep research assistant",
-				Mode:         "interactive",
-				TrustLevel:   trust,
-				Profile:      profile,
-				SystemPrompt: systemPrompt,
-				MaxSteps:     200,
+				Goal:       "interactive deep research assistant",
+				Mode:       "interactive",
+				TrustLevel: trust,
+				MaxSteps:   200,
+				Metadata: map[string]any{
+					prompting.MetadataSessionInstructionsKey: buildSystemPrompt(workspace, trust),
+				},
 			}
 		},
 	})
@@ -201,20 +201,23 @@ func runOneShot(ctx context.Context, cfg *config) error {
 }
 
 func buildKernel(ctx context.Context, flags *appkit.AppFlags, io kernio.UserIO) (*kernel.Kernel, error) {
-	deepCfg := appkit.DeepAgentDefaults()
-	deepCfg.AppName = appName
-	deepCfg.GeneralPurposeName = "research-generalist"
-	deepCfg.GeneralPurposePrompt = "You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings."
-	deepCfg.GeneralPurposeDesc = "General-purpose delegated assistant for research-adjacent tasks."
-	deepCfg.AdditionalFeatures = []harness.Feature{
-		harness.FeatureFunc{FeatureName: "research-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
-			if err := registerResearchTools(h.Kernel().ToolRegistry()); err != nil {
-				return err
-			}
-			return registerResearchAgents(h.Kernel(), flags)
-		}},
-	}
-	return appkit.BuildDeepAgent(ctx, flags, io, &deepCfg)
+	return appkit.BuildDeepAgent(ctx, flags, io, appkit.NewDeepAgentConfig(
+		appkit.WithDeepAgentAppName(appName),
+		appkit.WithDeepAgentGeneralPurposeAgent(
+			"research-generalist",
+			"You are a general-purpose delegated assistant helping a deep research orchestrator. Complete delegated tasks thoroughly, cite evidence when possible, and return concise findings.",
+			"General-purpose delegated assistant for research-adjacent tasks.",
+			0,
+		),
+		appkit.WithDeepAgentAdditionalFeatures(
+			harness.FeatureFunc{FeatureName: "research-tools", InstallFunc: func(_ context.Context, h *harness.Harness) error {
+				if err := registerResearchTools(h.Kernel().ToolRegistry()); err != nil {
+					return err
+				}
+				return registerResearchAgents(h.Kernel(), flags)
+			}},
+		),
+	))
 }
 
 func buildSystemPrompt(workspace, trust string) string {

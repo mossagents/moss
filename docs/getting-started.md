@@ -78,7 +78,7 @@ skills:
 
 优先级保持一致：
 
-**命令行参数 > 环境变量 > 全局配置文件**
+**命令行参数 > 全局配置文件 > 环境变量 > 默认值**
 
 常见环境变量：
 
@@ -102,6 +102,7 @@ import (
 	"os"
 
 	"github.com/mossagents/moss/harness/appkit"
+	"github.com/mossagents/moss/kernel"
 	intr "github.com/mossagents/moss/kernel/io"
 	mdl "github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
@@ -133,14 +134,19 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sess.AppendMessage(mdl.Message{
+	userMsg := mdl.Message{
 		Role: mdl.RoleUser,
 		ContentParts: []mdl.ContentPart{
 			mdl.TextPart("Read README.md and summarize it"),
 		},
-	})
+	}
+	sess.AppendMessage(userMsg)
 
-	result, err := k.Run(ctx, sess)
+	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+		Session:     sess,
+		Agent:       k.BuildLLMAgent("root"),
+		UserContent: &userMsg,
+	})
 	if err != nil {
 		panic(err)
 	}
@@ -151,7 +157,7 @@ func main() {
 这条路径会自动完成：
 
 - LLM adapter 构建
-- 本地 `Sandbox` / `Workspace` / `Executor`
+- 本地 `Workspace` backend
 - `harness.RuntimeSetup(...)` 默认能力装配
 - 内置工具、MCP、`SKILL.md`、subagent 注册
 
@@ -174,7 +180,7 @@ k, err := appkit.BuildKernelWithFeatures(ctx, flags, io,
 
 官方 Feature 会按 phase / dependency 元数据做受控安装；未标注元数据的自定义 Feature 则保持 configure 阶段语义，并在同阶段内按传入顺序安装。
 
-`appkit` 的默认 builder 现在也会通过 managed backend factory 注入本地执行后端；如果你显式提供了 `Workspace/Executor`，builder 会尊重这些端口，而不是再额外覆盖一层默认 local backend。
+`appkit` 的默认 builder 现在会通过 managed backend factory 注入本地 `Workspace` backend；如果你需要在 backend 激活前显式控制 `Workspace` 或其他 kernel 端口，请直接组合 `kernel.New(...)` 与 `harness.NewWithBackendFactory(...)`。
 
 ### Deep Agent 预设：`appkit`
 
@@ -194,7 +200,7 @@ k, err := appkit.BuildDeepAgent(ctx, flags, io, nil)
 - 通用委派代理 `general-purpose`
 - planning、task、mailbox 等协作能力
 
-这条路径现在由声明式 preset packs 组合而成：`BuildDeepAgent(...)` 负责按 `DeepAgentConfig` 选择 pack，再交给 `BuildKernelWithFeatures(...)` 做受控安装。
+这条路径现在由声明式 preset packs 组合而成：`BuildDeepAgent(...)` 负责按 `DeepAgentConfig` 选择 pack，再交给 `BuildKernelWithFeatures(...)` 做受控安装。产品侧如果只想声明 preset 差异，优先使用 `appkit.NewDeepAgentConfig(...)` 及其 option helpers，而不是直接依赖 pack 顺序。
 
 ## 4. 你应该选哪条路径
 

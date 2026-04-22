@@ -130,6 +130,16 @@ func TestRenderMessage_ProgressShowsThinkingDetail(t *testing.T) {
 	}
 }
 
+func TestCompactRunSummary_ShowsBudgetExhaustedStatus(t *testing.T) {
+	got := compactRunSummary("Run summary: | status=budget_exhausted | steps=2 | tokens=124075 | cost=n/a")
+	if !strings.Contains(got, "budget exhausted") {
+		t.Fatalf("expected budget exhausted status in %q", got)
+	}
+	if strings.Contains(got, "completed") {
+		t.Fatalf("did not expect completed status in %q", got)
+	}
+}
+
 func TestRenderMessage_TimestampNotShownForAnyRole(t *testing.T) {
 	ts := time.Date(2026, 4, 4, 12, 34, 56, 0, time.UTC)
 	stamp := formatMessageTimestamp(map[string]any{"timestamp": ts})
@@ -197,6 +207,21 @@ func TestRenderMessage_ReasoningWrapsChineseSafely(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("reasoning output missing %q in %q", want, out)
 		}
+	}
+}
+
+func TestRenderAllMessages_SuppressesShortReasoningFragments(t *testing.T) {
+	out := stripANSICodes(renderAllMessages([]chatMessage{
+		{kind: msgReasoning, content: "Let"},
+		{kind: msgToolStart, content: "grep", meta: map[string]any{"tool": "grep", "call_id": "a", "args_preview": `{"pattern":"FastMode"}`}},
+		{kind: msgToolResult, content: `[{"path":"runtime_support.go"}]`, meta: map[string]any{"tool": "grep", "call_id": "a"}},
+		{kind: msgReasoning, content: "Need to inspect the redirect chain first."},
+	}, 96, true))
+	if strings.Contains(out, "thinking · Let") || strings.Contains(out, "│ thinking  Let") {
+		t.Fatalf("expected low-signal reasoning fragment to be hidden, got %q", out)
+	}
+	if !strings.Contains(out, "Need to inspect the redirect chain first.") {
+		t.Fatalf("expected substantive reasoning to remain visible, got %q", out)
 	}
 }
 

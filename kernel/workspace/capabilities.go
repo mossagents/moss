@@ -7,6 +7,11 @@ type Capabilities struct {
 	NetworkIsolation    IsolationMethod `json:"network_isolation"`
 	ProcessIsolation    IsolationMethod `json:"process_isolation"`
 	ResourceEnforcement bool            `json:"resource_enforcement"`
+	// GovernanceOnly 表示该 backend 主要依赖策略/审批/用户态限制，
+	// 不应被当作强安全边界。
+	GovernanceOnly bool `json:"governance_only,omitempty"`
+	// HardSandbox 表示该 backend 可以满足 IsolationSandbox 这类硬隔离要求。
+	HardSandbox bool `json:"hard_sandbox,omitempty"`
 }
 
 // IsolationMethod 描述具体隔离实现方式。
@@ -22,3 +27,9 @@ const (
 	IsolationMethodFirewall  IsolationMethod = "firewall"   // Windows firewall
 	IsolationMethodProxy     IsolationMethod = "proxy"      // 环境变量 proxy（可绕过）
 )
+
+// SupportsHardSandbox reports whether the backend can satisfy IsolationSandbox
+// without silently degrading to host execution.
+func (c Capabilities) SupportsHardSandbox() bool {
+	return c.HardSandbox
+}

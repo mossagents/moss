@@ -1,6 +1,7 @@
 package observe
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -57,6 +58,9 @@ func TestMetricsAccumulator_ExecutionMetrics(t *testing.T) {
 		Type:     ExecutionGuardianReviewed,
 		Metadata: map[string]any{"outcome": "fallback_error"},
 	}))
+	acc.ApplyEnvelope(EnvelopeFromExecutionEvent(ExecutionEvent{
+		Type: ExecutionReplayPrepared,
+	}))
 
 	m := acc.Map()
 	if m["context.compactions_total"] != 1 {
@@ -91,5 +95,26 @@ func TestMetricsAccumulator_ExecutionMetrics(t *testing.T) {
 	}
 	if m["guardian.error_rate"] != 0.5 {
 		t.Fatalf("guardian error rate = %v", m["guardian.error_rate"])
+	}
+	if m["replay.prepared_total"] != 1 {
+		t.Fatalf("replay prepared total = %v", m["replay.prepared_total"])
+	}
+}
+
+func TestMetricsObserver_Snapshot(t *testing.T) {
+	obs := NewMetricsObserver(nil)
+	obs.OnLLMCall(context.Background(), LLMCallEvent{Duration: 15 * time.Millisecond})
+	obs.OnSessionEvent(context.Background(), SessionEvent{Type: "completed"})
+	obs.OnExecutionEvent(context.Background(), ExecutionEvent{Type: ExecutionReplayPrepared})
+
+	snapshot := obs.Snapshot()
+	if snapshot.RunSuccessTotal != 1 {
+		t.Fatalf("RunSuccessTotal = %v, want 1", snapshot.RunSuccessTotal)
+	}
+	if snapshot.ReplayPreparedTotal != 1 {
+		t.Fatalf("ReplayPreparedTotal = %v, want 1", snapshot.ReplayPreparedTotal)
+	}
+	if snapshot.LLMMSCount != 1 {
+		t.Fatalf("LLMMSCount = %v, want 1", snapshot.LLMMSCount)
 	}
 }

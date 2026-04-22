@@ -788,11 +788,41 @@ func TestStreamIterator_ReasoningDeltas(t *testing.T) {
 	if len(it.pending) != 2 {
 		t.Fatalf("expected 2 pending chunks, got %d", len(it.pending))
 	}
-	if it.pending[0].ReasoningDelta != "First inspect the redirect chain." {
+	if it.pending[0].ReasoningDelta != "First inspect the redirect chain. " {
 		t.Fatalf("reasoning delta[0] = %q", it.pending[0].ReasoningDelta)
 	}
 	if it.pending[1].ReasoningDelta != "Then call the weather API." {
 		t.Fatalf("reasoning delta[1] = %q", it.pending[1].ReasoningDelta)
+	}
+}
+
+func TestStreamIterator_ReasoningDeltasPreserveLeadingWhitespace(t *testing.T) {
+	it := newTestIterator()
+
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-r2","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner",
+		"choices":[{"index":0,"delta":{"reasoning_content":"The"},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-r2","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner",
+		"choices":[{"index":0,"delta":{"reasoning_content":" user"},"finish_reason":""}]
+	}`))
+	it.processChunk(chunkFromJSON(t, `{
+		"id":"cc-r2","object":"chat.completion.chunk","created":1,"model":"deepseek-reasoner",
+		"choices":[{"index":0,"delta":{"reasoning_content":" is asking"},"finish_reason":""}]
+	}`))
+
+	if len(it.pending) != 3 {
+		t.Fatalf("expected 3 pending chunks, got %d", len(it.pending))
+	}
+	if got := it.pending[0].ReasoningDelta; got != "The" {
+		t.Fatalf("reasoning delta[0] = %q", got)
+	}
+	if got := it.pending[1].ReasoningDelta; got != " user" {
+		t.Fatalf("reasoning delta[1] = %q", got)
+	}
+	if got := it.pending[2].ReasoningDelta; got != " is asking" {
+		t.Fatalf("reasoning delta[2] = %q", got)
 	}
 }
 

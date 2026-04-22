@@ -65,6 +65,31 @@ type ContextCompressionConfig struct {
 // 检测上下文是否超限并触发压缩，避免必须等到下一次 BeforeLLM hook。
 type MidTurnCompactFunc func(ctx context.Context, sess *session.Session) error
 
+// TokenOverrunRequest 描述一次响应将超过当前线程 token 上限时的上下文。
+type TokenOverrunRequest struct {
+	UsedTokens     int
+	CurrentLimit   int
+	ResponseTokens int
+	ProposedLimit  int
+}
+
+// TokenOverrunPersistFunc 在内存预算已更新后，将新的 token 上限持久化到当前线程。
+type TokenOverrunPersistFunc func(context.Context, *session.Session, TokenOverrunRequest) error
+
+// TokenOverrunConfig 配置 token 超限协商行为。
+type TokenOverrunConfig struct {
+	PromptUser         bool
+	ContinueMultiplier int
+	PersistLimit       TokenOverrunPersistFunc
+}
+
+func (c TokenOverrunConfig) continueMultiplier() int {
+	if c.ContinueMultiplier <= 1 {
+		return 2
+	}
+	return c.ContinueMultiplier
+}
+
 // LoopConfig 配置 Agent Loop 的行为。
 type LoopConfig struct {
 	MaxIterations      int                      // 最大循环次数（默认 50）
@@ -80,6 +105,8 @@ type LoopConfig struct {
 	// 当单次迭代产生大量工具输出导致上下文膨胀时，可在迭代内即时压缩，
 	// 而非等到下一次 BeforeLLM hook。为 nil 时不执行 mid-turn compact。
 	MidTurnCompact MidTurnCompactFunc
+	// TokenOverrun 配置当单次响应将超过当前线程 token 上限时的协商行为。
+	TokenOverrun TokenOverrunConfig
 }
 
 // RetryConfig 复用 retry.Config，避免 loop 与其他组件维护多套重试配置定义。
@@ -138,12 +165,14 @@ func (l *AgentLoop) emitAgentEvent(event *session.Event) bool {
 
 // SessionResult 是一次 Session 执行的结果。
 type SessionResult struct {
-	SessionID  string           `json:"session_id"`
-	Success    bool             `json:"success"`
-	Output     string           `json:"output"`
-	Steps      int              `json:"steps"`
-	TokensUsed model.TokenUsage `json:"tokens_used"`
-	Error      string           `json:"error,omitempty"`
+	SessionID        string                        `json:"session_id"`
+	Success          bool                          `json:"success"`
+	Status           session.LifecycleStage        `json:"status,omitempty"`
+	Output           string                        `json:"output"`
+	Steps            int                           `json:"steps"`
+	TokensUsed       model.TokenUsage              `json:"tokens_used"`
+	Error            string                        `json:"error,omitempty"`
+	BudgetExhausted  *session.BudgetExhaustedDetail `json:"budget_exhausted,omitempty"`
 }
 
 func (l *AgentLoop) observer() observe.Observer {

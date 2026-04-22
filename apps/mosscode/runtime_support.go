@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/harness/appkit"
 	"github.com/mossagents/moss/harness/appkit/product"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
@@ -101,14 +100,11 @@ func buildKernel(ctx context.Context, flags *appkit.AppFlags, io io.UserIO, appr
 		retryCfg = nil
 		breakerCfg = nil
 	}
-	k, err := appkit.BuildDeepAgent(ctx, flags, io, &appkit.DeepAgentConfig{
-		AppName:                       appName,
-		EnableDefaultRestrictedPolicy: &disableDefaultPolicy,
-		EnableDefaultLLMRetry:         retryEnabled,
-		LLMRetryConfig:                retryCfg,
-		LLMBreakerConfig:              breakerCfg,
-		AdditionalFeatures:            []harness.Feature{},
-	})
+	k, err := appkit.BuildDeepAgent(ctx, flags, io, appkit.NewDeepAgentConfig(
+		appkit.WithDeepAgentAppName(appName),
+		appkit.WithDeepAgentDefaultRestrictedPolicy(disableDefaultPolicy),
+		appkit.WithDeepAgentLLMGovernance(retryEnabled, retryCfg, breakerCfg),
+	))
 	if err != nil {
 		return nil, err
 	}

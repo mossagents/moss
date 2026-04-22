@@ -261,6 +261,18 @@ func TestLocalWorkspaceExecuteClearEnvAndInjectEnv(t *testing.T) {
 	}
 }
 
+func TestLocalWorkspaceCapabilitiesAdvertiseGovernanceOnly(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocalWorkspace(dir)
+	caps := s.Capabilities()
+	if !caps.GovernanceOnly {
+		t.Fatal("expected local workspace to advertise governance-only semantics")
+	}
+	if caps.SupportsHardSandbox() {
+		t.Fatal("local workspace must not advertise hard sandbox support")
+	}
+}
+
 func TestLocalWorkspaceExecuteDisabledNetworkFallsBackToSoftLimit(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewLocalWorkspace(dir)
@@ -286,6 +298,9 @@ func TestLocalWorkspaceExecuteDisabledNetworkFallsBackToSoftLimit(t *testing.T) 
 	if out.Details == "" {
 		t.Fatal("expected degradation details")
 	}
+	if !contains(out.Details, "governance-only") {
+		t.Fatalf("expected governance-only details, got %q", out.Details)
+	}
 }
 
 func TestLocalWorkspaceExecuteDisabledNetworkHardBlockOnlyFails(t *testing.T) {
@@ -303,6 +318,26 @@ func TestLocalWorkspaceExecuteDisabledNetworkHardBlockOnlyFails(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected hard-block unavailable error")
+	}
+}
+
+func TestLocalWorkspaceExecuteIsolationSandboxRequiresHardSandbox(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := NewLocalWorkspace(dir)
+
+	out, err := s.Execute(context.Background(), workspace.ExecRequest{
+		Command:        commandForNoop(),
+		Args:           argsForNoop(),
+		IsolationLevel: workspace.IsolationSandbox,
+	})
+	if err == nil {
+		t.Fatal("expected hard sandbox requirement error")
+	}
+	if out.Enforcement != io.EnforcementHardBlock {
+		t.Fatalf("enforcement = %q, want %q", out.Enforcement, io.EnforcementHardBlock)
+	}
+	if !contains(out.Details, "governance-only") {
+		t.Fatalf("details = %q, want governance-only explanation", out.Details)
 	}
 }
 

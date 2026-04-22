@@ -15,11 +15,11 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: go.work
 
       - name: Run architecture guard
         shell: pwsh
-        run: pwsh ./testing/arch_guard.ps1
+        run: pwsh ./harness/testing/arch_guard.ps1
 
   root-validation:
     runs-on: windows-latest
@@ -30,7 +30,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: go.work
 
       - name: Run go vet
         shell: pwsh
@@ -49,8 +49,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: go.work
 
       - name: Validate example modules
         shell: pwsh
-        run: pwsh ./testing/validate_examples.ps1
+        run: pwsh ./harness/testing/validate_examples.ps1

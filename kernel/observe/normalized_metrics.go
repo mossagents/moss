@@ -5,7 +5,8 @@ import (
 	"sync"
 )
 
-// NormalizedMetricsSnapshot captures unified success/latency/cost/tool-error counters.
+// NormalizedMetricsSnapshot captures unified success/latency/cost/tool-error
+// and replay-coverage counters.
 type NormalizedMetricsSnapshot struct {
 	RunTotal        float64
 	RunSuccessTotal float64
@@ -33,6 +34,8 @@ type NormalizedMetricsSnapshot struct {
 	GuardianAutoApprovedTotal float64
 	GuardianFallbackTotal     float64
 	GuardianErrorsTotal       float64
+
+	ReplayPreparedTotal float64
 }
 
 // Map exports the snapshot using the standardized metric keys.
@@ -87,6 +90,7 @@ func (s NormalizedMetricsSnapshot) Map() map[string]float64 {
 		"guardian.error_total":                         s.GuardianErrorsTotal,
 		"guardian.fallback_rate":                       guardianFallbackRate,
 		"guardian.error_rate":                          guardianErrorRate,
+		"replay.prepared_total":                        s.ReplayPreparedTotal,
 	}
 }
 
@@ -162,6 +166,8 @@ func (a *MetricsAccumulator) ApplyExecutionEvent(e ExecutionEvent) {
 		if strings.Contains(outcome, "error") {
 			a.snapshot.GuardianErrorsTotal++
 		}
+	case ExecutionReplayPrepared:
+		a.snapshot.ReplayPreparedTotal++
 	}
 }
 

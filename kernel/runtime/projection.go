@@ -259,6 +259,12 @@ func (e *ProjectionEngine) Apply(state *MaterializedState, ev RuntimeEvent) erro
 			}
 		}
 
+	case EventTypeBudgetLimitUpdated:
+		p, ok := ev.Payload.(*BudgetLimitUpdatedPayload)
+		if ok && p != nil && state.Blueprint != nil {
+			state.Blueprint.ContextBudget.MainTokenBudget = int(p.MainTokenBudget)
+		}
+
 	case EventTypeSessionForked:
 		p, ok := ev.Payload.(*SessionForkedPayload)
 		if ok && p != nil && p.BlueprintPayload != nil {

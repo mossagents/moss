@@ -56,7 +56,10 @@ const (
 type ExecNetworkPolicy struct {
 	Mode            ExecNetworkMode `json:"mode,omitempty"`
 	AllowHosts      []string        `json:"allow_hosts,omitempty"`
+	// PreferHardBlock requests a real network block instead of governance-only degradation.
 	PreferHardBlock bool            `json:"prefer_hard_block,omitempty"`
+	// AllowSoftLimit allows implementations without hard network isolation to fall back
+	// to soft controls such as environment scrubbing.
 	AllowSoftLimit  bool            `json:"allow_soft_limit,omitempty"`
 }
 
@@ -71,6 +74,7 @@ const (
 	// IsolationProcess 在独立子进程中执行，提供基本的进程级隔离。
 	IsolationProcess IsolationLevel = "process"
 	// IsolationSandbox 强制在完全隔离的 sandbox 中执行（容器级）。
+	// 若 backend 无法满足该要求，必须返回错误，而不是静默降级到宿主机执行。
 	IsolationSandbox IsolationLevel = "sandbox"
 )
 

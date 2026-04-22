@@ -787,6 +787,7 @@ func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 		Session:     a.sess,
 		Agent:       a.k.BuildLLMAgent("tui"),
 		UserContent: &userMsg,
+		IO:          a.bridge,
 	})
 
 	// 阶段 3：写入 turn_completed 事件
@@ -796,6 +797,11 @@ func (a *agentState) appendAndRun(text string, parts []model.ContentPart) {
 		if err != nil {
 			outcome = kruntime.TurnOutcomeError
 			errKind = "execution_error"
+		} else if result != nil && result.Status == session.LifecycleBudgetExhausted {
+			outcome = kruntime.TurnOutcomeBudgetExhausted
+			if budgetErr := a.k.RecordBudgetExhausted(runCtx, *a.blueprint, result.BudgetExhausted); budgetErr != nil {
+				a.k.Logger().WarnContext(runCtx, "RecordBudgetExhausted failed", "error", budgetErr)
+			}
 		}
 		if compErr := a.k.RecordTurnCompleted(runCtx, *a.blueprint, turnID, outcome, errKind); compErr != nil {
 			a.k.Logger().WarnContext(runCtx, "RecordTurnCompleted failed", "error", compErr)
@@ -870,6 +876,9 @@ func runTraceStatus(result *session.LifecycleResult, err error) string {
 	}
 	if err != nil {
 		return "failed"
+	}
+	if result != nil && strings.TrimSpace(string(result.Status)) != "" {
+		return string(result.Status)
 	}
 	if result == nil || result.Success {
 		return "completed"
