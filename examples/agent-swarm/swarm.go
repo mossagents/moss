@@ -165,17 +165,36 @@ func (w *PersonaWorkerAgent) buildUserPrompt() string {
 // ResearchSwarm is the top-level orchestrator agent.
 // It drives the full pipeline: decompose → multi-round research → synthesize.
 type ResearchSwarm struct {
-	topic  string
-	agents int
-	rounds int
-	batch  int
-	llm    model.LLM
+	topic     string
+	agents    int
+	rounds    int
+	batch     int
+	personasN int // 0 = use built-in fallback; >0 = generate via LLM
+	llm       model.LLM
 }
 
 func (s *ResearchSwarm) Name() string { return "research-swarm" }
 
 func (s *ResearchSwarm) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
+		// ── 0. Persona generation ─────────────────────────────────────────────
+		activePersonas := personas // built-in fallback
+		if s.personasN > 0 {
+			fmt.Printf("\n🎭  正在为「%s」定制专家人设（%d 个）...\n", s.topic, s.personasN)
+			generated, err := s.generatePersonas(ctx.Context)
+			if err != nil || len(generated) == 0 {
+				fmt.Printf("    ⚠  人设生成失败（%v），使用内置预设人设\n", err)
+			} else {
+				activePersonas = generated
+				fmt.Printf("    ✓ 已生成 %d 个定制人设：", len(activePersonas))
+				names := make([]string, len(activePersonas))
+				for i, p := range activePersonas {
+					names[i] = p.Name
+				}
+				fmt.Printf("%s\n", strings.Join(names, " / "))
+			}
+		}
+
 		// ── 1. Problem decomposition ──────────────────────────────────────────
 		fmt.Printf("\n🔍  正在分解研究主题...\n")
 		questions, err := s.decompose(ctx.Context)
@@ -198,7 +217,7 @@ func (s *ResearchSwarm) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Ev
 			roundFindings := make([]Finding, s.agents)
 			workers := make([]kernel.Agent, s.agents)
 			for i := 0; i < s.agents; i++ {
-				p := personas[i%len(personas)]
+				p := activePersonas[i%len(activePersonas)]
 				workers[i] = &PersonaWorkerAgent{
 					id:           i,
 					persona:      p,
@@ -396,4 +415,90 @@ func countValid(findings []Finding) int {
 		}
 	}
 	return n
+}
+
+// ─── Dynamic persona generation ───────────────────────────────────────────────
+
+// generatePersonas calls the LLM to produce personas tailored to the research topic.
+func (s *ResearchSwarm) generatePersonas(ctx context.Context) ([]Persona, error) {
+	prompt := fmt.Sprintf(`你是一名跨学科研究团队设计专家。
+请根据以下研究主题，设计 %d 个最适合深度研究该主题的专家角色。
+
+要求：
+- 每个角色拥有独特的专业背景和认知视角，彼此形成互补
+- 角色应专门针对该主题定制（而非泛化的通用角色）
+- 角色之间视角差异越大越好，覆盖技术、社会、经济、伦理、政策、文化等维度
+- system_prompt 须描述该专家的专业背景、思维方式、研究风格，
+  以及在多方讨论中会如何质疑他人、提供独特洞察（4–6句中文）
+
+研究主题：%s
+
+请以 JSON 数组格式输出，每个元素包含：
+- "name": 角色中文名称（2–6字，如"量子物理学家"、"教育政策顾问"）
+- "role": 英文标识符（小写字母和连字符，如"quantum-physicist"）
+- "system_prompt": 该专家的系统提示词（中文）
+
+只输出 JSON 数组，不要其他文字。`, s.personasN, s.topic)
+
+	text, err := collectLLMText(ctx, s.llm, model.CompletionRequest{
+		Messages: []model.Message{
+			{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parseJSONPersonas(text)
+}
+
+// parseJSONPersonas extracts a []Persona from an LLM response containing a JSON array.
+func parseJSONPersonas(text string) ([]Persona, error) {
+	start := strings.Index(text, "[")
+	end := strings.LastIndex(text, "]")
+	if start < 0 || end <= start {
+		return nil, fmt.Errorf("no JSON array in response")
+	}
+
+	var raw []struct {
+		Name         string `json:"name"`
+		Role         string `json:"role"`
+		SystemPrompt string `json:"system_prompt"`
+	}
+	if err := json.Unmarshal([]byte(text[start:end+1]), &raw); err != nil {
+		return nil, fmt.Errorf("JSON parse error: %w", err)
+	}
+
+	out := make([]Persona, 0, len(raw))
+	for _, r := range raw {
+		if r.Name == "" || r.SystemPrompt == "" {
+			continue
+		}
+		slug := sanitizeSlug(r.Role)
+		if slug == "" {
+			slug = "expert"
+		}
+		out = append(out, Persona{
+			Name:         r.Name,
+			Role:         slug,
+			SystemPrompt: r.SystemPrompt,
+		})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no valid personas parsed")
+	}
+	return out, nil
+}
+
+// sanitizeSlug converts an arbitrary string to a lowercase hyphen-separated slug.
+func sanitizeSlug(s string) string {
+	var sb strings.Builder
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			sb.WriteRune(r)
+		case r == ' ' || r == '_':
+			sb.WriteRune('-')
+		}
+	}
+	return strings.Trim(sb.String(), "-")
 }

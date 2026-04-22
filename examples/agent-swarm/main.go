@@ -40,6 +40,7 @@ func main() {
 	agentsN := flag.Int("agents", 8, "研究 Agent 数量（2–30）")
 	rounds := flag.Int("rounds", 2, "研究轮次（1–5）；轮次 ≥2 时 Agent 间会相互评论发现")
 	batch := flag.Int("batch", 5, "每批并行 Agent 数（≤10，受 kernel maxActiveAgents=16 约束）")
+	personasN := flag.Int("personas", 5, "为研究主题动态生成的专家人设数量（2–20）；0 = 使用内置预设人设")
 
 	// ParseAppFlags binds standard LLM flags (--provider, --model, --api-key, …)
 	// and calls flag.Parse(), so our custom flags above are also parsed.
@@ -65,6 +66,14 @@ func main() {
 		fmt.Fprintln(os.Stderr, "警告: -batch 超过 10，已自动截断（kernel maxActiveAgents 约束）")
 		*batch = 10
 	}
+	if *personasN != 0 {
+		if *personasN < 2 {
+			*personasN = 2
+		}
+		if *personasN > 20 {
+			*personasN = 20
+		}
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
@@ -81,7 +90,7 @@ func main() {
 	}
 	defer k.Shutdown(ctx)
 
-	printBanner(*topic, *agentsN, *rounds, *batch, flags.Provider, flags.Model)
+	printBanner(*topic, *agentsN, *rounds, *batch, *personasN, flags.Provider, flags.Model)
 
 	// Create a minimal session for the orchestrator.
 	sess, err := k.NewSession(ctx, session.SessionConfig{
@@ -95,11 +104,12 @@ func main() {
 	}
 
 	swarm := &ResearchSwarm{
-		topic:  *topic,
-		agents: *agentsN,
-		rounds: *rounds,
-		batch:  *batch,
-		llm:    k.LLM(),
+		topic:     *topic,
+		agents:    *agentsN,
+		rounds:    *rounds,
+		batch:     *batch,
+		personasN: *personasN,
+		llm:       k.LLM(),
 	}
 
 	start := time.Now()
@@ -174,17 +184,25 @@ func min(a, b int) int {
 	return b
 }
 
-func printBanner(topic string, agentsN, rounds, batch int, provider, model string) {
+func printBanner(topic string, agentsN, rounds, batch, personasN int, provider, model string) {
 	sep := strings.Repeat("─", 70)
 	fmt.Println(sep)
 	fmt.Println("  🐝  智能 Agent Swarm 研究系统  (moss kernel)")
 	fmt.Println(sep)
 	fmt.Printf("  研究主题  : %s\n", topic)
-	fmt.Printf("  Agent 数量: %d（%d 种人设循环分配）\n", agentsN, len(personas))
+	personaDesc := "内置预设"
+	if personasN > 0 {
+		personaDesc = fmt.Sprintf("LLM 动态生成 %d 个", personasN)
+	}
+	fmt.Printf("  专家人设  : %s（循环分配给 %d 个 Agent）\n", personaDesc, agentsN)
 	fmt.Printf("  研究轮次  : %d\n", rounds)
 	fmt.Printf("  批次大小  : %d（每批并行，批次间串行）\n", batch)
 	fmt.Printf("  LLM       : %s / %s\n", provider, model)
-	fmt.Printf("  总调用次数: ≈%d（分解1 + 研究%d + 综合1）\n",
-		1+agentsN*rounds+1, agentsN*rounds)
+	extraCalls := 0
+	if personasN > 0 {
+		extraCalls = 1
+	}
+	fmt.Printf("  总调用次数: ≈%d（人设生成%d + 分解1 + 研究%d + 综合1）\n",
+		extraCalls+1+agentsN*rounds+1, extraCalls, agentsN*rounds)
 	fmt.Println(sep)
 }
