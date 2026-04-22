@@ -177,24 +177,6 @@ func (s *ResearchSwarm) Name() string { return "research-swarm" }
 
 func (s *ResearchSwarm) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
-		// ── 0. Persona generation ─────────────────────────────────────────────
-		activePersonas := personas // built-in fallback
-		if s.personasN > 0 {
-			fmt.Printf("\n🎭  正在为「%s」定制专家人设（%d 个）...\n", s.topic, s.personasN)
-			generated, err := s.generatePersonas(ctx.Context)
-			if err != nil || len(generated) == 0 {
-				fmt.Printf("    ⚠  人设生成失败（%v），使用内置预设人设\n", err)
-			} else {
-				activePersonas = generated
-				fmt.Printf("    ✓ 已生成 %d 个定制人设：", len(activePersonas))
-				names := make([]string, len(activePersonas))
-				for i, p := range activePersonas {
-					names[i] = p.Name
-				}
-				fmt.Printf("%s\n", strings.Join(names, " / "))
-			}
-		}
-
 		// ── 1. Problem decomposition ──────────────────────────────────────────
 		fmt.Printf("\n🔍  正在分解研究主题...\n")
 		questions, err := s.decompose(ctx.Context)
@@ -209,15 +191,42 @@ func (s *ResearchSwarm) Run(ctx *kernel.InvocationContext) iter.Seq2[*session.Ev
 
 		// ── 2. Multi-round research ───────────────────────────────────────────
 		var allFindings []Finding
+		currentPersonas := personas // built-in fallback; replaced each round on success
 
 		for round := 1; round <= s.rounds; round++ {
+			// Re-generate personas before each round.
+			// Round 1: tailored to the topic.
+			// Round 2+: informed by previous findings to fill research gaps.
+			if s.personasN > 0 {
+				label := "第 1 轮初始人设"
+				if round > 1 {
+					label = fmt.Sprintf("第 %d 轮（基于前轮发现补全视角）", round)
+				}
+				fmt.Printf("\n🎭  生成专家人设 — %s（%d 个）...\n", label, s.personasN)
+				generated, err := s.generatePersonas(ctx.Context, round, allFindings)
+				if err != nil || len(generated) == 0 {
+					fallbackDesc := "内置预设"
+					if round > 1 {
+						fallbackDesc = "上轮人设"
+					}
+					fmt.Printf("    ⚠  生成失败（%v），沿用%s\n", err, fallbackDesc)
+				} else {
+					currentPersonas = generated
+					names := make([]string, len(currentPersonas))
+					for i, p := range currentPersonas {
+						names[i] = p.Name
+					}
+					fmt.Printf("    ✓ %s\n", strings.Join(names, " / "))
+				}
+			}
+
 			fmt.Printf("\n🔬  第 %d/%d 轮研究（%d 个 Agent 并行）...\n",
 				round, s.rounds, s.agents)
 
 			roundFindings := make([]Finding, s.agents)
 			workers := make([]kernel.Agent, s.agents)
 			for i := 0; i < s.agents; i++ {
-				p := activePersonas[i%len(activePersonas)]
+				p := currentPersonas[i%len(currentPersonas)]
 				workers[i] = &PersonaWorkerAgent{
 					id:           i,
 					persona:      p,
@@ -420,8 +429,12 @@ func countValid(findings []Finding) int {
 // ─── Dynamic persona generation ───────────────────────────────────────────────
 
 // generatePersonas calls the LLM to produce personas tailored to the research topic.
-func (s *ResearchSwarm) generatePersonas(ctx context.Context) ([]Persona, error) {
-	prompt := fmt.Sprintf(`你是一名跨学科研究团队设计专家。
+// Round 1: personas are designed for initial topic exploration.
+// Round 2+: personas are chosen to fill gaps identified in previous findings.
+func (s *ResearchSwarm) generatePersonas(ctx context.Context, round int, prevFindings []Finding) ([]Persona, error) {
+	var prompt string
+	if round == 1 || len(prevFindings) == 0 {
+		prompt = fmt.Sprintf(`你是一名跨学科研究团队设计专家。
 请根据以下研究主题，设计 %d 个最适合深度研究该主题的专家角色。
 
 要求：
@@ -439,6 +452,33 @@ func (s *ResearchSwarm) generatePersonas(ctx context.Context) ([]Persona, error)
 - "system_prompt": 该专家的系统提示词（中文）
 
 只输出 JSON 数组，不要其他文字。`, s.personasN, s.topic)
+	} else {
+		digest := buildFindingsDigest(prevFindings)
+		prompt = fmt.Sprintf(`你是一名跨学科研究团队设计专家，正在为多轮研究项目设计第 %d 轮的专家团队。
+
+研究主题：%s
+
+前几轮已产出的研究发现摘要：
+%s
+---
+
+请根据以上发现，为第 %d 轮设计 %d 个专家角色，这些角色应能：
+- 填补前几轮研究中缺失或浅显的视角
+- 深化仍有争议或尚未充分探索的领域
+- 从新的维度挑战或强化现有结论
+- 与前几轮的专家视角形成明显差异和互补
+
+要求：
+- system_prompt 须描述该专家的专业背景、思维方式、研究风格（4–6句中文）
+- 角色应针对本研究当前阶段的实际需求定制
+
+请以 JSON 数组格式输出，每个元素包含：
+- "name": 角色中文名称（2–6字）
+- "role": 英文标识符（小写字母和连字符）
+- "system_prompt": 该专家的系统提示词（中文）
+
+只输出 JSON 数组，不要其他文字。`, round, s.topic, digest, round, s.personasN)
+	}
 
 	text, err := collectLLMText(ctx, s.llm, model.CompletionRequest{
 		Messages: []model.Message{
@@ -449,6 +489,33 @@ func (s *ResearchSwarm) generatePersonas(ctx context.Context) ([]Persona, error)
 		return nil, err
 	}
 	return parseJSONPersonas(text)
+}
+
+// buildFindingsDigest builds a concise summary of findings for the persona generation prompt.
+func buildFindingsDigest(findings []Finding) string {
+	const maxPerFinding = 150
+	const maxItems = 10
+
+	var sb strings.Builder
+	shown := 0
+	for _, f := range findings {
+		if f.Content == "" {
+			continue
+		}
+		snip := f.Content
+		if runes := []rune(snip); len(runes) > maxPerFinding {
+			snip = string(runes[:maxPerFinding]) + "…"
+		}
+		sb.WriteString(fmt.Sprintf("[第%d轮 | %s | %s]\n%s\n\n", f.Round, f.Persona, f.Question, snip))
+		shown++
+		if shown >= maxItems {
+			if remaining := len(findings) - shown; remaining > 0 {
+				sb.WriteString(fmt.Sprintf("（另有 %d 条发现略去）\n", remaining))
+			}
+			break
+		}
+	}
+	return sb.String()
 }
 
 // parseJSONPersonas extracts a []Persona from an LLM response containing a JSON array.

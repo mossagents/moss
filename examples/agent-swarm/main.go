@@ -192,17 +192,17 @@ func printBanner(topic string, agentsN, rounds, batch, personasN int, provider, 
 	fmt.Printf("  研究主题  : %s\n", topic)
 	personaDesc := "内置预设"
 	if personasN > 0 {
-		personaDesc = fmt.Sprintf("LLM 动态生成 %d 个", personasN)
+		personaDesc = fmt.Sprintf("LLM 动态生成 %d 个（每轮重新生成）", personasN)
 	}
 	fmt.Printf("  专家人设  : %s（循环分配给 %d 个 Agent）\n", personaDesc, agentsN)
 	fmt.Printf("  研究轮次  : %d\n", rounds)
 	fmt.Printf("  批次大小  : %d（每批并行，批次间串行）\n", batch)
 	fmt.Printf("  LLM       : %s / %s\n", provider, model)
-	extraCalls := 0
+	personaCalls := 0
 	if personasN > 0 {
-		extraCalls = 1
+		personaCalls = rounds
 	}
 	fmt.Printf("  总调用次数: ≈%d（人设生成%d + 分解1 + 研究%d + 综合1）\n",
-		extraCalls+1+agentsN*rounds+1, extraCalls, agentsN*rounds)
+		personaCalls+1+agentsN*rounds+1, personaCalls, agentsN*rounds)
 	fmt.Println(sep)
 }
