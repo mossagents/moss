@@ -333,18 +333,24 @@ func (s *ResearchSwarm) decompose(ctx context.Context) ([]string, error) {
 }
 
 // synthesize calls the LLM to produce a structured research report.
+// Persona names are intentionally stripped from the digest so the final report
+// only surfaces viewpoints and arguments, not internal agent identities.
 func (s *ResearchSwarm) synthesize(ctx context.Context, findings []Finding) (string, error) {
 	var digest strings.Builder
+	seq := 0
 	for _, f := range findings {
 		if f.Content == "" {
 			continue
 		}
-		digest.WriteString(fmt.Sprintf("### [R%d | %s]\n**子问题：** %s\n\n%s\n\n---\n\n",
-			f.Round, f.Persona, f.Question, f.Content))
+		seq++
+		// Use neutral "视角N" labels — persona names are internal implementation
+		// details and must not appear in the reader-facing report.
+		digest.WriteString(fmt.Sprintf("### [第%d轮 · 视角%d]\n**研究子问题：** %s\n\n%s\n\n---\n\n",
+			f.Round, seq, f.Question, f.Content))
 	}
 
-	prompt := fmt.Sprintf(`你是一名高级研究综合专家。以下是 %d 个具有不同专业背景的研究者，
-经过 %d 轮讨论后产出的所有研究发现：
+	prompt := fmt.Sprintf(`你是一名高级研究综合专家。以下是经过 %d 轮多视角讨论后产出的 %d 条研究发现，
+每条发现标注了所属轮次和研究子问题：
 
 ---
 
@@ -360,8 +366,13 @@ func (s *ResearchSwarm) synthesize(ctx context.Context, findings []Finding) (str
 4. **综合结论与建议**（整合多方视角后的综合判断和行动建议）
 5. **未来研究方向**（本次讨论揭示的重要待探索议题）
 
+**重要写作要求：**
+- 报告中不得提及任何研究者名称或角色标签（如"视角1"、"第2轮"等内部编号也不应出现在正文中）
+- 引用观点时使用中性表述，例如：「有观点认为」「另一角度指出」「技术层面的分析显示」「从政策视角看」等
+- 不同的观点和分歧应以论点本身呈现，而非以来源标注
+
 报告应整合各方视角，保持客观中立，字数约 600–900 字。`,
-		s.agents, s.rounds, digest.String())
+		s.rounds, seq, digest.String())
 
 	text, err := collectLLMText(ctx, s.llm, model.CompletionRequest{
 		Messages: []model.Message{
