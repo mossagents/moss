@@ -120,23 +120,31 @@ func (w *PersonaWorkerAgent) buildUserPrompt() string {
 			w.subQuestion, w.persona.Name)
 	}
 
-	// Build digest of previous findings (truncated for context efficiency).
+	// Build a digest of ALL findings from previous rounds, attributed by round.
+	// Each entry is truncated to 200 runes to keep context size manageable.
+	const maxShown = 20
+	const snippetRunes = 200
+
 	var digest strings.Builder
-	digest.WriteString("**其他研究者的发现（第")
-	digest.WriteString(fmt.Sprintf("%d", w.round-1))
-	digest.WriteString("轮）：**\n\n")
-	for i, f := range w.prevFindings {
+	digest.WriteString(fmt.Sprintf("**前 %d 轮的研究发现（共 %d 条）：**\n\n",
+		w.round-1, countValid(w.prevFindings)))
+
+	shown := 0
+	for _, f := range w.prevFindings {
 		if f.Content == "" {
 			continue
 		}
 		snip := f.Content
-		if len([]rune(snip)) > 200 {
-			runes := []rune(snip)
-			snip = string(runes[:200]) + "…"
+		if runes := []rune(snip); len(runes) > snippetRunes {
+			snip = string(runes[:snippetRunes]) + "…"
 		}
-		digest.WriteString(fmt.Sprintf("**[%s | %s]** %s\n\n", f.Persona, f.Question, snip))
-		if i >= 14 {
-			digest.WriteString(fmt.Sprintf("（另有 %d 条发现略去）\n", len(w.prevFindings)-15))
+		digest.WriteString(fmt.Sprintf("**[第%d轮 | %s | %s]**\n%s\n\n",
+			f.Round, f.Persona, f.Question, snip))
+		shown++
+		if shown >= maxShown {
+			if remaining := countValid(w.prevFindings) - shown; remaining > 0 {
+				digest.WriteString(fmt.Sprintf("（另有 %d 条发现略去）\n\n", remaining))
+			}
 			break
 		}
 	}
@@ -144,21 +152,23 @@ func (w *PersonaWorkerAgent) buildUserPrompt() string {
 	return fmt.Sprintf(`你正在参与一项多 Agent 协作研究项目的第 %d 轮讨论。
 
 %s
-
 ---
 
 **你的研究子问题（本轮继续研究）：**
 %s
 
 **任务：**
-请以你的专业视角（%s）阅读以上其他研究者的发现，然后：
+请以你的专业视角（%s）仔细阅读以上所有前轮发现，然后：
 1. 选出 1–2 条你认为存在问题或可补充的发现，进行建设性的质疑或延伸
-2. 提出本轮你新的核心洞察（视角应与上轮有所演进）
-3. 指出跨不同视角发现之间的联系或矛盾
+2. 提出本轮你新的核心洞察（视角应与前轮有所演进，避免重复）
+3. 指出跨不同视角、不同轮次发现之间的联系或矛盾
 
 请保持简洁（约150–250字），直接进入实质内容。`,
 		w.round, digest.String(), w.subQuestion, w.persona.Name)
 }
+
+
+
 
 // ─── ResearchSwarm ────────────────────────────────────────────────────────────
 
