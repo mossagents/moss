@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	extcap "github.com/mossagents/moss/harness/extensions/capability"
+	extcap "github.com/mossagents/moss/harness/capability"
 	"github.com/mossagents/moss/harness/sandbox"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/workspace"

@@ -3,8 +3,8 @@ package capstate_test
 import (
 	"testing"
 
-	"github.com/mossagents/moss/harness/extensions/capability"
-	"github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/capability"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/runtime/capstate"
 	"github.com/mossagents/moss/kernel"
 )

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/harness"
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"

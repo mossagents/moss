@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	extknowledge "github.com/mossagents/moss/harness/extensions/knowledge"
+	extknowledge "github.com/mossagents/moss/harness/knowledge"
 	memstore "github.com/mossagents/moss/harness/runtime/memory"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/tool"

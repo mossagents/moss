@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mossagents/moss/harness/bootstrap"
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/execution"
 	runtimepolicy "github.com/mossagents/moss/harness/runtime/policy"

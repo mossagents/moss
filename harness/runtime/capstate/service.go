@@ -7,8 +7,8 @@ import (
 	"log"
 	"strings"
 
-	rootcap "github.com/mossagents/moss/harness/extensions/capability"
-	"github.com/mossagents/moss/harness/extensions/skill"
+	rootcap "github.com/mossagents/moss/harness/capability"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/tool"
 )

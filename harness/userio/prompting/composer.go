@@ -9,7 +9,7 @@ import (
 
 	"github.com/mossagents/moss/harness/bootstrap"
 	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/session"
 )

@@ -11,7 +11,7 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	config "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 	"github.com/mossagents/moss/harness/sandbox"
 	kerrors "github.com/mossagents/moss/kernel/errors"
 	"github.com/mossagents/moss/kernel/io"

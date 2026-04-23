@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mossagents/moss/harness/appkit/product"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/collaboration"
 	"github.com/mossagents/moss/kernel/model"

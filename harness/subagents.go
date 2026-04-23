@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mossagents/moss/harness/extensions/agent"
+	"github.com/mossagents/moss/harness/agent"
 	"github.com/mossagents/moss/kernel"
 	"gopkg.in/yaml.v3"
 )

@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/extensions/agent"
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/agent"
+	"github.com/mossagents/moss/harness/capability"
 	appruntime "github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/policy"
 	kt "github.com/mossagents/moss/harness/testing"

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 )
 
 type stubProvider struct {

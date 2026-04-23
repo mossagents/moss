@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	skillx "github.com/mossagents/moss/harness/extensions/skill"
+	skillx "github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/logging"
 	statecatalog "github.com/mossagents/moss/harness/runtime/catalog"
 	"github.com/mossagents/moss/kernel"

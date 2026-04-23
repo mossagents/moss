@@ -16,7 +16,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/extensions/skill"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/scheduling"

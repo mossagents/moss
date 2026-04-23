@@ -13,7 +13,7 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
-	extcapability "github.com/mossagents/moss/harness/extensions/capability"
+	extcapability "github.com/mossagents/moss/harness/capability"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel/checkpoint"

@@ -10,7 +10,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 )
 
 // RegistryEntry describes a skill available in a remote registry.

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mossagents/moss/harness/extensions/capability"
+	"github.com/mossagents/moss/harness/capability"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/assembly"
 	"github.com/mossagents/moss/harness/runtime/planning"
