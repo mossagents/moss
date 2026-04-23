@@ -16,30 +16,39 @@ import (
 type EventType string
 
 const (
-	EventTypeSessionCreated     EventType = "session_created"
-	EventTypeTurnStarted        EventType = "turn_started"
-	EventTypeTurnCompleted      EventType = "turn_completed"
-	EventTypePromptMaterialized EventType = "prompt_materialized"
-	EventTypeToolCalled         EventType = "tool_called"
-	EventTypeToolCompleted      EventType = "tool_completed"
-	EventTypeApprovalRequested  EventType = "approval_requested"
-	EventTypeApprovalResolved   EventType = "approval_resolved"
-	EventTypePermissionsAmended EventType = "permissions_amended"
-	EventTypeContextCompacted   EventType = "context_compacted"
-	EventTypeSessionForked      EventType = "session_forked"
-	EventTypeCheckpointCreated  EventType = "checkpoint_created"
-	EventTypeSessionCompleted   EventType = "session_completed"
-	EventTypeSessionFailed      EventType = "session_failed"
-	EventTypeTaskStarted        EventType = "task_started"
-	EventTypeTaskCompleted      EventType = "task_completed"
-	EventTypeTaskAbandoned      EventType = "task_abandoned"
-	EventTypeRoleTransitioned   EventType = "role_transitioned"
-	EventTypePlanUpdated        EventType = "plan_updated"
-	EventTypeMemoryConsolidated EventType = "memory_consolidated"
-	EventTypeBudgetExhausted    EventType = "budget_exhausted"
-	EventTypeBudgetLimitUpdated EventType = "budget_limit_updated"
-	EventTypeSubagentSpawned    EventType = "subagent_spawned"
-	EventTypeSubagentCompleted  EventType = "subagent_completed"
+	EventTypeSessionCreated         EventType = "session_created"
+	EventTypeTurnStarted            EventType = "turn_started"
+	EventTypeTurnCompleted          EventType = "turn_completed"
+	EventTypePromptMaterialized     EventType = "prompt_materialized"
+	EventTypeToolCalled             EventType = "tool_called"
+	EventTypeToolCompleted          EventType = "tool_completed"
+	EventTypeApprovalRequested      EventType = "approval_requested"
+	EventTypeApprovalResolved       EventType = "approval_resolved"
+	EventTypePermissionsAmended     EventType = "permissions_amended"
+	EventTypeContextCompacted       EventType = "context_compacted"
+	EventTypeSessionForked          EventType = "session_forked"
+	EventTypeCheckpointCreated      EventType = "checkpoint_created"
+	EventTypeSessionCompleted       EventType = "session_completed"
+	EventTypeSessionFailed          EventType = "session_failed"
+	EventTypeTaskStarted            EventType = "task_started"
+	EventTypeTaskCompleted          EventType = "task_completed"
+	EventTypeTaskAbandoned          EventType = "task_abandoned"
+	EventTypeRoleTransitioned       EventType = "role_transitioned"
+	EventTypePlanUpdated            EventType = "plan_updated"
+	EventTypeMemoryConsolidated     EventType = "memory_consolidated"
+	EventTypeBudgetExhausted        EventType = "budget_exhausted"
+	EventTypeBudgetLimitUpdated     EventType = "budget_limit_updated"
+	EventTypeSubagentSpawned        EventType = "subagent_spawned"
+	EventTypeSubagentCompleted      EventType = "subagent_completed"
+	EventTypeSwarmStarted           EventType = "swarm_started"
+	EventTypeSwarmThreadSpawned     EventType = "swarm_thread_spawned"
+	EventTypeSwarmTaskCreated       EventType = "swarm_task_created"
+	EventTypeSwarmTaskClaimed       EventType = "swarm_task_claimed"
+	EventTypeSwarmMessageSent       EventType = "swarm_message_sent"
+	EventTypeSwarmArtifactPublished EventType = "swarm_artifact_published"
+	EventTypeSwarmThreadCompleted   EventType = "swarm_thread_completed"
+	EventTypeSwarmCompleted         EventType = "swarm_completed"
+	EventTypeSwarmFailed            EventType = "swarm_failed"
 	// EventTypeLLMCalled 对应一次 LLM 调用完成事件（§14.8 Provider Failover）。
 	EventTypeLLMCalled EventType = "llm_called"
 )
@@ -361,4 +370,88 @@ type SubagentCompletedPayload struct {
 	ChildSessionID string          `json:"child_session_id"`
 	ResultRef      string          `json:"result_ref,omitempty"`
 	Outcome        SubagentOutcome `json:"outcome"`
+}
+
+// SwarmStartedPayload records the creation of a structured swarm run.
+type SwarmStartedPayload struct {
+	SwarmRunID   string   `json:"swarm_run_id"`
+	Goal         string   `json:"goal,omitempty"`
+	RootThreadID string   `json:"root_thread_id,omitempty"`
+	Roles        []string `json:"roles,omitempty"`
+}
+
+// SwarmThreadSpawnedPayload links a newly spawned swarm thread to its run and parent.
+type SwarmThreadSpawnedPayload struct {
+	SwarmRunID     string `json:"swarm_run_id"`
+	ThreadID       string `json:"thread_id"`
+	ParentThreadID string `json:"parent_thread_id,omitempty"`
+	TaskID         string `json:"task_id,omitempty"`
+	SessionID      string `json:"session_id,omitempty"`
+	Role           string `json:"role,omitempty"`
+	Goal           string `json:"goal,omitempty"`
+}
+
+// SwarmTaskCreatedPayload records a structured swarm task creation event.
+type SwarmTaskCreatedPayload struct {
+	SwarmRunID   string   `json:"swarm_run_id"`
+	ThreadID     string   `json:"thread_id,omitempty"`
+	TaskID       string   `json:"task_id"`
+	ParentTaskID string   `json:"parent_task_id,omitempty"`
+	AssigneeRole string   `json:"assignee_role,omitempty"`
+	Goal         string   `json:"goal,omitempty"`
+	DependsOn    []string `json:"depends_on,omitempty"`
+}
+
+// SwarmTaskClaimedPayload records the thread that claimed a swarm task.
+type SwarmTaskClaimedPayload struct {
+	SwarmRunID        string `json:"swarm_run_id"`
+	ThreadID          string `json:"thread_id,omitempty"`
+	TaskID            string `json:"task_id"`
+	ClaimedByThreadID string `json:"claimed_by_thread_id,omitempty"`
+}
+
+// SwarmMessageSentPayload records a durable peer-to-peer swarm message.
+type SwarmMessageSentPayload struct {
+	SwarmRunID   string `json:"swarm_run_id"`
+	ThreadID     string `json:"thread_id,omitempty"`
+	MessageID    string `json:"message_id"`
+	FromThreadID string `json:"from_thread_id,omitempty"`
+	ToThreadID   string `json:"to_thread_id,omitempty"`
+	TaskID       string `json:"task_id,omitempty"`
+	Kind         string `json:"kind,omitempty"`
+	Subject      string `json:"subject,omitempty"`
+}
+
+// SwarmArtifactPublishedPayload records a shared artifact publication.
+type SwarmArtifactPublishedPayload struct {
+	SwarmRunID string `json:"swarm_run_id"`
+	ThreadID   string `json:"thread_id,omitempty"`
+	TaskID     string `json:"task_id,omitempty"`
+	ArtifactID string `json:"artifact_id"`
+	SessionID  string `json:"session_id,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	Version    int    `json:"version,omitempty"`
+}
+
+// SwarmThreadCompletedPayload records the completion of one swarm thread.
+type SwarmThreadCompletedPayload struct {
+	SwarmRunID string `json:"swarm_run_id"`
+	ThreadID   string `json:"thread_id"`
+	Status     string `json:"status,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+}
+
+// SwarmCompletedPayload records the successful completion of a swarm run.
+type SwarmCompletedPayload struct {
+	SwarmRunID string `json:"swarm_run_id"`
+	Summary    string `json:"summary,omitempty"`
+}
+
+// SwarmFailedPayload records a failed swarm run.
+type SwarmFailedPayload struct {
+	SwarmRunID     string `json:"swarm_run_id"`
+	ErrorKind      string `json:"error_kind,omitempty"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+	FailedThreadID string `json:"failed_thread_id,omitempty"`
 }

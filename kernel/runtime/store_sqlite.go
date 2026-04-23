@@ -571,6 +571,8 @@ func newPayloadForType(evType EventType) any {
 		return &MemoryConsolidatedPayload{}
 	case EventTypeBudgetExhausted:
 		return &BudgetExhaustedPayload{}
+	case EventTypeBudgetLimitUpdated:
+		return &BudgetLimitUpdatedPayload{}
 	case EventTypeSubagentSpawned:
 		return &SubagentSpawnedPayload{}
 	case EventTypeSubagentCompleted:

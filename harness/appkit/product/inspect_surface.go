@@ -101,7 +101,7 @@ func BuildInspectReportForTrust(ctx context.Context, workspace, trust string, ar
 		if err != nil {
 			return InspectReport{}, err
 		}
-		run := buildInspectRun(page.Items, sessionID)
+		run := buildInspectRun(ctx, page.Items, sessionID)
 		run.Changes = inspectChangesForSession(ctx, changeStore, sessionID, 10)
 		report.Run = &run
 		return report, nil
@@ -222,6 +222,33 @@ func RenderInspectReport(report InspectReport) string {
 		fmt.Fprintf(&b, "Run session: %s\n", run.SessionID)
 		fmt.Fprintf(&b, "Run id:      %s\n", stringutil.FirstNonEmpty(run.RunID, "(none)"))
 		fmt.Fprintf(&b, "Turn id:     %s\n", stringutil.FirstNonEmpty(run.TurnID, "(none)"))
+		if run.Swarm != nil {
+			fmt.Fprintf(&b, "Swarm run:   %s | root=%s | threads=%d tasks=%d messages=%d artifacts=%d\n",
+				stringutil.FirstNonEmpty(run.Swarm.RunID, "(none)"),
+				stringutil.FirstNonEmpty(run.Swarm.RootSessionID, "(none)"),
+				run.Swarm.ThreadCount,
+				run.Swarm.TaskCount,
+				run.Swarm.MessageCount,
+				run.Swarm.ArtifactCount,
+			)
+			fmt.Fprintf(&b, "Swarm roles: %s | artifact_kinds=%s | approvals=%s\n",
+				stringutil.FirstNonEmpty(strings.Join(run.Swarm.Roles, ","), "(none)"),
+				stringutil.FirstNonEmpty(strings.Join(run.Swarm.ArtifactKinds, ","), "(none)"),
+				stringutil.FirstNonEmpty(strings.Join(run.Swarm.ApprovalCeilings, ","), "(none)"),
+			)
+			fmt.Fprintf(&b, "Swarm gov:   review=%d redirect=%d takeover=%d approve=%d reject=%d | pending=%d running=%d completed=%d failed=%d cancelled=%d\n",
+				run.Swarm.ReviewRequests,
+				run.Swarm.Redirects,
+				run.Swarm.Takeovers,
+				run.Swarm.Approvals,
+				run.Swarm.Rejections,
+				run.Swarm.PendingTasks,
+				run.Swarm.RunningTasks,
+				run.Swarm.CompletedTasks,
+				run.Swarm.FailedTasks,
+				run.Swarm.CancelledTasks,
+			)
+		}
 		if run.TurnPlan != nil {
 			fmt.Fprintf(
 				&b,
@@ -322,16 +349,19 @@ func RenderInspectReport(report InspectReport) string {
 		}
 		b.WriteString("Threads:\n")
 		for _, item := range report.Threads {
-			fmt.Fprintf(&b, "- %s | status=%s | recoverable=%t | source=%s | parent=%s | task=%s | checkpoints=%d | changes=%d | tasks=%d | archived=%t | updated=%s | preview=%s\n",
+			fmt.Fprintf(&b, "- %s | status=%s | recoverable=%t | source=%s | parent=%s | task=%s | swarm=%s/%s | checkpoints=%d | changes=%d | tasks=%d | artifacts=%d | archived=%t | updated=%s | preview=%s\n",
 				item.ID,
 				item.Status,
 				item.Recoverable,
 				stringutil.FirstNonEmpty(item.Source, "(none)"),
 				stringutil.FirstNonEmpty(item.ParentID, "(none)"),
 				stringutil.FirstNonEmpty(item.TaskID, "(none)"),
+				stringutil.FirstNonEmpty(item.SwarmRunID, "(none)"),
+				stringutil.FirstNonEmpty(item.ThreadRole, "(none)"),
 				item.CheckpointCount,
 				item.ChangeCount,
 				item.TaskCount,
+				item.ArtifactCount,
 				item.Archived,
 				stringutil.FirstNonEmpty(item.UpdatedAt, "(none)"),
 				stringutil.FirstNonEmpty(item.Preview, "(none)"),

@@ -177,9 +177,12 @@ func (l *AgentLoop) callLLMOnce(ctx context.Context, sess *session.Session, req 
 
 	for chunk, err := range l.LLM.GenerateContent(ctx, req) {
 		if err != nil {
-			// Check recoverable tail errors when we have partial content + tool calls.
-			if state.emittedContent && len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
-				state.stopReason = "tool_use"
+			// Accept truncated tail errors once the assistant already emitted tool
+			// calls. A cut-off tail should not discard a valid tool-use response,
+			// but we also avoid re-entering the LLM with a response that may have
+			// been cut off mid-tail by terminating the run after tool execution.
+			if len(state.toolCalls) > 0 && isRecoverableStreamTailError(err) {
+				state.stopReason = "end_turn"
 				l.finalizeHostedToolLifecycle(ctx, sess, &state, false)
 				if l.IO != nil {
 					if sendErr := l.IO.Send(ctx, kernio.OutputMessage{Type: kernio.OutputStreamEnd}); sendErr != nil {

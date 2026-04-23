@@ -35,6 +35,10 @@ func TaskRuntimeDir() string {
 	return filepath.Join(appconfig.AppDir(), "tasks")
 }
 
+func ArtifactStoreDir() string {
+	return filepath.Join(appconfig.AppDir(), "artifacts")
+}
+
 func WorkspaceIsolationDir() string {
 	return filepath.Join(appconfig.AppDir(), "workspaces")
 }

@@ -13,6 +13,9 @@ import (
 	rpolicy "github.com/mossagents/moss/harness/runtime/policy"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
+	hswarm "github.com/mossagents/moss/harness/swarm"
+	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/retry"
 	"github.com/mossagents/moss/kernel/session"
@@ -44,12 +47,14 @@ func defaultDeepAgentPacks() []deepAgentPack {
 		{name: "session-context", build: buildDeepAgentSessionContextPack},
 		{name: "checkpoint-store", build: buildDeepAgentCheckpointPack},
 		{name: "task-runtime", build: buildDeepAgentTaskRuntimePack},
+		{name: "artifact-store", build: buildDeepAgentArtifactPack},
 		{name: "persistent-memories", build: buildDeepAgentPersistentMemoryPack},
 		{name: "execution-services", build: buildDeepAgentExecutionPack},
 		{name: "planning-pack", build: buildDeepAgentPlanningPack},
 		{name: "bootstrap-context", build: buildDeepAgentBootstrapPack},
 		{name: "llm-governance", build: buildDeepAgentLLMGovernancePack},
 		{name: "runtime-setup", build: buildDeepAgentRuntimePack},
+		{name: "swarm-preset", build: buildDeepAgentSwarmPack},
 		{name: "post-runtime-governance", build: buildDeepAgentPostRuntimePack},
 	}
 }
@@ -152,6 +157,40 @@ func buildDeepAgentTaskRuntimePack(state *deepAgentPresetState) ([]harness.Featu
 	}, nil
 }
 
+func buildDeepAgentArtifactPack(state *deepAgentPresetState) ([]harness.Feature, error) {
+	if !deepAgentValueOrDefault(state.config.EnableSwarm, false) {
+		return nil, nil
+	}
+	artifactDir := state.config.ArtifactStoreDir
+	if artifactDir == "" {
+		artifactDir = state.defaultDataDir("artifacts")
+	}
+	store, err := artifact.NewFileStore(artifactDir)
+	if err != nil {
+		return nil, fmt.Errorf("artifact store: %w", err)
+	}
+	var indexed artifact.Store = store
+	indexed = rstate.WrapArtifactStore(indexed, state.stateCatalog)
+	return []harness.Feature{
+		harness.FeatureFunc{
+			FeatureName: "artifact-store",
+			MetadataValue: harness.FeatureMetadata{
+				Key:   "artifact-store",
+				Phase: harness.FeaturePhaseConfigure,
+			},
+			InstallFunc: func(_ context.Context, h *harness.Harness) error {
+				if h == nil || h.Kernel() == nil {
+					return fmt.Errorf("harness kernel is required")
+				}
+				if h.Kernel().ArtifactStore() == nil {
+					h.Kernel().Apply(kernel.WithArtifactStore(indexed))
+				}
+				return nil
+			},
+		},
+	}, nil
+}
+
 func buildDeepAgentPersistentMemoryPack(state *deepAgentPresetState) ([]harness.Feature, error) {
 	if !deepAgentValueOrDefault(state.config.EnablePersistentMemories, true) {
 		return nil, nil
@@ -221,6 +260,21 @@ func buildDeepAgentLLMGovernancePack(state *deepAgentPresetState) ([]harness.Fea
 func buildDeepAgentRuntimePack(state *deepAgentPresetState) ([]harness.Feature, error) {
 	return []harness.Feature{
 		harness.RuntimeSetup(state.flags.Workspace, state.flags.Trust, state.config.DefaultSetupOptions...),
+	}, nil
+}
+
+func buildDeepAgentSwarmPack(state *deepAgentPresetState) ([]harness.Feature, error) {
+	if !deepAgentValueOrDefault(state.config.EnableSwarm, false) {
+		return nil, nil
+	}
+	if !deepAgentValueOrDefault(state.config.EnableSessionStore, true) {
+		return nil, fmt.Errorf("swarm preset requires session store")
+	}
+	if !deepAgentValueOrDefault(state.config.EnableTaskRuntime, true) {
+		return nil, fmt.Errorf("swarm preset requires task runtime")
+	}
+	return []harness.Feature{
+		hswarm.RuntimeFeature(),
 	}, nil
 }
 

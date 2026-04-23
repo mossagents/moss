@@ -58,6 +58,8 @@ func TestCatalogListsThreadsAndCheckpoints(t *testing.T) {
 	}
 	SetThreadParent(sess, "sess-root")
 	SetThreadTaskID(sess, "task-1")
+	SetThreadSwarmRunID(sess, "swarm-1")
+	SetThreadRole(sess, "worker")
 	SetThreadPreview(sess, "resume picker")
 	TouchThreadActivity(sess, time.Now().UTC(), "assistant")
 	if err := store.Save(context.Background(), sess); err != nil {
@@ -85,7 +87,7 @@ func TestCatalogListsThreadsAndCheckpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(threads) != 1 || threads[0].ParentSessionID != "sess-root" || threads[0].TaskID != "task-1" {
+	if len(threads) != 1 || threads[0].ParentSessionID != "sess-root" || threads[0].TaskID != "task-1" || threads[0].SwarmRunID != "swarm-1" || threads[0].ThreadRole != "worker" {
 		t.Fatalf("unexpected threads: %+v", threads)
 	}
 	checkpoints, err := catalog.ListCheckpoints(context.Background(), CheckpointQuery{SessionID: "sess-1"})

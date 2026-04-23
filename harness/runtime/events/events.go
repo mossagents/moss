@@ -100,6 +100,16 @@ func FromExecutionEvent(e observe.ExecutionEvent) StreamEvent {
 		event.Type = EventHostedToolFailed
 	case observe.ExecutionIterationProgress:
 		event.Type = EventProgress
+	case observe.ExecutionSwarmStarted,
+		observe.ExecutionSwarmThreadSpawned,
+		observe.ExecutionSwarmTaskCreated,
+		observe.ExecutionSwarmTaskClaimed,
+		observe.ExecutionSwarmMessageSent,
+		observe.ExecutionSwarmArtifactPub,
+		observe.ExecutionSwarmThreadDone,
+		observe.ExecutionSwarmCompleted,
+		observe.ExecutionSwarmFailed:
+		event.Type = EventProgress
 	}
 	if event.Metadata == nil {
 		event.Metadata = map[string]any{}

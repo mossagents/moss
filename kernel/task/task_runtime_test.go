@@ -225,6 +225,9 @@ func TestMemoryTaskRuntime_TaskSummariesAndRelations(t *testing.T) {
 		Goal:            "inspect repo",
 		Status:          TaskPending,
 		DependsOn:       []string{"task-0"},
+		ArtifactIDs:     []string{"artifact-1", "artifact-2"},
+		SwarmRunID:      "swarm-1",
+		ThreadID:        "thread-1",
 		SessionID:       "sess-1",
 		ParentSessionID: "sess-root",
 		JobID:           "job-1",
@@ -245,11 +248,11 @@ func TestMemoryTaskRuntime_TaskSummariesAndRelations(t *testing.T) {
 		t.Fatalf("expected 1 summary, got %d", len(summaries))
 	}
 	summary := summaries[0]
-	if summary.Handle.SessionID != "sess-1" || summary.Handle.ParentSessionID != "sess-root" || summary.Handle.JobID != "job-1" {
+	if summary.Handle.SwarmRunID != "swarm-1" || summary.Handle.ThreadID != "thread-1" || summary.Handle.SessionID != "sess-1" || summary.Handle.ParentSessionID != "sess-root" || summary.Handle.JobID != "job-1" {
 		t.Fatalf("unexpected handle: %+v", summary.Handle)
 	}
-	if len(summary.Relations) != 5 {
-		t.Fatalf("expected dependency/session/parent/job/job_item relations, got %+v", summary.Relations)
+	if len(summary.Relations) != 9 {
+		t.Fatalf("expected dependency/artifact/swarm/thread/session/parent/job/job_item relations, got %+v", summary.Relations)
 	}
 	relations, err := graph.ListTaskRelations(ctx, "task-1")
 	if err != nil {
@@ -268,12 +271,15 @@ func TestFileTaskRuntime_TaskSummaryQueriesPersist(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := rt.UpsertTask(ctx, TaskRecord{
-		ID:        "task-a",
-		AgentName: "worker",
-		Goal:      "resume thread",
-		Status:    TaskPending,
-		SessionID: "sess-a",
-		JobID:     "job-a",
+		ID:          "task-a",
+		AgentName:   "worker",
+		Goal:        "resume thread",
+		Status:      TaskPending,
+		ArtifactIDs: []string{"artifact-a"},
+		SwarmRunID:  "swarm-a",
+		ThreadID:    "thread-a",
+		SessionID:   "sess-a",
+		JobID:       "job-a",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -286,11 +292,11 @@ func TestFileTaskRuntime_TaskSummaryQueriesPersist(t *testing.T) {
 	if !ok {
 		t.Fatal("file task runtime should implement TaskGraphRuntime")
 	}
-	summaries, err := graph.ListTaskSummaries(ctx, TaskQuery{SessionID: "sess-a"})
+	summaries, err := graph.ListTaskSummaries(ctx, TaskQuery{SwarmRunID: "swarm-a", ThreadID: "thread-a", SessionID: "sess-a"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(summaries) != 1 || summaries[0].Handle.JobID != "job-a" {
+	if len(summaries) != 1 || summaries[0].Handle.JobID != "job-a" || summaries[0].Handle.SwarmRunID != "swarm-a" || summaries[0].Handle.ThreadID != "thread-a" || len(summaries[0].Relations) != 5 {
 		t.Fatalf("unexpected summaries: %+v", summaries)
 	}
 }
@@ -301,18 +307,28 @@ func TestMemoryTaskRuntime_TaskMessages(t *testing.T) {
 	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg", Status: TaskRunning}); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg", Content: "follow up"})
+	queued, err := rt.EnqueueTaskMessage(ctx, TaskMessage{
+		TaskID:       "task-msg",
+		SwarmRunID:   "swarm-msg",
+		ThreadID:     "thread-a",
+		FromThreadID: "thread-a",
+		ToThreadID:   "thread-b",
+		Kind:         "question",
+		Subject:      "need follow-up",
+		Content:      "follow up",
+		Metadata:     map[string]any{"priority": "high"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if queued.ID == "" || queued.CreatedAt.IsZero() {
+	if queued.ID == "" || queued.CreatedAt.IsZero() || queued.SwarmRunID != "swarm-msg" || queued.ThreadID != "thread-a" || queued.Metadata["priority"] != "high" {
 		t.Fatalf("unexpected queued message: %+v", queued)
 	}
 	list, err := rt.ListTaskMessages(ctx, "task-msg", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].Content != "follow up" {
+	if len(list) != 1 || list[0].Content != "follow up" || list[0].ToThreadID != "thread-b" || list[0].Kind != "question" {
 		t.Fatalf("unexpected messages: %+v", list)
 	}
 	consumed, err := rt.ConsumeTaskMessages(ctx, "task-msg", 10)
@@ -341,7 +357,17 @@ func TestFileTaskRuntime_TaskMessagesPersistAcrossRestart(t *testing.T) {
 	if err := rt.UpsertTask(ctx, TaskRecord{ID: "task-msg", Status: TaskRunning}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.EnqueueTaskMessage(ctx, TaskMessage{TaskID: "task-msg", Content: "persist me"}); err != nil {
+	if _, err := rt.EnqueueTaskMessage(ctx, TaskMessage{
+		TaskID:       "task-msg",
+		SwarmRunID:   "swarm-persist",
+		ThreadID:     "thread-persist",
+		FromThreadID: "thread-persist",
+		ToThreadID:   "thread-review",
+		Kind:         "status",
+		Subject:      "persist subject",
+		Content:      "persist me",
+		Metadata:     map[string]any{"kind": "research"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	reloaded, err := NewFileTaskRuntime(dir)
@@ -352,7 +378,7 @@ func TestFileTaskRuntime_TaskMessagesPersistAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 1 || list[0].Content != "persist me" {
+	if len(list) != 1 || list[0].Content != "persist me" || list[0].SwarmRunID != "swarm-persist" || list[0].Subject != "persist subject" || list[0].Metadata["kind"] != "research" {
 		t.Fatalf("unexpected persisted messages: %+v", list)
 	}
 	consumed, err := reloaded.ConsumeTaskMessages(ctx, "task-msg", 10)

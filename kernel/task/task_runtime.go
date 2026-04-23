@@ -30,8 +30,11 @@ type TaskRecord struct {
 	Goal            string       `json:"goal"`
 	Status          TaskStatus   `json:"status"`
 	DependsOn       []string     `json:"depends_on,omitempty"`
+	ArtifactIDs     []string     `json:"artifact_ids,omitempty"`
 	Contract        TaskContract `json:"contract,omitempty"`
 	ClaimedBy       string       `json:"claimed_by,omitempty"`
+	SwarmRunID      string       `json:"swarm_run_id,omitempty"`
+	ThreadID        string       `json:"thread_id,omitempty"`
 	WorkspaceID     string       `json:"workspace_id,omitempty"`
 	SessionID       string       `json:"session_id,omitempty"`
 	ParentSessionID string       `json:"parent_session_id,omitempty"`
@@ -104,6 +107,8 @@ type TaskQuery struct {
 	AgentName       string     `json:"agent_name,omitempty"`
 	Status          TaskStatus `json:"status,omitempty"`
 	ClaimedBy       string     `json:"claimed_by,omitempty"`
+	SwarmRunID      string     `json:"swarm_run_id,omitempty"`
+	ThreadID        string     `json:"thread_id,omitempty"`
 	SessionID       string     `json:"session_id,omitempty"`
 	ParentSessionID string     `json:"parent_session_id,omitempty"`
 	JobID           string     `json:"job_id,omitempty"`
@@ -115,6 +120,9 @@ type TaskRelationKind string
 
 const (
 	TaskRelationDependency    TaskRelationKind = "depends_on"
+	TaskRelationArtifact      TaskRelationKind = "artifact"
+	TaskRelationSwarmRun      TaskRelationKind = "swarm_run"
+	TaskRelationThread        TaskRelationKind = "thread"
 	TaskRelationSession       TaskRelationKind = "session"
 	TaskRelationParentSession TaskRelationKind = "parent_session"
 	TaskRelationJob           TaskRelationKind = "job"
@@ -124,6 +132,8 @@ const (
 // TaskHandle 是任务定位标识。
 type TaskHandle struct {
 	ID              string `json:"id"`
+	SwarmRunID      string `json:"swarm_run_id,omitempty"`
+	ThreadID        string `json:"thread_id,omitempty"`
 	SessionID       string `json:"session_id,omitempty"`
 	ParentSessionID string `json:"parent_session_id,omitempty"`
 	JobID           string `json:"job_id,omitempty"`
@@ -133,12 +143,15 @@ type TaskHandle struct {
 
 // TaskRelation 描述任务与其他对象的边。
 type TaskRelation struct {
-	TaskID           string           `json:"task_id"`
-	Kind             TaskRelationKind `json:"kind"`
-	RelatedTaskID    string           `json:"related_task_id,omitempty"`
-	RelatedSessionID string           `json:"related_session_id,omitempty"`
-	RelatedJobID     string           `json:"related_job_id,omitempty"`
-	RelatedJobItemID string           `json:"related_job_item_id,omitempty"`
+	TaskID            string           `json:"task_id"`
+	Kind              TaskRelationKind `json:"kind"`
+	RelatedTaskID     string           `json:"related_task_id,omitempty"`
+	RelatedArtifactID string           `json:"related_artifact_id,omitempty"`
+	RelatedRunID      string           `json:"related_run_id,omitempty"`
+	RelatedThreadID   string           `json:"related_thread_id,omitempty"`
+	RelatedSessionID  string           `json:"related_session_id,omitempty"`
+	RelatedJobID      string           `json:"related_job_id,omitempty"`
+	RelatedJobItemID  string           `json:"related_job_item_id,omitempty"`
 }
 
 // TaskSummary 是面向线程/子代理浏览的任务摘要。
@@ -158,10 +171,17 @@ type TaskSummary struct {
 
 // TaskMessage is a persisted follow-up message queued for a task.
 type TaskMessage struct {
-	ID        string    `json:"id"`
-	TaskID    string    `json:"task_id"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
+	ID           string         `json:"id"`
+	TaskID       string         `json:"task_id"`
+	SwarmRunID   string         `json:"swarm_run_id,omitempty"`
+	ThreadID     string         `json:"thread_id,omitempty"`
+	FromThreadID string         `json:"from_thread_id,omitempty"`
+	ToThreadID   string         `json:"to_thread_id,omitempty"`
+	Kind         string         `json:"kind,omitempty"`
+	Subject      string         `json:"subject,omitempty"`
+	Content      string         `json:"content"`
+	Metadata     map[string]any `json:"metadata,omitempty"`
+	CreatedAt    time.Time      `json:"created_at,omitempty"`
 }
 
 // JobQuery 用于筛选 Job。
@@ -273,6 +293,7 @@ func (r *MemoryTaskRuntime) UpsertTask(_ context.Context, task TaskRecord) error
 	}
 	task.UpdatedAt = now
 	task.DependsOn = append([]string(nil), task.DependsOn...)
+	task.ArtifactIDs = append([]string(nil), task.ArtifactIDs...)
 	r.tasks[task.ID] = task
 	return nil
 }
@@ -286,6 +307,7 @@ func (r *MemoryTaskRuntime) GetTask(_ context.Context, id string) (*TaskRecord, 
 	}
 	cp := task
 	cp.DependsOn = append([]string(nil), task.DependsOn...)
+	cp.ArtifactIDs = append([]string(nil), task.ArtifactIDs...)
 	return &cp, nil
 }
 
@@ -303,6 +325,12 @@ func (r *MemoryTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]Tas
 		if query.ClaimedBy != "" && t.ClaimedBy != query.ClaimedBy {
 			continue
 		}
+		if query.SwarmRunID != "" && t.SwarmRunID != query.SwarmRunID {
+			continue
+		}
+		if query.ThreadID != "" && t.ThreadID != query.ThreadID {
+			continue
+		}
 		if query.SessionID != "" && t.SessionID != query.SessionID {
 			continue
 		}
@@ -314,6 +342,7 @@ func (r *MemoryTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]Tas
 		}
 		cp := t
 		cp.DependsOn = append([]string(nil), t.DependsOn...)
+		cp.ArtifactIDs = append([]string(nil), t.ArtifactIDs...)
 		out = append(out, cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -365,6 +394,7 @@ func (r *MemoryTaskRuntime) ClaimNextReady(_ context.Context, claimer string, pr
 	r.tasks[best.ID] = *best
 	cp := *best
 	cp.DependsOn = append([]string(nil), best.DependsOn...)
+	cp.ArtifactIDs = append([]string(nil), best.ArtifactIDs...)
 	return &cp, nil
 }
 
@@ -384,16 +414,23 @@ func (r *MemoryTaskRuntime) EnqueueTaskMessage(_ context.Context, message TaskMe
 	}
 	r.seq++
 	queued := TaskMessage{
-		ID:        message.ID,
-		TaskID:    taskID,
-		Content:   content,
-		CreatedAt: time.Now(),
+		ID:           strings.TrimSpace(message.ID),
+		TaskID:       taskID,
+		SwarmRunID:   strings.TrimSpace(message.SwarmRunID),
+		ThreadID:     strings.TrimSpace(message.ThreadID),
+		FromThreadID: strings.TrimSpace(message.FromThreadID),
+		ToThreadID:   strings.TrimSpace(message.ToThreadID),
+		Kind:         strings.TrimSpace(message.Kind),
+		Subject:      strings.TrimSpace(message.Subject),
+		Content:      content,
+		Metadata:     cloneAnyMap(message.Metadata),
+		CreatedAt:    time.Now(),
 	}
 	if queued.ID == "" {
 		queued.ID = "msg-" + taskID + "-" + strconv.FormatInt(r.seq, 10)
 	}
 	r.msgs[taskID] = append(r.msgs[taskID], queued)
-	cp := queued
+	cp := cloneTaskMessage(queued)
 	return &cp, nil
 }
 
@@ -410,7 +447,7 @@ func (r *MemoryTaskRuntime) ListTaskMessages(_ context.Context, taskID string, l
 	original := r.msgs[taskID]
 	out := make([]TaskMessage, 0, len(original))
 	for _, item := range original {
-		out = append(out, item)
+		out = append(out, cloneTaskMessage(item))
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -438,7 +475,7 @@ func (r *MemoryTaskRuntime) ConsumeTaskMessages(_ context.Context, taskID string
 	}
 	consumed := make([]TaskMessage, 0, count)
 	for i := 0; i < count; i++ {
-		consumed = append(consumed, original[i])
+		consumed = append(consumed, cloneTaskMessage(original[i]))
 	}
 	if count >= len(original) {
 		delete(r.msgs, taskID)
@@ -503,6 +540,8 @@ func (r *MemoryTaskRuntime) UpsertJob(_ context.Context, job AgentJob) error {
 func TaskHandleFromRecord(task TaskRecord) TaskHandle {
 	return TaskHandle{
 		ID:              task.ID,
+		SwarmRunID:      task.SwarmRunID,
+		ThreadID:        task.ThreadID,
 		SessionID:       task.SessionID,
 		ParentSessionID: task.ParentSessionID,
 		JobID:           task.JobID,
@@ -512,7 +551,7 @@ func TaskHandleFromRecord(task TaskRecord) TaskHandle {
 }
 
 func TaskRelationsFromRecord(task TaskRecord) []TaskRelation {
-	out := make([]TaskRelation, 0, len(task.DependsOn)+4)
+	out := make([]TaskRelation, 0, len(task.DependsOn)+len(task.ArtifactIDs)+6)
 	for _, depID := range task.DependsOn {
 		depID = strings.TrimSpace(depID)
 		if depID == "" {
@@ -522,6 +561,32 @@ func TaskRelationsFromRecord(task TaskRecord) []TaskRelation {
 			TaskID:        task.ID,
 			Kind:          TaskRelationDependency,
 			RelatedTaskID: depID,
+		})
+	}
+	for _, artifactID := range task.ArtifactIDs {
+		artifactID = strings.TrimSpace(artifactID)
+		if artifactID == "" {
+			continue
+		}
+		out = append(out, TaskRelation{
+			TaskID:            task.ID,
+			Kind:              TaskRelationArtifact,
+			RelatedArtifactID: artifactID,
+		})
+	}
+	if runID := strings.TrimSpace(task.SwarmRunID); runID != "" {
+		out = append(out, TaskRelation{
+			TaskID:       task.ID,
+			Kind:         TaskRelationSwarmRun,
+			RelatedRunID: runID,
+		})
+	}
+	if threadID := strings.TrimSpace(task.ThreadID); threadID != "" {
+		out = append(out, TaskRelation{
+			TaskID:          task.ID,
+			Kind:            TaskRelationThread,
+			RelatedRunID:    strings.TrimSpace(task.SwarmRunID),
+			RelatedThreadID: threadID,
 		})
 	}
 	if sessionID := strings.TrimSpace(task.SessionID); sessionID != "" {
@@ -555,8 +620,8 @@ func TaskRelationsFromRecord(task TaskRecord) []TaskRelation {
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kind == out[j].Kind {
-			left := strings.Join([]string{out[i].RelatedTaskID, out[i].RelatedSessionID, out[i].RelatedJobID, out[i].RelatedJobItemID}, ":")
-			right := strings.Join([]string{out[j].RelatedTaskID, out[j].RelatedSessionID, out[j].RelatedJobID, out[j].RelatedJobItemID}, ":")
+			left := strings.Join([]string{out[i].RelatedTaskID, out[i].RelatedArtifactID, out[i].RelatedRunID, out[i].RelatedThreadID, out[i].RelatedSessionID, out[i].RelatedJobID, out[i].RelatedJobItemID}, ":")
+			right := strings.Join([]string{out[j].RelatedTaskID, out[j].RelatedArtifactID, out[j].RelatedRunID, out[j].RelatedThreadID, out[j].RelatedSessionID, out[j].RelatedJobID, out[j].RelatedJobItemID}, ":")
 			return left < right
 		}
 		return out[i].Kind < out[j].Kind
@@ -579,6 +644,22 @@ func TaskSummaryFromRecord(task TaskRecord) TaskSummary {
 		UpdatedAt: task.UpdatedAt,
 		Relations: TaskRelationsFromRecord(task),
 	}
+}
+
+func cloneTaskMessage(in TaskMessage) TaskMessage {
+	in.Metadata = cloneAnyMap(in.Metadata)
+	return in
+}
+
+func cloneAnyMap(in map[string]any) map[string]any {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (r *MemoryTaskRuntime) GetJob(_ context.Context, id string) (*AgentJob, error) {

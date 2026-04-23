@@ -10,12 +10,15 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
+	kswarm "github.com/mossagents/moss/kernel/swarm"
+	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/x/stringutil"
 )
 
 type InspectRunReport struct {
 	SessionID  string               `json:"session_id"`
 	RunID      string               `json:"run_id,omitempty"`
+	Swarm      *InspectSwarmReport  `json:"swarm,omitempty"`
 	TurnID     string               `json:"turn_id,omitempty"`
 	TurnPlan   *InspectTurnPlan     `json:"turn_plan,omitempty"`
 	ToolRoute  *InspectToolRoute    `json:"tool_route,omitempty"`
@@ -24,6 +27,31 @@ type InspectRunReport struct {
 	Failovers  []InspectFailover    `json:"failovers,omitempty"`
 	Changes    []InspectStateItem   `json:"changes,omitempty"`
 	Events     []TraceEvent         `json:"events,omitempty"`
+}
+
+type InspectSwarmReport struct {
+	RunID            string   `json:"run_id,omitempty"`
+	RootSessionID    string   `json:"root_session_id,omitempty"`
+	ThreadCount      int      `json:"thread_count,omitempty"`
+	TaskCount        int      `json:"task_count,omitempty"`
+	MessageCount     int      `json:"message_count,omitempty"`
+	ArtifactCount    int      `json:"artifact_count,omitempty"`
+	PendingTasks     int      `json:"pending_tasks,omitempty"`
+	RunningTasks     int      `json:"running_tasks,omitempty"`
+	CompletedTasks   int      `json:"completed_tasks,omitempty"`
+	FailedTasks      int      `json:"failed_tasks,omitempty"`
+	CancelledTasks   int      `json:"cancelled_tasks,omitempty"`
+	ReviewRequests   int      `json:"review_requests,omitempty"`
+	Redirects        int      `json:"redirects,omitempty"`
+	Takeovers        int      `json:"takeovers,omitempty"`
+	Approvals        int      `json:"approvals,omitempty"`
+	Rejections       int      `json:"rejections,omitempty"`
+	Roles            []string `json:"roles,omitempty"`
+	ArtifactKinds    []string `json:"artifact_kinds,omitempty"`
+	ApprovalCeilings []string `json:"approval_ceilings,omitempty"`
+	WritableScopes   []string `json:"writable_scopes,omitempty"`
+	MemoryScopes     []string `json:"memory_scopes,omitempty"`
+	AllowedEffects   []string `json:"allowed_effects,omitempty"`
 }
 
 type InspectTurnPlan struct {
@@ -170,7 +198,7 @@ func changeCountsBySession(ctx context.Context, store *changes.FileChangeStore) 
 	return counts
 }
 
-func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunReport {
+func buildInspectRun(ctx context.Context, entries []rstate.StateEntry, sessionID string) InspectRunReport {
 	report := InspectRunReport{SessionID: sessionID}
 	for _, entry := range entries {
 		event, ok := decodeInspectTraceEvent(entry)
@@ -237,7 +265,127 @@ func buildInspectRun(entries []rstate.StateEntry, sessionID string) InspectRunRe
 		return report.Failovers[i].AttemptIndex < report.Failovers[j].AttemptIndex
 	})
 	report.Audit = buildInspectAuditSummary(sessionID, report.RunID)
+	report.Swarm = buildInspectSwarm(ctx, sessionID)
 	return report
+}
+
+func buildInspectSwarm(ctx context.Context, sessionID string) *InspectSwarmReport {
+	catalog, err := runtimeenv.OpenSessionCatalog()
+	if err != nil {
+		return nil
+	}
+	thread, err := catalog.GetThread(ctx, sessionID)
+	if err != nil || thread == nil || strings.TrimSpace(thread.SwarmRunID) == "" {
+		return nil
+	}
+	tasks, err := runtimeenv.OpenTaskRuntime()
+	if err != nil {
+		return nil
+	}
+	artifacts, err := runtimeenv.OpenArtifactStore()
+	if err != nil {
+		return nil
+	}
+	snapshot, err := kswarm.RecoveryResolver{
+		Sessions:  catalog,
+		Tasks:     tasks,
+		Messages:  tasks,
+		Artifacts: artifacts,
+	}.LoadRun(ctx, kswarm.RecoveryQuery{RunID: thread.SwarmRunID, IncludeArchived: true})
+	if err != nil {
+		return nil
+	}
+	records, err := tasks.ListTasks(ctx, taskrt.TaskQuery{SwarmRunID: thread.SwarmRunID})
+	if err != nil {
+		return nil
+	}
+	report := &InspectSwarmReport{
+		RunID:         snapshot.RunID,
+		RootSessionID: snapshot.RootSessionID,
+		ThreadCount:   len(snapshot.Threads),
+		TaskCount:     len(records),
+		MessageCount:  len(snapshot.Messages),
+		ArtifactCount: len(snapshot.Artifacts),
+	}
+	roleSet := make(map[string]struct{}, len(snapshot.Threads))
+	kindSet := make(map[string]struct{}, len(snapshot.Artifacts))
+	approvalSet := map[string]struct{}{}
+	writableSet := map[string]struct{}{}
+	memorySet := map[string]struct{}{}
+	effectSet := map[string]struct{}{}
+	for _, item := range snapshot.Threads {
+		if role := strings.TrimSpace(item.ThreadRole); role != "" {
+			roleSet[role] = struct{}{}
+		}
+	}
+	for _, item := range snapshot.Artifacts {
+		if kind := strings.TrimSpace(string(item.Kind)); kind != "" {
+			kindSet[kind] = struct{}{}
+		}
+	}
+	for _, task := range records {
+		switch task.Status {
+		case taskrt.TaskPending:
+			report.PendingTasks++
+		case taskrt.TaskRunning:
+			report.RunningTasks++
+		case taskrt.TaskCompleted:
+			report.CompletedTasks++
+		case taskrt.TaskFailed:
+			report.FailedTasks++
+		case taskrt.TaskCancelled:
+			report.CancelledTasks++
+		}
+		if ceiling := strings.TrimSpace(string(task.Contract.ApprovalCeiling)); ceiling != "" {
+			approvalSet[ceiling] = struct{}{}
+		}
+		for _, scope := range task.Contract.WritableScopes {
+			if scope = strings.TrimSpace(scope); scope != "" {
+				writableSet[scope] = struct{}{}
+			}
+		}
+		if memory := strings.TrimSpace(task.Contract.MemoryScope); memory != "" {
+			memorySet[memory] = struct{}{}
+		}
+		for _, effect := range task.Contract.AllowedEffects {
+			if effectName := strings.TrimSpace(string(effect)); effectName != "" {
+				effectSet[effectName] = struct{}{}
+			}
+		}
+	}
+	for _, message := range snapshot.Messages {
+		switch kswarm.GovernanceActionFromMetadata(message.Metadata) {
+		case kswarm.GovernanceReviewRequested:
+			report.ReviewRequests++
+		case kswarm.GovernanceRedirected:
+			report.Redirects++
+		case kswarm.GovernanceTakenOver:
+			report.Takeovers++
+		case kswarm.GovernanceApproved:
+			report.Approvals++
+		case kswarm.GovernanceRejected:
+			report.Rejections++
+		}
+	}
+	report.Roles = sortedStringSet(roleSet)
+	report.ArtifactKinds = sortedStringSet(kindSet)
+	report.ApprovalCeilings = sortedStringSet(approvalSet)
+	report.WritableScopes = sortedStringSet(writableSet)
+	report.MemoryScopes = sortedStringSet(memorySet)
+	report.AllowedEffects = sortedStringSet(effectSet)
+	return report
+}
+
+func sortedStringSet(items map[string]struct{}) []string {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for item := range items {
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func decodeInspectTraceEvent(entry rstate.StateEntry) (TraceEvent, bool) {

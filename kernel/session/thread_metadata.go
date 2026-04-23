@@ -15,6 +15,8 @@ const (
 	MetadataThreadLastActivityKind = "thread_last_activity_kind"
 	MetadataThreadPreview          = "thread_preview"
 	MetadataThreadTaskID           = "thread_task_id"
+	MetadataThreadSwarmRunID       = "thread_swarm_run_id"
+	MetadataThreadRole             = "thread_role"
 )
 
 func ensureSessionMetadata(sess *Session) {
@@ -62,6 +64,30 @@ func SetThreadTaskID(sess *Session, taskID string) {
 		return
 	}
 	sess.SetMetadata(MetadataThreadTaskID, taskID)
+}
+
+func SetThreadSwarmRunID(sess *Session, runID string) {
+	if sess == nil {
+		return
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		sess.DeleteMetadata(MetadataThreadSwarmRunID)
+		return
+	}
+	sess.SetMetadata(MetadataThreadSwarmRunID, runID)
+}
+
+func SetThreadRole(sess *Session, role string) {
+	if sess == nil {
+		return
+	}
+	role = strings.TrimSpace(role)
+	if role == "" {
+		sess.DeleteMetadata(MetadataThreadRole)
+		return
+	}
+	sess.SetMetadata(MetadataThreadRole, role)
 }
 
 func SetThreadArchived(sess *Session, archived bool) {
@@ -154,14 +180,16 @@ func ThreadActivityTime(sess *Session) time.Time {
 	return time.Time{}
 }
 
-func ThreadMetadataValues(sess *Session) (source, parentID, taskID, preview, activityKind string, archived bool, activityAt time.Time) {
+func ThreadMetadataValues(sess *Session) (source, parentID, taskID, swarmRunID, role, preview, activityKind string, archived bool, activityAt time.Time) {
 	if sess == nil {
-		return "", "", "", "", "", false, time.Time{}
+		return "", "", "", "", "", "", "", false, time.Time{}
 	}
 	meta := sess.CopyMetadata()
 	return metadataString(meta, MetadataThreadSource),
 		metadataString(meta, MetadataThreadParentID),
 		metadataString(meta, MetadataThreadTaskID),
+		metadataString(meta, MetadataThreadSwarmRunID),
+		metadataString(meta, MetadataThreadRole),
 		ThreadPreview(sess),
 		metadataString(meta, MetadataThreadLastActivityKind),
 		metadataBool(meta, MetadataThreadArchived),

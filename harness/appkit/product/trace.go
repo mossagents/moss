@@ -430,6 +430,47 @@ func summarizeTraceEvent(event TraceEvent, index int) (traceEventSummary, bool) 
 		case "hosted_tool.failed":
 			toolName := valueOrUnknown(event.ToolName, "hosted tool")
 			return traceEventSummary{priority: 4, index: index, message: fmt.Sprintf("Hosted tool %s failed", toolName)}, true
+		case "swarm.started":
+			runID := valueOrUnknown(stringData(event.Metadata, "swarm_run_id"), event.RunID)
+			return traceEventSummary{priority: 14, index: index, message: fmt.Sprintf("Swarm started: %s", runID)}, true
+		case "swarm.thread_spawned":
+			threadID := valueOrUnknown(stringData(event.Metadata, "thread_id"), "thread")
+			role := strings.TrimSpace(stringData(event.Metadata, "role"))
+			if role != "" {
+				return traceEventSummary{priority: 18, index: index, message: fmt.Sprintf("Swarm thread spawned: %s (%s)", threadID, role)}, true
+			}
+			return traceEventSummary{priority: 18, index: index, message: fmt.Sprintf("Swarm thread spawned: %s", threadID)}, true
+		case "swarm.task_created":
+			taskID := valueOrUnknown(stringData(event.Metadata, "task_id"), "task")
+			return traceEventSummary{priority: 18, index: index, message: fmt.Sprintf("Swarm task created: %s", taskID)}, true
+		case "swarm.task_claimed":
+			taskID := valueOrUnknown(stringData(event.Metadata, "task_id"), "task")
+			claimedBy := valueOrUnknown(stringData(event.Metadata, "claimed_by_thread_id"), "thread")
+			return traceEventSummary{priority: 17, index: index, message: fmt.Sprintf("Swarm task claimed: %s by %s", taskID, claimedBy)}, true
+		case "swarm.message_sent":
+			action := strings.TrimSpace(stringData(event.Metadata, "governance_action"))
+			if action != "" {
+				return traceEventSummary{priority: 11, index: index, message: fmt.Sprintf("Swarm governance message: %s", action)}, true
+			}
+			subject := valueOrUnknown(stringData(event.Metadata, "subject"), "message")
+			return traceEventSummary{priority: 18, index: index, message: fmt.Sprintf("Swarm message sent: %s", subject)}, true
+		case "swarm.artifact_published":
+			name := valueOrUnknown(stringData(event.Metadata, "artifact_name"), "artifact")
+			kind := strings.TrimSpace(stringData(event.Metadata, "artifact_kind"))
+			if kind != "" {
+				return traceEventSummary{priority: 12, index: index, message: fmt.Sprintf("Swarm artifact published: %s (%s)", name, kind)}, true
+			}
+			return traceEventSummary{priority: 12, index: index, message: fmt.Sprintf("Swarm artifact published: %s", name)}, true
+		case "swarm.thread_completed":
+			threadID := valueOrUnknown(stringData(event.Metadata, "thread_id"), "thread")
+			status := valueOrUnknown(stringData(event.Metadata, "status"), "completed")
+			return traceEventSummary{priority: 13, index: index, message: fmt.Sprintf("Swarm thread %s %s", threadID, status)}, true
+		case "swarm.completed":
+			runID := valueOrUnknown(stringData(event.Metadata, "swarm_run_id"), event.RunID)
+			return traceEventSummary{priority: 8, index: index, message: fmt.Sprintf("Swarm completed: %s", runID)}, true
+		case "swarm.failed":
+			runID := valueOrUnknown(stringData(event.Metadata, "swarm_run_id"), event.RunID)
+			return traceEventSummary{priority: 1, index: index, message: fmt.Sprintf("Swarm failed: %s", runID)}, true
 		}
 	case "llm_call":
 		if strings.TrimSpace(event.Error) == "" {
@@ -609,6 +650,17 @@ func formatTraceMetadataPairs(data map[string]any) []string {
 		"steps",
 		"mode",
 		"goal",
+		"swarm_run_id",
+		"root_thread_id",
+		"thread_id",
+		"parent_thread_id",
+		"task_id",
+		"claimed_by_thread_id",
+		"governance_action",
+		"governance_reason",
+		"artifact_name",
+		"artifact_kind",
+		"version",
 		"reason_code",
 		"approved",
 		"enforcement",

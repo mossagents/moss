@@ -67,6 +67,7 @@ func (r *FileTaskRuntime) UpsertTask(_ context.Context, task TaskRecord) error {
 	}
 	task.UpdatedAt = now
 	task.DependsOn = append([]string(nil), task.DependsOn...)
+	task.ArtifactIDs = append([]string(nil), task.ArtifactIDs...)
 	r.tasks[task.ID] = task
 	return r.persist()
 }
@@ -80,6 +81,7 @@ func (r *FileTaskRuntime) GetTask(_ context.Context, id string) (*TaskRecord, er
 	}
 	cp := task
 	cp.DependsOn = append([]string(nil), task.DependsOn...)
+	cp.ArtifactIDs = append([]string(nil), task.ArtifactIDs...)
 	return &cp, nil
 }
 
@@ -97,6 +99,12 @@ func (r *FileTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]TaskR
 		if query.ClaimedBy != "" && t.ClaimedBy != query.ClaimedBy {
 			continue
 		}
+		if query.SwarmRunID != "" && t.SwarmRunID != query.SwarmRunID {
+			continue
+		}
+		if query.ThreadID != "" && t.ThreadID != query.ThreadID {
+			continue
+		}
 		if query.SessionID != "" && t.SessionID != query.SessionID {
 			continue
 		}
@@ -108,6 +116,7 @@ func (r *FileTaskRuntime) ListTasks(_ context.Context, query TaskQuery) ([]TaskR
 		}
 		cp := t
 		cp.DependsOn = append([]string(nil), t.DependsOn...)
+		cp.ArtifactIDs = append([]string(nil), t.ArtifactIDs...)
 		out = append(out, cp)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -162,6 +171,7 @@ func (r *FileTaskRuntime) ClaimNextReady(_ context.Context, claimer string, pref
 	}
 	cp := *best
 	cp.DependsOn = append([]string(nil), best.DependsOn...)
+	cp.ArtifactIDs = append([]string(nil), best.ArtifactIDs...)
 	return &cp, nil
 }
 
@@ -228,6 +238,7 @@ func (r *FileTaskRuntime) persist() error {
 	for id, task := range r.tasks {
 		cp := task
 		cp.DependsOn = append([]string(nil), task.DependsOn...)
+		cp.ArtifactIDs = append([]string(nil), task.ArtifactIDs...)
 		state.Tasks[id] = cp
 	}
 	for id, job := range r.jobs {
@@ -492,10 +503,17 @@ func (r *FileTaskRuntime) EnqueueTaskMessage(_ context.Context, message TaskMess
 	}
 	r.seq++
 	queued := TaskMessage{
-		ID:        message.ID,
-		TaskID:    taskID,
-		Content:   content,
-		CreatedAt: time.Now(),
+		ID:           strings.TrimSpace(message.ID),
+		TaskID:       taskID,
+		SwarmRunID:   strings.TrimSpace(message.SwarmRunID),
+		ThreadID:     strings.TrimSpace(message.ThreadID),
+		FromThreadID: strings.TrimSpace(message.FromThreadID),
+		ToThreadID:   strings.TrimSpace(message.ToThreadID),
+		Kind:         strings.TrimSpace(message.Kind),
+		Subject:      strings.TrimSpace(message.Subject),
+		Content:      content,
+		Metadata:     cloneAnyMap(message.Metadata),
+		CreatedAt:    time.Now(),
 	}
 	if queued.ID == "" {
 		queued.ID = fmt.Sprintf("msg-%s-%d", taskID, r.seq)
@@ -504,7 +522,7 @@ func (r *FileTaskRuntime) EnqueueTaskMessage(_ context.Context, message TaskMess
 	if err := r.persist(); err != nil {
 		return nil, err
 	}
-	cp := queued
+	cp := cloneTaskMessage(queued)
 	return &cp, nil
 }
 
@@ -521,7 +539,7 @@ func (r *FileTaskRuntime) ListTaskMessages(_ context.Context, taskID string, lim
 	original := r.msgs[taskID]
 	out := make([]TaskMessage, 0, len(original))
 	for _, item := range original {
-		out = append(out, item)
+		out = append(out, cloneTaskMessage(item))
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -549,7 +567,7 @@ func (r *FileTaskRuntime) ConsumeTaskMessages(_ context.Context, taskID string, 
 	}
 	consumed := make([]TaskMessage, 0, count)
 	for i := 0; i < count; i++ {
-		consumed = append(consumed, original[i])
+		consumed = append(consumed, cloneTaskMessage(original[i]))
 	}
 	if count >= len(original) {
 		delete(r.msgs, taskID)

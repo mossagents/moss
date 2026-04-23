@@ -7,6 +7,7 @@ import (
 
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/harness/sandbox"
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	kruntime "github.com/mossagents/moss/kernel/runtime"
 	"github.com/mossagents/moss/kernel/session"
@@ -46,6 +47,14 @@ func OpenTaskRuntime() (*taskrt.FileTaskRuntime, error) {
 		return nil, fmt.Errorf("task runtime: %w", err)
 	}
 	return rt, nil
+}
+
+func OpenArtifactStore() (*artifact.FileStore, error) {
+	store, err := artifact.NewFileStore(ArtifactStoreDir())
+	if err != nil {
+		return nil, fmt.Errorf("artifact store: %w", err)
+	}
+	return store, nil
 }
 
 func OpenStateCatalog() (*rstate.StateCatalog, error) {

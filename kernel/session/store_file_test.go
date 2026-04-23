@@ -537,6 +537,8 @@ func TestFileStoreListIncludesThreadMetadataAndActivitySort(t *testing.T) {
 	SetThreadSource(child, "delegated")
 	SetThreadParent(child, "parent")
 	SetThreadTaskID(child, "task-123")
+	SetThreadSwarmRunID(child, "swarm-123")
+	SetThreadRole(child, "reviewer")
 	SetThreadArchived(child, true)
 	RefreshThreadMetadata(child, time.Now(), "tool:task")
 	SetThreadPreview(child, "latest delegated progress")
@@ -557,7 +559,7 @@ func TestFileStoreListIncludesThreadMetadataAndActivitySort(t *testing.T) {
 	if summaries[0].Source != "delegated" || summaries[0].ParentID != "parent" {
 		t.Fatalf("unexpected thread lineage: %+v", summaries[0])
 	}
-	if summaries[0].TaskID != "task-123" || summaries[0].ActivityKind != "tool:task" {
+	if summaries[0].TaskID != "task-123" || summaries[0].SwarmRunID != "swarm-123" || summaries[0].ThreadRole != "reviewer" || summaries[0].ActivityKind != "tool:task" {
 		t.Fatalf("unexpected thread task metadata: %+v", summaries[0])
 	}
 	if !summaries[0].Archived {

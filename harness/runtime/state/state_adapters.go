@@ -3,14 +3,18 @@ package state
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/mossagents/moss/x/stringutil"
 	memstore "github.com/mossagents/moss/harness/runtime/memory"
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/session"
+	kswarm "github.com/mossagents/moss/kernel/swarm"
 	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/kernel/tool"
+	"github.com/mossagents/moss/x/stringutil"
 )
 
 func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
@@ -21,7 +25,7 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 	if title == "" {
 		title = sess.ID
 	}
-	source, parentID, taskID, preview, activityKind, archived, activityAt := session.ThreadMetadataValues(sess)
+	source, parentID, taskID, swarmRunID, threadRole, preview, activityKind, archived, activityAt := session.ThreadMetadataValues(sess)
 	sortTime := sessionSortTime(sess)
 	if !activityAt.IsZero() {
 		sortTime = activityAt.UTC()
@@ -33,20 +37,22 @@ func StateEntryFromSession(sess *session.Session) (StateEntry, bool) {
 		Status:     string(sess.Status),
 		Title:      title,
 		Summary:    stringutil.FirstNonEmpty(strings.TrimSpace(preview), strings.TrimSpace(sess.Config.Mode)),
-		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, taskID, preview, activityKind),
+		SearchText: normalizeStateText(sess.ID, sess.Config.Goal, sess.Config.Mode, string(sess.Status), source, parentID, taskID, swarmRunID, threadRole, preview, activityKind),
 		SortTime:   sortTime,
 		CreatedAt:  sess.CreatedAt,
 		UpdatedAt:  sortTime,
 		Metadata: marshalStateMetadata(map[string]any{
-			"mode":        sess.Config.Mode,
-			"recoverable": session.IsRecoverableStatus(sess.Status),
-			"steps":       sess.Budget.UsedSteps,
-			"source":      source,
-			"parent_id":   parentID,
-			"task_id":     taskID,
-			"preview":     preview,
-			"archived":    archived,
-			"activity":    activityKind,
+			"mode":         sess.Config.Mode,
+			"recoverable":  session.IsRecoverableStatus(sess.Status),
+			"steps":        sess.Budget.UsedSteps,
+			"source":       source,
+			"parent_id":    parentID,
+			"task_id":      taskID,
+			"swarm_run_id": swarmRunID,
+			"thread_role":  threadRole,
+			"preview":      preview,
+			"archived":     archived,
+			"activity":     activityKind,
 		}),
 	}, true
 }
@@ -122,7 +128,7 @@ func StateEntryFromTask(task taskrt.TaskRecord) (StateEntry, bool) {
 		Status:     string(task.Status),
 		Title:      title,
 		Summary:    strings.TrimSpace(task.AgentName),
-		SearchText: normalizeStateText(task.ID, task.AgentName, task.Goal, task.Result, task.Error, string(task.Status), task.SessionID, task.ParentSessionID, task.JobID, task.JobItemID),
+		SearchText: normalizeStateText(task.ID, task.AgentName, task.Goal, task.Result, task.Error, string(task.Status), task.SessionID, task.ParentSessionID, task.JobID, task.JobItemID, task.SwarmRunID, task.ThreadID, task.Contract.InputContext, task.Contract.MemoryScope, string(task.Contract.ApprovalCeiling), strings.Join(task.Contract.WritableScopes, " "), strings.Join(task.Contract.ReturnArtifacts, " ")),
 		SortTime:   sortTime.UTC(),
 		CreatedAt:  task.CreatedAt.UTC(),
 		UpdatedAt:  task.UpdatedAt.UTC(),
@@ -130,13 +136,74 @@ func StateEntryFromTask(task taskrt.TaskRecord) (StateEntry, bool) {
 			"agent_name":        task.AgentName,
 			"claimed_by":        task.ClaimedBy,
 			"depends_on":        append([]string(nil), task.DependsOn...),
+			"artifact_ids":      append([]string(nil), task.ArtifactIDs...),
 			"result":            task.Result,
 			"error":             task.Error,
+			"swarm_run_id":      task.SwarmRunID,
+			"thread_id":         task.ThreadID,
 			"workspace_id":      task.WorkspaceID,
 			"session_id":        task.SessionID,
 			"parent_session_id": task.ParentSessionID,
 			"job_id":            task.JobID,
 			"job_item_id":       task.JobItemID,
+			"budget":            task.Contract.Budget,
+			"approval_ceiling":  task.Contract.ApprovalCeiling,
+			"writable_scopes":   append([]string(nil), task.Contract.WritableScopes...),
+			"memory_scope":      task.Contract.MemoryScope,
+			"allowed_effects":   effectStrings(task.Contract.AllowedEffects),
+			"return_artifacts":  append([]string(nil), task.Contract.ReturnArtifacts...),
+		}),
+	}, true
+}
+
+func effectStrings(in []tool.Effect) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		value := strings.TrimSpace(string(item))
+		if value == "" {
+			continue
+		}
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func StateEntryFromArtifact(sessionID string, item *artifact.Artifact) (StateEntry, bool) {
+	ref, err := kswarm.ArtifactRefFromArtifact(sessionID, item)
+	if err != nil {
+		return StateEntry{}, false
+	}
+	title := stringutil.FirstNonEmpty(ref.Name, ref.ID)
+	summary := stringutil.FirstNonEmpty(ref.Summary, string(ref.Kind), ref.MIMEType)
+	return StateEntry{
+		Kind:       StateKindArtifact,
+		RecordID:   artifactStateRecordID(sessionID, ref.Name),
+		SessionID:  strings.TrimSpace(sessionID),
+		Status:     strconv.Itoa(ref.Version),
+		Title:      title,
+		Summary:    summary,
+		SearchText: normalizeStateText(ref.ID, ref.Name, ref.Summary, ref.RunID, ref.ThreadID, ref.TaskID, string(ref.Kind), ref.MIMEType, sessionID),
+		SortTime:   ref.CreatedAt.UTC(),
+		CreatedAt:  ref.CreatedAt.UTC(),
+		UpdatedAt:  ref.CreatedAt.UTC(),
+		Metadata: marshalStateMetadata(map[string]any{
+			"artifact_id":   ref.ID,
+			"name":          ref.Name,
+			"version":       ref.Version,
+			"mime_type":     ref.MIMEType,
+			"size_bytes":    len(item.Data),
+			"swarm_run_id":  ref.RunID,
+			"thread_id":     ref.ThreadID,
+			"task_id":       ref.TaskID,
+			"artifact_kind": ref.Kind,
+			"summary":       ref.Summary,
+			"metadata":      ref.Metadata,
 		}),
 	}, true
 }
@@ -470,4 +537,50 @@ func (r *indexedTaskRuntime) ReportJobItemResult(ctx context.Context, jobID, ite
 		r.catalog.BestEffortUpsert(entry)
 	}
 	return item, nil
+}
+
+type indexedArtifactStore struct {
+	inner   artifact.Store
+	catalog *StateCatalog
+}
+
+func WrapArtifactStore(store artifact.Store, catalog *StateCatalog) artifact.Store {
+	if store == nil || catalog == nil || !catalog.Enabled() {
+		return store
+	}
+	return &indexedArtifactStore{inner: store, catalog: catalog}
+}
+
+func (s *indexedArtifactStore) Save(ctx context.Context, sessionID string, item *artifact.Artifact) error {
+	if err := s.inner.Save(ctx, sessionID, item); err != nil {
+		return err
+	}
+	if entry, ok := StateEntryFromArtifact(sessionID, item); ok {
+		s.catalog.BestEffortUpsert(entry)
+	}
+	return nil
+}
+
+func (s *indexedArtifactStore) Load(ctx context.Context, sessionID, name string, version int) (*artifact.Artifact, error) {
+	return s.inner.Load(ctx, sessionID, name, version)
+}
+
+func (s *indexedArtifactStore) List(ctx context.Context, sessionID string) ([]*artifact.Artifact, error) {
+	return s.inner.List(ctx, sessionID)
+}
+
+func (s *indexedArtifactStore) Versions(ctx context.Context, sessionID, name string) ([]*artifact.Artifact, error) {
+	return s.inner.Versions(ctx, sessionID, name)
+}
+
+func (s *indexedArtifactStore) Delete(ctx context.Context, sessionID, name string) error {
+	if err := s.inner.Delete(ctx, sessionID, name); err != nil {
+		return err
+	}
+	s.catalog.BestEffortDelete(StateKindArtifact, artifactStateRecordID(sessionID, name))
+	return nil
+}
+
+func artifactStateRecordID(sessionID, name string) string {
+	return strings.TrimSpace(sessionID) + ":" + strings.TrimSpace(name)
 }

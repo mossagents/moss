@@ -137,7 +137,7 @@ func (fs *FileStore) loadAllSummariesLocked() error {
 
 // buildSessionSummary extracts a SessionSummary from a Session.
 func buildSessionSummary(sess *Session) SessionSummary {
-	source, parentID, taskID, preview, activityKind, archived, activityAt := ThreadMetadataValues(sess)
+	source, parentID, taskID, swarmRunID, threadRole, preview, activityKind, archived, activityAt := ThreadMetadataValues(sess)
 	endedAt := formatSessionTime(sess.EndedAt)
 	updatedAt := formatSessionTime(activityAt)
 	if updatedAt == "" {
@@ -172,6 +172,8 @@ func buildSessionSummary(sess *Session) SessionSummary {
 		Source:            source,
 		ParentID:          parentID,
 		TaskID:            taskID,
+		SwarmRunID:        swarmRunID,
+		ThreadRole:        threadRole,
 		Preview:           preview,
 		ActivityKind:      activityKind,
 		Status:            sess.Status,

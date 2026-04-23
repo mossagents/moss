@@ -12,14 +12,18 @@ import (
 
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	appconfig "github.com/mossagents/moss/harness/config"
 	extcapability "github.com/mossagents/moss/harness/capability"
+	appconfig "github.com/mossagents/moss/harness/config"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
 	"github.com/mossagents/moss/harness/userio/prompting"
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/checkpoint"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/observe"
 	"github.com/mossagents/moss/kernel/session"
+	kswarm "github.com/mossagents/moss/kernel/swarm"
+	taskrt "github.com/mossagents/moss/kernel/task"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
@@ -40,6 +44,110 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 		},
 	}); err != nil {
 		t.Fatalf("save session: %v", err)
+	}
+	root, err := store.Load(ctx, "sess-inspect")
+	if err != nil || root == nil {
+		t.Fatalf("load session: %v", err)
+	}
+	session.SetThreadSwarmRunID(root, "swarm-1")
+	session.SetThreadRole(root, "supervisor")
+	session.SetThreadPreview(root, "swarm root")
+	session.RefreshThreadMetadata(root, now, "manual")
+	if err := store.Save(ctx, root); err != nil {
+		t.Fatalf("save root metadata: %v", err)
+	}
+	child := &session.Session{
+		ID:        "sess-inspect-worker",
+		Status:    session.StatusRunning,
+		CreatedAt: now.Add(time.Millisecond),
+		Config:    session.SessionConfig{Goal: "worker"},
+	}
+	session.SetThreadParent(child, "sess-inspect")
+	session.SetThreadTaskID(child, "task-findings")
+	session.SetThreadSwarmRunID(child, "swarm-1")
+	session.SetThreadRole(child, "worker")
+	session.SetThreadPreview(child, "worker findings")
+	session.RefreshThreadMetadata(child, now.Add(time.Millisecond), "delegated")
+	if err := store.Save(ctx, child); err != nil {
+		t.Fatalf("save child session: %v", err)
+	}
+	taskRuntime, err := taskrt.NewFileTaskRuntime(runtimeenv.TaskRuntimeDir())
+	if err != nil {
+		t.Fatalf("NewFileTaskRuntime: %v", err)
+	}
+	if err := taskRuntime.UpsertTask(ctx, taskrt.TaskRecord{
+		ID:         "task-findings",
+		AgentName:  "swarm-worker",
+		Goal:       "Collect evidence",
+		Status:     taskrt.TaskCompleted,
+		SwarmRunID: "swarm-1",
+		ThreadID:   "sess-inspect-worker",
+		SessionID:  "sess-inspect-worker",
+		Contract: taskrt.TaskContract{
+			ApprovalCeiling: "policy_guarded",
+			WritableScopes:  []string{"repo"},
+			MemoryScope:     "research",
+			AllowedEffects:  []tool.Effect{"read"},
+		},
+	}); err != nil {
+		t.Fatalf("UpsertTask: %v", err)
+	}
+	if err := taskRuntime.UpsertTask(ctx, taskrt.TaskRecord{
+		ID:         "task-review",
+		AgentName:  "swarm-reviewer",
+		Goal:       "Review synthesis",
+		Status:     taskrt.TaskPending,
+		SwarmRunID: "swarm-1",
+		ThreadID:   "swarm-1-reviewer",
+		Contract: taskrt.TaskContract{
+			ApprovalCeiling: "explicit_user",
+		},
+	}); err != nil {
+		t.Fatalf("UpsertTask review: %v", err)
+	}
+	for _, msg := range []taskrt.TaskMessage{
+		{
+			TaskID:       "task-findings",
+			SwarmRunID:   "swarm-1",
+			ThreadID:     "sess-inspect-worker",
+			FromThreadID: "sess-inspect",
+			ToThreadID:   "swarm-1-reviewer",
+			Kind:         string(kswarm.MessageStatus),
+			Subject:      "review",
+			Content:      "please review",
+			Metadata:     kswarm.GovernanceMetadata(kswarm.GovernanceReviewRequested, "quality gate", nil),
+			CreatedAt:    now.Add(2 * time.Millisecond),
+		},
+		{
+			TaskID:       "task-findings",
+			SwarmRunID:   "swarm-1",
+			ThreadID:     "sess-inspect-worker",
+			FromThreadID: "sess-inspect",
+			ToThreadID:   "sess-inspect-worker",
+			Kind:         string(kswarm.MessageHandoff),
+			Subject:      "redirect",
+			Content:      "expand search",
+			Metadata:     kswarm.GovernanceMetadata(kswarm.GovernanceRedirected, "need broader evidence", nil),
+			CreatedAt:    now.Add(3 * time.Millisecond),
+		},
+	} {
+		if _, err := taskRuntime.EnqueueTaskMessage(ctx, msg); err != nil {
+			t.Fatalf("EnqueueTaskMessage(%s): %v", msg.Subject, err)
+		}
+	}
+	artifactStore, err := artifact.NewFileStore(runtimeenv.ArtifactStoreDir())
+	if err != nil {
+		t.Fatalf("NewFileStore artifact: %v", err)
+	}
+	for _, item := range []kswarm.ArtifactRef{
+		{RunID: "swarm-1", ThreadID: "sess-inspect-worker", TaskID: "task-findings", Name: "sources", Kind: kswarm.ArtifactSourceSet, Summary: "source corpus"},
+		{RunID: "swarm-1", ThreadID: "sess-inspect-worker", TaskID: "task-findings", Name: "draft", Kind: kswarm.ArtifactSynthesisDraft, Summary: "draft answer"},
+	} {
+		payload := &artifact.Artifact{Name: item.Name, MIMEType: "text/plain", Data: []byte(item.Name)}
+		kswarm.StampArtifact(payload, item)
+		if err := artifactStore.Save(ctx, "sess-inspect-worker", payload); err != nil {
+			t.Fatalf("Save artifact %s: %v", item.Name, err)
+		}
 	}
 	catalog, err := rstate.NewStateCatalog(runtimeenv.StateStoreDir(), runtimeenv.StateEventDir(), true)
 	if err != nil {
@@ -209,11 +317,16 @@ func TestBuildInspectReportRunSummarizesPlanningAndFailover(t *testing.T) {
 	if report.Run.Audit == nil || report.Run.Audit.EventCount != 2 || report.Run.Audit.Context.Compactions != 1 || report.Run.Audit.Guardian.AutoApproved != 1 {
 		t.Fatalf("unexpected run audit summary: %+v", report.Run.Audit)
 	}
+	if report.Run.Swarm == nil || report.Run.Swarm.RunID != "swarm-1" || report.Run.Swarm.ArtifactCount != 2 || report.Run.Swarm.Redirects != 1 || report.Run.Swarm.ReviewRequests != 1 {
+		t.Fatalf("unexpected swarm summary: %+v", report.Run.Swarm)
+	}
 
 	rendered := RenderInspectReport(report)
 	for _, want := range []string{
 		"moss inspect (run)",
 		"Run session: sess-inspect",
+		"Swarm run:   swarm-1",
+		"Swarm gov:   review=1 redirect=1 takeover=0 approve=0 reject=0",
 		"Turn plan:   iteration=1 instruction_profile=planning lane=reasoning",
 		"Model route: configured=gpt-5 lane=reasoning",
 		"Tool decisions:",
@@ -238,6 +351,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 		t.Fatalf("NewFileStore: %v", err)
 	}
 	root := &session.Session{
+		ID:        "sess-root",
 		Status:    session.StatusPaused,
 		CreatedAt: time.Now().Add(-time.Hour),
 		Config: session.SessionConfig{
@@ -283,9 +397,16 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	session.SetThreadSource(child, "delegated")
 	session.SetThreadParent(child, "sess-root")
 	session.SetThreadTaskID(child, "task-1")
+	session.SetThreadSwarmRunID(child, "swarm-threads")
+	session.SetThreadRole(child, "worker")
 	session.RefreshThreadMetadata(child, time.Now(), "delegated")
 	if err := store.Save(ctx, child); err != nil {
 		t.Fatalf("save child: %v", err)
+	}
+	session.SetThreadSwarmRunID(root, "swarm-threads")
+	session.SetThreadRole(root, "supervisor")
+	if err := store.Save(ctx, root); err != nil {
+		t.Fatalf("resave root with swarm metadata: %v", err)
 	}
 	cpStore, err := checkpoint.NewFileCheckpointStore(runtimeenv.CheckpointStoreDir())
 	if err != nil {
@@ -343,6 +464,21 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 			t.Fatalf("Upsert(%s): %v", entry.Kind, err)
 		}
 	}
+	artifactStore, err := artifact.NewFileStore(runtimeenv.ArtifactStoreDir())
+	if err != nil {
+		t.Fatalf("artifact store: %v", err)
+	}
+	indexedArtifacts := rstate.WrapArtifactStore(artifactStore, catalog)
+	rootArtifact := &artifact.Artifact{Name: "root-summary", MIMEType: "text/plain", Data: []byte("summary")}
+	kswarm.StampArtifact(rootArtifact, kswarm.ArtifactRef{
+		RunID:   "swarm-threads",
+		Name:    "root-summary",
+		Kind:    kswarm.ArtifactSummary,
+		Summary: "thread summary",
+	})
+	if err := indexedArtifacts.Save(ctx, "sess-root", rootArtifact); err != nil {
+		t.Fatalf("save indexed artifact: %v", err)
+	}
 	capabilitySnapshot := extcapability.CapabilitySnapshot{
 		UpdatedAt: time.Now().UTC(),
 		Items: []extcapability.CapabilityStatus{
@@ -372,7 +508,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 		if item.ID == "sess-root" && item.ChangeCount == 1 {
 			foundRoot = true
 		}
-		if item.ID == "sess-child" && item.TaskCount == 1 {
+		if item.ID == "sess-child" && item.TaskCount == 1 && item.SwarmRunID == "swarm-threads" && item.ThreadRole == "worker" {
 			foundChild = true
 		}
 	}
@@ -385,6 +521,9 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	}
 	if threadReport.Thread == nil || len(threadReport.Thread.Children) != 1 || len(threadReport.Thread.Checkpoints) < 1 || threadReport.Thread.Summary.CheckpointCount < 1 {
 		t.Fatalf("unexpected thread detail: %+v", threadReport.Thread)
+	}
+	if threadReport.Thread.Summary.ArtifactCount != 1 || len(threadReport.Thread.Artifacts) != 1 {
+		t.Fatalf("unexpected thread artifact detail: %+v", threadReport.Thread)
 	}
 	if threadReport.Thread.Audit == nil || threadReport.Thread.Audit.Context.Normalizations != 1 || threadReport.Thread.Audit.Guardian.Errors != 1 {
 		t.Fatalf("unexpected thread audit summary: %+v", threadReport.Thread.Audit)
@@ -405,7 +544,7 @@ func TestBuildInspectReportThreadsPromptAndCapabilities(t *testing.T) {
 	}
 
 	rendered := RenderInspectReport(promptReport) + "\n" + RenderInspectReport(threadReport) + "\n" + RenderInspectReport(capReport)
-	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Audit: source=audit_log events=2", "Context audit: compactions=0 reclaimed=0 trim_retries=0 trimmed_messages=0 normalizations=1", "Capabilities:"} {
+	for _, want := range []string{"Prompt session: sess-root", "Thread:      sess-root", "Swarm:       run=swarm-threads role=supervisor", "Artifacts:", "Audit: source=audit_log events=2", "Context audit: compactions=0 reclaimed=0 trim_retries=0 trimmed_messages=0 normalizations=1", "Capabilities:"} {
 		if !strings.Contains(rendered, want) {
 			t.Fatalf("expected %q in rendered output:\n%s", want, rendered)
 		}

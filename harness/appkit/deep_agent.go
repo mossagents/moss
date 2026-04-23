@@ -4,8 +4,8 @@ import (
 	"context"
 	"sort"
 
-	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness"
+	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/retry"
@@ -21,6 +21,8 @@ type DeepAgentConfig struct {
 	CheckpointStoreDir            string
 	EnableTaskRuntime             *bool
 	TaskRuntimeDir                string
+	ArtifactStoreDir              string
+	EnableSwarm                   *bool
 	EnablePersistentMemories      *bool
 	MemoryDir                     string
 	EnableContextOffload          *bool
@@ -113,6 +115,22 @@ func WithDeepAgentTaskRuntimeDir(dir string) DeepAgentPresetOption {
 	}
 }
 
+// WithDeepAgentArtifactStoreDir overrides the preset-managed artifact store path.
+func WithDeepAgentArtifactStoreDir(dir string) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.ArtifactStoreDir = dir
+	}
+}
+
+// WithDeepAgentSwarm toggles the appkit-managed swarm preset. When enabled, the
+// preset wires an artifact store plus the harness swarm runtime and default
+// research orchestrator entrypoints.
+func WithDeepAgentSwarm(enabled bool) DeepAgentPresetOption {
+	return func(cfg *DeepAgentConfig) {
+		cfg.EnableSwarm = deepAgentBoolPtr(enabled)
+	}
+}
+
 // WithDeepAgentMemoryDir overrides the preset-managed memory path.
 func WithDeepAgentMemoryDir(dir string) DeepAgentPresetOption {
 	return func(cfg *DeepAgentConfig) {
@@ -168,6 +186,12 @@ func (c DeepAgentConfig) ApplyOver(base DeepAgentConfig) DeepAgentConfig {
 	}
 	if c.TaskRuntimeDir != "" {
 		base.TaskRuntimeDir = c.TaskRuntimeDir
+	}
+	if c.ArtifactStoreDir != "" {
+		base.ArtifactStoreDir = c.ArtifactStoreDir
+	}
+	if c.EnableSwarm != nil {
+		base.EnableSwarm = c.EnableSwarm
 	}
 	if c.EnablePersistentMemories != nil {
 		base.EnablePersistentMemories = c.EnablePersistentMemories
@@ -230,6 +254,7 @@ func DeepAgentDefaults() DeepAgentConfig {
 		EnableSessionStore:            deepAgentBoolPtr(true),
 		EnableCheckpointStore:         deepAgentBoolPtr(true),
 		EnableTaskRuntime:             deepAgentBoolPtr(true),
+		EnableSwarm:                   deepAgentBoolPtr(false),
 		EnablePersistentMemories:      deepAgentBoolPtr(true),
 		EnableContextOffload:          deepAgentBoolPtr(true),
 		EnableBootstrapContext:        deepAgentBoolPtr(true),

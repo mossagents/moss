@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mossagents/moss/harness/agent"
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
-	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/agent"
 	extcapability "github.com/mossagents/moss/harness/capability"
-	"github.com/mossagents/moss/harness/skill"
+	appconfig "github.com/mossagents/moss/harness/config"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
 	rstate "github.com/mossagents/moss/harness/runtime/state"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/x/stringutil"
@@ -36,6 +36,8 @@ type InspectThreadSummary struct {
 	Source            string `json:"source,omitempty"`
 	ParentID          string `json:"parent_id,omitempty"`
 	TaskID            string `json:"task_id,omitempty"`
+	SwarmRunID        string `json:"swarm_run_id,omitempty"`
+	ThreadRole        string `json:"thread_role,omitempty"`
 	Preview           string `json:"preview,omitempty"`
 	ActivityKind      string `json:"activity_kind,omitempty"`
 	Recoverable       bool   `json:"recoverable"`
@@ -46,6 +48,7 @@ type InspectThreadSummary struct {
 	CheckpointCount   int    `json:"checkpoint_count,omitempty"`
 	ChangeCount       int    `json:"change_count,omitempty"`
 	TaskCount         int    `json:"task_count,omitempty"`
+	ArtifactCount     int    `json:"artifact_count,omitempty"`
 }
 
 type InspectThreadReport struct {
@@ -55,6 +58,7 @@ type InspectThreadReport struct {
 	Checkpoints []runtimeenv.CheckpointSummary `json:"checkpoints,omitempty"`
 	Changes     []InspectStateItem             `json:"changes,omitempty"`
 	Tasks       []InspectStateItem             `json:"tasks,omitempty"`
+	Artifacts   []InspectStateItem             `json:"artifacts,omitempty"`
 }
 
 type InspectPromptReport struct {
@@ -112,6 +116,7 @@ func buildInspectThreads(ctx context.Context, workspace string, catalog *rstate.
 		item.CheckpointCount = checkpointCounts[summary.ID]
 		item.ChangeCount = changeCounts[summary.ID]
 		item.TaskCount = countStateEntries(catalog, rstate.StateKindTask, summary.ID)
+		item.ArtifactCount = countStateEntries(catalog, rstate.StateKindArtifact, summary.ID)
 		out = append(out, item)
 	}
 	if limit > 0 && len(out) > limit {
@@ -140,6 +145,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 	report.Summary.CheckpointCount = checkpointCounts[selected.ID]
 	report.Summary.ChangeCount = changeCounts[selected.ID]
 	report.Summary.TaskCount = countStateEntries(catalog, rstate.StateKindTask, selected.ID)
+	report.Summary.ArtifactCount = countStateEntries(catalog, rstate.StateKindArtifact, selected.ID)
 	for _, summary := range summaries {
 		if summary.ParentID != selected.ID {
 			continue
@@ -148,6 +154,7 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 		child.CheckpointCount = checkpointCounts[summary.ID]
 		child.ChangeCount = changeCounts[summary.ID]
 		child.TaskCount = countStateEntries(catalog, rstate.StateKindTask, summary.ID)
+		child.ArtifactCount = countStateEntries(catalog, rstate.StateKindArtifact, summary.ID)
 		report.Children = append(report.Children, child)
 	}
 	sort.Slice(report.Children, func(i, j int) bool { return report.Children[i].UpdatedAt > report.Children[j].UpdatedAt })
@@ -166,6 +173,9 @@ func buildInspectThread(ctx context.Context, workspace string, catalog *rstate.S
 	if catalog != nil {
 		if page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindTask}, SessionID: selected.ID, Limit: 10}); err == nil {
 			report.Tasks = inspectStateItems(page.Items)
+		}
+		if page, err := catalog.Query(rstate.StateQuery{Kinds: []rstate.StateKind{rstate.StateKindArtifact}, SessionID: selected.ID, Limit: 10}); err == nil {
+			report.Artifacts = inspectStateItems(page.Items)
 		}
 	}
 	return report, nil
@@ -375,7 +385,11 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 		stringutil.FirstNonEmpty(report.Summary.PromptPack, "(none)"),
 		stringutil.FirstNonEmpty(report.Summary.WorkspaceTrust, "(none)"),
 	)
-	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount)
+	fmt.Fprintf(b, "Swarm:       run=%s role=%s\n",
+		stringutil.FirstNonEmpty(report.Summary.SwarmRunID, "(none)"),
+		stringutil.FirstNonEmpty(report.Summary.ThreadRole, "(none)"),
+	)
+	fmt.Fprintf(b, "Checkpoints: %d | Changes: %d | Tasks: %d | Artifacts: %d\n", report.Summary.CheckpointCount, report.Summary.ChangeCount, report.Summary.TaskCount, report.Summary.ArtifactCount)
 	renderInspectAuditSummary(b, "Audit", report.Audit)
 	fmt.Fprintf(b, "Preview:     %s\n", stringutil.FirstNonEmpty(report.Summary.Preview, "(none)"))
 	if len(report.Children) > 0 {
@@ -401,6 +415,17 @@ func renderInspectThreadReport(b *strings.Builder, report InspectThreadReport) {
 		b.WriteString("Related tasks:\n")
 		for _, item := range report.Tasks {
 			fmt.Fprintf(b, "- %s | status=%s | title=%s\n", item.RecordID, stringutil.FirstNonEmpty(item.Status, "(none)"), stringutil.FirstNonEmpty(item.Title, "(none)"))
+		}
+	}
+	if len(report.Artifacts) > 0 {
+		b.WriteString("Artifacts:\n")
+		for _, item := range report.Artifacts {
+			fmt.Fprintf(b, "- %s | version=%s | title=%s | summary=%s\n",
+				item.RecordID,
+				stringutil.FirstNonEmpty(item.Status, "(none)"),
+				stringutil.FirstNonEmpty(item.Title, "(none)"),
+				stringutil.FirstNonEmpty(item.Summary, "(none)"),
+			)
 		}
 	}
 }
@@ -495,6 +520,8 @@ func inspectThreadSummaryFromSession(summary session.SessionSummary) InspectThre
 		Source:            summary.Source,
 		ParentID:          summary.ParentID,
 		TaskID:            summary.TaskID,
+		SwarmRunID:        summary.SwarmRunID,
+		ThreadRole:        summary.ThreadRole,
 		Preview:           summary.Preview,
 		ActivityKind:      summary.ActivityKind,
 		Recoverable:       summary.Recoverable,

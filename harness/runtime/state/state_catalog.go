@@ -25,6 +25,7 @@ const (
 	StateKindSession        StateKind = "session"
 	StateKindCheckpoint     StateKind = "checkpoint"
 	StateKindTask           StateKind = "task"
+	StateKindArtifact       StateKind = "artifact"
 	StateKindJob            StateKind = "job"
 	StateKindJobItem        StateKind = "job_item"
 	StateKindMemory         StateKind = "memory"

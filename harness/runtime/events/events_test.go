@@ -76,6 +76,8 @@ func TestFromExecutionEvent_AllTypes(t *testing.T) {
 		{observe.ExecutionHostedToolCompleted, EventHostedToolCompleted},
 		{observe.ExecutionHostedToolFailed, EventHostedToolFailed},
 		{observe.ExecutionIterationProgress, EventProgress},
+		{observe.ExecutionSwarmMessageSent, EventProgress},
+		{observe.ExecutionSwarmCompleted, EventProgress},
 		{observe.ExecutionEventType("other"), EventUnknown},
 	}
 	for _, tc := range cases {

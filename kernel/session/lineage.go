@@ -17,6 +17,7 @@ const (
 	LineageKindCheckpoint LineageKind = "checkpoint"
 	LineageKindReplay     LineageKind = "replay"
 	LineageKindTask       LineageKind = "task"
+	LineageKindSwarmRun   LineageKind = "swarm_run"
 )
 
 // LineageRef 描述一个可导航的谱系节点。
@@ -32,6 +33,8 @@ type ThreadRef struct {
 	SessionID         string        `json:"session_id"`
 	ParentSessionID   string        `json:"parent_session_id,omitempty"`
 	TaskID            string        `json:"task_id,omitempty"`
+	SwarmRunID        string        `json:"swarm_run_id,omitempty"`
+	ThreadRole        string        `json:"thread_role,omitempty"`
 	Goal              string        `json:"goal,omitempty"`
 	Mode              string        `json:"mode,omitempty"`
 	Preset            string        `json:"preset,omitempty"`
@@ -81,6 +84,8 @@ type ThreadQuery struct {
 	SessionID       string `json:"session_id,omitempty"`
 	ParentSessionID string `json:"parent_session_id,omitempty"`
 	TaskID          string `json:"task_id,omitempty"`
+	SwarmRunID      string `json:"swarm_run_id,omitempty"`
+	ThreadRole      string `json:"thread_role,omitempty"`
 	RecoverableOnly bool   `json:"recoverable_only,omitempty"`
 	IncludeArchived bool   `json:"include_archived,omitempty"`
 	Limit           int    `json:"limit,omitempty"`
@@ -123,6 +128,12 @@ func (c Catalog) ListThreads(ctx context.Context, query ThreadQuery) ([]ThreadRe
 			continue
 		}
 		if query.TaskID != "" && summary.TaskID != query.TaskID {
+			continue
+		}
+		if query.SwarmRunID != "" && summary.SwarmRunID != query.SwarmRunID {
+			continue
+		}
+		if query.ThreadRole != "" && summary.ThreadRole != query.ThreadRole {
 			continue
 		}
 		if query.RecoverableOnly && !summary.Recoverable {
@@ -245,10 +256,20 @@ func ThreadRefFromSummary(summary SessionSummary) ThreadRef {
 			Label:     summary.TaskID,
 		})
 	}
+	if summary.SwarmRunID != "" {
+		lineage = append(lineage, LineageRef{
+			Kind:      LineageKindSwarmRun,
+			ID:        summary.SwarmRunID,
+			SessionID: summary.ID,
+			Label:     summary.SwarmRunID,
+		})
+	}
 	return ThreadRef{
 		SessionID:         summary.ID,
 		ParentSessionID:   summary.ParentID,
 		TaskID:            summary.TaskID,
+		SwarmRunID:        summary.SwarmRunID,
+		ThreadRole:        summary.ThreadRole,
 		Goal:              summary.Goal,
 		Mode:              summary.Mode,
 		Preset:            summary.Preset,

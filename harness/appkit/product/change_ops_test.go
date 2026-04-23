@@ -5,8 +5,8 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/kernel/session"
 	"github.com/mossagents/moss/harness/sandbox"
+	"github.com/mossagents/moss/kernel/session"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -264,6 +264,7 @@ func configureProductTestApp(t *testing.T) {
 	appconfig.SetAppName("moss-product-test-" + replacer.Replace(strings.ToLower(t.Name())))
 	t.Setenv("APPDATA", t.TempDir())
 	t.Setenv("LOCALAPPDATA", t.TempDir())
+	_ = os.RemoveAll(appconfig.AppDir())
 }
 
 func initTestRepo(t *testing.T) string {

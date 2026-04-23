@@ -35,6 +35,15 @@ const (
 	ExecutionCheckpointCreated   ExecutionEventType = "checkpoint.created"
 	ExecutionSessionForked       ExecutionEventType = "session.forked"
 	ExecutionReplayPrepared      ExecutionEventType = "replay.prepared"
+	ExecutionSwarmStarted        ExecutionEventType = "swarm.started"
+	ExecutionSwarmThreadSpawned  ExecutionEventType = "swarm.thread_spawned"
+	ExecutionSwarmTaskCreated    ExecutionEventType = "swarm.task_created"
+	ExecutionSwarmTaskClaimed    ExecutionEventType = "swarm.task_claimed"
+	ExecutionSwarmMessageSent    ExecutionEventType = "swarm.message_sent"
+	ExecutionSwarmArtifactPub    ExecutionEventType = "swarm.artifact_published"
+	ExecutionSwarmThreadDone     ExecutionEventType = "swarm.thread_completed"
+	ExecutionSwarmCompleted      ExecutionEventType = "swarm.completed"
+	ExecutionSwarmFailed         ExecutionEventType = "swarm.failed"
 )
 
 // ExecutionEvent 是运行时统一结构化事件。

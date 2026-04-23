@@ -12,8 +12,10 @@ import (
 	"github.com/mossagents/moss/harness"
 	"github.com/mossagents/moss/harness/capability"
 	rprobe "github.com/mossagents/moss/harness/runtime/probe"
+	hswarm "github.com/mossagents/moss/harness/swarm"
 	kt "github.com/mossagents/moss/harness/testing"
 	"github.com/mossagents/moss/kernel"
+	"github.com/mossagents/moss/kernel/artifact"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/retry"
@@ -85,6 +87,9 @@ func TestBuildDeepAgent_DefaultPreset(t *testing.T) {
 	}
 	if len(gp.Tools) == 0 {
 		t.Fatal("expected general-purpose tools to be populated")
+	}
+	if hswarm.RuntimeOf(k) != nil {
+		t.Fatal("swarm runtime should be opt-in")
 	}
 }
 
@@ -375,6 +380,54 @@ func TestBuildDeepAgentFeatures_DefaultPackSequence(t *testing.T) {
 	}
 }
 
+func TestBuildDeepAgent_EnableSwarmPreset(t *testing.T) {
+	artifactDir := t.TempDir()
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "restricted",
+	}
+
+	enable := true
+	k, err := BuildDeepAgent(context.Background(), flags, &io.NoOpIO{}, &DeepAgentConfig{
+		EnableSwarm:      &enable,
+		ArtifactStoreDir: artifactDir,
+	})
+	if err != nil {
+		t.Fatalf("BuildDeepAgent: %v", err)
+	}
+
+	rt := hswarm.RuntimeOf(k)
+	if rt == nil {
+		t.Fatal("expected swarm runtime to be attached")
+	}
+	item := &artifact.Artifact{Name: "smoke", MIMEType: "text/plain", Data: []byte("ok")}
+	if err := rt.Artifacts.Save(context.Background(), "sess-smoke", item); err != nil {
+		t.Fatalf("artifact save via swarm runtime: %v", err)
+	}
+	rawStore, err := artifact.NewFileStore(artifactDir)
+	if err != nil {
+		t.Fatalf("NewFileStore: %v", err)
+	}
+	saved, err := rawStore.Load(context.Background(), "sess-smoke", "smoke", item.Version)
+	if err != nil {
+		t.Fatalf("artifact load from file store: %v", err)
+	}
+	if saved == nil || string(saved.Data) != "ok" {
+		t.Fatalf("expected persisted artifact payload, got %+v", saved)
+	}
+	if _, ok := harness.SubagentCatalogOf(k).Get("swarm-supervisor"); !ok {
+		t.Fatal("expected swarm-supervisor role in appkit preset")
+	}
+	orchestrator, err := rt.ResearchOrchestrator()
+	if err != nil {
+		t.Fatalf("ResearchOrchestrator: %v", err)
+	}
+	if orchestrator == nil {
+		t.Fatal("expected research orchestrator")
+	}
+}
+
 func TestBuildDeepAgentFeatures_DisableOptionalPacks(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -412,6 +465,85 @@ func TestBuildDeepAgentFeatures_DisableOptionalPacks(t *testing.T) {
 	}
 	if got := deepAgentFeatureNames(features); !reflect.DeepEqual(got, want) {
 		t.Fatalf("feature sequence mismatch:\n got=%v\nwant=%v", got, want)
+	}
+}
+
+func TestBuildDeepAgentFeatures_EnableSwarmAddsPresetPacks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	enable := true
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "trusted",
+	}
+	features, err := buildDeepAgentFeatures(flags, DeepAgentConfig{
+		AppName:                  "moss",
+		EnableSessionStore:       deepAgentBoolPtr(true),
+		EnableCheckpointStore:    deepAgentBoolPtr(true),
+		EnableTaskRuntime:        deepAgentBoolPtr(true),
+		EnableSwarm:              &enable,
+		EnablePersistentMemories: deepAgentBoolPtr(true),
+		EnableContextOffload:     deepAgentBoolPtr(true),
+		EnableBootstrapContext:   deepAgentBoolPtr(true),
+		EnsureGeneralPurpose:     deepAgentBoolPtr(true),
+	})
+	if err != nil {
+		t.Fatalf("buildDeepAgentFeatures: %v", err)
+	}
+
+	want := []string{
+		"state-catalog",
+		"session-store",
+		"context-offload",
+		"context-management",
+		"checkpointing",
+		"task-delegation",
+		"artifact-store",
+		"persistent-memories",
+		"execution-services",
+		"planning",
+		"bootstrap-context",
+		"llm-resilience",
+		"runtime-setup",
+		"swarm-runtime",
+		"patch-tool-calls",
+		"execution-capability-report",
+		"general-purpose-agent",
+	}
+	got := deepAgentFeatureNames(features)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("feature sequence mismatch:\n got=%v\nwant=%v", got, want)
+	}
+}
+
+func TestBuildDeepAgentFeatures_EnableSwarmRequiresSessionAndTaskRuntime(t *testing.T) {
+	flags := &AppFlags{
+		Provider:  "openai",
+		Workspace: t.TempDir(),
+		Trust:     "trusted",
+	}
+	enable := true
+	disable := false
+
+	if _, err := buildDeepAgentFeatures(flags, DeepAgentConfig{
+		AppName:            "moss",
+		EnableSwarm:        &enable,
+		EnableSessionStore: &disable,
+		EnableTaskRuntime:  deepAgentBoolPtr(true),
+	}); err == nil || !strings.Contains(err.Error(), "session store") {
+		t.Fatalf("expected session store error, got %v", err)
+	}
+
+	if _, err := buildDeepAgentFeatures(flags, DeepAgentConfig{
+		AppName:            "moss",
+		EnableSwarm:        &enable,
+		EnableSessionStore: deepAgentBoolPtr(true),
+		EnableTaskRuntime:  &disable,
+	}); err == nil || !strings.Contains(err.Error(), "task runtime") {
+		t.Fatalf("expected task runtime error, got %v", err)
 	}
 }
 
@@ -499,6 +631,8 @@ func TestNewDeepAgentConfig_OptionsComposePresetContract(t *testing.T) {
 	cfg := NewDeepAgentConfig(
 		WithDeepAgentAppName("mossresearch"),
 		WithDeepAgentGeneralPurposeAgent("research-generalist", "delegate carefully", "Research helper", 120),
+		WithDeepAgentArtifactStoreDir("tmp-artifacts"),
+		WithDeepAgentSwarm(true),
 		WithDeepAgentDefaultRestrictedPolicy(false),
 		WithDeepAgentLLMGovernance(&retryEnabled, &retry.Config{MaxRetries: 4}, &retry.BreakerConfig{MaxFailures: 2}),
 		WithDeepAgentRuntimeSetupOptions(
@@ -527,6 +661,12 @@ func TestNewDeepAgentConfig_OptionsComposePresetContract(t *testing.T) {
 	}
 	if cfg.GeneralPurposeMaxSteps != 120 {
 		t.Fatalf("GeneralPurposeMaxSteps = %d, want 120", cfg.GeneralPurposeMaxSteps)
+	}
+	if cfg.ArtifactStoreDir != "tmp-artifacts" {
+		t.Fatalf("ArtifactStoreDir = %q, want tmp-artifacts", cfg.ArtifactStoreDir)
+	}
+	if cfg.EnableSwarm == nil || !*cfg.EnableSwarm {
+		t.Fatalf("EnableSwarm = %v, want true", cfg.EnableSwarm)
 	}
 	if cfg.EnableDefaultRestrictedPolicy == nil || *cfg.EnableDefaultRestrictedPolicy {
 		t.Fatalf("EnableDefaultRestrictedPolicy = %v, want false", cfg.EnableDefaultRestrictedPolicy)

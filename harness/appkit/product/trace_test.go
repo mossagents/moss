@@ -111,6 +111,35 @@ func TestSelectKeyTraceEventsIncludesHostedToolLifecycle(t *testing.T) {
 	}
 }
 
+func TestSelectKeyTraceEventsIncludesSwarmGovernanceAndArtifacts(t *testing.T) {
+	events := SelectKeyTraceEvents(RunTrace{Timeline: []TraceEvent{
+		{
+			Kind: "execution_event",
+			Type: "swarm.message_sent",
+			Metadata: map[string]any{
+				"governance_action": "redirected",
+			},
+		},
+		{
+			Kind: "execution_event",
+			Type: "swarm.artifact_published",
+			Metadata: map[string]any{
+				"artifact_name": "draft-1",
+				"artifact_kind": "synthesis_draft",
+			},
+		},
+	}}, 3)
+	joined := strings.Join(events, "\n")
+	for _, want := range []string{
+		"Swarm governance message: redirected",
+		"Swarm artifact published: draft-1 (synthesis_draft)",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("expected %q in %v", want, events)
+		}
+	}
+}
+
 func TestRenderRunTraceDetailIncludesTimelineAndLimit(t *testing.T) {
 	detail := RenderRunTraceDetail(RunTraceSummary{
 		Status: "completed",

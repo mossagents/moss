@@ -66,6 +66,8 @@ type SessionSummary struct {
 	Source            string        `json:"source,omitempty"`
 	ParentID          string        `json:"parent_id,omitempty"`
 	TaskID            string        `json:"task_id,omitempty"`
+	SwarmRunID        string        `json:"swarm_run_id,omitempty"`
+	ThreadRole        string        `json:"thread_role,omitempty"`
 	Preview           string        `json:"preview,omitempty"`
 	ActivityKind      string        `json:"activity_kind,omitempty"`
 	Status            SessionStatus `json:"status"`

@@ -23,6 +23,7 @@ func TestJSONLStore_AppendAndLoad(t *testing.T) {
 	evs := []RuntimeEvent{
 		{Type: EventTypeSessionCreated, Timestamp: time.Now(), Payload: &SessionCreatedPayload{}},
 		{Type: EventTypeTurnStarted, Timestamp: time.Now(), Payload: &TurnStartedPayload{TurnID: "t1"}},
+		{Type: EventTypeSwarmStarted, Timestamp: time.Now(), Payload: &SwarmStartedPayload{SwarmRunID: "swarm-1", Goal: "research"}},
 	}
 	if err := store.AppendEvents(ctx, "sess1", 0, "req-1", evs); err != nil {
 		t.Fatalf("AppendEvents: %v", err)
@@ -32,11 +33,14 @@ func TestJSONLStore_AppendAndLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadEvents: %v", err)
 	}
-	if len(loaded) != 2 {
-		t.Errorf("loaded %d events, want 2", len(loaded))
+	if len(loaded) != 3 {
+		t.Errorf("loaded %d events, want 3", len(loaded))
 	}
 	if loaded[0].Seq != 1 {
 		t.Errorf("seq[0] = %d, want 1", loaded[0].Seq)
+	}
+	if loaded[2].Type != EventTypeSwarmStarted {
+		t.Errorf("type[2] = %s, want %s", loaded[2].Type, EventTypeSwarmStarted)
 	}
 }
 
