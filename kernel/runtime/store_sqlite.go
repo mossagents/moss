@@ -61,6 +61,7 @@ func (s *SQLiteEventStore) Close() error {
 func (s *SQLiteEventStore) migrate(ctx context.Context) error {
 	stmts := []string{
 		`PRAGMA journal_mode=WAL`,
+		`PRAGMA busy_timeout=5000`,
 		`PRAGMA foreign_keys=ON`,
 		// sessions 表：记录每个 session 的最新 seq 和状态
 		`CREATE TABLE IF NOT EXISTS sessions (

@@ -37,6 +37,7 @@ func NewSQLiteMemoryStore(dbPath string) (ExtendedMemoryStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite memory store: %w", err)
 	}
+	db.SetMaxOpenConns(1)
 	if err := initSQLiteMemorySchema(db); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -45,6 +46,14 @@ func NewSQLiteMemoryStore(dbPath string) (ExtendedMemoryStore, error) {
 }
 
 func initSQLiteMemorySchema(db *sql.DB) error {
+	for _, pragma := range []string{
+		`PRAGMA journal_mode=WAL`,
+		`PRAGMA busy_timeout=5000`,
+	} {
+		if _, err := db.Exec(pragma); err != nil {
+			return fmt.Errorf("sqlite pragma (%s): %w", pragma, err)
+		}
+	}
 	const createTableDDL = `
 CREATE TABLE IF NOT EXISTS memory_records (
   path TEXT PRIMARY KEY,
