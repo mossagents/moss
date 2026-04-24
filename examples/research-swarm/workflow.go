@@ -34,6 +34,11 @@ type roleRunResult struct {
 	ToolResults int
 }
 
+type plannedQuestion struct {
+	Slug     string `json:"slug"`
+	Question string `json:"question"`
+}
+
 func startRunWorkflow(ctx context.Context, env *runtimeEnv, cfg *runCommandConfig) (*runResult, error) {
 	if env == nil || env.Kernel == nil || env.Orchestrator == nil {
 		return nil, fmt.Errorf("execution runtime is not initialized")
@@ -62,12 +67,13 @@ func startRunWorkflow(ctx context.Context, env *runtimeEnv, cfg *runCommandConfi
 	session.SetThreadRole(root, string(kswarm.RoleSupervisor))
 	session.SetThreadPreview(root, strings.TrimSpace(cfg.Topic))
 	root.SetMetadataBatch(map[string]any{
-		metaExecutionMode: modeString(cfg.Demo),
 		metaRunStatus:     string(kswarm.RunRunning),
 		metaEventsPartial: false,
 		metaDegraded:      false,
 		metaReportDetail:  string(cfg.Detail),
 		metaReportAsOf:    cfg.AsOf.UTC().Format(time.RFC3339),
+		metaWorkerCount:   cfg.Workers,
+		metaLang:          cfg.Lang,
 	})
 	if err := env.SessionStore.Save(ctx, root); err != nil {
 		return nil, err
@@ -101,7 +107,7 @@ func startRunWorkflow(ctx context.Context, env *runtimeEnv, cfg *runCommandConfi
 	if err != nil {
 		return nil, err
 	}
-	return continueRunWorkflow(ctx, env, snapshot, strings.TrimSpace(cfg.Topic), cfg.Demo, false)
+	return continueRunWorkflow(ctx, env, snapshot, strings.TrimSpace(cfg.Topic), false)
 }
 
 func resumeRunWorkflow(ctx context.Context, env *runtimeEnv, target resolvedTarget, snapshot *RecoveredRunSnapshot, cfg *resumeCommandConfig) (*runResult, error) {
@@ -114,17 +120,10 @@ func resumeRunWorkflow(ctx context.Context, env *runtimeEnv, target resolvedTarg
 	if snapshot.Degraded && !cfg.ForceDegradedResume {
 		return nil, fmt.Errorf("swarm run %q is degraded; rerun with --force-degraded-resume to continue", snapshot.RunID)
 	}
-	expectedMode := snapshot.ExecutionMode
-	if cfg.Demo && expectedMode != "demo" {
-		return nil, fmt.Errorf("swarm run %q was created in %s mode; --demo only applies to demo runs", snapshot.RunID, expectedMode)
-	}
-	if !cfg.Demo && expectedMode == "" {
-		expectedMode = "real"
-	}
-	return continueRunWorkflow(ctx, env, snapshot, loadRunTopic(ctx, env, snapshot.RootSessionID), expectedMode == "demo", true)
+	return continueRunWorkflow(ctx, env, snapshot, loadRunTopic(ctx, env, snapshot.RootSessionID), true)
 }
 
-func continueRunWorkflow(ctx context.Context, env *runtimeEnv, snapshot *RecoveredRunSnapshot, topic string, demo bool, resumed bool) (*runResult, error) {
+func continueRunWorkflow(ctx context.Context, env *runtimeEnv, snapshot *RecoveredRunSnapshot, topic string, resumed bool) (*runResult, error) {
 	root, err := loadWritableSession(ctx, env, snapshot.RootSessionID)
 	if err != nil {
 		return nil, err
@@ -139,6 +138,8 @@ func continueRunWorkflow(ctx context.Context, env *runtimeEnv, snapshot *Recover
 	}
 	detail := reportDetailFromSession(root)
 	asOf := reportAsOfFromSession(root)
+	workers := workerCountFromSession(root)
+	lang := langFromSession(root)
 	for {
 		next, err := nextReadyTask(ctx, env, snapshot.RunID)
 		if err != nil {
@@ -152,7 +153,7 @@ func continueRunWorkflow(ctx context.Context, env *runtimeEnv, snapshot *Recover
 		if err := env.TaskWriter.UpsertTask(ctx, *next); err != nil {
 			return nil, err
 		}
-		if err := executeTask(ctx, env, root, next, topic, demo, detail, asOf); err != nil {
+		if err := executeTask(ctx, env, root, next, topic, detail, asOf, workers, lang); err != nil {
 			next.Status = taskrt.TaskFailed
 			next.Error = err.Error()
 			_ = env.TaskWriter.UpsertTask(ctx, *next)
@@ -191,19 +192,19 @@ func continueRunWorkflow(ctx context.Context, env *runtimeEnv, snapshot *Recover
 	}, nil
 }
 
-func executeTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, demo bool, detail reportDetail, asOf time.Time) error {
+func executeTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, detail reportDetail, asOf time.Time, workers int, lang string) error {
 	role := roleForTask(env, task.AgentName)
 	switch role {
 	case kswarm.RolePlanner:
-		return executePlannerTask(ctx, env, root, task, topic, demo, detail, asOf)
+		return executePlannerTask(ctx, env, root, task, topic, detail, asOf, workers, lang)
 	case kswarm.RoleSupervisor:
 		return executeSupervisorTask(ctx, env, task, topic, asOf)
 	case kswarm.RoleWorker:
-		return executeWorkerTask(ctx, env, root, task, topic, demo, detail, asOf)
+		return executeWorkerTask(ctx, env, root, task, topic, detail, asOf, lang)
 	case kswarm.RoleSynthesizer:
-		return executeSynthTask(ctx, env, root, task, topic, demo, detail, asOf)
+		return executeSynthTask(ctx, env, root, task, topic, detail, asOf, lang)
 	case kswarm.RoleReviewer:
-		return executeReviewTask(ctx, env, root, task, topic, demo, detail, asOf)
+		return executeReviewTask(ctx, env, root, task, topic, detail, asOf, lang)
 	default:
 		task.Status = taskrt.TaskCompleted
 		task.Result = "noop"
@@ -211,7 +212,7 @@ func executeTask(ctx context.Context, env *runtimeEnv, root *session.Session, ta
 	}
 }
 
-func executePlannerTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, demo bool, detail reportDetail, asOf time.Time) error {
+func executePlannerTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, detail reportDetail, asOf time.Time, workers int, lang string) error {
 	thread, err := loadWritableSession(ctx, env, task.ThreadID)
 	if err != nil {
 		return err
@@ -219,19 +220,15 @@ func executePlannerTask(ctx context.Context, env *runtimeEnv, root *session.Sess
 	if thread == nil {
 		return fmt.Errorf("planner session %q not found", task.ThreadID)
 	}
-	questions, err := planQuestions(ctx, env, topic, detail, asOf, demo)
+	questions, err := planQuestions(ctx, env, topic, detail, asOf, workers, lang)
 	if err != nil {
 		return err
 	}
-	planText := demoPlanFragment(topic, questions)
-	if !demo {
-		if llmText, llmErr := completeText(ctx, env.Kernel.LLM(),
-			"You are the swarm planner. Return a compact JSON object with topic and questions.",
-			fmt.Sprintf("Topic: %s\nQuestions JSON:\n%s", topic, planText),
-		); llmErr == nil && strings.TrimSpace(llmText) != "" {
-			planText = llmText
-		}
+	planJSON, err := json.MarshalIndent(map[string]any{"topic": topic, "questions": questions}, "", "  ")
+	if err != nil {
+		return err
 	}
+	planText := string(planJSON)
 	if _, err := publishArtifact(ctx, env, task.SwarmRunID, thread.ID, kswarm.ArtifactPlanFragment, task.ID, "plan-fragment.json", "application/json", []byte(planText), "Planner output"); err != nil {
 		return err
 	}
@@ -312,7 +309,7 @@ func executeSupervisorTask(ctx context.Context, env *runtimeEnv, task *taskrt.Ta
 	return env.TaskWriter.UpsertTask(ctx, *task)
 }
 
-func executeWorkerTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, demo bool, detail reportDetail, asOf time.Time) error {
+func executeWorkerTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, detail reportDetail, asOf time.Time, lang string) error {
 	thread, err := loadWritableSession(ctx, env, task.ThreadID)
 	if err != nil {
 		return err
@@ -321,7 +318,7 @@ func executeWorkerTask(ctx context.Context, env *runtimeEnv, root *session.Sessi
 		return fmt.Errorf("worker session %q not found", task.ThreadID)
 	}
 	question := task.Goal
-	finding, sourceSet, confidence, err := buildWorkerOutput(ctx, env, thread, topic, question, detail, asOf, demo)
+	finding, sourceSet, confidence, err := buildWorkerOutput(ctx, env, thread, topic, question, detail, asOf, lang)
 	if err != nil {
 		return err
 	}
@@ -358,7 +355,7 @@ func executeWorkerTask(ctx context.Context, env *runtimeEnv, root *session.Sessi
 	return env.TaskWriter.UpsertTask(ctx, *task)
 }
 
-func executeSynthTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, demo bool, detail reportDetail, asOf time.Time) error {
+func executeSynthTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, detail reportDetail, asOf time.Time, lang string) error {
 	thread, err := loadWritableSession(ctx, env, task.ThreadID)
 	if err != nil {
 		return err
@@ -376,7 +373,7 @@ func executeSynthTask(ctx context.Context, env *runtimeEnv, root *session.Sessio
 	}
 	findings := collectArtifactTexts(ctx, env, snapshot.Snapshot, kswarm.ArtifactFinding)
 	sourceSets := collectArtifactTexts(ctx, env, snapshot.Snapshot, kswarm.ArtifactSourceSet)
-	report, err := buildFinalReport(ctx, env, thread, topic, findings, sourceSets, detail, asOf, demo)
+	report, err := buildFinalReport(ctx, env, thread, topic, findings, sourceSets, detail, asOf, lang)
 	if err != nil {
 		return err
 	}
@@ -407,7 +404,7 @@ func executeSynthTask(ctx context.Context, env *runtimeEnv, root *session.Sessio
 	return env.TaskWriter.UpsertTask(ctx, *task)
 }
 
-func executeReviewTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, demo bool, detail reportDetail, asOf time.Time) error {
+func executeReviewTask(ctx context.Context, env *runtimeEnv, root *session.Session, task *taskrt.TaskRecord, topic string, detail reportDetail, asOf time.Time, lang string) error {
 	thread, err := loadWritableSession(ctx, env, task.ThreadID)
 	if err != nil {
 		return err
@@ -427,7 +424,7 @@ func executeReviewTask(ctx context.Context, env *runtimeEnv, root *session.Sessi
 	if item == nil {
 		return fmt.Errorf("final report artifact %q not found", reportName)
 	}
-	reviewText, err := buildReview(ctx, env, thread, topic, string(item.Data), detail, asOf, demo)
+	reviewText, err := buildReview(ctx, env, thread, topic, string(item.Data), detail, asOf, lang)
 	if err != nil {
 		return err
 	}
@@ -568,39 +565,35 @@ func nextReadyTask(ctx context.Context, env *runtimeEnv, runID string) (*taskrt.
 	return nil, nil
 }
 
-func planQuestions(ctx context.Context, env *runtimeEnv, topic string, detail reportDetail, asOf time.Time, demo bool) ([]plannedQuestion, error) {
-	if demo {
-		return demoQuestions(topic), nil
-	}
-	prompt := fmt.Sprintf(`Return a JSON array with exactly 3 objects. Each object must contain "slug" and "question".
+func planQuestions(ctx context.Context, env *runtimeEnv, topic string, detail reportDetail, asOf time.Time, workers int, lang string) ([]plannedQuestion, error) {
+	prompt := fmt.Sprintf(`Return a JSON array with exactly %d objects. Each object must contain "slug" and "question".
 
 Topic: %s
 Report detail: %s
 As of: %s
 
 Requirements:
-- Cover market drivers, opposing risks, and a practical decision path.
+- Cover distinct research angles: market drivers, opposing risks, practical execution, and (for larger counts) competitive landscape, economics, adoption patterns, regulatory factors, or integration challenges.
 - Questions should be researchable with current evidence, not generic.
-- Return valid JSON only.`, topic, detail, asOf.UTC().Format(time.RFC3339))
+- Return valid JSON only.%s`, workers, topic, detail, asOf.UTC().Format(time.RFC3339), langInstruction(lang))
 	text, err := completeText(ctx, env.Kernel.LLM(),
 		"You are a research planner. Return valid JSON only.",
 		prompt,
 	)
 	if err != nil {
-		return demoQuestions(topic), nil
+		return nil, fmt.Errorf("planner LLM call failed: %w", err)
 	}
 	var questions []plannedQuestion
-	if err := json.Unmarshal([]byte(strings.TrimSpace(text)), &questions); err != nil || len(questions) == 0 {
-		return demoQuestions(topic), nil
+	if parseErr := json.Unmarshal([]byte(strings.TrimSpace(text)), &questions); parseErr != nil {
+		return nil, fmt.Errorf("planner returned invalid JSON: %w", parseErr)
+	}
+	if len(questions) == 0 {
+		return nil, fmt.Errorf("planner returned empty questions list")
 	}
 	return questions, nil
 }
 
-func buildWorkerOutput(ctx context.Context, env *runtimeEnv, thread *session.Session, topic, question string, detail reportDetail, asOf time.Time, demo bool) (string, string, string, error) {
-	if demo {
-		q := plannedQuestion{Slug: slugify(question), Question: question}
-		return demoFinding(topic, q, detail, asOf), demoSourceSet(q, asOf), demoConfidence(q, asOf), nil
-	}
+func buildWorkerOutput(ctx context.Context, env *runtimeEnv, thread *session.Session, topic, question string, detail reportDetail, asOf time.Time, lang string) (string, string, string, error) {
 	prompt := fmt.Sprintf(`Research topic: %s
 Assigned question: %s
 Report detail: %s
@@ -634,7 +627,7 @@ Requirements:
 ## Confidence
 <short confidence note explaining freshness, coverage, and gaps>
 
-Do not omit any section.`, topic, question, detail, asOf.UTC().Format(time.RFC3339))
+Do not omit any section.%s`, topic, question, detail, asOf.UTC().Format(time.RFC3339), langInstruction(lang))
 	roleRun, err := runRoleAgent(ctx, env, thread, kswarm.RoleWorker, prompt, detail, asOf)
 	if err != nil {
 		return "", "", "", err
@@ -649,10 +642,7 @@ Do not omit any section.`, topic, question, detail, asOf.UTC().Format(time.RFC33
 	return finding, sourceSet, confidence, nil
 }
 
-func buildFinalReport(ctx context.Context, env *runtimeEnv, thread *session.Session, topic string, findings, sourceSets []string, detail reportDetail, asOf time.Time, demo bool) (string, error) {
-	if demo {
-		return demoFinalReport(topic, findings, detail, asOf), nil
-	}
+func buildFinalReport(ctx context.Context, env *runtimeEnv, thread *session.Session, topic string, findings, sourceSets []string, detail reportDetail, asOf time.Time, lang string) (string, error) {
 	prompt := fmt.Sprintf(`Topic: %s
 As of: %s
 Detail level: %s
@@ -673,7 +663,7 @@ Requirements:
 - For detail=brief: keep it concise but still evidence-backed.
 - For detail=standard: provide a balanced report with evidence tables and trade-offs.
 - For detail=comprehensive: produce a long-form report with detailed arguments, counterarguments, evidence ledger, and operational recommendations.
-- Markdown only.`, topic, asOf.UTC().Format(time.RFC3339), detail, strings.Join(findings, "\n\n---\n\n"), strings.Join(sourceSets, "\n\n"))
+- Markdown only.%s`, topic, asOf.UTC().Format(time.RFC3339), detail, strings.Join(findings, "\n\n---\n\n"), strings.Join(sourceSets, "\n\n"), langInstruction(lang))
 	roleRun, err := runRoleAgent(ctx, env, thread, kswarm.RoleSynthesizer, prompt, detail, asOf)
 	if err != nil {
 		return "", err
@@ -681,10 +671,7 @@ Requirements:
 	return strings.TrimSpace(roleRun.Output), nil
 }
 
-func buildReview(ctx context.Context, env *runtimeEnv, thread *session.Session, topic, report string, detail reportDetail, asOf time.Time, demo bool) (string, error) {
-	if demo {
-		return demoReview(topic), nil
-	}
+func buildReview(ctx context.Context, env *runtimeEnv, thread *session.Session, topic, report string, detail reportDetail, asOf time.Time, lang string) (string, error) {
 	prompt := fmt.Sprintf(`Topic: %s
 As of: %s
 Detail level: %s
@@ -693,7 +680,7 @@ Final report:
 %s
 
 Review this report for unsupported claims, missing dated evidence, overconfidence, and stale assumptions.
-Return a short markdown review note that explicitly states approval status and any gaps.`, topic, asOf.UTC().Format(time.RFC3339), detail, report)
+Return a short markdown review note that explicitly states approval status and any gaps.%s`, topic, asOf.UTC().Format(time.RFC3339), detail, report, langInstruction(lang))
 	roleRun, err := runRoleAgent(ctx, env, thread, kswarm.RoleReviewer, prompt, detail, asOf)
 	if err != nil {
 		return "", err
@@ -808,24 +795,6 @@ func artifactFileName(prefix, taskID, ext string) string {
 	return fmt.Sprintf("%s-%s.%s", prefix, taskID, ext)
 }
 
-func slugify(in string) string {
-	in = strings.ToLower(strings.TrimSpace(in))
-	replacer := strings.NewReplacer(" ", "-", "\t", "-", "\n", "-", "\r", "-", "/", "-", "\\", "-", ":", "-", ".", "-")
-	in = replacer.Replace(in)
-	in = strings.Trim(in, "-")
-	if in == "" {
-		return "item"
-	}
-	return in
-}
-
-func modeString(demo bool) string {
-	if demo {
-		return "demo"
-	}
-	return "real"
-}
-
 func boolSource(flag bool, yes, no string) string {
 	if flag {
 		return yes
@@ -851,6 +820,39 @@ func reportAsOfFromSession(root *session.Session) time.Time {
 		return time.Now().UTC()
 	}
 	return asOf.UTC()
+}
+
+func workerCountFromSession(root *session.Session) int {
+	if root == nil {
+		return 3
+	}
+	raw, ok := root.GetMetadata(metaWorkerCount)
+	if !ok {
+		return 3
+	}
+	switch v := raw.(type) {
+	case int:
+		if v > 0 {
+			return v
+		}
+	case float64:
+		if n := int(v); n > 0 {
+			return n
+		}
+	}
+	return 3
+}
+
+func langFromSession(root *session.Session) string {
+	return metadataString(root, metaLang, "")
+}
+
+func langInstruction(lang string) string {
+	lang = strings.TrimSpace(lang)
+	if lang == "" {
+		return ""
+	}
+	return fmt.Sprintf("\n\nWrite all output in %s.", lang)
 }
 
 func roleSpecForRole(env *runtimeEnv, role kswarm.Role) *hswarm.RoleSpec {

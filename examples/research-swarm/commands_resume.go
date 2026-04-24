@@ -17,6 +17,11 @@ func runResumeCommand(cfg *resumeCommandConfig) error {
 		return err
 	}
 	defer env.Close(ctx)
+	if cfg.AllowAll {
+		if err := installAllowAllGuard(env.Kernel); err != nil {
+			return err
+		}
+	}
 	target, err := env.Targets.ResolveForResume(ctx, cfg.SessionID, cfg.RunID, cfg.Latest)
 	if err != nil {
 		return err

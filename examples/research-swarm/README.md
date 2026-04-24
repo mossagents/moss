@@ -7,8 +7,12 @@
 ```bash
 cd examples/research-swarm
 
-# 1) 运行一个 deterministic demo run
-go run . run --demo
+# 1) 运行一次真实研究 run
+go run . run \
+  --topic "Summarize the trade-offs of local-first agent swarms." \
+  --model gpt-4o \
+  --workers 3 \
+  --lang zh
 
 # 2) 查看最近一次 run
 go run . inspect --latest
@@ -21,35 +25,20 @@ go run . export --latest --format json
 go run . export --latest --format jsonl
 
 # 4) 恢复可恢复的 run
-go run . resume --latest
+go run . resume --latest --model gpt-4o
 ```
 
-## 真实模式
-
-```bash
-go run . run \
-  --topic "Summarize the trade-offs of local-first agent swarms." \
-  --detail comprehensive \
-  --as-of 2026-04-23T12:00:00Z \
-  --provider openai \
-  --model gpt-4o
-```
-
-- `run` 在真实模式下需要可用的 provider/model 配置。
-- 真实模式会把 worker / synthesizer / reviewer 切到 agent loop，因此可使用 runtime 中已启用的 builtin tools、skills、MCP 与 agents。
-- `--detail` 控制报告详尽程度；`comprehensive` 会要求更长的论证、反方观点、证据账本与操作建议。
-- `--as-of` 显式注入研究基准时间；若不传，默认使用当前 UTC 时间。
-- `resume` 会保持已持久化的 `execution_mode`；demo run 只能用 demo 语义恢复，real run 不能切成 demo。
-- `inspect/export --latest` 解析 **最新 run**；`resume --latest` 解析 **最新可恢复 run**。
-
-## 主要 flag
+## 关键 flag
 
 | 命令 | 关键 flag | 说明 |
 |------|-----------|------|
-| `run` | `--topic` | 真实模式必填；`--demo` 时默认使用内置 topic |
-| `run` | `--demo` | 启用 deterministic demo 数据流 |
+| `run` | `--topic` | 研究课题（必填） |
+| `run` | `--model` | LLM 模型（必填） |
+| `run` | `--workers N` | 并行 worker 数量（默认 3，最小 1） |
+| `run` | `--lang <lang>` | 输出语言，如 `zh`、`en`、`ja`（默认：模型自然语言） |
 | `run` | `--detail brief|standard|comprehensive` | 控制最终报告篇幅、论据深度与覆盖面 |
 | `run` | `--as-of <RFC3339>` | 指定研究的基准时间，帮助报告显式声明 freshness |
+| `run/resume` | `--allow-all` | 允许所有操作；通过 AI guardian 审批代替交互确认（需要 --model） |
 | `run/resume` | `--run-id` | 显式指定 swarm run ID |
 | `run/resume` | `--output` | 额外写出 `run-summary.json` / `resume-summary.json` |
 | `resume` | `--session` / `--run-id` / `--latest` | 指定恢复目标 |
@@ -102,7 +91,4 @@ exports/<run-id>/
 
 ```bash
 go test .
-go run . run --demo
-go run . inspect --latest --view threads
-go run . export --latest --format bundle
 ```

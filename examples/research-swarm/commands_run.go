@@ -24,6 +24,11 @@ func runRunCommand(cfg *runCommandConfig) error {
 		return err
 	}
 	defer env.Close(ctx)
+	if cfg.AllowAll {
+		if err := installAllowAllGuard(env.Kernel); err != nil {
+			return err
+		}
+	}
 	lease, err := env.Locks.Acquire(cfg.RunID)
 	if err != nil {
 		return err

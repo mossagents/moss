@@ -25,7 +25,6 @@ import (
 )
 
 const (
-	metaExecutionMode       = "example_swarm_execution_mode"
 	metaRunStatus           = "example_swarm_run_status"
 	metaEventsPartial       = "events_partial"
 	metaEventsLastError     = "events_last_error"
@@ -34,6 +33,8 @@ const (
 	metaFinalArtifactThread = "example_swarm_final_artifact_thread"
 	metaReportDetail        = "research_swarm_report_detail"
 	metaReportAsOf          = "research_swarm_report_as_of"
+	metaWorkerCount         = "research_swarm_worker_count"
+	metaLang                = "research_swarm_lang"
 	metaPlannerSessionID    = "example_swarm_planner_session_id"
 	metaSynthSessionID      = "example_swarm_synth_session_id"
 	metaReviewerSessionID   = "example_swarm_reviewer_session_id"
@@ -91,9 +92,9 @@ type RecoveredRunSnapshot struct {
 	RunID               string                        `json:"run_id"`
 	RootSessionID       string                        `json:"root_session_id"`
 	Status              string                        `json:"status"`
-	ExecutionMode       string                        `json:"execution_mode"`
 	ReportDetail        string                        `json:"report_detail,omitempty"`
 	ReportAsOf          string                        `json:"report_as_of,omitempty"`
+	Lang                string                        `json:"lang,omitempty"`
 	Recoverable         bool                          `json:"recoverable"`
 	Degraded            bool                          `json:"degraded"`
 	EventsPartial       bool                          `json:"events_partial"`
@@ -471,9 +472,9 @@ func (r *RecoveryResolver) Load(ctx context.Context, target resolvedTarget) (*Re
 		RunID:               strings.TrimSpace(snapshot.RunID),
 		RootSessionID:       root.ID,
 		Status:              string(root.Status),
-		ExecutionMode:       metadataString(root, metaExecutionMode, "real"),
 		ReportDetail:        metadataString(root, metaReportDetail, string(detailComprehensive)),
 		ReportAsOf:          metadataString(root, metaReportAsOf, ""),
+		Lang:                metadataString(root, metaLang, ""),
 		Degraded:            metadataBool(root, metaDegraded),
 		EventsPartial:       metadataBool(root, metaEventsPartial),
 		EventsLastError:     metadataString(root, metaEventsLastError, ""),

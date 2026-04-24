@@ -31,8 +31,9 @@ type ReviewResult struct {
 }
 
 type Guardian struct {
-	LLM         model.LLM
-	ModelConfig model.ModelConfig
+	LLM          model.LLM
+	ModelConfig  model.ModelConfig
+	SystemPrompt string // overrides the default system prompt when non-empty
 }
 
 func New(llm model.LLM, cfg model.ModelConfig) *Guardian {
@@ -58,6 +59,8 @@ func Lookup(k *kernel.Kernel) (*Guardian, bool) {
 	return g, ok && g != nil
 }
 
+const defaultSystemPrompt = "You are a conservative tool-approval guardian. Return JSON only with fields approved(boolean), reason(string), confidence(string). Approve only when the action is narrow in scope, low blast radius, and clearly justified by the request. If uncertain, set approved to false."
+
 func (g *Guardian) ReviewToolApproval(ctx context.Context, input ReviewInput) (*ReviewResult, error) {
 	if g == nil || g.LLM == nil {
 		return nil, nil
@@ -66,11 +69,15 @@ func (g *Guardian) ReviewToolApproval(ctx context.Context, input ReviewInput) (*
 	if err != nil {
 		return nil, fmt.Errorf("marshal guardian input: %w", err)
 	}
+	sysPrompt := g.SystemPrompt
+	if strings.TrimSpace(sysPrompt) == "" {
+		sysPrompt = defaultSystemPrompt
+	}
 	resp, err := model.Complete(ctx, g.LLM, model.CompletionRequest{
 		Messages: []model.Message{
 			{
 				Role:         model.RoleSystem,
-				ContentParts: []model.ContentPart{model.TextPart("You are a conservative tool-approval guardian. Return JSON only with fields approved(boolean), reason(string), confidence(string). Approve only when the action is narrow in scope, low blast radius, and clearly justified by the request. If uncertain, set approved to false.")},
+				ContentParts: []model.ContentPart{model.TextPart(sysPrompt)},
 			},
 			{
 				Role:         model.RoleUser,

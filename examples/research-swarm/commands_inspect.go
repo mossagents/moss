@@ -15,7 +15,6 @@ type inspectReport struct {
 	RunID           string               `json:"run_id"`
 	RootSessionID   string               `json:"root_session_id"`
 	Status          string               `json:"status"`
-	ExecutionMode   string               `json:"execution_mode"`
 	Recoverable     bool                 `json:"recoverable"`
 	Degraded        bool                 `json:"degraded"`
 	EventsPartial   bool                 `json:"events_partial"`
@@ -69,7 +68,6 @@ func buildInspectReport(ctx context.Context, env *runtimeEnv, snapshot *Recovere
 		RunID:           snapshot.RunID,
 		RootSessionID:   snapshot.RootSessionID,
 		Status:          snapshot.Status,
-		ExecutionMode:   snapshot.ExecutionMode,
 		Recoverable:     snapshot.Recoverable,
 		Degraded:        snapshot.Degraded,
 		EventsPartial:   snapshot.EventsPartial,
@@ -127,8 +125,8 @@ func printInspectReport(report *inspectReport, view string) error {
 	if report == nil {
 		return fmt.Errorf("inspect report is required")
 	}
-	fmt.Printf("run_id=%s root_session_id=%s status=%s mode=%s recoverable=%t degraded=%t events_partial=%t\n",
-		report.RunID, report.RootSessionID, report.Status, report.ExecutionMode, report.Recoverable, report.Degraded, report.EventsPartial)
+	fmt.Printf("run_id=%s root_session_id=%s status=%s recoverable=%t degraded=%t events_partial=%t\n",
+		report.RunID, report.RootSessionID, report.Status, report.Recoverable, report.Degraded, report.EventsPartial)
 	switch view {
 	case "threads":
 		for _, thread := range report.Threads {

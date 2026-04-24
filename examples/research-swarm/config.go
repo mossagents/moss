@@ -14,7 +14,6 @@ const (
 	appName          = "research-swarm"
 	defaultView      = "run"
 	defaultExportFmt = "bundle"
-	defaultDemoTopic = "Summarize the trade-offs of local-first agent swarms."
 )
 
 type reportDetail string
@@ -47,7 +46,9 @@ type runCommandConfig struct {
 	Topic    string
 	RunID    string
 	Output   string
-	Demo     bool
+	AllowAll bool
+	Workers  int
+	Lang     string
 	Detail   reportDetail
 	AsOf     time.Time
 }
@@ -58,7 +59,7 @@ type resumeCommandConfig struct {
 	SessionID           string
 	Output              string
 	Latest              bool
-	Demo                bool
+	AllowAll            bool
 	ForceDegradedResume bool
 }
 
@@ -130,7 +131,9 @@ func parseRunCommand(args []string) (*runCommandConfig, error) {
 	fs.StringVar(&cfg.Topic, "topic", "", "Research topic")
 	fs.StringVar(&cfg.RunID, "run-id", "", "Explicit swarm run ID")
 	fs.StringVar(&cfg.Output, "output", "", "Output directory for user-facing files")
-	fs.BoolVar(&cfg.Demo, "demo", false, "Use deterministic demo execution")
+	fs.BoolVar(&cfg.AllowAll, "allow-all", false, "Allow all operations; use AI guardian for permission checks instead of interactive approval")
+	fs.IntVar(&cfg.Workers, "workers", 3, "Number of parallel worker agents (default 3, min 1)")
+	fs.StringVar(&cfg.Lang, "lang", "", "Output language for generated reports (e.g. zh, en, ja; default: model default)")
 	fs.StringVar(&detail, "detail", detail, "Report detail: brief|standard|comprehensive")
 	fs.StringVar(&asOf, "as-of", "", "Reference time for current-data research (RFC3339, default: now)")
 	if err := parseFlagSet(fs, args); err != nil {
@@ -148,14 +151,14 @@ func parseRunCommand(args []string) (*runCommandConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Demo && strings.TrimSpace(cfg.Topic) == "" {
-		cfg.Topic = defaultDemoTopic
-	}
 	if strings.TrimSpace(cfg.Topic) == "" {
-		return nil, usageError(2, "run requires --topic (or use --demo for the built-in topic)")
+		return nil, usageError(2, "run requires --topic")
 	}
-	if !cfg.Demo && strings.TrimSpace(cfg.AppFlags.Model) == "" {
-		return nil, usageError(2, "run in real mode requires --model (or configure one via env/global config)")
+	if strings.TrimSpace(cfg.AppFlags.Model) == "" {
+		return nil, usageError(2, "run requires --model (or configure one via env/global config)")
+	}
+	if cfg.Workers < 1 {
+		return nil, usageError(2, "--workers must be at least 1")
 	}
 	return cfg, nil
 }
@@ -168,13 +171,16 @@ func parseResumeCommand(args []string) (*resumeCommandConfig, error) {
 	fs.StringVar(&cfg.SessionID, "session", "", "Root session ID")
 	fs.StringVar(&cfg.Output, "output", "", "Output directory for user-facing files")
 	fs.BoolVar(&cfg.Latest, "latest", false, "Resolve the latest candidate")
-	fs.BoolVar(&cfg.Demo, "demo", false, "Assert that the resumed run is demo mode")
+	fs.BoolVar(&cfg.AllowAll, "allow-all", false, "Allow all operations; use AI guardian for permission checks instead of interactive approval")
 	fs.BoolVar(&cfg.ForceDegradedResume, "force-degraded-resume", false, "Allow resume from a degraded snapshot")
 	if err := parseFlagSet(fs, args); err != nil {
 		return nil, err
 	}
 	if err := appkit.InitializeApp(appName, &cfg.AppFlags, "RESEARCH_SWARM", "MOSS"); err != nil {
 		return nil, err
+	}
+	if cfg.AllowAll && strings.TrimSpace(cfg.AppFlags.Model) == "" {
+		return nil, usageError(2, "--allow-all requires --model (AI permission guard needs a model)")
 	}
 	return cfg, nil
 }
@@ -237,10 +243,15 @@ func usageError(code int, msg string) error {
 
 func rootUsage() string {
 	return strings.TrimSpace(`usage:
-  go run . run --topic "<topic>" [--demo] [--detail brief|standard|comprehensive] [--as-of RFC3339] [provider flags...]
-  go run . resume [--session <id> | --run-id <id> | --latest] [--demo] [provider flags...]
+  go run . run --topic "<topic>" [--allow-all] [--workers N] [--lang <lang>] [--detail brief|standard|comprehensive] [--as-of RFC3339] [provider flags...]
+  go run . resume [--session <id> | --run-id <id> | --latest] [--allow-all] [provider flags...]
   go run . inspect [--session <id> | --run-id <id> | --latest] [--view run|threads|thread|events] [--thread-id <id>] [--json]
-  go run . export [--session <id> | --run-id <id> | --latest] [--format bundle|json|jsonl] [--output <dir>] [--include-payloads]`)
+  go run . export [--session <id> | --run-id <id> | --latest] [--format bundle|json|jsonl] [--output <dir>] [--include-payloads]
+
+flags:
+  --allow-all   Allow all operations; route tool approvals through AI guardian instead of interactive prompts (requires --model)
+  --workers N   Number of parallel worker agents to spawn (default 3, min 1)
+  --lang        Output language for generated reports (e.g. zh, en, ja; default: model default)`)
 }
 
 func stringsTrim(value string) string {
