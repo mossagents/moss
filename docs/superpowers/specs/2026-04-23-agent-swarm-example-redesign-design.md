@@ -2,7 +2,7 @@
 
 ## Problem
 
-`examples\agent-swarm` 目前仍是旧的并行研究 demo：它直接在 example 内实现 persona worker、分解、并行批处理和综合流程，能展示“多 agent 一起工作”，但不能体现新的 swarm 一等公民能力，包括：
+`examples\research-swarm` 目前仍是旧的并行研究 demo：它直接在 example 内实现 persona worker、分解、并行批处理和综合流程，能展示“多 agent 一起工作”，但不能体现新的 swarm 一等公民能力，包括：
 
 - `harness\swarm` 的 runtime / role pack / research orchestrator
 - session / task / message / artifact 的持久化事实面
@@ -13,7 +13,7 @@
 
 ## Goals
 
-1. 将 `examples\agent-swarm` 重做为一个独立的小型 swarm app，而不是单次运行 demo。
+1. 将 `examples\research-swarm` 重做为一个独立的小型 swarm app，而不是单次运行 demo。
 2. 首版命令面提供：
    - `run`
    - `resume`
@@ -29,14 +29,14 @@
 
 ## Non-Goals
 
-1. 不兼容旧 `examples\agent-swarm` 的 persona worker 内部实现。
+1. 不兼容旧 `examples\research-swarm` 的 persona worker 内部实现。
 2. 不在首版引入新的通用 swarm orchestration 策略；首版只聚焦 research-first。
 3. 不把 example 做成第二个 `apps\mosscode`；它是小型产品示例，不是通用 IDE/assistant。
 4. 不在首版覆盖分布式 swarm 或跨节点调度。
 
 ## User-Facing Shape
 
-`examples\agent-swarm` 作为独立 example app，保留 `go run .` 的体验，但命令面改为产品式子命令：
+`examples\research-swarm` 作为独立 example app，保留 `go run .` 的体验，但命令面改为产品式子命令：
 
 - `run`：启动一个 research swarm run，输出 root session / swarm run / artifact 摘要
 - `resume`：恢复最近一次或指定的一次 swarm run，继续未完成任务
@@ -421,7 +421,7 @@ run-level lock 契约：
 建议目录按职责拆开，而不是继续堆在单一 `main.go`/`swarm.go`：
 
 ```text
-examples/agent-swarm/
+examples/research-swarm/
 ├── main.go
 ├── config.go
 ├── commands_run.go
@@ -444,10 +444,12 @@ examples/agent-swarm/
 
 ## Recommendation
 
-按“独立的小型 swarm app”路线实现 `examples\agent-swarm`。它应成为新 swarm 的官方参考样板：
+按“独立的小型 swarm app”路线实现 `examples\research-swarm`。它应成为新 swarm 的官方参考样板：
 
 - 用新的 swarm substrate 做 research app
 - 展示真实的 run/resume/inspect/export 流程
 - 又通过 deterministic demo 保持可演示、可测试、可回归
 
-这是当前仓库里最能向贡献者说明“新 agent-swarm 应该怎样被真正使用”的示例形态。
+这是当前仓库里最能向贡献者说明“新 research-swarm 应该怎样被真正使用”的示例形态。
+
+

@@ -6,25 +6,25 @@ import (
 	"fmt"
 	"time"
 
-	taskrt "github.com/mossagents/moss/kernel/task"
 	"github.com/mossagents/moss/kernel/session"
 	kswarm "github.com/mossagents/moss/kernel/swarm"
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 type inspectReport struct {
-	RunID           string                  `json:"run_id"`
-	RootSessionID   string                  `json:"root_session_id"`
-	Status          string                  `json:"status"`
-	ExecutionMode   string                  `json:"execution_mode"`
-	Recoverable     bool                    `json:"recoverable"`
-	Degraded        bool                    `json:"degraded"`
-	EventsPartial   bool                    `json:"events_partial"`
-	EventsLastError string                  `json:"events_last_error,omitempty"`
-	Threads         []session.ThreadRef     `json:"threads,omitempty"`
-	Tasks           any                     `json:"tasks,omitempty"`
-	Artifacts       []kswarm.ArtifactRef    `json:"artifacts,omitempty"`
-	Messages        int                     `json:"message_count,omitempty"`
-	Events          []map[string]any        `json:"events,omitempty"`
+	RunID           string               `json:"run_id"`
+	RootSessionID   string               `json:"root_session_id"`
+	Status          string               `json:"status"`
+	ExecutionMode   string               `json:"execution_mode"`
+	Recoverable     bool                 `json:"recoverable"`
+	Degraded        bool                 `json:"degraded"`
+	EventsPartial   bool                 `json:"events_partial"`
+	EventsLastError string               `json:"events_last_error,omitempty"`
+	Threads         []session.ThreadRef  `json:"threads,omitempty"`
+	Tasks           any                  `json:"tasks,omitempty"`
+	Artifacts       []kswarm.ArtifactRef `json:"artifacts,omitempty"`
+	Messages        int                  `json:"message_count,omitempty"`
+	Events          []map[string]any     `json:"events,omitempty"`
 }
 
 func runInspectCommand(cfg *inspectCommandConfig) error {

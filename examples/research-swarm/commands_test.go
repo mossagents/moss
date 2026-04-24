@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mossagents/moss/harness/config"
 )
@@ -124,6 +125,26 @@ func TestDemoRunInspectExportAndResume(t *testing.T) {
 	}
 	if err := runResumeCommand(resumeCfg); err == nil {
 		t.Fatal("expected resume of completed run to fail")
+	}
+}
+
+func TestParseRunCommandDetailAndAsOf(t *testing.T) {
+	setupTestAppHome(t)
+	cfg, err := parseRunCommand([]string{
+		"--topic", "Current AI IDE landscape",
+		"--model", "gpt-4o",
+		"--detail", "brief",
+		"--as-of", "2026-04-23T12:34:56Z",
+	})
+	if err != nil {
+		t.Fatalf("parse run command: %v", err)
+	}
+	if cfg.Detail != detailBrief {
+		t.Fatalf("expected detail %q, got %q", detailBrief, cfg.Detail)
+	}
+	want := time.Date(2026, 4, 23, 12, 34, 56, 0, time.UTC)
+	if !cfg.AsOf.Equal(want) {
+		t.Fatalf("expected as-of %s, got %s", want.Format(time.RFC3339), cfg.AsOf.Format(time.RFC3339))
 	}
 }
 

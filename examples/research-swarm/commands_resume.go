@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+
+	kernio "github.com/mossagents/moss/kernel/io"
 )
 
 func runResumeCommand(cfg *resumeCommandConfig) error {
@@ -10,7 +12,7 @@ func runResumeCommand(cfg *resumeCommandConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("resume config is required")
 	}
-	env, err := buildExecutionEnv(ctx, &cfg.AppFlags)
+	env, err := buildExecutionEnv(ctx, &cfg.AppFlags, kernio.NewConsoleIO())
 	if err != nil {
 		return err
 	}

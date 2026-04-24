@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/mossagents/moss/kernel/session"
-	taskrt "github.com/mossagents/moss/kernel/task"
 	kswarm "github.com/mossagents/moss/kernel/swarm"
+	taskrt "github.com/mossagents/moss/kernel/task"
 )
 
 func TestRunLockServiceAcquireAndExpire(t *testing.T) {

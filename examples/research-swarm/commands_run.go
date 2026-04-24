@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/mossagents/moss/kernel/ids"
+	kernio "github.com/mossagents/moss/kernel/io"
 )
 
 func runRunCommand(cfg *runCommandConfig) error {
@@ -18,7 +19,7 @@ func runRunCommand(cfg *runCommandConfig) error {
 	if cfg.RunID == "" {
 		cfg.RunID = "swarm-" + ids.New()
 	}
-	env, err := buildExecutionEnv(ctx, &cfg.AppFlags)
+	env, err := buildExecutionEnv(ctx, &cfg.AppFlags, kernio.NewConsoleIO())
 	if err != nil {
 		return err
 	}

@@ -32,12 +32,14 @@ const (
 	metaDegraded            = "degraded"
 	metaFinalArtifactName   = "example_swarm_final_artifact_name"
 	metaFinalArtifactThread = "example_swarm_final_artifact_thread"
+	metaReportDetail        = "research_swarm_report_detail"
+	metaReportAsOf          = "research_swarm_report_as_of"
 	metaPlannerSessionID    = "example_swarm_planner_session_id"
 	metaSynthSessionID      = "example_swarm_synth_session_id"
 	metaReviewerSessionID   = "example_swarm_reviewer_session_id"
 	metaSynthTaskID         = "example_swarm_synth_task_id"
 	metaReviewTaskID        = "example_swarm_review_task_id"
-	threadSourceExample     = "agent-swarm-example"
+	threadSourceExample     = "research-swarm-example"
 	defaultLockTTL          = 5 * time.Minute
 )
 
@@ -53,22 +55,22 @@ type storagePaths struct {
 }
 
 type runtimeEnv struct {
-	Paths        storagePaths
-	Kernel       *kernel.Kernel
-	Swarm        *hswarm.Runtime
-	Orchestrator *hswarm.ResearchOrchestrator
-	SessionStore session.SessionStore
-	Catalog      session.Catalog
-	TaskWriter   taskrt.TaskRuntime
-	Tasks        taskrt.TaskRuntime
-	Graph        taskrt.TaskGraphRuntime
+	Paths         storagePaths
+	Kernel        *kernel.Kernel
+	Swarm         *hswarm.Runtime
+	Orchestrator  *hswarm.ResearchOrchestrator
+	SessionStore  session.SessionStore
+	Catalog       session.Catalog
+	TaskWriter    taskrt.TaskRuntime
+	Tasks         taskrt.TaskRuntime
+	Graph         taskrt.TaskGraphRuntime
 	MessageWriter taskrt.TaskMessageRuntime
-	Messages     taskrt.TaskMessageRuntime
-	Artifacts    artifact.Store
-	EventStore   kruntime.EventStore
-	Targets      *TargetResolver
-	Recovery     *RecoveryResolver
-	Locks        *RunLockService
+	Messages      taskrt.TaskMessageRuntime
+	Artifacts     artifact.Store
+	EventStore    kruntime.EventStore
+	Targets       *TargetResolver
+	Recovery      *RecoveryResolver
+	Locks         *RunLockService
 }
 
 type resolvedTarget struct {
@@ -86,19 +88,21 @@ type runSummary struct {
 }
 
 type RecoveredRunSnapshot struct {
-	RunID             string                `json:"run_id"`
-	RootSessionID     string                `json:"root_session_id"`
-	Status            string                `json:"status"`
-	ExecutionMode     string                `json:"execution_mode"`
-	Recoverable       bool                  `json:"recoverable"`
-	Degraded          bool                  `json:"degraded"`
-	EventsPartial     bool                  `json:"events_partial"`
-	EventsLastError   string                `json:"events_last_error,omitempty"`
-	FinalArtifactName string                `json:"final_artifact_name,omitempty"`
-	FinalArtifactThread string              `json:"final_artifact_thread,omitempty"`
-	Snapshot          *kswarm.Snapshot      `json:"snapshot,omitempty"`
-	ThreadIndex       map[string]session.ThreadRef `json:"-"`
-	TaskIndex         map[string]taskrt.TaskSummary `json:"-"`
+	RunID               string                        `json:"run_id"`
+	RootSessionID       string                        `json:"root_session_id"`
+	Status              string                        `json:"status"`
+	ExecutionMode       string                        `json:"execution_mode"`
+	ReportDetail        string                        `json:"report_detail,omitempty"`
+	ReportAsOf          string                        `json:"report_as_of,omitempty"`
+	Recoverable         bool                          `json:"recoverable"`
+	Degraded            bool                          `json:"degraded"`
+	EventsPartial       bool                          `json:"events_partial"`
+	EventsLastError     string                        `json:"events_last_error,omitempty"`
+	FinalArtifactName   string                        `json:"final_artifact_name,omitempty"`
+	FinalArtifactThread string                        `json:"final_artifact_thread,omitempty"`
+	Snapshot            *kswarm.Snapshot              `json:"snapshot,omitempty"`
+	ThreadIndex         map[string]session.ThreadRef  `json:"-"`
+	TaskIndex           map[string]taskrt.TaskSummary `json:"-"`
 }
 
 type TargetResolver struct {
@@ -156,9 +160,12 @@ func storageLayout() storagePaths {
 	}
 }
 
-func buildExecutionEnv(ctx context.Context, flags *appkit.AppFlags) (*runtimeEnv, error) {
+func buildExecutionEnv(ctx context.Context, flags *appkit.AppFlags, userIO kernio.UserIO) (*runtimeEnv, error) {
 	if flags == nil {
 		return nil, fmt.Errorf("app flags are required")
+	}
+	if userIO == nil {
+		userIO = &kernio.NoOpIO{}
 	}
 	paths := storageLayout()
 	if err := ensureDirs(paths); err != nil {
@@ -173,7 +180,7 @@ func buildExecutionEnv(ctx context.Context, flags *appkit.AppFlags) (*runtimeEnv
 		appkit.WithDeepAgentAdditionalFeatures(harness.EventStorePersistence(paths.EventsDB)),
 		appkit.WithDeepAgentSwarm(true),
 	)
-	k, err := appkit.BuildDeepAgent(ctx, flags, &kernio.NoOpIO{}, cfg)
+	k, err := appkit.BuildDeepAgent(ctx, flags, userIO, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -210,20 +217,20 @@ func buildExecutionEnv(ctx context.Context, flags *appkit.AppFlags) (*runtimeEnv
 		return nil, fmt.Errorf("event store is not attached")
 	}
 	env := &runtimeEnv{
-		Paths:        paths,
-		Kernel:       k,
-		Swarm:        rt,
-		Orchestrator: orch,
-		SessionStore: k.SessionStore(),
-		Catalog:      session.Catalog{Store: k.SessionStore(), Checkpoints: k.Checkpoints()},
-		TaskWriter:   rt.Tasks,
-		Tasks:        rt.Tasks,
-		Graph:        graph,
+		Paths:         paths,
+		Kernel:        k,
+		Swarm:         rt,
+		Orchestrator:  orch,
+		SessionStore:  k.SessionStore(),
+		Catalog:       session.Catalog{Store: k.SessionStore(), Checkpoints: k.Checkpoints()},
+		TaskWriter:    rt.Tasks,
+		Tasks:         rt.Tasks,
+		Graph:         graph,
 		MessageWriter: reloadingMessageRuntime{dir: paths.Tasks},
-		Messages:     rawTasks,
-		Artifacts:    rt.Artifacts,
-		EventStore:   eventStore,
-		Locks:        &RunLockService{dir: paths.Locks, ttl: defaultLockTTL, now: time.Now},
+		Messages:      rawTasks,
+		Artifacts:     rt.Artifacts,
+		EventStore:    eventStore,
+		Locks:         &RunLockService{dir: paths.Locks, ttl: defaultLockTTL, now: time.Now},
 	}
 	env.Recovery = &RecoveryResolver{
 		store:   env.SessionStore,
@@ -261,17 +268,17 @@ func openSnapshotEnv() (*runtimeEnv, error) {
 		return nil, err
 	}
 	env := &runtimeEnv{
-		Paths:        paths,
-		SessionStore: store,
-		Catalog:      session.Catalog{Store: store},
-		TaskWriter:   tasks,
-		Tasks:        tasks,
-		Graph:        tasks,
+		Paths:         paths,
+		SessionStore:  store,
+		Catalog:       session.Catalog{Store: store},
+		TaskWriter:    tasks,
+		Tasks:         tasks,
+		Graph:         tasks,
 		MessageWriter: tasks,
-		Messages:     tasks,
-		Artifacts:    artifacts,
-		EventStore:   eventStore,
-		Locks:        &RunLockService{dir: paths.Locks, ttl: defaultLockTTL, now: time.Now},
+		Messages:      tasks,
+		Artifacts:     artifacts,
+		EventStore:    eventStore,
+		Locks:         &RunLockService{dir: paths.Locks, ttl: defaultLockTTL, now: time.Now},
 	}
 	env.Recovery = &RecoveryResolver{
 		store:   store,
@@ -461,18 +468,20 @@ func (r *RecoveryResolver) Load(ctx context.Context, target resolvedTarget) (*Re
 		return nil, fmt.Errorf("root session %q not found", rootID)
 	}
 	out := &RecoveredRunSnapshot{
-		RunID:             strings.TrimSpace(snapshot.RunID),
-		RootSessionID:     root.ID,
-		Status:            string(root.Status),
-		ExecutionMode:     metadataString(root, metaExecutionMode, "real"),
-		Degraded:          metadataBool(root, metaDegraded),
-		EventsPartial:     metadataBool(root, metaEventsPartial),
-		EventsLastError:   metadataString(root, metaEventsLastError, ""),
-		FinalArtifactName: metadataString(root, metaFinalArtifactName, ""),
+		RunID:               strings.TrimSpace(snapshot.RunID),
+		RootSessionID:       root.ID,
+		Status:              string(root.Status),
+		ExecutionMode:       metadataString(root, metaExecutionMode, "real"),
+		ReportDetail:        metadataString(root, metaReportDetail, string(detailComprehensive)),
+		ReportAsOf:          metadataString(root, metaReportAsOf, ""),
+		Degraded:            metadataBool(root, metaDegraded),
+		EventsPartial:       metadataBool(root, metaEventsPartial),
+		EventsLastError:     metadataString(root, metaEventsLastError, ""),
+		FinalArtifactName:   metadataString(root, metaFinalArtifactName, ""),
 		FinalArtifactThread: metadataString(root, metaFinalArtifactThread, ""),
-		Snapshot:          snapshot,
-		ThreadIndex:       make(map[string]session.ThreadRef, len(snapshot.Threads)),
-		TaskIndex:         make(map[string]taskrt.TaskSummary, len(snapshot.Tasks)),
+		Snapshot:            snapshot,
+		ThreadIndex:         make(map[string]session.ThreadRef, len(snapshot.Threads)),
+		TaskIndex:           make(map[string]taskrt.TaskSummary, len(snapshot.Tasks)),
 	}
 	for _, thread := range snapshot.Threads {
 		out.ThreadIndex[thread.SessionID] = thread

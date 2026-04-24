@@ -6,7 +6,7 @@ use (
 	./contrib/telemetry
 	./contrib/tools
 	./contrib/tui
-	./examples/agent-swarm
+	./examples/research-swarm
 	./examples/basic
 	./examples/custom-tool
 	./examples/mossclaw

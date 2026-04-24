@@ -5,15 +5,24 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/mossagents/moss/harness/appkit"
 )
 
 const (
-	appName          = "agent-swarm"
+	appName          = "research-swarm"
 	defaultView      = "run"
 	defaultExportFmt = "bundle"
 	defaultDemoTopic = "Summarize the trade-offs of local-first agent swarms."
+)
+
+type reportDetail string
+
+const (
+	detailBrief         reportDetail = "brief"
+	detailStandard      reportDetail = "standard"
+	detailComprehensive reportDetail = "comprehensive"
 )
 
 type commandKind string
@@ -39,16 +48,18 @@ type runCommandConfig struct {
 	RunID    string
 	Output   string
 	Demo     bool
+	Detail   reportDetail
+	AsOf     time.Time
 }
 
 type resumeCommandConfig struct {
-	AppFlags             appkit.AppFlags
-	RunID                string
-	SessionID            string
-	Output               string
-	Latest               bool
-	Demo                 bool
-	ForceDegradedResume  bool
+	AppFlags            appkit.AppFlags
+	RunID               string
+	SessionID           string
+	Output              string
+	Latest              bool
+	Demo                bool
+	ForceDegradedResume bool
 }
 
 type inspectCommandConfig struct {
@@ -114,14 +125,27 @@ func parseRunCommand(args []string) (*runCommandConfig, error) {
 	cfg := &runCommandConfig{}
 	fs := newFlagSet(string(commandRun))
 	appkit.BindAppFlags(fs, &cfg.AppFlags)
+	detail := string(detailComprehensive)
+	var asOf string
 	fs.StringVar(&cfg.Topic, "topic", "", "Research topic")
 	fs.StringVar(&cfg.RunID, "run-id", "", "Explicit swarm run ID")
 	fs.StringVar(&cfg.Output, "output", "", "Output directory for user-facing files")
 	fs.BoolVar(&cfg.Demo, "demo", false, "Use deterministic demo execution")
+	fs.StringVar(&detail, "detail", detail, "Report detail: brief|standard|comprehensive")
+	fs.StringVar(&asOf, "as-of", "", "Reference time for current-data research (RFC3339, default: now)")
 	if err := parseFlagSet(fs, args); err != nil {
 		return nil, err
 	}
-	if err := appkit.InitializeApp(appName, &cfg.AppFlags, "AGENT_SWARM", "MOSS"); err != nil {
+	if err := appkit.InitializeApp(appName, &cfg.AppFlags, "RESEARCH_SWARM", "MOSS"); err != nil {
+		return nil, err
+	}
+	parsedDetail, err := parseReportDetail(detail)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Detail = parsedDetail
+	cfg.AsOf, err = parseAsOfTime(asOf)
+	if err != nil {
 		return nil, err
 	}
 	if cfg.Demo && strings.TrimSpace(cfg.Topic) == "" {
@@ -149,7 +173,7 @@ func parseResumeCommand(args []string) (*resumeCommandConfig, error) {
 	if err := parseFlagSet(fs, args); err != nil {
 		return nil, err
 	}
-	if err := appkit.InitializeApp(appName, &cfg.AppFlags, "AGENT_SWARM", "MOSS"); err != nil {
+	if err := appkit.InitializeApp(appName, &cfg.AppFlags, "RESEARCH_SWARM", "MOSS"); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -167,7 +191,7 @@ func parseInspectCommand(args []string) (*inspectCommandConfig, error) {
 	if err := parseFlagSet(fs, args); err != nil {
 		return nil, err
 	}
-	if err := appkit.InitializeApp(appName, nil, "AGENT_SWARM", "MOSS"); err != nil {
+	if err := appkit.InitializeApp(appName, nil, "RESEARCH_SWARM", "MOSS"); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -185,7 +209,7 @@ func parseExportCommand(args []string) (*exportCommandConfig, error) {
 	if err := parseFlagSet(fs, args); err != nil {
 		return nil, err
 	}
-	if err := appkit.InitializeApp(appName, nil, "AGENT_SWARM", "MOSS"); err != nil {
+	if err := appkit.InitializeApp(appName, nil, "RESEARCH_SWARM", "MOSS"); err != nil {
 		return nil, err
 	}
 	return cfg, nil
@@ -213,7 +237,7 @@ func usageError(code int, msg string) error {
 
 func rootUsage() string {
 	return strings.TrimSpace(`usage:
-  go run . run --topic "<topic>" [--demo] [provider flags...]
+  go run . run --topic "<topic>" [--demo] [--detail brief|standard|comprehensive] [--as-of RFC3339] [provider flags...]
   go run . resume [--session <id> | --run-id <id> | --latest] [--demo] [provider flags...]
   go run . inspect [--session <id> | --run-id <id> | --latest] [--view run|threads|thread|events] [--thread-id <id>] [--json]
   go run . export [--session <id> | --run-id <id> | --latest] [--format bundle|json|jsonl] [--output <dir>] [--include-payloads]`)
@@ -221,4 +245,29 @@ func rootUsage() string {
 
 func stringsTrim(value string) string {
 	return strings.TrimSpace(value)
+}
+
+func parseReportDetail(value string) (reportDetail, error) {
+	switch reportDetail(strings.ToLower(strings.TrimSpace(value))) {
+	case detailBrief:
+		return detailBrief, nil
+	case "", detailStandard:
+		return detailStandard, nil
+	case detailComprehensive:
+		return detailComprehensive, nil
+	default:
+		return "", usageError(2, fmt.Sprintf("unsupported --detail %q (expected brief|standard|comprehensive)", value))
+	}
+}
+
+func parseAsOfTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Now().UTC(), nil
+	}
+	asOf, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return time.Time{}, usageError(2, fmt.Sprintf("invalid --as-of %q (expected RFC3339)", raw))
+	}
+	return asOf.UTC(), nil
 }

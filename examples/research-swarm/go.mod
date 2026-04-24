@@ -1,4 +1,4 @@
-module github.com/mossagents/moss/examples/agent-swarm
+module github.com/mossagents/moss/examples/research-swarm
 
 go 1.25.8
 
