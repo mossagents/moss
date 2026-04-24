@@ -68,7 +68,15 @@ func TestToOpenAIMessages_AssistantWithToolCalls(t *testing.T) {
 }
 
 func TestToOpenAIMessages_ToolResults(t *testing.T) {
+	// A valid conversation: assistant issues tool_calls, then tool results follow.
 	msgs := []model.Message{
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{
+				{ID: "call_1", Name: "get_weather", Arguments: json.RawMessage(`{"city":"Beijing"}`)},
+				{ID: "call_2", Name: "get_time", Arguments: json.RawMessage(`{}`)},
+			},
+		},
 		{
 			Role: model.RoleTool,
 			ToolResults: []model.ToolResult{
@@ -83,23 +91,63 @@ func TestToOpenAIMessages_ToolResults(t *testing.T) {
 	}
 
 	// OpenAI 要求每个 tool result 是独立的 tool message
-	if len(result) != 2 {
-		t.Fatalf("expected 2 tool messages, got %d", len(result))
+	// result[0] = assistant, result[1] = tool(call_1), result[2] = tool(call_2)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages (1 assistant + 2 tool), got %d", len(result))
 	}
-	for _, msg := range result {
+	if result[0].OfAssistant == nil {
+		t.Fatal("expected assistant message at index 0")
+	}
+	for _, msg := range result[1:] {
 		if msg.OfTool == nil {
 			t.Fatal("expected tool message")
 		}
 	}
-	if result[0].OfTool.ToolCallID != "call_1" {
-		t.Errorf("tool_call_id = %q, want call_1", result[0].OfTool.ToolCallID)
+	if result[1].OfTool.ToolCallID != "call_1" {
+		t.Errorf("tool_call_id = %q, want call_1", result[1].OfTool.ToolCallID)
 	}
-	raw, err := json.Marshal(result[0].OfTool)
+	raw, err := json.Marshal(result[1].OfTool)
 	if err != nil {
 		t.Fatalf("marshal tool message: %v", err)
 	}
 	if !strings.Contains(string(raw), `"content":"Sunny, 25°C"`) {
 		t.Fatalf("expected tool message content to marshal as string, got %s", string(raw))
+	}
+}
+
+func TestToOpenAIMessages_OrphanedToolResultsDropped(t *testing.T) {
+	// Simulate context pruning: assistant message with call_1 was pruned,
+	// leaving an orphaned tool result for call_1. Only call_2 has a valid
+	// preceding assistant tool_call.
+	msgs := []model.Message{
+		{
+			Role: model.RoleAssistant,
+			ToolCalls: []model.ToolCall{
+				{ID: "call_2", Name: "get_time", Arguments: json.RawMessage(`{}`)},
+			},
+		},
+		{
+			Role: model.RoleTool,
+			ToolResults: []model.ToolResult{
+				{CallID: "call_1", ContentParts: []model.ContentPart{model.TextPart("orphaned")}},
+				{CallID: "call_2", ContentParts: []model.ContentPart{model.TextPart("12:00")}},
+			},
+		},
+	}
+	result, err := toOpenAIMessages(msgs, "gpt-4o")
+	if err != nil {
+		t.Fatalf("toOpenAIMessages: %v", err)
+	}
+
+	// Only call_2 should remain; call_1 is orphaned and must be dropped.
+	if len(result) != 2 {
+		t.Fatalf("expected 2 messages (1 assistant + 1 tool), got %d", len(result))
+	}
+	if result[1].OfTool == nil {
+		t.Fatal("expected tool message at index 1")
+	}
+	if result[1].OfTool.ToolCallID != "call_2" {
+		t.Errorf("expected call_2 to survive, got %q", result[1].OfTool.ToolCallID)
 	}
 }
 

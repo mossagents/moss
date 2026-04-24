@@ -684,25 +684,27 @@ func needsShell(cmd string) bool {
 // composing multiple commands and must not be auto-wrapped via sh -c.
 func rejectShellChaining(cmd string) error {
 	dangerous := []struct {
-		seq  string
-		name string
+		seq      string
+		name     string
+		multiCmd bool
 	}{
-		{";", "command separator ';'"},
-		{"&&", "operator '&&'"},
-		{"||", "operator '||'"},
-		{"|", "pipe '|'"},
-		{"`", "backtick command substitution"},
-		{"$(", "subshell '$()'"},
-		{"${", "variable substitution '${}'"},
-		{">", "output redirection '>'"},
-		{"<", "input redirection '<'"},
+		{";", "command separator ';'", true},
+		{"&&", "operator '&&'", true},
+		{"||", "operator '||'", true},
+		{"|", "pipe '|'", false},
+		{"`", "backtick command substitution", false},
+		{"$(", "subshell '$()'", false},
+		{"${", "variable substitution '${}'", false},
+		{">", "output redirection '>'", false},
+		{"<", "input redirection '<'", false},
 	}
 	for _, d := range dangerous {
 		if strings.Contains(cmd, d.seq) {
-			return fmt.Errorf(
-				"command contains %s; use the 'args' field to pass arguments separately",
-				d.name,
-			)
+			hint := "use the 'args' field to pass arguments separately"
+			if d.multiCmd {
+				hint = "use separate run_command calls for each command"
+			}
+			return fmt.Errorf("command contains %s; %s", d.name, hint)
 		}
 	}
 	return nil

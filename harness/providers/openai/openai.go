@@ -221,6 +221,21 @@ func normalizeMessages(msgs []model.Message) []model.Message {
 
 func toOpenAIMessages(msgs []model.Message, modelName string) ([]openai.ChatCompletionMessageParamUnion, error) {
 	msgs = normalizeMessages(msgs)
+
+	// Build the set of tool call IDs present in assistant messages.
+	// Tool results whose call ID is absent are "orphaned" — the assistant
+	// message that issued the matching tool_call was pruned from context.
+	// Strict providers (e.g. DeepSeek) reject any tool result that is not
+	// preceded by a corresponding tool_calls entry.
+	validCallIDs := make(map[string]struct{})
+	for _, msg := range msgs {
+		if msg.Role == model.RoleAssistant {
+			for _, tc := range msg.ToolCalls {
+				validCallIDs[tc.ID] = struct{}{}
+			}
+		}
+	}
+
 	var result []openai.ChatCompletionMessageParamUnion
 
 	for _, msg := range msgs {
@@ -250,6 +265,11 @@ func toOpenAIMessages(msgs []model.Message, modelName string) ([]openai.ChatComp
 
 		case model.RoleTool:
 			for _, tr := range msg.ToolResults {
+				if _, ok := validCallIDs[tr.CallID]; !ok {
+					// Orphaned tool result: no preceding assistant tool_call found.
+					// Drop silently to avoid a 400 from strict providers.
+					continue
+				}
 				content, err := contentPartsToTextOnlyString(tr.ContentParts, "openai", modelName, "tool_result")
 				if err != nil {
 					return nil, err
