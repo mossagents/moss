@@ -60,6 +60,9 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 	rootSessID := rootSess.ID
 	s.mu.Unlock()
 
+	// Capture history (previous turns) BEFORE appending the current message.
+	historyMsgs := rootSess.CopyMessages()
+
 	// Append user message to root session immediately.
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}}
 	rootSess.AppendMessage(userMsg)
@@ -88,7 +91,7 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 		s.mu.Unlock()
 		defer cancel()
 
-		output, err := s.runExpertSwarm(ctx, sw, rootSessID, content, breadth, depth)
+		output, err := s.runExpertSwarm(ctx, sw, rootSessID, content, historyMsgs, breadth, depth)
 		if err != nil {
 			if ctx.Err() != nil {
 				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": rootSessID})
@@ -130,7 +133,7 @@ func emitThinking(sessionID, content string, append bool) {
 }
 
 // runExpertSwarm runs the Planner → Workers → Synthesizer pipeline for expert mode.
-func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, breadth int, depth string) (string, error) {
+func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string) (string, error) {
 	k := s.k
 	numWorkers := breadth
 	if numWorkers <= 0 {
@@ -140,10 +143,11 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 		numWorkers = 3
 	}
 	maxSteps := depthMaxSteps(depth)
+	historyCtx := buildHistoryContext(history)
 
 	// Phase 1: Plan sub-questions via a direct LLM call.
 	emitThinking(rootSessID, "🧠 规划研究方向...\n\n", true)
-	questions, err := expertPlanQuestions(ctx, k, goal, numWorkers)
+	questions, err := expertPlanQuestions(ctx, k, goal, historyCtx, numWorkers)
 	if err != nil {
 		return "", fmt.Errorf("规划阶段失败: %w", err)
 	}
@@ -174,7 +178,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	emitEvent("chat:reset_stream", map[string]any{"session_id": rootSessID})
 
 	// Phase 3: Synthesize findings (streams directly via wailsIO → chat:stream events).
-	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, findings)
+	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, historyCtx, findings)
 	if err != nil {
 		return "", fmt.Errorf("综合阶段失败: %w", err)
 	}
@@ -195,17 +199,44 @@ func expertBuildPlanText(questions []expertQuestion, completed map[int]bool) str
 	return sb.String()
 }
 
+// buildHistoryContext converts prior session messages into a compact text block
+// that planners and synthesizers can use as conversation context.
+func buildHistoryContext(msgs []model.Message) string {
+	var sb strings.Builder
+	for _, m := range msgs {
+		if m.Role != model.RoleUser && m.Role != model.RoleAssistant {
+			continue
+		}
+		text := model.ContentPartsToPlainText(m.ContentParts)
+		if text == "" {
+			continue
+		}
+		role := "User"
+		if m.Role == model.RoleAssistant {
+			role = "Assistant"
+		}
+		fmt.Fprintf(&sb, "%s: %s\n\n", role, text)
+	}
+	return strings.TrimSpace(sb.String())
+}
+
 // expertPlanQuestions calls the LLM directly to produce N sub-questions as JSON.
-func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, goal string, numWorkers int) ([]expertQuestion, error) {
+func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, goal, historyCtx string, numWorkers int) ([]expertQuestion, error) {
 	systemPrompt := "You are a research planner. Return valid JSON only, no markdown."
+
+	var historySection string
+	if historyCtx != "" {
+		historySection = fmt.Sprintf("\nPrevious conversation:\n%s\n", historyCtx)
+	}
+
 	userPrompt := fmt.Sprintf(
 		`Return a JSON array with exactly %d objects. Each object must have "slug" (short kebab-case identifier) and "question" (research question string).
-
-Goal: %s
+%s
+Current goal: %s
 As of: %s
 
-Cover distinct research angles that together address the goal comprehensively. Return valid JSON array only.`,
-		numWorkers, goal, time.Now().UTC().Format(time.RFC3339),
+Cover distinct research angles that together address the current goal. If there is prior conversation, focus on what's new, complementary, or corrective — avoid repeating already-covered angles. Return valid JSON array only.`,
+		numWorkers, historySection, goal, time.Now().UTC().Format(time.RFC3339),
 	)
 
 	text, err := expertCompleteText(ctx, k.LLM(), systemPrompt, userPrompt)
@@ -338,7 +369,7 @@ func expertSynthesize(
 	sw *hswarm.Runtime,
 	store session.SessionStore,
 	userIO *WailsUserIO,
-	rootSessID, goal string,
+	rootSessID, goal, historyCtx string,
 	findings []string,
 ) (string, error) {
 	thread, err := k.NewSession(ctx, session.SessionConfig{
@@ -360,10 +391,16 @@ func expertSynthesize(
 		}
 	}
 
+	var historySection string
+	if historyCtx != "" {
+		historySection = fmt.Sprintf("\nPrevious conversation (for continuity):\n%s\n", historyCtx)
+	}
+
 	prompt := fmt.Sprintf(
-		"Goal: %s\nAs of: %s\n\nWorker findings:\n%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. Be thorough but concise.",
+		"Goal: %s\nAs of: %s\n%s\nWorker findings:\n%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. If there is prior conversation, build on it — address corrections, additions, or follow-ups as appropriate. Be thorough but concise.",
 		goal,
 		time.Now().UTC().Format(time.RFC3339),
+		historySection,
 		strings.Join(findings, "\n\n---\n\n"),
 	)
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}}
