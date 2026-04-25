@@ -815,12 +815,6 @@ export default function App() {
               </div>
 
               <div className="relative h-36 shrink-0">
-                {isRunning && statusText && (
-                  <div className="absolute top-0 left-0 right-0 px-6 py-1.5 flex items-center gap-2 border-t border-outline-variant/20">
-                    <span className="material-symbols-outlined text-sm animate-spin-1s text-primary shrink-0">autorenew</span>
-                    <span className="text-xs text-on-surface-variant truncate">{statusText}</span>
-                  </div>
-                )}
                 <AssistantComposerBar
                   isRunning={isRunning}
                   onStop={handleStop}
