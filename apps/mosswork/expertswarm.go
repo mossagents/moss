@@ -156,12 +156,54 @@ func workerStatusIcon(status string) string {
 	}
 }
 
-// expertBuildPlanText formats the research questions with per-item status icons.
-func expertBuildPlanText(questions []expertQuestion, statuses map[int]string) string {
+// confidenceBadge returns a compact Chinese label for a confidence level.
+func confidenceBadge(c string) string {
+	switch c {
+	case "high":
+		return "〔高〕"
+	case "medium":
+		return "〔中〕"
+	case "low":
+		return "〔低〕"
+	default:
+		return ""
+	}
+}
+
+// expertBuildPlanText formats the research questions with per-item status and confidence.
+// findings may be nil (returns pending state for all items).
+func expertBuildPlanText(questions []expertQuestion, findings map[int]workerFinding) string {
 	var sb strings.Builder
 	sb.WriteString("研究方向\n\n")
 	for i, q := range questions {
-		fmt.Fprintf(&sb, "  %s %s\n", workerStatusIcon(statuses[i]), q.Question)
+		f := findings[i] // zero value if nil map or missing key
+		fmt.Fprintf(&sb, "  %s %s%s\n", workerStatusIcon(f.Status), confidenceBadge(f.Confidence), q.Question)
+	}
+	return sb.String()
+}
+
+// buildFindingsSummaryText appends a short per-worker excerpt section to the thinking panel.
+func buildFindingsSummaryText(findings []workerFinding) string {
+	var sb strings.Builder
+	sb.WriteString("\n─────────────────────\n\n调研摘要\n\n")
+	for _, f := range findings {
+		if f.Status == "failed" || f.Finding == "" {
+			if f.Error != "" {
+				fmt.Fprintf(&sb, "%s（失败）: %s\n\n", f.Question, f.Error)
+			} else {
+				fmt.Fprintf(&sb, "%s（失败）\n\n", f.Question)
+			}
+			continue
+		}
+		fmt.Fprintf(&sb, "%s（置信度：%s）\n", f.Question, confidenceLabel(f.Confidence))
+		excerpt := strings.TrimSpace(f.Finding)
+		if nl := strings.IndexByte(excerpt, '\n'); nl >= 0 && nl < 80 {
+			excerpt = excerpt[:nl]
+		} else if runes := []rune(excerpt); len(runes) > 80 {
+			excerpt = string(runes[:80]) + "..."
+		}
+		sb.WriteString(excerpt)
+		sb.WriteString("\n\n")
 	}
 	return sb.String()
 }
@@ -194,20 +236,21 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 
 	// Phase 2: Run workers concurrently; update plan on each completion.
 	var progressMu sync.Mutex
-	statuses := map[int]string{}
-	onWorkerComplete := func(idx int, status string) {
+	progressFindings := map[int]workerFinding{}
+	onWorkerComplete := func(idx int, f workerFinding) {
 		progressMu.Lock()
-		statuses[idx] = status
-		text := expertBuildPlanText(questions, statuses)
-		progressMu.Unlock()
+		progressFindings[idx] = f
+		text := expertBuildPlanText(questions, progressFindings)
+		// Emit inside the lock to prevent out-of-order snapshots.
 		emitThinking(rootSessID, text, false)
+		progressMu.Unlock()
 	}
 	findings, err := expertRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerComplete)
 	if err != nil {
 		return "", fmt.Errorf("调研阶段失败: %w", err)
 	}
 
-	// Count results and show final plan summary.
+	// Count results and build final plan from authoritative findings (not callback state).
 	done, partial, failed := 0, 0, 0
 	for _, f := range findings {
 		switch f.Status {
@@ -219,9 +262,13 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 			failed++
 		}
 	}
-	planText := expertBuildPlanText(questions, statuses)
+	finalMap := make(map[int]workerFinding, len(findings))
+	for i, f := range findings {
+		finalMap[i] = f
+	}
+	planText := expertBuildPlanText(questions, finalMap)
 	summary := fmt.Sprintf("\n完成 %d，部分 %d，失败 %d\n", done, partial, failed)
-	emitThinking(rootSessID, planText+summary, false)
+	emitThinking(rootSessID, planText+summary+buildFindingsSummaryText(findings), false)
 
 	if done+partial == 0 {
 		return "", fmt.Errorf("所有调研方向均失败，无法生成报告")
@@ -339,7 +386,7 @@ func expertRunWorkers(
 	rootSessID, goal string,
 	questions []expertQuestion,
 	maxSteps int,
-	onComplete func(idx int, status string),
+	onComplete func(idx int, f workerFinding),
 ) ([]workerFinding, error) {
 	results := make([]workerFinding, len(questions))
 	var wg sync.WaitGroup
@@ -351,7 +398,7 @@ func expertRunWorkers(
 			finding := expertRunWorker(ctx, k, sw, store, rootSessID, goal, q, maxSteps)
 			results[i] = finding
 			if onComplete != nil {
-				onComplete(i, finding.Status)
+				onComplete(i, finding)
 			}
 		}()
 	}
