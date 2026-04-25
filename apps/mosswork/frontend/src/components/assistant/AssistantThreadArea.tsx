@@ -221,6 +221,17 @@ function AssistantMessage({ onArtifact, retryUserMessage, onRetryMessage }: {
     });
   };
 
+  const handleDownload = () => {
+    if (!cleaned) return;
+    const blob = new Blob([cleaned], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `moss-${Date.now()}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const canRetry = !isStreaming && retryUserMessage?.retryable && retryUserMessage.historyIndex != null;
 
   return (
@@ -260,7 +271,7 @@ function AssistantMessage({ onArtifact, retryUserMessage, onRetryMessage }: {
           </div>
         )}
 
-        {/* Action buttons: copy + retry — shown only when done streaming */}
+        {/* Action buttons: copy + download + retry — shown only when done streaming */}
         {!isStreaming && cleaned && (
           <div className="flex items-center gap-1 pt-1">
             <button
@@ -278,6 +289,20 @@ function AssistantMessage({ onArtifact, retryUserMessage, onRetryMessage }: {
                 {copied ? "check" : "content_copy"}
               </span>
               {copied ? "已复制" : "复制"}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              title="下载为 Markdown 文件"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] leading-none",
+                "text-on-surface-variant/70 transition-all",
+                "hover:bg-surface-container-lowest hover:text-primary opacity-70 hover:opacity-100",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+              )}
+            >
+              <span className="material-symbols-outlined text-[12px] leading-none">download</span>
+              下载
             </button>
             {canRetry && (
               <button
