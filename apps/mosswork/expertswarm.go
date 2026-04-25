@@ -118,6 +118,17 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 	return nil
 }
 
+// emitThinking sends a research-step update to the frontend's thinking block.
+// When append is true, content is appended to the existing thinking text.
+// When append is false, content replaces the thinking text.
+func emitThinking(sessionID, content string, append bool) {
+	emitEvent("chat:thinking", map[string]any{
+		"content":    content,
+		"append":     append,
+		"session_id": sessionID,
+	})
+}
+
 // runExpertSwarm runs the Planner → Workers → Synthesizer pipeline for expert mode.
 func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, breadth int, depth string) (string, error) {
 	k := s.k
@@ -131,7 +142,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	maxSteps := depthMaxSteps(depth)
 
 	// Phase 1: Plan sub-questions via a direct LLM call.
-	emitEvent("chat:progress", map[string]any{"content": "🧠 规划研究方向...", "session_id": rootSessID})
+	emitThinking(rootSessID, "🧠 规划研究方向...\n\n", true)
 	questions, err := expertPlanQuestions(ctx, k, goal, numWorkers)
 	if err != nil {
 		return "", fmt.Errorf("规划阶段失败: %w", err)
@@ -140,13 +151,10 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 		return "", fmt.Errorf("规划器未返回任何子问题")
 	}
 
-	// Show the research plan as a chat message (updated in-place as workers complete).
-	emitEvent("chat:text", map[string]any{
-		"content":    expertBuildPlanText(questions, nil),
-		"session_id": rootSessID,
-	})
+	// Show initial research plan (all pending).
+	emitThinking(rootSessID, expertBuildPlanText(questions, nil), false)
 
-	// Phase 2: Run workers concurrently; update the plan message on each completion.
+	// Phase 2: Run workers concurrently; update plan on each completion.
 	var progressMu sync.Mutex
 	completed := map[int]bool{}
 	onWorkerDone := func(idx int) {
@@ -154,23 +162,18 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 		completed[idx] = true
 		text := expertBuildPlanText(questions, completed)
 		progressMu.Unlock()
-		emitEvent("chat:text", map[string]any{"content": text, "session_id": rootSessID})
+		emitThinking(rootSessID, text, false)
 	}
-	emitEvent("chat:progress", map[string]any{
-		"content":    fmt.Sprintf("🔍 并行调研 %d 个方向...", len(questions)),
-		"session_id": rootSessID,
-	})
 	findings, err := expertRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerDone)
 	if err != nil {
 		return "", fmt.Errorf("调研阶段失败: %w", err)
 	}
 
-	// Seal the research-plan message, then reset so synthesizer gets its own bubble.
+	// Seal the research-thinking bubble, then reset so synthesizer gets its own bubble.
 	emitEvent("chat:stream_end", map[string]any{"session_id": rootSessID})
 	emitEvent("chat:reset_stream", map[string]any{"session_id": rootSessID})
 
-	// Phase 3: Synthesize findings.
-	emitEvent("chat:progress", map[string]any{"content": "✍️ 综合分析，生成最终回答...", "session_id": rootSessID})
+	// Phase 3: Synthesize findings (streams directly via wailsIO → chat:stream events).
 	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, findings)
 	if err != nil {
 		return "", fmt.Errorf("综合阶段失败: %w", err)
@@ -178,15 +181,15 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	return result, nil
 }
 
-// expertBuildPlanText formats the research questions with per-item completion indicators.
+// expertBuildPlanText formats the research questions with per-item completion indicators (plain text).
 func expertBuildPlanText(questions []expertQuestion, completed map[int]bool) string {
 	var sb strings.Builder
-	sb.WriteString("**研究方向**\n\n")
+	sb.WriteString("研究方向\n\n")
 	for i, q := range questions {
 		if completed[i] {
-			fmt.Fprintf(&sb, "%d. ✅ %s\n", i+1, q.Question)
+			fmt.Fprintf(&sb, "  ✅ %s\n", q.Question)
 		} else {
-			fmt.Fprintf(&sb, "%d. ⏳ %s\n", i+1, q.Question)
+			fmt.Fprintf(&sb, "  ⏳ %s\n", q.Question)
 		}
 	}
 	return sb.String()

@@ -160,8 +160,9 @@ function UserMessage({ skills, onRetryMessage, onCapture }: { skills: SkillInfo[
   );
 }
 
-function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
+function ThinkingBlock({ text, streaming, label }: { text: string; streaming: boolean; label?: string }) {
   const [open, setOpen] = useState(streaming); // auto-open while streaming, collapse when done
+  const isResearch = !!label;
 
   useEffect(() => {
     if (!streaming) setOpen(false);
@@ -174,9 +175,11 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
         className="w-full flex items-center gap-2 px-3 py-2 text-on-surface-variant hover:bg-surface-container/60 transition-colors text-left"
       >
         <span className={cn("material-symbols-outlined text-sm", streaming && "animate-spin-1s")}>
-          {streaming ? "autorenew" : "psychology"}
+          {streaming ? "autorenew" : (isResearch ? "manage_search" : "psychology")}
         </span>
-        <span className="font-medium">{streaming ? "思考中..." : "思考过程"}</span>
+        <span className="font-medium">
+          {streaming ? (isResearch ? "研究中..." : "思考中...") : (label ?? "思考过程")}
+        </span>
         <span className="material-symbols-outlined text-sm ml-auto">
           {open ? "expand_less" : "expand_more"}
         </span>
@@ -227,7 +230,11 @@ function AssistantMessage({ onArtifact, retryUserMessage, onRetryMessage }: {
       </div>
       <div className="flex-1 space-y-3 min-w-0">
         {fullThinking && (
-          <ThinkingBlock text={fullThinking} streaming={isStreaming && !fullContent} />
+          <ThinkingBlock
+            text={fullThinking}
+            streaming={isStreaming && !fullContent}
+            label={!fullContent ? "研究过程" : undefined}
+          />
         )}
 
         {/* Tool chips — shown before text when tools precede any content */}

@@ -12,7 +12,6 @@ import type {
   ChatMessagePart,
   ToolExecution,
   AppConfig,
-  WorkerState,
   AskData,
   StreamData,
   ToolStartData,
@@ -32,7 +31,6 @@ import ExpertParamsBar, { type ExpertDepth } from "@/components/ExpertParamsBar.
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea.tsx";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar.tsx";
 import AskDialog from "@/components/AskDialog.tsx";
-import WorkerPanel from "@/components/WorkerPanel.tsx";
 import ArtifactPanel from "@/components/ArtifactPanel.tsx";
 import AutomationView from "@/components/automation/AutomationView.tsx";
 import AutomationFormModal from "@/components/automation/AutomationFormModal.tsx";
@@ -77,27 +75,6 @@ function convertChatMessage(message: ChatMessage): ThreadMessageLike {
     content: parts.length > 0 ? parts : "",
     createdAt: new Date(message.timestamp),
     status,
-  };
-}
-
-function normalizeWorkerState(input: any): WorkerState | null {
-  if (!input || typeof input !== "object") return null;
-  const tasks = Array.isArray(input.tasks)
-    ? input.tasks.map((t: any) => ({
-      id: String(t?.id ?? ""),
-      description: String(t?.description ?? t?.id ?? ""),
-      status: String(t?.status ?? "queued") as WorkerState["tasks"][number]["status"],
-      steps: Number(t?.steps ?? 0),
-      error: t?.error ? String(t.error) : undefined,
-    }))
-    : [];
-
-  return {
-    state: input.state === "running" ? "running" : "completed",
-    running: Number(input.running ?? 0),
-    succeeded: Number(input.succeeded ?? 0),
-    failed: Number(input.failed ?? 0),
-    tasks,
   };
 }
 
@@ -179,7 +156,6 @@ export default function App() {
   const [statusText, setStatusText] = useState<string>("");
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [askData, setAskData] = useState<AskData | null>(null);
-  const [workerState, setWorkerState] = useState<WorkerState | null>(null);
   const [pendingFiles, setPendingFiles] = useState<string[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
@@ -352,19 +328,17 @@ export default function App() {
     ]);
   });
 
-  // Reasoning/thinking content from models like DeepSeek-R1.
-  // Aggregated into the SAME assistant message bubble as a collapsible section.
   useWailsEvent<StreamData>("chat:thinking", (data) => {
     if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
     const chunk = data?.content ?? "";
     if (!chunk) return;
+    const shouldAppend = data?.append !== false;
     setIsRunning(true);
-    setStatusText("正在思考...");
     if (streamingIdRef.current) {
       const id = streamingIdRef.current;
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === id ? { ...m, thinking: (m.thinking ?? "") + chunk } : m,
+          m.id === id ? { ...m, thinking: shouldAppend ? (m.thinking ?? "") + chunk : chunk } : m,
         ),
       );
       return;
@@ -534,8 +508,6 @@ export default function App() {
     if (typeof data.current_session_id === "string") setCurrentSessionId(data.current_session_id);
     if (typeof data.session_mode === "string") setChatMode(data.session_mode as ChatMode);
     if (typeof data.session_mode_committed === "boolean") setModeCommitted(data.session_mode_committed);
-    const ws = normalizeWorkerState((data as DashboardState).worker);
-    if (ws) setWorkerState(ws);
     // If the current session is running (e.g. started by automation), reflect that in UI state
     if (typeof data.current_session_id === "string" && Array.isArray(data.sessions)) {
       const cur = data.sessions.find((s) => s.id === data.current_session_id);
@@ -559,19 +531,6 @@ export default function App() {
 
   useWailsEvent<AutomationTask[]>("desktop:schedules", (data) => {
     if (Array.isArray(data)) setAutomationTasks(data);
-  });
-
-  useWailsEvent<any>("worker:update", (data) => {
-    let raw = data;
-    if (typeof data === "string") {
-      try {
-        raw = JSON.parse(data);
-      } catch {
-        raw = null;
-      }
-    }
-    const ws = normalizeWorkerState(raw);
-    if (ws) setWorkerState(ws);
   });
 
   const handleSend = useCallback(
@@ -628,7 +587,6 @@ export default function App() {
       setPendingFiles([]);
       setArtifact(null);
       streamingIdRef.current = null;
-      setWorkerState(null);
     } catch {}
   }, []);
 
@@ -642,7 +600,6 @@ export default function App() {
       setMessages([]);
       setArtifact(null);
       streamingIdRef.current = null;
-      setWorkerState(null);
       // Switch the backend session
       await ChatService.resumeSession(id);
       setCurrentSessionId(id);
@@ -667,7 +624,6 @@ export default function App() {
       currentSessionIdRef.current = sessionId;
       setCurrentSessionId(sessionId);
       setMessages([]);
-      setWorkerState(null);
       await ChatService.resumeSession(sessionId);
     }
 
@@ -857,12 +813,6 @@ export default function App() {
                   onRetryMessage={handleRetryMessage}
                 />
               </div>
-
-              {isRunning && workerState && workerState.tasks.length > 0 && (
-                <div className="shrink-0 px-2 pb-1">
-                  <WorkerPanel state={workerState} />
-                </div>
-              )}
 
               <div className="relative h-36 shrink-0">
                 {isRunning && statusText && (

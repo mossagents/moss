@@ -32,6 +32,7 @@ export interface ToolExecution {
 export interface StreamData {
   content: string;
   session_id?: string;
+  append?: boolean;   // used by chat:thinking — false means replace, true (default) means append
   meta?: Record<string, any>;
 }
 
