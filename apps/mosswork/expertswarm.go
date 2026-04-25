@@ -45,6 +45,17 @@ type expertQuestion struct {
 	Question string `json:"question"`
 }
 
+// workerFinding is the structured output from a single research worker.
+type workerFinding struct {
+	Slug       string   `json:"slug"`
+	Question   string   `json:"question"`
+	Finding    string   `json:"finding"`
+	Confidence string   `json:"confidence"` // "high", "medium", "low"
+	Gaps       []string `json:"gaps"`
+	Status     string   `json:"status"` // "done", "partial", "failed"
+	Error      string   `json:"error,omitempty"`
+}
+
 // sendMessageToSwarm routes a user message to the expert swarm pipeline.
 // Returns immediately; the pipeline runs in a background goroutine.
 func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.Session, content string, breadth int, depth string, outputLength string) error {
@@ -122,17 +133,40 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 }
 
 // emitThinking sends a research-step update to the frontend's thinking block.
-// When append is true, content is appended to the existing thinking text.
-// When append is false, content replaces the thinking text.
-func emitThinking(sessionID, content string, append bool) {
+// When appendMode is true the content is appended; when false it replaces.
+func emitThinking(sessionID, content string, appendMode bool) {
 	emitEvent("chat:thinking", map[string]any{
 		"content":    content,
-		"append":     append,
+		"append":     appendMode,
 		"session_id": sessionID,
 	})
 }
 
-// runExpertSwarm runs the Planner → Workers → Synthesizer pipeline for expert mode.
+// workerStatusIcon returns a display icon for a worker completion status.
+func workerStatusIcon(status string) string {
+	switch status {
+	case "done":
+		return "✅"
+	case "partial":
+		return "🔶"
+	case "failed":
+		return "❌"
+	default:
+		return "⏳"
+	}
+}
+
+// expertBuildPlanText formats the research questions with per-item status icons.
+func expertBuildPlanText(questions []expertQuestion, statuses map[int]string) string {
+	var sb strings.Builder
+	sb.WriteString("研究方向\n\n")
+	for i, q := range questions {
+		fmt.Fprintf(&sb, "  %s %s\n", workerStatusIcon(statuses[i]), q.Question)
+	}
+	return sb.String()
+}
+
+// runExpertSwarm runs the Planner → Workers → Synthesizer → Reviewer pipeline for expert mode.
 func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string, outputLength string) (string, error) {
 	k := s.k
 	numWorkers := breadth
@@ -147,7 +181,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 
 	// Phase 1: Plan sub-questions via a direct LLM call.
 	emitThinking(rootSessID, "🧠 规划研究方向...\n\n", true)
-	questions, err := expertPlanQuestions(ctx, k, goal, historyCtx, numWorkers)
+	questions, err := expertPlanQuestions(ctx, k, sw, goal, historyCtx, numWorkers)
 	if err != nil {
 		return "", fmt.Errorf("规划阶段失败: %w", err)
 	}
@@ -160,17 +194,37 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 
 	// Phase 2: Run workers concurrently; update plan on each completion.
 	var progressMu sync.Mutex
-	completed := map[int]bool{}
-	onWorkerDone := func(idx int) {
+	statuses := map[int]string{}
+	onWorkerComplete := func(idx int, status string) {
 		progressMu.Lock()
-		completed[idx] = true
-		text := expertBuildPlanText(questions, completed)
+		statuses[idx] = status
+		text := expertBuildPlanText(questions, statuses)
 		progressMu.Unlock()
 		emitThinking(rootSessID, text, false)
 	}
-	findings, err := expertRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerDone)
+	findings, err := expertRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerComplete)
 	if err != nil {
 		return "", fmt.Errorf("调研阶段失败: %w", err)
+	}
+
+	// Count results and show final plan summary.
+	done, partial, failed := 0, 0, 0
+	for _, f := range findings {
+		switch f.Status {
+		case "done":
+			done++
+		case "partial":
+			partial++
+		default:
+			failed++
+		}
+	}
+	planText := expertBuildPlanText(questions, statuses)
+	summary := fmt.Sprintf("\n完成 %d，部分 %d，失败 %d\n", done, partial, failed)
+	emitThinking(rootSessID, planText+summary, false)
+
+	if done+partial == 0 {
+		return "", fmt.Errorf("所有调研方向均失败，无法生成报告")
 	}
 
 	// Seal the research-thinking bubble, then reset so synthesizer gets its own bubble.
@@ -182,21 +236,11 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	if err != nil {
 		return "", fmt.Errorf("综合阶段失败: %w", err)
 	}
-	return result, nil
-}
 
-// expertBuildPlanText formats the research questions with per-item completion indicators (plain text).
-func expertBuildPlanText(questions []expertQuestion, completed map[int]bool) string {
-	var sb strings.Builder
-	sb.WriteString("研究方向\n\n")
-	for i, q := range questions {
-		if completed[i] {
-			fmt.Fprintf(&sb, "  ✅ %s\n", q.Question)
-		} else {
-			fmt.Fprintf(&sb, "  ⏳ %s\n", q.Question)
-		}
-	}
-	return sb.String()
+	// Phase 4: Quality review — appends caveats to the thinking panel if issues are found.
+	expertReview(ctx, k, sw, rootSessID, goal, result)
+
+	return result, nil
 }
 
 // buildHistoryContext converts prior session messages into a compact text block
@@ -220,9 +264,20 @@ func buildHistoryContext(msgs []model.Message) string {
 	return strings.TrimSpace(sb.String())
 }
 
+// expertPlannerSysPrompt returns the system prompt for the planner phase.
+// Uses the configured role spec when available, otherwise falls back to a built-in prompt.
+func expertPlannerSysPrompt(sw *hswarm.Runtime) string {
+	if sw != nil {
+		if spec, ok := sw.Role(kswarm.RolePlanner); ok && spec.SystemPrompt != "" {
+			return expertComposeSysPrompt(spec)
+		}
+	}
+	return fmt.Sprintf("You are a research planner. Return valid JSON only, no markdown. Current time: %s", time.Now().UTC().Format(time.RFC3339))
+}
+
 // expertPlanQuestions calls the LLM directly to produce N sub-questions as JSON.
-func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, goal, historyCtx string, numWorkers int) ([]expertQuestion, error) {
-	systemPrompt := "You are a research planner. Return valid JSON only, no markdown."
+func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, goal, historyCtx string, numWorkers int) ([]expertQuestion, error) {
+	systemPrompt := expertPlannerSysPrompt(sw)
 
 	var historySection string
 	if historyCtx != "" {
@@ -230,12 +285,12 @@ func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, goal, historyCtx
 	}
 
 	userPrompt := fmt.Sprintf(
-		`Return a JSON array with exactly %d objects. Each object must have "slug" (short kebab-case identifier) and "question" (research question string).
+		`Return a JSON array with exactly %d objects. Each object must have "slug" (short kebab-case identifier, unique) and "question" (research question string).
 %s
 Current goal: %s
 As of: %s
 
-Cover distinct research angles that together address the current goal. If there is prior conversation, focus on what's new, complementary, or corrective — avoid repeating already-covered angles. Return valid JSON array only.`,
+Cover distinct, non-overlapping research angles that together fully address the goal. If there is prior conversation, focus on new, complementary, or corrective angles — avoid repeating already-covered content. Return valid JSON array only.`,
 		numWorkers, historySection, goal, time.Now().UTC().Format(time.RFC3339),
 	)
 
@@ -256,7 +311,23 @@ Cover distinct research angles that together address the current goal. If there 
 	if err := json.Unmarshal([]byte(text), &questions); err != nil {
 		return nil, fmt.Errorf("规划器返回无效 JSON (%w): %s", err, text)
 	}
-	return questions, nil
+
+	// Deduplicate by slug and filter empty questions.
+	seen := make(map[string]struct{}, len(questions))
+	deduped := questions[:0]
+	for _, q := range questions {
+		q.Slug = strings.TrimSpace(q.Slug)
+		q.Question = strings.TrimSpace(q.Question)
+		if q.Question == "" || q.Slug == "" {
+			continue
+		}
+		if _, ok := seen[q.Slug]; ok {
+			continue
+		}
+		seen[q.Slug] = struct{}{}
+		deduped = append(deduped, q)
+	}
+	return deduped, nil
 }
 
 // expertRunWorkers runs each research question in its own sub-session, concurrently.
@@ -268,42 +339,28 @@ func expertRunWorkers(
 	rootSessID, goal string,
 	questions []expertQuestion,
 	maxSteps int,
-	onComplete func(idx int),
-) ([]string, error) {
-	type workerResult struct {
-		idx    int
-		output string
-		err    error
-	}
-	results := make([]workerResult, len(questions))
+	onComplete func(idx int, status string),
+) ([]workerFinding, error) {
+	results := make([]workerFinding, len(questions))
 	var wg sync.WaitGroup
 	wg.Add(len(questions))
 	for i, q := range questions {
 		i, q := i, q
 		go func() {
 			defer wg.Done()
-			out, err := expertRunWorker(ctx, k, sw, store, rootSessID, goal, q.Question, maxSteps)
-			results[i] = workerResult{idx: i, output: out, err: err}
+			finding := expertRunWorker(ctx, k, sw, store, rootSessID, goal, q, maxSteps)
+			results[i] = finding
 			if onComplete != nil {
-				onComplete(i)
+				onComplete(i, finding.Status)
 			}
 		}()
 	}
 	wg.Wait()
 
-	var findings []string
-	for _, r := range results {
-		if r.err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			slog.Warn("expert worker failed", slog.Any("error", r.err))
-			findings = append(findings, fmt.Sprintf("[调研失败: %v]", r.err))
-			continue
-		}
-		findings = append(findings, r.output)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
-	return findings, nil
+	return results, nil
 }
 
 // expertRunWorker runs a single research question in a tagged sub-session.
@@ -312,19 +369,25 @@ func expertRunWorker(
 	k *kernel.Kernel,
 	sw *hswarm.Runtime,
 	store session.SessionStore,
-	rootSessID, goal, question string,
+	rootSessID, goal string,
+	question expertQuestion,
 	maxSteps int,
-) (string, error) {
+) workerFinding {
 	if maxSteps <= 0 {
 		maxSteps = 30
 	}
 	thread, err := k.NewSession(ctx, session.SessionConfig{
-		Goal:     question,
+		Goal:     question.Question,
 		Mode:     "swarm-worker",
 		MaxSteps: maxSteps,
 	})
 	if err != nil {
-		return "", fmt.Errorf("创建调研子会话失败: %w", err)
+		return workerFinding{
+			Slug:     question.Slug,
+			Question: question.Question,
+			Status:   "failed",
+			Error:    fmt.Sprintf("创建调研子会话失败: %v", err),
+		}
 	}
 	session.SetThreadParent(thread, rootSessID)
 	session.SetThreadRole(thread, string(kswarm.RoleWorker))
@@ -338,27 +401,132 @@ func expertRunWorker(
 	}
 
 	prompt := fmt.Sprintf(
-		"Overall goal: %s\n\nYour assigned research question: %s\n\nResearch this question thoroughly and provide a detailed, evidence-backed answer.",
-		goal, question,
+		"Overall goal: %s\n\nYour assigned research question: %s\n\nResearch this question thoroughly. Use any available tools (for example, use http_request to fetch web pages or query search APIs) to gather relevant, up-to-date information before answering. After collecting sufficient evidence, output your findings as your final message using this EXACT format:\n\n<findings>\n{\"finding\": \"<comprehensive answer to the research question>\", \"confidence\": \"high|medium|low\", \"gaps\": [\"<aspect not fully covered>\"]}\n</findings>\n\nConfidence guide: \"high\" = well-established facts with strong evidence; \"medium\" = reasonable basis with some uncertainty; \"low\" = speculative or limited evidence. Do not output anything after the </findings> tag.",
+		goal, question.Question,
 	)
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}}
 	thread.AppendMessage(userMsg)
 
-	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
+	result, runErr := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     thread,
 		Agent:       k.BuildLLMAgent("expert-worker"),
 		UserContent: &userMsg,
-		IO:          discardIO{}, // suppress worker output from chat UI
+		IO:          discardIO{},
 	})
-	if err != nil {
-		return "", err
-	}
 	if store != nil {
 		if saveErr := store.Save(ctx, thread); saveErr != nil {
 			slog.Debug("save worker thread failed", slog.Any("error", saveErr))
 		}
 	}
-	return strings.TrimSpace(result.Output), nil
+	if runErr != nil {
+		return workerFinding{
+			Slug:     question.Slug,
+			Question: question.Question,
+			Status:   "failed",
+			Error:    runErr.Error(),
+		}
+	}
+
+	return extractWorkerFinding(strings.TrimSpace(result.Output), question)
+}
+
+// extractWorkerFinding parses a structured finding from worker output.
+// It tries sentinel format (<findings>…</findings>) first, then bare JSON extraction,
+// and finally falls back to treating the full output as a plain text partial finding.
+func extractWorkerFinding(text string, q expertQuestion) workerFinding {
+	if text == "" {
+		return workerFinding{Slug: q.Slug, Question: q.Question, Status: "failed", Error: "empty output"}
+	}
+
+	// Primary: extract JSON from <findings>…</findings> sentinel block.
+	if si := strings.Index(text, "<findings>"); si >= 0 {
+		rest := text[si+len("<findings>"):]
+		if ei := strings.Index(rest, "</findings>"); ei >= 0 {
+			if f, ok := parseWorkerFindingJSON(strings.TrimSpace(rest[:ei]), q); ok {
+				return f
+			}
+		}
+	}
+
+	// Fallback: find the first complete {…} block in the output.
+	if start := strings.Index(text, "{"); start >= 0 {
+		if end := strings.LastIndex(text, "}"); end > start {
+			if f, ok := parseWorkerFindingJSON(text[start:end+1], q); ok {
+				return f
+			}
+		}
+	}
+
+	// Last resort: treat raw output as a plain text partial finding.
+	return workerFinding{
+		Slug:       q.Slug,
+		Question:   q.Question,
+		Finding:    text,
+		Confidence: "medium",
+		Status:     "partial",
+	}
+}
+
+// parseWorkerFindingJSON attempts to unmarshal a JSON string into a workerFinding.
+func parseWorkerFindingJSON(jsonStr string, q expertQuestion) (workerFinding, bool) {
+	var raw struct {
+		Finding    string   `json:"finding"`
+		Confidence string   `json:"confidence"`
+		Gaps       []string `json:"gaps"`
+	}
+	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil || raw.Finding == "" {
+		return workerFinding{}, false
+	}
+	confidence := raw.Confidence
+	if confidence != "high" && confidence != "low" {
+		confidence = "medium"
+	}
+	return workerFinding{
+		Slug:       q.Slug,
+		Question:   q.Question,
+		Finding:    raw.Finding,
+		Confidence: confidence,
+		Gaps:       raw.Gaps,
+		Status:     "done",
+	}, true
+}
+
+// confidenceLabel translates a confidence value to a display label.
+func confidenceLabel(c string) string {
+	switch c {
+	case "high":
+		return "高"
+	case "low":
+		return "低"
+	default:
+		return "中"
+	}
+}
+
+// buildFindingsContext formats structured findings into a synthesizer prompt context.
+// Returns the formatted context string and a list of notes for failed/missing directions.
+func buildFindingsContext(findings []workerFinding) (string, []string) {
+	var sb strings.Builder
+	var gapNotes []string
+	first := true
+	for _, f := range findings {
+		if f.Status == "failed" || f.Finding == "" {
+			gapNotes = append(gapNotes, fmt.Sprintf("研究方向「%s」未完成（%s）", f.Question, f.Error))
+			continue
+		}
+		if !first {
+			sb.WriteString("\n\n---\n\n")
+		}
+		first = false
+		fmt.Fprintf(&sb, "### %s\n**置信度**: %s\n\n%s", f.Question, confidenceLabel(f.Confidence), f.Finding)
+		if len(f.Gaps) > 0 {
+			sb.WriteString("\n\n**未解决问题**:\n")
+			for _, g := range f.Gaps {
+				fmt.Fprintf(&sb, "- %s\n", g)
+			}
+		}
+	}
+	return sb.String(), gapNotes
 }
 
 // outputLengthInstruction maps a length key to a natural-language writing instruction.
@@ -384,7 +552,7 @@ func expertSynthesize(
 	store session.SessionStore,
 	userIO *WailsUserIO,
 	rootSessID, goal, historyCtx, outputLength string,
-	findings []string,
+	findings []workerFinding,
 ) (string, error) {
 	thread, err := k.NewSession(ctx, session.SessionConfig{
 		Goal:     "synthesize: " + goal,
@@ -405,17 +573,26 @@ func expertSynthesize(
 		}
 	}
 
+	findingsContext, gapNotes := buildFindingsContext(findings)
 	var historySection string
 	if historyCtx != "" {
 		historySection = fmt.Sprintf("\nPrevious conversation (for continuity):\n%s\n", historyCtx)
 	}
+	var gapSection string
+	if len(gapNotes) > 0 {
+		gapSection = "\n\nResearch gaps (these directions could not be fully investigated):\n"
+		for _, note := range gapNotes {
+			gapSection += "- " + note + "\n"
+		}
+	}
 
 	prompt := fmt.Sprintf(
-		"Goal: %s\nAs of: %s\n%s\nWorker findings:\n%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. If there is prior conversation, build on it — address corrections, additions, or follow-ups as appropriate.\n\nOutput length guidance: %s",
+		"Goal: %s\nAs of: %s\n%s\nWorker findings:\n%s%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. If there is prior conversation, build on it — address corrections, additions, or follow-ups as appropriate. Where confidence is low or gaps exist, acknowledge them explicitly.\n\nOutput length guidance: %s",
 		goal,
 		time.Now().UTC().Format(time.RFC3339),
 		historySection,
-		strings.Join(findings, "\n\n---\n\n"),
+		findingsContext,
+		gapSection,
 		outputLengthInstruction(outputLength),
 	)
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}}
@@ -436,6 +613,31 @@ func expertSynthesize(
 		}
 	}
 	return strings.TrimSpace(result.Output), nil
+}
+
+// expertReview performs a lightweight quality check on the synthesized output.
+// If the reviewer flags issues, a note is appended to the thinking panel.
+// Failures are silently discarded — the review is advisory only.
+func expertReview(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, rootSessID, goal, draft string) {
+	sysPrompt := "You are a critical research reviewer. Be concise and direct."
+	if sw != nil {
+		if spec, ok := sw.Role(kswarm.RoleReviewer); ok && spec.SystemPrompt != "" {
+			sysPrompt = expertComposeSysPrompt(spec)
+		}
+	}
+	userPrompt := fmt.Sprintf(
+		"Review the following research answer for significant quality issues.\n\nGoal: %s\n\nAnswer:\n%s\n\nIf the answer is generally sound, respond with exactly: APPROVED\nIf there are significant issues (unsupported claims, critical missing angles, overconfident conclusions), respond with a brief bulleted list of issues (3 max). Do not rewrite the answer.",
+		goal, draft,
+	)
+	review, err := expertCompleteText(ctx, k.LLM(), sysPrompt, userPrompt)
+	if err != nil {
+		return
+	}
+	review = strings.TrimSpace(review)
+	if strings.EqualFold(review, "APPROVED") || strings.HasPrefix(strings.ToUpper(review), "APPROVED") {
+		return
+	}
+	emitThinking(rootSessID, "\n\n---\n\n🔍 **审查说明**\n\n"+review, true)
 }
 
 // expertComposeSysPrompt composes a role-specific system prompt with time context.
