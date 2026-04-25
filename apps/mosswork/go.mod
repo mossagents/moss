@@ -14,6 +14,8 @@ replace github.com/mossagents/moss/harness => ./../../harness
 
 replace github.com/mossagents/moss/contrib/tools => ./../../contrib/tools
 
+replace github.com/mossagents/moss/x => ./../../x
+
 require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/auth v0.9.3 // indirect
@@ -56,6 +58,7 @@ require (
 	github.com/mark3labs/mcp-go v0.45.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mossagents/moss/x v0.0.0-00010101000000-000000000000 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/openai/openai-go v1.12.0 // indirect

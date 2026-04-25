@@ -237,6 +237,14 @@ html, body, #root {
   .progress-fill {
     width: var(--progress-width, 0%);
   }
+  .progress-indeterminate {
+    width: 35%;
+    animation: progressSlide 1.6s ease-in-out infinite;
+  }
+@keyframes progressSlide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

@@ -142,6 +142,23 @@ export function SendMessageWithAttachments(content: string, attachments: string[
     return $Call.ByID(1831210734, content, attachments);
 }
 
+/**
+ * SetChatMode sets and persists the chat interaction mode ("normal" or "expert").
+ * Calling this commits the mode for the current session — the mode toggle is then hidden.
+ */
+export function SetChatMode(mode: string): $CancellablePromise<void> {
+    return $Call.ByID(302981656, mode);
+}
+
+/**
+ * SetExpertParams sets the breadth (number of research sub-questions, 1–5) and
+ * depth ("fast", "standard", or "deep") for the expert swarm pipeline.
+ * Call this before sending the first message in expert mode.
+ */
+export function SetExpertParams(breadth: number, depth: string): $CancellablePromise<void> {
+    return $Call.ByID(1825596595, breadth, depth);
+}
+
 export function StopAgent(): $CancellablePromise<void> {
     return $Call.ByID(429619256);
 }

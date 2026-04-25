@@ -22,6 +22,7 @@ import (
 	"github.com/mossagents/moss/harness/skill"
 	appruntime "github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/scheduler"
+	hswarm "github.com/mossagents/moss/harness/swarm"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
@@ -36,6 +37,7 @@ type ChatService struct {
 	sched *scheduler.Scheduler
 	store session.SessionStore
 	sess  *session.Session
+	swarm *hswarm.Runtime // nil until kernel boots with swarm enabled
 
 	wailsIO    *WailsUserIO
 	serviceCtx context.Context
@@ -43,6 +45,9 @@ type ChatService struct {
 	mu            sync.Mutex
 	activeRuns    map[string]context.CancelFunc
 	monitorCancel context.CancelFunc
+	chatMode      string // "normal" or "expert"; protected by mu
+	expertBreadth int    // number of parallel research questions; protected by mu
+	expertDepth   string // "fast", "standard", or "deep"; protected by mu
 }
 
 func NewChatService(cfg config) *ChatService {
@@ -83,6 +88,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		return fmt.Errorf("boot kernel: %w", err)
 	}
 	s.k = k
+	s.rebindSwarm(k)
 
 	// Repair any sessions left in "running" state from a previous crash before
 	// deciding which thread to restore on startup.
@@ -93,6 +99,7 @@ func (s *ChatService) ServiceStartup(ctx context.Context, _ application.ServiceO
 		return err
 	}
 	s.sess = sess
+	s.chatMode = sessionChatMode(sess)
 
 	s.startScheduler(ctx)
 	s.startDashboardMonitor(ctx)
@@ -175,6 +182,75 @@ func (s *ChatService) ServiceShutdown() error {
 	return nil
 }
 
+// SetChatMode sets and persists the chat interaction mode ("normal" or "expert").
+// Calling this commits the mode for the current session — the mode toggle is then hidden.
+func (s *ChatService) SetChatMode(mode string) {
+	mode = strings.TrimSpace(mode)
+	s.mu.Lock()
+	s.chatMode = mode
+	sess := s.sess
+	s.mu.Unlock()
+	if sess != nil {
+		// Persist as thread_source: "expert" or "normal" (explicit committed-normal).
+		session.SetThreadSource(sess, mode)
+		_ = s.persistSession(sess)
+	}
+	s.emitDashboard()
+}
+
+// SetExpertParams sets the breadth (number of research sub-questions, 1–5) and
+// depth ("fast", "standard", or "deep") for the expert swarm pipeline.
+// Call this before sending the first message in expert mode.
+func (s *ChatService) SetExpertParams(breadth int, depth string) {
+	if breadth < 1 {
+		breadth = 1
+	}
+	if breadth > 5 {
+		breadth = 5
+	}
+	switch depth {
+	case "fast", "standard", "deep":
+	default:
+		depth = "standard"
+	}
+	s.mu.Lock()
+	s.expertBreadth = breadth
+	s.expertDepth = depth
+	s.mu.Unlock()
+}
+
+// sessionChatMode reads the persisted chat mode from session metadata.
+func sessionChatMode(sess *session.Session) string {
+	if sess == nil {
+		return "normal"
+	}
+	if v, ok := sess.GetMetadata(session.MetadataThreadSource); ok {
+		if src, _ := v.(string); src == "expert" {
+			return "expert"
+		}
+	}
+	return "normal"
+}
+
+// sessionModeCommitted reports whether the session's chat mode is locked in:
+// either explicitly (source is non-empty) or because a user message exists.
+func sessionModeCommitted(sess *session.Session) bool {
+	if sess == nil {
+		return false
+	}
+	if v, ok := sess.GetMetadata(session.MetadataThreadSource); ok {
+		if src, _ := v.(string); src != "" {
+			return true
+		}
+	}
+	for _, msg := range sess.CopyMessages() {
+		if msg.Role == model.RoleUser {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ChatService) SendMessage(content string) error {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {
@@ -226,6 +302,16 @@ func (s *ChatService) SendMessage(content string) error {
 		}
 	}
 
+	// Route to swarm pipeline in expert mode.
+	s.mu.Lock()
+	mode := s.chatMode
+	sw := s.swarm
+	breadth := s.expertBreadth
+	depth := s.expertDepth
+	s.mu.Unlock()
+	if mode == "expert" && sw != nil {
+		return s.sendMessageToSwarm(sw, sess, content, breadth, depth)
+	}
 	return s.sendMessageToSession(sess, content)
 }
 
@@ -265,6 +351,7 @@ func (s *ChatService) NewSession() error {
 	sess.SetTitle("New Chat")
 	s.mu.Lock()
 	s.sess = sess
+	s.chatMode = "normal"
 	s.mu.Unlock()
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist new session failed", slog.Any("error", err))
@@ -288,6 +375,7 @@ func (s *ChatService) ResumeSession(id string) error {
 	}
 	s.mu.Lock()
 	s.sess = sess
+	s.chatMode = sessionChatMode(sess)
 	s.mu.Unlock()
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist resumed session failed", slog.Any("error", err))
@@ -747,6 +835,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 		appkit.WithDeepAgentAppName(appconfig.AppName()),
 		appkit.WithDeepAgentSessionStoreDir(sessionDir),
 		appkit.WithDeepAgentMemoryDir(filepath.Join(appDir, "memories")),
+		appkit.WithDeepAgentSwarm(true),
 		appkit.WithDeepAgentAdditionalFeatures(
 			harness.Scheduling(sched),
 		),
@@ -768,6 +857,19 @@ func (s *ChatService) newScheduler(appDir string) *scheduler.Scheduler {
 		return scheduler.New()
 	}
 	return scheduler.New(scheduler.WithPersistence(store))
+}
+
+// rebindSwarm attaches the swarm runtime from the kernel after boot.
+// Must be called each time the kernel is (re)built and booted.
+func (s *ChatService) rebindSwarm(k *kernel.Kernel) {
+	if k == nil {
+		s.swarm = nil
+		return
+	}
+	s.swarm = hswarm.RuntimeOf(k)
+	if s.swarm == nil {
+		slog.Warn("swarm runtime not available; expert mode disabled")
+	}
 }
 
 func (s *ChatService) startScheduler(ctx context.Context) {
@@ -883,6 +985,9 @@ func (s *ChatService) dashboardSnapshot(ctx context.Context) (map[string]any, er
 			}
 			sessionViews = make([]sessionSummaryView, 0, len(summaries))
 			for _, sum := range summaries {
+				if sum.ParentID != "" {
+					continue // skip internal swarm sub-sessions
+				}
 				sessionViews = append(sessionViews, sessionSummaryView{
 					SessionSummary: sum,
 					Current:        sum.ID == currentSessionID,
@@ -918,11 +1023,22 @@ func (s *ChatService) dashboardSnapshot(ctx context.Context) (map[string]any, er
 		worker = &workerStateView{State: "completed", Tasks: []workerTaskView{}}
 	}
 
+	sessMode := "normal"
+	sessModeCommitted := false
+	s.mu.Lock()
+	if s.sess != nil {
+		sessMode = s.chatMode
+		sessModeCommitted = sessionModeCommitted(s.sess)
+	}
+	s.mu.Unlock()
+
 	return map[string]any{
-		"current_session_id": currentSessionID,
-		"sessions":           sessionViews,
-		"schedules":          scheduleViews,
-		"worker":             worker,
+		"current_session_id":      currentSessionID,
+		"session_mode":            sessMode,
+		"session_mode_committed":  sessModeCommitted,
+		"sessions":                sessionViews,
+		"schedules":               scheduleViews,
+		"worker":                  worker,
 	}, nil
 }
 
@@ -1327,6 +1443,9 @@ func (s *ChatService) restoreOrCreateStartupSession(ctx context.Context) (*sessi
 			return summaries[i].CreatedAt > summaries[j].CreatedAt
 		})
 		for _, summary := range summaries {
+			if summary.ParentID != "" {
+				continue // skip internal swarm sub-sessions
+			}
 			sess, err := s.store.Load(ctx, summary.ID)
 			if err != nil {
 				slog.Warn("load startup session failed",
@@ -1632,6 +1751,7 @@ func (s *ChatService) RunAutomationNow(id string) error {
 					slog.Warn("RunAutomationNow: create session failed", slog.Any("error", err))
 					return
 				}
+				session.SetThreadSource(sess, "scheduled")
 				userMsg := model.Message{
 					Role:         model.RoleUser,
 					ContentParts: []model.ContentPart{model.TextPart(job.Goal)},
@@ -1827,6 +1947,7 @@ func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error
 		return fmt.Errorf("boot kernel: %w", err)
 	}
 	s.k = k
+	s.rebindSwarm(k)
 
 	// Create a fresh session
 	sess, err := k.NewSession(ctx, s.newSessionConfig())
@@ -1836,6 +1957,7 @@ func (s *ChatService) UpdateModel(provider, model, baseURL, apiKey string) error
 	sess.SetTitle("New Chat")
 	s.mu.Lock()
 	s.sess = sess
+	s.chatMode = "normal"
 	s.mu.Unlock()
 	if err := s.persistSession(sess); err != nil {
 		slog.Warn("persist session after model update failed", slog.Any("error", err))

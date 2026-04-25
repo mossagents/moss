@@ -31,6 +31,8 @@ export const ChatService = {
   getSessionHistory: (id: string) => _Chat.GetSessionHistory(id),
   getTools: () => _Chat.GetTools(),
   getSkills: () => _Chat.GetSkills(),
+  setChatMode: (mode: string) => _Chat.SetChatMode(mode),
+  setExpertParams: (breadth: number, depth: string) => _Chat.SetExpertParams(breadth, depth),
 };
 
 export const FileService = {

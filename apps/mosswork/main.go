@@ -38,7 +38,7 @@ func main() {
 	cfg := parseFlags()
 
 	app := application.New(application.Options{
-		Name:        "Moss Desktop",
+		Name:        "MOSS Desktop",
 		Description: "AI Agent Desktop — Powered by Moss Kernel",
 		LogLevel:    slog.LevelInfo,
 		Services: []application.Service{
@@ -54,7 +54,7 @@ func main() {
 	})
 
 	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "Moss Desktop — AI Agent Workspace",
+		Title:     "MOSS Desktop — Deep Insights, Fast",
 		Width:     1280,
 		Height:    860,
 		MinWidth:  900,

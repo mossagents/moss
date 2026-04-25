@@ -27,6 +27,8 @@ import type {
 } from "@/lib/types.ts";
 import NavSidebar from "@/components/NavSidebar.tsx";
 import ChatSidebar from "@/components/ChatSidebar.tsx";
+import ModeToggleBar, { type ChatMode } from "@/components/ModeToggleBar.tsx";
+import ExpertParamsBar, { type ExpertDepth } from "@/components/ExpertParamsBar.tsx";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea.tsx";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar.tsx";
 import AskDialog from "@/components/AskDialog.tsx";
@@ -186,6 +188,14 @@ export default function App() {
   const [automationTasks, setAutomationTasks] = useState<AutomationTask[]>([]);
   const [showAutomationForm, setShowAutomationForm] = useState(false);
 
+  // Chat mode toggle
+  const [chatMode, setChatMode] = useState<ChatMode>("normal");
+  const [modeCommitted, setModeCommitted] = useState(false);
+
+  // Expert mode params (breadth = # of sub-questions, depth = research depth)
+  const [expertBreadth, setExpertBreadth] = useState(3);
+  const [expertDepth, setExpertDepth] = useState<ExpertDepth>("standard");
+
   // Right info panel
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [sessionTokens, setSessionTokens] = useState(0);
@@ -296,6 +306,12 @@ export default function App() {
         prev.map((m) => m.id === id ? { ...m, streaming: false } : m),
       );
     }
+  });
+
+  // Reset the streaming ref so the next chat:stream/text creates a new message bubble.
+  // Used by expert mode to separate the research-plan message from the synthesis answer.
+  useWailsEvent("chat:reset_stream", () => {
+    streamingIdRef.current = null;
   });
 
   useWailsEvent<StreamData>("chat:text", (data) => {
@@ -505,11 +521,19 @@ export default function App() {
     ]);
   });
 
+  useWailsEvent<StreamData>("chat:progress", (data) => {
+    if (data?.session_id && currentSessionIdRef.current && data.session_id !== currentSessionIdRef.current) return;
+    setIsRunning(true);
+    if (data?.content) setStatusText(data.content);
+  });
+
   useWailsEvent<DashboardState>("desktop:dashboard", (data) => {
     if (!data || typeof data !== "object") return;
     if (Array.isArray(data.sessions)) setSessions(data.sessions);
     if (Array.isArray(data.schedules)) setAutomationTasks(data.schedules as AutomationTask[]);
     if (typeof data.current_session_id === "string") setCurrentSessionId(data.current_session_id);
+    if (typeof data.session_mode === "string") setChatMode(data.session_mode as ChatMode);
+    if (typeof data.session_mode_committed === "boolean") setModeCommitted(data.session_mode_committed);
     const ws = normalizeWorkerState((data as DashboardState).worker);
     if (ws) setWorkerState(ws);
     // If the current session is running (e.g. started by automation), reflect that in UI state
@@ -552,6 +576,7 @@ export default function App() {
 
   const handleSend = useCallback(
     async (content: string, files?: string[]) => {
+      setModeCommitted(true);
       const id = nextId();
       setMessages((prev) => [
         ...prev,
@@ -560,6 +585,10 @@ export default function App() {
       setIsRunning(true);
       setStatusText("正在处理...");
       try {
+        // Sync expert params to backend before sending in expert mode.
+        if (chatMode === "expert") {
+          try { await ChatService.setExpertParams(expertBreadth, expertDepth); } catch {}
+        }
         if (files?.length) {
           await ChatService.sendMessageWithAttachments(content, files);
         } else {
@@ -575,7 +604,7 @@ export default function App() {
         ]);
       }
     },
-    [currentSessionId],
+    [currentSessionId, chatMode, expertBreadth, expertDepth],
   );
 
   const handleStop = useCallback(async () => {
@@ -588,6 +617,10 @@ export default function App() {
     setIsRunning(false);
     setStatusText("");
     setSessionTokens(0);
+    setModeCommitted(false);
+    setChatMode("normal");
+    setExpertBreadth(3);
+    setExpertDepth("standard");
     try {
       await ChatService.newSession();
       loadedSessionIdRef.current = undefined;
@@ -696,8 +729,9 @@ export default function App() {
     el.focus();
     el.setSelectionRange(caret, caret);
   }, []);
+  void handleInsertSkill;
 
-  const handleComposerInputRef = useCallback((node: HTMLTextAreaElement | null) => {
+  const handleComposerInputRef= useCallback((node: HTMLTextAreaElement | null) => {
     composerInputRef.current = node;
   }, []);
 
@@ -798,8 +832,23 @@ export default function App() {
               right: artifact ? "400px" : "320px",
             }}
           >
+            {/* Titlebar spacer + mode toggle */}
+            <div className="h-8 shrink-0" />
+            {!modeCommitted && (
+              <ModeToggleBar mode={chatMode} onChange={(mode) => { setChatMode(mode); setModeCommitted(true); ChatService.setChatMode(mode); }} />
+            )}
+            {!modeCommitted && chatMode === "expert" && (
+              <ExpertParamsBar
+                breadth={expertBreadth}
+                depth={expertDepth}
+                onBreadthChange={setExpertBreadth}
+                onDepthChange={setExpertDepth}
+              />
+            )}
+            <div className="border-b border-border/50 shrink-0" />
+
             <AssistantRuntimeProvider runtime={runtime}>
-              <div className="flex-1 overflow-hidden relative mt-8">
+              <div className="flex-1 overflow-hidden relative">
                 <AssistantThreadArea
                   showTypingIndicator={showTypingIndicator}
                   statusText={statusText}
@@ -807,13 +856,13 @@ export default function App() {
                   skills={skills}
                   onRetryMessage={handleRetryMessage}
                 />
-
-                {workerState && workerState.tasks.length > 0 && (
-                  <div className="absolute bottom-0 left-0 right-0 pb-2">
-                    <WorkerPanel state={workerState} />
-                  </div>
-                )}
               </div>
+
+              {isRunning && workerState && workerState.tasks.length > 0 && (
+                <div className="shrink-0 px-2 pb-1">
+                  <WorkerPanel state={workerState} />
+                </div>
+              )}
 
               <div className="relative h-36 shrink-0">
                 {isRunning && statusText && (
@@ -843,9 +892,11 @@ export default function App() {
             totalTokens={sessionTokens}
             currentSessionId={currentSessionId}
             sessions={sessions}
-            skills={skills}
             config={config}
-            onInsertSkill={handleInsertSkill}
+            chatMode={chatMode}
+            automationTasks={automationTasks}
+            onAddAutomation={() => setShowAutomationForm(true)}
+            onViewAllAutomations={() => setModule("automation")}
           />
         </>
       )}

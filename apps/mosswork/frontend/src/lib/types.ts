@@ -115,6 +115,7 @@ export interface SessionSummary {
   title?: string;
   goal: string;
   mode?: string;
+  source?: string;
   status: string;
   steps: number;
   created_at: string;
@@ -138,6 +139,8 @@ export interface AutomationTask {
   run_count: number;
   last_run?: string;
   next_run?: string;
+  status?: "running" | "paused" | "completed" | "failed";
+  last_run_result?: "success" | "failure";
 }
 
 export interface ModelPreset {
@@ -174,6 +177,8 @@ export interface AppSettings {
 
 export interface DashboardState {
   current_session_id?: string;
+  session_mode?: string;
+  session_mode_committed?: boolean;
   sessions?: SessionSummary[];
   schedules?: ScheduleEntry[];
   worker?: WorkerState;

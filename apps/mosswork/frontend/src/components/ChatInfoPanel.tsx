@@ -1,15 +1,17 @@
 import { cn } from "@/lib/cn.ts";
-import type { ChatMessage, SessionSummary, SkillInfo, AppConfig } from "@/lib/types.ts";
-import type { ReactNode } from "react";
+import type { ChatMessage, SessionSummary, AppConfig, AutomationTask } from "@/lib/types.ts";
+import type { ChatMode } from "@/components/ModeToggleBar.tsx";
 
 interface ChatInfoPanelProps {
   messages: ChatMessage[];
   totalTokens: number;
   currentSessionId?: string;
   sessions: SessionSummary[];
-  skills: SkillInfo[];
   config: AppConfig | null;
-  onInsertSkill: (name: string) => void;
+  chatMode: ChatMode;
+  automationTasks: AutomationTask[];
+  onAddAutomation: () => void;
+  onViewAllAutomations: () => void;
 }
 
 export default function ChatInfoPanel({
@@ -17,211 +19,200 @@ export default function ChatInfoPanel({
   totalTokens,
   currentSessionId,
   sessions,
-  skills,
   config,
-  onInsertSkill,
+  chatMode,
+  automationTasks,
+  onAddAutomation,
+  onViewAllAutomations,
 }: ChatInfoPanelProps) {
+  void config;
+
   const currentSession = sessions.find((s) => s.id === currentSessionId);
-  const userMessages = messages.filter((m) => m.role === "user").length;
-  const assistantMessages = messages.filter((m) => m.role === "assistant").length;
-  const totalMessages = userMessages + assistantMessages;
+  const totalMessages = messages.filter(
+    (m) => m.role === "user" || m.role === "assistant",
+  ).length;
 
   const createdAt = currentSession?.created_at
-    ? new Date(currentSession.created_at).toLocaleString("zh-CN", {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
+    ? (() => {
+        const d = new Date(currentSession.created_at);
+        return `${d.getMonth() + 1}月${d.getDate()}日 ${d
+          .getHours()
+          .toString()
+          .padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
+      })()
+    : "—";
 
-  const sortedSkills = [...skills].sort((a, b) => {
-    if (a.active !== b.active) return a.active ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  const modeLabel = chatMode === "normal" ? "普通模式" : "专家模式";
+  const modeIcon = chatMode === "normal" ? "chat_bubble" : "workspace_premium";
 
   return (
-    <aside className="fixed right-0 top-0 bottom-0 w-80 bg-surface-container-low border-l border-outline-variant/30 overflow-y-auto z-20 flex flex-col">
-      {/* Header */}
-      <div className="px-4 py-3 mt-8 shrink-0 border-b border-outline-variant/20">
-        <span className="text-xs font-bold text-on-surface-variant/70 tracking-widest uppercase">会话信息</span>
+    <aside className="fixed right-0 top-0 bottom-0 w-80 bg-surface-container-low border-l border-border/40 overflow-y-auto z-20 flex flex-col select-none">
+      {/* Wails title bar spacer */}
+      <div className="h-8 shrink-0" />
+
+      {/* Session info header */}
+      <div className="px-4 py-3 flex items-center justify-between">
+        <span className="text-sm font-semibold text-on-surface">会话信息</span>
+        <button
+          type="button"
+          className="p-1 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors"
+        >
+          <span className="material-symbols-outlined text-lg">more_horiz</span>
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
-        {/* Session Stats */}
-        <section>
-          <SectionLabel>当前会话</SectionLabel>
-          <div className="bg-surface-container-lowest rounded-xl p-3 space-y-2">
-            <StatRow icon="chat" label="消息数" value={String(totalMessages)} />
-            <StatRow icon="person" label="发送" value={String(userMessages)} />
-            <StatRow icon="smart_toy" label="回复" value={String(assistantMessages)} />
-            <StatRow
-              icon="token"
-              label="Token"
-              value={totalTokens > 0 ? formatNumber(totalTokens) : "—"}
-            />
-            {currentSession?.steps != null && currentSession.steps > 0 && (
-              <StatRow icon="steps" label="步骤" value={String(currentSession.steps)} />
-            )}
-            {createdAt && <StatRow icon="schedule" label="创建" value={createdAt} />}
-            {config?.model && (
-              <StatRow icon="model_training" label="模型" value={config.model} truncate />
-            )}
-          </div>
-        </section>
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+        {/* Stats 2×2 grid */}
+        <div className="grid grid-cols-2 gap-2">
+          <StatCard icon="chat_bubble_outline" label="消息数" value={String(totalMessages)} />
+          <StatCard
+            icon="data_usage"
+            label="Token 使用"
+            value={totalTokens > 0 ? formatNumber(totalTokens) : "0"}
+          />
+          <StatCard icon="calendar_today" label="创建时间" value={createdAt} small />
+          <StatCard icon={modeIcon} label="模式" value={modeLabel} />
+        </div>
 
-        {/* Keyboard shortcuts */}
+        {/* Automation tasks section */}
         <section>
-          <SectionLabel>快捷键</SectionLabel>
-          <div className="bg-surface-container-lowest rounded-xl p-3 space-y-2">
-            <ShortcutRow keys={["Enter"]} label="发送消息" />
-            <ShortcutRow keys={["Shift", "Enter"]} label="换行" />
-            <ShortcutRow keys={["Esc"]} label="停止执行" />
-            <ShortcutRow keys={["/sessions"]} label="列出会话" isCmd />
-            <ShortcutRow keys={["/compact"]} label="压缩上下文" isCmd />
-            <ShortcutRow keys={["/schedules"]} label="列出定时任务" isCmd />
-            <ShortcutRow keys={["/dashboard"]} label="查看仪表盘" isCmd />
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-on-surface">定时任务</span>
+            <button
+              type="button"
+              onClick={onViewAllAutomations}
+              className="text-xs text-primary hover:opacity-75 transition-opacity flex items-center gap-0.5"
+            >
+              查看全部
+              <span className="material-symbols-outlined text-sm">chevron_right</span>
+            </button>
           </div>
-        </section>
 
-        {/* Available Skills */}
-        <section>
-          <SectionLabel>可用技能 ({skills.length})</SectionLabel>
-          <p className="text-[11px] text-on-surface-variant/70 leading-snug px-1">
-            点击技能即可在输入框中插入 <code className="font-mono">/&lt;skill_name&gt;</code> 引用。
-          </p>
-          {skills.length === 0 ? (
-            <div className="text-xs text-on-surface-variant/60 px-1">暂无技能</div>
+          {automationTasks.length === 0 ? (
+            <p className="text-xs text-on-surface-variant/60 px-1 py-1">暂无定时任务</p>
           ) : (
-            <div className="space-y-1.5">
-              {sortedSkills.map((skill) => (
-                <SkillRow key={skill.name} skill={skill} onInsert={onInsertSkill} />
+            <div className="space-y-2">
+              {automationTasks.slice(0, 3).map((task) => (
+                <TaskRow key={task.id} task={task} />
               ))}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={onAddAutomation}
+            className="mt-3 w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-border/60 text-xs font-medium hover:bg-surface-container transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm text-primary">add</span>
+            <span className="text-primary">新建定时任务</span>
+          </button>
+        </section>
+
+        {/* Shortcuts section */}
+        <section>
+          <div className="mb-3">
+            <span className="text-sm font-semibold text-on-surface">快捷操作</span>
+          </div>
+          <div className="space-y-2.5">
+            <ShortcutRow label="发送消息" icon="send" keys={["Enter"]} />
+            <ShortcutRow label="换行" icon="keyboard_return" keys={["Shift", "Enter"]} />
+            <ShortcutRow label="上传文件" icon="upload" keys={["⌘", "U"]} />
+            <ShortcutRow label="切换模式" icon="swap_horiz" keys={["⌘", "M"]} />
+            <ShortcutRow label="清空对话" icon="delete_sweep" keys={["⌘", "K"]} />
+          </div>
         </section>
       </div>
     </aside>
   );
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return (
-    <span className="text-[10px] font-bold text-on-surface-variant/60 tracking-widest uppercase mb-2 block">
-      {children}
-    </span>
-  );
-}
-
-function StatRow({
+function StatCard({
   icon,
   label,
   value,
-  truncate,
+  small,
 }: {
   icon: string;
   label: string;
   value: string;
-  truncate?: boolean;
+  small?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="material-symbols-outlined text-[13px] text-on-surface-variant/60 shrink-0">{icon}</span>
-      <span className="text-on-surface-variant flex-1">{label}</span>
-      <span className={cn("font-medium text-on-surface text-right", truncate && "truncate max-w-24")}>{value}</span>
+    <div className="bg-surface-container-lowest rounded-xl p-3">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <span className="material-symbols-outlined text-sm text-on-surface-variant/70">{icon}</span>
+        <span className="text-xs text-on-surface-variant">{label}</span>
+      </div>
+      <p className={cn("font-semibold text-on-surface leading-tight", small ? "text-xs" : "text-lg")}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function TaskRow({ task }: { task: AutomationTask }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2.5 bg-surface-container-lowest rounded-xl">
+      <span className="material-symbols-outlined text-base text-on-surface-variant/70 shrink-0">
+        schedule
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium text-on-surface truncate">{task.goal}</p>
+        <p className="text-[11px] text-on-surface-variant/60 mt-0.5">
+          {scheduleLabel(task.schedule)}
+        </p>
+      </div>
+      {/* Toggle — tasks that exist are active */}
+      <div className="w-9 h-5 bg-primary rounded-full relative shrink-0 cursor-default">
+        <div className="w-4 h-4 rounded-full bg-white absolute right-0.5 top-0.5 shadow-sm" />
+      </div>
     </div>
   );
 }
 
 function ShortcutRow({
-  keys,
   label,
-  isCmd,
+  icon,
+  keys,
 }: {
-  keys: string[];
   label: string;
-  isCmd?: boolean;
+  icon: string;
+  keys: string[];
 }) {
   return (
-    <div className="flex items-center justify-between text-xs gap-2">
-      <span className="text-on-surface-variant flex-1">{label}</span>
+    <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="material-symbols-outlined text-base text-on-surface-variant/60 shrink-0">
+          {icon}
+        </span>
+        <span className="text-xs text-on-surface-variant truncate">{label}</span>
+      </div>
       <div className="flex items-center gap-1 shrink-0">
-        {isCmd ? (
-          <code className="bg-surface-container px-1.5 py-0.5 rounded text-[10px] font-mono text-on-surface-variant border border-outline-variant/30">
-            {keys[0]}
-          </code>
-        ) : (
-          keys.map((k, i) => (
-            <span key={i} className="flex items-center gap-1">
-              {i > 0 && <span className="text-on-surface-variant/40">+</span>}
-              <kbd className="bg-surface-container px-1.5 py-0.5 rounded text-[10px] font-sans text-on-surface-variant border border-outline-variant/30 leading-none">
-                {k}
-              </kbd>
-            </span>
-          ))
-        )}
+        {keys.map((k, i) => (
+          <span key={i} className="flex items-center gap-1">
+            {i > 0 && <span className="text-on-surface-variant/40 text-xs">+</span>}
+            <kbd className="text-[10px] bg-surface-container px-1.5 py-0.5 rounded border border-outline-variant/30 text-on-surface-variant font-sans leading-none">
+              {k}
+            </kbd>
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-const SKILL_STYLES = {
-  active: {
-    badge: "bg-primary/10 text-primary",
-    action: "text-primary",
-  },
-  available: {
-    badge: "bg-surface-container text-on-surface-variant",
-    action: "text-on-surface-variant",
-  },
-};
-
-function SkillRow({
-  skill,
-  onInsert,
-}: {
-  skill: SkillInfo;
-  onInsert: (name: string) => void;
-}) {
-  const style = skill.active ? SKILL_STYLES.active : SKILL_STYLES.available;
-  const source = skill.source ? skill.source.replace(/\\/g, "/").split("/").slice(-2).join("/") : "";
-  return (
-    <button
-      type="button"
-      onClick={() => onInsert(skill.name)}
-      className="w-full bg-surface-container-lowest rounded-lg px-3 py-2 flex items-start gap-2 group text-left hover:bg-surface-container transition-colors"
-      title={`引用技能 ${skill.name}`}
-    >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs font-medium text-on-surface truncate">{skill.name}</span>
-          <span className={cn("text-[9px] font-bold px-1 py-px rounded shrink-0", style.badge)}>
-            {skill.active ? "已激活" : "可用"}
-          </span>
-          <span className={cn("text-[10px] font-medium ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity", style.action)}>
-            引用
-          </span>
-        </div>
-        {skill.description && (
-          <p className="text-[11px] text-on-surface-variant/70 mt-0.5 line-clamp-2 leading-snug">
-            {skill.description}
-          </p>
-        )}
-        {(source || skill.depends_on?.length || skill.required_env?.length) && (
-          <div className="mt-1.5 space-y-1">
-            {source && (
-              <p className="text-[10px] text-on-surface-variant/55 truncate">{source}</p>
-            )}
-            {skill.depends_on && skill.depends_on.length > 0 && (
-              <p className="text-[10px] text-on-surface-variant/55 truncate">
-                依赖: {skill.depends_on.join(", ")}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    </button>
-  );
+function scheduleLabel(expr: string): string {
+  const map: Record<string, string> = {
+    "@every 30m": "每30分钟",
+    "@every 1h": "每小时",
+    "@every 2h": "每2小时",
+    "@every 6h": "每6小时",
+    "@every 12h": "每12小时",
+    "@every 24h": "每天",
+    "@every 72h": "每3天",
+    "@every 168h": "每周",
+  };
+  return map[expr] || expr;
 }
 
 function formatNumber(n: number): string {
@@ -229,3 +220,5 @@ function formatNumber(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
 }
+
+

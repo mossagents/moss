@@ -7,9 +7,10 @@ interface WorkerPanelProps {
 
 export default function WorkerPanel({ state }: WorkerPanelProps) {
   const isCompleted = state.state === "completed";
+  const isRunning = state.running > 0;
   const total = state.tasks.length;
   const done = state.succeeded + state.failed;
-  const pct = total > 0 ? (done / total) * 100 : 0;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
     <div className="mx-4 md:mx-8 mb-2 animate-fade-in">
@@ -18,7 +19,7 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Agent 进度</p>
             <div className="flex items-center gap-3 text-xs text-on-surface-variant">
-              {state.running > 0 && (
+              {isRunning && (
                 <span className="flex items-center gap-1 text-primary">
                   <span className="material-symbols-outlined text-sm animate-spin-1s">refresh</span>
                   {state.running} 运行中
@@ -36,17 +37,29 @@ export default function WorkerPanel({ state }: WorkerPanelProps) {
                   {state.failed}
                 </span>
               )}
+              {!isRunning && isCompleted && total > 0 && (
+                <span className="text-on-surface-variant/60">{pct}%</span>
+              )}
             </div>
           </div>
 
           <div className="h-1.5 bg-surface-container-high rounded-full overflow-hidden mb-3">
-            <div
-              className={cn(
-                "progress-fill h-full rounded-full transition-all duration-500",
-                isCompleted && state.failed > 0 ? "bg-error" : "bg-primary",
-              )}
-              style={{ "--progress-width": `${pct}%` } as React.CSSProperties}
-            />
+            {isRunning ? (
+              <div
+                className={cn(
+                  "progress-indeterminate h-full rounded-full",
+                  state.failed > 0 ? "bg-error" : "bg-primary",
+                )}
+              />
+            ) : (
+              <div
+                className={cn(
+                  "progress-fill h-full rounded-full transition-all duration-500",
+                  isCompleted && state.failed > 0 ? "bg-error" : "bg-primary",
+                )}
+                style={{ "--progress-width": `${pct}%` } as React.CSSProperties}
+              />
+            )}
           </div>
 
           <div className="flex flex-wrap gap-1.5">

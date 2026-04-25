@@ -40,28 +40,55 @@ function extractArtifact(content: string): { cleaned: string; artifact: string |
 }
 
 export default function AssistantThreadArea({ showTypingIndicator, statusText, onArtifact, skills, onRetryMessage }: AssistantThreadAreaProps) {
+  // Track the last user message seen during message rendering so AssistantMessage
+  // can offer a retry action (which logically retries from the preceding user turn).
+  let lastRetryableUserMsg: ChatMessage | null = null;
+
   return (
     <ThreadPrimitive.Root className="h-full">
-      <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-8 pb-4">
+      <ThreadPrimitive.Viewport className="h-full overflow-y-auto px-4 md:px-8 pt-6 pb-4">
         <AuiIf condition={(s) => s.thread.isEmpty}>
-          <div className="flex flex-col items-center justify-center h-full select-none">
-            <div className="w-16 h-16 rounded-2xl overflow-hidden mb-5 shadow-botanical-empty shrink-0">
-              <img src="/logo.png" alt="Moss" className="w-full h-full object-cover" />
+          <div className="flex flex-col items-center justify-center h-full select-none pb-8">
+            {/* Logo circle */}
+            <div className="w-20 h-20 rounded-full border-2 border-outline-variant/50 flex items-center justify-center mb-5 shrink-0">
+              <img src="/logo.png" alt="Moss" className="w-12 h-12 object-contain" />
             </div>
-            <h2 className="text-xl font-bold text-on-surface mb-1.5 font-headline">你好，有什么可以帮你？</h2>
-            <p className="text-sm text-on-surface-variant max-w-sm text-center leading-relaxed">
-              我可以帮你完成任务、分析文件、编写代码等。
-              <br />
-              请在下方输入你的需求。
+            <h1 className="text-3xl font-bold text-on-surface mb-2 font-headline">你好，MOSS！</h1>
+            <p className="text-sm text-on-surface-variant mb-8">
+              我是你的 AI 助手，有什么可以帮你？
             </p>
+            {/* Feature cards 2×2 */}
+            <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
+              <FeatureCard icon="description" title="分析文件" desc="上传文件，分析内容" />
+              <FeatureCard icon="code" title="生成代码" desc="编写代码片段" />
+              <FeatureCard icon="lightbulb" title="头脑风暴" desc="激发创意和想法" />
+              <FeatureCard icon="security" title="解决问题" desc="寻求解决方案" />
+            </div>
           </div>
         </AuiIf>
 
         <div className="max-w-4xl mx-auto space-y-12">
           <ThreadPrimitive.Messages>
             {({ message }) => {
-              if (message.role === "user") return <UserMessage skills={skills} onRetryMessage={onRetryMessage} />;
-              if (message.role === "assistant") return <AssistantMessage onArtifact={onArtifact} />;
+              if (message.role === "user") {
+                return (
+                  <UserMessage
+                    skills={skills}
+                    onRetryMessage={onRetryMessage}
+                    onCapture={(m) => { lastRetryableUserMsg = m; }}
+                  />
+                );
+              }
+              if (message.role === "assistant") {
+                const userMsg = lastRetryableUserMsg;
+                return (
+                  <AssistantMessage
+                    onArtifact={onArtifact}
+                    retryUserMessage={userMsg}
+                    onRetryMessage={onRetryMessage}
+                  />
+                );
+              }
               return <SystemMessage />;
             }}
           </ThreadPrimitive.Messages>
@@ -87,13 +114,17 @@ export default function AssistantThreadArea({ showTypingIndicator, statusText, o
   );
 }
 
-function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryMessage: (message: ChatMessage) => void }) {
+function UserMessage({ skills, onRetryMessage, onCapture }: { skills: SkillInfo[]; onRetryMessage: (message: ChatMessage) => void; onCapture: (m: ChatMessage) => void }) {
   const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
   const rawMessage = Array.isArray(raw) ? raw[0] : raw;
   const text = useMessage((s) => {
     const textPart = s.content.find((part) => part.type === "text");
     return textPart?.type === "text" ? textPart.text : "";
   });
+
+  // Capture this user message so the following AssistantMessage can reference it for retry.
+  if (rawMessage) onCapture(rawMessage);
+
   const skillInvocation = parseSkillLikeInvocation(text);
   const matchedSkill = skillInvocation
     ? skills.find((skill) => skill.name === skillInvocation.name)
@@ -124,23 +155,6 @@ function UserMessage({ skills, onRetryMessage }: { skills: SkillInfo[]; onRetryM
       </div>
       <div className="mt-2 flex items-center justify-end gap-2">
         <MessageMetaTime />
-        {rawMessage?.retryable && rawMessage.historyIndex != null && (
-          <button
-            type="button"
-            onClick={() => onRetryMessage(rawMessage)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] leading-none",
-              "text-on-surface-variant/85",
-              "transition-all hover:bg-surface-container-lowest hover:text-primary",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
-              "opacity-70 hover:opacity-100",
-            )}
-            title="从该消息重新执行"
-          >
-            <span className="material-symbols-outlined text-[12px] leading-none">restart_alt</span>
-            重试
-          </button>
-        )}
       </div>
     </MessagePrimitive.Root>
   );
@@ -176,20 +190,35 @@ function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }
   );
 }
 
-function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void }) {
+function AssistantMessage({ onArtifact, retryUserMessage, onRetryMessage }: {
+  onArtifact?: (html: string) => void;
+  retryUserMessage?: ChatMessage | null;
+  onRetryMessage?: (message: ChatMessage) => void;
+}) {
   const raw = useAuiState((s) => getExternalStoreMessage<ChatMessage>(s.message));
   const rawMessages = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const isStreaming = useMessage((s) => s.status?.type === "running");
+  const [copied, setCopied] = useState(false);
 
   const fullContent = rawMessages.map((m) => m.content || "").join("");
   const fullThinking = rawMessages.map((m) => m.thinking || "").join("");
-  const { artifact } = extractArtifact(fullContent);
+  const { artifact, cleaned } = extractArtifact(fullContent);
 
   useEffect(() => {
     if (artifact && !isStreaming && onArtifact) {
       onArtifact(artifact);
     }
   }, [artifact, isStreaming, onArtifact]);
+
+  const handleCopy = () => {
+    if (!cleaned) return;
+    navigator.clipboard.writeText(cleaned).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const canRetry = !isStreaming && retryUserMessage?.retryable && retryUserMessage.historyIndex != null;
 
   return (
     <MessagePrimitive.Root data-role="assistant" className="flex gap-6 animate-fade-in">
@@ -208,7 +237,6 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
 
         {/* Main text — always rendered as a single ReactMarkdown for correct markdown context */}
         {(() => {
-          const { cleaned } = extractArtifact(fullContent);
           if (!cleaned) return null;
           return (
             <div className={cn("prose-chat text-sm leading-relaxed", isStreaming && "typing-cursor")}>
@@ -222,6 +250,44 @@ function AssistantMessage({ onArtifact }: { onArtifact?: (html: string) => void 
           <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-primary-container/30 text-on-primary-container text-xs font-bold">
             <span className="material-symbols-outlined text-sm">web</span>
             已生成界面 · 查看右侧面板
+          </div>
+        )}
+
+        {/* Action buttons: copy + retry — shown only when done streaming */}
+        {!isStreaming && cleaned && (
+          <div className="flex items-center gap-1 pt-1">
+            <button
+              type="button"
+              onClick={handleCopy}
+              title="复制回复"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] leading-none",
+                "text-on-surface-variant/70 transition-all",
+                "hover:bg-surface-container-lowest hover:text-primary opacity-70 hover:opacity-100",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+              )}
+            >
+              <span className="material-symbols-outlined text-[12px] leading-none">
+                {copied ? "check" : "content_copy"}
+              </span>
+              {copied ? "已复制" : "复制"}
+            </button>
+            {canRetry && (
+              <button
+                type="button"
+                onClick={() => onRetryMessage?.(retryUserMessage!)}
+                title="从该消息重新执行"
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] leading-none",
+                  "text-on-surface-variant/70 transition-all",
+                  "hover:bg-surface-container-lowest hover:text-primary opacity-70 hover:opacity-100",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/20",
+                )}
+              >
+                <span className="material-symbols-outlined text-[12px] leading-none">restart_alt</span>
+                重试
+              </button>
+            )}
           </div>
         )}
 
@@ -253,6 +319,16 @@ function SystemMessage() {
         </MessagePrimitive.Parts>
       </div>
     </MessagePrimitive.Root>
+  );
+}
+
+function FeatureCard({ icon, title, desc }: { icon: string; title: string; desc: string }) {
+  return (
+    <div className="bg-surface-container-lowest rounded-2xl p-4 flex flex-col gap-1.5 border border-outline-variant/20 hover:bg-surface-container transition-colors cursor-default select-none">
+      <span className="material-symbols-outlined text-2xl text-primary">{icon}</span>
+      <span className="text-sm font-semibold text-on-surface">{title}</span>
+      <span className="text-xs text-on-surface-variant leading-snug">{desc}</span>
+    </div>
   );
 }
 

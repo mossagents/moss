@@ -18,8 +18,8 @@ export default function AssistantComposerBar({
   inputRef,
 }: AssistantComposerBarProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 p-8 bg-linear-to-t from-background via-background to-transparent pointer-events-none">
-      <div className="max-w-4xl mx-auto pointer-events-auto">
+    <div className="absolute bottom-0 left-0 right-0 px-6 pb-6 bg-linear-to-t from-background via-background to-transparent pointer-events-none">
+      <div className="max-w-3xl mx-auto pointer-events-auto">
         {attachmentFiles.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mb-2">
             {attachmentFiles.map((f, i) => (
@@ -41,62 +41,83 @@ export default function AssistantComposerBar({
           </div>
         )}
 
-        <ComposerPrimitive.Root className="bg-surface-container-high rounded-2xl p-2 flex items-end gap-2 transition-all duration-300 shadow-botanical-input focus-within:bg-surface-container-lowest focus-within:ring-2 focus-within:ring-primary-container">
-          <div className="flex gap-1 pb-1 px-1">
-            <button
-              type="button"
-              onClick={onAttachFiles}
-              className="p-2 hover:bg-surface-container-highest rounded-xl text-on-surface-variant transition-colors"
-              title="附加文件"
-            >
-              <span className="material-symbols-outlined text-xl">attach_file</span>
-            </button>
-            <button
-              type="button"
-              className="p-2 hover:bg-surface-container-highest rounded-xl text-on-surface-variant/60 transition-colors cursor-not-allowed"
-              title="语音输入"
-              disabled
-            >
-              <span className="material-symbols-outlined text-xl">mic</span>
-            </button>
-          </div>
-
+        <ComposerPrimitive.Root className="bg-surface-container-high rounded-2xl shadow-botanical-input transition-all duration-300 focus-within:bg-surface-container-lowest focus-within:ring-2 focus-within:ring-primary-container">
+          {/* Input area */}
           <ComposerPrimitive.Input
             asChild
             submitMode="enter"
-            placeholder="描述一个场景... (Shift+Enter 换行)"
+            placeholder="输入你的问题或需求..."
             className="flex-1"
           >
             <textarea
               ref={inputRef}
-              className="flex-1 bg-transparent border-none outline-none focus:ring-0 py-3 text-on-surface placeholder:text-on-surface-variant/50 resize-none max-h-48 text-sm"
-              rows={1}
-              placeholder="描述一个场景... (Shift+Enter 换行)"
+              className="w-full bg-transparent border-none outline-none focus:ring-0 px-4 pt-4 pb-2 text-on-surface placeholder:text-on-surface-variant/50 resize-none max-h-48 text-sm block"
+              rows={3}
+              placeholder="输入你的问题或需求..."
               aria-label="消息输入框"
               title="消息输入框"
             />
           </ComposerPrimitive.Input>
 
-          <div className="flex items-center gap-2 p-1">
-            {isRunning ? (
+          {/* Toolbar row */}
+          <div className="flex items-center justify-between px-3 pb-3">
+            {/* Left: action buttons */}
+            <div className="flex items-center gap-1">
               <button
                 type="button"
-                onClick={onStop}
-                className="w-10 h-10 bg-error text-on-error rounded-xl flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all"
-                title="停止"
+                onClick={onAttachFiles}
+                className="flex items-center justify-center w-8 h-8 hover:bg-surface-container-highest rounded-xl text-on-surface-variant transition-colors"
+                title="附加文件"
               >
-                <span className="material-symbols-outlined text-lg">stop</span>
+                <span className="material-symbols-outlined text-[18px]">attach_file</span>
               </button>
-            ) : (
-              <ComposerPrimitive.Send
-                asChild
-                className="w-10 h-10 bg-primary text-on-primary rounded-xl flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all"
+              <button
+                type="button"
+                className="flex items-center justify-center h-8 px-2 gap-0.5 hover:bg-surface-container-highest rounded-xl text-on-surface-variant/70 transition-colors text-xs font-medium"
+                title="提及"
               >
-                <button type="submit" title="发送">
-                  <span className="material-symbols-outlined text-lg">arrow_upward</span>
+                <span className="text-base leading-none">@</span>
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center h-8 px-2 gap-1 hover:bg-surface-container-highest rounded-xl text-on-surface-variant/70 transition-colors text-xs font-medium"
+                title="工具"
+              >
+                <span className="material-symbols-outlined text-[15px]">keyboard_command_key</span>
+                <span>工具</span>
+                <span className="material-symbols-outlined text-[15px]">expand_more</span>
+              </button>
+            </div>
+
+            {/* Right: shortcut hint + send/stop */}
+            <div className="flex items-center gap-2">
+              {!isRunning && (
+                <span className="text-[11px] text-on-surface-variant/40 flex items-center gap-0.5 select-none">
+                  <span className="material-symbols-outlined text-sm">keyboard_return</span>
+                  发送
+                </span>
+              )}
+              {isRunning ? (
+                <button
+                  type="button"
+                  onClick={onStop}
+                  className="w-8 h-8 bg-error text-on-error rounded-full flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all"
+                  title="停止"
+                >
+                  <span className="material-symbols-outlined text-base">stop</span>
                 </button>
-              </ComposerPrimitive.Send>
-            )}
+              ) : (
+                <ComposerPrimitive.Send asChild>
+                  <button
+                    type="submit"
+                    title="发送"
+                    className="w-8 h-8 bg-primary text-on-primary rounded-full flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-base">arrow_upward</span>
+                  </button>
+                </ComposerPrimitive.Send>
+              )}
+            </div>
           </div>
         </ComposerPrimitive.Root>
       </div>
