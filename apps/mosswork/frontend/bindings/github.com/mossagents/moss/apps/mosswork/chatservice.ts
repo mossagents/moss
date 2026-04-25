@@ -151,12 +151,13 @@ export function SetChatMode(mode: string): $CancellablePromise<void> {
 }
 
 /**
- * SetExpertParams sets the breadth (number of research sub-questions, 1–5) and
- * depth ("fast", "standard", or "deep") for the expert swarm pipeline.
+ * SetExpertParams sets the breadth (number of research sub-questions, 1–5),
+ * depth ("fast", "standard", or "deep"), and outputLength ("brief", "standard",
+ * "detailed", or "comprehensive") for the expert swarm pipeline.
  * Call this before sending the first message in expert mode.
  */
-export function SetExpertParams(breadth: number, depth: string): $CancellablePromise<void> {
-    return $Call.ByID(1825596595, breadth, depth);
+export function SetExpertParams(breadth: number, depth: string, outputLength: string): $CancellablePromise<void> {
+    return $Call.ByID(1825596595, breadth, depth, outputLength);
 }
 
 export function StopAgent(): $CancellablePromise<void> {
