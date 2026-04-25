@@ -27,7 +27,7 @@ import type {
 import NavSidebar from "@/components/NavSidebar.tsx";
 import ChatSidebar from "@/components/ChatSidebar.tsx";
 import ModeToggleBar, { type ChatMode } from "@/components/ModeToggleBar.tsx";
-import ExpertParamsBar, { type ExpertDepth } from "@/components/ExpertParamsBar.tsx";
+import { type ExpertDepth } from "@/components/ExpertParamsBar.tsx";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea.tsx";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar.tsx";
 import AskDialog from "@/components/AskDialog.tsx";
@@ -793,14 +793,6 @@ export default function App() {
             {!modeCommitted && (
               <ModeToggleBar mode={chatMode} onChange={(mode) => { setChatMode(mode); setModeCommitted(true); ChatService.setChatMode(mode); }} />
             )}
-            {chatMode === "expert" && (
-              <ExpertParamsBar
-                breadth={expertBreadth}
-                depth={expertDepth}
-                onBreadthChange={setExpertBreadth}
-                onDepthChange={setExpertDepth}
-              />
-            )}
             <div className="border-b border-border/50 shrink-0" />
 
             <AssistantRuntimeProvider runtime={runtime}>
@@ -841,6 +833,10 @@ export default function App() {
             automationTasks={automationTasks}
             onAddAutomation={() => setShowAutomationForm(true)}
             onViewAllAutomations={() => setModule("automation")}
+            expertBreadth={expertBreadth}
+            expertDepth={expertDepth}
+            onBreadthChange={setExpertBreadth}
+            onDepthChange={setExpertDepth}
           />
         </>
       )}
