@@ -20,6 +20,7 @@ import (
 	appconfig "github.com/mossagents/moss/harness/config"
 	"github.com/mossagents/moss/harness/agent"
 	"github.com/mossagents/moss/harness/skill"
+	attlib "github.com/mossagents/moss/harness/userio/attachments"
 	appruntime "github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/scheduler"
 	hswarm "github.com/mossagents/moss/harness/swarm"
@@ -311,7 +312,14 @@ func (s *ChatService) SendMessage(content string) error {
 		}
 	}
 
-	// Route to swarm pipeline in expert mode.
+	return s.routeMessage(sess, content, nil)
+}
+
+// routeMessage sends a prepared user message to the appropriate pipeline.
+// userParts carries the multimodal content; nil means text-only from content.
+// Expert mode does not support multimodal yet — image parts are silently
+// dropped and only the text goal is forwarded.
+func (s *ChatService) routeMessage(sess *session.Session, content string, userParts []model.ContentPart) error {
 	s.mu.Lock()
 	mode := s.chatMode
 	sw := s.swarm
@@ -320,19 +328,83 @@ func (s *ChatService) SendMessage(content string) error {
 	outputLength := s.expertOutputLength
 	s.mu.Unlock()
 	if mode == "expert" && sw != nil {
-		return s.sendMessageToSwarm(sw, sess, content, breadth, depth, outputLength)
+		return s.sendMessageToSwarm(sw, sess, content, nil, breadth, depth, outputLength)
 	}
-	return s.sendMessageToSession(sess, content)
+	return s.sendMessageToSession(sess, content, userParts)
 }
 
 func (s *ChatService) SendMessageWithAttachments(content string, attachments []string) error {
-	if len(attachments) > 0 {
-		content += "\n\n📎 Attached files:\n"
-		for _, path := range attachments {
-			content += fmt.Sprintf("- %s\n", path)
+	if len(attachments) == 0 {
+		return s.SendMessage(content)
+	}
+	trimmed := strings.TrimSpace(content)
+	// Slash commands don't support attachments; delegate to text-only path.
+	if strings.HasPrefix(trimmed, "/") {
+		return s.SendMessage(content)
+	}
+
+	s.mu.Lock()
+	if s.sess == nil || s.k == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("service not initialized")
+	}
+	sess := s.sess
+	s.mu.Unlock()
+
+	userParts, err := buildMessagePartsWithAttachments(trimmed, attachments)
+	if err != nil {
+		slog.Warn("attachment build failed, sending as plain text", slog.Any("error", err))
+		fallback := content
+		for _, p := range attachments {
+			fallback += "\n📎 " + p
+		}
+		return s.SendMessage(fallback)
+	}
+	return s.routeMessage(sess, trimmed, userParts)
+}
+
+// buildMessagePartsWithAttachments constructs a ContentParts slice from text
+// plus file attachments. Each file is resolved independently: recognised media
+// (image/audio/video) is base64-inlined; other files are listed as text
+// references. A single failed attachment is logged and degraded to text rather
+// than aborting the whole send.
+func buildMessagePartsWithAttachments(content string, filePaths []string) ([]model.ContentPart, error) {
+	var textRefs []string
+	var mediaParts []model.ContentPart
+
+	for _, p := range filePaths {
+		draft, err := attlib.BuildAttachmentDraft("", p)
+		if err != nil {
+			slog.Warn("could not load attachment, falling back to path text",
+				slog.String("path", p), slog.Any("error", err))
+			textRefs = append(textRefs, p)
+			continue
+		}
+		switch draft.Part.Type {
+		case model.ContentPartInputImage, model.ContentPartInputAudio, model.ContentPartInputVideo:
+			mediaParts = append(mediaParts, draft.Part)
+		default:
+			textRefs = append(textRefs, p)
 		}
 	}
-	return s.SendMessage(content)
+
+	var sb strings.Builder
+	sb.WriteString(content)
+	for _, ref := range textRefs {
+		sb.WriteString("\n📎 ")
+		sb.WriteString(ref)
+	}
+
+	text := strings.TrimSpace(sb.String())
+	parts := make([]model.ContentPart, 0, 1+len(mediaParts))
+	if text != "" {
+		parts = append(parts, model.TextPart(text))
+	}
+	parts = append(parts, mediaParts...)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("no valid content parts from attachments")
+	}
+	return parts, nil
 }
 
 func (s *ChatService) StopAgent() {
@@ -496,12 +568,12 @@ func convertToHistoryMessages(msgs []model.Message) []HistoryMessage {
 	return out
 }
 
-func (s *ChatService) sendMessageToSession(sess *session.Session, content string) error {
+func (s *ChatService) sendMessageToSession(sess *session.Session, content string, userParts []model.ContentPart) error {
 	if sess == nil || s.k == nil {
 		return fmt.Errorf("service not initialized")
 	}
 	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
+	if trimmed == "" && len(userParts) == 0 {
 		return nil
 	}
 
@@ -513,7 +585,10 @@ func (s *ChatService) sendMessageToSession(sess *session.Session, content string
 	sessID := sess.ID
 	s.mu.Unlock()
 
-	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}}
+	if userParts == nil {
+		userParts = []model.ContentPart{model.TextPart(content)}
+	}
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: userParts}
 	sess.AppendMessage(userMsg)
 
 	go func() {
@@ -626,7 +701,7 @@ func (s *ChatService) retryUserMessage(historyIndex int) error {
 		slog.Warn("persist retried session failed", slog.Any("error", err))
 	}
 	s.emitDashboard()
-	return s.sendMessageToSession(sess, content)
+	return s.sendMessageToSession(sess, content, nil)
 }
 
 func (s *ChatService) tryHandleRetryCommand(content string) (bool, error) {
@@ -1590,6 +1665,11 @@ func (s *ChatService) maybeGenerateTitle(sess *session.Session) {
 	}
 	title := s.generateTitleFromLLM(sess)
 	if title == "" {
+		// Fallback: derive a short title directly from the first user message
+		// so the session is always renamed even when the LLM call fails.
+		title = titleFallbackFromSession(sess)
+	}
+	if title == "" {
 		return
 	}
 	sess.SetTitle(title)
@@ -1601,6 +1681,26 @@ func (s *ChatService) maybeGenerateTitle(sess *session.Session) {
 		"title":      title,
 	})
 	s.emitDashboard()
+}
+
+// titleFallbackFromSession returns a best-effort title from the first user
+// message in the session (up to 15 runes). Used when the LLM call fails.
+func titleFallbackFromSession(sess *session.Session) string {
+	for _, m := range sess.CopyMessages() {
+		if m.Role != model.RoleUser {
+			continue
+		}
+		text := strings.TrimSpace(model.ContentPartsToPlainText(m.ContentParts))
+		if text == "" {
+			continue
+		}
+		r := []rune(text)
+		if len(r) > 15 {
+			return string(r[:15])
+		}
+		return text
+	}
+	return ""
 }
 
 // generateTitleFromLLM makes a lightweight LLM call to generate a short
@@ -1666,7 +1766,7 @@ func (s *ChatService) generateTitleFromLLM(sess *session.Session) string {
 		},
 	})
 	if err != nil {
-		slog.Debug("title generation failed", slog.Any("error", err))
+		slog.Warn("title generation failed", slog.Any("error", err))
 		return ""
 	}
 

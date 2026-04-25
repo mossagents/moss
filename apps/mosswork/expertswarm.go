@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	appconfig "github.com/mossagents/moss/harness/config"
 	hswarm "github.com/mossagents/moss/harness/swarm"
 	"github.com/mossagents/moss/kernel"
 	kio "github.com/mossagents/moss/kernel/io"
@@ -58,7 +61,10 @@ type workerFinding struct {
 
 // sendMessageToSwarm routes a user message to the expert swarm pipeline.
 // Returns immediately; the pipeline runs in a background goroutine.
-func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.Session, content string, breadth int, depth string, outputLength string) error {
+// userParts is the full multimodal content for the user message; nil falls
+// back to a single text part from content. The swarm planner always uses the
+// plain-text content string as its goal regardless of userParts.
+func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.Session, content string, userParts []model.ContentPart, breadth int, depth string, outputLength string) error {
 	if rootSess == nil || s.k == nil {
 		return fmt.Errorf("service not initialized")
 	}
@@ -75,7 +81,10 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 	historyMsgs := rootSess.CopyMessages()
 
 	// Append user message to root session immediately.
-	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(content)}}
+	if userParts == nil {
+		userParts = []model.ContentPart{model.TextPart(content)}
+	}
+	userMsg := model.Message{Role: model.RoleUser, ContentParts: userParts}
 	rootSess.AppendMessage(userMsg)
 
 	go func() {
@@ -111,6 +120,8 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 			emitEvent("chat:error", map[string]any{"message": err.Error(), "session_id": rootSessID})
 			return
 		}
+
+		saveExpertOutput(content, output)
 
 		// Append synthesized answer to root session for persistence.
 		assistantMsg := model.Message{
@@ -154,6 +165,29 @@ func workerStatusIcon(status string) string {
 	default:
 		return "⏳"
 	}
+}
+
+// saveExpertOutput persists the synthesized expert-mode answer to ~/.mosswork/.
+// Filename format: expert-YYYYMMDD-HHMMSS.md
+// Errors are logged but never propagated — saving is best-effort.
+func saveExpertOutput(goal, output string) {
+	dir := appconfig.AppDir()
+	if dir == "" {
+		slog.Warn("saveExpertOutput: cannot determine app dir")
+		return
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		slog.Warn("saveExpertOutput: create dir failed", slog.Any("error", err))
+		return
+	}
+	ts := time.Now().Format("20060102-150405")
+	name := filepath.Join(dir, "expert-"+ts+".md")
+	content := "# " + goal + "\n\n" + output + "\n"
+	if err := os.WriteFile(name, []byte(content), 0600); err != nil {
+		slog.Warn("saveExpertOutput: write failed", slog.String("path", name), slog.Any("error", err))
+		return
+	}
+	slog.Debug("expert output saved", slog.String("path", name))
 }
 
 // confidenceBadge returns a compact Chinese label for a confidence level.
