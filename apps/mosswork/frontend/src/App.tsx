@@ -793,7 +793,7 @@ export default function App() {
             {!modeCommitted && (
               <ModeToggleBar mode={chatMode} onChange={(mode) => { setChatMode(mode); setModeCommitted(true); ChatService.setChatMode(mode); }} />
             )}
-            {!modeCommitted && chatMode === "expert" && (
+            {chatMode === "expert" && (
               <ExpertParamsBar
                 breadth={expertBreadth}
                 depth={expertDepth}
