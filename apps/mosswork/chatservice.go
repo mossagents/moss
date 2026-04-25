@@ -46,8 +46,9 @@ type ChatService struct {
 	activeRuns    map[string]context.CancelFunc
 	monitorCancel context.CancelFunc
 	chatMode      string // "normal" or "expert"; protected by mu
-	expertBreadth int    // number of parallel research questions; protected by mu
-	expertDepth   string // "fast", "standard", or "deep"; protected by mu
+	expertBreadth       int    // number of parallel research questions; protected by mu
+	expertDepth         string // "fast", "standard", or "deep"; protected by mu
+	expertOutputLength  string // "brief", "standard", "detailed", or "comprehensive"; protected by mu
 }
 
 func NewChatService(cfg config) *ChatService {
@@ -198,10 +199,11 @@ func (s *ChatService) SetChatMode(mode string) {
 	s.emitDashboard()
 }
 
-// SetExpertParams sets the breadth (number of research sub-questions, 1–5) and
-// depth ("fast", "standard", or "deep") for the expert swarm pipeline.
+// SetExpertParams sets the breadth (number of research sub-questions, 1–5),
+// depth ("fast", "standard", or "deep"), and outputLength ("brief", "standard",
+// "detailed", or "comprehensive") for the expert swarm pipeline.
 // Call this before sending the first message in expert mode.
-func (s *ChatService) SetExpertParams(breadth int, depth string) {
+func (s *ChatService) SetExpertParams(breadth int, depth string, outputLength string) {
 	if breadth < 1 {
 		breadth = 1
 	}
@@ -213,9 +215,15 @@ func (s *ChatService) SetExpertParams(breadth int, depth string) {
 	default:
 		depth = "standard"
 	}
+	switch outputLength {
+	case "brief", "standard", "detailed", "comprehensive":
+	default:
+		outputLength = "standard"
+	}
 	s.mu.Lock()
 	s.expertBreadth = breadth
 	s.expertDepth = depth
+	s.expertOutputLength = outputLength
 	s.mu.Unlock()
 }
 
@@ -308,9 +316,10 @@ func (s *ChatService) SendMessage(content string) error {
 	sw := s.swarm
 	breadth := s.expertBreadth
 	depth := s.expertDepth
+	outputLength := s.expertOutputLength
 	s.mu.Unlock()
 	if mode == "expert" && sw != nil {
-		return s.sendMessageToSwarm(sw, sess, content, breadth, depth)
+		return s.sendMessageToSwarm(sw, sess, content, breadth, depth, outputLength)
 	}
 	return s.sendMessageToSession(sess, content)
 }

@@ -1,6 +1,7 @@
 import { cn } from "@/lib/cn.ts";
 
 export type ExpertDepth = "fast" | "standard" | "deep";
+export type ExpertOutputLength = "brief" | "standard" | "detailed" | "comprehensive";
 
 interface ExpertParamsBarProps {
   breadth: number;

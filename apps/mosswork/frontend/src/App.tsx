@@ -27,7 +27,7 @@ import type {
 import NavSidebar from "@/components/NavSidebar.tsx";
 import ChatSidebar from "@/components/ChatSidebar.tsx";
 import ModeToggleBar, { type ChatMode } from "@/components/ModeToggleBar.tsx";
-import { type ExpertDepth } from "@/components/ExpertParamsBar.tsx";
+import { type ExpertDepth, type ExpertOutputLength } from "@/components/ExpertParamsBar.tsx";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea.tsx";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar.tsx";
 import AskDialog from "@/components/AskDialog.tsx";
@@ -168,9 +168,10 @@ export default function App() {
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [modeCommitted, setModeCommitted] = useState(false);
 
-  // Expert mode params (breadth = # of sub-questions, depth = research depth)
+  // Expert mode params (breadth = # of sub-questions, depth = research depth, outputLength = response length)
   const [expertBreadth, setExpertBreadth] = useState(3);
   const [expertDepth, setExpertDepth] = useState<ExpertDepth>("standard");
+  const [expertOutputLength, setExpertOutputLength] = useState<ExpertOutputLength>("standard");
 
   // Right info panel
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -546,7 +547,7 @@ export default function App() {
       try {
         // Sync expert params to backend before sending in expert mode.
         if (chatMode === "expert") {
-          try { await ChatService.setExpertParams(expertBreadth, expertDepth); } catch {}
+          try { await ChatService.setExpertParams(expertBreadth, expertDepth, expertOutputLength); } catch {}
         }
         if (files?.length) {
           await ChatService.sendMessageWithAttachments(content, files);
@@ -563,7 +564,7 @@ export default function App() {
         ]);
       }
     },
-    [currentSessionId, chatMode, expertBreadth, expertDepth],
+    [currentSessionId, chatMode, expertBreadth, expertDepth, expertOutputLength],
   );
 
   const handleStop = useCallback(async () => {
@@ -835,8 +836,10 @@ export default function App() {
             onViewAllAutomations={() => setModule("automation")}
             expertBreadth={expertBreadth}
             expertDepth={expertDepth}
+            expertOutputLength={expertOutputLength}
             onBreadthChange={setExpertBreadth}
             onDepthChange={setExpertDepth}
+            onOutputLengthChange={setExpertOutputLength}
           />
         </>
       )}

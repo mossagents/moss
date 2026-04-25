@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn.ts";
 import type { ChatMessage, SessionSummary, AppConfig, AutomationTask } from "@/lib/types.ts";
 import type { ChatMode } from "@/components/ModeToggleBar.tsx";
-import type { ExpertDepth } from "@/components/ExpertParamsBar.tsx";
+import type { ExpertDepth, ExpertOutputLength } from "@/components/ExpertParamsBar.tsx";
 
 interface ChatInfoPanelProps {
   messages: ChatMessage[];
@@ -15,8 +15,10 @@ interface ChatInfoPanelProps {
   onViewAllAutomations: () => void;
   expertBreadth?: number;
   expertDepth?: ExpertDepth;
+  expertOutputLength?: ExpertOutputLength;
   onBreadthChange?: (v: number) => void;
   onDepthChange?: (v: ExpertDepth) => void;
+  onOutputLengthChange?: (v: ExpertOutputLength) => void;
 }
 
 export default function ChatInfoPanel({
@@ -31,8 +33,10 @@ export default function ChatInfoPanel({
   onViewAllAutomations,
   expertBreadth = 3,
   expertDepth = "standard",
+  expertOutputLength = "standard",
   onBreadthChange,
   onDepthChange,
+  onOutputLengthChange,
 }: ChatInfoPanelProps) {
   void config;
 
@@ -112,6 +116,19 @@ export default function ChatInfoPanel({
                   <option value="fast">快速（10步）</option>
                   <option value="standard">标准（30步）</option>
                   <option value="deep">深度（60步）</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-on-surface-variant">输出长度</span>
+                <select
+                  value={expertOutputLength}
+                  onChange={(e) => onOutputLengthChange?.(e.target.value as ExpertOutputLength)}
+                  className="text-xs bg-surface-container-lowest border border-outline-variant/40 rounded-lg px-2 py-1 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
+                >
+                  <option value="brief">简洁（~500字）</option>
+                  <option value="standard">标准（~1000字）</option>
+                  <option value="detailed">详细（~3000字）</option>
+                  <option value="comprehensive">完整（不限）</option>
                 </select>
               </div>
             </div>

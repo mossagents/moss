@@ -32,7 +32,7 @@ export const ChatService = {
   getTools: () => _Chat.GetTools(),
   getSkills: () => _Chat.GetSkills(),
   setChatMode: (mode: string) => _Chat.SetChatMode(mode),
-  setExpertParams: (breadth: number, depth: string) => _Chat.SetExpertParams(breadth, depth),
+  setExpertParams: (breadth: number, depth: string, outputLength: string) => _Chat.SetExpertParams(breadth, depth, outputLength),
 };
 
 export const FileService = {

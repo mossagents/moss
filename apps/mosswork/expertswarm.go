@@ -47,7 +47,7 @@ type expertQuestion struct {
 
 // sendMessageToSwarm routes a user message to the expert swarm pipeline.
 // Returns immediately; the pipeline runs in a background goroutine.
-func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.Session, content string, breadth int, depth string) error {
+func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.Session, content string, breadth int, depth string, outputLength string) error {
 	if rootSess == nil || s.k == nil {
 		return fmt.Errorf("service not initialized")
 	}
@@ -91,7 +91,7 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 		s.mu.Unlock()
 		defer cancel()
 
-		output, err := s.runExpertSwarm(ctx, sw, rootSessID, content, historyMsgs, breadth, depth)
+		output, err := s.runExpertSwarm(ctx, sw, rootSessID, content, historyMsgs, breadth, depth, outputLength)
 		if err != nil {
 			if ctx.Err() != nil {
 				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": rootSessID})
@@ -133,7 +133,7 @@ func emitThinking(sessionID, content string, append bool) {
 }
 
 // runExpertSwarm runs the Planner → Workers → Synthesizer pipeline for expert mode.
-func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string) (string, error) {
+func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string, outputLength string) (string, error) {
 	k := s.k
 	numWorkers := breadth
 	if numWorkers <= 0 {
@@ -178,7 +178,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	emitEvent("chat:reset_stream", map[string]any{"session_id": rootSessID})
 
 	// Phase 3: Synthesize findings (streams directly via wailsIO → chat:stream events).
-	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, historyCtx, findings)
+	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, historyCtx, outputLength, findings)
 	if err != nil {
 		return "", fmt.Errorf("综合阶段失败: %w", err)
 	}
@@ -361,6 +361,20 @@ func expertRunWorker(
 	return strings.TrimSpace(result.Output), nil
 }
 
+// outputLengthInstruction maps a length key to a natural-language writing instruction.
+func outputLengthInstruction(length string) string {
+	switch length {
+	case "brief":
+		return "Write a concise summary (around 300–500 words). Use bullet points where helpful. Avoid repetition."
+	case "detailed":
+		return "Write a detailed report (around 2000–3000 words). Use headings, sub-sections, and examples."
+	case "comprehensive":
+		return "Write a comprehensive, in-depth analysis with no length limit. Cover every aspect thoroughly with rich detail, examples, and citations."
+	default: // "standard"
+		return "Write a well-structured answer (around 800–1200 words). Use headings and bullet points as appropriate."
+	}
+}
+
 // expertSynthesize combines worker findings into a final answer.
 // The synthesizer's output is streamed to the frontend via wailsIO.
 func expertSynthesize(
@@ -369,7 +383,7 @@ func expertSynthesize(
 	sw *hswarm.Runtime,
 	store session.SessionStore,
 	userIO *WailsUserIO,
-	rootSessID, goal, historyCtx string,
+	rootSessID, goal, historyCtx, outputLength string,
 	findings []string,
 ) (string, error) {
 	thread, err := k.NewSession(ctx, session.SessionConfig{
@@ -397,11 +411,12 @@ func expertSynthesize(
 	}
 
 	prompt := fmt.Sprintf(
-		"Goal: %s\nAs of: %s\n%s\nWorker findings:\n%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. If there is prior conversation, build on it — address corrections, additions, or follow-ups as appropriate. Be thorough but concise.",
+		"Goal: %s\nAs of: %s\n%s\nWorker findings:\n%s\n\nBased on the above findings, write a comprehensive, well-structured answer in markdown. If there is prior conversation, build on it — address corrections, additions, or follow-ups as appropriate.\n\nOutput length guidance: %s",
 		goal,
 		time.Now().UTC().Format(time.RFC3339),
 		historySection,
 		strings.Join(findings, "\n\n---\n\n"),
+		outputLengthInstruction(outputLength),
 	)
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(prompt)}}
 	thread.AppendMessage(userMsg)
