@@ -125,8 +125,8 @@ func RegisterJinaSearch(reg tool.Registry) {
 	_ = reg.Register(tool.NewRawTool(JinaSearchSpec, JinaSearchHandler()))
 }
 
-// RegisterJinaTools 同时注册 jina_search 与 jina_fetch。
+// RegisterJinaTools 同时注册 jina_search 与 jina_read。
 func RegisterJinaTools(reg tool.Registry) {
 	RegisterJinaSearch(reg)
-	RegisterJinaFetch(reg)
+	RegisterJinaRead(reg)
 }

@@ -12,8 +12,8 @@ import (
 	"github.com/mossagents/moss/kernel/tool"
 )
 
-var JinaFetchSpec = tool.ToolSpec{
-	Name:        "jina_fetch",
+var JinaReadSpec = tool.ToolSpec{
+	Name:        "jina_read",
 	Description: "使用 Jina AI Reader 抓取网页并转换为 Markdown，适合读取文章、文档等任意网址的完整内容",
 	InputSchema: json.RawMessage(`{
 		"type": "object",
@@ -26,18 +26,18 @@ var JinaFetchSpec = tool.ToolSpec{
 	Capabilities: []string{"network"},
 }
 
-type jinaFetchEnvelope struct {
-	Code int             `json:"code"`
-	Data jinaFetchResult `json:"data"`
+type jinaReadEnvelope struct {
+	Code int            `json:"code"`
+	Data jinaReadResult `json:"data"`
 }
 
-type jinaFetchResult struct {
+type jinaReadResult struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Content string `json:"content"`
 }
 
-func JinaFetchHandler() tool.ToolHandler {
+func JinaReadHandler() tool.ToolHandler {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var args struct {
 			URL string `json:"url"`
@@ -55,7 +55,7 @@ func JinaFetchHandler() tool.ToolHandler {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", "moss-jina-fetch")
+		req.Header.Set("User-Agent", "moss-jina-read")
 		if key := os.Getenv("JINA_API_KEY"); key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 		}
@@ -63,7 +63,7 @@ func JinaFetchHandler() tool.ToolHandler {
 		client := &http.Client{Timeout: 30 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, fmt.Errorf("jina fetch request failed: %w", err)
+			return nil, fmt.Errorf("jina read request failed: %w", err)
 		}
 		defer resp.Body.Close()
 
@@ -72,15 +72,15 @@ func JinaFetchHandler() tool.ToolHandler {
 			return nil, fmt.Errorf("read response: %w", err)
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("jina fetch returned %d: %s", resp.StatusCode, string(body))
+			return nil, fmt.Errorf("jina read returned %d: %s", resp.StatusCode, string(body))
 		}
 
-		var envelope jinaFetchEnvelope
+		var envelope jinaReadEnvelope
 		if err := json.Unmarshal(body, &envelope); err != nil {
-			return nil, fmt.Errorf("parse fetch response: %w", err)
+			return nil, fmt.Errorf("parse read response: %w", err)
 		}
 
-		return json.Marshal(jinaFetchResult{
+		return json.Marshal(jinaReadResult{
 			Title:   envelope.Data.Title,
 			URL:     envelope.Data.URL,
 			Content: envelope.Data.Content,
@@ -88,7 +88,7 @@ func JinaFetchHandler() tool.ToolHandler {
 	}
 }
 
-// RegisterJinaFetch 便捷注册 jina_fetch 工具。
-func RegisterJinaFetch(reg tool.Registry) {
-	_ = reg.Register(tool.NewRawTool(JinaFetchSpec, JinaFetchHandler()))
+// RegisterJinaRead 便捷注册 jina_read 工具。
+func RegisterJinaRead(reg tool.Registry) {
+	_ = reg.Register(tool.NewRawTool(JinaReadSpec, JinaReadHandler()))
 }
