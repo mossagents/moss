@@ -3,6 +3,7 @@ module github.com/mossagents/moss/apps/mosswork
 go 1.25.8
 
 require (
+	github.com/mossagents/moss/contrib/tools v0.0.0
 	github.com/mossagents/moss/harness v0.0.0
 	github.com/mossagents/moss/kernel v0.0.0
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.74

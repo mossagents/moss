@@ -27,6 +27,7 @@ import (
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
+	jinatools "github.com/mossagents/moss/contrib/tools"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -852,6 +853,7 @@ func (s *ChatService) buildKernel() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
+	jinatools.RegisterJinaTools(k.ToolRegistry())
 	return k, nil
 }
 
