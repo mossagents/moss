@@ -1,7 +1,7 @@
 # mosswork Swarm 模式切换设计
 
 日期：2026-04-30  
-状态：Draft / Ready for review
+状态：Approved / Ready for user review
 
 ## 1. 背景
 
