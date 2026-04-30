@@ -27,7 +27,7 @@ import type {
 import NavSidebar from "@/components/NavSidebar.tsx";
 import ChatSidebar from "@/components/ChatSidebar.tsx";
 import ModeToggleBar, { type ChatMode } from "@/components/ModeToggleBar.tsx";
-import { type ExpertDepth, type ExpertOutputLength } from "@/components/ExpertParamsBar.tsx";
+import { type SwarmDepth, type SwarmOutputLength } from "@/components/SwarmParamsBar.tsx";
 import AssistantThreadArea from "@/components/assistant/AssistantThreadArea.tsx";
 import AssistantComposerBar from "@/components/assistant/AssistantComposerBar.tsx";
 import AskDialog from "@/components/AskDialog.tsx";
@@ -168,10 +168,10 @@ export default function App() {
   const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [modeCommitted, setModeCommitted] = useState(false);
 
-  // Expert mode params (breadth = # of sub-questions, depth = research depth, outputLength = response length)
-  const [expertBreadth, setExpertBreadth] = useState(3);
-  const [expertDepth, setExpertDepth] = useState<ExpertDepth>("standard");
-  const [expertOutputLength, setExpertOutputLength] = useState<ExpertOutputLength>("standard");
+  // Swarm mode params (breadth = # of sub-questions, depth = research depth, outputLength = response length)
+  const [swarmBreadth, setSwarmBreadth] = useState(3);
+  const [swarmDepth, setSwarmDepth] = useState<SwarmDepth>("standard");
+  const [swarmOutputLength, setSwarmOutputLength] = useState<SwarmOutputLength>("standard");
 
   // Right info panel
   const [skills, setSkills] = useState<SkillInfo[]>([]);
@@ -286,7 +286,7 @@ export default function App() {
   });
 
   // Reset the streaming ref so the next chat:stream/text creates a new message bubble.
-  // Used by expert mode to separate the research-plan message from the synthesis answer.
+  // Used by swarm mode to separate the research-plan message from the synthesis answer.
   useWailsEvent("chat:reset_stream", () => {
     streamingIdRef.current = null;
   });
@@ -545,9 +545,9 @@ export default function App() {
       setIsRunning(true);
       setStatusText("正在处理...");
       try {
-        // Sync expert params to backend before sending in expert mode.
-        if (chatMode === "expert") {
-          try { await ChatService.setExpertParams(expertBreadth, expertDepth, expertOutputLength); } catch {}
+        // Sync swarm params to backend before sending in swarm mode.
+        if (chatMode === "swarm") {
+          try { await ChatService.setSwarmParams(swarmBreadth, swarmDepth, swarmOutputLength); } catch {}
         }
         if (files?.length) {
           await ChatService.sendMessageWithAttachments(content, files);
@@ -564,7 +564,7 @@ export default function App() {
         ]);
       }
     },
-    [currentSessionId, chatMode, expertBreadth, expertDepth, expertOutputLength],
+    [currentSessionId, chatMode, swarmBreadth, swarmDepth, swarmOutputLength],
   );
 
   const handleStop = useCallback(async () => {
@@ -579,8 +579,8 @@ export default function App() {
     setSessionTokens(0);
     setModeCommitted(false);
     setChatMode("normal");
-    setExpertBreadth(3);
-    setExpertDepth("standard");
+    setSwarmBreadth(3);
+    setSwarmDepth("standard");
     try {
       await ChatService.newSession();
       loadedSessionIdRef.current = undefined;
@@ -834,12 +834,12 @@ export default function App() {
             automationTasks={automationTasks}
             onAddAutomation={() => setShowAutomationForm(true)}
             onViewAllAutomations={() => setModule("automation")}
-            expertBreadth={expertBreadth}
-            expertDepth={expertDepth}
-            expertOutputLength={expertOutputLength}
-            onBreadthChange={setExpertBreadth}
-            onDepthChange={setExpertDepth}
-            onOutputLengthChange={setExpertOutputLength}
+            swarmBreadth={swarmBreadth}
+            swarmDepth={swarmDepth}
+            swarmOutputLength={swarmOutputLength}
+            onBreadthChange={setSwarmBreadth}
+            onDepthChange={setSwarmDepth}
+            onOutputLengthChange={setSwarmOutputLength}
           />
         </>
       )}

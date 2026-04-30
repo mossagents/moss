@@ -1,6 +1,6 @@
 import { cn } from "@/lib/cn.ts";
 
-export type ChatMode = "normal" | "expert";
+export type ChatMode = "normal" | "swarm";
 
 interface ModeToggleBarProps {
   mode: ChatMode;
@@ -18,10 +18,10 @@ export default function ModeToggleBar({ mode, onChange }: ModeToggleBarProps) {
           onClick={() => onChange("normal")}
         />
         <ModeButton
-          active={mode === "expert"}
+          active={mode === "swarm"}
           icon="workspace_premium"
-          label="专家模式"
-          onClick={() => onChange("expert")}
+          label="Swarm 模式"
+          onClick={() => onChange("swarm")}
         />
       </div>
       <button

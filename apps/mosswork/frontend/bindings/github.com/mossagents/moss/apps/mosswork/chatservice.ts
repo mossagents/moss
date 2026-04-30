@@ -143,7 +143,7 @@ export function SendMessageWithAttachments(content: string, attachments: string[
 }
 
 /**
- * SetChatMode sets and persists the chat interaction mode ("normal" or "expert").
+ * SetChatMode sets and persists the chat interaction mode ("normal" or "swarm").
  * Calling this commits the mode for the current session — the mode toggle is then hidden.
  */
 export function SetChatMode(mode: string): $CancellablePromise<void> {
@@ -151,13 +151,13 @@ export function SetChatMode(mode: string): $CancellablePromise<void> {
 }
 
 /**
- * SetExpertParams sets the breadth (number of research sub-questions, 1–5),
+ * SetSwarmParams sets the breadth (number of research sub-questions, 1–5),
  * depth ("fast", "standard", or "deep"), and outputLength ("brief", "standard",
- * "detailed", or "comprehensive") for the expert swarm pipeline.
- * Call this before sending the first message in expert mode.
+ * "detailed", or "comprehensive") for the swarm pipeline.
+ * Call this before sending the first message in swarm mode.
  */
-export function SetExpertParams(breadth: number, depth: string, outputLength: string): $CancellablePromise<void> {
-    return $Call.ByID(1825596595, breadth, depth, outputLength);
+export function SetSwarmParams(breadth: number, depth: string, outputLength: string): $CancellablePromise<void> {
+    return $Call.ByID(3105118809, breadth, depth, outputLength);
 }
 
 export function StopAgent(): $CancellablePromise<void> {

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/cn.ts";
 import type { ChatMessage, SessionSummary, AppConfig, AutomationTask } from "@/lib/types.ts";
 import type { ChatMode } from "@/components/ModeToggleBar.tsx";
-import type { ExpertDepth, ExpertOutputLength } from "@/components/ExpertParamsBar.tsx";
+import type { SwarmDepth, SwarmOutputLength } from "@/components/SwarmParamsBar.tsx";
 
 interface ChatInfoPanelProps {
   messages: ChatMessage[];
@@ -13,12 +13,12 @@ interface ChatInfoPanelProps {
   automationTasks: AutomationTask[];
   onAddAutomation: () => void;
   onViewAllAutomations: () => void;
-  expertBreadth?: number;
-  expertDepth?: ExpertDepth;
-  expertOutputLength?: ExpertOutputLength;
+  swarmBreadth?: number;
+  swarmDepth?: SwarmDepth;
+  swarmOutputLength?: SwarmOutputLength;
   onBreadthChange?: (v: number) => void;
-  onDepthChange?: (v: ExpertDepth) => void;
-  onOutputLengthChange?: (v: ExpertOutputLength) => void;
+  onDepthChange?: (v: SwarmDepth) => void;
+  onOutputLengthChange?: (v: SwarmOutputLength) => void;
 }
 
 export default function ChatInfoPanel({
@@ -31,9 +31,9 @@ export default function ChatInfoPanel({
   automationTasks,
   onAddAutomation,
   onViewAllAutomations,
-  expertBreadth = 3,
-  expertDepth = "standard",
-  expertOutputLength = "standard",
+  swarmBreadth = 3,
+  swarmDepth = "standard",
+  swarmOutputLength = "standard",
   onBreadthChange,
   onDepthChange,
   onOutputLengthChange,
@@ -55,7 +55,7 @@ export default function ChatInfoPanel({
       })()
     : "—";
 
-  const modeLabel = chatMode === "normal" ? "普通模式" : "专家模式";
+  const modeLabel = chatMode === "normal" ? "普通模式" : "Swarm 模式";
   const modeIcon = chatMode === "normal" ? "chat_bubble" : "workspace_premium";
 
   return (
@@ -87,8 +87,8 @@ export default function ChatInfoPanel({
           <StatCard icon={modeIcon} label="模式" value={modeLabel} />
         </div>
 
-        {/* Expert mode params */}
-        {chatMode === "expert" && (
+        {/* Swarm mode params */}
+        {chatMode === "swarm" && (
           <section>
             <div className="mb-2">
               <span className="text-sm font-semibold text-on-surface">研究参数</span>
@@ -97,7 +97,7 @@ export default function ChatInfoPanel({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-on-surface-variant">广度</span>
                 <select
-                  value={expertBreadth}
+                  value={swarmBreadth}
                   onChange={(e) => onBreadthChange?.(Number(e.target.value))}
                   className="text-xs bg-surface-container-lowest border border-outline-variant/40 rounded-lg px-2 py-1 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
                 >
@@ -109,8 +109,8 @@ export default function ChatInfoPanel({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-on-surface-variant">深度</span>
                 <select
-                  value={expertDepth}
-                  onChange={(e) => onDepthChange?.(e.target.value as ExpertDepth)}
+                  value={swarmDepth}
+                  onChange={(e) => onDepthChange?.(e.target.value as SwarmDepth)}
                   className="text-xs bg-surface-container-lowest border border-outline-variant/40 rounded-lg px-2 py-1 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
                 >
                   <option value="fast">快速（10步）</option>
@@ -121,8 +121,8 @@ export default function ChatInfoPanel({
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-on-surface-variant">输出长度</span>
                 <select
-                  value={expertOutputLength}
-                  onChange={(e) => onOutputLengthChange?.(e.target.value as ExpertOutputLength)}
+                  value={swarmOutputLength}
+                  onChange={(e) => onOutputLengthChange?.(e.target.value as SwarmOutputLength)}
                   className="text-xs bg-surface-container-lowest border border-outline-variant/40 rounded-lg px-2 py-1 text-on-surface focus:outline-none focus:ring-1 focus:ring-primary/40 cursor-pointer"
                 >
                   <option value="brief">简洁（~500字）</option>

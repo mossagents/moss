@@ -20,7 +20,7 @@ import (
 	kswarm "github.com/mossagents/moss/kernel/swarm"
 )
 
-const maxExpertWorkers = 5
+const maxSwarmWorkers = 5
 
 // depthMaxSteps maps a depth label to a per-worker MaxSteps budget.
 func depthMaxSteps(depth string) int {
@@ -43,7 +43,7 @@ func (discardIO) Ask(_ context.Context, _ kio.InputRequest) (kio.InputResponse, 
 	return kio.InputResponse{Approved: true}, nil
 }
 
-type expertQuestion struct {
+type swarmQuestion struct {
 	Slug     string `json:"slug"`
 	Question string `json:"question"`
 }
@@ -59,7 +59,7 @@ type workerFinding struct {
 	Error      string   `json:"error,omitempty"`
 }
 
-// sendMessageToSwarm routes a user message to the expert swarm pipeline.
+// sendMessageToSwarm routes a user message to the swarm pipeline.
 // Returns immediately; the pipeline runs in a background goroutine.
 // userParts is the full multimodal content for the user message; nil falls
 // back to a single text part from content. The swarm planner always uses the
@@ -111,7 +111,7 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 		s.mu.Unlock()
 		defer cancel()
 
-		output, err := s.runExpertSwarm(ctx, sw, rootSessID, content, historyMsgs, breadth, depth, outputLength)
+		output, err := s.runSwarmPipeline(ctx, sw, rootSessID, content, historyMsgs, breadth, depth, outputLength)
 		if err != nil {
 			if ctx.Err() != nil {
 				emitEvent("chat:cancelled", map[string]any{"message": "已取消", "session_id": rootSessID})
@@ -121,7 +121,7 @@ func (s *ChatService) sendMessageToSwarm(sw *hswarm.Runtime, rootSess *session.S
 			return
 		}
 
-		saveExpertOutput(content, output)
+		saveSwarmOutput(content, output)
 
 		// Append synthesized answer to root session for persistence.
 		assistantMsg := model.Message{
@@ -167,27 +167,27 @@ func workerStatusIcon(status string) string {
 	}
 }
 
-// saveExpertOutput persists the synthesized expert-mode answer to ~/.mosswork/.
-// Filename format: expert-YYYYMMDD-HHMMSS.md
+// saveSwarmOutput persists the synthesized swarm-mode answer to ~/.mosswork/.
+// Filename format: swarm-YYYYMMDD-HHMMSS.md
 // Errors are logged but never propagated — saving is best-effort.
-func saveExpertOutput(goal, output string) {
+func saveSwarmOutput(goal, output string) {
 	dir := appconfig.AppDir()
 	if dir == "" {
-		slog.Warn("saveExpertOutput: cannot determine app dir")
+		slog.Warn("saveSwarmOutput: cannot determine app dir")
 		return
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
-		slog.Warn("saveExpertOutput: create dir failed", slog.Any("error", err))
+		slog.Warn("saveSwarmOutput: create dir failed", slog.Any("error", err))
 		return
 	}
 	ts := time.Now().Format("20060102-150405")
-	name := filepath.Join(dir, "expert-"+ts+".md")
+	name := filepath.Join(dir, "swarm-"+ts+".md")
 	content := "# " + goal + "\n\n" + output + "\n"
 	if err := os.WriteFile(name, []byte(content), 0600); err != nil {
-		slog.Warn("saveExpertOutput: write failed", slog.String("path", name), slog.Any("error", err))
+		slog.Warn("saveSwarmOutput: write failed", slog.String("path", name), slog.Any("error", err))
 		return
 	}
-	slog.Debug("expert output saved", slog.String("path", name))
+	slog.Debug("swarm output saved", slog.String("path", name))
 }
 
 // confidenceBadge returns a compact Chinese label for a confidence level.
@@ -204,9 +204,9 @@ func confidenceBadge(c string) string {
 	}
 }
 
-// expertBuildPlanText formats the research questions with per-item status and confidence.
+// swarmBuildPlanText formats the research questions with per-item status and confidence.
 // findings may be nil (returns pending state for all items).
-func expertBuildPlanText(questions []expertQuestion, findings map[int]workerFinding) string {
+func swarmBuildPlanText(questions []swarmQuestion, findings map[int]workerFinding) string {
 	var sb strings.Builder
 	sb.WriteString("研究方向\n\n")
 	for i, q := range questions {
@@ -242,14 +242,14 @@ func buildFindingsSummaryText(findings []workerFinding) string {
 	return sb.String()
 }
 
-// runExpertSwarm runs the Planner → Workers → Synthesizer → Reviewer pipeline for expert mode.
-func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string, outputLength string) (string, error) {
+// runSwarmPipeline runs the Planner → Workers → Synthesizer → Reviewer pipeline for swarm mode.
+func (s *ChatService) runSwarmPipeline(ctx context.Context, sw *hswarm.Runtime, rootSessID, goal string, history []model.Message, breadth int, depth string, outputLength string) (string, error) {
 	k := s.k
 	numWorkers := breadth
 	if numWorkers <= 0 {
 		numWorkers = s.cfg.workers
 	}
-	if numWorkers <= 0 || numWorkers > maxExpertWorkers {
+	if numWorkers <= 0 || numWorkers > maxSwarmWorkers {
 		numWorkers = 3
 	}
 	maxSteps := depthMaxSteps(depth)
@@ -257,7 +257,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 
 	// Phase 1: Plan sub-questions via a direct LLM call.
 	emitThinking(rootSessID, "🧠 规划研究方向...\n\n", true)
-	questions, err := expertPlanQuestions(ctx, k, sw, goal, historyCtx, numWorkers)
+	questions, err := swarmPlanQuestions(ctx, k, sw, goal, historyCtx, numWorkers)
 	if err != nil {
 		return "", fmt.Errorf("规划阶段失败: %w", err)
 	}
@@ -266,7 +266,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	}
 
 	// Show initial research plan (all pending).
-	emitThinking(rootSessID, expertBuildPlanText(questions, nil), false)
+	emitThinking(rootSessID, swarmBuildPlanText(questions, nil), false)
 
 	// Phase 2: Run workers concurrently; update plan on each completion.
 	var progressMu sync.Mutex
@@ -274,12 +274,12 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	onWorkerComplete := func(idx int, f workerFinding) {
 		progressMu.Lock()
 		progressFindings[idx] = f
-		text := expertBuildPlanText(questions, progressFindings)
+		text := swarmBuildPlanText(questions, progressFindings)
 		// Emit inside the lock to prevent out-of-order snapshots.
 		emitThinking(rootSessID, text, false)
 		progressMu.Unlock()
 	}
-	findings, err := expertRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerComplete)
+	findings, err := swarmRunWorkers(ctx, k, sw, s.store, rootSessID, goal, questions, maxSteps, onWorkerComplete)
 	if err != nil {
 		return "", fmt.Errorf("调研阶段失败: %w", err)
 	}
@@ -300,7 +300,7 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	for i, f := range findings {
 		finalMap[i] = f
 	}
-	planText := expertBuildPlanText(questions, finalMap)
+	planText := swarmBuildPlanText(questions, finalMap)
 	summary := fmt.Sprintf("\n完成 %d，部分 %d，失败 %d\n", done, partial, failed)
 	emitThinking(rootSessID, planText+summary+buildFindingsSummaryText(findings), false)
 
@@ -313,13 +313,13 @@ func (s *ChatService) runExpertSwarm(ctx context.Context, sw *hswarm.Runtime, ro
 	emitEvent("chat:reset_stream", map[string]any{"session_id": rootSessID})
 
 	// Phase 3: Synthesize findings (streams directly via wailsIO → chat:stream events).
-	result, err := expertSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, historyCtx, outputLength, findings)
+	result, err := swarmSynthesize(ctx, k, sw, s.store, s.wailsIO, rootSessID, goal, historyCtx, outputLength, findings)
 	if err != nil {
 		return "", fmt.Errorf("综合阶段失败: %w", err)
 	}
 
 	// Phase 4: Quality review — appends caveats to the thinking panel if issues are found.
-	expertReview(ctx, k, sw, rootSessID, goal, result)
+	swarmReview(ctx, k, sw, rootSessID, goal, result)
 
 	return result, nil
 }
@@ -345,20 +345,20 @@ func buildHistoryContext(msgs []model.Message) string {
 	return strings.TrimSpace(sb.String())
 }
 
-// expertPlannerSysPrompt returns the system prompt for the planner phase.
+// swarmPlannerSysPrompt returns the system prompt for the planner phase.
 // Uses the configured role spec when available, otherwise falls back to a built-in prompt.
-func expertPlannerSysPrompt(sw *hswarm.Runtime) string {
+func swarmPlannerSysPrompt(sw *hswarm.Runtime) string {
 	if sw != nil {
 		if spec, ok := sw.Role(kswarm.RolePlanner); ok && spec.SystemPrompt != "" {
-			return expertComposeSysPrompt(spec)
+			return swarmComposeSysPrompt(spec)
 		}
 	}
 	return fmt.Sprintf("You are a research planner. Return valid JSON only, no markdown. Current time: %s", time.Now().UTC().Format(time.RFC3339))
 }
 
-// expertPlanQuestions calls the LLM directly to produce N sub-questions as JSON.
-func expertPlanQuestions(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, goal, historyCtx string, numWorkers int) ([]expertQuestion, error) {
-	systemPrompt := expertPlannerSysPrompt(sw)
+// swarmPlanQuestions calls the LLM directly to produce N sub-questions as JSON.
+func swarmPlanQuestions(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, goal, historyCtx string, numWorkers int) ([]swarmQuestion, error) {
+	systemPrompt := swarmPlannerSysPrompt(sw)
 
 	var historySection string
 	if historyCtx != "" {
@@ -375,7 +375,7 @@ Cover distinct, non-overlapping research angles that together fully address the 
 		numWorkers, historySection, goal, time.Now().UTC().Format(time.RFC3339),
 	)
 
-	text, err := expertCompleteText(ctx, k.LLM(), systemPrompt, userPrompt)
+	text, err := swarmCompleteText(ctx, k.LLM(), systemPrompt, userPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +388,7 @@ Cover distinct, non-overlapping research angles that together fully address the 
 		text = text[:idx+1]
 	}
 
-	var questions []expertQuestion
+	var questions []swarmQuestion
 	if err := json.Unmarshal([]byte(text), &questions); err != nil {
 		return nil, fmt.Errorf("规划器返回无效 JSON (%w): %s", err, text)
 	}
@@ -411,14 +411,14 @@ Cover distinct, non-overlapping research angles that together fully address the 
 	return deduped, nil
 }
 
-// expertRunWorkers runs each research question in its own sub-session, concurrently.
-func expertRunWorkers(
+// swarmRunWorkers runs each research question in its own sub-session, concurrently.
+func swarmRunWorkers(
 	ctx context.Context,
 	k *kernel.Kernel,
 	sw *hswarm.Runtime,
 	store session.SessionStore,
 	rootSessID, goal string,
-	questions []expertQuestion,
+	questions []swarmQuestion,
 	maxSteps int,
 	onComplete func(idx int, f workerFinding),
 ) ([]workerFinding, error) {
@@ -429,7 +429,7 @@ func expertRunWorkers(
 		i, q := i, q
 		go func() {
 			defer wg.Done()
-			finding := expertRunWorker(ctx, k, sw, store, rootSessID, goal, q, maxSteps)
+			finding := swarmRunWorker(ctx, k, sw, store, rootSessID, goal, q, maxSteps)
 			results[i] = finding
 			if onComplete != nil {
 				onComplete(i, finding)
@@ -444,14 +444,14 @@ func expertRunWorkers(
 	return results, nil
 }
 
-// expertRunWorker runs a single research question in a tagged sub-session.
-func expertRunWorker(
+// swarmRunWorker runs a single research question in a tagged sub-session.
+func swarmRunWorker(
 	ctx context.Context,
 	k *kernel.Kernel,
 	sw *hswarm.Runtime,
 	store session.SessionStore,
 	rootSessID, goal string,
-	question expertQuestion,
+	question swarmQuestion,
 	maxSteps int,
 ) workerFinding {
 	if maxSteps <= 0 {
@@ -475,7 +475,7 @@ func expertRunWorker(
 
 	if sw != nil {
 		if spec, ok := sw.Role(kswarm.RoleWorker); ok {
-			sysPrompt := expertComposeSysPrompt(spec)
+			sysPrompt := swarmComposeSysPrompt(spec)
 			thread.Config.SystemPrompt = sysPrompt
 			thread.UpdateSystemPrompt(sysPrompt)
 		}
@@ -490,7 +490,7 @@ func expertRunWorker(
 
 	result, runErr := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     thread,
-		Agent:       k.BuildLLMAgent("expert-worker"),
+		Agent:       k.BuildLLMAgent("swarm-worker"),
 		UserContent: &userMsg,
 		IO:          discardIO{},
 	})
@@ -514,7 +514,7 @@ func expertRunWorker(
 // extractWorkerFinding parses a structured finding from worker output.
 // It tries sentinel format (<findings>…</findings>) first, then bare JSON extraction,
 // and finally falls back to treating the full output as a plain text partial finding.
-func extractWorkerFinding(text string, q expertQuestion) workerFinding {
+func extractWorkerFinding(text string, q swarmQuestion) workerFinding {
 	if text == "" {
 		return workerFinding{Slug: q.Slug, Question: q.Question, Status: "failed", Error: "empty output"}
 	}
@@ -549,7 +549,7 @@ func extractWorkerFinding(text string, q expertQuestion) workerFinding {
 }
 
 // parseWorkerFindingJSON attempts to unmarshal a JSON string into a workerFinding.
-func parseWorkerFindingJSON(jsonStr string, q expertQuestion) (workerFinding, bool) {
+func parseWorkerFindingJSON(jsonStr string, q swarmQuestion) (workerFinding, bool) {
 	var raw struct {
 		Finding    string   `json:"finding"`
 		Confidence string   `json:"confidence"`
@@ -624,9 +624,9 @@ func outputLengthInstruction(length string) string {
 	}
 }
 
-// expertSynthesize combines worker findings into a final answer.
+// swarmSynthesize combines worker findings into a final answer.
 // The synthesizer's output is streamed to the frontend via wailsIO.
-func expertSynthesize(
+func swarmSynthesize(
 	ctx context.Context,
 	k *kernel.Kernel,
 	sw *hswarm.Runtime,
@@ -648,7 +648,7 @@ func expertSynthesize(
 
 	if sw != nil {
 		if spec, ok := sw.Role(kswarm.RoleSynthesizer); ok {
-			sysPrompt := expertComposeSysPrompt(spec)
+			sysPrompt := swarmComposeSysPrompt(spec)
 			thread.Config.SystemPrompt = sysPrompt
 			thread.UpdateSystemPrompt(sysPrompt)
 		}
@@ -681,7 +681,7 @@ func expertSynthesize(
 
 	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
 		Session:     thread,
-		Agent:       k.BuildLLMAgent("expert-synthesizer"),
+		Agent:       k.BuildLLMAgent("swarm-synthesizer"),
 		UserContent: &userMsg,
 		IO:          userIO, // stream synthesizer output to frontend
 	})
@@ -696,21 +696,21 @@ func expertSynthesize(
 	return strings.TrimSpace(result.Output), nil
 }
 
-// expertReview performs a lightweight quality check on the synthesized output.
+// swarmReview performs a lightweight quality check on the synthesized output.
 // If the reviewer flags issues, a note is appended to the thinking panel.
 // Failures are silently discarded — the review is advisory only.
-func expertReview(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, rootSessID, goal, draft string) {
+func swarmReview(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, rootSessID, goal, draft string) {
 	sysPrompt := "You are a critical research reviewer. Be concise and direct."
 	if sw != nil {
 		if spec, ok := sw.Role(kswarm.RoleReviewer); ok && spec.SystemPrompt != "" {
-			sysPrompt = expertComposeSysPrompt(spec)
+			sysPrompt = swarmComposeSysPrompt(spec)
 		}
 	}
 	userPrompt := fmt.Sprintf(
 		"Review the following research answer for significant quality issues.\n\nGoal: %s\n\nAnswer:\n%s\n\nIf the answer is generally sound, respond with exactly: APPROVED\nIf there are significant issues (unsupported claims, critical missing angles, overconfident conclusions), respond with a brief bulleted list of issues (3 max). Do not rewrite the answer.",
 		goal, draft,
 	)
-	review, err := expertCompleteText(ctx, k.LLM(), sysPrompt, userPrompt)
+	review, err := swarmCompleteText(ctx, k.LLM(), sysPrompt, userPrompt)
 	if err != nil {
 		return
 	}
@@ -721,14 +721,14 @@ func expertReview(ctx context.Context, k *kernel.Kernel, sw *hswarm.Runtime, roo
 	emitThinking(rootSessID, "\n\n---\n\n🔍 **审查说明**\n\n"+review, true)
 }
 
-// expertComposeSysPrompt composes a role-specific system prompt with time context.
-func expertComposeSysPrompt(spec hswarm.RoleSpec) string {
+// swarmComposeSysPrompt composes a role-specific system prompt with time context.
+func swarmComposeSysPrompt(spec hswarm.RoleSpec) string {
 	return strings.TrimSpace(fmt.Sprintf("%s\n\nCurrent reference time: %s",
 		spec.SystemPrompt, time.Now().UTC().Format(time.RFC3339)))
 }
 
-// expertCompleteText calls the LLM with a simple two-message prompt and collects the response.
-func expertCompleteText(ctx context.Context, llm model.LLM, systemPrompt, userPrompt string) (string, error) {
+// swarmCompleteText calls the LLM with a simple two-message prompt and collects the response.
+func swarmCompleteText(ctx context.Context, llm model.LLM, systemPrompt, userPrompt string) (string, error) {
 	var sb strings.Builder
 	for chunk, err := range llm.GenerateContent(ctx, model.CompletionRequest{
 		Messages: []model.Message{

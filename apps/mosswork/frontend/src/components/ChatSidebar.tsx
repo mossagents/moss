@@ -108,8 +108,8 @@ export default function ChatSidebar({
                 >
                   {title}
                 </span>
-                {s.source === "expert" && (
-                  <span className="material-symbols-outlined text-[13px] text-amber-500 shrink-0 mr-1" title="专家模式">workspace_premium</span>
+                {s.source === "swarm" && (
+                  <span className="material-symbols-outlined text-[13px] text-amber-500 shrink-0 mr-1" title="Swarm 模式">workspace_premium</span>
                 )}
                 {s.source === "scheduled" && (
                   <span className="material-symbols-outlined text-[13px] text-blue-400 shrink-0 mr-1" title="定时任务">schedule</span>

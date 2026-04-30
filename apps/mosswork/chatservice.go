@@ -15,20 +15,20 @@ import (
 	"sync"
 	"time"
 
+	jinatools "github.com/mossagents/moss/contrib/tools"
 	"github.com/mossagents/moss/harness"
+	"github.com/mossagents/moss/harness/agent"
 	"github.com/mossagents/moss/harness/appkit"
 	appconfig "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/agent"
-	"github.com/mossagents/moss/harness/skill"
-	attlib "github.com/mossagents/moss/harness/userio/attachments"
 	appruntime "github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/scheduler"
+	"github.com/mossagents/moss/harness/skill"
 	hswarm "github.com/mossagents/moss/harness/swarm"
+	attlib "github.com/mossagents/moss/harness/userio/attachments"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/io"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	jinatools "github.com/mossagents/moss/contrib/tools"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -44,13 +44,13 @@ type ChatService struct {
 	wailsIO    *WailsUserIO
 	serviceCtx context.Context
 
-	mu            sync.Mutex
-	activeRuns    map[string]context.CancelFunc
-	monitorCancel context.CancelFunc
-	chatMode      string // "normal" or "expert"; protected by mu
-	expertBreadth       int    // number of parallel research questions; protected by mu
-	expertDepth         string // "fast", "standard", or "deep"; protected by mu
-	expertOutputLength  string // "brief", "standard", "detailed", or "comprehensive"; protected by mu
+	mu                sync.Mutex
+	activeRuns        map[string]context.CancelFunc
+	monitorCancel     context.CancelFunc
+	chatMode          string // "normal" or "swarm"; protected by mu
+	swarmBreadth      int    // number of parallel research questions; protected by mu
+	swarmDepth        string // "fast", "standard", or "deep"; protected by mu
+	swarmOutputLength string // "brief", "standard", "detailed", or "comprehensive"; protected by mu
 }
 
 func NewChatService(cfg config) *ChatService {
@@ -185,27 +185,30 @@ func (s *ChatService) ServiceShutdown() error {
 	return nil
 }
 
-// SetChatMode sets and persists the chat interaction mode ("normal" or "expert").
+// SetChatMode sets and persists the chat interaction mode ("normal" or "swarm").
 // Calling this commits the mode for the current session — the mode toggle is then hidden.
 func (s *ChatService) SetChatMode(mode string) {
 	mode = strings.TrimSpace(mode)
+	if mode != "swarm" {
+		mode = "normal"
+	}
 	s.mu.Lock()
 	s.chatMode = mode
 	sess := s.sess
 	s.mu.Unlock()
 	if sess != nil {
-		// Persist as thread_source: "expert" or "normal" (explicit committed-normal).
+		// Persist as thread_source: "swarm" or "normal" (explicit committed-normal).
 		session.SetThreadSource(sess, mode)
 		_ = s.persistSession(sess)
 	}
 	s.emitDashboard()
 }
 
-// SetExpertParams sets the breadth (number of research sub-questions, 1–5),
+// SetSwarmParams sets the breadth (number of research sub-questions, 1–5),
 // depth ("fast", "standard", or "deep"), and outputLength ("brief", "standard",
-// "detailed", or "comprehensive") for the expert swarm pipeline.
-// Call this before sending the first message in expert mode.
-func (s *ChatService) SetExpertParams(breadth int, depth string, outputLength string) {
+// "detailed", or "comprehensive") for the swarm pipeline.
+// Call this before sending the first message in swarm mode.
+func (s *ChatService) SetSwarmParams(breadth int, depth string, outputLength string) {
 	if breadth < 1 {
 		breadth = 1
 	}
@@ -223,9 +226,9 @@ func (s *ChatService) SetExpertParams(breadth int, depth string, outputLength st
 		outputLength = "standard"
 	}
 	s.mu.Lock()
-	s.expertBreadth = breadth
-	s.expertDepth = depth
-	s.expertOutputLength = outputLength
+	s.swarmBreadth = breadth
+	s.swarmDepth = depth
+	s.swarmOutputLength = outputLength
 	s.mu.Unlock()
 }
 
@@ -235,8 +238,8 @@ func sessionChatMode(sess *session.Session) string {
 		return "normal"
 	}
 	if v, ok := sess.GetMetadata(session.MetadataThreadSource); ok {
-		if src, _ := v.(string); src == "expert" {
-			return "expert"
+		if src, _ := v.(string); src == "swarm" {
+			return "swarm"
 		}
 	}
 	return "normal"
@@ -317,17 +320,17 @@ func (s *ChatService) SendMessage(content string) error {
 
 // routeMessage sends a prepared user message to the appropriate pipeline.
 // userParts carries the multimodal content; nil means text-only from content.
-// Expert mode does not support multimodal yet — image parts are silently
+// Swarm mode does not support multimodal yet — image parts are silently
 // dropped and only the text goal is forwarded.
 func (s *ChatService) routeMessage(sess *session.Session, content string, userParts []model.ContentPart) error {
 	s.mu.Lock()
 	mode := s.chatMode
 	sw := s.swarm
-	breadth := s.expertBreadth
-	depth := s.expertDepth
-	outputLength := s.expertOutputLength
+	breadth := s.swarmBreadth
+	depth := s.swarmDepth
+	outputLength := s.swarmOutputLength
 	s.mu.Unlock()
-	if mode == "expert" && sw != nil {
+	if mode == "swarm" && sw != nil {
 		return s.sendMessageToSwarm(sw, sess, content, nil, breadth, depth, outputLength)
 	}
 	return s.sendMessageToSession(sess, content, userParts)
@@ -954,7 +957,7 @@ func (s *ChatService) rebindSwarm(k *kernel.Kernel) {
 	}
 	s.swarm = hswarm.RuntimeOf(k)
 	if s.swarm == nil {
-		slog.Warn("swarm runtime not available; expert mode disabled")
+		slog.Warn("swarm runtime not available; swarm mode disabled")
 	}
 }
 
@@ -1119,12 +1122,12 @@ func (s *ChatService) dashboardSnapshot(ctx context.Context) (map[string]any, er
 	s.mu.Unlock()
 
 	return map[string]any{
-		"current_session_id":      currentSessionID,
-		"session_mode":            sessMode,
-		"session_mode_committed":  sessModeCommitted,
-		"sessions":                sessionViews,
-		"schedules":               scheduleViews,
-		"worker":                  worker,
+		"current_session_id":     currentSessionID,
+		"session_mode":           sessMode,
+		"session_mode_committed": sessModeCommitted,
+		"sessions":               sessionViews,
+		"schedules":              scheduleViews,
+		"worker":                 worker,
 	}, nil
 }
 
