@@ -50,14 +50,12 @@ type Kernel struct {
 	loopCfg      loop.LoopConfig
 	observer     observe.Observer
 
-	// 新路径：kernel-centric runtime（阶段1，与旧路径并存）
+	// kernel-centric runtime：EventStore、RequestResolver、PromptCompiler
 	eventStore      kruntime.EventStore
 	runtimeResolver kruntime.RequestResolver
 	promptCompiler  kruntime.PromptCompiler
 
-	// §阶段4: blueprint policy applier — 在每次 RunAgentFromBlueprint 执行前
-	// 由 harness 注册，用于将 bp.EffectiveToolPolicy 应用到 kernel policystate，
-	// 替代直接 approval mode → runtime policy 的旧路径。
+	// blueprintPolicyApplier：harness 注册，在每次 RunAgentFromBlueprint 前应用 bp.EffectiveToolPolicy。
 	blueprintPolicyApplier func(bp kruntime.SessionBlueprint)
 
 	assemblyMu     sync.Mutex
@@ -473,8 +471,7 @@ func (k *Kernel) BuildLLMAgent(name string) *LLMAgent {
 }
 
 // RunAgent runs an Agent on the given request and yields events.
-// This is the canonical execution API. Legacy Run* wrappers currently forward
-// into this path and will be removed once all callers are migrated.
+// This is the canonical execution API used by LLM agents and by RunAgentFromBlueprint.
 func (k *Kernel) RunAgent(ctx context.Context, req RunAgentRequest) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
 		req, err := k.normalizeRunAgentRequest(req)
@@ -539,14 +536,11 @@ func (k *Kernel) SetBlueprintPolicyApplier(fn func(bp kruntime.SessionBlueprint)
 	k.blueprintPolicyApplier = fn
 }
 
-// StartRuntimeSession 通过新路径启动一个 Session：
-//  1. 用 RequestResolver 将 RuntimeRequest 解析为 SessionBlueprint
-//  2. 向 EventStore 追加 session_created 事件
-//  3. 返回 blueprint（供调用方继续发送 turn_started 等事件）
+// StartRuntimeSession 通过 RuntimeRequest 解析 SessionBlueprint，并向 EventStore 追加 session_created。
 //
-// 要求 WithEventStore 均已配置，否则返回错误。
-// 若未通过 WithRuntimeResolver 配置 resolver，则使用 DefaultRequestResolver（需注入 DefaultPolicyCompiler）。
-// 本方法不影响旧路径（session.Session / RunAgent），两条路径并存于阶段 1。
+// 步骤：1) RequestResolver.Resolve → SessionBlueprint；2) AppendEvents(session_created)；3) 返回 blueprint。
+// 要求 WithEventStore 已配置；若未配置 WithRuntimeResolver，则使用 DefaultRequestResolver + DefaultPolicyCompiler。
+// 典型后续流程：CollectRunAgentFromBlueprint / RunAgentFromBlueprint。
 func (k *Kernel) StartRuntimeSession(ctx context.Context, req kruntime.RuntimeRequest) (kruntime.SessionBlueprint, error) {
 	if k.eventStore == nil {
 		return kruntime.SessionBlueprint{}, errors.New(errors.ErrValidation, "StartRuntimeSession requires an EventStore (use kernel.WithEventStore())")

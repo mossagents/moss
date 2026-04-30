@@ -1031,6 +1031,7 @@ func TestExecuteSingleToolCall_RepairsTruncatedArguments(t *testing.T) {
 	}
 
 	l := &AgentLoop{Tools: reg, IO: kt.NewRecorderIO()}
+	l.currentTurn = TurnPlan{ToolRoute: []ToolRouteDecision{{Name: "echo_json", Status: ToolRouteVisible}}}
 	sess := &session.Session{ID: "sess-json-repair", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
 
 	call := model.ToolCall{
@@ -1078,6 +1079,7 @@ func TestExecuteSingleToolCall_PolicyDeniedAddsStructuredExecutionMetadata(t *te
 		IO:       kt.NewRecorderIO(),
 		Observer: observer,
 	}
+	l.currentTurn = TurnPlan{ToolRoute: []ToolRouteDecision{{Name: "dangerous_tool", Status: ToolRouteVisible}}}
 	sess := &session.Session{ID: "sess-policy-meta", Status: session.StatusCreated, Budget: session.Budget{MaxSteps: 5}}
 	call := model.ToolCall{ID: "c1", Name: "dangerous_tool", Arguments: json.RawMessage(`{}`)}
 

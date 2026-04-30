@@ -456,6 +456,24 @@ func appliesHTTPAccess(spec tool.ToolSpec) bool {
 	return toolHasCapability(spec, "network")
 }
 
+// toolSpecNeedsStrictSchemaValidation reports tools that must have parseable
+// InputSchema before execution (command/network/side-effect surfaces).
+func toolSpecNeedsStrictSchemaValidation(spec tool.ToolSpec) bool {
+	if appliesCommandAccess(spec) || appliesHTTPAccess(spec) {
+		return true
+	}
+	if toolHasCapability(spec, "execution") || toolHasCapability(spec, "network") {
+		return true
+	}
+	for _, effect := range spec.EffectiveEffects() {
+		switch effect {
+		case tool.EffectWritesWorkspace, tool.EffectWritesMemory, tool.EffectGraphMutation, tool.EffectExternalSideEffect:
+			return true
+		}
+	}
+	return spec.Risk == tool.RiskHigh
+}
+
 func toolHasCapability(spec tool.ToolSpec, want string) bool {
 	for _, capability := range spec.Capabilities {
 		if strings.EqualFold(strings.TrimSpace(capability), want) {

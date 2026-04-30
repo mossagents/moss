@@ -8,8 +8,7 @@ import (
 )
 
 // emitSessionLifecycle dispatches session lifecycle through the shared
-// observer + hook dispatcher so legacy and runtime-backed paths follow the
-// same reporting contract.
+// observer + hook dispatcher for consistent reporting.
 func (k *Kernel) emitSessionLifecycle(ctx context.Context, event session.LifecycleEvent) {
 	hooks.DispatchSessionLifecycle(contextOrBackground(ctx), k.chain, k.observerOrNoOp(), k.Logger(), event)
 }

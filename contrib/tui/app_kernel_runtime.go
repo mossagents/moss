@@ -32,7 +32,7 @@ func buildRuntimeKernel(cfg Config, wCfg WelcomeConfig, bridge *bridgeIO) (*kern
 	return k, ctx, cancel, nil
 }
 
-// blueprintToSessionConfig 将 SessionBlueprint 的关键字段转换成 legacy session.SessionConfig，
+// blueprintToSessionConfig 将 SessionBlueprint 的关键字段转换成 session.SessionConfig，
 // 供 TUI resume 路径在 kernel.NewSession 时使用。
 func blueprintToSessionConfig(bp kruntime.SessionBlueprint) session.SessionConfig {
 	trustLevel := bp.EffectiveToolPolicy.TrustLevel

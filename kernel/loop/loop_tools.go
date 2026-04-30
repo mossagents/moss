@@ -358,7 +358,8 @@ func buildToolResult(callID string, output []byte, err error) model.ToolResult {
 
 // validateRequiredToolArgs checks that all fields listed as "required" in the
 // tool's input schema are present in the provided (repaired) arguments.
-// It is a best-effort guard: if the schema cannot be parsed the call proceeds.
+// For command/network/high side-effect tools, invalid schema JSON fails closed;
+// other tools keep best-effort behavior when required fields cannot be read.
 func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
 	if len(spec.InputSchema) == 0 || len(args) == 0 {
 		return nil
@@ -366,8 +367,14 @@ func validateRequiredToolArgs(spec tool.ToolSpec, args json.RawMessage) error {
 	var schema struct {
 		Required []string `json:"required"`
 	}
-	if err := json.Unmarshal(spec.InputSchema, &schema); err != nil || len(schema.Required) == 0 {
-		return nil // best-effort: unparseable schema or no required fields
+	if err := json.Unmarshal(spec.InputSchema, &schema); err != nil {
+		if toolSpecNeedsStrictSchemaValidation(spec) {
+			return fmt.Errorf("tool %q input schema is invalid JSON: %w", spec.Name, err)
+		}
+		return nil // best-effort for low-impact tools
+	}
+	if len(schema.Required) == 0 {
+		return nil
 	}
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(args, &obj); err != nil {

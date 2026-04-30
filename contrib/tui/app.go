@@ -16,10 +16,10 @@ import (
 	"github.com/mossagents/moss/harness/appkit/product/changes"
 	runtimeenv "github.com/mossagents/moss/harness/appkit/product/runtimeenv"
 	configpkg "github.com/mossagents/moss/harness/config"
-	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/runtime"
 	"github.com/mossagents/moss/harness/runtime/hooks/governance"
 	"github.com/mossagents/moss/harness/runtime/scheduling"
+	"github.com/mossagents/moss/harness/skill"
 	"github.com/mossagents/moss/harness/userio/prompting"
 	"github.com/mossagents/moss/kernel"
 	"github.com/mossagents/moss/kernel/hooks"
@@ -80,7 +80,7 @@ type kernelReadyMsg struct {
 type agentState struct {
 	k                        *kernel.Kernel
 	sess                     *session.Session
-	blueprint                *kruntime.SessionBlueprint // 阶段 3：blueprint 主链路（nil = 旧路径）
+	blueprint                *kruntime.SessionBlueprint // EventStore 注册成功时为非 nil
 	store                    session.SessionStore
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -308,8 +308,7 @@ func (a *agentState) refreshSystemPrompt() error {
 	sess.Config.Metadata = metadata
 	a.mu.Unlock()
 	sess.UpdateSystemPrompt(nextPrompt)
-	// 当 EventStore 已成为 truth source（blueprint 非 nil），跳过 FileStore 写入；
-	// EventStore 中的 session_created + turn 事件已充当持久化机制（SessionStore 旧路径迁移）。
+	// 当 EventStore 已成为 truth source（blueprint 非 nil），跳过 FileStore 写入。
 	if store != nil && blueprint == nil {
 		saveCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		defer cancel()

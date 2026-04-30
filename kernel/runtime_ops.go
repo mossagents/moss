@@ -1,11 +1,9 @@
 package kernel
 
-// runtime_ops.go — 阶段 2-5 的 kernel-centric runtime 操作 API。
+// runtime_ops.go — kernel-centric runtime EventStore 操作 API 及 Blueprint 驱动入口。
 //
-// 这些方法与旧路径（RunAgent / session.Session）并存（阶段 1-2），
-// 阶段 3 开始接管主链路，阶段 4 完成后删除旧路径。
-//
-// 所有方法都要求 WithEventStore 已配置，否则返回 ErrValidation。
+// RunAgentFromBlueprint 将 SessionBlueprint 物化为临时 session.Session 并委托 RunAgent 执行，
+// 同时在 EventStore 中写入 turn 生命周期事件（若已配置）。
 
 import (
 	"context"
@@ -186,7 +184,7 @@ func (k *Kernel) FailRuntimeSession(ctx context.Context, sessionID, errorKind, e
 }
 
 // ────────────────────────────────────────────────────────────────────
-// 阶段 3：Blueprint → legacy session.Session bridge
+// Blueprint → session 桥接（与 RunAgent 执行引擎配合）
 // ────────────────────────────────────────────────────────────────────
 
 // RunBlueprintOption 是 RunAgentFromBlueprint 的可选参数。
@@ -202,14 +200,12 @@ func WithBlueprintOnResult(cb func(*session.LifecycleResult)) RunBlueprintOption
 	return func(o *runBlueprintOptions) { o.onResult = cb }
 }
 
-// RunAgentFromBlueprint 是阶段 3 的主链路桥接方法。
-// 它将 SessionBlueprint 翻译为 legacy session.Session，
-// 然后委托 RunAgent 执行，同时在 EventStore（若已配置）中写入 turn_started / turn_completed 事件。
+// RunAgentFromBlueprint 使用 SessionBlueprint 创建会话并执行 Agent。
+// 它将 SessionBlueprint 映射为 session.SessionConfig，通过 NewSession 创建会话，
+// 然后委托 RunAgent 执行；在 EventStore（若已配置）中写入 turn_started / turn_completed 事件。
 //
 // layers 是本次 turn 可用的 PromptLayerProvider 列表（含 system / user scope）。
 // 若 layers 非空，使用 DefaultPromptCompiler 编译出 system prompt 并写入 SessionConfig。
-// 这使现有 RunAgent 执行引擎无需修改即可被新 blueprint 路径驱动。
-// 阶段 4 完成后，本方法将成为唯一推荐入口，而 RunAgent 将被标记为 Deprecated。
 func (k *Kernel) RunAgentFromBlueprint(
 	ctx context.Context,
 	bp kruntime.SessionBlueprint,
@@ -244,7 +240,7 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 			k.blueprintPolicyApplier(bp)
 		}
 
-		// 1. 从 blueprint 构造 legacy SessionConfig
+		// 1. 从 blueprint 构造 SessionConfig
 		cfg := blueprintToSessionConfig(bp)
 
 		// 1a. 若提供了 PromptLayerProvider，通过 PromptCompiler 编译 system prompt
@@ -261,7 +257,7 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 			}
 		}
 
-		// 2. 创建 legacy session（走现有 NewSession 路径）
+		// 2. 创建会话（NewSession）
 		sess, err := k.NewSession(ctx, cfg)
 		if err != nil {
 			yield(nil, fmt.Errorf("create session from blueprint: %w", err))
@@ -303,7 +299,7 @@ func (k *Kernel) runAgentFromBlueprintImpl(
 					onResult(result)
 				}
 			},
-			Observer:    runObserver,
+			Observer: runObserver,
 		}
 
 		var outcome kruntime.TurnOutcome = kruntime.TurnOutcomeCompleted
@@ -521,7 +517,7 @@ func (k *Kernel) RecordBudgetLimitUpdated(
 	return updated, nil
 }
 
-// blueprintToSessionConfig 将 SessionBlueprint 映射到 legacy SessionConfig。
+// blueprintToSessionConfig 将 SessionBlueprint 映射到 session.SessionConfig。
 // 这是阶段 3 的过渡适配层，仅在阶段 4 完成前使用。
 func blueprintToSessionConfig(bp kruntime.SessionBlueprint) session.SessionConfig {
 	trustLevel := bp.EffectiveToolPolicy.TrustLevel

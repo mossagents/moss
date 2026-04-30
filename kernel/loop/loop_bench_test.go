@@ -8,8 +8,8 @@ import (
 	"github.com/mossagents/moss/kernel/hooks"
 	"github.com/mossagents/moss/kernel/model"
 	"github.com/mossagents/moss/kernel/session"
-	"github.com/mossagents/moss/kernel/tool"
 	kt "github.com/mossagents/moss/kernel/testing"
+	"github.com/mossagents/moss/kernel/tool"
 )
 
 func BenchmarkToolCallDispatch(b *testing.B) {
@@ -25,6 +25,7 @@ func BenchmarkToolCallDispatch(b *testing.B) {
 	}
 
 	l := &AgentLoop{Tools: reg, IO: kt.NewRecorderIO()}
+	l.currentTurn = TurnPlan{ToolRoute: []ToolRouteDecision{{Name: "echo", Status: ToolRouteVisible}}}
 	sess := &session.Session{
 		ID:     "bench-tool",
 		Status: session.StatusRunning,
@@ -62,6 +63,7 @@ func BenchmarkHooksPipeline(b *testing.B) {
 	}
 
 	l := &AgentLoop{Tools: reg, Hooks: chain, IO: kt.NewRecorderIO()}
+	l.currentTurn = TurnPlan{ToolRoute: []ToolRouteDecision{{Name: "noop", Status: ToolRouteVisible}}}
 	sess := &session.Session{
 		ID:     "bench-mw",
 		Status: session.StatusRunning,

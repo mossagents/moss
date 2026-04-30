@@ -36,11 +36,11 @@ type runtimeParityTrace struct {
 }
 
 type runtimeParityRun struct {
-	result           *session.LifecycleResult
-	err              error
-	trace            runtimeParityTrace
+	result            *session.LifecycleResult
+	err               error
+	trace             runtimeParityTrace
 	runtimeEventTypes []kruntime.EventType
-	blueprint        kruntime.SessionBlueprint
+	blueprint         kruntime.SessionBlueprint
 }
 
 func (o *runtimeParityObserver) OnSessionEvent(_ context.Context, e observe.SessionEvent) {
@@ -85,7 +85,7 @@ func (o *runtimeParityObserver) snapshot() runtimeParityTrace {
 	}
 }
 
-func TestLegacyAndBlueprintRunParity_ResultLifecycleAndObserver(t *testing.T) {
+func TestBlueprintRun_ResultLifecycleAndObserver(t *testing.T) {
 	responses := []model.CompletionResponse{{
 		Message: model.Message{
 			Role:         model.RoleAssistant,
@@ -95,19 +95,14 @@ func TestLegacyAndBlueprintRunParity_ResultLifecycleAndObserver(t *testing.T) {
 		Usage:      model.TokenUsage{PromptTokens: 2, CompletionTokens: 5, TotalTokens: 7},
 	}}
 
-	legacy := runLegacyParityPath(t, context.Background(), &kt.MockLLM{Responses: cloneResponses(responses)})
-	blueprint := runBlueprintParityPath(t, context.Background(), &kt.MockLLM{Responses: cloneResponses(responses)})
-
-	if legacy.err != nil {
-		t.Fatalf("legacy run failed: %v", legacy.err)
+	run := runBlueprintParityPath(t, context.Background(), &kt.MockLLM{Responses: cloneResponses(responses)})
+	if run.err != nil {
+		t.Fatalf("blueprint run failed: %v", run.err)
 	}
-	if blueprint.err != nil {
-		t.Fatalf("blueprint run failed: %v", blueprint.err)
+	if run.result == nil || !run.result.Success {
+		t.Fatalf("expected successful lifecycle result, got %+v err=%v", run.result, run.err)
 	}
-	assertParityLifecycleResult(t, legacy.result, blueprint.result)
-	assertParityTrace(t, legacy.trace, blueprint.trace)
-	assertSessionTypes(t, legacy.trace.sessionTypes, []string{"created", "running", "completed"})
-	assertSessionTypes(t, blueprint.trace.sessionTypes, []string{"created", "running", "completed"})
+	assertSessionTypes(t, run.trace.sessionTypes, []string{"created", "running", "completed"})
 
 	wantRuntimeEvents := []kruntime.EventType{
 		kruntime.EventTypeSessionCreated,
@@ -115,34 +110,24 @@ func TestLegacyAndBlueprintRunParity_ResultLifecycleAndObserver(t *testing.T) {
 		kruntime.EventTypeLLMCalled,
 		kruntime.EventTypeTurnCompleted,
 	}
-	if !reflect.DeepEqual(blueprint.runtimeEventTypes, wantRuntimeEvents) {
-		t.Fatalf("runtime event types = %v, want %v", blueprint.runtimeEventTypes, wantRuntimeEvents)
+	if !reflect.DeepEqual(run.runtimeEventTypes, wantRuntimeEvents) {
+		t.Fatalf("runtime event types = %v, want %v", run.runtimeEventTypes, wantRuntimeEvents)
 	}
 }
 
-func TestLegacyAndBlueprintRunParity_ContextTermination(t *testing.T) {
+func TestBlueprintRun_ContextTermination(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
-		legacyCtx, legacyCancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-		defer legacyCancel()
-		legacy := runLegacyParityPath(t, legacyCtx, &blockingLLM{})
-
-		blueprintCtx, blueprintCancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
-		defer blueprintCancel()
-		blueprint := runBlueprintParityPath(t, blueprintCtx, &blockingLLM{})
-
-		assertTerminationParity(t, legacy, blueprint, context.DeadlineExceeded, []string{"created", "running", "failed"})
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+		defer cancel()
+		run := runBlueprintParityPath(t, ctx, &blockingLLM{})
+		assertBlueprintTermination(t, run, context.DeadlineExceeded, []string{"created", "running", "failed"})
 	})
 
 	t.Run("cancel", func(t *testing.T) {
-		legacyCtx, legacyCancel := context.WithCancel(context.Background())
-		time.AfterFunc(30*time.Millisecond, legacyCancel)
-		legacy := runLegacyParityPath(t, legacyCtx, &blockingLLM{})
-
-		blueprintCtx, blueprintCancel := context.WithCancel(context.Background())
-		time.AfterFunc(30*time.Millisecond, blueprintCancel)
-		blueprint := runBlueprintParityPath(t, blueprintCtx, &blockingLLM{})
-
-		assertTerminationParity(t, legacy, blueprint, context.Canceled, []string{"created", "running", "cancelled"})
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(30*time.Millisecond, cancel)
+		run := runBlueprintParityPath(t, ctx, &blockingLLM{})
+		assertBlueprintTermination(t, run, context.Canceled, []string{"created", "running", "cancelled"})
 	})
 }
 
@@ -272,39 +257,6 @@ func TestForkRuntimeSession_PersistsResolvedBlueprintAcrossSourceAndChild(t *tes
 	}
 }
 
-func runLegacyParityPath(t *testing.T, ctx context.Context, llm model.LLM) runtimeParityRun {
-	t.Helper()
-	obs := &runtimeParityObserver{}
-	k := New(
-		WithLLM(llm),
-		WithUserIO(&io.NoOpIO{}),
-		WithObserver(obs),
-	)
-	sess, err := k.NewSession(context.Background(), session.SessionConfig{
-		Goal:     "parity",
-		MaxSteps: 5,
-	})
-	if err != nil {
-		t.Fatalf("NewSession: %v", err)
-	}
-	userMsg := model.Message{
-		Role:         model.RoleUser,
-		ContentParts: []model.ContentPart{model.TextPart("say done")},
-	}
-	sess.AppendMessage(userMsg)
-	result, err := CollectRunAgentResult(ctx, k, RunAgentRequest{
-		Session:     sess,
-		Agent:       k.BuildLLMAgent("root"),
-		UserContent: &userMsg,
-		IO:          &io.NoOpIO{},
-	})
-	return runtimeParityRun{
-		result: result,
-		err:    err,
-		trace:  obs.snapshot(),
-	}
-}
-
 func runBlueprintParityPath(t *testing.T, ctx context.Context, llm model.LLM) runtimeParityRun {
 	t.Helper()
 	obs := &runtimeParityObserver{}
@@ -355,67 +307,14 @@ func loadRuntimeEventTypes(t *testing.T, store kruntime.EventStore, sessionID st
 	return types
 }
 
-func assertParityLifecycleResult(t *testing.T, got, want *session.LifecycleResult) {
+func assertBlueprintTermination(t *testing.T, run runtimeParityRun, want error, wantSessionTypes []string) {
 	t.Helper()
-	if got == nil || want == nil {
-		t.Fatalf("lifecycle results must both be non-nil, got=%+v want=%+v", got, want)
+	if !stderrors.Is(run.err, want) {
+		t.Fatalf("error = %v, want %v", run.err, want)
 	}
-	if got.Success != want.Success {
-		t.Fatalf("Success mismatch: got=%v want=%v", got.Success, want.Success)
-	}
-	if got.Output != want.Output {
-		t.Fatalf("Output mismatch: got=%q want=%q", got.Output, want.Output)
-	}
-	if got.Steps != want.Steps {
-		t.Fatalf("Steps mismatch: got=%d want=%d", got.Steps, want.Steps)
-	}
-	if !reflect.DeepEqual(got.TokensUsed, want.TokensUsed) {
-		t.Fatalf("TokensUsed mismatch: got=%+v want=%+v", got.TokensUsed, want.TokensUsed)
-	}
-	if got.Error != want.Error {
-		t.Fatalf("Error mismatch: got=%q want=%q", got.Error, want.Error)
-	}
-	if got.Status != want.Status {
-		t.Fatalf("Status mismatch: got=%q want=%q", got.Status, want.Status)
-	}
-	if !reflect.DeepEqual(got.BudgetExhausted, want.BudgetExhausted) {
-		t.Fatalf("BudgetExhausted mismatch: got=%+v want=%+v", got.BudgetExhausted, want.BudgetExhausted)
-	}
-}
-
-func assertParityTrace(t *testing.T, got, want runtimeParityTrace) {
-	t.Helper()
-	if !reflect.DeepEqual(got.sessionTypes, want.sessionTypes) {
-		t.Fatalf("session lifecycle mismatch: got=%v want=%v", got.sessionTypes, want.sessionTypes)
-	}
-	if !reflect.DeepEqual(got.executionTypes, want.executionTypes) {
-		t.Fatalf("execution event mismatch: got=%v want=%v", got.executionTypes, want.executionTypes)
-	}
-	if got.llmCalls != want.llmCalls {
-		t.Fatalf("llm call count mismatch: got=%d want=%d", got.llmCalls, want.llmCalls)
-	}
-	if got.toolCalls != want.toolCalls {
-		t.Fatalf("tool call count mismatch: got=%d want=%d", got.toolCalls, want.toolCalls)
-	}
-	if !reflect.DeepEqual(got.errors, want.errors) {
-		t.Fatalf("observer errors mismatch: got=%v want=%v", got.errors, want.errors)
-	}
-}
-
-func assertTerminationParity(t *testing.T, legacy, blueprint runtimeParityRun, want error, wantSessionTypes []string) {
-	t.Helper()
-	if !stderrors.Is(legacy.err, want) {
-		t.Fatalf("legacy error = %v, want %v", legacy.err, want)
-	}
-	if !stderrors.Is(blueprint.err, want) {
-		t.Fatalf("blueprint error = %v, want %v", blueprint.err, want)
-	}
-	assertParityLifecycleResult(t, legacy.result, blueprint.result)
-	assertParityTrace(t, legacy.trace, blueprint.trace)
-	assertSessionTypes(t, legacy.trace.sessionTypes, wantSessionTypes)
-	assertSessionTypes(t, blueprint.trace.sessionTypes, wantSessionTypes)
-	if legacy.result.Success || blueprint.result.Success {
-		t.Fatalf("expected both runs to fail, got legacy=%+v blueprint=%+v", legacy.result, blueprint.result)
+	assertSessionTypes(t, run.trace.sessionTypes, wantSessionTypes)
+	if run.result != nil && run.result.Success {
+		t.Fatalf("expected failed run, got success: %+v", run.result)
 	}
 }
 

@@ -85,90 +85,27 @@ func (s *kernelInitState) initSession() error {
 }
 
 func (s *kernelInitState) loadInitialSession() error {
-	// 优先走 EventStore 路径（新 kernel-centric 路径）
-	if s.eventStore != nil {
-		bp, err := s.k.ResumeRuntimeSession(s.ctx, s.cfg.InitialSessionID)
-		if err == nil {
-			// 将 blueprint 的 config 应用到 kernel（session 由 blueprint 携带）
-			sessCfg := blueprintToSessionConfig(bp)
-			if applyErr := product.ApplySessionConfig(s.k, sessCfg); applyErr != nil {
-				s.cancel()
-				return fmt.Errorf("apply blueprint session config: %w", applyErr)
-			}
-			// §阶段5: posture patch-up 停止 — blueprint path 存储 blueprint，
-			// 后续 turn 通过 RunAgentFromBlueprint + blueprintPolicyApplier 应用 EffectiveToolPolicy，
-			// 不再需要 planPostureRebuild / applyPostureRebuild。
-			s.blueprint = &bp
-			s.notices = append(s.notices, fmt.Sprintf("Resumed session %s via EventStore", s.cfg.InitialSessionID))
-			// 在 EventStore 上创建 interactive session（后续 turn 会通过 RunAgentFromBlueprint 写入）
-			var sessErr error
-			s.sess, sessErr = s.k.NewSession(s.ctx, sessCfg)
-			if sessErr != nil {
-				s.cancel()
-				return fmt.Errorf("create session for resumed blueprint: %w", sessErr)
-			}
-			return nil
-		}
-		// EventStore 找不到时 fallback 到旧路径
-	}
-	if s.store == nil {
+	if s.eventStore == nil {
 		s.cancel()
-		return fmt.Errorf("failed to load session %q: session store is unavailable", s.cfg.InitialSessionID)
+		return fmt.Errorf("resume requires EventStore (set EventStoreDBPath); session %q", s.cfg.InitialSessionID)
 	}
-	sess, err := s.store.Load(s.ctx, s.cfg.InitialSessionID)
+	bp, err := s.k.ResumeRuntimeSession(s.ctx, s.cfg.InitialSessionID)
 	if err != nil {
 		s.cancel()
-		return fmt.Errorf("failed to load session %q: %w", s.cfg.InitialSessionID, err)
+		return fmt.Errorf("resume session %q: %w", s.cfg.InitialSessionID, err)
 	}
-	if sess == nil {
+	sessCfg := blueprintToSessionConfig(bp)
+	if applyErr := product.ApplySessionConfig(s.k, sessCfg); applyErr != nil {
 		s.cancel()
-		return fmt.Errorf("session %q not found", s.cfg.InitialSessionID)
+		return fmt.Errorf("apply blueprint session config: %w", applyErr)
 	}
-	s.sess = sess
-	currentPosture := postureFromRuntime(s.k, s.cfg.CollaborationMode, s.cfg.Trust, s.cfg.ApprovalMode)
-	plan, err := planPostureRebuild(
-		s.cfg.InitialSessionID,
-		currentPosture,
-		s.sess,
-	)
+	s.blueprint = &bp
+	s.notices = append(s.notices, fmt.Sprintf("Resumed session %s via EventStore", s.cfg.InitialSessionID))
+	s.sess, err = s.k.NewSession(s.ctx, sessCfg)
 	if err != nil {
 		s.cancel()
-		return err
+		return fmt.Errorf("create session for resumed blueprint: %w", err)
 	}
-	if err := s.applyPostureRebuild(plan); err != nil {
-		return err
-	}
-	if strings.TrimSpace(plan.Notice) != "" {
-		s.notices = append(s.notices, plan.Notice)
-	}
-	return nil
-}
-
-func (s *kernelInitState) applyPostureRebuild(plan postureRebuildPlan) error {
-	if !plan.Rebuild {
-		return nil
-	}
-	s.cancel()
-	k, ctx, cancel, err := buildRuntimeKernel(Config{
-		Trust:             plan.Trust,
-		CollaborationMode: firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), plan.Mode, s.cfg.CollaborationMode, "execute"),
-		ApprovalMode:      plan.ApprovalMode,
-		APIKey:            s.cfg.APIKey,
-		BaseURL:           s.cfg.BaseURL,
-		BuildKernel:       s.cfg.BuildKernel,
-		AfterBoot:         s.cfg.AfterBoot,
-	}, s.wCfg, s.bridge)
-	if err != nil {
-		return err
-	}
-	s.k, s.ctx, s.cancel = k, ctx, cancel
-	if err := product.ApplySessionConfig(s.k, plan.TargetConfig); err != nil {
-		s.cancel()
-		return fmt.Errorf("apply rebuilt posture: %w", err)
-	}
-	s.cfg.Trust = plan.Trust
-	s.cfg.CollaborationMode = firstNonEmptyTrimmed(sessionConfigCollaborationMode(plan.TargetConfig), s.cfg.CollaborationMode, "execute")
-	s.cfg.ApprovalMode = plan.ApprovalMode
 	return nil
 }
 
@@ -205,14 +142,15 @@ func (s *kernelInitState) createInteractiveSession() error {
 	sessCfg.SystemPrompt = sysPrompt
 	sessCfg.Metadata = metadata
 
-	// 阶段 3：若 EventStore 可用，注册 blueprint（后续 turn 走 RunAgentFromBlueprint）
 	if s.eventStore != nil {
 		runtimeReq := tuiRuntimeRequest(s.cfg, s.wCfg.Workspace)
-		if bp, bpErr := s.k.StartRuntimeSession(s.ctx, runtimeReq); bpErr == nil {
-			s.blueprint = &bp
-			s.notices = append(s.notices, fmt.Sprintf("Session %s registered in EventStore", bp.Identity.SessionID))
+		bp, bpErr := s.k.StartRuntimeSession(s.ctx, runtimeReq)
+		if bpErr != nil {
+			s.cancel()
+			return fmt.Errorf("StartRuntimeSession: %w", bpErr)
 		}
-		// blueprint 注册失败不阻断 TUI 启动，降级到无 blueprint 模式
+		s.blueprint = &bp
+		s.notices = append(s.notices, fmt.Sprintf("Session %s registered in EventStore", bp.Identity.SessionID))
 	}
 
 	s.sess, err = s.k.NewSession(s.ctx, sessCfg)

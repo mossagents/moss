@@ -193,74 +193,24 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 	sessCfg.SystemPrompt = systemPrompt
 	sessCfg.Metadata = metadata
 
-	// 阶段 3：若 EventStore 可用，走 blueprint 主链路
-	if es := k.EventStore(); es != nil {
-		runtimeReq := runtimeInvocationToRuntimeRequest(invocation, "oneshot")
-		bp, bpErr := k.StartRuntimeSession(ctx, runtimeReq)
-		if bpErr != nil {
-			// EventStore 错误不阻断 exec，降级到旧路径并记录警告
-			k.Logger().WarnContext(ctx, "StartRuntimeSession failed, falling back to legacy path", "error", bpErr)
-		} else {
-			// 将 PromptLayerRegistry（动态层）与静态 system prompt 层合并，路由经 PromptCompiler
-			layers := k.PromptLayers().Build(k)
-			if staticLayers := systemPromptToLayers(systemPrompt, sessCfg.Metadata); len(staticLayers) > 0 {
-				layers = append(staticLayers, layers...)
-			}
-			report.SessionID = bp.Identity.SessionID
-			userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
-			agent := k.BuildLLMAgent("mosscode")
-
-			result, runErr := kernel.CollectRunAgentFromBlueprint(ctx, k, bp, layers, agent, &userMsg, userIO)
-			if recorder != nil {
-				report.Events = recorder.Events()
-			}
-			trace := traceRecorder.Snapshot()
-			report.PromptTokens = trace.PromptTokens
-			report.CompletionTokens = trace.CompletionTokens
-			report.Tokens = trace.TotalTokens
-			report.EstimatedCostUSD = trace.EstimatedCostUSD
-			report.Trace = trace.Timeline
-			if runErr != nil {
-				report.Error = runErr.Error()
-				return report, fmt.Errorf("run: %w", runErr)
-			}
-			report.Status = "completed"
-			report.Steps = result.Steps
-			if report.Tokens == 0 {
-				report.Tokens = result.TokensUsed.TotalTokens
-			}
-			report.Output = result.Output
-
-			if !cfg.execJSON {
-				fmt.Println()
-				fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", bp.Identity.SessionID, result.Steps, report.Tokens)
-				if report.EstimatedCostUSD > 0 {
-					fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
-				}
-				fmt.Printf(")\n")
-				if strings.TrimSpace(result.Output) != "" {
-					fmt.Printf("\n%s\n", result.Output)
-				}
-			}
-			return report, nil
-		}
+	if k.EventStore() == nil {
+		return report, fmt.Errorf("exec requires EventStore: event store did not open (check workspace permissions and app data paths for moss)")
 	}
-
-	// 旧路径（EventStore 不可用时的 fallback）
-	sess, err := k.NewSession(ctx, sessCfg)
+	runtimeReq := runtimeInvocationToRuntimeRequest(invocation, "oneshot")
+	bp, err := k.StartRuntimeSession(ctx, runtimeReq)
 	if err != nil {
 		report.Error = err.Error()
-		return report, fmt.Errorf("create session: %w", err)
+		return report, fmt.Errorf("start runtime session: %w", err)
 	}
-	report.SessionID = sess.ID
+	layers := k.PromptLayers().Build(k)
+	if staticLayers := systemPromptToLayers(systemPrompt, sessCfg.Metadata); len(staticLayers) > 0 {
+		layers = append(staticLayers, layers...)
+	}
+	report.SessionID = bp.Identity.SessionID
 	userMsg := model.Message{Role: model.RoleUser, ContentParts: []model.ContentPart{model.TextPart(cfg.prompt)}}
-	sess.AppendMessage(userMsg)
+	agent := k.BuildLLMAgent("mosscode")
 
-	result, err := kernel.CollectRunAgentResult(ctx, k, kernel.RunAgentRequest{
-		Session:     sess,
-		Agent:       k.BuildLLMAgent("mosscode"),
-		UserContent: &userMsg,
-	})
+	result, runErr := kernel.CollectRunAgentFromBlueprint(ctx, k, bp, layers, agent, &userMsg, userIO)
 	if recorder != nil {
 		report.Events = recorder.Events()
 	}
@@ -270,12 +220,11 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 	report.Tokens = trace.TotalTokens
 	report.EstimatedCostUSD = trace.EstimatedCostUSD
 	report.Trace = trace.Timeline
-	if err != nil {
-		report.Error = err.Error()
-		return report, fmt.Errorf("run: %w", err)
+	if runErr != nil {
+		report.Error = runErr.Error()
+		return report, fmt.Errorf("run: %w", runErr)
 	}
 	report.Status = "completed"
-	report.SessionID = sess.ID
 	report.Steps = result.Steps
 	if report.Tokens == 0 {
 		report.Tokens = result.TokensUsed.TotalTokens
@@ -284,7 +233,7 @@ func executeOneShot(ctx context.Context, cfg *config, invocation runtimeInvocati
 
 	if !cfg.execJSON {
 		fmt.Println()
-		fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", sess.ID, result.Steps, report.Tokens)
+		fmt.Printf("✅ Done (thread: %s, steps: %d, tokens: %d", bp.Identity.SessionID, result.Steps, report.Tokens)
 		if report.EstimatedCostUSD > 0 {
 			fmt.Printf(", cost: $%.6f", report.EstimatedCostUSD)
 		}

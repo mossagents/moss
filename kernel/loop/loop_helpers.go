@@ -45,8 +45,10 @@ func (l *AgentLoop) toolAllowed(name string) bool {
 	if name == "" {
 		return false
 	}
+	// Empty route means no registry, no registered tools, or planner invariant bug.
+	// Deny-all prevents hallucinated tool calls from executing when nothing was routed.
 	if len(l.currentTurn.ToolRoute) == 0 {
-		return true
+		return false
 	}
 	for _, decision := range l.currentTurn.ToolRoute {
 		if decision.Name != name {
@@ -194,12 +196,12 @@ func (l *AgentLoop) stopForBudget(
 	)
 	runEvent := l.executionEventBase(sess, observe.ExecutionRunCompleted, "run", "runtime", "run")
 	runEvent.Metadata = map[string]any{
-		"status":       string(session.LifecycleBudgetExhausted),
-		"budget_kind":  detail.BudgetKind,
-		"consumed":     detail.ConsumedValue,
-		"limit":        detail.LimitValue,
-		"steps":        sess.Budget.UsedStepsValue(),
-		"tokens":       usage.TotalTokens,
+		"status":      string(session.LifecycleBudgetExhausted),
+		"budget_kind": detail.BudgetKind,
+		"consumed":    detail.ConsumedValue,
+		"limit":       detail.LimitValue,
+		"steps":       sess.Budget.UsedStepsValue(),
+		"tokens":      usage.TotalTokens,
 	}
 	observe.ObserveExecutionEvent(context.Background(), l.observer(), runEvent)
 	result := &SessionResult{
